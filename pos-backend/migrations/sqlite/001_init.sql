@@ -136,8 +136,8 @@ CREATE TABLE payments (
 CREATE TABLE pos_sync_outbox (
   id TEXT PRIMARY KEY,
   command_id TEXT NOT NULL UNIQUE,
-  restaurant_id TEXT NOT NULL,
-  device_id TEXT NOT NULL,
+  restaurant_id TEXT,
+  device_id TEXT,
   aggregate_type TEXT NOT NULL,
   aggregate_id TEXT NOT NULL,
   command_type TEXT NOT NULL,

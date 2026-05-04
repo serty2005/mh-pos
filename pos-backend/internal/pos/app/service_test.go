@@ -124,6 +124,30 @@ func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 	return order, check
 }
 
+func countRows(t *testing.T, f *fixture, table string) int {
+	t.Helper()
+	switch table {
+	case "orders", "pos_sync_outbox", "roles", "catalog_items", "menu_items":
+	default:
+		t.Fatalf("unexpected table %q", table)
+	}
+	var n int
+	if err := f.db.QueryRowContext(f.ctx, fmt.Sprintf("SELECT COUNT(1) FROM %s", table)).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func outboxDeviceIDIsNull(t *testing.T, f *fixture, commandID string) bool {
+	t.Helper()
+	var n int
+	err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM pos_sync_outbox WHERE command_id = ? AND device_id IS NULL`, commandID).Scan(&n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n == 1
+}
+
 func TestCannotOpenTwoShiftsOnDevice(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
@@ -138,6 +162,74 @@ func TestCannotCreateOrderWithoutOpenShift(t *testing.T) {
 	_, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{DeviceID: f.device.ID, TableName: "A1"})
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
+	}
+}
+
+func TestDuplicateCommandIDDoesNotCreateDuplicateOrderOrOutbox(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	ordersBefore := countRows(t, f, "orders")
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+
+	cmd := app.CreateOrderCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-create-order-1"},
+		DeviceID:    f.device.ID,
+		TableName:   "A1",
+		GuestCount:  1,
+	}
+	if _, err := f.service.CreateOrder(f.ctx, cmd); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CreateOrder(f.ctx, cmd); !errors.Is(err, domain.ErrDuplicateCommand) {
+		t.Fatalf("expected duplicate command, got %v", err)
+	}
+	if orders := countRows(t, f, "orders"); orders != ordersBefore+1 {
+		t.Fatalf("expected one business row, before=%d after=%d", ordersBefore, orders)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+1 {
+		t.Fatalf("expected one outbox row, before=%d after=%d", outboxBefore, outbox)
+	}
+}
+
+func TestReferenceCreatesAllowNullOutboxDeviceID(t *testing.T) {
+	f := newFixture(t)
+
+	if _, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta:     app.CommandMeta{CommandID: "cmd-role-without-device"},
+		Name:            "manager",
+		PermissionsJSON: `{}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !outboxDeviceIDIsNull(t, f, "cmd-role-without-device") {
+		t.Fatal("expected role outbox device_id to be NULL")
+	}
+
+	catalog, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-catalog-without-device"},
+		Type:        domain.CatalogItemGood,
+		Name:        "Tea",
+		SKU:         "TEA",
+		BaseUnit:    "portion",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !outboxDeviceIDIsNull(t, f, "cmd-catalog-without-device") {
+		t.Fatal("expected catalog item outbox device_id to be NULL")
+	}
+
+	if _, err := f.service.CreateMenuItem(f.ctx, app.CreateMenuItemCommand{
+		CommandMeta:   app.CommandMeta{CommandID: "cmd-menu-without-device"},
+		CatalogItemID: catalog.ID,
+		Name:          "Tea",
+		Price:         300,
+		Currency:      "RUB",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !outboxDeviceIDIsNull(t, f, "cmd-menu-without-device") {
+		t.Fatal("expected menu item outbox device_id to be NULL")
 	}
 }
 
@@ -160,6 +252,38 @@ func TestCannotAddLineToClosedOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+}
+
+func TestCannotCloseOrderWithoutFullPayment(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{DeviceID: f.device.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CreateCheck(f.ctx, app.CreateCheckCommand{OrderID: order.ID}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.CloseOrder(f.ctx, app.CloseOrderCommand{OrderID: order.ID})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+}
+
+func TestCreateOrderRejectsMismatchedRestaurantID(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	other, err := f.service.CreateRestaurant(f.ctx, app.CreateRestaurantCommand{Name: "Other", Timezone: "Europe/Moscow", Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.CreateOrder(f.ctx, app.CreateOrderCommand{RestaurantID: other.ID, DeviceID: f.device.ID})
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
 	}

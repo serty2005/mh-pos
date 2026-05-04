@@ -59,6 +59,20 @@ func boolInt(v bool) int {
 	return 0
 }
 
+func nullableString(v *string) any {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
+func stringPtr(v sql.NullString) *string {
+	if !v.Valid {
+		return nil
+	}
+	return &v.String
+}
+
 func normalizeErr(err error) error {
 	if err == nil {
 		return nil
@@ -457,8 +471,12 @@ func (r *Repository) CreatePayment(ctx context.Context, v *domain.Payment) error
 
 func (r *Repository) CreateOutboxMessage(ctx context.Context, v *domain.OutboxMessage) error {
 	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO pos_sync_outbox(id,command_id,restaurant_id,device_id,aggregate_type,aggregate_id,command_type,payload_json,status,attempts,last_error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.CommandID, v.RestaurantID, v.DeviceID, v.AggregateType, v.AggregateID, v.CommandType, v.PayloadJSON, string(v.Status), v.Attempts, v.LastError, dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+		v.ID, v.CommandID, nullableString(v.RestaurantID), nullableString(v.DeviceID), v.AggregateType, v.AggregateID, v.CommandType, v.PayloadJSON, string(v.Status), v.Attempts, v.LastError, dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
+}
+
+func (r *Repository) GetOutboxByCommandID(ctx context.Context, commandID string) (*domain.OutboxMessage, error) {
+	return r.scanOutbox(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,command_id,restaurant_id,device_id,aggregate_type,aggregate_id,command_type,payload_json,status,attempts,last_error,created_at,updated_at FROM pos_sync_outbox WHERE command_id = ?`, commandID))
 }
 
 func (r *Repository) ListOutbox(ctx context.Context, limit int) ([]domain.OutboxMessage, error) {
@@ -472,21 +490,50 @@ func (r *Repository) ListOutbox(ctx context.Context, limit int) ([]domain.Outbox
 	defer rows.Close()
 	var out []domain.OutboxMessage
 	for rows.Next() {
-		var v domain.OutboxMessage
-		var status, created, updated string
-		var lastErr sql.NullString
-		if err := rows.Scan(&v.ID, &v.CommandID, &v.RestaurantID, &v.DeviceID, &v.AggregateType, &v.AggregateID, &v.CommandType, &v.PayloadJSON, &status, &v.Attempts, &lastErr, &created, &updated); err != nil {
+		v, err := scanOutboxRows(rows)
+		if err != nil {
 			return nil, err
 		}
-		if lastErr.Valid {
-			v.LastError = &lastErr.String
-		}
-		v.Status = domain.OutboxStatus(status)
-		v.CreatedAt = parseTime(created)
-		v.UpdatedAt = parseTime(updated)
-		out = append(out, v)
+		out = append(out, *v)
 	}
 	return out, rows.Err()
+}
+
+func (r *Repository) scanOutbox(row *sql.Row) (*domain.OutboxMessage, error) {
+	var v domain.OutboxMessage
+	var restaurantID, deviceID, lastErr sql.NullString
+	var status, created, updated string
+	err := row.Scan(&v.ID, &v.CommandID, &restaurantID, &deviceID, &v.AggregateType, &v.AggregateID, &v.CommandType, &v.PayloadJSON, &status, &v.Attempts, &lastErr, &created, &updated)
+	if err != nil {
+		return nil, normalizeErr(err)
+	}
+	v.RestaurantID = stringPtr(restaurantID)
+	v.DeviceID = stringPtr(deviceID)
+	v.LastError = stringPtr(lastErr)
+	v.Status = domain.OutboxStatus(status)
+	v.CreatedAt = parseTime(created)
+	v.UpdatedAt = parseTime(updated)
+	return &v, nil
+}
+
+type outboxScanner interface {
+	Scan(...any) error
+}
+
+func scanOutboxRows(row outboxScanner) (*domain.OutboxMessage, error) {
+	var v domain.OutboxMessage
+	var restaurantID, deviceID, lastErr sql.NullString
+	var status, created, updated string
+	if err := row.Scan(&v.ID, &v.CommandID, &restaurantID, &deviceID, &v.AggregateType, &v.AggregateID, &v.CommandType, &v.PayloadJSON, &status, &v.Attempts, &lastErr, &created, &updated); err != nil {
+		return nil, err
+	}
+	v.RestaurantID = stringPtr(restaurantID)
+	v.DeviceID = stringPtr(deviceID)
+	v.LastError = stringPtr(lastErr)
+	v.Status = domain.OutboxStatus(status)
+	v.CreatedAt = parseTime(created)
+	v.UpdatedAt = parseTime(updated)
+	return &v, nil
 }
 
 func (r *Repository) MarkOutboxSent(ctx context.Context, id, updatedAt string) error {

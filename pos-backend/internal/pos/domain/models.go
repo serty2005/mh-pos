@@ -199,8 +199,8 @@ const (
 type OutboxMessage struct {
 	ID            string       `json:"id"`
 	CommandID     string       `json:"command_id"`
-	RestaurantID  string       `json:"restaurant_id"`
-	DeviceID      string       `json:"device_id"`
+	RestaurantID  *string      `json:"restaurant_id,omitempty"`
+	DeviceID      *string      `json:"device_id,omitempty"`
 	AggregateType string       `json:"aggregate_type"`
 	AggregateID   string       `json:"aggregate_id"`
 	CommandType   string       `json:"command_type"`

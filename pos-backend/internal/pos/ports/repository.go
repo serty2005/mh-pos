@@ -49,6 +49,7 @@ type Repository interface {
 	CreatePayment(context.Context, *domain.Payment) error
 
 	CreateOutboxMessage(context.Context, *domain.OutboxMessage) error
+	GetOutboxByCommandID(context.Context, string) (*domain.OutboxMessage, error)
 	ListOutbox(context.Context, int) ([]domain.OutboxMessage, error)
 	MarkOutboxSent(context.Context, string, string) error
 	MarkOutboxFailed(context.Context, string, string, string) error

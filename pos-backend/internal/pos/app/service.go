@@ -194,6 +194,9 @@ func (s *Service) CreateRestaurant(ctx context.Context, cmd CreateRestaurantComm
 	now := s.clock.Now()
 	v := &domain.Restaurant{ID: s.ids.NewID(), Name: cmd.Name, Timezone: cmd.Timezone, Currency: strings.ToUpper(cmd.Currency), Active: true, CreatedAt: now, UpdatedAt: now}
 	return v, s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.ensureCommandNotProcessed(ctx, cmd.CommandID); err != nil {
+			return err
+		}
 		if err := s.repo.CreateRestaurant(ctx, v); err != nil {
 			return err
 		}
@@ -208,6 +211,9 @@ func (s *Service) RegisterDevice(ctx context.Context, cmd RegisterDeviceCommand)
 	now := s.clock.Now()
 	v := &domain.Device{ID: s.ids.NewID(), RestaurantID: cmd.RestaurantID, DeviceCode: cmd.DeviceCode, Name: cmd.Name, Type: cmd.Type, Active: true, RegisteredAt: now, CreatedAt: now, UpdatedAt: now}
 	return v, s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.ensureCommandNotProcessed(ctx, cmd.CommandID); err != nil {
+			return err
+		}
 		if err := s.repo.CreateDevice(ctx, v); err != nil {
 			return err
 		}
@@ -226,6 +232,9 @@ func (s *Service) CreateRole(ctx context.Context, cmd CreateRoleCommand) (*domai
 	now := s.clock.Now()
 	v := &domain.Role{ID: s.ids.NewID(), Name: cmd.Name, PermissionsJSON: permissions, Active: true, CreatedAt: now, UpdatedAt: now}
 	return v, s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.ensureCommandNotProcessed(ctx, cmd.CommandID); err != nil {
+			return err
+		}
 		if err := s.repo.CreateRole(ctx, v); err != nil {
 			return err
 		}
@@ -240,6 +249,9 @@ func (s *Service) CreateEmployee(ctx context.Context, cmd CreateEmployeeCommand)
 	now := s.clock.Now()
 	v := &domain.Employee{ID: s.ids.NewID(), RestaurantID: cmd.RestaurantID, RoleID: cmd.RoleID, Name: cmd.Name, PINHash: cmd.PINHash, Active: true, CreatedAt: now, UpdatedAt: now}
 	return v, s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.ensureCommandNotProcessed(ctx, cmd.CommandID); err != nil {
+			return err
+		}
 		if err := s.repo.CreateEmployee(ctx, v); err != nil {
 			return err
 		}
@@ -253,6 +265,9 @@ func (s *Service) ArchiveEmployee(ctx context.Context, cmd ArchiveEmployeeComman
 	}
 	now := s.clock.Now()
 	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.ensureCommandNotProcessed(ctx, cmd.CommandID); err != nil {
+			return err
+		}
 		if err := s.repo.ArchiveEmployee(ctx, cmd.ID, dbTime(now)); err != nil {
 			return err
 		}
@@ -270,6 +285,9 @@ func (s *Service) CreateCatalogItem(ctx context.Context, cmd CreateCatalogItemCo
 	now := s.clock.Now()
 	v := &domain.CatalogItem{ID: s.ids.NewID(), Type: cmd.Type, Name: cmd.Name, SKU: cmd.SKU, BaseUnit: cmd.BaseUnit, Active: true, CreatedAt: now, UpdatedAt: now}
 	return v, s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.ensureCommandNotProcessed(ctx, cmd.CommandID); err != nil {
+			return err
+		}
 		if err := s.repo.CreateCatalogItem(ctx, v); err != nil {
 			return err
 		}
@@ -284,6 +302,9 @@ func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand)
 	now := s.clock.Now()
 	v := &domain.MenuItem{ID: s.ids.NewID(), CatalogItemID: cmd.CatalogItemID, Name: cmd.Name, Price: cmd.Price, Currency: strings.ToUpper(cmd.Currency), Active: true, CreatedAt: now, UpdatedAt: now}
 	return v, s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.ensureCommandNotProcessed(ctx, cmd.CommandID); err != nil {
+			return err
+		}
 		catalogItem, err := s.repo.GetCatalogItem(ctx, cmd.CatalogItemID)
 		if err != nil {
 			return err
@@ -305,6 +326,9 @@ func (s *Service) OpenShift(ctx context.Context, cmd OpenShiftCommand) (*domain.
 	now := s.clock.Now()
 	v := &domain.Shift{ID: s.ids.NewID(), RestaurantID: cmd.RestaurantID, DeviceID: cmd.DeviceID, OpenedByEmployeeID: cmd.OpenedByEmployeeID, Status: domain.ShiftOpen, OpenedAt: now, OpeningCashAmount: cmd.OpeningCashAmount, CreatedAt: now, UpdatedAt: now}
 	return v, s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.ensureCommandNotProcessed(ctx, cmd.CommandID); err != nil {
+			return err
+		}
 		if _, err := s.repo.GetOpenShiftByDevice(ctx, cmd.DeviceID); err == nil {
 			return fmt.Errorf("%w: device already has an open shift", domain.ErrConflict)
 		} else if !errors.Is(err, domain.ErrNotFound) {
@@ -324,6 +348,9 @@ func (s *Service) CloseShift(ctx context.Context, cmd CloseShiftCommand) (*domai
 	now := s.clock.Now()
 	var shift *domain.Shift
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.ensureCommandNotProcessed(ctx, cmd.CommandID); err != nil {
+			return err
+		}
 		var err error
 		shift, err = s.repo.GetShift(ctx, cmd.ID)
 		if err != nil {
@@ -362,6 +389,9 @@ func (s *Service) CreateOrder(ctx context.Context, cmd CreateOrderCommand) (*dom
 	now := s.clock.Now()
 	var order *domain.Order
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.ensureCommandNotProcessed(ctx, cmd.CommandID); err != nil {
+			return err
+		}
 		var shift *domain.Shift
 		var err error
 		if strings.TrimSpace(cmd.ShiftID) != "" {
@@ -378,11 +408,10 @@ func (s *Service) CreateOrder(ctx context.Context, cmd CreateOrderCommand) (*dom
 		if shift.Status != domain.ShiftOpen || shift.DeviceID != cmd.DeviceID {
 			return fmt.Errorf("%w: cannot create order without an open shift on device", domain.ErrConflict)
 		}
-		restaurantID := cmd.RestaurantID
-		if restaurantID == "" {
-			restaurantID = shift.RestaurantID
+		if restaurantID := strings.TrimSpace(cmd.RestaurantID); restaurantID != "" && restaurantID != shift.RestaurantID {
+			return fmt.Errorf("%w: restaurant_id does not match open shift", domain.ErrConflict)
 		}
-		order = &domain.Order{ID: s.ids.NewID(), EdgeOrderID: s.ids.NewID(), RestaurantID: restaurantID, DeviceID: cmd.DeviceID, ShiftID: shift.ID, Status: domain.OrderOpen, TableName: cmd.TableName, GuestCount: cmd.GuestCount, OpenedAt: now, CreatedAt: now, UpdatedAt: now}
+		order = &domain.Order{ID: s.ids.NewID(), EdgeOrderID: s.ids.NewID(), RestaurantID: shift.RestaurantID, DeviceID: cmd.DeviceID, ShiftID: shift.ID, Status: domain.OrderOpen, TableName: cmd.TableName, GuestCount: cmd.GuestCount, OpenedAt: now, CreatedAt: now, UpdatedAt: now}
 		if err := s.repo.CreateOrder(ctx, order); err != nil {
 			return err
 		}
@@ -398,6 +427,9 @@ func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*d
 	now := s.clock.Now()
 	var line *domain.OrderLine
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.ensureCommandNotProcessed(ctx, cmd.CommandID); err != nil {
+			return err
+		}
 		order, err := s.repo.GetOrder(ctx, cmd.OrderID)
 		if err != nil {
 			return err
@@ -428,6 +460,9 @@ func (s *Service) CreateCheck(ctx context.Context, cmd CreateCheckCommand) (*dom
 	now := s.clock.Now()
 	var check *domain.Check
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.ensureCommandNotProcessed(ctx, cmd.CommandID); err != nil {
+			return err
+		}
 		order, err := s.repo.GetOrder(ctx, cmd.OrderID)
 		if err != nil {
 			return err
@@ -473,6 +508,9 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 	now := s.clock.Now()
 	var payment *domain.Payment
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.ensureCommandNotProcessed(ctx, cmd.CommandID); err != nil {
+			return err
+		}
 		check, err := s.repo.GetCheck(ctx, cmd.CheckID)
 		if err != nil {
 			return err
@@ -511,6 +549,9 @@ func (s *Service) CloseOrder(ctx context.Context, cmd CloseOrderCommand) (*domai
 	now := s.clock.Now()
 	var order *domain.Order
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.ensureCommandNotProcessed(ctx, cmd.CommandID); err != nil {
+			return err
+		}
 		var err error
 		order, err = s.repo.GetOrder(ctx, cmd.OrderID)
 		if err != nil {
@@ -559,7 +600,8 @@ func (s *Service) MarkOutboxFailed(ctx context.Context, id, reason string) error
 }
 
 func (s *Service) outbox(ctx context.Context, commandID, restaurantID, deviceID, aggregateType, aggregateID, commandType string, payload any) error {
-	if strings.TrimSpace(commandID) == "" {
+	commandID = strings.TrimSpace(commandID)
+	if commandID == "" {
 		commandID = s.ids.NewID()
 	}
 	body, err := json.Marshal(payload)
@@ -570,8 +612,8 @@ func (s *Service) outbox(ctx context.Context, commandID, restaurantID, deviceID,
 	msg := &domain.OutboxMessage{
 		ID:            s.ids.NewID(),
 		CommandID:     commandID,
-		RestaurantID:  restaurantID,
-		DeviceID:      deviceID,
+		RestaurantID:  optionalID(restaurantID),
+		DeviceID:      optionalID(deviceID),
 		AggregateType: aggregateType,
 		AggregateID:   aggregateID,
 		CommandType:   commandType,
@@ -581,6 +623,27 @@ func (s *Service) outbox(ctx context.Context, commandID, restaurantID, deviceID,
 		UpdatedAt:     now,
 	}
 	return s.repo.CreateOutboxMessage(ctx, msg)
+}
+
+func (s *Service) ensureCommandNotProcessed(ctx context.Context, commandID string) error {
+	commandID = strings.TrimSpace(commandID)
+	if commandID == "" {
+		return nil
+	}
+	if _, err := s.repo.GetOutboxByCommandID(ctx, commandID); err == nil {
+		return fmt.Errorf("%w: %s", domain.ErrDuplicateCommand, commandID)
+	} else if !errors.Is(err, domain.ErrNotFound) {
+		return err
+	}
+	return nil
+}
+
+func optionalID(id string) *string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	return &id
 }
 
 func dbTime(t time.Time) string {
