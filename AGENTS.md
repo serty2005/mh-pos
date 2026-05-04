@@ -1,10 +1,81 @@
 # AGENTS.md
 
-## 🧠 Purpose
+## Быстрый Старт Для Агентов
+
+Перед любыми изменениями держи в голове главные инварианты: POS должен работать offline, все write use case выполняются в транзакции, outbox пишется в той же транзакции, закрытые заказы не меняются, смена на device может быть только одна активная.
+
+### Карта Репозитория
+
+```text
+.
+|-- README.md                 # карта монорепозитория и команды входа
+|-- AGENTS.md                 # этот документ: правила архитектуры и навигация
+|-- pos-backend/              # текущая основная кодовая база
+|   |-- README.md             # запуск, Docker, smoke test, примеры API
+|   |-- cmd/pos-edge/         # main() локального POS Edge Backend
+|   |-- internal/platform/    # clock, http helpers, idgen, sqlite, tx
+|   |-- internal/pos/api/     # HTTP router и thin handlers
+|   |-- internal/pos/app/     # use cases, транзакции, outbox orchestration
+|   |-- internal/pos/domain/  # бизнес-модели, ошибки, инварианты
+|   |-- internal/pos/ports/   # интерфейсы репозиториев
+|   |-- internal/pos/infra/   # реализации портов, сейчас SQLite
+|   |-- migrations/sqlite/    # schema migrations
+|   `-- docs/                 # проектные отчеты backend
+|-- .codex/skills/            # локальные Codex skills
+|-- pack_go_files.py          # вспомогательный скрипт упаковки Go-файлов
+`-- project_dump.py           # вспомогательный скрипт дампа проекта
+```
+
+### Куда Идти За Чем
+
+- Запустить backend: `pos-backend/README.md`
+- Найти HTTP endpoints: `pos-backend/internal/pos/api/router.go`
+- Добавить или изменить use case: `pos-backend/internal/pos/app/<context>/service.go`
+- Проверить бизнес-правило: `pos-backend/internal/pos/domain/<context>/`
+- Добавить repository contract: `pos-backend/internal/pos/ports/`
+- Реализовать SQLite storage: `pos-backend/internal/pos/infra/sqlite/`
+- Изменить схему БД: `pos-backend/migrations/sqlite/`
+- Проверить архитектурные import rules: `pos-backend/internal/pos/architecture_test.go`
+- Проверить schema/invariant tests: `pos-backend/internal/pos/infra/sqlite/schema_test.go`
+- Посмотреть отчет по текущей фазе: `pos-backend/docs/phase-1-report.md`
+
+### Команды
+
+```powershell
+cd pos-backend
+go test ./...
+go run ./cmd/pos-edge
+docker compose up --build
+```
+
+### Правила Навигации По Слоям
+
+- `domain`: только бизнес-логика, типы, ошибки, инварианты. Никакого HTTP, SQL, `database/sql`, infra.
+- `app`: orchestration use cases, транзакции, вызовы портов, запись outbox. Никаких прямых SQL.
+- `ports`: интерфейсы репозиториев.
+- `infra`: реализации портов и работа с SQLite.
+- `api`: HTTP mapping, request validation, response mapping. Без бизнес-логики.
+- `platform`: технические primitives, не POS business logic.
+
+### Когда Добавляешь Write Use Case
+
+1. Проверь доменный инвариант.
+2. Открой транзакцию.
+3. Выполни repository writes.
+4. Запиши command/event в `pos_sync_outbox`.
+5. Закоммить транзакцию.
+6. Добавь тест на invalid state transition или boundary case.
+
+Запрещено писать в outbox вне транзакции или делать split транзакции.
+
+---
+
+## Purpose
 
 Этот документ определяет архитектурные принципы, правила разработки и доменные инварианты системы POS/RMS.
 
 Он обязателен для:
+
 - разработчиков
 - AI-агентов (Codex, ChatGPT и др.)
 - code review
@@ -14,7 +85,7 @@
 
 ---
 
-# 🧭 System Overview
+# System Overview
 
 Система построена как **edge-first POS/RMS платформа**.
 
@@ -23,6 +94,7 @@
 ### 1. POS Edge Node (локальный кассовый узел)
 
 Работает на:
+
 - Windows
 - Linux
 - Android
@@ -34,7 +106,7 @@
 - device adapters (принтеры и т.д.)
 - sync outbox
 
-📌 **Главная цель:** работать без интернета.
+Главная цель: работать без интернета.
 
 ---
 
@@ -46,16 +118,16 @@
 - Integrations
 - Fiscalization
 
-📌 **Главная цель:** учет, аналитика и консистентность данных.
+Главная цель: учет, аналитика и консистентность данных.
 
 ---
 
-# 🎯 Architectural Principles
+# Architectural Principles
 
 ## 1. Edge-first
 
 - POS должен работать без сети
-- Интернет — это улучшение, не зависимость
+- Интернет - это улучшение, не зависимость
 - Все критические операции выполняются локально
 
 ---
@@ -77,13 +149,15 @@
 
 ## 4. Source of Truth
 
-### POS Edge Node — source of truth для:
+### POS Edge Node - source of truth для:
+
 - активных заказов
 - чеков (до sync)
 - оплат
 - смен
 
-### Cloud Backend — source of truth для:
+### Cloud Backend - source of truth для:
+
 - меню
 - сотрудников
 - цен
@@ -105,21 +179,19 @@
 
 Зависимости:
 
-```
-
-domain → app → ports → infra
-
+```text
+domain -> app -> ports -> infra
 ```
 
 Запрещено:
 
-- domain → infra
-- domain → database/sql
-- domain → http
+- domain -> infra
+- domain -> database/sql
+- domain -> http
 
 ---
 
-# 🧱 POS Edge Backend Scope
+# POS Edge Backend Scope
 
 Текущая реализация включает:
 
@@ -134,17 +206,19 @@ domain → app → ports → infra
 - payments
 - shifts
 - sync outbox
+- foundation для recipes/inventory/accounting в схеме и repository layer
 
 НЕ включает (пока):
 
-- inventory
-- recipes
+- POS UI
 - cloud sync
 - fiscalization
+- production-grade inventory workflows
+- public API для inventory/recipes
 
 ---
 
-# 📦 Domain Rules
+# Domain Rules
 
 ## Справочники
 
@@ -160,9 +234,9 @@ domain → app → ports → infra
 - создаются локально
 - имеют `edge_order_id`
 - принадлежат:
-  - restaurant_id
-  - device_id
-  - shift_id
+  - `restaurant_id`
+  - `device_id`
+  - `shift_id`
 
 ### Ограничения:
 
@@ -175,10 +249,8 @@ domain → app → ports → infra
 
 Связи:
 
-```
-
-Order → Check → Payments
-
+```text
+Order -> Check -> Payments
 ```
 
 Правила:
@@ -197,26 +269,24 @@ Order → Check → Payments
 
 ---
 
-# 🔄 Sync Model (Foundation)
+# Sync Model (Foundation)
 
 ## Outbox Pattern
 
 Все действия пишутся в:
 
-```
-
+```text
 pos_sync_outbox
-
 ```
 
 Каждый command:
 
-- command_id
-- device_id
-- aggregate_type
-- aggregate_id
-- payload
-- status
+- `command_id`
+- `device_id`
+- `aggregate_type`
+- `aggregate_id`
+- `payload`
+- `status`
 
 ## Принципы:
 
@@ -226,22 +296,22 @@ pos_sync_outbox
 
 ---
 
-# ⚖️ Invariants (Critical)
+# Invariants (Critical)
 
 НАРУШЕНИЕ = BUG
 
-- ❌ нельзя открыть 2 смены на device
-- ❌ нельзя создать заказ без смены
-- ❌ нельзя закрыть смену с открытыми заказами
-- ❌ нельзя изменить закрытый заказ
-- ❌ нельзя закрыть заказ без оплаты
-- ❌ нельзя переплатить чек
-- ❌ нельзя удалять справочники
-- ❌ нельзя пропустить запись в outbox
+- нельзя открыть 2 смены на device
+- нельзя создать заказ без смены
+- нельзя закрыть смену с открытыми заказами
+- нельзя изменить закрытый заказ
+- нельзя закрыть заказ без оплаты
+- нельзя переплатить чек
+- нельзя удалять справочники
+- нельзя пропустить запись в outbox
 
 ---
 
-# 🧠 ID Strategy
+# ID Strategy
 
 Использовать:
 
@@ -255,34 +325,32 @@ pos_sync_outbox
 
 ---
 
-# 🕒 Time
+# Time
 
 - всегда хранить в UTC
 - использовать `created_at`, `updated_at`
-- бизнес-время хранить отдельно (например `opened_at`)
+- бизнес-время хранить отдельно, например `opened_at`
 
 ---
 
-# 💾 Database Rules (SQLite)
+# Database Rules (SQLite)
 
-- SQLite — primary storage для POS
+- SQLite - primary storage для POS
 - использовать транзакции ВСЕГДА для write операций
-- не делать “частичных” записей
+- не делать частичных записей
 
 ---
 
-# 🔐 Transactions
+# Transactions
 
 Каждый use case:
 
-```
-
+```text
 BEGIN
 business logic
 repository writes
 outbox write
 COMMIT
-
 ```
 
 Запрещено:
@@ -292,7 +360,7 @@ COMMIT
 
 ---
 
-# 🧪 Testing Rules
+# Testing Rules
 
 Минимум:
 
@@ -308,7 +376,7 @@ COMMIT
 
 ---
 
-# 🧰 Coding Standards
+# Coding Standards
 
 ## Общие
 
@@ -349,29 +417,29 @@ COMMIT
 
 ---
 
-# 🚫 Anti-Patterns
+# Anti-Patterns
 
 Запрещено:
 
-- ❌ бизнес-логика в handlers
-- ❌ прямые SQL в use cases
-- ❌ mutable состояния без контроля
-- ❌ глобальные синглтоны
-- ❌ shared mutable state
-- ❌ скрытые зависимости
-- ❌ Redis как source of truth
-- ❌ микросервисы на MVP
-- ❌ event sourcing как primary модель
+- бизнес-логика в handlers
+- прямые SQL в use cases
+- mutable состояния без контроля
+- глобальные синглтоны
+- shared mutable state
+- скрытые зависимости
+- Redis как source of truth
+- микросервисы на MVP
+- event sourcing как primary модель
 
 ---
 
-# 📊 Observability (Foundation)
+# Observability (Foundation)
 
 Каждый request должен иметь:
 
-- request_id
-- device_id
-- tenant_id (в будущем)
+- `request_id`
+- `device_id`
+- `tenant_id` (в будущем)
 
 Логировать:
 
@@ -381,21 +449,21 @@ COMMIT
 
 ---
 
-# 🔮 Future Extensions (Design Constraints)
+# Future Extensions (Design Constraints)
 
 Текущий код должен позволять добавить без переписывания:
 
 - cloud sync
 - inventory (stock ledger)
 - recipes + versions
-- DishServed → write-off
+- DishServed -> write-off
 - fiscalization
 - multi-tenant cloud
 - reporting
 
 ---
 
-# 🧭 Decision Rules
+# Decision Rules
 
 При любом архитектурном выборе:
 
@@ -405,11 +473,11 @@ COMMIT
 4. Можно ли это синхронизировать позже?
 5. Не добавляет ли это скрытую связанность?
 
-Если ответ “нет” → решение неверное.
+Если ответ "нет" - решение неверное.
 
 ---
 
-# 🧩 Naming Conventions
+# Naming Conventions
 
 Использовать:
 
@@ -420,18 +488,18 @@ COMMIT
 
 ---
 
-# 📌 Final Rule
+# Final Rule
 
 Если есть сомнение:
 
-👉 выбирай **простоту + явность + инварианты**
+выбирай **простоту + явность + инварианты**
 
-а не “гибкость” или “универсальность”.
+а не "гибкость" или "универсальность".
 
 ---
 
-# 📎 Status
+# Status
 
-- Version: 1.0
+- Version: 1.1
 - Scope: POS Edge Backend (Phase 1)
 - Cloud: not implemented yet
