@@ -648,11 +648,12 @@ func (s *Service) outbox(ctx context.Context, meta CommandMeta, restaurantID, ag
 	if commandID == "" {
 		commandID = s.ids.NewID()
 	}
+	origin := normalizeOrigin(meta.Origin)
 	body, err := json.Marshal(struct {
 		Origin domain.CommandOrigin `json:"origin"`
 		Data   any                  `json:"data"`
 	}{
-		Origin: meta.Origin,
+		Origin: origin,
 		Data:   payload,
 	})
 	if err != nil {
@@ -662,7 +663,7 @@ func (s *Service) outbox(ctx context.Context, meta CommandMeta, restaurantID, ag
 	msg := &domain.OutboxMessage{
 		ID:            s.ids.NewID(),
 		CommandID:     commandID,
-		Origin:        meta.Origin,
+		Origin:        origin,
 		RestaurantID:  optionalID(restaurantID),
 		DeviceID:      strings.TrimSpace(meta.DeviceID),
 		AggregateType: aggregateType,
@@ -681,11 +682,18 @@ func validateWriteMeta(meta CommandMeta) error {
 		return fmt.Errorf("%w: device_id is required", domain.ErrInvalid)
 	}
 	switch meta.Origin {
-	case domain.OriginEdgeDevice, domain.OriginCloudSync, domain.OriginSystemSeed:
+	case "", domain.OriginEdgeDevice, domain.OriginCloudSync, domain.OriginSystemSeed:
 		return nil
 	default:
 		return fmt.Errorf("%w: valid origin is required", domain.ErrInvalid)
 	}
+}
+
+func normalizeOrigin(origin domain.CommandOrigin) domain.CommandOrigin {
+	if origin == "" {
+		return domain.OriginEdgeDevice
+	}
+	return origin
 }
 
 func (s *Service) ensureCommandNotProcessed(ctx context.Context, commandID string) error {

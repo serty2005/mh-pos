@@ -218,14 +218,27 @@ func TestReferenceCreatesRequireDeviceID(t *testing.T) {
 	}
 }
 
-func TestValidDeviceIDCreatesBusinessAndOutboxRowsWithOrigin(t *testing.T) {
+func TestWriteRejectsInvalidOrigin(t *testing.T) {
+	f := newFixture(t)
+
+	_, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta:     app.CommandMeta{DeviceID: f.device.ID, Origin: domain.CommandOrigin("bad_origin")},
+		Name:            "manager",
+		PermissionsJSON: `{}`,
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected invalid origin, got %v", err)
+	}
+}
+
+func TestValidDeviceIDCreatesBusinessAndOutboxRowsWithDefaultOrigin(t *testing.T) {
 	f := newFixture(t)
 	rolesBefore := countRows(t, f, "roles")
 	outboxBefore := countRows(t, f, "pos_sync_outbox")
 	commandID := "cmd-role-with-device"
 
 	_, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
-		CommandMeta:     app.CommandMeta{CommandID: commandID, DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta:     app.CommandMeta{CommandID: commandID, DeviceID: f.device.ID},
 		Name:            "manager",
 		PermissionsJSON: `{}`,
 	})

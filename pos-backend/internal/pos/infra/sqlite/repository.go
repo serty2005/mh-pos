@@ -501,16 +501,15 @@ func (r *Repository) ListOutbox(ctx context.Context, limit int) ([]domain.Outbox
 
 func (r *Repository) scanOutbox(row *sql.Row) (*domain.OutboxMessage, error) {
 	var v domain.OutboxMessage
-	var restaurantID, deviceID, lastErr sql.NullString
+	var restaurantID, lastErr sql.NullString
 	var status, created, updated string
 	var origin string
-	err := row.Scan(&v.ID, &v.CommandID, &origin, &restaurantID, &deviceID, &v.AggregateType, &v.AggregateID, &v.CommandType, &v.PayloadJSON, &status, &v.Attempts, &lastErr, &created, &updated)
+	err := row.Scan(&v.ID, &v.CommandID, &origin, &restaurantID, &v.DeviceID, &v.AggregateType, &v.AggregateID, &v.CommandType, &v.PayloadJSON, &status, &v.Attempts, &lastErr, &created, &updated)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
 	v.Origin = domain.CommandOrigin(origin)
 	v.RestaurantID = stringPtr(restaurantID)
-	v.DeviceID = deviceID.String
 	v.LastError = stringPtr(lastErr)
 	v.Status = domain.OutboxStatus(status)
 	v.CreatedAt = parseTime(created)
@@ -524,15 +523,14 @@ type outboxScanner interface {
 
 func scanOutboxRows(row outboxScanner) (*domain.OutboxMessage, error) {
 	var v domain.OutboxMessage
-	var restaurantID, deviceID, lastErr sql.NullString
+	var restaurantID, lastErr sql.NullString
 	var status, created, updated string
 	var origin string
-	if err := row.Scan(&v.ID, &v.CommandID, &origin, &restaurantID, &deviceID, &v.AggregateType, &v.AggregateID, &v.CommandType, &v.PayloadJSON, &status, &v.Attempts, &lastErr, &created, &updated); err != nil {
+	if err := row.Scan(&v.ID, &v.CommandID, &origin, &restaurantID, &v.DeviceID, &v.AggregateType, &v.AggregateID, &v.CommandType, &v.PayloadJSON, &status, &v.Attempts, &lastErr, &created, &updated); err != nil {
 		return nil, err
 	}
 	v.Origin = domain.CommandOrigin(origin)
 	v.RestaurantID = stringPtr(restaurantID)
-	v.DeviceID = deviceID.String
 	v.LastError = stringPtr(lastErr)
 	v.Status = domain.OutboxStatus(status)
 	v.CreatedAt = parseTime(created)

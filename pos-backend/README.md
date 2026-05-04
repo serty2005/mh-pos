@@ -48,25 +48,31 @@ curl http://localhost:8080/health
 Create the basic data:
 
 ```powershell
-$restaurant = curl -s -X POST http://localhost:8080/api/v1/restaurants -H "Content-Type: application/json" -d '{"name":"Demo Bistro","timezone":"Europe/Moscow","currency":"RUB"}' | ConvertFrom-Json
-$role = curl -s -X POST http://localhost:8080/api/v1/roles -H "Content-Type: application/json" -d '{"name":"cashier","permissions_json":"{\"pos\":true}"}' | ConvertFrom-Json
-$device = curl -s -X POST http://localhost:8080/api/v1/devices/register -H "Content-Type: application/json" -d "{`"restaurant_id`":`"$($restaurant.id)`",`"device_code`":`"POS-1`",`"name`":`"Main terminal`",`"type`":`"windows-pos`"}" | ConvertFrom-Json
-$employee = curl -s -X POST http://localhost:8080/api/v1/employees -H "Content-Type: application/json" -d "{`"restaurant_id`":`"$($restaurant.id)`",`"role_id`":`"$($role.id)`",`"name`":`"Anna`",`"pin_hash`":`"demo-hash`"}" | ConvertFrom-Json
-$catalog = curl -s -X POST http://localhost:8080/api/v1/catalog/items -H "Content-Type: application/json" -d '{"type":"dish","name":"Soup","sku":"SOUP-001","base_unit":"portion"}' | ConvertFrom-Json
-$menu = curl -s -X POST http://localhost:8080/api/v1/menu/items -H "Content-Type: application/json" -d "{`"catalog_item_id`":`"$($catalog.id)`",`"name`":`"Soup`",`"price`":35000,`"currency`":`"RUB`"}" | ConvertFrom-Json
+$bootstrapDeviceID = "bootstrap-$env:COMPUTERNAME"
+
+$restaurant = curl -s -X POST http://localhost:8080/api/v1/restaurants -H "Content-Type: application/json" -d "{`"device_id`":`"$bootstrapDeviceID`",`"name`":`"Demo Bistro`",`"timezone`":`"Europe/Moscow`",`"currency`":`"RUB`"}" | ConvertFrom-Json
+$role = curl -s -X POST http://localhost:8080/api/v1/roles -H "Content-Type: application/json" -d "{`"device_id`":`"$bootstrapDeviceID`",`"name`":`"cashier`",`"permissions_json`":`"{\`"pos\`":true}`"}" | ConvertFrom-Json
+$device = curl -s -X POST http://localhost:8080/api/v1/devices/register -H "Content-Type: application/json" -d "{`"device_id`":`"$bootstrapDeviceID`",`"restaurant_id`":`"$($restaurant.id)`",`"device_code`":`"POS-1`",`"name`":`"Main terminal`",`"type`":`"windows-pos`"}" | ConvertFrom-Json
+$employee = curl -s -X POST http://localhost:8080/api/v1/employees -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"restaurant_id`":`"$($restaurant.id)`",`"role_id`":`"$($role.id)`",`"name`":`"Anna`",`"pin_hash`":`"demo-hash`"}" | ConvertFrom-Json
+$catalog = curl -s -X POST http://localhost:8080/api/v1/catalog/items -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"type`":`"dish`",`"name`":`"Soup`",`"sku`":`"SOUP-001`",`"base_unit`":`"portion`"}" | ConvertFrom-Json
+$menu = curl -s -X POST http://localhost:8080/api/v1/menu/items -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"catalog_item_id`":`"$($catalog.id)`",`"name`":`"Soup`",`"price`":35000,`"currency`":`"RUB`"}" | ConvertFrom-Json
 ```
 
 Open a shift, create and pay an order:
 
 ```powershell
-$shift = curl -s -X POST http://localhost:8080/api/v1/shifts/open -H "Content-Type: application/json" -d "{`"restaurant_id`":`"$($restaurant.id)`",`"device_id`":`"$($device.id)`",`"opened_by_employee_id`":`"$($employee.id)`",`"opening_cash_amount`":100000}" | ConvertFrom-Json
+$shift = curl -s -X POST http://localhost:8080/api/v1/shifts/open -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"restaurant_id`":`"$($restaurant.id)`",`"opened_by_employee_id`":`"$($employee.id)`",`"opening_cash_amount`":100000}" | ConvertFrom-Json
 $order = curl -s -X POST http://localhost:8080/api/v1/orders -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"table_name`":`"A1`",`"guest_count`":2}" | ConvertFrom-Json
-curl -s -X POST "http://localhost:8080/api/v1/orders/$($order.id)/lines" -H "Content-Type: application/json" -d "{`"menu_item_id`":`"$($menu.id)`",`"quantity`":2}"
-$check = curl -s -X POST "http://localhost:8080/api/v1/orders/$($order.id)/check" -H "Content-Type: application/json" -d '{"discount_total":0,"tax_total":0}' | ConvertFrom-Json
-curl -s -X POST "http://localhost:8080/api/v1/checks/$($check.id)/payments" -H "Content-Type: application/json" -d "{`"method`":`"cash`",`"amount`":$($check.total),`"currency`":`"RUB`"}"
-curl -s -X POST "http://localhost:8080/api/v1/orders/$($order.id)/close" -H "Content-Type: application/json" -d '{}'
+curl -s -X POST "http://localhost:8080/api/v1/orders/$($order.id)/lines" -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"menu_item_id`":`"$($menu.id)`",`"quantity`":2}"
+$check = curl -s -X POST "http://localhost:8080/api/v1/orders/$($order.id)/check" -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"discount_total`":0,`"tax_total`":0}" | ConvertFrom-Json
+curl -s -X POST "http://localhost:8080/api/v1/checks/$($check.id)/payments" -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"method`":`"cash`",`"amount`":$($check.total),`"currency`":`"RUB`"}"
+curl -s -X POST "http://localhost:8080/api/v1/orders/$($order.id)/close" -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`"}"
 curl -s http://localhost:8080/api/v1/sync/outbox
 ```
+
+Bootstrap note: before the real POS device is registered, bootstrap writes use a stable local bootstrap id such as `bootstrap-$env:COMPUTERNAME` as `device_id`. After `/devices/register` returns the real device aggregate id, all regular POS writes should use `$device.id`.
+
+Outbox note: `pos_sync_outbox.device_id` is always non-empty. `restaurant_id` may be `NULL` for Phase 1 global dictionaries such as roles, catalog items, and menu items because they are not restaurant-scoped yet; this is intentional and separate from the mandatory `device_id` observability contract.
 
 ## Tests
 
