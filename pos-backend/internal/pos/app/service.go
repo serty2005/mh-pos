@@ -27,9 +27,16 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 }
 
 type CommandMeta struct {
-	CommandID string `json:"command_id,omitempty"`
-	DeviceID  string `json:"device_id,omitempty"`
+	CommandID string               `json:"command_id,omitempty"`
+	DeviceID  string               `json:"device_id,omitempty"`
+	Origin    domain.CommandOrigin `json:"origin,omitempty"`
 }
+
+const (
+	OriginEdgeDevice = domain.OriginEdgeDevice
+	OriginCloudSync  = domain.OriginCloudSync
+	OriginSystemSeed = domain.OriginSystemSeed
+)
 
 type CreateRestaurantCommand struct {
 	CommandMeta
@@ -85,7 +92,6 @@ type CreateMenuItemCommand struct {
 type OpenShiftCommand struct {
 	CommandMeta
 	RestaurantID       string `json:"restaurant_id"`
-	DeviceID           string `json:"device_id"`
 	OpenedByEmployeeID string `json:"opened_by_employee_id"`
 	OpeningCashAmount  int64  `json:"opening_cash_amount"`
 }
@@ -100,7 +106,6 @@ type CloseShiftCommand struct {
 type CreateOrderCommand struct {
 	CommandMeta
 	RestaurantID string `json:"restaurant_id"`
-	DeviceID     string `json:"device_id"`
 	ShiftID      string `json:"shift_id"`
 	TableName    string `json:"table_name"`
 	GuestCount   int    `json:"guest_count"`
@@ -188,6 +193,9 @@ func (s *Service) GetCurrentShift(ctx context.Context, deviceID string) (*domain
 }
 
 func (s *Service) CreateRestaurant(ctx context.Context, cmd CreateRestaurantCommand) (*domain.Restaurant, error) {
+	if err := validateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(cmd.Name) == "" || strings.TrimSpace(cmd.Timezone) == "" || strings.TrimSpace(cmd.Currency) == "" {
 		return nil, fmt.Errorf("%w: name, timezone and currency are required", domain.ErrInvalid)
 	}
@@ -200,11 +208,14 @@ func (s *Service) CreateRestaurant(ctx context.Context, cmd CreateRestaurantComm
 		if err := s.repo.CreateRestaurant(ctx, v); err != nil {
 			return err
 		}
-		return s.outbox(ctx, cmd.CommandID, v.ID, cmd.DeviceID, "Restaurant", v.ID, "RestaurantCreated", v)
+		return s.outbox(ctx, cmd.CommandMeta, v.ID, "Restaurant", v.ID, "RestaurantCreated", v)
 	})
 }
 
 func (s *Service) RegisterDevice(ctx context.Context, cmd RegisterDeviceCommand) (*domain.Device, error) {
+	if err := validateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(cmd.RestaurantID) == "" || strings.TrimSpace(cmd.DeviceCode) == "" || strings.TrimSpace(cmd.Name) == "" || strings.TrimSpace(cmd.Type) == "" {
 		return nil, fmt.Errorf("%w: restaurant_id, device_code, name and type are required", domain.ErrInvalid)
 	}
@@ -217,11 +228,14 @@ func (s *Service) RegisterDevice(ctx context.Context, cmd RegisterDeviceCommand)
 		if err := s.repo.CreateDevice(ctx, v); err != nil {
 			return err
 		}
-		return s.outbox(ctx, cmd.CommandID, v.RestaurantID, v.ID, "Device", v.ID, "DeviceRegistered", v)
+		return s.outbox(ctx, cmd.CommandMeta, v.RestaurantID, "Device", v.ID, "DeviceRegistered", v)
 	})
 }
 
 func (s *Service) CreateRole(ctx context.Context, cmd CreateRoleCommand) (*domain.Role, error) {
+	if err := validateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
 	permissions := strings.TrimSpace(cmd.PermissionsJSON)
 	if permissions == "" {
 		permissions = "{}"
@@ -238,11 +252,14 @@ func (s *Service) CreateRole(ctx context.Context, cmd CreateRoleCommand) (*domai
 		if err := s.repo.CreateRole(ctx, v); err != nil {
 			return err
 		}
-		return s.outbox(ctx, cmd.CommandID, "", cmd.DeviceID, "Role", v.ID, "RoleCreated", v)
+		return s.outbox(ctx, cmd.CommandMeta, "", "Role", v.ID, "RoleCreated", v)
 	})
 }
 
 func (s *Service) CreateEmployee(ctx context.Context, cmd CreateEmployeeCommand) (*domain.Employee, error) {
+	if err := validateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(cmd.RestaurantID) == "" || strings.TrimSpace(cmd.RoleID) == "" || strings.TrimSpace(cmd.Name) == "" || strings.TrimSpace(cmd.PINHash) == "" {
 		return nil, fmt.Errorf("%w: restaurant_id, role_id, name and pin_hash are required", domain.ErrInvalid)
 	}
@@ -255,11 +272,14 @@ func (s *Service) CreateEmployee(ctx context.Context, cmd CreateEmployeeCommand)
 		if err := s.repo.CreateEmployee(ctx, v); err != nil {
 			return err
 		}
-		return s.outbox(ctx, cmd.CommandID, v.RestaurantID, cmd.DeviceID, "Employee", v.ID, "EmployeeCreated", v)
+		return s.outbox(ctx, cmd.CommandMeta, v.RestaurantID, "Employee", v.ID, "EmployeeCreated", v)
 	})
 }
 
 func (s *Service) ArchiveEmployee(ctx context.Context, cmd ArchiveEmployeeCommand) error {
+	if err := validateWriteMeta(cmd.CommandMeta); err != nil {
+		return err
+	}
 	if strings.TrimSpace(cmd.ID) == "" {
 		return fmt.Errorf("%w: employee id is required", domain.ErrInvalid)
 	}
@@ -271,11 +291,14 @@ func (s *Service) ArchiveEmployee(ctx context.Context, cmd ArchiveEmployeeComman
 		if err := s.repo.ArchiveEmployee(ctx, cmd.ID, dbTime(now)); err != nil {
 			return err
 		}
-		return s.outbox(ctx, cmd.CommandID, cmd.RestaurantID, cmd.DeviceID, "Employee", cmd.ID, "EmployeeArchived", cmd)
+		return s.outbox(ctx, cmd.CommandMeta, cmd.RestaurantID, "Employee", cmd.ID, "EmployeeArchived", cmd)
 	})
 }
 
 func (s *Service) CreateCatalogItem(ctx context.Context, cmd CreateCatalogItemCommand) (*domain.CatalogItem, error) {
+	if err := validateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
 	if cmd.Type != domain.CatalogItemIngredient && cmd.Type != domain.CatalogItemDish && cmd.Type != domain.CatalogItemGood {
 		return nil, fmt.Errorf("%w: unsupported catalog item type", domain.ErrInvalid)
 	}
@@ -291,11 +314,14 @@ func (s *Service) CreateCatalogItem(ctx context.Context, cmd CreateCatalogItemCo
 		if err := s.repo.CreateCatalogItem(ctx, v); err != nil {
 			return err
 		}
-		return s.outbox(ctx, cmd.CommandID, "", cmd.DeviceID, "CatalogItem", v.ID, "CatalogItemCreated", v)
+		return s.outbox(ctx, cmd.CommandMeta, "", "CatalogItem", v.ID, "CatalogItemCreated", v)
 	})
 }
 
 func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand) (*domain.MenuItem, error) {
+	if err := validateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(cmd.CatalogItemID) == "" || strings.TrimSpace(cmd.Name) == "" || strings.TrimSpace(cmd.Currency) == "" || cmd.Price < 0 {
 		return nil, fmt.Errorf("%w: catalog_item_id, name, currency and non-negative price are required", domain.ErrInvalid)
 	}
@@ -315,11 +341,14 @@ func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand)
 		if err := s.repo.CreateMenuItem(ctx, v); err != nil {
 			return err
 		}
-		return s.outbox(ctx, cmd.CommandID, "", cmd.DeviceID, "MenuItem", v.ID, "MenuItemCreated", v)
+		return s.outbox(ctx, cmd.CommandMeta, "", "MenuItem", v.ID, "MenuItemCreated", v)
 	})
 }
 
 func (s *Service) OpenShift(ctx context.Context, cmd OpenShiftCommand) (*domain.Shift, error) {
+	if err := validateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(cmd.RestaurantID) == "" || strings.TrimSpace(cmd.DeviceID) == "" || strings.TrimSpace(cmd.OpenedByEmployeeID) == "" || cmd.OpeningCashAmount < 0 {
 		return nil, fmt.Errorf("%w: restaurant_id, device_id, opened_by_employee_id and non-negative opening_cash_amount are required", domain.ErrInvalid)
 	}
@@ -337,11 +366,14 @@ func (s *Service) OpenShift(ctx context.Context, cmd OpenShiftCommand) (*domain.
 		if err := s.repo.CreateShift(ctx, v); err != nil {
 			return err
 		}
-		return s.outbox(ctx, cmd.CommandID, v.RestaurantID, v.DeviceID, "Shift", v.ID, "ShiftOpened", v)
+		return s.outbox(ctx, cmd.CommandMeta, v.RestaurantID, "Shift", v.ID, "ShiftOpened", v)
 	})
 }
 
 func (s *Service) CloseShift(ctx context.Context, cmd CloseShiftCommand) (*domain.Shift, error) {
+	if err := validateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(cmd.ID) == "" || strings.TrimSpace(cmd.ClosedByEmployeeID) == "" || cmd.ClosingCashAmount < 0 {
 		return nil, fmt.Errorf("%w: id, closed_by_employee_id and non-negative closing_cash_amount are required", domain.ErrInvalid)
 	}
@@ -374,14 +406,14 @@ func (s *Service) CloseShift(ctx context.Context, cmd CloseShiftCommand) (*domai
 		if err := s.repo.UpdateShiftClosed(ctx, shift); err != nil {
 			return err
 		}
-		return s.outbox(ctx, cmd.CommandID, shift.RestaurantID, shift.DeviceID, "Shift", shift.ID, "ShiftClosed", shift)
+		return s.outbox(ctx, cmd.CommandMeta, shift.RestaurantID, "Shift", shift.ID, "ShiftClosed", shift)
 	})
 	return shift, err
 }
 
 func (s *Service) CreateOrder(ctx context.Context, cmd CreateOrderCommand) (*domain.Order, error) {
-	if strings.TrimSpace(cmd.DeviceID) == "" {
-		return nil, fmt.Errorf("%w: device_id is required", domain.ErrInvalid)
+	if err := validateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
 	}
 	if cmd.GuestCount < 0 {
 		return nil, fmt.Errorf("%w: guest_count must be non-negative", domain.ErrInvalid)
@@ -415,12 +447,15 @@ func (s *Service) CreateOrder(ctx context.Context, cmd CreateOrderCommand) (*dom
 		if err := s.repo.CreateOrder(ctx, order); err != nil {
 			return err
 		}
-		return s.outbox(ctx, cmd.CommandID, order.RestaurantID, order.DeviceID, "Order", order.ID, "OrderCreated", order)
+		return s.outbox(ctx, cmd.CommandMeta, order.RestaurantID, "Order", order.ID, "OrderCreated", order)
 	})
 	return order, err
 }
 
 func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*domain.OrderLine, error) {
+	if err := validateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(cmd.OrderID) == "" || strings.TrimSpace(cmd.MenuItemID) == "" || cmd.Quantity <= 0 {
 		return nil, fmt.Errorf("%w: order_id, menu_item_id and positive quantity are required", domain.ErrInvalid)
 	}
@@ -448,12 +483,15 @@ func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*d
 		if err := s.repo.CreateOrderLine(ctx, line); err != nil {
 			return err
 		}
-		return s.outbox(ctx, cmd.CommandID, order.RestaurantID, order.DeviceID, "Order", order.ID, "OrderLineAdded", line)
+		return s.outbox(ctx, cmd.CommandMeta, order.RestaurantID, "Order", order.ID, "OrderLineAdded", line)
 	})
 	return line, err
 }
 
 func (s *Service) CreateCheck(ctx context.Context, cmd CreateCheckCommand) (*domain.Check, error) {
+	if err := validateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(cmd.OrderID) == "" || cmd.DiscountTotal < 0 || cmd.TaxTotal < 0 {
 		return nil, fmt.Errorf("%w: order_id, non-negative discount_total and tax_total are required", domain.ErrInvalid)
 	}
@@ -493,12 +531,15 @@ func (s *Service) CreateCheck(ctx context.Context, cmd CreateCheckCommand) (*dom
 		if err := s.repo.CreateCheck(ctx, check); err != nil {
 			return err
 		}
-		return s.outbox(ctx, cmd.CommandID, order.RestaurantID, order.DeviceID, "Check", check.ID, "CheckCreated", check)
+		return s.outbox(ctx, cmd.CommandMeta, order.RestaurantID, "Check", check.ID, "CheckCreated", check)
 	})
 	return check, err
 }
 
 func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand) (*domain.Payment, error) {
+	if err := validateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(cmd.CheckID) == "" || cmd.Amount <= 0 || strings.TrimSpace(cmd.Currency) == "" {
 		return nil, fmt.Errorf("%w: check_id, positive amount and currency are required", domain.ErrInvalid)
 	}
@@ -537,12 +578,15 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 		if err := s.repo.UpdateCheckPaidTotal(ctx, check); err != nil {
 			return err
 		}
-		return s.outbox(ctx, cmd.CommandID, order.RestaurantID, order.DeviceID, "Payment", payment.ID, "PaymentCaptured", payment)
+		return s.outbox(ctx, cmd.CommandMeta, order.RestaurantID, "Payment", payment.ID, "PaymentCaptured", payment)
 	})
 	return payment, err
 }
 
 func (s *Service) CloseOrder(ctx context.Context, cmd CloseOrderCommand) (*domain.Order, error) {
+	if err := validateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(cmd.OrderID) == "" {
 		return nil, fmt.Errorf("%w: order_id is required", domain.ErrInvalid)
 	}
@@ -576,7 +620,7 @@ func (s *Service) CloseOrder(ctx context.Context, cmd CloseOrderCommand) (*domai
 		if err := s.repo.UpdateOrderClosed(ctx, order); err != nil {
 			return err
 		}
-		return s.outbox(ctx, cmd.CommandID, order.RestaurantID, order.DeviceID, "Order", order.ID, "OrderClosed", order)
+		return s.outbox(ctx, cmd.CommandMeta, order.RestaurantID, "Order", order.ID, "OrderClosed", order)
 	})
 	return order, err
 }
@@ -599,12 +643,18 @@ func (s *Service) MarkOutboxFailed(ctx context.Context, id, reason string) error
 	return s.repo.MarkOutboxFailed(ctx, id, reason, dbTime(s.clock.Now()))
 }
 
-func (s *Service) outbox(ctx context.Context, commandID, restaurantID, deviceID, aggregateType, aggregateID, commandType string, payload any) error {
-	commandID = strings.TrimSpace(commandID)
+func (s *Service) outbox(ctx context.Context, meta CommandMeta, restaurantID, aggregateType, aggregateID, commandType string, payload any) error {
+	commandID := strings.TrimSpace(meta.CommandID)
 	if commandID == "" {
 		commandID = s.ids.NewID()
 	}
-	body, err := json.Marshal(payload)
+	body, err := json.Marshal(struct {
+		Origin domain.CommandOrigin `json:"origin"`
+		Data   any                  `json:"data"`
+	}{
+		Origin: meta.Origin,
+		Data:   payload,
+	})
 	if err != nil {
 		return err
 	}
@@ -612,8 +662,9 @@ func (s *Service) outbox(ctx context.Context, commandID, restaurantID, deviceID,
 	msg := &domain.OutboxMessage{
 		ID:            s.ids.NewID(),
 		CommandID:     commandID,
+		Origin:        meta.Origin,
 		RestaurantID:  optionalID(restaurantID),
-		DeviceID:      optionalID(deviceID),
+		DeviceID:      strings.TrimSpace(meta.DeviceID),
 		AggregateType: aggregateType,
 		AggregateID:   aggregateID,
 		CommandType:   commandType,
@@ -623,6 +674,18 @@ func (s *Service) outbox(ctx context.Context, commandID, restaurantID, deviceID,
 		UpdatedAt:     now,
 	}
 	return s.repo.CreateOutboxMessage(ctx, msg)
+}
+
+func validateWriteMeta(meta CommandMeta) error {
+	if strings.TrimSpace(meta.DeviceID) == "" {
+		return fmt.Errorf("%w: device_id is required", domain.ErrInvalid)
+	}
+	switch meta.Origin {
+	case domain.OriginEdgeDevice, domain.OriginCloudSync, domain.OriginSystemSeed:
+		return nil
+	default:
+		return fmt.Errorf("%w: valid origin is required", domain.ErrInvalid)
+	}
 }
 
 func (s *Service) ensureCommandNotProcessed(ctx context.Context, commandID string) error {
