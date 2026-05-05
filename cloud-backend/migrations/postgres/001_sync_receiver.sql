@@ -13,7 +13,10 @@ CREATE TABLE cloud_edge_event_receipts (
     'OrderLineAdded',
     'CheckCreated',
     'PaymentCaptured',
-    'OrderClosed'
+    'OrderClosed',
+    'CashSessionOpened',
+    'CashSessionClosed',
+    'CashDrawerEventRecorded'
   )),
   aggregate_type TEXT NOT NULL CHECK (aggregate_type <> ''),
   aggregate_id TEXT NOT NULL CHECK (aggregate_id <> ''),

@@ -19,6 +19,9 @@ OrderLineAdded
 CheckCreated
 PaymentCaptured
 OrderClosed
+CashSessionOpened
+CashSessionClosed
+CashDrawerEventRecorded
 ```
 
 ## SyncEnvelope
@@ -52,6 +55,9 @@ OrderLineAdded  -> OrderLine
 CheckCreated    -> Check
 PaymentCaptured -> Payment
 OrderClosed     -> Order
+CashSessionOpened -> CashSession
+CashSessionClosed -> CashSession
+CashDrawerEventRecorded -> CashDrawerEvent
 ```
 
 Cloud validates the envelope version, known event type, required routing fields, and the basic payload shape for the selected event type. Cloud stores the raw full envelope before any future projection logic.

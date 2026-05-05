@@ -63,9 +63,10 @@ go run ./cmd/pos-edge
 
 - локальное хранение POS данных в SQLite;
 - JSON API для POS UI;
-- доменные инварианты заказов, чеков, оплат и смен;
+- доменные инварианты заказов, чеков, оплат, смен и cash sessions;
 - edge foundation для `local_event_log`, `SyncEnvelope` и sync outbox;
 - read-only operational access к sync outbox и local events;
+- financial foundation для `payment_attempts`, cash sessions и cash drawer events;
 - foundation для будущих рецептов, склада и учета.
 
 Архитектура внутри backend:
@@ -107,6 +108,7 @@ go test ./...
 - Phase 1: POS Edge Backend foundation.
 - `local_event_log` уже является частью edge foundation, хранит `command_id` той же write-операции, что и outbox, и доступен read-only через `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`.
 - Sync outbox доступен через `GET /api/v1/sync/outbox`.
+- Edge financial foundation включает `payment_attempts`, `cash_sessions`, `cash_drawer_events` и базовые HTTP endpoints для cash session/drawer workflows.
 - Cloud: минимальный `cloud-backend/` Sync Receiver реализован; Cloud не является зависимостью для критических POS Edge операций.
 - POS UI: не реализован.
 - Source of truth для активных POS операций: локальный POS Edge Node.
@@ -119,7 +121,7 @@ go test ./...
 - PostgreSQL bootstrap и migrations: `cloud-backend/migrations/postgres`
 - health endpoint: `GET /health`
 - Edge event receiver: `POST /api/v1/sync/edge-events`
-- idempotent receive/dedupe для текущих POS Edge events
+- idempotent receive/dedupe для текущих POS Edge events, включая cash session/drawer foundation events
 - raw `SyncEnvelope` storage до будущих Cloud projections
 
 Контракты синхронизации и idempotency rules зафиксированы в `docs/sync/edge-cloud-contracts-v1.md`.

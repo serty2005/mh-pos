@@ -33,10 +33,14 @@ type CreateCheckCommand struct {
 
 type CapturePaymentCommand struct {
 	shared.CommandMeta
-	CheckID  string               `json:"check_id"`
-	Method   domain.PaymentMethod `json:"method"`
-	Amount   int64                `json:"amount"`
-	Currency string               `json:"currency"`
+	CheckID               string               `json:"check_id"`
+	Method                domain.PaymentMethod `json:"method"`
+	Amount                int64                `json:"amount"`
+	Currency              string               `json:"currency"`
+	ProviderName          string               `json:"provider_name,omitempty"`
+	ProviderTransactionID string               `json:"provider_transaction_id,omitempty"`
+	ProviderReference     string               `json:"provider_reference,omitempty"`
+	FingerprintHash       string               `json:"fingerprint_hash,omitempty"`
 }
 
 func (s *Service) GetCheck(ctx context.Context, id string) (*domain.Check, error) {
@@ -121,8 +125,46 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 		if err != nil {
 			return err
 		}
-		payment = &domain.Payment{ID: s.ids.NewID(), CheckID: check.ID, Method: cmd.Method, Amount: cmd.Amount, Currency: strings.ToUpper(cmd.Currency), Status: domain.PaymentCaptured, CreatedAt: now, UpdatedAt: now}
+		if order.DeviceID != cmd.DeviceID {
+			return fmt.Errorf("%w: payment device does not match order device", domain.ErrConflict)
+		}
+		payment = &domain.Payment{
+			ID:                    s.ids.NewID(),
+			EdgePaymentID:         s.ids.NewID(),
+			RestaurantID:          order.RestaurantID,
+			DeviceID:              order.DeviceID,
+			ShiftID:               order.ShiftID,
+			CheckID:               check.ID,
+			Method:                cmd.Method,
+			Amount:                cmd.Amount,
+			Currency:              strings.ToUpper(cmd.Currency),
+			Status:                domain.PaymentCaptured,
+			ProviderName:          optionalString(cmd.ProviderName),
+			ProviderTransactionID: optionalString(cmd.ProviderTransactionID),
+			ProviderReference:     optionalString(cmd.ProviderReference),
+			FingerprintHash:       optionalString(cmd.FingerprintHash),
+			CreatedAt:             now,
+			UpdatedAt:             now,
+		}
 		if err := s.repo.CreatePayment(ctx, payment); err != nil {
+			return err
+		}
+		attempt := &domain.PaymentAttempt{
+			ID:                    s.ids.NewID(),
+			PaymentID:             payment.ID,
+			AttemptNo:             1,
+			Method:                payment.Method,
+			Amount:                payment.Amount,
+			Currency:              payment.Currency,
+			Status:                domain.PaymentCaptured,
+			ProviderName:          payment.ProviderName,
+			ProviderTransactionID: payment.ProviderTransactionID,
+			ProviderReference:     payment.ProviderReference,
+			FingerprintHash:       payment.FingerprintHash,
+			AttemptedAt:           now,
+			CreatedAt:             now,
+		}
+		if err := s.repo.CreatePaymentAttempt(ctx, attempt); err != nil {
 			return err
 		}
 		check.PaidTotal += cmd.Amount
@@ -136,4 +178,12 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Payment", payment.ID, "PaymentCaptured", payment)
 	})
 	return payment, err
+}
+
+func optionalString(v string) *string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	return &v
 }

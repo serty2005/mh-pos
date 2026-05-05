@@ -164,7 +164,7 @@ func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
-	case "orders", "order_lines", "pos_sync_outbox", "local_event_log", "roles", "catalog_items", "menu_items":
+	case "orders", "order_lines", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "roles", "catalog_items", "menu_items":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -199,6 +199,72 @@ func TestCannotCreateOrderWithoutOpenShift(t *testing.T) {
 	_, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1"})
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
+	}
+}
+
+func TestCannotOpenCashSessionWithoutOpenShift(t *testing.T) {
+	f := newFixture(t)
+	before := countRows(t, f, "cash_sessions")
+
+	_, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  100,
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+	if after := countRows(t, f, "cash_sessions"); after != before {
+		t.Fatalf("expected no cash session write, before=%d after=%d", before, after)
+	}
+}
+
+func TestCannotRecordCashDrawerEventWithoutActiveCashSession(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+
+	_, err := f.service.RecordCashDrawerEvent(f.ctx, app.RecordCashDrawerEventCommand{
+		CommandMeta:         f.edgeMeta(),
+		CreatedByEmployeeID: f.employee.ID,
+		EventType:           domain.CashDrawerCashIn,
+		Amount:              100,
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+	if events := countRows(t, f, "cash_drawer_events"); events != 0 {
+		t.Fatalf("expected no cash drawer events, got %d", events)
+	}
+}
+
+func TestDuplicateCashSessionCommandIDDoesNotCreateDuplicateRows(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	sessionsBefore := countRows(t, f, "cash_sessions")
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+
+	cmd := app.OpenCashSessionCommand{
+		CommandMeta:        app.CommandMeta{CommandID: "cmd-open-cash-session-1", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  100,
+	}
+	if _, err := f.service.OpenCashSession(f.ctx, cmd); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.OpenCashSession(f.ctx, cmd); !errors.Is(err, domain.ErrDuplicateCommand) {
+		t.Fatalf("expected duplicate command, got %v", err)
+	}
+	if sessions := countRows(t, f, "cash_sessions"); sessions != sessionsBefore+1 {
+		t.Fatalf("expected one cash session row, before=%d after=%d", sessionsBefore, sessions)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+1 {
+		t.Fatalf("expected one outbox row, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore+1 {
+		t.Fatalf("expected one local event row, before=%d after=%d", eventsBefore, events)
 	}
 }
 
@@ -276,6 +342,34 @@ func TestRollbackRemovesDomainAndLocalEventWhenOutboxWriteFails(t *testing.T) {
 	}
 	if orders := countRows(t, f, "orders"); orders != ordersBefore {
 		t.Fatalf("expected no partial order write, before=%d after=%d", ordersBefore, orders)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected no partial local event write, before=%d after=%d", eventsBefore, events)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no partial outbox write, before=%d after=%d", outboxBefore, outbox)
+	}
+}
+
+func TestRollbackRemovesCashSessionWhenOutboxWriteFails(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	sessionsBefore := countRows(t, f, "cash_sessions")
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+	service := app.NewService(outboxFailingRepo{Repository: f.repo}, platformsqlite.NewTxManager(f.db), &testIDs{n: 3000}, fixedClock{})
+
+	_, err := service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
+		CommandMeta:        app.CommandMeta{CommandID: "cmd-cash-outbox-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  100,
+	})
+	if !errors.Is(err, errInjectedOutbox) {
+		t.Fatalf("expected injected outbox failure, got %v", err)
+	}
+	if sessions := countRows(t, f, "cash_sessions"); sessions != sessionsBefore {
+		t.Fatalf("expected no partial cash session write, before=%d after=%d", sessionsBefore, sessions)
 	}
 	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
 		t.Fatalf("expected no partial local event write, before=%d after=%d", eventsBefore, events)
@@ -410,6 +504,97 @@ func TestCannotOverpayCheck(t *testing.T) {
 	_, err = f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), CheckID: check.ID, Method: domain.PaymentCash, Amount: check.Total + 1, Currency: "RUB"})
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
+	}
+}
+
+func TestCapturePaymentCreatesFirstAttemptWithEdgeContext(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.service.CreateCheck(f.ctx, app.CreateCheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+		CommandMeta:           f.edgeMeta(),
+		CheckID:               check.ID,
+		Method:                domain.PaymentCard,
+		Amount:                check.Total,
+		Currency:              "rub",
+		ProviderName:          "demo-psp",
+		ProviderTransactionID: "txn-1",
+		FingerprintHash:       "fingerprint-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payment.EdgePaymentID == "" || payment.RestaurantID != f.restaurant.ID || payment.DeviceID != f.device.ID || payment.ShiftID == "" {
+		t.Fatalf("expected payment edge context, got %+v", payment)
+	}
+	var attempts int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM payment_attempts WHERE payment_id = ? AND attempt_no = 1 AND provider_transaction_id = 'txn-1'`, payment.ID).Scan(&attempts); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 1 {
+		t.Fatalf("expected first payment attempt, got %d", attempts)
+	}
+}
+
+func TestCapturePaymentRollbackRemovesAttemptPaymentOutboxAndLocalEvent(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.service.CreateCheck(f.ctx, app.CreateCheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	paymentsBefore := countRows(t, f, "payments")
+	attemptsBefore := countRows(t, f, "payment_attempts")
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+	service := app.NewService(outboxFailingRepo{Repository: f.repo}, platformsqlite.NewTxManager(f.db), &testIDs{n: 4000}, fixedClock{})
+
+	_, err = service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-payment-outbox-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CheckID:     check.ID,
+		Method:      domain.PaymentCash,
+		Amount:      check.Total,
+		Currency:    "RUB",
+	})
+	if !errors.Is(err, errInjectedOutbox) {
+		t.Fatalf("expected injected outbox failure, got %v", err)
+	}
+	if payments := countRows(t, f, "payments"); payments != paymentsBefore {
+		t.Fatalf("expected no partial payment write, before=%d after=%d", paymentsBefore, payments)
+	}
+	if attempts := countRows(t, f, "payment_attempts"); attempts != attemptsBefore {
+		t.Fatalf("expected no partial payment attempt write, before=%d after=%d", attemptsBefore, attempts)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected no partial local event write, before=%d after=%d", eventsBefore, events)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no partial outbox write, before=%d after=%d", outboxBefore, outbox)
+	}
+	var paidTotal int64
+	var status string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT paid_total,status FROM checks WHERE id = ?`, check.ID).Scan(&paidTotal, &status); err != nil {
+		t.Fatal(err)
+	}
+	if paidTotal != 0 || status != string(domain.CheckOpen) {
+		t.Fatalf("expected check rollback, paid_total=%d status=%s", paidTotal, status)
 	}
 }
 

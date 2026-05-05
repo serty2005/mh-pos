@@ -13,13 +13,16 @@ const EnvelopeVersion = "1"
 type EventType string
 
 const (
-	EventShiftOpened     EventType = "ShiftOpened"
-	EventShiftClosed     EventType = "ShiftClosed"
-	EventOrderCreated    EventType = "OrderCreated"
-	EventOrderLineAdded  EventType = "OrderLineAdded"
-	EventCheckCreated    EventType = "CheckCreated"
-	EventPaymentCaptured EventType = "PaymentCaptured"
-	EventOrderClosed     EventType = "OrderClosed"
+	EventShiftOpened             EventType = "ShiftOpened"
+	EventShiftClosed             EventType = "ShiftClosed"
+	EventOrderCreated            EventType = "OrderCreated"
+	EventOrderLineAdded          EventType = "OrderLineAdded"
+	EventCheckCreated            EventType = "CheckCreated"
+	EventPaymentCaptured         EventType = "PaymentCaptured"
+	EventOrderClosed             EventType = "OrderClosed"
+	EventCashSessionOpened       EventType = "CashSessionOpened"
+	EventCashSessionClosed       EventType = "CashSessionClosed"
+	EventCashDrawerEventRecorded EventType = "CashDrawerEventRecorded"
 )
 
 var (
@@ -116,17 +119,72 @@ type CheckCreated struct {
 }
 
 type PaymentCaptured struct {
-	ID        string    `json:"id"`
-	CheckID   string    `json:"check_id"`
-	Method    string    `json:"method"`
-	Amount    int64     `json:"amount"`
-	Currency  string    `json:"currency"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID                    string    `json:"id"`
+	EdgePaymentID         string    `json:"edge_payment_id"`
+	RestaurantID          string    `json:"restaurant_id"`
+	DeviceID              string    `json:"device_id"`
+	ShiftID               string    `json:"shift_id"`
+	CheckID               string    `json:"check_id"`
+	Method                string    `json:"method"`
+	Amount                int64     `json:"amount"`
+	Currency              string    `json:"currency"`
+	Status                string    `json:"status"`
+	ProviderName          *string   `json:"provider_name,omitempty"`
+	ProviderTransactionID *string   `json:"provider_transaction_id,omitempty"`
+	ProviderReference     *string   `json:"provider_reference,omitempty"`
+	FingerprintHash       *string   `json:"fingerprint_hash,omitempty"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }
 
 type OrderClosed = OrderCreated
+
+type CashSessionOpened struct {
+	ID                 string    `json:"id"`
+	EdgeCashSessionID  string    `json:"edge_cash_session_id"`
+	RestaurantID       string    `json:"restaurant_id"`
+	DeviceID           string    `json:"device_id"`
+	ShiftID            string    `json:"shift_id"`
+	OpenedByEmployeeID string    `json:"opened_by_employee_id"`
+	Status             string    `json:"status"`
+	OpeningCashAmount  int64     `json:"opening_cash_amount"`
+	OpenedAt           time.Time `json:"opened_at"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+}
+
+type CashSessionClosed struct {
+	ID                 string     `json:"id"`
+	EdgeCashSessionID  string     `json:"edge_cash_session_id"`
+	RestaurantID       string     `json:"restaurant_id"`
+	DeviceID           string     `json:"device_id"`
+	ShiftID            string     `json:"shift_id"`
+	OpenedByEmployeeID string     `json:"opened_by_employee_id"`
+	ClosedByEmployeeID *string    `json:"closed_by_employee_id,omitempty"`
+	Status             string     `json:"status"`
+	OpeningCashAmount  int64      `json:"opening_cash_amount"`
+	ClosingCashAmount  *int64     `json:"closing_cash_amount,omitempty"`
+	OpenedAt           time.Time  `json:"opened_at"`
+	ClosedAt           *time.Time `json:"closed_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+type CashDrawerEventRecorded struct {
+	ID                    string    `json:"id"`
+	EdgeCashDrawerEventID string    `json:"edge_cash_drawer_event_id"`
+	CashSessionID         string    `json:"cash_session_id"`
+	RestaurantID          string    `json:"restaurant_id"`
+	DeviceID              string    `json:"device_id"`
+	ShiftID               string    `json:"shift_id"`
+	CreatedByEmployeeID   string    `json:"created_by_employee_id"`
+	EventType             string    `json:"event_type"`
+	Amount                int64     `json:"amount"`
+	Reason                *string   `json:"reason,omitempty"`
+	Note                  *string   `json:"note,omitempty"`
+	OccurredAt            time.Time `json:"occurred_at"`
+	CreatedAt             time.Time `json:"created_at"`
+}
 
 type EventAck struct {
 	Status              string    `json:"status"`
@@ -187,6 +245,12 @@ func ValidateEventPayload(v SyncEnvelope) error {
 		return validatePayload[PaymentCaptured](v)
 	case EventOrderClosed:
 		return validatePayload[OrderClosed](v)
+	case EventCashSessionOpened:
+		return validatePayload[CashSessionOpened](v)
+	case EventCashSessionClosed:
+		return validatePayload[CashSessionClosed](v)
+	case EventCashDrawerEventRecorded:
+		return validatePayload[CashDrawerEventRecorded](v)
 	default:
 		return fmt.Errorf("%w: unsupported event_type %q", ErrInvalidEnvelope, v.EventType)
 	}
@@ -212,7 +276,7 @@ func validatePayload[T any](v SyncEnvelope) error {
 
 func IsKnownEventType(v EventType) bool {
 	switch v {
-	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventCheckCreated, EventPaymentCaptured, EventOrderClosed:
+	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventCheckCreated, EventPaymentCaptured, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded:
 		return true
 	default:
 		return false

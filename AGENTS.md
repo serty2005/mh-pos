@@ -205,7 +205,10 @@ domain -> app -> ports -> infra
 - orders
 - checks
 - payments
+- payment_attempts
 - shifts
+- cash_sessions
+- cash_drawer_events
 - `local_event_log`
 - sync outbox
 - foundation для recipes/inventory/accounting в схеме и repository layer
@@ -320,6 +323,8 @@ GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated
 - нельзя изменить закрытый заказ
 - нельзя закрыть заказ без оплаты
 - нельзя переплатить чек
+- нельзя открыть cash session без активной смены
+- нельзя записать cash drawer event без active cash session
 - нельзя удалять справочники
 - нельзя пропустить запись в outbox
 
@@ -518,7 +523,7 @@ COMMIT
 
 - Version: 1.2
 - Scope: POS Edge Backend (Phase 1)
-- Edge foundation: `local_event_log` + `pos_sync_outbox`
+- Edge foundation: `local_event_log` + `pos_sync_outbox` + cash sessions + payment attempts
 - Operational read-only endpoints: sync outbox and local events
 - Cloud: minimal `cloud-backend/` Sync Receiver implemented; Cloud is not a runtime dependency for critical POS Edge writes
 
@@ -534,7 +539,7 @@ Implemented Cloud scope:
 - PostgreSQL bootstrap and migrations: `cloud-backend/migrations/postgres`
 - Health endpoint: `GET /health`
 - Edge event receive endpoint: `POST /api/v1/sync/edge-events`
-- Accepted current Edge events: `ShiftOpened`, `ShiftClosed`, `OrderCreated`, `OrderLineAdded`, `CheckCreated`, `PaymentCaptured`, `OrderClosed`
+- Accepted current Edge events: `ShiftOpened`, `ShiftClosed`, `OrderCreated`, `OrderLineAdded`, `CheckCreated`, `PaymentCaptured`, `OrderClosed`, `CashSessionOpened`, `CashSessionClosed`, `CashDrawerEventRecorded`
 - Idempotent insert/dedupe using `restaurant_id:device_id:edge_event_id`
 - Raw full `SyncEnvelope` storage
 - Stable ack on duplicate replay

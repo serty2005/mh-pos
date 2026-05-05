@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"pos-backend/internal/pos/domain/cash"
 	"pos-backend/internal/pos/domain/catalog"
 	"pos-backend/internal/pos/domain/check"
 	"pos-backend/internal/pos/domain/device"
@@ -77,6 +78,7 @@ const (
 type PaymentStatus = check.PaymentStatus
 type PaymentMethod = check.PaymentMethod
 type Payment = check.Payment
+type PaymentAttempt = check.PaymentAttempt
 
 const (
 	PaymentCaptured = check.PaymentCaptured
@@ -85,6 +87,20 @@ const (
 	PaymentCash     = check.PaymentCash
 	PaymentCard     = check.PaymentCard
 	PaymentOther    = check.PaymentOther
+)
+
+type CashSessionStatus = cash.CashSessionStatus
+type CashDrawerEventType = cash.CashDrawerEventType
+type CashSession = cash.CashSession
+type CashDrawerEvent = cash.CashDrawerEvent
+
+const (
+	CashSessionOpen     = cash.CashSessionOpen
+	CashSessionClosed   = cash.CashSessionClosed
+	CashDrawerCashIn    = cash.CashDrawerCashIn
+	CashDrawerCashOut   = cash.CashDrawerCashOut
+	CashDrawerNoSale    = cash.CashDrawerNoSale
+	CashDrawerCashCount = cash.CashDrawerCashCount
 )
 
 type OutboxStatus = shared.OutboxStatus

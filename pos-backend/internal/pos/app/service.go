@@ -6,6 +6,7 @@ import (
 	"pos-backend/internal/platform/clock"
 	"pos-backend/internal/platform/idgen"
 	txmanager "pos-backend/internal/platform/tx"
+	appcash "pos-backend/internal/pos/app/cash"
 	appcatalog "pos-backend/internal/pos/app/catalog"
 	appcheck "pos-backend/internal/pos/app/check"
 	appdevice "pos-backend/internal/pos/app/device"
@@ -41,6 +42,9 @@ type AddOrderLineCommand = apporder.AddOrderLineCommand
 type CreateCheckCommand = appcheck.CreateCheckCommand
 type CapturePaymentCommand = appcheck.CapturePaymentCommand
 type CloseOrderCommand = apporder.CloseOrderCommand
+type OpenCashSessionCommand = appcash.OpenCashSessionCommand
+type CloseCashSessionCommand = appcash.CloseCashSessionCommand
+type RecordCashDrawerEventCommand = appcash.RecordCashDrawerEventCommand
 
 type ListLocalEventsQuery struct {
 	Limit     int
@@ -56,6 +60,7 @@ type Service struct {
 	shifts      *appshift.Service
 	orders      *apporder.Service
 	checks      *appcheck.Service
+	cash        *appcash.Service
 	localEvents ports.LocalEventRepository
 	outbox      *shared.OutboxService
 }
@@ -70,6 +75,7 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 		shifts:      appshift.NewService(repo, tx, ids, clock),
 		orders:      apporder.NewService(repo, tx, ids, clock),
 		checks:      appcheck.NewService(repo, tx, ids, clock),
+		cash:        appcash.NewService(repo, tx, ids, clock),
 		localEvents: repo,
 		outbox:      shared.NewOutboxService(repo, clock),
 	}
@@ -165,6 +171,22 @@ func (s *Service) CreateCheck(ctx context.Context, cmd CreateCheckCommand) (*dom
 
 func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand) (*domain.Payment, error) {
 	return s.checks.CapturePayment(ctx, cmd)
+}
+
+func (s *Service) GetCurrentCashSession(ctx context.Context, deviceID string) (*domain.CashSession, error) {
+	return s.cash.GetCurrentCashSession(ctx, deviceID)
+}
+
+func (s *Service) OpenCashSession(ctx context.Context, cmd OpenCashSessionCommand) (*domain.CashSession, error) {
+	return s.cash.OpenCashSession(ctx, cmd)
+}
+
+func (s *Service) CloseCashSession(ctx context.Context, cmd CloseCashSessionCommand) (*domain.CashSession, error) {
+	return s.cash.CloseCashSession(ctx, cmd)
+}
+
+func (s *Service) RecordCashDrawerEvent(ctx context.Context, cmd RecordCashDrawerEventCommand) (*domain.CashDrawerEvent, error) {
+	return s.cash.RecordCashDrawerEvent(ctx, cmd)
 }
 
 func (s *Service) ListOutbox(ctx context.Context, limit int) ([]domain.OutboxMessage, error) {

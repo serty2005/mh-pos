@@ -9,6 +9,7 @@ type Repository interface {
 	ShiftRepository
 	OrderRepository
 	CheckRepository
+	CashRepository
 	InventoryRepository
 	LocalEventRepository
 	OutboxRepository

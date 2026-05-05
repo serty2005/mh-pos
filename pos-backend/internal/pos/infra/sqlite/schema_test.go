@@ -35,6 +35,16 @@ func seedCatalogForSchemaTests(t *testing.T, ctx context.Context, db *sql.DB) {
 	execSchema(t, ctx, db, `INSERT INTO catalog_items(id,type,name,sku,base_unit,active,created_at,updated_at) VALUES ('good-1','good','Bottle','GOOD-1','pcs',1,?,?)`, schemaTestTime, schemaTestTime)
 }
 
+func seedFinancialForSchemaTests(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+	seedCatalogForSchemaTests(t, ctx, db)
+	execSchema(t, ctx, db, `INSERT INTO roles(id,name,permissions_json,active,created_at,updated_at) VALUES ('role-1','cashier','{}',1,?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO employees(id,restaurant_id,role_id,name,pin_hash,active,created_at,updated_at) VALUES ('employee-1','restaurant-1','role-1','Anna','hash',1,?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO shifts(id,restaurant_id,device_id,opened_by_employee_id,status,opened_at,opening_cash_amount,created_at,updated_at) VALUES ('shift-1','restaurant-1','device-1','employee-1','open',?,0,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO orders(id,edge_order_id,restaurant_id,device_id,shift_id,status,table_name,guest_count,opened_at,created_at,updated_at) VALUES ('order-1','edge-order-1','restaurant-1','device-1','shift-1','open','A1',1,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO checks(id,order_id,status,subtotal,discount_total,tax_total,total,paid_total,created_at,updated_at) VALUES ('check-1','order-1','open',100,0,0,100,0,?,?)`, schemaTestTime, schemaTestTime)
+}
+
 func execSchema(t *testing.T, ctx context.Context, db *sql.DB, query string, args ...any) {
 	t.Helper()
 	if _, err := db.ExecContext(ctx, query, args...); err != nil {
@@ -77,6 +87,71 @@ func TestLocalEventLogFoundationTableExists(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatal("expected local_event_log table to exist")
+	}
+}
+
+func TestCashAndPaymentAttemptFoundationTablesExist(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	tables := []string{"cash_sessions", "cash_drawer_events", "payment_attempts"}
+	for _, table := range tables {
+		t.Run(table, func(t *testing.T) {
+			var n int
+			err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&n)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n != 1 {
+				t.Fatalf("expected table %s to exist", table)
+			}
+		})
+	}
+}
+
+func TestCashSessionsAllowOnlyOneOpenSessionPerDevice(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	seedFinancialForSchemaTests(t, ctx, db)
+	insert := `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,shift_id,opened_by_employee_id,status,opening_cash_amount,opened_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+	execSchema(t, ctx, db, insert, "cash-session-1", "edge-cash-session-1", "restaurant-1", "device-1", "shift-1", "employee-1", "open", 100, schemaTestTime, schemaTestTime, schemaTestTime)
+
+	_, err := db.ExecContext(ctx, insert, "cash-session-2", "edge-cash-session-2", "restaurant-1", "device-1", "shift-1", "employee-1", "open", 200, schemaTestTime, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected second open cash session on device to fail")
+	}
+}
+
+func TestCashDrawerEventsRequireSessionAndNonNegativeAmount(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	seedFinancialForSchemaTests(t, ctx, db)
+	execSchema(t, ctx, db, `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,shift_id,opened_by_employee_id,status,opening_cash_amount,opened_at,created_at,updated_at) VALUES ('cash-session-1','edge-cash-session-1','restaurant-1','device-1','shift-1','employee-1','open',100,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO cash_drawer_events(id,edge_cash_drawer_event_id,cash_session_id,restaurant_id,device_id,shift_id,created_by_employee_id,event_type,amount,occurred_at,created_at) VALUES ('cash-event-1','edge-cash-event-1','cash-session-1','restaurant-1','device-1','shift-1','employee-1','cash_in',100,?,?)`, schemaTestTime, schemaTestTime)
+
+	_, err := db.ExecContext(ctx, `INSERT INTO cash_drawer_events(id,edge_cash_drawer_event_id,cash_session_id,restaurant_id,device_id,shift_id,created_by_employee_id,event_type,amount,occurred_at,created_at) VALUES ('cash-event-2','edge-cash-event-2','missing','restaurant-1','device-1','shift-1','employee-1','cash_in',100,?,?)`, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected cash drawer event without session to fail")
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO cash_drawer_events(id,edge_cash_drawer_event_id,cash_session_id,restaurant_id,device_id,shift_id,created_by_employee_id,event_type,amount,occurred_at,created_at) VALUES ('cash-event-3','edge-cash-event-3','cash-session-1','restaurant-1','device-1','shift-1','employee-1','cash_out',-1,?,?)`, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected negative cash drawer event amount to fail")
+	}
+}
+
+func TestPaymentsRequireEdgeContextAndPaymentAttemptsReferencePayment(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	seedFinancialForSchemaTests(t, ctx, db)
+	execSchema(t, ctx, db, `INSERT INTO payments(id,edge_payment_id,restaurant_id,device_id,shift_id,check_id,method,amount,currency,status,created_at,updated_at) VALUES ('payment-1','edge-payment-1','restaurant-1','device-1','shift-1','check-1','cash',100,'RUB','captured',?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO payment_attempts(id,payment_id,attempt_no,method,amount,currency,status,attempted_at,created_at) VALUES ('attempt-1','payment-1',1,'cash',100,'RUB','captured',?,?)`, schemaTestTime, schemaTestTime)
+
+	_, err := db.ExecContext(ctx, `INSERT INTO payments(id,edge_payment_id,restaurant_id,device_id,shift_id,check_id,method,amount,currency,status,created_at,updated_at) VALUES ('payment-2','edge-payment-2',NULL,'device-1','shift-1','check-1','cash',100,'RUB','captured',?,?)`, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected payment without restaurant_id to fail")
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO payment_attempts(id,payment_id,attempt_no,method,amount,currency,status,attempted_at,created_at) VALUES ('attempt-2','missing',1,'cash',100,'RUB','captured',?,?)`, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected payment attempt without payment to fail")
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO payment_attempts(id,payment_id,attempt_no,method,amount,currency,status,attempted_at,created_at) VALUES ('attempt-3','payment-1',0,'cash',100,'RUB','captured',?,?)`, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected payment attempt with zero attempt_no to fail")
 	}
 }
 

@@ -58,6 +58,11 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Get("/checks/{id}", h.getCheck)
 		r.Post("/checks/{id}/payments", h.capturePayment)
 
+		r.Post("/cash-sessions/open", h.openCashSession)
+		r.Post("/cash-sessions/{id}/close", h.closeCashSession)
+		r.Get("/cash-sessions/current", h.currentCashSession)
+		r.Post("/cash-drawer-events", h.recordCashDrawerEvent)
+
 		r.Get("/sync/outbox", h.listOutbox)
 		r.Post("/sync/outbox/{id}/mark-sent", h.markOutboxSent)
 		r.Post("/sync/outbox/{id}/mark-failed", h.markOutboxFailed)
@@ -274,6 +279,45 @@ func (h *Handler) capturePayment(w http.ResponseWriter, r *http.Request) {
 	setEdgeOrigin(&cmd.CommandMeta)
 	cmd.CheckID = chi.URLParam(r, "id")
 	v, err := h.service.CapturePayment(r.Context(), cmd)
+	writeCreated(w, v, err)
+}
+
+func (h *Handler) openCashSession(w http.ResponseWriter, r *http.Request) {
+	var cmd app.OpenCashSessionCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err)
+		return
+	}
+	setEdgeOrigin(&cmd.CommandMeta)
+	v, err := h.service.OpenCashSession(r.Context(), cmd)
+	writeCreated(w, v, err)
+}
+
+func (h *Handler) closeCashSession(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CloseCashSessionCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err)
+		return
+	}
+	setEdgeOrigin(&cmd.CommandMeta)
+	cmd.ID = chi.URLParam(r, "id")
+	v, err := h.service.CloseCashSession(r.Context(), cmd)
+	writeOK(w, v, err)
+}
+
+func (h *Handler) currentCashSession(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetCurrentCashSession(r.Context(), r.URL.Query().Get("device_id"))
+	writeOK(w, v, err)
+}
+
+func (h *Handler) recordCashDrawerEvent(w http.ResponseWriter, r *http.Request) {
+	var cmd app.RecordCashDrawerEventCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err)
+		return
+	}
+	setEdgeOrigin(&cmd.CommandMeta)
+	v, err := h.service.RecordCashDrawerEvent(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
 
