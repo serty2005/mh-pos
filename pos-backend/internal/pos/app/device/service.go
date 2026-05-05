@@ -51,6 +51,6 @@ func (s *Service) RegisterDevice(ctx context.Context, cmd RegisterDeviceCommand)
 		if err := s.repo.CreateDevice(ctx, v); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, v.RestaurantID, "Device", v.ID, "DeviceRegistered", v)
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, v.RestaurantID, "", "Device", v.ID, "DeviceRegistered", v)
 	})
 }

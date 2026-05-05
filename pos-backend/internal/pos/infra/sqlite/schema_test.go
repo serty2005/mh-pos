@@ -67,6 +67,37 @@ func TestPhase2FoundationTablesExist(t *testing.T) {
 	}
 }
 
+func TestLocalEventLogFoundationTableExists(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	var n int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = 'local_event_log'`).Scan(&n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatal("expected local_event_log table to exist")
+	}
+}
+
+func TestLocalEventLogRequiresUniqueEdgeEventIdentity(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	insert := `INSERT INTO local_event_log(id,event_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+	execSchema(t, ctx, db, insert, "local-event-1", "edge-event-1", "1", "OrderCreated", "Order", "order-1", "restaurant-1", "device-1", "shift-1", `{"event_id":"edge-event-1"}`, schemaTestTime, schemaTestTime)
+
+	_, err := db.ExecContext(ctx, insert, "local-event-2", "edge-event-1", "1", "OrderCreated", "Order", "order-1", "restaurant-1", "device-1", "shift-1", `{"event_id":"edge-event-1"}`, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected duplicate event_id to fail")
+	}
+}
+
+func TestLocalEventLogRequiresDeviceID(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	_, err := db.ExecContext(ctx, `INSERT INTO local_event_log(id,event_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES ('local-event-1','edge-event-1','1','OrderCreated','Order','order-1','restaurant-1','','shift-1','{}',?,?)`, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected empty device_id to fail")
+	}
+}
+
 func TestStockMovesCannotHaveZeroQuantity(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedCatalogForSchemaTests(t, ctx, db)

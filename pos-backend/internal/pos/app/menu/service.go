@@ -58,6 +58,6 @@ func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand)
 		if err := s.repo.CreateMenuItem(ctx, v); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, "", "MenuItem", v.ID, "MenuItemCreated", v)
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, "", "", "MenuItem", v.ID, "MenuItemCreated", v)
 	})
 }

@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -141,7 +142,7 @@ func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
-	case "orders", "pos_sync_outbox", "roles", "catalog_items", "menu_items":
+	case "orders", "pos_sync_outbox", "local_event_log", "roles", "catalog_items", "menu_items":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -184,6 +185,7 @@ func TestDuplicateCommandIDDoesNotCreateDuplicateOrderOrOutbox(t *testing.T) {
 	f.openShift(t)
 	ordersBefore := countRows(t, f, "orders")
 	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
 
 	cmd := app.CreateOrderCommand{
 		CommandMeta: app.CommandMeta{CommandID: "cmd-create-order-1", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
@@ -201,6 +203,9 @@ func TestDuplicateCommandIDDoesNotCreateDuplicateOrderOrOutbox(t *testing.T) {
 	}
 	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+1 {
 		t.Fatalf("expected one outbox row, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore+1 {
+		t.Fatalf("expected one local event row, before=%d after=%d", eventsBefore, events)
 	}
 }
 
@@ -348,6 +353,141 @@ func TestOutboxEntryCreatedForEachWriteAction(t *testing.T) {
 	if after != before+1 {
 		t.Fatalf("expected one outbox record for write action, before=%d after=%d", before, after)
 	}
+}
+
+func TestKeyWritesCreateLocalEventsAndMatchingOutboxEnvelopes(t *testing.T) {
+	f := newFixture(t)
+	shift := f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.service.CreateCheck(f.ctx, app.CreateCheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), CheckID: check.ID, Method: domain.PaymentCash, Amount: check.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CloseOrder(f.ctx, app.CloseOrderCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CloseShift(f.ctx, app.CloseShiftCommand{CommandMeta: f.edgeMeta(), ID: shift.ID, ClosedByEmployeeID: f.employee.ID, ClosingCashAmount: 0}); err != nil {
+		t.Fatal(err)
+	}
+
+	eventTypes := []string{"ShiftOpened", "ShiftClosed", "OrderCreated", "CheckCreated", "PaymentCaptured"}
+	local := localEventIDsByType(t, f, eventTypes, shift.ID)
+	outbox := outboxEventIDsByType(t, f, eventTypes)
+	for _, eventType := range eventTypes {
+		localIDs := local[eventType]
+		outboxIDs := outbox[eventType]
+		if len(localIDs) != 1 {
+			t.Fatalf("expected one local %s event, got %d", eventType, len(localIDs))
+		}
+		if len(outboxIDs) != 1 {
+			t.Fatalf("expected one outbox %s envelope, got %d", eventType, len(outboxIDs))
+		}
+		for eventID := range localIDs {
+			if !outboxIDs[eventID] {
+				t.Fatalf("local event %s for %s missing from outbox envelope", eventID, eventType)
+			}
+		}
+	}
+}
+
+type syncEnvelopeProbe struct {
+	Version      string  `json:"version"`
+	EventID      string  `json:"event_id"`
+	EventType    string  `json:"event_type"`
+	RestaurantID *string `json:"restaurant_id"`
+	DeviceID     string  `json:"device_id"`
+	ShiftID      *string `json:"shift_id"`
+}
+
+func localEventIDsByType(t *testing.T, f *fixture, wanted []string, shiftID string) map[string]map[string]bool {
+	t.Helper()
+	want := make(map[string]bool, len(wanted))
+	out := make(map[string]map[string]bool, len(wanted))
+	for _, eventType := range wanted {
+		want[eventType] = true
+		out[eventType] = map[string]bool{}
+	}
+	rows, err := f.db.QueryContext(f.ctx, `SELECT event_type,event_id,payload_json,restaurant_id,device_id,shift_id FROM local_event_log`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var eventType, eventID, payload, deviceID string
+		var restaurantID, gotShiftID sql.NullString
+		if err := rows.Scan(&eventType, &eventID, &payload, &restaurantID, &deviceID, &gotShiftID); err != nil {
+			t.Fatal(err)
+		}
+		if !want[eventType] {
+			continue
+		}
+		var envelope syncEnvelopeProbe
+		if err := json.Unmarshal([]byte(payload), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope.Version != domain.SyncEnvelopeVersion || envelope.EventID != eventID || envelope.EventType != eventType {
+			t.Fatalf("local event envelope mismatch for %s", eventType)
+		}
+		if !restaurantID.Valid || restaurantID.String != f.restaurant.ID || envelope.RestaurantID == nil || *envelope.RestaurantID != f.restaurant.ID {
+			t.Fatalf("expected restaurant_id in %s envelope", eventType)
+		}
+		if deviceID != f.device.ID || envelope.DeviceID != f.device.ID {
+			t.Fatalf("expected device_id in %s envelope", eventType)
+		}
+		if !gotShiftID.Valid || gotShiftID.String != shiftID || envelope.ShiftID == nil || *envelope.ShiftID != shiftID {
+			t.Fatalf("expected shift_id in %s envelope", eventType)
+		}
+		out[eventType][eventID] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func outboxEventIDsByType(t *testing.T, f *fixture, wanted []string) map[string]map[string]bool {
+	t.Helper()
+	want := make(map[string]bool, len(wanted))
+	out := make(map[string]map[string]bool, len(wanted))
+	for _, eventType := range wanted {
+		want[eventType] = true
+		out[eventType] = map[string]bool{}
+	}
+	rows, err := f.db.QueryContext(f.ctx, `SELECT command_type,payload_json FROM pos_sync_outbox`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var eventType, payload string
+		if err := rows.Scan(&eventType, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if !want[eventType] {
+			continue
+		}
+		var envelope syncEnvelopeProbe
+		if err := json.Unmarshal([]byte(payload), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope.Version != domain.SyncEnvelopeVersion || envelope.EventType != eventType || envelope.EventID == "" {
+			t.Fatalf("outbox envelope mismatch for %s", eventType)
+		}
+		out[eventType][envelope.EventID] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 var _ clock.Clock = fixedClock{}

@@ -72,7 +72,7 @@ func (s *Service) CreateRole(ctx context.Context, cmd CreateRoleCommand) (*domai
 		if err := s.repo.CreateRole(ctx, v); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, "", "Role", v.ID, "RoleCreated", v)
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, "", "", "Role", v.ID, "RoleCreated", v)
 	})
 }
 
@@ -92,7 +92,7 @@ func (s *Service) CreateEmployee(ctx context.Context, cmd CreateEmployeeCommand)
 		if err := s.repo.CreateEmployee(ctx, v); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, v.RestaurantID, "Employee", v.ID, "EmployeeCreated", v)
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, v.RestaurantID, "", "Employee", v.ID, "EmployeeCreated", v)
 	})
 }
 
@@ -111,6 +111,6 @@ func (s *Service) ArchiveEmployee(ctx context.Context, cmd ArchiveEmployeeComman
 		if err := s.repo.ArchiveEmployee(ctx, cmd.ID, shared.DBTime(now)); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, cmd.RestaurantID, "Employee", cmd.ID, "EmployeeArchived", cmd)
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, cmd.RestaurantID, "", "Employee", cmd.ID, "EmployeeArchived", cmd)
 	})
 }

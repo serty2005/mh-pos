@@ -10,5 +10,6 @@ type Repository interface {
 	OrderRepository
 	CheckRepository
 	InventoryRepository
+	LocalEventRepository
 	OutboxRepository
 }

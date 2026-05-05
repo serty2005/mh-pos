@@ -90,6 +90,8 @@ const (
 type OutboxStatus = shared.OutboxStatus
 type CommandOrigin = shared.CommandOrigin
 type OutboxMessage = shared.OutboxMessage
+type LocalEvent = shared.LocalEvent
+type SyncEnvelope = shared.SyncEnvelope
 
 const (
 	OutboxPending    = shared.OutboxPending
@@ -98,6 +100,8 @@ const (
 	OriginEdgeDevice = shared.OriginEdgeDevice
 	OriginCloudSync  = shared.OriginCloudSync
 	OriginSystemSeed = shared.OriginSystemSeed
+
+	SyncEnvelopeVersion = shared.SyncEnvelopeVersion
 )
 
 type RecipeVersionStatus = inventory.RecipeVersionStatus

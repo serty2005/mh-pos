@@ -66,7 +66,7 @@ func (s *Service) OpenShift(ctx context.Context, cmd OpenShiftCommand) (*domain.
 		if err := s.repo.CreateShift(ctx, v); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, v.RestaurantID, "Shift", v.ID, "ShiftOpened", v)
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, v.RestaurantID, v.ID, "Shift", v.ID, "ShiftOpened", v)
 	})
 }
 
@@ -106,7 +106,7 @@ func (s *Service) CloseShift(ctx context.Context, cmd CloseShiftCommand) (*domai
 		if err := s.repo.UpdateShiftClosed(ctx, shift); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, shift.RestaurantID, "Shift", shift.ID, "ShiftClosed", shift)
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, shift.RestaurantID, shift.ID, "Shift", shift.ID, "ShiftClosed", shift)
 	})
 	return shift, err
 }

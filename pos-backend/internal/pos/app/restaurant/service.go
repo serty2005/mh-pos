@@ -50,6 +50,6 @@ func (s *Service) CreateRestaurant(ctx context.Context, cmd CreateRestaurantComm
 		if err := s.repo.CreateRestaurant(ctx, v); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, v.ID, "Restaurant", v.ID, "RestaurantCreated", v)
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, v.ID, "", "Restaurant", v.ID, "RestaurantCreated", v)
 	})
 }

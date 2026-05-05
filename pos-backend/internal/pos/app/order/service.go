@@ -99,7 +99,7 @@ func (s *Service) CreateOrder(ctx context.Context, cmd CreateOrderCommand) (*dom
 		if err := s.repo.CreateOrder(ctx, order); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, "Order", order.ID, "OrderCreated", order)
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Order", order.ID, "OrderCreated", order)
 	})
 	return order, err
 }
@@ -135,7 +135,7 @@ func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*d
 		if err := s.repo.CreateOrderLine(ctx, line); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, "Order", order.ID, "OrderLineAdded", line)
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Order", order.ID, "OrderLineAdded", line)
 	})
 	return line, err
 }
@@ -177,7 +177,7 @@ func (s *Service) CloseOrder(ctx context.Context, cmd CloseOrderCommand) (*domai
 		if err := s.repo.UpdateOrderClosed(ctx, order); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, "Order", order.ID, "OrderClosed", order)
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Order", order.ID, "OrderClosed", order)
 	})
 	return order, err
 }

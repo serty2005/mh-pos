@@ -54,6 +54,6 @@ func (s *Service) CreateCatalogItem(ctx context.Context, cmd CreateCatalogItemCo
 		if err := s.repo.CreateCatalogItem(ctx, v); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, "", "CatalogItem", v.ID, "CatalogItemCreated", v)
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, "", "", "CatalogItem", v.ID, "CatalogItemCreated", v)
 	})
 }

@@ -18,6 +18,11 @@ type OutboxService struct {
 	clock clock.Clock
 }
 
+type eventOutboxRepository interface {
+	ports.OutboxRepository
+	ports.LocalEventRepository
+}
+
 func NewOutboxService(repo ports.OutboxRepository, clock clock.Clock) *OutboxService {
 	return &OutboxService{repo: repo, clock: clock}
 }
@@ -53,23 +58,54 @@ func EnsureCommandNotProcessed(ctx context.Context, repo ports.OutboxRepository,
 	return nil
 }
 
-func WriteOutbox(ctx context.Context, repo ports.OutboxRepository, ids idgen.Generator, clock clock.Clock, meta CommandMeta, restaurantID, aggregateType, aggregateID, commandType string, payload any) error {
+func WriteOutbox(ctx context.Context, repo eventOutboxRepository, ids idgen.Generator, clock clock.Clock, meta CommandMeta, restaurantID, shiftID, aggregateType, aggregateID, commandType string, payload any) error {
 	commandID := strings.TrimSpace(meta.CommandID)
 	if commandID == "" {
 		commandID = ids.NewID()
 	}
 	origin := NormalizeOrigin(meta.Origin)
-	body, err := json.Marshal(struct {
+	eventID := ids.NewID()
+	now := clock.Now()
+	payloadBody := struct {
 		Origin domain.CommandOrigin `json:"origin"`
 		Data   any                  `json:"data"`
 	}{
 		Origin: origin,
 		Data:   payload,
-	})
+	}
+	envelope := domain.SyncEnvelope{
+		Version:       domain.SyncEnvelopeVersion,
+		EventID:       eventID,
+		EventType:     commandType,
+		AggregateType: aggregateType,
+		AggregateID:   aggregateID,
+		RestaurantID:  OptionalID(restaurantID),
+		DeviceID:      strings.TrimSpace(meta.DeviceID),
+		ShiftID:       OptionalID(shiftID),
+		OccurredAt:    now,
+		Payload:       payloadBody,
+	}
+	body, err := json.Marshal(envelope)
 	if err != nil {
 		return err
 	}
-	now := clock.Now()
+	localEvent := &domain.LocalEvent{
+		ID:              ids.NewID(),
+		EventID:         eventID,
+		EnvelopeVersion: domain.SyncEnvelopeVersion,
+		EventType:       commandType,
+		AggregateType:   aggregateType,
+		AggregateID:     aggregateID,
+		RestaurantID:    OptionalID(restaurantID),
+		DeviceID:        strings.TrimSpace(meta.DeviceID),
+		ShiftID:         OptionalID(shiftID),
+		PayloadJSON:     string(body),
+		OccurredAt:      now,
+		CreatedAt:       now,
+	}
+	if err := repo.CreateLocalEvent(ctx, localEvent); err != nil {
+		return err
+	}
 	msg := &domain.OutboxMessage{
 		ID:            ids.NewID(),
 		CommandID:     commandID,

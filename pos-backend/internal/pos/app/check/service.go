@@ -86,7 +86,7 @@ func (s *Service) CreateCheck(ctx context.Context, cmd CreateCheckCommand) (*dom
 		if err := s.repo.CreateCheck(ctx, check); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, "Check", check.ID, "CheckCreated", check)
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Check", check.ID, "CheckCreated", check)
 	})
 	return check, err
 }
@@ -133,7 +133,7 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 		if err := s.repo.UpdateCheckPaidTotal(ctx, check); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, "Payment", payment.ID, "PaymentCaptured", payment)
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Payment", payment.ID, "PaymentCaptured", payment)
 	})
 	return payment, err
 }
