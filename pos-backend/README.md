@@ -1,6 +1,20 @@
 # MyHoReCa POS Edge Backend
 
-Foundation for the POS Edge Backend: a local JSON API service with SQLite persistence, domain invariants, `local_event_log`, a sync outbox, cash sessions, cash drawer events, and first payment attempts. This repository intentionally implements only the POS Edge Backend. POS UI, full PSP adapters, Back Office UI, fiscalization, reporting, integrations, production recipes, and inventory workflows are out of scope for this phase.
+POS Edge Backend - локальный JSON API сервис на Go + SQLite для кассового узла. Он должен работать offline, сохранять критические операции локально и писать `local_event_log` + `pos_sync_outbox` в той же транзакции, что и бизнес-изменение.
+
+## Architecture Lock v1.3
+
+Целевая финансовая модель проекта:
+
+```text
+Order -> Precheck -> Payment -> Check
+```
+
+`Precheck` - рабочий финансовый snapshot для гостя. `Check` - только финальный неизменяемый расчетный документ после полной оплаты precheck.
+
+Текущее состояние кода честно отличается от цели: backend пока является legacy foundation и еще не переведен на precheck flow. В коде есть текущие check/payment endpoints и `CreateCheck`, но они описывают старый foundation и не должны использоваться как целевая модель для новых итераций. Следующая архитектурная работа должна двигаться к `IssuePrecheck`, payment-to-precheck и automatic final check generation.
+
+Проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. Изменения схемы v1.3 нужно проектировать как first-launch schema.
 
 ## Stack
 
@@ -10,18 +24,18 @@ Foundation for the POS Edge Backend: a local JSON API service with SQLite persis
 - HTTP JSON API with `chi`
 - Docker Compose with a named SQLite volume
 
-## Run Locally On Windows
+## Запуск Локально На Windows
 
-From `pos-backend`:
+Из `pos-backend`:
 
 ```powershell
 go mod tidy
 go run ./cmd/pos-edge
 ```
 
-The service listens on `http://localhost:8080`.
+Сервис слушает `http://localhost:8080`.
 
-Useful environment variables:
+Полезные environment variables:
 
 ```powershell
 $env:POS_HTTP_ADDR=":8080"
@@ -29,7 +43,7 @@ $env:POS_SQLITE_PATH="data/pos-edge.db"
 $env:POS_SQLITE_MIGRATIONS_DIR="migrations/sqlite"
 ```
 
-VSCode setup: open the `pos-backend` folder, install the official Go extension, run `Go: Install/Update Tools`, then use the integrated terminal for `go test ./...` and `go run ./cmd/pos-edge`.
+VSCode setup: открой папку `pos-backend`, установи официальный Go extension, выполни `Go: Install/Update Tools`, затем используй integrated terminal для `go test ./...` и `go run ./cmd/pos-edge`.
 
 ## Docker
 
@@ -37,15 +51,17 @@ VSCode setup: open the `pos-backend` folder, install the official Go extension, 
 docker compose up --build
 ```
 
-SQLite is stored in the `pos_edge_sqlite` Docker volume. The API is available on `http://localhost:8080`.
+SQLite хранится в Docker volume `pos_edge_sqlite`. API доступен на `http://localhost:8080`.
 
 ## API Smoke Test
+
+Этот smoke test проверяет текущее состояние legacy foundation. Он не является целевым precheck flow v1.3 и не должен служить подсказкой для новой доменной разработки.
 
 ```powershell
 curl http://localhost:8080/health
 ```
 
-Create the basic data:
+Создать базовые данные:
 
 ```powershell
 $bootstrapDeviceID = "bootstrap-$env:COMPUTERNAME"
@@ -58,7 +74,7 @@ $catalog = curl -s -X POST http://localhost:8080/api/v1/catalog/items -H "Conten
 $menu = curl -s -X POST http://localhost:8080/api/v1/menu/items -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"catalog_item_id`":`"$($catalog.id)`",`"name`":`"Soup`",`"price`":35000,`"currency`":`"RUB`"}" | ConvertFrom-Json
 ```
 
-Open a shift, create and pay an order:
+Проверить текущий legacy guest flow:
 
 ```powershell
 $shift = curl -s -X POST http://localhost:8080/api/v1/shifts/open -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"restaurant_id`":`"$($restaurant.id)`",`"opened_by_employee_id`":`"$($employee.id)`",`"opening_cash_amount`":100000}" | ConvertFrom-Json
@@ -66,8 +82,8 @@ $cashSession = curl -s -X POST http://localhost:8080/api/v1/cash-sessions/open -
 curl -s -X POST http://localhost:8080/api/v1/cash-drawer-events -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"created_by_employee_id`":`"$($employee.id)`",`"event_type`":`"cash_count`",`"amount`":100000}"
 $order = curl -s -X POST http://localhost:8080/api/v1/orders -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"table_name`":`"A1`",`"guest_count`":2}" | ConvertFrom-Json
 curl -s -X POST "http://localhost:8080/api/v1/orders/$($order.id)/lines" -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"menu_item_id`":`"$($menu.id)`",`"quantity`":2}"
-$check = curl -s -X POST "http://localhost:8080/api/v1/orders/$($order.id)/check" -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"discount_total`":0,`"tax_total`":0}" | ConvertFrom-Json
-curl -s -X POST "http://localhost:8080/api/v1/checks/$($check.id)/payments" -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"method`":`"cash`",`"amount`":$($check.total),`"currency`":`"RUB`"}"
+$legacyCheck = curl -s -X POST "http://localhost:8080/api/v1/orders/$($order.id)/check" -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"discount_total`":0,`"tax_total`":0}" | ConvertFrom-Json
+curl -s -X POST "http://localhost:8080/api/v1/checks/$($legacyCheck.id)/payments" -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"method`":`"cash`",`"amount`":$($legacyCheck.total),`"currency`":`"RUB`"}"
 curl -s -X POST "http://localhost:8080/api/v1/orders/$($order.id)/close" -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`"}"
 curl -s -X POST "http://localhost:8080/api/v1/cash-sessions/$($cashSession.id)/close" -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"closed_by_employee_id`":`"$($employee.id)`",`"closing_cash_amount`":100000}"
 curl -s http://localhost:8080/api/v1/sync/outbox
@@ -75,13 +91,25 @@ curl -s "http://localhost:8080/api/v1/sync/local-events?limit=50"
 curl -s "http://localhost:8080/api/v1/sync/local-events?limit=50&event_type=OrderCreated"
 ```
 
-Bootstrap note: before the real POS device is registered, bootstrap writes use a stable local bootstrap id such as `bootstrap-$env:COMPUTERNAME` as `device_id`. After `/devices/register` returns the real device aggregate id, all regular POS writes should use `$device.id`.
+Bootstrap note: до регистрации реального POS device bootstrap writes используют стабильный локальный bootstrap id вроде `bootstrap-$env:COMPUTERNAME` как `device_id`. После `/devices/register` все regular POS writes должны использовать `$device.id`.
 
-Outbox note: `pos_sync_outbox.device_id` is always non-empty. `restaurant_id` may be `NULL` for Phase 1 global dictionaries such as roles, catalog items, and menu items because they are not restaurant-scoped yet; this is intentional and separate from the mandatory `device_id` observability contract.
+Outbox note: `pos_sync_outbox.device_id` всегда непустой. `restaurant_id` может быть `NULL` для Phase 1 global dictionaries вроде roles, catalog items и menu items, потому что они пока не restaurant-scoped. Это намеренно и отдельно от обязательного `device_id` observability contract.
 
-Local events note: write use cases store a matching local event in `local_event_log` in the same SQLite transaction as the outbox row. The same `command_id` is stored in `local_event_log`, in `pos_sync_outbox`, and in the `SyncEnvelope` JSON payload together with `event_id`, aggregate metadata, `device_id`, optional `restaurant_id`, optional `shift_id`, and the domain payload. The read-only endpoint `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated` is for operational inspection and does not change write semantics.
+Local events note: write use cases сохраняют matching local event в `local_event_log` в той же SQLite transaction, что и outbox row. Один и тот же `command_id` хранится в `local_event_log`, в `pos_sync_outbox` и в `SyncEnvelope` JSON payload вместе с `event_id`, aggregate metadata, `device_id`, optional `restaurant_id`, optional `shift_id` и domain payload. Read-only endpoint `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated` нужен для operational inspection и не меняет write semantics.
 
-Financial foundation note: `CapturePayment` stores `payments` and the first `payment_attempts` row in the same transaction as check paid-total updates, `local_event_log`, and `pos_sync_outbox`. Cash session writes use `POST /api/v1/cash-sessions/open`, `POST /api/v1/cash-sessions/{id}/close`, `GET /api/v1/cash-sessions/current?device_id=...`, and `POST /api/v1/cash-drawer-events`.
+Financial foundation note: текущий `CapturePayment` сохраняет `payments` и первую строку `payment_attempts` в той же transaction, что и legacy check paid-total updates, `local_event_log` и `pos_sync_outbox`. В целевой v1.3 реализации payment должен быть связан с precheck, а final check должен создаваться только после полной оплаты.
+
+Cash session endpoints: `POST /api/v1/cash-sessions/open`, `POST /api/v1/cash-sessions/{id}/close`, `GET /api/v1/cash-sessions/current?device_id=...`, `POST /api/v1/cash-drawer-events`.
+
+## Текущие Legacy Endpoints
+
+См. `internal/pos/api/router.go`. На момент Architecture Lock v1.3 там все еще есть:
+
+- `POST /api/v1/orders/{id}/check`
+- `POST /api/v1/checks/{id}/payments`
+- `GET /api/v1/checks/{id}`
+
+Они отражают текущее состояние кода, а не целевую v1.3 модель.
 
 ## Tests
 

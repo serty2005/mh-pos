@@ -2,7 +2,25 @@
 
 ## Быстрый Старт Для Агентов
 
+**⚠️ ВАЖНЫЕ ПРАВИЛА ОКРУЖЕНИЯ (WINDOWS + POWERSHELL):**
+- Для поиска, чтения и анализа файлов **используйте Python** (а не системные bash/powershell утилиты).
+- При открытии любых файлов через Python **всегда принудительно указывайте кодировку UTF-8** (`open(filepath, mode, encoding='utf-8')`). Окружение работает на русскоязычной Windows, и чтение без `utf-8` приведет к нечитаемым символам (mojibake) и поломке кириллицы.
+- Все комментарии в генерируемом коде должны быть строго на **русском языке**.
+
+
 Перед любыми изменениями держи в голове главные инварианты: POS должен работать offline, все write use case выполняются в транзакции, `local_event_log` и outbox пишутся в той же транзакции, закрытые заказы не меняются, смена на device может быть только одна активная.
+
+Architecture Lock v1.3 фиксирует целевую финансовую модель:
+
+```text
+Order -> Precheck -> Payment -> Check
+```
+
+`Precheck` - рабочий финансовый snapshot для гостя. `Check` - только финальный неизменяемый расчетный документ после полной оплаты precheck. Новая логика должна двигаться к `IssuePrecheck`, а не к старому `CreateCheck`.
+
+Важно: проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. Изменения v1.3 нужно проектировать как first-launch schema/logic, а не как миграцию исторических данных.
+
+Текущее состояние кода нужно отделять от целевой модели: `pos-backend` сейчас является legacy foundation со старым checks/payments flow и еще не переведен на precheck flow. В этой фазе документация уже фиксирует v1.3, но код Precheck еще не внедрен.
 
 ### Карта Репозитория
 
@@ -10,8 +28,10 @@
 .
 |-- README.md                 # карта монорепозитория и команды входа
 |-- AGENTS.md                 # этот документ: правила архитектуры и навигация
-|-- pos-backend/              # текущая основная кодовая база
-|   |-- README.md             # запуск, Docker, smoke test, примеры API
+|-- SPECv1.3.md               # целевая архитектурная спецификация MVP-0 / first launch
+|-- ROADMAP_MVP.md            # рабочий roadmap перехода к v1.3
+|-- pos-backend/              # текущая основная кодовая база POS Edge
+|   |-- README.md             # запуск, Docker, smoke test, текущее legacy API состояние
 |   |-- cmd/pos-edge/         # main() локального POS Edge Backend
 |   |-- internal/platform/    # clock, http helpers, idgen, sqlite, tx
 |   |-- internal/pos/api/     # HTTP router и thin handlers
@@ -21,6 +41,11 @@
 |   |-- internal/pos/infra/   # реализации портов, сейчас SQLite
 |   |-- migrations/sqlite/    # schema migrations, включая local_event_log и pos_sync_outbox
 |   `-- docs/                 # проектные отчеты backend
+|-- cloud-backend/            # минимальный Cloud Sync Receiver foundation
+|   |-- README.md             # запуск и тесты cloud receiver
+|   |-- cmd/cloud-api/        # main() Cloud API
+|   `-- migrations/postgres/  # PostgreSQL bootstrap и migrations
+|-- docs/sync/                # sync contracts
 |-- .codex/skills/            # локальные Codex skills
 |-- pack_go_files.py          # вспомогательный скрипт упаковки Go-файлов
 `-- project_dump.py           # вспомогательный скрипт дампа проекта
@@ -28,8 +53,11 @@
 
 ### Куда Идти За Чем
 
-- Запустить backend: `pos-backend/README.md`
-- Найти HTTP endpoints: `pos-backend/internal/pos/api/router.go`
+- Целевая архитектура v1.3: `SPECv1.3.md`
+- Порядок MVP-итераций: `ROADMAP_MVP.md`
+- Запустить POS Edge backend: `pos-backend/README.md`
+- Запустить Cloud Sync Receiver: `cloud-backend/README.md`
+- Найти текущие HTTP endpoints: `pos-backend/internal/pos/api/router.go`
 - Добавить или изменить use case: `pos-backend/internal/pos/app/<context>/service.go`
 - Проверить бизнес-правило: `pos-backend/internal/pos/domain/<context>/`
 - Добавить repository contract: `pos-backend/internal/pos/ports/`
@@ -38,7 +66,6 @@
 - Проверить read-only sync endpoints: `GET /api/v1/sync/outbox`, `GET /api/v1/sync/local-events`
 - Проверить архитектурные import rules: `pos-backend/internal/pos/architecture_test.go`
 - Проверить schema/invariant tests: `pos-backend/internal/pos/infra/sqlite/schema_test.go`
-- Посмотреть отчет по текущей фазе: `pos-backend/docs/phase-1-report.md`
 
 ### Команды
 
@@ -47,6 +74,11 @@ cd pos-backend
 go test ./...
 go run ./cmd/pos-edge
 docker compose up --build
+
+cd ../cloud-backend
+go test ./...
+$env:CLOUD_POSTGRES_DSN="postgres://postgres:postgres@localhost:5432/mh_pos_cloud?sslmode=disable"
+go run ./cmd/cloud-api
 ```
 
 ### Правила Навигации По Слоям
@@ -78,11 +110,11 @@ docker compose up --build
 Он обязателен для:
 
 - разработчиков
-- AI-агентов (Codex, ChatGPT и др.)
+- AI-агентов
 - code review
 - архитектурных решений
 
-Любые изменения архитектуры должны быть согласованы с этим документом.
+Любые изменения архитектуры должны быть согласованы с `SPECv1.3.md`, `ROADMAP_MVP.md` и этим документом.
 
 ---
 
@@ -90,36 +122,30 @@ docker compose up --build
 
 Система построена как **edge-first POS/RMS платформа**.
 
-## Основные компоненты:
+## 1. POS Edge Node
 
-### 1. POS Edge Node (локальный кассовый узел)
+Локальный кассовый узел работает на Windows/Linux/Android и содержит:
 
-Работает на:
-
-- Windows
-- Linux
-- Android
-
-Содержит:
-
-- POS UI (интерфейс)
+- POS UI
 - POS Edge Backend (Go + SQLite)
-- device adapters (принтеры и т.д.)
+- device adapters
 - sync outbox
 
 Главная цель: работать без интернета.
 
----
+## 2. Cloud Platform
 
-### 2. Cloud Platform (будет позже)
+В репозитории уже есть минимальный `cloud-backend/` Sync Receiver foundation. Это не runtime dependency для критических POS операций.
 
-- Cloud Backend (Go + PostgreSQL)
-- Back Office UI
-- Reporting
-- Integrations
-- Fiscalization
+Cloud в целевой архитектуре отвечает за:
 
-Главная цель: учет, аналитика и консистентность данных.
+- учет и аналитику
+- справочники
+- рецепты и склад
+- sync receiver
+- reporting
+- integrations
+- fiscalization в будущих фазах
 
 ---
 
@@ -127,35 +153,30 @@ docker compose up --build
 
 ## 1. Edge-first
 
-- POS должен работать без сети
-- Интернет - это улучшение, не зависимость
-- Все критические операции выполняются локально
-
----
+- POS должен работать без сети.
+- Интернет - это улучшение, не зависимость.
+- Все критические операции выполняются локально.
 
 ## 2. Offline-first
 
-- все действия пишутся локально
-- синхронизация асинхронная
-- повторная отправка безопасна
-
----
+- Все действия пишутся локально.
+- Синхронизация асинхронная.
+- Повторная отправка безопасна.
 
 ## 3. Eventual Consistency
 
-- cloud и edge могут временно расходиться
-- консистентность достигается через sync
-
----
+- Cloud и Edge могут временно расходиться.
+- Консистентность достигается через sync.
 
 ## 4. Source of Truth
 
 ### POS Edge Node - source of truth для:
 
 - активных заказов
-- чеков (до sync)
-- оплат
-- смен
+- prechecks до синхронизации
+- локальных оплат
+- финальных checks до синхронизации
+- смен и cash sessions
 
 ### Cloud Backend - source of truth для:
 
@@ -165,16 +186,13 @@ docker compose up --build
 - рецептов
 - склада
 - отчетности
-
----
+- долгосрочных проекций после sync
 
 ## 5. Modular Monolith
 
-- нет микросервисов на MVP
-- модули изолированы
-- явные границы контекстов
-
----
+- Нет микросервисов на MVP.
+- Модули изолированы.
+- Явные границы контекстов.
 
 ## 6. Clean Architecture
 
@@ -194,7 +212,7 @@ domain -> app -> ports -> infra
 
 # POS Edge Backend Scope
 
-Текущая реализация включает:
+Текущая реализация включает legacy foundation:
 
 - restaurants
 - devices
@@ -203,8 +221,7 @@ domain -> app -> ports -> infra
 - catalog
 - menu
 - orders
-- checks
-- payments
+- checks/payments foundation по старому flow
 - payment_attempts
 - shifts
 - cash_sessions
@@ -213,70 +230,87 @@ domain -> app -> ports -> infra
 - sync outbox
 - foundation для recipes/inventory/accounting в схеме и repository layer
 
-НЕ включает (пока):
+Текущая реализация еще НЕ включает:
 
+- целевой `Precheck` flow
+- `IssuePrecheck`
+- payment привязанный к precheck
+- автоматическое создание final check после полной оплаты precheck
 - POS UI
-- cloud sync
-- fiscalization
 - production-grade inventory workflows
+- fiscalization
 - public API для inventory/recipes
 
 ---
 
-# Domain Rules
-
-## Справочники
-
-- не удаляются
-- имеют `active` / `archived`
-- имеют стабильные ID
-- изменения должны быть sync-safe
-
----
-
-## Заказы
-
-- создаются локально
-- имеют `edge_order_id`
-- принадлежат:
-  - `restaurant_id`
-  - `device_id`
-  - `shift_id`
-
-### Ограничения:
-
-- нельзя редактировать закрытый заказ
-- нельзя добавить позицию в закрытый заказ
-
----
-
-## Чеки и оплаты
-
-Связи:
+# Target Financial Model v1.3
 
 ```text
-Order -> Check -> Payments
+Order -> Precheck -> Payment -> Check
 ```
+
+## Order
+
+`Order` - рабочая сущность официанта и кухни.
 
 Правила:
 
-- чек обязателен для закрытия заказа
-- заказ нельзя закрыть без оплаты
-- нельзя переплатить чек (без политики)
+- заказ создается локально и требует активную смену;
+- заказ принадлежит `restaurant_id`, `device_id`, `shift_id`;
+- в `open` можно добавлять позиции;
+- после active precheck заказ должен быть locked;
+- закрытый заказ нельзя редактировать.
+
+## Precheck
+
+`Precheck` - заблокированный финансовый snapshot для гостя.
+
+Правила:
+
+- создается из текущего состояния order;
+- фиксирует позиции, скидки, налоги и totals;
+- активным может быть только один `issued` precheck на order;
+- precheck нельзя редактировать;
+- изменение order после precheck требует отмены текущего precheck через manager override;
+- precheck пишется в `local_event_log` и outbox в той же транзакции.
+
+## Payment
+
+`Payment` - immutable финансовый факт.
+
+Правила:
+
+- payment привязан к precheck;
+- payment нельзя удалять или редактировать;
+- ошибка исправляется refund/reversal/correction событием;
+- нельзя переплатить precheck без явной политики tips/overpayment;
+- capture payment пишет local event и outbox в той же транзакции.
+
+## Check
+
+`Check` - финальный неизменяемый расчетный документ.
+
+Правила:
+
+- check создается только после полной оплаты precheck;
+- check нельзя использовать как рабочий счет гостя;
+- check нельзя создать вручную до оплаты;
+- после final check заказ закрывается;
+- check immutable.
 
 ---
 
-## Смены
+# Смены И Cash Sessions
 
-- у device только одна активная смена
-- заказ требует активную смену
-- нельзя закрыть смену с открытыми заказами
+- У device только одна активная смена.
+- Заказ требует активную смену.
+- Cash session нельзя открыть без активной смены.
+- Cash drawer event нельзя записать без active cash session.
+- Нельзя закрыть смену с открытыми заказами.
 
 ---
 
-# Sync Model (Foundation)
-
-## Outbox Pattern
+# Sync Model
 
 Все write-действия пишутся в local edge foundation:
 
@@ -305,7 +339,7 @@ GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated
 - `payload`
 - `status`
 
-## Принципы:
+Принципы:
 
 - idempotent
 - retry-safe
@@ -321,61 +355,27 @@ GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated
 - нельзя создать заказ без смены
 - нельзя закрыть смену с открытыми заказами
 - нельзя изменить закрытый заказ
-- нельзя закрыть заказ без оплаты
-- нельзя переплатить чек
+- нельзя изменить locked order без отмены active precheck по правилам manager override
+- нельзя редактировать issued precheck
+- нельзя принять payment без precheck в целевой модели v1.3
+- нельзя создать check до полной оплаты precheck
+- нельзя использовать check как рабочий счет гостя
+- нельзя переплатить precheck без явной политики
 - нельзя открыть cash session без активной смены
 - нельзя записать cash drawer event без active cash session
 - нельзя удалять справочники
+- нельзя пропустить запись в `local_event_log`
 - нельзя пропустить запись в outbox
 
 ---
 
-# ID Strategy
+# Database Rules
 
-Использовать:
-
-- ULID или UUID
-
-Правила:
-
-- генерируются backend
-- глобально уникальны
-- не зависят от БД
-
----
-
-# Time
-
-- всегда хранить в UTC
-- использовать `created_at`, `updated_at`
-- бизнес-время хранить отдельно, например `opened_at`
-
----
-
-# Database Rules (SQLite)
-
-- SQLite - primary storage для POS
-- использовать транзакции ВСЕГДА для write операций
-- не делать частичных записей
-
----
-
-# Transactions
-
-Каждый use case:
-
-```text
-BEGIN
-business logic
-repository writes
-outbox write
-COMMIT
-```
-
-Запрещено:
-
-- писать в outbox вне транзакции
-- split транзакции
+- SQLite - primary storage для POS Edge.
+- Использовать транзакции всегда для write операций.
+- Не делать частичных записей.
+- До первого production launch не нужна миграция реальных production данных.
+- Изменения схемы v1.3 проектируются как first-launch schema, пока нет клиентских production БД.
 
 ---
 
@@ -386,12 +386,15 @@ COMMIT
 - инварианты
 - бизнес-ограничения
 - idempotency foundation
+- transactional `local_event_log` + outbox
 
 Обязательно тестировать:
 
 - duplicate actions
 - invalid state transitions
 - boundary cases
+- запрет создания check до полной оплаты precheck в целевой v1.3 реализации
+- запрет редактирования issued precheck
 
 ---
 
@@ -399,40 +402,34 @@ COMMIT
 
 ## Общие
 
-- код должен быть читаемым
-- без магии
-- без overengineering
-
----
+- код должен быть читаемым;
+- без магии;
+- без overengineering;
+- документация, планы и task comments по проекту пишутся на русском языке, если пользователь не попросил иначе;
+- имена Go-пакетов, SQL-таблиц, JSON fields, enum values и endpoints остаются на английском.
 
 ## Domain Layer
 
-- только бизнес-логика
-- без инфраструктуры
-- явные ошибки
-
----
+- только бизнес-логика;
+- без инфраструктуры;
+- явные ошибки.
 
 ## Use Cases
 
-- orchestrate domain
-- управляют транзакциями
-- не содержат SQL
-
----
+- orchestrate domain;
+- управляют транзакциями;
+- не содержат SQL.
 
 ## Repositories
 
-- только интерфейсы в ports
-- реализация в infra
-
----
+- только интерфейсы в ports;
+- реализация в infra.
 
 ## HTTP Layer
 
-- thin handlers
-- validation + mapping
-- без бизнес-логики
+- thin handlers;
+- validation + mapping;
+- без бизнес-логики.
 
 ---
 
@@ -440,19 +437,26 @@ COMMIT
 
 Запрещено:
 
-- бизнес-логика в handlers
-- прямые SQL в use cases
-- mutable состояния без контроля
-- глобальные синглтоны
-- shared mutable state
-- скрытые зависимости
-- Redis как source of truth
-- микросервисы на MVP
-- event sourcing как primary модель
+- бизнес-логика в handlers;
+- бизнес-логика во frontend;
+- прямые SQL в use cases;
+- mutable состояния без контроля;
+- глобальные синглтоны;
+- shared mutable state;
+- скрытые зависимости;
+- Redis как source of truth;
+- микросервисы на MVP;
+- event sourcing как primary модель;
+- Cloud как runtime dependency для POS writes;
+- production data migration до первого запуска;
+- развивать новый код вокруг старого `CreateCheck`;
+- создавать `Check` до полной оплаты;
+- редактировать `Precheck`;
+- удалять или редактировать `Payment`.
 
 ---
 
-# Observability (Foundation)
+# Observability
 
 Каждый request должен иметь:
 
@@ -468,12 +472,12 @@ COMMIT
 
 ---
 
-# Future Extensions (Design Constraints)
+# Future Extensions
 
 Текущий код должен позволять добавить без переписывания:
 
 - cloud sync
-- inventory (stock ledger)
+- inventory stock ledger
 - recipes + versions
 - DishServed -> write-off
 - fiscalization
@@ -491,6 +495,7 @@ COMMIT
 3. Не ломает ли это инварианты?
 4. Можно ли это синхронизировать позже?
 5. Не добавляет ли это скрытую связанность?
+6. Соответствует ли это модели `Order -> Precheck -> Payment -> Check`?
 
 Если ответ "нет" - решение неверное.
 
@@ -504,6 +509,8 @@ COMMIT
 - `CreateOrder`, не `CreateOrderUseCaseImpl`
 - `Repository`, не `RepoManager`
 - `ID`, не `Id`
+- `IssuePrecheck` для целевого precheck flow
+- `Check` только для final check semantics
 
 ---
 
@@ -515,23 +522,23 @@ COMMIT
 
 а не "гибкость" или "универсальность".
 
-В конце каждой итерации агент обязан синхронизировать `AGENTS.md` и `README.md` с фактическим состоянием репозитория, если структура, статус или доступные backend capabilities изменились.
+В конце каждой итерации агент обязан синхронизировать `AGENTS.md`, `README.md` и при изменении backend API `pos-backend/README.md` с фактическим состоянием репозитория, если структура, статус или доступные capabilities изменились.
 
 ---
 
 # Status
 
-- Version: 1.2
-- Scope: POS Edge Backend (Phase 1)
+- Version: 1.3 Architecture Lock
+- Scope: POS Edge Backend + minimal Cloud Sync Receiver foundation
+- Target financial model: `Order -> Precheck -> Payment -> Check`
+- Current POS Edge code: legacy foundation, not yet migrated to precheck flow
 - Edge foundation: `local_event_log` + `pos_sync_outbox` + cash sessions + payment attempts
 - Operational read-only endpoints: sync outbox and local events
 - Cloud: minimal `cloud-backend/` Sync Receiver implemented; Cloud is not a runtime dependency for critical POS Edge writes
 
 ---
 
-# Phase 0/2 Cloud Sync Receiver Status
-
-The repository now includes a minimal `cloud-backend/` module for Cloud Sync Receiver foundation.
+# Cloud Sync Receiver Status
 
 Implemented Cloud scope:
 
@@ -539,20 +546,9 @@ Implemented Cloud scope:
 - PostgreSQL bootstrap and migrations: `cloud-backend/migrations/postgres`
 - Health endpoint: `GET /health`
 - Edge event receive endpoint: `POST /api/v1/sync/edge-events`
-- Accepted current Edge events: `ShiftOpened`, `ShiftClosed`, `OrderCreated`, `OrderLineAdded`, `CheckCreated`, `PaymentCaptured`, `OrderClosed`, `CashSessionOpened`, `CashSessionClosed`, `CashDrawerEventRecorded`
+- Accepted current legacy Edge events: `ShiftOpened`, `ShiftClosed`, `OrderCreated`, `OrderLineAdded`, `CheckCreated`, `PaymentCaptured`, `OrderClosed`, `CashSessionOpened`, `CashSessionClosed`, `CashDrawerEventRecorded`
 - Idempotent insert/dedupe using `restaurant_id:device_id:edge_event_id`
 - Raw full `SyncEnvelope` storage
 - Stable ack on duplicate replay
-
-Cloud commands:
-
-```powershell
-cd cloud-backend
-go test ./...
-$env:CLOUD_POSTGRES_DSN="postgres://postgres:postgres@localhost:5432/mh_pos_cloud?sslmode=disable"
-go run ./cmd/cloud-api
-```
-
-Sync contract docs: `docs/sync/edge-cloud-contracts-v1.md`.
 
 Important invariant: Cloud receiver must not become a runtime dependency for critical POS Edge writes. Edge still works offline; Cloud only receives outbox events asynchronously.
