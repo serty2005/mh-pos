@@ -479,20 +479,24 @@ func TestKeyWritesCreateLocalEventsAndMatchingOutboxEnvelopes(t *testing.T) {
 	}
 
 	eventTypes := []string{"ShiftOpened", "ShiftClosed", "OrderCreated", "OrderLineAdded", "OrderClosed", "CheckCreated", "PaymentCaptured"}
-	local := localEventIDsByType(t, f, eventTypes, shift.ID)
-	outbox := outboxEventIDsByType(t, f, eventTypes)
+	local := localEventCommandIDsByType(t, f, eventTypes, shift.ID)
+	outbox := outboxEventCommandIDsByType(t, f, eventTypes)
 	for _, eventType := range eventTypes {
-		localIDs := local[eventType]
-		outboxIDs := outbox[eventType]
-		if len(localIDs) != 1 {
-			t.Fatalf("expected one local %s event, got %d", eventType, len(localIDs))
+		localCommands := local[eventType]
+		outboxCommands := outbox[eventType]
+		if len(localCommands) != 1 {
+			t.Fatalf("expected one local %s event, got %d", eventType, len(localCommands))
 		}
-		if len(outboxIDs) != 1 {
-			t.Fatalf("expected one outbox %s envelope, got %d", eventType, len(outboxIDs))
+		if len(outboxCommands) != 1 {
+			t.Fatalf("expected one outbox %s envelope, got %d", eventType, len(outboxCommands))
 		}
-		for eventID := range localIDs {
-			if !outboxIDs[eventID] {
+		for eventID, commandID := range localCommands {
+			outboxCommandID, ok := outboxCommands[eventID]
+			if !ok {
 				t.Fatalf("local event %s for %s missing from outbox envelope", eventID, eventType)
+			}
+			if outboxCommandID != commandID {
+				t.Fatalf("command_id mismatch for %s event %s: local=%s outbox=%s", eventType, eventID, commandID, outboxCommandID)
 			}
 		}
 	}
@@ -508,13 +512,13 @@ type syncEnvelopeProbe struct {
 	ShiftID      *string `json:"shift_id"`
 }
 
-func localEventIDsByType(t *testing.T, f *fixture, wanted []string, shiftID string) map[string]map[string]bool {
+func localEventCommandIDsByType(t *testing.T, f *fixture, wanted []string, shiftID string) map[string]map[string]string {
 	t.Helper()
 	want := make(map[string]bool, len(wanted))
-	out := make(map[string]map[string]bool, len(wanted))
+	out := make(map[string]map[string]string, len(wanted))
 	for _, eventType := range wanted {
 		want[eventType] = true
-		out[eventType] = map[string]bool{}
+		out[eventType] = map[string]string{}
 	}
 	rows, err := f.db.QueryContext(f.ctx, `SELECT event_type,event_id,command_id,payload_json,restaurant_id,device_id,shift_id FROM local_event_log`)
 	if err != nil {
@@ -546,7 +550,7 @@ func localEventIDsByType(t *testing.T, f *fixture, wanted []string, shiftID stri
 		if !gotShiftID.Valid || gotShiftID.String != shiftID || envelope.ShiftID == nil || *envelope.ShiftID != shiftID {
 			t.Fatalf("expected shift_id in %s envelope", eventType)
 		}
-		out[eventType][eventID] = true
+		out[eventType][eventID] = commandID
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
@@ -554,13 +558,13 @@ func localEventIDsByType(t *testing.T, f *fixture, wanted []string, shiftID stri
 	return out
 }
 
-func outboxEventIDsByType(t *testing.T, f *fixture, wanted []string) map[string]map[string]bool {
+func outboxEventCommandIDsByType(t *testing.T, f *fixture, wanted []string) map[string]map[string]string {
 	t.Helper()
 	want := make(map[string]bool, len(wanted))
-	out := make(map[string]map[string]bool, len(wanted))
+	out := make(map[string]map[string]string, len(wanted))
 	for _, eventType := range wanted {
 		want[eventType] = true
-		out[eventType] = map[string]bool{}
+		out[eventType] = map[string]string{}
 	}
 	rows, err := f.db.QueryContext(f.ctx, `SELECT command_type,command_id,payload_json FROM pos_sync_outbox`)
 	if err != nil {
@@ -582,7 +586,7 @@ func outboxEventIDsByType(t *testing.T, f *fixture, wanted []string) map[string]
 		if envelope.Version != domain.SyncEnvelopeVersion || envelope.EventType != eventType || envelope.EventID == "" || envelope.CommandID != commandID {
 			t.Fatalf("outbox envelope mismatch for %s", eventType)
 		}
-		out[eventType][envelope.EventID] = true
+		out[eventType][envelope.EventID] = commandID
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)

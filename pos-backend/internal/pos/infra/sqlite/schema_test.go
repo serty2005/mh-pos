@@ -3,6 +3,7 @@ package sqlite_test
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -106,6 +107,44 @@ func TestLocalEventLogRequiresDeviceID(t *testing.T) {
 	_, err := db.ExecContext(ctx, `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES ('local-event-1','edge-event-1','cmd-1','1','OrderCreated','Order','order-1','restaurant-1','','shift-1','{}',?,?)`, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected empty device_id to fail")
+	}
+}
+
+func TestLocalEventCommandIDMigrationBackfillsFromEnvelopePayload(t *testing.T) {
+	ctx := context.Background()
+	db, err := platformsqlite.Open(filepath.Join(t.TempDir(), "pos.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	migrationsDir := filepath.Join("..", "..", "..", "..", "migrations", "sqlite")
+	applyMigrationFile(t, ctx, db, filepath.Join(migrationsDir, "001_init.sql"))
+	applyMigrationFile(t, ctx, db, filepath.Join(migrationsDir, "003_local_event_log.sql"))
+	execSchema(t, ctx, db, `INSERT INTO local_event_log(id,event_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES ('local-event-1','edge-event-1','1','OrderCreated','Order','order-1','restaurant-1','device-1','shift-1','{"command_id":"cmd-from-envelope","event_id":"edge-event-1"}',?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO pos_sync_outbox(id,command_id,origin,restaurant_id,device_id,aggregate_type,aggregate_id,command_type,payload_json,status,attempts,created_at,updated_at) VALUES ('outbox-1','cmd-from-envelope','edge_device','restaurant-1','device-1','Order','order-1','OrderCreated','{"command_id":"cmd-from-envelope","event_id":"edge-event-1"}','pending',0,?,?)`, schemaTestTime, schemaTestTime)
+
+	applyMigrationFile(t, ctx, db, filepath.Join(migrationsDir, "004_local_event_command_id.sql"))
+
+	var localCommandID, outboxCommandID string
+	if err := db.QueryRowContext(ctx, `SELECT command_id FROM local_event_log WHERE id = 'local-event-1'`).Scan(&localCommandID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT command_id FROM pos_sync_outbox WHERE id = 'outbox-1'`).Scan(&outboxCommandID); err != nil {
+		t.Fatal(err)
+	}
+	if localCommandID != "cmd-from-envelope" || localCommandID != outboxCommandID {
+		t.Fatalf("expected matching command_id from envelope payload, local=%q outbox=%q", localCommandID, outboxCommandID)
+	}
+}
+
+func applyMigrationFile(t *testing.T, ctx context.Context, db *sql.DB, path string) {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, string(body)); err != nil {
+		t.Fatal(err)
 	}
 }
 

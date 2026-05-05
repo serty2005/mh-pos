@@ -30,20 +30,30 @@ INSERT INTO local_event_log_next (
   created_at
 )
 SELECT
-  id,
-  event_id,
-  event_id,
-  envelope_version,
-  event_type,
-  aggregate_type,
-  aggregate_id,
-  restaurant_id,
-  device_id,
-  shift_id,
-  payload_json,
-  occurred_at,
-  created_at
-FROM local_event_log;
+  old.id,
+  old.event_id,
+  COALESCE(
+    NULLIF(CAST(CASE WHEN json_valid(old.payload_json) THEN json_extract(old.payload_json, '$.command_id') END AS TEXT), ''),
+    (
+      SELECT outbox.command_id
+      FROM pos_sync_outbox AS outbox
+      WHERE json_valid(outbox.payload_json)
+        AND json_extract(outbox.payload_json, '$.event_id') = old.event_id
+      LIMIT 1
+    ),
+    old.event_id
+  ),
+  old.envelope_version,
+  old.event_type,
+  old.aggregate_type,
+  old.aggregate_id,
+  old.restaurant_id,
+  old.device_id,
+  old.shift_id,
+  old.payload_json,
+  old.occurred_at,
+  old.created_at
+FROM local_event_log AS old;
 
 DROP TABLE local_event_log;
 ALTER TABLE local_event_log_next RENAME TO local_event_log;
