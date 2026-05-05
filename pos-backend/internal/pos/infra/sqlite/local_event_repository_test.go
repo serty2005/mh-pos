@@ -61,6 +61,9 @@ func insertLocalEvent(t *testing.T, repo *possqlite.Repository, ctx context.Cont
 	if event.EnvelopeVersion == "" {
 		event.EnvelopeVersion = domain.SyncEnvelopeVersion
 	}
+	if event.CommandID == "" {
+		event.CommandID = "cmd-" + event.ID
+	}
 	if event.AggregateType == "" {
 		event.AggregateType = "Order"
 	}

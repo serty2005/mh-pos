@@ -76,6 +76,7 @@ func WriteOutbox(ctx context.Context, repo eventOutboxRepository, ids idgen.Gene
 	envelope := domain.SyncEnvelope{
 		Version:       domain.SyncEnvelopeVersion,
 		EventID:       eventID,
+		CommandID:     commandID,
 		EventType:     commandType,
 		AggregateType: aggregateType,
 		AggregateID:   aggregateID,
@@ -92,6 +93,7 @@ func WriteOutbox(ctx context.Context, repo eventOutboxRepository, ids idgen.Gene
 	localEvent := &domain.LocalEvent{
 		ID:              ids.NewID(),
 		EventID:         eventID,
+		CommandID:       commandID,
 		EnvelopeVersion: domain.SyncEnvelopeVersion,
 		EventType:       commandType,
 		AggregateType:   aggregateType,

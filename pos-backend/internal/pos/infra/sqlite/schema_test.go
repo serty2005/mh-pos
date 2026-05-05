@@ -81,18 +81,29 @@ func TestLocalEventLogFoundationTableExists(t *testing.T) {
 
 func TestLocalEventLogRequiresUniqueEdgeEventIdentity(t *testing.T) {
 	db, ctx := newSchemaDB(t)
-	insert := `INSERT INTO local_event_log(id,event_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
-	execSchema(t, ctx, db, insert, "local-event-1", "edge-event-1", "1", "OrderCreated", "Order", "order-1", "restaurant-1", "device-1", "shift-1", `{"event_id":"edge-event-1"}`, schemaTestTime, schemaTestTime)
+	insert := `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+	execSchema(t, ctx, db, insert, "local-event-1", "edge-event-1", "cmd-1", "1", "OrderCreated", "Order", "order-1", "restaurant-1", "device-1", "shift-1", `{"event_id":"edge-event-1"}`, schemaTestTime, schemaTestTime)
 
-	_, err := db.ExecContext(ctx, insert, "local-event-2", "edge-event-1", "1", "OrderCreated", "Order", "order-1", "restaurant-1", "device-1", "shift-1", `{"event_id":"edge-event-1"}`, schemaTestTime, schemaTestTime)
+	_, err := db.ExecContext(ctx, insert, "local-event-2", "edge-event-1", "cmd-2", "1", "OrderCreated", "Order", "order-1", "restaurant-1", "device-1", "shift-1", `{"event_id":"edge-event-1"}`, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected duplicate event_id to fail")
 	}
 }
 
+func TestLocalEventLogRequiresUniqueCommandID(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	insert := `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+	execSchema(t, ctx, db, insert, "local-event-1", "edge-event-1", "cmd-1", "1", "OrderCreated", "Order", "order-1", "restaurant-1", "device-1", "shift-1", `{"command_id":"cmd-1"}`, schemaTestTime, schemaTestTime)
+
+	_, err := db.ExecContext(ctx, insert, "local-event-2", "edge-event-2", "cmd-1", "1", "OrderCreated", "Order", "order-2", "restaurant-1", "device-1", "shift-1", `{"command_id":"cmd-1"}`, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected duplicate command_id to fail")
+	}
+}
+
 func TestLocalEventLogRequiresDeviceID(t *testing.T) {
 	db, ctx := newSchemaDB(t)
-	_, err := db.ExecContext(ctx, `INSERT INTO local_event_log(id,event_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES ('local-event-1','edge-event-1','1','OrderCreated','Order','order-1','restaurant-1','','shift-1','{}',?,?)`, schemaTestTime, schemaTestTime)
+	_, err := db.ExecContext(ctx, `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES ('local-event-1','edge-event-1','cmd-1','1','OrderCreated','Order','order-1','restaurant-1','','shift-1','{}',?,?)`, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected empty device_id to fail")
 	}

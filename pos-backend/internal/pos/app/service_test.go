@@ -15,6 +15,7 @@ import (
 	"pos-backend/internal/pos/app"
 	"pos-backend/internal/pos/domain"
 	possqlite "pos-backend/internal/pos/infra/sqlite"
+	"pos-backend/internal/pos/ports"
 )
 
 type testIDs struct {
@@ -30,6 +31,27 @@ type fixedClock struct{}
 
 func (fixedClock) Now() time.Time {
 	return time.Date(2026, 5, 4, 20, 0, 0, 0, time.UTC)
+}
+
+var (
+	errInjectedLocalEvent = errors.New("injected local event failure")
+	errInjectedOutbox     = errors.New("injected outbox failure")
+)
+
+type localEventFailingRepo struct {
+	ports.Repository
+}
+
+func (r localEventFailingRepo) CreateLocalEvent(context.Context, *domain.LocalEvent) error {
+	return errInjectedLocalEvent
+}
+
+type outboxFailingRepo struct {
+	ports.Repository
+}
+
+func (r outboxFailingRepo) CreateOutboxMessage(context.Context, *domain.OutboxMessage) error {
+	return errInjectedOutbox
 }
 
 type fixture struct {
@@ -142,7 +164,7 @@ func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
-	case "orders", "pos_sync_outbox", "local_event_log", "roles", "catalog_items", "menu_items":
+	case "orders", "order_lines", "pos_sync_outbox", "local_event_log", "roles", "catalog_items", "menu_items":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -206,6 +228,60 @@ func TestDuplicateCommandIDDoesNotCreateDuplicateOrderOrOutbox(t *testing.T) {
 	}
 	if events := countRows(t, f, "local_event_log"); events != eventsBefore+1 {
 		t.Fatalf("expected one local event row, before=%d after=%d", eventsBefore, events)
+	}
+}
+
+func TestRollbackRemovesDomainWriteWhenLocalEventWriteFails(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	ordersBefore := countRows(t, f, "orders")
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+	service := app.NewService(localEventFailingRepo{Repository: f.repo}, platformsqlite.NewTxManager(f.db), &testIDs{n: 1000}, fixedClock{})
+
+	_, err := service.CreateOrder(f.ctx, app.CreateOrderCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-local-event-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		TableName:   "A1",
+		GuestCount:  1,
+	})
+	if !errors.Is(err, errInjectedLocalEvent) {
+		t.Fatalf("expected injected local event failure, got %v", err)
+	}
+	if orders := countRows(t, f, "orders"); orders != ordersBefore {
+		t.Fatalf("expected no partial order write, before=%d after=%d", ordersBefore, orders)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no partial outbox write, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected no partial local event write, before=%d after=%d", eventsBefore, events)
+	}
+}
+
+func TestRollbackRemovesDomainAndLocalEventWhenOutboxWriteFails(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	ordersBefore := countRows(t, f, "orders")
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+	service := app.NewService(outboxFailingRepo{Repository: f.repo}, platformsqlite.NewTxManager(f.db), &testIDs{n: 2000}, fixedClock{})
+
+	_, err := service.CreateOrder(f.ctx, app.CreateOrderCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-outbox-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		TableName:   "A1",
+		GuestCount:  1,
+	})
+	if !errors.Is(err, errInjectedOutbox) {
+		t.Fatalf("expected injected outbox failure, got %v", err)
+	}
+	if orders := countRows(t, f, "orders"); orders != ordersBefore {
+		t.Fatalf("expected no partial order write, before=%d after=%d", ordersBefore, orders)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected no partial local event write, before=%d after=%d", eventsBefore, events)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no partial outbox write, before=%d after=%d", outboxBefore, outbox)
 	}
 }
 
@@ -402,7 +478,7 @@ func TestKeyWritesCreateLocalEventsAndMatchingOutboxEnvelopes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	eventTypes := []string{"ShiftOpened", "ShiftClosed", "OrderCreated", "CheckCreated", "PaymentCaptured"}
+	eventTypes := []string{"ShiftOpened", "ShiftClosed", "OrderCreated", "OrderLineAdded", "OrderClosed", "CheckCreated", "PaymentCaptured"}
 	local := localEventIDsByType(t, f, eventTypes, shift.ID)
 	outbox := outboxEventIDsByType(t, f, eventTypes)
 	for _, eventType := range eventTypes {
@@ -425,6 +501,7 @@ func TestKeyWritesCreateLocalEventsAndMatchingOutboxEnvelopes(t *testing.T) {
 type syncEnvelopeProbe struct {
 	Version      string  `json:"version"`
 	EventID      string  `json:"event_id"`
+	CommandID    string  `json:"command_id"`
 	EventType    string  `json:"event_type"`
 	RestaurantID *string `json:"restaurant_id"`
 	DeviceID     string  `json:"device_id"`
@@ -439,15 +516,15 @@ func localEventIDsByType(t *testing.T, f *fixture, wanted []string, shiftID stri
 		want[eventType] = true
 		out[eventType] = map[string]bool{}
 	}
-	rows, err := f.db.QueryContext(f.ctx, `SELECT event_type,event_id,payload_json,restaurant_id,device_id,shift_id FROM local_event_log`)
+	rows, err := f.db.QueryContext(f.ctx, `SELECT event_type,event_id,command_id,payload_json,restaurant_id,device_id,shift_id FROM local_event_log`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var eventType, eventID, payload, deviceID string
+		var eventType, eventID, commandID, payload, deviceID string
 		var restaurantID, gotShiftID sql.NullString
-		if err := rows.Scan(&eventType, &eventID, &payload, &restaurantID, &deviceID, &gotShiftID); err != nil {
+		if err := rows.Scan(&eventType, &eventID, &commandID, &payload, &restaurantID, &deviceID, &gotShiftID); err != nil {
 			t.Fatal(err)
 		}
 		if !want[eventType] {
@@ -457,7 +534,7 @@ func localEventIDsByType(t *testing.T, f *fixture, wanted []string, shiftID stri
 		if err := json.Unmarshal([]byte(payload), &envelope); err != nil {
 			t.Fatal(err)
 		}
-		if envelope.Version != domain.SyncEnvelopeVersion || envelope.EventID != eventID || envelope.EventType != eventType {
+		if envelope.Version != domain.SyncEnvelopeVersion || envelope.EventID != eventID || envelope.CommandID != commandID || envelope.EventType != eventType {
 			t.Fatalf("local event envelope mismatch for %s", eventType)
 		}
 		if !restaurantID.Valid || restaurantID.String != f.restaurant.ID || envelope.RestaurantID == nil || *envelope.RestaurantID != f.restaurant.ID {
@@ -485,14 +562,14 @@ func outboxEventIDsByType(t *testing.T, f *fixture, wanted []string) map[string]
 		want[eventType] = true
 		out[eventType] = map[string]bool{}
 	}
-	rows, err := f.db.QueryContext(f.ctx, `SELECT command_type,payload_json FROM pos_sync_outbox`)
+	rows, err := f.db.QueryContext(f.ctx, `SELECT command_type,command_id,payload_json FROM pos_sync_outbox`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var eventType, payload string
-		if err := rows.Scan(&eventType, &payload); err != nil {
+		var eventType, commandID, payload string
+		if err := rows.Scan(&eventType, &commandID, &payload); err != nil {
 			t.Fatal(err)
 		}
 		if !want[eventType] {
@@ -502,7 +579,7 @@ func outboxEventIDsByType(t *testing.T, f *fixture, wanted []string) map[string]
 		if err := json.Unmarshal([]byte(payload), &envelope); err != nil {
 			t.Fatal(err)
 		}
-		if envelope.Version != domain.SyncEnvelopeVersion || envelope.EventType != eventType || envelope.EventID == "" {
+		if envelope.Version != domain.SyncEnvelopeVersion || envelope.EventType != eventType || envelope.EventID == "" || envelope.CommandID != commandID {
 			t.Fatalf("outbox envelope mismatch for %s", eventType)
 		}
 		out[eventType][envelope.EventID] = true

@@ -9,8 +9,8 @@ import (
 )
 
 func (r *Repository) CreateLocalEvent(ctx context.Context, v *domain.LocalEvent) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO local_event_log(id,event_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.EventID, v.EnvelopeVersion, v.EventType, v.AggregateType, v.AggregateID, nullableString(v.RestaurantID), v.DeviceID, nullableString(v.ShiftID), v.PayloadJSON, dbTime(v.OccurredAt), dbTime(v.CreatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.EventID, v.CommandID, v.EnvelopeVersion, v.EventType, v.AggregateType, v.AggregateID, nullableString(v.RestaurantID), v.DeviceID, nullableString(v.ShiftID), v.PayloadJSON, dbTime(v.OccurredAt), dbTime(v.CreatedAt))
 	return normalizeErr(err)
 }
 
@@ -19,7 +19,7 @@ func (r *Repository) ListLocalEvents(ctx context.Context, limit int, eventType s
 		limit = 100
 	}
 	eventType = strings.TrimSpace(eventType)
-	query := `SELECT id,event_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at FROM local_event_log`
+	query := `SELECT id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at FROM local_event_log`
 	args := []any{}
 	if eventType != "" {
 		query += ` WHERE event_type = ?`
@@ -59,7 +59,7 @@ func scanLocalEventRows(row localEventScanner) (*domain.LocalEvent, error) {
 	var v domain.LocalEvent
 	var restaurantID, shiftID sql.NullString
 	var occurred, created string
-	if err := row.Scan(&v.ID, &v.EventID, &v.EnvelopeVersion, &v.EventType, &v.AggregateType, &v.AggregateID, &restaurantID, &v.DeviceID, &shiftID, &v.PayloadJSON, &occurred, &created); err != nil {
+	if err := row.Scan(&v.ID, &v.EventID, &v.CommandID, &v.EnvelopeVersion, &v.EventType, &v.AggregateType, &v.AggregateID, &restaurantID, &v.DeviceID, &shiftID, &v.PayloadJSON, &occurred, &created); err != nil {
 		return nil, err
 	}
 	v.RestaurantID = stringPtr(restaurantID)

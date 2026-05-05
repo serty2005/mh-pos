@@ -7,6 +7,7 @@ const SyncEnvelopeVersion = "1"
 type LocalEvent struct {
 	ID              string    `json:"id"`
 	EventID         string    `json:"event_id"`
+	CommandID       string    `json:"command_id"`
 	EnvelopeVersion string    `json:"envelope_version"`
 	EventType       string    `json:"event_type"`
 	AggregateType   string    `json:"aggregate_type"`
@@ -22,6 +23,7 @@ type LocalEvent struct {
 type SyncEnvelope struct {
 	Version       string    `json:"version"`
 	EventID       string    `json:"event_id"`
+	CommandID     string    `json:"command_id"`
 	EventType     string    `json:"event_type"`
 	AggregateType string    `json:"aggregate_type"`
 	AggregateID   string    `json:"aggregate_id"`

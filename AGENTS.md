@@ -282,7 +282,7 @@ local_event_log
 pos_sync_outbox
 ```
 
-`local_event_log` хранит локальные события для операционного аудита и будущей синхронизации. `pos_sync_outbox` хранит команды/события для retry-safe отправки.
+`local_event_log` хранит локальные события для операционного аудита и будущей синхронизации. `pos_sync_outbox` хранит команды/события для retry-safe отправки. Одна write-операция использует один `command_id`: он хранится в `local_event_log`, в `pos_sync_outbox` и внутри `SyncEnvelope` payload.
 
 Read-only operational endpoints:
 
@@ -294,6 +294,8 @@ GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated
 Каждый command:
 
 - `command_id`
+- `event_id`
+- `envelope_version`
 - `device_id`
 - `aggregate_type`
 - `aggregate_id`

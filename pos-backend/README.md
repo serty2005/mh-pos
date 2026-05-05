@@ -76,7 +76,7 @@ Bootstrap note: before the real POS device is registered, bootstrap writes use a
 
 Outbox note: `pos_sync_outbox.device_id` is always non-empty. `restaurant_id` may be `NULL` for Phase 1 global dictionaries such as roles, catalog items, and menu items because they are not restaurant-scoped yet; this is intentional and separate from the mandatory `device_id` observability contract.
 
-Local events note: write use cases store a matching local event in `local_event_log` in the same SQLite transaction as the outbox row. The read-only endpoint `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated` is for operational inspection and does not change write semantics.
+Local events note: write use cases store a matching local event in `local_event_log` in the same SQLite transaction as the outbox row. The same `command_id` is stored in `local_event_log`, in `pos_sync_outbox`, and in the `SyncEnvelope` JSON payload together with `event_id`, aggregate metadata, `device_id`, optional `restaurant_id`, optional `shift_id`, and the domain payload. The read-only endpoint `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated` is for operational inspection and does not change write semantics.
 
 ## Tests
 
