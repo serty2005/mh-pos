@@ -520,4 +520,34 @@ COMMIT
 - Scope: POS Edge Backend (Phase 1)
 - Edge foundation: `local_event_log` + `pos_sync_outbox`
 - Operational read-only endpoints: sync outbox and local events
-- Cloud: not implemented yet
+- Cloud: minimal `cloud-backend/` Sync Receiver implemented; Cloud is not a runtime dependency for critical POS Edge writes
+
+---
+
+# Phase 0/2 Cloud Sync Receiver Status
+
+The repository now includes a minimal `cloud-backend/` module for Cloud Sync Receiver foundation.
+
+Implemented Cloud scope:
+
+- Go entrypoint: `cloud-backend/cmd/cloud-api`
+- PostgreSQL bootstrap and migrations: `cloud-backend/migrations/postgres`
+- Health endpoint: `GET /health`
+- Edge event receive endpoint: `POST /api/v1/sync/edge-events`
+- Accepted current Edge events: `ShiftOpened`, `ShiftClosed`, `OrderCreated`, `OrderLineAdded`, `CheckCreated`, `PaymentCaptured`, `OrderClosed`
+- Idempotent insert/dedupe using `restaurant_id:device_id:edge_event_id`
+- Raw full `SyncEnvelope` storage
+- Stable ack on duplicate replay
+
+Cloud commands:
+
+```powershell
+cd cloud-backend
+go test ./...
+$env:CLOUD_POSTGRES_DSN="postgres://postgres:postgres@localhost:5432/mh_pos_cloud?sslmode=disable"
+go run ./cmd/cloud-api
+```
+
+Sync contract docs: `docs/sync/edge-cloud-contracts-v1.md`.
+
+Important invariant: Cloud receiver must not become a runtime dependency for critical POS Edge writes. Edge still works offline; Cloud only receives outbox events asynchronously.

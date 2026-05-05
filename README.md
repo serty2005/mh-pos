@@ -107,6 +107,28 @@ go test ./...
 - Phase 1: POS Edge Backend foundation.
 - `local_event_log` уже является частью edge foundation, хранит `command_id` той же write-операции, что и outbox, и доступен read-only через `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`.
 - Sync outbox доступен через `GET /api/v1/sync/outbox`.
-- Cloud: не реализован.
+- Cloud: минимальный `cloud-backend/` Sync Receiver реализован; Cloud не является зависимостью для критических POS Edge операций.
 - POS UI: не реализован.
 - Source of truth для активных POS операций: локальный POS Edge Node.
+
+## Phase 0/2 Sync Receiver Update
+
+Репозиторий теперь включает минимальный `cloud-backend/`:
+
+- Go Cloud API entrypoint: `cloud-backend/cmd/cloud-api`
+- PostgreSQL bootstrap и migrations: `cloud-backend/migrations/postgres`
+- health endpoint: `GET /health`
+- Edge event receiver: `POST /api/v1/sync/edge-events`
+- idempotent receive/dedupe для текущих POS Edge events
+- raw `SyncEnvelope` storage до будущих Cloud projections
+
+Контракты синхронизации и idempotency rules зафиксированы в `docs/sync/edge-cloud-contracts-v1.md`.
+
+Cloud backend команды:
+
+```powershell
+cd cloud-backend
+go test ./...
+$env:CLOUD_POSTGRES_DSN="postgres://postgres:postgres@localhost:5432/mh_pos_cloud?sslmode=disable"
+go run ./cmd/cloud-api
+```
