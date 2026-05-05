@@ -355,6 +355,29 @@ func TestOutboxEntryCreatedForEachWriteAction(t *testing.T) {
 	}
 }
 
+func TestListLocalEventsThroughServiceSupportsLimitAndFilter(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := f.service.ListLocalEvents(f.ctx, app.ListLocalEventsQuery{EventType: "OrderCreated", Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(events), 1; got != want {
+		t.Fatalf("expected %d event, got %d", want, got)
+	}
+	if events[0].EventType != "OrderCreated" || events[0].AggregateID != order.ID {
+		t.Fatalf("unexpected event: type=%s aggregate_id=%s", events[0].EventType, events[0].AggregateID)
+	}
+}
+
 func TestKeyWritesCreateLocalEventsAndMatchingOutboxEnvelopes(t *testing.T) {
 	f := newFixture(t)
 	shift := f.openShift(t)

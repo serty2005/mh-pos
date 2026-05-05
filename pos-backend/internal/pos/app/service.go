@@ -42,6 +42,11 @@ type CreateCheckCommand = appcheck.CreateCheckCommand
 type CapturePaymentCommand = appcheck.CapturePaymentCommand
 type CloseOrderCommand = apporder.CloseOrderCommand
 
+type ListLocalEventsQuery struct {
+	Limit     int
+	EventType string
+}
+
 type Service struct {
 	restaurants *apprestaurant.Service
 	devices     *appdevice.Service
@@ -51,6 +56,7 @@ type Service struct {
 	shifts      *appshift.Service
 	orders      *apporder.Service
 	checks      *appcheck.Service
+	localEvents ports.LocalEventRepository
 	outbox      *shared.OutboxService
 }
 
@@ -64,6 +70,7 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 		shifts:      appshift.NewService(repo, tx, ids, clock),
 		orders:      apporder.NewService(repo, tx, ids, clock),
 		checks:      appcheck.NewService(repo, tx, ids, clock),
+		localEvents: repo,
 		outbox:      shared.NewOutboxService(repo, clock),
 	}
 }
@@ -162,6 +169,10 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 
 func (s *Service) ListOutbox(ctx context.Context, limit int) ([]domain.OutboxMessage, error) {
 	return s.outbox.ListOutbox(ctx, limit)
+}
+
+func (s *Service) ListLocalEvents(ctx context.Context, query ListLocalEventsQuery) ([]domain.LocalEvent, error) {
+	return s.localEvents.ListLocalEvents(ctx, query.Limit, query.EventType)
 }
 
 func (s *Service) MarkOutboxSent(ctx context.Context, id string) error {

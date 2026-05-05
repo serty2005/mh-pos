@@ -2,7 +2,7 @@
 
 ## Быстрый Старт Для Агентов
 
-Перед любыми изменениями держи в голове главные инварианты: POS должен работать offline, все write use case выполняются в транзакции, outbox пишется в той же транзакции, закрытые заказы не меняются, смена на device может быть только одна активная.
+Перед любыми изменениями держи в голове главные инварианты: POS должен работать offline, все write use case выполняются в транзакции, `local_event_log` и outbox пишутся в той же транзакции, закрытые заказы не меняются, смена на device может быть только одна активная.
 
 ### Карта Репозитория
 
@@ -19,7 +19,7 @@
 |   |-- internal/pos/domain/  # бизнес-модели, ошибки, инварианты
 |   |-- internal/pos/ports/   # интерфейсы репозиториев
 |   |-- internal/pos/infra/   # реализации портов, сейчас SQLite
-|   |-- migrations/sqlite/    # schema migrations
+|   |-- migrations/sqlite/    # schema migrations, включая local_event_log и pos_sync_outbox
 |   `-- docs/                 # проектные отчеты backend
 |-- .codex/skills/            # локальные Codex skills
 |-- pack_go_files.py          # вспомогательный скрипт упаковки Go-файлов
@@ -35,6 +35,7 @@
 - Добавить repository contract: `pos-backend/internal/pos/ports/`
 - Реализовать SQLite storage: `pos-backend/internal/pos/infra/sqlite/`
 - Изменить схему БД: `pos-backend/migrations/sqlite/`
+- Проверить read-only sync endpoints: `GET /api/v1/sync/outbox`, `GET /api/v1/sync/local-events`
 - Проверить архитектурные import rules: `pos-backend/internal/pos/architecture_test.go`
 - Проверить schema/invariant tests: `pos-backend/internal/pos/infra/sqlite/schema_test.go`
 - Посмотреть отчет по текущей фазе: `pos-backend/docs/phase-1-report.md`
@@ -62,7 +63,7 @@ docker compose up --build
 1. Проверь доменный инвариант.
 2. Открой транзакцию.
 3. Выполни repository writes.
-4. Запиши command/event в `pos_sync_outbox`.
+4. Запиши local event в `local_event_log` и command/event в `pos_sync_outbox` в той же транзакции.
 5. Закоммить транзакцию.
 6. Добавь тест на invalid state transition или boundary case.
 
@@ -205,6 +206,7 @@ domain -> app -> ports -> infra
 - checks
 - payments
 - shifts
+- `local_event_log`
 - sync outbox
 - foundation для recipes/inventory/accounting в схеме и repository layer
 
@@ -273,10 +275,20 @@ Order -> Check -> Payments
 
 ## Outbox Pattern
 
-Все действия пишутся в:
+Все write-действия пишутся в local edge foundation:
 
 ```text
+local_event_log
 pos_sync_outbox
+```
+
+`local_event_log` хранит локальные события для операционного аудита и будущей синхронизации. `pos_sync_outbox` хранит команды/события для retry-safe отправки.
+
+Read-only operational endpoints:
+
+```text
+GET /api/v1/sync/outbox?limit=50
+GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated
 ```
 
 Каждый command:
@@ -496,10 +508,14 @@ COMMIT
 
 а не "гибкость" или "универсальность".
 
+В конце каждой итерации агент обязан синхронизировать `AGENTS.md` и `README.md` с фактическим состоянием репозитория, если структура, статус или доступные backend capabilities изменились.
+
 ---
 
 # Status
 
-- Version: 1.1
+- Version: 1.2
 - Scope: POS Edge Backend (Phase 1)
+- Edge foundation: `local_event_log` + `pos_sync_outbox`
+- Operational read-only endpoints: sync outbox and local events
 - Cloud: not implemented yet

@@ -61,6 +61,7 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Get("/sync/outbox", h.listOutbox)
 		r.Post("/sync/outbox/{id}/mark-sent", h.markOutboxSent)
 		r.Post("/sync/outbox/{id}/mark-failed", h.markOutboxFailed)
+		r.Get("/sync/local-events", h.listLocalEvents)
 	})
 
 	return r
@@ -279,6 +280,15 @@ func (h *Handler) capturePayment(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) listOutbox(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	v, err := h.service.ListOutbox(r.Context(), limit)
+	writeOK(w, v, err)
+}
+
+func (h *Handler) listLocalEvents(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	v, err := h.service.ListLocalEvents(r.Context(), app.ListLocalEventsQuery{
+		Limit:     limit,
+		EventType: r.URL.Query().Get("event_type"),
+	})
 	writeOK(w, v, err)
 }
 

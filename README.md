@@ -64,7 +64,8 @@ go run ./cmd/pos-edge
 - локальное хранение POS данных в SQLite;
 - JSON API для POS UI;
 - доменные инварианты заказов, чеков, оплат и смен;
-- sync outbox foundation;
+- edge foundation для `local_event_log` и sync outbox;
+- read-only operational access к sync outbox и local events;
 - foundation для будущих рецептов, склада и учета.
 
 Архитектура внутри backend:
@@ -104,6 +105,8 @@ go test ./...
 ## Статус
 
 - Phase 1: POS Edge Backend foundation.
+- `local_event_log` уже является частью edge foundation и доступен read-only через `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`.
+- Sync outbox доступен через `GET /api/v1/sync/outbox`.
 - Cloud: не реализован.
 - POS UI: не реализован.
 - Source of truth для активных POS операций: локальный POS Edge Node.

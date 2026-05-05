@@ -1,6 +1,6 @@
 # MyHoReCa POS Edge Backend
 
-Foundation for the POS Edge Backend: a local JSON API service with SQLite persistence, domain invariants, and a sync outbox. This repository intentionally implements only the POS Edge Backend. POS UI, Cloud Backend, Back Office UI, PostgreSQL, fiscalization, reporting, integrations, recipes, and inventory are out of scope for this phase.
+Foundation for the POS Edge Backend: a local JSON API service with SQLite persistence, domain invariants, `local_event_log`, and a sync outbox. This repository intentionally implements only the POS Edge Backend. POS UI, Cloud Backend, Back Office UI, PostgreSQL, fiscalization, reporting, integrations, recipes, and inventory are out of scope for this phase.
 
 ## Stack
 
@@ -68,11 +68,15 @@ $check = curl -s -X POST "http://localhost:8080/api/v1/orders/$($order.id)/check
 curl -s -X POST "http://localhost:8080/api/v1/checks/$($check.id)/payments" -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"method`":`"cash`",`"amount`":$($check.total),`"currency`":`"RUB`"}"
 curl -s -X POST "http://localhost:8080/api/v1/orders/$($order.id)/close" -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`"}"
 curl -s http://localhost:8080/api/v1/sync/outbox
+curl -s "http://localhost:8080/api/v1/sync/local-events?limit=50"
+curl -s "http://localhost:8080/api/v1/sync/local-events?limit=50&event_type=OrderCreated"
 ```
 
 Bootstrap note: before the real POS device is registered, bootstrap writes use a stable local bootstrap id such as `bootstrap-$env:COMPUTERNAME` as `device_id`. After `/devices/register` returns the real device aggregate id, all regular POS writes should use `$device.id`.
 
 Outbox note: `pos_sync_outbox.device_id` is always non-empty. `restaurant_id` may be `NULL` for Phase 1 global dictionaries such as roles, catalog items, and menu items because they are not restaurant-scoped yet; this is intentional and separate from the mandatory `device_id` observability contract.
+
+Local events note: write use cases store a matching local event in `local_event_log` in the same SQLite transaction as the outbox row. The read-only endpoint `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated` is for operational inspection and does not change write semantics.
 
 ## Tests
 
