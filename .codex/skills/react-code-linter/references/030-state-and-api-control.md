@@ -1,7 +1,7 @@
 ---
-description: State ownership + API discipline (loading/error/success, retry, contracts) для React
+description: State ownership and API discipline for React: loading/error/success, retry, contracts
 globs:
-  - *.{ts,tsx,js,jsx}"
+  - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 
@@ -9,33 +9,33 @@ alwaysApply: true
 
 ## State ownership
 
-- **local state** (useState/useReducer) → по умолчанию.
-- **context** → в основном для DI / cross-cutting (theme, auth, i18n), а не для бизнес‑state.
-- **global state** (redux/zustand/mobx/rtk-query и т.п.) → только при явном обосновании (несколько страниц, сложная синхронизация, кэш).
+- **local state** (`useState` / `useReducer`) is the default.
+- **context** is mainly for dependency injection or cross-cutting concerns such as theme, auth, and i18n, not for business state.
+- **global state** such as Redux, Zustand, MobX, RTK Query, etc. is allowed only with explicit justification: multiple pages, complex synchronization, or caching.
 
 ## Data fetching / API
 
-- Все HTTP вызовы — только в data/service слое (API client).
-- Компоненты не должны знать про URL/headers/token refresh — только про «use-case»/метод сервиса.
-- DTO → маппинг в UI model (и обратно) должен быть явным.
+- All HTTP calls must live only in the data/service layer, such as an API client.
+- Components must not know about URLs, headers, or token refresh. They should only know about use-cases or service methods.
+- DTO → UI model mapping, and UI model → DTO mapping, must be explicit.
 
-## Async state machine (обязательное)
+## Async state machine (mandatory)
 
-Для любого async сценария должны быть учтены состояния:
+Every async scenario must account for these states:
 
 - loading
 - success
 - error
-- empty (если применимо)
+- empty, if applicable
 
-Опционально:
+Optional states:
 
-- retry (для transient ошибок)
-- partial success (если страница состоит из независимых виджетов)
+- retry, for transient errors
+- partial success, if the page consists of independent widgets
 
-## ❌ Запрещено
+## ❌ Forbidden
 
-- unhandled promises / «потерянные» async ошибки
+- unhandled promises or lost async errors
 - silent catch
-- обновление state после unmount без защиты
-- гонки запросов без отмены/дедупликации (если сценарий допускает)
+- updating state after unmount without protection
+- request races without cancellation or deduplication, if the scenario allows them

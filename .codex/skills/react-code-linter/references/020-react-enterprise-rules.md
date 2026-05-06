@@ -1,38 +1,38 @@
 ---
-description: React правила уровня enterprise (архитектура, компоненты, слои) для React
+description: Enterprise-level React rules for architecture, components, and layers
 globs:
-  - *.{ts,tsx,js,jsx}"
+  - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 
 # REACT HARD RULES
 
-## Архитектура
+## Architecture
 
-- Только functional components (классовые компоненты — запрещены).
-- Строгая изоляция слоёв и ответственностей.
-- Явный ownership state и границы компонентов.
+- Use functional components only. Class components are forbidden.
+- Maintain strict isolation of layers and responsibilities.
+- Define explicit state ownership and component boundaries.
 
-## Слои (обязательная дисциплина)
+## Layers (mandatory discipline)
 
-- **UI**: рендер + обработчики UI событий (без бизнес‑логики).
-- **Logic (domain/use-cases)**: бизнес‑правила, преобразования, оркестрация.
-- **Data (API/storage)**: HTTP, localStorage/sessionStorage, маппинг DTO, кеширование.
-- **Contracts**: типы запросов/ответов, схемы валидации (если есть).
+- **UI**: rendering and UI event handlers only; no business logic.
+- **Logic (domain/use-cases)**: business rules, transformations, orchestration.
+- **Data (API/storage)**: HTTP, localStorage/sessionStorage, DTO mapping, caching.
+- **Contracts**: request/response types and validation schemas, if present.
 
-## ❌ Запрещено
+## ❌ Forbidden
 
-- бизнес‑логика в UI компонентах
-- прямые API вызовы из компонентов (кроме тонких «page orchestrator» компонентов — и то по строгому обоснованию)
-- смешивание DTO/transport моделей с UI моделями без явного маппинга
-- side effects в render (любой effect только через `useEffect`/hooks)
+- business logic inside UI components
+- direct API calls from components, except thin page orchestrator components with strict justification
+- mixing DTO / transport models with UI models without explicit mapping
+- side effects during render; every effect must go through `useEffect` or hooks
 
-## Компоненты
+## Components
 
-- маленькие, предсказуемые, переиспользуемые
-- props → минимальны и типизированы
-- избегай «god component» (компонент на 500+ строк — сигнал к декомпозиции)
+- Keep components small, predictable, and reusable.
+- Keep props minimal and typed.
+- Avoid god components; a 500+ line component is a decomposition signal.
 
 ## Routing
 
-- route-level компоненты — «composition root» для страницы: подключают data/logic, но UI выносят в отдельные компоненты.
+- Route-level components are the page composition root: they connect data and logic, while UI is extracted into separate components.

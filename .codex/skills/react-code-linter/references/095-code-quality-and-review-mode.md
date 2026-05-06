@@ -1,37 +1,37 @@
 ---
-description: Code quality + refactoring discipline + review mode (front_new)
+description: Frontend code quality, refactoring discipline, and review mode (front_new)
 globs:
-  - *.{ts,tsx,js,jsx}"
+  - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 
 # CODE QUALITY (FRONTEND)
 
-## ❌ Запрещено
+## ❌ Forbidden
 
-- дублирование
-- магия и скрытая логика
-- «TODO в проде» без тикета/плана
-- неявные side effects
+- duplication
+- magic and hidden logic
+- production TODOs without a ticket or plan
+- implicit side effects
 
-## ✅ Принцип
+## ✅ Principle
 
 - explicit > implicit
 - readable > clever
 
 ## REFACTORING DISCIPLINE
 
-- Не делать «рефакторинг ради рефакторинга» без запроса.
-- Рефакторинг допустим только если он **необходим** для задачи (и минимален).
+- Do not refactor for the sake of refactoring without a request.
+- Refactoring is allowed only when it is necessary for the task, and it must be minimal.
 
 ## REVIEW MODE (MANDATORY)
 
-Перед финальным ответом/PR ассистент обязан проверить:
+Before the final response or PR, the assistant must verify:
 
-1. масштабируемо ли (perf, поддержка роста функционала)
-2. читаемо ли (простая навигация, адекватные имена)
-3. нет ли скрытой логики
-4. учтены ли edge cases
-5. обработаны ли ошибки
-6. соблюдены ли security правила
-7. прошёл бы строгий code review
+1. whether it scales: performance and support for functional growth
+2. whether it is readable: simple navigation and appropriate names
+3. whether there is hidden logic
+4. whether edge cases are covered
+5. whether errors are handled
+6. whether security rules are followed
+7. whether it would pass strict code review

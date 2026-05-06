@@ -1,31 +1,31 @@
 ---
-description: Универсальная защита от галлюцинаций для React
+description: Universal anti-hallucination protection for React
 globs:
-  - *.{ts,tsx,js,jsx}"
+  - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 
 # 🚨 ANTI-HALLUCINATION (CRITICAL)
 
-Если ты НЕ уверен на 100%:
+If you are not 100% sure about:
 
-- в API браузера / Node
-- в версии React/Vite/Router/библиотеки
-- в поведении fetch/axios/кэша/ретраев
-- в формате контрактов backend
-- в правилах CORS/Auth/CSRF
+- browser or Node APIs
+- React / Vite / Router / library versions
+- fetch / axios / cache / retry behavior
+- backend contract formats
+- CORS / Auth / CSRF rules
 
-## ❌ ЗАПРЕЩЕНО
+## ❌ FORBIDDEN
 
-- придумывать API/хуки/опции конфигов
-- угадывать сигнатуры
-- использовать «похожие» методы
-- ссылаться на несуществующие возможности
+- inventing APIs, hooks, or config options
+- guessing signatures
+- using similar-looking methods without verification
+- referencing non-existent capabilities
 
-## ✅ ВМЕСТО ЭТОГО
+## ✅ INSTEAD
 
-- Пиши явно: **«Требуется уточнить версию … / проверить документацию …»**
-- Если есть риск несовместимости: **«Возможна несовместимость — нужно проверить версию»**
-- Если решения зависят от контекста: перечисли допущения и предложи 2–3 варианта
+- Write explicitly: **"The version must be clarified / the documentation must be checked."**
+- If there is a compatibility risk: **"There may be an incompatibility — the version must be checked."**
+- If the solution depends on context, list assumptions and propose 2–3 options.
 
-Галлюцинация = критическая ошибка.
+Hallucination is a critical error.

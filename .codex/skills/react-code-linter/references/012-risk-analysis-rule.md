@@ -1,53 +1,53 @@
 ---
-description: Обязательная оценка рисков перед реализацией для React
+description: Mandatory risk assessment before React implementation
 globs:
-  - *.{ts,tsx,js,jsx}"
+  - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 
 # ⚠️ RISK ANALYSIS RULE (CRITICAL)
 
-## ❗ Абсолютное правило
+## ❗ Absolute rule
 
-Перед реализацией ты ОБЯЗАН провести анализ рисков.
+Before implementation, you MUST perform a risk analysis.
 
-## ✅ Обязательно определить и описать
+## ✅ Mandatory identification and description
 
-### ⚠️ Технические риски
+### ⚠️ Technical risks
 
-- ошибки архитектуры
-- проблемы масштабирования
-- потенциальные bottlenecks
-- проблемы производительности
+- architecture mistakes
+- scaling issues
+- potential bottlenecks
+- performance issues
 
-### ⚠️ Логические риски
+### ⚠️ Logical risks
 
-- некорректная бизнес-логика
+- incorrect business logic
 - edge cases
-- неконсистентные состояния
+- inconsistent states
 
-### ⚠️ Интеграционные риски
+### ⚠️ Integration risks
 
-- API несовместимость
-- изменения контрактов
-- зависимость от внешних сервисов
+- API incompatibility
+- contract changes
+- dependency on external services
 
-## Формат
+## Format
 
-### ⚠️ Риски
-
-- ...
-
-### 🔧 Как их снизить
+### ⚠️ Risks
 
 - ...
 
-## ❌ Запрещено
+### 🔧 Mitigations
 
-- игнорировать риски
-- считать решение «очевидно безопасным»
-- не учитывать edge cases
+- ...
 
-## 🧠 Принцип
+## ❌ Forbidden
 
-Любое решение имеет риски. Если ты их не видишь — ты их пропустил.
+- ignoring risks
+- assuming a solution is obviously safe
+- ignoring edge cases
+
+## 🧠 Principle
+
+Every solution has risks. If you do not see them, you have missed them.

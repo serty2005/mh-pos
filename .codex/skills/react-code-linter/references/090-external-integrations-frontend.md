@@ -1,28 +1,28 @@
 ---
-description: Паттерны внешних интеграций (frontend): contracts, resilience, idempotency
+description: Frontend external integration patterns: contracts, resilience, idempotency
 globs:
-  - *.{ts,tsx,js,jsx}"
+  - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 
 # EXTERNAL INTEGRATIONS (FRONTEND)
 
-## Контракты и совместимость
+## Contracts and compatibility
 
-- API контракты должны быть типизированы (DTO) и иметь явный маппинг в UI модели.
-- Backward compatibility: UI должен быть устойчив к отсутствию новых полей и появлению дополнительных.
+- API contracts must be typed as DTOs and explicitly mapped to UI models.
+- Backward compatibility: the UI must tolerate missing new fields and the appearance of additional fields.
 
 ## Resilience
 
-- Таймауты/отмена запросов (если поддерживается клиентом).
-- Retry только для **идемпотентных** запросов и transient ошибок (network/5xx), с backoff.
-- Circuit breaker — если есть единый слой/библиотека и это оправдано (иначе не выдумывать).
+- Use request timeouts and cancellation if supported by the client.
+- Retry only **idempotent** requests and transient errors such as network/5xx, with backoff.
+- Circuit breaker is allowed only if there is a shared layer/library and it is justified. Otherwise, do not invent it.
 
 ## Idempotency / double submit
 
-- Защита от двойных сабмитов: disable кнопок на loading, dedupe запросов по ключу, явные «in-flight» флаги.
+- Protect against double submits: disable buttons while loading, deduplicate requests by key, and use explicit in-flight flags.
 
-## Запрещено
+## Forbidden
 
-- хранить «сырой» response в UI состоянии без нормализации/маппинга
-- скрывать ошибки интеграции от пользователя без UX решения
+- storing raw responses in UI state without normalization/mapping
+- hiding integration errors from the user without a UX solution

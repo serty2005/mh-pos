@@ -1,37 +1,37 @@
 ---
-description: Архитектура-начала и анализ альтернатив  для React
+description: Architecture-first approach and alternative analysis for React
 globs:
-  - *.{ts,tsx,js,jsx}"
+  - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 
 # 🏗 ARCHITECTURE FIRST (CRITICAL)
 
-## ❗ Абсолютное правило
+## ❗ Absolute rule
 
-ЗАПРЕЩЕНО сразу писать код (кроме микроправки 1–2 строки без влияния на архитектуру).
+DO NOT start by writing code, except for a micro-fix of 1–2 lines that does not affect architecture.
 
-Перед реализацией нужно:
+Before implementation, you must describe:
 
-- описать слои (UI / logic / data-access / contracts)
-- описать поток данных (откуда → куда → кто владеет state)
-- описать обработку ошибок (network/auth/validation)
-- описать критерии готовности (что считается «сделано»)
+- the layers: UI / logic / data-access / contracts
+- the data flow: from where → to where → who owns state
+- error handling: network / auth / validation
+- completion criteria: what counts as done
 
 ## ⚖️ MULTIPLE SOLUTIONS RULE
 
-Всегда предлагай минимум **2–3** варианта решения:
+Always propose at least **2–3** solution options:
 
-- кратко что это
-- плюсы/минусы
-- когда выбирать
+- brief description
+- pros / cons
+- when to choose it
 
-После — выбрать лучший и объяснить WHY.
+Then choose the best option and explain WHY.
 
 ## 🔍 HIDDEN REQUIREMENTS DETECTION
 
-Перед решением перечисли:
+Before proposing a solution, list:
 
-- что не определено (версии, API контракты, UX детали)
-- возможные скрытые требования (auth, роли, i18n, offline, доступность, perf)
-- потенциальные ограничения (legacy, back compat, SEO, аналитика)
+- what is undefined: versions, API contracts, UX details
+- possible hidden requirements: auth, roles, i18n, offline, accessibility, performance
+- potential constraints: legacy, backward compatibility, SEO, analytics

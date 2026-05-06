@@ -1,27 +1,27 @@
 ---
-description: Performance thinking: renders, requests, bundles для React
+description: Frontend performance thinking for React: renders, requests, bundles
 globs:
-  - *.{ts,tsx,js,jsx}"
+  - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 
 # PERFORMANCE RULES (FRONTEND)
 
-Всегда отвечай на вопрос: **что сломается при 10x нагрузке?**
+Always answer the question: **what breaks under 10x load?**
 
-## React perf
+## React performance
 
-- Избегай лишних ререндеров: стабильные props, мемоизация там где нужно, не плодить inline объекты/функции в горячих местах.
-- Избегай тяжелых вычислений в render — выносить и кешировать.
-- Большие списки → virtualization (если применимо).
+- Avoid unnecessary re-renders: stable props, memoization where needed, and no excessive inline objects/functions in hot paths.
+- Avoid heavy computations during render; extract and cache them.
+- Large lists require virtualization when applicable.
 
-## Network perf
+## Network performance
 
-- Дедупликация запросов, кеширование где уместно.
-- Не делать N+1 запросов при рендере страницы.
-- Pagination/filters на больших наборах данных — продумать.
+- Deduplicate requests and cache where appropriate.
+- Do not create N+1 requests during page render.
+- Design pagination and filters for large datasets.
 
-## Bundle perf
+## Bundle performance
 
-- Code splitting по маршрутам/фичам (если проект поддерживает).
-- Не тянуть тяжёлые библиотеки ради мелкой фичи без обоснования.
+- Use code splitting by route or feature if the project supports it.
+- Do not add heavy libraries for a small feature without justification.

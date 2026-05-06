@@ -1,26 +1,26 @@
 ---
-description: Error discipline + observability (frontend) для React
+description: Frontend error discipline and observability for React
 globs:
-  - *.{ts,tsx,js,jsx}"
+  - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 
 # ERROR HANDLING (FRONTEND)
 
-## ❌ Запрещено
+## ❌ Forbidden
 
 - silent catch
-- игнор ошибок сетевого слоя
-- «проглатывание» ошибок в `console.log` без UX реакции
+- ignoring network-layer errors
+- swallowing errors with `console.log` without any UX reaction
 
-## ✅ Обязательно
+## ✅ Mandatory
 
-- Для любых запросов: loading/error/empty/success UI.
-- Ошибки делить на категории: auth (401/403), validation (400/422), not found (404), conflict (409), server (5xx), network/timeout.
-- Для auth ошибок: единый сценарий (refresh/logout/redirect) — централизованно в API слое.
-- Для transient ошибок: retry/backoff (если безопасно).
+- For every request: loading / error / empty / success UI.
+- Categorize errors: auth (401/403), validation (400/422), not found (404), conflict (409), server (5xx), network/timeout.
+- Auth errors must follow a centralized scenario in the API layer: refresh / logout / redirect.
+- Transient errors must use retry/backoff when it is safe.
 
 ## Observability
 
-- Логи только без чувствительных данных (token, пароль, PII).
-- Для важных ошибок — централизованный репортинг (Sentry/аналог), если используется в проекте.
+- Logs must never include sensitive data such as tokens, passwords, or PII.
+- Important errors must use centralized reporting such as Sentry or an equivalent tool, if the project uses one.

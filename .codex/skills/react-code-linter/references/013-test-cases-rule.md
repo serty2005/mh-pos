@@ -1,37 +1,37 @@
 ---
-description: Обязательное определение тест-кейсов для любого решения для React
+description: Mandatory test-case definition for every React solution
 globs:
-  - *.{ts,tsx,js,jsx}"
+  - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 
 # 🧪 TEST CASES RULE (CRITICAL)
 
-## ❗ Абсолютное правило
+## ❗ Absolute rule
 
-Любое решение должно сопровождаться тест-кейсами.
+Every solution must include test cases.
 
-## ✅ Обязательно определить
+## ✅ Mandatory coverage
 
-### ✅ Основные сценарии
+### ✅ Main scenarios
 
-- стандартное поведение
+- standard behavior
 
-### ⚠️ Граничные случаи (edge cases)
+### ⚠️ Edge cases
 
-- пустые значения
+- empty values
 - null / undefined
-- крайние значения
+- boundary values
 
-### ❌ Негативные сценарии
+### ❌ Negative scenarios
 
-- ошибки API
-- некорректные данные
-- сбои
+- API errors
+- invalid data
+- failures
 
-## Формат
+## Format
 
-### 🧪 Тест-кейсы
+### 🧪 Test cases
 
 #### ✅ Happy path
 
@@ -45,12 +45,12 @@ alwaysApply: true
 
 - ...
 
-## ❌ Запрещено
+## ❌ Forbidden
 
-- писать решение без тест-кейсов
-- игнорировать edge cases
-- проверять только happy path
+- writing a solution without test cases
+- ignoring edge cases
+- testing only the happy path
 
-## 🧠 Принцип
+## 🧠 Principle
 
-Если это нельзя протестировать — это нельзя считать надёжным.
+If it cannot be tested, it cannot be considered reliable.
