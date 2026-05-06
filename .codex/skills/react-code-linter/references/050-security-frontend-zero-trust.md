@@ -1,5 +1,5 @@
 ---
-description: Frontend zero-trust security for React: input, auth, tokens, XSS/CSRF, storage
+description: Frontend zero-trust security for React input, auth, tokens, XSS/CSRF, storage
 globs:
   - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
