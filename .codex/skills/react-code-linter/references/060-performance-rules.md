@@ -1,5 +1,5 @@
 ---
-description: Frontend performance thinking for React: renders, requests, bundles
+description: Frontend performance thinking for React renders, requests, bundles
 globs:
   - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
