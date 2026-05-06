@@ -1,5 +1,5 @@
 ---
-description: State ownership and API discipline for React: loading/error/success, retry, contracts
+description: State ownership and API discipline for React  loading/error/success, retry, contracts
 globs:
   - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
