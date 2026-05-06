@@ -1,7 +1,7 @@
 ---
-description: Performance thinking (frontend): renders, requests, bundles
+description: Performance thinking: renders, requests, bundles для React
 globs:
-  - "front_new/**/*.{ts,tsx,js,jsx,css}"
+  - *.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 

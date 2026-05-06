@@ -1,7 +1,7 @@
 ---
-description: React правила уровня enterprise (архитектура, компоненты, слои)
+description: React правила уровня enterprise (архитектура, компоненты, слои) для React
 globs:
-  - "front_new/**/*.{ts,tsx,js,jsx}"
+  - *.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 

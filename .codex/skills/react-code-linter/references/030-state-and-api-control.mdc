@@ -1,7 +1,7 @@
 ---
-description: State ownership + API discipline (loading/error/success, retry, contracts)
+description: State ownership + API discipline (loading/error/success, retry, contracts) для React
 globs:
-  - "front_new/**/*.{ts,tsx,js,jsx}"
+  - *.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 

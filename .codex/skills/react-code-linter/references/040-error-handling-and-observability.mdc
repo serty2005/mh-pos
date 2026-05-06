@@ -1,7 +1,7 @@
 ---
-description: Error discipline + observability (frontend)
+description: Error discipline + observability (frontend) для React
 globs:
-  - "front_new/**/*.{ts,tsx,js,jsx}"
+  - *.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 

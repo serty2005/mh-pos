@@ -1,7 +1,7 @@
 ---
-description: Обязательное определение тест-кейсов для любого решения (front_new)
+description: Обязательное определение тест-кейсов для любого решения для React
 globs:
-  - "front_new/**/*"
+  - *.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 

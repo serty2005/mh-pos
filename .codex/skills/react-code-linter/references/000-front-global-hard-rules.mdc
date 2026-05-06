@@ -1,7 +1,7 @@
 ---
-description: Абсолютные глобальные правила для front_new (самые строгие)
+description: Абсолютные глобальные правила для React (самые строгие)
 globs:
-  - "front_new/**/*"
+  - *.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 

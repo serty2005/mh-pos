@@ -1,7 +1,7 @@
 ---
 description: Code quality + refactoring discipline + review mode (front_new)
 globs:
-  - "front_new/**/*.{ts,tsx,js,jsx,css,md}"
+  - *.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 

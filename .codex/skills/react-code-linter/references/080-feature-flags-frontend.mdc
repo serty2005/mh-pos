@@ -1,7 +1,7 @@
 ---
 description: Feature flags / gradual rollout (frontend): kill switch, targeting, sunset plan
 globs:
-  - "front_new/**/*.{ts,tsx,js,jsx}"
+  - *.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 

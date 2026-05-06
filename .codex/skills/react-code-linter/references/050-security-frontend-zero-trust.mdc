@@ -1,7 +1,7 @@
 ---
-description: Security (frontend zero-trust): input, auth, tokens, XSS/CSRF, storage
+description: Security (frontend zero-trust): input, auth, tokens, XSS/CSRF, storage для React
 globs:
-  - "front_new/**/*.{ts,tsx,js,jsx,html}"
+  - *.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 

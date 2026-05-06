@@ -1,7 +1,7 @@
 ---
-description: Тестирование frontend (React): unit/component/e2e, что мокать
+description: Тестирование (React): unit/component/e2e, что мокать 
 globs:
-  - "front_new/**/*.{ts,tsx,js,jsx}"
+  - *.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 

@@ -1,7 +1,7 @@
 ---
 description: Паттерны внешних интеграций (frontend): contracts, resilience, idempotency
 globs:
-  - "front_new/**/*.{ts,tsx,js,jsx}"
+  - *.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 
