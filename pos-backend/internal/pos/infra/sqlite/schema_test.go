@@ -290,6 +290,67 @@ func TestLocalEventCommandIDMigrationBackfillsFromEnvelopePayload(t *testing.T) 
 	}
 }
 
+func TestRetrySafeOutboxSchemaColumnsAndConstraints(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	expected := map[string]bool{
+		"sequence_no":   false,
+		"attempts":      false,
+		"next_retry_at": false,
+		"locked_at":     false,
+		"locked_by":     false,
+		"sent_at":       false,
+		"last_error":    false,
+	}
+	rows, err := db.QueryContext(ctx, `PRAGMA table_info(pos_sync_outbox)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull int
+		var defaultValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultValue, &pk); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := expected[name]; ok {
+			expected[name] = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	for name, found := range expected {
+		if !found {
+			t.Fatalf("expected pos_sync_outbox column %s", name)
+		}
+	}
+
+	execSchema(t, ctx, db, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,aggregate_type,aggregate_id,command_type,payload_json,status,created_at,updated_at) VALUES ('outbox-ok','cmd-ok',1,'edge_device','restaurant-1','device-1','Order','order-1','OrderCreated','{}','pending',?,?)`, schemaTestTime, schemaTestTime)
+	var attempts int
+	if err := db.QueryRowContext(ctx, `SELECT attempts FROM pos_sync_outbox WHERE id = 'outbox-ok'`).Scan(&attempts); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 0 {
+		t.Fatalf("expected default attempts=0, got %d", attempts)
+	}
+
+	_, err = db.ExecContext(ctx, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,aggregate_type,aggregate_id,command_type,payload_json,status,created_at,updated_at) VALUES ('outbox-bad-status','cmd-bad-status',2,'edge_device','restaurant-1','device-1','Order','order-1','OrderCreated','{}','unknown',?,?)`, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected invalid outbox status to fail")
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,aggregate_type,aggregate_id,command_type,payload_json,status,locked_at,locked_by,created_at,updated_at) VALUES ('outbox-bad-lock','cmd-bad-lock',3,'edge_device','restaurant-1','device-1','Order','order-1','OrderCreated','{}','pending',?,'worker',?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected non-processing outbox lock to fail")
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,aggregate_type,aggregate_id,command_type,payload_json,status,created_at,updated_at) VALUES ('outbox-bad-sequence','cmd-bad-sequence',0,'edge_device','restaurant-1','device-1','Order','order-1','OrderCreated','{}','pending',?,?)`, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected non-positive sequence_no to fail")
+	}
+}
+
 func applyMigrationFile(t *testing.T, ctx context.Context, db *sql.DB, path string) {
 	t.Helper()
 	body, err := os.ReadFile(path)

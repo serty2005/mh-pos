@@ -27,6 +27,7 @@
 - `cloud-backend` — минимальный Cloud Sync Receiver;
 - `local_event_log`;
 - `pos_sync_outbox`;
+- retry-safe outbox foundation: `sequence_no`, `pending/processing/sent/failed/suspended`, attempts/retry metadata, processing locks, manual retry failed/suspended;
 - `SyncEnvelope`;
 - idempotent Cloud receive/dedupe;
 - shifts;
@@ -44,7 +45,7 @@
 Order -> Precheck -> Payment -> Check
 ```
 
-Текущее состояние: публичный `Order -> Precheck -> Payment -> Check` runtime включен. `IssuePrecheck` locks order и доступен через API, `CancelPrecheck` доступен публично через manager override, payment capture идет через precheck, automatic final check generation закрывает order после полной оплаты.
+Текущее состояние: публичный `Order -> Precheck -> Payment -> Check` runtime включен. `IssuePrecheck` locks order и доступен через API, `CancelPrecheck` доступен публично через manager override, payment capture идет через precheck, automatic final check generation закрывает order после полной оплаты. Sync/outbox foundation доведен до retry-safe состояния на schema/app/API уровне; полноценный Cloud sender/worker еще не реализован.
 
 ---
 
@@ -353,6 +354,7 @@ Acceptance criteria:
 
 ```text
 status: pending | processing | sent | failed | suspended
+sequence_no monotonic local ordering key
 attempts INT NOT NULL DEFAULT 0
 next_retry_at TIMESTAMP NULL
 last_error TEXT NULL
@@ -395,6 +397,8 @@ UPDATE pos_sync_outbox
 SET status = 'pending', attempts = 0, next_retry_at = NULL, last_error = NULL
 WHERE status IN ('failed', 'suspended');
 ```
+
+Текущий статус реализации: schema/domain/ports/infra/app/API foundation реализован. Доступны aggregated status и manual retry endpoints; app-level claim/reclaim покрыты тестами. Реальный sync sender/worker и exponential backoff policy остаются отдельной будущей итерацией.
 
 Acceptance criteria:
 
@@ -1183,7 +1187,7 @@ README.md
 5. Реализовать Generic Tax Engine.
 6. Перевести payments с `check_id` на `precheck_id`.
 7. Реализовать automatic final check generation.
-8. Реализовать sync-worker retry/backoff/suspended.
+8. Реализовать sync sender/worker поверх готового retry-safe outbox foundation.
 9. Реализовать device provisioning flow.
 10. Собрать минимальный POS UI.
 11. Реализовать DishServed MVP без полного KDS.

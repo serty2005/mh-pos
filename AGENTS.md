@@ -20,7 +20,7 @@ Order -> Precheck -> Payment -> Check
 
 Важно: проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. Изменения v1.3 нужно проектировать как first-launch schema/logic, а не как миграцию исторических данных.
 
-Текущее состояние кода нужно отделять от следующих будущих улучшений: `pos-backend` уже включает публичный runtime `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` (`POST /api/v1/orders/{id}/precheck`, `GET /api/v1/prechecks/{id}`, `GET /api/v1/orders/{id}/prechecks`) создает issued precheck и переводит order в `locked`; публичный `CancelPrecheck` (`POST /api/v1/prechecks/{id}/cancel`) требует manager employee id, PIN и reason, проверяет локальный PBKDF2 `pin_hash`, пишет `manager_override_audit`, `local_event_log` и outbox в одной транзакции и возвращает unpaid active issued precheck order в `open`; payment capture идет через `POST /api/v1/prechecks/{id}/payments`, поддерживает partial payments и автоматически создает final `Check` + закрывает order после полной оплаты. Deprecated `POST /api/v1/orders/{id}/check` остается alias к `IssuePrecheck`; legacy `POST /api/v1/checks/{id}/payments` отключен.
+Текущее состояние кода нужно отделять от следующих будущих улучшений: `pos-backend` уже включает публичный runtime `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` (`POST /api/v1/orders/{id}/precheck`, `GET /api/v1/prechecks/{id}`, `GET /api/v1/orders/{id}/prechecks`) создает issued precheck и переводит order в `locked`; публичный `CancelPrecheck` (`POST /api/v1/prechecks/{id}/cancel`) требует manager employee id, PIN и reason, проверяет локальный PBKDF2 `pin_hash`, пишет `manager_override_audit`, `local_event_log` и outbox в одной транзакции и возвращает unpaid active issued precheck order в `open`; payment capture идет через `POST /api/v1/prechecks/{id}/payments`, поддерживает partial payments и автоматически создает final `Check` + закрывает order после полной оплаты. Deprecated `POST /api/v1/orders/{id}/check` остается alias к `IssuePrecheck`; legacy `POST /api/v1/checks/{id}/payments` отключен. Sync/outbox foundation уже включает retry-safe schema/app/API состояние очереди, но полноценный Cloud sender/worker еще не реализован.
 
 ### Карта Репозитория
 
@@ -63,7 +63,7 @@ Order -> Precheck -> Payment -> Check
 - Добавить repository contract: `pos-backend/internal/pos/ports/`
 - Реализовать SQLite storage: `pos-backend/internal/pos/infra/sqlite/`
 - Изменить схему БД: `pos-backend/migrations/sqlite/`
-- Проверить read-only sync endpoints: `GET /api/v1/sync/outbox`, `GET /api/v1/sync/local-events`
+- Проверить sync endpoints: `GET /api/v1/sync/outbox`, `GET /api/v1/sync/local-events`, `GET /api/v1/sync/status`, `POST /api/v1/sync/retry-failed`
 - Проверить архитектурные import rules: `pos-backend/internal/pos/architecture_test.go`
 - Проверить schema/invariant tests: `pos-backend/internal/pos/infra/sqlite/schema_test.go`
 
@@ -320,29 +320,36 @@ pos_sync_outbox
 
 `local_event_log` хранит локальные события для операционного аудита и будущей синхронизации. `pos_sync_outbox` хранит команды/события для retry-safe отправки. Одна write-операция использует один `command_id`: он хранится в `local_event_log`, в `pos_sync_outbox` и внутри `SyncEnvelope` payload.
 
-Read-only operational endpoints:
+Operational sync endpoints:
 
 ```text
 GET /api/v1/sync/outbox?limit=50
 GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated
+GET /api/v1/sync/status
+POST /api/v1/sync/retry-failed
 ```
+
+`retry-failed` не отправляет данные в Cloud и не меняет бизнес-сущности. Он только возвращает outbox rows со статусом `failed`/`suspended` в `pending` для ручного повторного sync.
 
 Каждый command:
 
 - `command_id`
 - `event_id`
 - `envelope_version`
+- `sequence_no`
 - `device_id`
 - `aggregate_type`
 - `aggregate_id`
 - `payload`
-- `status`
+- `status`: `pending`, `processing`, `sent`, `failed`, `suspended`
+- retry/lock metadata: `attempts`, `next_retry_at`, `locked_at`, `locked_by`, `sent_at`, `last_error`
 
 Принципы:
 
 - idempotent
 - retry-safe
 - append-only
+- `processing` locks должны быть reclaimable, а `failed`/`suspended` можно вручную вернуть в `pending`
 
 ---
 
@@ -534,8 +541,8 @@ GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated
 - Scope: POS Edge Backend + minimal Cloud Sync Receiver foundation
 - Target financial model: `Order -> Precheck -> Payment -> Check`
 - Current POS Edge code: public `Order -> Precheck -> Payment -> Check` runtime enabled; legacy check payment endpoint is disabled
-- Edge foundation: `local_event_log` + `pos_sync_outbox` + cash sessions + payment attempts + prechecks lifecycle foundation with public issue/read/list/cancel endpoints, manager override audit, precheck payments and automatic final check generation
-- Operational read-only endpoints: sync outbox and local events
+- Edge foundation: `local_event_log` + retry-safe `pos_sync_outbox` + cash sessions + payment attempts + prechecks lifecycle foundation with public issue/read/list/cancel endpoints, manager override audit, precheck payments and automatic final check generation
+- Operational sync endpoints: outbox, local events, aggregated sync status and manual retry failed/suspended
 - Cloud: minimal `cloud-backend/` Sync Receiver implemented; Cloud is not a runtime dependency for critical POS Edge writes
 
 ---

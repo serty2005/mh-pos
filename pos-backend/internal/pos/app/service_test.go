@@ -229,6 +229,192 @@ func outboxHasDeviceAndOrigin(t *testing.T, f *fixture, commandID, deviceID stri
 	return n == 1
 }
 
+func outboxIDs(t *testing.T, f *fixture, n int) []string {
+	t.Helper()
+	rows, err := f.db.QueryContext(f.ctx, `SELECT id FROM pos_sync_outbox ORDER BY sequence_no LIMIT ?`, n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != n {
+		t.Fatalf("expected %d outbox ids, got %d", n, len(ids))
+	}
+	return ids
+}
+
+func outboxStatusAttempts(t *testing.T, f *fixture, id string) (domain.OutboxStatus, int) {
+	t.Helper()
+	var status string
+	var attempts int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status, attempts FROM pos_sync_outbox WHERE id = ?`, id).Scan(&status, &attempts); err != nil {
+		t.Fatal(err)
+	}
+	return domain.OutboxStatus(status), attempts
+}
+
+func TestRetryFailedOutboxResetsFailedAndSuspendedButNotSent(t *testing.T) {
+	f := newFixture(t)
+	ids := outboxIDs(t, f, 3)
+	now := appshared.DBTime(fixedClock{}.Now())
+	_, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'failed', attempts = 2, last_error = 'temporary', updated_at = ? WHERE id = ?`, now, ids[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'suspended', attempts = 4, last_error = 'threshold', updated_at = ? WHERE id = ?`, now, ids[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'sent', sent_at = ?, updated_at = ? WHERE id = ?`, now, now, ids[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	retried, err := f.service.RetryFailedOutbox(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retried != 2 {
+		t.Fatalf("expected 2 retried messages, got %d", retried)
+	}
+	for _, id := range ids[:2] {
+		status, attempts := outboxStatusAttempts(t, f, id)
+		if status != domain.OutboxPending || attempts != 0 {
+			t.Fatalf("expected %s to be pending with attempts=0, got status=%s attempts=%d", id, status, attempts)
+		}
+	}
+	status, _ := outboxStatusAttempts(t, f, ids[2])
+	if status != domain.OutboxSent {
+		t.Fatalf("expected sent outbox row to stay sent, got %s", status)
+	}
+}
+
+func TestClaimPendingOutboxSkipsFutureNextRetryAt(t *testing.T) {
+	f := newFixture(t)
+	future := appshared.DBTime(fixedClock{}.Now().Add(time.Hour))
+	now := appshared.DBTime(fixedClock{}.Now())
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET next_retry_at = ?, updated_at = ? WHERE status = 'pending'`, future, now); err != nil {
+		t.Fatal(err)
+	}
+
+	claimed, err := f.service.ClaimPendingOutbox(f.ctx, app.ClaimPendingOutboxCommand{Limit: 10, LockedBy: "sync-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 0 {
+		t.Fatalf("expected no claimed messages while next_retry_at is in future, got %d", len(claimed))
+	}
+}
+
+func TestClaimPendingOutboxUsesSequenceOrderAndLocksRows(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET next_retry_at = NULL, updated_at = ? WHERE status = 'pending'`, appshared.DBTime(fixedClock{}.Now())); err != nil {
+		t.Fatal(err)
+	}
+
+	claimed, err := f.service.ClaimPendingOutbox(f.ctx, app.ClaimPendingOutboxCommand{Limit: 3, LockedBy: "sync-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 3 {
+		t.Fatalf("expected 3 claimed messages, got %d", len(claimed))
+	}
+	for i, msg := range claimed {
+		if msg.Status != domain.OutboxProcessing || msg.LockedBy == nil || *msg.LockedBy != "sync-test" || msg.LockedAt == nil {
+			t.Fatalf("expected claimed message to be processing and locked, got %+v", msg)
+		}
+		if i > 0 && claimed[i-1].SequenceNo >= msg.SequenceNo {
+			t.Fatalf("expected sequence order, got %d before %d", claimed[i-1].SequenceNo, msg.SequenceNo)
+		}
+	}
+}
+
+func TestReclaimStaleProcessingOutboxReturnsOldLocksToPending(t *testing.T) {
+	f := newFixture(t)
+	ids := outboxIDs(t, f, 2)
+	oldLock := appshared.DBTime(fixedClock{}.Now().Add(-2 * time.Hour))
+	freshLock := appshared.DBTime(fixedClock{}.Now().Add(-time.Minute))
+	now := appshared.DBTime(fixedClock{}.Now())
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'processing', locked_at = ?, locked_by = 'old-worker', updated_at = ? WHERE id = ?`, oldLock, now, ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'processing', locked_at = ?, locked_by = 'fresh-worker', updated_at = ? WHERE id = ?`, freshLock, now, ids[1]); err != nil {
+		t.Fatal(err)
+	}
+
+	reclaimed, err := f.service.ReclaimStaleProcessingOutbox(f.ctx, app.ReclaimStaleOutboxCommand{StaleBefore: fixedClock{}.Now().Add(-time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reclaimed != 1 {
+		t.Fatalf("expected one stale processing lock reclaimed, got %d", reclaimed)
+	}
+	status, _ := outboxStatusAttempts(t, f, ids[0])
+	if status != domain.OutboxPending {
+		t.Fatalf("expected stale row to return to pending, got %s", status)
+	}
+	status, _ = outboxStatusAttempts(t, f, ids[1])
+	if status != domain.OutboxProcessing {
+		t.Fatalf("expected fresh lock to stay processing, got %s", status)
+	}
+}
+
+func TestMarkOutboxFailedSuspendsAfterAttemptsExceedThreshold(t *testing.T) {
+	f := newFixture(t)
+	id := outboxIDs(t, f, 1)[0]
+	for i := 0; i < appshared.DefaultOutboxMaxAttempts+1; i++ {
+		if err := f.service.MarkOutboxFailed(f.ctx, id, "cloud unavailable"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	status, attempts := outboxStatusAttempts(t, f, id)
+	if status != domain.OutboxSuspended {
+		t.Fatalf("expected suspended after threshold exceeded, got %s", status)
+	}
+	if attempts != appshared.DefaultOutboxMaxAttempts+1 {
+		t.Fatalf("expected attempts=%d, got %d", appshared.DefaultOutboxMaxAttempts+1, attempts)
+	}
+}
+
+func TestGetSyncStatusAggregatesOutboxRows(t *testing.T) {
+	f := newFixture(t)
+	ids := outboxIDs(t, f, 4)
+	now := appshared.DBTime(fixedClock{}.Now())
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'processing', locked_at = ?, locked_by = 'worker', updated_at = ? WHERE id = ?`, now, now, ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'failed', attempts = 1, last_error = 'temporary', updated_at = ? WHERE id = ?`, now, ids[1]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'suspended', attempts = 4, last_error = 'threshold', updated_at = ? WHERE id = ?`, now, ids[2]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'sent', sent_at = ?, updated_at = ? WHERE id = ?`, now, now, ids[3]); err != nil {
+		t.Fatal(err)
+	}
+
+	status, err := f.service.GetSyncStatus(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Total != countRows(t, f, "pos_sync_outbox") || status.Processing != 1 || status.Failed != 1 || status.Suspended != 1 || status.Sent != 1 {
+		t.Fatalf("unexpected sync status: %+v", status)
+	}
+	if status.Pending == 0 || status.OldestPendingSequenceNo == nil {
+		t.Fatalf("expected pending rows with oldest sequence, got %+v", status)
+	}
+}
+
 func TestCannotOpenTwoShiftsOnDevice(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)

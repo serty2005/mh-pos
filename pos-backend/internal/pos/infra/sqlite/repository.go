@@ -87,6 +87,14 @@ func stringPtr(v sql.NullString) *string {
 	return &v.String
 }
 
+func timePtr(v sql.NullString) *time.Time {
+	if !v.Valid {
+		return nil
+	}
+	t := parseTime(v.String)
+	return &t
+}
+
 func int64Ptr(v sql.NullInt64) *int64 {
 	if !v.Valid {
 		return nil

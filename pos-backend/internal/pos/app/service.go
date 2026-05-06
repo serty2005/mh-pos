@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"time"
 
 	"pos-backend/internal/platform/clock"
 	"pos-backend/internal/platform/idgen"
@@ -54,6 +55,15 @@ type ListLocalEventsQuery struct {
 	EventType string
 }
 
+type ClaimPendingOutboxCommand struct {
+	Limit    int
+	LockedBy string
+}
+
+type ReclaimStaleOutboxCommand struct {
+	StaleBefore time.Time
+}
+
 type Service struct {
 	restaurants *apprestaurant.Service
 	devices     *appdevice.Service
@@ -82,7 +92,7 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 		checks:      appcheck.NewService(repo, tx, ids, clock),
 		cash:        appcash.NewService(repo, tx, ids, clock),
 		localEvents: repo,
-		outbox:      shared.NewOutboxService(repo, clock),
+		outbox:      shared.NewOutboxService(repo, tx, clock),
 	}
 }
 
@@ -212,6 +222,22 @@ func (s *Service) RecordCashDrawerEvent(ctx context.Context, cmd RecordCashDrawe
 
 func (s *Service) ListOutbox(ctx context.Context, limit int) ([]domain.OutboxMessage, error) {
 	return s.outbox.ListOutbox(ctx, limit)
+}
+
+func (s *Service) GetSyncStatus(ctx context.Context) (domain.SyncStatus, error) {
+	return s.outbox.GetSyncStatus(ctx)
+}
+
+func (s *Service) RetryFailedOutbox(ctx context.Context) (int, error) {
+	return s.outbox.RetryFailedOutbox(ctx)
+}
+
+func (s *Service) ClaimPendingOutbox(ctx context.Context, cmd ClaimPendingOutboxCommand) ([]domain.OutboxMessage, error) {
+	return s.outbox.ClaimPendingOutbox(ctx, cmd.Limit, cmd.LockedBy)
+}
+
+func (s *Service) ReclaimStaleProcessingOutbox(ctx context.Context, cmd ReclaimStaleOutboxCommand) (int, error) {
+	return s.outbox.ReclaimStaleProcessingOutbox(ctx, cmd.StaleBefore)
 }
 
 func (s *Service) ListLocalEvents(ctx context.Context, query ListLocalEventsQuery) ([]domain.LocalEvent, error) {

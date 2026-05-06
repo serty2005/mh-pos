@@ -75,6 +75,8 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/sync/outbox/{id}/mark-sent", h.markOutboxSent)
 		r.Post("/sync/outbox/{id}/mark-failed", h.markOutboxFailed)
 		r.Get("/sync/local-events", h.listLocalEvents)
+		r.Get("/sync/status", h.syncStatus)
+		r.Post("/sync/retry-failed", h.retryFailedOutbox)
 	})
 
 	return r
@@ -382,6 +384,20 @@ func (h *Handler) listLocalEvents(w http.ResponseWriter, r *http.Request) {
 		EventType: r.URL.Query().Get("event_type"),
 	})
 	writeOK(w, v, err)
+}
+
+func (h *Handler) syncStatus(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetSyncStatus(r.Context())
+	writeOK(w, v, err)
+}
+
+func (h *Handler) retryFailedOutbox(w http.ResponseWriter, r *http.Request) {
+	n, err := h.service.RetryFailedOutbox(r.Context())
+	if err != nil {
+		httpx.Error(w, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]int{"retried": n})
 }
 
 func (h *Handler) markOutboxSent(w http.ResponseWriter, r *http.Request) {

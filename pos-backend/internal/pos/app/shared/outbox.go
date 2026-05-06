@@ -6,43 +6,97 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"pos-backend/internal/platform/clock"
 	"pos-backend/internal/platform/idgen"
+	txmanager "pos-backend/internal/platform/tx"
 	"pos-backend/internal/pos/domain"
 	"pos-backend/internal/pos/ports"
 )
 
 type OutboxService struct {
 	repo  ports.OutboxRepository
+	tx    txmanager.Manager
 	clock clock.Clock
 }
+
+const (
+	DefaultOutboxMaxAttempts = 20
+	defaultOutboxRetryDelay  = time.Minute
+)
 
 type eventOutboxRepository interface {
 	ports.OutboxRepository
 	ports.LocalEventRepository
 }
 
-func NewOutboxService(repo ports.OutboxRepository, clock clock.Clock) *OutboxService {
-	return &OutboxService{repo: repo, clock: clock}
+func NewOutboxService(repo ports.OutboxRepository, tx txmanager.Manager, clock clock.Clock) *OutboxService {
+	return &OutboxService{repo: repo, tx: tx, clock: clock}
 }
 
 func (s *OutboxService) ListOutbox(ctx context.Context, limit int) ([]domain.OutboxMessage, error) {
 	return s.repo.ListOutbox(ctx, limit)
 }
 
+func (s *OutboxService) GetSyncStatus(ctx context.Context) (domain.SyncStatus, error) {
+	return s.repo.GetSyncStatus(ctx)
+}
+
+func (s *OutboxService) RetryFailedOutbox(ctx context.Context) (int, error) {
+	var count int
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		var err error
+		count, err = s.repo.RetryFailedOutbox(ctx, DBTime(s.clock.Now()))
+		return err
+	})
+	return count, err
+}
+
+func (s *OutboxService) ClaimPendingOutbox(ctx context.Context, limit int, lockedBy string) ([]domain.OutboxMessage, error) {
+	if strings.TrimSpace(lockedBy) == "" {
+		return nil, fmt.Errorf("%w: locked_by is required", domain.ErrInvalid)
+	}
+	var out []domain.OutboxMessage
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		var err error
+		out, err = s.repo.ClaimPendingOutbox(ctx, limit, strings.TrimSpace(lockedBy), DBTime(s.clock.Now()))
+		return err
+	})
+	return out, err
+}
+
+func (s *OutboxService) ReclaimStaleProcessingOutbox(ctx context.Context, staleBefore time.Time) (int, error) {
+	if staleBefore.IsZero() {
+		return 0, fmt.Errorf("%w: stale_before is required", domain.ErrInvalid)
+	}
+	var count int
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		var err error
+		count, err = s.repo.ReclaimStaleProcessingOutbox(ctx, DBTime(staleBefore), DBTime(s.clock.Now()))
+		return err
+	})
+	return count, err
+}
+
 func (s *OutboxService) MarkOutboxSent(ctx context.Context, id string) error {
 	if strings.TrimSpace(id) == "" {
 		return fmt.Errorf("%w: outbox id is required", domain.ErrInvalid)
 	}
-	return s.repo.MarkOutboxSent(ctx, id, DBTime(s.clock.Now()))
+	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		return s.repo.MarkOutboxSent(ctx, id, DBTime(s.clock.Now()))
+	})
 }
 
 func (s *OutboxService) MarkOutboxFailed(ctx context.Context, id, reason string) error {
 	if strings.TrimSpace(id) == "" || strings.TrimSpace(reason) == "" {
 		return fmt.Errorf("%w: outbox id and error are required", domain.ErrInvalid)
 	}
-	return s.repo.MarkOutboxFailed(ctx, id, reason, DBTime(s.clock.Now()))
+	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		now := s.clock.Now()
+		nextRetryAt := DBTime(now.Add(defaultOutboxRetryDelay))
+		return s.repo.MarkOutboxFailed(ctx, id, reason, &nextRetryAt, DBTime(now), DefaultOutboxMaxAttempts)
+	})
 }
 
 func EnsureCommandNotProcessed(ctx context.Context, repo ports.OutboxRepository, commandID string) error {

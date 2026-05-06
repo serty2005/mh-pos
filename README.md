@@ -28,7 +28,8 @@ Order -> Precheck -> Payment -> Check
 - precheck-based payment capture: `POST /api/v1/prechecks/{id}/payments`, partial payments, automatic final `Check` после полной оплаты и automatic order close;
 - final checks/payments foundation;
 - `payment_attempts`;
-- read-only sync endpoints.
+- retry-safe sync outbox foundation with status/claim/retry metadata;
+- operational sync endpoints for outbox inspection, local events, aggregated status and manual retry of failed/suspended messages.
 
 Честное состояние текущего кода: POS Edge backend уже выполняет runtime flow `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` переводит order в `locked`; публичный `CancelPrecheck` требует manager employee id, PIN и reason, пишет audit trail и возвращает unpaid active issued precheck в `open`; payment capture идет через `precheck_id`, а final `Check` создается только после полной оплаты. Deprecated `POST /api/v1/orders/{id}/check` остается dev alias для `IssuePrecheck`; legacy `POST /api/v1/checks/{id}/payments` отключен и не обходит precheck flow.
 
@@ -112,7 +113,7 @@ go run ./cmd/cloud-api
 - JSON API для POS UI;
 - доменные инварианты заказов, смен, cash sessions и текущего financial foundation;
 - edge foundation для `local_event_log`, `SyncEnvelope` и sync outbox;
-- read-only operational access к sync outbox и local events;
+- operational access к sync outbox, local events, aggregated sync status и manual retry failed/suspended;
 - financial foundation для precheck payments, final checks, `payment_attempts`, cash sessions и cash drawer events;
 - foundation для будущих рецептов, склада и учета.
 
@@ -181,7 +182,8 @@ go test ./...
 - POS Edge SQLite runtime contract: functional minimum `>= 3.37.0`, production WAL pilot baseline `>= 3.51.3` или pinned backport `3.50.7/3.44.6`; backend завершается при несоответствии.
 - POS Edge code: public `Order -> Precheck -> Payment -> Check` runtime enabled; legacy check payment endpoint is disabled.
 - `local_event_log` уже является частью edge foundation, хранит `command_id` той же write-операции, что и outbox rows (одна write-операция может породить несколько events), и доступен read-only через `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`.
-- Sync outbox доступен через `GET /api/v1/sync/outbox`.
+- Sync outbox имеет retry-safe поля `sequence_no`, `attempts`, `next_retry_at`, `locked_at`, `locked_by`, `sent_at`, `last_error` и статусы `pending`, `processing`, `sent`, `failed`, `suspended`.
+- Sync outbox доступен через `GET /api/v1/sync/outbox`, aggregated status через `GET /api/v1/sync/status`, manual retry failed/suspended через `POST /api/v1/sync/retry-failed`.
 - Edge financial foundation включает публичные precheck issue/read/list/cancel endpoints, precheck payment endpoint, `manager_override_audit`, `payment_attempts`, automatic final checks, `cash_sessions`, `cash_drawer_events` и базовые HTTP endpoints для cash session/drawer workflows.
 - Закрытие смены в POS Edge запрещено при открытых заказах или active cash session.
 - Cloud: минимальный `cloud-backend/` Sync Receiver реализован; Cloud не является зависимостью для критических POS Edge операций.

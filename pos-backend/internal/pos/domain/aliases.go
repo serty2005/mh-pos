@@ -120,13 +120,16 @@ const (
 type OutboxStatus = shared.OutboxStatus
 type CommandOrigin = shared.CommandOrigin
 type OutboxMessage = shared.OutboxMessage
+type SyncStatus = shared.SyncStatus
 type LocalEvent = shared.LocalEvent
 type SyncEnvelope = shared.SyncEnvelope
 
 const (
 	OutboxPending    = shared.OutboxPending
+	OutboxProcessing = shared.OutboxProcessing
 	OutboxSent       = shared.OutboxSent
 	OutboxFailed     = shared.OutboxFailed
+	OutboxSuspended  = shared.OutboxSuspended
 	OriginEdgeDevice = shared.OriginEdgeDevice
 	OriginCloudSync  = shared.OriginCloudSync
 	OriginSystemSeed = shared.OriginSystemSeed

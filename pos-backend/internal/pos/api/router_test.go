@@ -175,6 +175,88 @@ func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 	return n
 }
 
+func apiOutboxIDs(t *testing.T, f *apiFixture, n int) []string {
+	t.Helper()
+	rows, err := f.db.QueryContext(f.ctx, `SELECT id FROM pos_sync_outbox ORDER BY sequence_no LIMIT ?`, n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != n {
+		t.Fatalf("expected %d outbox ids, got %d", n, len(ids))
+	}
+	return ids
+}
+
+func TestSyncStatusAPI(t *testing.T) {
+	f := newAPIFixture(t)
+	ids := apiOutboxIDs(t, f, 2)
+	now := appshared.DBTime(apiFixedClock{}.Now())
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'failed', attempts = 1, last_error = 'temporary', updated_at = ? WHERE id = ?`, now, ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'processing', locked_at = ?, locked_by = 'api-worker', updated_at = ? WHERE id = ?`, now, now, ids[1]); err != nil {
+		t.Fatal(err)
+	}
+
+	rr := f.get(t, "/api/v1/sync/status")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	status := decodeAPIResponse[domain.SyncStatus](t, rr)
+	if status.Total != countAPIRows(t, f, "pos_sync_outbox") || status.Failed != 1 || status.Processing != 1 {
+		t.Fatalf("unexpected sync status: %+v", status)
+	}
+}
+
+func TestRetryFailedAPIResetsFailedAndSuspendedButNotSent(t *testing.T) {
+	f := newAPIFixture(t)
+	ids := apiOutboxIDs(t, f, 3)
+	now := appshared.DBTime(apiFixedClock{}.Now())
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'failed', attempts = 1, last_error = 'temporary', updated_at = ? WHERE id = ?`, now, ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'suspended', attempts = 4, last_error = 'threshold', updated_at = ? WHERE id = ?`, now, ids[1]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'sent', sent_at = ?, updated_at = ? WHERE id = ?`, now, now, ids[2]); err != nil {
+		t.Fatal(err)
+	}
+
+	rr := f.postJSON(t, "/api/v1/sync/retry-failed", `{}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	got := decodeAPIResponse[map[string]int](t, rr)
+	if got["retried"] != 2 {
+		t.Fatalf("expected retried=2, got %+v", got)
+	}
+	var failedStatus, suspendedStatus, sentStatus string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM pos_sync_outbox WHERE id = ?`, ids[0]).Scan(&failedStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM pos_sync_outbox WHERE id = ?`, ids[1]).Scan(&suspendedStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM pos_sync_outbox WHERE id = ?`, ids[2]).Scan(&sentStatus); err != nil {
+		t.Fatal(err)
+	}
+	if failedStatus != "pending" || suspendedStatus != "pending" || sentStatus != "sent" {
+		t.Fatalf("unexpected retry statuses: failed=%s suspended=%s sent=%s", failedStatus, suspendedStatus, sentStatus)
+	}
+}
+
 func TestIssueFirstPrecheckThroughPublicAPI(t *testing.T) {
 	f := newAPIFixture(t)
 	order := f.createOrderWithLine(t)
