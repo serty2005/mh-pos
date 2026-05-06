@@ -1,7 +1,7 @@
 ---
 description: Абсолютные глобальные правила для React (самые строгие)
 globs:
-  - *.{ts,tsx,js,jsx}"
+  - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
 ---
 
