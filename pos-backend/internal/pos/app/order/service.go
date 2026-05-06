@@ -124,6 +124,11 @@ func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*d
 		if order.Status != domain.OrderOpen {
 			return fmt.Errorf("%w: cannot add line to non-open order", domain.ErrConflict)
 		}
+		if _, err := s.repo.GetActivePrecheckByOrder(ctx, order.ID); err == nil {
+			return fmt.Errorf("%w: cannot change order with active precheck", domain.ErrConflict)
+		} else if !errors.Is(err, domain.ErrNotFound) {
+			return err
+		}
 		menuItem, err := s.repo.GetMenuItem(ctx, cmd.MenuItemID)
 		if err != nil {
 			return err

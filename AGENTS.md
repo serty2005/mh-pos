@@ -20,7 +20,7 @@ Order -> Precheck -> Payment -> Check
 
 Важно: проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. Изменения v1.3 нужно проектировать как first-launch schema/logic, а не как миграцию исторических данных.
 
-Текущее состояние кода нужно отделять от целевой модели: `pos-backend` сейчас сохраняет legacy checks/payments runtime flow и еще не переведен на precheck flow. Минимальный Precheck foundation уже добавлен на уровне schema/domain/repository/dormant app service; app-level `IssuePrecheck` создает issued precheck и переводит order в `locked`, но публичный runtime flow системы остается legacy.
+Текущее состояние кода нужно отделять от целевой модели: `pos-backend` сейчас сохраняет legacy checks/payments runtime flow и еще не переведен на precheck flow. Precheck foundation уже добавлен на уровне schema/domain/repository/dormant app service; app-level `IssuePrecheck` создает issued precheck и переводит order в `locked`, app-level `CancelPrecheck` отменяет active issued precheck без full PIN verification foundation и возвращает order в `open`, но публичный runtime flow системы остается legacy.
 
 ### Карта Репозитория
 
@@ -221,7 +221,7 @@ domain -> app -> ports -> infra
 - catalog
 - menu
 - orders
-- prechecks foundation без runtime API переключения
+- prechecks lifecycle foundation без runtime API переключения
 - checks/payments foundation по старому flow
 - payment_attempts
 - shifts
@@ -537,7 +537,7 @@ GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated
 - Scope: POS Edge Backend + minimal Cloud Sync Receiver foundation
 - Target financial model: `Order -> Precheck -> Payment -> Check`
 - Current POS Edge code: legacy runtime flow, not yet migrated to precheck flow
-- Edge foundation: `local_event_log` + `pos_sync_outbox` + cash sessions + payment attempts + dormant prechecks foundation with app-level order locking
+- Edge foundation: `local_event_log` + `pos_sync_outbox` + cash sessions + payment attempts + dormant prechecks lifecycle foundation with app-level order locking/unlocking
 - Operational read-only endpoints: sync outbox and local events
 - Cloud: minimal `cloud-backend/` Sync Receiver implemented; Cloud is not a runtime dependency for critical POS Edge writes
 

@@ -32,6 +32,11 @@ func (r *Repository) GetOrder(ctx context.Context, id string) (*domain.Order, er
 	return &v, nil
 }
 
+func (r *Repository) UpdateOrderOpen(ctx context.Context, v *domain.Order) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `UPDATE orders SET status = ?, updated_at = ? WHERE id = ?`, string(v.Status), dbTime(v.UpdatedAt), v.ID)
+	return normalizeErr(err)
+}
+
 func (r *Repository) UpdateOrderLocked(ctx context.Context, v *domain.Order) error {
 	_, err := r.execer(ctx).ExecContext(ctx, `UPDATE orders SET status = ?, updated_at = ? WHERE id = ?`, string(v.Status), dbTime(v.UpdatedAt), v.ID)
 	return normalizeErr(err)

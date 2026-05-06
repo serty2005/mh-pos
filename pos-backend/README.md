@@ -12,7 +12,7 @@ Order -> Precheck -> Payment -> Check
 
 `Precheck` - рабочий финансовый snapshot для гостя. `Check` - только финальный неизменяемый расчетный документ после полной оплаты precheck.
 
-Текущее состояние кода честно отличается от цели: backend пока сохраняет legacy runtime flow и еще не переведен на precheck flow. Precheck foundation added, runtime flow still legacy: есть таблица `prechecks`, domain model, repository и dormant app-level `IssuePrecheck`, который создает issued precheck и переводит order в `locked`, но публичные endpoints пока не переключены. В коде есть текущие check/payment endpoints и `CreateCheck`, но они описывают старый foundation и не должны использоваться как целевая модель для новых итераций. Следующая архитектурная работа должна двигаться к публичному `IssuePrecheck`, payment-to-precheck и automatic final check generation.
+Текущее состояние кода честно отличается от цели: backend пока сохраняет legacy runtime flow и еще не переведен на precheck flow. Precheck foundation added, runtime flow still legacy: есть таблица `prechecks`, domain model, repository, dormant app-level `IssuePrecheck`, который создает issued precheck и переводит order в `locked`, и app-level `CancelPrecheck`, который отменяет active issued precheck и возвращает order в `open`. Публичные endpoints пока не переключены. В коде есть текущие check/payment endpoints и `CreateCheck`, но они описывают старый foundation и не должны использоваться как целевая модель для новых итераций. Следующая архитектурная работа должна двигаться к публичному `IssuePrecheck`, payment-to-precheck и automatic final check generation.
 
 Проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. Изменения схемы v1.3 нужно проектировать как first-launch schema.
 
@@ -115,7 +115,7 @@ Local events note: write use cases сохраняют matching local event в `l
 
 Financial foundation note: текущий `CapturePayment` сохраняет `payments` и первую строку `payment_attempts` в той же transaction, что и legacy check paid-total updates, `local_event_log` и `pos_sync_outbox`. В целевой v1.3 реализации payment должен быть связан с precheck, а final check должен создаваться только после полной оплаты.
 
-Precheck foundation note: в схеме уже есть `prechecks`, в backend добавлены domain model, repository interface/SQLite implementation и dormant `IssuePrecheck` app service. `IssuePrecheck` транзакционно создает precheck, переводит order в `locked`, пишет `local_event_log` и `pos_sync_outbox`. Этот capability не подключен к router и не меняет текущий legacy guest flow.
+Precheck foundation note: в схеме уже есть `prechecks` lifecycle foundation с `version`, `supersedes_precheck_id`, `paid_total`, terminal status `cancelled/superseded`, в backend добавлены domain model, repository interface/SQLite implementation и dormant app service. `IssuePrecheck` транзакционно создает precheck, переводит order в `locked`, пишет `local_event_log` и `pos_sync_outbox`. `CancelPrecheck` транзакционно отменяет только active issued precheck без paid amount foundation, возвращает order в `open`, пишет `PrecheckCancelled` в `local_event_log` и `pos_sync_outbox`. Manager override пока является backend foundation без полноценной PIN verification. Эти capabilities не подключены к router и не меняют текущий legacy guest flow.
 
 Cash session endpoints: `POST /api/v1/cash-sessions/open`, `POST /api/v1/cash-sessions/{id}/close`, `GET /api/v1/cash-sessions/current?device_id=...`, `POST /api/v1/cash-drawer-events`. Закрытие смены запрещено, пока на device есть active cash session; cash session нужно закрыть до `POST /api/v1/shifts/{id}/close`.
 
@@ -129,7 +129,7 @@ Cash session endpoints: `POST /api/v1/cash-sessions/open`, `POST /api/v1/cash-se
 
 Они отражают текущее состояние кода, а не целевую v1.3 модель.
 
-Публичного endpoint для `IssuePrecheck` пока нет.
+Публичных endpoints для `IssuePrecheck` и `CancelPrecheck` пока нет.
 
 ## Tests
 

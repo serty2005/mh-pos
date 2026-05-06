@@ -658,6 +658,254 @@ func TestIssuePrecheckRollbackKeepsOrderOpenWhenLocalEventOrOutboxFails(t *testi
 	}
 }
 
+func TestCannotCancelMissingPrecheck(t *testing.T) {
+	f := newFixture(t)
+	beforeOutbox := countRows(t, f, "pos_sync_outbox")
+	beforeEvents := countRows(t, f, "local_event_log")
+
+	_, err := f.service.CancelPrecheck(f.ctx, app.CancelPrecheckCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-cancel-missing-precheck", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		PrecheckID:  "missing-precheck",
+	})
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("expected not found, got %v", err)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != beforeOutbox {
+		t.Fatalf("expected no outbox write, before=%d after=%d", beforeOutbox, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != beforeEvents {
+		t.Fatalf("expected no local event write, before=%d after=%d", beforeEvents, events)
+	}
+}
+
+func TestCancelPrecheckUnlocksOrderAndWritesOutbox(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-before-cancel", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		OrderID:     order.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+
+	cancelled, err := f.service.CancelPrecheck(f.ctx, app.CancelPrecheckCommand{
+		CommandMeta:        app.CommandMeta{CommandID: "cmd-cancel-precheck-1", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		PrecheckID:         precheck.ID,
+		ManagerEmployeeID:  f.employee.ID,
+		CancellationReason: "guest changed order",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cancelled.Status != domain.PrecheckCancelled || cancelled.ClosedAt == nil {
+		t.Fatalf("expected cancelled precheck, got %+v", cancelled)
+	}
+	gotOrder, err := f.repo.GetOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotOrder.Status != domain.OrderOpen {
+		t.Fatalf("expected order to unlock to open, got %s", gotOrder.Status)
+	}
+	if _, err := f.repo.GetActivePrecheckByOrder(f.ctx, order.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("expected no active precheck after cancel, got %v", err)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+1 {
+		t.Fatalf("expected one outbox row, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore+1 {
+		t.Fatalf("expected one local event row, before=%d after=%d", eventsBefore, events)
+	}
+	var eventCount int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM local_event_log WHERE command_id = ? AND event_type = 'PrecheckCancelled'`, "cmd-cancel-precheck-1").Scan(&eventCount); err != nil {
+		t.Fatal(err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("expected PrecheckCancelled local event, got %d", eventCount)
+	}
+}
+
+func TestCannotCancelNonIssuedPrecheck(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-for-non-issued-cancel", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		OrderID:     order.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CancelPrecheck(f.ctx, app.CancelPrecheckCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-cancel-once", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		PrecheckID:  precheck.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+
+	_, err = f.service.CancelPrecheck(f.ctx, app.CancelPrecheckCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-cancel-non-issued", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		PrecheckID:  precheck.ID,
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no outbox write, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected no local event write, before=%d after=%d", eventsBefore, events)
+	}
+}
+
+func TestCannotCancelPrecheckWithPaidTotalFoundation(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-paid-foundation", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		OrderID:     order.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE prechecks SET paid_total = 1 WHERE id = ?`, precheck.ID); err != nil {
+		t.Fatal(err)
+	}
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+
+	_, err = f.service.CancelPrecheck(f.ctx, app.CancelPrecheckCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-cancel-paid-foundation", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		PrecheckID:  precheck.ID,
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+	gotOrder, err := f.repo.GetOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotOrder.Status != domain.OrderLocked {
+		t.Fatalf("expected paid precheck cancel failure to keep order locked, got %s", gotOrder.Status)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no outbox write, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected no local event write, before=%d after=%d", eventsBefore, events)
+	}
+}
+
+func TestCancelPrecheckRollbackKeepsIssuedAndOrderLockedWhenOutboxFails(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-before-cancel-outbox-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		OrderID:     order.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+	service := app.NewService(outboxFailingRepo{Repository: f.repo}, platformsqlite.NewTxManager(f.db), &testIDs{n: 6000}, fixedClock{})
+
+	_, err = service.CancelPrecheck(f.ctx, app.CancelPrecheckCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-cancel-outbox-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		PrecheckID:  precheck.ID,
+	})
+	if !errors.Is(err, errInjectedOutbox) {
+		t.Fatalf("expected injected outbox failure, got %v", err)
+	}
+	gotPrecheck, err := f.repo.GetPrecheck(f.ctx, precheck.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPrecheck.Status != domain.PrecheckIssued {
+		t.Fatalf("expected precheck to remain issued after rollback, got %s", gotPrecheck.Status)
+	}
+	gotOrder, err := f.repo.GetOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotOrder.Status != domain.OrderLocked {
+		t.Fatalf("expected order to remain locked after rollback, got %s", gotOrder.Status)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no partial outbox write, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected no partial local event write, before=%d after=%d", eventsBefore, events)
+	}
+}
+
+func TestDuplicateCancelPrecheckCommandIDDoesNotDoubleCancel(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-before-duplicate-cancel", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		OrderID:     order.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+	cmd := app.CancelPrecheckCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-cancel-duplicate", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		PrecheckID:  precheck.ID,
+	}
+	if _, err := f.service.CancelPrecheck(f.ctx, cmd); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CancelPrecheck(f.ctx, cmd); !errors.Is(err, domain.ErrDuplicateCommand) {
+		t.Fatalf("expected duplicate command, got %v", err)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+1 {
+		t.Fatalf("expected one outbox row, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore+1 {
+		t.Fatalf("expected one local event row, before=%d after=%d", eventsBefore, events)
+	}
+	var cancelEvents int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM local_event_log WHERE command_id = ? AND event_type = 'PrecheckCancelled'`, cmd.CommandID).Scan(&cancelEvents); err != nil {
+		t.Fatal(err)
+	}
+	if cancelEvents != 1 {
+		t.Fatalf("expected one PrecheckCancelled event, got %d", cancelEvents)
+	}
+}
+
 func TestCannotCloseShiftWithLockedOrders(t *testing.T) {
 	f := newFixture(t)
 	shift := f.openShift(t)

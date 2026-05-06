@@ -17,6 +17,7 @@ func TestPrecheckRepositoryPersistsAndFindsActiveByOrder(t *testing.T) {
 		ID:            "precheck-1",
 		OrderID:       "order-1",
 		Status:        domain.PrecheckIssued,
+		Version:       1,
 		Subtotal:      100,
 		DiscountTotal: 0,
 		TaxTotal:      0,
@@ -41,5 +42,25 @@ func TestPrecheckRepositoryPersistsAndFindsActiveByOrder(t *testing.T) {
 	}
 	if active.ID != precheck.ID {
 		t.Fatalf("expected active precheck %s, got %s", precheck.ID, active.ID)
+	}
+	prechecks, err := repo.ListPrechecksByOrder(ctx, precheck.OrderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prechecks) != 1 || prechecks[0].ID != precheck.ID {
+		t.Fatalf("expected one listed precheck, got %+v", prechecks)
+	}
+	if err := precheck.Cancel(now, "", "guest changed order"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpdatePrecheckLifecycle(ctx, precheck); err != nil {
+		t.Fatal(err)
+	}
+	got, err = repo.GetPrecheck(ctx, precheck.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != domain.PrecheckCancelled || got.ClosedAt == nil || got.CancellationReason == nil || *got.CancellationReason != "guest changed order" {
+		t.Fatalf("expected cancelled precheck lifecycle fields, got %+v", got)
 	}
 }

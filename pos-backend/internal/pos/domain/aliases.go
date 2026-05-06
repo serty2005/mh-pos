@@ -81,9 +81,10 @@ type PrecheckStatus = precheck.PrecheckStatus
 type Precheck = precheck.Precheck
 
 const (
-	PrecheckIssued    = precheck.PrecheckIssued
-	PrecheckClosed    = precheck.PrecheckClosed
-	PrecheckCancelled = precheck.PrecheckCancelled
+	PrecheckIssued     = precheck.PrecheckIssued
+	PrecheckClosed     = precheck.PrecheckClosed
+	PrecheckCancelled  = precheck.PrecheckCancelled
+	PrecheckSuperseded = precheck.PrecheckSuperseded
 )
 
 type PaymentStatus = check.PaymentStatus

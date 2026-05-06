@@ -155,6 +155,27 @@ func TestPrecheckTotalsMustMatchSnapshotFormula(t *testing.T) {
 	}
 }
 
+func TestPrecheckLifecycleFoundationConstraints(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	seedFinancialForSchemaTests(t, ctx, db)
+	insert := `INSERT INTO prechecks(id,order_id,status,version,subtotal,discount_total,tax_total,total,paid_total,created_at,issued_at,closed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+	execSchema(t, ctx, db, insert, "precheck-1", "order-1", "cancelled", 1, 100, 0, 0, 100, 0, schemaTestTime, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, insert, "precheck-2", "order-1", "superseded", 2, 100, 0, 0, 100, 0, schemaTestTime, schemaTestTime, schemaTestTime)
+
+	_, err := db.ExecContext(ctx, insert, "precheck-bad-version", "order-1", "cancelled", 0, 100, 0, 0, 100, 0, schemaTestTime, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected non-positive precheck version to fail")
+	}
+	_, err = db.ExecContext(ctx, insert, "precheck-bad-paid-total", "order-1", "cancelled", 3, 100, 0, 0, 100, 101, schemaTestTime, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected paid_total above total to fail")
+	}
+	_, err = db.ExecContext(ctx, insert, "precheck-bad-terminal-time", "order-1", "cancelled", 4, 100, 0, 0, 100, 0, schemaTestTime, schemaTestTime, nil)
+	if err == nil {
+		t.Fatal("expected terminal precheck without closed_at to fail")
+	}
+}
+
 func TestCashSessionsAllowOnlyOneOpenSessionPerDevice(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)

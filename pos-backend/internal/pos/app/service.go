@@ -41,6 +41,7 @@ type CloseShiftCommand = appshift.CloseShiftCommand
 type CreateOrderCommand = apporder.CreateOrderCommand
 type AddOrderLineCommand = apporder.AddOrderLineCommand
 type IssuePrecheckCommand = appprecheck.IssuePrecheckCommand
+type CancelPrecheckCommand = appprecheck.CancelPrecheckCommand
 type CreateCheckCommand = appcheck.CreateCheckCommand
 type CapturePaymentCommand = appcheck.CapturePaymentCommand
 type CloseOrderCommand = apporder.CloseOrderCommand
@@ -167,6 +168,18 @@ func (s *Service) CloseOrder(ctx context.Context, cmd CloseOrderCommand) (*domai
 
 func (s *Service) IssuePrecheck(ctx context.Context, cmd IssuePrecheckCommand) (*domain.Precheck, error) {
 	return s.prechecks.IssuePrecheck(ctx, cmd)
+}
+
+func (s *Service) GetPrecheck(ctx context.Context, id string) (*domain.Precheck, error) {
+	return s.prechecks.GetPrecheck(ctx, id)
+}
+
+func (s *Service) ListPrechecksByOrder(ctx context.Context, orderID string) ([]domain.Precheck, error) {
+	return s.prechecks.ListPrechecksByOrder(ctx, orderID)
+}
+
+func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand) (*domain.Precheck, error) {
+	return s.prechecks.CancelPrecheck(ctx, cmd)
 }
 
 func (s *Service) GetCheck(ctx context.Context, id string) (*domain.Check, error) {

@@ -23,12 +23,12 @@ Order -> Precheck -> Payment -> Check
 - `pos_sync_outbox`;
 - `SyncEnvelope` foundation;
 - shifts, cash sessions, cash drawer events;
-- minimal prechecks foundation: schema, domain model, repository, dormant `IssuePrecheck` app service that locks the order;
+- prechecks lifecycle foundation: schema, domain model, repository, dormant `IssuePrecheck` app service that locks the order, and app-level `CancelPrecheck` foundation that unlocks it without full PIN verification flow;
 - orders/checks/payments legacy foundation;
 - `payment_attempts`;
 - read-only sync endpoints.
 
-Честное ограничение текущего кода: POS Edge backend еще не переведен на precheck flow. Precheck foundation added, runtime flow still legacy; app-level `IssuePrecheck` уже переводит order в `locked`, но публичного endpoint для этого flow пока нет. Текущие endpoints и use cases вокруг check/payment являются legacy foundation и не должны восприниматься как целевая v1.3 модель.
+Честное ограничение текущего кода: POS Edge backend еще не переведен на precheck flow. Precheck foundation added, runtime flow still legacy; app-level `IssuePrecheck` уже переводит order в `locked`, а app-level `CancelPrecheck` отменяет active issued precheck и возвращает order в `open`, но публичного endpoint для этого flow пока нет. Текущие endpoints и use cases вокруг check/payment являются legacy foundation и не должны восприниматься как целевая v1.3 модель.
 
 ## Структура Монорепозитория
 
@@ -164,7 +164,7 @@ go test ./...
 - Запуск POS Edge backend: `pos-backend/README.md`
 - Запуск Cloud receiver: `cloud-backend/README.md`
 - HTTP маршруты POS Edge: `pos-backend/internal/pos/api/router.go`
-- Dormant precheck app foundation: `pos-backend/internal/pos/app/precheck/service.go`
+- Dormant precheck lifecycle app foundation: `pos-backend/internal/pos/app/precheck/service.go`
 - Текущий legacy check service: `pos-backend/internal/pos/app/check/service.go`
 - Use cases: `pos-backend/internal/pos/app/`
 - Доменные модели: `pos-backend/internal/pos/domain/`
@@ -178,7 +178,7 @@ go test ./...
 - Target financial model: `Order -> Precheck -> Payment -> Check`.
 - Production data migration before first launch: не требуется.
 - POS Edge SQLite runtime contract: functional minimum `>= 3.37.0`, production WAL pilot baseline `>= 3.51.3` или pinned backport `3.50.7/3.44.6`; backend завершается при несоответствии.
-- POS Edge code: legacy runtime flow, еще не переведен на precheck flow; precheck foundation added без публичного API переключения, app-level `IssuePrecheck` locks order.
+- POS Edge code: legacy runtime flow, еще не переведен на precheck flow; precheck lifecycle foundation added без публичного API переключения, app-level `IssuePrecheck` locks order, app-level `CancelPrecheck` unlocks order after successful cancel.
 - `local_event_log` уже является частью edge foundation, хранит `command_id` той же write-операции, что и outbox, и доступен read-only через `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`.
 - Sync outbox доступен через `GET /api/v1/sync/outbox`.
 - Edge financial foundation включает `prechecks`, `payment_attempts`, `cash_sessions`, `cash_drawer_events` и базовые HTTP endpoints для cash session/drawer workflows.

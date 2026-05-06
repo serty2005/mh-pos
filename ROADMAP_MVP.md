@@ -32,7 +32,7 @@
 - shifts;
 - cash sessions;
 - cash drawer events;
-- минимальный prechecks foundation: SQLite table, domain model, repository, dormant `IssuePrecheck`, order locking;
+- prechecks lifecycle foundation: SQLite table, domain model, repository, dormant `IssuePrecheck`, order locking, app-level `CancelPrecheck`, version/paid_total fields;
 - базовые orders/checks/payments;
 - device registration foundation;
 - SQLite migrations для первого запуска локальной БД;
@@ -44,7 +44,7 @@
 Order -> Precheck -> Payment -> Check
 ```
 
-Текущее ограничение: precheck foundation added, runtime flow still legacy. App-level `IssuePrecheck` уже locks order, но legacy `CreateCheck` и payment-to-check flow intentionally сохранены до полноценного Precheck Core.
+Текущее ограничение: precheck foundation added, runtime flow still legacy. App-level `IssuePrecheck` уже locks order, app-level `CancelPrecheck` unlocks order после успешной отмены active issued precheck, но legacy `CreateCheck` и payment-to-check flow intentionally сохранены до полноценного Precheck Core и публичного precheck API.
 
 ---
 
@@ -525,7 +525,7 @@ Acceptance criteria:
 
 ## Этап B. Schema Reset для первого запуска
 
-Статус: начат частично. Минимальная таблица `prechecks` уже добавлена как preparatory foundation; полный schema reset v1.3 еще не завершен.
+Статус: начат частично. Таблица `prechecks` уже расширена как preparatory lifecycle foundation; полный schema reset v1.3 еще не завершен.
 
 Цель: привести SQLite и PostgreSQL стартовые схемы к v1.3 без сложных data migrations.
 
@@ -545,7 +545,7 @@ Acceptance criteria:
 - [ ] Обновить `checks`, чтобы они были финальными документами, а не рабочими счетами.
 - [ ] Добавить поля outbox retry policy: `attempts`, `next_retry_at`, `last_error`, `locked_at`, `locked_by`.
 - [x] Добавить constraint для одного active `issued` precheck на order.
-- [ ] Добавить полный constraints набор для precheck versioning; `version_no` еще не внедрен.
+- [x] Добавить минимальный constraints набор для precheck versioning: `version`, unique `(order_id, version)`, `paid_total`, terminal statuses.
 - [ ] Добавить `business_date_local` в `shifts`, `cash_sessions`, `prechecks`, `payments`, `checks`.
 - [ ] Перевести money columns на signed `INTEGER minor units`.
 - [ ] Добавить `currency_code`.
@@ -576,7 +576,7 @@ Acceptance criteria:
 
 Цель: реализовать `Order -> Precheck`.
 
-Статус: начат как dormant foundation. Entity, минимальный repository и app-level `IssuePrecheck` добавлены, но endpoint, order locking, supersede/versioning и payment-to-precheck еще не внедрены.
+Статус: начат как dormant foundation. Entity, repository, app-level `IssuePrecheck`, order locking, app-level `CancelPrecheck` и минимальный versioning foundation добавлены, но endpoint, full supersede flow и payment-to-precheck еще не внедрены.
 
 Backend задачи:
 
@@ -587,11 +587,11 @@ Backend задачи:
   - `CreatePrecheck`;
   - `GetPrecheck`;
   - `GetActivePrecheckByOrder`;
-- [ ] Добавить расширенные repository ports:
+- [x] Добавить часть расширенных repository ports:
   - `ListPrechecksByOrder`;
-  - `SupersedeIssuedPrechecksForOrder`;
-  - `NextPrecheckVersionForOrder`.
-- [x] Реализовать минимальный SQLite repository для `CreatePrecheck`, `GetPrecheck`, `GetActivePrecheckByOrder`.
+  - `UpdatePrecheckLifecycle`;
+  - full `SupersedeIssuedPrechecksForOrder`/`NextPrecheckVersionForOrder` еще не выделены отдельными ports.
+- [x] Реализовать SQLite repository для `CreatePrecheck`, `GetPrecheck`, `GetActivePrecheckByOrder`, `ListPrechecksByOrder`, `UpdatePrecheckLifecycle`.
 - [x] Реализовать dormant use case `IssuePrecheck`.
 - [ ] Заменить endpoint `POST /orders/{id}/check` на `POST /orders/{id}/precheck`.
 - [ ] Старый endpoint либо удалить до первого запуска, либо оставить временно только как deprecated dev endpoint, который вызывает `IssuePrecheck`.
@@ -599,10 +599,10 @@ Backend задачи:
 Бизнес-правила:
 
 - [ ] Нельзя выпустить precheck без активной смены.
-- [ ] Нельзя выпустить precheck для closed/cancelled order.
-- [ ] Нельзя добавить order line после active precheck.
-- [ ] `IssuePrecheck` блокирует заказ.
-- [ ] `IssuePrecheck` пишет `PrecheckIssued` в `local_event_log` и `pos_sync_outbox`.
+- [x] Нельзя выпустить precheck для closed/cancelled order.
+- [x] Нельзя добавить order line после active precheck.
+- [x] `IssuePrecheck` блокирует заказ.
+- [x] `IssuePrecheck` пишет `PrecheckIssued` в `local_event_log` и `pos_sync_outbox`.
 
 События:
 
@@ -613,11 +613,11 @@ PrecheckSuperseded
 
 Тесты:
 
-- [ ] success: issue first precheck version 1;
+- [x] success: issue first precheck version 1;
 - [ ] success: issue second precheck version 2, previous becomes superseded;
 - [ ] fail: duplicate version blocked by unique index;
-- [ ] fail: add order line after issued precheck;
-- [ ] rollback: outbox write failure откатывает precheck и order lock.
+- [x] fail: add order line after issued precheck;
+- [x] rollback: outbox write failure откатывает precheck и order lock.
 
 Acceptance criteria:
 
@@ -638,10 +638,11 @@ Acceptance criteria:
 - [ ] Добавить permission/role flag для manager override.
 - [ ] Реализовать локальную проверку PIN на Edge.
 - [ ] Реализовать `manager_override_logs`.
-- [ ] Реализовать use case `CancelPrecheckWithManagerOverride`.
+- [x] Реализовать temporary backend foundation `CancelPrecheck` без full PIN verification.
+- [ ] Реализовать full use case `CancelPrecheckWithManagerOverride`.
 - [ ] Реализовать endpoint `POST /prechecks/{id}/cancel`.
 - [ ] Добавить reason code.
-- [ ] После отмены precheck разблокировать order.
+- [x] После отмены precheck разблокировать order на app/service уровне.
 - [ ] Реализовать `RefundPaymentWithManagerOverride`.
 - [ ] Добавить `entry_kind = capture | refund`.
 - [ ] Добавить `original_payment_id`.
@@ -668,8 +669,8 @@ OrderUnlocked
 - [ ] correct manager PIN allows cancel;
 - [ ] wrong PIN rejects cancel;
 - [ ] employee without permission rejects cancel;
-- [ ] cancel precheck unlocks order;
-- [ ] cancel paid precheck запрещен;
+- [x] cancel precheck unlocks order;
+- [x] cancel paid precheck запрещен на уровне `prechecks.paid_total` foundation;
 - [ ] override log пишется в одной транзакции с cancel.
 
 Acceptance criteria:
