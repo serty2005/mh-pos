@@ -1,5 +1,5 @@
 ---
-description: React testing rules: unit/component/e2e and mocking discipline
+description: React testing rules unit/component/e2e and mocking discipline
 globs:
   - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
