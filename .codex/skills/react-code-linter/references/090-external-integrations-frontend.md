@@ -1,5 +1,5 @@
 ---
-description: Frontend external integration patterns: contracts, resilience, idempotency
+description: Frontend external integration patterns contracts, resilience, idempotency
 globs:
   - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
