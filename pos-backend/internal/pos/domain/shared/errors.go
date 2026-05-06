@@ -6,6 +6,7 @@ var (
 	ErrInvalid          = errors.New("invalid domain operation")
 	ErrNotFound         = errors.New("not found")
 	ErrConflict         = errors.New("domain invariant violation")
+	ErrForbidden        = errors.New("forbidden")
 	ErrDuplicate        = errors.New("duplicate resource")
 	ErrDuplicateCommand = errors.New("duplicate command")
 )

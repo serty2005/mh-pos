@@ -40,8 +40,8 @@ func (r *Repository) UpdateCheckPaidTotal(ctx context.Context, v *domain.Check) 
 }
 
 func (r *Repository) CreatePayment(ctx context.Context, v *domain.Payment) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO payments(id,edge_payment_id,restaurant_id,device_id,shift_id,check_id,method,amount,currency,status,provider_name,provider_transaction_id,provider_reference,fingerprint_hash,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.EdgePaymentID, v.RestaurantID, v.DeviceID, v.ShiftID, v.CheckID, string(v.Method), v.Amount, v.Currency, string(v.Status), nullableString(v.ProviderName), nullableString(v.ProviderTransactionID), nullableString(v.ProviderReference), nullableString(v.FingerprintHash), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO payments(id,edge_payment_id,restaurant_id,device_id,shift_id,precheck_id,method,amount,currency,status,provider_name,provider_transaction_id,provider_reference,fingerprint_hash,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.EdgePaymentID, v.RestaurantID, v.DeviceID, v.ShiftID, v.PrecheckID, string(v.Method), v.Amount, v.Currency, string(v.Status), nullableString(v.ProviderName), nullableString(v.ProviderTransactionID), nullableString(v.ProviderReference), nullableString(v.FingerprintHash), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }
 

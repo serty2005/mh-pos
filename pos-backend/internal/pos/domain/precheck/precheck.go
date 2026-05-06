@@ -96,6 +96,28 @@ func (p *Precheck) Cancel(now time.Time, cancelledByEmployeeID, reason string) e
 	return nil
 }
 
+func (p *Precheck) ApplyCapturedPayment(amount int64, now time.Time) error {
+	if p.Status != PrecheckIssued {
+		return fmt.Errorf("%w: precheck cannot accept payments", shared.ErrConflict)
+	}
+	if amount <= 0 {
+		return fmt.Errorf("%w: payment amount must be positive", shared.ErrInvalid)
+	}
+	if p.PaidTotal+amount > p.Total {
+		return fmt.Errorf("%w: precheck overpayment is not allowed", shared.ErrConflict)
+	}
+	p.PaidTotal += amount
+	if p.PaidTotal == p.Total {
+		p.Status = PrecheckClosed
+		p.ClosedAt = &now
+	}
+	return nil
+}
+
+func (p Precheck) IsFullyPaid() bool {
+	return p.Status == PrecheckClosed && p.PaidTotal == p.Total
+}
+
 func (p *Precheck) Supersede(now time.Time) error {
 	if p.Status != PrecheckIssued {
 		return fmt.Errorf("%w: only issued precheck can be superseded", shared.ErrConflict)

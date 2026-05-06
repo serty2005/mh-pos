@@ -15,6 +15,7 @@ import (
 	platformsqlite "pos-backend/internal/platform/sqlite"
 	"pos-backend/internal/pos/api"
 	"pos-backend/internal/pos/app"
+	appshared "pos-backend/internal/pos/app/shared"
 	"pos-backend/internal/pos/domain"
 	possqlite "pos-backend/internal/pos/infra/sqlite"
 )
@@ -43,6 +44,7 @@ type apiFixture struct {
 	restaurant *domain.Restaurant
 	device     *domain.Device
 	employee   *domain.Employee
+	manager    *domain.Employee
 	menuItem   *domain.MenuItem
 }
 
@@ -75,11 +77,23 @@ func (f *apiFixture) seed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	managerRole, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{CommandMeta: apiSeedMeta("bootstrap-device"), Name: "manager", PermissionsJSON: `{"precheck.cancel":true}`})
+	if err != nil {
+		t.Fatal(err)
+	}
 	f.device, err = f.service.RegisterDevice(f.ctx, app.RegisterDeviceCommand{CommandMeta: apiSeedMeta("bootstrap-device"), RestaurantID: f.restaurant.ID, DeviceCode: "POS-1", Name: "Main", Type: "windows"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.employee, err = f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{CommandMeta: apiSeedMeta(f.device.ID), RestaurantID: f.restaurant.ID, RoleID: role.ID, Name: "Anna", PINHash: "hash"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	managerPINHash, err := appshared.HashPIN("2468", []byte("api-manager-salt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.manager, err = f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{CommandMeta: apiSeedMeta(f.device.ID), RestaurantID: f.restaurant.ID, RoleID: managerRole.ID, Name: "Mira", PINHash: managerPINHash})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +164,7 @@ func decodeAPIResponse[T any](t *testing.T, rr *httptest.ResponseRecorder) T {
 func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 	t.Helper()
 	switch table {
-	case "prechecks", "checks", "pos_sync_outbox", "local_event_log":
+	case "prechecks", "checks", "payments", "payment_attempts", "pos_sync_outbox", "local_event_log", "manager_override_audit":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -296,5 +310,55 @@ func TestDeprecatedCheckEndpointIssuesPrecheckWithoutLegacyCheck(t *testing.T) {
 	}
 	if checks := countAPIRows(t, f, "checks"); checks != checksBefore {
 		t.Fatalf("expected no legacy check row, before=%d after=%d", checksBefore, checks)
+	}
+}
+
+func TestCancelPrecheckThroughPublicAPIRequiresManagerOverride(t *testing.T) {
+	f := newAPIFixture(t)
+	order := f.createOrderWithLine(t)
+	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-cancel-issue","device_id":"`+f.device.ID+`"}`)
+	if issued.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", issued.Code, issued.Body.String())
+	}
+	precheck := decodeAPIResponse[domain.Precheck](t, issued)
+	body := `{"command_id":"cmd-api-cancel-precheck","device_id":"` + f.device.ID + `","manager_employee_id":"` + f.manager.ID + `","manager_pin":"2468","cancellation_reason":"guest changed order"}`
+	rr := f.postJSON(t, "/api/v1/prechecks/"+precheck.ID+"/cancel", body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	cancelled := decodeAPIResponse[domain.Precheck](t, rr)
+	if cancelled.Status != domain.PrecheckCancelled {
+		t.Fatalf("expected cancelled precheck, got %+v", cancelled)
+	}
+	if audit := countAPIRows(t, f, "manager_override_audit"); audit != 1 {
+		t.Fatalf("expected one manager override audit row, got %d", audit)
+	}
+}
+
+func TestCapturePaymentThroughPrecheckAPICreatesFinalCheck(t *testing.T) {
+	f := newAPIFixture(t)
+	order := f.createOrderWithLine(t)
+	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-payment-issue","device_id":"`+f.device.ID+`"}`)
+	if issued.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", issued.Code, issued.Body.String())
+	}
+	precheck := decodeAPIResponse[domain.Precheck](t, issued)
+	rr := f.postJSON(t, "/api/v1/prechecks/"+precheck.ID+"/payments", `{"command_id":"cmd-api-payment-full","device_id":"`+f.device.ID+`","method":"cash","amount":`+fmt.Sprint(precheck.Total)+`,"currency":"RUB"}`)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	payment := decodeAPIResponse[domain.Payment](t, rr)
+	if payment.PrecheckID != precheck.ID {
+		t.Fatalf("expected payment for precheck %s, got %+v", precheck.ID, payment)
+	}
+	if checks := countAPIRows(t, f, "checks"); checks != 1 {
+		t.Fatalf("expected one final check, got %d", checks)
+	}
+	gotOrder, err := f.repo.GetOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotOrder.Status != domain.OrderClosed {
+		t.Fatalf("expected order closed, got %s", gotOrder.Status)
 	}
 }

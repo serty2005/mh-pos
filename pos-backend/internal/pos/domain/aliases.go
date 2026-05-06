@@ -19,6 +19,7 @@ var (
 	ErrInvalid          = shared.ErrInvalid
 	ErrNotFound         = shared.ErrNotFound
 	ErrConflict         = shared.ErrConflict
+	ErrForbidden        = shared.ErrForbidden
 	ErrDuplicate        = shared.ErrDuplicate
 	ErrDuplicateCommand = shared.ErrDuplicateCommand
 )
@@ -29,6 +30,7 @@ type Device = device.Device
 
 type Role = employee.Role
 type Employee = employee.Employee
+type ManagerOverrideAudit = employee.ManagerOverrideAudit
 
 type CatalogItemType = catalog.CatalogItemType
 type CatalogItem = catalog.CatalogItem

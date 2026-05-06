@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -9,6 +10,7 @@ import (
 
 	httpx "pos-backend/internal/platform/http"
 	"pos-backend/internal/pos/app"
+	"pos-backend/internal/pos/domain"
 )
 
 type Handler struct {
@@ -58,9 +60,11 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/orders/{id}/close", h.closeOrder)
 
 		r.Get("/prechecks/{id}", h.getPrecheck)
+		r.Post("/prechecks/{id}/cancel", h.cancelPrecheck)
+		r.Post("/prechecks/{id}/payments", h.capturePrecheckPayment)
 
 		r.Get("/checks/{id}", h.getCheck)
-		r.Post("/checks/{id}/payments", h.capturePayment)
+		r.Post("/checks/{id}/payments", h.captureLegacyCheckPayment)
 
 		r.Post("/cash-sessions/open", h.openCashSession)
 		r.Post("/cash-sessions/{id}/close", h.closeCashSession)
@@ -293,21 +297,37 @@ func (h *Handler) listPrechecksByOrder(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, v, err)
 }
 
+func (h *Handler) cancelPrecheck(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CancelPrecheckCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err)
+		return
+	}
+	setEdgeOrigin(&cmd.CommandMeta)
+	cmd.PrecheckID = chi.URLParam(r, "id")
+	v, err := h.service.CancelPrecheck(r.Context(), cmd)
+	writeOK(w, v, err)
+}
+
 func (h *Handler) getCheck(w http.ResponseWriter, r *http.Request) {
 	v, err := h.service.GetCheck(r.Context(), chi.URLParam(r, "id"))
 	writeOK(w, v, err)
 }
 
-func (h *Handler) capturePayment(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) capturePrecheckPayment(w http.ResponseWriter, r *http.Request) {
 	var cmd app.CapturePaymentCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
 		httpx.Error(w, err)
 		return
 	}
 	setEdgeOrigin(&cmd.CommandMeta)
-	cmd.CheckID = chi.URLParam(r, "id")
+	cmd.PrecheckID = chi.URLParam(r, "id")
 	v, err := h.service.CapturePayment(r.Context(), cmd)
 	writeCreated(w, v, err)
+}
+
+func (h *Handler) captureLegacyCheckPayment(w http.ResponseWriter, r *http.Request) {
+	httpx.Error(w, fmt.Errorf("%w: legacy check payment endpoint is disabled; use /api/v1/prechecks/{id}/payments", domain.ErrConflict))
 }
 
 func (h *Handler) openCashSession(w http.ResponseWriter, r *http.Request) {

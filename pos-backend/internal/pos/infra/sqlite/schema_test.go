@@ -119,6 +119,18 @@ func TestPrecheckFoundationTableExists(t *testing.T) {
 	}
 }
 
+func TestManagerOverrideAuditTableExists(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	var n int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = 'manager_override_audit'`).Scan(&n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatal("expected manager_override_audit table to exist")
+	}
+}
+
 func TestOrdersAllowLockedStatus(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)
@@ -207,10 +219,11 @@ func TestCashDrawerEventsRequireSessionAndNonNegativeAmount(t *testing.T) {
 func TestPaymentsRequireEdgeContextAndPaymentAttemptsReferencePayment(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)
-	execSchema(t, ctx, db, `INSERT INTO payments(id,edge_payment_id,restaurant_id,device_id,shift_id,check_id,method,amount,currency,status,created_at,updated_at) VALUES ('payment-1','edge-payment-1','restaurant-1','device-1','shift-1','check-1','cash',100,'RUB','captured',?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO prechecks(id,order_id,status,version,subtotal,discount_total,tax_total,total,paid_total,created_at,issued_at) VALUES ('precheck-1','order-1','issued',1,100,0,0,100,0,?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO payments(id,edge_payment_id,restaurant_id,device_id,shift_id,precheck_id,method,amount,currency,status,created_at,updated_at) VALUES ('payment-1','edge-payment-1','restaurant-1','device-1','shift-1','precheck-1','cash',100,'RUB','captured',?,?)`, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO payment_attempts(id,payment_id,attempt_no,method,amount,currency,status,attempted_at,created_at) VALUES ('attempt-1','payment-1',1,'cash',100,'RUB','captured',?,?)`, schemaTestTime, schemaTestTime)
 
-	_, err := db.ExecContext(ctx, `INSERT INTO payments(id,edge_payment_id,restaurant_id,device_id,shift_id,check_id,method,amount,currency,status,created_at,updated_at) VALUES ('payment-2','edge-payment-2',NULL,'device-1','shift-1','check-1','cash',100,'RUB','captured',?,?)`, schemaTestTime, schemaTestTime)
+	_, err := db.ExecContext(ctx, `INSERT INTO payments(id,edge_payment_id,restaurant_id,device_id,shift_id,precheck_id,method,amount,currency,status,created_at,updated_at) VALUES ('payment-2','edge-payment-2',NULL,'device-1','shift-1','precheck-1','cash',100,'RUB','captured',?,?)`, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected payment without restaurant_id to fail")
 	}
@@ -235,15 +248,11 @@ func TestLocalEventLogRequiresUniqueEdgeEventIdentity(t *testing.T) {
 	}
 }
 
-func TestLocalEventLogRequiresUniqueCommandID(t *testing.T) {
+func TestLocalEventLogAllowsMultipleEventsForOneCommandID(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	insert := `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
 	execSchema(t, ctx, db, insert, "local-event-1", "edge-event-1", "cmd-1", "1", "OrderCreated", "Order", "order-1", "restaurant-1", "device-1", "shift-1", `{"command_id":"cmd-1"}`, schemaTestTime, schemaTestTime)
-
-	_, err := db.ExecContext(ctx, insert, "local-event-2", "edge-event-2", "cmd-1", "1", "OrderCreated", "Order", "order-2", "restaurant-1", "device-1", "shift-1", `{"command_id":"cmd-1"}`, schemaTestTime, schemaTestTime)
-	if err == nil {
-		t.Fatal("expected duplicate command_id to fail")
-	}
+	execSchema(t, ctx, db, insert, "local-event-2", "edge-event-2", "cmd-1", "1", "CheckCreated", "Check", "check-1", "restaurant-1", "device-1", "shift-1", `{"command_id":"cmd-1"}`, schemaTestTime, schemaTestTime)
 }
 
 func TestLocalEventLogRequiresDeviceID(t *testing.T) {

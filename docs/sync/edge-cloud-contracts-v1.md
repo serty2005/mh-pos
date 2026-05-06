@@ -76,9 +76,10 @@ Relationships:
 ```text
 command_id
   generated once per edge write use case
-  stored in local_event_log
-  stored in pos_sync_outbox
-  copied into SyncEnvelope.command_id
+  may be shared by multiple local events from the same write use case
+  stored in local_event_log rows
+  stored in pos_sync_outbox rows
+  copied into each SyncEnvelope.command_id
 
 event_id
   generated once for the local edge event

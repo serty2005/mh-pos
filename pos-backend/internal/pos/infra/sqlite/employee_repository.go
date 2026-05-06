@@ -33,6 +33,20 @@ func (r *Repository) ListRoles(ctx context.Context) ([]domain.Role, error) {
 	return out, rows.Err()
 }
 
+func (r *Repository) GetRole(ctx context.Context, id string) (*domain.Role, error) {
+	var v domain.Role
+	var active int
+	var created, updated string
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,name,permissions_json,active,created_at,updated_at FROM roles WHERE id = ?`, id).Scan(&v.ID, &v.Name, &v.PermissionsJSON, &active, &created, &updated)
+	if err != nil {
+		return nil, normalizeErr(err)
+	}
+	v.Active = active == 1
+	v.CreatedAt = parseTime(created)
+	v.UpdatedAt = parseTime(updated)
+	return &v, nil
+}
+
 func (r *Repository) CreateEmployee(ctx context.Context, v *domain.Employee) error {
 	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO employees(id,restaurant_id,role_id,name,pin_hash,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)`,
 		v.ID, v.RestaurantID, v.RoleID, v.Name, v.PINHash, boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
@@ -61,6 +75,20 @@ func (r *Repository) ListEmployees(ctx context.Context) ([]domain.Employee, erro
 	return out, rows.Err()
 }
 
+func (r *Repository) GetEmployee(ctx context.Context, id string) (*domain.Employee, error) {
+	var v domain.Employee
+	var active int
+	var created, updated string
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,role_id,name,pin_hash,active,created_at,updated_at FROM employees WHERE id = ?`, id).Scan(&v.ID, &v.RestaurantID, &v.RoleID, &v.Name, &v.PINHash, &active, &created, &updated)
+	if err != nil {
+		return nil, normalizeErr(err)
+	}
+	v.Active = active == 1
+	v.CreatedAt = parseTime(created)
+	v.UpdatedAt = parseTime(updated)
+	return &v, nil
+}
+
 func (r *Repository) ArchiveEmployee(ctx context.Context, id, updatedAt string) error {
 	res, err := r.execer(ctx).ExecContext(ctx, `UPDATE employees SET active = 0, updated_at = ? WHERE id = ?`, updatedAt, id)
 	if err != nil {
@@ -71,4 +99,10 @@ func (r *Repository) ArchiveEmployee(ctx context.Context, id, updatedAt string) 
 		return domain.ErrNotFound
 	}
 	return nil
+}
+
+func (r *Repository) CreateManagerOverrideAudit(ctx context.Context, v *domain.ManagerOverrideAudit) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO manager_override_audit(id,command_id,restaurant_id,device_id,shift_id,order_id,precheck_id,manager_employee_id,action,reason,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.CommandID, v.RestaurantID, v.DeviceID, v.ShiftID, v.OrderID, v.PrecheckID, v.ManagerEmployeeID, v.Action, v.Reason, dbTime(v.OccurredAt), dbTime(v.CreatedAt))
+	return normalizeErr(err)
 }

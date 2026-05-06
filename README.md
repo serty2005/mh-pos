@@ -23,13 +23,14 @@ Order -> Precheck -> Payment -> Check
 - `pos_sync_outbox`;
 - `SyncEnvelope` foundation;
 - shifts, cash sessions, cash drawer events;
-- public precheck issue/read/list flow: `POST /api/v1/orders/{id}/precheck`, `GET /api/v1/prechecks/{id}`, `GET /api/v1/orders/{id}/prechecks`;
-- prechecks lifecycle foundation: schema, domain model, repository, `IssuePrecheck` app service that locks the order, and app-level `CancelPrecheck` foundation that unlocks it without full PIN verification flow;
-- orders/checks/payments legacy foundation;
+- public precheck issue/read/list/cancel flow: `POST /api/v1/orders/{id}/precheck`, `GET /api/v1/prechecks/{id}`, `GET /api/v1/orders/{id}/prechecks`, `POST /api/v1/prechecks/{id}/cancel`;
+- manager override для `CancelPrecheck`: локальная PBKDF2 PIN verification, permission `precheck.cancel`, audit trail `manager_override_audit`;
+- precheck-based payment capture: `POST /api/v1/prechecks/{id}/payments`, partial payments, automatic final `Check` после полной оплаты и automatic order close;
+- final checks/payments foundation;
 - `payment_attempts`;
 - read-only sync endpoints.
 
-Честное ограничение текущего кода: POS Edge backend начал публичный `Order -> Precheck` slice, но еще не переведен на полный payment-to-precheck flow. `IssuePrecheck` доступен через API и переводит order в `locked`; app-level `CancelPrecheck` уже отменяет active issued precheck и возвращает order в `open`, но публичного cancel endpoint и manager PIN verification пока нет. Payment endpoint все еще legacy check-based и не должен восприниматься как целевая v1.3 модель.
+Честное состояние текущего кода: POS Edge backend уже выполняет runtime flow `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` переводит order в `locked`; публичный `CancelPrecheck` требует manager employee id, PIN и reason, пишет audit trail и возвращает unpaid active issued precheck в `open`; payment capture идет через `precheck_id`, а final `Check` создается только после полной оплаты. Deprecated `POST /api/v1/orders/{id}/check` остается dev alias для `IssuePrecheck`; legacy `POST /api/v1/checks/{id}/payments` отключен и не обходит precheck flow.
 
 ## Структура Монорепозитория
 
@@ -112,10 +113,10 @@ go run ./cmd/cloud-api
 - доменные инварианты заказов, смен, cash sessions и текущего financial foundation;
 - edge foundation для `local_event_log`, `SyncEnvelope` и sync outbox;
 - read-only operational access к sync outbox и local events;
-- financial foundation для `payment_attempts`, cash sessions и cash drawer events;
+- financial foundation для precheck payments, final checks, `payment_attempts`, cash sessions и cash drawer events;
 - foundation для будущих рецептов, склада и учета.
 
-Текущее ограничение: публичный `Order -> Precheck` slice уже включен, но код пока содержит legacy check/payment flow для оплаты. В целевой v1.3 модели рабочим финансовым документом становится `Precheck`, а `Check` создается только после полной оплаты.
+Текущее состояние: публичный runtime `Order -> Precheck -> Payment -> Check` включен. `Precheck` является рабочим финансовым snapshot, payment привязан к precheck, а `Check` создается автоматически только после полной оплаты.
 
 Архитектура внутри backend:
 
@@ -165,8 +166,7 @@ go test ./...
 - Запуск POS Edge backend: `pos-backend/README.md`
 - Запуск Cloud receiver: `cloud-backend/README.md`
 - HTTP маршруты POS Edge: `pos-backend/internal/pos/api/router.go`
-- Public precheck lifecycle API/use cases: `pos-backend/internal/pos/api/router.go`, `pos-backend/internal/pos/app/precheck/service.go`
-- Текущий legacy check service: `pos-backend/internal/pos/app/check/service.go`
+- Public precheck lifecycle/payment API/use cases: `pos-backend/internal/pos/api/router.go`, `pos-backend/internal/pos/app/precheck/service.go`, `pos-backend/internal/pos/app/check/service.go`
 - Use cases: `pos-backend/internal/pos/app/`
 - Доменные модели: `pos-backend/internal/pos/domain/`
 - Репозитории SQLite: `pos-backend/internal/pos/infra/sqlite/`
@@ -179,10 +179,10 @@ go test ./...
 - Target financial model: `Order -> Precheck -> Payment -> Check`.
 - Production data migration before first launch: не требуется.
 - POS Edge SQLite runtime contract: functional minimum `>= 3.37.0`, production WAL pilot baseline `>= 3.51.3` или pinned backport `3.50.7/3.44.6`; backend завершается при несоответствии.
-- POS Edge code: public `Order -> Precheck` slice enabled; payment remains legacy check-based, `CancelPrecheck` remains app-level foundation without public manager override endpoint.
-- `local_event_log` уже является частью edge foundation, хранит `command_id` той же write-операции, что и outbox, и доступен read-only через `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`.
+- POS Edge code: public `Order -> Precheck -> Payment -> Check` runtime enabled; legacy check payment endpoint is disabled.
+- `local_event_log` уже является частью edge foundation, хранит `command_id` той же write-операции, что и outbox rows (одна write-операция может породить несколько events), и доступен read-only через `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`.
 - Sync outbox доступен через `GET /api/v1/sync/outbox`.
-- Edge financial foundation включает публичные precheck endpoints, `payment_attempts`, `cash_sessions`, `cash_drawer_events` и базовые HTTP endpoints для cash session/drawer workflows.
+- Edge financial foundation включает публичные precheck issue/read/list/cancel endpoints, precheck payment endpoint, `manager_override_audit`, `payment_attempts`, automatic final checks, `cash_sessions`, `cash_drawer_events` и базовые HTTP endpoints для cash session/drawer workflows.
 - Закрытие смены в POS Edge запрещено при открытых заказах или active cash session.
 - Cloud: минимальный `cloud-backend/` Sync Receiver реализован; Cloud не является зависимостью для критических POS Edge операций.
 - POS UI: не реализован.

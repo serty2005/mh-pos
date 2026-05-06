@@ -37,6 +37,8 @@ func Error(w http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 	case errors.Is(err, domain.ErrNotFound):
 		status = http.StatusNotFound
+	case errors.Is(err, domain.ErrForbidden):
+		status = http.StatusForbidden
 	case errors.Is(err, domain.ErrConflict), errors.Is(err, domain.ErrDuplicate), errors.Is(err, domain.ErrDuplicateCommand):
 		status = http.StatusConflict
 	}

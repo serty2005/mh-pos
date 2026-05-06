@@ -32,8 +32,8 @@
 - shifts;
 - cash sessions;
 - cash drawer events;
-- prechecks lifecycle foundation: SQLite table, domain model, repository, public `IssuePrecheck` API, order locking, app-level `CancelPrecheck`, version/paid_total fields;
-- базовые orders/checks/payments;
+- prechecks lifecycle foundation: SQLite table, domain model, repository, public `IssuePrecheck` API, order locking, public manager override `CancelPrecheck`, version/paid_total fields;
+- precheck-based payments, payment_attempts, automatic final check generation;
 - device registration foundation;
 - SQLite migrations для первого запуска локальной БД;
 - PostgreSQL migrations для Cloud sync receiver.
@@ -44,7 +44,7 @@
 Order -> Precheck -> Payment -> Check
 ```
 
-Текущее ограничение: публичный `Order -> Precheck` slice уже включен. App-level `IssuePrecheck` locks order и доступен через API, app-level `CancelPrecheck` unlocks order после успешной отмены active issued precheck, но payment-to-precheck, automatic final check generation и публичный manager cancel endpoint еще не реализованы.
+Текущее состояние: публичный `Order -> Precheck -> Payment -> Check` runtime включен. `IssuePrecheck` locks order и доступен через API, `CancelPrecheck` доступен публично через manager override, payment capture идет через precheck, automatic final check generation закрывает order после полной оплаты.
 
 ---
 
@@ -540,9 +540,9 @@ Acceptance criteria:
 - [ ] Добавить таблицу `precheck_tax_lines` или JSON snapshot налогов, если это проще для MVP.
 - [ ] Добавить таблицу `manager_override_logs`.
 - [ ] Добавить/обновить `tax_profiles`.
-- [ ] Добавить связь `payments.precheck_id`.
-- [ ] Проверить необходимость сохранения `payments.check_id` как nullable post-finalization reference.
-- [ ] Обновить `checks`, чтобы они были финальными документами, а не рабочими счетами.
+- [x] Добавить связь `payments.precheck_id`.
+- [x] Убрать runtime dependency на `payments.check_id` для capture payment.
+- [x] Обновить `checks`, чтобы они были финальными документами, а не рабочими счетами.
 - [ ] Добавить поля outbox retry policy: `attempts`, `next_retry_at`, `last_error`, `locked_at`, `locked_by`.
 - [x] Добавить constraint для одного active `issued` precheck на order.
 - [x] Добавить минимальный constraints набор для precheck versioning: `version`, unique `(order_id, version)`, `paid_total`, terminal statuses.
@@ -576,7 +576,7 @@ Acceptance criteria:
 
 Цель: реализовать `Order -> Precheck`.
 
-Статус: публичный Stage C slice включен. Entity, repository, app-level/public `IssuePrecheck`, order locking, public get/list precheck endpoints, app-level `CancelPrecheck` и минимальный versioning foundation добавлены, но full supersede flow, payment-to-precheck и публичный manager cancel endpoint еще не внедрены.
+Статус: публичный Stage C slice включен. Entity, repository, app-level/public `IssuePrecheck`, order locking, public get/list precheck endpoints, public manager override `CancelPrecheck` и минимальный versioning foundation добавлены. Full supersede flow и precheck line/tax snapshots остаются будущими задачами.
 
 Backend задачи:
 
@@ -644,9 +644,9 @@ Acceptance criteria:
 - [ ] Добавить permission/role flag для manager override.
 - [ ] Реализовать локальную проверку PIN на Edge.
 - [ ] Реализовать `manager_override_logs`.
-- [x] Реализовать temporary backend foundation `CancelPrecheck` без full PIN verification.
-- [ ] Реализовать full use case `CancelPrecheckWithManagerOverride`.
-- [ ] Реализовать endpoint `POST /prechecks/{id}/cancel`.
+- [x] Реализовать backend foundation `CancelPrecheck`.
+- [x] Реализовать full use case `CancelPrecheck` с manager override.
+- [x] Реализовать endpoint `POST /prechecks/{id}/cancel`.
 - [ ] Добавить reason code.
 - [x] После отмены precheck разблокировать order на app/service уровне.
 - [ ] Реализовать `RefundPaymentWithManagerOverride`.
@@ -672,12 +672,12 @@ OrderUnlocked
 
 Тесты:
 
-- [ ] correct manager PIN allows cancel;
-- [ ] wrong PIN rejects cancel;
-- [ ] employee without permission rejects cancel;
+- [x] correct manager PIN allows cancel;
+- [x] wrong PIN rejects cancel;
+- [x] employee without permission rejects cancel;
 - [x] cancel precheck unlocks order;
 - [x] cancel paid precheck запрещен на уровне `prechecks.paid_total` foundation;
-- [ ] override log пишется в одной транзакции с cancel.
+- [x] override log пишется в одной транзакции с cancel.
 
 Acceptance criteria:
 
@@ -741,20 +741,20 @@ Full paid Precheck -> Final Check
 
 Задачи:
 
-- [ ] Изменить payment capture с `check_id` на `precheck_id`.
-- [ ] Поддержать cash payment.
-- [ ] Поддержать trusted card terminal payment.
-- [ ] Запретить payment без active shift.
-- [ ] Запретить payment для cancelled/superseded precheck.
-- [ ] Разрешить partial payments.
+- [x] Изменить payment capture с `check_id` на `precheck_id`.
+- [x] Поддержать cash payment.
+- [x] Поддержать trusted card terminal payment как trusted captured method foundation.
+- [x] Запретить payment без active shift.
+- [x] Запретить payment для cancelled/superseded precheck.
+- [x] Разрешить partial payments.
 - [ ] Поддержать refund flow через immutable negative ledger entries.
 - [ ] Запретить `CancelPrecheck` при `paid_total_minor > 0`.
 - [ ] Разрешить `CancelPrecheck` только после refund до `paid_total_minor = 0`.
 - [ ] Добавить reconciliation fields: `provider_reference`, `terminal_id`, `auth_code`, `operator_note`, `business_date_local`.
-- [ ] При достижении полной суммы создать final `Check`.
-- [ ] Пометить precheck `paid`.
+- [x] При достижении полной суммы создать final `Check`.
+- [x] Пометить precheck terminal paid-state через текущий status `closed` + `paid_total == total`.
 - [ ] Пометить order `closed`.
-- [ ] Создать событие `CheckCreated` только после полной оплаты.
+- [x] Создать событие `CheckCreated` только после полной оплаты.
 
 События:
 
@@ -774,13 +774,13 @@ OrderClosed
 
 Тесты:
 
-- [ ] partial payment keeps precheck issued/partially_paid equivalent;
-- [ ] full payment creates final check;
-- [ ] overpayment rejected;
-- [ ] payment for cancelled precheck rejected;
-- [ ] payment for superseded precheck rejected;
+- [x] partial payment keeps precheck issued/partially_paid equivalent;
+- [x] full payment creates final check;
+- [x] overpayment rejected;
+- [x] payment for cancelled precheck rejected;
+- [x] payment for superseded precheck rejected;
 - [ ] duplicate command id does not double-capture;
-- [ ] outbox failure rolls back payment and check generation.
+- [x] outbox failure rolls back payment and check generation.
 
 Acceptance criteria:
 

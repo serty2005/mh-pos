@@ -21,7 +21,7 @@ type Payment struct {
 	RestaurantID          string        `json:"restaurant_id"`
 	DeviceID              string        `json:"device_id"`
 	ShiftID               string        `json:"shift_id"`
-	CheckID               string        `json:"check_id"`
+	PrecheckID            string        `json:"precheck_id"`
 	Method                PaymentMethod `json:"method"`
 	Amount                int64         `json:"amount"`
 	Currency              string        `json:"currency"`

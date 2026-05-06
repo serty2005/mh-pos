@@ -20,7 +20,7 @@ Order -> Precheck -> Payment -> Check
 
 Важно: проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. Изменения v1.3 нужно проектировать как first-launch schema/logic, а не как миграцию исторических данных.
 
-Текущее состояние кода нужно отделять от целевой модели: `pos-backend` уже включает публичный `Order -> Precheck` slice (`POST /api/v1/orders/{id}/precheck`, `GET /api/v1/prechecks/{id}`, `GET /api/v1/orders/{id}/prechecks`). App-level `IssuePrecheck` создает issued precheck и переводит order в `locked`; app-level `CancelPrecheck` отменяет active issued precheck без full PIN verification foundation и возвращает order в `open`, но публичного cancel endpoint пока нет. Payment/check runtime flow пока остается legacy check-based и еще не переведен на payment-to-precheck/final-check flow.
+Текущее состояние кода нужно отделять от следующих будущих улучшений: `pos-backend` уже включает публичный runtime `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` (`POST /api/v1/orders/{id}/precheck`, `GET /api/v1/prechecks/{id}`, `GET /api/v1/orders/{id}/prechecks`) создает issued precheck и переводит order в `locked`; публичный `CancelPrecheck` (`POST /api/v1/prechecks/{id}/cancel`) требует manager employee id, PIN и reason, проверяет локальный PBKDF2 `pin_hash`, пишет `manager_override_audit`, `local_event_log` и outbox в одной транзакции и возвращает unpaid active issued precheck order в `open`; payment capture идет через `POST /api/v1/prechecks/{id}/payments`, поддерживает partial payments и автоматически создает final `Check` + закрывает order после полной оплаты. Deprecated `POST /api/v1/orders/{id}/check` остается alias к `IssuePrecheck`; legacy `POST /api/v1/checks/{id}/payments` отключен.
 
 ### Карта Репозитория
 
@@ -222,7 +222,7 @@ domain -> app -> ports -> infra
 - menu
 - orders
 - публичный `Order -> Precheck` API slice и prechecks lifecycle foundation
-- checks/payments foundation по старому flow
+- precheck-based payments и final checks после полной оплаты
 - payment_attempts
 - shifts
 - cash_sessions
@@ -233,9 +233,6 @@ domain -> app -> ports -> infra
 
 Текущая реализация еще НЕ включает:
 
-- payment привязанный к precheck
-- автоматическое создание final check после полной оплаты precheck
-- публичный cancel precheck endpoint с manager PIN verification
 - POS UI
 - production-grade inventory workflows
 - fiscalization
@@ -285,6 +282,7 @@ Order -> Precheck -> Payment -> Check
 - ошибка исправляется refund/reversal/correction событием;
 - нельзя переплатить precheck без явной политики tips/overpayment;
 - capture payment пишет local event и outbox в той же транзакции.
+- full payment может породить несколько событий с одним `command_id`: `PaymentCaptured`, `CheckCreated`, `OrderClosed`.
 
 ## Check
 
@@ -535,8 +533,8 @@ GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated
 - Version: 1.3 Architecture Lock
 - Scope: POS Edge Backend + minimal Cloud Sync Receiver foundation
 - Target financial model: `Order -> Precheck -> Payment -> Check`
-- Current POS Edge code: public `Order -> Precheck` slice enabled; payment/check runtime flow is still legacy check-based
-- Edge foundation: `local_event_log` + `pos_sync_outbox` + cash sessions + payment attempts + prechecks lifecycle foundation with public issue/read/list endpoints and app-level cancel foundation
+- Current POS Edge code: public `Order -> Precheck -> Payment -> Check` runtime enabled; legacy check payment endpoint is disabled
+- Edge foundation: `local_event_log` + `pos_sync_outbox` + cash sessions + payment attempts + prechecks lifecycle foundation with public issue/read/list/cancel endpoints, manager override audit, precheck payments and automatic final check generation
 - Operational read-only endpoints: sync outbox and local events
 - Cloud: minimal `cloud-backend/` Sync Receiver implemented; Cloud is not a runtime dependency for critical POS Edge writes
 

@@ -2,6 +2,7 @@ package precheck
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -34,8 +35,9 @@ type IssuePrecheckCommand struct {
 type CancelPrecheckCommand struct {
 	shared.CommandMeta
 	PrecheckID         string `json:"precheck_id"`
-	ManagerEmployeeID  string `json:"manager_employee_id,omitempty"`
-	CancellationReason string `json:"cancellation_reason,omitempty"`
+	ManagerEmployeeID  string `json:"manager_employee_id"`
+	ManagerPIN         string `json:"manager_pin"`
+	CancellationReason string `json:"cancellation_reason"`
 }
 
 func (s *Service) GetPrecheck(ctx context.Context, id string) (*domain.Precheck, error) {
@@ -124,8 +126,11 @@ func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand)
 	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(cmd.PrecheckID) == "" {
-		return nil, fmt.Errorf("%w: precheck_id is required", domain.ErrInvalid)
+	if strings.TrimSpace(cmd.PrecheckID) == "" || strings.TrimSpace(cmd.ManagerEmployeeID) == "" || strings.TrimSpace(cmd.ManagerPIN) == "" || strings.TrimSpace(cmd.CancellationReason) == "" {
+		return nil, fmt.Errorf("%w: precheck_id, manager_employee_id, manager_pin and cancellation_reason are required", domain.ErrInvalid)
+	}
+	if strings.TrimSpace(cmd.CommandID) == "" {
+		cmd.CommandID = s.ids.NewID()
 	}
 	now := s.clock.Now()
 	var precheck *domain.Precheck
@@ -143,6 +148,23 @@ func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand)
 		}
 		order, err := s.repo.GetOrder(ctx, precheck.OrderID)
 		if err != nil {
+			return err
+		}
+		manager, err := s.repo.GetEmployee(ctx, cmd.ManagerEmployeeID)
+		if err != nil {
+			return err
+		}
+		if !manager.Active || manager.RestaurantID != order.RestaurantID {
+			return fmt.Errorf("%w: manager override employee is not allowed", domain.ErrForbidden)
+		}
+		role, err := s.repo.GetRole(ctx, manager.RoleID)
+		if err != nil {
+			return err
+		}
+		if !role.Active || !hasPermission(role.PermissionsJSON, "precheck.cancel") {
+			return fmt.Errorf("%w: manager override permission is required", domain.ErrForbidden)
+		}
+		if err := shared.VerifyPIN(manager.PINHash, cmd.ManagerPIN); err != nil {
 			return err
 		}
 		if order.Status != domain.OrderLocked {
@@ -166,7 +188,44 @@ func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand)
 		if err := s.repo.UpdateOrderOpen(ctx, order); err != nil {
 			return err
 		}
+		audit := &domain.ManagerOverrideAudit{
+			ID:                s.ids.NewID(),
+			CommandID:         cmd.CommandID,
+			RestaurantID:      order.RestaurantID,
+			DeviceID:          order.DeviceID,
+			ShiftID:           order.ShiftID,
+			OrderID:           order.ID,
+			PrecheckID:        precheck.ID,
+			ManagerEmployeeID: manager.ID,
+			Action:            "cancel_precheck",
+			Reason:            strings.TrimSpace(cmd.CancellationReason),
+			OccurredAt:        now,
+			CreatedAt:         now,
+		}
+		if err := s.repo.CreateManagerOverrideAudit(ctx, audit); err != nil {
+			return err
+		}
 		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Precheck", precheck.ID, "PrecheckCancelled", precheck)
 	})
 	return precheck, err
+}
+
+func hasPermission(body, permission string) bool {
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(body), &raw); err != nil {
+		return false
+	}
+	if value, ok := raw[permission].(bool); ok && value {
+		return true
+	}
+	values, ok := raw["permissions"].([]any)
+	if !ok {
+		return false
+	}
+	for _, value := range values {
+		if text, ok := value.(string); ok && text == permission {
+			return true
+		}
+	}
+	return false
 }

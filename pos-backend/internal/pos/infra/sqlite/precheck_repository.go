@@ -54,6 +54,22 @@ func (r *Repository) UpdatePrecheckLifecycle(ctx context.Context, v *domain.Prec
 	return nil
 }
 
+func (r *Repository) UpdatePrecheckPayment(ctx context.Context, v *domain.Precheck) error {
+	result, err := r.execer(ctx).ExecContext(ctx, `UPDATE prechecks SET status = ?, paid_total = ?, closed_at = ? WHERE id = ? AND paid_total <= ?`,
+		string(v.Status), v.PaidTotal, nullableTime(v.ClosedAt), v.ID, v.PaidTotal)
+	if err != nil {
+		return normalizeErr(err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return domain.ErrConflict
+	}
+	return nil
+}
+
 func (r *Repository) scanPrecheck(row *sql.Row) (*domain.Precheck, error) {
 	v, err := scanPrecheckFields(row)
 	if err != nil {

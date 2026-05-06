@@ -13,6 +13,7 @@ import (
 	"pos-backend/internal/platform/clock"
 	platformsqlite "pos-backend/internal/platform/sqlite"
 	"pos-backend/internal/pos/app"
+	appshared "pos-backend/internal/pos/app/shared"
 	"pos-backend/internal/pos/domain"
 	possqlite "pos-backend/internal/pos/infra/sqlite"
 	"pos-backend/internal/pos/ports"
@@ -54,6 +55,17 @@ func (r outboxFailingRepo) CreateOutboxMessage(context.Context, *domain.OutboxMe
 	return errInjectedOutbox
 }
 
+type checkCreatedOutboxFailingRepo struct {
+	ports.Repository
+}
+
+func (r checkCreatedOutboxFailingRepo) CreateOutboxMessage(ctx context.Context, msg *domain.OutboxMessage) error {
+	if msg.CommandType == "CheckCreated" {
+		return errInjectedOutbox
+	}
+	return r.Repository.CreateOutboxMessage(ctx, msg)
+}
+
 type fixture struct {
 	ctx        context.Context
 	db         *sql.DB
@@ -62,6 +74,7 @@ type fixture struct {
 	restaurant *domain.Restaurant
 	device     *domain.Device
 	employee   *domain.Employee
+	manager    *domain.Employee
 	menuItem   *domain.MenuItem
 }
 
@@ -77,6 +90,25 @@ func edgeMeta(deviceID string) app.CommandMeta {
 
 func (f *fixture) edgeMeta() app.CommandMeta {
 	return edgeMeta(f.device.ID)
+}
+
+func (f *fixture) cancelPrecheckCommand(commandID, precheckID string) app.CancelPrecheckCommand {
+	return app.CancelPrecheckCommand{
+		CommandMeta:        app.CommandMeta{CommandID: commandID, DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		PrecheckID:         precheckID,
+		ManagerEmployeeID:  f.manager.ID,
+		ManagerPIN:         "2468",
+		CancellationReason: "guest changed order",
+	}
+}
+
+func testPINHash(t *testing.T, pin, salt string) string {
+	t.Helper()
+	hash, err := appshared.HashPIN(pin, []byte(salt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return hash
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -109,11 +141,19 @@ func (f *fixture) seed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	managerRole, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{CommandMeta: seedMeta(bootstrapDeviceID), Name: "manager", PermissionsJSON: `{"precheck.cancel":true}`})
+	if err != nil {
+		t.Fatal(err)
+	}
 	f.device, err = f.service.RegisterDevice(f.ctx, app.RegisterDeviceCommand{CommandMeta: seedMeta(bootstrapDeviceID), RestaurantID: f.restaurant.ID, DeviceCode: "POS-1", Name: "Main", Type: "windows"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.employee, err = f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, RoleID: role.ID, Name: "Anna", PINHash: "hash"})
+	f.employee, err = f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, RoleID: role.ID, Name: "Anna", PINHash: testPINHash(t, "1111", "cashier-salt")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.manager, err = f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, RoleID: managerRole.ID, Name: "Mira", PINHash: testPINHash(t, "2468", "manager-salt")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,11 +191,15 @@ func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
 		t.Fatal(err)
 	}
-	check, err := f.service.CreateCheck(f.ctx, app.CreateCheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), CheckID: check.ID, Method: domain.PaymentCash, Amount: check.Total, Currency: "RUB"}); err != nil {
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 	return order, check
@@ -164,7 +208,7 @@ func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
-	case "orders", "order_lines", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "roles", "catalog_items", "menu_items":
+	case "orders", "order_lines", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "roles", "catalog_items", "menu_items":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -414,7 +458,7 @@ func TestValidDeviceIDCreatesBusinessAndOutboxRowsWithDefaultOrigin(t *testing.T
 
 	_, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
 		CommandMeta:     app.CommandMeta{CommandID: commandID, DeviceID: f.device.ID},
-		Name:            "manager",
+		Name:            "supervisor",
 		PermissionsJSON: `{}`,
 	})
 	if err != nil {
@@ -494,9 +538,6 @@ func TestCannotCloseShiftWithActiveCashSession(t *testing.T) {
 func TestCannotAddLineToClosedOrder(t *testing.T) {
 	f := newFixture(t)
 	order, _ := f.createPaidOrder(t)
-	if _, err := f.service.CloseOrder(f.ctx, app.CloseOrderCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID}); err != nil {
-		t.Fatal(err)
-	}
 	_, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1})
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
@@ -511,9 +552,6 @@ func TestCannotCloseOrderWithoutFullPayment(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.service.CreateCheck(f.ctx, app.CreateCheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID}); err != nil {
 		t.Fatal(err)
 	}
 	_, err = f.service.CloseOrder(f.ctx, app.CloseOrderCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
@@ -664,8 +702,11 @@ func TestCannotCancelMissingPrecheck(t *testing.T) {
 	beforeEvents := countRows(t, f, "local_event_log")
 
 	_, err := f.service.CancelPrecheck(f.ctx, app.CancelPrecheckCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-cancel-missing-precheck", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
-		PrecheckID:  "missing-precheck",
+		CommandMeta:        app.CommandMeta{CommandID: "cmd-cancel-missing-precheck", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		PrecheckID:         "missing-precheck",
+		ManagerEmployeeID:  f.manager.ID,
+		ManagerPIN:         "2468",
+		CancellationReason: "guest changed order",
 	})
 	if !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("expected not found, got %v", err)
@@ -697,13 +738,9 @@ func TestCancelPrecheckUnlocksOrderAndWritesOutbox(t *testing.T) {
 	}
 	outboxBefore := countRows(t, f, "pos_sync_outbox")
 	eventsBefore := countRows(t, f, "local_event_log")
+	auditBefore := countRows(t, f, "manager_override_audit")
 
-	cancelled, err := f.service.CancelPrecheck(f.ctx, app.CancelPrecheckCommand{
-		CommandMeta:        app.CommandMeta{CommandID: "cmd-cancel-precheck-1", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
-		PrecheckID:         precheck.ID,
-		ManagerEmployeeID:  f.employee.ID,
-		CancellationReason: "guest changed order",
-	})
+	cancelled, err := f.service.CancelPrecheck(f.ctx, f.cancelPrecheckCommand("cmd-cancel-precheck-1", precheck.ID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -726,12 +763,77 @@ func TestCancelPrecheckUnlocksOrderAndWritesOutbox(t *testing.T) {
 	if events := countRows(t, f, "local_event_log"); events != eventsBefore+1 {
 		t.Fatalf("expected one local event row, before=%d after=%d", eventsBefore, events)
 	}
+	if audit := countRows(t, f, "manager_override_audit"); audit != auditBefore+1 {
+		t.Fatalf("expected one manager override audit row, before=%d after=%d", auditBefore, audit)
+	}
 	var eventCount int
 	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM local_event_log WHERE command_id = ? AND event_type = 'PrecheckCancelled'`, "cmd-cancel-precheck-1").Scan(&eventCount); err != nil {
 		t.Fatal(err)
 	}
 	if eventCount != 1 {
 		t.Fatalf("expected PrecheckCancelled local event, got %d", eventCount)
+	}
+	var auditPINCount int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM manager_override_audit WHERE precheck_id = ? AND manager_employee_id = ? AND action = 'cancel_precheck' AND reason = 'guest changed order'`, precheck.ID, f.manager.ID).Scan(&auditPINCount); err != nil {
+		t.Fatal(err)
+	}
+	if auditPINCount != 1 {
+		t.Fatalf("expected manager override audit without pin payload, got %d", auditPINCount)
+	}
+}
+
+func TestCancelPrecheckRejectsWrongManagerPIN(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-before-wrong-pin", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		OrderID:     order.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := f.cancelPrecheckCommand("cmd-cancel-wrong-pin", precheck.ID)
+	cmd.ManagerPIN = "0000"
+	_, err = f.service.CancelPrecheck(f.ctx, cmd)
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden, got %v", err)
+	}
+	got, err := f.repo.GetPrecheck(f.ctx, precheck.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != domain.PrecheckIssued {
+		t.Fatalf("expected precheck to stay issued, got %s", got.Status)
+	}
+	if audit := countRows(t, f, "manager_override_audit"); audit != 0 {
+		t.Fatalf("expected no manager override audit for wrong pin, got %d", audit)
+	}
+}
+
+func TestCancelPrecheckRejectsEmployeeWithoutPermission(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-before-no-permission", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		OrderID:     order.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := f.cancelPrecheckCommand("cmd-cancel-no-permission", precheck.ID)
+	cmd.ManagerEmployeeID = f.employee.ID
+	cmd.ManagerPIN = "1111"
+	_, err = f.service.CancelPrecheck(f.ctx, cmd)
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden, got %v", err)
 	}
 }
 
@@ -749,19 +851,13 @@ func TestCannotCancelNonIssuedPrecheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.CancelPrecheck(f.ctx, app.CancelPrecheckCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-cancel-once", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
-		PrecheckID:  precheck.ID,
-	}); err != nil {
+	if _, err := f.service.CancelPrecheck(f.ctx, f.cancelPrecheckCommand("cmd-cancel-once", precheck.ID)); err != nil {
 		t.Fatal(err)
 	}
 	outboxBefore := countRows(t, f, "pos_sync_outbox")
 	eventsBefore := countRows(t, f, "local_event_log")
 
-	_, err = f.service.CancelPrecheck(f.ctx, app.CancelPrecheckCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-cancel-non-issued", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
-		PrecheckID:  precheck.ID,
-	})
+	_, err = f.service.CancelPrecheck(f.ctx, f.cancelPrecheckCommand("cmd-cancel-non-issued", precheck.ID))
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
 	}
@@ -796,10 +892,7 @@ func TestCannotCancelPrecheckWithPaidTotalFoundation(t *testing.T) {
 	outboxBefore := countRows(t, f, "pos_sync_outbox")
 	eventsBefore := countRows(t, f, "local_event_log")
 
-	_, err = f.service.CancelPrecheck(f.ctx, app.CancelPrecheckCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-cancel-paid-foundation", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
-		PrecheckID:  precheck.ID,
-	})
+	_, err = f.service.CancelPrecheck(f.ctx, f.cancelPrecheckCommand("cmd-cancel-paid-foundation", precheck.ID))
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
 	}
@@ -834,12 +927,10 @@ func TestCancelPrecheckRollbackKeepsIssuedAndOrderLockedWhenOutboxFails(t *testi
 	}
 	outboxBefore := countRows(t, f, "pos_sync_outbox")
 	eventsBefore := countRows(t, f, "local_event_log")
+	auditBefore := countRows(t, f, "manager_override_audit")
 	service := app.NewService(outboxFailingRepo{Repository: f.repo}, platformsqlite.NewTxManager(f.db), &testIDs{n: 6000}, fixedClock{})
 
-	_, err = service.CancelPrecheck(f.ctx, app.CancelPrecheckCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-cancel-outbox-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
-		PrecheckID:  precheck.ID,
-	})
+	_, err = service.CancelPrecheck(f.ctx, f.cancelPrecheckCommand("cmd-cancel-outbox-fails", precheck.ID))
 	if !errors.Is(err, errInjectedOutbox) {
 		t.Fatalf("expected injected outbox failure, got %v", err)
 	}
@@ -863,6 +954,9 @@ func TestCancelPrecheckRollbackKeepsIssuedAndOrderLockedWhenOutboxFails(t *testi
 	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
 		t.Fatalf("expected no partial local event write, before=%d after=%d", eventsBefore, events)
 	}
+	if audit := countRows(t, f, "manager_override_audit"); audit != auditBefore {
+		t.Fatalf("expected no partial manager override audit write, before=%d after=%d", auditBefore, audit)
+	}
 }
 
 func TestDuplicateCancelPrecheckCommandIDDoesNotDoubleCancel(t *testing.T) {
@@ -882,8 +976,11 @@ func TestDuplicateCancelPrecheckCommandIDDoesNotDoubleCancel(t *testing.T) {
 	outboxBefore := countRows(t, f, "pos_sync_outbox")
 	eventsBefore := countRows(t, f, "local_event_log")
 	cmd := app.CancelPrecheckCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-cancel-duplicate", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
-		PrecheckID:  precheck.ID,
+		CommandMeta:        app.CommandMeta{CommandID: "cmd-cancel-duplicate", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		PrecheckID:         precheck.ID,
+		ManagerEmployeeID:  f.manager.ID,
+		ManagerPIN:         "2468",
+		CancellationReason: "guest changed order",
 	}
 	if _, err := f.service.CancelPrecheck(f.ctx, cmd); err != nil {
 		t.Fatal(err)
@@ -965,7 +1062,7 @@ func TestCreateOrderRejectsMismatchedRestaurantID(t *testing.T) {
 	}
 }
 
-func TestCannotOverpayCheck(t *testing.T) {
+func TestCannotOverpayPrecheck(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta()})
@@ -975,11 +1072,11 @@ func TestCannotOverpayCheck(t *testing.T) {
 	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
 		t.Fatal(err)
 	}
-	check, err := f.service.CreateCheck(f.ctx, app.CreateCheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), CheckID: check.ID, Method: domain.PaymentCash, Amount: check.Total + 1, Currency: "RUB"})
+	_, err = f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total + 1, Currency: "RUB"})
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
 	}
@@ -995,15 +1092,15 @@ func TestCapturePaymentCreatesFirstAttemptWithEdgeContext(t *testing.T) {
 	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
 		t.Fatal(err)
 	}
-	check, err := f.service.CreateCheck(f.ctx, app.CreateCheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
 	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
 		CommandMeta:           f.edgeMeta(),
-		CheckID:               check.ID,
+		PrecheckID:            precheck.ID,
 		Method:                domain.PaymentCard,
-		Amount:                check.Total,
+		Amount:                precheck.Total,
 		Currency:              "rub",
 		ProviderName:          "demo-psp",
 		ProviderTransactionID: "txn-1",
@@ -1014,6 +1111,9 @@ func TestCapturePaymentCreatesFirstAttemptWithEdgeContext(t *testing.T) {
 	}
 	if payment.EdgePaymentID == "" || payment.RestaurantID != f.restaurant.ID || payment.DeviceID != f.device.ID || payment.ShiftID == "" {
 		t.Fatalf("expected payment edge context, got %+v", payment)
+	}
+	if payment.PrecheckID != precheck.ID {
+		t.Fatalf("expected payment to reference precheck %s, got %s", precheck.ID, payment.PrecheckID)
 	}
 	var attempts int
 	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM payment_attempts WHERE payment_id = ? AND attempt_no = 1 AND provider_transaction_id = 'txn-1'`, payment.ID).Scan(&attempts); err != nil {
@@ -1034,7 +1134,7 @@ func TestCapturePaymentRollbackRemovesAttemptPaymentOutboxAndLocalEvent(t *testi
 	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
 		t.Fatal(err)
 	}
-	check, err := f.service.CreateCheck(f.ctx, app.CreateCheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1046,9 +1146,9 @@ func TestCapturePaymentRollbackRemovesAttemptPaymentOutboxAndLocalEvent(t *testi
 
 	_, err = service.CapturePayment(f.ctx, app.CapturePaymentCommand{
 		CommandMeta: app.CommandMeta{CommandID: "cmd-payment-outbox-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
-		CheckID:     check.ID,
+		PrecheckID:  precheck.ID,
 		Method:      domain.PaymentCash,
-		Amount:      check.Total,
+		Amount:      precheck.Total,
 		Currency:    "RUB",
 	})
 	if !errors.Is(err, errInjectedOutbox) {
@@ -1068,11 +1168,225 @@ func TestCapturePaymentRollbackRemovesAttemptPaymentOutboxAndLocalEvent(t *testi
 	}
 	var paidTotal int64
 	var status string
-	if err := f.db.QueryRowContext(f.ctx, `SELECT paid_total,status FROM checks WHERE id = ?`, check.ID).Scan(&paidTotal, &status); err != nil {
+	if err := f.db.QueryRowContext(f.ctx, `SELECT paid_total,status FROM prechecks WHERE id = ?`, precheck.ID).Scan(&paidTotal, &status); err != nil {
 		t.Fatal(err)
 	}
-	if paidTotal != 0 || status != string(domain.CheckOpen) {
-		t.Fatalf("expected check rollback, paid_total=%d status=%s", paidTotal, status)
+	if paidTotal != 0 || status != string(domain.PrecheckIssued) {
+		t.Fatalf("expected precheck rollback, paid_total=%d status=%s", paidTotal, status)
+	}
+	if checks := countRows(t, f, "checks"); checks != 0 {
+		t.Fatalf("expected no final check after rollback, got %d", checks)
+	}
+}
+
+func TestFullPaymentRollsBackFinalCheckWhenCheckCreatedOutboxFails(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	paymentsBefore := countRows(t, f, "payments")
+	checksBefore := countRows(t, f, "checks")
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+	service := app.NewService(checkCreatedOutboxFailingRepo{Repository: f.repo}, platformsqlite.NewTxManager(f.db), &testIDs{n: 7000}, fixedClock{})
+
+	_, err = service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-payment-check-outbox-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		PrecheckID:  precheck.ID,
+		Method:      domain.PaymentCash,
+		Amount:      precheck.Total,
+		Currency:    "RUB",
+	})
+	if !errors.Is(err, errInjectedOutbox) {
+		t.Fatalf("expected injected outbox failure, got %v", err)
+	}
+	if payments := countRows(t, f, "payments"); payments != paymentsBefore {
+		t.Fatalf("expected payment rollback, before=%d after=%d", paymentsBefore, payments)
+	}
+	if checks := countRows(t, f, "checks"); checks != checksBefore {
+		t.Fatalf("expected final check rollback, before=%d after=%d", checksBefore, checks)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected outbox rollback, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected local event rollback, before=%d after=%d", eventsBefore, events)
+	}
+	got, err := f.repo.GetPrecheck(f.ctx, precheck.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PaidTotal != 0 || got.Status != domain.PrecheckIssued {
+		t.Fatalf("expected precheck rollback, got %+v", got)
+	}
+}
+
+func TestPartialPaymentKeepsPrecheckOpenAndDoesNotCreateFinalCheck(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 2}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: 1000, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.repo.GetPrecheck(f.ctx, precheck.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != domain.PrecheckIssued || got.PaidTotal != 1000 {
+		t.Fatalf("expected partial paid issued precheck, got %+v", got)
+	}
+	if checks := countRows(t, f, "checks"); checks != 0 {
+		t.Fatalf("expected no final check before full payment, got %d", checks)
+	}
+	gotOrder, err := f.repo.GetOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotOrder.Status != domain.OrderLocked {
+		t.Fatalf("expected order to stay locked, got %s", gotOrder.Status)
+	}
+}
+
+func TestFullPaymentCreatesFinalCheckAndClosesOrder(t *testing.T) {
+	f := newFixture(t)
+	order, check := f.createPaidOrder(t)
+	if check.Status != domain.CheckPaid || check.PaidTotal != check.Total {
+		t.Fatalf("expected paid final check, got %+v", check)
+	}
+	gotOrder, err := f.repo.GetOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotOrder.Status != domain.OrderClosed || gotOrder.ClosedAt == nil {
+		t.Fatalf("expected closed order, got %+v", gotOrder)
+	}
+}
+
+func TestPaymentForCancelledPrecheckRejected(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CancelPrecheck(f.ctx, f.cancelPrecheckCommand("cmd-cancel-before-payment", precheck.ID)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+}
+
+func TestPaymentForSupersededPrecheckRejected(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := precheck.Supersede(fixedClock{}.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.repo.UpdatePrecheckLifecycle(f.ctx, precheck); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"})
+	if !errors.Is(err, domain.ErrNotFound) && !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected not found or conflict for inactive precheck, got %v", err)
+	}
+}
+
+func TestDuplicatePaymentCommandIDDoesNotDoubleCapture(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 2}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := app.CapturePaymentCommand{CommandMeta: app.CommandMeta{CommandID: "cmd-payment-duplicate", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice}, PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: 1000, Currency: "RUB"}
+	if _, err := f.service.CapturePayment(f.ctx, cmd); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, cmd); !errors.Is(err, domain.ErrDuplicateCommand) {
+		t.Fatalf("expected duplicate command, got %v", err)
+	}
+	if payments := countRows(t, f, "payments"); payments != 1 {
+		t.Fatalf("expected one payment, got %d", payments)
+	}
+	got, err := f.repo.GetPrecheck(f.ctx, precheck.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PaidTotal != 1000 {
+		t.Fatalf("expected paid_total 1000, got %d", got.PaidTotal)
+	}
+}
+
+func TestPaymentRequiresActiveShiftAndMatchingDevice(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: app.CommandMeta{CommandID: "cmd-payment-wrong-device", DeviceID: "other-device", Origin: app.OriginEdgeDevice}, PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected device conflict, got %v", err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE shifts SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`, appshared.DBTime(fixedClock{}.Now()), appshared.DBTime(fixedClock{}.Now()), order.ShiftID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: app.CommandMeta{CommandID: "cmd-payment-no-active-shift", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice}, PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected active shift conflict, got %v", err)
 	}
 }
 
@@ -1127,21 +1441,18 @@ func TestKeyWritesCreateLocalEventsAndMatchingOutboxEnvelopes(t *testing.T) {
 	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
 		t.Fatal(err)
 	}
-	check, err := f.service.CreateCheck(f.ctx, app.CreateCheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), CheckID: check.ID, Method: domain.PaymentCash, Amount: check.Total, Currency: "RUB"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.service.CloseOrder(f.ctx, app.CloseOrderCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID}); err != nil {
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: app.CommandMeta{CommandID: "cmd-key-write-full-payment", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice}, PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.service.CloseShift(f.ctx, app.CloseShiftCommand{CommandMeta: f.edgeMeta(), ID: shift.ID, ClosedByEmployeeID: f.employee.ID, ClosingCashAmount: 0}); err != nil {
 		t.Fatal(err)
 	}
 
-	eventTypes := []string{"ShiftOpened", "ShiftClosed", "OrderCreated", "OrderLineAdded", "OrderClosed", "CheckCreated", "PaymentCaptured"}
+	eventTypes := []string{"ShiftOpened", "ShiftClosed", "OrderCreated", "OrderLineAdded", "PrecheckIssued", "OrderClosed", "CheckCreated", "PaymentCaptured"}
 	local := localEventCommandIDsByType(t, f, eventTypes, shift.ID)
 	outbox := outboxEventCommandIDsByType(t, f, eventTypes)
 	for _, eventType := range eventTypes {

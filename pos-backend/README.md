@@ -12,7 +12,7 @@ Order -> Precheck -> Payment -> Check
 
 `Precheck` - рабочий финансовый snapshot для гостя. `Check` - только финальный неизменяемый расчетный документ после полной оплаты precheck.
 
-Текущее состояние кода честно отличается от полной цели: backend уже включает публичный `Order -> Precheck` slice, но payment-to-precheck и automatic final check generation еще не реализованы. Есть таблица `prechecks`, domain model, repository, app-level `IssuePrecheck`, который создает issued precheck и переводит order в `locked`, публичные endpoints для issue/get/list, и app-level `CancelPrecheck`, который отменяет active issued precheck и возвращает order в `open` без публичного manager PIN flow. Текущий `POST /api/v1/checks/{id}/payments` пока остается legacy check-based foundation.
+Текущее состояние кода: backend выполняет runtime flow `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` создает issued precheck и переводит order в `locked`; публичный `CancelPrecheck` требует manager employee id, PIN и reason, проверяет локальный PBKDF2 `pin_hash`, пишет `manager_override_audit` и возвращает unpaid active issued precheck в `open`; payment capture идет через `precheck_id`, поддерживает partial payments и создает final `Check` только после полной оплаты. Legacy `POST /api/v1/checks/{id}/payments` отключен и не обходит precheck flow.
 
 Проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. Изменения схемы v1.3 нужно проектировать как first-launch schema.
 
@@ -71,7 +71,7 @@ SQLite хранится в Docker volume `pos_edge_sqlite`. API доступен
 
 ## API Smoke Test
 
-Этот smoke test проверяет текущий публичный `Order -> Precheck` slice. Payment endpoint пока остается legacy check-based и не включен в этот precheck smoke.
+Этот smoke test проверяет текущий публичный `Order -> Precheck -> Payment -> Check` slice.
 
 ```powershell
 curl http://localhost:8080/health
@@ -101,6 +101,7 @@ curl -s -X POST "http://localhost:8080/api/v1/orders/$($order.id)/lines" -H "Con
 $precheck = curl -s -X POST "http://localhost:8080/api/v1/orders/$($order.id)/precheck" -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`"}" | ConvertFrom-Json
 curl -s "http://localhost:8080/api/v1/prechecks/$($precheck.id)"
 curl -s "http://localhost:8080/api/v1/orders/$($order.id)/prechecks"
+$payment = curl -s -X POST "http://localhost:8080/api/v1/prechecks/$($precheck.id)/payments" -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"method`":`"cash`",`"amount`":$($precheck.total),`"currency`":`"RUB`"}" | ConvertFrom-Json
 curl -s -X POST "http://localhost:8080/api/v1/cash-sessions/$($cashSession.id)/close" -H "Content-Type: application/json" -d "{`"device_id`":`"$($device.id)`",`"closed_by_employee_id`":`"$($employee.id)`",`"closing_cash_amount`":100000}"
 curl -s http://localhost:8080/api/v1/sync/outbox
 curl -s "http://localhost:8080/api/v1/sync/local-events?limit=50"
@@ -111,26 +112,28 @@ Bootstrap note: до регистрации реального POS device bootst
 
 Outbox note: `pos_sync_outbox.device_id` всегда непустой. `restaurant_id` может быть `NULL` для Phase 1 global dictionaries вроде roles, catalog items и menu items, потому что они пока не restaurant-scoped. Это намеренно и отдельно от обязательного `device_id` observability contract.
 
-Local events note: write use cases сохраняют matching local event в `local_event_log` в той же SQLite transaction, что и outbox row. Один и тот же `command_id` хранится в `local_event_log`, в `pos_sync_outbox` и в `SyncEnvelope` JSON payload вместе с `event_id`, aggregate metadata, `device_id`, optional `restaurant_id`, optional `shift_id` и domain payload. Read-only endpoint `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated` нужен для operational inspection и не меняет write semantics.
+Local events note: write use cases сохраняют matching local events в `local_event_log` в той же SQLite transaction, что и outbox rows. Один business command может породить несколько domain events с одним `command_id` (например full payment пишет `PaymentCaptured`, `CheckCreated`, `OrderClosed`); `command_id` хранится в `local_event_log`, в `pos_sync_outbox` и в каждом `SyncEnvelope` JSON payload вместе с `event_id`, aggregate metadata, `device_id`, optional `restaurant_id`, optional `shift_id` и domain payload. Read-only endpoint `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated` нужен для operational inspection и не меняет write semantics.
 
-Financial foundation note: текущий `CapturePayment` сохраняет `payments` и первую строку `payment_attempts` в той же transaction, что и legacy check paid-total updates, `local_event_log` и `pos_sync_outbox`. Этот endpoint все еще принимает `check_id`. В целевой v1.3 реализации payment должен быть связан с precheck, а final check должен создаваться только после полной оплаты.
+Financial foundation note: текущий `CapturePayment` принимает `precheck_id`, сохраняет `payments` и первую строку `payment_attempts` в той же transaction, что и precheck paid-total update, `local_event_log` и `pos_sync_outbox`. При partial payment precheck остается `issued`; при полной оплате в той же transaction создается final `Check`, precheck становится terminal `closed`, order закрывается, а события `PaymentCaptured`, `CheckCreated` и `OrderClosed` пишутся в local event log и outbox с тем же `command_id`.
 
-Precheck foundation note: в схеме уже есть `prechecks` lifecycle foundation с `version`, `supersedes_precheck_id`, `paid_total`, terminal status `cancelled/superseded`, в backend добавлены domain model, repository interface/SQLite implementation и app service. `IssuePrecheck` транзакционно создает precheck, переводит order в `locked`, пишет `local_event_log` и `pos_sync_outbox`, и доступен публично через `POST /api/v1/orders/{id}/precheck`. `GET /api/v1/prechecks/{id}` и `GET /api/v1/orders/{id}/prechecks` читают prechecks. `CancelPrecheck` транзакционно отменяет только active issued precheck без paid amount foundation, возвращает order в `open`, пишет `PrecheckCancelled` в `local_event_log` и `pos_sync_outbox`; публичного cancel endpoint и полноценной PIN verification пока нет.
+Precheck foundation note: в схеме есть `prechecks` lifecycle foundation с `version`, `supersedes_precheck_id`, `paid_total`, terminal status `cancelled/superseded/closed`, domain model, repository interface/SQLite implementation и app service. `IssuePrecheck` транзакционно создает precheck, переводит order в `locked`, пишет `local_event_log` и `pos_sync_outbox`, и доступен публично через `POST /api/v1/orders/{id}/precheck`. `GET /api/v1/prechecks/{id}` и `GET /api/v1/orders/{id}/prechecks` читают prechecks. `CancelPrecheck` доступен через `POST /api/v1/prechecks/{id}/cancel`, требует manager override, запрещает cancel при `paid_total > 0`, возвращает order в `open`, пишет `manager_override_audit`, `PrecheckCancelled`, local event и outbox в одной transaction. PIN не пишется в audit/outbox/local event и не отправляется в Cloud.
 
 Cash session endpoints: `POST /api/v1/cash-sessions/open`, `POST /api/v1/cash-sessions/{id}/close`, `GET /api/v1/cash-sessions/current?device_id=...`, `POST /api/v1/cash-drawer-events`. Закрытие смены запрещено, пока на device есть active cash session; cash session нужно закрыть до `POST /api/v1/shifts/{id}/close`.
 
 ## Текущие Financial Endpoints
 
-См. `internal/pos/api/router.go`. На момент Architecture Lock v1.3 там все еще есть:
+См. `internal/pos/api/router.go`. На текущий момент financial endpoints:
 
 - `POST /api/v1/orders/{id}/precheck`
 - `GET /api/v1/prechecks/{id}`
+- `POST /api/v1/prechecks/{id}/cancel`
+- `POST /api/v1/prechecks/{id}/payments`
 - `GET /api/v1/orders/{id}/prechecks`
 - `POST /api/v1/orders/{id}/check`
 - `POST /api/v1/checks/{id}/payments`
 - `GET /api/v1/checks/{id}`
 
-`POST /api/v1/orders/{id}/check` оставлен как deprecated dev alias и вызывает `IssuePrecheck`, не создает legacy check напрямую. `POST /api/v1/checks/{id}/payments` и `GET /api/v1/checks/{id}` остаются legacy check-based foundation до отдельной итерации payment-to-precheck и final check generation. Публичного endpoint для `CancelPrecheck` пока нет.
+`POST /api/v1/orders/{id}/check` оставлен как deprecated dev alias и вызывает `IssuePrecheck`, не создает legacy check напрямую. `POST /api/v1/checks/{id}/payments` оставлен только как deprecated compatibility route и возвращает conflict с указанием использовать `/api/v1/prechecks/{id}/payments`. `GET /api/v1/checks/{id}` читает только final checks, которые появляются после полной оплаты precheck.
 
 ## Tests
 
