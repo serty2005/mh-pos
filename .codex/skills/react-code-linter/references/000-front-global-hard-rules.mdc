@@ -1,7 +1,6 @@
 ---
 description: Абсолютные глобальные правила для front_new (самые строгие)
-globs:
-  - "front_new/**/*"
+
 alwaysApply: true
 ---
 
