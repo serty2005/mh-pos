@@ -24,6 +24,22 @@ Order -> Precheck -> Payment -> Check
 - HTTP JSON API with `chi`
 - Docker Compose with a named SQLite volume
 
+## SQLite Runtime Contract
+
+При старте POS Edge backend открывает SQLite fail-fast: выставляет и затем проверяет фактические runtime параметры.
+
+Обязательный baseline:
+
+- `sqlite_version()` доступен;
+- functional minimum: `SQLite >= 3.37.0`;
+- production WAL pilot baseline: `SQLite >= 3.51.3` или pinned backport `3.50.7/3.44.6`;
+- `PRAGMA journal_mode = WAL`;
+- `PRAGMA synchronous = NORMAL`;
+- `PRAGMA foreign_keys = ON`;
+- `PRAGMA busy_timeout >= 5000`.
+
+Если runtime не соответствует baseline, backend завершается до применения migrations и запуска HTTP server.
+
 ## Запуск Локально На Windows
 
 Из `pos-backend`:

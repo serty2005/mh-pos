@@ -375,6 +375,8 @@ GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated
 # Database Rules
 
 - SQLite - primary storage для POS Edge.
+- При открытии POS Edge backend выполняет fail-fast SQLite runtime gate: проверяет `sqlite_version()`, `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout >= 5000`.
+- SQLite runtime baseline: functional minimum `>= 3.37.0`; production WAL pilot baseline `>= 3.51.3` или явно разрешенный pinned backport `3.50.7/3.44.6`.
 - Использовать транзакции всегда для write операций.
 - Не делать частичных записей.
 - До первого production launch не нужна миграция реальных production данных.

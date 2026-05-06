@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -32,7 +33,7 @@ func run() error {
 
 	db, err := platformsqlite.Open(dbPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("open sqlite and verify runtime gate: %w", err)
 	}
 	defer db.Close()
 

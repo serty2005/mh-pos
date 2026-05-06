@@ -17,6 +17,7 @@ Order -> Precheck -> Payment -> Check
 Репозиторий уже содержит рабочий foundation:
 
 - `pos-backend/` - локальный POS Edge backend на Go + SQLite;
+- SQLite runtime gate для POS Edge: startup fail-fast проверяет фактические `sqlite_version()`, `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout >= 5000`;
 - `cloud-backend/` - минимальный Cloud Sync Receiver на Go + PostgreSQL;
 - `local_event_log`;
 - `pos_sync_outbox`;
@@ -176,6 +177,7 @@ go test ./...
 - Architecture Lock: v1.3.
 - Target financial model: `Order -> Precheck -> Payment -> Check`.
 - Production data migration before first launch: не требуется.
+- POS Edge SQLite runtime contract: functional minimum `>= 3.37.0`, production WAL pilot baseline `>= 3.51.3` или pinned backport `3.50.7/3.44.6`; backend завершается при несоответствии.
 - POS Edge code: legacy runtime flow, еще не переведен на precheck flow; precheck foundation added без публичного API переключения, app-level `IssuePrecheck` locks order.
 - `local_event_log` уже является частью edge foundation, хранит `command_id` той же write-операции, что и outbox, и доступен read-only через `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`.
 - Sync outbox доступен через `GET /api/v1/sync/outbox`.
