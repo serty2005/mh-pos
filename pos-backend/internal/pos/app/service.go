@@ -13,6 +13,7 @@ import (
 	appemployee "pos-backend/internal/pos/app/employee"
 	appmenu "pos-backend/internal/pos/app/menu"
 	apporder "pos-backend/internal/pos/app/order"
+	appprecheck "pos-backend/internal/pos/app/precheck"
 	apprestaurant "pos-backend/internal/pos/app/restaurant"
 	"pos-backend/internal/pos/app/shared"
 	appshift "pos-backend/internal/pos/app/shift"
@@ -39,6 +40,7 @@ type OpenShiftCommand = appshift.OpenShiftCommand
 type CloseShiftCommand = appshift.CloseShiftCommand
 type CreateOrderCommand = apporder.CreateOrderCommand
 type AddOrderLineCommand = apporder.AddOrderLineCommand
+type IssuePrecheckCommand = appprecheck.IssuePrecheckCommand
 type CreateCheckCommand = appcheck.CreateCheckCommand
 type CapturePaymentCommand = appcheck.CapturePaymentCommand
 type CloseOrderCommand = apporder.CloseOrderCommand
@@ -59,6 +61,7 @@ type Service struct {
 	menu        *appmenu.Service
 	shifts      *appshift.Service
 	orders      *apporder.Service
+	prechecks   *appprecheck.Service
 	checks      *appcheck.Service
 	cash        *appcash.Service
 	localEvents ports.LocalEventRepository
@@ -74,6 +77,7 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 		menu:        appmenu.NewService(repo, tx, ids, clock),
 		shifts:      appshift.NewService(repo, tx, ids, clock),
 		orders:      apporder.NewService(repo, tx, ids, clock),
+		prechecks:   appprecheck.NewService(repo, tx, ids, clock),
 		checks:      appcheck.NewService(repo, tx, ids, clock),
 		cash:        appcash.NewService(repo, tx, ids, clock),
 		localEvents: repo,
@@ -159,6 +163,10 @@ func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*d
 
 func (s *Service) CloseOrder(ctx context.Context, cmd CloseOrderCommand) (*domain.Order, error) {
 	return s.orders.CloseOrder(ctx, cmd)
+}
+
+func (s *Service) IssuePrecheck(ctx context.Context, cmd IssuePrecheckCommand) (*domain.Precheck, error) {
+	return s.prechecks.IssuePrecheck(ctx, cmd)
 }
 
 func (s *Service) GetCheck(ctx context.Context, id string) (*domain.Check, error) {

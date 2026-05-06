@@ -107,6 +107,40 @@ func TestCashAndPaymentAttemptFoundationTablesExist(t *testing.T) {
 	}
 }
 
+func TestPrecheckFoundationTableExists(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	var n int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = 'prechecks'`).Scan(&n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatal("expected prechecks table to exist")
+	}
+}
+
+func TestPrechecksAllowOnlyOneIssuedPrecheckPerOrder(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	seedFinancialForSchemaTests(t, ctx, db)
+	insert := `INSERT INTO prechecks(id,order_id,status,subtotal,discount_total,tax_total,total,created_at,issued_at) VALUES (?,?,?,?,?,?,?,?,?)`
+	execSchema(t, ctx, db, insert, "precheck-1", "order-1", "issued", 100, 0, 0, 100, schemaTestTime, schemaTestTime)
+
+	_, err := db.ExecContext(ctx, insert, "precheck-2", "order-1", "issued", 100, 0, 0, 100, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected second issued precheck for order to fail")
+	}
+}
+
+func TestPrecheckTotalsMustMatchSnapshotFormula(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	seedFinancialForSchemaTests(t, ctx, db)
+
+	_, err := db.ExecContext(ctx, `INSERT INTO prechecks(id,order_id,status,subtotal,discount_total,tax_total,total,created_at,issued_at) VALUES ('precheck-bad','order-1','issued',100,10,5,100,?,?)`, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected inconsistent precheck total to fail")
+	}
+}
+
 func TestCashSessionsAllowOnlyOneOpenSessionPerDevice(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)

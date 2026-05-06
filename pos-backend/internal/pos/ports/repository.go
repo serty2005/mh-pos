@@ -8,6 +8,7 @@ type Repository interface {
 	MenuRepository
 	ShiftRepository
 	OrderRepository
+	PrecheckRepository
 	CheckRepository
 	CashRepository
 	InventoryRepository

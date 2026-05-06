@@ -164,7 +164,7 @@ func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
-	case "orders", "order_lines", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "roles", "catalog_items", "menu_items":
+	case "orders", "order_lines", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "roles", "catalog_items", "menu_items":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -519,6 +519,78 @@ func TestCannotCloseOrderWithoutFullPayment(t *testing.T) {
 	_, err = f.service.CloseOrder(f.ctx, app.CloseOrderCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
+	}
+}
+
+func TestIssuePrecheckCreatesDormantSnapshotWithoutLegacyCheck(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 2}); err != nil {
+		t.Fatal(err)
+	}
+	prechecksBefore := countRows(t, f, "prechecks")
+	checksBefore := countRows(t, f, "checks")
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-precheck-1", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		OrderID:     order.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if precheck.OrderID != order.ID || precheck.Status != domain.PrecheckIssued || precheck.Subtotal != 2000 || precheck.Total != 2000 {
+		t.Fatalf("unexpected precheck: %+v", precheck)
+	}
+	if prechecks := countRows(t, f, "prechecks"); prechecks != prechecksBefore+1 {
+		t.Fatalf("expected one precheck row, before=%d after=%d", prechecksBefore, prechecks)
+	}
+	if checks := countRows(t, f, "checks"); checks != checksBefore {
+		t.Fatalf("expected legacy checks to remain unchanged, before=%d after=%d", checksBefore, checks)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+1 {
+		t.Fatalf("expected one outbox row, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore+1 {
+		t.Fatalf("expected one local event row, before=%d after=%d", eventsBefore, events)
+	}
+	active, err := f.repo.GetActivePrecheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.ID != precheck.ID {
+		t.Fatalf("expected active precheck %s, got %s", precheck.ID, active.ID)
+	}
+}
+
+func TestCannotIssueSecondActivePrecheckForOrder(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-precheck-1", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		OrderID:     order.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-precheck-2", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		OrderID:     order.ID,
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+	if prechecks := countRows(t, f, "prechecks"); prechecks != 1 {
+		t.Fatalf("expected one precheck row, got %d", prechecks)
 	}
 }
 

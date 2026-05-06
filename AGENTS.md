@@ -20,7 +20,7 @@ Order -> Precheck -> Payment -> Check
 
 Важно: проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. Изменения v1.3 нужно проектировать как first-launch schema/logic, а не как миграцию исторических данных.
 
-Текущее состояние кода нужно отделять от целевой модели: `pos-backend` сейчас является legacy foundation со старым checks/payments flow и еще не переведен на precheck flow. В этой фазе документация уже фиксирует v1.3, но код Precheck еще не внедрен.
+Текущее состояние кода нужно отделять от целевой модели: `pos-backend` сейчас сохраняет legacy checks/payments runtime flow и еще не переведен на precheck flow. Минимальный Precheck foundation уже добавлен на уровне schema/domain/repository/dormant app service, но публичный runtime flow системы остается legacy.
 
 ### Карта Репозитория
 
@@ -221,6 +221,7 @@ domain -> app -> ports -> infra
 - catalog
 - menu
 - orders
+- prechecks foundation без runtime API переключения
 - checks/payments foundation по старому flow
 - payment_attempts
 - shifts
@@ -233,7 +234,7 @@ domain -> app -> ports -> infra
 Текущая реализация еще НЕ включает:
 
 - целевой `Precheck` flow
-- `IssuePrecheck`
+- публичный endpoint `IssuePrecheck`
 - payment привязанный к precheck
 - автоматическое создание final check после полной оплаты precheck
 - POS UI
@@ -533,8 +534,8 @@ GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated
 - Version: 1.3 Architecture Lock
 - Scope: POS Edge Backend + minimal Cloud Sync Receiver foundation
 - Target financial model: `Order -> Precheck -> Payment -> Check`
-- Current POS Edge code: legacy foundation, not yet migrated to precheck flow
-- Edge foundation: `local_event_log` + `pos_sync_outbox` + cash sessions + payment attempts
+- Current POS Edge code: legacy runtime flow, not yet migrated to precheck flow
+- Edge foundation: `local_event_log` + `pos_sync_outbox` + cash sessions + payment attempts + dormant prechecks foundation
 - Operational read-only endpoints: sync outbox and local events
 - Cloud: minimal `cloud-backend/` Sync Receiver implemented; Cloud is not a runtime dependency for critical POS Edge writes
 

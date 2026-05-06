@@ -9,6 +9,7 @@ import (
 	"pos-backend/internal/pos/domain/inventory"
 	"pos-backend/internal/pos/domain/menu"
 	"pos-backend/internal/pos/domain/order"
+	"pos-backend/internal/pos/domain/precheck"
 	"pos-backend/internal/pos/domain/restaurant"
 	"pos-backend/internal/pos/domain/shared"
 	"pos-backend/internal/pos/domain/shift"
@@ -73,6 +74,15 @@ const (
 	CheckPaid     = check.CheckPaid
 	CheckRefunded = check.CheckRefunded
 	CheckVoided   = check.CheckVoided
+)
+
+type PrecheckStatus = precheck.PrecheckStatus
+type Precheck = precheck.Precheck
+
+const (
+	PrecheckIssued    = precheck.PrecheckIssued
+	PrecheckClosed    = precheck.PrecheckClosed
+	PrecheckCancelled = precheck.PrecheckCancelled
 )
 
 type PaymentStatus = check.PaymentStatus

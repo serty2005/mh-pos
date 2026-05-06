@@ -78,6 +78,7 @@ pos-backend/
   pos_sync_outbox
   SyncEnvelope foundation
   Orders foundation
+  Prechecks foundation: schema/domain/repository/dormant IssuePrecheck
   Checks/Payments foundation по старой модели
   Shifts foundation
   Cash Sessions foundation
@@ -102,6 +103,8 @@ Stage 2: Cash & Shifts Core — DONE / mostly done
 Stage 3: Orders, Prechecks & Taxes — NEXT / in progress
 Stage 4: Payments & Final Checks — NEXT
 ```
+
+Фактическое ограничение текущего кода: Precheck foundation added, runtime flow still legacy. Публичные POS endpoints пока продолжают использовать старый checks/payments flow; payments еще не привязаны к precheck, final check еще не создается автоматически после полной оплаты precheck.
 
 В v1.3 старая модель `Order → Check → Payment` заменяется целевой финансовой моделью:
 

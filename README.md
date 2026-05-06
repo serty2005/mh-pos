@@ -22,11 +22,12 @@ Order -> Precheck -> Payment -> Check
 - `pos_sync_outbox`;
 - `SyncEnvelope` foundation;
 - shifts, cash sessions, cash drawer events;
+- minimal prechecks foundation: schema, domain model, repository, dormant `IssuePrecheck` app service;
 - orders/checks/payments legacy foundation;
 - `payment_attempts`;
 - read-only sync endpoints.
 
-Честное ограничение текущего кода: POS Edge backend еще не переведен на precheck flow. Текущие endpoints и use cases вокруг check/payment являются legacy foundation и не должны восприниматься как целевая v1.3 модель.
+Честное ограничение текущего кода: POS Edge backend еще не переведен на precheck flow. Precheck foundation added, runtime flow still legacy. Текущие endpoints и use cases вокруг check/payment являются legacy foundation и не должны восприниматься как целевая v1.3 модель.
 
 ## Структура Монорепозитория
 
@@ -162,6 +163,7 @@ go test ./...
 - Запуск POS Edge backend: `pos-backend/README.md`
 - Запуск Cloud receiver: `cloud-backend/README.md`
 - HTTP маршруты POS Edge: `pos-backend/internal/pos/api/router.go`
+- Dormant precheck app foundation: `pos-backend/internal/pos/app/precheck/service.go`
 - Текущий legacy check service: `pos-backend/internal/pos/app/check/service.go`
 - Use cases: `pos-backend/internal/pos/app/`
 - Доменные модели: `pos-backend/internal/pos/domain/`
@@ -174,10 +176,10 @@ go test ./...
 - Architecture Lock: v1.3.
 - Target financial model: `Order -> Precheck -> Payment -> Check`.
 - Production data migration before first launch: не требуется.
-- POS Edge code: legacy foundation, еще не переведен на precheck flow.
+- POS Edge code: legacy runtime flow, еще не переведен на precheck flow; precheck foundation added без публичного API переключения.
 - `local_event_log` уже является частью edge foundation, хранит `command_id` той же write-операции, что и outbox, и доступен read-only через `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`.
 - Sync outbox доступен через `GET /api/v1/sync/outbox`.
-- Edge financial foundation включает `payment_attempts`, `cash_sessions`, `cash_drawer_events` и базовые HTTP endpoints для cash session/drawer workflows.
+- Edge financial foundation включает `prechecks`, `payment_attempts`, `cash_sessions`, `cash_drawer_events` и базовые HTTP endpoints для cash session/drawer workflows.
 - Закрытие смены в POS Edge запрещено при открытых заказах или active cash session.
 - Cloud: минимальный `cloud-backend/` Sync Receiver реализован; Cloud не является зависимостью для критических POS Edge операций.
 - POS UI: не реализован.

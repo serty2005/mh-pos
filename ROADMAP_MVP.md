@@ -32,6 +32,7 @@
 - shifts;
 - cash sessions;
 - cash drawer events;
+- минимальный prechecks foundation: SQLite table, domain model, repository, dormant `IssuePrecheck`;
 - базовые orders/checks/payments;
 - device registration foundation;
 - SQLite migrations для первого запуска локальной БД;
@@ -42,6 +43,8 @@
 ```text
 Order -> Precheck -> Payment -> Check
 ```
+
+Текущее ограничение: precheck foundation added, runtime flow still legacy. Legacy `CreateCheck` и payment-to-check flow intentionally сохранены до полноценного Precheck Core.
 
 ---
 
@@ -522,7 +525,7 @@ Acceptance criteria:
 
 ## Этап B. Schema Reset для первого запуска
 
-Статус: следующий технический этап.
+Статус: начат частично. Минимальная таблица `prechecks` уже добавлена как preparatory foundation; полный schema reset v1.3 еще не завершен.
 
 Цель: привести SQLite и PostgreSQL стартовые схемы к v1.3 без сложных data migrations.
 
@@ -532,7 +535,7 @@ Acceptance criteria:
 
 Задачи SQLite:
 
-- [ ] Добавить таблицу `prechecks`.
+- [x] Добавить минимальную таблицу `prechecks` без переключения runtime flow.
 - [ ] Добавить таблицу `precheck_lines`.
 - [ ] Добавить таблицу `precheck_tax_lines` или JSON snapshot налогов, если это проще для MVP.
 - [ ] Добавить таблицу `manager_override_logs`.
@@ -541,7 +544,8 @@ Acceptance criteria:
 - [ ] Проверить необходимость сохранения `payments.check_id` как nullable post-finalization reference.
 - [ ] Обновить `checks`, чтобы они были финальными документами, а не рабочими счетами.
 - [ ] Добавить поля outbox retry policy: `attempts`, `next_retry_at`, `last_error`, `locked_at`, `locked_by`.
-- [ ] Добавить constraints для precheck versioning.
+- [x] Добавить constraint для одного active `issued` precheck на order.
+- [ ] Добавить полный constraints набор для precheck versioning; `version_no` еще не внедрен.
 - [ ] Добавить `business_date_local` в `shifts`, `cash_sessions`, `prechecks`, `payments`, `checks`.
 - [ ] Перевести money columns на signed `INTEGER minor units`.
 - [ ] Добавить `currency_code`.
@@ -572,20 +576,23 @@ Acceptance criteria:
 
 Цель: реализовать `Order -> Precheck`.
 
+Статус: начат как dormant foundation. Entity, минимальный repository и app-level `IssuePrecheck` добавлены, но endpoint, order locking, supersede/versioning и payment-to-precheck еще не внедрены.
+
 Backend задачи:
 
-- [ ] Создать domain model `Precheck`.
+- [x] Создать минимальную domain model `Precheck`.
 - [ ] Создать domain model `PrecheckLine`.
 - [ ] Создать domain model `PrecheckTaxLine` или tax snapshot.
-- [ ] Добавить repository ports:
+- [x] Добавить минимальные repository ports:
   - `CreatePrecheck`;
   - `GetPrecheck`;
   - `GetActivePrecheckByOrder`;
+- [ ] Добавить расширенные repository ports:
   - `ListPrechecksByOrder`;
   - `SupersedeIssuedPrechecksForOrder`;
   - `NextPrecheckVersionForOrder`.
-- [ ] Реализовать SQLite repository.
-- [ ] Реализовать use case `IssuePrecheck`.
+- [x] Реализовать минимальный SQLite repository для `CreatePrecheck`, `GetPrecheck`, `GetActivePrecheckByOrder`.
+- [x] Реализовать dormant use case `IssuePrecheck`.
 - [ ] Заменить endpoint `POST /orders/{id}/check` на `POST /orders/{id}/precheck`.
 - [ ] Старый endpoint либо удалить до первого запуска, либо оставить временно только как deprecated dev endpoint, который вызывает `IssuePrecheck`.
 
