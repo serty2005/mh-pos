@@ -225,6 +225,10 @@ func (s *Service) GetOrder(ctx context.Context, id string) (*domain.Order, error
 	return s.orders.GetOrder(ctx, id)
 }
 
+func (s *Service) GetCurrentOrderByTable(ctx context.Context, deviceID, tableID string) (*domain.Order, error) {
+	return s.orders.GetCurrentOrderByTable(ctx, deviceID, tableID)
+}
+
 func (s *Service) CreateOrder(ctx context.Context, cmd CreateOrderCommand) (*domain.Order, error) {
 	return s.orders.CreateOrder(ctx, cmd)
 }

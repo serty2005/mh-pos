@@ -2,7 +2,7 @@
   <q-layout view="hHh lpR fFf" class="app-shell">
     <q-header v-if="showHeader" class="app-header">
       <q-toolbar class="toolbar">
-        <q-toolbar-title class="brand">MyHoReCa POS</q-toolbar-title>
+        <q-toolbar-title class="brand">{{ t('app.title') }}</q-toolbar-title>
         <div class="header-meta">
           <span v-if="auth.nodeDeviceId">{{ t('common.node') }} {{ shortId(auth.nodeDeviceId) }}</span>
           <span>{{ t('common.client') }} {{ shortId(auth.clientDeviceId) }}</span>

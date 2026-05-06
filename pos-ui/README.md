@@ -1,6 +1,6 @@
 # MyHoReCa POS UI
 
-`pos-ui` - минимальный Vue 3 + TypeScript shell для новой модели `pairing -> login -> pos -> lock/logout`.
+`pos-ui` - Vue 3 + TypeScript + Quasar интерфейс для модели `pairing -> login -> pos -> lock/logout`.
 
 ## Запуск
 
@@ -17,16 +17,36 @@ $env:VITE_POS_API_BASE="http://localhost:8080/api/v1"
 npm run dev
 ```
 
-## Identity Flow
+## Что Реализовано
 
 - `/pair` вызывает реальный `POST /api/v1/system/pair`.
-- MVP pairing code имеет честный временный формат `MHPOS:<restaurant_id>:<node_device_id>`.
+- `/login` вызывает реальный `POST /api/v1/auth/pin-login`.
+- `/lock` вызывает реальный `POST /api/v1/auth/logout`, очищает локальную session и требует новый PIN.
+- `/pos` реализует POS Terminal Core для одного кассира на одном Primary Edge Node:
+  - показывает сотрудника, session, pairing/node status;
+  - показывает текущую смену и кассовую сессию;
+  - открывает смену и кассовую сессию;
+  - закрывает кассовую сессию и показывает безопасное действие закрытия смены;
+  - выбирает зал и стол;
+  - находит активный заказ по столу через backend;
+  - создает заказ на выбранном столе;
+  - показывает позиции заказа и backend totals;
+  - добавляет позиции из меню;
+  - меняет количество и void-ит позиции;
+  - выпускает пречек;
+  - отменяет unpaid issued пречек через manager override;
+  - принимает оплату наличными и trusted manual card;
+  - показывает финальный чек после полной оплаты.
+
+Server state хранится только через `@tanstack/vue-query`. Frontend не является source of truth и не принимает бизнес-решения по заказу, пречеку, оплате или чеку.
+
+## Identity Flow
+
+- MVP pairing code имеет временный формат `MHPOS:<restaurant_id>:<node_device_id>`.
 - `node_device_id` не генерируется frontend-клиентом; он приходит из pairing payload и обозначает Edge Node backend.
 - Каждый browser/tablet client генерирует свой `client_device_id` через `crypto.randomUUID()` и хранит его в `localStorage`.
 - Backend auto-registers новый `client_device_id` при PIN login.
-- `/login` вызывает `POST /api/v1/auth/pin-login`.
-- `/lock` вызывает `POST /api/v1/auth/logout`, очищает локальный session state и требует новый PIN login.
-- `/pos` читает текущую session, halls и tables только через backend API.
+- Lock всегда вызывает backend logout.
 
 ## Используемые Backend Endpoints
 
@@ -35,12 +55,34 @@ npm run dev
 - `POST /api/v1/auth/pin-login`
 - `GET /api/v1/auth/session`
 - `POST /api/v1/auth/logout`
+- `GET /api/v1/shifts/current`
+- `POST /api/v1/shifts/open`
+- `POST /api/v1/shifts/{id}/close`
+- `GET /api/v1/cash-sessions/current`
+- `POST /api/v1/cash-sessions/open`
+- `POST /api/v1/cash-sessions/{id}/close`
 - `GET /api/v1/halls`
 - `GET /api/v1/tables`
+- `GET /api/v1/menu/items`
+- `GET /api/v1/orders/current?table_id=...`
+- `POST /api/v1/orders`
+- `GET /api/v1/orders/{id}`
+- `POST /api/v1/orders/{id}/lines`
+- `PATCH /api/v1/orders/{id}/lines/{line_id}`
+- `POST /api/v1/orders/{id}/lines/{line_id}/void`
+- `POST /api/v1/orders/{id}/precheck`
+- `GET /api/v1/orders/{id}/prechecks`
+- `POST /api/v1/prechecks/{id}/cancel`
+- `POST /api/v1/prechecks/{id}/payments`
+- `GET /api/v1/checks/{id}`
 
-## MVP Ограничения
+## Ограничения
 
-- Нет manager approve для планшетов.
-- Нет waiter UI, KDS runtime, refunds, tax engine или sync worker.
-- Pairing пока не общается с production Cloud orchestration; код содержит выданный извне `node_device_id`.
-- Frontend не принимает бизнес-решения и не является source of truth.
+- Нет waiter mode.
+- Нет KDS runtime.
+- Нет refund flow.
+- Нет tax engine rewrite.
+- Нет print/reprint UI.
+- Нет backoffice.
+- Trusted card payment - ручная trusted capture запись без PSP integration.
+- Денежный ввод в UI показывается в основных единицах валюты, а backend получает integer minor units.

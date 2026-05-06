@@ -16,19 +16,23 @@ const (
 )
 
 type Order struct {
-	ID           string       `json:"id"`
-	EdgeOrderID  string       `json:"edge_order_id"`
-	RestaurantID string       `json:"restaurant_id"`
-	DeviceID     string       `json:"device_id"`
-	ShiftID      string       `json:"shift_id"`
-	Status       OrderStatus  `json:"status"`
-	TableID      string       `json:"table_id"`
-	TableName    string       `json:"table_name"`
-	GuestCount   int          `json:"guest_count"`
-	OpenedAt     time.Time    `json:"opened_at"`
-	ClosedAt     *time.Time   `json:"closed_at,omitempty"`
-	CreatedAt    time.Time    `json:"created_at"`
-	UpdatedAt    time.Time    `json:"updated_at"`
-	Lines        []OrderLine  `json:"lines,omitempty"`
-	Check        *check.Check `json:"check,omitempty"`
+	ID            string       `json:"id"`
+	EdgeOrderID   string       `json:"edge_order_id"`
+	RestaurantID  string       `json:"restaurant_id"`
+	DeviceID      string       `json:"device_id"`
+	ShiftID       string       `json:"shift_id"`
+	Status        OrderStatus  `json:"status"`
+	TableID       string       `json:"table_id"`
+	TableName     string       `json:"table_name"`
+	GuestCount    int          `json:"guest_count"`
+	Subtotal      int64        `json:"subtotal"`
+	DiscountTotal int64        `json:"discount_total"`
+	TaxTotal      int64        `json:"tax_total"`
+	Total         int64        `json:"total"`
+	OpenedAt      time.Time    `json:"opened_at"`
+	ClosedAt      *time.Time   `json:"closed_at,omitempty"`
+	CreatedAt     time.Time    `json:"created_at"`
+	UpdatedAt     time.Time    `json:"updated_at"`
+	Lines         []OrderLine  `json:"lines,omitempty"`
+	Check         *check.Check `json:"check,omitempty"`
 }

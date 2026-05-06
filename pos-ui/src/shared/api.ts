@@ -2,16 +2,24 @@ import { z } from 'zod';
 
 import { useAuthStore } from '../stores/auth';
 import {
+	cashSessionSchema,
+	checkSchema,
 	hallSchema,
+	menuItemSchema,
+	orderLineSchema,
+	orderSchema,
 	pairingStatusSchema,
+	paymentSchema,
 	pinLoginResultSchema,
+	precheckSchema,
+	shiftSchema,
 	tableSchema,
 	type PinLoginResult,
 } from './schemas';
 
 const apiBase = (import.meta.env.VITE_POS_API_BASE ?? 'http://localhost:8080/api/v1').replace(/\/$/, '');
 
-class ApiError extends Error {
+export class ApiError extends Error {
   status: number;
 
   constructor(status: number, message: string) {
@@ -36,6 +44,22 @@ async function request<T>(path: string, schema: z.ZodType<T>, init: RequestInit 
     throw new ApiError(response.status, data?.error ?? response.statusText);
   }
   return schema.parse(data);
+}
+
+async function requestOptional<T>(path: string, schema: z.ZodType<T>, init: RequestInit = {}) {
+  try {
+    return await request(path, schema, init);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function actorId() {
+  const auth = useAuthStore();
+  return auth.actor?.employee_id ?? '';
 }
 
 export function getPairingStatus() {
@@ -84,6 +108,62 @@ export function logout() {
   });
 }
 
+export function getCurrentShift() {
+  const auth = useAuthStore();
+  const query = new URLSearchParams({ device_id: auth.nodeDeviceId });
+  return requestOptional(`/shifts/current?${query}`, shiftSchema);
+}
+
+export function openShift(openingCashAmount: number) {
+  const auth = useAuthStore();
+  return request('/shifts/open', shiftSchema, {
+    method: 'POST',
+    body: JSON.stringify({
+      restaurant_id: auth.restaurantId,
+      opened_by_employee_id: actorId(),
+      opening_cash_amount: openingCashAmount,
+    }),
+  });
+}
+
+export function closeShift(shiftId: string, closingCashAmount: number) {
+  return request(`/shifts/${encodeURIComponent(shiftId)}/close`, shiftSchema, {
+    method: 'POST',
+    body: JSON.stringify({
+      closed_by_employee_id: actorId(),
+      closing_cash_amount: closingCashAmount,
+    }),
+  });
+}
+
+export function getCurrentCashSession() {
+  const auth = useAuthStore();
+  const query = new URLSearchParams({ device_id: auth.nodeDeviceId });
+  return requestOptional(`/cash-sessions/current?${query}`, cashSessionSchema);
+}
+
+export function openCashSession(openingCashAmount: number) {
+  const auth = useAuthStore();
+  return request('/cash-sessions/open', cashSessionSchema, {
+    method: 'POST',
+    body: JSON.stringify({
+      restaurant_id: auth.restaurantId,
+      opened_by_employee_id: actorId(),
+      opening_cash_amount: openingCashAmount,
+    }),
+  });
+}
+
+export function closeCashSession(cashSessionId: string, closingCashAmount: number) {
+  return request(`/cash-sessions/${encodeURIComponent(cashSessionId)}/close`, cashSessionSchema, {
+    method: 'POST',
+    body: JSON.stringify({
+      closed_by_employee_id: actorId(),
+      closing_cash_amount: closingCashAmount,
+    }),
+  });
+}
+
 export function listHalls(restaurantId: string) {
   return request(`/halls?restaurant_id=${encodeURIComponent(restaurantId)}`, z.array(hallSchema));
 }
@@ -91,4 +171,92 @@ export function listHalls(restaurantId: string) {
 export function listTables(restaurantId: string, hallId: string) {
   const query = new URLSearchParams({ restaurant_id: restaurantId, hall_id: hallId });
   return request(`/tables?${query}`, z.array(tableSchema));
+}
+
+export function listMenuItems() {
+  return request('/menu/items', z.array(menuItemSchema));
+}
+
+export function getCurrentOrderByTable(tableId: string) {
+  const query = new URLSearchParams({ table_id: tableId });
+  return requestOptional(`/orders/current?${query}`, orderSchema);
+}
+
+export function getOrder(orderId: string) {
+  return request(`/orders/${encodeURIComponent(orderId)}`, orderSchema);
+}
+
+export function createOrder(tableId: string, tableName: string, guestCount: number) {
+  const auth = useAuthStore();
+  return request('/orders', orderSchema, {
+    method: 'POST',
+    body: JSON.stringify({
+      restaurant_id: auth.restaurantId,
+      table_id: tableId,
+      table_name: tableName,
+      guest_count: guestCount,
+    }),
+  });
+}
+
+export function addOrderLine(orderId: string, menuItemId: string, quantity = 1) {
+  return request(`/orders/${encodeURIComponent(orderId)}/lines`, orderLineSchema, {
+    method: 'POST',
+    body: JSON.stringify({
+      menu_item_id: menuItemId,
+      quantity,
+    }),
+  });
+}
+
+export function changeOrderLineQuantity(orderId: string, lineId: string, quantity: number) {
+  return request(`/orders/${encodeURIComponent(orderId)}/lines/${encodeURIComponent(lineId)}`, orderLineSchema, {
+    method: 'PATCH',
+    body: JSON.stringify({ quantity }),
+  });
+}
+
+export function voidOrderLine(orderId: string, lineId: string, reason: string) {
+  return request(`/orders/${encodeURIComponent(orderId)}/lines/${encodeURIComponent(lineId)}/void`, orderLineSchema, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function listPrechecksByOrder(orderId: string) {
+  return request(`/orders/${encodeURIComponent(orderId)}/prechecks`, z.array(precheckSchema));
+}
+
+export function issuePrecheck(orderId: string) {
+  return request(`/orders/${encodeURIComponent(orderId)}/precheck`, precheckSchema, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export function cancelPrecheck(precheckId: string, managerEmployeeId: string, managerPin: string, cancellationReason: string) {
+  return request(`/prechecks/${encodeURIComponent(precheckId)}/cancel`, precheckSchema, {
+    method: 'POST',
+    body: JSON.stringify({
+      manager_employee_id: managerEmployeeId,
+      manager_pin: managerPin,
+      cancellation_reason: cancellationReason,
+    }),
+  });
+}
+
+export function capturePrecheckPayment(precheckId: string, method: 'cash' | 'card', amount: number, currency: string) {
+  return request(`/prechecks/${encodeURIComponent(precheckId)}/payments`, paymentSchema, {
+    method: 'POST',
+    body: JSON.stringify({
+      method,
+      amount,
+      currency,
+      provider_name: method === 'card' ? 'trusted_manual' : undefined,
+    }),
+  });
+}
+
+export function getCheck(checkId: string) {
+  return request(`/checks/${encodeURIComponent(checkId)}`, checkSchema);
 }

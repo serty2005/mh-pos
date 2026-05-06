@@ -60,6 +60,23 @@ type VoidOrderLineCommand struct {
 }
 
 func (s *Service) GetOrder(ctx context.Context, id string) (*domain.Order, error) {
+	return s.hydrateOrder(ctx, id)
+}
+
+func (s *Service) GetCurrentOrderByTable(ctx context.Context, deviceID, tableID string) (*domain.Order, error) {
+	deviceID = strings.TrimSpace(deviceID)
+	tableID = strings.TrimSpace(tableID)
+	if deviceID == "" || tableID == "" {
+		return nil, fmt.Errorf("%w: device_id and table_id are required", domain.ErrInvalid)
+	}
+	order, err := s.repo.GetActiveOrderByDeviceAndTable(ctx, deviceID, tableID)
+	if err != nil {
+		return nil, err
+	}
+	return s.hydrateOrder(ctx, order.ID)
+}
+
+func (s *Service) hydrateOrder(ctx context.Context, id string) (*domain.Order, error) {
 	order, err := s.repo.GetOrder(ctx, id)
 	if err != nil {
 		return nil, err
@@ -69,6 +86,12 @@ func (s *Service) GetOrder(ctx context.Context, id string) (*domain.Order, error
 		return nil, err
 	}
 	order.Lines = lines
+	for _, line := range lines {
+		if line.Status == domain.OrderLineActive {
+			order.Subtotal += line.TotalPrice
+		}
+	}
+	order.Total = order.Subtotal - order.DiscountTotal + order.TaxTotal
 	check, err := s.repo.GetCheckByOrder(ctx, id)
 	if err == nil {
 		order.Check = check

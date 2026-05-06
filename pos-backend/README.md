@@ -12,7 +12,7 @@ Order -> Precheck -> Payment -> Check
 
 `Precheck` - рабочий финансовый snapshot для гостя. `Check` - только финальный неизменяемый расчетный документ после полной оплаты precheck.
 
-Текущее состояние кода: backend выполняет runtime flow `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` создает issued precheck и переводит order в `locked`; публичный `CancelPrecheck` требует manager employee id, PIN и reason, проверяет локальный PBKDF2 `pin_hash`, пишет `manager_override_audit` и возвращает unpaid active issued precheck в `open`; payment capture идет через `precheck_id`, поддерживает partial payments и создает final `Check` только после полной оплаты. Backend также включает strict PIN auth/session/logout foundation, Edge Node pairing, client device auto-registration, actor/session/node/client metadata, halls/tables API и order line quantity/void API. Legacy `POST /api/v1/checks/{id}/payments` отключен и не обходит precheck flow.
+Текущее состояние кода: backend выполняет runtime flow `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` создает issued precheck и переводит order в `locked`; публичный `CancelPrecheck` требует manager employee id, PIN и reason, проверяет локальный PBKDF2 `pin_hash`, пишет `manager_override_audit` и возвращает unpaid active issued precheck в `open`; payment capture идет через `precheck_id`, поддерживает partial payments и создает final `Check` только после полной оплаты. Backend также включает strict PIN auth/session/logout foundation, Edge Node pairing, client device auto-registration, actor/session/node/client metadata, halls/tables API, current active order by table read endpoint, order line quantity/void API и backend-calculated order totals в `GET /api/v1/orders/{id}`. Legacy `POST /api/v1/checks/{id}/payments` отключен и не обходит precheck flow.
 
 Auth/device boundary:
 
@@ -128,9 +128,9 @@ curl -s "http://localhost:8080/api/v1/auth/session?node_device_id=$($device.id)&
 
 Financial precheck/payment endpoints ???????? ??????????, ?? operator writes ?????? ??????? ??? ?? metadata contract. Legacy `POST /api/v1/orders/{id}/check` ???????? deprecated alias ? `IssuePrecheck`; `POST /api/v1/checks/{id}/payments` ?????????? conflict.
 
-## ??????? API Endpoints
+## Доступные API Endpoints
 
-Financial endpoints:
+Финансовые endpoints:
 
 - `POST /api/v1/orders/{id}/precheck`
 - `GET /api/v1/prechecks/{id}`
@@ -141,7 +141,7 @@ Financial endpoints:
 - `POST /api/v1/checks/{id}/payments` disabled compatibility route
 - `GET /api/v1/checks/{id}`
 
-Auth/device and POS UI foundation endpoints:
+Auth/device и POS UI endpoints:
 
 - `GET /api/v1/system/pairing-status`
 - `POST /api/v1/system/pair`
@@ -154,12 +154,23 @@ Auth/device and POS UI foundation endpoints:
 - `POST /api/v1/tables`
 - `GET /api/v1/tables`
 - `PATCH /api/v1/tables/{id}/archive`
+- `GET /api/v1/menu/items`
+- `POST /api/v1/orders`
+- `GET /api/v1/orders/current?table_id=...`
+- `GET /api/v1/orders/{id}`
+- `POST /api/v1/orders/{id}/lines`
 - `PATCH /api/v1/orders/{id}/lines/{line_id}`
 - `POST /api/v1/orders/{id}/lines/{line_id}/void`
+- `GET /api/v1/shifts/current`
+- `POST /api/v1/shifts/open`
+- `POST /api/v1/shifts/{id}/close`
+- `GET /api/v1/cash-sessions/current`
+- `POST /api/v1/cash-sessions/open`
+- `POST /api/v1/cash-sessions/{id}/close`
 
 Operational sync endpoints: `GET /api/v1/sync/outbox?limit=50`, `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`, `GET /api/v1/sync/status`, `POST /api/v1/sync/retry-failed`. `retry-failed` ?? ?????????? ?????? ? Cloud ? ?? ?????? business state; ?? ?????? ?????????? `failed`/`suspended` outbox rows ? `pending`.
 
-POS UI package: `../pos-ui` ???????? Vue 3 + Quasar shell ??? `pairing -> login -> pos -> lock/logout`. ??. `pos-ui/README.md`.
+POS UI package: `../pos-ui` содержит Vue 3 + Quasar shell и рабочий POS Terminal Core на `/pos` для single-terminal cashier flow. См. `pos-ui/README.md`.
 
 ## Tests
 

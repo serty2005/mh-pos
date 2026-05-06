@@ -70,6 +70,7 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Get("/shifts/current", h.currentShift)
 
 		r.Post("/orders", h.createOrder)
+		r.Get("/orders/current", h.getCurrentOrder)
 		r.Get("/orders/{id}", h.getOrder)
 		r.Post("/orders/{id}/lines", h.addOrderLine)
 		r.Patch("/orders/{id}/lines/{line_id}", h.changeOrderLineQuantity)
@@ -369,6 +370,11 @@ func (h *Handler) createOrder(w http.ResponseWriter, r *http.Request) {
 	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateOrder(r.Context(), cmd)
 	writeCreated(w, v, err)
+}
+
+func (h *Handler) getCurrentOrder(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetCurrentOrderByTable(r.Context(), requestNodeDeviceID(r), r.URL.Query().Get("table_id"))
+	writeOK(w, v, err)
 }
 
 func (h *Handler) getOrder(w http.ResponseWriter, r *http.Request) {

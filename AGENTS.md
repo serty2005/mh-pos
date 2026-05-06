@@ -20,9 +20,9 @@ Order -> Precheck -> Payment -> Check
 
 Важно: проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. Изменения v1.3 нужно проектировать как first-launch schema/logic, а не как миграцию исторических данных.
 
-Текущее состояние кода нужно отделять от следующих будущих улучшений: `pos-backend` уже включает публичный runtime `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` (`POST /api/v1/orders/{id}/precheck`, `GET /api/v1/prechecks/{id}`, `GET /api/v1/orders/{id}/prechecks`) создает issued precheck и переводит order в `locked`; публичный `CancelPrecheck` (`POST /api/v1/prechecks/{id}/cancel`) требует manager employee id, PIN и reason, проверяет локальный PBKDF2 `pin_hash`, пишет `manager_override_audit`, `local_event_log` и outbox в одной транзакции и возвращает unpaid active issued precheck order в `open`; payment capture идет через `POST /api/v1/prechecks/{id}/payments`, поддерживает partial payments и автоматически создает final `Check` + закрывает order после полной оплаты. Backend также включает PIN auth/session foundation, actor/session metadata в `local_event_log`/outbox/`SyncEnvelope`, halls/tables foundation и order line quantity/void API. Deprecated `POST /api/v1/orders/{id}/check` остается alias к `IssuePrecheck`; legacy `POST /api/v1/checks/{id}/payments` отключен. Sync/outbox foundation уже включает retry-safe schema/app/API состояние очереди, но полноценный Cloud sender/worker еще не реализован. KDS/Waiter UI еще не готовы; не описывай их как реализованные.
+Текущее состояние кода нужно отделять от следующих будущих улучшений: `pos-backend` уже включает публичный runtime `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` (`POST /api/v1/orders/{id}/precheck`, `GET /api/v1/prechecks/{id}`, `GET /api/v1/orders/{id}/prechecks`) создает issued precheck и переводит order в `locked`; публичный `CancelPrecheck` (`POST /api/v1/prechecks/{id}/cancel`) требует manager employee id, PIN и reason, проверяет локальный PBKDF2 `pin_hash`, пишет `manager_override_audit`, `local_event_log` и outbox в одной транзакции и возвращает unpaid active issued precheck order в `open`; payment capture идет через `POST /api/v1/prechecks/{id}/payments`, поддерживает partial payments и автоматически создает final `Check` + закрывает order после полной оплаты. Backend также включает PIN auth/session foundation, actor/session metadata в `local_event_log`/outbox/`SyncEnvelope`, halls/tables foundation, read-only поиск активного заказа по столу (`GET /api/v1/orders/current?table_id=...`) и order line quantity/void API. Deprecated `POST /api/v1/orders/{id}/check` остается alias к `IssuePrecheck`; legacy `POST /api/v1/checks/{id}/payments` отключен. Sync/outbox foundation уже включает retry-safe schema/app/API состояние очереди, но полноценный Cloud sender/worker еще не реализован. KDS/Waiter UI еще не готовы; не описывай их как реализованные.
 
-Approved frontend MVP теперь `pos-ui`: отдельный пакет Vue 3 + TypeScript + Quasar + Vue Router + Pinia + `@tanstack/vue-query` + `vue-i18n` + Zod. Tailwind запрещен. Frontend не является source of truth и не содержит бизнес-решений; все критические решения остаются в POS Edge backend. Старые предположения про React/Vite UI считаются устаревшими.
+Approved frontend MVP теперь `pos-ui`: отдельный пакет Vue 3 + TypeScript + Quasar + Vue Router + Pinia + `@tanstack/vue-query` + `vue-i18n` + Zod. Реализован POS Terminal Core на `/pos` для single-terminal cashier flow поверх реальных backend endpoints. Tailwind запрещен. Frontend не является source of truth и не содержит бизнес-решений; все критические решения остаются в POS Edge backend. Старые предположения про React/Vite UI считаются устаревшими.
 
 Identity/auth модель больше не трактует `device_id` как один общий идентификатор. Вводятся:
 
@@ -58,7 +58,7 @@ Lock = строгий backend logout. UI lock или авто-блокировк
 |   |-- cmd/cloud-api/        # main() Cloud API
 |   `-- migrations/postgres/  # PostgreSQL bootstrap и migrations
 |-- docs/sync/                # sync contracts
-|-- pos-ui/                   # Vue 3 + Quasar POS shell: pairing/login/pos/lock
+|-- pos-ui/                   # Vue 3 + Quasar POS Terminal Core: pairing/login/pos/lock
 |-- .codex/skills/            # локальные Codex skills
 |-- pack_go_files.py          # вспомогательный скрипт упаковки Go-файлов
 `-- project_dump.py           # вспомогательный скрипт дампа проекта
@@ -237,6 +237,7 @@ domain -> app -> ports -> infra
 - PIN auth/session foundation
 - actor/session metadata для write commands, `local_event_log`, outbox и `SyncEnvelope`
 - halls/tables foundation для выбора стола
+- read-only endpoint активного заказа по столу для POS Terminal Core
 - order line quantity/void API
 - публичный `Order -> Precheck` API slice и prechecks lifecycle foundation
 - precheck-based payments и final checks после полной оплаты
@@ -563,10 +564,10 @@ POST /api/v1/sync/retry-failed
 - Target financial model: `Order -> Precheck -> Payment -> Check`
 - Current POS Edge code: public `Order -> Precheck -> Payment -> Check` runtime enabled; legacy check payment endpoint is disabled
 - SQLite clean install: active migration path contains canonical `001_init.sql`; it creates `prechecks`, `payments.precheck_id`, retry-safe `pos_sync_outbox`, `local_event_log.command_id` and `manager_override_audit` immediately, without legacy `payments.check_id`
-- Edge foundation: `local_event_log` + retry-safe `pos_sync_outbox` + cash sessions + payment attempts + PIN auth/session, actor/session metadata, halls/tables foundation, order line quantity/void API, prechecks lifecycle foundation with public issue/read/list/cancel endpoints, manager override audit, precheck payments and automatic final check generation
+- Edge foundation: `local_event_log` + retry-safe `pos_sync_outbox` + cash sessions + payment attempts + PIN auth/session, actor/session metadata, halls/tables foundation, active order by table read endpoint, order line quantity/void API, prechecks lifecycle foundation with public issue/read/list/cancel endpoints, manager override audit, precheck payments and automatic final check generation
 - Operational sync endpoints: outbox, local events, aggregated sync status and manual retry failed/suspended
 - Cloud: minimal `cloud-backend/` Sync Receiver implemented; Cloud is not a runtime dependency for critical POS Edge writes
-- Approved frontend MVP: `pos-ui` на Vue 3 + TypeScript + Quasar + Vue Router + Pinia + `@tanstack/vue-query` + `vue-i18n` + Zod; реализован минимальный shell `/pair`, `/login`, `/lock`, `/pos`
+- Approved frontend MVP: `pos-ui` на Vue 3 + TypeScript + Quasar + Vue Router + Pinia + `@tanstack/vue-query` + `vue-i18n` + Zod; реализованы `/pair`, `/login`, `/lock` и POS Terminal Core `/pos` для single-terminal cashier flow
 - Auth/device model: operator flows требуют active employee session + matching `actor_employee_id`/`session_id`/`client_device_id`; system/device endpoints идут отдельным path; lock вызывает backend logout
 - Identity split: `node_device_id` назначается через pairing, `client_device_id` хранится в frontend `localStorage` и auto-registers на Edge; business audit/events/outbox metadata должны сохранять оба идентификатора там, где применимо
 

@@ -44,7 +44,7 @@
 - halls/tables foundation для выбора стола в POS/Waiter UI;
 - order line quantity/void API;
 - device registration foundation;
-- `pos-ui` minimal shell на Vue 3 + Quasar: `/pair`, `/login`, `/lock`, `/pos`;
+- `pos-ui` на Vue 3 + Quasar: `/pair`, `/login`, `/lock` и POS Terminal Core `/pos` для single-terminal cashier flow;
 - SQLite migrations для первого запуска локальной БД;
 - PostgreSQL migrations для Cloud sync receiver.
 
@@ -54,7 +54,7 @@
 Order -> Precheck -> Payment -> Check
 ```
 
-Текущее состояние: публичный `Order -> Precheck -> Payment -> Check` runtime включен. `IssuePrecheck` locks order и доступен через API, `CancelPrecheck` доступен публично через manager override, payment capture идет через precheck, automatic final check generation закрывает order после полной оплаты. Для старта `pos-ui` уже есть pairing, PIN login/session, strict logout, actor/session/client/node metadata, halls/tables и базовое редактирование order lines. Sync/outbox foundation доведен до retry-safe состояния на schema/app/API уровне; полноценный Cloud sender/worker еще не реализован.
+Текущее состояние: публичный `Order -> Precheck -> Payment -> Check` runtime включен. `IssuePrecheck` locks order и доступен через API, `CancelPrecheck` доступен публично через manager override, payment capture идет через precheck, automatic final check generation закрывает order после полной оплаты. Для старта `pos-ui` уже есть pairing, PIN login/session, strict logout, actor/session/client/node metadata, halls/tables, read-only поиск активного заказа по столу, базовое редактирование order lines и рабочий cashier POS Terminal Core на `/pos`. Sync/outbox foundation доведен до retry-safe состояния на schema/app/API уровне; полноценный Cloud sender/worker еще не реализован.
 
 ---
 
@@ -1223,14 +1223,15 @@ README.md
 
 ## 12. Рекомендуемый порядок ближайших итераций
 
-1. Расширить минимальный `pos-ui` shell до реального cashier/waiter MVP поверх готовых backend prerequisites без моков на критических путях.
-2. Реализовать sync sender/worker поверх готового retry-safe outbox foundation.
-3. Добавить precheck line/tax snapshots или зафиксированный JSON snapshot, если это проще для MVP.
-4. Реализовать Generic Tax Engine.
-5. Завершить business date/currency/payment correction детали перед пилотом.
-6. Реализовать production Cloud provisioning для `node_device_id`; `client_device_id` остается локальной UI-client identity, но требует production hardening storage/policy.
-7. Реализовать DishServed MVP без полного KDS.
-8. Провести First Launch Readiness.
+1. Довести реализованный cashier POS Terminal Core до pilot-ready UX: валидация денежных вводов, recovery после reload, seed/demo bootstrap и сценарные smoke tests.
+2. Реализовать waiter mode отдельной итерацией поверх тех же backend primitives, без KDS runtime.
+3. Реализовать sync sender/worker поверх готового retry-safe outbox foundation.
+4. Добавить precheck line/tax snapshots или зафиксированный JSON snapshot, если это проще для MVP.
+5. Реализовать Generic Tax Engine.
+6. Завершить business date/currency/payment correction детали перед пилотом.
+7. Реализовать production Cloud provisioning для `node_device_id`; `client_device_id` остается локальной UI-client identity, но требует production hardening storage/policy.
+8. Реализовать DishServed MVP без полного KDS.
+9. Провести First Launch Readiness.
 
 ---
 

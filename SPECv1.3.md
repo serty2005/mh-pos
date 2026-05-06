@@ -3,7 +3,7 @@
 Статус: актуальная pilot-freeze спецификация для MVP-0 и первого запуска  
 Язык проекта, документации, промптов и комментариев задач: русский  
 Дата фиксации версии: 2026-05-06
-Текущее обновление реализации: 2026-05-07 — backend auth/device contract и `pos-ui` shell приведены к модели `pairing -> login -> pos -> lock/logout`
+Текущее обновление реализации: 2026-05-07 — backend auth/device contract и `pos-ui` POS Terminal Core приведены к модели `pairing -> login -> pos -> lock/logout`
 
 ---
 
@@ -95,8 +95,9 @@ pos-backend/
   Inventory/Recipes schema foundation
 
 pos-ui/
-  Vue 3 + TypeScript + Quasar shell
-  /pair, /login, /lock, /pos
+  Vue 3 + TypeScript + Quasar
+  /pair, /login, /lock
+  /pos POS Terminal Core для single-terminal cashier flow
   TanStack Query server state
   localStorage client_device_id
 
@@ -116,7 +117,8 @@ Stage 0/1: Edge Core Skeleton & Sync Foundation — DONE
 Stage 2: Cash & Shifts Core — DONE / mostly done
 Stage 3: Orders, Prechecks & Taxes — in progress
 Stage 4: Payments & Final Checks — runtime slice enabled
-Stage UI-0: pos-ui shell — DONE / minimal
+Stage UI-0: pos-ui shell — DONE
+Stage UI-1: POS Terminal Core cashier surface — DONE / first slice
 ```
 
 Фактическое состояние текущего кода: публичный runtime `Order -> Precheck -> Payment -> Check` включен. `IssuePrecheck` создает issued precheck и переводит order в `locked`; `CancelPrecheck` доступен публично через manager override; payment capture идет через precheck, поддерживает partial payments и создает final `Check` только после полной оплаты. Legacy check payment endpoint отключен.
@@ -222,12 +224,12 @@ pos-ui
 
 Frontend не является source of truth. Запрещено переносить бизнес-решения, финансовую математику, precheck/payment/check инварианты, права или state transitions во frontend. Tailwind не используется. Старые предположения про React/Vite UI считаются устаревшими.
 
-`pos-ui` реализует минимальный shell:
+`pos-ui` реализует shell и POS Terminal Core:
 
 ```text
 /pair  -> POST /api/v1/system/pair
 /login -> POST /api/v1/auth/pin-login
-/pos   -> session restore + halls/tables
+/pos   -> cashier terminal: shift, cash session, hall/table, active order, menu, precheck, payment, final check
 /lock  -> POST /api/v1/auth/logout
 ```
 
@@ -2017,12 +2019,30 @@ GET  /api/v1/orders/{order_id}/prechecks
 ```text
 POST /api/v1/auth/pin-login
 GET  /api/v1/auth/session
+GET  /api/v1/shifts/current
+POST /api/v1/shifts/open
+POST /api/v1/shifts/{shift_id}/close
+GET  /api/v1/cash-sessions/current
+POST /api/v1/cash-sessions/open
+POST /api/v1/cash-sessions/{cash_session_id}/close
 POST /api/v1/halls
 GET  /api/v1/halls
 PATCH /api/v1/halls/{hall_id}/archive
 POST /api/v1/tables
 GET  /api/v1/tables
 PATCH /api/v1/tables/{table_id}/archive
+GET  /api/v1/menu/items
+GET  /api/v1/orders/current?table_id=...
+POST /api/v1/orders
+GET  /api/v1/orders/{order_id}
+POST /api/v1/orders/{order_id}/lines
+PATCH /api/v1/orders/{order_id}/lines/{line_id}
+POST /api/v1/orders/{order_id}/lines/{line_id}/void
+POST /api/v1/orders/{order_id}/precheck
+GET  /api/v1/orders/{order_id}/prechecks
+POST /api/v1/prechecks/{precheck_id}/cancel
+POST /api/v1/prechecks/{precheck_id}/payments
+GET  /api/v1/checks/{check_id}
 ```
 
 PIN не хранится в plaintext, не логируется и не попадает в outbox/local events. Все write commands могут нести `actor_employee_id` и `session_id`; эти поля сохраняются в `local_event_log`, `pos_sync_outbox` и `SyncEnvelope`.

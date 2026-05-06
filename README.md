@@ -19,7 +19,7 @@ Order -> Precheck -> Payment -> Check
 - `pos-backend/` - локальный POS Edge backend на Go + SQLite;
 - SQLite runtime gate для POS Edge: startup fail-fast проверяет фактические `sqlite_version()`, `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout >= 5000`;
 - `cloud-backend/` - минимальный Cloud Sync Receiver на Go + PostgreSQL;
-- approved frontend MVP: отдельный пакет `pos-ui` на Vue 3 + TypeScript + Quasar + Vue Router + Pinia + `@tanstack/vue-query` + `vue-i18n` + Zod; минимальный shell `/pair`, `/login`, `/lock`, `/pos` реализован;
+- approved frontend MVP: отдельный пакет `pos-ui` на Vue 3 + TypeScript + Quasar + Vue Router + Pinia + `@tanstack/vue-query` + `vue-i18n` + Zod; `/pair`, `/login`, `/lock` и рабочий POS Terminal Core `/pos` для single-terminal cashier flow реализованы;
 - `local_event_log`;
 - `pos_sync_outbox`;
 - `SyncEnvelope` foundation;
@@ -31,6 +31,7 @@ Order -> Precheck -> Payment -> Check
 - identity split: `node_device_id` обозначает Edge Backend и назначается pairing flow; `client_device_id` обозначает frontend-клиент, генерируется `pos-ui` в `localStorage` и auto-registers на Edge;
 - actor/session/client/node metadata в write commands, `local_event_log`, `pos_sync_outbox` и `SyncEnvelope`: `node_device_id`, `client_device_id`, `actor_employee_id`, `session_id`;
 - halls/tables foundation для выбора стола в POS/Waiter UI;
+- read-only endpoint активного заказа по столу для cashier terminal: `GET /api/v1/orders/current?table_id=...`;
 - order line editing foundation: изменение количества и void позиции без физического удаления;
 - shifts, cash sessions, cash drawer events;
 - public precheck issue/read/list/cancel flow: `POST /api/v1/orders/{id}/precheck`, `GET /api/v1/prechecks/{id}`, `GET /api/v1/orders/{id}/prechecks`, `POST /api/v1/prechecks/{id}/cancel`;
@@ -69,7 +70,7 @@ Order -> Precheck -> Payment -> Check
 |   |-- README.md             # запуск и тесты cloud receiver
 |   |-- cmd/cloud-api/        # entrypoint Cloud API
 |   `-- migrations/postgres/  # PostgreSQL bootstrap и migrations
-|-- pos-ui/                   # Vue 3 + Quasar POS shell
+|-- pos-ui/                   # Vue 3 + Quasar POS Terminal Core
 |-- docs/sync/                # sync contracts
 |-- .codex/skills/            # локальные skills для Codex
 |-- pack_go_files.py          # вспомогательный скрипт упаковки Go-файлов
@@ -163,12 +164,12 @@ Cloud не является зависимостью для критически
 
 Approved frontend MVP - отдельный пакет `pos-ui` на Vue 3 + TypeScript + Quasar + Vue Router + Pinia + `@tanstack/vue-query` + `vue-i18n` + Zod. Старые предположения про React/Vite UI считаются устаревшими. Tailwind не используется. Frontend не является source of truth и не содержит бизнес-решений.
 
-`pos-ui` уже содержит рабочий shell:
+`pos-ui` уже содержит рабочий shell и POS Terminal Core:
 
 - `/pair` - ввод pairing code и вызов `POST /api/v1/system/pair`;
 - `/login` - реальный `POST /api/v1/auth/pin-login`;
 - `/lock` - реальный `POST /api/v1/auth/logout` и очистка локального session state;
-- `/pos` - текущий actor/session, список залов и столов через backend API.
+- `/pos` - cashier surface для одного терминала: смена, кассовая сессия, выбор зала/стола, активный заказ, позиции меню, изменение/void позиций, выпуск/отмена пречека, cash/trusted card payment и отображение final check.
 
 Identity model: `node_device_id` - Edge Node backend identity, назначается pairing/provisioning. `client_device_id` - конкретный UI-клиент, в MVP генерируется frontend через `crypto.randomUUID()` и хранится в `localStorage`; backend auto-registers новый client. Старый `device_id` в текущих API/таблицах остается backward-compatible alias для `node_device_id`, но новая документация и новый код должны использовать явное разделение.
 
@@ -218,5 +219,5 @@ go test ./...
 - Auth/device foundation включает pairing status/pair endpoints, `POST /api/v1/auth/logout`, revoked sessions, client device registry, `node_device_id`/`client_device_id` metadata в local events/outbox/SyncEnvelope.
 - Закрытие смены в POS Edge запрещено при открытых заказах или active cash session.
 - Cloud: минимальный `cloud-backend/` Sync Receiver реализован; Cloud не является зависимостью для критических POS Edge операций.
-- POS UI: `pos-ui` на Vue 3 + Quasar реализован как минимальный shell для `pairing -> login -> pos -> lock/logout`.
+- POS UI: `pos-ui` на Vue 3 + Quasar реализует `pairing -> login -> pos -> lock/logout` и POS Terminal Core для single-terminal cashier flow.
 - Source of truth для активных POS операций: локальный POS Edge Node.

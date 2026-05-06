@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+const optionalNullableString = z.string().nullable().optional();
+
 export const edgeNodeIdentitySchema = z.object({
   id: z.string(),
   node_device_id: z.string(),
@@ -57,9 +59,146 @@ export const tableSchema = z.object({
   active: z.boolean(),
 });
 
+export const shiftSchema = z.object({
+  id: z.string(),
+  restaurant_id: z.string(),
+  device_id: z.string(),
+  opened_by_employee_id: z.string(),
+  closed_by_employee_id: optionalNullableString,
+  status: z.enum(['open', 'closed']),
+  opened_at: z.string(),
+  closed_at: optionalNullableString,
+  opening_cash_amount: z.number(),
+  closing_cash_amount: z.number().nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const cashSessionSchema = z.object({
+  id: z.string(),
+  edge_cash_session_id: z.string(),
+  restaurant_id: z.string(),
+  device_id: z.string(),
+  shift_id: z.string(),
+  opened_by_employee_id: z.string(),
+  closed_by_employee_id: optionalNullableString,
+  status: z.enum(['open', 'closed']),
+  opening_cash_amount: z.number(),
+  closing_cash_amount: z.number().nullable().optional(),
+  opened_at: z.string(),
+  closed_at: optionalNullableString,
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const menuItemSchema = z.object({
+  id: z.string(),
+  catalog_item_id: z.string(),
+  name: z.string(),
+  price: z.number(),
+  currency: z.string(),
+  active: z.boolean(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const orderLineSchema = z.object({
+  id: z.string(),
+  order_id: z.string(),
+  menu_item_id: z.string(),
+  catalog_item_id: z.string(),
+  name: z.string(),
+  quantity: z.number(),
+  unit_price: z.number(),
+  total_price: z.number(),
+  status: z.enum(['active', 'cancelled', 'voided']),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const checkSchema = z.object({
+  id: z.string(),
+  order_id: z.string(),
+  status: z.enum(['open', 'paid', 'refunded', 'voided']),
+  subtotal: z.number(),
+  discount_total: z.number(),
+  tax_total: z.number(),
+  total: z.number(),
+  paid_total: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const orderSchema = z.object({
+  id: z.string(),
+  edge_order_id: z.string(),
+  restaurant_id: z.string(),
+  device_id: z.string(),
+  shift_id: z.string(),
+  status: z.enum(['open', 'locked', 'closed', 'cancelled']),
+  table_id: z.string(),
+  table_name: z.string(),
+  guest_count: z.number(),
+  subtotal: z.number().optional().default(0),
+  discount_total: z.number().optional().default(0),
+  tax_total: z.number().optional().default(0),
+  total: z.number().optional().default(0),
+  opened_at: z.string(),
+  closed_at: optionalNullableString,
+  created_at: z.string(),
+  updated_at: z.string(),
+  lines: z.array(orderLineSchema).optional().default([]),
+  check: checkSchema.optional(),
+});
+
+export const precheckSchema = z.object({
+  id: z.string(),
+  order_id: z.string(),
+  status: z.enum(['issued', 'closed', 'cancelled', 'superseded']),
+  version: z.number(),
+  supersedes_precheck_id: optionalNullableString,
+  subtotal: z.number(),
+  discount_total: z.number(),
+  tax_total: z.number(),
+  total: z.number(),
+  paid_total: z.number(),
+  created_at: z.string(),
+  issued_at: z.string(),
+  closed_at: optionalNullableString,
+  cancelled_by_employee_id: optionalNullableString,
+  cancellation_reason: optionalNullableString,
+});
+
+export const paymentSchema = z.object({
+  id: z.string(),
+  edge_payment_id: z.string(),
+  restaurant_id: z.string(),
+  device_id: z.string(),
+  shift_id: z.string(),
+  precheck_id: z.string(),
+  method: z.enum(['cash', 'card', 'other']),
+  amount: z.number(),
+  currency: z.string(),
+  status: z.enum(['captured', 'refunded', 'failed']),
+  provider_name: optionalNullableString,
+  provider_transaction_id: optionalNullableString,
+  provider_reference: optionalNullableString,
+  fingerprint_hash: optionalNullableString,
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
 export type PairingStatus = z.infer<typeof pairingStatusSchema>;
 export type AuthSession = z.infer<typeof authSessionSchema>;
 export type ActorContext = z.infer<typeof actorContextSchema>;
 export type PinLoginResult = z.infer<typeof pinLoginResultSchema>;
 export type Hall = z.infer<typeof hallSchema>;
 export type RestaurantTable = z.infer<typeof tableSchema>;
+export type Shift = z.infer<typeof shiftSchema>;
+export type CashSession = z.infer<typeof cashSessionSchema>;
+export type MenuItem = z.infer<typeof menuItemSchema>;
+export type Order = z.infer<typeof orderSchema>;
+export type OrderLine = z.infer<typeof orderLineSchema>;
+export type Precheck = z.infer<typeof precheckSchema>;
+export type Payment = z.infer<typeof paymentSchema>;
+export type Check = z.infer<typeof checkSchema>;

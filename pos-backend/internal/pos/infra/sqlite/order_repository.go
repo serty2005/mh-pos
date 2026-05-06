@@ -32,6 +32,26 @@ func (r *Repository) GetOrder(ctx context.Context, id string) (*domain.Order, er
 	return &v, nil
 }
 
+func (r *Repository) GetActiveOrderByDeviceAndTable(ctx context.Context, deviceID, tableID string) (*domain.Order, error) {
+	var v domain.Order
+	var status, opened, created, updated string
+	var closed sql.NullString
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,edge_order_id,restaurant_id,device_id,shift_id,status,table_id,table_name,guest_count,opened_at,closed_at,created_at,updated_at FROM orders WHERE device_id = ? AND table_id = ? AND status IN ('open','locked') ORDER BY opened_at DESC LIMIT 1`, deviceID, tableID).
+		Scan(&v.ID, &v.EdgeOrderID, &v.RestaurantID, &v.DeviceID, &v.ShiftID, &status, &v.TableID, &v.TableName, &v.GuestCount, &opened, &closed, &created, &updated)
+	if err != nil {
+		return nil, normalizeErr(err)
+	}
+	v.Status = domain.OrderStatus(status)
+	v.OpenedAt = parseTime(opened)
+	if closed.Valid {
+		t := parseTime(closed.String)
+		v.ClosedAt = &t
+	}
+	v.CreatedAt = parseTime(created)
+	v.UpdatedAt = parseTime(updated)
+	return &v, nil
+}
+
 func (r *Repository) UpdateOrderOpen(ctx context.Context, v *domain.Order) error {
 	_, err := r.execer(ctx).ExecContext(ctx, `UPDATE orders SET status = ?, updated_at = ? WHERE id = ?`, string(v.Status), dbTime(v.UpdatedAt), v.ID)
 	return normalizeErr(err)
