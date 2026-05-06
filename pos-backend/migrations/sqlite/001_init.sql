@@ -41,6 +41,45 @@ CREATE TABLE employees (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE auth_sessions (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+  device_id TEXT NOT NULL REFERENCES devices(id),
+  employee_id TEXT NOT NULL REFERENCES employees(id),
+  status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
+  started_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  expires_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX auth_sessions_device_employee_status ON auth_sessions(device_id, employee_id, status);
+
+CREATE TABLE halls (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+  name TEXT NOT NULL,
+  active INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(restaurant_id, name)
+);
+
+CREATE TABLE tables (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+  hall_id TEXT NOT NULL REFERENCES halls(id),
+  name TEXT NOT NULL,
+  seats INTEGER NOT NULL CHECK (seats >= 0),
+  active INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(hall_id, name)
+);
+
+CREATE INDEX tables_restaurant_hall ON tables(restaurant_id, hall_id);
+
 CREATE TABLE catalog_items (
   id TEXT PRIMARY KEY,
   type TEXT NOT NULL CHECK (type IN ('ingredient', 'dish', 'good')),
@@ -87,6 +126,7 @@ CREATE TABLE orders (
   device_id TEXT NOT NULL REFERENCES devices(id),
   shift_id TEXT NOT NULL REFERENCES shifts(id),
   status TEXT NOT NULL CHECK (status IN ('open', 'locked', 'closed', 'cancelled')),
+  table_id TEXT NOT NULL REFERENCES tables(id),
   table_name TEXT NOT NULL,
   guest_count INTEGER NOT NULL,
   opened_at TEXT NOT NULL,
@@ -104,7 +144,7 @@ CREATE TABLE order_lines (
   quantity INTEGER NOT NULL CHECK (quantity > 0),
   unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
   total_price INTEGER NOT NULL CHECK (total_price >= 0),
-  status TEXT NOT NULL CHECK (status IN ('active', 'cancelled')),
+  status TEXT NOT NULL CHECK (status IN ('active', 'cancelled', 'voided')),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -239,6 +279,8 @@ CREATE TABLE manager_override_audit (
   order_id TEXT NOT NULL REFERENCES orders(id),
   precheck_id TEXT NOT NULL REFERENCES prechecks(id),
   manager_employee_id TEXT NOT NULL REFERENCES employees(id),
+  actor_employee_id TEXT REFERENCES employees(id),
+  session_id TEXT REFERENCES auth_sessions(id),
   action TEXT NOT NULL CHECK (action IN ('cancel_precheck')),
   reason TEXT NOT NULL CHECK (reason <> ''),
   occurred_at TEXT NOT NULL,
@@ -408,6 +450,8 @@ CREATE TABLE local_event_log (
   restaurant_id TEXT CHECK (restaurant_id IS NULL OR restaurant_id <> ''),
   device_id TEXT NOT NULL CHECK (device_id <> ''),
   shift_id TEXT CHECK (shift_id IS NULL OR shift_id <> ''),
+  actor_employee_id TEXT REFERENCES employees(id),
+  session_id TEXT REFERENCES auth_sessions(id),
   payload_json TEXT NOT NULL,
   occurred_at TEXT NOT NULL,
   created_at TEXT NOT NULL
@@ -424,6 +468,8 @@ CREATE TABLE pos_sync_outbox (
   origin TEXT NOT NULL CHECK (origin IN ('edge_device', 'cloud_sync', 'system_seed')),
   restaurant_id TEXT CHECK (restaurant_id IS NULL OR restaurant_id <> ''),
   device_id TEXT NOT NULL CHECK (device_id <> ''),
+  actor_employee_id TEXT REFERENCES employees(id),
+  session_id TEXT REFERENCES auth_sessions(id),
   aggregate_type TEXT NOT NULL,
   aggregate_id TEXT NOT NULL,
   command_type TEXT NOT NULL,

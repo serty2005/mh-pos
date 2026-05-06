@@ -28,6 +28,7 @@ type CreateOrderCommand struct {
 	shared.CommandMeta
 	RestaurantID string `json:"restaurant_id"`
 	ShiftID      string `json:"shift_id"`
+	TableID      string `json:"table_id"`
 	TableName    string `json:"table_name"`
 	GuestCount   int    `json:"guest_count"`
 }
@@ -42,6 +43,20 @@ type AddOrderLineCommand struct {
 type CloseOrderCommand struct {
 	shared.CommandMeta
 	OrderID string `json:"order_id"`
+}
+
+type ChangeOrderLineQuantityCommand struct {
+	shared.CommandMeta
+	OrderID  string `json:"order_id"`
+	LineID   string `json:"line_id"`
+	Quantity int64  `json:"quantity"`
+}
+
+type VoidOrderLineCommand struct {
+	shared.CommandMeta
+	OrderID string `json:"order_id"`
+	LineID  string `json:"line_id"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 func (s *Service) GetOrder(ctx context.Context, id string) (*domain.Order, error) {
@@ -70,6 +85,9 @@ func (s *Service) CreateOrder(ctx context.Context, cmd CreateOrderCommand) (*dom
 	if cmd.GuestCount < 0 {
 		return nil, fmt.Errorf("%w: guest_count must be non-negative", domain.ErrInvalid)
 	}
+	if strings.TrimSpace(cmd.TableID) == "" {
+		return nil, fmt.Errorf("%w: table_id is required", domain.ErrInvalid)
+	}
 	now := s.clock.Now()
 	var order *domain.Order
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
@@ -95,13 +113,99 @@ func (s *Service) CreateOrder(ctx context.Context, cmd CreateOrderCommand) (*dom
 		if restaurantID := strings.TrimSpace(cmd.RestaurantID); restaurantID != "" && restaurantID != shift.RestaurantID {
 			return fmt.Errorf("%w: restaurant_id does not match open shift", domain.ErrConflict)
 		}
-		order = &domain.Order{ID: s.ids.NewID(), EdgeOrderID: s.ids.NewID(), RestaurantID: shift.RestaurantID, DeviceID: cmd.DeviceID, ShiftID: shift.ID, Status: domain.OrderOpen, TableName: cmd.TableName, GuestCount: cmd.GuestCount, OpenedAt: now, CreatedAt: now, UpdatedAt: now}
+		table, err := s.repo.GetTable(ctx, cmd.TableID)
+		if err != nil {
+			return err
+		}
+		if !table.Active || table.RestaurantID != shift.RestaurantID {
+			return fmt.Errorf("%w: table is not active for open shift restaurant", domain.ErrConflict)
+		}
+		order = &domain.Order{ID: s.ids.NewID(), EdgeOrderID: s.ids.NewID(), RestaurantID: shift.RestaurantID, DeviceID: cmd.DeviceID, ShiftID: shift.ID, Status: domain.OrderOpen, TableID: table.ID, TableName: table.Name, GuestCount: cmd.GuestCount, OpenedAt: now, CreatedAt: now, UpdatedAt: now}
 		if err := s.repo.CreateOrder(ctx, order); err != nil {
 			return err
 		}
 		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Order", order.ID, "OrderCreated", order)
 	})
 	return order, err
+}
+
+func (s *Service) ChangeOrderLineQuantity(ctx context.Context, cmd ChangeOrderLineQuantityCommand) (*domain.OrderLine, error) {
+	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(cmd.OrderID) == "" || strings.TrimSpace(cmd.LineID) == "" || cmd.Quantity <= 0 {
+		return nil, fmt.Errorf("%w: order_id, line_id and positive quantity are required", domain.ErrInvalid)
+	}
+	now := s.clock.Now()
+	var line *domain.OrderLine
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
+			return err
+		}
+		order, err := s.ensureEditableOrder(ctx, cmd.OrderID, cmd.DeviceID)
+		if err != nil {
+			return err
+		}
+		line, err = s.repo.GetOrderLine(ctx, cmd.LineID)
+		if err != nil {
+			return err
+		}
+		if line.OrderID != order.ID {
+			return fmt.Errorf("%w: order line does not belong to order", domain.ErrConflict)
+		}
+		if line.Status != domain.OrderLineActive {
+			return fmt.Errorf("%w: cannot change non-active order line", domain.ErrConflict)
+		}
+		line.Quantity = cmd.Quantity
+		line.TotalPrice = line.UnitPrice * cmd.Quantity
+		line.UpdatedAt = now
+		if err := s.repo.UpdateOrderLine(ctx, line); err != nil {
+			return err
+		}
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Order", order.ID, "OrderLineQuantityChanged", line)
+	})
+	return line, err
+}
+
+func (s *Service) VoidOrderLine(ctx context.Context, cmd VoidOrderLineCommand) (*domain.OrderLine, error) {
+	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(cmd.OrderID) == "" || strings.TrimSpace(cmd.LineID) == "" {
+		return nil, fmt.Errorf("%w: order_id and line_id are required", domain.ErrInvalid)
+	}
+	now := s.clock.Now()
+	var line *domain.OrderLine
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
+			return err
+		}
+		order, err := s.ensureEditableOrder(ctx, cmd.OrderID, cmd.DeviceID)
+		if err != nil {
+			return err
+		}
+		line, err = s.repo.GetOrderLine(ctx, cmd.LineID)
+		if err != nil {
+			return err
+		}
+		if line.OrderID != order.ID {
+			return fmt.Errorf("%w: order line does not belong to order", domain.ErrConflict)
+		}
+		if line.Status != domain.OrderLineActive {
+			return fmt.Errorf("%w: cannot void non-active order line", domain.ErrConflict)
+		}
+		line.Status = domain.OrderLineVoided
+		line.UpdatedAt = now
+		if err := s.repo.UpdateOrderLine(ctx, line); err != nil {
+			return err
+		}
+		payload := struct {
+			Line   *domain.OrderLine `json:"line"`
+			Reason string            `json:"reason,omitempty"`
+		}{Line: line, Reason: strings.TrimSpace(cmd.Reason)}
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Order", order.ID, "OrderLineVoided", payload)
+	})
+	return line, err
 }
 
 func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*domain.OrderLine, error) {
@@ -185,4 +289,23 @@ func (s *Service) CloseOrder(ctx context.Context, cmd CloseOrderCommand) (*domai
 		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Order", order.ID, "OrderClosed", order)
 	})
 	return order, err
+}
+
+func (s *Service) ensureEditableOrder(ctx context.Context, orderID, deviceID string) (*domain.Order, error) {
+	order, err := s.repo.GetOrder(ctx, orderID)
+	if err != nil {
+		return nil, err
+	}
+	if order.DeviceID != deviceID {
+		return nil, fmt.Errorf("%w: order device does not match command device", domain.ErrConflict)
+	}
+	if order.Status != domain.OrderOpen {
+		return nil, fmt.Errorf("%w: cannot change non-open order", domain.ErrConflict)
+	}
+	if _, err := s.repo.GetActivePrecheckByOrder(ctx, order.ID); err == nil {
+		return nil, fmt.Errorf("%w: cannot change order with active precheck", domain.ErrConflict)
+	} else if !errors.Is(err, domain.ErrNotFound) {
+		return nil, err
+	}
+	return order, nil
 }

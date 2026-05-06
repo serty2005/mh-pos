@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"pos-backend/internal/pos/domain"
 )
 
@@ -54,7 +55,15 @@ func (r *Repository) CreateEmployee(ctx context.Context, v *domain.Employee) err
 }
 
 func (r *Repository) ListEmployees(ctx context.Context) ([]domain.Employee, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,restaurant_id,role_id,name,pin_hash,active,created_at,updated_at FROM employees ORDER BY created_at`)
+	return r.listEmployees(ctx, `SELECT id,restaurant_id,role_id,name,pin_hash,active,created_at,updated_at FROM employees ORDER BY created_at`)
+}
+
+func (r *Repository) ListEmployeesByRestaurant(ctx context.Context, restaurantID string) ([]domain.Employee, error) {
+	return r.listEmployees(ctx, `SELECT id,restaurant_id,role_id,name,pin_hash,active,created_at,updated_at FROM employees WHERE restaurant_id = ? ORDER BY created_at`, restaurantID)
+}
+
+func (r *Repository) listEmployees(ctx context.Context, query string, args ...any) ([]domain.Employee, error) {
+	rows, err := r.queryer(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +111,31 @@ func (r *Repository) ArchiveEmployee(ctx context.Context, id, updatedAt string) 
 }
 
 func (r *Repository) CreateManagerOverrideAudit(ctx context.Context, v *domain.ManagerOverrideAudit) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO manager_override_audit(id,command_id,restaurant_id,device_id,shift_id,order_id,precheck_id,manager_employee_id,action,reason,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.CommandID, v.RestaurantID, v.DeviceID, v.ShiftID, v.OrderID, v.PrecheckID, v.ManagerEmployeeID, v.Action, v.Reason, dbTime(v.OccurredAt), dbTime(v.CreatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO manager_override_audit(id,command_id,restaurant_id,device_id,shift_id,order_id,precheck_id,manager_employee_id,actor_employee_id,session_id,action,reason,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.CommandID, v.RestaurantID, v.DeviceID, v.ShiftID, v.OrderID, v.PrecheckID, v.ManagerEmployeeID, nullableString(v.ActorEmployeeID), nullableString(v.SessionID), v.Action, v.Reason, dbTime(v.OccurredAt), dbTime(v.CreatedAt))
 	return normalizeErr(err)
+}
+
+func (r *Repository) CreateAuthSession(ctx context.Context, v *domain.AuthSession) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO auth_sessions(id,restaurant_id,device_id,employee_id,status,started_at,last_seen_at,expires_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.RestaurantID, v.DeviceID, v.EmployeeID, string(v.Status), dbTime(v.StartedAt), dbTime(v.LastSeenAt), nullableTime(v.ExpiresAt), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	return normalizeErr(err)
+}
+
+func (r *Repository) GetAuthSession(ctx context.Context, id string) (*domain.AuthSession, error) {
+	var v domain.AuthSession
+	var status, started, lastSeen, created, updated string
+	var expires sql.NullString
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,device_id,employee_id,status,started_at,last_seen_at,expires_at,created_at,updated_at FROM auth_sessions WHERE id = ?`, id).
+		Scan(&v.ID, &v.RestaurantID, &v.DeviceID, &v.EmployeeID, &status, &started, &lastSeen, &expires, &created, &updated)
+	if err != nil {
+		return nil, normalizeErr(err)
+	}
+	v.Status = domain.AuthSessionStatus(status)
+	v.StartedAt = parseTime(started)
+	v.LastSeenAt = parseTime(lastSeen)
+	v.ExpiresAt = timePtr(expires)
+	v.CreatedAt = parseTime(created)
+	v.UpdatedAt = parseTime(updated)
+	return &v, nil
 }

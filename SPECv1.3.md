@@ -187,24 +187,25 @@ power/sleep handling
 
 ---
 
-## ADR-004: UI Workspace Architecture — Vite Framework-Agnostic
+## ADR-004: UI Workspace Architecture — Approved `pos-ui`
 
-Решение: frontend кассы не привязывается к React на архитектурном уровне. Разработка MVP ведется на Vite и монорепозитории:
+Решение: approved frontend MVP - отдельный пакет `pos-ui`.
 
 ```text
-/ui-core
-  design system, controls, grids, no business logic
-
-/ui-protocol
-  generated DTO
-  Edge/Cloud API clients
-  SyncEnvelope validators
-
-/apps/pos-react
-  React POS application for MVP
+pos-ui
+  Vue 3
+  TypeScript
+  Quasar
+  Vue Router
+  Pinia
+  @tanstack/vue-query
+  vue-i18n
+  Zod
 ```
 
-Цель: позволить в будущем заменить UI на Vue/Svelte/другой renderer без переписывания бизнес-ядра.
+Frontend не является source of truth. Запрещено переносить бизнес-решения, финансовую математику, precheck/payment/check инварианты, права или state transitions во frontend. Tailwind не используется. Старые предположения про React/Vite UI считаются устаревшими.
+
+`pos-ui` может использовать dev-only bootstrap `device_id` в `localStorage` только до production provisioning. Production target - stable server-issued `device_id` через binding/provisioning.
 
 ---
 
@@ -1901,12 +1902,35 @@ POST /api/v1/cash-drawer-events
 ```text
 POST /api/v1/orders
 POST /api/v1/orders/{order_id}/lines
+PATCH /api/v1/orders/{order_id}/lines/{line_id}
 POST /api/v1/orders/{order_id}/lines/{line_id}/void
-POST /api/v1/orders/{order_id}/prechecks
+POST /api/v1/orders/{order_id}/precheck
 POST /api/v1/prechecks/{precheck_id}/cancel
 GET  /api/v1/orders/{order_id}
 GET  /api/v1/prechecks/{precheck_id}
+GET  /api/v1/orders/{order_id}/prechecks
 ```
+
+---
+
+## 19.3.1 Auth, actor context & floor foundation
+
+Текущий backend foundation для старта `pos-ui`:
+
+```text
+POST /api/v1/auth/pin-login
+GET  /api/v1/auth/session
+POST /api/v1/halls
+GET  /api/v1/halls
+PATCH /api/v1/halls/{hall_id}/archive
+POST /api/v1/tables
+GET  /api/v1/tables
+PATCH /api/v1/tables/{table_id}/archive
+```
+
+PIN не хранится в plaintext, не логируется и не попадает в outbox/local events. Все write commands могут нести `actor_employee_id` и `session_id`; эти поля сохраняются в `local_event_log`, `pos_sync_outbox` и `SyncEnvelope`.
+
+Order ссылается на `table_id` и хранит `table_name` как snapshot для чтения. Floor plan остается отдельным future foundation; текущий runtime покрывает halls + tables.
 
 ---
 
@@ -1938,7 +1962,7 @@ GET  /api/v1/kds/tasks
 POST /api/v1/kds/tasks/{task_id}/done
 ```
 
-KDS API может быть отложен, но `DishServed` event model должен быть учтен до inventory.
+KDS API отложен. Текущий backend не реализует `kds_stations`, ticket query или KDS runtime; нельзя считать KDS/Waiter готовыми. `DishServed` event model должен быть учтен до inventory.
 
 ---
 
@@ -1949,7 +1973,7 @@ KDS API может быть отложен, но `DishServed` event model дол
 ```text
 One Restaurant
 One Primary Edge Node
-Framework-Agnostic UI, React/Vite for MVP
+pos-ui on Vue 3 + TypeScript + Quasar
 Stable Device Identity
 Shift Opening/Closing
 Cash Session
@@ -2263,7 +2287,8 @@ Payment Evidence Archive
 Строгие запреты:
 
 ```text
-business logic in React/Vite
+business logic in frontend / pos-ui
+Tailwind in approved POS UI
 business logic in Android/Kotlin shell
 UI directly calls Cloud
 Create Check before full payment

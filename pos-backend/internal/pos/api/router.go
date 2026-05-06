@@ -41,6 +41,16 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Get("/employees", h.listEmployees)
 		r.Patch("/employees/{id}/archive", h.archiveEmployee)
 
+		r.Post("/auth/pin-login", h.pinLogin)
+		r.Get("/auth/session", h.getAuthSession)
+
+		r.Post("/halls", h.createHall)
+		r.Get("/halls", h.listHalls)
+		r.Patch("/halls/{id}/archive", h.archiveHall)
+		r.Post("/tables", h.createTable)
+		r.Get("/tables", h.listTables)
+		r.Patch("/tables/{id}/archive", h.archiveTable)
+
 		r.Post("/catalog/items", h.createCatalogItem)
 		r.Get("/catalog/items", h.listCatalogItems)
 
@@ -54,6 +64,8 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/orders", h.createOrder)
 		r.Get("/orders/{id}", h.getOrder)
 		r.Post("/orders/{id}/lines", h.addOrderLine)
+		r.Patch("/orders/{id}/lines/{line_id}", h.changeOrderLineQuantity)
+		r.Post("/orders/{id}/lines/{line_id}/void", h.voidOrderLine)
 		r.Post("/orders/{id}/precheck", h.issuePrecheck)
 		r.Get("/orders/{id}/prechecks", h.listPrechecksByOrder)
 		r.Post("/orders/{id}/check", h.issuePrecheckFromDeprecatedCheckAlias)
@@ -164,6 +176,82 @@ func (h *Handler) archiveEmployee(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]string{"status": "archived"})
 }
 
+func (h *Handler) pinLogin(w http.ResponseWriter, r *http.Request) {
+	var cmd app.PinLoginCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err)
+		return
+	}
+	setEdgeOrigin(&cmd.CommandMeta)
+	v, err := h.service.PinLogin(r.Context(), cmd)
+	writeCreated(w, v, err)
+}
+
+func (h *Handler) getAuthSession(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetSession(r.Context(), r.URL.Query().Get("session_id"), r.URL.Query().Get("device_id"))
+	writeOK(w, v, err)
+}
+
+func (h *Handler) createHall(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateHallCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err)
+		return
+	}
+	setEdgeOrigin(&cmd.CommandMeta)
+	v, err := h.service.CreateHall(r.Context(), cmd)
+	writeCreated(w, v, err)
+}
+
+func (h *Handler) listHalls(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListHalls(r.Context(), r.URL.Query().Get("restaurant_id"))
+	writeOK(w, v, err)
+}
+
+func (h *Handler) archiveHall(w http.ResponseWriter, r *http.Request) {
+	var cmd app.ArchiveHallCommand
+	if r.Body != nil {
+		_ = httpx.Decode(r, &cmd)
+	}
+	setEdgeOrigin(&cmd.CommandMeta)
+	cmd.ID = chi.URLParam(r, "id")
+	if err := h.service.ArchiveHall(r.Context(), cmd); err != nil {
+		httpx.Error(w, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]string{"status": "archived"})
+}
+
+func (h *Handler) createTable(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateTableCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err)
+		return
+	}
+	setEdgeOrigin(&cmd.CommandMeta)
+	v, err := h.service.CreateTable(r.Context(), cmd)
+	writeCreated(w, v, err)
+}
+
+func (h *Handler) listTables(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListTables(r.Context(), r.URL.Query().Get("restaurant_id"), r.URL.Query().Get("hall_id"))
+	writeOK(w, v, err)
+}
+
+func (h *Handler) archiveTable(w http.ResponseWriter, r *http.Request) {
+	var cmd app.ArchiveTableCommand
+	if r.Body != nil {
+		_ = httpx.Decode(r, &cmd)
+	}
+	setEdgeOrigin(&cmd.CommandMeta)
+	cmd.ID = chi.URLParam(r, "id")
+	if err := h.service.ArchiveTable(r.Context(), cmd); err != nil {
+		httpx.Error(w, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]string{"status": "archived"})
+}
+
 func (h *Handler) createCatalogItem(w http.ResponseWriter, r *http.Request) {
 	var cmd app.CreateCatalogItemCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
@@ -250,6 +338,31 @@ func (h *Handler) addOrderLine(w http.ResponseWriter, r *http.Request) {
 	cmd.OrderID = chi.URLParam(r, "id")
 	v, err := h.service.AddOrderLine(r.Context(), cmd)
 	writeCreated(w, v, err)
+}
+
+func (h *Handler) changeOrderLineQuantity(w http.ResponseWriter, r *http.Request) {
+	var cmd app.ChangeOrderLineQuantityCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err)
+		return
+	}
+	setEdgeOrigin(&cmd.CommandMeta)
+	cmd.OrderID = chi.URLParam(r, "id")
+	cmd.LineID = chi.URLParam(r, "line_id")
+	v, err := h.service.ChangeOrderLineQuantity(r.Context(), cmd)
+	writeOK(w, v, err)
+}
+
+func (h *Handler) voidOrderLine(w http.ResponseWriter, r *http.Request) {
+	var cmd app.VoidOrderLineCommand
+	if r.Body != nil {
+		_ = httpx.Decode(r, &cmd)
+	}
+	setEdgeOrigin(&cmd.CommandMeta)
+	cmd.OrderID = chi.URLParam(r, "id")
+	cmd.LineID = chi.URLParam(r, "line_id")
+	v, err := h.service.VoidOrderLine(r.Context(), cmd)
+	writeOK(w, v, err)
 }
 
 func (h *Handler) issuePrecheck(w http.ResponseWriter, r *http.Request) {

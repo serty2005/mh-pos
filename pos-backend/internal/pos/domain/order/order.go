@@ -22,6 +22,7 @@ type Order struct {
 	DeviceID     string       `json:"device_id"`
 	ShiftID      string       `json:"shift_id"`
 	Status       OrderStatus  `json:"status"`
+	TableID      string       `json:"table_id"`
 	TableName    string       `json:"table_name"`
 	GuestCount   int          `json:"guest_count"`
 	OpenedAt     time.Time    `json:"opened_at"`

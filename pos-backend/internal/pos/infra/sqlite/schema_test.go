@@ -40,8 +40,11 @@ func seedFinancialForSchemaTests(t *testing.T, ctx context.Context, db *sql.DB) 
 	seedCatalogForSchemaTests(t, ctx, db)
 	execSchema(t, ctx, db, `INSERT INTO roles(id,name,permissions_json,active,created_at,updated_at) VALUES ('role-1','cashier','{}',1,?,?)`, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO employees(id,restaurant_id,role_id,name,pin_hash,active,created_at,updated_at) VALUES ('employee-1','restaurant-1','role-1','Anna','hash',1,?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO halls(id,restaurant_id,name,active,created_at,updated_at) VALUES ('hall-1','restaurant-1','Main',1,?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO tables(id,restaurant_id,hall_id,name,seats,active,created_at,updated_at) VALUES ('table-1','restaurant-1','hall-1','A1',2,1,?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO tables(id,restaurant_id,hall_id,name,seats,active,created_at,updated_at) VALUES ('table-2','restaurant-1','hall-1','A2',2,1,?,?)`, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO shifts(id,restaurant_id,device_id,opened_by_employee_id,status,opened_at,opening_cash_amount,created_at,updated_at) VALUES ('shift-1','restaurant-1','device-1','employee-1','open',?,0,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
-	execSchema(t, ctx, db, `INSERT INTO orders(id,edge_order_id,restaurant_id,device_id,shift_id,status,table_name,guest_count,opened_at,created_at,updated_at) VALUES ('order-1','edge-order-1','restaurant-1','device-1','shift-1','open','A1',1,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO orders(id,edge_order_id,restaurant_id,device_id,shift_id,status,table_id,table_name,guest_count,opened_at,created_at,updated_at) VALUES ('order-1','edge-order-1','restaurant-1','device-1','shift-1','open','table-1','A1',1,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO checks(id,order_id,status,subtotal,discount_total,tax_total,total,paid_total,created_at,updated_at) VALUES ('check-1','order-1','open',100,0,0,100,0,?,?)`, schemaTestTime, schemaTestTime)
 }
 
@@ -135,13 +138,36 @@ func TestOrdersAllowLockedStatus(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)
 
-	execSchema(t, ctx, db, `INSERT INTO orders(id,edge_order_id,restaurant_id,device_id,shift_id,status,table_name,guest_count,opened_at,created_at,updated_at) VALUES ('order-locked','edge-order-locked','restaurant-1','device-1','shift-1','locked','A2',1,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO orders(id,edge_order_id,restaurant_id,device_id,shift_id,status,table_id,table_name,guest_count,opened_at,created_at,updated_at) VALUES ('order-locked','edge-order-locked','restaurant-1','device-1','shift-1','locked','table-2','A2',1,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
 	var status string
 	if err := db.QueryRowContext(ctx, `SELECT status FROM orders WHERE id = 'order-locked'`).Scan(&status); err != nil {
 		t.Fatal(err)
 	}
 	if status != "locked" {
 		t.Fatalf("expected locked status, got %s", status)
+	}
+}
+
+func TestAuthSessionsAndActorMetadataReferenceLocalEmployees(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	seedFinancialForSchemaTests(t, ctx, db)
+	execSchema(t, ctx, db, `INSERT INTO auth_sessions(id,restaurant_id,device_id,employee_id,status,started_at,last_seen_at,created_at,updated_at) VALUES ('session-1','restaurant-1','device-1','employee-1','active',?,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,actor_employee_id,session_id,payload_json,occurred_at,created_at) VALUES ('local-event-actor','edge-event-actor','cmd-actor','1','OrderCreated','Order','order-1','restaurant-1','device-1','shift-1','employee-1','session-1','{}',?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,actor_employee_id,session_id,aggregate_type,aggregate_id,command_type,payload_json,status,created_at,updated_at) VALUES ('outbox-actor','cmd-actor',1,'edge_device','restaurant-1','device-1','employee-1','session-1','Order','order-1','OrderCreated','{}','pending',?,?)`, schemaTestTime, schemaTestTime)
+
+	_, err := db.ExecContext(ctx, `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,actor_employee_id,payload_json,occurred_at,created_at) VALUES ('local-event-bad-actor','edge-event-bad-actor','cmd-bad-actor','1','OrderCreated','Order','order-1','restaurant-1','device-1','missing-employee','{}',?,?)`, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected invalid actor_employee_id foreign key")
+	}
+}
+
+func TestOrdersRequireTableEntity(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	seedFinancialForSchemaTests(t, ctx, db)
+
+	_, err := db.ExecContext(ctx, `INSERT INTO orders(id,edge_order_id,restaurant_id,device_id,shift_id,status,table_id,table_name,guest_count,opened_at,created_at,updated_at) VALUES ('order-bad-table','edge-order-bad-table','restaurant-1','device-1','shift-1','open','missing-table','Ghost',1,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected invalid table_id foreign key")
 	}
 }
 

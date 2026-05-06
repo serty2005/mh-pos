@@ -20,7 +20,11 @@ Order -> Precheck -> Payment -> Check
 
 Важно: проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. Изменения v1.3 нужно проектировать как first-launch schema/logic, а не как миграцию исторических данных.
 
-Текущее состояние кода нужно отделять от следующих будущих улучшений: `pos-backend` уже включает публичный runtime `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` (`POST /api/v1/orders/{id}/precheck`, `GET /api/v1/prechecks/{id}`, `GET /api/v1/orders/{id}/prechecks`) создает issued precheck и переводит order в `locked`; публичный `CancelPrecheck` (`POST /api/v1/prechecks/{id}/cancel`) требует manager employee id, PIN и reason, проверяет локальный PBKDF2 `pin_hash`, пишет `manager_override_audit`, `local_event_log` и outbox в одной транзакции и возвращает unpaid active issued precheck order в `open`; payment capture идет через `POST /api/v1/prechecks/{id}/payments`, поддерживает partial payments и автоматически создает final `Check` + закрывает order после полной оплаты. Deprecated `POST /api/v1/orders/{id}/check` остается alias к `IssuePrecheck`; legacy `POST /api/v1/checks/{id}/payments` отключен. Sync/outbox foundation уже включает retry-safe schema/app/API состояние очереди, но полноценный Cloud sender/worker еще не реализован.
+Текущее состояние кода нужно отделять от следующих будущих улучшений: `pos-backend` уже включает публичный runtime `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` (`POST /api/v1/orders/{id}/precheck`, `GET /api/v1/prechecks/{id}`, `GET /api/v1/orders/{id}/prechecks`) создает issued precheck и переводит order в `locked`; публичный `CancelPrecheck` (`POST /api/v1/prechecks/{id}/cancel`) требует manager employee id, PIN и reason, проверяет локальный PBKDF2 `pin_hash`, пишет `manager_override_audit`, `local_event_log` и outbox в одной транзакции и возвращает unpaid active issued precheck order в `open`; payment capture идет через `POST /api/v1/prechecks/{id}/payments`, поддерживает partial payments и автоматически создает final `Check` + закрывает order после полной оплаты. Backend также включает PIN auth/session foundation, actor/session metadata в `local_event_log`/outbox/`SyncEnvelope`, halls/tables foundation и order line quantity/void API. Deprecated `POST /api/v1/orders/{id}/check` остается alias к `IssuePrecheck`; legacy `POST /api/v1/checks/{id}/payments` отключен. Sync/outbox foundation уже включает retry-safe schema/app/API состояние очереди, но полноценный Cloud sender/worker еще не реализован. KDS/Waiter UI еще не готовы; не описывай их как реализованные.
+
+Approved frontend MVP теперь `pos-ui`: отдельный пакет Vue 3 + TypeScript + Quasar + Vue Router + Pinia + `@tanstack/vue-query` + `vue-i18n` + Zod. Tailwind запрещен. Frontend не является source of truth и не содержит бизнес-решений; все критические решения остаются в POS Edge backend. Старые предположения про React/Vite UI считаются устаревшими.
+
+Открытый архитектурный конфликт по `device_id`: production target - stable server-issued `device_id` через binding/provisioning. Для раннего dev bootstrap `pos-ui` допустим временный `localStorage device_id`, но только как dev-only режим до реализации provisioning; production writes не должны использовать random/client-generated `device_id`.
 
 ### Карта Репозитория
 
@@ -46,6 +50,7 @@ Order -> Precheck -> Payment -> Check
 |   |-- cmd/cloud-api/        # main() Cloud API
 |   `-- migrations/postgres/  # PostgreSQL bootstrap и migrations
 |-- docs/sync/                # sync contracts
+|-- pos-ui/                   # approved frontend MVP target, еще не реализован
 |-- .codex/skills/            # локальные Codex skills
 |-- pack_go_files.py          # вспомогательный скрипт упаковки Go-файлов
 `-- project_dump.py           # вспомогательный скрипт дампа проекта
@@ -221,6 +226,10 @@ domain -> app -> ports -> infra
 - catalog
 - menu
 - orders
+- PIN auth/session foundation
+- actor/session metadata для write commands, `local_event_log`, outbox и `SyncEnvelope`
+- halls/tables foundation для выбора стола
+- order line quantity/void API
 - публичный `Order -> Precheck` API slice и prechecks lifecycle foundation
 - precheck-based payments и final checks после полной оплаты
 - payment_attempts
@@ -237,6 +246,7 @@ domain -> app -> ports -> infra
 - production-grade inventory workflows
 - fiscalization
 - public API для inventory/recipes
+- KDS runtime и Waiter UI
 
 ---
 
@@ -338,6 +348,8 @@ POST /api/v1/sync/retry-failed
 - `envelope_version`
 - `sequence_no`
 - `device_id`
+- `actor_employee_id`
+- `session_id`
 - `aggregate_type`
 - `aggregate_id`
 - `payload`
@@ -543,9 +555,10 @@ POST /api/v1/sync/retry-failed
 - Target financial model: `Order -> Precheck -> Payment -> Check`
 - Current POS Edge code: public `Order -> Precheck -> Payment -> Check` runtime enabled; legacy check payment endpoint is disabled
 - SQLite clean install: active migration path contains canonical `001_init.sql`; it creates `prechecks`, `payments.precheck_id`, retry-safe `pos_sync_outbox`, `local_event_log.command_id` and `manager_override_audit` immediately, without legacy `payments.check_id`
-- Edge foundation: `local_event_log` + retry-safe `pos_sync_outbox` + cash sessions + payment attempts + prechecks lifecycle foundation with public issue/read/list/cancel endpoints, manager override audit, precheck payments and automatic final check generation
+- Edge foundation: `local_event_log` + retry-safe `pos_sync_outbox` + cash sessions + payment attempts + PIN auth/session, actor/session metadata, halls/tables foundation, order line quantity/void API, prechecks lifecycle foundation with public issue/read/list/cancel endpoints, manager override audit, precheck payments and automatic final check generation
 - Operational sync endpoints: outbox, local events, aggregated sync status and manual retry failed/suspended
 - Cloud: minimal `cloud-backend/` Sync Receiver implemented; Cloud is not a runtime dependency for critical POS Edge writes
+- Approved frontend MVP: `pos-ui` на Vue 3 + TypeScript + Quasar + Vue Router + Pinia + `@tanstack/vue-query` + `vue-i18n` + Zod; frontend еще не реализован
 
 ---
 

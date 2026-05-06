@@ -128,17 +128,19 @@ func WriteOutbox(ctx context.Context, repo eventOutboxRepository, ids idgen.Gene
 		Data:   payload,
 	}
 	envelope := domain.SyncEnvelope{
-		Version:       domain.SyncEnvelopeVersion,
-		EventID:       eventID,
-		CommandID:     commandID,
-		EventType:     commandType,
-		AggregateType: aggregateType,
-		AggregateID:   aggregateID,
-		RestaurantID:  OptionalID(restaurantID),
-		DeviceID:      strings.TrimSpace(meta.DeviceID),
-		ShiftID:       OptionalID(shiftID),
-		OccurredAt:    now,
-		Payload:       payloadBody,
+		Version:         domain.SyncEnvelopeVersion,
+		EventID:         eventID,
+		CommandID:       commandID,
+		EventType:       commandType,
+		AggregateType:   aggregateType,
+		AggregateID:     aggregateID,
+		RestaurantID:    OptionalID(restaurantID),
+		DeviceID:        strings.TrimSpace(meta.DeviceID),
+		ShiftID:         OptionalID(shiftID),
+		ActorEmployeeID: OptionalID(meta.ActorEmployeeID),
+		SessionID:       OptionalID(meta.SessionID),
+		OccurredAt:      now,
+		Payload:         payloadBody,
 	}
 	body, err := json.Marshal(envelope)
 	if err != nil {
@@ -155,6 +157,8 @@ func WriteOutbox(ctx context.Context, repo eventOutboxRepository, ids idgen.Gene
 		RestaurantID:    OptionalID(restaurantID),
 		DeviceID:        strings.TrimSpace(meta.DeviceID),
 		ShiftID:         OptionalID(shiftID),
+		ActorEmployeeID: OptionalID(meta.ActorEmployeeID),
+		SessionID:       OptionalID(meta.SessionID),
 		PayloadJSON:     string(body),
 		OccurredAt:      now,
 		CreatedAt:       now,
@@ -163,18 +167,20 @@ func WriteOutbox(ctx context.Context, repo eventOutboxRepository, ids idgen.Gene
 		return err
 	}
 	msg := &domain.OutboxMessage{
-		ID:            ids.NewID(),
-		CommandID:     commandID,
-		Origin:        origin,
-		RestaurantID:  OptionalID(restaurantID),
-		DeviceID:      strings.TrimSpace(meta.DeviceID),
-		AggregateType: aggregateType,
-		AggregateID:   aggregateID,
-		CommandType:   commandType,
-		PayloadJSON:   string(body),
-		Status:        domain.OutboxPending,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ID:              ids.NewID(),
+		CommandID:       commandID,
+		Origin:          origin,
+		RestaurantID:    OptionalID(restaurantID),
+		DeviceID:        strings.TrimSpace(meta.DeviceID),
+		ActorEmployeeID: OptionalID(meta.ActorEmployeeID),
+		SessionID:       OptionalID(meta.SessionID),
+		AggregateType:   aggregateType,
+		AggregateID:     aggregateID,
+		CommandType:     commandType,
+		PayloadJSON:     string(body),
+		Status:          domain.OutboxPending,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	return repo.CreateOutboxMessage(ctx, msg)
 }

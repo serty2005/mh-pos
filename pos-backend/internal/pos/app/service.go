@@ -7,11 +7,13 @@ import (
 	"pos-backend/internal/platform/clock"
 	"pos-backend/internal/platform/idgen"
 	txmanager "pos-backend/internal/platform/tx"
+	appauth "pos-backend/internal/pos/app/auth"
 	appcash "pos-backend/internal/pos/app/cash"
 	appcatalog "pos-backend/internal/pos/app/catalog"
 	appcheck "pos-backend/internal/pos/app/check"
 	appdevice "pos-backend/internal/pos/app/device"
 	appemployee "pos-backend/internal/pos/app/employee"
+	appfloor "pos-backend/internal/pos/app/floor"
 	appmenu "pos-backend/internal/pos/app/menu"
 	apporder "pos-backend/internal/pos/app/order"
 	appprecheck "pos-backend/internal/pos/app/precheck"
@@ -35,12 +37,19 @@ type RegisterDeviceCommand = appdevice.RegisterDeviceCommand
 type CreateRoleCommand = appemployee.CreateRoleCommand
 type CreateEmployeeCommand = appemployee.CreateEmployeeCommand
 type ArchiveEmployeeCommand = appemployee.ArchiveEmployeeCommand
+type PinLoginCommand = appauth.PinLoginCommand
+type CreateHallCommand = appfloor.CreateHallCommand
+type ArchiveHallCommand = appfloor.ArchiveHallCommand
+type CreateTableCommand = appfloor.CreateTableCommand
+type ArchiveTableCommand = appfloor.ArchiveTableCommand
 type CreateCatalogItemCommand = appcatalog.CreateCatalogItemCommand
 type CreateMenuItemCommand = appmenu.CreateMenuItemCommand
 type OpenShiftCommand = appshift.OpenShiftCommand
 type CloseShiftCommand = appshift.CloseShiftCommand
 type CreateOrderCommand = apporder.CreateOrderCommand
 type AddOrderLineCommand = apporder.AddOrderLineCommand
+type ChangeOrderLineQuantityCommand = apporder.ChangeOrderLineQuantityCommand
+type VoidOrderLineCommand = apporder.VoidOrderLineCommand
 type IssuePrecheckCommand = appprecheck.IssuePrecheckCommand
 type CancelPrecheckCommand = appprecheck.CancelPrecheckCommand
 type CreateCheckCommand = appcheck.CreateCheckCommand
@@ -68,6 +77,8 @@ type Service struct {
 	restaurants *apprestaurant.Service
 	devices     *appdevice.Service
 	employees   *appemployee.Service
+	auth        *appauth.Service
+	floor       *appfloor.Service
 	catalog     *appcatalog.Service
 	menu        *appmenu.Service
 	shifts      *appshift.Service
@@ -84,6 +95,8 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 		restaurants: apprestaurant.NewService(repo, tx, ids, clock),
 		devices:     appdevice.NewService(repo, tx, ids, clock),
 		employees:   appemployee.NewService(repo, tx, ids, clock),
+		auth:        appauth.NewService(repo, tx, ids, clock),
+		floor:       appfloor.NewService(repo, tx, ids, clock),
 		catalog:     appcatalog.NewService(repo, tx, ids, clock),
 		menu:        appmenu.NewService(repo, tx, ids, clock),
 		shifts:      appshift.NewService(repo, tx, ids, clock),
@@ -132,6 +145,38 @@ func (s *Service) ArchiveEmployee(ctx context.Context, cmd ArchiveEmployeeComman
 	return s.employees.ArchiveEmployee(ctx, cmd)
 }
 
+func (s *Service) PinLogin(ctx context.Context, cmd PinLoginCommand) (*domain.PinLoginResult, error) {
+	return s.auth.PinLogin(ctx, cmd)
+}
+
+func (s *Service) GetSession(ctx context.Context, sessionID, deviceID string) (*domain.PinLoginResult, error) {
+	return s.auth.GetSession(ctx, sessionID, deviceID)
+}
+
+func (s *Service) CreateHall(ctx context.Context, cmd CreateHallCommand) (*domain.Hall, error) {
+	return s.floor.CreateHall(ctx, cmd)
+}
+
+func (s *Service) ListHalls(ctx context.Context, restaurantID string) ([]domain.Hall, error) {
+	return s.floor.ListHalls(ctx, restaurantID)
+}
+
+func (s *Service) ArchiveHall(ctx context.Context, cmd ArchiveHallCommand) error {
+	return s.floor.ArchiveHall(ctx, cmd)
+}
+
+func (s *Service) CreateTable(ctx context.Context, cmd CreateTableCommand) (*domain.Table, error) {
+	return s.floor.CreateTable(ctx, cmd)
+}
+
+func (s *Service) ListTables(ctx context.Context, restaurantID, hallID string) ([]domain.Table, error) {
+	return s.floor.ListTables(ctx, restaurantID, hallID)
+}
+
+func (s *Service) ArchiveTable(ctx context.Context, cmd ArchiveTableCommand) error {
+	return s.floor.ArchiveTable(ctx, cmd)
+}
+
 func (s *Service) ListCatalogItems(ctx context.Context) ([]domain.CatalogItem, error) {
 	return s.catalog.ListCatalogItems(ctx)
 }
@@ -170,6 +215,14 @@ func (s *Service) CreateOrder(ctx context.Context, cmd CreateOrderCommand) (*dom
 
 func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*domain.OrderLine, error) {
 	return s.orders.AddOrderLine(ctx, cmd)
+}
+
+func (s *Service) ChangeOrderLineQuantity(ctx context.Context, cmd ChangeOrderLineQuantityCommand) (*domain.OrderLine, error) {
+	return s.orders.ChangeOrderLineQuantity(ctx, cmd)
+}
+
+func (s *Service) VoidOrderLine(ctx context.Context, cmd VoidOrderLineCommand) (*domain.OrderLine, error) {
+	return s.orders.VoidOrderLine(ctx, cmd)
 }
 
 func (s *Service) CloseOrder(ctx context.Context, cmd CloseOrderCommand) (*domain.Order, error) {

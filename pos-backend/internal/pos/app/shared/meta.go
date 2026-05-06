@@ -9,9 +9,11 @@ import (
 )
 
 type CommandMeta struct {
-	CommandID string               `json:"command_id,omitempty"`
-	DeviceID  string               `json:"device_id,omitempty"`
-	Origin    domain.CommandOrigin `json:"origin,omitempty"`
+	CommandID       string               `json:"command_id,omitempty"`
+	DeviceID        string               `json:"device_id,omitempty"`
+	ActorEmployeeID string               `json:"actor_employee_id,omitempty"`
+	SessionID       string               `json:"session_id,omitempty"`
+	Origin          domain.CommandOrigin `json:"origin,omitempty"`
 }
 
 const (

@@ -15,21 +15,25 @@ type LocalEvent struct {
 	RestaurantID    *string   `json:"restaurant_id,omitempty"`
 	DeviceID        string    `json:"device_id"`
 	ShiftID         *string   `json:"shift_id,omitempty"`
+	ActorEmployeeID *string   `json:"actor_employee_id,omitempty"`
+	SessionID       *string   `json:"session_id,omitempty"`
 	PayloadJSON     string    `json:"payload_json"`
 	OccurredAt      time.Time `json:"occurred_at"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 
 type SyncEnvelope struct {
-	Version       string    `json:"version"`
-	EventID       string    `json:"event_id"`
-	CommandID     string    `json:"command_id"`
-	EventType     string    `json:"event_type"`
-	AggregateType string    `json:"aggregate_type"`
-	AggregateID   string    `json:"aggregate_id"`
-	RestaurantID  *string   `json:"restaurant_id,omitempty"`
-	DeviceID      string    `json:"device_id"`
-	ShiftID       *string   `json:"shift_id,omitempty"`
-	OccurredAt    time.Time `json:"occurred_at"`
-	Payload       any       `json:"payload"`
+	Version         string    `json:"version"`
+	EventID         string    `json:"event_id"`
+	CommandID       string    `json:"command_id"`
+	EventType       string    `json:"event_type"`
+	AggregateType   string    `json:"aggregate_type"`
+	AggregateID     string    `json:"aggregate_id"`
+	RestaurantID    *string   `json:"restaurant_id,omitempty"`
+	DeviceID        string    `json:"device_id"`
+	ShiftID         *string   `json:"shift_id,omitempty"`
+	ActorEmployeeID *string   `json:"actor_employee_id,omitempty"`
+	SessionID       *string   `json:"session_id,omitempty"`
+	OccurredAt      time.Time `json:"occurred_at"`
+	Payload         any       `json:"payload"`
 }

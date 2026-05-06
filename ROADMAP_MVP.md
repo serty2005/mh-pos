@@ -35,6 +35,10 @@
 - cash drawer events;
 - prechecks lifecycle foundation: SQLite table, domain model, repository, public `IssuePrecheck` API, order locking, public manager override `CancelPrecheck`, version/paid_total fields;
 - precheck-based payments, payment_attempts, automatic final check generation;
+- PIN auth/session foundation;
+- actor/session metadata в write commands, `local_event_log`, `pos_sync_outbox` и `SyncEnvelope`;
+- halls/tables foundation для выбора стола в POS/Waiter UI;
+- order line quantity/void API;
 - device registration foundation;
 - SQLite migrations для первого запуска локальной БД;
 - PostgreSQL migrations для Cloud sync receiver.
@@ -45,7 +49,7 @@
 Order -> Precheck -> Payment -> Check
 ```
 
-Текущее состояние: публичный `Order -> Precheck -> Payment -> Check` runtime включен. `IssuePrecheck` locks order и доступен через API, `CancelPrecheck` доступен публично через manager override, payment capture идет через precheck, automatic final check generation закрывает order после полной оплаты. Sync/outbox foundation доведен до retry-safe состояния на schema/app/API уровне; полноценный Cloud sender/worker еще не реализован.
+Текущее состояние: публичный `Order -> Precheck -> Payment -> Check` runtime включен. `IssuePrecheck` locks order и доступен через API, `CancelPrecheck` доступен публично через manager override, payment capture идет через precheck, automatic final check generation закрывает order после полной оплаты. Для старта `pos-ui` уже есть PIN login/session, actor/session metadata, halls/tables и базовое редактирование order lines. Sync/outbox foundation доведен до retry-safe состояния на schema/app/API уровне; полноценный Cloud sender/worker еще не реализован.
 
 ---
 
@@ -434,6 +438,8 @@ Provisioning flow:
    - Windows config file с ограниченными правами;
    - LocalStorage допустим только для раннего dev UI, но не как финальное production-хранилище.
 10. Все последующие write-команды и `SyncEnvelope` используют этот UUID.
+
+Открытый конфликт для ранней разработки `pos-ui`: production target остается stable server-issued `device_id` через binding/provisioning, но до реализации этого этапа dev bootstrap может временно хранить `device_id` в `localStorage`. Это dev-only режим, не production identity.
 
 Правила:
 
@@ -883,14 +889,22 @@ Acceptance criteria:
 Стек:
 
 ```text
-Vite workspace
-/ui-core
-/ui-protocol
-/apps/pos-react
+pos-ui
+Vue 3
+TypeScript
+Quasar
+Vue Router
+Pinia
+@tanstack/vue-query
+vue-i18n
+Zod
 ```
 
 Правила:
 
+- approved frontend MVP теперь отдельный пакет `pos-ui`;
+- старые предположения про React/Vite UI устарели;
+- Tailwind не используется;
 - UI не считает бизнес-итоги;
 - UI вызывает Edge API;
 - UI показывает состояния, полученные от backend;
@@ -899,11 +913,16 @@ Vite workspace
 
 MVP screens:
 
-- [ ] Первый запуск / привязка устройства.
+- [ ] Первый запуск / dev-only bootstrap `device_id` до production provisioning.
+- [ ] Production привязка устройства после этапа H.
+- [ ] PIN login и session restore.
 - [ ] Открытие смены.
 - [ ] Открытие cash session.
+- [ ] Выбор зала и стола.
 - [ ] Создание заказа.
 - [ ] Добавление позиций.
+- [ ] Изменение количества позиции.
+- [ ] Void позиции.
 - [ ] Выпуск пречека.
 - [ ] Отмена пречека через PIN менеджера.
 - [ ] Оплата наличными.
@@ -1100,6 +1119,8 @@ Checklist recovery:
 
 ### 9.1 Полный KDS
 
+Текущий backend не реализует KDS runtime; до отдельной итерации нельзя считать KDS/Waiter готовыми.
+
 - KDS screen;
 - kitchen routing;
 - WebSocket updates;
@@ -1147,6 +1168,8 @@ Checklist recovery:
 - менять `Order` после active precheck без manager override;
 - списывать склад по `OrderLineAdded`;
 - считать налоги во frontend;
+- переносить бизнес-логику в `pos-ui`;
+- использовать Tailwind в approved POS UI;
 - hardcode `PB1` / `PBJT` в Go logic;
 - хранить PIN в открытом виде;
 - генерировать unstable `device_id`;
@@ -1184,12 +1207,12 @@ README.md
 
 ## 12. Рекомендуемый порядок ближайших итераций
 
-1. Реализовать sync sender/worker поверх готового retry-safe outbox foundation.
-2. Добавить precheck line/tax snapshots или зафиксированный JSON snapshot, если это проще для MVP.
-3. Реализовать Generic Tax Engine.
-4. Завершить business date/currency/payment correction детали перед пилотом.
-5. Реализовать device provisioning flow.
-6. Собрать минимальный POS UI.
+1. Собрать минимальный `pos-ui` shell на Vue 3 + Quasar поверх готовых backend prerequisites без моков на критических путях.
+2. Реализовать sync sender/worker поверх готового retry-safe outbox foundation.
+3. Добавить precheck line/tax snapshots или зафиксированный JSON snapshot, если это проще для MVP.
+4. Реализовать Generic Tax Engine.
+5. Завершить business date/currency/payment correction детали перед пилотом.
+6. Реализовать production device provisioning flow и убрать dev-only `localStorage device_id`.
 7. Реализовать DishServed MVP без полного KDS.
 8. Провести First Launch Readiness.
 

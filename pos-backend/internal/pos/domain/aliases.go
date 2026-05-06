@@ -6,6 +6,7 @@ import (
 	"pos-backend/internal/pos/domain/check"
 	"pos-backend/internal/pos/domain/device"
 	"pos-backend/internal/pos/domain/employee"
+	"pos-backend/internal/pos/domain/floor"
 	"pos-backend/internal/pos/domain/inventory"
 	"pos-backend/internal/pos/domain/menu"
 	"pos-backend/internal/pos/domain/order"
@@ -31,6 +32,18 @@ type Device = device.Device
 type Role = employee.Role
 type Employee = employee.Employee
 type ManagerOverrideAudit = employee.ManagerOverrideAudit
+type AuthSessionStatus = employee.AuthSessionStatus
+type AuthSession = employee.AuthSession
+type ActorContext = employee.ActorContext
+type PinLoginResult = employee.PinLoginResult
+
+const (
+	AuthSessionActive  = employee.AuthSessionActive
+	AuthSessionRevoked = employee.AuthSessionRevoked
+)
+
+type Hall = floor.Hall
+type Table = floor.Table
 
 type CatalogItemType = catalog.CatalogItemType
 type CatalogItem = catalog.CatalogItem
@@ -67,6 +80,7 @@ type OrderLine = order.OrderLine
 const (
 	OrderLineActive    = order.OrderLineActive
 	OrderLineCancelled = order.OrderLineCancelled
+	OrderLineVoided    = order.OrderLineVoided
 )
 
 type CheckStatus = check.CheckStatus

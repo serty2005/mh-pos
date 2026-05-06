@@ -3,6 +3,7 @@ package ports
 type Repository interface {
 	RestaurantRepository
 	DeviceRepository
+	FloorRepository
 	EmployeeRepository
 	CatalogRepository
 	MenuRepository

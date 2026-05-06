@@ -8,5 +8,6 @@ import (
 
 type DeviceRepository interface {
 	CreateDevice(context.Context, *device.Device) error
+	GetDevice(context.Context, string) (*device.Device, error)
 	ListDevices(context.Context) ([]device.Device, error)
 }

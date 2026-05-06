@@ -7,6 +7,7 @@ type OrderLineStatus string
 const (
 	OrderLineActive    OrderLineStatus = "active"
 	OrderLineCancelled OrderLineStatus = "cancelled"
+	OrderLineVoided    OrderLineStatus = "voided"
 )
 
 type OrderLine struct {

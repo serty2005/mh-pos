@@ -2,7 +2,6 @@ package precheck
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -161,7 +160,7 @@ func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand)
 		if err != nil {
 			return err
 		}
-		if !role.Active || !hasPermission(role.PermissionsJSON, "precheck.cancel") {
+		if !role.Active || !shared.HasPermission(role.PermissionsJSON, "precheck.cancel") {
 			return fmt.Errorf("%w: manager override permission is required", domain.ErrForbidden)
 		}
 		if err := shared.VerifyPIN(manager.PINHash, cmd.ManagerPIN); err != nil {
@@ -188,6 +187,10 @@ func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand)
 		if err := s.repo.UpdateOrderOpen(ctx, order); err != nil {
 			return err
 		}
+		actorEmployeeID := cmd.ActorEmployeeID
+		if strings.TrimSpace(actorEmployeeID) == "" {
+			actorEmployeeID = manager.ID
+		}
 		audit := &domain.ManagerOverrideAudit{
 			ID:                s.ids.NewID(),
 			CommandID:         cmd.CommandID,
@@ -197,6 +200,8 @@ func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand)
 			OrderID:           order.ID,
 			PrecheckID:        precheck.ID,
 			ManagerEmployeeID: manager.ID,
+			ActorEmployeeID:   shared.OptionalID(actorEmployeeID),
+			SessionID:         shared.OptionalID(cmd.SessionID),
 			Action:            "cancel_precheck",
 			Reason:            strings.TrimSpace(cmd.CancellationReason),
 			OccurredAt:        now,
@@ -205,27 +210,9 @@ func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand)
 		if err := s.repo.CreateManagerOverrideAudit(ctx, audit); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Precheck", precheck.ID, "PrecheckCancelled", precheck)
+		eventMeta := cmd.CommandMeta
+		eventMeta.ActorEmployeeID = actorEmployeeID
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, eventMeta, order.RestaurantID, order.ShiftID, "Precheck", precheck.ID, "PrecheckCancelled", precheck)
 	})
 	return precheck, err
-}
-
-func hasPermission(body, permission string) bool {
-	var raw map[string]any
-	if err := json.Unmarshal([]byte(body), &raw); err != nil {
-		return false
-	}
-	if value, ok := raw[permission].(bool); ok && value {
-		return true
-	}
-	values, ok := raw["permissions"].([]any)
-	if !ok {
-		return false
-	}
-	for _, value := range values {
-		if text, ok := value.(string); ok && text == permission {
-			return true
-		}
-	}
-	return false
 }

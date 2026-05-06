@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,6 +76,8 @@ type fixture struct {
 	device     *domain.Device
 	employee   *domain.Employee
 	manager    *domain.Employee
+	hall       *domain.Hall
+	table      *domain.Table
 	menuItem   *domain.MenuItem
 }
 
@@ -157,6 +160,14 @@ func (f *fixture) seed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f.hall, err = f.service.CreateHall(f.ctx, app.CreateHallCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, Name: "Main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.table, err = f.service.CreateTable(f.ctx, app.CreateTableCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, HallID: f.hall.ID, Name: "A1", Seats: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
 	catalog, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: seedMeta(f.device.ID), Type: domain.CatalogItemDish, Name: "Soup", SKU: "SOUP", BaseUnit: "portion"})
 	if err != nil {
 		t.Fatal(err)
@@ -184,7 +195,7 @@ func (f *fixture) openShift(t *testing.T) *domain.Shift {
 func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 	t.Helper()
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +219,7 @@ func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
-	case "orders", "order_lines", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "roles", "catalog_items", "menu_items":
+	case "orders", "order_lines", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "roles", "catalog_items", "menu_items", "auth_sessions", "halls", "tables":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -426,7 +437,7 @@ func TestCannotOpenTwoShiftsOnDevice(t *testing.T) {
 
 func TestCannotCreateOrderWithoutOpenShift(t *testing.T) {
 	f := newFixture(t)
-	_, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1"})
+	_, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1"})
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
 	}
@@ -507,6 +518,7 @@ func TestDuplicateCommandIDDoesNotCreateDuplicateOrderOrOutbox(t *testing.T) {
 
 	cmd := app.CreateOrderCommand{
 		CommandMeta: app.CommandMeta{CommandID: "cmd-create-order-1", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		TableID:     f.table.ID,
 		TableName:   "A1",
 		GuestCount:  1,
 	}
@@ -537,6 +549,7 @@ func TestRollbackRemovesDomainWriteWhenLocalEventWriteFails(t *testing.T) {
 
 	_, err := service.CreateOrder(f.ctx, app.CreateOrderCommand{
 		CommandMeta: app.CommandMeta{CommandID: "cmd-local-event-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		TableID:     f.table.ID,
 		TableName:   "A1",
 		GuestCount:  1,
 	})
@@ -564,6 +577,7 @@ func TestRollbackRemovesDomainAndLocalEventWhenOutboxWriteFails(t *testing.T) {
 
 	_, err := service.CreateOrder(f.ctx, app.CreateOrderCommand{
 		CommandMeta: app.CommandMeta{CommandID: "cmd-outbox-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		TableID:     f.table.ID,
 		TableName:   "A1",
 		GuestCount:  1,
 	})
@@ -636,6 +650,142 @@ func TestWriteRejectsInvalidOrigin(t *testing.T) {
 	}
 }
 
+func TestPinLoginCreatesLocalSessionAndActorMetadataWithoutPINLeak(t *testing.T) {
+	f := newFixture(t)
+	sessionsBefore := countRows(t, f, "auth_sessions")
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+
+	result, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-pin-login-1", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		PIN:         "1111",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Session.EmployeeID != f.employee.ID || result.Actor.EmployeeID != f.employee.ID || result.Session.DeviceID != f.device.ID {
+		t.Fatalf("unexpected login result: %+v", result)
+	}
+	if sessions := countRows(t, f, "auth_sessions"); sessions != sessionsBefore+1 {
+		t.Fatalf("expected one auth session, before=%d after=%d", sessionsBefore, sessions)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+1 {
+		t.Fatalf("expected one auth outbox row, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore+1 {
+		t.Fatalf("expected one auth local event, before=%d after=%d", eventsBefore, events)
+	}
+	var actorID, sessionID, payload string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT actor_employee_id, session_id, payload_json FROM local_event_log WHERE command_id = ?`, "cmd-pin-login-1").Scan(&actorID, &sessionID, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if actorID != f.employee.ID || sessionID != result.Session.ID {
+		t.Fatalf("expected actor/session metadata, got actor=%s session=%s", actorID, sessionID)
+	}
+	if strings.Contains(payload, "1111") {
+		t.Fatal("expected PIN not to be written to local event payload")
+	}
+	current, err := f.service.GetSession(f.ctx, result.Session.ID, f.device.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Actor.EmployeeID != f.employee.ID {
+		t.Fatalf("unexpected current session actor: %+v", current.Actor)
+	}
+}
+
+func TestPinLoginRejectsInvalidPINWithoutSessionWrite(t *testing.T) {
+	f := newFixture(t)
+	before := countRows(t, f, "auth_sessions")
+
+	_, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{CommandMeta: f.edgeMeta(), PIN: "9999"})
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden, got %v", err)
+	}
+	if sessions := countRows(t, f, "auth_sessions"); sessions != before {
+		t.Fatalf("expected no auth session write, before=%d after=%d", before, sessions)
+	}
+}
+
+func TestCreateEmployeeDoesNotWritePINHashToOutboxOrLocalEvent(t *testing.T) {
+	f := newFixture(t)
+	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{CommandMeta: seedMeta(f.device.ID), Name: "auditor", PermissionsJSON: `{}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := testPINHash(t, "1357", "auditor-salt")
+	_, err = f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{
+		CommandMeta:  app.CommandMeta{CommandID: "cmd-create-employee-no-pin-leak", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		RestaurantID: f.restaurant.ID,
+		RoleID:       role.ID,
+		Name:         "Oleg",
+		PINHash:      hash,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var eventPayload, outboxPayload string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT payload_json FROM local_event_log WHERE command_id = ?`, "cmd-create-employee-no-pin-leak").Scan(&eventPayload); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRowContext(f.ctx, `SELECT payload_json FROM pos_sync_outbox WHERE command_id = ?`, "cmd-create-employee-no-pin-leak").Scan(&outboxPayload); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(eventPayload, "pin_hash") || strings.Contains(eventPayload, hash) || strings.Contains(outboxPayload, "pin_hash") || strings.Contains(outboxPayload, hash) {
+		t.Fatal("expected employee PIN hash not to be written to local event or outbox payload")
+	}
+}
+
+func TestCreateAndArchiveHallAndTableUseOutbox(t *testing.T) {
+	f := newFixture(t)
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+
+	hall, err := f.service.CreateHall(f.ctx, app.CreateHallCommand{CommandMeta: f.edgeMeta(), RestaurantID: f.restaurant.ID, Name: "Terrace"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	table, err := f.service.CreateTable(f.ctx, app.CreateTableCommand{CommandMeta: f.edgeMeta(), RestaurantID: f.restaurant.ID, HallID: hall.ID, Name: "T1", Seats: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.ArchiveTable(f.ctx, app.ArchiveTableCommand{CommandMeta: f.edgeMeta(), ID: table.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.ArchiveHall(f.ctx, app.ArchiveHallCommand{CommandMeta: f.edgeMeta(), ID: hall.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+4 {
+		t.Fatalf("expected four floor outbox rows, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore+4 {
+		t.Fatalf("expected four floor local events, before=%d after=%d", eventsBefore, events)
+	}
+	tables, err := f.service.ListTables(f.ctx, f.restaurant.ID, hall.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tables) != 1 || tables[0].Active {
+		t.Fatalf("expected archived table in read model, got %+v", tables)
+	}
+}
+
+func TestCannotCreateTableInArchivedHall(t *testing.T) {
+	f := newFixture(t)
+	hall, err := f.service.CreateHall(f.ctx, app.CreateHallCommand{CommandMeta: f.edgeMeta(), RestaurantID: f.restaurant.ID, Name: "Closed room"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.ArchiveHall(f.ctx, app.ArchiveHallCommand{CommandMeta: f.edgeMeta(), ID: hall.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = f.service.CreateTable(f.ctx, app.CreateTableCommand{CommandMeta: f.edgeMeta(), RestaurantID: f.restaurant.ID, HallID: hall.ID, Name: "C1", Seats: 2})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+}
+
 func TestValidDeviceIDCreatesBusinessAndOutboxRowsWithDefaultOrigin(t *testing.T) {
 	f := newFixture(t)
 	rolesBefore := countRows(t, f, "roles")
@@ -664,7 +814,7 @@ func TestValidDeviceIDCreatesBusinessAndOutboxRowsWithDefaultOrigin(t *testing.T
 func TestCannotCloseShiftWithOpenOrders(t *testing.T) {
 	f := newFixture(t)
 	shift := f.openShift(t)
-	if _, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1"}); err != nil {
+	if _, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1"}); err != nil {
 		t.Fatal(err)
 	}
 	_, err := f.service.CloseShift(f.ctx, app.CloseShiftCommand{CommandMeta: f.edgeMeta(), ID: shift.ID, ClosedByEmployeeID: f.employee.ID, ClosingCashAmount: 0})
@@ -733,7 +883,7 @@ func TestCannotAddLineToClosedOrder(t *testing.T) {
 func TestCannotCloseOrderWithoutFullPayment(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta()})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -749,7 +899,7 @@ func TestCannotCloseOrderWithoutFullPayment(t *testing.T) {
 func TestIssuePrecheckCreatesDormantSnapshotAndLocksOrderWithoutLegacyCheck(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -802,7 +952,7 @@ func TestIssuePrecheckCreatesDormantSnapshotAndLocksOrderWithoutLegacyCheck(t *t
 func TestCannotAddLineToLockedOrder(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -816,6 +966,93 @@ func TestCannotAddLineToLockedOrder(t *testing.T) {
 	_, err = f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1})
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
+	}
+}
+
+func TestChangeOrderLineQuantityUpdatesTotalAndWritesAuditMetadata(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{CommandMeta: f.edgeMeta(), PIN: "1111"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	changed, err := f.service.ChangeOrderLineQuantity(f.ctx, app.ChangeOrderLineQuantityCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-change-line-quantity", DeviceID: f.device.ID, ActorEmployeeID: f.employee.ID, SessionID: login.Session.ID, Origin: app.OriginEdgeDevice},
+		OrderID:     order.ID,
+		LineID:      line.ID,
+		Quantity:    3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed.Quantity != 3 || changed.TotalPrice != 3000 || changed.Status != domain.OrderLineActive {
+		t.Fatalf("unexpected changed line: %+v", changed)
+	}
+	var actorID, sessionID string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT actor_employee_id, session_id FROM local_event_log WHERE command_id = ? AND event_type = 'OrderLineQuantityChanged'`, "cmd-change-line-quantity").Scan(&actorID, &sessionID); err != nil {
+		t.Fatal(err)
+	}
+	if actorID != f.employee.ID || sessionID != login.Session.ID {
+		t.Fatalf("expected line edit actor metadata, got actor=%s session=%s", actorID, sessionID)
+	}
+}
+
+func TestCannotChangeOrderLineQuantityForLockedOrder(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = f.service.ChangeOrderLineQuantity(f.ctx, app.ChangeOrderLineQuantityCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, LineID: line.ID, Quantity: 2})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+}
+
+func TestVoidOrderLineKeepsRowAndBlocksSecondVoid(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	linesBefore := countRows(t, f, "order_lines")
+
+	voided, err := f.service.VoidOrderLine(f.ctx, app.VoidOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, LineID: line.ID, Reason: "mistake"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if voided.Status != domain.OrderLineVoided {
+		t.Fatalf("expected voided line, got %+v", voided)
+	}
+	if lines := countRows(t, f, "order_lines"); lines != linesBefore {
+		t.Fatalf("expected void to keep order line row, before=%d after=%d", linesBefore, lines)
+	}
+	_, err = f.service.VoidOrderLine(f.ctx, app.VoidOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, LineID: line.ID})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected conflict on second void, got %v", err)
 	}
 }
 
@@ -840,7 +1077,7 @@ func TestIssuePrecheckRollbackKeepsOrderOpenWhenLocalEventOrOutboxFails(t *testi
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)
 			f.openShift(t)
-			order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+			order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -908,7 +1145,7 @@ func TestCannotCancelMissingPrecheck(t *testing.T) {
 func TestCancelPrecheckUnlocksOrderAndWritesOutbox(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -971,7 +1208,7 @@ func TestCancelPrecheckUnlocksOrderAndWritesOutbox(t *testing.T) {
 func TestCancelPrecheckRejectsWrongManagerPIN(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1003,7 +1240,7 @@ func TestCancelPrecheckRejectsWrongManagerPIN(t *testing.T) {
 func TestCancelPrecheckRejectsEmployeeWithoutPermission(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1026,7 +1263,7 @@ func TestCancelPrecheckRejectsEmployeeWithoutPermission(t *testing.T) {
 func TestCannotCancelNonIssuedPrecheck(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1058,7 +1295,7 @@ func TestCannotCancelNonIssuedPrecheck(t *testing.T) {
 func TestCannotCancelPrecheckWithPaidTotalFoundation(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1100,7 +1337,7 @@ func TestCannotCancelPrecheckWithPaidTotalFoundation(t *testing.T) {
 func TestCancelPrecheckRollbackKeepsIssuedAndOrderLockedWhenOutboxFails(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1148,7 +1385,7 @@ func TestCancelPrecheckRollbackKeepsIssuedAndOrderLockedWhenOutboxFails(t *testi
 func TestDuplicateCancelPrecheckCommandIDDoesNotDoubleCancel(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1192,7 +1429,7 @@ func TestDuplicateCancelPrecheckCommandIDDoesNotDoubleCancel(t *testing.T) {
 func TestCannotCloseShiftWithLockedOrders(t *testing.T) {
 	f := newFixture(t)
 	shift := f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1212,7 +1449,7 @@ func TestCannotCloseShiftWithLockedOrders(t *testing.T) {
 func TestCannotIssueSecondActivePrecheckForOrder(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1242,7 +1479,7 @@ func TestCreateOrderRejectsMismatchedRestaurantID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), RestaurantID: other.ID})
+	_, err = f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), RestaurantID: other.ID, TableID: f.table.ID})
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
 	}
@@ -1251,7 +1488,7 @@ func TestCreateOrderRejectsMismatchedRestaurantID(t *testing.T) {
 func TestCannotOverpayPrecheck(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta()})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1271,7 +1508,7 @@ func TestCannotOverpayPrecheck(t *testing.T) {
 func TestCapturePaymentCreatesFirstAttemptWithEdgeContext(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta()})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1313,7 +1550,7 @@ func TestCapturePaymentCreatesFirstAttemptWithEdgeContext(t *testing.T) {
 func TestCapturePaymentRollbackRemovesAttemptPaymentOutboxAndLocalEvent(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta()})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1368,7 +1605,7 @@ func TestCapturePaymentRollbackRemovesAttemptPaymentOutboxAndLocalEvent(t *testi
 func TestFullPaymentRollsBackFinalCheckWhenCheckCreatedOutboxFails(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1419,7 +1656,7 @@ func TestFullPaymentRollsBackFinalCheckWhenCheckCreatedOutboxFails(t *testing.T)
 func TestPartialPaymentKeepsPrecheckOpenAndDoesNotCreateFinalCheck(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1470,7 +1707,7 @@ func TestFullPaymentCreatesFinalCheckAndClosesOrder(t *testing.T) {
 func TestPaymentForCancelledPrecheckRejected(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1493,7 +1730,7 @@ func TestPaymentForCancelledPrecheckRejected(t *testing.T) {
 func TestPaymentForSupersededPrecheckRejected(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1519,7 +1756,7 @@ func TestPaymentForSupersededPrecheckRejected(t *testing.T) {
 func TestDuplicatePaymentCommandIDDoesNotDoubleCapture(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1552,7 +1789,7 @@ func TestDuplicatePaymentCommandIDDoesNotDoubleCapture(t *testing.T) {
 func TestPaymentRequiresActiveShiftAndMatchingDevice(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1597,7 +1834,7 @@ func TestOutboxEntryCreatedForEachWriteAction(t *testing.T) {
 func TestListLocalEventsThroughServiceSupportsLimitAndFilter(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1620,7 +1857,7 @@ func TestListLocalEventsThroughServiceSupportsLimitAndFilter(t *testing.T) {
 func TestKeyWritesCreateLocalEventsAndMatchingOutboxEnvelopes(t *testing.T) {
 	f := newFixture(t)
 	shift := f.openShift(t)
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

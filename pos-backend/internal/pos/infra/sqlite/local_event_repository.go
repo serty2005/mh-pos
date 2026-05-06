@@ -9,8 +9,8 @@ import (
 )
 
 func (r *Repository) CreateLocalEvent(ctx context.Context, v *domain.LocalEvent) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.EventID, v.CommandID, v.EnvelopeVersion, v.EventType, v.AggregateType, v.AggregateID, nullableString(v.RestaurantID), v.DeviceID, nullableString(v.ShiftID), v.PayloadJSON, dbTime(v.OccurredAt), dbTime(v.CreatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,actor_employee_id,session_id,payload_json,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.EventID, v.CommandID, v.EnvelopeVersion, v.EventType, v.AggregateType, v.AggregateID, nullableString(v.RestaurantID), v.DeviceID, nullableString(v.ShiftID), nullableString(v.ActorEmployeeID), nullableString(v.SessionID), v.PayloadJSON, dbTime(v.OccurredAt), dbTime(v.CreatedAt))
 	return normalizeErr(err)
 }
 
@@ -19,7 +19,7 @@ func (r *Repository) ListLocalEvents(ctx context.Context, limit int, eventType s
 		limit = 100
 	}
 	eventType = strings.TrimSpace(eventType)
-	query := `SELECT id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at FROM local_event_log`
+	query := `SELECT id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,actor_employee_id,session_id,payload_json,occurred_at,created_at FROM local_event_log`
 	args := []any{}
 	if eventType != "" {
 		query += ` WHERE event_type = ?`
@@ -57,13 +57,15 @@ type localEventScanner interface {
 
 func scanLocalEventRows(row localEventScanner) (*domain.LocalEvent, error) {
 	var v domain.LocalEvent
-	var restaurantID, shiftID sql.NullString
+	var restaurantID, shiftID, actorEmployeeID, sessionID sql.NullString
 	var occurred, created string
-	if err := row.Scan(&v.ID, &v.EventID, &v.CommandID, &v.EnvelopeVersion, &v.EventType, &v.AggregateType, &v.AggregateID, &restaurantID, &v.DeviceID, &shiftID, &v.PayloadJSON, &occurred, &created); err != nil {
+	if err := row.Scan(&v.ID, &v.EventID, &v.CommandID, &v.EnvelopeVersion, &v.EventType, &v.AggregateType, &v.AggregateID, &restaurantID, &v.DeviceID, &shiftID, &actorEmployeeID, &sessionID, &v.PayloadJSON, &occurred, &created); err != nil {
 		return nil, err
 	}
 	v.RestaurantID = stringPtr(restaurantID)
 	v.ShiftID = stringPtr(shiftID)
+	v.ActorEmployeeID = stringPtr(actorEmployeeID)
+	v.SessionID = stringPtr(sessionID)
 	v.OccurredAt = parseTime(occurred)
 	v.CreatedAt = parseTime(created)
 	return &v, nil

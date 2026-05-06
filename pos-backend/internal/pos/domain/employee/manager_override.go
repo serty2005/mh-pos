@@ -11,6 +11,8 @@ type ManagerOverrideAudit struct {
 	OrderID           string    `json:"order_id"`
 	PrecheckID        string    `json:"precheck_id"`
 	ManagerEmployeeID string    `json:"manager_employee_id"`
+	ActorEmployeeID   *string   `json:"actor_employee_id,omitempty"`
+	SessionID         *string   `json:"session_id,omitempty"`
 	Action            string    `json:"action"`
 	Reason            string    `json:"reason"`
 	OccurredAt        time.Time `json:"occurred_at"`

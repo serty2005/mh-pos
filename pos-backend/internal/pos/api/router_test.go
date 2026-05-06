@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,6 +46,8 @@ type apiFixture struct {
 	device     *domain.Device
 	employee   *domain.Employee
 	manager    *domain.Employee
+	hall       *domain.Hall
+	table      *domain.Table
 	menuItem   *domain.MenuItem
 }
 
@@ -85,7 +88,11 @@ func (f *apiFixture) seed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.employee, err = f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{CommandMeta: apiSeedMeta(f.device.ID), RestaurantID: f.restaurant.ID, RoleID: role.ID, Name: "Anna", PINHash: "hash"})
+	cashierPINHash, err := appshared.HashPIN("1111", []byte("api-cashier-salt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.employee, err = f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{CommandMeta: apiSeedMeta(f.device.ID), RestaurantID: f.restaurant.ID, RoleID: role.ID, Name: "Anna", PINHash: cashierPINHash})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,6 +101,14 @@ func (f *apiFixture) seed(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.manager, err = f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{CommandMeta: apiSeedMeta(f.device.ID), RestaurantID: f.restaurant.ID, RoleID: managerRole.ID, Name: "Mira", PINHash: managerPINHash})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.hall, err = f.service.CreateHall(f.ctx, app.CreateHallCommand{CommandMeta: apiSeedMeta(f.device.ID), RestaurantID: f.restaurant.ID, Name: "Main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.table, err = f.service.CreateTable(f.ctx, app.CreateTableCommand{CommandMeta: apiSeedMeta(f.device.ID), RestaurantID: f.restaurant.ID, HallID: f.hall.ID, Name: "A1", Seats: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +140,7 @@ func (f *apiFixture) createOrderWithLine(t *testing.T) *domain.Order {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,6 +153,15 @@ func (f *apiFixture) createOrderWithLine(t *testing.T) *domain.Order {
 func (f *apiFixture) postJSON(t *testing.T, path string, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	return rr
+}
+
+func (f *apiFixture) patchJSON(t *testing.T, path string, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPatch, path, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 	f.router.ServeHTTP(rr, req)
@@ -164,7 +188,7 @@ func decodeAPIResponse[T any](t *testing.T, rr *httptest.ResponseRecorder) T {
 func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 	t.Helper()
 	switch table {
-	case "prechecks", "checks", "payments", "payment_attempts", "pos_sync_outbox", "local_event_log", "manager_override_audit":
+	case "prechecks", "checks", "payments", "payment_attempts", "pos_sync_outbox", "local_event_log", "manager_override_audit", "auth_sessions", "halls", "tables":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -173,6 +197,83 @@ func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 		t.Fatal(err)
 	}
 	return n
+}
+
+func TestPinLoginAndSessionAPI(t *testing.T) {
+	f := newAPIFixture(t)
+	rr := f.postJSON(t, "/api/v1/auth/pin-login", `{"command_id":"cmd-api-pin-login","device_id":"`+f.device.ID+`","pin":"1111"}`)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	result := decodeAPIResponse[domain.PinLoginResult](t, rr)
+	if result.Session.EmployeeID != f.employee.ID || result.Actor.EmployeeID != f.employee.ID {
+		t.Fatalf("unexpected login result: %+v", result)
+	}
+	if strings.Contains(rr.Body.String(), "1111") {
+		t.Fatal("expected PIN not to be returned in login response")
+	}
+	if strings.Contains(rr.Body.String(), "pin_hash") {
+		t.Fatal("expected pin_hash not to be returned in login response")
+	}
+
+	current := f.get(t, "/api/v1/auth/session?device_id="+f.device.ID+"&session_id="+result.Session.ID)
+	if current.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", current.Code, current.Body.String())
+	}
+	got := decodeAPIResponse[domain.PinLoginResult](t, current)
+	if got.Session.ID != result.Session.ID || got.Actor.EmployeeID != f.employee.ID {
+		t.Fatalf("unexpected current session: %+v", got)
+	}
+}
+
+func TestFloorAndOrderLineEditingAPI(t *testing.T) {
+	f := newAPIFixture(t)
+	hallResp := f.postJSON(t, "/api/v1/halls", `{"device_id":"`+f.device.ID+`","restaurant_id":"`+f.restaurant.ID+`","name":"Terrace"}`)
+	if hallResp.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", hallResp.Code, hallResp.Body.String())
+	}
+	hall := decodeAPIResponse[domain.Hall](t, hallResp)
+	tableResp := f.postJSON(t, "/api/v1/tables", `{"device_id":"`+f.device.ID+`","restaurant_id":"`+f.restaurant.ID+`","hall_id":"`+hall.ID+`","name":"T1","seats":4}`)
+	if tableResp.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", tableResp.Code, tableResp.Body.String())
+	}
+	table := decodeAPIResponse[domain.Table](t, tableResp)
+	listTables := f.get(t, "/api/v1/tables?restaurant_id="+f.restaurant.ID+"&hall_id="+hall.ID)
+	if listTables.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", listTables.Code, listTables.Body.String())
+	}
+	tables := decodeAPIResponse[[]domain.Table](t, listTables)
+	if len(tables) != 1 || tables[0].ID != table.ID {
+		t.Fatalf("unexpected table list: %+v", tables)
+	}
+
+	if _, err := f.service.OpenShift(f.ctx, app.OpenShiftCommand{CommandMeta: f.edgeMeta(), RestaurantID: f.restaurant.ID, OpenedByEmployeeID: f.employee.ID, OpeningCashAmount: 0}); err != nil {
+		t.Fatal(err)
+	}
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: table.ID, GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	change := f.patchJSON(t, "/api/v1/orders/"+order.ID+"/lines/"+line.ID, `{"device_id":"`+f.device.ID+`","quantity":3}`)
+	if change.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", change.Code, change.Body.String())
+	}
+	changed := decodeAPIResponse[domain.OrderLine](t, change)
+	if changed.Quantity != 3 || changed.TotalPrice != 3000 {
+		t.Fatalf("unexpected changed line: %+v", changed)
+	}
+	voidedResp := f.postJSON(t, "/api/v1/orders/"+order.ID+"/lines/"+line.ID+"/void", `{"device_id":"`+f.device.ID+`","reason":"mistake"}`)
+	if voidedResp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", voidedResp.Code, voidedResp.Body.String())
+	}
+	voided := decodeAPIResponse[domain.OrderLine](t, voidedResp)
+	if voided.Status != domain.OrderLineVoided {
+		t.Fatalf("expected voided line, got %+v", voided)
+	}
 }
 
 func apiOutboxIDs(t *testing.T, f *apiFixture, n int) []string {
