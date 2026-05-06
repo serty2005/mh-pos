@@ -307,6 +307,7 @@ Order -> Precheck -> Payment -> Check
 - Cash session нельзя открыть без активной смены.
 - Cash drawer event нельзя записать без active cash session.
 - Нельзя закрыть смену с открытыми заказами.
+- Нельзя закрыть смену с active cash session.
 
 ---
 
@@ -354,6 +355,7 @@ GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated
 - нельзя открыть 2 смены на device
 - нельзя создать заказ без смены
 - нельзя закрыть смену с открытыми заказами
+- нельзя закрыть смену с active cash session
 - нельзя изменить закрытый заказ
 - нельзя изменить locked order без отмены active precheck по правилам manager override
 - нельзя редактировать issued precheck

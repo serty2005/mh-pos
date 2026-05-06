@@ -98,6 +98,11 @@ func (s *Service) CloseShift(ctx context.Context, cmd CloseShiftCommand) (*domai
 		if hasOpenOrders {
 			return fmt.Errorf("%w: shift has open orders", domain.ErrConflict)
 		}
+		if _, err := s.repo.GetOpenCashSessionByDevice(ctx, shift.DeviceID); err == nil {
+			return fmt.Errorf("%w: shift has active cash session", domain.ErrConflict)
+		} else if !errors.Is(err, domain.ErrNotFound) {
+			return err
+		}
 		shift.Status = domain.ShiftClosed
 		shift.ClosedByEmployeeID = &cmd.ClosedByEmployeeID
 		shift.ClosedAt = &now

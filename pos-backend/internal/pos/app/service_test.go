@@ -443,6 +443,54 @@ func TestCannotCloseShiftWithOpenOrders(t *testing.T) {
 	}
 }
 
+func TestCloseShiftSucceedsWithoutOpenOrdersAndActiveCashSession(t *testing.T) {
+	f := newFixture(t)
+	shift := f.openShift(t)
+
+	closed, err := f.service.CloseShift(f.ctx, app.CloseShiftCommand{
+		CommandMeta:        f.edgeMeta(),
+		ID:                 shift.ID,
+		ClosedByEmployeeID: f.employee.ID,
+		ClosingCashAmount:  0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed.Status != domain.ShiftClosed {
+		t.Fatalf("expected closed shift, got %s", closed.Status)
+	}
+}
+
+func TestCannotCloseShiftWithActiveCashSession(t *testing.T) {
+	f := newFixture(t)
+	shift := f.openShift(t)
+	if _, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  100,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := f.service.CloseShift(f.ctx, app.CloseShiftCommand{
+		CommandMeta:        f.edgeMeta(),
+		ID:                 shift.ID,
+		ClosedByEmployeeID: f.employee.ID,
+		ClosingCashAmount:  100,
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+	got, err := f.service.GetCurrentShift(f.ctx, f.device.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != shift.ID || got.Status != domain.ShiftOpen {
+		t.Fatalf("expected shift to remain open, got %+v", got)
+	}
+}
+
 func TestCannotAddLineToClosedOrder(t *testing.T) {
 	f := newFixture(t)
 	order, _ := f.createPaidOrder(t)

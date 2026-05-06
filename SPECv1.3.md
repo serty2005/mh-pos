@@ -1,6 +1,6 @@
 # Итоговая Спецификация и Архитектура RMS/POS Платформы v1.3
 
-Статус: актуальная целевая спецификация для MVP-0 и первого запуска  
+Статус: актуальная pilot-freeze спецификация для MVP-0 и первого запуска  
 Язык проекта, документации, промптов и комментариев задач: русский  
 Дата фиксации версии: 2026-05-06
 
@@ -335,6 +335,68 @@ complex conflict resolution
 
 ---
 
+
+## ADR-011: Strict Financial Math & Rounding
+
+Решение:
+
+1. Все денежные суммы в системе (БД, API, события) передаются и хранятся исключительно в **minor units (`INTEGER`)**.
+2. Использование `REAL`, `FLOAT` или `DECIMAL/NUMERIC` для денег в persistent schema запрещено.
+3. Каждая денежная величина обязана иметь `currency_code`.
+4. Цена и скидка фиксируются в момент `OrderLineAdded`. Если после этого цена в меню изменилась, позиция в открытом заказе не пересчитывается.
+5. Порядок расчета чека: **Discount Before Tax**. Скидка применяется к сабтоталу позиции, и только на получившуюся сумму (`taxable amount`) рассчитывается налог.
+6. Округление происходит математически (`round half up`) строго на уровне каждой позиции (`line-level rounding`), а итог чека — это сумма уже округленных позиций.
+
+---
+
+## ADR-012: SQLite Write Transactions & Durability
+
+Решение:
+
+1. Все конкурентно-чувствительные write use cases стартуют транзакцию строго через `BEGIN IMMEDIATE`, а не стандартный `BEGIN` (`DEFERRED`).
+2. Функциональный минимум SQLite для `STRICT` tables — `>= 3.37.0`.
+3. Pilot-required baseline для production WAL use — `SQLite >= 3.51.3`.
+4. Допускаются backported fixed builds `3.50.7` или `3.44.6` только при явном pin в сборке и CI.
+5. Все новые финансовые таблицы (`orders`, `prechecks`, `payments`, `checks`, snapshots, outbox) должны создаваться с `STRICT`, если это не ломает совместимость текущего драйвера/мигратора.
+6. Резервное копирование SQLite для отправки в Cloud делается исключительно через `VACUUM INTO 'temp_snapshot.db'` во временный новый файл с последующей checksum/metadata валидацией.
+7. Прямое OS-level копирование active `.db`, `.db-wal`, `.db-shm` во время работы кассы не является supported backup path.
+8. `PRAGMA synchronous = NORMAL` принимается как осознанный pilot trade-off:
+   - система остается консистентной в WAL mode;
+   - при power loss может потеряться durability последнего commit.
+9. Если pilot требует максимальной durability на каждом commit, это оформляется отдельным deployment override на `synchronous = FULL` с обязательным performance test report.
+
+---
+
+## ADR-013: SQLite Runtime Gate
+
+Решение:
+
+1. При старте Edge backend обязан проверять фактическое окружение SQLite, а не только выполнять `PRAGMA`.
+2. Запуск запрещен, если не выполнены одновременно:
+   - `sqlite_version()` соответствует pilot baseline;
+   - `PRAGMA journal_mode` вернул `wal`;
+   - `PRAGMA synchronous` вернул `1 (NORMAL)` или отдельное разрешенное deployment override;
+   - `PRAGMA foreign_keys` вернул `1`;
+   - `PRAGMA busy_timeout` не меньше `5000`.
+3. Проверка выполняется fail-fast на старте процесса.
+4. `PRAGMA foreign_key_check` является частью bootstrap smoke test после миграций.
+
+---
+
+## ADR-014: Device Binding Secret Storage
+
+Решение:
+
+1. Binding code никогда не хранится в plaintext.
+2. Для verifier-side хранения используется не plain hash, а keyed verifier format:
+   - рекомендуемый default: `binding_code_hmac = HMAC-SHA-256(server_secret, code)`;
+   - memory-hard hash допустим только если это отдельно обосновано.
+3. Android production storage — keystore-backed local storage.
+4. Windows production storage — local DPAPI-protected storage.
+5. Roaming credential stores для production `device_id` запрещены.
+
+---
+
 # 5. Core Domain Boundaries
 
 Целевые bounded contexts:
@@ -488,6 +550,25 @@ Frontend business calculations
 
 ---
 
+
+## 7.1 Топология пилота (Pilot Topology)
+
+Для первого запуска (MVP-0) замораживается следующая инфраструктурная модель:
+
+1. **Один хост / all-in-one terminal:** POS UI, Go Edge Backend и SQLite физически находятся на одном устройстве.
+2. **Запрет Network FS:** размещение SQLite БД на сетевых дисках (`SMB/NFS/WebDAV`) и в sync-папках (`Google Drive / Dropbox / OneDrive`) строго запрещено.
+3. **Путь печати:** для MVP-0 фиксируется один supported path — **Network ESC/POS Printer** через локальную сеть.
+4. Сетевой принтер является периферией. Он не является частью локального хранения БД и не меняет правило all-in-one для runtime-ядра.
+
+## 7.2 Print Failure Semantics
+
+Печать не является частью финансовой транзакции.
+
+1. Ошибка печати не откатывает `IssuePrecheck`, `CapturePayment`, `CheckCreated` и `OrderClosed`.
+2. После неудачной печати UI обязан показать оператору статус ошибки и действие `Reprint`.
+3. Backend обязан повторно сформировать печатный payload из сохраненного snapshot, а не пересчитывать суммы заново.
+4. Повторная печать precheck/check обязательна для MVP-0.
+
 # 8. Synchronization Protocol
 
 В системе закреплен корпоративный стандарт обмена — SyncEnvelope.
@@ -495,14 +576,14 @@ Frontend business calculations
 Любая write-операция выполняется в одной транзакции:
 
 ```text
-BEGIN
+BEGIN IMMEDIATE
   business logic writes
   local_event_log append
   pos_sync_outbox append
 COMMIT
 ```
 
-Если событие попало в бизнес-таблицу, но не попало в local_event_log/outbox — это bug.
+Если событие попало в бизнес-таблицу, но не попало в `local_event_log` / `pos_sync_outbox` — это bug.
 
 ---
 
@@ -520,17 +601,17 @@ aggregate_id
 restaurant_id
 device_id
 shift_id nullable
-occurred_at
+occurred_at_utc
 payload
 ```
 
-`event_id` является уникальным edge event identifier.
+`event_id` является уникальным Edge event identifier. Каждый write API должен принимать стабильный `command_id`, чтобы client retries не создавали повторные бизнес-факты.
 
 ---
 
 ## 8.2 Idempotency Key для Cloud
 
-Стандарт v1.3:
+Стандарт v1.3 pilot freeze:
 
 ```text
 restaurant_id : device_id : event_id
@@ -558,78 +639,118 @@ aggregate_type
 aggregate_id
 event_type
 payload
-status
+status                 -- pending | processing | sent | failed | suspended
+sequence_no            -- monotonic local ordering key
 attempts
 next_retry_at
 last_error
-created_at
-updated_at
-sent_at nullable
+locked_at nullable
+locked_by nullable
+created_at_utc
+updated_at_utc
+sent_at_utc nullable
 ```
 
-Статусы:
+`sequence_no` — канонический ключ порядка доставки. Worker всегда выбирает батчи так:
 
-```text
-pending
-sending
-sent
-failed
+```sql
+ORDER BY sequence_no ASC
 ```
 
-Допустимо использовать `suspended` вместо `failed`, если в коде это будет единообразно.
+Для `sequence_no` допускается `INTEGER PRIMARY KEY AUTOINCREMENT`, потому что outbox нужен не переиспользуемый ordering key даже после purge старых `sent` записей.
 
 ---
 
 ## 8.4 Retry Policy
 
-Sync worker не должен бесконечно долбить Cloud.
-
-Правило:
+Для MVP-0 фиксируются значения:
 
 ```text
-next_retry_at = now + min(2 ^ attempts seconds, 5 minutes)
+base_delay_ms = 1000
+max_delay_ms  = 300000
+lease_ttl_seconds = 120
+max_attempts_before_suspended = 20
 ```
 
-Примеры:
+Формула:
 
 ```text
-attempt 1 → 2 seconds
-attempt 2 → 4 seconds
-attempt 3 → 8 seconds
-...
-max interval → 5 minutes
+delay_ms = min(base_delay_ms * 2^attempts, max_delay_ms) + random(0, 1000)
 ```
+
+При `attempts > 20` статус меняется на `suspended`.
 
 Worker выбирает только:
 
 ```text
 status = 'pending'
-AND next_retry_at <= now
+AND (next_retry_at IS NULL OR next_retry_at <= now_utc)
 ```
 
 ---
 
-## 8.5 Dead-letter в SQLite
+## 8.5 Item-level ACK от Cloud
 
-В MVP не строим отдельную DLQ через Kafka/RabbitMQ.
+Cloud не возвращает `all-or-nothing`. Для каждого события в батче Cloud обязан вернуть индивидуальный статус:
 
-Если:
+- `accepted`: Edge ставит `status = 'sent'`.
+- `duplicate`: Edge ставит `status = 'sent'`.
+- `retryable_error`: Edge увеличивает `attempts`, рассчитывает `next_retry_at` и возвращает запись в `pending`.
+- `terminal_error`: Edge ставит `status = 'failed'`.
 
-```text
-attempts > 20
+Минимальный формат batch ACK:
+
+```json
+{
+  "batch_id": "uuid",
+  "results": [
+    {
+      "event_id": "uuid",
+      "status": "accepted | duplicate | retryable_error | terminal_error",
+      "error_code": "optional_machine_code",
+      "message": "optional_human_message"
+    }
+  ]
+}
 ```
-
-то:
-
-```text
-status = 'failed'
-```
-
-Такие события автоматически не берутся worker-ом, чтобы не блокировать очередь.
 
 ---
 
-## 8.6 Manual Retry Failed Syncs
+## 8.6 Retry Classification
+
+По умолчанию retryable:
+
+- timeout;
+- network unavailable;
+- DNS/TLS transient failure;
+- HTTP `408`, `425`, `429`, `500`, `502`, `503`, `504`.
+
+По умолчанию terminal:
+
+- schema validation error;
+- malformed JSON envelope;
+- unsupported `event_type` / `event_version`;
+- signature/authentication failure на payload level.
+
+---
+
+## 8.7 Lease Recovery для Outbox
+
+Для предотвращения зависания событий со статусом `processing`:
+
+- Worker при взятии батча обновляет `status = 'processing'`, `locked_at = now_utc`, `locked_by = worker_instance_id`.
+- При следующем цикле Worker имеет право reclaim-события:
+
+```sql
+WHERE status = 'processing'
+  AND locked_at < now_utc - interval '120 seconds'
+```
+
+- При reclaim запись возвращается в `pending`, а `locked_at` и `locked_by` очищаются.
+
+---
+
+## 8.8 Manual Retry Failed Syncs
 
 В UI менеджера должна быть операция:
 
@@ -642,8 +763,10 @@ Retry Failed Syncs
 ```text
 status = 'pending'
 attempts = 0
-next_retry_at = now
+next_retry_at = null
 last_error = null or preserved separately
+locked_at = null
+locked_by = null
 ```
 
 Операция может требовать Manager Override в зависимости от политики ресторана.
@@ -724,6 +847,46 @@ kds events
 Если устройство сгорело, новое устройство проходит привязку заново и получает новый `device_id`.
 
 Нельзя переиспользовать старый `device_id` без процедуры восстановления, явно подтвержденной менеджером/администратором.
+
+---
+
+
+## 9.4 Безопасность Binding Flow и жизненный цикл
+
+Для защиты процесса привязки устройства вводятся строгие ограничения.
+
+### Binding Code
+
+- Длина: 8 цифровых символов.
+- TTL: строго 10 минут.
+- Single-use: код сгорает сразу после первого успешного применения.
+- Rate limiting: максимум 5 неудачных попыток, после чего код инвалидируется.
+- Resend: генерация нового кода немедленно инвалидирует предыдущий.
+- Запрет логирования: binding code никогда не пишется в plaintext ни в логи, ни в БД.
+- Verifier-side хранение: `binding_code_hmac` или иной keyed verifier format.
+
+### Транспорт
+
+- Процесс привязки и вся дальнейшая синхронизация работают только по TLS 1.2/1.3.
+- Production sync/provisioning по открытому HTTP запрещены.
+
+### Жизненный цикл устройства
+
+```text
+pending -> active -> revoked -> replaced
+```
+
+### Защита от клонирования
+
+- При restore ОС, клонировании диска или reinstall приложения старый `device_id` запрещено переиспользовать молча.
+- Приложение обязано потребовать повторную авторизацию (`Rebind`) менеджером.
+- Только authoritative registrar может перевести старый `device_id` в `replaced` и выдать новый.
+
+### Хранение identity на клиенте
+
+- Android: keystore-backed local storage.
+- Windows: local DPAPI-protected storage.
+- Roaming credential stores для production `device_id` запрещены.
 
 ---
 
@@ -885,7 +1048,90 @@ Reopen «как есть» запрещен.
 
 ---
 
-## 10.8 Generic Tax Engine
+
+## 10.8 Refund Flow, блокировка отмены и частичные оплаты
+
+Refund включен в MVP-0 как минимальный compensating flow.
+
+1. Если precheck имеет `paid_total_minor > 0`, его отмена через Manager Override строго запрещена.
+2. Менеджер инициирует `RefundPayment` через Manager PIN.
+3. Создается новая immutable ledger row в `payments`.
+4. Refund использует отрицательную сумму: `amount_minor < 0`.
+5. Refund обязан иметь `original_payment_id`, указывающий на исходный capture.
+6. Refund обязан иметь `entry_kind = 'refund'`.
+7. Исходный платеж capture обязан иметь `entry_kind = 'capture'`.
+8. `paid_total_minor = sum(capture.amount_minor) + sum(refund.amount_minor)`.
+9. Только когда `paid_total_minor = 0`, менеджер может выполнить `CancelPrecheck` и разблокировать заказ для редактирования.
+
+Partial payment в MVP-0 не вводит отдельный статус `partially_paid`: precheck остается `issued`, а факт частичной оплаты определяется как:
+
+```text
+status = 'issued' AND paid_total_minor > 0
+```
+
+---
+
+## 10.9 Матрица состояний и блокировки
+
+| Entity | From | Command | To | Actor | Инварианты |
+|---|---|---|---|---|---|
+| Order | `open` | `IssuePrecheck` | `locked` | cashier | active shift, snapshot created, outbox written |
+| Order | `locked` | `CancelPrecheck` | `open` | manager | only when `paid_total_minor = 0` |
+| Order | `locked` | `CreateFinalCheck` | `closed` | system | only after full payment |
+| Precheck | none | `IssuePrecheck` | `issued` | cashier | one issued precheck per order |
+| Precheck | `issued` | `SupersedePrecheck` | `superseded` | system | forbidden if `paid_total_minor > 0` |
+| Precheck | `issued` | `CancelPrecheck` | `cancelled` | manager | forbidden if `paid_total_minor > 0` |
+| Precheck | `issued` | `CapturePayment` partial | `issued` | cashier | paid amount tracked by ledger sum |
+| Precheck | `issued` | `CapturePayment` full | `paid` | system | final check created in same transaction |
+| Payment | none | `CapturePayment` | `captured` | cashier | immutable positive ledger row |
+| Payment | `captured` | `RefundPayment` | unchanged | manager | new negative ledger row, original row unchanged |
+| Check | none | `CreateFinalCheck` | `created` | system | only after full payment; immutable |
+
+Запрещенные переходы:
+
+- `Check` до полной оплаты.
+- `Payment` без active shift.
+- `Payment` для `cancelled` или `superseded` precheck.
+- `CancelPrecheck` при `paid_total_minor > 0`.
+- Изменение `Order` после active precheck без cancel/refund flow.
+
+---
+
+## 10.10 Payment Data Shape for MVP-0
+
+Минимальные обязательные поля платежа:
+
+```text
+payment_id
+precheck_id
+original_payment_id NULL
+entry_kind          -- capture | refund
+method              -- cash | trusted_card
+status              -- captured | refunded
+amount_minor        -- signed INTEGER
+currency_code
+provider_reference NULL
+terminal_id NULL
+auth_code NULL
+operator_note NULL
+captured_at_utc
+business_date_local
+device_id
+shift_id
+cash_session_id
+operator_user_id
+```
+
+Для cash, если пилот включает наличные с выдачей сдачи, дополнительно фиксируются:
+
+```text
+tendered_amount_minor
+change_amount_minor
+```
+
+---
+
+## 10.11 Generic Tax Engine
 
 Налоги не хардкодятся.
 
@@ -979,6 +1225,19 @@ open_drawer
 ```
 
 Все события пишутся append-only и синхронизируются через outbox.
+
+---
+
+
+## 11.4 Business Date и время
+
+Кассовый день не совпадает с календарным.
+
+- Для всех бизнес-сущностей (`shifts`, `cash_sessions`, `prechecks`, `payments`, `checks`) вводится обязательное поле `business_date_local`.
+- Формат: строка `YYYY-MM-DD` в таймзоне ресторана на момент открытия смены.
+- Все системные timestamps (`created_at`, `occurred_at`, `locked_at`, `sent_at`) в БД и событиях хранятся в UTC формате RFC3339Nano.
+- Опора на локальное не-нормализованное время сервера запрещена.
+- Cloud всегда пишет отдельный `received_at_utc`.
 
 ---
 
@@ -1094,6 +1353,26 @@ PCI-safe payload cleaning
 ```
 
 Raw payload нельзя хранить с PAN/SAD/PII без очистки. Payment Evidence Archive проектируется отдельно.
+
+---
+
+
+## 12.6 Security & Manager PIN Handling
+
+1. Менеджерский PIN хэшируется алгоритмом **Argon2id** или documented fallback (`scrypt` / `PBKDF2`).
+2. Plaintext PIN хранить запрещено.
+3. PIN, OTP, access token, refresh token и любые аутентификационные секреты никогда не должны попадать в `local_event_log`, `pos_sync_outbox`, `manager_override_logs` или application logs.
+4. Override действует на **одно действие**. Одно действие = один ввод PIN.
+5. В `manager_override_logs` обязательно пишутся `target_id`, `target_type`, `reason_code`, `manager_user_id`, `cashier_user_id`, `device_id`, `created_at_utc`, `outcome`.
+
+---
+
+## 12.7 Payment Data Compliance
+
+1. `CVV/CVC`, track data, PIN block и полный `PAN` не хранятся в БД и не передаются в Cloud ни при каких условиях.
+2. `provider_reference` используется только для безопасных reference-значений эквайера / терминала.
+3. Если в будущем потребуется хранить отображаемый card fragment, для этого используется отдельное display-only поле `masked_pan`, а не `provider_reference`.
+4. Raw PSP payload storage проектируется отдельно и только после PCI-safe filtering.
 
 ---
 
@@ -1322,6 +1601,56 @@ hash/checksum
 ```
 
 Нельзя автоматически переиспользовать старый device_id без явного recovery flow.
+
+---
+
+
+## 16.3 Безопасный Snapshot
+
+Поскольку база работает в режиме WAL, `.db`, `.db-wal` и `.db-shm` нельзя считать произвольно копируемым live backup contract.
+
+- Edge выполняет online snapshot только через `VACUUM INTO 'temp_snapshot.db'`.
+- Целевой файл snapshot не должен существовать заранее.
+- После успешного завершения snapshot вычисляется SHA-256 checksum.
+- Только после успешной валидации snapshot архивируется и отправляется в Cloud.
+- Простое OS-level копирование active DB не считается supported recovery procedure.
+
+---
+
+## 16.4 Metadata Bundle
+
+Snapshot отправляется не “голым” файлом, а metadata bundle:
+
+```text
+snapshot.db
+metadata.json
+sha256
+```
+
+`metadata.json` минимум:
+
+```json
+{
+  "schema_version": "...",
+  "app_version": "...",
+  "sqlite_version": "...",
+  "device_id": "...",
+  "restaurant_id": "...",
+  "created_at_utc": "..."
+}
+```
+
+---
+
+## 16.5 Recovery Flow
+
+При восстановлении базы из snapshot на новом железе часть событий в `pos_sync_outbox` может оставаться в `pending`.
+
+Это штатная ситуация:
+
+- Edge отправит их повторно.
+- Cloud безопасно проигнорирует дубликаты благодаря `event_id`-based idempotency.
+- Повторная отправка после restore считается частью нормального recovery, а не инцидентом.
 
 ---
 
@@ -2066,3 +2395,9 @@ Stage 3: Orders, Prechecks & Taxes
 Stage 4: Payments & Final Checks
 First Launch Readiness
 ```
+
+---
+
+# Codex Usage Note
+
+Эти файлы являются актуальными pilot-freeze источниками для формирования промптов Codex. Перед генерацией кода агент должен использовать их вместе с `AGENTS.md`, `README.md`, текущей структурой репозитория и существующими тестами. Запрещено возвращаться к старой модели `Order -> Check -> Payment`, хранить деньги не как minor units, делать live backup через прямое копирование active WAL DB, хранить PIN/OTP в plaintext или считать печать частью финансового commit.
