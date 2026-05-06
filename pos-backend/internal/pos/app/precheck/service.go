@@ -76,6 +76,11 @@ func (s *Service) IssuePrecheck(ctx context.Context, cmd IssuePrecheckCommand) (
 		if err := s.repo.CreatePrecheck(ctx, precheck); err != nil {
 			return err
 		}
+		order.Status = domain.OrderLocked
+		order.UpdatedAt = now
+		if err := s.repo.UpdateOrderLocked(ctx, order); err != nil {
+			return err
+		}
 		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Precheck", precheck.ID, "PrecheckIssued", precheck)
 	})
 	return precheck, err

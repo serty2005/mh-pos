@@ -522,7 +522,7 @@ func TestCannotCloseOrderWithoutFullPayment(t *testing.T) {
 	}
 }
 
-func TestIssuePrecheckCreatesDormantSnapshotWithoutLegacyCheck(t *testing.T) {
+func TestIssuePrecheckCreatesDormantSnapshotAndLocksOrderWithoutLegacyCheck(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
@@ -553,6 +553,13 @@ func TestIssuePrecheckCreatesDormantSnapshotWithoutLegacyCheck(t *testing.T) {
 	if checks := countRows(t, f, "checks"); checks != checksBefore {
 		t.Fatalf("expected legacy checks to remain unchanged, before=%d after=%d", checksBefore, checks)
 	}
+	lockedOrder, err := f.repo.GetOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lockedOrder.Status != domain.OrderLocked {
+		t.Fatalf("expected order to be locked, got %s", lockedOrder.Status)
+	}
 	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+1 {
 		t.Fatalf("expected one outbox row, before=%d after=%d", outboxBefore, outbox)
 	}
@@ -565,6 +572,109 @@ func TestIssuePrecheckCreatesDormantSnapshotWithoutLegacyCheck(t *testing.T) {
 	}
 	if active.ID != precheck.ID {
 		t.Fatalf("expected active precheck %s, got %s", precheck.ID, active.ID)
+	}
+}
+
+func TestCannotAddLineToLockedOrder(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+}
+
+func TestIssuePrecheckRollbackKeepsOrderOpenWhenLocalEventOrOutboxFails(t *testing.T) {
+	cases := []struct {
+		name    string
+		repo    func(*possqlite.Repository) ports.Repository
+		wantErr error
+	}{
+		{
+			name:    "local-event",
+			repo:    func(repo *possqlite.Repository) ports.Repository { return localEventFailingRepo{Repository: repo} },
+			wantErr: errInjectedLocalEvent,
+		},
+		{
+			name:    "outbox",
+			repo:    func(repo *possqlite.Repository) ports.Repository { return outboxFailingRepo{Repository: repo} },
+			wantErr: errInjectedOutbox,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.openShift(t)
+			order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+				t.Fatal(err)
+			}
+			prechecksBefore := countRows(t, f, "prechecks")
+			outboxBefore := countRows(t, f, "pos_sync_outbox")
+			eventsBefore := countRows(t, f, "local_event_log")
+			service := app.NewService(tc.repo(f.repo), platformsqlite.NewTxManager(f.db), &testIDs{n: 5000}, fixedClock{})
+
+			_, err = service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
+				CommandMeta: app.CommandMeta{CommandID: "cmd-precheck-fails-" + tc.name, DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+				OrderID:     order.ID,
+			})
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("expected injected failure, got %v", err)
+			}
+			if prechecks := countRows(t, f, "prechecks"); prechecks != prechecksBefore {
+				t.Fatalf("expected no partial precheck write, before=%d after=%d", prechecksBefore, prechecks)
+			}
+			if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+				t.Fatalf("expected no partial local event write, before=%d after=%d", eventsBefore, events)
+			}
+			if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+				t.Fatalf("expected no partial outbox write, before=%d after=%d", outboxBefore, outbox)
+			}
+			got, err := f.repo.GetOrder(f.ctx, order.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != domain.OrderOpen {
+				t.Fatalf("expected order to remain open, got %s", got.Status)
+			}
+			if _, err := f.repo.GetActivePrecheckByOrder(f.ctx, order.ID); !errors.Is(err, domain.ErrNotFound) {
+				t.Fatalf("expected no active precheck, got %v", err)
+			}
+		})
+	}
+}
+
+func TestCannotCloseShiftWithLockedOrders(t *testing.T) {
+	f := newFixture(t)
+	shift := f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = f.service.CloseShift(f.ctx, app.CloseShiftCommand{CommandMeta: f.edgeMeta(), ID: shift.ID, ClosedByEmployeeID: f.employee.ID, ClosingCashAmount: 0})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected conflict, got %v", err)
 	}
 }
 

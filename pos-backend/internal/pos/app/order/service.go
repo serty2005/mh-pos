@@ -122,7 +122,7 @@ func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*d
 			return err
 		}
 		if order.Status != domain.OrderOpen {
-			return fmt.Errorf("%w: cannot add line to closed order", domain.ErrConflict)
+			return fmt.Errorf("%w: cannot add line to non-open order", domain.ErrConflict)
 		}
 		menuItem, err := s.repo.GetMenuItem(ctx, cmd.MenuItemID)
 		if err != nil {

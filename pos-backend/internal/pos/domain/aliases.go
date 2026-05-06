@@ -54,6 +54,7 @@ type Order = order.Order
 
 const (
 	OrderOpen      = order.OrderOpen
+	OrderLocked    = order.OrderLocked
 	OrderClosed    = order.OrderClosed
 	OrderCancelled = order.OrderCancelled
 )

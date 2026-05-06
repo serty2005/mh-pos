@@ -32,7 +32,7 @@
 - shifts;
 - cash sessions;
 - cash drawer events;
-- минимальный prechecks foundation: SQLite table, domain model, repository, dormant `IssuePrecheck`;
+- минимальный prechecks foundation: SQLite table, domain model, repository, dormant `IssuePrecheck`, order locking;
 - базовые orders/checks/payments;
 - device registration foundation;
 - SQLite migrations для первого запуска локальной БД;
@@ -44,7 +44,7 @@
 Order -> Precheck -> Payment -> Check
 ```
 
-Текущее ограничение: precheck foundation added, runtime flow still legacy. Legacy `CreateCheck` и payment-to-check flow intentionally сохранены до полноценного Precheck Core.
+Текущее ограничение: precheck foundation added, runtime flow still legacy. App-level `IssuePrecheck` уже locks order, но legacy `CreateCheck` и payment-to-check flow intentionally сохранены до полноценного Precheck Core.
 
 ---
 

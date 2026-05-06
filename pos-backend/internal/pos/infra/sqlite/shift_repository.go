@@ -59,6 +59,6 @@ func (r *Repository) scanShift(row *sql.Row) (*domain.Shift, error) {
 
 func (r *Repository) HasOpenOrdersForShift(ctx context.Context, shiftID string) (bool, error) {
 	var n int
-	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT COUNT(1) FROM orders WHERE shift_id = ? AND status = 'open'`, shiftID).Scan(&n)
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT COUNT(1) FROM orders WHERE shift_id = ? AND status IN ('open', 'locked')`, shiftID).Scan(&n)
 	return n > 0, normalizeErr(err)
 }

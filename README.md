@@ -22,12 +22,12 @@ Order -> Precheck -> Payment -> Check
 - `pos_sync_outbox`;
 - `SyncEnvelope` foundation;
 - shifts, cash sessions, cash drawer events;
-- minimal prechecks foundation: schema, domain model, repository, dormant `IssuePrecheck` app service;
+- minimal prechecks foundation: schema, domain model, repository, dormant `IssuePrecheck` app service that locks the order;
 - orders/checks/payments legacy foundation;
 - `payment_attempts`;
 - read-only sync endpoints.
 
-Честное ограничение текущего кода: POS Edge backend еще не переведен на precheck flow. Precheck foundation added, runtime flow still legacy. Текущие endpoints и use cases вокруг check/payment являются legacy foundation и не должны восприниматься как целевая v1.3 модель.
+Честное ограничение текущего кода: POS Edge backend еще не переведен на precheck flow. Precheck foundation added, runtime flow still legacy; app-level `IssuePrecheck` уже переводит order в `locked`, но публичного endpoint для этого flow пока нет. Текущие endpoints и use cases вокруг check/payment являются legacy foundation и не должны восприниматься как целевая v1.3 модель.
 
 ## Структура Монорепозитория
 
@@ -176,7 +176,7 @@ go test ./...
 - Architecture Lock: v1.3.
 - Target financial model: `Order -> Precheck -> Payment -> Check`.
 - Production data migration before first launch: не требуется.
-- POS Edge code: legacy runtime flow, еще не переведен на precheck flow; precheck foundation added без публичного API переключения.
+- POS Edge code: legacy runtime flow, еще не переведен на precheck flow; precheck foundation added без публичного API переключения, app-level `IssuePrecheck` locks order.
 - `local_event_log` уже является частью edge foundation, хранит `command_id` той же write-операции, что и outbox, и доступен read-only через `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`.
 - Sync outbox доступен через `GET /api/v1/sync/outbox`.
 - Edge financial foundation включает `prechecks`, `payment_attempts`, `cash_sessions`, `cash_drawer_events` и базовые HTTP endpoints для cash session/drawer workflows.

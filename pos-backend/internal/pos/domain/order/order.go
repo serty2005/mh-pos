@@ -10,6 +10,7 @@ type OrderStatus string
 
 const (
 	OrderOpen      OrderStatus = "open"
+	OrderLocked    OrderStatus = "locked"
 	OrderClosed    OrderStatus = "closed"
 	OrderCancelled OrderStatus = "cancelled"
 )

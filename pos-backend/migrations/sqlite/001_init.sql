@@ -86,7 +86,7 @@ CREATE TABLE orders (
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
   device_id TEXT NOT NULL REFERENCES devices(id),
   shift_id TEXT NOT NULL REFERENCES shifts(id),
-  status TEXT NOT NULL CHECK (status IN ('open', 'closed', 'cancelled')),
+  status TEXT NOT NULL CHECK (status IN ('open', 'locked', 'closed', 'cancelled')),
   table_name TEXT NOT NULL,
   guest_count INTEGER NOT NULL,
   opened_at TEXT NOT NULL,

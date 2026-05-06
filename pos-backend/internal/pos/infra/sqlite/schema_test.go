@@ -119,6 +119,20 @@ func TestPrecheckFoundationTableExists(t *testing.T) {
 	}
 }
 
+func TestOrdersAllowLockedStatus(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	seedFinancialForSchemaTests(t, ctx, db)
+
+	execSchema(t, ctx, db, `INSERT INTO orders(id,edge_order_id,restaurant_id,device_id,shift_id,status,table_name,guest_count,opened_at,created_at,updated_at) VALUES ('order-locked','edge-order-locked','restaurant-1','device-1','shift-1','locked','A2',1,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
+	var status string
+	if err := db.QueryRowContext(ctx, `SELECT status FROM orders WHERE id = 'order-locked'`).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "locked" {
+		t.Fatalf("expected locked status, got %s", status)
+	}
+}
+
 func TestPrechecksAllowOnlyOneIssuedPrecheckPerOrder(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)
