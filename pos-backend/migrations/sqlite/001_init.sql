@@ -122,20 +122,305 @@ CREATE TABLE checks (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE prechecks (
+  id TEXT PRIMARY KEY,
+  order_id TEXT NOT NULL REFERENCES orders(id),
+  status TEXT NOT NULL CHECK (status IN ('issued', 'closed', 'cancelled', 'superseded')),
+  version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
+  supersedes_precheck_id TEXT CHECK (supersedes_precheck_id IS NULL OR supersedes_precheck_id <> ''),
+  subtotal INTEGER NOT NULL CHECK (subtotal >= 0),
+  discount_total INTEGER NOT NULL CHECK (discount_total >= 0),
+  tax_total INTEGER NOT NULL CHECK (tax_total >= 0),
+  total INTEGER NOT NULL CHECK (total >= 0),
+  paid_total INTEGER NOT NULL DEFAULT 0 CHECK (paid_total >= 0),
+  created_at TEXT NOT NULL,
+  issued_at TEXT NOT NULL,
+  closed_at TEXT,
+  cancelled_by_employee_id TEXT REFERENCES employees(id),
+  cancellation_reason TEXT CHECK (cancellation_reason IS NULL OR cancellation_reason <> ''),
+  CHECK (total = subtotal - discount_total + tax_total),
+  CHECK (paid_total <= total),
+  CHECK (closed_at IS NULL OR status IN ('closed', 'cancelled', 'superseded')),
+  CHECK (closed_at IS NOT NULL OR status = 'issued')
+);
+
+CREATE UNIQUE INDEX prechecks_one_issued_per_order ON prechecks(order_id) WHERE status = 'issued';
+CREATE UNIQUE INDEX prechecks_order_version ON prechecks(order_id, version);
+CREATE INDEX prechecks_order_id_created_at ON prechecks(order_id, created_at);
+
 CREATE TABLE payments (
   id TEXT PRIMARY KEY,
-  check_id TEXT NOT NULL REFERENCES checks(id),
+  edge_payment_id TEXT NOT NULL UNIQUE,
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+  device_id TEXT NOT NULL REFERENCES devices(id),
+  shift_id TEXT NOT NULL REFERENCES shifts(id),
+  precheck_id TEXT NOT NULL REFERENCES prechecks(id),
   method TEXT NOT NULL CHECK (method IN ('cash', 'card', 'other')),
   amount INTEGER NOT NULL CHECK (amount > 0),
   currency TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('captured', 'refunded', 'failed')),
+  provider_name TEXT CHECK (provider_name IS NULL OR provider_name <> ''),
+  provider_transaction_id TEXT CHECK (provider_transaction_id IS NULL OR provider_transaction_id <> ''),
+  provider_reference TEXT CHECK (provider_reference IS NULL OR provider_reference <> ''),
+  fingerprint_hash TEXT CHECK (fingerprint_hash IS NULL OR fingerprint_hash <> ''),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 
+CREATE INDEX payments_precheck_id_created_at ON payments(precheck_id, created_at);
+CREATE INDEX payments_provider_transaction_id ON payments(provider_name, provider_transaction_id) WHERE provider_transaction_id IS NOT NULL;
+CREATE INDEX payments_fingerprint_hash ON payments(fingerprint_hash) WHERE fingerprint_hash IS NOT NULL;
+
+CREATE TABLE payment_attempts (
+  id TEXT PRIMARY KEY,
+  payment_id TEXT NOT NULL REFERENCES payments(id),
+  attempt_no INTEGER NOT NULL CHECK (attempt_no > 0),
+  method TEXT NOT NULL CHECK (method IN ('cash', 'card', 'other')),
+  amount INTEGER NOT NULL CHECK (amount > 0),
+  currency TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('captured', 'failed')),
+  provider_name TEXT CHECK (provider_name IS NULL OR provider_name <> ''),
+  provider_transaction_id TEXT CHECK (provider_transaction_id IS NULL OR provider_transaction_id <> ''),
+  provider_reference TEXT CHECK (provider_reference IS NULL OR provider_reference <> ''),
+  fingerprint_hash TEXT CHECK (fingerprint_hash IS NULL OR fingerprint_hash <> ''),
+  attempted_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(payment_id, attempt_no)
+);
+
+CREATE INDEX payment_attempts_payment_id_attempt_no ON payment_attempts(payment_id, attempt_no);
+CREATE INDEX payment_attempts_provider_transaction_id ON payment_attempts(provider_name, provider_transaction_id) WHERE provider_transaction_id IS NOT NULL;
+
+CREATE TABLE cash_sessions (
+  id TEXT PRIMARY KEY,
+  edge_cash_session_id TEXT NOT NULL UNIQUE,
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+  device_id TEXT NOT NULL REFERENCES devices(id),
+  shift_id TEXT NOT NULL REFERENCES shifts(id),
+  opened_by_employee_id TEXT NOT NULL REFERENCES employees(id),
+  closed_by_employee_id TEXT REFERENCES employees(id),
+  status TEXT NOT NULL CHECK (status IN ('open', 'closed')),
+  opening_cash_amount INTEGER NOT NULL CHECK (opening_cash_amount >= 0),
+  closing_cash_amount INTEGER CHECK (closing_cash_amount IS NULL OR closing_cash_amount >= 0),
+  opened_at TEXT NOT NULL,
+  closed_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX cash_sessions_one_open_per_device ON cash_sessions(device_id) WHERE status = 'open';
+CREATE INDEX cash_sessions_shift_id ON cash_sessions(shift_id);
+
+CREATE TABLE cash_drawer_events (
+  id TEXT PRIMARY KEY,
+  edge_cash_drawer_event_id TEXT NOT NULL UNIQUE,
+  cash_session_id TEXT NOT NULL REFERENCES cash_sessions(id),
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+  device_id TEXT NOT NULL REFERENCES devices(id),
+  shift_id TEXT NOT NULL REFERENCES shifts(id),
+  created_by_employee_id TEXT NOT NULL REFERENCES employees(id),
+  event_type TEXT NOT NULL CHECK (event_type IN ('cash_in', 'cash_out', 'no_sale', 'cash_count')),
+  amount INTEGER NOT NULL CHECK (amount >= 0),
+  reason TEXT CHECK (reason IS NULL OR reason <> ''),
+  note TEXT CHECK (note IS NULL OR note <> ''),
+  occurred_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX cash_drawer_events_cash_session_created_at ON cash_drawer_events(cash_session_id, created_at);
+CREATE INDEX cash_drawer_events_shift_created_at ON cash_drawer_events(shift_id, created_at);
+
+CREATE TABLE manager_override_audit (
+  id TEXT PRIMARY KEY,
+  command_id TEXT NOT NULL,
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+  device_id TEXT NOT NULL REFERENCES devices(id),
+  shift_id TEXT NOT NULL REFERENCES shifts(id),
+  order_id TEXT NOT NULL REFERENCES orders(id),
+  precheck_id TEXT NOT NULL REFERENCES prechecks(id),
+  manager_employee_id TEXT NOT NULL REFERENCES employees(id),
+  action TEXT NOT NULL CHECK (action IN ('cancel_precheck')),
+  reason TEXT NOT NULL CHECK (reason <> ''),
+  occurred_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX manager_override_audit_precheck_created_at ON manager_override_audit(precheck_id, created_at);
+CREATE INDEX manager_override_audit_manager_created_at ON manager_override_audit(manager_employee_id, created_at);
+
+CREATE TABLE recipe_versions (
+  id TEXT PRIMARY KEY,
+  dish_catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
+  version INTEGER NOT NULL CHECK (version > 0),
+  name TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('draft', 'active', 'archived')),
+  yield_quantity INTEGER NOT NULL CHECK (yield_quantity > 0),
+  yield_unit TEXT NOT NULL,
+  active INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(dish_catalog_item_id, version)
+);
+
+CREATE TABLE recipe_lines (
+  id TEXT PRIMARY KEY,
+  recipe_version_id TEXT NOT NULL REFERENCES recipe_versions(id),
+  catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  unit TEXT NOT NULL,
+  loss_percent INTEGER NOT NULL CHECK (loss_percent >= 0 AND loss_percent <= 100),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(recipe_version_id, catalog_item_id)
+);
+
+CREATE TABLE purchase_receipts (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+  device_id TEXT NOT NULL REFERENCES devices(id),
+  supplier_name TEXT NOT NULL,
+  document_number TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+  received_at TEXT NOT NULL,
+  total_amount INTEGER NOT NULL CHECK (total_amount >= 0),
+  currency TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE purchase_receipt_lines (
+  id TEXT PRIMARY KEY,
+  purchase_receipt_id TEXT NOT NULL REFERENCES purchase_receipts(id),
+  catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  unit TEXT NOT NULL,
+  unit_cost INTEGER NOT NULL CHECK (unit_cost >= 0),
+  total_cost INTEGER NOT NULL CHECK (total_cost >= 0),
+  currency TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE stock_documents (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+  device_id TEXT NOT NULL REFERENCES devices(id),
+  document_type TEXT NOT NULL CHECK (document_type IN ('purchase_receipt', 'adjustment', 'transfer', 'write_off', 'production')),
+  source_type TEXT,
+  source_id TEXT,
+  status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
+  occurred_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE stock_moves (
+  id TEXT PRIMARY KEY,
+  stock_document_id TEXT NOT NULL REFERENCES stock_documents(id),
+  catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
+  location_id TEXT,
+  movement_type TEXT NOT NULL CHECK (movement_type IN ('in', 'out', 'adjustment')),
+  quantity INTEGER NOT NULL CHECK (quantity <> 0),
+  unit TEXT NOT NULL,
+  unit_cost INTEGER CHECK (unit_cost IS NULL OR unit_cost >= 0),
+  total_cost INTEGER CHECK (total_cost IS NULL OR total_cost >= 0),
+  occurred_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TRIGGER stock_moves_no_update
+BEFORE UPDATE ON stock_moves
+BEGIN
+  SELECT RAISE(ABORT, 'stock_moves are append-only');
+END;
+
+CREATE TRIGGER stock_moves_no_delete
+BEFORE DELETE ON stock_moves
+BEGIN
+  SELECT RAISE(ABORT, 'stock_moves are append-only');
+END;
+
+CREATE TABLE stock_balances (
+  id TEXT PRIMARY KEY,
+  catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
+  location_id TEXT,
+  quantity INTEGER NOT NULL,
+  unit TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX stock_balances_catalog_location ON stock_balances(catalog_item_id, location_id) WHERE location_id IS NOT NULL;
+
+CREATE TABLE item_costs (
+  id TEXT PRIMARY KEY,
+  catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
+  cost_type TEXT NOT NULL CHECK (cost_type IN ('last_purchase', 'moving_average')),
+  amount INTEGER NOT NULL CHECK (amount >= 0),
+  currency TEXT NOT NULL,
+  source_type TEXT,
+  source_id TEXT,
+  effective_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX item_costs_catalog_type_effective_at ON item_costs(catalog_item_id, cost_type, effective_at);
+
+CREATE TRIGGER recipe_versions_dish_catalog_item_insert
+BEFORE INSERT ON recipe_versions
+FOR EACH ROW
+WHEN NOT EXISTS (SELECT 1 FROM catalog_items WHERE id = NEW.dish_catalog_item_id AND type = 'dish')
+BEGIN
+  SELECT RAISE(ABORT, 'recipe version must reference dish catalog item');
+END;
+
+CREATE TRIGGER recipe_versions_dish_catalog_item_update
+BEFORE UPDATE OF dish_catalog_item_id ON recipe_versions
+FOR EACH ROW
+WHEN NOT EXISTS (SELECT 1 FROM catalog_items WHERE id = NEW.dish_catalog_item_id AND type = 'dish')
+BEGIN
+  SELECT RAISE(ABORT, 'recipe version must reference dish catalog item');
+END;
+
+CREATE TRIGGER recipe_lines_ingredient_or_good_insert
+BEFORE INSERT ON recipe_lines
+FOR EACH ROW
+WHEN NOT EXISTS (SELECT 1 FROM catalog_items WHERE id = NEW.catalog_item_id AND type IN ('ingredient', 'good'))
+BEGIN
+  SELECT RAISE(ABORT, 'recipe line must reference ingredient or good catalog item');
+END;
+
+CREATE TRIGGER recipe_lines_ingredient_or_good_update
+BEFORE UPDATE OF catalog_item_id ON recipe_lines
+FOR EACH ROW
+WHEN NOT EXISTS (SELECT 1 FROM catalog_items WHERE id = NEW.catalog_item_id AND type IN ('ingredient', 'good'))
+BEGIN
+  SELECT RAISE(ABORT, 'recipe line must reference ingredient or good catalog item');
+END;
+
+CREATE TABLE local_event_log (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL UNIQUE,
+  command_id TEXT NOT NULL,
+  envelope_version TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  aggregate_type TEXT NOT NULL,
+  aggregate_id TEXT NOT NULL,
+  restaurant_id TEXT CHECK (restaurant_id IS NULL OR restaurant_id <> ''),
+  device_id TEXT NOT NULL CHECK (device_id <> ''),
+  shift_id TEXT CHECK (shift_id IS NULL OR shift_id <> ''),
+  payload_json TEXT NOT NULL,
+  occurred_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX local_event_log_created_at ON local_event_log(created_at);
+CREATE INDEX local_event_log_event_type_created_at ON local_event_log(event_type, created_at);
+CREATE INDEX local_event_log_command_id_created_at ON local_event_log(command_id, created_at);
+
 CREATE TABLE pos_sync_outbox (
   id TEXT PRIMARY KEY,
-  command_id TEXT NOT NULL UNIQUE,
+  command_id TEXT NOT NULL,
+  sequence_no INTEGER NOT NULL UNIQUE CHECK (sequence_no > 0),
   origin TEXT NOT NULL CHECK (origin IN ('edge_device', 'cloud_sync', 'system_seed')),
   restaurant_id TEXT CHECK (restaurant_id IS NULL OR restaurant_id <> ''),
   device_id TEXT NOT NULL CHECK (device_id <> ''),
@@ -143,11 +428,21 @@ CREATE TABLE pos_sync_outbox (
   aggregate_id TEXT NOT NULL,
   command_type TEXT NOT NULL,
   payload_json TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('pending', 'sent', 'failed')),
-  attempts INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'processing', 'sent', 'failed', 'suspended')),
+  attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  next_retry_at TEXT,
+  locked_at TEXT,
+  locked_by TEXT CHECK (locked_by IS NULL OR locked_by <> ''),
+  sent_at TEXT,
   last_error TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  CHECK (status = 'processing' OR (locked_at IS NULL AND locked_by IS NULL)),
+  CHECK ((locked_at IS NULL AND locked_by IS NULL) OR (locked_at IS NOT NULL AND locked_by IS NOT NULL)),
+  CHECK (sent_at IS NULL OR status = 'sent')
 );
 
-CREATE INDEX pos_sync_outbox_status_created_at ON pos_sync_outbox(status, created_at);
+CREATE INDEX pos_sync_outbox_status_sequence_no ON pos_sync_outbox(status, sequence_no);
+CREATE INDEX pos_sync_outbox_pending_retry_sequence ON pos_sync_outbox(next_retry_at, sequence_no) WHERE status = 'pending';
+CREATE INDEX pos_sync_outbox_processing_locked_at ON pos_sync_outbox(locked_at) WHERE status = 'processing';
+CREATE INDEX pos_sync_outbox_command_id_created_at ON pos_sync_outbox(command_id, created_at);

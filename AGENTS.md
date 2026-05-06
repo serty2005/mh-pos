@@ -31,7 +31,7 @@ Order -> Precheck -> Payment -> Check
 |-- SPECv1.3.md               # целевая архитектурная спецификация MVP-0 / first launch
 |-- ROADMAP_MVP.md            # рабочий roadmap перехода к v1.3
 |-- pos-backend/              # текущая основная кодовая база POS Edge
-|   |-- README.md             # запуск, Docker, smoke test, текущее legacy API состояние
+|   |-- README.md             # запуск, Docker, smoke test, текущий API и first-launch schema
 |   |-- cmd/pos-edge/         # main() локального POS Edge Backend
 |   |-- internal/platform/    # clock, http helpers, idgen, sqlite, tx
 |   |-- internal/pos/api/     # HTTP router и thin handlers
@@ -39,7 +39,7 @@ Order -> Precheck -> Payment -> Check
 |   |-- internal/pos/domain/  # бизнес-модели, ошибки, инварианты
 |   |-- internal/pos/ports/   # интерфейсы репозиториев
 |   |-- internal/pos/infra/   # реализации портов, сейчас SQLite
-|   |-- migrations/sqlite/    # schema migrations, включая local_event_log и pos_sync_outbox
+|   |-- migrations/sqlite/    # canonical first-launch SQLite init schema
 |   `-- docs/                 # проектные отчеты backend
 |-- cloud-backend/            # минимальный Cloud Sync Receiver foundation
 |   |-- README.md             # запуск и тесты cloud receiver
@@ -381,10 +381,11 @@ POST /api/v1/sync/retry-failed
 - SQLite - primary storage для POS Edge.
 - При открытии POS Edge backend выполняет fail-fast SQLite runtime gate: проверяет `sqlite_version()`, `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout >= 5000`.
 - SQLite runtime baseline: functional minimum `>= 3.37.0`; production WAL pilot baseline `>= 3.51.3` или явно разрешенный pinned backport `3.50.7/3.44.6`.
-- Использовать транзакции всегда для write операций.
+- Использовать транзакции всегда для write операций; SQLite write transactions открываются через `BEGIN IMMEDIATE`.
 - Не делать частичных записей.
 - До первого production launch не нужна миграция реальных production данных.
-- Изменения схемы v1.3 проектируются как first-launch schema, пока нет клиентских production БД.
+- Активный SQLite migration path для первого пилота - один canonical `001_init.sql`, который сразу создает текущую runtime-схему `Order -> Precheck -> Payment -> Check`.
+- Изменения схемы v1.3 проектируются как first-launch schema, пока нет клиентских production БД; не добавлять backward compatibility вокруг старых dev-миграций.
 
 ---
 
@@ -541,6 +542,7 @@ POST /api/v1/sync/retry-failed
 - Scope: POS Edge Backend + minimal Cloud Sync Receiver foundation
 - Target financial model: `Order -> Precheck -> Payment -> Check`
 - Current POS Edge code: public `Order -> Precheck -> Payment -> Check` runtime enabled; legacy check payment endpoint is disabled
+- SQLite clean install: active migration path contains canonical `001_init.sql`; it creates `prechecks`, `payments.precheck_id`, retry-safe `pos_sync_outbox`, `local_event_log.command_id` and `manager_override_audit` immediately, without legacy `payments.check_id`
 - Edge foundation: `local_event_log` + retry-safe `pos_sync_outbox` + cash sessions + payment attempts + prechecks lifecycle foundation with public issue/read/list/cancel endpoints, manager override audit, precheck payments and automatic final check generation
 - Operational sync endpoints: outbox, local events, aggregated sync status and manual retry failed/suspended
 - Cloud: minimal `cloud-backend/` Sync Receiver implemented; Cloud is not a runtime dependency for critical POS Edge writes

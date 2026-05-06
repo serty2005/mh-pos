@@ -2,9 +2,13 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	txctx "pos-backend/internal/platform/tx"
 )
 
 func TestOpenAppliesAndVerifiesRuntimeGate(t *testing.T) {
@@ -123,5 +127,47 @@ func TestValidateRuntimeReportAllowsPinnedBackports(t *testing.T) {
 		if err := validateRuntimeReport(report); err != nil {
 			t.Fatalf("expected pinned backport %s to pass runtime gate: %v", version, err)
 		}
+	}
+}
+
+func TestTxManagerUsesBeginImmediate(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "pos.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.ExecContext(ctx, `CREATE TABLE tx_probe (id TEXT PRIMARY KEY)`); err != nil {
+		t.Fatal(err)
+	}
+
+	otherDB, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = otherDB.Close() })
+	if _, err := otherDB.ExecContext(ctx, `PRAGMA busy_timeout = 50`); err != nil {
+		t.Fatal(err)
+	}
+
+	err = NewTxManager(db).WithinTx(ctx, func(ctx context.Context) error {
+		writeCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		defer cancel()
+		if _, err := otherDB.ExecContext(writeCtx, `INSERT INTO tx_probe(id) VALUES ('other-writer')`); err == nil {
+			return errors.New("expected concurrent writer to be blocked by BEGIN IMMEDIATE")
+		}
+		tx, ok := txctx.FromContext(ctx)
+		if !ok {
+			return errors.New("expected transaction in context")
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO tx_probe(id) VALUES ('owner')`)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := otherDB.ExecContext(ctx, `INSERT INTO tx_probe(id) VALUES ('after-commit')`); err != nil {
+		t.Fatal(err)
 	}
 }

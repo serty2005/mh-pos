@@ -263,30 +263,48 @@ func TestLocalEventLogRequiresDeviceID(t *testing.T) {
 	}
 }
 
-func TestLocalEventCommandIDMigrationBackfillsFromEnvelopePayload(t *testing.T) {
-	ctx := context.Background()
-	db, err := platformsqlite.Open(filepath.Join(t.TempDir(), "pos.db"))
+func TestActiveSQLiteMigrationPathIsSingleCanonicalFirstLaunchInit(t *testing.T) {
+	entries, err := os.ReadDir(filepath.Join("..", "..", "..", "..", "migrations", "sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
-	migrationsDir := filepath.Join("..", "..", "..", "..", "migrations", "sqlite")
-	applyMigrationFile(t, ctx, db, filepath.Join(migrationsDir, "001_init.sql"))
-	applyMigrationFile(t, ctx, db, filepath.Join(migrationsDir, "003_local_event_log.sql"))
-	execSchema(t, ctx, db, `INSERT INTO local_event_log(id,event_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES ('local-event-1','edge-event-1','1','OrderCreated','Order','order-1','restaurant-1','device-1','shift-1','{"command_id":"cmd-from-envelope","event_id":"edge-event-1"}',?,?)`, schemaTestTime, schemaTestTime)
-	execSchema(t, ctx, db, `INSERT INTO pos_sync_outbox(id,command_id,origin,restaurant_id,device_id,aggregate_type,aggregate_id,command_type,payload_json,status,attempts,created_at,updated_at) VALUES ('outbox-1','cmd-from-envelope','edge_device','restaurant-1','device-1','Order','order-1','OrderCreated','{"command_id":"cmd-from-envelope","event_id":"edge-event-1"}','pending',0,?,?)`, schemaTestTime, schemaTestTime)
+	var migrations []string
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".sql" {
+			migrations = append(migrations, entry.Name())
+		}
+	}
+	if len(migrations) != 1 || migrations[0] != "001_init.sql" {
+		t.Fatalf("expected only canonical first-launch 001_init.sql, got %+v", migrations)
+	}
+}
 
-	applyMigrationFile(t, ctx, db, filepath.Join(migrationsDir, "004_local_event_command_id.sql"))
+func TestCleanInstallPaymentsUsePrecheckIDWithoutLegacyCheckID(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	columns := tableColumns(t, ctx, db, "payments")
+	if !columns["precheck_id"] {
+		t.Fatal("expected payments.precheck_id in first-launch schema")
+	}
+	if columns["check_id"] {
+		t.Fatal("did not expect legacy payments.check_id in first-launch schema")
+	}
+}
 
-	var localCommandID, outboxCommandID string
-	if err := db.QueryRowContext(ctx, `SELECT command_id FROM local_event_log WHERE id = 'local-event-1'`).Scan(&localCommandID); err != nil {
+func TestCleanInstallRecordsOnlyCanonicalInitMigration(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	var version string
+	if err := db.QueryRowContext(ctx, `SELECT version FROM schema_migrations`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRowContext(ctx, `SELECT command_id FROM pos_sync_outbox WHERE id = 'outbox-1'`).Scan(&outboxCommandID); err != nil {
+	if version != "001_init.sql" {
+		t.Fatalf("expected schema_migrations to contain 001_init.sql, got %q", version)
+	}
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if localCommandID != "cmd-from-envelope" || localCommandID != outboxCommandID {
-		t.Fatalf("expected matching command_id from envelope payload, local=%q outbox=%q", localCommandID, outboxCommandID)
+	if n != 1 {
+		t.Fatalf("expected one applied first-launch migration, got %d", n)
 	}
 }
 
@@ -351,15 +369,29 @@ func TestRetrySafeOutboxSchemaColumnsAndConstraints(t *testing.T) {
 	}
 }
 
-func applyMigrationFile(t *testing.T, ctx context.Context, db *sql.DB, path string) {
+func tableColumns(t *testing.T, ctx context.Context, db *sql.DB, table string) map[string]bool {
 	t.Helper()
-	body, err := os.ReadFile(path)
+	rows, err := db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, string(body)); err != nil {
+	defer rows.Close()
+	columns := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull int
+		var defaultValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultValue, &pk); err != nil {
+			t.Fatal(err)
+		}
+		columns[name] = true
+	}
+	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
+	return columns
 }
 
 func TestStockMovesCannotHaveZeroQuantity(t *testing.T) {

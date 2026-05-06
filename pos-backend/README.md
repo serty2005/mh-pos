@@ -16,7 +16,7 @@ Order -> Precheck -> Payment -> Check
 
 Sync/outbox foundation уже поддерживает retry-safe состояние очереди: `pending`, `processing`, `sent`, `failed`, `suspended`, локальный `sequence_no`, attempts/retry metadata, processing locks, stale lock reclaim на app-level и manual retry failed/suspended. Реальный Cloud sender/worker в этой итерации не реализован.
 
-Проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. Изменения схемы v1.3 нужно проектировать как first-launch schema.
+Проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. SQLite clean install является canonical first-launch source of truth: активный migration path содержит один `migrations/sqlite/001_init.sql`, который сразу создает текущую runtime-схему без legacy `payments.check_id`.
 
 ## Stack
 
@@ -41,6 +41,12 @@ Sync/outbox foundation уже поддерживает retry-safe состоян
 - `PRAGMA busy_timeout >= 5000`.
 
 Если runtime не соответствует baseline, backend завершается до применения migrations и запуска HTTP server.
+
+## SQLite First Launch Schema
+
+`MigrateDir` применяет canonical `001_init.sql` на чистую БД. В этой стартовой схеме сразу присутствуют `prechecks`, `payments.precheck_id`, retry-safe поля `pos_sync_outbox` (`sequence_no`, `attempts`, `next_retry_at`, `locked_at`, `locked_by`, `sent_at`, `last_error`), `local_event_log.command_id`, `manager_override_audit`, constraints precheck lifecycle и outbox. Историческая dev-цепочка миграций не является обязательной частью первого пилотного запуска.
+
+Write transactions в POS Edge открываются через `BEGIN IMMEDIATE`, чтобы writer lock бралась в начале транзакционного use case.
 
 ## Запуск Локально На Windows
 

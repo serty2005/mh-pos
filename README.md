@@ -42,7 +42,7 @@ Order -> Precheck -> Payment -> Check
 |-- SPECv1.3.md               # целевая спецификация Architecture Lock v1.3
 |-- ROADMAP_MVP.md            # roadmap перехода к MVP v1.3
 |-- pos-backend/              # POS Edge Backend, текущая основная кодовая база
-|   |-- README.md             # запуск, Docker, smoke test и текущее legacy API состояние
+|   |-- README.md             # запуск, Docker, smoke test, текущий API и first-launch schema
 |   |-- cmd/pos-edge/         # entrypoint локального POS backend сервиса
 |   |-- internal/platform/    # общая инфраструктура: clock, http, idgen, sqlite, tx
 |   |-- internal/pos/         # POS bounded context
@@ -51,7 +51,7 @@ Order -> Precheck -> Payment -> Check
 |   |   |-- domain/           # доменные модели, ошибки и инварианты
 |   |   |-- ports/            # интерфейсы репозиториев
 |   |   `-- infra/sqlite/     # SQLite реализации репозиториев
-|   |-- migrations/sqlite/    # SQLite schema migrations
+|   |-- migrations/sqlite/    # canonical SQLite first-launch init schema
 |   |-- docker/               # Dockerfile
 |   |-- docker-compose.yml    # локальный запуск через Docker Compose
 |   `-- docs/                 # отчеты и проектные документы по backend
@@ -179,6 +179,7 @@ go test ./...
 - Architecture Lock: v1.3.
 - Target financial model: `Order -> Precheck -> Payment -> Check`.
 - Production data migration before first launch: не требуется.
+- SQLite clean install: активный migration path состоит из canonical `001_init.sql`, который сразу создает текущую runtime-схему без legacy `payments.check_id`.
 - POS Edge SQLite runtime contract: functional minimum `>= 3.37.0`, production WAL pilot baseline `>= 3.51.3` или pinned backport `3.50.7/3.44.6`; backend завершается при несоответствии.
 - POS Edge code: public `Order -> Precheck -> Payment -> Check` runtime enabled; legacy check payment endpoint is disabled.
 - `local_event_log` уже является частью edge foundation, хранит `command_id` той же write-операции, что и outbox rows (одна write-операция может породить несколько events), и доступен read-only через `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`.

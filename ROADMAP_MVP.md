@@ -61,6 +61,7 @@ Order -> Precheck -> Payment -> Check
 - можно переименовывать текущие сущности, если это нужно для правильной модели MVP;
 - можно заменить текущий `CreateCheck` на `IssuePrecheck`;
 - можно привести стартовую схему к финальной форме v1.3;
+- canonical SQLite clean install path для первого пилота - один `001_init.sql`, а не историческая цепочка dev-миграций;
 - не нужно писать сложные data migrations для исторических заказов, оплат и чеков.
 
 Запрещено тратить время MVP на:
@@ -529,9 +530,9 @@ Acceptance criteria:
 
 ## Этап B. Schema Reset для первого запуска
 
-Статус: начат частично. Таблица `prechecks` уже расширена как preparatory lifecycle foundation; полный schema reset v1.3 еще не завершен.
+Статус: SQLite clean-install path завершен для текущего runtime. Активный `pos-backend/migrations/sqlite/001_init.sql` сразу создает first-launch схему `Order -> Precheck -> Payment -> Check`; промежуточные legacy dev-миграции убраны из активного migration path.
 
-Цель: привести SQLite и PostgreSQL стартовые схемы к v1.3 без сложных data migrations.
+Цель: привести стартовые схемы к v1.3 без сложных data migrations. В текущей итерации канонизирован SQLite first-launch path; PostgreSQL Cloud остается минимальным sync receiver foundation.
 
 Важно:
 
@@ -539,15 +540,17 @@ Acceptance criteria:
 
 Задачи SQLite:
 
+- [x] Свести active SQLite migration path к canonical `001_init.sql` для clean install.
 - [x] Добавить минимальную таблицу `prechecks` без переключения runtime flow.
 - [ ] Добавить таблицу `precheck_lines`.
 - [ ] Добавить таблицу `precheck_tax_lines` или JSON snapshot налогов, если это проще для MVP.
-- [ ] Добавить таблицу `manager_override_logs`.
+- [x] Добавить таблицу `manager_override_audit`.
 - [ ] Добавить/обновить `tax_profiles`.
 - [x] Добавить связь `payments.precheck_id`.
 - [x] Убрать runtime dependency на `payments.check_id` для capture payment.
+- [x] Убрать legacy `payments.check_id` из clean-install схемы.
 - [x] Обновить `checks`, чтобы они были финальными документами, а не рабочими счетами.
-- [ ] Добавить поля outbox retry policy: `attempts`, `next_retry_at`, `last_error`, `locked_at`, `locked_by`.
+- [x] Добавить поля outbox retry policy: `sequence_no`, `attempts`, `next_retry_at`, `last_error`, `locked_at`, `locked_by`, `sent_at`.
 - [x] Добавить constraint для одного active `issued` precheck на order.
 - [x] Добавить минимальный constraints набор для precheck versioning: `version`, unique `(order_id, version)`, `paid_total`, terminal statuses.
 - [ ] Добавить `business_date_local` в `shifts`, `cash_sessions`, `prechecks`, `payments`, `checks`.
@@ -555,7 +558,7 @@ Acceptance criteria:
 - [ ] Добавить `currency_code`.
 - [ ] Добавить `payments.entry_kind`.
 - [ ] Добавить `payments.original_payment_id`.
-- [ ] Добавить `pos_sync_outbox.sequence_no`.
+- [x] Добавить `pos_sync_outbox.sequence_no`.
 - [ ] Добавить `STRICT` tables для новых финансовых сущностей.
 
 Задачи PostgreSQL Cloud:
@@ -572,7 +575,8 @@ Acceptance criteria:
 - `go test ./...` проходит;
 - новая пустая SQLite БД создается сразу в v1.3 форме;
 - нет обязательных миграций исторических данных;
-- старые тесты адаптированы под precheck lifecycle.
+- старые тесты адаптированы под precheck lifecycle;
+- clean install не создает legacy `payments.check_id`.
 
 ---
 
@@ -647,7 +651,7 @@ Acceptance criteria:
 - [ ] Добавить PIN hash для employees.
 - [ ] Добавить permission/role flag для manager override.
 - [ ] Реализовать локальную проверку PIN на Edge.
-- [ ] Реализовать `manager_override_logs`.
+- [x] Реализовать `manager_override_audit` для отмены precheck.
 - [x] Реализовать backend foundation `CancelPrecheck`.
 - [x] Реализовать full use case `CancelPrecheck` с manager override.
 - [x] Реализовать endpoint `POST /prechecks/{id}/cancel`.
@@ -1026,12 +1030,12 @@ Acceptance criteria:
 
 Checklist backend:
 
-- [ ] `go test ./...` проходит в `pos-backend`.
+- [x] `go test ./...` проходит в `pos-backend`.
 - [ ] `go test ./...` проходит в `cloud-backend`.
-- [ ] SQLite стартует с чистой БД.
+- [x] SQLite стартует с чистой БД.
 - [ ] PostgreSQL Cloud стартует с чистой БД.
-- [ ] Все migrations применяются с нуля.
-- [ ] Нет обязательной миграции production данных.
+- [x] SQLite clean install применяет canonical `001_init.sql` с нуля.
+- [x] Нет обязательной миграции production данных.
 - [ ] Все write use cases пишут local event и outbox в одной транзакции.
 - [ ] Outbox retry/backoff работает.
 - [ ] Cloud dedupe работает.
@@ -1180,18 +1184,14 @@ README.md
 
 ## 12. Рекомендуемый порядок ближайших итераций
 
-1. Обновить документацию: `SPECv1.3.md`, `ROADMAP_MVP.md`, `AGENTS.md`, `README.md`.
-2. Привести SQLite schema к v1.3 для первого запуска.
-3. Реализовать Precheck domain/repository/use case/API.
-4. Реализовать Manager Override и отмену precheck.
-5. Реализовать Generic Tax Engine.
-6. Перевести payments с `check_id` на `precheck_id`.
-7. Реализовать automatic final check generation.
-8. Реализовать sync sender/worker поверх готового retry-safe outbox foundation.
-9. Реализовать device provisioning flow.
-10. Собрать минимальный POS UI.
-11. Реализовать DishServed MVP без полного KDS.
-12. Провести First Launch Readiness.
+1. Реализовать sync sender/worker поверх готового retry-safe outbox foundation.
+2. Добавить precheck line/tax snapshots или зафиксированный JSON snapshot, если это проще для MVP.
+3. Реализовать Generic Tax Engine.
+4. Завершить business date/currency/payment correction детали перед пилотом.
+5. Реализовать device provisioning flow.
+6. Собрать минимальный POS UI.
+7. Реализовать DishServed MVP без полного KDS.
+8. Провести First Launch Readiness.
 
 ---
 
