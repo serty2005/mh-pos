@@ -24,6 +24,10 @@ func NewRouter(service *app.Service) http.Handler {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(localCORS)
+	r.Options("/*", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
 
 	r.Get("/health", h.health)
 
@@ -42,7 +46,11 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Patch("/employees/{id}/archive", h.archiveEmployee)
 
 		r.Post("/auth/pin-login", h.pinLogin)
+		r.Post("/auth/logout", h.logout)
 		r.Get("/auth/session", h.getAuthSession)
+
+		r.Post("/system/pair", h.pairEdgeNode)
+		r.Get("/system/pairing-status", h.getPairingStatus)
 
 		r.Post("/halls", h.createHall)
 		r.Get("/halls", h.listHalls)
@@ -98,13 +106,27 @@ func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+func localCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin == "http://localhost:5173" || origin == "http://127.0.0.1:5173" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Credentials", "false")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Node-Device-ID, X-Client-Device-ID, X-Actor-Employee-ID, X-Session-ID")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (h *Handler) createRestaurant(w http.ResponseWriter, r *http.Request) {
 	var cmd app.CreateRestaurantCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateRestaurant(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -120,7 +142,7 @@ func (h *Handler) registerDevice(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.RegisterDevice(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -136,7 +158,7 @@ func (h *Handler) createRole(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateRole(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -152,7 +174,7 @@ func (h *Handler) createEmployee(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateEmployee(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -167,7 +189,7 @@ func (h *Handler) archiveEmployee(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil {
 		_ = httpx.Decode(r, &cmd)
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.ID = chi.URLParam(r, "id")
 	if err := h.service.ArchiveEmployee(r.Context(), cmd); err != nil {
 		httpx.Error(w, err)
@@ -182,13 +204,39 @@ func (h *Handler) pinLogin(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.PinLogin(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
 
+func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
+	var cmd app.LogoutCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.Logout(r.Context(), cmd)
+	writeOK(w, v, err)
+}
+
 func (h *Handler) getAuthSession(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.GetSession(r.Context(), r.URL.Query().Get("session_id"), r.URL.Query().Get("device_id"))
+	v, err := h.service.GetSession(r.Context(), r.URL.Query().Get("session_id"), requestNodeDeviceID(r), requestClientDeviceID(r))
+	writeOK(w, v, err)
+}
+
+func (h *Handler) pairEdgeNode(w http.ResponseWriter, r *http.Request) {
+	var cmd app.PairEdgeNodeCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err)
+		return
+	}
+	v, err := h.service.PairEdgeNode(r.Context(), cmd)
+	writeCreated(w, v, err)
+}
+
+func (h *Handler) getPairingStatus(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetPairingStatus(r.Context())
 	writeOK(w, v, err)
 }
 
@@ -198,7 +246,7 @@ func (h *Handler) createHall(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateHall(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -213,7 +261,7 @@ func (h *Handler) archiveHall(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil {
 		_ = httpx.Decode(r, &cmd)
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.ID = chi.URLParam(r, "id")
 	if err := h.service.ArchiveHall(r.Context(), cmd); err != nil {
 		httpx.Error(w, err)
@@ -228,7 +276,7 @@ func (h *Handler) createTable(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateTable(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -243,7 +291,7 @@ func (h *Handler) archiveTable(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil {
 		_ = httpx.Decode(r, &cmd)
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.ID = chi.URLParam(r, "id")
 	if err := h.service.ArchiveTable(r.Context(), cmd); err != nil {
 		httpx.Error(w, err)
@@ -258,7 +306,7 @@ func (h *Handler) createCatalogItem(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateCatalogItem(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -274,7 +322,7 @@ func (h *Handler) createMenuItem(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateMenuItem(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -290,7 +338,7 @@ func (h *Handler) openShift(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.OpenShift(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -301,7 +349,7 @@ func (h *Handler) closeShift(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.ID = chi.URLParam(r, "id")
 	v, err := h.service.CloseShift(r.Context(), cmd)
 	writeOK(w, v, err)
@@ -318,7 +366,7 @@ func (h *Handler) createOrder(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateOrder(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -334,7 +382,7 @@ func (h *Handler) addOrderLine(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.OrderID = chi.URLParam(r, "id")
 	v, err := h.service.AddOrderLine(r.Context(), cmd)
 	writeCreated(w, v, err)
@@ -346,7 +394,7 @@ func (h *Handler) changeOrderLineQuantity(w http.ResponseWriter, r *http.Request
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.OrderID = chi.URLParam(r, "id")
 	cmd.LineID = chi.URLParam(r, "line_id")
 	v, err := h.service.ChangeOrderLineQuantity(r.Context(), cmd)
@@ -358,7 +406,7 @@ func (h *Handler) voidOrderLine(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil {
 		_ = httpx.Decode(r, &cmd)
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.OrderID = chi.URLParam(r, "id")
 	cmd.LineID = chi.URLParam(r, "line_id")
 	v, err := h.service.VoidOrderLine(r.Context(), cmd)
@@ -371,7 +419,7 @@ func (h *Handler) issuePrecheck(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.OrderID = chi.URLParam(r, "id")
 	v, err := h.service.IssuePrecheck(r.Context(), cmd)
 	writeCreated(w, v, err)
@@ -383,7 +431,7 @@ func (h *Handler) issuePrecheckFromDeprecatedCheckAlias(w http.ResponseWriter, r
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&legacy.CommandMeta)
+	setRequestMeta(&legacy.CommandMeta, r)
 	v, err := h.service.IssuePrecheck(r.Context(), app.IssuePrecheckCommand{
 		CommandMeta: legacy.CommandMeta,
 		OrderID:     chi.URLParam(r, "id"),
@@ -396,7 +444,7 @@ func (h *Handler) closeOrder(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil {
 		_ = httpx.Decode(r, &cmd)
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.OrderID = chi.URLParam(r, "id")
 	v, err := h.service.CloseOrder(r.Context(), cmd)
 	writeOK(w, v, err)
@@ -418,7 +466,7 @@ func (h *Handler) cancelPrecheck(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.PrecheckID = chi.URLParam(r, "id")
 	v, err := h.service.CancelPrecheck(r.Context(), cmd)
 	writeOK(w, v, err)
@@ -435,7 +483,7 @@ func (h *Handler) capturePrecheckPayment(w http.ResponseWriter, r *http.Request)
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.PrecheckID = chi.URLParam(r, "id")
 	v, err := h.service.CapturePayment(r.Context(), cmd)
 	writeCreated(w, v, err)
@@ -451,7 +499,7 @@ func (h *Handler) openCashSession(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.OpenCashSession(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -462,7 +510,7 @@ func (h *Handler) closeCashSession(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.ID = chi.URLParam(r, "id")
 	v, err := h.service.CloseCashSession(r.Context(), cmd)
 	writeOK(w, v, err)
@@ -479,7 +527,7 @@ func (h *Handler) recordCashDrawerEvent(w http.ResponseWriter, r *http.Request) 
 		httpx.Error(w, err)
 		return
 	}
-	setEdgeOrigin(&cmd.CommandMeta)
+	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.RecordCashDrawerEvent(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -554,4 +602,40 @@ func writeOK(w http.ResponseWriter, v any, err error) {
 
 func setEdgeOrigin(meta *app.CommandMeta) {
 	meta.Origin = app.OriginEdgeDevice
+	app.NormalizeDeviceMeta(meta)
+}
+
+func setRequestMeta(meta *app.CommandMeta, r *http.Request) {
+	setEdgeOrigin(meta)
+	if meta.NodeDeviceID == "" {
+		meta.NodeDeviceID = requestNodeDeviceID(r)
+		meta.DeviceID = meta.NodeDeviceID
+	}
+	if meta.ClientDeviceID == "" {
+		meta.ClientDeviceID = requestClientDeviceID(r)
+	}
+	if meta.ActorEmployeeID == "" {
+		meta.ActorEmployeeID = r.Header.Get("X-Actor-Employee-ID")
+	}
+	if meta.SessionID == "" {
+		meta.SessionID = r.Header.Get("X-Session-ID")
+	}
+	app.NormalizeDeviceMeta(meta)
+}
+
+func requestNodeDeviceID(r *http.Request) string {
+	if v := r.Header.Get("X-Node-Device-ID"); v != "" {
+		return v
+	}
+	if v := r.URL.Query().Get("node_device_id"); v != "" {
+		return v
+	}
+	return r.URL.Query().Get("device_id")
+}
+
+func requestClientDeviceID(r *http.Request) string {
+	if v := r.Header.Get("X-Client-Device-ID"); v != "" {
+		return v
+	}
+	return r.URL.Query().Get("client_device_id")
 }

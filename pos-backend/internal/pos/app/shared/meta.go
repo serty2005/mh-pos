@@ -10,6 +10,8 @@ import (
 
 type CommandMeta struct {
 	CommandID       string               `json:"command_id,omitempty"`
+	NodeDeviceID    string               `json:"node_device_id,omitempty"`
+	ClientDeviceID  string               `json:"client_device_id,omitempty"`
 	DeviceID        string               `json:"device_id,omitempty"`
 	ActorEmployeeID string               `json:"actor_employee_id,omitempty"`
 	SessionID       string               `json:"session_id,omitempty"`
@@ -23,8 +25,8 @@ const (
 )
 
 func ValidateWriteMeta(meta CommandMeta) error {
-	if strings.TrimSpace(meta.DeviceID) == "" {
-		return fmt.Errorf("%w: device_id is required", domain.ErrInvalid)
+	if EffectiveNodeDeviceID(meta) == "" {
+		return fmt.Errorf("%w: node_device_id is required", domain.ErrInvalid)
 	}
 	switch meta.Origin {
 	case "", domain.OriginEdgeDevice, domain.OriginCloudSync, domain.OriginSystemSeed:
@@ -32,6 +34,22 @@ func ValidateWriteMeta(meta CommandMeta) error {
 	default:
 		return fmt.Errorf("%w: valid origin is required", domain.ErrInvalid)
 	}
+}
+
+func EffectiveNodeDeviceID(meta CommandMeta) string {
+	if id := strings.TrimSpace(meta.NodeDeviceID); id != "" {
+		return id
+	}
+	return strings.TrimSpace(meta.DeviceID)
+}
+
+func NormalizeDeviceMeta(meta *CommandMeta) {
+	if strings.TrimSpace(meta.NodeDeviceID) == "" {
+		meta.NodeDeviceID = strings.TrimSpace(meta.DeviceID)
+	}
+	meta.NodeDeviceID = strings.TrimSpace(meta.NodeDeviceID)
+	meta.ClientDeviceID = strings.TrimSpace(meta.ClientDeviceID)
+	meta.DeviceID = meta.NodeDeviceID
 }
 
 func NormalizeOrigin(origin domain.CommandOrigin) domain.CommandOrigin {

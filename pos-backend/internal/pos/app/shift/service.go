@@ -46,6 +46,7 @@ func (s *Service) GetCurrentShift(ctx context.Context, deviceID string) (*domain
 }
 
 func (s *Service) OpenShift(ctx context.Context, cmd OpenShiftCommand) (*domain.Shift, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
 	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
@@ -57,6 +58,12 @@ func (s *Service) OpenShift(ctx context.Context, cmd OpenShiftCommand) (*domain.
 	return v, s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
+		}
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
+			return err
+		}
+		if cmd.Origin == domain.OriginEdgeDevice && cmd.ActorEmployeeID != cmd.OpenedByEmployeeID {
+			return fmt.Errorf("%w: opened_by_employee_id must match actor_employee_id", domain.ErrForbidden)
 		}
 		if _, err := s.repo.GetOpenShiftByDevice(ctx, cmd.DeviceID); err == nil {
 			return fmt.Errorf("%w: device already has an open shift", domain.ErrConflict)
@@ -71,6 +78,7 @@ func (s *Service) OpenShift(ctx context.Context, cmd OpenShiftCommand) (*domain.
 }
 
 func (s *Service) CloseShift(ctx context.Context, cmd CloseShiftCommand) (*domain.Shift, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
 	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
@@ -82,6 +90,12 @@ func (s *Service) CloseShift(ctx context.Context, cmd CloseShiftCommand) (*domai
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
+		}
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
+			return err
+		}
+		if cmd.Origin == domain.OriginEdgeDevice && cmd.ActorEmployeeID != cmd.ClosedByEmployeeID {
+			return fmt.Errorf("%w: closed_by_employee_id must match actor_employee_id", domain.ErrForbidden)
 		}
 		var err error
 		shift, err = s.repo.GetShift(ctx, cmd.ID)

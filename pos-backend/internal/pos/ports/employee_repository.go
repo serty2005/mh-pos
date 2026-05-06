@@ -18,4 +18,6 @@ type EmployeeRepository interface {
 	CreateManagerOverrideAudit(context.Context, *employee.ManagerOverrideAudit) error
 	CreateAuthSession(context.Context, *employee.AuthSession) error
 	GetAuthSession(context.Context, string) (*employee.AuthSession, error)
+	UpdateAuthSessionSeen(context.Context, string, string) error
+	RevokeAuthSession(context.Context, string, string) error
 }

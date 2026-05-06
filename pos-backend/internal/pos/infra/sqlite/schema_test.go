@@ -151,11 +151,11 @@ func TestOrdersAllowLockedStatus(t *testing.T) {
 func TestAuthSessionsAndActorMetadataReferenceLocalEmployees(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)
-	execSchema(t, ctx, db, `INSERT INTO auth_sessions(id,restaurant_id,device_id,employee_id,status,started_at,last_seen_at,created_at,updated_at) VALUES ('session-1','restaurant-1','device-1','employee-1','active',?,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime, schemaTestTime)
-	execSchema(t, ctx, db, `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,actor_employee_id,session_id,payload_json,occurred_at,created_at) VALUES ('local-event-actor','edge-event-actor','cmd-actor','1','OrderCreated','Order','order-1','restaurant-1','device-1','shift-1','employee-1','session-1','{}',?,?)`, schemaTestTime, schemaTestTime)
-	execSchema(t, ctx, db, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,actor_employee_id,session_id,aggregate_type,aggregate_id,command_type,payload_json,status,created_at,updated_at) VALUES ('outbox-actor','cmd-actor',1,'edge_device','restaurant-1','device-1','employee-1','session-1','Order','order-1','OrderCreated','{}','pending',?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO auth_sessions(id,restaurant_id,device_id,node_device_id,client_device_id,employee_id,status,started_at,last_seen_at,created_at,updated_at) VALUES ('session-1','restaurant-1','device-1','device-1','client-1','employee-1','active',?,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,node_device_id,client_device_id,shift_id,actor_employee_id,session_id,payload_json,occurred_at,created_at) VALUES ('local-event-actor','edge-event-actor','cmd-actor','1','OrderCreated','Order','order-1','restaurant-1','device-1','device-1','client-1','shift-1','employee-1','session-1','{}',?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_id,client_device_id,actor_employee_id,session_id,aggregate_type,aggregate_id,command_type,payload_json,status,created_at,updated_at) VALUES ('outbox-actor','cmd-actor',1,'edge_device','restaurant-1','device-1','device-1','client-1','employee-1','session-1','Order','order-1','OrderCreated','{}','pending',?,?)`, schemaTestTime, schemaTestTime)
 
-	_, err := db.ExecContext(ctx, `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,actor_employee_id,payload_json,occurred_at,created_at) VALUES ('local-event-bad-actor','edge-event-bad-actor','cmd-bad-actor','1','OrderCreated','Order','order-1','restaurant-1','device-1','missing-employee','{}',?,?)`, schemaTestTime, schemaTestTime)
+	_, err := db.ExecContext(ctx, `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,node_device_id,actor_employee_id,payload_json,occurred_at,created_at) VALUES ('local-event-bad-actor','edge-event-bad-actor','cmd-bad-actor','1','OrderCreated','Order','order-1','restaurant-1','device-1','device-1','missing-employee','{}',?,?)`, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected invalid actor_employee_id foreign key")
 	}
@@ -265,10 +265,10 @@ func TestPaymentsRequireEdgeContextAndPaymentAttemptsReferencePayment(t *testing
 
 func TestLocalEventLogRequiresUniqueEdgeEventIdentity(t *testing.T) {
 	db, ctx := newSchemaDB(t)
-	insert := `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
-	execSchema(t, ctx, db, insert, "local-event-1", "edge-event-1", "cmd-1", "1", "OrderCreated", "Order", "order-1", "restaurant-1", "device-1", "shift-1", `{"event_id":"edge-event-1"}`, schemaTestTime, schemaTestTime)
+	insert := `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,node_device_id,shift_id,payload_json,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+	execSchema(t, ctx, db, insert, "local-event-1", "edge-event-1", "cmd-1", "1", "OrderCreated", "Order", "order-1", "restaurant-1", "device-1", "device-1", "shift-1", `{"event_id":"edge-event-1"}`, schemaTestTime, schemaTestTime)
 
-	_, err := db.ExecContext(ctx, insert, "local-event-2", "edge-event-1", "cmd-2", "1", "OrderCreated", "Order", "order-1", "restaurant-1", "device-1", "shift-1", `{"event_id":"edge-event-1"}`, schemaTestTime, schemaTestTime)
+	_, err := db.ExecContext(ctx, insert, "local-event-2", "edge-event-1", "cmd-2", "1", "OrderCreated", "Order", "order-1", "restaurant-1", "device-1", "device-1", "shift-1", `{"event_id":"edge-event-1"}`, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected duplicate event_id to fail")
 	}
@@ -276,14 +276,14 @@ func TestLocalEventLogRequiresUniqueEdgeEventIdentity(t *testing.T) {
 
 func TestLocalEventLogAllowsMultipleEventsForOneCommandID(t *testing.T) {
 	db, ctx := newSchemaDB(t)
-	insert := `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
-	execSchema(t, ctx, db, insert, "local-event-1", "edge-event-1", "cmd-1", "1", "OrderCreated", "Order", "order-1", "restaurant-1", "device-1", "shift-1", `{"command_id":"cmd-1"}`, schemaTestTime, schemaTestTime)
-	execSchema(t, ctx, db, insert, "local-event-2", "edge-event-2", "cmd-1", "1", "CheckCreated", "Check", "check-1", "restaurant-1", "device-1", "shift-1", `{"command_id":"cmd-1"}`, schemaTestTime, schemaTestTime)
+	insert := `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,node_device_id,shift_id,payload_json,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+	execSchema(t, ctx, db, insert, "local-event-1", "edge-event-1", "cmd-1", "1", "OrderCreated", "Order", "order-1", "restaurant-1", "device-1", "device-1", "shift-1", `{"command_id":"cmd-1"}`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, insert, "local-event-2", "edge-event-2", "cmd-1", "1", "CheckCreated", "Check", "check-1", "restaurant-1", "device-1", "device-1", "shift-1", `{"command_id":"cmd-1"}`, schemaTestTime, schemaTestTime)
 }
 
 func TestLocalEventLogRequiresDeviceID(t *testing.T) {
 	db, ctx := newSchemaDB(t)
-	_, err := db.ExecContext(ctx, `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,shift_id,payload_json,occurred_at,created_at) VALUES ('local-event-1','edge-event-1','cmd-1','1','OrderCreated','Order','order-1','restaurant-1','','shift-1','{}',?,?)`, schemaTestTime, schemaTestTime)
+	_, err := db.ExecContext(ctx, `INSERT INTO local_event_log(id,event_id,command_id,envelope_version,event_type,aggregate_type,aggregate_id,restaurant_id,device_id,node_device_id,shift_id,payload_json,occurred_at,created_at) VALUES ('local-event-1','edge-event-1','cmd-1','1','OrderCreated','Order','order-1','restaurant-1','','','shift-1','{}',?,?)`, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected empty device_id to fail")
 	}
@@ -372,7 +372,7 @@ func TestRetrySafeOutboxSchemaColumnsAndConstraints(t *testing.T) {
 		}
 	}
 
-	execSchema(t, ctx, db, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,aggregate_type,aggregate_id,command_type,payload_json,status,created_at,updated_at) VALUES ('outbox-ok','cmd-ok',1,'edge_device','restaurant-1','device-1','Order','order-1','OrderCreated','{}','pending',?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_id,aggregate_type,aggregate_id,command_type,payload_json,status,created_at,updated_at) VALUES ('outbox-ok','cmd-ok',1,'edge_device','restaurant-1','device-1','device-1','Order','order-1','OrderCreated','{}','pending',?,?)`, schemaTestTime, schemaTestTime)
 	var attempts int
 	if err := db.QueryRowContext(ctx, `SELECT attempts FROM pos_sync_outbox WHERE id = 'outbox-ok'`).Scan(&attempts); err != nil {
 		t.Fatal(err)
@@ -381,15 +381,15 @@ func TestRetrySafeOutboxSchemaColumnsAndConstraints(t *testing.T) {
 		t.Fatalf("expected default attempts=0, got %d", attempts)
 	}
 
-	_, err = db.ExecContext(ctx, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,aggregate_type,aggregate_id,command_type,payload_json,status,created_at,updated_at) VALUES ('outbox-bad-status','cmd-bad-status',2,'edge_device','restaurant-1','device-1','Order','order-1','OrderCreated','{}','unknown',?,?)`, schemaTestTime, schemaTestTime)
+	_, err = db.ExecContext(ctx, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_id,aggregate_type,aggregate_id,command_type,payload_json,status,created_at,updated_at) VALUES ('outbox-bad-status','cmd-bad-status',2,'edge_device','restaurant-1','device-1','device-1','Order','order-1','OrderCreated','{}','unknown',?,?)`, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected invalid outbox status to fail")
 	}
-	_, err = db.ExecContext(ctx, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,aggregate_type,aggregate_id,command_type,payload_json,status,locked_at,locked_by,created_at,updated_at) VALUES ('outbox-bad-lock','cmd-bad-lock',3,'edge_device','restaurant-1','device-1','Order','order-1','OrderCreated','{}','pending',?,'worker',?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
+	_, err = db.ExecContext(ctx, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_id,aggregate_type,aggregate_id,command_type,payload_json,status,locked_at,locked_by,created_at,updated_at) VALUES ('outbox-bad-lock','cmd-bad-lock',3,'edge_device','restaurant-1','device-1','device-1','Order','order-1','OrderCreated','{}','pending',?,'worker',?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected non-processing outbox lock to fail")
 	}
-	_, err = db.ExecContext(ctx, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,aggregate_type,aggregate_id,command_type,payload_json,status,created_at,updated_at) VALUES ('outbox-bad-sequence','cmd-bad-sequence',0,'edge_device','restaurant-1','device-1','Order','order-1','OrderCreated','{}','pending',?,?)`, schemaTestTime, schemaTestTime)
+	_, err = db.ExecContext(ctx, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_id,aggregate_type,aggregate_id,command_type,payload_json,status,created_at,updated_at) VALUES ('outbox-bad-sequence','cmd-bad-sequence',0,'edge_device','restaurant-1','device-1','device-1','Order','order-1','OrderCreated','{}','pending',?,?)`, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected non-positive sequence_no to fail")
 	}

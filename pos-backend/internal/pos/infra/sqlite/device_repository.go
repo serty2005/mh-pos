@@ -49,3 +49,60 @@ func (r *Repository) ListDevices(ctx context.Context) ([]domain.Device, error) {
 	}
 	return out, rows.Err()
 }
+
+func (r *Repository) UpsertEdgeNodeIdentity(ctx context.Context, v *domain.EdgeNodeIdentity) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO edge_node_identity(id,node_device_id,restaurant_id,status,pairing_code_hash,paired_at,created_at,updated_at)
+VALUES (?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET node_device_id = excluded.node_device_id, restaurant_id = excluded.restaurant_id, status = excluded.status, pairing_code_hash = excluded.pairing_code_hash, paired_at = excluded.paired_at, updated_at = excluded.updated_at`,
+		v.ID, v.NodeDeviceID, v.RestaurantID, string(v.Status), v.PairingCodeHash, dbTime(v.PairedAt), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	return normalizeErr(err)
+}
+
+func (r *Repository) GetEdgeNodeIdentity(ctx context.Context) (*domain.EdgeNodeIdentity, error) {
+	var v domain.EdgeNodeIdentity
+	var status, paired, created, updated string
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,node_device_id,restaurant_id,status,pairing_code_hash,paired_at,created_at,updated_at FROM edge_node_identity WHERE id = 'local'`).
+		Scan(&v.ID, &v.NodeDeviceID, &v.RestaurantID, &status, &v.PairingCodeHash, &paired, &created, &updated)
+	if err != nil {
+		return nil, normalizeErr(err)
+	}
+	v.Status = domain.EdgeNodeStatus(status)
+	v.PairedAt = parseTime(paired)
+	v.CreatedAt = parseTime(created)
+	v.UpdatedAt = parseTime(updated)
+	return &v, nil
+}
+
+func (r *Repository) CreateClientDevice(ctx context.Context, v *domain.ClientDevice) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO client_devices(id,restaurant_id,node_device_id,client_device_id,status,first_seen_at,last_seen_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.RestaurantID, v.NodeDeviceID, v.ClientDeviceID, string(v.Status), dbTime(v.FirstSeenAt), dbTime(v.LastSeenAt), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	return normalizeErr(err)
+}
+
+func (r *Repository) GetClientDevice(ctx context.Context, nodeDeviceID, clientDeviceID string) (*domain.ClientDevice, error) {
+	var v domain.ClientDevice
+	var status, firstSeen, lastSeen, created, updated string
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,node_device_id,client_device_id,status,first_seen_at,last_seen_at,created_at,updated_at FROM client_devices WHERE node_device_id = ? AND client_device_id = ?`, nodeDeviceID, clientDeviceID).
+		Scan(&v.ID, &v.RestaurantID, &v.NodeDeviceID, &v.ClientDeviceID, &status, &firstSeen, &lastSeen, &created, &updated)
+	if err != nil {
+		return nil, normalizeErr(err)
+	}
+	v.Status = domain.ClientDeviceStatus(status)
+	v.FirstSeenAt = parseTime(firstSeen)
+	v.LastSeenAt = parseTime(lastSeen)
+	v.CreatedAt = parseTime(created)
+	v.UpdatedAt = parseTime(updated)
+	return &v, nil
+}
+
+func (r *Repository) TouchClientDevice(ctx context.Context, nodeDeviceID, clientDeviceID, seenAt string) error {
+	res, err := r.execer(ctx).ExecContext(ctx, `UPDATE client_devices SET last_seen_at = ?, updated_at = ? WHERE node_device_id = ? AND client_device_id = ? AND status = 'active'`, seenAt, seenAt, nodeDeviceID, clientDeviceID)
+	if err != nil {
+		return normalizeErr(err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}

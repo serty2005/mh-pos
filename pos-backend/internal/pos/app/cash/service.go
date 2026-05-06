@@ -57,6 +57,7 @@ func (s *Service) GetCurrentCashSession(ctx context.Context, deviceID string) (*
 }
 
 func (s *Service) OpenCashSession(ctx context.Context, cmd OpenCashSessionCommand) (*domain.CashSession, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
 	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
@@ -68,6 +69,12 @@ func (s *Service) OpenCashSession(ctx context.Context, cmd OpenCashSessionComman
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
+		}
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
+			return err
+		}
+		if cmd.Origin == domain.OriginEdgeDevice && cmd.ActorEmployeeID != cmd.OpenedByEmployeeID {
+			return fmt.Errorf("%w: opened_by_employee_id must match actor_employee_id", domain.ErrForbidden)
 		}
 		shift, err := s.repo.GetOpenShiftByDevice(ctx, cmd.DeviceID)
 		if err != nil {
@@ -106,6 +113,7 @@ func (s *Service) OpenCashSession(ctx context.Context, cmd OpenCashSessionComman
 }
 
 func (s *Service) CloseCashSession(ctx context.Context, cmd CloseCashSessionCommand) (*domain.CashSession, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
 	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
@@ -117,6 +125,12 @@ func (s *Service) CloseCashSession(ctx context.Context, cmd CloseCashSessionComm
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
+		}
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
+			return err
+		}
+		if cmd.Origin == domain.OriginEdgeDevice && cmd.ActorEmployeeID != cmd.ClosedByEmployeeID {
+			return fmt.Errorf("%w: closed_by_employee_id must match actor_employee_id", domain.ErrForbidden)
 		}
 		var err error
 		session, err = s.repo.GetCashSession(ctx, cmd.ID)
@@ -143,6 +157,7 @@ func (s *Service) CloseCashSession(ctx context.Context, cmd CloseCashSessionComm
 }
 
 func (s *Service) RecordCashDrawerEvent(ctx context.Context, cmd RecordCashDrawerEventCommand) (*domain.CashDrawerEvent, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
 	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
@@ -154,6 +169,12 @@ func (s *Service) RecordCashDrawerEvent(ctx context.Context, cmd RecordCashDrawe
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
+		}
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
+			return err
+		}
+		if cmd.Origin == domain.OriginEdgeDevice && cmd.ActorEmployeeID != cmd.CreatedByEmployeeID {
+			return fmt.Errorf("%w: created_by_employee_id must match actor_employee_id", domain.ErrForbidden)
 		}
 		session, err := s.cashSessionForEvent(ctx, cmd)
 		if err != nil {

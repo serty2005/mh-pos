@@ -46,9 +46,11 @@ type apiFixture struct {
 	device     *domain.Device
 	employee   *domain.Employee
 	manager    *domain.Employee
+	session    *domain.AuthSession
 	hall       *domain.Hall
 	table      *domain.Table
 	menuItem   *domain.MenuItem
+	clientID   string
 }
 
 func newAPIFixture(t *testing.T) *apiFixture {
@@ -64,7 +66,7 @@ func newAPIFixture(t *testing.T) *apiFixture {
 	}
 	repo := possqlite.NewRepository(db)
 	service := app.NewService(repo, platformsqlite.NewTxManager(db), &apiTestIDs{}, apiFixedClock{})
-	f := &apiFixture{ctx: ctx, db: db, repo: repo, service: service, router: api.NewRouter(service)}
+	f := &apiFixture{ctx: ctx, db: db, repo: repo, service: service, router: api.NewRouter(service), clientID: "api-client-1"}
 	f.seed(t)
 	return f
 }
@@ -88,6 +90,9 @@ func (f *apiFixture) seed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := f.service.PairEdgeNode(f.ctx, app.PairEdgeNodeCommand{PairingCode: "MHPOS:" + f.restaurant.ID + ":" + f.device.ID}); err != nil {
+		t.Fatal(err)
+	}
 	cashierPINHash, err := appshared.HashPIN("1111", []byte("api-cashier-salt"))
 	if err != nil {
 		t.Fatal(err)
@@ -104,6 +109,11 @@ func (f *apiFixture) seed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{CommandMeta: app.CommandMeta{CommandID: "cmd-api-seed-login", NodeDeviceID: f.device.ID, DeviceID: f.device.ID, ClientDeviceID: f.clientID, Origin: app.OriginEdgeDevice}, PIN: "1111"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.session = &login.Session
 	f.hall, err = f.service.CreateHall(f.ctx, app.CreateHallCommand{CommandMeta: apiSeedMeta(f.device.ID), RestaurantID: f.restaurant.ID, Name: "Main"})
 	if err != nil {
 		t.Fatal(err)
@@ -127,7 +137,7 @@ func apiSeedMeta(deviceID string) app.CommandMeta {
 }
 
 func (f *apiFixture) edgeMeta() app.CommandMeta {
-	return app.CommandMeta{DeviceID: f.device.ID, Origin: app.OriginEdgeDevice}
+	return app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, ClientDeviceID: f.clientID, ActorEmployeeID: f.employee.ID, SessionID: f.session.ID, Origin: app.OriginEdgeDevice}
 }
 
 func (f *apiFixture) createOrderWithLine(t *testing.T) *domain.Order {
@@ -154,6 +164,7 @@ func (f *apiFixture) postJSON(t *testing.T, path string, body string) *httptest.
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
+	f.setOperatorHeaders(req)
 	rr := httptest.NewRecorder()
 	f.router.ServeHTTP(rr, req)
 	return rr
@@ -163,6 +174,7 @@ func (f *apiFixture) patchJSON(t *testing.T, path string, body string) *httptest
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPatch, path, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
+	f.setOperatorHeaders(req)
 	rr := httptest.NewRecorder()
 	f.router.ServeHTTP(rr, req)
 	return rr
@@ -171,9 +183,20 @@ func (f *apiFixture) patchJSON(t *testing.T, path string, body string) *httptest
 func (f *apiFixture) get(t *testing.T, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, path, nil)
+	f.setOperatorHeaders(req)
 	rr := httptest.NewRecorder()
 	f.router.ServeHTTP(rr, req)
 	return rr
+}
+
+func (f *apiFixture) setOperatorHeaders(req *http.Request) {
+	if f.device == nil || f.session == nil {
+		return
+	}
+	req.Header.Set("X-Node-Device-ID", f.device.ID)
+	req.Header.Set("X-Client-Device-ID", f.clientID)
+	req.Header.Set("X-Actor-Employee-ID", f.employee.ID)
+	req.Header.Set("X-Session-ID", f.session.ID)
 }
 
 func decodeAPIResponse[T any](t *testing.T, rr *httptest.ResponseRecorder) T {

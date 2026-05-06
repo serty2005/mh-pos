@@ -54,6 +54,7 @@ func (s *Service) ListPrechecksByOrder(ctx context.Context, orderID string) ([]d
 }
 
 func (s *Service) IssuePrecheck(ctx context.Context, cmd IssuePrecheckCommand) (*domain.Precheck, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
 	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
@@ -64,6 +65,9 @@ func (s *Service) IssuePrecheck(ctx context.Context, cmd IssuePrecheckCommand) (
 	var precheck *domain.Precheck
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
+			return err
+		}
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
 			return err
 		}
 		order, err := s.repo.GetOrder(ctx, cmd.OrderID)
@@ -122,6 +126,7 @@ func (s *Service) IssuePrecheck(ctx context.Context, cmd IssuePrecheckCommand) (
 }
 
 func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand) (*domain.Precheck, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
 	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
@@ -135,6 +140,9 @@ func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand)
 	var precheck *domain.Precheck
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
+			return err
+		}
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
 			return err
 		}
 		var err error
@@ -196,6 +204,8 @@ func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand)
 			CommandID:         cmd.CommandID,
 			RestaurantID:      order.RestaurantID,
 			DeviceID:          order.DeviceID,
+			NodeDeviceID:      order.DeviceID,
+			ClientDeviceID:    shared.OptionalID(cmd.ClientDeviceID),
 			ShiftID:           order.ShiftID,
 			OrderID:           order.ID,
 			PrecheckID:        precheck.ID,

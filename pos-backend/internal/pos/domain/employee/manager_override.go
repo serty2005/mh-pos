@@ -7,6 +7,8 @@ type ManagerOverrideAudit struct {
 	CommandID         string    `json:"command_id"`
 	RestaurantID      string    `json:"restaurant_id"`
 	DeviceID          string    `json:"device_id"`
+	NodeDeviceID      string    `json:"node_device_id"`
+	ClientDeviceID    *string   `json:"client_device_id,omitempty"`
 	ShiftID           string    `json:"shift_id"`
 	OrderID           string    `json:"order_id"`
 	PrecheckID        string    `json:"precheck_id"`

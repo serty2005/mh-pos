@@ -35,11 +35,16 @@
 - cash drawer events;
 - prechecks lifecycle foundation: SQLite table, domain model, repository, public `IssuePrecheck` API, order locking, public manager override `CancelPrecheck`, version/paid_total fields;
 - precheck-based payments, payment_attempts, automatic final check generation;
-- PIN auth/session foundation;
-- actor/session metadata в write commands, `local_event_log`, `pos_sync_outbox` и `SyncEnvelope`;
+- PIN auth/session foundation with strict logout/revoked sessions;
+- operator auth enforcement для business/operator flows: active employee session + `actor_employee_id` + `session_id` + matching `client_device_id`;
+- system/device flows (`sync`, pairing/status, future diagnostics/hardware callbacks) отделены от employee session auth path;
+- Edge Node pairing foundation: `POST /api/v1/system/pair`, `GET /api/v1/system/pairing-status`;
+- identity split: `node_device_id` для Edge Backend, `client_device_id` для UI-клиента; оба попадают в business events/audit/outbox metadata там, где применимо;
+- actor/session/client/node metadata в write commands, `local_event_log`, `pos_sync_outbox` и `SyncEnvelope`;
 - halls/tables foundation для выбора стола в POS/Waiter UI;
 - order line quantity/void API;
 - device registration foundation;
+- `pos-ui` minimal shell на Vue 3 + Quasar: `/pair`, `/login`, `/lock`, `/pos`;
 - SQLite migrations для первого запуска локальной БД;
 - PostgreSQL migrations для Cloud sync receiver.
 
@@ -49,7 +54,7 @@
 Order -> Precheck -> Payment -> Check
 ```
 
-Текущее состояние: публичный `Order -> Precheck -> Payment -> Check` runtime включен. `IssuePrecheck` locks order и доступен через API, `CancelPrecheck` доступен публично через manager override, payment capture идет через precheck, automatic final check generation закрывает order после полной оплаты. Для старта `pos-ui` уже есть PIN login/session, actor/session metadata, halls/tables и базовое редактирование order lines. Sync/outbox foundation доведен до retry-safe состояния на schema/app/API уровне; полноценный Cloud sender/worker еще не реализован.
+Текущее состояние: публичный `Order -> Precheck -> Payment -> Check` runtime включен. `IssuePrecheck` locks order и доступен через API, `CancelPrecheck` доступен публично через manager override, payment capture идет через precheck, automatic final check generation закрывает order после полной оплаты. Для старта `pos-ui` уже есть pairing, PIN login/session, strict logout, actor/session/client/node metadata, halls/tables и базовое редактирование order lines. Sync/outbox foundation доведен до retry-safe состояния на schema/app/API уровне; полноценный Cloud sender/worker еще не реализован.
 
 ---
 
@@ -415,45 +420,56 @@ Acceptance criteria:
 
 ---
 
-### 7.3 Device Identity
+### 7.3 Edge Node и Client Device Identity
 
-Риск: нестабильный `device_id` ломает idempotency и audit trail.
+Риск: смешивание backend identity и UI-client identity ломает idempotency, audit trail и operator session enforcement.
 
 Правило:
 
-Устройство не генерирует себе production `device_id` самостоятельно.
+`device_id` больше не используется как неявный единый термин. Новая модель разделяет два идентификатора:
 
-Provisioning flow:
+```text
+node_device_id   = POS Edge Backend / Edge Node identity
+client_device_id = конкретный UI-клиент: планшет, кассовый экран, браузер
+```
 
-1. Новый планшет/ПК запускает POS UI.
-2. UI показывает экран привязки устройства.
-3. Менеджер вводит OTP-код привязки.
-4. OTP создается в Cloud или Primary Edge, в зависимости от доступности сети и сценария первого запуска.
-5. Primary Edge регистрирует устройство.
-6. Primary Edge генерирует стабильный `Device UUID`.
-7. UUID сохраняется в таблице `devices`.
-8. UUID возвращается клиентскому устройству.
-9. Клиент сохраняет UUID в устойчивом локальном хранилище:
-   - Android Keystore / SharedPreferences с защитой;
-   - Windows config file с ограниченными правами;
-   - LocalStorage допустим только для раннего dev UI, но не как финальное production-хранилище.
-10. Все последующие write-команды и `SyncEnvelope` используют этот UUID.
+Production target:
 
-Открытый конфликт для ранней разработки `pos-ui`: production target остается stable server-issued `device_id` через binding/provisioning, но до реализации этого этапа dev bootstrap может временно хранить `device_id` в `localStorage`. Это dev-only режим, не production identity.
+1. Cloud/Provisioning выдает stable `node_device_id` для Edge Node.
+2. Edge Node сохраняет pairing identity локально.
+3. UI-клиенты не генерируют `node_device_id`.
+4. UI-клиенты генерируют только `client_device_id`.
 
-Правила:
+MVP foundation:
 
-- если устройство сгорело, новое устройство получает новый `device_id`;
-- нельзя переиспользовать старый `device_id` без явной процедуры восстановления;
-- нельзя брать MAC address, hostname или случайный ID на каждый запуск как production identity;
-- `device_id` обязателен во всех write-командах, local events и outbox payloads.
+1. `pos-ui` показывает `/pair`.
+2. Пользователь вводит pairing payload формата `MHPOS:<restaurant_id>:<node_device_id>`.
+3. UI вызывает `POST /api/v1/system/pair`.
+4. Backend сохраняет `node_device_id` как Edge Node identity и не подменяет pairing локальной random generation.
+5. Каждый frontend instance генерирует `client_device_id` через `crypto.randomUUID()` и хранит его в `localStorage`.
+6. Новый `client_device_id` auto-registers на Edge со статусом `active` при PIN login.
+
+Auth/RBAC boundary:
+
+- operator/business flows требуют active employee session, `actor_employee_id`, `session_id`, matching `client_device_id`;
+- permissions проверяются в app/use case layer там, где нужны;
+- system/device flows (`sync`, pairing/status, future diagnostics/hardware callbacks) не требуют employee session и должны иметь отдельный device/system auth path;
+- lock screen = backend logout через `POST /api/v1/auth/logout`, session становится `revoked`;
+- новый PIN login всегда создает новую session.
+
+Metadata rules:
+
+- business commands должны знать `node_device_id`, `client_device_id`, `actor_employee_id`, `session_id`;
+- `local_event_log`, `pos_sync_outbox`, `SyncEnvelope` и audit metadata сохраняют оба device identifiers там, где это применимо;
+- legacy `device_id` в текущей схеме/API остается backward-compatible alias для `node_device_id`, но новые roadmap/spec/API examples должны использовать явные поля.
 
 Acceptance criteria:
 
-- перезапуск приложения не меняет `device_id`;
-- переподключение сети не меняет `device_id`;
-- Cloud idempotency key стабилен;
-- все события содержат `device_id`.
+- перезапуск frontend не меняет `client_device_id`;
+- pairing не генерирует `node_device_id` локально;
+- logout переводит backend session в terminal/revoked state;
+- старый `session_id` после logout не проходит operator enforcement;
+- все business события содержат node/client/actor/session metadata.
 
 ---
 
@@ -1207,12 +1223,12 @@ README.md
 
 ## 12. Рекомендуемый порядок ближайших итераций
 
-1. Собрать минимальный `pos-ui` shell на Vue 3 + Quasar поверх готовых backend prerequisites без моков на критических путях.
+1. Расширить минимальный `pos-ui` shell до реального cashier/waiter MVP поверх готовых backend prerequisites без моков на критических путях.
 2. Реализовать sync sender/worker поверх готового retry-safe outbox foundation.
 3. Добавить precheck line/tax snapshots или зафиксированный JSON snapshot, если это проще для MVP.
 4. Реализовать Generic Tax Engine.
 5. Завершить business date/currency/payment correction детали перед пилотом.
-6. Реализовать production device provisioning flow и убрать dev-only `localStorage device_id`.
+6. Реализовать production Cloud provisioning для `node_device_id`; `client_device_id` остается локальной UI-client identity, но требует production hardening storage/policy.
 7. Реализовать DishServed MVP без полного KDS.
 8. Провести First Launch Readiness.
 

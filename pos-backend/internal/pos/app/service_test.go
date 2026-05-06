@@ -76,28 +76,41 @@ type fixture struct {
 	device     *domain.Device
 	employee   *domain.Employee
 	manager    *domain.Employee
+	session    *domain.AuthSession
 	hall       *domain.Hall
 	table      *domain.Table
 	menuItem   *domain.MenuItem
+	clientID   string
 }
 
 const bootstrapDeviceID = "bootstrap-device"
+const testClientDeviceID = "client-device-1"
 
 func seedMeta(deviceID string) app.CommandMeta {
 	return app.CommandMeta{DeviceID: deviceID, Origin: app.OriginSystemSeed}
 }
 
 func edgeMeta(deviceID string) app.CommandMeta {
-	return app.CommandMeta{DeviceID: deviceID, Origin: app.OriginEdgeDevice}
+	return app.CommandMeta{NodeDeviceID: deviceID, DeviceID: deviceID, Origin: app.OriginEdgeDevice}
 }
 
 func (f *fixture) edgeMeta() app.CommandMeta {
-	return edgeMeta(f.device.ID)
+	meta := edgeMeta(f.device.ID)
+	meta.ClientDeviceID = f.clientID
+	meta.ActorEmployeeID = f.employee.ID
+	meta.SessionID = f.session.ID
+	return meta
+}
+
+func (f *fixture) edgeMetaCommand(commandID string) app.CommandMeta {
+	meta := f.edgeMeta()
+	meta.CommandID = commandID
+	return meta
 }
 
 func (f *fixture) cancelPrecheckCommand(commandID, precheckID string) app.CancelPrecheckCommand {
 	return app.CancelPrecheckCommand{
-		CommandMeta:        app.CommandMeta{CommandID: commandID, DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta:        f.edgeMetaCommand(commandID),
 		PrecheckID:         precheckID,
 		ManagerEmployeeID:  f.manager.ID,
 		ManagerPIN:         "2468",
@@ -129,6 +142,7 @@ func newFixture(t *testing.T) *fixture {
 	repo := possqlite.NewRepository(db)
 	service := app.NewService(repo, platformsqlite.NewTxManager(db), &testIDs{}, fixedClock{})
 	f := &fixture{ctx: ctx, db: db, repo: repo, service: service}
+	f.clientID = testClientDeviceID
 	f.seed(t)
 	return f
 }
@@ -152,6 +166,9 @@ func (f *fixture) seed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := f.service.PairEdgeNode(f.ctx, app.PairEdgeNodeCommand{PairingCode: "MHPOS:" + f.restaurant.ID + ":" + f.device.ID}); err != nil {
+		t.Fatal(err)
+	}
 	f.employee, err = f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, RoleID: role.ID, Name: "Anna", PINHash: testPINHash(t, "1111", "cashier-salt")})
 	if err != nil {
 		t.Fatal(err)
@@ -160,6 +177,11 @@ func (f *fixture) seed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{CommandMeta: app.CommandMeta{CommandID: "cmd-seed-login", NodeDeviceID: f.device.ID, DeviceID: f.device.ID, ClientDeviceID: f.clientID, Origin: app.OriginEdgeDevice}, PIN: "1111"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.session = &login.Session
 	f.hall, err = f.service.CreateHall(f.ctx, app.CreateHallCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, Name: "Main"})
 	if err != nil {
 		t.Fatal(err)
@@ -487,7 +509,7 @@ func TestDuplicateCashSessionCommandIDDoesNotCreateDuplicateRows(t *testing.T) {
 	eventsBefore := countRows(t, f, "local_event_log")
 
 	cmd := app.OpenCashSessionCommand{
-		CommandMeta:        app.CommandMeta{CommandID: "cmd-open-cash-session-1", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta:        f.edgeMetaCommand("cmd-open-cash-session-1"),
 		RestaurantID:       f.restaurant.ID,
 		OpenedByEmployeeID: f.employee.ID,
 		OpeningCashAmount:  100,
@@ -517,7 +539,7 @@ func TestDuplicateCommandIDDoesNotCreateDuplicateOrderOrOutbox(t *testing.T) {
 	eventsBefore := countRows(t, f, "local_event_log")
 
 	cmd := app.CreateOrderCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-create-order-1", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: f.edgeMetaCommand("cmd-create-order-1"),
 		TableID:     f.table.ID,
 		TableName:   "A1",
 		GuestCount:  1,
@@ -548,7 +570,7 @@ func TestRollbackRemovesDomainWriteWhenLocalEventWriteFails(t *testing.T) {
 	service := app.NewService(localEventFailingRepo{Repository: f.repo}, platformsqlite.NewTxManager(f.db), &testIDs{n: 1000}, fixedClock{})
 
 	_, err := service.CreateOrder(f.ctx, app.CreateOrderCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-local-event-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: f.edgeMetaCommand("cmd-local-event-fails"),
 		TableID:     f.table.ID,
 		TableName:   "A1",
 		GuestCount:  1,
@@ -576,7 +598,7 @@ func TestRollbackRemovesDomainAndLocalEventWhenOutboxWriteFails(t *testing.T) {
 	service := app.NewService(outboxFailingRepo{Repository: f.repo}, platformsqlite.NewTxManager(f.db), &testIDs{n: 2000}, fixedClock{})
 
 	_, err := service.CreateOrder(f.ctx, app.CreateOrderCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-outbox-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: f.edgeMetaCommand("cmd-outbox-fails"),
 		TableID:     f.table.ID,
 		TableName:   "A1",
 		GuestCount:  1,
@@ -604,7 +626,7 @@ func TestRollbackRemovesCashSessionWhenOutboxWriteFails(t *testing.T) {
 	service := app.NewService(outboxFailingRepo{Repository: f.repo}, platformsqlite.NewTxManager(f.db), &testIDs{n: 3000}, fixedClock{})
 
 	_, err := service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
-		CommandMeta:        app.CommandMeta{CommandID: "cmd-cash-outbox-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta:        f.edgeMetaCommand("cmd-cash-outbox-fails"),
 		RestaurantID:       f.restaurant.ID,
 		OpenedByEmployeeID: f.employee.ID,
 		OpeningCashAmount:  100,
@@ -657,13 +679,13 @@ func TestPinLoginCreatesLocalSessionAndActorMetadataWithoutPINLeak(t *testing.T)
 	eventsBefore := countRows(t, f, "local_event_log")
 
 	result, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-pin-login-1", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: app.CommandMeta{CommandID: "cmd-pin-login-1", NodeDeviceID: f.device.ID, DeviceID: f.device.ID, ClientDeviceID: f.clientID, Origin: app.OriginEdgeDevice},
 		PIN:         "1111",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Session.EmployeeID != f.employee.ID || result.Actor.EmployeeID != f.employee.ID || result.Session.DeviceID != f.device.ID {
+	if result.Session.EmployeeID != f.employee.ID || result.Actor.EmployeeID != f.employee.ID || result.Session.NodeDeviceID != f.device.ID || result.Session.ClientDeviceID != f.clientID {
 		t.Fatalf("unexpected login result: %+v", result)
 	}
 	if sessions := countRows(t, f, "auth_sessions"); sessions != sessionsBefore+1 {
@@ -685,12 +707,40 @@ func TestPinLoginCreatesLocalSessionAndActorMetadataWithoutPINLeak(t *testing.T)
 	if strings.Contains(payload, "1111") {
 		t.Fatal("expected PIN not to be written to local event payload")
 	}
-	current, err := f.service.GetSession(f.ctx, result.Session.ID, f.device.ID)
+	current, err := f.service.GetSession(f.ctx, result.Session.ID, f.device.ID, f.clientID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if current.Actor.EmployeeID != f.employee.ID {
 		t.Fatalf("unexpected current session actor: %+v", current.Actor)
+	}
+}
+
+func TestLogoutRevokesBackendSession(t *testing.T) {
+	f := newFixture(t)
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-login-before-logout", NodeDeviceID: f.device.ID, DeviceID: f.device.ID, ClientDeviceID: f.clientID, Origin: app.OriginEdgeDevice},
+		PIN:         "1111",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	logout, err := f.service.Logout(f.ctx, app.LogoutCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-logout-session", NodeDeviceID: f.device.ID, DeviceID: f.device.ID, ClientDeviceID: f.clientID, Origin: app.OriginEdgeDevice},
+		SessionID:   login.Session.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if logout.Status != domain.AuthSessionRevoked || logout.RevokedAt == nil {
+		t.Fatalf("expected revoked session, got %+v", logout)
+	}
+	current, err := f.service.GetSession(f.ctx, login.Session.ID, f.device.ID, f.clientID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Session.Status != domain.AuthSessionRevoked {
+		t.Fatalf("expected session restore to show revoked status, got %+v", current.Session)
 	}
 }
 
@@ -912,7 +962,7 @@ func TestIssuePrecheckCreatesDormantSnapshotAndLocksOrderWithoutLegacyCheck(t *t
 	eventsBefore := countRows(t, f, "local_event_log")
 
 	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-precheck-1", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: f.edgeMetaCommand("cmd-issue-precheck-1"),
 		OrderID:     order.ID,
 	})
 	if err != nil {
@@ -985,8 +1035,10 @@ func TestChangeOrderLineQuantityUpdatesTotalAndWritesAuditMetadata(t *testing.T)
 		t.Fatal(err)
 	}
 
+	meta := f.edgeMetaCommand("cmd-change-line-quantity")
+	meta.SessionID = login.Session.ID
 	changed, err := f.service.ChangeOrderLineQuantity(f.ctx, app.ChangeOrderLineQuantityCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-change-line-quantity", DeviceID: f.device.ID, ActorEmployeeID: f.employee.ID, SessionID: login.Session.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: meta,
 		OrderID:     order.ID,
 		LineID:      line.ID,
 		Quantity:    3,
@@ -1090,7 +1142,7 @@ func TestIssuePrecheckRollbackKeepsOrderOpenWhenLocalEventOrOutboxFails(t *testi
 			service := app.NewService(tc.repo(f.repo), platformsqlite.NewTxManager(f.db), &testIDs{n: 5000}, fixedClock{})
 
 			_, err = service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
-				CommandMeta: app.CommandMeta{CommandID: "cmd-precheck-fails-" + tc.name, DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+				CommandMeta: f.edgeMetaCommand("cmd-precheck-fails-" + tc.name),
 				OrderID:     order.ID,
 			})
 			if !errors.Is(err, tc.wantErr) {
@@ -1125,7 +1177,7 @@ func TestCannotCancelMissingPrecheck(t *testing.T) {
 	beforeEvents := countRows(t, f, "local_event_log")
 
 	_, err := f.service.CancelPrecheck(f.ctx, app.CancelPrecheckCommand{
-		CommandMeta:        app.CommandMeta{CommandID: "cmd-cancel-missing-precheck", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta:        f.edgeMetaCommand("cmd-cancel-missing-precheck"),
 		PrecheckID:         "missing-precheck",
 		ManagerEmployeeID:  f.manager.ID,
 		ManagerPIN:         "2468",
@@ -1153,7 +1205,7 @@ func TestCancelPrecheckUnlocksOrderAndWritesOutbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-before-cancel", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: f.edgeMetaCommand("cmd-issue-before-cancel"),
 		OrderID:     order.ID,
 	})
 	if err != nil {
@@ -1213,7 +1265,7 @@ func TestCancelPrecheckRejectsWrongManagerPIN(t *testing.T) {
 		t.Fatal(err)
 	}
 	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-before-wrong-pin", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: f.edgeMetaCommand("cmd-issue-before-wrong-pin"),
 		OrderID:     order.ID,
 	})
 	if err != nil {
@@ -1245,7 +1297,7 @@ func TestCancelPrecheckRejectsEmployeeWithoutPermission(t *testing.T) {
 		t.Fatal(err)
 	}
 	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-before-no-permission", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: f.edgeMetaCommand("cmd-issue-before-no-permission"),
 		OrderID:     order.ID,
 	})
 	if err != nil {
@@ -1268,7 +1320,7 @@ func TestCannotCancelNonIssuedPrecheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-for-non-issued-cancel", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: f.edgeMetaCommand("cmd-issue-for-non-issued-cancel"),
 		OrderID:     order.ID,
 	})
 	if err != nil {
@@ -1303,7 +1355,7 @@ func TestCannotCancelPrecheckWithPaidTotalFoundation(t *testing.T) {
 		t.Fatal(err)
 	}
 	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-paid-foundation", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: f.edgeMetaCommand("cmd-issue-paid-foundation"),
 		OrderID:     order.ID,
 	})
 	if err != nil {
@@ -1342,7 +1394,7 @@ func TestCancelPrecheckRollbackKeepsIssuedAndOrderLockedWhenOutboxFails(t *testi
 		t.Fatal(err)
 	}
 	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-before-cancel-outbox-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: f.edgeMetaCommand("cmd-issue-before-cancel-outbox-fails"),
 		OrderID:     order.ID,
 	})
 	if err != nil {
@@ -1390,7 +1442,7 @@ func TestDuplicateCancelPrecheckCommandIDDoesNotDoubleCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-before-duplicate-cancel", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: f.edgeMetaCommand("cmd-issue-before-duplicate-cancel"),
 		OrderID:     order.ID,
 	})
 	if err != nil {
@@ -1399,7 +1451,7 @@ func TestDuplicateCancelPrecheckCommandIDDoesNotDoubleCancel(t *testing.T) {
 	outboxBefore := countRows(t, f, "pos_sync_outbox")
 	eventsBefore := countRows(t, f, "local_event_log")
 	cmd := app.CancelPrecheckCommand{
-		CommandMeta:        app.CommandMeta{CommandID: "cmd-cancel-duplicate", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta:        f.edgeMetaCommand("cmd-cancel-duplicate"),
 		PrecheckID:         precheck.ID,
 		ManagerEmployeeID:  f.manager.ID,
 		ManagerPIN:         "2468",
@@ -1454,14 +1506,14 @@ func TestCannotIssueSecondActivePrecheckForOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-precheck-1", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: f.edgeMetaCommand("cmd-issue-precheck-1"),
 		OrderID:     order.ID,
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	_, err = f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-issue-precheck-2", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: f.edgeMetaCommand("cmd-issue-precheck-2"),
 		OrderID:     order.ID,
 	})
 	if !errors.Is(err, domain.ErrConflict) {
@@ -1568,7 +1620,7 @@ func TestCapturePaymentRollbackRemovesAttemptPaymentOutboxAndLocalEvent(t *testi
 	service := app.NewService(outboxFailingRepo{Repository: f.repo}, platformsqlite.NewTxManager(f.db), &testIDs{n: 4000}, fixedClock{})
 
 	_, err = service.CapturePayment(f.ctx, app.CapturePaymentCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-payment-outbox-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: f.edgeMetaCommand("cmd-payment-outbox-fails"),
 		PrecheckID:  precheck.ID,
 		Method:      domain.PaymentCash,
 		Amount:      precheck.Total,
@@ -1623,7 +1675,7 @@ func TestFullPaymentRollsBackFinalCheckWhenCheckCreatedOutboxFails(t *testing.T)
 	service := app.NewService(checkCreatedOutboxFailingRepo{Repository: f.repo}, platformsqlite.NewTxManager(f.db), &testIDs{n: 7000}, fixedClock{})
 
 	_, err = service.CapturePayment(f.ctx, app.CapturePaymentCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-payment-check-outbox-fails", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta: f.edgeMetaCommand("cmd-payment-check-outbox-fails"),
 		PrecheckID:  precheck.ID,
 		Method:      domain.PaymentCash,
 		Amount:      precheck.Total,
@@ -1767,7 +1819,7 @@ func TestDuplicatePaymentCommandIDDoesNotDoubleCapture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := app.CapturePaymentCommand{CommandMeta: app.CommandMeta{CommandID: "cmd-payment-duplicate", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice}, PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: 1000, Currency: "RUB"}
+	cmd := app.CapturePaymentCommand{CommandMeta: f.edgeMetaCommand("cmd-payment-duplicate"), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: 1000, Currency: "RUB"}
 	if _, err := f.service.CapturePayment(f.ctx, cmd); err != nil {
 		t.Fatal(err)
 	}
@@ -1800,14 +1852,17 @@ func TestPaymentRequiresActiveShiftAndMatchingDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: app.CommandMeta{CommandID: "cmd-payment-wrong-device", DeviceID: "other-device", Origin: app.OriginEdgeDevice}, PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"})
-	if !errors.Is(err, domain.ErrConflict) {
-		t.Fatalf("expected device conflict, got %v", err)
+	wrongDeviceMeta := f.edgeMetaCommand("cmd-payment-wrong-device")
+	wrongDeviceMeta.NodeDeviceID = "other-device"
+	wrongDeviceMeta.DeviceID = "other-device"
+	_, err = f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: wrongDeviceMeta, PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"})
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected session/device forbidden, got %v", err)
 	}
 	if _, err := f.db.ExecContext(f.ctx, `UPDATE shifts SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`, appshared.DBTime(fixedClock{}.Now()), appshared.DBTime(fixedClock{}.Now()), order.ShiftID); err != nil {
 		t.Fatal(err)
 	}
-	_, err = f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: app.CommandMeta{CommandID: "cmd-payment-no-active-shift", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice}, PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"})
+	_, err = f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMetaCommand("cmd-payment-no-active-shift"), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"})
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected active shift conflict, got %v", err)
 	}
@@ -1868,7 +1923,7 @@ func TestKeyWritesCreateLocalEventsAndMatchingOutboxEnvelopes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: app.CommandMeta{CommandID: "cmd-key-write-full-payment", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice}, PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMetaCommand("cmd-key-write-full-payment"), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.service.CloseShift(f.ctx, app.CloseShiftCommand{CommandMeta: f.edgeMeta(), ID: shift.ID, ClosedByEmployeeID: f.employee.ID, ClosingCashAmount: 0}); err != nil {

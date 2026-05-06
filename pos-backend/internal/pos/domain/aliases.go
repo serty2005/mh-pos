@@ -28,6 +28,16 @@ var (
 type Restaurant = restaurant.Restaurant
 
 type Device = device.Device
+type EdgeNodeStatus = device.EdgeNodeStatus
+type EdgeNodeIdentity = device.EdgeNodeIdentity
+type ClientDeviceStatus = device.ClientDeviceStatus
+type ClientDevice = device.ClientDevice
+type PairingStatus = device.PairingStatus
+
+const (
+	EdgeNodePaired     = device.EdgeNodePaired
+	ClientDeviceActive = device.ClientDeviceActive
+)
 
 type Role = employee.Role
 type Employee = employee.Employee

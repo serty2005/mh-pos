@@ -3,6 +3,7 @@
 Статус: актуальная pilot-freeze спецификация для MVP-0 и первого запуска  
 Язык проекта, документации, промптов и комментариев задач: русский  
 Дата фиксации версии: 2026-05-06
+Текущее обновление реализации: 2026-05-07 — backend auth/device contract и `pos-ui` shell приведены к модели `pairing -> login -> pos -> lock/logout`
 
 ---
 
@@ -29,7 +30,8 @@ docs/sync/edge-cloud-contracts-v1.md
 - SyncEnvelope и Outbox модель;
 - модель Order → Precheck → Payment → Check;
 - правила Manager Override;
-- правила Device Identity;
+- правила Edge Node / Client Device Identity;
+- правила operator auth vs system/device auth;
 - правила DishServed и Inventory Ledger;
 - ограничения текущего этапа;
 - запреты и anti-patterns.
@@ -78,13 +80,25 @@ pos-backend/
   pos_sync_outbox
   SyncEnvelope foundation
   Orders foundation
-  Prechecks lifecycle foundation: schema/domain/repository/dormant IssuePrecheck and CancelPrecheck
-  Checks/Payments foundation по старой модели
+  Public Order -> Precheck -> Payment -> Check runtime
+  Public IssuePrecheck / read / list / CancelPrecheck
+  Precheck-based payments and automatic final Check
+  PIN login/session/logout foundation
+  Operator auth enforcement for business flows
+  Edge Node pairing foundation
+  node_device_id + client_device_id metadata foundation
+  Client device auto-registration foundation
   Shifts foundation
   Cash Sessions foundation
   Cash Drawer Events foundation
   payment_attempts foundation
   Inventory/Recipes schema foundation
+
+pos-ui/
+  Vue 3 + TypeScript + Quasar shell
+  /pair, /login, /lock, /pos
+  TanStack Query server state
+  localStorage client_device_id
 
 cloud-backend/
   Go Cloud Sync Receiver
@@ -100,11 +114,14 @@ cloud-backend/
 ```text
 Stage 0/1: Edge Core Skeleton & Sync Foundation — DONE
 Stage 2: Cash & Shifts Core — DONE / mostly done
-Stage 3: Orders, Prechecks & Taxes — NEXT / in progress
-Stage 4: Payments & Final Checks — NEXT
+Stage 3: Orders, Prechecks & Taxes — in progress
+Stage 4: Payments & Final Checks — runtime slice enabled
+Stage UI-0: pos-ui shell — DONE / minimal
 ```
 
-Фактическое ограничение текущего кода: Precheck lifecycle foundation added, runtime flow still legacy. Публичные POS endpoints пока продолжают использовать старый checks/payments flow; app-level `IssuePrecheck` и `CancelPrecheck` существуют без публичного API, payments еще не привязаны к precheck, final check еще не создается автоматически после полной оплаты precheck.
+Фактическое состояние текущего кода: публичный runtime `Order -> Precheck -> Payment -> Check` включен. `IssuePrecheck` создает issued precheck и переводит order в `locked`; `CancelPrecheck` доступен публично через manager override; payment capture идет через precheck, поддерживает partial payments и создает final `Check` только после полной оплаты. Legacy check payment endpoint отключен.
+
+Auth/device состояние: operator/business flows требуют active employee session, matching `actor_employee_id`, `session_id`, `client_device_id` и permissions там, где нужны. System/device flows (`sync`, pairing/status, future diagnostics/hardware callbacks) не завязаны на employee session. Lock screen равен backend logout через `POST /api/v1/auth/logout`; session становится `revoked`, новый PIN login создает новую session.
 
 В v1.3 старая модель `Order → Check → Payment` заменяется целевой финансовой моделью:
 
@@ -205,7 +222,87 @@ pos-ui
 
 Frontend не является source of truth. Запрещено переносить бизнес-решения, финансовую математику, precheck/payment/check инварианты, права или state transitions во frontend. Tailwind не используется. Старые предположения про React/Vite UI считаются устаревшими.
 
-`pos-ui` может использовать dev-only bootstrap `device_id` в `localStorage` только до production provisioning. Production target - stable server-issued `device_id` через binding/provisioning.
+`pos-ui` реализует минимальный shell:
+
+```text
+/pair  -> POST /api/v1/system/pair
+/login -> POST /api/v1/auth/pin-login
+/pos   -> session restore + halls/tables
+/lock  -> POST /api/v1/auth/logout
+```
+
+Server state в UI идет через TanStack Query. Pinia хранит только локальное состояние identity/session. `client_device_id` генерируется frontend-клиентом через `crypto.randomUUID()` и хранится в `localStorage`; это identity конкретного UI-клиента, а не Edge Node. `node_device_id` не генерируется frontend; он приходит через pairing/provisioning и обозначает POS Edge Backend.
+
+---
+
+## ADR-004A: Operator Auth vs System/Device Auth
+
+Решение: RBAC/Auth enforcement применяется только к operator/business flows.
+
+Operator/business actions:
+
+```text
+orders
+prechecks
+payments/checks/refunds
+KDS actions
+cash/cash drawer business actions
+other employee-initiated writes
+```
+
+Требования:
+
+- active backend `session_id`;
+- `session_id` принадлежит `actor_employee_id`;
+- session active and not revoked;
+- session context matches `node_device_id` and `client_device_id`;
+- permissions проверяются в app/use case layer там, где нужны.
+
+System/device actions:
+
+```text
+sync
+pairing/status
+diagnostics
+hardware callbacks
+future device operations
+```
+
+Они не требуют employee session и должны иметь отдельный device/system auth path. Нельзя натягивать employee session на sync/diagnostics/hardware callbacks.
+
+Lock semantics:
+
+- UI Lock или auto-lock обязан вызвать `POST /api/v1/auth/logout`;
+- logout переводит backend session в `revoked`;
+- frontend очищает локальный auth/session state;
+- новый PIN login всегда создает новую session;
+- `GET /api/v1/auth/session` отражает актуальный status старой session.
+
+---
+
+## ADR-004B: Edge Node and Client Device Identity
+
+Решение: разделяем identity backend-сервера и frontend-клиента.
+
+```text
+node_device_id   = POS Edge Backend / Edge Node identity
+client_device_id = UI-клиент: планшет, касса, браузер
+```
+
+Production target: `node_device_id` назначается Cloud через pairing/provisioning. MVP foundation: `POST /api/v1/system/pair` принимает pairing payload `MHPOS:<restaurant_id>:<node_device_id>` и не генерирует `node_device_id` локально.
+
+`client_device_id` в MVP генерируется frontend-клиентом и auto-registers на Edge со статусом `active`. Ручной approve планшетов менеджером в MVP не нужен.
+
+Business commands должны знать:
+
+```text
+node_device_id
+client_device_id
+actor_employee_id
+session_id
+```
+
+`local_event_log`, `pos_sync_outbox`, `SyncEnvelope` и audit metadata сохраняют оба device identifiers там, где применимо. Legacy `device_id` в текущих API/таблицах остается backward-compatible alias для `node_device_id`; новый код должен использовать явные поля.
 
 ---
 

@@ -111,23 +111,23 @@ func (r *Repository) ArchiveEmployee(ctx context.Context, id, updatedAt string) 
 }
 
 func (r *Repository) CreateManagerOverrideAudit(ctx context.Context, v *domain.ManagerOverrideAudit) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO manager_override_audit(id,command_id,restaurant_id,device_id,shift_id,order_id,precheck_id,manager_employee_id,actor_employee_id,session_id,action,reason,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.CommandID, v.RestaurantID, v.DeviceID, v.ShiftID, v.OrderID, v.PrecheckID, v.ManagerEmployeeID, nullableString(v.ActorEmployeeID), nullableString(v.SessionID), v.Action, v.Reason, dbTime(v.OccurredAt), dbTime(v.CreatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO manager_override_audit(id,command_id,restaurant_id,device_id,node_device_id,client_device_id,shift_id,order_id,precheck_id,manager_employee_id,actor_employee_id,session_id,action,reason,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.CommandID, v.RestaurantID, v.DeviceID, v.NodeDeviceID, nullableString(v.ClientDeviceID), v.ShiftID, v.OrderID, v.PrecheckID, v.ManagerEmployeeID, nullableString(v.ActorEmployeeID), nullableString(v.SessionID), v.Action, v.Reason, dbTime(v.OccurredAt), dbTime(v.CreatedAt))
 	return normalizeErr(err)
 }
 
 func (r *Repository) CreateAuthSession(ctx context.Context, v *domain.AuthSession) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO auth_sessions(id,restaurant_id,device_id,employee_id,status,started_at,last_seen_at,expires_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.RestaurantID, v.DeviceID, v.EmployeeID, string(v.Status), dbTime(v.StartedAt), dbTime(v.LastSeenAt), nullableTime(v.ExpiresAt), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO auth_sessions(id,restaurant_id,device_id,node_device_id,client_device_id,employee_id,status,started_at,last_seen_at,expires_at,revoked_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.RestaurantID, v.NodeDeviceID, v.NodeDeviceID, v.ClientDeviceID, v.EmployeeID, string(v.Status), dbTime(v.StartedAt), dbTime(v.LastSeenAt), nullableTime(v.ExpiresAt), nullableTime(v.RevokedAt), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }
 
 func (r *Repository) GetAuthSession(ctx context.Context, id string) (*domain.AuthSession, error) {
 	var v domain.AuthSession
 	var status, started, lastSeen, created, updated string
-	var expires sql.NullString
-	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,device_id,employee_id,status,started_at,last_seen_at,expires_at,created_at,updated_at FROM auth_sessions WHERE id = ?`, id).
-		Scan(&v.ID, &v.RestaurantID, &v.DeviceID, &v.EmployeeID, &status, &started, &lastSeen, &expires, &created, &updated)
+	var expires, revoked sql.NullString
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,node_device_id,client_device_id,employee_id,status,started_at,last_seen_at,expires_at,revoked_at,created_at,updated_at FROM auth_sessions WHERE id = ?`, id).
+		Scan(&v.ID, &v.RestaurantID, &v.NodeDeviceID, &v.ClientDeviceID, &v.EmployeeID, &status, &started, &lastSeen, &expires, &revoked, &created, &updated)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
@@ -135,7 +135,32 @@ func (r *Repository) GetAuthSession(ctx context.Context, id string) (*domain.Aut
 	v.StartedAt = parseTime(started)
 	v.LastSeenAt = parseTime(lastSeen)
 	v.ExpiresAt = timePtr(expires)
+	v.RevokedAt = timePtr(revoked)
 	v.CreatedAt = parseTime(created)
 	v.UpdatedAt = parseTime(updated)
 	return &v, nil
+}
+
+func (r *Repository) UpdateAuthSessionSeen(ctx context.Context, id, seenAt string) error {
+	res, err := r.execer(ctx).ExecContext(ctx, `UPDATE auth_sessions SET last_seen_at = ?, updated_at = ? WHERE id = ?`, seenAt, seenAt, id)
+	if err != nil {
+		return normalizeErr(err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (r *Repository) RevokeAuthSession(ctx context.Context, id, revokedAt string) error {
+	res, err := r.execer(ctx).ExecContext(ctx, `UPDATE auth_sessions SET status = 'revoked', revoked_at = ?, updated_at = ? WHERE id = ?`, revokedAt, revokedAt, id)
+	if err != nil {
+		return normalizeErr(err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }

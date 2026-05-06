@@ -26,6 +26,8 @@ import (
 
 type CommandMeta = shared.CommandMeta
 
+var NormalizeDeviceMeta = shared.NormalizeDeviceMeta
+
 const (
 	OriginEdgeDevice = shared.OriginEdgeDevice
 	OriginCloudSync  = shared.OriginCloudSync
@@ -34,10 +36,12 @@ const (
 
 type CreateRestaurantCommand = apprestaurant.CreateRestaurantCommand
 type RegisterDeviceCommand = appdevice.RegisterDeviceCommand
+type PairEdgeNodeCommand = appdevice.PairEdgeNodeCommand
 type CreateRoleCommand = appemployee.CreateRoleCommand
 type CreateEmployeeCommand = appemployee.CreateEmployeeCommand
 type ArchiveEmployeeCommand = appemployee.ArchiveEmployeeCommand
 type PinLoginCommand = appauth.PinLoginCommand
+type LogoutCommand = appauth.LogoutCommand
 type CreateHallCommand = appfloor.CreateHallCommand
 type ArchiveHallCommand = appfloor.ArchiveHallCommand
 type CreateTableCommand = appfloor.CreateTableCommand
@@ -125,6 +129,14 @@ func (s *Service) RegisterDevice(ctx context.Context, cmd RegisterDeviceCommand)
 	return s.devices.RegisterDevice(ctx, cmd)
 }
 
+func (s *Service) PairEdgeNode(ctx context.Context, cmd PairEdgeNodeCommand) (*domain.EdgeNodeIdentity, error) {
+	return s.devices.PairEdgeNode(ctx, cmd)
+}
+
+func (s *Service) GetPairingStatus(ctx context.Context) (domain.PairingStatus, error) {
+	return s.devices.GetPairingStatus(ctx)
+}
+
 func (s *Service) ListRoles(ctx context.Context) ([]domain.Role, error) {
 	return s.employees.ListRoles(ctx)
 }
@@ -149,8 +161,12 @@ func (s *Service) PinLogin(ctx context.Context, cmd PinLoginCommand) (*domain.Pi
 	return s.auth.PinLogin(ctx, cmd)
 }
 
-func (s *Service) GetSession(ctx context.Context, sessionID, deviceID string) (*domain.PinLoginResult, error) {
-	return s.auth.GetSession(ctx, sessionID, deviceID)
+func (s *Service) Logout(ctx context.Context, cmd LogoutCommand) (*domain.AuthSession, error) {
+	return s.auth.Logout(ctx, cmd)
+}
+
+func (s *Service) GetSession(ctx context.Context, sessionID, nodeDeviceID, clientDeviceID string) (*domain.PinLoginResult, error) {
+	return s.auth.GetSession(ctx, sessionID, nodeDeviceID, clientDeviceID)
 }
 
 func (s *Service) CreateHall(ctx context.Context, cmd CreateHallCommand) (*domain.Hall, error) {

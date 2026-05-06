@@ -1,0 +1,30 @@
+{
+  "name": "pos-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@quasar/extras": "^1.18.0",
+    "@tanstack/vue-query": "^5.100.9",
+    "pinia": "^3.0.4",
+    "quasar": "^2.19.3",
+    "vue": "^3.5.34",
+    "vue-i18n": "^11.4.0",
+    "vue-router": "^5.0.6",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@quasar/vite-plugin": "^1.11.0",
+    "@vitejs/plugin-vue": "^6.0.6",
+    "sass-embedded": "^1.99.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.10",
+    "vitest": "^4.1.5",
+    "vue-tsc": "^3.2.8"
+  }
+}

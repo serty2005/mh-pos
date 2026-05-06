@@ -24,6 +24,8 @@ type OutboxMessage struct {
 	Origin          CommandOrigin `json:"origin"`
 	RestaurantID    *string       `json:"restaurant_id,omitempty"`
 	DeviceID        string        `json:"device_id"`
+	NodeDeviceID    string        `json:"node_device_id"`
+	ClientDeviceID  *string       `json:"client_device_id,omitempty"`
 	ActorEmployeeID *string       `json:"actor_employee_id,omitempty"`
 	SessionID       *string       `json:"session_id,omitempty"`
 	AggregateType   string        `json:"aggregate_type"`

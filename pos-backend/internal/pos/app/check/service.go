@@ -48,6 +48,7 @@ func (s *Service) GetCheck(ctx context.Context, id string) (*domain.Check, error
 }
 
 func (s *Service) CreateCheck(ctx context.Context, cmd CreateCheckCommand) (*domain.Check, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
 	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
@@ -55,6 +56,7 @@ func (s *Service) CreateCheck(ctx context.Context, cmd CreateCheckCommand) (*dom
 }
 
 func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand) (*domain.Payment, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
 	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
@@ -71,6 +73,9 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 	var payment *domain.Payment
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
+			return err
+		}
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
 			return err
 		}
 		precheck, err := s.repo.GetPrecheck(ctx, cmd.PrecheckID)

@@ -1,0 +1,270 @@
+:root {
+  color: #202124;
+  background: #f5f4ef;
+  font-family:
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  background: #f5f4ef;
+}
+
+.app-shell {
+  min-height: 100dvh;
+  background: #f5f4ef;
+}
+
+.app-header {
+  background: #f5f4ef;
+  color: #202124;
+  border-bottom: 1px solid #d8d6ce;
+}
+
+.toolbar {
+  min-height: 56px;
+  padding: 0 24px;
+}
+
+.brand {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.header-meta {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  color: #5f625f;
+  font-size: 12px;
+  margin-right: 12px;
+}
+
+.auth-page,
+.center-page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-panel,
+.status-panel {
+  width: min(100%, 460px);
+  display: grid;
+  gap: 24px;
+  padding: 32px;
+  background: #ffffff;
+  border: 1px solid #dedbd2;
+  border-radius: 8px;
+}
+
+.auth-panel.compact {
+  width: min(100%, 380px);
+}
+
+.status-panel {
+  text-align: center;
+  justify-items: center;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: #66706b;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  font-size: 12px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 28px;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+h2 {
+  font-size: 16px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.form-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.error-banner {
+  color: #7a2e20;
+  background: #f9e7df;
+  border: 1px solid #e7b9a9;
+}
+
+.pos-page {
+  min-height: calc(100dvh - 56px);
+  padding: 24px;
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.operator-strip {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 18px 20px;
+  background: #ffffff;
+  border: 1px solid #dedbd2;
+  border-radius: 8px;
+}
+
+.session-box {
+  display: grid;
+  gap: 3px;
+  color: #66706b;
+  font-size: 12px;
+  text-align: right;
+}
+
+.session-box strong {
+  color: #202124;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+}
+
+.workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.list-pane,
+.table-pane {
+  min-height: 360px;
+  padding: 18px;
+  background: #ffffff;
+  border: 1px solid #dedbd2;
+  border-radius: 8px;
+}
+
+.pane-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  margin-bottom: 12px;
+}
+
+.active-item {
+  color: #174f41;
+  background: #e6f0eb;
+}
+
+.skeleton-row {
+  height: 48px;
+  border-radius: 6px;
+}
+
+.empty-state {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  color: #66706b;
+  border: 1px dashed #c9c5bc;
+  border-radius: 8px;
+  text-align: center;
+  padding: 18px;
+}
+
+.empty-state.wide {
+  min-height: 220px;
+}
+
+.table-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 12px;
+}
+
+.table-tile {
+  min-height: 92px;
+  display: grid;
+  align-content: space-between;
+  padding: 14px;
+  color: #202124;
+  background: #f7f6f1;
+  border: 1px solid #d8d6ce;
+  border-radius: 8px;
+  text-align: left;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+button.table-tile {
+  cursor: pointer;
+}
+
+button.table-tile:hover {
+  background: #eef5f0;
+  border-color: #9fc7b9;
+}
+
+button.table-tile:active {
+  transform: translateY(1px);
+}
+
+.table-tile span {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.table-tile small {
+  color: #66706b;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+}
+
+@media (max-width: 760px) {
+  .toolbar {
+    padding: 0 12px;
+  }
+
+  .header-meta {
+    display: none;
+  }
+
+  .auth-panel,
+  .status-panel,
+  .operator-strip,
+  .list-pane,
+  .table-pane {
+    padding: 18px;
+  }
+
+  .pos-page {
+    padding: 12px;
+  }
+
+  .operator-strip,
+  .workspace-grid {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .session-box {
+    text-align: left;
+  }
+}

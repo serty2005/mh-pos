@@ -21,6 +21,32 @@ CREATE TABLE devices (
   UNIQUE(restaurant_id, device_code)
 );
 
+CREATE TABLE edge_node_identity (
+  id TEXT PRIMARY KEY CHECK (id = 'local'),
+  node_device_id TEXT NOT NULL REFERENCES devices(id),
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+  status TEXT NOT NULL CHECK (status IN ('paired')),
+  pairing_code_hash TEXT NOT NULL CHECK (pairing_code_hash <> ''),
+  paired_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE client_devices (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+  node_device_id TEXT NOT NULL REFERENCES devices(id),
+  client_device_id TEXT NOT NULL CHECK (client_device_id <> ''),
+  status TEXT NOT NULL CHECK (status IN ('active')),
+  first_seen_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(node_device_id, client_device_id)
+);
+
+CREATE INDEX client_devices_restaurant_node_status ON client_devices(restaurant_id, node_device_id, status);
+
 CREATE TABLE roles (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
@@ -45,16 +71,20 @@ CREATE TABLE auth_sessions (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
   device_id TEXT NOT NULL REFERENCES devices(id),
+  node_device_id TEXT NOT NULL REFERENCES devices(id),
+  client_device_id TEXT NOT NULL CHECK (client_device_id <> ''),
   employee_id TEXT NOT NULL REFERENCES employees(id),
   status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
   started_at TEXT NOT NULL,
   last_seen_at TEXT NOT NULL,
   expires_at TEXT,
+  revoked_at TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  CHECK (device_id = node_device_id)
 );
 
-CREATE INDEX auth_sessions_device_employee_status ON auth_sessions(device_id, employee_id, status);
+CREATE INDEX auth_sessions_device_employee_status ON auth_sessions(node_device_id, client_device_id, employee_id, status);
 
 CREATE TABLE halls (
   id TEXT PRIMARY KEY,
@@ -275,6 +305,8 @@ CREATE TABLE manager_override_audit (
   command_id TEXT NOT NULL,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
   device_id TEXT NOT NULL REFERENCES devices(id),
+  node_device_id TEXT NOT NULL REFERENCES devices(id),
+  client_device_id TEXT CHECK (client_device_id IS NULL OR client_device_id <> ''),
   shift_id TEXT NOT NULL REFERENCES shifts(id),
   order_id TEXT NOT NULL REFERENCES orders(id),
   precheck_id TEXT NOT NULL REFERENCES prechecks(id),
@@ -284,7 +316,8 @@ CREATE TABLE manager_override_audit (
   action TEXT NOT NULL CHECK (action IN ('cancel_precheck')),
   reason TEXT NOT NULL CHECK (reason <> ''),
   occurred_at TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  CHECK (device_id = node_device_id)
 );
 
 CREATE INDEX manager_override_audit_precheck_created_at ON manager_override_audit(precheck_id, created_at);
@@ -449,12 +482,15 @@ CREATE TABLE local_event_log (
   aggregate_id TEXT NOT NULL,
   restaurant_id TEXT CHECK (restaurant_id IS NULL OR restaurant_id <> ''),
   device_id TEXT NOT NULL CHECK (device_id <> ''),
+  node_device_id TEXT NOT NULL CHECK (node_device_id <> ''),
+  client_device_id TEXT CHECK (client_device_id IS NULL OR client_device_id <> ''),
   shift_id TEXT CHECK (shift_id IS NULL OR shift_id <> ''),
   actor_employee_id TEXT REFERENCES employees(id),
   session_id TEXT REFERENCES auth_sessions(id),
   payload_json TEXT NOT NULL,
   occurred_at TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  CHECK (device_id = node_device_id)
 );
 
 CREATE INDEX local_event_log_created_at ON local_event_log(created_at);
@@ -468,6 +504,8 @@ CREATE TABLE pos_sync_outbox (
   origin TEXT NOT NULL CHECK (origin IN ('edge_device', 'cloud_sync', 'system_seed')),
   restaurant_id TEXT CHECK (restaurant_id IS NULL OR restaurant_id <> ''),
   device_id TEXT NOT NULL CHECK (device_id <> ''),
+  node_device_id TEXT NOT NULL CHECK (node_device_id <> ''),
+  client_device_id TEXT CHECK (client_device_id IS NULL OR client_device_id <> ''),
   actor_employee_id TEXT REFERENCES employees(id),
   session_id TEXT REFERENCES auth_sessions(id),
   aggregate_type TEXT NOT NULL,
@@ -485,7 +523,8 @@ CREATE TABLE pos_sync_outbox (
   updated_at TEXT NOT NULL,
   CHECK (status = 'processing' OR (locked_at IS NULL AND locked_by IS NULL)),
   CHECK ((locked_at IS NULL AND locked_by IS NULL) OR (locked_at IS NOT NULL AND locked_by IS NOT NULL)),
-  CHECK (sent_at IS NULL OR status = 'sent')
+  CHECK (sent_at IS NULL OR status = 'sent'),
+  CHECK (device_id = node_device_id)
 );
 
 CREATE INDEX pos_sync_outbox_status_sequence_no ON pos_sync_outbox(status, sequence_no);

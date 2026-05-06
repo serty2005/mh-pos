@@ -113,11 +113,13 @@ func EnsureCommandNotProcessed(ctx context.Context, repo ports.OutboxRepository,
 }
 
 func WriteOutbox(ctx context.Context, repo eventOutboxRepository, ids idgen.Generator, clock clock.Clock, meta CommandMeta, restaurantID, shiftID, aggregateType, aggregateID, commandType string, payload any) error {
+	NormalizeDeviceMeta(&meta)
 	commandID := strings.TrimSpace(meta.CommandID)
 	if commandID == "" {
 		commandID = ids.NewID()
 	}
 	origin := NormalizeOrigin(meta.Origin)
+	nodeDeviceID := EffectiveNodeDeviceID(meta)
 	eventID := ids.NewID()
 	now := clock.Now()
 	payloadBody := struct {
@@ -135,7 +137,9 @@ func WriteOutbox(ctx context.Context, repo eventOutboxRepository, ids idgen.Gene
 		AggregateType:   aggregateType,
 		AggregateID:     aggregateID,
 		RestaurantID:    OptionalID(restaurantID),
-		DeviceID:        strings.TrimSpace(meta.DeviceID),
+		DeviceID:        nodeDeviceID,
+		NodeDeviceID:    nodeDeviceID,
+		ClientDeviceID:  OptionalID(meta.ClientDeviceID),
 		ShiftID:         OptionalID(shiftID),
 		ActorEmployeeID: OptionalID(meta.ActorEmployeeID),
 		SessionID:       OptionalID(meta.SessionID),
@@ -155,7 +159,9 @@ func WriteOutbox(ctx context.Context, repo eventOutboxRepository, ids idgen.Gene
 		AggregateType:   aggregateType,
 		AggregateID:     aggregateID,
 		RestaurantID:    OptionalID(restaurantID),
-		DeviceID:        strings.TrimSpace(meta.DeviceID),
+		DeviceID:        nodeDeviceID,
+		NodeDeviceID:    nodeDeviceID,
+		ClientDeviceID:  OptionalID(meta.ClientDeviceID),
 		ShiftID:         OptionalID(shiftID),
 		ActorEmployeeID: OptionalID(meta.ActorEmployeeID),
 		SessionID:       OptionalID(meta.SessionID),
@@ -171,7 +177,9 @@ func WriteOutbox(ctx context.Context, repo eventOutboxRepository, ids idgen.Gene
 		CommandID:       commandID,
 		Origin:          origin,
 		RestaurantID:    OptionalID(restaurantID),
-		DeviceID:        strings.TrimSpace(meta.DeviceID),
+		DeviceID:        nodeDeviceID,
+		NodeDeviceID:    nodeDeviceID,
+		ClientDeviceID:  OptionalID(meta.ClientDeviceID),
 		ActorEmployeeID: OptionalID(meta.ActorEmployeeID),
 		SessionID:       OptionalID(meta.SessionID),
 		AggregateType:   aggregateType,

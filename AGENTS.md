@@ -24,7 +24,15 @@ Order -> Precheck -> Payment -> Check
 
 Approved frontend MVP теперь `pos-ui`: отдельный пакет Vue 3 + TypeScript + Quasar + Vue Router + Pinia + `@tanstack/vue-query` + `vue-i18n` + Zod. Tailwind запрещен. Frontend не является source of truth и не содержит бизнес-решений; все критические решения остаются в POS Edge backend. Старые предположения про React/Vite UI считаются устаревшими.
 
-Открытый архитектурный конфликт по `device_id`: production target - stable server-issued `device_id` через binding/provisioning. Для раннего dev bootstrap `pos-ui` допустим временный `localStorage device_id`, но только как dev-only режим до реализации provisioning; production writes не должны использовать random/client-generated `device_id`.
+Identity/auth модель больше не трактует `device_id` как один общий идентификатор. Вводятся:
+
+- `node_device_id` — стабильная identity самого POS Edge Backend / Edge Node. Production target: назначается Cloud через pairing/provisioning. В MVP foundation `POST /api/v1/system/pair` принимает pairing payload формата `MHPOS:<restaurant_id>:<node_device_id>` и не генерирует `node_device_id` локально.
+- `client_device_id` — identity конкретного frontend-клиента/планшета/браузера. В MVP `pos-ui` генерирует UUID через `crypto.randomUUID()` и хранит его в `localStorage`; backend auto-registers новый client на Edge со статусом `active`.
+- legacy `device_id` в текущей схеме и API считается backward-compatible alias для `node_device_id`; новый код и документация должны явно писать `node_device_id` и `client_device_id`.
+
+RBAC/Auth enforcement применяется только к operator/business flows. Любое действие живого сотрудника через UI требует active backend session (`session_id`), matching `actor_employee_id`, matching `client_device_id` и прав сотрудника там, где они нужны. System/device flows (`sync`, diagnostics, hardware callbacks, pairing и подобные операции) не зависят от employee session и должны идти отдельным auth path.
+
+Lock = строгий backend logout. UI lock или авто-блокировка обязаны вызвать `POST /api/v1/auth/logout`; logout переводит backend session в terminal/revoked state, frontend очищает локальный auth/session state, а новый ввод PIN всегда создает новую session. `GET /api/v1/auth/session` должен отражать актуальный status старой session, включая `revoked`.
 
 ### Карта Репозитория
 
@@ -50,7 +58,7 @@ Approved frontend MVP теперь `pos-ui`: отдельный пакет Vue 3
 |   |-- cmd/cloud-api/        # main() Cloud API
 |   `-- migrations/postgres/  # PostgreSQL bootstrap и migrations
 |-- docs/sync/                # sync contracts
-|-- pos-ui/                   # approved frontend MVP target, еще не реализован
+|-- pos-ui/                   # Vue 3 + Quasar POS shell: pairing/login/pos/lock
 |-- .codex/skills/            # локальные Codex skills
 |-- pack_go_files.py          # вспомогательный скрипт упаковки Go-файлов
 `-- project_dump.py           # вспомогательный скрипт дампа проекта
@@ -558,7 +566,9 @@ POST /api/v1/sync/retry-failed
 - Edge foundation: `local_event_log` + retry-safe `pos_sync_outbox` + cash sessions + payment attempts + PIN auth/session, actor/session metadata, halls/tables foundation, order line quantity/void API, prechecks lifecycle foundation with public issue/read/list/cancel endpoints, manager override audit, precheck payments and automatic final check generation
 - Operational sync endpoints: outbox, local events, aggregated sync status and manual retry failed/suspended
 - Cloud: minimal `cloud-backend/` Sync Receiver implemented; Cloud is not a runtime dependency for critical POS Edge writes
-- Approved frontend MVP: `pos-ui` на Vue 3 + TypeScript + Quasar + Vue Router + Pinia + `@tanstack/vue-query` + `vue-i18n` + Zod; frontend еще не реализован
+- Approved frontend MVP: `pos-ui` на Vue 3 + TypeScript + Quasar + Vue Router + Pinia + `@tanstack/vue-query` + `vue-i18n` + Zod; реализован минимальный shell `/pair`, `/login`, `/lock`, `/pos`
+- Auth/device model: operator flows требуют active employee session + matching `actor_employee_id`/`session_id`/`client_device_id`; system/device endpoints идут отдельным path; lock вызывает backend logout
+- Identity split: `node_device_id` назначается через pairing, `client_device_id` хранится в frontend `localStorage` и auto-registers на Edge; business audit/events/outbox metadata должны сохранять оба идентификатора там, где применимо
 
 ---
 

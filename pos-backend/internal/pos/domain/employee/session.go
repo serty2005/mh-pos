@@ -10,16 +10,18 @@ const (
 )
 
 type AuthSession struct {
-	ID           string            `json:"id"`
-	RestaurantID string            `json:"restaurant_id"`
-	DeviceID     string            `json:"device_id"`
-	EmployeeID   string            `json:"employee_id"`
-	Status       AuthSessionStatus `json:"status"`
-	StartedAt    time.Time         `json:"started_at"`
-	LastSeenAt   time.Time         `json:"last_seen_at"`
-	ExpiresAt    *time.Time        `json:"expires_at,omitempty"`
-	CreatedAt    time.Time         `json:"created_at"`
-	UpdatedAt    time.Time         `json:"updated_at"`
+	ID             string            `json:"id"`
+	RestaurantID   string            `json:"restaurant_id"`
+	NodeDeviceID   string            `json:"node_device_id"`
+	ClientDeviceID string            `json:"client_device_id"`
+	EmployeeID     string            `json:"employee_id"`
+	Status         AuthSessionStatus `json:"status"`
+	StartedAt      time.Time         `json:"started_at"`
+	LastSeenAt     time.Time         `json:"last_seen_at"`
+	ExpiresAt      *time.Time        `json:"expires_at,omitempty"`
+	RevokedAt      *time.Time        `json:"revoked_at,omitempty"`
+	CreatedAt      time.Time         `json:"created_at"`
+	UpdatedAt      time.Time         `json:"updated_at"`
 }
 
 type ActorContext struct {
