@@ -1,0 +1,27 @@
+---
+description: Feature flags / gradual rollout (frontend): kill switch, targeting, sunset plan
+globs:
+  - "front_new/**/*.{ts,tsx,js,jsx}"
+alwaysApply: true
+---
+
+# FEATURE FLAGS (FRONTEND) — 2026
+
+Feature flags нужны для миграций UI, canary, dark launches, A/B.
+
+## Правила
+
+- Флаг выбирает реализацию/маршрут/поведение, но **не размазывает бизнес‑логику** по UI.
+- У флага всегда есть **sunset plan**: когда и кем он будет удалён.
+- В местах переключения — единый helper/adapter (не сотни `if(flag)` по коду).
+
+## Паттерны
+
+- Kill switch (мгновенно выключить фичу)
+- Canary (процент пользователей/tenant)
+- Migration toggle (v1 → v2)
+
+## Запрещено
+
+- вечные флаги без удаления
+- флаг без наблюдаемости (хотя бы лог/метрика в единой точке)
