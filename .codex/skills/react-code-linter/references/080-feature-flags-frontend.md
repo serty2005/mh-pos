@@ -1,5 +1,5 @@
 ---
-description: Frontend feature flags and gradual rollout: kill switch, targeting, sunset plan
+description: Frontend feature flags and gradual rollout kill switch, targeting, sunset plan
 globs:
   - "*.{ts,tsx,js,jsx}"
 alwaysApply: true
