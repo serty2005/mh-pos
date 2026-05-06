@@ -20,7 +20,7 @@ Order -> Precheck -> Payment -> Check
 
 Важно: проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. Изменения v1.3 нужно проектировать как first-launch schema/logic, а не как миграцию исторических данных.
 
-Текущее состояние кода нужно отделять от целевой модели: `pos-backend` сейчас сохраняет legacy checks/payments runtime flow и еще не переведен на precheck flow. Precheck foundation уже добавлен на уровне schema/domain/repository/dormant app service; app-level `IssuePrecheck` создает issued precheck и переводит order в `locked`, app-level `CancelPrecheck` отменяет active issued precheck без full PIN verification foundation и возвращает order в `open`, но публичный runtime flow системы остается legacy.
+Текущее состояние кода нужно отделять от целевой модели: `pos-backend` уже включает публичный `Order -> Precheck` slice (`POST /api/v1/orders/{id}/precheck`, `GET /api/v1/prechecks/{id}`, `GET /api/v1/orders/{id}/prechecks`). App-level `IssuePrecheck` создает issued precheck и переводит order в `locked`; app-level `CancelPrecheck` отменяет active issued precheck без full PIN verification foundation и возвращает order в `open`, но публичного cancel endpoint пока нет. Payment/check runtime flow пока остается legacy check-based и еще не переведен на payment-to-precheck/final-check flow.
 
 ### Карта Репозитория
 
@@ -221,7 +221,7 @@ domain -> app -> ports -> infra
 - catalog
 - menu
 - orders
-- prechecks lifecycle foundation без runtime API переключения
+- публичный `Order -> Precheck` API slice и prechecks lifecycle foundation
 - checks/payments foundation по старому flow
 - payment_attempts
 - shifts
@@ -233,10 +233,9 @@ domain -> app -> ports -> infra
 
 Текущая реализация еще НЕ включает:
 
-- целевой `Precheck` flow
-- публичный endpoint `IssuePrecheck`
 - payment привязанный к precheck
 - автоматическое создание final check после полной оплаты precheck
+- публичный cancel precheck endpoint с manager PIN verification
 - POS UI
 - production-grade inventory workflows
 - fiscalization
@@ -536,8 +535,8 @@ GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated
 - Version: 1.3 Architecture Lock
 - Scope: POS Edge Backend + minimal Cloud Sync Receiver foundation
 - Target financial model: `Order -> Precheck -> Payment -> Check`
-- Current POS Edge code: legacy runtime flow, not yet migrated to precheck flow
-- Edge foundation: `local_event_log` + `pos_sync_outbox` + cash sessions + payment attempts + dormant prechecks lifecycle foundation with app-level order locking/unlocking
+- Current POS Edge code: public `Order -> Precheck` slice enabled; payment/check runtime flow is still legacy check-based
+- Edge foundation: `local_event_log` + `pos_sync_outbox` + cash sessions + payment attempts + prechecks lifecycle foundation with public issue/read/list endpoints and app-level cancel foundation
 - Operational read-only endpoints: sync outbox and local events
 - Cloud: minimal `cloud-backend/` Sync Receiver implemented; Cloud is not a runtime dependency for critical POS Edge writes
 

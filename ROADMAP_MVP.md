@@ -32,7 +32,7 @@
 - shifts;
 - cash sessions;
 - cash drawer events;
-- prechecks lifecycle foundation: SQLite table, domain model, repository, dormant `IssuePrecheck`, order locking, app-level `CancelPrecheck`, version/paid_total fields;
+- prechecks lifecycle foundation: SQLite table, domain model, repository, public `IssuePrecheck` API, order locking, app-level `CancelPrecheck`, version/paid_total fields;
 - базовые orders/checks/payments;
 - device registration foundation;
 - SQLite migrations для первого запуска локальной БД;
@@ -44,7 +44,7 @@
 Order -> Precheck -> Payment -> Check
 ```
 
-Текущее ограничение: precheck foundation added, runtime flow still legacy. App-level `IssuePrecheck` уже locks order, app-level `CancelPrecheck` unlocks order после успешной отмены active issued precheck, но legacy `CreateCheck` и payment-to-check flow intentionally сохранены до полноценного Precheck Core и публичного precheck API.
+Текущее ограничение: публичный `Order -> Precheck` slice уже включен. App-level `IssuePrecheck` locks order и доступен через API, app-level `CancelPrecheck` unlocks order после успешной отмены active issued precheck, но payment-to-precheck, automatic final check generation и публичный manager cancel endpoint еще не реализованы.
 
 ---
 
@@ -576,7 +576,7 @@ Acceptance criteria:
 
 Цель: реализовать `Order -> Precheck`.
 
-Статус: начат как dormant foundation. Entity, repository, app-level `IssuePrecheck`, order locking, app-level `CancelPrecheck` и минимальный versioning foundation добавлены, но endpoint, full supersede flow и payment-to-precheck еще не внедрены.
+Статус: публичный Stage C slice включен. Entity, repository, app-level/public `IssuePrecheck`, order locking, public get/list precheck endpoints, app-level `CancelPrecheck` и минимальный versioning foundation добавлены, но full supersede flow, payment-to-precheck и публичный manager cancel endpoint еще не внедрены.
 
 Backend задачи:
 
@@ -592,9 +592,10 @@ Backend задачи:
   - `UpdatePrecheckLifecycle`;
   - full `SupersedeIssuedPrechecksForOrder`/`NextPrecheckVersionForOrder` еще не выделены отдельными ports.
 - [x] Реализовать SQLite repository для `CreatePrecheck`, `GetPrecheck`, `GetActivePrecheckByOrder`, `ListPrechecksByOrder`, `UpdatePrecheckLifecycle`.
-- [x] Реализовать dormant use case `IssuePrecheck`.
-- [ ] Заменить endpoint `POST /orders/{id}/check` на `POST /orders/{id}/precheck`.
-- [ ] Старый endpoint либо удалить до первого запуска, либо оставить временно только как deprecated dev endpoint, который вызывает `IssuePrecheck`.
+- [x] Реализовать use case `IssuePrecheck`.
+- [x] Добавить endpoint `POST /orders/{id}/precheck`.
+- [x] Оставить старый `POST /orders/{id}/check` временно только как deprecated dev endpoint, который вызывает `IssuePrecheck`.
+- [x] Добавить read endpoints `GET /prechecks/{id}` и `GET /orders/{id}/prechecks`.
 
 Бизнес-правила:
 
@@ -614,8 +615,13 @@ PrecheckSuperseded
 Тесты:
 
 - [x] success: issue first precheck version 1;
+- [x] success: issue first precheck through public API;
+- [x] success: get precheck by id through public API;
+- [x] success: list prechecks by order through public API;
 - [ ] success: issue second precheck version 2, previous becomes superseded;
 - [ ] fail: duplicate version blocked by unique index;
+- [x] fail: duplicate public API command id does not create second precheck;
+- [x] deprecated `/orders/{id}/check` public API alias calls `IssuePrecheck` and does not create legacy check;
 - [x] fail: add order line after issued precheck;
 - [x] rollback: outbox write failure откатывает precheck и order lock.
 

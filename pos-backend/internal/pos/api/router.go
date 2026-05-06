@@ -52,8 +52,12 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/orders", h.createOrder)
 		r.Get("/orders/{id}", h.getOrder)
 		r.Post("/orders/{id}/lines", h.addOrderLine)
-		r.Post("/orders/{id}/check", h.createCheck)
+		r.Post("/orders/{id}/precheck", h.issuePrecheck)
+		r.Get("/orders/{id}/prechecks", h.listPrechecksByOrder)
+		r.Post("/orders/{id}/check", h.issuePrecheckFromDeprecatedCheckAlias)
 		r.Post("/orders/{id}/close", h.closeOrder)
+
+		r.Get("/prechecks/{id}", h.getPrecheck)
 
 		r.Get("/checks/{id}", h.getCheck)
 		r.Post("/checks/{id}/payments", h.capturePayment)
@@ -242,15 +246,29 @@ func (h *Handler) addOrderLine(w http.ResponseWriter, r *http.Request) {
 	writeCreated(w, v, err)
 }
 
-func (h *Handler) createCheck(w http.ResponseWriter, r *http.Request) {
-	var cmd app.CreateCheckCommand
+func (h *Handler) issuePrecheck(w http.ResponseWriter, r *http.Request) {
+	var cmd app.IssuePrecheckCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
 		httpx.Error(w, err)
 		return
 	}
 	setEdgeOrigin(&cmd.CommandMeta)
 	cmd.OrderID = chi.URLParam(r, "id")
-	v, err := h.service.CreateCheck(r.Context(), cmd)
+	v, err := h.service.IssuePrecheck(r.Context(), cmd)
+	writeCreated(w, v, err)
+}
+
+func (h *Handler) issuePrecheckFromDeprecatedCheckAlias(w http.ResponseWriter, r *http.Request) {
+	var legacy app.CreateCheckCommand
+	if err := httpx.Decode(r, &legacy); err != nil {
+		httpx.Error(w, err)
+		return
+	}
+	setEdgeOrigin(&legacy.CommandMeta)
+	v, err := h.service.IssuePrecheck(r.Context(), app.IssuePrecheckCommand{
+		CommandMeta: legacy.CommandMeta,
+		OrderID:     chi.URLParam(r, "id"),
+	})
 	writeCreated(w, v, err)
 }
 
@@ -262,6 +280,16 @@ func (h *Handler) closeOrder(w http.ResponseWriter, r *http.Request) {
 	setEdgeOrigin(&cmd.CommandMeta)
 	cmd.OrderID = chi.URLParam(r, "id")
 	v, err := h.service.CloseOrder(r.Context(), cmd)
+	writeOK(w, v, err)
+}
+
+func (h *Handler) getPrecheck(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetPrecheck(r.Context(), chi.URLParam(r, "id"))
+	writeOK(w, v, err)
+}
+
+func (h *Handler) listPrechecksByOrder(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListPrechecksByOrder(r.Context(), chi.URLParam(r, "id"))
 	writeOK(w, v, err)
 }
 
