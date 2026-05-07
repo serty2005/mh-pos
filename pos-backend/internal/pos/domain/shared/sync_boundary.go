@@ -44,6 +44,13 @@ type MasterDataSyncState struct {
 	UpdatedAt          string           `json:"updated_at"`
 }
 
+type MasterRecordSyncMeta struct {
+	CloudVersion   int64
+	CloudUpdatedAt *string
+	CloudDeletedAt *string
+	LastSyncedAt   string
+}
+
 func IsEdgeToCloudOperationalEvent(eventType string) bool {
 	switch eventType {
 	case "ShiftOpened",

@@ -241,7 +241,7 @@ func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
-	case "orders", "order_lines", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "roles", "catalog_items", "menu_items", "auth_sessions", "halls", "tables":
+	case "restaurants", "devices", "orders", "order_lines", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "roles", "employees", "catalog_items", "menu_items", "auth_sessions", "halls", "tables", "cloud_master_sync_state":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -1912,6 +1912,109 @@ func TestOutboxEntryCreatedForEachWriteAction(t *testing.T) {
 	}
 	if after != before+1 {
 		t.Fatalf("expected one outbox record for write action, before=%d after=%d", before, after)
+	}
+}
+
+func TestApplyMasterDataSnapshotUpsertsRowsStateAndDoesNotCreateOutbox(t *testing.T) {
+	f := newFixture(t)
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+	applied, err := f.service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:  app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		SyncMode:     domain.SyncModeFullSnapshot,
+		CloudVersion: 42,
+		Restaurants: []domain.Restaurant{{
+			ID:       "cloud-restaurant-1",
+			Name:     "Cloud Bistro",
+			Timezone: "Europe/Moscow",
+			Currency: "rub",
+			Active:   true,
+		}},
+		Devices: []domain.Device{{
+			ID:           "cloud-device-1",
+			RestaurantID: "cloud-restaurant-1",
+			DeviceCode:   "CLOUD-POS-1",
+			Name:         "Cloud POS",
+			Type:         "terminal",
+			Active:       true,
+		}},
+		Roles: []domain.Role{{
+			ID:              "cloud-role-1",
+			Name:            "cloud-cashier",
+			PermissionsJSON: `{"pos":true}`,
+			Active:          true,
+		}},
+		Employees: []domain.Employee{{
+			ID:           "cloud-employee-1",
+			RestaurantID: "cloud-restaurant-1",
+			RoleID:       "cloud-role-1",
+			Name:         "Cloud Anna",
+			PINHash:      testPINHash(t, "3333", "cloud-salt"),
+			Active:       true,
+		}},
+		Halls: []domain.Hall{{
+			ID:           "cloud-hall-1",
+			RestaurantID: "cloud-restaurant-1",
+			Name:         "Cloud Hall",
+			Active:       true,
+		}},
+		Tables: []domain.Table{{
+			ID:           "cloud-table-1",
+			RestaurantID: "cloud-restaurant-1",
+			HallID:       "cloud-hall-1",
+			Name:         "C1",
+			Seats:        4,
+			Active:       true,
+		}},
+		CatalogItems: []domain.CatalogItem{{
+			ID:       "cloud-catalog-1",
+			Type:     domain.CatalogItemDish,
+			Name:     "Cloud Soup",
+			SKU:      "CLOUD-SOUP",
+			BaseUnit: "portion",
+			Active:   true,
+		}},
+		MenuItems: []domain.MenuItem{{
+			ID:            "cloud-menu-1",
+			CatalogItemID: "cloud-catalog-1",
+			Name:          "Cloud Soup",
+			Price:         1200,
+			Currency:      "rub",
+			Active:        true,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(applied.AppliedStreams), 6; got != want {
+		t.Fatalf("expected %d applied streams, got %d: %+v", want, got, applied.AppliedStreams)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected master ingest not to create outbox rows, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected master ingest not to create local events, before=%d after=%d", eventsBefore, events)
+	}
+	var restaurantName, menuCurrency string
+	var restaurantCloudVersion, menuCloudVersion int64
+	if err := f.db.QueryRowContext(f.ctx, `SELECT name,cloud_version FROM restaurants WHERE id = 'cloud-restaurant-1'`).Scan(&restaurantName, &restaurantCloudVersion); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRowContext(f.ctx, `SELECT currency,cloud_version FROM menu_items WHERE id = 'cloud-menu-1'`).Scan(&menuCurrency, &menuCloudVersion); err != nil {
+		t.Fatal(err)
+	}
+	if restaurantName != "Cloud Bistro" || restaurantCloudVersion != 42 || menuCurrency != "RUB" || menuCloudVersion != 42 {
+		t.Fatalf("unexpected applied rows: restaurant=%q/%d menu_currency=%q/%d", restaurantName, restaurantCloudVersion, menuCurrency, menuCloudVersion)
+	}
+	if states := countRows(t, f, "cloud_master_sync_state"); states != 6 {
+		t.Fatalf("expected six master sync states, got %d", states)
+	}
+	var wrongDirection int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM cloud_master_sync_state WHERE direction <> 'cloud_to_edge' OR status <> 'applied'`).Scan(&wrongDirection); err != nil {
+		t.Fatal(err)
+	}
+	if wrongDirection != 0 {
+		t.Fatalf("expected all master sync states applied/cloud_to_edge, got %d wrong rows", wrongDirection)
 	}
 }
 

@@ -44,6 +44,7 @@ Order -> Precheck -> Payment -> Check
 - production-like POS Edge -> Cloud sender worker с direction gate, automatic retry/backoff, stale lock reclaim и idempotent resend;
 - Cloud operational event journal для принятых Edge runtime events;
 - directional sync ownership foundation: Cloud owns master/reference/configuration data, Edge owns operational POS runtime data; matrix в `docs/sync/directional-sync-ownership.md`;
+- Cloud -> Edge master-data ingest API on POS Edge: `POST /api/v1/sync/master-data/snapshots` and `POST /api/v1/sync/master-data/{stream}` for `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`; applies `cloud_sync` payloads transactionally without creating Edge -> Cloud outbox rows;
 - operational sync endpoints для просмотра outbox, local events, aggregated status и ручного retry failed/suspended messages.
 
 Честное состояние текущего кода: POS Edge backend уже выполняет runtime flow `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` переводит order в `locked`; публичный `CancelPrecheck` требует manager employee id, PIN и reason, пишет audit trail и возвращает unpaid active issued precheck в `open`; payment capture идет через `precheck_id`, а final `Check` создается только после полной оплаты. Публичные compatibility endpoints для старой check/payment модели удалены. KDS/Waiter UI еще не готовы: backend сейчас дает только halls/tables и базовое редактирование order lines.
@@ -201,6 +202,26 @@ Invoke-RestMethod http://localhost:8080/api/v1/sync/status
 
 Runtime POS actions автоматически перемещают operational outbox rows в Cloud, когда `POS_SYNC_SENDER_ENABLED=true`, а `POS_CLOUD_SYNC_URL` указывает на Cloud. Configuration/bootstrap rows, которые не являются допустимыми Edge -> Cloud operational events, имеют `sync_direction = cloud_to_edge` или `local_only` и помечаются `suspended` с явной sync-direction причиной.
 
+Cloud-authored master data for local/dev checks can be applied directly to POS Edge without running a full Cloud master backend:
+
+```powershell
+Invoke-RestMethod -Method Post http://localhost:8080/api/v1/sync/master-data/catalog -ContentType "application/json" -Body (@{
+  node_device_id = "demo-edge-node-1"
+  sync_mode = "incremental"
+  cloud_version = 1
+  catalog_items = @(@{
+    id = "cloud-demo-dish-1"
+    type = "dish"
+    name = "Cloud Demo Dish"
+    sku = "CLOUD-DEMO-DISH"
+    base_unit = "portion"
+    active = $true
+  })
+} | ConvertTo-Json -Depth 5)
+```
+
+This endpoint is Cloud -> Edge ingest, not a POS runtime mutation route. It updates master tables and `cloud_master_sync_state`; it does not enqueue Edge -> Cloud outbox rows.
+
 Проверка PostgreSQL:
 
 ```powershell
@@ -349,7 +370,7 @@ go test ./...
 - Sync outbox имеет retry-safe поля `sequence_no`, `sync_direction`, `attempts`, `next_retry_at`, `locked_at`, `locked_by`, `sent_at`, `last_error` и статусы `pending`, `processing`, `sent`, `failed`, `suspended`.
 - Sync outbox доступен через `GET /api/v1/sync/outbox`, aggregated status через `GET /api/v1/sync/status`, manual retry failed/suspended через `POST /api/v1/sync/retry-failed`.
 - Edge financial foundation включает публичные precheck issue/read/list/cancel endpoints, precheck payment endpoint, `manager_override_audit`, `payment_attempts`, automatic final checks, `cash_sessions`, `cash_drawer_events`, PIN auth/session foundation, halls/tables API и базовые HTTP endpoints для cash session/drawer workflows.
-- Cloud-owned master-data foundation запрещает Edge runtime mutation restaurants/devices metadata/roles/employees/halls/tables/catalog/menu/recipes/inventory reference data. POS Edge использует локальную read model offline; write use cases для master data принимают только `cloud_sync` или `system_seed`.
+- Cloud-owned master-data foundation запрещает Edge runtime mutation restaurants/devices metadata/roles/employees/halls/tables/catalog/menu/recipes/inventory reference data. POS Edge использует локальную read model offline; Cloud-authored master data applies through `/api/v1/sync/master-data/snapshots` or `/api/v1/sync/master-data/{stream}`; dev seed/admin write routes require `POS_DEV_TOOLS=1`.
 - Auth/device foundation включает pairing status/pair endpoints, `POST /api/v1/auth/logout`, revoked sessions, client device registry, `node_device_id`/`client_device_id` metadata в local events/outbox/SyncEnvelope.
 - Закрытие смены в POS Edge запрещено при открытых заказах или active cash session.
 - Cloud: минимальный `cloud-backend/` Sync Receiver реализован; Cloud не является зависимостью для критических POS Edge операций.

@@ -14,6 +14,7 @@ import (
 	appdevice "pos-backend/internal/pos/app/device"
 	appemployee "pos-backend/internal/pos/app/employee"
 	appfloor "pos-backend/internal/pos/app/floor"
+	appmastersync "pos-backend/internal/pos/app/mastersync"
 	appmenu "pos-backend/internal/pos/app/menu"
 	apporder "pos-backend/internal/pos/app/order"
 	appprecheck "pos-backend/internal/pos/app/precheck"
@@ -61,6 +62,8 @@ type CloseOrderCommand = apporder.CloseOrderCommand
 type OpenCashSessionCommand = appcash.OpenCashSessionCommand
 type CloseCashSessionCommand = appcash.CloseCashSessionCommand
 type RecordCashDrawerEventCommand = appcash.RecordCashDrawerEventCommand
+type ApplyMasterDataCommand = appmastersync.ApplyMasterDataCommand
+type ApplyMasterDataResult = appmastersync.ApplyMasterDataResult
 
 type ListLocalEventsQuery struct {
 	Limit     int
@@ -89,6 +92,7 @@ type Service struct {
 	prechecks   *appprecheck.Service
 	checks      *appcheck.Service
 	cash        *appcash.Service
+	masterSync  *appmastersync.Service
 	localEvents ports.LocalEventRepository
 	outbox      *shared.OutboxService
 }
@@ -107,6 +111,7 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 		prechecks:   appprecheck.NewService(repo, tx, ids, clock),
 		checks:      appcheck.NewService(repo, tx, ids, clock),
 		cash:        appcash.NewService(repo, tx, ids, clock),
+		masterSync:  appmastersync.NewService(repo, tx, ids, clock),
 		localEvents: repo,
 		outbox:      shared.NewOutboxService(repo, tx, clock),
 	}
@@ -286,6 +291,10 @@ func (s *Service) CloseCashSession(ctx context.Context, cmd CloseCashSessionComm
 
 func (s *Service) RecordCashDrawerEvent(ctx context.Context, cmd RecordCashDrawerEventCommand) (*domain.CashDrawerEvent, error) {
 	return s.cash.RecordCashDrawerEvent(ctx, cmd)
+}
+
+func (s *Service) ApplyMasterData(ctx context.Context, cmd ApplyMasterDataCommand) (*ApplyMasterDataResult, error) {
+	return s.masterSync.ApplyMasterData(ctx, cmd)
 }
 
 func (s *Service) ListOutbox(ctx context.Context, limit int) ([]domain.OutboxMessage, error) {

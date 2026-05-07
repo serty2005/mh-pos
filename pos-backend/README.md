@@ -25,7 +25,7 @@ Order -> Precheck -> Payment -> Check
 
 Sync/outbox foundation поддерживает retry-safe состояние очереди: `pending`, `processing`, `sent`, `failed`, `suspended`, локальный `sequence_no`, явный `sync_direction`, attempts/retry metadata, processing locks, stale lock reclaim на app-level и manual retry failed/suspended. implemented now: POS Edge запускает background sender worker, который claim'ит Edge -> Cloud operational rows, отправляет `SyncEnvelope` в Cloud, делает idempotent resend, automatic retry с exponential backoff, crash recovery через stale lock reclaim и direction gate для Cloud-managed/configuration событий.
 
-implemented now: master/reference/configuration data является Cloud-owned. POS Edge хранит локальную read model для offline POS flow, но Edge runtime не редактирует restaurants, devices metadata, roles, employees, halls, tables, catalog, menu, recipes и inventory reference data. Application services принимают такие writes только от `cloud_sync` или `system_seed`; public HTTP Edge mutation возвращает `403 Forbidden`. Ownership matrix: `../docs/sync/directional-sync-ownership.md`.
+implemented now: master/reference/configuration data является Cloud-owned. POS Edge хранит локальную read model для offline POS flow, но Edge runtime не редактирует restaurants, devices metadata, roles, employees, halls, tables, catalog, menu, recipes и inventory reference data. Cloud-authored master data применяется через `POST /api/v1/sync/master-data/snapshots` или `POST /api/v1/sync/master-data/{stream}` с origin `cloud_sync`; dev seed/admin mutation routes require `POS_DEV_TOOLS=1` and use `system_seed`. Ownership matrix: `../docs/sync/directional-sync-ownership.md`.
 
 Проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. SQLite clean install является canonical first-launch source of truth: активный migration path содержит один `migrations/sqlite/001_init.sql`, который сразу создает текущую runtime-схему без `payments.check_id`.
 
@@ -82,7 +82,7 @@ $env:POS_SYNC_SENDER_BATCH_SIZE="25"
 $env:POS_SYNC_SENDER_POLL_INTERVAL="2s"
 $env:POS_SYNC_SENDER_RECLAIM_AFTER="5m"
 $env:POS_SYNC_SENDER_SEND_TIMEOUT="10s"
-$env:POS_DEV_TOOLS="1" # только для локального demo bootstrap
+$env:POS_DEV_TOOLS="1" # только для локального demo bootstrap/dev seed/admin master-data helpers
 ```
 
 VSCode setup: открой папку `pos-backend`, установи официальный Go extension, выполни `Go: Install/Update Tools`, затем используй integrated terminal для `go test ./...` и `go run ./cmd/pos-edge`.
@@ -165,7 +165,14 @@ Auth/device и POS UI endpoints:
 - `POST /api/v1/cash-sessions/{id}/close`
 - `POST /api/v1/dev/bootstrap-demo` dev/local only, требует `POS_DEV_TOOLS=1`
 
-Master-data write endpoints for restaurants/devices/roles/employees/halls/tables/catalog/menu are implemented as application-layer seed/cloud-sync write use cases, but public Edge runtime HTTP calls to them return `403 Forbidden`. Use `POST /api/v1/dev/bootstrap-demo` for local demo bootstrap until production Cloud -> Edge provisioning is implemented.
+Cloud -> Edge master-data ingest endpoints:
+
+- `POST /api/v1/sync/master-data/snapshots`
+- `POST /api/v1/sync/master-data/{stream}`
+
+Supported streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`. Payload accepts `node_device_id`, `sync_mode` (`full_snapshot` or `incremental`), optional `checkpoint_token`, `cloud_version`, optional `cloud_updated_at`, and stream arrays (`restaurants`, `devices`, `roles`, `employees`, `halls`, `tables`, `catalog_items`, `menu_items`). Ingest writes master tables and `cloud_master_sync_state` in one transaction and does not create Edge -> Cloud outbox rows.
+
+Master-data write endpoints for restaurants/devices/roles/employees/halls/tables/catalog/menu are implemented as application-layer seed/cloud-sync write use cases. HTTP mutation routes are dev-only seed/admin helpers behind `POS_DEV_TOOLS=1`; normal POS runtime should use read endpoints and the Cloud -> Edge ingest endpoints above.
 
 Operational sync endpoints: `GET /api/v1/sync/outbox?limit=50`, `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`, `GET /api/v1/sync/status`, `POST /api/v1/sync/retry-failed`. `retry-failed` не отправляет данные в Cloud и не меняет business state; он только возвращает `failed`/`suspended` outbox rows в `pending`.
 

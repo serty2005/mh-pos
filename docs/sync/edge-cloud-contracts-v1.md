@@ -6,7 +6,7 @@
 
 implemented now: Edge -> Cloud отправляет только runtime operational events. POS Edge остается источником истины для кассовых runtime-операций и продолжает работать, когда Cloud недоступен.
 
-implemented now: Cloud -> Edge является направлением для master/reference/configuration данных. Полноценные Cloud-managed provisioning snapshots являются planned next и не входят в текущий sender.
+implemented now: Cloud -> Edge является направлением для master/reference/configuration данных. POS Edge принимает Cloud-authored master-data snapshots/incrementals через dedicated ingest API; этот flow не входит в Edge -> Cloud sender.
 
 implemented now: подробная ownership matrix зафиксирована в `docs/sync/directional-sync-ownership.md`.
 
@@ -37,7 +37,69 @@ POS sender содержит direction gate. Если строка `pos_sync_outb
 
 implemented now: `pos_sync_outbox.sync_direction` хранит явное направление строки: `edge_to_cloud`, `cloud_to_edge` или `local_only`. Sender отправляет только operational rows с `sync_direction = edge_to_cloud`.
 
-implemented now: Cloud -> Edge foundation хранится на Edge в `cloud_master_sync_state` и sync metadata columns master tables (`cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at`). Production snapshot/apply endpoint является planned next.
+implemented now: Cloud -> Edge master-data ingestion доступен на POS Edge через backend API `POST /api/v1/sync/master-data/snapshots` и `POST /api/v1/sync/master-data/{stream}`. Apply flow выполняется application-layer сервисом `internal/pos/app/mastersync`, пишет master/read-model rows и `cloud_master_sync_state` в одной транзакции, использует origin `cloud_sync` и не создает Edge -> Cloud outbox/local events.
+
+implemented now: Cloud -> Edge state хранится на Edge в `cloud_master_sync_state` и sync metadata columns master tables (`cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at`).
+
+## Cloud -> Edge master-data ingest
+
+implemented now: POS Edge принимает Cloud-authored full snapshot или incremental payload.
+
+Endpoints:
+
+```text
+POST /api/v1/sync/master-data/snapshots
+POST /api/v1/sync/master-data/{stream}
+Content-Type: application/json
+```
+
+Supported `{stream}` values:
+
+```text
+restaurants
+devices
+staff
+floor
+catalog
+menu
+```
+
+Request body shape:
+
+```json
+{
+  "node_device_id": "edge-node-device-id",
+  "restaurant_id": "restaurant-id",
+  "sync_mode": "full_snapshot",
+  "checkpoint_token": "optional-cloud-checkpoint",
+  "cloud_version": 42,
+  "cloud_updated_at": "2026-05-07T10:00:00Z",
+  "restaurants": [],
+  "devices": [],
+  "roles": [],
+  "employees": [],
+  "halls": [],
+  "tables": [],
+  "catalog_items": [],
+  "menu_items": []
+}
+```
+
+`sync_mode` может быть `full_snapshot` или `incremental`; если поле не передано, backend использует `full_snapshot`. `/snapshots` infers streams from non-empty arrays. `/{stream}` applies only the stream from the URL and may apply an empty stream to update checkpoint state.
+
+Response body:
+
+```json
+{
+  "node_device_id": "edge-node-device-id",
+  "applied_at": "2026-05-07T10:01:00Z",
+  "applied_streams": ["catalog"],
+  "counts": {"catalog": 1},
+  "sync_states": []
+}
+```
+
+implemented now: stream apply order inside a multi-stream snapshot is restaurants, devices, staff, floor, catalog, menu so SQLite foreign keys can be satisfied by the same payload.
 
 ## POS Sender
 

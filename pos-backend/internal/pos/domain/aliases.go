@@ -148,6 +148,7 @@ type SyncDirection = shared.SyncDirection
 type SyncMode = shared.SyncMode
 type MasterDataStream = shared.MasterDataStream
 type MasterDataSyncState = shared.MasterDataSyncState
+type MasterRecordSyncMeta = shared.MasterRecordSyncMeta
 type OutboxMessage = shared.OutboxMessage
 type SyncStatus = shared.SyncStatus
 type LocalEvent = shared.LocalEvent

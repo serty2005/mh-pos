@@ -211,7 +211,7 @@ func decodeAPIResponse[T any](t *testing.T, rr *httptest.ResponseRecorder) T {
 func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 	t.Helper()
 	switch table {
-	case "prechecks", "checks", "payments", "payment_attempts", "pos_sync_outbox", "local_event_log", "manager_override_audit", "auth_sessions", "halls", "tables":
+	case "prechecks", "checks", "payments", "payment_attempts", "pos_sync_outbox", "local_event_log", "manager_override_audit", "auth_sessions", "halls", "tables", "catalog_items", "cloud_master_sync_state":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -258,6 +258,52 @@ func TestMasterDataWriteAPIsRejectEdgeRuntimeMutation(t *testing.T) {
 	menuResp := f.postJSON(t, "/api/v1/menu/items", `{"node_device_id":"`+f.device.ID+`","catalog_item_id":"`+f.menuItem.CatalogItemID+`","name":"Tea","price":3000,"currency":"RUB"}`)
 	if menuResp.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for Edge menu mutation, got %d: %s", menuResp.Code, menuResp.Body.String())
+	}
+}
+
+func TestMasterDataIngestAPIAppliesCloudAuthoredCatalogWithoutOutbox(t *testing.T) {
+	f := newAPIFixture(t)
+	outboxBefore := countAPIRows(t, f, "pos_sync_outbox")
+	eventsBefore := countAPIRows(t, f, "local_event_log")
+	catalogBefore := countAPIRows(t, f, "catalog_items")
+	body := `{
+		"node_device_id":"` + f.device.ID + `",
+		"sync_mode":"incremental",
+		"cloud_version":55,
+		"catalog_items":[{
+			"id":"cloud-api-catalog-1",
+			"type":"dish",
+			"name":"Cloud API Tea",
+			"sku":"CLOUD-API-TEA",
+			"base_unit":"portion",
+			"active":true
+		}]
+	}`
+
+	rr := f.postJSON(t, "/api/v1/sync/master-data/catalog", body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	result := decodeAPIResponse[app.ApplyMasterDataResult](t, rr)
+	if len(result.AppliedStreams) != 1 || result.AppliedStreams[0] != domain.MasterDataStreamCatalog || result.Counts["catalog"] != 1 {
+		t.Fatalf("unexpected ingest result: %+v", result)
+	}
+	if catalog := countAPIRows(t, f, "catalog_items"); catalog != catalogBefore+1 {
+		t.Fatalf("expected one catalog item created, before=%d after=%d", catalogBefore, catalog)
+	}
+	if outbox := countAPIRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no outbox from master ingest, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countAPIRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected no local events from master ingest, before=%d after=%d", eventsBefore, events)
+	}
+	var direction, mode string
+	var version int64
+	if err := f.db.QueryRowContext(f.ctx, `SELECT direction,sync_mode,last_cloud_version FROM cloud_master_sync_state WHERE node_device_id = ? AND stream_name = 'catalog'`, f.device.ID).Scan(&direction, &mode, &version); err != nil {
+		t.Fatal(err)
+	}
+	if direction != "cloud_to_edge" || mode != "incremental" || version != 55 {
+		t.Fatalf("unexpected sync state direction=%s mode=%s version=%d", direction, mode, version)
 	}
 }
 

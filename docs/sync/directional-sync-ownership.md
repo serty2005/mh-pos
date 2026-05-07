@@ -2,9 +2,9 @@
 
 ## Status
 
-implemented now: POS Edge separates Cloud-owned master data from Edge-owned operational data at the application boundary, outbox metadata, SQLite schema metadata and tests.
+implemented now: POS Edge separates Cloud-owned master data from Edge-owned operational data at the HTTP boundary, application boundary, outbox metadata, SQLite schema metadata and tests.
 
-planned next: Cloud -> Edge production snapshot/import endpoints and Cloud-side master-data authoring UI.
+planned next: Cloud-side master-data authoring UI and richer replacement policy for full snapshots.
 
 out of scope: Kafka, distributed transactions, event sourcing as primary persistence, websocket sync and full Cloud projections.
 
@@ -52,7 +52,9 @@ implemented now fixed:
 implemented now:
 
 - Master-data write use cases accept only `origin = cloud_sync` or `origin = system_seed`.
-- HTTP requests are normalized to Edge runtime origin, so public master-data mutation routes return forbidden and do not write business rows, local events or outbox rows.
+- POS runtime HTTP requests are normalized to Edge runtime origin.
+- Public master-data mutation routes are dev-only and require `POS_DEV_TOOLS=1`; without it they return forbidden and do not write business rows, local events or outbox rows.
+- Cloud -> Edge master-data ingestion uses dedicated sync endpoints, sets origin to `cloud_sync`, and is not a POS runtime route.
 - Demo bootstrap remains available only through `POST /api/v1/dev/bootstrap-demo` with `POS_DEV_TOOLS=1`; it uses `system_seed`.
 - Operational writes remain local, transactional and outbox-backed.
 - `pos_sync_outbox.sync_direction` is explicit: `edge_to_cloud`, `cloud_to_edge` or `local_only`.
@@ -62,17 +64,19 @@ implemented now:
 
 ## Cloud -> Edge
 
-implemented now foundation:
+implemented now:
 
 - read model storage exists for restaurants, devices, staff, roles, halls, tables, catalog, menu, recipes and inventory reference/cost data;
 - master tables are version/checkpoint-ready;
 - sync state can track stream, mode, checkpoint token, last Cloud version, last Cloud update time, last applied time and status;
+- `POST /api/v1/sync/master-data/snapshots` applies Cloud-authored multi-stream full snapshots or incrementals;
+- `POST /api/v1/sync/master-data/{stream}` applies one supported stream: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`;
+- master-data ingestion writes master rows and `cloud_master_sync_state` in the same transaction;
+- master-data ingestion does not create `local_event_log` or `pos_sync_outbox` rows;
 - local POS flow uses cached/read-model data and does not require Cloud online.
 
 planned next:
 
-- Cloud-managed provisioning snapshots;
-- idempotent import/apply use case with `origin = cloud_sync`;
 - full snapshot replacement policy per stream;
 - incremental update policy using `cloud_version` and `updated_at` checkpoints.
 
@@ -99,7 +103,8 @@ Implemented Edge -> Cloud event catalog:
 implemented now:
 
 - Operational endpoints remain Edge-writable.
-- Master-data mutation endpoints are no longer valid Edge runtime flows and return forbidden when called through public HTTP.
+- Master-data mutation endpoints are no longer valid Edge runtime flows; they are dev-only seed/admin helpers behind `POS_DEV_TOOLS=1`.
+- Cloud-authored master data enters through `/api/v1/sync/master-data/snapshots` or `/api/v1/sync/master-data/{stream}`.
 - Read endpoints for master data remain available because POS must use the local read model offline.
 - `POST /api/v1/dev/bootstrap-demo` remains the supported local/demo bootstrap path.
 

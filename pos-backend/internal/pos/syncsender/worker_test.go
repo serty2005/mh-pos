@@ -75,6 +75,28 @@ func TestRunOnceSuspendsWrongDirectionMessageAndContinues(t *testing.T) {
 	}
 }
 
+func TestRunOnceSuspendsCloudToEdgeLocalOnlyAndUnsupportedRows(t *testing.T) {
+	service := &fakeOutboxService{claimed: []domain.OutboxMessage{
+		{ID: "outbox-cloud", SequenceNo: 1, Origin: domain.OriginCloudSync, SyncDirection: domain.SyncDirectionCloudToEdge, CommandType: "RestaurantCreated"},
+		{ID: "outbox-local", SequenceNo: 2, Origin: domain.OriginEdgeDevice, SyncDirection: domain.SyncDirectionLocalOnly, CommandType: "LocalDiagnosticRecorded"},
+		{ID: "outbox-wrong-direction", SequenceNo: 3, Origin: domain.OriginEdgeDevice, SyncDirection: domain.SyncDirectionCloudToEdge, CommandType: "OrderCreated"},
+		{ID: "outbox-order", SequenceNo: 4, Origin: domain.OriginEdgeDevice, SyncDirection: domain.SyncDirectionEdgeToCloud, CommandType: "OrderCreated", PayloadJSON: `{}`},
+	}}
+	worker := NewWorker(service, fakeSender{}, Config{WorkerID: "worker-test", PollInterval: time.Hour}, nil)
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"outbox-cloud", "outbox-local", "outbox-wrong-direction"} {
+		if service.suspended[id] == "" {
+			t.Fatalf("expected %s to be suspended, got suspended=%v", id, service.suspended)
+		}
+	}
+	if len(service.sent) != 1 || service.sent[0] != "outbox-order" {
+		t.Fatalf("expected only operational Edge->Cloud message to be sent, got %v", service.sent)
+	}
+}
+
 func TestRunOnceMarksRetryableFailureAndReleasesRemainingBatch(t *testing.T) {
 	service := &fakeOutboxService{claimed: []domain.OutboxMessage{
 		{ID: "outbox-order", SequenceNo: 1, Origin: domain.OriginEdgeDevice, CommandType: "OrderCreated", PayloadJSON: `{}`},

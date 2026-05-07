@@ -96,6 +96,8 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Get("/sync/local-events", h.listLocalEvents)
 		r.Get("/sync/status", h.syncStatus)
 		r.Post("/sync/retry-failed", h.retryFailedOutbox)
+		r.Post("/sync/master-data/snapshots", h.applyMasterDataSnapshot)
+		r.Post("/sync/master-data/{stream}", h.applyMasterDataStream)
 
 		r.Post("/dev/bootstrap-demo", h.bootstrapDemo)
 	})
@@ -115,6 +117,14 @@ func (h *Handler) bootstrapDemo(w http.ResponseWriter, r *http.Request) {
 func devToolsEnabled() bool {
 	value := strings.ToLower(strings.TrimSpace(os.Getenv("POS_DEV_TOOLS")))
 	return value == "1" || value == "true" || value == "yes"
+}
+
+func requireDevTools(w http.ResponseWriter) bool {
+	if devToolsEnabled() {
+		return true
+	}
+	httpx.Error(w, fmt.Errorf("%w: master data mutation APIs are dev-only; use Cloud->Edge sync ingest or set POS_DEV_TOOLS=1 for local seed data", domain.ErrForbidden))
+	return false
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
@@ -140,12 +150,15 @@ func localCORS(next http.Handler) http.Handler {
 }
 
 func (h *Handler) createRestaurant(w http.ResponseWriter, r *http.Request) {
+	if !requireDevTools(w) {
+		return
+	}
 	var cmd app.CreateRestaurantCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
 		httpx.Error(w, err)
 		return
 	}
-	setRequestMeta(&cmd.CommandMeta, r)
+	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateRestaurant(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -156,12 +169,15 @@ func (h *Handler) listRestaurants(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) registerDevice(w http.ResponseWriter, r *http.Request) {
+	if !requireDevTools(w) {
+		return
+	}
 	var cmd app.RegisterDeviceCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
 		httpx.Error(w, err)
 		return
 	}
-	setRequestMeta(&cmd.CommandMeta, r)
+	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.RegisterDevice(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -172,12 +188,15 @@ func (h *Handler) listDevices(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createRole(w http.ResponseWriter, r *http.Request) {
+	if !requireDevTools(w) {
+		return
+	}
 	var cmd app.CreateRoleCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
 		httpx.Error(w, err)
 		return
 	}
-	setRequestMeta(&cmd.CommandMeta, r)
+	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateRole(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -188,12 +207,15 @@ func (h *Handler) listRoles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createEmployee(w http.ResponseWriter, r *http.Request) {
+	if !requireDevTools(w) {
+		return
+	}
 	var cmd app.CreateEmployeeCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
 		httpx.Error(w, err)
 		return
 	}
-	setRequestMeta(&cmd.CommandMeta, r)
+	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateEmployee(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -204,11 +226,14 @@ func (h *Handler) listEmployees(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) archiveEmployee(w http.ResponseWriter, r *http.Request) {
+	if !requireDevTools(w) {
+		return
+	}
 	var cmd app.ArchiveEmployeeCommand
 	if r.Body != nil {
 		_ = httpx.Decode(r, &cmd)
 	}
-	setRequestMeta(&cmd.CommandMeta, r)
+	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	cmd.ID = chi.URLParam(r, "id")
 	if err := h.service.ArchiveEmployee(r.Context(), cmd); err != nil {
 		httpx.Error(w, err)
@@ -260,12 +285,15 @@ func (h *Handler) getPairingStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createHall(w http.ResponseWriter, r *http.Request) {
+	if !requireDevTools(w) {
+		return
+	}
 	var cmd app.CreateHallCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
 		httpx.Error(w, err)
 		return
 	}
-	setRequestMeta(&cmd.CommandMeta, r)
+	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateHall(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -276,11 +304,14 @@ func (h *Handler) listHalls(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) archiveHall(w http.ResponseWriter, r *http.Request) {
+	if !requireDevTools(w) {
+		return
+	}
 	var cmd app.ArchiveHallCommand
 	if r.Body != nil {
 		_ = httpx.Decode(r, &cmd)
 	}
-	setRequestMeta(&cmd.CommandMeta, r)
+	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	cmd.ID = chi.URLParam(r, "id")
 	if err := h.service.ArchiveHall(r.Context(), cmd); err != nil {
 		httpx.Error(w, err)
@@ -290,12 +321,15 @@ func (h *Handler) archiveHall(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createTable(w http.ResponseWriter, r *http.Request) {
+	if !requireDevTools(w) {
+		return
+	}
 	var cmd app.CreateTableCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
 		httpx.Error(w, err)
 		return
 	}
-	setRequestMeta(&cmd.CommandMeta, r)
+	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateTable(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -306,11 +340,14 @@ func (h *Handler) listTables(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) archiveTable(w http.ResponseWriter, r *http.Request) {
+	if !requireDevTools(w) {
+		return
+	}
 	var cmd app.ArchiveTableCommand
 	if r.Body != nil {
 		_ = httpx.Decode(r, &cmd)
 	}
-	setRequestMeta(&cmd.CommandMeta, r)
+	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	cmd.ID = chi.URLParam(r, "id")
 	if err := h.service.ArchiveTable(r.Context(), cmd); err != nil {
 		httpx.Error(w, err)
@@ -320,12 +357,15 @@ func (h *Handler) archiveTable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createCatalogItem(w http.ResponseWriter, r *http.Request) {
+	if !requireDevTools(w) {
+		return
+	}
 	var cmd app.CreateCatalogItemCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
 		httpx.Error(w, err)
 		return
 	}
-	setRequestMeta(&cmd.CommandMeta, r)
+	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateCatalogItem(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -336,12 +376,15 @@ func (h *Handler) listCatalogItems(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createMenuItem(w http.ResponseWriter, r *http.Request) {
+	if !requireDevTools(w) {
+		return
+	}
 	var cmd app.CreateMenuItemCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
 		httpx.Error(w, err)
 		return
 	}
-	setRequestMeta(&cmd.CommandMeta, r)
+	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateMenuItem(r.Context(), cmd)
 	writeCreated(w, v, err)
 }
@@ -567,6 +610,29 @@ func (h *Handler) retryFailedOutbox(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]int{"retried": n})
 }
 
+func (h *Handler) applyMasterDataSnapshot(w http.ResponseWriter, r *http.Request) {
+	var cmd app.ApplyMasterDataCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err)
+		return
+	}
+	setCloudSyncRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.ApplyMasterData(r.Context(), cmd)
+	writeOK(w, v, err)
+}
+
+func (h *Handler) applyMasterDataStream(w http.ResponseWriter, r *http.Request) {
+	var cmd app.ApplyMasterDataCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err)
+		return
+	}
+	cmd.StreamName = domain.MasterDataStream(chi.URLParam(r, "stream"))
+	setCloudSyncRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.ApplyMasterData(r.Context(), cmd)
+	writeOK(w, v, err)
+}
+
 func writeCreated(w http.ResponseWriter, v any, err error) {
 	if err != nil {
 		httpx.Error(w, err)
@@ -585,6 +651,28 @@ func writeOK(w http.ResponseWriter, v any, err error) {
 
 func setEdgeOrigin(meta *app.CommandMeta) {
 	meta.Origin = app.OriginEdgeDevice
+	app.NormalizeDeviceMeta(meta)
+}
+
+func setSystemSeedRequestMeta(meta *app.CommandMeta, r *http.Request) {
+	meta.Origin = app.OriginSystemSeed
+	if meta.NodeDeviceID == "" {
+		meta.NodeDeviceID = requestNodeDeviceID(r)
+		meta.DeviceID = meta.NodeDeviceID
+	}
+	if meta.NodeDeviceID == "" {
+		meta.NodeDeviceID = "dev-bootstrap"
+		meta.DeviceID = meta.NodeDeviceID
+	}
+	app.NormalizeDeviceMeta(meta)
+}
+
+func setCloudSyncRequestMeta(meta *app.CommandMeta, r *http.Request) {
+	meta.Origin = app.OriginCloudSync
+	if meta.NodeDeviceID == "" {
+		meta.NodeDeviceID = requestNodeDeviceID(r)
+		meta.DeviceID = meta.NodeDeviceID
+	}
 	app.NormalizeDeviceMeta(meta)
 }
 
