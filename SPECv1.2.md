@@ -1,6 +1,6 @@
 # Итоговая Спецификация и Архитектура RMS/POS Платформы v1.2
 
-## Executive Summary
+## Краткое резюме
 
 Платформа представляет собой распределенную ресторанную учетную систему RMS/POS с автономным Edge-контуром в ресторане и облачным учетным ядром.
 
@@ -343,7 +343,7 @@ ws://edge.local/ws
 
 ---
 
-# 5. Edge Data Model
+# 5. Модель данных Edge
 
 ```text
 edge_nodes
@@ -445,7 +445,7 @@ feature flags
 
 ---
 
-## Data Model
+## Модель данных
 
 ```text
 shifts (
@@ -570,7 +570,7 @@ mixed
 
 ---
 
-## Cloud Data Model
+## Модель данных Cloud
 
 ```text
 payments (
@@ -742,7 +742,7 @@ missing_in_bank
 manual_override
 ```
 
-## Data Model
+## Модель данных
 
 ```text
 payment_reconciliations (
@@ -759,7 +759,7 @@ payment_reconciliations (
 
 ---
 
-# 11. Legal Evidence Storage
+# 11. Хранение юридически значимых доказательств
 
 ```text
 payment_evidence_archive (
@@ -1306,7 +1306,7 @@ multi-master Edge в MVP
 
 ---
 
-# 19. MVP-0 Definition
+# 19. Определение MVP-0
 
 Первый технически значимый MVP:
 
@@ -1341,7 +1341,7 @@ Cloud получает полный журнал
 
 ---
 
-# 20. Final Conclusion
+# 20. Итоговый вывод
 
 Спецификация готова к разработке после фиксации контрактов Этапа 0.
 

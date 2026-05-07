@@ -224,7 +224,7 @@ func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 
 func TestPinLoginAndSessionAPI(t *testing.T) {
 	f := newAPIFixture(t)
-	rr := f.postJSON(t, "/api/v1/auth/pin-login", `{"command_id":"cmd-api-pin-login","device_id":"`+f.device.ID+`","pin":"1111"}`)
+	rr := f.postJSON(t, "/api/v1/auth/pin-login", `{"command_id":"cmd-api-pin-login","node_device_id":"`+f.device.ID+`","pin":"1111"}`)
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -239,7 +239,7 @@ func TestPinLoginAndSessionAPI(t *testing.T) {
 		t.Fatal("expected pin_hash not to be returned in login response")
 	}
 
-	current := f.get(t, "/api/v1/auth/session?device_id="+f.device.ID+"&session_id="+result.Session.ID)
+	current := f.get(t, "/api/v1/auth/session?node_device_id="+f.device.ID+"&session_id="+result.Session.ID)
 	if current.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", current.Code, current.Body.String())
 	}
@@ -251,12 +251,12 @@ func TestPinLoginAndSessionAPI(t *testing.T) {
 
 func TestFloorAndOrderLineEditingAPI(t *testing.T) {
 	f := newAPIFixture(t)
-	hallResp := f.postJSON(t, "/api/v1/halls", `{"device_id":"`+f.device.ID+`","restaurant_id":"`+f.restaurant.ID+`","name":"Terrace"}`)
+	hallResp := f.postJSON(t, "/api/v1/halls", `{"node_device_id":"`+f.device.ID+`","restaurant_id":"`+f.restaurant.ID+`","name":"Terrace"}`)
 	if hallResp.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", hallResp.Code, hallResp.Body.String())
 	}
 	hall := decodeAPIResponse[domain.Hall](t, hallResp)
-	tableResp := f.postJSON(t, "/api/v1/tables", `{"device_id":"`+f.device.ID+`","restaurant_id":"`+f.restaurant.ID+`","hall_id":"`+hall.ID+`","name":"T1","seats":4}`)
+	tableResp := f.postJSON(t, "/api/v1/tables", `{"node_device_id":"`+f.device.ID+`","restaurant_id":"`+f.restaurant.ID+`","hall_id":"`+hall.ID+`","name":"T1","seats":4}`)
 	if tableResp.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", tableResp.Code, tableResp.Body.String())
 	}
@@ -281,7 +281,7 @@ func TestFloorAndOrderLineEditingAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	change := f.patchJSON(t, "/api/v1/orders/"+order.ID+"/lines/"+line.ID, `{"device_id":"`+f.device.ID+`","quantity":3}`)
+	change := f.patchJSON(t, "/api/v1/orders/"+order.ID+"/lines/"+line.ID, `{"node_device_id":"`+f.device.ID+`","quantity":3}`)
 	if change.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", change.Code, change.Body.String())
 	}
@@ -289,7 +289,7 @@ func TestFloorAndOrderLineEditingAPI(t *testing.T) {
 	if changed.Quantity != 3 || changed.TotalPrice != 3000 {
 		t.Fatalf("unexpected changed line: %+v", changed)
 	}
-	voidedResp := f.postJSON(t, "/api/v1/orders/"+order.ID+"/lines/"+line.ID+"/void", `{"device_id":"`+f.device.ID+`","reason":"mistake"}`)
+	voidedResp := f.postJSON(t, "/api/v1/orders/"+order.ID+"/lines/"+line.ID+"/void", `{"node_device_id":"`+f.device.ID+`","reason":"mistake"}`)
 	if voidedResp.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", voidedResp.Code, voidedResp.Body.String())
 	}
@@ -447,7 +447,7 @@ func TestIssueFirstPrecheckThroughPublicAPI(t *testing.T) {
 	outboxBefore := countAPIRows(t, f, "pos_sync_outbox")
 	eventsBefore := countAPIRows(t, f, "local_event_log")
 
-	rr := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-issue-precheck","device_id":"`+f.device.ID+`"}`)
+	rr := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-issue-precheck","node_device_id":"`+f.device.ID+`"}`)
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -466,7 +466,7 @@ func TestIssueFirstPrecheckThroughPublicAPI(t *testing.T) {
 		t.Fatalf("expected one precheck row, before=%d after=%d", prechecksBefore, prechecks)
 	}
 	if checks := countAPIRows(t, f, "checks"); checks != checksBefore {
-		t.Fatalf("expected deprecated flow not to create legacy check, before=%d after=%d", checksBefore, checks)
+		t.Fatalf("expected issue precheck not to create final check, before=%d after=%d", checksBefore, checks)
 	}
 	if outbox := countAPIRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+1 {
 		t.Fatalf("expected one outbox row, before=%d after=%d", outboxBefore, outbox)
@@ -479,7 +479,7 @@ func TestIssueFirstPrecheckThroughPublicAPI(t *testing.T) {
 func TestGetPrecheckByIDThroughPublicAPI(t *testing.T) {
 	f := newAPIFixture(t)
 	order := f.createOrderWithLine(t)
-	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-get-precheck","device_id":"`+f.device.ID+`"}`)
+	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-get-precheck","node_device_id":"`+f.device.ID+`"}`)
 	if issued.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", issued.Code, issued.Body.String())
 	}
@@ -498,7 +498,7 @@ func TestGetPrecheckByIDThroughPublicAPI(t *testing.T) {
 func TestListPrechecksByOrderThroughPublicAPI(t *testing.T) {
 	f := newAPIFixture(t)
 	order := f.createOrderWithLine(t)
-	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-list-prechecks","device_id":"`+f.device.ID+`"}`)
+	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-list-prechecks","node_device_id":"`+f.device.ID+`"}`)
 	if issued.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", issued.Code, issued.Body.String())
 	}
@@ -517,12 +517,12 @@ func TestListPrechecksByOrderThroughPublicAPI(t *testing.T) {
 func TestAddOrderLineAfterIssuedPrecheckFailsThroughPublicAPI(t *testing.T) {
 	f := newAPIFixture(t)
 	order := f.createOrderWithLine(t)
-	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-lock-order","device_id":"`+f.device.ID+`"}`)
+	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-lock-order","node_device_id":"`+f.device.ID+`"}`)
 	if issued.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", issued.Code, issued.Body.String())
 	}
 
-	rr := f.postJSON(t, "/api/v1/orders/"+order.ID+"/lines", `{"command_id":"cmd-api-add-line-after-precheck","device_id":"`+f.device.ID+`","menu_item_id":"`+f.menuItem.ID+`","quantity":1}`)
+	rr := f.postJSON(t, "/api/v1/orders/"+order.ID+"/lines", `{"command_id":"cmd-api-add-line-after-precheck","node_device_id":"`+f.device.ID+`","menu_item_id":"`+f.menuItem.ID+`","quantity":1}`)
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("expected 409, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -531,7 +531,7 @@ func TestAddOrderLineAfterIssuedPrecheckFailsThroughPublicAPI(t *testing.T) {
 func TestDuplicatePrecheckCommandIDDoesNotCreateSecondPrecheckThroughPublicAPI(t *testing.T) {
 	f := newAPIFixture(t)
 	order := f.createOrderWithLine(t)
-	body := `{"command_id":"cmd-api-duplicate-precheck","device_id":"` + f.device.ID + `"}`
+	body := `{"command_id":"cmd-api-duplicate-precheck","node_device_id":"` + f.device.ID + `"}`
 	rr := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", body)
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
@@ -555,37 +555,15 @@ func TestDuplicatePrecheckCommandIDDoesNotCreateSecondPrecheckThroughPublicAPI(t
 	}
 }
 
-func TestDeprecatedCheckEndpointIssuesPrecheckWithoutLegacyCheck(t *testing.T) {
-	f := newAPIFixture(t)
-	order := f.createOrderWithLine(t)
-	checksBefore := countAPIRows(t, f, "checks")
-	prechecksBefore := countAPIRows(t, f, "prechecks")
-
-	rr := f.postJSON(t, "/api/v1/orders/"+order.ID+"/check", `{"command_id":"cmd-api-deprecated-check-alias","device_id":"`+f.device.ID+`","discount_total":0,"tax_total":0}`)
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
-	}
-	precheck := decodeAPIResponse[domain.Precheck](t, rr)
-	if precheck.OrderID != order.ID || precheck.Status != domain.PrecheckIssued {
-		t.Fatalf("expected deprecated endpoint to issue precheck, got %+v", precheck)
-	}
-	if prechecks := countAPIRows(t, f, "prechecks"); prechecks != prechecksBefore+1 {
-		t.Fatalf("expected one precheck row, before=%d after=%d", prechecksBefore, prechecks)
-	}
-	if checks := countAPIRows(t, f, "checks"); checks != checksBefore {
-		t.Fatalf("expected no legacy check row, before=%d after=%d", checksBefore, checks)
-	}
-}
-
 func TestCancelPrecheckThroughPublicAPIRequiresManagerOverride(t *testing.T) {
 	f := newAPIFixture(t)
 	order := f.createOrderWithLine(t)
-	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-cancel-issue","device_id":"`+f.device.ID+`"}`)
+	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-cancel-issue","node_device_id":"`+f.device.ID+`"}`)
 	if issued.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", issued.Code, issued.Body.String())
 	}
 	precheck := decodeAPIResponse[domain.Precheck](t, issued)
-	body := `{"command_id":"cmd-api-cancel-precheck","device_id":"` + f.device.ID + `","manager_employee_id":"` + f.manager.ID + `","manager_pin":"2468","cancellation_reason":"guest changed order"}`
+	body := `{"command_id":"cmd-api-cancel-precheck","node_device_id":"` + f.device.ID + `","manager_employee_id":"` + f.manager.ID + `","manager_pin":"2468","cancellation_reason":"guest changed order"}`
 	rr := f.postJSON(t, "/api/v1/prechecks/"+precheck.ID+"/cancel", body)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
@@ -602,12 +580,12 @@ func TestCancelPrecheckThroughPublicAPIRequiresManagerOverride(t *testing.T) {
 func TestCapturePaymentThroughPrecheckAPICreatesFinalCheck(t *testing.T) {
 	f := newAPIFixture(t)
 	order := f.createOrderWithLine(t)
-	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-payment-issue","device_id":"`+f.device.ID+`"}`)
+	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-payment-issue","node_device_id":"`+f.device.ID+`"}`)
 	if issued.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", issued.Code, issued.Body.String())
 	}
 	precheck := decodeAPIResponse[domain.Precheck](t, issued)
-	rr := f.postJSON(t, "/api/v1/prechecks/"+precheck.ID+"/payments", `{"command_id":"cmd-api-payment-full","device_id":"`+f.device.ID+`","method":"cash","amount":`+fmt.Sprint(precheck.Total)+`,"currency":"RUB"}`)
+	rr := f.postJSON(t, "/api/v1/prechecks/"+precheck.ID+"/payments", `{"command_id":"cmd-api-payment-full","node_device_id":"`+f.device.ID+`","method":"cash","amount":`+fmt.Sprint(precheck.Total)+`,"currency":"RUB"}`)
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
 	}

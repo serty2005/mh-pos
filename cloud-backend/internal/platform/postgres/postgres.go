@@ -38,6 +38,9 @@ func MigrateDir(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 		}
 	}
 	sort.Strings(names)
+	if len(names) != 1 {
+		return fmt.Errorf("postgres first-launch migration path must contain exactly one canonical SQL file, got %d", len(names))
+	}
 	for _, name := range names {
 		tx, err := pool.Begin(ctx)
 		if err != nil {

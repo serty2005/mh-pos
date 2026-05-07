@@ -79,7 +79,6 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/orders/{id}/lines/{line_id}/void", h.voidOrderLine)
 		r.Post("/orders/{id}/precheck", h.issuePrecheck)
 		r.Get("/orders/{id}/prechecks", h.listPrechecksByOrder)
-		r.Post("/orders/{id}/check", h.issuePrecheckFromDeprecatedCheckAlias)
 		r.Post("/orders/{id}/close", h.closeOrder)
 
 		r.Get("/prechecks/{id}", h.getPrecheck)
@@ -87,7 +86,6 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/prechecks/{id}/payments", h.capturePrecheckPayment)
 
 		r.Get("/checks/{id}", h.getCheck)
-		r.Post("/checks/{id}/payments", h.captureLegacyCheckPayment)
 
 		r.Post("/cash-sessions/open", h.openCashSession)
 		r.Post("/cash-sessions/{id}/close", h.closeCashSession)
@@ -95,8 +93,6 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/cash-drawer-events", h.recordCashDrawerEvent)
 
 		r.Get("/sync/outbox", h.listOutbox)
-		r.Post("/sync/outbox/{id}/mark-sent", h.markOutboxSent)
-		r.Post("/sync/outbox/{id}/mark-failed", h.markOutboxFailed)
 		r.Get("/sync/local-events", h.listLocalEvents)
 		r.Get("/sync/status", h.syncStatus)
 		r.Post("/sync/retry-failed", h.retryFailedOutbox)
@@ -379,7 +375,7 @@ func (h *Handler) closeShift(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) currentShift(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.GetCurrentShift(r.Context(), r.URL.Query().Get("device_id"))
+	v, err := h.service.GetCurrentShift(r.Context(), requestNodeDeviceID(r))
 	writeOK(w, v, err)
 }
 
@@ -453,20 +449,6 @@ func (h *Handler) issuePrecheck(w http.ResponseWriter, r *http.Request) {
 	writeCreated(w, v, err)
 }
 
-func (h *Handler) issuePrecheckFromDeprecatedCheckAlias(w http.ResponseWriter, r *http.Request) {
-	var legacy app.CreateCheckCommand
-	if err := httpx.Decode(r, &legacy); err != nil {
-		httpx.Error(w, err)
-		return
-	}
-	setRequestMeta(&legacy.CommandMeta, r)
-	v, err := h.service.IssuePrecheck(r.Context(), app.IssuePrecheckCommand{
-		CommandMeta: legacy.CommandMeta,
-		OrderID:     chi.URLParam(r, "id"),
-	})
-	writeCreated(w, v, err)
-}
-
 func (h *Handler) closeOrder(w http.ResponseWriter, r *http.Request) {
 	var cmd app.CloseOrderCommand
 	if r.Body != nil {
@@ -517,10 +499,6 @@ func (h *Handler) capturePrecheckPayment(w http.ResponseWriter, r *http.Request)
 	writeCreated(w, v, err)
 }
 
-func (h *Handler) captureLegacyCheckPayment(w http.ResponseWriter, r *http.Request) {
-	httpx.Error(w, fmt.Errorf("%w: legacy check payment endpoint is disabled; use /api/v1/prechecks/{id}/payments", domain.ErrConflict))
-}
-
 func (h *Handler) openCashSession(w http.ResponseWriter, r *http.Request) {
 	var cmd app.OpenCashSessionCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
@@ -545,7 +523,7 @@ func (h *Handler) closeCashSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) currentCashSession(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.GetCurrentCashSession(r.Context(), r.URL.Query().Get("device_id"))
+	v, err := h.service.GetCurrentCashSession(r.Context(), requestNodeDeviceID(r))
 	writeOK(w, v, err)
 }
 
@@ -587,29 +565,6 @@ func (h *Handler) retryFailedOutbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]int{"retried": n})
-}
-
-func (h *Handler) markOutboxSent(w http.ResponseWriter, r *http.Request) {
-	if err := h.service.MarkOutboxSent(r.Context(), chi.URLParam(r, "id")); err != nil {
-		httpx.Error(w, err)
-		return
-	}
-	httpx.JSON(w, http.StatusOK, map[string]string{"status": "sent"})
-}
-
-func (h *Handler) markOutboxFailed(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Error string `json:"error"`
-	}
-	if err := httpx.Decode(r, &body); err != nil {
-		httpx.Error(w, err)
-		return
-	}
-	if err := h.service.MarkOutboxFailed(r.Context(), chi.URLParam(r, "id"), body.Error); err != nil {
-		httpx.Error(w, err)
-		return
-	}
-	httpx.JSON(w, http.StatusOK, map[string]string{"status": "failed"})
 }
 
 func writeCreated(w http.ResponseWriter, v any, err error) {
@@ -658,7 +613,7 @@ func requestNodeDeviceID(r *http.Request) string {
 	if v := r.URL.Query().Get("node_device_id"); v != "" {
 		return v
 	}
-	return r.URL.Query().Get("device_id")
+	return ""
 }
 
 func requestClientDeviceID(r *http.Request) string {

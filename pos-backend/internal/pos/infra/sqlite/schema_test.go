@@ -312,7 +312,7 @@ func TestCleanInstallPaymentsUsePrecheckIDWithoutLegacyCheckID(t *testing.T) {
 		t.Fatal("expected payments.precheck_id in first-launch schema")
 	}
 	if columns["check_id"] {
-		t.Fatal("did not expect legacy payments.check_id in first-launch schema")
+		t.Fatal("did not expect payments.check_id in first-launch schema")
 	}
 }
 

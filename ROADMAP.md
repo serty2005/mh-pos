@@ -38,13 +38,13 @@
 - shifts foundation
 - cash sessions foundation
 - cash drawer events foundation
-- local E2E demo bootstrap and smoke scripts
+- local E2E demo bootstrap и smoke scripts
 
 ### Sales runtime
 
 Статус: `done`
 
-- `Order -> Precheck -> Payment -> Check` public runtime
+- публичный runtime `Order -> Precheck -> Payment -> Check`
 - issue precheck
 - list/get prechecks
 - manager override cancel precheck
@@ -82,32 +82,33 @@
 - добавить отдельный backend data/migration policy document
 - перестать документировать future modes как current runtime
 
-### Compatibility tail cleanup
+### Очистка compatibility-хвостов
 
-Статус: `next`
+Статус: `done`
 
-Нужно:
+Сделано:
 
-- удалить deprecated `/orders/{id}/check`
-- перестать продвигать `device_id` как основной public field
-- выбрать одно canonical имя terminal precheck state
-- зафиксировать kill-plan для всех remaining transport aliases
+- удалены public compatibility endpoints старой check/payment модели;
+- `device_id` больше не описывается как transport compatibility alias; он остается domain/storage field для POS Edge node identity в operational payload;
+- canonical transport examples используют `node_device_id` и `client_device_id`.
 
-### Sync contract alignment
+### Выравнивание sync contract
 
-Статус: `blocked`
+Статус: `done`
 
-Нельзя считать sync pilot-ready, пока не выполнено одно из двух:
+Сделано:
 
-- либо Cloud принимает весь фактический Edge event catalog;
-- либо Edge перестает эмитить неподдерживаемые облаком события в production sender path.
+- Cloud принимает фактический Edge -> Cloud operational event catalog;
+- production sender path имеет direction gate и не отправляет Cloud-managed/configuration события вверх;
+- canonical Edge/Cloud sync contract обновлен в `docs/sync/edge-cloud-contracts-v1.md`;
+- POS sender включен как отдельный background worker с retry/backoff, stale lock reclaim и idempotent resend;
+- Cloud хранит raw envelopes и append-safe operational event journal.
 
-Нужно:
+planned next:
 
-- опубликовать canonical event catalog
-- синхронизировать Cloud contract doc
-- зафиксировать sender enablement gate
-- описать item-level ACK plan как current target, а не implemented now
+- item-level ACK plan;
+- richer Cloud projections поверх `cloud_operational_events`;
+- Cloud -> Edge provisioning snapshots для master/reference/configuration данных.
 
 ### Security hardening
 
@@ -178,10 +179,9 @@
 
 Критерий:
 
-- deprecated alias endpoints удалены;
-- transport aliases явно помечены;
+- compatibility endpoints удалены;
 - event catalog опубликован;
-- compatibility tails имеют kill-plan.
+- first-launch API не содержит unresolved public compatibility tails.
 
 ### Pilot hardening freeze
 
@@ -200,20 +200,20 @@
 
 Критерий:
 
-- sync contract aligned
-- security hardening closed
-- docs freeze closed
-- no unresolved critical compatibility tails
+- sync contract aligned;
+- security hardening closed;
+- docs freeze closed;
+- no unresolved critical compatibility tails.
 
 ## Риски и mitigation
 
-| Риск | Влияние | Вероятность | Mitigation |
+| Риск | Влияние | Вероятность | Митигирующее действие |
 |---|---|---|---|
-| Документация обещает больше, чем реально поддерживает runtime | Высокое | Высокая | Разделить docs по владельцам и обновить их в одном PR |
-| Deprecated alias останется в прод-поверхности | Среднее | Высокая | Удалить до API freeze |
-| Edge/Cloud event catalog расходится | Высокое | Высокая | Ввести sender gate и canonical catalog |
+| Документация обещает больше, чем реально поддерживает runtime | Высокое | Высокая | Разделить docs по владельцам и обновлять их в одном PR |
+| Старый compatibility endpoint вернется в public surface | Среднее | Средняя | Проверять `rg` по API routes/docs перед freeze |
+| Edge/Cloud event catalog снова расходится | Высокое | Средняя | Поддерживать canonical catalog в `docs/sync/edge-cloud-contracts-v1.md` и тестировать sender direction gate |
 | Pairing verifier остается plain hash | Высокое | Средняя | Перейти на keyed verifier до пилота |
-| Duplicate PIN / ambiguous login | Высокое | Средняя | Уникальность PIN или employee-first login |
+| Duplicate PIN / ambiguous login | Высокое | Средняя | Ввести уникальность PIN или employee-first login |
 | RBAC остается неявным | Среднее | Высокая | Утвердить permission catalog и matrix |
 | Пилотные assumptions по валюте и business date не зафиксированы | Высокое | Средняя | Зафиксировать policy в backend/data docs |
 | Reprint нужен операционно, но не описан и не реализован | Среднее | Средняя | Либо убрать из pilot scope, либо реализовать и зафиксировать |
@@ -233,17 +233,17 @@ flowchart LR
 
 До первого пилота нельзя тратить время на:
 
-- legacy DB migrations для несуществующего production;
+- historical DB migrations для несуществующего production;
 - dual-write;
 - сохранение obsolete API ради “может пригодится”;
 - расширение future modes без фиксации текущего cashier pilot scope.
 
-## Definition of done для pre-pilot изменений
+## Критерии готовности pre-pilot изменений
 
 Изменение считается завершенным только если:
 
 - код и тесты обновлены;
 - профильная документация обновлена;
 - roadmap status изменен;
-- compatibility tail либо удален, либо получил owner + kill-plan;
+- compatibility tail удален из public surface;
 - изменение не создало новый historical хвост.

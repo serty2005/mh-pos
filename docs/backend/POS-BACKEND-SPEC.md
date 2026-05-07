@@ -1,4 +1,4 @@
-# POS Backend Specification
+# Спецификация POS Backend
 
 ## Назначение
 
@@ -6,7 +6,7 @@
 
 - текущий публичный backend surface;
 - state transitions;
-- current compatibility tails;
+- policy compatibility-хвостов для текущего публичного API;
 - event catalog Edge runtime;
 - границы между implemented now и target later.
 
@@ -16,13 +16,13 @@ Edge backend является source of truth для всех активных P
 
 Cloud не является runtime dependency для:
 
-- shifts
-- cash sessions
-- orders
-- prechecks
-- payments
-- final checks
-- manager override
+- смен;
+- кассовых сессий;
+- заказов;
+- пречеков;
+- оплат;
+- финальных чеков;
+- manager override.
 
 ## Финансовая модель
 
@@ -34,14 +34,14 @@ Order -> Precheck -> Payment -> Check
 
 Правила:
 
-- `Order` — рабочая сущность обслуживания;
-- `Precheck` — рабочий финансовый snapshot;
-- `Payment` — immutable финансовый факт;
-- `Check` — финальный расчетный документ после полной оплаты precheck.
+- `Order` - рабочая сущность обслуживания;
+- `Precheck` - рабочий финансовый snapshot;
+- `Payment` - immutable финансовый факт;
+- `Check` - финальный расчетный документ после полной оплаты precheck.
 
 ## Текущий публичный API
 
-### Health and system
+### Health и system
 
 - `GET /health`
 - `GET /api/v1/system/pairing-status`
@@ -53,7 +53,7 @@ Order -> Precheck -> Payment -> Check
 - `GET /api/v1/auth/session`
 - `POST /api/v1/auth/logout`
 
-### Floor and menu
+### Залы и меню
 
 - `GET /api/v1/halls`
 - `POST /api/v1/halls`
@@ -61,7 +61,7 @@ Order -> Precheck -> Payment -> Check
 - `POST /api/v1/tables`
 - `GET /api/v1/menu/items`
 
-### Shift and cash
+### Смены и касса
 
 - `GET /api/v1/shifts/current`
 - `POST /api/v1/shifts/open`
@@ -71,7 +71,7 @@ Order -> Precheck -> Payment -> Check
 - `POST /api/v1/cash-sessions/open`
 - `POST /api/v1/cash-sessions/{id}/close`
 
-### Orders
+### Заказы
 
 - `GET /api/v1/orders/current?table_id=...`
 - `GET /api/v1/orders/{id}`
@@ -80,7 +80,7 @@ Order -> Precheck -> Payment -> Check
 - `PATCH /api/v1/orders/{id}/lines/{line_id}`
 - `POST /api/v1/orders/{id}/lines/{line_id}/void`
 
-### Prechecks and checks
+### Пречеки и чеки
 
 - `POST /api/v1/orders/{id}/precheck`
 - `GET /api/v1/prechecks/{id}`
@@ -89,7 +89,7 @@ Order -> Precheck -> Payment -> Check
 - `POST /api/v1/prechecks/{id}/payments`
 - `GET /api/v1/checks/{id}`
 
-### Sync operational endpoints
+### Operational sync endpoints
 
 - `GET /api/v1/sync/outbox`
 - `GET /api/v1/sync/status`
@@ -106,81 +106,52 @@ implemented now:
 - возвращает `pairing_code` и `manager_employee_id` для ручного POS UI smoke flow;
 - не является production path.
 
-## Explicit compatibility tails
+## Policy compatibility-хвостов
 
-На текущем этапе в backend существуют следующие tails:
+implemented now: публичные compatibility tails удалены из backend API surface.
 
-### Deprecated alias endpoint
+`device_id` остается domain/storage field для POS Edge node identity в operational payloads. Новые transport examples используют явные `node_device_id` и `client_device_id`, когда нужен actor/device context.
 
-`POST /api/v1/orders/{id}/check`
-
-Смысл:
-
-- временный alias;
-- вызывает issue precheck flow;
-- не создает legacy working check.
-
-Статус:
-
-- должен быть удален до pilot API freeze.
-
-### Legacy transport alias
-
-`device_id`
-
-Смысл:
-
-- backward-compatible alias для `node_device_id`.
-
-Статус:
-
-- поддерживается транспортно;
-- не должен продвигаться в новой документации, payload examples и новых UI-клиентах.
-
-### Manual check creation command
-
-Manual `CreateCheck` path считается disabled.
-Финальный check создается только автоматически после полной оплаты precheck.
-
-## State transitions
+## Переходы состояния
 
 ### Order
 
-- `open` -> `locked` при `IssuePrecheck`
-- `locked` -> `open` при `CancelPrecheck`
-- `open` или `locked` -> `closed` только после полной оплаты и final check
-- `closed` не редактируется
+- `open` -> `locked` при `IssuePrecheck`;
+- `locked` -> `open` при `CancelPrecheck`;
+- `open` или `locked` -> `closed` только после полной оплаты и final check;
+- `closed` не редактируется.
 
 ### Precheck
 
-- `issued` -> `cancelled`
-- `issued` -> `closed` при полной оплате
-- `issued` -> `superseded` зарезервировано для future re-issue flow
+- `issued` -> `cancelled`;
+- `issued` -> `closed` при полной оплате;
+- `issued` -> `superseded` зарезервировано для future re-issue flow.
 
 ### Payment
 
-- создается как immutable факт
-- не редактируется
-- не удаляется
-- correction делается отдельными финансовыми операциями, а не mutate-in-place
+- создается как immutable факт;
+- не редактируется;
+- не удаляется;
+- correction делается отдельными финансовыми операциями, а не mutate-in-place.
 
 ### Check
 
-- создается только после полной оплаты precheck
-- не является рабочим счетом гостя
-- не создается вручную в нормальном runtime flow
+- создается только после полной оплаты precheck;
+- не является рабочим счетом гостя;
+- не создается вручную в нормальном runtime flow.
 
-## Event catalog Edge runtime
+## Каталог событий Edge runtime
 
 На Edge runtime уже существуют или должны существовать в outbox/local event log события следующих групп:
 
-### System and auth
+### System и auth
 
 - `EdgeNodePaired`
 - `AuthSessionStarted`
 - `AuthSessionRevoked`
+- `DeviceRegistered`
 
-### Shift and cash
+### Смены и касса
 
 - `ShiftOpened`
 - `ShiftClosed`
@@ -188,7 +159,7 @@ Manual `CreateCheck` path считается disabled.
 - `CashSessionClosed`
 - `CashDrawerEventRecorded`
 
-### Orders
+### Заказы
 
 - `OrderCreated`
 - `OrderLineAdded`
@@ -196,29 +167,33 @@ Manual `CreateCheck` path считается disabled.
 - `OrderLineVoided`
 - `OrderClosed`
 
-### Financial
+### Финансы
 
 - `PrecheckIssued`
 - `PrecheckCancelled`
 - `PaymentCaptured`
 - `CheckCreated`
 
-## Sync contract note
+## Примечание к sync contract
 
-Cloud receiver documentation и Edge event emission должны быть синхронизированы.
+Документация Cloud receiver и Edge event emission должны быть синхронизированы.
 
-Пока Cloud не принимает весь фактический event catalog Edge, real sender/worker не считается pilot-ready.
+implemented now: production sender path отправляет только Edge -> Cloud operational events. Cloud-managed/configuration events, например изменения restaurant, employee, role, catalog, menu, hall и table, не отправляются sender-ом вверх; они помечаются `suspended` с явной sync-direction причиной.
+
+implemented now: Cloud принимает operational sender catalog, описанный в `docs/sync/edge-cloud-contracts-v1.md`, и хранит raw envelopes плюс `cloud_operational_events`.
+
+planned next: Cloud -> Edge provisioning/configuration snapshots становятся authoritative path для master/reference data.
 
 ## Manager override
 
 На текущем этапе manager override обязателен как минимум для отмены пречека.
 
-Минимальный payload contract для override operation:
+Минимальный контракт payload для override-операции:
 
-- actor context
-- manager employee id
-- manager PIN
-- reason
+- actor context;
+- manager employee id;
+- manager PIN;
+- reason.
 
 Backend обязан:
 
@@ -232,9 +207,9 @@ Backend обязан:
 
 Любое изменение одного из пунктов ниже обновляет этот файл в том же PR:
 
-- endpoint list;
-- request/response contract;
-- state transitions;
+- список endpoints;
+- контракт запроса/ответа;
+- переходы состояния;
 - event catalog;
 - compatibility tails;
 - manager override behavior.

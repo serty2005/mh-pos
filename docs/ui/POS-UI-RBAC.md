@@ -1,4 +1,4 @@
-# POS UI RBAC Matrix
+# RBAC-матрица POS UI
 
 ## Назначение
 
@@ -31,20 +31,20 @@
 
 Используются три класса решения:
 
-- `allow` — операция возможна без дополнительного подтверждения;
-- `override` — операция инициируется сотрудником, но требует manager override;
-- `deny` — операция недоступна.
+- `allow` - операция возможна без дополнительного подтверждения;
+- `override` - операция инициируется сотрудником, но требует manager override;
+- `deny` - операция недоступна.
 
-## Permission catalog
+## Каталог permission id
 
-### Session and terminal
+### Session и terminal
 
 - `ui.session.login`
 - `ui.session.lock`
 - `ui.system.pair`
 - `ui.system.logout`
 
-### Shift and cash
+### Смены и касса
 
 - `ui.pos.shift.open`
 - `ui.pos.shift.close`
@@ -62,7 +62,7 @@
 - `ui.pos.order.transfer`
 - `ui.pos.order.view_other_employee_order`
 
-### Financial actions
+### Финансовые действия
 
 - `ui.pos.precheck.issue`
 - `ui.pos.precheck.cancel`
@@ -72,7 +72,7 @@
 - `ui.pos.check.reprint`
 - `ui.pos.payment.refund`
 
-### Manager and service operations
+### Manager и service operations
 
 - `ui.manager.sync.view`
 - `ui.manager.sync.retry_failed`
@@ -107,38 +107,38 @@
 
 - `A` = allow
 - `O` = allow only via manager override
-- `—` = deny
+- `-` = deny
 
 | Операция | cashier | senior_cashier | waiter | manager | kitchen | support_admin |
 |---|---:|---:|---:|---:|---:|---:|
 | Login to POS UI | A | A | A | A | A | A |
-| Pair terminal | — | — | — | A | — | A |
-| Open shift | A | A | — | A | — | — |
-| Close shift | — | A | — | A | — | — |
-| Open cash session | A | A | — | A | — | — |
-| Close cash session | — | A | — | A | — | — |
-| No sale / drawer open | — | O | — | A | — | — |
-| Select hall/table | A | A | A | A | — | — |
-| Create order | A | A | A | A | — | — |
-| Add order line | A | A | A | A | — | — |
-| Change quantity before precheck | A | A | A | A | — | — |
-| Void line before precheck | A | A | A | A | — | — |
-| View other employee order | — | A | — | A | — | — |
-| Transfer order to another employee | — | O | O | A | — | — |
-| Issue precheck | A | A | A | A | — | — |
-| Cancel precheck | — | O | O | A | — | — |
-| Take cash payment | A | A | O | A | — | — |
-| Take trusted manual card payment | A | A | O | A | — | — |
-| View final check | A | A | A | A | — | — |
-| Reprint final check | — | A | — | A | — | — |
-| Refund payment | — | — | — | A | — | — |
-| View sync status | — | A | — | A | — | A |
-| Retry failed syncs | — | — | — | A | — | A |
-| View diagnostics | — | — | — | A | — | A |
-| Run diagnostics actions | — | — | — | A | — | A |
-| Edit halls/tables | — | — | — | A | — | A |
-| Edit menu/catalog | — | — | — | A | — | A |
-| Edit employees/roles | — | — | — | A | — | A |
+| Pair terminal | - | - | - | A | - | A |
+| Open shift | A | A | - | A | - | - |
+| Close shift | - | A | - | A | - | - |
+| Open cash session | A | A | - | A | - | - |
+| Close cash session | - | A | - | A | - | - |
+| No sale / drawer open | - | O | - | A | - | - |
+| Select hall/table | A | A | A | A | - | - |
+| Create order | A | A | A | A | - | - |
+| Add order line | A | A | A | A | - | - |
+| Change quantity before precheck | A | A | A | A | - | - |
+| Void line before precheck | A | A | A | A | - | - |
+| View other employee order | - | A | - | A | - | - |
+| Transfer order to another employee | - | O | O | A | - | - |
+| Issue precheck | A | A | A | A | - | - |
+| Cancel precheck | - | O | O | A | - | - |
+| Take cash payment | A | A | O | A | - | - |
+| Take trusted manual card payment | A | A | O | A | - | - |
+| View final check | A | A | A | A | - | - |
+| Reprint final check | - | A | - | A | - | - |
+| Refund payment | - | - | - | A | - | - |
+| View sync status | - | A | - | A | - | A |
+| Retry failed syncs | - | - | - | A | - | A |
+| View diagnostics | - | - | - | A | - | A |
+| Запустить diagnostics actions | - | - | - | A | - | A |
+| Edit halls/tables | - | - | - | A | - | A |
+| Edit menu/catalog | - | - | - | A | - | A |
+| Edit employees/roles | - | - | - | A | - | A |
 
 ## Рекомендуемые связки роли и режима
 
@@ -175,7 +175,7 @@
 ### Support admin
 
 Это не ресторанная операционная роль.
-Ее задача — pairing, service access, diagnostics, техническое обслуживание.
+Ее задача - pairing, service access, diagnostics, техническое обслуживание.
 Она не должна использоваться как обычная кассовая роль.
 
 ## UX-требования к RBAC

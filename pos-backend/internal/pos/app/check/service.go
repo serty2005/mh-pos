@@ -24,13 +24,6 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 	return &Service{repo: repo, tx: tx, ids: ids, clock: clock}
 }
 
-type CreateCheckCommand struct {
-	shared.CommandMeta
-	OrderID       string `json:"order_id"`
-	DiscountTotal int64  `json:"discount_total"`
-	TaxTotal      int64  `json:"tax_total"`
-}
-
 type CapturePaymentCommand struct {
 	shared.CommandMeta
 	PrecheckID            string               `json:"precheck_id"`
@@ -45,14 +38,6 @@ type CapturePaymentCommand struct {
 
 func (s *Service) GetCheck(ctx context.Context, id string) (*domain.Check, error) {
 	return s.repo.GetCheck(ctx, id)
-}
-
-func (s *Service) CreateCheck(ctx context.Context, cmd CreateCheckCommand) (*domain.Check, error) {
-	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
-	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
-		return nil, err
-	}
-	return nil, fmt.Errorf("%w: manual check creation is disabled; issue and fully pay a precheck", domain.ErrConflict)
 }
 
 func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand) (*domain.Payment, error) {

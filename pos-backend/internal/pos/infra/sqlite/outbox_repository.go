@@ -25,6 +25,10 @@ func (r *Repository) CreateOutboxMessage(ctx context.Context, v *domain.OutboxMe
 	return normalizeErr(err)
 }
 
+func (r *Repository) GetOutboxByID(ctx context.Context, id string) (*domain.OutboxMessage, error) {
+	return r.scanOutbox(r.queryer(ctx).QueryRowContext(ctx, outboxSelectColumns+` FROM pos_sync_outbox WHERE id = ?`, id))
+}
+
 func (r *Repository) GetOutboxByCommandID(ctx context.Context, commandID string) (*domain.OutboxMessage, error) {
 	return r.scanOutbox(r.queryer(ctx).QueryRowContext(ctx, outboxSelectColumns+` FROM pos_sync_outbox WHERE command_id = ? ORDER BY sequence_no LIMIT 1`, commandID))
 }
@@ -103,13 +107,20 @@ func (r *Repository) ClaimPendingOutbox(ctx context.Context, limit int, lockedBy
 	rows, err := r.queryer(ctx).QueryContext(ctx, `WITH candidates AS (
   SELECT id FROM pos_sync_outbox
   WHERE status = 'pending' AND (next_retry_at IS NULL OR next_retry_at <= ?)
+    AND sequence_no < (
+      SELECT COALESCE(MIN(sequence_no), 9223372036854775807)
+      FROM pos_sync_outbox
+      WHERE status = 'processing'
+        OR status = 'failed'
+        OR (status = 'pending' AND next_retry_at IS NOT NULL AND next_retry_at > ?)
+    )
   ORDER BY sequence_no
   LIMIT ?
 )
 UPDATE pos_sync_outbox
 SET status = 'processing', locked_at = ?, locked_by = ?, updated_at = ?
 WHERE id IN (SELECT id FROM candidates)
-RETURNING id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_id,client_device_id,actor_employee_id,session_id,aggregate_type,aggregate_id,command_type,payload_json,status,attempts,next_retry_at,locked_at,locked_by,sent_at,last_error,created_at,updated_at`, now, limit, now, lockedBy, now)
+RETURNING id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_id,client_device_id,actor_employee_id,session_id,aggregate_type,aggregate_id,command_type,payload_json,status,attempts,next_retry_at,locked_at,locked_by,sent_at,last_error,created_at,updated_at`, now, now, limit, now, lockedBy, now)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
@@ -129,6 +140,15 @@ RETURNING id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_i
 		return out[i].SequenceNo < out[j].SequenceNo
 	})
 	return out, nil
+}
+
+func (r *Repository) ReleaseProcessingOutbox(ctx context.Context, lockedBy, updatedAt string) (int, error) {
+	res, err := r.execer(ctx).ExecContext(ctx, `UPDATE pos_sync_outbox SET status = 'pending', locked_at = NULL, locked_by = NULL, updated_at = ? WHERE status = 'processing' AND locked_by = ?`, updatedAt, lockedBy)
+	if err != nil {
+		return 0, normalizeErr(err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
 }
 
 func (r *Repository) ReclaimStaleProcessingOutbox(ctx context.Context, staleBefore, updatedAt string) (int, error) {
@@ -188,6 +208,30 @@ func (r *Repository) MarkOutboxSent(ctx context.Context, id, updatedAt string) e
 
 func (r *Repository) MarkOutboxFailed(ctx context.Context, id, errorText string, nextRetryAt *string, updatedAt string, maxAttempts int) error {
 	res, err := r.execer(ctx).ExecContext(ctx, `UPDATE pos_sync_outbox SET status = CASE WHEN attempts + 1 > ? THEN 'suspended' ELSE 'failed' END, attempts = attempts + 1, next_retry_at = CASE WHEN attempts + 1 > ? THEN NULL ELSE ? END, locked_at = NULL, locked_by = NULL, last_error = ?, updated_at = ? WHERE id = ?`, maxAttempts, maxAttempts, nullableString(nextRetryAt), errorText, updatedAt, id)
+	if err != nil {
+		return normalizeErr(err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (r *Repository) MarkOutboxRetryableFailure(ctx context.Context, id, errorText string, nextRetryAt *string, updatedAt string, maxAttempts int) error {
+	res, err := r.execer(ctx).ExecContext(ctx, `UPDATE pos_sync_outbox SET status = CASE WHEN attempts + 1 > ? THEN 'suspended' ELSE 'pending' END, attempts = attempts + 1, next_retry_at = CASE WHEN attempts + 1 > ? THEN NULL ELSE ? END, locked_at = NULL, locked_by = NULL, last_error = ?, updated_at = ? WHERE id = ?`, maxAttempts, maxAttempts, nullableString(nextRetryAt), errorText, updatedAt, id)
+	if err != nil {
+		return normalizeErr(err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (r *Repository) SuspendOutboxMessage(ctx context.Context, id, reason, updatedAt string) error {
+	res, err := r.execer(ctx).ExecContext(ctx, `UPDATE pos_sync_outbox SET status = 'suspended', next_retry_at = NULL, locked_at = NULL, locked_by = NULL, last_error = ?, updated_at = ? WHERE id = ?`, reason, updatedAt, id)
 	if err != nil {
 		return normalizeErr(err)
 	}

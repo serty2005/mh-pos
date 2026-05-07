@@ -12,7 +12,7 @@ type CommandMeta struct {
 	CommandID       string               `json:"command_id,omitempty"`
 	NodeDeviceID    string               `json:"node_device_id,omitempty"`
 	ClientDeviceID  string               `json:"client_device_id,omitempty"`
-	DeviceID        string               `json:"device_id,omitempty"`
+	DeviceID        string               `json:"-"`
 	ActorEmployeeID string               `json:"actor_employee_id,omitempty"`
 	SessionID       string               `json:"session_id,omitempty"`
 	Origin          domain.CommandOrigin `json:"origin,omitempty"`

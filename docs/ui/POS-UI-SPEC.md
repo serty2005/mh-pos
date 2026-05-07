@@ -1,4 +1,4 @@
-# POS UI Specification
+# Спецификация POS UI
 
 ## Назначение
 
@@ -10,7 +10,7 @@
 
 ## Текущее состояние
 
-`pos-ui` на текущем этапе — это cashier-first UI для одного all-in-one pilot terminal.
+`pos-ui` на текущем этапе - это cashier-first UI для одного all-in-one pilot terminal.
 
 Реально поддерживаемые маршруты:
 
@@ -40,8 +40,8 @@ Frontend:
 
 UI использует два идентификатора устройства:
 
-- `node_device_id` — identity Edge backend / Edge node;
-- `client_device_id` — identity конкретного UI-клиента.
+- `node_device_id` - identity Edge backend / Edge node;
+- `client_device_id` - identity конкретного UI-клиента.
 
 Правила:
 
@@ -97,7 +97,7 @@ UI использует два идентификатора устройства
 - change quantity;
 - void line;
 - issue precheck;
-- cancel precheck through manager override dialog;
+- cancel precheck через manager override dialog;
 - cash payment;
 - trusted manual card payment;
 - final check display.
@@ -150,7 +150,7 @@ flowchart LR
 - menu items;
 - final check.
 
-### Local state
+### Локальное состояние
 
 Локально разрешено хранить только:
 
@@ -177,12 +177,12 @@ flowchart LR
 - `X-Session-ID`
 - `X-Actor-Employee-ID`
 
-## Supported pilot scope
+## Поддерживаемый pilot scope
 
 Для первого пилота supported:
 
 - cashier flow на одном all-in-one terminal;
-- pairing → login → pos → lock/logout;
+- pairing -> login -> pos -> lock/logout;
 - один локальный Edge backend;
 - один локальный SQLite source of truth;
 - наличная оплата;

@@ -419,6 +419,31 @@ func TestMarkOutboxFailedSuspendsAfterAttemptsExceedThreshold(t *testing.T) {
 	}
 }
 
+func TestMarkOutboxRetryableFailureKeepsMessagePendingWithBackoff(t *testing.T) {
+	f := newFixture(t)
+	id := outboxIDs(t, f, 1)[0]
+	if _, err := f.service.ClaimPendingOutbox(f.ctx, app.ClaimPendingOutboxCommand{Limit: 1, LockedBy: "sync-test"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.MarkOutboxRetryableFailure(f.ctx, id, "cloud unavailable"); err != nil {
+		t.Fatal(err)
+	}
+	status, attempts := outboxStatusAttempts(t, f, id)
+	if status != domain.OutboxPending || attempts != 1 {
+		t.Fatalf("expected pending retry with attempts=1, got status=%s attempts=%d", status, attempts)
+	}
+	var nextRetryAt, lockedAt, lockedBy string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COALESCE(next_retry_at,''), COALESCE(locked_at,''), COALESCE(locked_by,'') FROM pos_sync_outbox WHERE id = ?`, id).Scan(&nextRetryAt, &lockedAt, &lockedBy); err != nil {
+		t.Fatal(err)
+	}
+	if nextRetryAt == "" {
+		t.Fatal("expected next_retry_at to be set")
+	}
+	if lockedAt != "" || lockedBy != "" {
+		t.Fatalf("expected retryable failure to release lock, got locked_at=%q locked_by=%q", lockedAt, lockedBy)
+	}
+}
+
 func TestGetSyncStatusAggregatesOutboxRows(t *testing.T) {
 	f := newFixture(t)
 	ids := outboxIDs(t, f, 4)
@@ -975,7 +1000,7 @@ func TestIssuePrecheckCreatesDormantSnapshotAndLocksOrderWithoutLegacyCheck(t *t
 		t.Fatalf("expected one precheck row, before=%d after=%d", prechecksBefore, prechecks)
 	}
 	if checks := countRows(t, f, "checks"); checks != checksBefore {
-		t.Fatalf("expected legacy checks to remain unchanged, before=%d after=%d", checksBefore, checks)
+		t.Fatalf("expected final checks to remain unchanged, before=%d after=%d", checksBefore, checks)
 	}
 	lockedOrder, err := f.repo.GetOrder(f.ctx, order.ID)
 	if err != nil {

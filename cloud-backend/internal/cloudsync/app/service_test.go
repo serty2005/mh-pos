@@ -49,16 +49,20 @@ func TestReceiveDuplicateEnvelopeReturnsStableAckAndKeepsOneReceipt(t *testing.T
 func sampleEnvelope(t *testing.T) []byte {
 	t.Helper()
 	body := map[string]any{
-		"version":        "1",
-		"event_id":       "event-1",
-		"command_id":     "command-1",
-		"event_type":     "OrderCreated",
-		"aggregate_type": "Order",
-		"aggregate_id":   "order-1",
-		"restaurant_id":  "restaurant-1",
-		"device_id":      "device-1",
-		"shift_id":       "shift-1",
-		"occurred_at":    "2026-05-05T09:00:00Z",
+		"version":           "1",
+		"event_id":          "event-1",
+		"command_id":        "command-1",
+		"event_type":        "OrderCreated",
+		"aggregate_type":    "Order",
+		"aggregate_id":      "order-1",
+		"restaurant_id":     "restaurant-1",
+		"device_id":         "device-1",
+		"node_device_id":    "device-1",
+		"client_device_id":  "client-1",
+		"actor_employee_id": "employee-1",
+		"session_id":        "session-1",
+		"shift_id":          "shift-1",
+		"occurred_at":       "2026-05-05T09:00:00Z",
 		"payload": map[string]any{
 			"origin": "edge_device",
 			"data": map[string]any{

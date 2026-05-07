@@ -94,6 +94,29 @@ VALUES ($1,$2::jsonb,$3,$4)`,
 	); err != nil {
 		return contracts.EventAck{}, err
 	}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO cloud_operational_events(
+  id,receipt_id,idempotency_key,restaurant_id,device_id,command_id,event_id,edge_event_id,
+  event_type,aggregate_type,aggregate_id,envelope_version,occurred_at,cloud_received_at,raw_payload_sha256_hex
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+		ack.CloudReceiptID,
+		ack.CloudReceiptID,
+		ack.IdempotencyKey,
+		*receipt.Envelope.RestaurantID,
+		receipt.Envelope.DeviceID,
+		receipt.Envelope.CommandID,
+		receipt.Envelope.EventID,
+		ack.EdgeEventID,
+		string(receipt.Envelope.EventType),
+		receipt.Envelope.AggregateType,
+		receipt.Envelope.AggregateID,
+		receipt.Envelope.Version,
+		receipt.Envelope.OccurredAt,
+		receipt.CloudReceivedAt,
+		receipt.RawPayloadSHA256,
+	); err != nil {
+		return contracts.EventAck{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return contracts.EventAck{}, err
 	}

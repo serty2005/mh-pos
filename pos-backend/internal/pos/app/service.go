@@ -56,7 +56,6 @@ type ChangeOrderLineQuantityCommand = apporder.ChangeOrderLineQuantityCommand
 type VoidOrderLineCommand = apporder.VoidOrderLineCommand
 type IssuePrecheckCommand = appprecheck.IssuePrecheckCommand
 type CancelPrecheckCommand = appprecheck.CancelPrecheckCommand
-type CreateCheckCommand = appcheck.CreateCheckCommand
 type CapturePaymentCommand = appcheck.CapturePaymentCommand
 type CloseOrderCommand = apporder.CloseOrderCommand
 type OpenCashSessionCommand = appcash.OpenCashSessionCommand
@@ -269,10 +268,6 @@ func (s *Service) GetCheck(ctx context.Context, id string) (*domain.Check, error
 	return s.checks.GetCheck(ctx, id)
 }
 
-func (s *Service) CreateCheck(ctx context.Context, cmd CreateCheckCommand) (*domain.Check, error) {
-	return s.checks.CreateCheck(ctx, cmd)
-}
-
 func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand) (*domain.Payment, error) {
 	return s.checks.CapturePayment(ctx, cmd)
 }
@@ -313,6 +308,10 @@ func (s *Service) ReclaimStaleProcessingOutbox(ctx context.Context, cmd ReclaimS
 	return s.outbox.ReclaimStaleProcessingOutbox(ctx, cmd.StaleBefore)
 }
 
+func (s *Service) ReleaseProcessingOutbox(ctx context.Context, lockedBy string) (int, error) {
+	return s.outbox.ReleaseProcessingOutbox(ctx, lockedBy)
+}
+
 func (s *Service) ListLocalEvents(ctx context.Context, query ListLocalEventsQuery) ([]domain.LocalEvent, error) {
 	return s.localEvents.ListLocalEvents(ctx, query.Limit, query.EventType)
 }
@@ -323,4 +322,12 @@ func (s *Service) MarkOutboxSent(ctx context.Context, id string) error {
 
 func (s *Service) MarkOutboxFailed(ctx context.Context, id, reason string) error {
 	return s.outbox.MarkOutboxFailed(ctx, id, reason)
+}
+
+func (s *Service) MarkOutboxRetryableFailure(ctx context.Context, id, reason string) error {
+	return s.outbox.MarkOutboxRetryableFailure(ctx, id, reason)
+}
+
+func (s *Service) SuspendOutboxMessage(ctx context.Context, id, reason string) error {
+	return s.outbox.SuspendOutboxMessage(ctx, id, reason)
 }

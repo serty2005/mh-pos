@@ -110,7 +110,7 @@ export function logout() {
 
 export function getCurrentShift() {
   const auth = useAuthStore();
-  const query = new URLSearchParams({ device_id: auth.nodeDeviceId });
+  const query = new URLSearchParams({ node_device_id: auth.nodeDeviceId });
   return requestOptional(`/shifts/current?${query}`, shiftSchema);
 }
 
@@ -138,7 +138,7 @@ export function closeShift(shiftId: string, closingCashAmount: number) {
 
 export function getCurrentCashSession() {
   const auth = useAuthStore();
-  const query = new URLSearchParams({ device_id: auth.nodeDeviceId });
+  const query = new URLSearchParams({ node_device_id: auth.nodeDeviceId });
   return requestOptional(`/cash-sessions/current?${query}`, cashSessionSchema);
 }
 

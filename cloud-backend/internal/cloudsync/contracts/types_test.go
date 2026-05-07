@@ -42,13 +42,17 @@ func validEnvelope(t *testing.T, eventType contracts.EventType) contracts.SyncEn
 	  "aggregate_id":"payment-1",
 	  "restaurant_id":"restaurant-1",
 	  "device_id":"device-1",
+	  "node_device_id":"device-1",
+	  "client_device_id":"client-1",
+	  "actor_employee_id":"employee-1",
+	  "session_id":"session-1",
 	  "shift_id":"shift-1",
 	  "occurred_at":"2026-05-05T09:00:00Z",
 	  "payload":{
 	    "origin":"edge_device",
 	    "data":{
 	      "id":"payment-1",
-	      "check_id":"check-1",
+	      "precheck_id":"precheck-1",
 	      "method":"cash",
 	      "amount":1000,
 	      "currency":"RUB",

@@ -13,16 +13,23 @@ const EnvelopeVersion = "1"
 type EventType string
 
 const (
-	EventShiftOpened             EventType = "ShiftOpened"
-	EventShiftClosed             EventType = "ShiftClosed"
-	EventOrderCreated            EventType = "OrderCreated"
-	EventOrderLineAdded          EventType = "OrderLineAdded"
-	EventCheckCreated            EventType = "CheckCreated"
-	EventPaymentCaptured         EventType = "PaymentCaptured"
-	EventOrderClosed             EventType = "OrderClosed"
-	EventCashSessionOpened       EventType = "CashSessionOpened"
-	EventCashSessionClosed       EventType = "CashSessionClosed"
-	EventCashDrawerEventRecorded EventType = "CashDrawerEventRecorded"
+	EventShiftOpened              EventType = "ShiftOpened"
+	EventShiftClosed              EventType = "ShiftClosed"
+	EventOrderCreated             EventType = "OrderCreated"
+	EventOrderLineAdded           EventType = "OrderLineAdded"
+	EventOrderLineQuantityChanged EventType = "OrderLineQuantityChanged"
+	EventOrderLineVoided          EventType = "OrderLineVoided"
+	EventPrecheckIssued           EventType = "PrecheckIssued"
+	EventPrecheckCancelled        EventType = "PrecheckCancelled"
+	EventCheckCreated             EventType = "CheckCreated"
+	EventPaymentCaptured          EventType = "PaymentCaptured"
+	EventOrderClosed              EventType = "OrderClosed"
+	EventCashSessionOpened        EventType = "CashSessionOpened"
+	EventCashSessionClosed        EventType = "CashSessionClosed"
+	EventCashDrawerEventRecorded  EventType = "CashDrawerEventRecorded"
+	EventAuthSessionStarted       EventType = "AuthSessionStarted"
+	EventAuthSessionRevoked       EventType = "AuthSessionRevoked"
+	EventDeviceRegistered         EventType = "DeviceRegistered"
 )
 
 var (
@@ -31,17 +38,21 @@ var (
 )
 
 type SyncEnvelope struct {
-	Version       string          `json:"version"`
-	EventID       string          `json:"event_id"`
-	CommandID     string          `json:"command_id"`
-	EventType     EventType       `json:"event_type"`
-	AggregateType string          `json:"aggregate_type"`
-	AggregateID   string          `json:"aggregate_id"`
-	RestaurantID  *string         `json:"restaurant_id,omitempty"`
-	DeviceID      string          `json:"device_id"`
-	ShiftID       *string         `json:"shift_id,omitempty"`
-	OccurredAt    time.Time       `json:"occurred_at"`
-	Payload       json.RawMessage `json:"payload"`
+	Version         string          `json:"version"`
+	EventID         string          `json:"event_id"`
+	CommandID       string          `json:"command_id"`
+	EventType       EventType       `json:"event_type"`
+	AggregateType   string          `json:"aggregate_type"`
+	AggregateID     string          `json:"aggregate_id"`
+	RestaurantID    *string         `json:"restaurant_id,omitempty"`
+	DeviceID        string          `json:"device_id"`
+	NodeDeviceID    string          `json:"node_device_id,omitempty"`
+	ClientDeviceID  *string         `json:"client_device_id,omitempty"`
+	ShiftID         *string         `json:"shift_id,omitempty"`
+	ActorEmployeeID *string         `json:"actor_employee_id,omitempty"`
+	SessionID       *string         `json:"session_id,omitempty"`
+	OccurredAt      time.Time       `json:"occurred_at"`
+	Payload         json.RawMessage `json:"payload"`
 }
 
 type Payload[T any] struct {
@@ -124,7 +135,7 @@ type PaymentCaptured struct {
 	RestaurantID          string    `json:"restaurant_id"`
 	DeviceID              string    `json:"device_id"`
 	ShiftID               string    `json:"shift_id"`
-	CheckID               string    `json:"check_id"`
+	PrecheckID            string    `json:"precheck_id"`
 	Method                string    `json:"method"`
 	Amount                int64     `json:"amount"`
 	Currency              string    `json:"currency"`
@@ -239,6 +250,8 @@ func ValidateEventPayload(v SyncEnvelope) error {
 		return validatePayload[OrderCreated](v)
 	case EventOrderLineAdded:
 		return validatePayload[OrderLineAdded](v)
+	case EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckCancelled, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
+		return validateOperationalPayload(v)
 	case EventCheckCreated:
 		return validatePayload[CheckCreated](v)
 	case EventPaymentCaptured:
@@ -274,9 +287,23 @@ func validatePayload[T any](v SyncEnvelope) error {
 	return nil
 }
 
+func validateOperationalPayload(v SyncEnvelope) error {
+	var payload Payload[map[string]any]
+	if err := json.Unmarshal(v.Payload, &payload); err != nil {
+		return fmt.Errorf("%w: invalid %s payload: %v", ErrInvalidEnvelope, v.EventType, err)
+	}
+	if strings.TrimSpace(payload.Origin) == "" {
+		return fmt.Errorf("%w: payload.origin is required", ErrInvalidEnvelope)
+	}
+	if len(payload.Data) == 0 {
+		return fmt.Errorf("%w: payload.data is required", ErrInvalidEnvelope)
+	}
+	return nil
+}
+
 func IsKnownEventType(v EventType) bool {
 	switch v {
-	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventCheckCreated, EventPaymentCaptured, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded:
+	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckCancelled, EventCheckCreated, EventPaymentCaptured, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
 		return true
 	default:
 		return false

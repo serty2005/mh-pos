@@ -40,7 +40,7 @@ docs/sync/edge-cloud-contracts-v1.md
 
 ---
 
-# 1. Executive Summary
+# 1. Краткое резюме
 
 Платформа представляет собой распределенную ресторанную учетную систему RMS/POS с автономным Edge-контуром в ресторане и облачным учетным ядром.
 
@@ -49,7 +49,7 @@ docs/sync/edge-cloud-contracts-v1.md
 ```text
 Edge-first POS/KDS
 Immutable Ledger & SyncEnvelope
-Primary Edge Node as Local Source of Truth
+Primary Edge Node как локальный источник истины
 Cloud Accounting Core
 OLAP Analytics
 ```
@@ -80,8 +80,8 @@ pos-backend/
   pos_sync_outbox
   SyncEnvelope foundation
   Orders foundation
-  Public Order -> Precheck -> Payment -> Check runtime
-  Public IssuePrecheck / read / list / CancelPrecheck
+  Публичный Order -> Precheck -> Payment -> Check runtime
+  Публичные IssuePrecheck / read / list / CancelPrecheck
   Precheck-based payments and automatic final Check
   PIN login/session/logout foundation
   Operator auth enforcement for business flows
@@ -121,7 +121,7 @@ Stage UI-0: pos-ui shell — DONE
 Stage UI-1: POS Terminal Core cashier surface — DONE / first slice
 ```
 
-Фактическое состояние текущего кода: публичный runtime `Order -> Precheck -> Payment -> Check` включен. `IssuePrecheck` создает issued precheck и переводит order в `locked`; `CancelPrecheck` доступен публично через manager override; payment capture идет через precheck, поддерживает partial payments и создает final `Check` только после полной оплаты. Legacy check payment endpoint отключен.
+Фактическое состояние текущего кода: публичный runtime `Order -> Precheck -> Payment -> Check` включен. `IssuePrecheck` создает issued precheck и переводит order в `locked`; `CancelPrecheck` доступен публично через manager override; payment capture идет через precheck, поддерживает partial payments и создает final `Check` только после полной оплаты. Публичные compatibility endpoints для старой check/payment модели удалены.
 
 Auth/device состояние: operator/business flows требуют active employee session, matching `actor_employee_id`, `session_id`, `client_device_id` и permissions там, где нужны. System/device flows (`sync`, pairing/status, future diagnostics/hardware callbacks) не завязаны на employee session. Lock screen равен backend logout через `POST /api/v1/auth/logout`; session становится `revoked`, новый PIN login создает новую session.
 
@@ -133,7 +133,7 @@ Order → Precheck → Payment → Check
 
 ---
 
-# 3. Non-Goals текущего этапа
+# 3. Что не входит в цели текущего этапа
 
 На текущем этапе не делаем:
 
@@ -304,7 +304,7 @@ actor_employee_id
 session_id
 ```
 
-`local_event_log`, `pos_sync_outbox`, `SyncEnvelope` и audit metadata сохраняют оба device identifiers там, где применимо. Legacy `device_id` в текущих API/таблицах остается backward-compatible alias для `node_device_id`; новый код должен использовать явные поля.
+`local_event_log`, `pos_sync_outbox`, `SyncEnvelope` и audit metadata сохраняют device identifiers там, где применимо. `device_id` остается domain/storage field для POS Edge node identity в operational payload; новый transport code должен использовать явные `node_device_id` и `client_device_id`.
 
 ---
 
@@ -357,7 +357,7 @@ Check создается только после полной оплаты Prech
 
 ---
 
-## ADR-007: Mandatory Manager Override via Local RBAC
+## ADR-007: Обязательный Manager Override через локальный RBAC
 
 Решение: опасные операции в offline требуют локального PIN менеджера.
 
@@ -486,7 +486,7 @@ complex conflict resolution
 
 ---
 
-## ADR-014: Device Binding Secret Storage
+## ADR-014: Хранение секрета привязки устройства
 
 Решение:
 
@@ -1757,13 +1757,13 @@ sha256
 
 ---
 
-# 17. Edge Data Model v1.3
+# 17. Модель данных Edge v1.3
 
 Ниже целевая first-launch schema-level модель. Конкретные имена таблиц могут сохранять суффиксы `_local`, если это уже принято в коде, но доменная семантика должна соответствовать v1.3.
 
 ---
 
-## 17.1 Core operational tables
+## 17.1 Основные operational tables
 
 ```text
 restaurants
@@ -1813,7 +1813,7 @@ prechecks (
 )
 ```
 
-Required indexes:
+Обязательные индексы:
 
 ```sql
 CREATE UNIQUE INDEX idx_prechecks_order_version
@@ -1866,7 +1866,7 @@ precheck_tax_lines (
 
 ---
 
-## 17.5 Manager override logs
+## 17.5 Логи manager override
 
 ```text
 manager_override_logs (
@@ -1883,7 +1883,7 @@ manager_override_logs (
 )
 ```
 
-Action types:
+Типы действий:
 
 ```text
 cancel_precheck
@@ -1926,7 +1926,7 @@ last_error TEXT NULL
 
 ---
 
-# 18. Required Domain Events
+# 18. Обязательные domain events
 
 MVP-0 / near-MVP events:
 
@@ -1984,7 +1984,7 @@ POST /api/v1/sync/retry-failed
 
 ---
 
-## 19.2 Shifts & cash
+## 19.2 Смены и касса
 
 ```text
 POST /api/v1/shifts/open
@@ -1996,7 +1996,7 @@ POST /api/v1/cash-drawer-events
 
 ---
 
-## 19.3 Orders & prechecks
+## 19.3 Заказы и пречеки
 
 ```text
 POST /api/v1/orders
@@ -2012,7 +2012,7 @@ GET  /api/v1/orders/{order_id}/prechecks
 
 ---
 
-## 19.3.1 Auth, actor context & floor foundation
+## 19.3.1 Auth, actor context и floor foundation
 
 Текущий backend foundation для старта `pos-ui`:
 
@@ -2051,7 +2051,7 @@ Order ссылается на `table_id` и хранит `table_name` как sna
 
 ---
 
-## 19.4 Payments & checks
+## 19.4 Оплаты и чеки
 
 ```text
 POST /api/v1/prechecks/{precheck_id}/payments
@@ -2061,7 +2061,7 @@ GET  /api/v1/checks/{check_id}
 
 ---
 
-## 19.5 Device binding
+## 19.5 Привязка устройств
 
 ```text
 POST /api/v1/devices/binding-codes
@@ -2083,7 +2083,7 @@ KDS API отложен. Текущий backend не реализует `kds_stat
 
 ---
 
-# 20. MVP-0 Definition
+# 20. Определение MVP-0
 
 Первый технически значимый MVP для пилота в Индонезии:
 
@@ -2097,7 +2097,7 @@ Cash Session
 Order Creation
 Order Line Management
 Issue Precheck as Snapshot
-Local Manager Override PIN for Precheck Cancel
+Локальный Manager Override PIN для Precheck Cancel
 Trusted Payment: Cash/Card terminal manual confirmation
 Final Check Generation after full payment
 SQLite WAL
@@ -2121,7 +2121,7 @@ failed sync можно вручную вернуть в pending
 
 ---
 
-# 21. First Launch Readiness
+# 21. Готовность к первому запуску
 
 Отдельный checkpoint перед первым пилотным запуском.
 
@@ -2129,7 +2129,7 @@ failed sync можно вручную вернуть в pending
 
 ---
 
-## 21.1 Functional readiness
+## 21.1 Функциональная готовность
 
 Должно работать:
 
@@ -2150,7 +2150,7 @@ close shift
 
 ---
 
-## 21.2 Offline readiness
+## 21.2 Offline-готовность
 
 Проверки:
 
@@ -2164,7 +2164,7 @@ close shift
 
 ---
 
-## 21.3 Financial integrity readiness
+## 21.3 Готовность финансовой целостности
 
 Проверки:
 
@@ -2182,7 +2182,7 @@ Check immutable
 
 ---
 
-## 21.4 Sync readiness
+## 21.4 Sync-готовность
 
 Проверки:
 
@@ -2198,7 +2198,7 @@ Retry Failed Syncs returns events to pending
 
 ---
 
-## 21.5 Device readiness
+## 21.5 Готовность устройств
 
 Проверки:
 
@@ -2212,7 +2212,7 @@ replacement device gets new UUID
 
 ---
 
-## 21.6 Recovery readiness
+## 21.6 Готовность восстановления
 
 Проверки:
 
@@ -2226,7 +2226,7 @@ outbox survives restore
 
 ---
 
-# 22. Roadmap Development Sequence
+# 22. Последовательность разработки
 
 Подробный roadmap живет в `ROADMAP.md`. Здесь фиксируется архитектурная последовательность.
 
@@ -2429,7 +2429,7 @@ Cloud as runtime dependency for POS writes
 
 ---
 
-# 24. Testing Requirements
+# 24. Требования к тестированию
 
 Каждый новый write use case должен иметь тесты:
 
@@ -2508,7 +2508,7 @@ Russian task descriptions/prompts/docs
 
 ---
 
-# 26. Final Conclusion
+# 26. Итоговый вывод
 
 SPEC v1.3 готова к разработке MVP-0.
 
@@ -2538,11 +2538,11 @@ no DB migration before first launch
 ```text
 Stage 3: Orders, Prechecks & Taxes
 Stage 4: Payments & Final Checks
-First Launch Readiness
+Готовность к первому запуску
 ```
 
 ---
 
-# Codex Usage Note
+# Примечание для Codex
 
 Эти файлы являются актуальными pilot-freeze источниками для формирования промптов Codex. Перед генерацией кода агент должен использовать их вместе с `AGENTS.md`, `README.md`, текущей структурой репозитория и существующими тестами. Запрещено возвращаться к старой модели `Order -> Check -> Payment`, хранить деньги не как minor units, делать live backup через прямое копирование active WAL DB, хранить PIN/OTP в plaintext или считать печать частью финансового commit.

@@ -16,7 +16,9 @@ import (
 	platformsqlite "pos-backend/internal/platform/sqlite"
 	"pos-backend/internal/pos/api"
 	"pos-backend/internal/pos/app"
+	poscloudsync "pos-backend/internal/pos/infra/cloudsync"
 	possqlite "pos-backend/internal/pos/infra/sqlite"
+	"pos-backend/internal/pos/syncsender"
 )
 
 func main() {
@@ -44,11 +46,27 @@ func run() error {
 	repo := possqlite.NewRepository(db)
 	tx := platformsqlite.NewTxManager(db)
 	service := app.NewService(repo, tx, idgen.UUIDGenerator{}, clock.SystemClock{})
+	rootCtx, rootCancel := context.WithCancel(context.Background())
+	defer rootCancel()
 
 	server := &http.Server{
 		Addr:              addr,
 		Handler:           api.NewRouter(service),
 		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	if envBool("POS_SYNC_SENDER_ENABLED", true) {
+		cloudEndpoint := env("POS_CLOUD_SYNC_URL", "http://localhost:8090/api/v1/sync/edge-events")
+		worker := syncsender.NewWorker(service, poscloudsync.NewClient(cloudEndpoint), syncsender.Config{
+			WorkerID:     env("POS_SYNC_SENDER_ID", "pos-sync-sender-main"),
+			BatchSize:    envInt("POS_SYNC_SENDER_BATCH_SIZE", 25),
+			PollInterval: envDuration("POS_SYNC_SENDER_POLL_INTERVAL", 2*time.Second),
+			ReclaimAfter: envDuration("POS_SYNC_SENDER_RECLAIM_AFTER", 5*time.Minute),
+			SendTimeout:  envDuration("POS_SYNC_SENDER_SEND_TIMEOUT", 10*time.Second),
+		}, slog.Default())
+		go worker.Run(rootCtx)
+	} else {
+		slog.Info("POS sync sender disabled")
 	}
 
 	go func() {
@@ -61,6 +79,7 @@ func run() error {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
+	rootCancel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -72,4 +91,43 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func envBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	switch v {
+	case "1", "true", "TRUE", "yes", "YES", "on", "ON":
+		return true
+	case "0", "false", "FALSE", "no", "NO", "off", "OFF":
+		return false
+	default:
+		return fallback
+	}
+}
+
+func envInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	var parsed int
+	if _, err := fmt.Sscanf(v, "%d", &parsed); err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
+}
+
+func envDuration(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(v)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }

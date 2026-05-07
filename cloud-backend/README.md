@@ -1,19 +1,20 @@
 # MyHoReCa Cloud Backend
 
-Minimal Cloud Sync Receiver for the POS/RMS platform.
+Минимальный Cloud Sync Receiver для POS/RMS платформы.
 
-Current scope:
+Текущий scope:
 
-- Go HTTP entrypoint: `cmd/cloud-api`
-- PostgreSQL bootstrap and migrations
-- `GET /health`
-- `POST /api/v1/sync/edge-events`
-- idempotent receive of POS Edge `SyncEnvelope`
-- raw envelope storage before future projections
+- Go HTTP entrypoint: `cmd/cloud-api`;
+- PostgreSQL bootstrap и migrations;
+- `GET /health`;
+- `POST /api/v1/sync/edge-events`;
+- идемпотентный прием POS Edge `SyncEnvelope`;
+- хранение raw envelope до будущих projections;
+- operational event journal в PostgreSQL (`cloud_operational_events`).
 
-## Run
+## Запуск
 
-Start local PostgreSQL:
+Запусти локальный PostgreSQL:
 
 ```powershell
 docker run --name mh-pos-cloud-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=mh_pos_cloud -p 5432:5432 -d postgres:16
@@ -27,30 +28,32 @@ go test ./...
 go run ./cmd/cloud-api
 ```
 
-Defaults:
+Значения по умолчанию:
 
 ```text
 CLOUD_HTTP_ADDR=:8090
 CLOUD_POSTGRES_MIGRATIONS_DIR=migrations/postgres
 ```
 
-`CLOUD_POSTGRES_DSN` is required.
+`CLOUD_POSTGRES_DSN` обязателен.
 
-## Local Receiver Smoke Test
+implemented now: PostgreSQL использует first-launch schema policy. `migrations/postgres` должен содержать ровно один canonical SQL file, `001_sync_receiver.sql`; исторические цепочки `002/003/...` не являются частью pre-pilot runtime.
+
+## Локальный smoke test receiver-а
 
 ```powershell
 Invoke-RestMethod http://localhost:8090/health
 ..\scripts\send-cloud-test-envelope.ps1 -ReplayTwice
 ```
 
-To replay an envelope using IDs from the POS demo bootstrap:
+Replay envelope с ID из POS demo bootstrap:
 
 ```powershell
 $demo = ..\scripts\bootstrap-pos-demo.ps1
 ..\scripts\send-cloud-test-envelope.ps1 -RestaurantId $demo.restaurant_id -NodeDeviceId $demo.node_device_id -ReplayTwice
 ```
 
-Minimal curl-equivalent body for `POST /api/v1/sync/edge-events`:
+Минимальное тело, эквивалентное curl-запросу `POST /api/v1/sync/edge-events`:
 
 ```powershell
 $body = @{
@@ -86,13 +89,13 @@ Invoke-RestMethod -Method Post http://localhost:8090/api/v1/sync/edge-events -Co
 Invoke-RestMethod -Method Post http://localhost:8090/api/v1/sync/edge-events -ContentType "application/json" -Body $body
 ```
 
-Duplicate replay returns the same stable ack. Cloud currently stores raw accepted envelopes; full Cloud projections and production sender worker are out of scope for this slice.
+Повторный duplicate replay возвращает тот же стабильный ack. implemented now: Cloud хранит raw accepted envelopes и append-safe operational event journal. Полные Cloud projections являются planned next.
 
-## Local E2E Prototype: получить pairing code и войти в POS UI
+## Локальный E2E Prototype: получить pairing code и войти в POS UI
 
-implemented now: Cloud participates in the local prototype as the idempotent envelope receiver.
+implemented now: Cloud участвует в локальном прототипе как идемпотентный receiver envelope-ов.
 
-1. Start Cloud with PostgreSQL:
+1. Запусти Cloud с PostgreSQL:
 
 ```powershell
 cd cloud-backend
@@ -100,24 +103,31 @@ $env:CLOUD_POSTGRES_DSN="postgres://postgres:postgres@localhost:5432/mh_pos_clou
 go run ./cmd/cloud-api
 ```
 
-2. After POS bootstrap, verify replay with real IDs:
+2. После POS bootstrap проверь replay с реальными ID:
 
 ```powershell
 $demo = ..\scripts\bootstrap-pos-demo.ps1
 ..\scripts\send-cloud-test-envelope.ps1 -RestaurantId $demo.restaurant_id -NodeDeviceId $demo.node_device_id -ReplayTwice
 ```
 
-out of scope: POS outbox is not automatically delivered to Cloud by a production sender worker.
+implemented now: POS outbox operational events автоматически доставляются в Cloud POS sender worker-ом, когда `POS_SYNC_SENDER_ENABLED=true`, а `POS_CLOUD_SYNC_URL` указывает на этот receiver.
 
-## Test
+Проверка PostgreSQL:
+
+```powershell
+docker exec -it mh-pos-cloud-postgres psql -U postgres -d mh_pos_cloud -c "select event_type, count(*) from cloud_operational_events group by event_type order by event_type;"
+docker exec -it mh-pos-cloud-postgres psql -U postgres -d mh_pos_cloud -c "select idempotency_key, event_type, cloud_received_at from cloud_edge_event_receipts order by cloud_received_at desc limit 10;"
+```
+
+## Проверки
 
 ```powershell
 cd cloud-backend
 go test ./...
 ```
 
-The default tests use the in-memory repository for service and HTTP replay checks. PostgreSQL runtime storage is implemented in `internal/cloudsync/infra/postgres` and initialized by `migrations/postgres`.
+Стандартные тесты используют in-memory repository для service и HTTP replay checks. PostgreSQL runtime storage реализован в `internal/cloudsync/infra/postgres` и инициализируется через `migrations/postgres`.
 
-## Contract
+## Контракт
 
-See `../docs/sync/edge-cloud-contracts-v1.md`.
+См. `../docs/sync/edge-cloud-contracts-v1.md`.

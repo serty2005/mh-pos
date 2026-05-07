@@ -1,6 +1,6 @@
-# POS-UI Vue 3 + Quasar MVP Specification
+# Спецификация POS-UI Vue 3 + Quasar MVP
 
-Статус: Approved MVP Specification
+Статус: утвержденная MVP-спецификация
 Назначение: Рабочая спецификация для реализации MVP frontend-части POS/RMS платформы
 Целевой пакет: `pos-ui`
 Frontend stack: Vue 3 + TypeScript + Quasar + TanStack Query
@@ -24,7 +24,7 @@ Frontend работает как локальный web-интерфейс к Ed
 Текущий backend (до MVP UI) уже содержит foundation для runtime flow:
 `Order -> Precheck -> Payment -> Check`
 
-**Backend Gaps (Должно быть сделано в Фазе 0 до старта UI):**
+**Backend gaps (должно быть сделано в Фазе 0 до старта UI):**
 1. Авторизация сотрудника по PIN.
 2. Столы, ресторанные залы и схемы залов.
 3. Несколько залов и KDS stations.
@@ -55,7 +55,7 @@ Frontend работает как локальный web-интерфейс к Ed
 
 ---
 
-## 3. Frontend Stack & Tooling
+## 3. Frontend stack и tooling
 
 * **Framework:** Vue 3 (Composition API, `<script setup>`)
 * **Language:** TypeScript (strict mode)
@@ -195,7 +195,7 @@ pos-ui/
 
 ---
 
-## 11. Acceptance Criteria для UI MVP
+## 11. Acceptance criteria для UI MVP
 
 1. Приложение стартует и не использует моки для критических путей (только вызовы к Edge backend).
 2. UI корректно использует Quasar CSS утилиты (без Tailwind).

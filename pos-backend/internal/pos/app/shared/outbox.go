@@ -24,6 +24,7 @@ type OutboxService struct {
 const (
 	DefaultOutboxMaxAttempts = 20
 	defaultOutboxRetryDelay  = time.Minute
+	defaultOutboxMaxDelay    = 30 * time.Minute
 )
 
 type eventOutboxRepository interface {
@@ -79,12 +80,40 @@ func (s *OutboxService) ReclaimStaleProcessingOutbox(ctx context.Context, staleB
 	return count, err
 }
 
+func (s *OutboxService) ReleaseProcessingOutbox(ctx context.Context, lockedBy string) (int, error) {
+	if strings.TrimSpace(lockedBy) == "" {
+		return 0, fmt.Errorf("%w: locked_by is required", domain.ErrInvalid)
+	}
+	var count int
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		var err error
+		count, err = s.repo.ReleaseProcessingOutbox(ctx, strings.TrimSpace(lockedBy), DBTime(s.clock.Now()))
+		return err
+	})
+	return count, err
+}
+
 func (s *OutboxService) MarkOutboxSent(ctx context.Context, id string) error {
 	if strings.TrimSpace(id) == "" {
 		return fmt.Errorf("%w: outbox id is required", domain.ErrInvalid)
 	}
 	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		return s.repo.MarkOutboxSent(ctx, id, DBTime(s.clock.Now()))
+	})
+}
+
+func (s *OutboxService) MarkOutboxRetryableFailure(ctx context.Context, id, reason string) error {
+	if strings.TrimSpace(id) == "" || strings.TrimSpace(reason) == "" {
+		return fmt.Errorf("%w: outbox id and error are required", domain.ErrInvalid)
+	}
+	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		msg, err := s.repo.GetOutboxByID(ctx, strings.TrimSpace(id))
+		if err != nil {
+			return err
+		}
+		now := s.clock.Now()
+		nextRetryAt := DBTime(now.Add(outboxBackoffDelay(msg.Attempts + 1)))
+		return s.repo.MarkOutboxRetryableFailure(ctx, id, reason, &nextRetryAt, DBTime(now), DefaultOutboxMaxAttempts)
 	})
 }
 
@@ -97,6 +126,29 @@ func (s *OutboxService) MarkOutboxFailed(ctx context.Context, id, reason string)
 		nextRetryAt := DBTime(now.Add(defaultOutboxRetryDelay))
 		return s.repo.MarkOutboxFailed(ctx, id, reason, &nextRetryAt, DBTime(now), DefaultOutboxMaxAttempts)
 	})
+}
+
+func (s *OutboxService) SuspendOutboxMessage(ctx context.Context, id, reason string) error {
+	if strings.TrimSpace(id) == "" || strings.TrimSpace(reason) == "" {
+		return fmt.Errorf("%w: outbox id and reason are required", domain.ErrInvalid)
+	}
+	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		return s.repo.SuspendOutboxMessage(ctx, strings.TrimSpace(id), reason, DBTime(s.clock.Now()))
+	})
+}
+
+func outboxBackoffDelay(attempt int) time.Duration {
+	if attempt <= 1 {
+		return defaultOutboxRetryDelay
+	}
+	delay := defaultOutboxRetryDelay
+	for i := 1; i < attempt; i++ {
+		delay *= 2
+		if delay >= defaultOutboxMaxDelay {
+			return defaultOutboxMaxDelay
+		}
+	}
+	return delay
 }
 
 func EnsureCommandNotProcessed(ctx context.Context, repo ports.OutboxRepository, commandID string) error {

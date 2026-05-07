@@ -12,28 +12,28 @@ Order -> Precheck -> Payment -> Check
 
 `Precheck` - рабочий финансовый snapshot для гостя. `Check` - только финальный неизменяемый расчетный документ после полной оплаты precheck.
 
-Текущее состояние кода: backend выполняет runtime flow `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` создает issued precheck и переводит order в `locked`; публичный `CancelPrecheck` требует manager employee id, PIN и reason, проверяет локальный PBKDF2 `pin_hash`, пишет `manager_override_audit` и возвращает unpaid active issued precheck в `open`; payment capture идет через `precheck_id`, поддерживает partial payments и создает final `Check` только после полной оплаты. Backend также включает strict PIN auth/session/logout foundation, Edge Node pairing, client device auto-registration, actor/session/node/client metadata, halls/tables API, current active order by table read endpoint, order line quantity/void API и backend-calculated order totals в `GET /api/v1/orders/{id}`. Legacy `POST /api/v1/checks/{id}/payments` отключен и не обходит precheck flow.
+Текущее состояние кода: backend выполняет runtime flow `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` создает issued precheck и переводит order в `locked`; публичный `CancelPrecheck` требует manager employee id, PIN и reason, проверяет локальный PBKDF2 `pin_hash`, пишет `manager_override_audit` и возвращает unpaid active issued precheck в `open`; payment capture идет через `precheck_id`, поддерживает partial payments и создает final `Check` только после полной оплаты. Backend также включает строгую PIN auth/session/logout foundation, Edge Node pairing, client device auto-registration, actor/session/node/client metadata, halls/tables API, read endpoint текущего активного заказа по столу, order line quantity/void API и рассчитанные backend-ом order totals в `GET /api/v1/orders/{id}`. Публичные compatibility endpoints для старой check/payment модели удалены.
 
-Auth/device boundary:
+Граница auth/device:
 
 - operator/business flows требуют active employee session, `actor_employee_id`, `session_id`, matching `client_device_id` и permissions там, где нужны;
-- system/device flows (`sync`, `system/pair`, pairing status, future diagnostics/hardware callbacks) не требуют employee session;
+- system/device flows (`sync`, `system/pair`, pairing status, будущие diagnostics/hardware callbacks) не требуют employee session;
 - lock screen = backend logout через `POST /api/v1/auth/logout`; session становится `revoked`, новый PIN login создает новую session;
 - `node_device_id` обозначает POS Edge Backend / Edge Node и приходит через pairing;
 - `client_device_id` обозначает frontend-клиент, в MVP генерируется `pos-ui` и auto-registers на Edge;
-- legacy `device_id` остается compatibility alias для `node_device_id`, но новый контракт использует явные поля.
+- `device_id` остается domain/storage field для POS Edge node identity в operational payload; новый transport contract использует явные `node_device_id` и `client_device_id`.
 
-Sync/outbox foundation уже поддерживает retry-safe состояние очереди: `pending`, `processing`, `sent`, `failed`, `suspended`, локальный `sequence_no`, attempts/retry metadata, processing locks, stale lock reclaim на app-level и manual retry failed/suspended. Реальный Cloud sender/worker в этой итерации не реализован.
+Sync/outbox foundation поддерживает retry-safe состояние очереди: `pending`, `processing`, `sent`, `failed`, `suspended`, локальный `sequence_no`, attempts/retry metadata, processing locks, stale lock reclaim на app-level и manual retry failed/suspended. implemented now: POS Edge запускает background sender worker, который claim'ит Edge -> Cloud operational rows, отправляет `SyncEnvelope` в Cloud, делает idempotent resend, automatic retry с exponential backoff, crash recovery через stale lock reclaim и direction gate для Cloud-managed/configuration событий.
 
-Проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. SQLite clean install является canonical first-launch source of truth: активный migration path содержит один `migrations/sqlite/001_init.sql`, который сразу создает текущую runtime-схему без legacy `payments.check_id`.
+Проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. SQLite clean install является canonical first-launch source of truth: активный migration path содержит один `migrations/sqlite/001_init.sql`, который сразу создает текущую runtime-схему без `payments.check_id`.
 
-## Stack
+## Стек
 
 - Go 1.26
 - Modular monolith, Clean Architecture, DDD-lite
-- SQLite with `modernc.org/sqlite`
-- HTTP JSON API with `chi`
-- Docker Compose with a named SQLite volume
+- SQLite с `modernc.org/sqlite`
+- HTTP JSON API на `chi`
+- Docker Compose с именованным SQLite volume
 
 ## SQLite Runtime Contract
 
@@ -57,7 +57,7 @@ Sync/outbox foundation уже поддерживает retry-safe состоян
 
 Write transactions в POS Edge открываются через `BEGIN IMMEDIATE`, чтобы writer lock бралась в начале транзакционного use case.
 
-## Запуск Локально На Windows
+## Запуск локально на Windows
 
 Из `pos-backend`:
 
@@ -74,6 +74,12 @@ go run ./cmd/pos-edge
 $env:POS_HTTP_ADDR=":8080"
 $env:POS_SQLITE_PATH="data/pos-edge.db"
 $env:POS_SQLITE_MIGRATIONS_DIR="migrations/sqlite"
+$env:POS_SYNC_SENDER_ENABLED="true"
+$env:POS_CLOUD_SYNC_URL="http://localhost:8090/api/v1/sync/edge-events"
+$env:POS_SYNC_SENDER_BATCH_SIZE="25"
+$env:POS_SYNC_SENDER_POLL_INTERVAL="2s"
+$env:POS_SYNC_SENDER_RECLAIM_AFTER="5m"
+$env:POS_SYNC_SENDER_SEND_TIMEOUT="10s"
 $env:POS_DEV_TOOLS="1" # только для локального demo bootstrap
 ```
 
@@ -119,7 +125,7 @@ Invoke-RestMethod http://localhost:8080/api/v1/sync/status
 Invoke-RestMethod -Method Post http://localhost:8080/api/v1/sync/retry-failed
 ```
 
-Legacy `POST /api/v1/orders/{id}/check` остается deprecated alias к `IssuePrecheck`; `POST /api/v1/checks/{id}/payments` возвращает conflict.
+Для выпуска precheck используй `POST /api/v1/orders/{id}/precheck`, для payment capture - `POST /api/v1/prechecks/{id}/payments`.
 
 ## Доступные API Endpoints
 
@@ -130,8 +136,6 @@ Legacy `POST /api/v1/orders/{id}/check` остается deprecated alias к `Is
 - `POST /api/v1/prechecks/{id}/cancel`
 - `POST /api/v1/prechecks/{id}/payments`
 - `GET /api/v1/orders/{id}/prechecks`
-- `POST /api/v1/orders/{id}/check` deprecated alias to `IssuePrecheck`
-- `POST /api/v1/checks/{id}/payments` disabled compatibility route
 - `GET /api/v1/checks/{id}`
 
 Auth/device и POS UI endpoints:
@@ -162,13 +166,13 @@ Auth/device и POS UI endpoints:
 - `POST /api/v1/cash-sessions/{id}/close`
 - `POST /api/v1/dev/bootstrap-demo` dev/local only, требует `POS_DEV_TOOLS=1`
 
-Operational sync endpoints: `GET /api/v1/sync/outbox?limit=50`, `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`, `GET /api/v1/sync/status`, `POST /api/v1/sync/retry-failed`. `retry-failed` ?? ?????????? ?????? ? Cloud ? ?? ?????? business state; ?? ?????? ?????????? `failed`/`suspended` outbox rows ? `pending`.
+Operational sync endpoints: `GET /api/v1/sync/outbox?limit=50`, `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`, `GET /api/v1/sync/status`, `POST /api/v1/sync/retry-failed`. `retry-failed` не отправляет данные в Cloud и не меняет business state; он только возвращает `failed`/`suspended` outbox rows в `pending`.
 
 POS UI package: `../pos-ui` содержит Vue 3 + Quasar shell и рабочий POS Terminal Core на `/pos` для single-terminal cashier flow. См. `pos-ui/README.md`.
 
-## Local E2E Prototype: получить pairing code и войти в POS UI
+## Локальный E2E Prototype: получить pairing code и войти в POS UI
 
-implemented now: `POST /api/v1/dev/bootstrap-demo` is dev/local only and requires `POS_DEV_TOOLS=1`.
+implemented now: `POST /api/v1/dev/bootstrap-demo` доступен только для dev/local и требует `POS_DEV_TOOLS=1`.
 
 ```powershell
 cd pos-backend
@@ -176,16 +180,16 @@ $env:POS_DEV_TOOLS="1"
 go run ./cmd/pos-edge
 ```
 
-From repo root:
+Из корня репозитория:
 
 ```powershell
 $demo = .\scripts\bootstrap-pos-demo.ps1
 $demo.pairing_code
 ```
 
-The returned `pairing_code` has format `MHPOS:<restaurant_id>:<node_device_id>` and is accepted by `POST /api/v1/system/pair` and POS UI `/pair`. Cashier PIN `1111` logs in through `POST /api/v1/auth/pin-login` with the returned `node_device_id`.
+Возвращенный `pairing_code` имеет формат `MHPOS:<restaurant_id>:<node_device_id>` и принимается `POST /api/v1/system/pair` и POS UI `/pair`. Cashier PIN `1111` выполняет вход через `POST /api/v1/auth/pin-login` с возвращенным `node_device_id`.
 
-Check local sync endpoints:
+Проверь локальные sync endpoints:
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/api/v1/sync/status
@@ -193,9 +197,15 @@ Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=10
 Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10
 ```
 
-out of scope: production sync sender worker is not implemented.
+implemented now: production-like sync sender worker включен по умолчанию и отправляет operational Edge -> Cloud events в `POS_CLOUD_SYNC_URL`. Для изолированной локальной отладки установи `POS_SYNC_SENDER_ENABLED=false`.
 
-## Tests
+Проверка Cloud PostgreSQL после runtime POS flow:
+
+```powershell
+docker exec -it mh-pos-cloud-postgres psql -U postgres -d mh_pos_cloud -c "select event_type, count(*) from cloud_operational_events group by event_type order by event_type;"
+```
+
+## Проверки
 
 ```powershell
 go test ./...

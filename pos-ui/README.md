@@ -17,7 +17,7 @@ $env:VITE_POS_API_BASE="http://localhost:8080/api/v1"
 npm run dev
 ```
 
-## Local E2E Prototype Quickstart
+## Локальный E2E Prototype Quickstart
 
 implemented now: UI проходит основной cashier flow через настоящий POS Edge backend.
 
@@ -34,11 +34,11 @@ implemented now: UI проходит основной cashier flow через н
 pair -> login -> open shift -> open cash session -> select hall/table -> create order -> add lines -> change quantity -> void line -> issue precheck -> cancel precheck -> issue precheck again -> pay -> final check -> close cash session -> close shift -> lock/logout
 ```
 
-## Local E2E Prototype: получить pairing code и войти в POS UI
+## Локальный E2E Prototype: получить pairing code и войти в POS UI
 
-implemented now: UI `/pair` and `/login` use real POS backend endpoints.
+implemented now: UI `/pair` и `/login` используют реальные POS backend endpoints.
 
-1. Start POS backend with dev bootstrap enabled:
+1. Запусти POS backend с включенным dev bootstrap:
 
 ```powershell
 cd pos-backend
@@ -46,13 +46,13 @@ $env:POS_DEV_TOOLS="1"
 go run ./cmd/pos-edge
 ```
 
-2. From repo root, get credentials:
+2. Из корня репозитория получи учетные данные:
 
 ```powershell
 $demo = .\scripts\bootstrap-pos-demo.ps1
 ```
 
-3. Start UI:
+3. Запусти UI:
 
 ```powershell
 cd pos-ui
@@ -60,9 +60,9 @@ npm install
 npm run dev
 ```
 
-4. Open `http://localhost:5173/pair`, enter `$demo.pairing_code`, then log in on `/login` with cashier PIN `1111`. The UI stores the paired `node_device_id` and `restaurant_id` returned by `GET /api/v1/system/pairing-status`, then reads demo hall/table/menu data from backend endpoints.
+4. Открой `http://localhost:5173/pair`, введи `$demo.pairing_code`, затем войди на `/login` с cashier PIN `1111`. UI сохраняет paired `node_device_id` и `restaurant_id`, возвращенные `GET /api/v1/system/pairing-status`, затем читает demo hall/table/menu data из backend endpoints.
 
-From repo root, Cloud replay and local sync checks:
+Из корня репозитория можно проверить Cloud replay и локальный sync:
 
 ```powershell
 .\scripts\send-cloud-test-envelope.ps1 -RestaurantId $demo.restaurant_id -NodeDeviceId $demo.node_device_id -ReplayTwice
@@ -71,9 +71,9 @@ Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=10
 Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10
 ```
 
-out of scope: waiter UI, KDS, inventory, fiscalization, and production sync sender worker.
+out of scope: waiter UI, KDS, inventory, fiscalization и production sync sender worker.
 
-## Что Реализовано
+## Что реализовано
 
 - `/pair` вызывает реальный `POST /api/v1/system/pair`.
 - `/login` вызывает реальный `POST /api/v1/auth/pin-login`.
@@ -96,7 +96,7 @@ out of scope: waiter UI, KDS, inventory, fiscalization, and production sync send
 
 Server state хранится только через `@tanstack/vue-query`. Frontend не является source of truth и не принимает бизнес-решения по заказу, пречеку, оплате или чеку.
 
-## Identity Flow
+## Поток identity
 
 - MVP pairing code имеет временный формат `MHPOS:<restaurant_id>:<node_device_id>`.
 - `node_device_id` не генерируется frontend-клиентом; он приходит из pairing payload и обозначает Edge Node backend.

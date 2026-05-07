@@ -1,4 +1,4 @@
-# POS Data Model and Migration Policy
+# Модель данных POS и policy миграций
 
 ## Назначение
 
@@ -25,13 +25,13 @@
 
 Pilot path для SQLite:
 
-- один `001_init.sql`
-- одна запись `001_init.sql` в `schema_migrations`
-- никаких обязательных historical alter-migrations до first pilot
+- один `001_init.sql`;
+- одна запись `001_init.sql` в `schema_migrations`;
+- никаких обязательных historical alter-migrations до first pilot.
 
 ## Ключевые runtime-сущности
 
-### Identity and org
+### Identity и организация
 
 - `restaurants`
 - `devices`
@@ -41,7 +41,7 @@ Pilot path для SQLite:
 - `employees`
 - `auth_sessions`
 
-### Floor and sales runtime
+### Залы и sales runtime
 
 - `halls`
 - `tables`
@@ -55,7 +55,7 @@ Pilot path для SQLite:
 - `payments`
 - `payment_attempts`
 
-### Cash and sync
+### Касса и sync
 
 - `cash_sessions`
 - `cash_drawer_events`
@@ -63,7 +63,7 @@ Pilot path для SQLite:
 - `local_event_log`
 - `pos_sync_outbox`
 
-### Future inventory foundation
+### Foundation будущего inventory
 
 - `recipe_versions`
 - `recipe_lines`
@@ -121,11 +121,11 @@ erDiagram
 
 - payment immutable;
 - payment ссылается на `precheck_id`, а не на legacy `check_id`;
-- payment attempt — отдельная сущность истории попыток.
+- payment attempt - отдельная сущность истории попыток.
 
 ### Outbox
 
-- `sequence_no` — канонический local ordering key;
+- `sequence_no` - канонический local ordering key;
 - запись в business tables, `local_event_log` и `pos_sync_outbox` должна быть транзакционной;
 - failed/suspended retry выполняется через явный operational path.
 
@@ -165,12 +165,12 @@ Plain hash считается временным состоянием и не д
 
 ## Что пока считается future work
 
-Без отдельного пилотного решения не считаются implemented:
+Без отдельного пилотного решения не считаются implemented now:
 
 - `precheck_lines` snapshots;
 - `precheck_tax` snapshots;
-- full refund ledger flow;
-- full print snapshot model;
+- полный refund ledger flow;
+- полная print snapshot model;
 - full business-date propagation на все сущности;
 - broadly enforced STRICT tables across all financial tables;
 - sender-side item-level batch ACK integration.
