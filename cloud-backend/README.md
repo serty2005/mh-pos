@@ -43,6 +43,13 @@ Invoke-RestMethod http://localhost:8090/health
 ..\scripts\send-cloud-test-envelope.ps1 -ReplayTwice
 ```
 
+To replay an envelope using IDs from the POS demo bootstrap:
+
+```powershell
+$demo = ..\scripts\bootstrap-pos-demo.ps1
+..\scripts\send-cloud-test-envelope.ps1 -RestaurantId $demo.restaurant_id -NodeDeviceId $demo.node_device_id -ReplayTwice
+```
+
 Minimal curl-equivalent body for `POST /api/v1/sync/edge-events`:
 
 ```powershell
@@ -80,6 +87,27 @@ Invoke-RestMethod -Method Post http://localhost:8090/api/v1/sync/edge-events -Co
 ```
 
 Duplicate replay returns the same stable ack. Cloud currently stores raw accepted envelopes; full Cloud projections and production sender worker are out of scope for this slice.
+
+## Local E2E Prototype: получить pairing code и войти в POS UI
+
+implemented now: Cloud participates in the local prototype as the idempotent envelope receiver.
+
+1. Start Cloud with PostgreSQL:
+
+```powershell
+cd cloud-backend
+$env:CLOUD_POSTGRES_DSN="postgres://postgres:postgres@localhost:5432/mh_pos_cloud?sslmode=disable"
+go run ./cmd/cloud-api
+```
+
+2. After POS bootstrap, verify replay with real IDs:
+
+```powershell
+$demo = ..\scripts\bootstrap-pos-demo.ps1
+..\scripts\send-cloud-test-envelope.ps1 -RestaurantId $demo.restaurant_id -NodeDeviceId $demo.node_device_id -ReplayTwice
+```
+
+out of scope: POS outbox is not automatically delivered to Cloud by a production sender worker.
 
 ## Test
 

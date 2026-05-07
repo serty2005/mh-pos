@@ -34,6 +34,45 @@ implemented now: UI проходит основной cashier flow через н
 pair -> login -> open shift -> open cash session -> select hall/table -> create order -> add lines -> change quantity -> void line -> issue precheck -> cancel precheck -> issue precheck again -> pay -> final check -> close cash session -> close shift -> lock/logout
 ```
 
+## Local E2E Prototype: получить pairing code и войти в POS UI
+
+implemented now: UI `/pair` and `/login` use real POS backend endpoints.
+
+1. Start POS backend with dev bootstrap enabled:
+
+```powershell
+cd pos-backend
+$env:POS_DEV_TOOLS="1"
+go run ./cmd/pos-edge
+```
+
+2. From repo root, get credentials:
+
+```powershell
+$demo = .\scripts\bootstrap-pos-demo.ps1
+```
+
+3. Start UI:
+
+```powershell
+cd pos-ui
+npm install
+npm run dev
+```
+
+4. Open `http://localhost:5173/pair`, enter `$demo.pairing_code`, then log in on `/login` with cashier PIN `1111`. The UI stores the paired `node_device_id` and `restaurant_id` returned by `GET /api/v1/system/pairing-status`, then reads demo hall/table/menu data from backend endpoints.
+
+From repo root, Cloud replay and local sync checks:
+
+```powershell
+.\scripts\send-cloud-test-envelope.ps1 -RestaurantId $demo.restaurant_id -NodeDeviceId $demo.node_device_id -ReplayTwice
+Invoke-RestMethod http://localhost:8080/api/v1/sync/status
+Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=10
+Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10
+```
+
+out of scope: waiter UI, KDS, inventory, fiscalization, and production sync sender worker.
+
 ## Что Реализовано
 
 - `/pair` вызывает реальный `POST /api/v1/system/pair`.

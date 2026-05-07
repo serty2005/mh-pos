@@ -197,6 +197,51 @@ Invoke-RestMethod http://localhost:8090/health
 
 `.\scripts\dev-smoke.ps1` выполняет health checks, POS demo bootstrap, POS sync endpoint checks и Cloud envelope replay, но не стартует серверы за тебя.
 
+## Local E2E Prototype: получить pairing code и войти в POS UI
+
+implemented now: local developer flow uses real POS backend endpoints and a real MVP pairing code.
+
+1. Start Cloud:
+
+```powershell
+cd cloud-backend
+$env:CLOUD_POSTGRES_DSN="postgres://postgres:postgres@localhost:5432/mh_pos_cloud?sslmode=disable"
+go run ./cmd/cloud-api
+```
+
+2. Start POS with dev tools:
+
+```powershell
+cd pos-backend
+$env:POS_DEV_TOOLS="1"
+go run ./cmd/pos-edge
+```
+
+3. From repo root, get demo credentials:
+
+```powershell
+.\scripts\bootstrap-pos-demo.ps1
+```
+
+Use the returned `pairing_code` on `http://localhost:5173/pair`, then log in on `/login` with cashier PIN `1111`. The script also returns `restaurant_id`, `node_device_id`, employee ids, `hall_id`, `table_ids`, and `menu_item_ids`.
+
+4. Check Cloud replay with real bootstrap IDs:
+
+```powershell
+$demo = .\scripts\bootstrap-pos-demo.ps1
+.\scripts\send-cloud-test-envelope.ps1 -RestaurantId $demo.restaurant_id -NodeDeviceId $demo.node_device_id -ReplayTwice
+```
+
+5. Check local POS sync state:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/api/v1/sync/status
+Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=10
+Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10
+```
+
+out of scope: production POS-to-Cloud sender worker is not implemented in this prototype slice.
+
 ## Основные Контуры
 
 ### POS Edge Backend

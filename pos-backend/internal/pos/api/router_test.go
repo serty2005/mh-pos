@@ -416,6 +416,29 @@ func TestDevBootstrapDemoIsGatedAndCreatesLoginData(t *testing.T) {
 	}
 }
 
+func TestCORSPreflightForPairingAPI(t *testing.T) {
+	f := newAPIFixture(t)
+
+	for _, origin := range []string{"http://localhost:5173", "http://host.docker.internal:5173"} {
+		req := httptest.NewRequest(http.MethodOptions, "/api/v1/system/pair", nil)
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Access-Control-Request-Method", "POST")
+		req.Header.Set("Access-Control-Request-Headers", "content-type,x-client-device-id")
+		rr := httptest.NewRecorder()
+		f.router.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusNoContent {
+			t.Fatalf("expected preflight 204 for %s, got %d: %s", origin, rr.Code, rr.Body.String())
+		}
+		if got := rr.Header().Get("Access-Control-Allow-Origin"); got != origin {
+			t.Fatalf("expected CORS origin header %q, got %q", origin, got)
+		}
+		if got := rr.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, "POST") || !strings.Contains(got, "OPTIONS") {
+			t.Fatalf("expected CORS methods to include POST and OPTIONS, got %q", got)
+		}
+	}
+}
+
 func TestIssueFirstPrecheckThroughPublicAPI(t *testing.T) {
 	f := newAPIFixture(t)
 	order := f.createOrderWithLine(t)

@@ -166,6 +166,35 @@ Operational sync endpoints: `GET /api/v1/sync/outbox?limit=50`, `GET /api/v1/syn
 
 POS UI package: `../pos-ui` содержит Vue 3 + Quasar shell и рабочий POS Terminal Core на `/pos` для single-terminal cashier flow. См. `pos-ui/README.md`.
 
+## Local E2E Prototype: получить pairing code и войти в POS UI
+
+implemented now: `POST /api/v1/dev/bootstrap-demo` is dev/local only and requires `POS_DEV_TOOLS=1`.
+
+```powershell
+cd pos-backend
+$env:POS_DEV_TOOLS="1"
+go run ./cmd/pos-edge
+```
+
+From repo root:
+
+```powershell
+$demo = .\scripts\bootstrap-pos-demo.ps1
+$demo.pairing_code
+```
+
+The returned `pairing_code` has format `MHPOS:<restaurant_id>:<node_device_id>` and is accepted by `POST /api/v1/system/pair` and POS UI `/pair`. Cashier PIN `1111` logs in through `POST /api/v1/auth/pin-login` with the returned `node_device_id`.
+
+Check local sync endpoints:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/api/v1/sync/status
+Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=10
+Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10
+```
+
+out of scope: production sync sender worker is not implemented.
+
 ## Tests
 
 ```powershell

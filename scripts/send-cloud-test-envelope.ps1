@@ -1,12 +1,12 @@
 param(
   [string]$CloudApiBase = "http://localhost:8090",
+  [string]$RestaurantId = "demo-restaurant",
+  [string]$NodeDeviceId = "demo-edge-node-1",
   [switch]$ReplayTwice
 )
 
 $ErrorActionPreference = "Stop"
 
-$restaurantId = "demo-restaurant"
-$deviceId = "demo-edge-node-1"
 $eventId = "demo-cloud-replay-event-1"
 $occurredAt = "2026-05-07T09:00:00Z"
 
@@ -17,8 +17,8 @@ $envelope = [ordered]@{
   event_type = "OrderCreated"
   aggregate_type = "Order"
   aggregate_id = "demo-order-cloud-1"
-  restaurant_id = $restaurantId
-  device_id = $deviceId
+  restaurant_id = $RestaurantId
+  device_id = $NodeDeviceId
   shift_id = "demo-shift-cloud-1"
   occurred_at = $occurredAt
   payload = [ordered]@{
@@ -26,8 +26,8 @@ $envelope = [ordered]@{
     data = [ordered]@{
       id = "demo-order-cloud-1"
       edge_order_id = "demo-edge-order-cloud-1"
-      restaurant_id = $restaurantId
-      device_id = $deviceId
+      restaurant_id = $RestaurantId
+      device_id = $NodeDeviceId
       shift_id = "demo-shift-cloud-1"
       status = "open"
       table_name = "A1"
@@ -49,7 +49,7 @@ function Send-Envelope {
     -Body $body
 }
 
-Write-Host "Sending Cloud test envelope..."
+Write-Host "Sending Cloud test envelope for restaurant '$RestaurantId' and node '$NodeDeviceId'..."
 $first = Send-Envelope
 $first
 
@@ -57,4 +57,9 @@ if ($ReplayTwice) {
   Write-Host "Replaying the same envelope..."
   $second = Send-Envelope
   $second
+  if ($first.idempotency_key -eq $second.idempotency_key -and $first.cloud_receipt_id -eq $second.cloud_receipt_id) {
+    Write-Host "Duplicate replay accepted idempotently."
+  } else {
+    throw "Duplicate replay was not idempotent. First receipt '$($first.cloud_receipt_id)', second receipt '$($second.cloud_receipt_id)'."
+  }
 }
