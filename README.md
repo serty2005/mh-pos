@@ -373,6 +373,8 @@ go test ./...
 - Edge financial foundation включает публичные precheck issue/read/list/cancel endpoints, precheck payment endpoint, `manager_override_audit`, `payment_attempts`, automatic final checks, `cash_sessions`, `cash_drawer_events`, PIN auth/session foundation, halls/tables API и базовые HTTP endpoints для cash session/drawer workflows.
 - Cloud-owned master-data foundation запрещает Edge runtime mutation restaurants/devices metadata/roles/employees/halls/tables/catalog/menu/recipes/inventory reference data. POS Edge использует локальную read model offline; Cloud-authored master data applies through `/api/v1/sync/master-data/snapshots` or `/api/v1/sync/master-data/{stream}`; dev seed/admin write routes require `POS_DEV_TOOLS=1`.
 - Auth/device foundation включает pairing status/pair endpoints, `POST /api/v1/auth/logout`, revoked sessions, client device registry, `node_device_id`/`client_device_id` metadata в local events/outbox/SyncEnvelope.
+- Pairing verifier хранится в keyed format `pairing.hmac-sha256.v1`; plaintext pairing code не сохраняется.
+- PIN login должен однозначно определить одного active employee в paired restaurant; дубли active PIN отклоняются как conflict.
 - Закрытие смены в POS Edge запрещено при открытых заказах или active cash session.
 - Cloud: минимальный `cloud-backend/` Sync Receiver реализован; Cloud не является зависимостью для критических POS Edge операций.
 - POS UI: `pos-ui` на Vue 3 + Quasar реализует `pairing -> login -> pos -> lock/logout` и POS Terminal Core для single-terminal cashier flow.
@@ -407,6 +409,7 @@ implemented now:
 
 - backend enforces canonical RBAC permission ids in app-layer for critical cashier runtime operations;
 - role permissions are still stored as JSON on roles, but authorization checks use stable ids;
+- cash drawer event recording requires backend permission `pos.cash_drawer.record_event`;
 - operator-triggered `POST /api/v1/sync/retry-failed` requires manager/service permission `pos.sync.retry_failed`;
 - failed authorization returns `forbidden` without leaking PIN or PIN hash data.
 

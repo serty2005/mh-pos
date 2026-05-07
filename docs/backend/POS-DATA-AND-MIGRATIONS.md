@@ -165,19 +165,16 @@ implemented now:
 
 ### Pairing secret verifier
 
-Verifier-side storage pairing code должен использовать keyed format.
-Plain hash считается временным состоянием и не должен пережить pre-pilot hardening.
+implemented now: verifier-side storage pairing code использует keyed format `pairing.hmac-sha256.v1`.
+Plain hash для pairing verifier запрещен в canonical first-launch schema/runtime.
 
 ### Employee credential policy
 
-Должна быть описана одна из двух политик:
+implemented now: PIN login должен однозначно определить одного active employee в пределах paired restaurant.
+Если один PIN совпал с несколькими active employees, login отклоняется как policy conflict.
+Employee selection login flow остается out of scope для текущего cashier-first pilot surface.
 
-- PIN уникален в пределах ресторана;
-- login требует явного выбора сотрудника + PIN.
-
-Неявный компромисс не допускается.
-
-## Что пока считается future work
+## Out of scope до отдельного пилотного решения
 
 Без отдельного пилотного решения не считаются implemented now:
 

@@ -89,23 +89,26 @@ func (s *Service) PinLogin(ctx context.Context, cmd PinLoginCommand) (*domain.Pi
 		if err != nil {
 			return err
 		}
-		var employee *domain.Employee
+		var matches []domain.Employee
 		for i := range employees {
 			item := employees[i]
 			if !item.Active {
 				continue
 			}
 			if err := shared.VerifyPIN(item.PINHash, cmd.PIN); err == nil {
-				employee = &item
-				break
+				matches = append(matches, item)
 			}
 		}
-		if employee == nil {
+		if len(matches) == 0 {
 			if err := s.limiter.RecordFailure(limiterKey, now); err != nil {
 				return err
 			}
 			return fmt.Errorf("%w: pin is invalid", domain.ErrForbidden)
 		}
+		if len(matches) > 1 {
+			return fmt.Errorf("%w: pin must uniquely identify one active employee", domain.ErrConflict)
+		}
+		employee := &matches[0]
 		s.limiter.Reset(limiterKey)
 		role, err := s.repo.GetRole(ctx, employee.RoleID)
 		if err != nil {

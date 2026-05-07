@@ -211,6 +211,7 @@ func (f *fixture) seed(t *testing.T) {
 			appshared.PermissionPrecheckIssue,
 			appshared.PermissionPaymentCapture,
 			appshared.PermissionPrecheckCancel,
+			appshared.PermissionCashDrawerEvent,
 			appshared.PermissionSyncRetryFailed,
 		),
 	})
@@ -252,6 +253,49 @@ func (f *fixture) seed(t *testing.T) {
 	f.menuItem, err = f.service.CreateMenuItem(f.ctx, app.CreateMenuItemCommand{CommandMeta: seedMeta(f.device.ID), CatalogItemID: catalog.ID, Name: "Soup", Price: 1000, Currency: "RUB"})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPairEdgeNodeStoresKeyedPairingVerifier(t *testing.T) {
+	f := newFixture(t)
+	var verifier string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT pairing_code_hash FROM edge_node_identity WHERE id = 'local'`).Scan(&verifier); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(verifier, "pairing.hmac-sha256.v1:") {
+		t.Fatalf("expected keyed pairing verifier format, got %q", verifier)
+	}
+	if strings.HasPrefix(verifier, "sha256:") {
+		t.Fatalf("expected pairing verifier not to use plain sha256 format, got %q", verifier)
+	}
+	if strings.Contains(verifier, "MHPOS:") || strings.Contains(verifier, f.restaurant.ID) || strings.Contains(verifier, f.device.ID) {
+		t.Fatalf("expected pairing verifier not to expose raw pairing payload, got %q", verifier)
+	}
+}
+
+func TestPinLoginRejectsDuplicateActivePIN(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{
+		CommandMeta:  seedMeta(f.device.ID),
+		RestaurantID: f.restaurant.ID,
+		RoleID:       f.employee.RoleID,
+		Name:         "Duplicate Cashier",
+		PINHash:      testPINHash(t, "1111", "duplicate-cashier-salt"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{
+			CommandID:      "cmd-login-duplicate-pin",
+			NodeDeviceID:   f.device.ID,
+			DeviceID:       f.device.ID,
+			ClientDeviceID: f.clientID,
+			Origin:         app.OriginEdgeDevice,
+		},
+		PIN: "1111",
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected duplicate active PIN login to conflict, got %v", err)
 	}
 }
 
@@ -599,8 +643,8 @@ func TestCannotRecordCashDrawerEventWithoutActiveCashSession(t *testing.T) {
 	f.openShift(t)
 
 	_, err := f.service.RecordCashDrawerEvent(f.ctx, app.RecordCashDrawerEventCommand{
-		CommandMeta:         f.edgeMeta(),
-		CreatedByEmployeeID: f.employee.ID,
+		CommandMeta:         f.managerEdgeMetaCommand(t, "cmd-cash-drawer-no-session"),
+		CreatedByEmployeeID: f.manager.ID,
 		EventType:           domain.CashDrawerCashIn,
 		Amount:              100,
 	})
@@ -609,6 +653,31 @@ func TestCannotRecordCashDrawerEventWithoutActiveCashSession(t *testing.T) {
 	}
 	if events := countRows(t, f, "cash_drawer_events"); events != 0 {
 		t.Fatalf("expected no cash drawer events, got %d", events)
+	}
+}
+
+func TestCashDrawerEventRequiresPermission(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	session, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
+		CommandMeta:        f.edgeMetaCommand("cmd-open-cash-before-denied-drawer"),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.RecordCashDrawerEvent(f.ctx, app.RecordCashDrawerEventCommand{
+		CommandMeta:         f.edgeMetaCommand("cmd-cash-drawer-denied"),
+		CashSessionID:       session.ID,
+		CreatedByEmployeeID: f.employee.ID,
+		EventType:           domain.CashDrawerNoSale,
+		Amount:              0,
+		Reason:              "cashier check",
+	})
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden for cashier cash drawer event, got %v", err)
 	}
 }
 

@@ -204,6 +204,7 @@ implemented now:
 - backend enforces a canonical RBAC slice for cashier runtime operations:
   - `pos.shift.open`, `pos.shift.close`
   - `pos.cash_session.open`, `pos.cash_session.close`
+  - `pos.cash_drawer.record_event`
   - `pos.order.create`, `pos.order.add_line`, `pos.order.change_quantity`, `pos.order.void_line`
   - `pos.precheck.issue`
   - `pos.payment.capture`

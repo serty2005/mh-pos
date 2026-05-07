@@ -43,6 +43,7 @@ func (s *Service) BootstrapDemo(ctx context.Context) (*DemoBootstrapResult, erro
 		appshared.PermissionShiftClose,
 		appshared.PermissionCashSessionOpen,
 		appshared.PermissionCashSessionClose,
+		appshared.PermissionCashDrawerEvent,
 		appshared.PermissionOrderCreate,
 		appshared.PermissionOrderAddLine,
 		appshared.PermissionOrderChangeQuantity,

@@ -170,7 +170,7 @@ func (s *Service) RecordCashDrawerEvent(ctx context.Context, cmd RecordCashDrawe
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionCashDrawerEvent)); err != nil {
 			return err
 		}
 		if cmd.Origin == domain.OriginEdgeDevice && cmd.ActorEmployeeID != cmd.CreatedByEmployeeID {

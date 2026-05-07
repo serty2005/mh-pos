@@ -77,6 +77,8 @@ UI использует два идентификатора устройства
 - получение session + actor context + permissions;
 - переход на `/pos`.
 
+implemented now: backend отклоняет login, если PIN совпадает с несколькими active employees; текущий UI не реализует employee selection flow.
+
 ### POS
 
 Назначение:

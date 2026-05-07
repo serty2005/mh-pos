@@ -14,6 +14,7 @@ const (
 	PermissionShiftClose          PermissionID = "pos.shift.close"
 	PermissionCashSessionOpen     PermissionID = "pos.cash_session.open"
 	PermissionCashSessionClose    PermissionID = "pos.cash_session.close"
+	PermissionCashDrawerEvent     PermissionID = "pos.cash_drawer.record_event"
 	PermissionOrderCreate         PermissionID = "pos.order.create"
 	PermissionOrderAddLine        PermissionID = "pos.order.add_line"
 	PermissionOrderChangeQuantity PermissionID = "pos.order.change_quantity"

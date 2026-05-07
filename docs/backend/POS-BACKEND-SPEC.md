@@ -8,7 +8,7 @@
 - state transitions;
 - policy compatibility-хвостов для текущего публичного API;
 - event catalog Edge runtime;
-- границы между implemented now и target later.
+- границы между implemented now, planned next и out of scope.
 
 ## Архитектурная позиция
 
@@ -47,6 +47,8 @@ Order -> Precheck -> Payment -> Check
 - `GET /api/v1/system/pairing-status`
 - `POST /api/v1/system/pair`
 
+implemented now: `POST /api/v1/system/pair` сохраняет verifier pairing code в keyed format `pairing.hmac-sha256.v1`; plaintext pairing code не сохраняется.
+
 ### Auth
 
 - `POST /api/v1/auth/pin-login`
@@ -56,6 +58,7 @@ Order -> Precheck -> Payment -> Check
 implemented now: PIN login is rate-limited per `node_device_id + client_device_id`.
 implemented now: repeated invalid PIN attempts return `429 Too Many Requests`.
 implemented now: PIN values are never echoed back in response payloads.
+implemented now: PIN login must resolve exactly one active employee in the paired restaurant; duplicate active PIN matches return conflict instead of choosing an arbitrary employee.
 
 ### Залы и меню
 
@@ -255,6 +258,7 @@ Canonical permission ids used by implemented now runtime:
 - `pos.shift.close`
 - `pos.cash_session.open`
 - `pos.cash_session.close`
+- `pos.cash_drawer.record_event`
 - `pos.order.create`
 - `pos.order.add_line`
 - `pos.order.change_quantity`

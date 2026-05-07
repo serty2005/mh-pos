@@ -195,7 +195,7 @@
 - `README.md` не обещает лишнего;
 - профильный документ обновлен;
 - deprecated tails либо удалены, либо помечены с kill date;
-- документация отделяет `implemented now` от `target later`.
+- документация отделяет `implemented now` от `planned next` и `out of scope`.
 
 ## Правило формулировок
 

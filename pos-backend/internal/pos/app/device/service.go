@@ -2,6 +2,7 @@ package device
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -21,6 +22,8 @@ type Service struct {
 	ids   idgen.Generator
 	clock clock.Clock
 }
+
+const pairingVerifierVersion = "pairing.hmac-sha256.v1"
 
 func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock) *Service {
 	return &Service{repo: repo, tx: tx, ids: ids, clock: clock}
@@ -80,7 +83,7 @@ func (s *Service) PairEdgeNode(ctx context.Context, cmd PairEdgeNodeCommand) (*d
 		NodeDeviceID:    nodeDeviceID,
 		RestaurantID:    restaurantID,
 		Status:          domain.EdgeNodePaired,
-		PairingCodeHash: pairingCodeHash(cmd.PairingCode),
+		PairingCodeHash: pairingCodeVerifier(cmd.PairingCode, restaurantID, nodeDeviceID),
 		PairedAt:        now,
 		CreatedAt:       now,
 		UpdatedAt:       now,
@@ -116,9 +119,11 @@ func (s *Service) PairEdgeNode(ctx context.Context, cmd PairEdgeNodeCommand) (*d
 	})
 }
 
-func pairingCodeHash(code string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(code)))
-	return "sha256:" + hex.EncodeToString(sum[:])
+func pairingCodeVerifier(code, restaurantID, nodeDeviceID string) string {
+	key := []byte(pairingVerifierVersion + ":" + strings.TrimSpace(restaurantID) + ":" + strings.TrimSpace(nodeDeviceID))
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(strings.TrimSpace(code)))
+	return pairingVerifierVersion + ":" + hex.EncodeToString(mac.Sum(nil))
 }
 
 func (s *Service) RegisterDevice(ctx context.Context, cmd RegisterDeviceCommand) (*domain.Device, error) {
