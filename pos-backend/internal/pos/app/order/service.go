@@ -63,6 +63,14 @@ func (s *Service) GetOrder(ctx context.Context, id string) (*domain.Order, error
 	return s.hydrateOrder(ctx, id)
 }
 
+// GetOrderAsOperator loads order data for authenticated operator flows with RBAC enforcement.
+func (s *Service) GetOrderAsOperator(ctx context.Context, id string, meta shared.CommandMeta) (*domain.Order, error) {
+	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionOrderView)); err != nil {
+		return nil, err
+	}
+	return s.GetOrder(ctx, id)
+}
+
 func (s *Service) GetCurrentOrderByTable(ctx context.Context, deviceID, tableID string) (*domain.Order, error) {
 	deviceID = strings.TrimSpace(deviceID)
 	tableID = strings.TrimSpace(tableID)
@@ -74,6 +82,15 @@ func (s *Service) GetCurrentOrderByTable(ctx context.Context, deviceID, tableID 
 		return nil, err
 	}
 	return s.hydrateOrder(ctx, order.ID)
+}
+
+// GetCurrentOrderByTableAsOperator loads active order for table in authenticated operator flows.
+func (s *Service) GetCurrentOrderByTableAsOperator(ctx context.Context, tableID string, meta shared.CommandMeta) (*domain.Order, error) {
+	shared.NormalizeDeviceMeta(&meta)
+	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionOrderView)); err != nil {
+		return nil, err
+	}
+	return s.GetCurrentOrderByTable(ctx, meta.DeviceID, tableID)
 }
 
 func (s *Service) hydrateOrder(ctx context.Context, id string) (*domain.Order, error) {
@@ -302,7 +319,7 @@ func (s *Service) CloseOrder(ctx context.Context, cmd CloseOrderCommand) (*domai
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionPaymentCapture)); err != nil {
 			return err
 		}
 		var err error

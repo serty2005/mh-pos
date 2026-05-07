@@ -97,14 +97,20 @@ func (f *apiFixture) seed(t *testing.T) {
 		PermissionsJSON: appshared.PermissionsJSON(
 			appshared.PermissionShiftOpen,
 			appshared.PermissionShiftClose,
+			appshared.PermissionShiftViewCurrent,
+			appshared.PermissionShiftRecent,
 			appshared.PermissionCashSessionOpen,
 			appshared.PermissionCashSessionClose,
+			appshared.PermissionCashSessionViewCurrent,
 			appshared.PermissionOrderCreate,
+			appshared.PermissionOrderView,
 			appshared.PermissionOrderAddLine,
 			appshared.PermissionOrderChangeQuantity,
 			appshared.PermissionOrderVoidLine,
 			appshared.PermissionPrecheckIssue,
+			appshared.PermissionPrecheckView,
 			appshared.PermissionPaymentCapture,
+			appshared.PermissionCheckView,
 		),
 	})
 	if err != nil {
@@ -116,15 +122,23 @@ func (f *apiFixture) seed(t *testing.T) {
 		PermissionsJSON: appshared.PermissionsJSON(
 			appshared.PermissionShiftOpen,
 			appshared.PermissionShiftClose,
+			appshared.PermissionShiftViewCurrent,
+			appshared.PermissionShiftRecent,
 			appshared.PermissionCashSessionOpen,
 			appshared.PermissionCashSessionClose,
+			appshared.PermissionCashSessionViewCurrent,
 			appshared.PermissionOrderCreate,
+			appshared.PermissionOrderView,
 			appshared.PermissionOrderAddLine,
 			appshared.PermissionOrderChangeQuantity,
 			appshared.PermissionOrderVoidLine,
 			appshared.PermissionPrecheckIssue,
+			appshared.PermissionPrecheckView,
+			appshared.PermissionPrecheckCancelRequest,
 			appshared.PermissionPaymentCapture,
+			appshared.PermissionCheckView,
 			appshared.PermissionPrecheckCancel,
+			appshared.PermissionSyncView,
 			appshared.PermissionSyncRetryFailed,
 		),
 	})
@@ -580,12 +594,34 @@ func TestSyncStatusAPI(t *testing.T) {
 	}
 
 	rr := f.get(t, "/api/v1/sync/status")
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cashier sync status access, got %d: %s", rr.Code, rr.Body.String())
+	}
+	f.useManagerOperator(t)
+	rr = f.get(t, "/api/v1/sync/status")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 	status := decodeAPIResponse[domain.SyncStatus](t, rr)
 	if status.Total != countAPIRows(t, f, "pos_sync_outbox") || status.Failed != 1 || status.Processing != 1 {
 		t.Fatalf("unexpected sync status: %+v", status)
+	}
+}
+
+func TestListOutboxAPIRequiresSyncViewPermission(t *testing.T) {
+	f := newAPIFixture(t)
+	rr := f.get(t, "/api/v1/sync/outbox?limit=5")
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cashier outbox access, got %d: %s", rr.Code, rr.Body.String())
+	}
+	f.useManagerOperator(t)
+	rr = f.get(t, "/api/v1/sync/outbox?limit=5")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for manager outbox access, got %d: %s", rr.Code, rr.Body.String())
+	}
+	items := decodeAPIResponse[[]domain.OutboxMessage](t, rr)
+	if len(items) == 0 {
+		t.Fatal("expected non-empty outbox list")
 	}
 }
 
@@ -819,6 +855,7 @@ func TestCancelPrecheckThroughPublicAPIRequiresManagerOverride(t *testing.T) {
 		t.Fatalf("expected 201, got %d: %s", issued.Code, issued.Body.String())
 	}
 	precheck := decodeAPIResponse[domain.Precheck](t, issued)
+	f.useManagerOperator(t)
 	body := `{"command_id":"cmd-api-cancel-precheck","node_device_id":"` + f.device.ID + `","manager_employee_id":"` + f.manager.ID + `","manager_pin":"2468","cancellation_reason":"guest changed order"}`
 	rr := f.postJSON(t, "/api/v1/prechecks/"+precheck.ID+"/cancel", body)
 	if rr.Code != http.StatusOK {

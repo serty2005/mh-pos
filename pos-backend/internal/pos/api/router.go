@@ -527,12 +527,16 @@ func (h *Handler) createOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getCurrentOrder(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.GetCurrentOrderByTable(r.Context(), requestNodeDeviceID(r), r.URL.Query().Get("table_id"))
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.GetCurrentOrderByTableAsOperator(r.Context(), r.URL.Query().Get("table_id"), meta)
 	writeOK(w, v, err)
 }
 
 func (h *Handler) getOrder(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.GetOrder(r.Context(), chi.URLParam(r, "id"))
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.GetOrderAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
 	writeOK(w, v, err)
 }
 
@@ -597,12 +601,16 @@ func (h *Handler) closeOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getPrecheck(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.GetPrecheck(r.Context(), chi.URLParam(r, "id"))
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.GetPrecheckAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
 	writeOK(w, v, err)
 }
 
 func (h *Handler) listPrechecksByOrder(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.ListPrechecksByOrder(r.Context(), chi.URLParam(r, "id"))
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.ListPrechecksByOrderAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
 	writeOK(w, v, err)
 }
 
@@ -619,7 +627,9 @@ func (h *Handler) cancelPrecheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getCheck(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.GetCheck(r.Context(), chi.URLParam(r, "id"))
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.GetCheckAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
 	writeOK(w, v, err)
 }
 
@@ -659,7 +669,9 @@ func (h *Handler) closeCashSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) currentCashSession(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.GetCurrentCashSession(r.Context(), requestNodeDeviceID(r))
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.GetCurrentCashSessionAsOperator(r.Context(), meta)
 	writeOK(w, v, err)
 }
 
@@ -676,7 +688,9 @@ func (h *Handler) recordCashDrawerEvent(w http.ResponseWriter, r *http.Request) 
 
 func (h *Handler) listOutbox(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	v, err := h.service.ListOutbox(r.Context(), limit)
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.ListOutboxAsOperator(r.Context(), meta, limit)
 	writeOK(w, v, err)
 }
 
@@ -690,7 +704,9 @@ func (h *Handler) listLocalEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) syncStatus(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.GetSyncStatus(r.Context())
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.GetSyncStatusAsOperator(r.Context(), meta)
 	writeOK(w, v, err)
 }
 

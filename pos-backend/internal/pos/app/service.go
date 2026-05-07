@@ -234,8 +234,16 @@ func (s *Service) GetOrder(ctx context.Context, id string) (*domain.Order, error
 	return s.orders.GetOrder(ctx, id)
 }
 
+func (s *Service) GetOrderAsOperator(ctx context.Context, id string, meta CommandMeta) (*domain.Order, error) {
+	return s.orders.GetOrderAsOperator(ctx, id, meta)
+}
+
 func (s *Service) GetCurrentOrderByTable(ctx context.Context, deviceID, tableID string) (*domain.Order, error) {
 	return s.orders.GetCurrentOrderByTable(ctx, deviceID, tableID)
+}
+
+func (s *Service) GetCurrentOrderByTableAsOperator(ctx context.Context, tableID string, meta CommandMeta) (*domain.Order, error) {
+	return s.orders.GetCurrentOrderByTableAsOperator(ctx, tableID, meta)
 }
 
 func (s *Service) CreateOrder(ctx context.Context, cmd CreateOrderCommand) (*domain.Order, error) {
@@ -266,8 +274,16 @@ func (s *Service) GetPrecheck(ctx context.Context, id string) (*domain.Precheck,
 	return s.prechecks.GetPrecheck(ctx, id)
 }
 
+func (s *Service) GetPrecheckAsOperator(ctx context.Context, id string, meta CommandMeta) (*domain.Precheck, error) {
+	return s.prechecks.GetPrecheckAsOperator(ctx, id, meta)
+}
+
 func (s *Service) ListPrechecksByOrder(ctx context.Context, orderID string) ([]domain.Precheck, error) {
 	return s.prechecks.ListPrechecksByOrder(ctx, orderID)
+}
+
+func (s *Service) ListPrechecksByOrderAsOperator(ctx context.Context, orderID string, meta CommandMeta) ([]domain.Precheck, error) {
+	return s.prechecks.ListPrechecksByOrderAsOperator(ctx, orderID, meta)
 }
 
 func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand) (*domain.Precheck, error) {
@@ -278,12 +294,20 @@ func (s *Service) GetCheck(ctx context.Context, id string) (*domain.Check, error
 	return s.checks.GetCheck(ctx, id)
 }
 
+func (s *Service) GetCheckAsOperator(ctx context.Context, id string, meta CommandMeta) (*domain.Check, error) {
+	return s.checks.GetCheckAsOperator(ctx, id, meta)
+}
+
 func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand) (*domain.Payment, error) {
 	return s.checks.CapturePayment(ctx, cmd)
 }
 
 func (s *Service) GetCurrentCashSession(ctx context.Context, deviceID string) (*domain.CashSession, error) {
 	return s.cash.GetCurrentCashSession(ctx, deviceID)
+}
+
+func (s *Service) GetCurrentCashSessionAsOperator(ctx context.Context, meta CommandMeta) (*domain.CashSession, error) {
+	return s.cash.GetCurrentCashSessionAsOperator(ctx, meta)
 }
 
 func (s *Service) OpenCashSession(ctx context.Context, cmd OpenCashSessionCommand) (*domain.CashSession, error) {
@@ -306,8 +330,16 @@ func (s *Service) ListOutbox(ctx context.Context, limit int) ([]domain.OutboxMes
 	return s.outbox.ListOutbox(ctx, limit)
 }
 
+func (s *Service) ListOutboxAsOperator(ctx context.Context, meta CommandMeta, limit int) ([]domain.OutboxMessage, error) {
+	return s.outbox.ListOutboxAsOperator(ctx, meta, limit)
+}
+
 func (s *Service) GetSyncStatus(ctx context.Context) (domain.SyncStatus, error) {
 	return s.outbox.GetSyncStatus(ctx)
+}
+
+func (s *Service) GetSyncStatusAsOperator(ctx context.Context, meta CommandMeta) (domain.SyncStatus, error) {
+	return s.outbox.GetSyncStatusAsOperator(ctx, meta)
 }
 
 func (s *Service) RetryFailedOutbox(ctx context.Context) (int, error) {

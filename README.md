@@ -37,7 +37,7 @@ Order -> Precheck -> Payment -> Check
 - order line editing foundation: изменение количества и void позиции без физического удаления;
 - personal employee shifts, cash shifts (`cash_sessions`) and cash drawer events;
 - public precheck issue/read/list/cancel flow: `POST /api/v1/orders/{id}/precheck`, `GET /api/v1/prechecks/{id}`, `GET /api/v1/orders/{id}/prechecks`, `POST /api/v1/prechecks/{id}/cancel`;
-- manager override для `CancelPrecheck`: локальная PBKDF2 PIN verification, permission `precheck.cancel`, audit trail `manager_override_audit`;
+- manager override для `CancelPrecheck`: локальная PBKDF2 PIN verification, actor permission `pos.precheck.cancel.request`, approver permission `pos.precheck.cancel`, audit trail `manager_override_audit`;
 - precheck-based payment capture: `POST /api/v1/prechecks/{id}/payments`, partial payments, required open cash shift, automatic final `Check` после полной оплаты и automatic order close;
 - foundation финальных чеков и оплат;
 - `payment_attempts`;
@@ -189,16 +189,30 @@ pairing -> login -> open personal shift -> open cash shift -> select hall/table 
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=20
-Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=20
-Invoke-RestMethod http://localhost:8080/api/v1/sync/status
-Invoke-RestMethod -Method Post http://localhost:8080/api/v1/sync/retry-failed
+
+$managerLogin = Invoke-RestMethod -Method Post http://localhost:8080/api/v1/auth/pin-login -ContentType "application/json" -Body (@{
+  node_device_id = "demo-edge-node-1"
+  client_device_id = "sync-cli-1"
+  pin = "2222"
+} | ConvertTo-Json)
+
+$syncHeaders = @{
+  "X-Node-Device-ID" = "demo-edge-node-1"
+  "X-Client-Device-ID" = "sync-cli-1"
+  "X-Session-ID" = $managerLogin.session.id
+  "X-Actor-Employee-ID" = $managerLogin.actor.employee_id
+}
+
+Invoke-RestMethod -Headers $syncHeaders http://localhost:8080/api/v1/sync/outbox?limit=20
+Invoke-RestMethod -Headers $syncHeaders http://localhost:8080/api/v1/sync/status
+Invoke-RestMethod -Method Post -Headers $syncHeaders http://localhost:8080/api/v1/sync/retry-failed
 ```
 
 8. Проверь Cloud receiver и автоматический POS sender:
 
 ```powershell
 Invoke-RestMethod http://localhost:8090/health
-Invoke-RestMethod http://localhost:8080/api/v1/sync/status
+Invoke-RestMethod -Headers $syncHeaders http://localhost:8080/api/v1/sync/status
 ```
 
 Runtime POS actions автоматически перемещают operational outbox rows в Cloud, когда `POS_SYNC_SENDER_ENABLED=true`, а `POS_CLOUD_SYNC_URL` указывает на Cloud. Configuration/bootstrap rows, которые не являются допустимыми Edge -> Cloud operational events, имеют `sync_direction = cloud_to_edge` или `local_only` и помечаются `suspended` с явной sync-direction причиной.
@@ -270,9 +284,23 @@ $demo = .\scripts\bootstrap-pos-demo.ps1
 5. Проверь локальное POS sync state:
 
 ```powershell
-Invoke-RestMethod http://localhost:8080/api/v1/sync/status
 Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=10
-Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10
+
+$managerLogin = Invoke-RestMethod -Method Post http://localhost:8080/api/v1/auth/pin-login -ContentType "application/json" -Body (@{
+  node_device_id = "demo-edge-node-1"
+  client_device_id = "sync-cli-2"
+  pin = "2222"
+} | ConvertTo-Json)
+
+$syncHeaders = @{
+  "X-Node-Device-ID" = "demo-edge-node-1"
+  "X-Client-Device-ID" = "sync-cli-2"
+  "X-Session-ID" = $managerLogin.session.id
+  "X-Actor-Employee-ID" = $managerLogin.actor.employee_id
+}
+
+Invoke-RestMethod -Headers $syncHeaders http://localhost:8080/api/v1/sync/status
+Invoke-RestMethod -Headers $syncHeaders http://localhost:8080/api/v1/sync/outbox?limit=10
 ```
 
 implemented now: POS Edge автоматически доставляет Edge -> Cloud operational outbox rows в локальный Cloud receiver, когда sender включен. Недоступность Cloud не блокирует POS runtime writes.
@@ -369,7 +397,7 @@ go test ./...
 - POS Edge code: публичный runtime `Order -> Precheck -> Payment -> Check` включен; old check/payment compatibility endpoints удалены.
 - `local_event_log` уже является частью edge foundation, хранит `command_id` той же write-операции, что и outbox rows (одна write-операция может породить несколько events), и доступен read-only через `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`.
 - Sync outbox имеет retry-safe поля `sequence_no`, `sync_direction`, `attempts`, `next_retry_at`, `locked_at`, `locked_by`, `sent_at`, `last_error` и статусы `pending`, `processing`, `sent`, `failed`, `suspended`.
-- Sync outbox доступен через `GET /api/v1/sync/outbox`, aggregated status через `GET /api/v1/sync/status`, manual retry failed/suspended через `POST /api/v1/sync/retry-failed`.
+- Sync outbox доступен через `GET /api/v1/sync/outbox`, aggregated status через `GET /api/v1/sync/status`, manual retry failed/suspended через `POST /api/v1/sync/retry-failed`; эти operator endpoints требуют заголовки `X-Node-Device-ID`, `X-Client-Device-ID`, `X-Session-ID`, `X-Actor-Employee-ID` и соответствующие permissions (`pos.sync.view`, `pos.sync.retry_failed`).
 - Edge financial foundation включает публичные precheck issue/read/list/cancel endpoints, precheck payment endpoint, `manager_override_audit`, `payment_attempts`, automatic final checks, `cash_sessions` как кассовые смены, `cash_drawer_events`, PIN auth/session foundation, halls/tables API и базовые HTTP endpoints для cash shift/drawer workflows.
 - Cloud-owned master-data foundation запрещает Edge runtime mutation restaurants/devices metadata/roles/employees/halls/tables/catalog/menu/recipes/inventory reference data. POS Edge использует локальную read model offline; Cloud-authored master data applies through `/api/v1/sync/master-data/snapshots` or `/api/v1/sync/master-data/{stream}`; dev seed/admin write routes require `POS_DEV_TOOLS=1`.
 - Auth/device foundation включает pairing status/pair endpoints, `POST /api/v1/auth/logout`, revoked sessions, client device registry, `node_device_id`/`client_device_id` metadata в local events/outbox/SyncEnvelope.
@@ -409,8 +437,11 @@ implemented now:
 
 - backend enforces canonical RBAC permission ids in app-layer for critical cashier runtime operations;
 - role permissions are still stored as JSON on roles, but authorization checks use stable ids;
+- read/runtime APIs (`employee-shifts/current|recent`, `cash-shifts/current`, `orders/current|{id}`, `prechecks`, `checks`) require explicit operator permissions;
 - cash drawer event recording requires backend permission `pos.cash_drawer.record_event`;
-- operator-triggered `POST /api/v1/sync/retry-failed` requires manager/service permission `pos.sync.retry_failed`;
+- precheck cancel override uses split permissions: actor requires `pos.precheck.cancel.request`, approver requires `pos.precheck.cancel`;
+- operator-triggered `GET /api/v1/sync/outbox` and `GET /api/v1/sync/status` require `pos.sync.view`;
+- operator-triggered `POST /api/v1/sync/retry-failed` requires `pos.sync.retry_failed`;
 - failed authorization returns `forbidden` without leaking PIN or PIN hash data.
 
 planned next:

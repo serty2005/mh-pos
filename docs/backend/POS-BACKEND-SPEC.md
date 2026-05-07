@@ -120,6 +120,12 @@ planned next:
 - `GET /api/v1/sync/local-events`
 - `POST /api/v1/sync/retry-failed`
 
+implemented now: operator-facing sync endpoints enforce app-layer RBAC:
+
+- `GET /api/v1/sync/outbox` requires `pos.sync.view`;
+- `GET /api/v1/sync/status` requires `pos.sync.view`;
+- `POST /api/v1/sync/retry-failed` requires `pos.sync.retry_failed`.
+
 ### Cloud -> Edge master-data ingest endpoints
 
 implemented now:
@@ -253,6 +259,7 @@ implemented now: Cloud -> Edge provisioning/configuration имеет backend app
 Backend обязан:
 
 - проверить active session actor;
+- проверить actor permission `pos.precheck.cancel.request` для инициации override-операции;
 - проверить manager employee и manager permission;
 - проверить manager PIN;
 - записать audit trail;
@@ -270,16 +277,24 @@ Canonical permission ids used by implemented now runtime:
 
 - `pos.shift.open`
 - `pos.shift.close`
+- `pos.shift.view_current`
+- `pos.shift.recent`
 - `pos.cash_session.open`
 - `pos.cash_session.close`
+- `pos.cash_session.view_current`
 - `pos.cash_drawer.record_event`
 - `pos.order.create`
+- `pos.order.view`
 - `pos.order.add_line`
 - `pos.order.change_quantity`
 - `pos.order.void_line`
 - `pos.precheck.issue`
+- `pos.precheck.view`
+- `pos.precheck.cancel.request` (override actor permission)
 - `pos.precheck.cancel` (manager override approver permission)
 - `pos.payment.capture`
+- `pos.check.view`
+- `pos.sync.view` (required for operator-triggered `GET /api/v1/sync/outbox` and `GET /api/v1/sync/status`)
 - `pos.sync.retry_failed` (required for operator-triggered `POST /api/v1/sync/retry-failed`)
 
 Error behavior:
@@ -289,7 +304,7 @@ Error behavior:
 
 planned next:
 
-- extend canonical backend enforcement to the full UI RBAC matrix (`docs/ui/POS-UI-RBAC.md`) beyond the current cashier hardening slice.
+- extend canonical backend enforcement to the full UI RBAC matrix (`docs/ui/POS-UI-RBAC.md`) beyond the current runtime RBAC slice.
 
 ## Документационные правила
 

@@ -204,14 +204,16 @@ UI обязан:
 implemented now:
 
 - backend enforces a canonical RBAC slice for cashier runtime operations:
-  - `pos.shift.open`, `pos.shift.close` for personal employee shifts
-  - `pos.cash_session.open`, `pos.cash_session.close`
+  - `pos.shift.open`, `pos.shift.close`, `pos.shift.view_current`, `pos.shift.recent` for personal employee shifts
+  - `pos.cash_session.open`, `pos.cash_session.close`, `pos.cash_session.view_current`
   - `pos.cash_drawer.record_event`
-  - `pos.order.create`, `pos.order.add_line`, `pos.order.change_quantity`, `pos.order.void_line`
-  - `pos.precheck.issue`
-  - `pos.payment.capture`
-  - `pos.sync.retry_failed` for operator-triggered retry API
-- manager override approver validation for precheck cancel uses `pos.precheck.cancel`.
+  - `pos.order.create`, `pos.order.view`, `pos.order.add_line`, `pos.order.change_quantity`, `pos.order.void_line`
+  - `pos.precheck.issue`, `pos.precheck.view`
+  - `pos.payment.capture`, `pos.check.view`
+  - `pos.sync.view` and `pos.sync.retry_failed` for operator-triggered sync APIs
+- manager override precheck cancel enforces split permissions:
+  - actor must have `pos.precheck.cancel.request`
+  - approving manager must have `pos.precheck.cancel`
 - личная смена сотрудника обязательна для runtime операций заказа и пречека; кассовая смена обязательна для оплат и cash drawer events.
 
 planned next:

@@ -46,11 +46,27 @@ func (s *Service) GetPrecheck(ctx context.Context, id string) (*domain.Precheck,
 	return s.repo.GetPrecheck(ctx, id)
 }
 
+// GetPrecheckAsOperator loads precheck details for authenticated operator flows with RBAC enforcement.
+func (s *Service) GetPrecheckAsOperator(ctx context.Context, id string, meta shared.CommandMeta) (*domain.Precheck, error) {
+	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionPrecheckView)); err != nil {
+		return nil, err
+	}
+	return s.GetPrecheck(ctx, id)
+}
+
 func (s *Service) ListPrechecksByOrder(ctx context.Context, orderID string) ([]domain.Precheck, error) {
 	if strings.TrimSpace(orderID) == "" {
 		return nil, fmt.Errorf("%w: order_id is required", domain.ErrInvalid)
 	}
 	return s.repo.ListPrechecksByOrder(ctx, orderID)
+}
+
+// ListPrechecksByOrderAsOperator returns precheck history for order in authenticated operator flows.
+func (s *Service) ListPrechecksByOrderAsOperator(ctx context.Context, orderID string, meta shared.CommandMeta) ([]domain.Precheck, error) {
+	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionPrecheckView)); err != nil {
+		return nil, err
+	}
+	return s.ListPrechecksByOrder(ctx, orderID)
 }
 
 func (s *Service) IssuePrecheck(ctx context.Context, cmd IssuePrecheckCommand) (*domain.Precheck, error) {
@@ -142,7 +158,7 @@ func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand)
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionPrecheckCancelRequest)); err != nil {
 			return err
 		}
 		var err error

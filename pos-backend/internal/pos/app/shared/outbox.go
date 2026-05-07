@@ -43,8 +43,24 @@ func (s *OutboxService) ListOutbox(ctx context.Context, limit int) ([]domain.Out
 	return s.repo.ListOutbox(ctx, limit)
 }
 
+// ListOutboxAsOperator returns outbox rows for authenticated operator flows with RBAC checks.
+func (s *OutboxService) ListOutboxAsOperator(ctx context.Context, meta CommandMeta, limit int) ([]domain.OutboxMessage, error) {
+	if _, err := EnsureOperatorSession(ctx, s.repo, meta, string(PermissionSyncView)); err != nil {
+		return nil, err
+	}
+	return s.ListOutbox(ctx, limit)
+}
+
 func (s *OutboxService) GetSyncStatus(ctx context.Context) (domain.SyncStatus, error) {
 	return s.repo.GetSyncStatus(ctx)
+}
+
+// GetSyncStatusAsOperator returns sync status for authenticated operator flows with RBAC checks.
+func (s *OutboxService) GetSyncStatusAsOperator(ctx context.Context, meta CommandMeta) (domain.SyncStatus, error) {
+	if _, err := EnsureOperatorSession(ctx, s.repo, meta, string(PermissionSyncView)); err != nil {
+		return domain.SyncStatus{}, err
+	}
+	return s.GetSyncStatus(ctx)
 }
 
 func (s *OutboxService) RetryFailedOutbox(ctx context.Context) (int, error) {

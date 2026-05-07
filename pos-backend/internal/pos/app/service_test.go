@@ -68,19 +68,20 @@ func (r checkCreatedOutboxFailingRepo) CreateOutboxMessage(ctx context.Context, 
 }
 
 type fixture struct {
-	ctx        context.Context
-	db         *sql.DB
-	repo       *possqlite.Repository
-	service    *app.Service
-	restaurant *domain.Restaurant
-	device     *domain.Device
-	employee   *domain.Employee
-	manager    *domain.Employee
-	session    *domain.AuthSession
-	hall       *domain.Hall
-	table      *domain.Table
-	menuItem   *domain.MenuItem
-	clientID   string
+	ctx            context.Context
+	db             *sql.DB
+	repo           *possqlite.Repository
+	service        *app.Service
+	restaurant     *domain.Restaurant
+	device         *domain.Device
+	employee       *domain.Employee
+	manager        *domain.Employee
+	session        *domain.AuthSession
+	managerSession *domain.AuthSession
+	hall           *domain.Hall
+	table          *domain.Table
+	menuItem       *domain.MenuItem
+	clientID       string
 }
 
 const bootstrapDeviceID = "bootstrap-device"
@@ -110,30 +111,37 @@ func (f *fixture) edgeMetaCommand(commandID string) app.CommandMeta {
 
 func (f *fixture) managerEdgeMetaCommand(t *testing.T, commandID string) app.CommandMeta {
 	t.Helper()
-	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
-		CommandMeta: app.CommandMeta{
-			CommandID:      "cmd-login-manager-" + commandID,
-			NodeDeviceID:   f.device.ID,
-			DeviceID:       f.device.ID,
-			ClientDeviceID: f.clientID,
-			Origin:         app.OriginEdgeDevice,
-		},
-		PIN: "2468",
-	})
-	if err != nil {
-		t.Fatal(err)
+	if f.managerSession == nil {
+		login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+			CommandMeta: app.CommandMeta{
+				CommandID:      "cmd-login-manager-" + commandID,
+				NodeDeviceID:   f.device.ID,
+				DeviceID:       f.device.ID,
+				ClientDeviceID: f.clientID,
+				Origin:         app.OriginEdgeDevice,
+			},
+			PIN: "2468",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.managerSession = &login.Session
 	}
+	return f.managerMetaCommand(commandID)
+}
+
+func (f *fixture) managerMetaCommand(commandID string) app.CommandMeta {
 	meta := edgeMeta(f.device.ID)
 	meta.CommandID = commandID
 	meta.ClientDeviceID = f.clientID
 	meta.ActorEmployeeID = f.manager.ID
-	meta.SessionID = login.Session.ID
+	meta.SessionID = f.managerSession.ID
 	return meta
 }
 
 func (f *fixture) cancelPrecheckCommand(commandID, precheckID string) app.CancelPrecheckCommand {
 	return app.CancelPrecheckCommand{
-		CommandMeta:        f.edgeMetaCommand(commandID),
+		CommandMeta:        f.managerMetaCommand(commandID),
 		PrecheckID:         precheckID,
 		ManagerEmployeeID:  f.manager.ID,
 		ManagerPIN:         "2468",
@@ -183,14 +191,20 @@ func (f *fixture) seed(t *testing.T) {
 		PermissionsJSON: appshared.PermissionsJSON(
 			appshared.PermissionShiftOpen,
 			appshared.PermissionShiftClose,
+			appshared.PermissionShiftViewCurrent,
+			appshared.PermissionShiftRecent,
 			appshared.PermissionCashSessionOpen,
 			appshared.PermissionCashSessionClose,
+			appshared.PermissionCashSessionViewCurrent,
 			appshared.PermissionOrderCreate,
+			appshared.PermissionOrderView,
 			appshared.PermissionOrderAddLine,
 			appshared.PermissionOrderChangeQuantity,
 			appshared.PermissionOrderVoidLine,
 			appshared.PermissionPrecheckIssue,
+			appshared.PermissionPrecheckView,
 			appshared.PermissionPaymentCapture,
+			appshared.PermissionCheckView,
 		),
 	})
 	if err != nil {
@@ -202,16 +216,24 @@ func (f *fixture) seed(t *testing.T) {
 		PermissionsJSON: appshared.PermissionsJSON(
 			appshared.PermissionShiftOpen,
 			appshared.PermissionShiftClose,
+			appshared.PermissionShiftViewCurrent,
+			appshared.PermissionShiftRecent,
 			appshared.PermissionCashSessionOpen,
 			appshared.PermissionCashSessionClose,
+			appshared.PermissionCashSessionViewCurrent,
 			appshared.PermissionOrderCreate,
+			appshared.PermissionOrderView,
 			appshared.PermissionOrderAddLine,
 			appshared.PermissionOrderChangeQuantity,
 			appshared.PermissionOrderVoidLine,
 			appshared.PermissionPrecheckIssue,
+			appshared.PermissionPrecheckView,
+			appshared.PermissionPrecheckCancelRequest,
 			appshared.PermissionPaymentCapture,
+			appshared.PermissionCheckView,
 			appshared.PermissionPrecheckCancel,
 			appshared.PermissionCashDrawerEvent,
+			appshared.PermissionSyncView,
 			appshared.PermissionSyncRetryFailed,
 		),
 	})
@@ -238,6 +260,11 @@ func (f *fixture) seed(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.session = &login.Session
+	managerLogin, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{CommandMeta: app.CommandMeta{CommandID: "cmd-seed-login-manager", NodeDeviceID: f.device.ID, DeviceID: f.device.ID, ClientDeviceID: f.clientID, Origin: app.OriginEdgeDevice}, PIN: "2468"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.managerSession = &managerLogin.Session
 	f.hall, err = f.service.CreateHall(f.ctx, app.CreateHallCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, Name: "Main"})
 	if err != nil {
 		t.Fatal(err)
@@ -474,6 +501,30 @@ func TestRetryFailedOutboxAsOperatorRequiresPermission(t *testing.T) {
 	}
 	if retried != 2 {
 		t.Fatalf("expected 2 retried messages for manager, got %d", retried)
+	}
+}
+
+func TestGetSyncStatusAsOperatorRequiresPermission(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.service.GetSyncStatusAsOperator(f.ctx, f.edgeMetaCommand("cmd-sync-status-cashier-denied")); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden for cashier sync status view, got %v", err)
+	}
+	if _, err := f.service.GetSyncStatusAsOperator(f.ctx, f.managerEdgeMetaCommand(t, "cmd-sync-status-manager-allow")); err != nil {
+		t.Fatalf("expected manager sync status access, got %v", err)
+	}
+}
+
+func TestListOutboxAsOperatorRequiresPermission(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.service.ListOutboxAsOperator(f.ctx, f.edgeMetaCommand("cmd-list-outbox-cashier-denied"), 10); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden for cashier outbox view, got %v", err)
+	}
+	items, err := f.service.ListOutboxAsOperator(f.ctx, f.managerEdgeMetaCommand(t, "cmd-list-outbox-manager-allow"), 10)
+	if err != nil {
+		t.Fatalf("expected manager outbox access, got %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatal("expected non-empty outbox list for manager")
 	}
 }
 
@@ -1194,6 +1245,61 @@ func TestCannotCloseOrderWithoutFullPayment(t *testing.T) {
 	}
 }
 
+func TestCloseOrderRequiresPaymentCapturePermission(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{
+		CommandMeta: f.edgeMetaCommand("cmd-create-order-close-permission"),
+		TableID:     f.table.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta: seedMeta(f.device.ID),
+		Name:        "order-close-without-payment-capture",
+		PermissionsJSON: appshared.PermissionsJSON(
+			appshared.PermissionOrderCreate,
+			appshared.PermissionOrderView,
+		),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	employee, err := f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{
+		CommandMeta:  seedMeta(f.device.ID),
+		RestaurantID: f.restaurant.ID,
+		RoleID:       role.ID,
+		Name:         "Denied Order Closer",
+		PINHash:      testPINHash(t, "7391", "denied-order-close-salt"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{
+			CommandID:      "cmd-login-denied-order-close",
+			NodeDeviceID:   f.device.ID,
+			DeviceID:       f.device.ID,
+			ClientDeviceID: f.clientID,
+			Origin:         app.OriginEdgeDevice,
+		},
+		PIN: "7391",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := edgeMeta(f.device.ID)
+	meta.CommandID = "cmd-close-order-denied"
+	meta.ClientDeviceID = f.clientID
+	meta.ActorEmployeeID = employee.ID
+	meta.SessionID = login.Session.ID
+	_, err = f.service.CloseOrder(f.ctx, app.CloseOrderCommand{CommandMeta: meta, OrderID: order.ID})
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden, got %v", err)
+	}
+}
+
 func TestIssuePrecheckCreatesDormantSnapshotAndLocksOrderWithoutLegacyCheck(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
@@ -1425,7 +1531,7 @@ func TestCannotCancelMissingPrecheck(t *testing.T) {
 	beforeEvents := countRows(t, f, "local_event_log")
 
 	_, err := f.service.CancelPrecheck(f.ctx, app.CancelPrecheckCommand{
-		CommandMeta:        f.edgeMetaCommand("cmd-cancel-missing-precheck"),
+		CommandMeta:        f.managerMetaCommand("cmd-cancel-missing-precheck"),
 		PrecheckID:         "missing-precheck",
 		ManagerEmployeeID:  f.manager.ID,
 		ManagerPIN:         "2468",
@@ -1554,6 +1660,120 @@ func TestCancelPrecheckRejectsEmployeeWithoutPermission(t *testing.T) {
 	cmd := f.cancelPrecheckCommand("cmd-cancel-no-permission", precheck.ID)
 	cmd.ManagerEmployeeID = f.employee.ID
 	cmd.ManagerPIN = "1111"
+	_, err = f.service.CancelPrecheck(f.ctx, cmd)
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden, got %v", err)
+	}
+}
+
+func TestGetCurrentShiftRequiresPermission(t *testing.T) {
+	f := newFixture(t)
+	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta:     seedMeta(f.device.ID),
+		Name:            "no-shift-read",
+		PermissionsJSON: `{}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	employee, err := f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{
+		CommandMeta:  seedMeta(f.device.ID),
+		RestaurantID: f.restaurant.ID,
+		RoleID:       role.ID,
+		Name:         "Denied Shift Reader",
+		PINHash:      testPINHash(t, "2580", "denied-shift-reader-salt"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{
+			CommandID:      "cmd-login-denied-shift-reader",
+			NodeDeviceID:   f.device.ID,
+			DeviceID:       f.device.ID,
+			ClientDeviceID: f.clientID,
+			Origin:         app.OriginEdgeDevice,
+		},
+		PIN: "2580",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := edgeMeta(f.device.ID)
+	meta.CommandID = "cmd-current-shift-denied"
+	meta.ClientDeviceID = f.clientID
+	meta.ActorEmployeeID = employee.ID
+	meta.SessionID = login.Session.ID
+	if _, err := f.service.GetCurrentShift(f.ctx, meta); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden, got %v", err)
+	}
+}
+
+func TestListRecentShiftsRequiresPermission(t *testing.T) {
+	f := newFixture(t)
+	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta:     seedMeta(f.device.ID),
+		Name:            "no-shift-recent",
+		PermissionsJSON: `{}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	employee, err := f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{
+		CommandMeta:  seedMeta(f.device.ID),
+		RestaurantID: f.restaurant.ID,
+		RoleID:       role.ID,
+		Name:         "Denied Recent Reader",
+		PINHash:      testPINHash(t, "8520", "denied-recent-reader-salt"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{
+			CommandID:      "cmd-login-denied-recent-reader",
+			NodeDeviceID:   f.device.ID,
+			DeviceID:       f.device.ID,
+			ClientDeviceID: f.clientID,
+			Origin:         app.OriginEdgeDevice,
+		},
+		PIN: "8520",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := edgeMeta(f.device.ID)
+	meta.CommandID = "cmd-recent-shift-denied"
+	meta.ClientDeviceID = f.clientID
+	meta.ActorEmployeeID = employee.ID
+	meta.SessionID = login.Session.ID
+	_, err = f.service.ListRecentShifts(f.ctx, app.ListRecentShiftsCommand{CommandMeta: meta, Limit: 5})
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden, got %v", err)
+	}
+}
+
+func TestCancelPrecheckRejectsActorWithoutOverridePermission(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
+		CommandMeta: f.edgeMetaCommand("cmd-issue-before-actor-without-permission"),
+		OrderID:     order.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := app.CancelPrecheckCommand{
+		CommandMeta:        f.edgeMetaCommand("cmd-cancel-actor-without-permission"),
+		PrecheckID:         precheck.ID,
+		ManagerEmployeeID:  f.manager.ID,
+		ManagerPIN:         "2468",
+		CancellationReason: "actor has no override permission",
+	}
 	_, err = f.service.CancelPrecheck(f.ctx, cmd)
 	if !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("expected forbidden, got %v", err)
@@ -1699,7 +1919,7 @@ func TestDuplicateCancelPrecheckCommandIDDoesNotDoubleCancel(t *testing.T) {
 	outboxBefore := countRows(t, f, "pos_sync_outbox")
 	eventsBefore := countRows(t, f, "local_event_log")
 	cmd := app.CancelPrecheckCommand{
-		CommandMeta:        f.edgeMetaCommand("cmd-cancel-duplicate"),
+		CommandMeta:        f.managerMetaCommand("cmd-cancel-duplicate"),
 		PrecheckID:         precheck.ID,
 		ManagerEmployeeID:  f.manager.ID,
 		ManagerPIN:         "2468",

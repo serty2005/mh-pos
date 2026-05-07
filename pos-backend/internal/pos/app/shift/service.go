@@ -47,7 +47,7 @@ type CloseShiftCommand struct {
 }
 
 func (s *Service) GetCurrentShift(ctx context.Context, meta shared.CommandMeta) (*domain.Shift, error) {
-	operator, err := shared.EnsureOperatorSession(ctx, s.repo, meta)
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionShiftViewCurrent))
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func (s *Service) GetCurrentShift(ctx context.Context, meta shared.CommandMeta) 
 }
 
 func (s *Service) ListRecentShifts(ctx context.Context, cmd ListRecentShiftsCommand) ([]domain.Shift, error) {
-	operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta)
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionShiftRecent))
 	if err != nil {
 		return nil, err
 	}

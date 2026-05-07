@@ -10,19 +10,27 @@ type PermissionID string
 
 const (
 	// Cashier runtime permission ids.
-	PermissionShiftOpen           PermissionID = "pos.shift.open"
-	PermissionShiftClose          PermissionID = "pos.shift.close"
-	PermissionCashSessionOpen     PermissionID = "pos.cash_session.open"
-	PermissionCashSessionClose    PermissionID = "pos.cash_session.close"
-	PermissionCashDrawerEvent     PermissionID = "pos.cash_drawer.record_event"
-	PermissionOrderCreate         PermissionID = "pos.order.create"
-	PermissionOrderAddLine        PermissionID = "pos.order.add_line"
-	PermissionOrderChangeQuantity PermissionID = "pos.order.change_quantity"
-	PermissionOrderVoidLine       PermissionID = "pos.order.void_line"
-	PermissionPrecheckIssue       PermissionID = "pos.precheck.issue"
-	// Manager override approver permission id.
-	PermissionPrecheckCancel PermissionID = "pos.precheck.cancel"
-	PermissionPaymentCapture PermissionID = "pos.payment.capture"
+	PermissionShiftOpen              PermissionID = "pos.shift.open"
+	PermissionShiftClose             PermissionID = "pos.shift.close"
+	PermissionShiftViewCurrent       PermissionID = "pos.shift.view_current"
+	PermissionShiftRecent            PermissionID = "pos.shift.recent"
+	PermissionCashSessionOpen        PermissionID = "pos.cash_session.open"
+	PermissionCashSessionClose       PermissionID = "pos.cash_session.close"
+	PermissionCashSessionViewCurrent PermissionID = "pos.cash_session.view_current"
+	PermissionCashDrawerEvent        PermissionID = "pos.cash_drawer.record_event"
+	PermissionOrderCreate            PermissionID = "pos.order.create"
+	PermissionOrderView              PermissionID = "pos.order.view"
+	PermissionOrderAddLine           PermissionID = "pos.order.add_line"
+	PermissionOrderChangeQuantity    PermissionID = "pos.order.change_quantity"
+	PermissionOrderVoidLine          PermissionID = "pos.order.void_line"
+	PermissionPrecheckIssue          PermissionID = "pos.precheck.issue"
+	PermissionPrecheckView           PermissionID = "pos.precheck.view"
+	// Manager override flow permission ids.
+	PermissionPrecheckCancelRequest PermissionID = "pos.precheck.cancel.request"
+	PermissionPrecheckCancel        PermissionID = "pos.precheck.cancel"
+	PermissionPaymentCapture        PermissionID = "pos.payment.capture"
+	PermissionCheckView             PermissionID = "pos.check.view"
+	PermissionSyncView              PermissionID = "pos.sync.view"
 	// Manager/service sync operation permission id.
 	PermissionSyncRetryFailed PermissionID = "pos.sync.retry_failed"
 )
