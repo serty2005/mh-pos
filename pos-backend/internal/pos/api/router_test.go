@@ -249,31 +249,33 @@ func TestPinLoginAndSessionAPI(t *testing.T) {
 	}
 }
 
-func TestFloorAndOrderLineEditingAPI(t *testing.T) {
+func TestMasterDataWriteAPIsRejectEdgeRuntimeMutation(t *testing.T) {
 	f := newAPIFixture(t)
 	hallResp := f.postJSON(t, "/api/v1/halls", `{"node_device_id":"`+f.device.ID+`","restaurant_id":"`+f.restaurant.ID+`","name":"Terrace"}`)
-	if hallResp.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", hallResp.Code, hallResp.Body.String())
+	if hallResp.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for Edge hall mutation, got %d: %s", hallResp.Code, hallResp.Body.String())
 	}
-	hall := decodeAPIResponse[domain.Hall](t, hallResp)
-	tableResp := f.postJSON(t, "/api/v1/tables", `{"node_device_id":"`+f.device.ID+`","restaurant_id":"`+f.restaurant.ID+`","hall_id":"`+hall.ID+`","name":"T1","seats":4}`)
-	if tableResp.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", tableResp.Code, tableResp.Body.String())
+	menuResp := f.postJSON(t, "/api/v1/menu/items", `{"node_device_id":"`+f.device.ID+`","catalog_item_id":"`+f.menuItem.CatalogItemID+`","name":"Tea","price":3000,"currency":"RUB"}`)
+	if menuResp.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for Edge menu mutation, got %d: %s", menuResp.Code, menuResp.Body.String())
 	}
-	table := decodeAPIResponse[domain.Table](t, tableResp)
-	listTables := f.get(t, "/api/v1/tables?restaurant_id="+f.restaurant.ID+"&hall_id="+hall.ID)
+}
+
+func TestFloorReadAndOrderLineEditingAPI(t *testing.T) {
+	f := newAPIFixture(t)
+	listTables := f.get(t, "/api/v1/tables?restaurant_id="+f.restaurant.ID+"&hall_id="+f.hall.ID)
 	if listTables.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", listTables.Code, listTables.Body.String())
 	}
 	tables := decodeAPIResponse[[]domain.Table](t, listTables)
-	if len(tables) != 1 || tables[0].ID != table.ID {
+	if len(tables) != 1 || tables[0].ID != f.table.ID {
 		t.Fatalf("unexpected table list: %+v", tables)
 	}
 
 	if _, err := f.service.OpenShift(f.ctx, app.OpenShiftCommand{CommandMeta: f.edgeMeta(), RestaurantID: f.restaurant.ID, OpenedByEmployeeID: f.employee.ID, OpeningCashAmount: 0}); err != nil {
 		t.Fatal(err)
 	}
-	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: table.ID, GuestCount: 1})
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

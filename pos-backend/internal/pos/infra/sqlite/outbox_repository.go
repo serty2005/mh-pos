@@ -16,12 +16,15 @@ func (r *Repository) CreateOutboxMessage(ctx context.Context, v *domain.OutboxMe
 	if v.NodeDeviceID == "" {
 		v.NodeDeviceID = v.DeviceID
 	}
+	if v.SyncDirection == "" {
+		v.SyncDirection = domain.DirectionForOutbox(v.Origin, v.AggregateType, v.CommandType)
+	}
 	sequenceNo := any(v.SequenceNo)
 	if v.SequenceNo <= 0 {
 		sequenceNo = nil
 	}
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_id,client_device_id,actor_employee_id,session_id,aggregate_type,aggregate_id,command_type,payload_json,status,attempts,next_retry_at,locked_at,locked_by,sent_at,last_error,created_at,updated_at) VALUES (?,?,COALESCE(?,(SELECT COALESCE(MAX(sequence_no),0) + 1 FROM pos_sync_outbox)),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.CommandID, sequenceNo, string(v.Origin), nullableString(v.RestaurantID), v.DeviceID, v.NodeDeviceID, nullableString(v.ClientDeviceID), nullableString(v.ActorEmployeeID), nullableString(v.SessionID), v.AggregateType, v.AggregateID, v.CommandType, v.PayloadJSON, string(v.Status), v.Attempts, nullableTime(v.NextRetryAt), nullableTime(v.LockedAt), nullableString(v.LockedBy), nullableTime(v.SentAt), nullableString(v.LastError), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_id,client_device_id,actor_employee_id,session_id,aggregate_type,aggregate_id,command_type,sync_direction,payload_json,status,attempts,next_retry_at,locked_at,locked_by,sent_at,last_error,created_at,updated_at) VALUES (?,?,COALESCE(?,(SELECT COALESCE(MAX(sequence_no),0) + 1 FROM pos_sync_outbox)),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.CommandID, sequenceNo, string(v.Origin), nullableString(v.RestaurantID), v.DeviceID, v.NodeDeviceID, nullableString(v.ClientDeviceID), nullableString(v.ActorEmployeeID), nullableString(v.SessionID), v.AggregateType, v.AggregateID, v.CommandType, string(v.SyncDirection), v.PayloadJSON, string(v.Status), v.Attempts, nullableTime(v.NextRetryAt), nullableTime(v.LockedAt), nullableString(v.LockedBy), nullableTime(v.SentAt), nullableString(v.LastError), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }
 
@@ -120,7 +123,7 @@ func (r *Repository) ClaimPendingOutbox(ctx context.Context, limit int, lockedBy
 UPDATE pos_sync_outbox
 SET status = 'processing', locked_at = ?, locked_by = ?, updated_at = ?
 WHERE id IN (SELECT id FROM candidates)
-RETURNING id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_id,client_device_id,actor_employee_id,session_id,aggregate_type,aggregate_id,command_type,payload_json,status,attempts,next_retry_at,locked_at,locked_by,sent_at,last_error,created_at,updated_at`, now, now, limit, now, lockedBy, now)
+RETURNING id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_id,client_device_id,actor_employee_id,session_id,aggregate_type,aggregate_id,command_type,sync_direction,payload_json,status,attempts,next_retry_at,locked_at,locked_by,sent_at,last_error,created_at,updated_at`, now, now, limit, now, lockedBy, now)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
@@ -168,17 +171,19 @@ func (r *Repository) scanOutbox(row *sql.Row) (*domain.OutboxMessage, error) {
 	return v, nil
 }
 
-const outboxSelectColumns = `SELECT id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_id,client_device_id,actor_employee_id,session_id,aggregate_type,aggregate_id,command_type,payload_json,status,attempts,next_retry_at,locked_at,locked_by,sent_at,last_error,created_at,updated_at`
+const outboxSelectColumns = `SELECT id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_id,client_device_id,actor_employee_id,session_id,aggregate_type,aggregate_id,command_type,sync_direction,payload_json,status,attempts,next_retry_at,locked_at,locked_by,sent_at,last_error,created_at,updated_at`
 
 func scanOutboxRows(row outboxScanner) (*domain.OutboxMessage, error) {
 	var v domain.OutboxMessage
 	var restaurantID, clientDeviceID, actorEmployeeID, sessionID, nextRetryAt, lockedAt, lockedBy, sentAt, lastErr sql.NullString
 	var status, created, updated string
 	var origin string
-	if err := row.Scan(&v.ID, &v.CommandID, &v.SequenceNo, &origin, &restaurantID, &v.DeviceID, &v.NodeDeviceID, &clientDeviceID, &actorEmployeeID, &sessionID, &v.AggregateType, &v.AggregateID, &v.CommandType, &v.PayloadJSON, &status, &v.Attempts, &nextRetryAt, &lockedAt, &lockedBy, &sentAt, &lastErr, &created, &updated); err != nil {
+	var syncDirection string
+	if err := row.Scan(&v.ID, &v.CommandID, &v.SequenceNo, &origin, &restaurantID, &v.DeviceID, &v.NodeDeviceID, &clientDeviceID, &actorEmployeeID, &sessionID, &v.AggregateType, &v.AggregateID, &v.CommandType, &syncDirection, &v.PayloadJSON, &status, &v.Attempts, &nextRetryAt, &lockedAt, &lockedBy, &sentAt, &lastErr, &created, &updated); err != nil {
 		return nil, err
 	}
 	v.Origin = domain.CommandOrigin(origin)
+	v.SyncDirection = domain.SyncDirection(syncDirection)
 	v.RestaurantID = stringPtr(restaurantID)
 	v.ClientDeviceID = stringPtr(clientDeviceID)
 	v.ActorEmployeeID = stringPtr(actorEmployeeID)

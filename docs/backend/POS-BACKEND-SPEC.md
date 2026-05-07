@@ -56,10 +56,11 @@ Order -> Precheck -> Payment -> Check
 ### Залы и меню
 
 - `GET /api/v1/halls`
-- `POST /api/v1/halls`
 - `GET /api/v1/tables`
-- `POST /api/v1/tables`
+- `GET /api/v1/catalog/items`
 - `GET /api/v1/menu/items`
+
+implemented now: halls, tables, catalog and menu are Cloud-owned master data. Public Edge runtime writes to these entities return `403 Forbidden`; local/demo setup uses `POST /api/v1/dev/bootstrap-demo`.
 
 ### Смены и касса
 
@@ -105,6 +106,24 @@ implemented now:
 - создает demo restaurant, paired Edge Node, cashier/manager roles, сотрудников с PIN `1111`/`2222`, hall/table и menu items;
 - возвращает `pairing_code` и `manager_employee_id` для ручного POS UI smoke flow;
 - не является production path.
+
+### Master-data mutation boundary
+
+implemented now:
+
+- `POST /api/v1/restaurants`
+- `POST /api/v1/devices/register`
+- `POST /api/v1/roles`
+- `POST /api/v1/employees`
+- `PATCH /api/v1/employees/{id}/archive`
+- `POST /api/v1/halls`
+- `PATCH /api/v1/halls/{id}/archive`
+- `POST /api/v1/tables`
+- `PATCH /api/v1/tables/{id}/archive`
+- `POST /api/v1/catalog/items`
+- `POST /api/v1/menu/items`
+
+Эти routes больше не являются runtime-supported Edge mutation flow. HTTP layer нормализует такие запросы как Edge runtime origin, application services запрещают mutation Cloud-owned master data и возвращают `403 Forbidden`. Разрешенные write origins для этих use cases: `cloud_sync` и `system_seed`.
 
 ## Policy compatibility-хвостов
 
@@ -180,9 +199,9 @@ implemented now: публичные compatibility tails удалены из back
 
 implemented now: production sender path отправляет только Edge -> Cloud operational events. Cloud-managed/configuration events, например изменения restaurant, employee, role, catalog, menu, hall и table, не отправляются sender-ом вверх; они помечаются `suspended` с явной sync-direction причиной.
 
-implemented now: Cloud принимает operational sender catalog, описанный в `docs/sync/edge-cloud-contracts-v1.md`, и хранит raw envelopes плюс `cloud_operational_events`.
+implemented now: Cloud принимает operational sender catalog, описанный в `docs/sync/edge-cloud-contracts-v1.md`, и хранит raw envelopes плюс `cloud_operational_events`. Ownership matrix и directional sync rules описаны в `docs/sync/directional-sync-ownership.md`.
 
-planned next: Cloud -> Edge provisioning/configuration snapshots становятся authoritative path для master/reference data.
+implemented now: Cloud -> Edge provisioning/configuration имеет schema/app foundation: master-data services принимают `cloud_sync`, master tables имеют sync metadata, `cloud_master_sync_state` хранит stream checkpoints. Production snapshot endpoint/apply flow является planned next.
 
 ## Manager override
 

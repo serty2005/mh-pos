@@ -53,7 +53,7 @@ func (s *Service) ListEmployees(ctx context.Context) ([]domain.Employee, error) 
 }
 
 func (s *Service) CreateRole(ctx context.Context, cmd CreateRoleCommand) (*domain.Role, error) {
-	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+	if err := shared.EnsureMasterDataWriteAllowed(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
 	permissions := strings.TrimSpace(cmd.PermissionsJSON)
@@ -77,7 +77,7 @@ func (s *Service) CreateRole(ctx context.Context, cmd CreateRoleCommand) (*domai
 }
 
 func (s *Service) CreateEmployee(ctx context.Context, cmd CreateEmployeeCommand) (*domain.Employee, error) {
-	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+	if err := shared.EnsureMasterDataWriteAllowed(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(cmd.RestaurantID) == "" || strings.TrimSpace(cmd.RoleID) == "" || strings.TrimSpace(cmd.Name) == "" || strings.TrimSpace(cmd.PINHash) == "" {
@@ -97,7 +97,7 @@ func (s *Service) CreateEmployee(ctx context.Context, cmd CreateEmployeeCommand)
 }
 
 func (s *Service) ArchiveEmployee(ctx context.Context, cmd ArchiveEmployeeCommand) error {
-	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+	if err := shared.EnsureMasterDataWriteAllowed(cmd.CommandMeta); err != nil {
 		return err
 	}
 	if strings.TrimSpace(cmd.ID) == "" {

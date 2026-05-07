@@ -337,13 +337,14 @@ func TestCleanInstallRecordsOnlyCanonicalInitMigration(t *testing.T) {
 func TestRetrySafeOutboxSchemaColumnsAndConstraints(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	expected := map[string]bool{
-		"sequence_no":   false,
-		"attempts":      false,
-		"next_retry_at": false,
-		"locked_at":     false,
-		"locked_by":     false,
-		"sent_at":       false,
-		"last_error":    false,
+		"sequence_no":    false,
+		"sync_direction": false,
+		"attempts":       false,
+		"next_retry_at":  false,
+		"locked_at":      false,
+		"locked_by":      false,
+		"sent_at":        false,
+		"last_error":     false,
 	}
 	rows, err := db.QueryContext(ctx, `PRAGMA table_info(pos_sync_outbox)`)
 	if err != nil {
@@ -380,6 +381,13 @@ func TestRetrySafeOutboxSchemaColumnsAndConstraints(t *testing.T) {
 	if attempts != 0 {
 		t.Fatalf("expected default attempts=0, got %d", attempts)
 	}
+	var syncDirection string
+	if err := db.QueryRowContext(ctx, `SELECT sync_direction FROM pos_sync_outbox WHERE id = 'outbox-ok'`).Scan(&syncDirection); err != nil {
+		t.Fatal(err)
+	}
+	if syncDirection != "edge_to_cloud" {
+		t.Fatalf("expected default sync_direction=edge_to_cloud, got %s", syncDirection)
+	}
 
 	_, err = db.ExecContext(ctx, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_id,aggregate_type,aggregate_id,command_type,payload_json,status,created_at,updated_at) VALUES ('outbox-bad-status','cmd-bad-status',2,'edge_device','restaurant-1','device-1','device-1','Order','order-1','OrderCreated','{}','unknown',?,?)`, schemaTestTime, schemaTestTime)
 	if err == nil {
@@ -392,6 +400,35 @@ func TestRetrySafeOutboxSchemaColumnsAndConstraints(t *testing.T) {
 	_, err = db.ExecContext(ctx, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_id,aggregate_type,aggregate_id,command_type,payload_json,status,created_at,updated_at) VALUES ('outbox-bad-sequence','cmd-bad-sequence',0,'edge_device','restaurant-1','device-1','device-1','Order','order-1','OrderCreated','{}','pending',?,?)`, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected non-positive sequence_no to fail")
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO pos_sync_outbox(id,command_id,sequence_no,origin,restaurant_id,device_id,node_device_id,aggregate_type,aggregate_id,command_type,sync_direction,payload_json,status,created_at,updated_at) VALUES ('outbox-bad-direction','cmd-bad-direction',4,'edge_device','restaurant-1','device-1','device-1','Order','order-1','OrderCreated','sideways','{}','pending',?,?)`, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected invalid sync_direction to fail")
+	}
+}
+
+func TestCloudMasterDataSyncFoundationSchema(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	for _, table := range []string{"restaurants", "devices", "roles", "employees", "halls", "tables", "catalog_items", "menu_items", "recipe_versions", "recipe_lines", "item_costs"} {
+		columns := tableColumns(t, ctx, db, table)
+		for _, column := range []string{"cloud_version", "cloud_updated_at", "cloud_deleted_at", "last_synced_at"} {
+			if !columns[column] {
+				t.Fatalf("expected %s.%s for Cloud -> Edge master sync metadata", table, column)
+			}
+		}
+	}
+
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = 'cloud_master_sync_state'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatal("expected cloud_master_sync_state table to exist")
+	}
+	execSchema(t, ctx, db, `INSERT INTO cloud_master_sync_state(id,restaurant_id,node_device_id,stream_name,direction,sync_mode,last_cloud_version,status,created_at,updated_at) VALUES ('sync-state-1','restaurant-1','device-1','menu','cloud_to_edge','full_snapshot',1,'applied',?,?)`, schemaTestTime, schemaTestTime)
+	_, err := db.ExecContext(ctx, `INSERT INTO cloud_master_sync_state(id,node_device_id,stream_name,direction,sync_mode,status,created_at,updated_at) VALUES ('sync-state-bad','device-1','menu','edge_to_cloud','incremental','applied',?,?)`, schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected Cloud master sync state to reject non cloud_to_edge direction")
 	}
 }
 

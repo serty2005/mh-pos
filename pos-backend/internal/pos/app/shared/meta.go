@@ -36,6 +36,18 @@ func ValidateWriteMeta(meta CommandMeta) error {
 	}
 }
 
+func EnsureMasterDataWriteAllowed(meta CommandMeta) error {
+	if err := ValidateWriteMeta(meta); err != nil {
+		return err
+	}
+	switch NormalizeOrigin(meta.Origin) {
+	case domain.OriginCloudSync, domain.OriginSystemSeed:
+		return nil
+	default:
+		return fmt.Errorf("%w: master data is cloud-owned and cannot be mutated by Edge runtime", domain.ErrForbidden)
+	}
+}
+
 func EffectiveNodeDeviceID(meta CommandMeta) string {
 	if id := strings.TrimSpace(meta.NodeDeviceID); id != "" {
 		return id

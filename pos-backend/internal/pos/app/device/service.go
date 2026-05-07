@@ -109,7 +109,7 @@ func pairingCodeHash(code string) string {
 
 func (s *Service) RegisterDevice(ctx context.Context, cmd RegisterDeviceCommand) (*domain.Device, error) {
 	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
-	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+	if err := shared.EnsureMasterDataWriteAllowed(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(cmd.RestaurantID) == "" || strings.TrimSpace(cmd.DeviceCode) == "" || strings.TrimSpace(cmd.Name) == "" || strings.TrimSpace(cmd.Type) == "" {

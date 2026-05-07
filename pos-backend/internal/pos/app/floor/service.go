@@ -50,7 +50,7 @@ type ArchiveTableCommand struct {
 
 func (s *Service) CreateHall(ctx context.Context, cmd CreateHallCommand) (*domain.Hall, error) {
 	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
-	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+	if err := shared.EnsureMasterDataWriteAllowed(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(cmd.RestaurantID) == "" || strings.TrimSpace(cmd.Name) == "" {
@@ -60,9 +60,6 @@ func (s *Service) CreateHall(ctx context.Context, cmd CreateHallCommand) (*domai
 	hall := &domain.Hall{ID: s.ids.NewID(), RestaurantID: strings.TrimSpace(cmd.RestaurantID), Name: strings.TrimSpace(cmd.Name), Active: true, CreatedAt: now, UpdatedAt: now}
 	return hall, s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
-			return err
-		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
 			return err
 		}
 		if err := s.repo.CreateHall(ctx, hall); err != nil {
@@ -82,7 +79,7 @@ func (s *Service) ListHalls(ctx context.Context, restaurantID string) ([]domain.
 
 func (s *Service) ArchiveHall(ctx context.Context, cmd ArchiveHallCommand) error {
 	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
-	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+	if err := shared.EnsureMasterDataWriteAllowed(cmd.CommandMeta); err != nil {
 		return err
 	}
 	if strings.TrimSpace(cmd.ID) == "" {
@@ -91,9 +88,6 @@ func (s *Service) ArchiveHall(ctx context.Context, cmd ArchiveHallCommand) error
 	now := s.clock.Now()
 	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
-			return err
-		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
 			return err
 		}
 		hall, err := s.repo.GetHall(ctx, cmd.ID)
@@ -111,7 +105,7 @@ func (s *Service) ArchiveHall(ctx context.Context, cmd ArchiveHallCommand) error
 
 func (s *Service) CreateTable(ctx context.Context, cmd CreateTableCommand) (*domain.Table, error) {
 	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
-	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+	if err := shared.EnsureMasterDataWriteAllowed(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(cmd.RestaurantID) == "" || strings.TrimSpace(cmd.HallID) == "" || strings.TrimSpace(cmd.Name) == "" || cmd.Seats < 0 {
@@ -121,9 +115,6 @@ func (s *Service) CreateTable(ctx context.Context, cmd CreateTableCommand) (*dom
 	table := &domain.Table{ID: s.ids.NewID(), RestaurantID: strings.TrimSpace(cmd.RestaurantID), HallID: strings.TrimSpace(cmd.HallID), Name: strings.TrimSpace(cmd.Name), Seats: cmd.Seats, Active: true, CreatedAt: now, UpdatedAt: now}
 	return table, s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
-			return err
-		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
 			return err
 		}
 		hall, err := s.repo.GetHall(ctx, table.HallID)
@@ -150,7 +141,7 @@ func (s *Service) ListTables(ctx context.Context, restaurantID, hallID string) (
 
 func (s *Service) ArchiveTable(ctx context.Context, cmd ArchiveTableCommand) error {
 	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
-	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+	if err := shared.EnsureMasterDataWriteAllowed(cmd.CommandMeta); err != nil {
 		return err
 	}
 	if strings.TrimSpace(cmd.ID) == "" {
@@ -159,9 +150,6 @@ func (s *Service) ArchiveTable(ctx context.Context, cmd ArchiveTableCommand) err
 	now := s.clock.Now()
 	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
-			return err
-		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
 			return err
 		}
 		table, err := s.repo.GetTable(ctx, cmd.ID)

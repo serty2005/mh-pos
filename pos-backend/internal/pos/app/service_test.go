@@ -790,7 +790,7 @@ func TestCreateEmployeeDoesNotWritePINHashToOutboxOrLocalEvent(t *testing.T) {
 	}
 	hash := testPINHash(t, "1357", "auditor-salt")
 	_, err = f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{
-		CommandMeta:  app.CommandMeta{CommandID: "cmd-create-employee-no-pin-leak", DeviceID: f.device.ID, Origin: app.OriginEdgeDevice},
+		CommandMeta:  app.CommandMeta{CommandID: "cmd-create-employee-no-pin-leak", DeviceID: f.device.ID, Origin: app.OriginSystemSeed},
 		RestaurantID: f.restaurant.ID,
 		RoleID:       role.ID,
 		Name:         "Oleg",
@@ -811,23 +811,23 @@ func TestCreateEmployeeDoesNotWritePINHashToOutboxOrLocalEvent(t *testing.T) {
 	}
 }
 
-func TestCreateAndArchiveHallAndTableUseOutbox(t *testing.T) {
+func TestCloudOrSeedCreateAndArchiveHallAndTableUseCloudToEdgeOutbox(t *testing.T) {
 	f := newFixture(t)
 	outboxBefore := countRows(t, f, "pos_sync_outbox")
 	eventsBefore := countRows(t, f, "local_event_log")
 
-	hall, err := f.service.CreateHall(f.ctx, app.CreateHallCommand{CommandMeta: f.edgeMeta(), RestaurantID: f.restaurant.ID, Name: "Terrace"})
+	hall, err := f.service.CreateHall(f.ctx, app.CreateHallCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, Name: "Terrace"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	table, err := f.service.CreateTable(f.ctx, app.CreateTableCommand{CommandMeta: f.edgeMeta(), RestaurantID: f.restaurant.ID, HallID: hall.ID, Name: "T1", Seats: 4})
+	table, err := f.service.CreateTable(f.ctx, app.CreateTableCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, HallID: hall.ID, Name: "T1", Seats: 4})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.service.ArchiveTable(f.ctx, app.ArchiveTableCommand{CommandMeta: f.edgeMeta(), ID: table.ID}); err != nil {
+	if err := f.service.ArchiveTable(f.ctx, app.ArchiveTableCommand{CommandMeta: seedMeta(f.device.ID), ID: table.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.service.ArchiveHall(f.ctx, app.ArchiveHallCommand{CommandMeta: f.edgeMeta(), ID: hall.ID}); err != nil {
+	if err := f.service.ArchiveHall(f.ctx, app.ArchiveHallCommand{CommandMeta: seedMeta(f.device.ID), ID: hall.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+4 {
@@ -843,25 +843,32 @@ func TestCreateAndArchiveHallAndTableUseOutbox(t *testing.T) {
 	if len(tables) != 1 || tables[0].Active {
 		t.Fatalf("expected archived table in read model, got %+v", tables)
 	}
+	var cloudToEdge int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM pos_sync_outbox WHERE aggregate_id IN (?, ?) AND command_type IN ('HallCreated','TableCreated','TableArchived','HallArchived') AND sync_direction = 'cloud_to_edge'`, hall.ID, table.ID).Scan(&cloudToEdge); err != nil {
+		t.Fatal(err)
+	}
+	if cloudToEdge != 4 {
+		t.Fatalf("expected floor master-data outbox rows to be cloud_to_edge, got %d", cloudToEdge)
+	}
 }
 
 func TestCannotCreateTableInArchivedHall(t *testing.T) {
 	f := newFixture(t)
-	hall, err := f.service.CreateHall(f.ctx, app.CreateHallCommand{CommandMeta: f.edgeMeta(), RestaurantID: f.restaurant.ID, Name: "Closed room"})
+	hall, err := f.service.CreateHall(f.ctx, app.CreateHallCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, Name: "Closed room"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.service.ArchiveHall(f.ctx, app.ArchiveHallCommand{CommandMeta: f.edgeMeta(), ID: hall.ID}); err != nil {
+	if err := f.service.ArchiveHall(f.ctx, app.ArchiveHallCommand{CommandMeta: seedMeta(f.device.ID), ID: hall.ID}); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = f.service.CreateTable(f.ctx, app.CreateTableCommand{CommandMeta: f.edgeMeta(), RestaurantID: f.restaurant.ID, HallID: hall.ID, Name: "C1", Seats: 2})
+	_, err = f.service.CreateTable(f.ctx, app.CreateTableCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, HallID: hall.ID, Name: "C1", Seats: 2})
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
 	}
 }
 
-func TestValidDeviceIDCreatesBusinessAndOutboxRowsWithDefaultOrigin(t *testing.T) {
+func TestEdgeRuntimeCannotMutateCloudOwnedMasterData(t *testing.T) {
 	f := newFixture(t)
 	rolesBefore := countRows(t, f, "roles")
 	outboxBefore := countRows(t, f, "pos_sync_outbox")
@@ -872,17 +879,14 @@ func TestValidDeviceIDCreatesBusinessAndOutboxRowsWithDefaultOrigin(t *testing.T
 		Name:            "supervisor",
 		PermissionsJSON: `{}`,
 	})
-	if err != nil {
-		t.Fatal(err)
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden, got %v", err)
 	}
-	if roles := countRows(t, f, "roles"); roles != rolesBefore+1 {
-		t.Fatalf("expected one role row, before=%d after=%d", rolesBefore, roles)
+	if roles := countRows(t, f, "roles"); roles != rolesBefore {
+		t.Fatalf("expected no role row, before=%d after=%d", rolesBefore, roles)
 	}
-	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+1 {
-		t.Fatalf("expected one outbox row, before=%d after=%d", outboxBefore, outbox)
-	}
-	if !outboxHasDeviceAndOrigin(t, f, commandID, f.device.ID, domain.OriginEdgeDevice) {
-		t.Fatal("expected outbox row to contain device_id and origin")
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no outbox row, before=%d after=%d", outboxBefore, outbox)
 	}
 }
 
@@ -1552,7 +1556,7 @@ func TestCannotIssueSecondActivePrecheckForOrder(t *testing.T) {
 func TestCreateOrderRejectsMismatchedRestaurantID(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
-	other, err := f.service.CreateRestaurant(f.ctx, app.CreateRestaurantCommand{CommandMeta: f.edgeMeta(), Name: "Other", Timezone: "Europe/Moscow", Currency: "RUB"})
+	other, err := f.service.CreateRestaurant(f.ctx, app.CreateRestaurantCommand{CommandMeta: seedMeta(f.device.ID), Name: "Other", Timezone: "Europe/Moscow", Currency: "RUB"})
 	if err != nil {
 		t.Fatal(err)
 	}

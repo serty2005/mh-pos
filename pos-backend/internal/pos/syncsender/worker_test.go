@@ -92,3 +92,10 @@ func TestRunOnceMarksRetryableFailureAndReleasesRemainingBatch(t *testing.T) {
 		t.Fatalf("expected remaining batch locks to be released, got %v", service.releasedLocks)
 	}
 }
+
+func TestDirectionFoundationKeepsDeviceRegisteredOperational(t *testing.T) {
+	direction := domain.DirectionForOutbox(domain.OriginEdgeDevice, "Device", "DeviceRegistered")
+	if direction != domain.SyncDirectionEdgeToCloud {
+		t.Fatalf("expected DeviceRegistered to stay edge_to_cloud, got %s", direction)
+	}
+}

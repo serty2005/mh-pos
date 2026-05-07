@@ -35,7 +35,7 @@ func (s *Service) ListRestaurants(ctx context.Context) ([]domain.Restaurant, err
 }
 
 func (s *Service) CreateRestaurant(ctx context.Context, cmd CreateRestaurantCommand) (*domain.Restaurant, error) {
-	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+	if err := shared.EnsureMasterDataWriteAllowed(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(cmd.Name) == "" || strings.TrimSpace(cmd.Timezone) == "" || strings.TrimSpace(cmd.Currency) == "" {

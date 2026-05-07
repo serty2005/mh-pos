@@ -36,7 +36,7 @@ func (s *Service) ListCatalogItems(ctx context.Context) ([]domain.CatalogItem, e
 }
 
 func (s *Service) CreateCatalogItem(ctx context.Context, cmd CreateCatalogItemCommand) (*domain.CatalogItem, error) {
-	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+	if err := shared.EnsureMasterDataWriteAllowed(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
 	if cmd.Type != domain.CatalogItemIngredient && cmd.Type != domain.CatalogItemDish && cmd.Type != domain.CatalogItemGood {

@@ -237,6 +237,7 @@ func WriteOutbox(ctx context.Context, repo eventOutboxRepository, ids idgen.Gene
 		AggregateType:   aggregateType,
 		AggregateID:     aggregateID,
 		CommandType:     commandType,
+		SyncDirection:   domain.DirectionForOutbox(origin, aggregateType, commandType),
 		PayloadJSON:     string(body),
 		Status:          domain.OutboxPending,
 		CreatedAt:       now,

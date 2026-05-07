@@ -60,6 +60,7 @@ Pilot path для SQLite:
 - `cash_sessions`
 - `cash_drawer_events`
 - `manager_override_audit`
+- `cloud_master_sync_state`
 - `local_event_log`
 - `pos_sync_outbox`
 
@@ -126,8 +127,19 @@ erDiagram
 ### Outbox
 
 - `sequence_no` - канонический local ordering key;
+- `sync_direction` явно фиксирует `edge_to_cloud`, `cloud_to_edge` или `local_only`;
 - запись в business tables, `local_event_log` и `pos_sync_outbox` должна быть транзакционной;
 - failed/suspended retry выполняется через явный operational path.
+
+### Directional ownership
+
+implemented now:
+
+- Cloud-owned master tables: `restaurants`, `devices`, `roles`, `employees`, `halls`, `tables`, `catalog_items`, `menu_items`, `recipe_versions`, `recipe_lines`, `item_costs`.
+- Эти таблицы являются локальной read model на POS Edge; application services запрещают Edge runtime mutation и принимают только `origin = cloud_sync` или `origin = system_seed`.
+- Cloud-owned master tables имеют `cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at`.
+- `cloud_master_sync_state` хранит Cloud -> Edge stream checkpoint foundation: stream, mode, checkpoint token, last Cloud version/update, last apply time, status/error.
+- Edge-owned operational tables: `shifts`, `cash_sessions`, `cash_drawer_events`, `orders`, `order_lines`, `prechecks`, `payments`, `payment_attempts`, `checks`, `manager_override_audit`, `auth_sessions`, `local_event_log`, `pos_sync_outbox`.
 
 ## Обязательные policy-решения до первого пилота
 

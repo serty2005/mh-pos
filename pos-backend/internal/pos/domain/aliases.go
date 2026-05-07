@@ -143,6 +143,11 @@ const (
 
 type OutboxStatus = shared.OutboxStatus
 type CommandOrigin = shared.CommandOrigin
+type DataOwner = shared.DataOwner
+type SyncDirection = shared.SyncDirection
+type SyncMode = shared.SyncMode
+type MasterDataStream = shared.MasterDataStream
+type MasterDataSyncState = shared.MasterDataSyncState
 type OutboxMessage = shared.OutboxMessage
 type SyncStatus = shared.SyncStatus
 type LocalEvent = shared.LocalEvent
@@ -158,8 +163,40 @@ const (
 	OriginCloudSync  = shared.OriginCloudSync
 	OriginSystemSeed = shared.OriginSystemSeed
 
+	DataOwnerCloud = shared.DataOwnerCloud
+	DataOwnerEdge  = shared.DataOwnerEdge
+	DataOwnerMixed = shared.DataOwnerMixed
+
+	SyncDirectionCloudToEdge = shared.SyncDirectionCloudToEdge
+	SyncDirectionEdgeToCloud = shared.SyncDirectionEdgeToCloud
+	SyncDirectionLocalOnly   = shared.SyncDirectionLocalOnly
+
+	SyncModeFullSnapshot = shared.SyncModeFullSnapshot
+	SyncModeIncremental  = shared.SyncModeIncremental
+
+	MasterDataStreamRestaurants = shared.MasterDataStreamRestaurants
+	MasterDataStreamDevices     = shared.MasterDataStreamDevices
+	MasterDataStreamStaff       = shared.MasterDataStreamStaff
+	MasterDataStreamFloor       = shared.MasterDataStreamFloor
+	MasterDataStreamCatalog     = shared.MasterDataStreamCatalog
+	MasterDataStreamMenu        = shared.MasterDataStreamMenu
+	MasterDataStreamRecipes     = shared.MasterDataStreamRecipes
+	MasterDataStreamInventory   = shared.MasterDataStreamInventory
+
 	SyncEnvelopeVersion = shared.SyncEnvelopeVersion
 )
+
+func IsEdgeToCloudOperationalEvent(eventType string) bool {
+	return shared.IsEdgeToCloudOperationalEvent(eventType)
+}
+
+func IsCloudOwnedAggregate(aggregateType string) bool {
+	return shared.IsCloudOwnedAggregate(aggregateType)
+}
+
+func DirectionForOutbox(origin CommandOrigin, aggregateType, eventType string) SyncDirection {
+	return shared.DirectionForOutbox(origin, aggregateType, eventType)
+}
 
 type RecipeVersionStatus = inventory.RecipeVersionStatus
 type RecipeVersion = inventory.RecipeVersion

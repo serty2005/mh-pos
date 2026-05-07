@@ -155,33 +155,11 @@ func blockedDirectionReason(msg domain.OutboxMessage) string {
 	if msg.Origin != domain.OriginEdgeDevice {
 		return fmt.Sprintf("sync direction blocked: origin %q is not Edge runtime origin", msg.Origin)
 	}
-	if !isEdgeToCloudOperationalEvent(msg.CommandType) {
+	if msg.SyncDirection != "" && msg.SyncDirection != domain.SyncDirectionEdgeToCloud {
+		return fmt.Sprintf("sync direction blocked: outbox row direction is %q", msg.SyncDirection)
+	}
+	if !domain.IsEdgeToCloudOperationalEvent(msg.CommandType) {
 		return fmt.Sprintf("sync direction blocked: %s is Cloud-managed/configuration or unsupported Edge->Cloud event", msg.CommandType)
 	}
 	return ""
-}
-
-func isEdgeToCloudOperationalEvent(eventType string) bool {
-	switch eventType {
-	case "ShiftOpened",
-		"ShiftClosed",
-		"CashSessionOpened",
-		"CashSessionClosed",
-		"CashDrawerEventRecorded",
-		"OrderCreated",
-		"OrderLineAdded",
-		"OrderLineQuantityChanged",
-		"OrderLineVoided",
-		"PrecheckIssued",
-		"PrecheckCancelled",
-		"PaymentCaptured",
-		"CheckCreated",
-		"OrderClosed",
-		"AuthSessionStarted",
-		"AuthSessionRevoked",
-		"DeviceRegistered":
-		return true
-	default:
-		return false
-	}
 }

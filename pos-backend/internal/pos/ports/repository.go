@@ -13,6 +13,7 @@ type Repository interface {
 	CheckRepository
 	CashRepository
 	InventoryRepository
+	MasterSyncRepository
 	LocalEventRepository
 	OutboxRepository
 }

@@ -23,7 +23,9 @@ Order -> Precheck -> Payment -> Check
 - `client_device_id` обозначает frontend-клиент, в MVP генерируется `pos-ui` и auto-registers на Edge;
 - `device_id` остается domain/storage field для POS Edge node identity в operational payload; новый transport contract использует явные `node_device_id` и `client_device_id`.
 
-Sync/outbox foundation поддерживает retry-safe состояние очереди: `pending`, `processing`, `sent`, `failed`, `suspended`, локальный `sequence_no`, attempts/retry metadata, processing locks, stale lock reclaim на app-level и manual retry failed/suspended. implemented now: POS Edge запускает background sender worker, который claim'ит Edge -> Cloud operational rows, отправляет `SyncEnvelope` в Cloud, делает idempotent resend, automatic retry с exponential backoff, crash recovery через stale lock reclaim и direction gate для Cloud-managed/configuration событий.
+Sync/outbox foundation поддерживает retry-safe состояние очереди: `pending`, `processing`, `sent`, `failed`, `suspended`, локальный `sequence_no`, явный `sync_direction`, attempts/retry metadata, processing locks, stale lock reclaim на app-level и manual retry failed/suspended. implemented now: POS Edge запускает background sender worker, который claim'ит Edge -> Cloud operational rows, отправляет `SyncEnvelope` в Cloud, делает idempotent resend, automatic retry с exponential backoff, crash recovery через stale lock reclaim и direction gate для Cloud-managed/configuration событий.
+
+implemented now: master/reference/configuration data является Cloud-owned. POS Edge хранит локальную read model для offline POS flow, но Edge runtime не редактирует restaurants, devices metadata, roles, employees, halls, tables, catalog, menu, recipes и inventory reference data. Application services принимают такие writes только от `cloud_sync` или `system_seed`; public HTTP Edge mutation возвращает `403 Forbidden`. Ownership matrix: `../docs/sync/directional-sync-ownership.md`.
 
 Проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. SQLite clean install является canonical first-launch source of truth: активный migration path содержит один `migrations/sqlite/001_init.sql`, который сразу создает текущую runtime-схему без `payments.check_id`.
 
@@ -53,7 +55,7 @@ Sync/outbox foundation поддерживает retry-safe состояние о
 
 ## SQLite First Launch Schema
 
-`MigrateDir` применяет canonical `001_init.sql` на чистую БД. В этой стартовой схеме сразу присутствуют `prechecks`, `payments.precheck_id`, `auth_sessions` со status `active/revoked`, `edge_node_identity`, `client_devices`, `halls`, `tables`, `orders.table_id`, retry-safe поля `pos_sync_outbox` (`sequence_no`, `attempts`, `next_retry_at`, `locked_at`, `locked_by`, `sent_at`, `last_error`), actor/session/node/client metadata (`node_device_id`, `client_device_id`, `actor_employee_id`, `session_id`) в `local_event_log`, `pos_sync_outbox` и `SyncEnvelope`, `local_event_log.command_id`, `manager_override_audit`, constraints precheck lifecycle и outbox. Историческая dev-цепочка миграций не является обязательной частью первого пилотного запуска.
+`MigrateDir` применяет canonical `001_init.sql` на чистую БД. В этой стартовой схеме сразу присутствуют `prechecks`, `payments.precheck_id`, `auth_sessions` со status `active/revoked`, `edge_node_identity`, `client_devices`, `halls`, `tables`, `orders.table_id`, Cloud -> Edge metadata columns на master tables, `cloud_master_sync_state`, retry-safe поля `pos_sync_outbox` (`sequence_no`, `sync_direction`, `attempts`, `next_retry_at`, `locked_at`, `locked_by`, `sent_at`, `last_error`), actor/session/node/client metadata (`node_device_id`, `client_device_id`, `actor_employee_id`, `session_id`) в `local_event_log`, `pos_sync_outbox` и `SyncEnvelope`, `local_event_log.command_id`, `manager_override_audit`, constraints precheck lifecycle и outbox. Историческая dev-цепочка миграций не является обязательной частью первого пилотного запуска.
 
 Write transactions в POS Edge открываются через `BEGIN IMMEDIATE`, чтобы writer lock бралась в начале транзакционного use case.
 
@@ -145,12 +147,9 @@ Auth/device и POS UI endpoints:
 - `POST /api/v1/auth/pin-login`
 - `GET /api/v1/auth/session`
 - `POST /api/v1/auth/logout`
-- `POST /api/v1/halls`
 - `GET /api/v1/halls`
-- `PATCH /api/v1/halls/{id}/archive`
-- `POST /api/v1/tables`
 - `GET /api/v1/tables`
-- `PATCH /api/v1/tables/{id}/archive`
+- `GET /api/v1/catalog/items`
 - `GET /api/v1/menu/items`
 - `POST /api/v1/orders`
 - `GET /api/v1/orders/current?table_id=...`
@@ -165,6 +164,8 @@ Auth/device и POS UI endpoints:
 - `POST /api/v1/cash-sessions/open`
 - `POST /api/v1/cash-sessions/{id}/close`
 - `POST /api/v1/dev/bootstrap-demo` dev/local only, требует `POS_DEV_TOOLS=1`
+
+Master-data write endpoints for restaurants/devices/roles/employees/halls/tables/catalog/menu are implemented as application-layer seed/cloud-sync write use cases, but public Edge runtime HTTP calls to them return `403 Forbidden`. Use `POST /api/v1/dev/bootstrap-demo` for local demo bootstrap until production Cloud -> Edge provisioning is implemented.
 
 Operational sync endpoints: `GET /api/v1/sync/outbox?limit=50`, `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`, `GET /api/v1/sync/status`, `POST /api/v1/sync/retry-failed`. `retry-failed` не отправляет данные в Cloud и не меняет business state; он только возвращает `failed`/`suspended` outbox rows в `pending`.
 

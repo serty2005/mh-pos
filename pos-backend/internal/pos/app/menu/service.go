@@ -36,7 +36,7 @@ func (s *Service) ListMenuItems(ctx context.Context) ([]domain.MenuItem, error) 
 }
 
 func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand) (*domain.MenuItem, error) {
-	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+	if err := shared.EnsureMasterDataWriteAllowed(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(cmd.CatalogItemID) == "" || strings.TrimSpace(cmd.Name) == "" || strings.TrimSpace(cmd.Currency) == "" || cmd.Price < 0 {

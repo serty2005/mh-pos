@@ -8,6 +8,8 @@ implemented now: Edge -> Cloud отправляет только runtime operati
 
 implemented now: Cloud -> Edge является направлением для master/reference/configuration данных. Полноценные Cloud-managed provisioning snapshots являются planned next и не входят в текущий sender.
 
+implemented now: подробная ownership matrix зафиксирована в `docs/sync/directional-sync-ownership.md`.
+
 Cloud-managed/configuration сущности:
 
 - рестораны;
@@ -32,6 +34,10 @@ Edge-managed operational сущности и события:
 - manager override, audit и business events.
 
 POS sender содержит direction gate. Если строка `pos_sync_outbox` не является Edge runtime operational event, sender не отправляет ее POST-запросом в Cloud; вместо тихого drop он переводит строку в `suspended` с явной причиной.
+
+implemented now: `pos_sync_outbox.sync_direction` хранит явное направление строки: `edge_to_cloud`, `cloud_to_edge` или `local_only`. Sender отправляет только operational rows с `sync_direction = edge_to_cloud`.
+
+implemented now: Cloud -> Edge foundation хранится на Edge в `cloud_master_sync_state` и sync metadata columns master tables (`cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at`). Production snapshot/apply endpoint является planned next.
 
 ## POS Sender
 

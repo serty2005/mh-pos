@@ -31,6 +31,7 @@ type OutboxMessage struct {
 	AggregateType   string        `json:"aggregate_type"`
 	AggregateID     string        `json:"aggregate_id"`
 	CommandType     string        `json:"command_type"`
+	SyncDirection   SyncDirection `json:"sync_direction"`
 	PayloadJSON     string        `json:"payload_json"`
 	Status          OutboxStatus  `json:"status"`
 	Attempts        int           `json:"attempts"`

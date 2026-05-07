@@ -31,6 +31,8 @@
 - `local_event_log`
 - `pos_sync_outbox`
 - retry-safe outbox foundation
+- explicit directional sync ownership foundation
+- Cloud -> Edge master sync metadata/checkpoint schema foundation
 - Cloud sync receiver foundation
 - pairing foundation
 - auth session foundation
@@ -100,6 +102,9 @@
 
 - Cloud принимает фактический Edge -> Cloud operational event catalog;
 - production sender path имеет direction gate и не отправляет Cloud-managed/configuration события вверх;
+- `pos_sync_outbox.sync_direction` явно разделяет `edge_to_cloud`, `cloud_to_edge` и `local_only`;
+- Edge runtime mutation Cloud-owned master data запрещен application boundary;
+- ownership matrix добавлена в `docs/sync/directional-sync-ownership.md`;
 - canonical Edge/Cloud sync contract обновлен в `docs/sync/edge-cloud-contracts-v1.md`;
 - POS sender включен как отдельный background worker с retry/backoff, stale lock reclaim и idempotent resend;
 - Cloud хранит raw envelopes и append-safe operational event journal.
@@ -108,7 +113,7 @@ planned next:
 
 - item-level ACK plan;
 - richer Cloud projections поверх `cloud_operational_events`;
-- Cloud -> Edge provisioning snapshots для master/reference/configuration данных.
+- production Cloud -> Edge provisioning/import endpoints для master/reference/configuration данных.
 
 ### Security hardening
 

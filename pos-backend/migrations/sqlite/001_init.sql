@@ -5,7 +5,11 @@ CREATE TABLE restaurants (
   currency TEXT NOT NULL,
   active INTEGER NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  cloud_version INTEGER NOT NULL DEFAULT 0 CHECK (cloud_version >= 0),
+  cloud_updated_at TEXT,
+  cloud_deleted_at TEXT,
+  last_synced_at TEXT
 );
 
 CREATE TABLE devices (
@@ -18,6 +22,10 @@ CREATE TABLE devices (
   registered_at TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  cloud_version INTEGER NOT NULL DEFAULT 0 CHECK (cloud_version >= 0),
+  cloud_updated_at TEXT,
+  cloud_deleted_at TEXT,
+  last_synced_at TEXT,
   UNIQUE(restaurant_id, device_code)
 );
 
@@ -53,7 +61,11 @@ CREATE TABLE roles (
   permissions_json TEXT NOT NULL,
   active INTEGER NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  cloud_version INTEGER NOT NULL DEFAULT 0 CHECK (cloud_version >= 0),
+  cloud_updated_at TEXT,
+  cloud_deleted_at TEXT,
+  last_synced_at TEXT
 );
 
 CREATE TABLE employees (
@@ -64,7 +76,11 @@ CREATE TABLE employees (
   pin_hash TEXT NOT NULL,
   active INTEGER NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  cloud_version INTEGER NOT NULL DEFAULT 0 CHECK (cloud_version >= 0),
+  cloud_updated_at TEXT,
+  cloud_deleted_at TEXT,
+  last_synced_at TEXT
 );
 
 CREATE TABLE auth_sessions (
@@ -93,6 +109,10 @@ CREATE TABLE halls (
   active INTEGER NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  cloud_version INTEGER NOT NULL DEFAULT 0 CHECK (cloud_version >= 0),
+  cloud_updated_at TEXT,
+  cloud_deleted_at TEXT,
+  last_synced_at TEXT,
   UNIQUE(restaurant_id, name)
 );
 
@@ -105,6 +125,10 @@ CREATE TABLE tables (
   active INTEGER NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  cloud_version INTEGER NOT NULL DEFAULT 0 CHECK (cloud_version >= 0),
+  cloud_updated_at TEXT,
+  cloud_deleted_at TEXT,
+  last_synced_at TEXT,
   UNIQUE(hall_id, name)
 );
 
@@ -118,7 +142,11 @@ CREATE TABLE catalog_items (
   base_unit TEXT NOT NULL,
   active INTEGER NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  cloud_version INTEGER NOT NULL DEFAULT 0 CHECK (cloud_version >= 0),
+  cloud_updated_at TEXT,
+  cloud_deleted_at TEXT,
+  last_synced_at TEXT
 );
 
 CREATE TABLE menu_items (
@@ -129,7 +157,11 @@ CREATE TABLE menu_items (
   currency TEXT NOT NULL,
   active INTEGER NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  cloud_version INTEGER NOT NULL DEFAULT 0 CHECK (cloud_version >= 0),
+  cloud_updated_at TEXT,
+  cloud_deleted_at TEXT,
+  last_synced_at TEXT
 );
 
 CREATE TABLE shifts (
@@ -334,6 +366,10 @@ CREATE TABLE recipe_versions (
   active INTEGER NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  cloud_version INTEGER NOT NULL DEFAULT 0 CHECK (cloud_version >= 0),
+  cloud_updated_at TEXT,
+  cloud_deleted_at TEXT,
+  last_synced_at TEXT,
   UNIQUE(dish_catalog_item_id, version)
 );
 
@@ -346,6 +382,10 @@ CREATE TABLE recipe_lines (
   loss_percent INTEGER NOT NULL CHECK (loss_percent >= 0 AND loss_percent <= 100),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  cloud_version INTEGER NOT NULL DEFAULT 0 CHECK (cloud_version >= 0),
+  cloud_updated_at TEXT,
+  cloud_deleted_at TEXT,
+  last_synced_at TEXT,
   UNIQUE(recipe_version_id, catalog_item_id)
 );
 
@@ -435,10 +475,34 @@ CREATE TABLE item_costs (
   source_type TEXT,
   source_id TEXT,
   effective_at TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  cloud_version INTEGER NOT NULL DEFAULT 0 CHECK (cloud_version >= 0),
+  cloud_updated_at TEXT,
+  cloud_deleted_at TEXT,
+  last_synced_at TEXT
 );
 
 CREATE INDEX item_costs_catalog_type_effective_at ON item_costs(catalog_item_id, cost_type, effective_at);
+
+CREATE TABLE cloud_master_sync_state (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT CHECK (restaurant_id IS NULL OR restaurant_id <> ''),
+  node_device_id TEXT NOT NULL CHECK (node_device_id <> ''),
+  stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','recipes','inventory_reference')),
+  direction TEXT NOT NULL CHECK (direction = 'cloud_to_edge'),
+  sync_mode TEXT NOT NULL CHECK (sync_mode IN ('full_snapshot','incremental')),
+  checkpoint_token TEXT CHECK (checkpoint_token IS NULL OR checkpoint_token <> ''),
+  last_cloud_version INTEGER NOT NULL DEFAULT 0 CHECK (last_cloud_version >= 0),
+  last_cloud_updated_at TEXT,
+  last_applied_at TEXT,
+  status TEXT NOT NULL CHECK (status IN ('never_synced','applying','applied','failed')),
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(node_device_id, stream_name)
+);
+
+CREATE INDEX cloud_master_sync_state_node_status ON cloud_master_sync_state(node_device_id, status);
 
 CREATE TRIGGER recipe_versions_dish_catalog_item_insert
 BEFORE INSERT ON recipe_versions
@@ -511,6 +575,7 @@ CREATE TABLE pos_sync_outbox (
   aggregate_type TEXT NOT NULL,
   aggregate_id TEXT NOT NULL,
   command_type TEXT NOT NULL,
+  sync_direction TEXT NOT NULL DEFAULT 'edge_to_cloud' CHECK (sync_direction IN ('edge_to_cloud','cloud_to_edge','local_only')),
   payload_json TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('pending', 'processing', 'sent', 'failed', 'suspended')),
   attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
