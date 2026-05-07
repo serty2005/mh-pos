@@ -3,7 +3,12 @@ package contracts
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
+	"strconv"
 	"strings"
+
+	iso4217 "github.com/JohannesJHN/iso4217"
 )
 
 // CurrencyProfile defines canonical Cloud currency template used for pilot provisioning.
@@ -21,6 +26,38 @@ type CurrencyProfile struct {
 
 type currencyProfilesPayload struct {
 	Currencies []CurrencyProfile `json:"currencies"`
+}
+
+type currencyDisplayOverride struct {
+	symbol        string
+	basicName     string
+	addName       string
+	showAdd       bool
+	showBasicName bool
+}
+
+var currencyDisplayOverrides = map[string]currencyDisplayOverride{
+	"RUB": {symbol: "₽", basicName: "р", addName: "коп.", showAdd: true, showBasicName: true},
+	"USD": {symbol: "$", basicName: "$", addName: "¢", showAdd: true, showBasicName: true},
+	"EUR": {symbol: "€", basicName: "€", addName: "c", showAdd: true, showBasicName: true},
+	"KZT": {symbol: "₸", basicName: "₸", addName: "тиын", showAdd: true, showBasicName: true},
+	"BYN": {symbol: "Br", basicName: "Br", addName: "коп.", showAdd: true, showBasicName: true},
+	"UAH": {symbol: "₴", basicName: "грн", addName: "коп.", showAdd: true, showBasicName: true},
+	"BHD": {symbol: "BD", basicName: "BD", addName: "fils", showAdd: true, showBasicName: true},
+	"JOD": {symbol: "JD", basicName: "JD", addName: "qirsh", showAdd: true, showBasicName: true},
+	"KWD": {symbol: "KD", basicName: "KD", addName: "fils", showAdd: true, showBasicName: true},
+	"OMR": {symbol: "OMR", basicName: "OMR", addName: "baisa", showAdd: true, showBasicName: true},
+	"TND": {symbol: "DT", basicName: "DT", addName: "millime", showAdd: true, showBasicName: true},
+	"VND": {symbol: "₫", basicName: "₫", addName: "xu", showAdd: false, showBasicName: true},
+	"THB": {symbol: "฿", basicName: "฿", addName: "satang", showAdd: true, showBasicName: true},
+	"IDR": {symbol: "Rp", basicName: "Rp", addName: "sen", showAdd: true, showBasicName: true},
+}
+
+var canonicalActiveCurrencyProfiles = buildCanonicalActiveCurrencyProfiles()
+
+// CanonicalActiveCurrencyProfiles returns deterministic active ISO 4217 cloud catalog snapshot.
+func CanonicalActiveCurrencyProfiles() []CurrencyProfile {
+	return slices.Clone(canonicalActiveCurrencyProfiles)
 }
 
 // ValidateMasterDataPayload verifies stream-specific payload constraints.
@@ -45,8 +82,8 @@ func ValidateMasterDataPayload(streamName string, payload json.RawMessage) error
 		if len(alpha) != 3 {
 			return fmt.Errorf("%w: currency_alpha_code must be ISO 4217 alpha-3", ErrInvalidEnvelope)
 		}
-		if item.MinorUnit < 0 || item.MinorUnit > 3 {
-			return fmt.Errorf("%w: minor_unit must be between 0 and 3", ErrInvalidEnvelope)
+		if item.MinorUnit < 0 || item.MinorUnit > 4 {
+			return fmt.Errorf("%w: minor_unit must be between 0 and 4", ErrInvalidEnvelope)
 		}
 		if strings.TrimSpace(item.CurrencyIsoName) == "" ||
 			strings.TrimSpace(item.CurrencySymbol) == "" ||
@@ -64,4 +101,56 @@ func ValidateMasterDataPayload(streamName string, payload json.RawMessage) error
 		seenAlpha[alpha] = struct{}{}
 	}
 	return nil
+}
+
+func buildCanonicalActiveCurrencyProfiles() []CurrencyProfile {
+	active := iso4217.AllActive()
+	profilesByAlpha := make(map[string]CurrencyProfile, len(active))
+	for _, currency := range active {
+		alpha := strings.ToUpper(strings.TrimSpace(currency.Alpha3))
+		if len(alpha) != 3 || currency.Numeric <= 0 || currency.MinorUnits < 0 || currency.MinorUnits > 4 {
+			continue
+		}
+		profile := CurrencyProfile{
+			CurrencyCode:          currency.Numeric,
+			CurrencyAlphaCode:     alpha,
+			MinorUnit:             currency.MinorUnits,
+			CurrencyIsoName:       strings.TrimSpace(currency.Name),
+			CurrencySymbol:        alpha,
+			CurrBasicName:         strings.ToLower(alpha),
+			CurrAddName:           "minor",
+			ShowAdd:               currency.MinorUnits > 0,
+			ShowCurrencyBasicName: true,
+		}
+		if override, ok := currencyDisplayOverrides[alpha]; ok {
+			profile.CurrencySymbol = override.symbol
+			profile.CurrBasicName = override.basicName
+			profile.CurrAddName = override.addName
+			profile.ShowAdd = override.showAdd
+			profile.ShowCurrencyBasicName = override.showBasicName
+		}
+		profilesByAlpha[alpha] = profile
+	}
+
+	keys := slices.Collect(maps.Keys(profilesByAlpha))
+	slices.Sort(keys)
+	profiles := make([]CurrencyProfile, 0, len(keys))
+	for _, alpha := range keys {
+		profiles = append(profiles, profilesByAlpha[alpha])
+	}
+	return profiles
+}
+
+func init() {
+	if len(canonicalActiveCurrencyProfiles) == 0 {
+		panic("active ISO 4217 currency catalog is empty")
+	}
+	for _, profile := range canonicalActiveCurrencyProfiles {
+		if profile.CurrencyCode <= 0 {
+			panic(fmt.Sprintf("invalid currency code for %s", profile.CurrencyAlphaCode))
+		}
+		if profile.MinorUnit < 0 || profile.MinorUnit > 4 {
+			panic(fmt.Sprintf("invalid minor unit for %s: %s", profile.CurrencyAlphaCode, strconv.Itoa(profile.MinorUnit)))
+		}
+	}
 }

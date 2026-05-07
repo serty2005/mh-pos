@@ -160,7 +160,7 @@ implemented now:
 - Создание и редактирование заказов доступно после открытия личной смены сотрудника и не требует кассовой смены.
 - Оплата доступна только при открытой кассовой смене.
 - visibility критичных действий в `/pos` привязана к backend permission ids (shift/cash/order/precheck/payment/floor/menu); backend остается final enforcement layer.
-- денежный ввод/показ в UI использует currency precision helper по ISO code с pilot-поддержкой 2 и 3 decimal places.
+- денежный ввод/показ в UI использует currency precision helper по ISO code и опирается на active ISO 4217 catalog (precision `0/2/3/4` по коду валюты).
 
 planned next:
 
@@ -204,7 +204,7 @@ planned next:
 - наличная оплата;
 - trusted manual card capture;
 - manager override только для отмены пречека.
-- money conversion в UI на основе integer minor units с currency-dependent precision (2/3 decimals).
+- money conversion в UI на основе integer minor units с currency-dependent precision (`0/2/3/4` decimals).
 
 ## Explicitly unsupported now
 

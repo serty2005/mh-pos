@@ -1,3 +1,5 @@
+github.com/JohannesJHN/iso4217 v0.0.0-20250910211824-d9ba0fe363a8 h1:d17pPc9OEenK5qGDNOyWjy54/rop2rg/ajxLJrWxCPs=
+github.com/JohannesJHN/iso4217 v0.0.0-20250910211824-d9ba0fe363a8/go.mod h1:EigOUF2OBoQ/J/WXl44atfjF+d9CuI9CuOAjpllOJE0=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/go-chi/chi/v5 v5.2.5 h1:Eg4myHZBjyvJmAFjFvWgrqDTXFyOzjj7YIm3L3mu6Ug=

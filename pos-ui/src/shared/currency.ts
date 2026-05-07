@@ -3,27 +3,15 @@ export type CurrencyProfile = {
   minorUnit: number;
 };
 
-const currencyProfiles: Record<string, CurrencyProfile> = {
-  RUB: { alphaCode: 'RUB', minorUnit: 2 },
-  USD: { alphaCode: 'USD', minorUnit: 2 },
-  EUR: { alphaCode: 'EUR', minorUnit: 2 },
-  KZT: { alphaCode: 'KZT', minorUnit: 2 },
-  BYN: { alphaCode: 'BYN', minorUnit: 2 },
-  UAH: { alphaCode: 'UAH', minorUnit: 2 },
-  BHD: { alphaCode: 'BHD', minorUnit: 3 },
-  JOD: { alphaCode: 'JOD', minorUnit: 3 },
-  KWD: { alphaCode: 'KWD', minorUnit: 3 },
-  OMR: { alphaCode: 'OMR', minorUnit: 3 },
-  TND: { alphaCode: 'TND', minorUnit: 3 },
-};
+const minorUnitByAlphaCode = new Map<string, number>();
 
 /**
- * Returns canonical ISO 4217 alpha code profile.
- * Falls back to 2-decimal precision for unknown currencies to keep UI resilient.
+ * Возвращает canonical ISO 4217 alpha code profile.
+ * Для неизвестных/неподдержанных окружением кодов оставляет fallback в 2 знака.
  */
 export function resolveCurrencyProfile(code: string): CurrencyProfile {
-  const normalized = code.trim().toUpperCase();
-  return currencyProfiles[normalized] ?? { alphaCode: normalized || 'RUB', minorUnit: 2 };
+  const alphaCode = normalizeCurrencyCode(code);
+  return { alphaCode, minorUnit: detectMinorUnit(alphaCode) };
 }
 
 export function currencyMinorUnit(code: string): number {
@@ -53,4 +41,31 @@ export function currencyInputStep(code: string): string {
 export function formatMinorCurrency(value: number, code: string, locale = 'ru-RU'): string {
   const profile = resolveCurrencyProfile(code);
   return new Intl.NumberFormat(locale, { style: 'currency', currency: profile.alphaCode }).format(minorToMoney(value, profile.alphaCode));
+}
+
+function normalizeCurrencyCode(code: string): string {
+  const normalized = code.trim().toUpperCase();
+  if (normalized.length === 3) {
+    return normalized;
+  }
+  return 'RUB';
+}
+
+function detectMinorUnit(alphaCode: string): number {
+  const cached = minorUnitByAlphaCode.get(alphaCode);
+  if (cached !== undefined) {
+    return cached;
+  }
+  let minorUnit = 2;
+  try {
+    const formatter = new Intl.NumberFormat('en', { style: 'currency', currency: alphaCode });
+    minorUnit = formatter.resolvedOptions().maximumFractionDigits;
+  } catch {
+    minorUnit = 2;
+  }
+  if (!Number.isInteger(minorUnit) || minorUnit < 0 || minorUnit > 4) {
+    minorUnit = 2;
+  }
+  minorUnitByAlphaCode.set(alphaCode, minorUnit);
+  return minorUnit;
 }

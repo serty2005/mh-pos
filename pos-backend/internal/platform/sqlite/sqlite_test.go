@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -169,5 +170,70 @@ func TestTxManagerUsesBeginImmediate(t *testing.T) {
 	}
 	if _, err := otherDB.ExecContext(ctx, `INSERT INTO tx_probe(id) VALUES ('after-commit')`); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMigrateDirWithPolicyWritesRuntimeVersionAndCreatesBackup(t *testing.T) {
+	ctx := t.Context()
+	dbPath := filepath.Join(t.TempDir(), "policy.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	migrationsDir := filepath.Join(t.TempDir(), "migrations")
+	if err := os.MkdirAll(migrationsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(migrationsDir, "001_init.sql"), []byte(`CREATE TABLE IF NOT EXISTS migration_probe (id TEXT PRIMARY KEY);`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	if err := MigrateDirWithPolicy(ctx, db, dbPath, migrationsDir, MigrationOptions{
+		ModuleName:    "pos-backend",
+		ModuleVersion: "0.1.0",
+		BackupDir:     backupDir,
+	}); err != nil {
+		t.Fatalf("first migrate failed: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO migration_probe(id) VALUES ('seed')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateDirWithPolicy(ctx, db, dbPath, migrationsDir, MigrationOptions{
+		ModuleName:    "pos-backend",
+		ModuleVersion: "0.2.0",
+		BackupDir:     backupDir,
+	}); err != nil {
+		t.Fatalf("second migrate failed: %v", err)
+	}
+
+	var runtimeVersion string
+	if err := db.QueryRowContext(ctx, `SELECT module_version FROM db_runtime_versions WHERE module_name = ?`, "pos-backend").Scan(&runtimeVersion); err != nil {
+		t.Fatal(err)
+	}
+	if runtimeVersion != "0.2.0" {
+		t.Fatalf("expected stored runtime version 0.2.0, got %s", runtimeVersion)
+	}
+
+	backupEntries, err := os.ReadDir(backupDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(backupEntries) == 0 {
+		t.Fatal("expected backup files before version upgrade")
+	}
+}
+
+func TestCompareModuleVersion(t *testing.T) {
+	result, err := compareModuleVersion("0.1.0", "0.2.0")
+	if err != nil {
+		t.Fatalf("compare failed: %v", err)
+	}
+	if result >= 0 {
+		t.Fatalf("expected 0.1.0 < 0.2.0, got %d", result)
+	}
+	if _, err := compareModuleVersion("invalid", "0.2.0"); err == nil {
+		t.Fatal("expected invalid semantic version to fail")
 	}
 }

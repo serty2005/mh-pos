@@ -3,6 +3,7 @@ module pos-backend
 go 1.26.2
 
 require (
+	github.com/JohannesJHN/iso4217 v0.0.0-20250910211824-d9ba0fe363a8
 	github.com/go-chi/chi/v5 v5.2.5
 	modernc.org/sqlite v1.50.0
 )

@@ -126,7 +126,7 @@ CREATE INDEX cloud_master_data_packages_stream_updated
 CREATE TABLE cloud_currency_reference (
   currency_code INTEGER PRIMARY KEY CHECK (currency_code > 0),
   currency_alpha_code TEXT NOT NULL UNIQUE CHECK (currency_alpha_code ~ '^[A-Z]{3}$'),
-  minor_unit SMALLINT NOT NULL CHECK (minor_unit BETWEEN 0 AND 3),
+  minor_unit SMALLINT NOT NULL CHECK (minor_unit BETWEEN 0 AND 4),
   currency_iso_name TEXT NOT NULL CHECK (currency_iso_name <> ''),
   currency_symbol TEXT NOT NULL CHECK (currency_symbol <> ''),
   curr_basic_name TEXT NOT NULL CHECK (curr_basic_name <> ''),
@@ -137,18 +137,3 @@ CREATE TABLE cloud_currency_reference (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
-INSERT INTO cloud_currency_reference (
-  currency_code,currency_alpha_code,minor_unit,currency_iso_name,currency_symbol,curr_basic_name,curr_add_name,show_add,show_currency_basic_name
-) VALUES
-  (643,'RUB',2,'Russian Ruble','₽','р','коп.',TRUE,TRUE),
-  (840,'USD',2,'US Dollar','$','$','¢',TRUE,TRUE),
-  (978,'EUR',2,'Euro','€','€','c',TRUE,TRUE),
-  (398,'KZT',2,'Kazakhstani Tenge','₸','₸','тиын',TRUE,TRUE),
-  (933,'BYN',2,'Belarusian Ruble','Br','Br','коп.',TRUE,TRUE),
-  (980,'UAH',2,'Hryvnia','₴','грн','коп.',TRUE,TRUE),
-  (48,'BHD',3,'Bahraini Dinar','BD','BD','fils',TRUE,TRUE),
-  (400,'JOD',3,'Jordanian Dinar','JD','JD','qirsh',TRUE,TRUE),
-  (414,'KWD',3,'Kuwaiti Dinar','KD','KD','fils',TRUE,TRUE),
-  (512,'OMR',3,'Omani Rial','OMR','OMR','baisa',TRUE,TRUE),
-  (788,'TND',3,'Tunisian Dinar','DT','DT','millime',TRUE,TRUE);

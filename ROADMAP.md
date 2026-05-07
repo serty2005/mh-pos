@@ -166,9 +166,10 @@ planned next:
 
 implemented now:
 
-- currency policy больше не ограничена только 2 decimals: pilot runtime поддерживает 2 и 3 decimal places по currency code;
+- currency policy больше не ограничена локальным subset: pilot runtime использует полный active ISO 4217 catalog (включая валюты ЮВА) с precision по коду валюты (`0/2/3/4`);
 - Cloud PostgreSQL получил canonical ISO 4217 currency template (`cloud_currency_reference`);
 - Cloud provisioning contract поддерживает `currencies` stream для Cloud -> Edge master/reference payload.
+- startup migration policy закрепляет `db_runtime_versions` + backup-before-upgrade для `SQLite` и `PostgreSQL`.
 
 ## Что можно оставить после пилота
 

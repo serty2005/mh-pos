@@ -276,6 +276,7 @@ implemented now:
   - `GET /api/v1/provisioning/master-data/{stream}?node_device_id=...`
 - Cloud stores provisioning payloads in `cloud_master_data_packages`.
 - Provisioning stream catalog on Cloud includes: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `currencies`.
+- `currencies` stream payload uses canonical active ISO 4217 catalog (`currency_code`, `currency_alpha_code`, `minor_unit`, display flags) and is validated before apply.
 
 next:
 - add authorization policy for provisioning endpoints in production perimeter;

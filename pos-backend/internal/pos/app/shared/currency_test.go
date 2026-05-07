@@ -34,4 +34,28 @@ func TestCurrencyMinorUnit(t *testing.T) {
 	if kwdMinor != 3 {
 		t.Fatalf("expected KWD minor unit 3, got %d", kwdMinor)
 	}
+	vndMinor, err := shared.CurrencyMinorUnit("vnd")
+	if err != nil {
+		t.Fatalf("expected VND minor unit to be available, got %v", err)
+	}
+	if vndMinor != 0 {
+		t.Fatalf("expected VND minor unit 0, got %d", vndMinor)
+	}
+}
+
+func TestCurrencyProfilesContainsSEACurrencies(t *testing.T) {
+	profiles := shared.CurrencyProfiles()
+	if len(profiles) < 100 {
+		t.Fatalf("expected broad ISO catalog, got only %d profiles", len(profiles))
+	}
+	required := []string{"IDR", "THB", "VND", "MYR", "SGD", "PHP"}
+	known := make(map[string]struct{}, len(profiles))
+	for _, profile := range profiles {
+		known[profile.AlphaCode] = struct{}{}
+	}
+	for _, code := range required {
+		if _, ok := known[code]; !ok {
+			t.Fatalf("expected %s in active currency catalog", code)
+		}
+	}
 }

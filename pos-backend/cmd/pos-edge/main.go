@@ -15,6 +15,7 @@ import (
 	"pos-backend/internal/platform/idgen"
 	"pos-backend/internal/platform/logging"
 	platformsqlite "pos-backend/internal/platform/sqlite"
+	"pos-backend/internal/platform/version"
 	"pos-backend/internal/pos/api"
 	"pos-backend/internal/pos/app"
 	poscloudsync "pos-backend/internal/pos/infra/cloudsync"
@@ -35,6 +36,8 @@ func run() error {
 	addr := env("POS_HTTP_ADDR", ":8080")
 	dbPath := env("POS_SQLITE_PATH", "data/pos-edge.db")
 	migrationsDir := env("POS_SQLITE_MIGRATIONS_DIR", "migrations/sqlite")
+	backupDir := env("POS_SQLITE_BACKUP_DIR", "data/backups")
+	moduleVersion := version.Resolve("MH_POS_VERSION")
 
 	db, err := platformsqlite.Open(dbPath)
 	if err != nil {
@@ -42,7 +45,11 @@ func run() error {
 	}
 	defer db.Close()
 
-	if err := platformsqlite.MigrateDir(context.Background(), db, migrationsDir); err != nil {
+	if err := platformsqlite.MigrateDirWithPolicy(context.Background(), db, dbPath, migrationsDir, platformsqlite.MigrationOptions{
+		ModuleName:    "pos-backend",
+		ModuleVersion: moduleVersion,
+		BackupDir:     backupDir,
+	}); err != nil {
 		return err
 	}
 

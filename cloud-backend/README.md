@@ -33,11 +33,15 @@ go run ./cmd/cloud-api
 ```text
 CLOUD_HTTP_ADDR=:8090
 CLOUD_POSTGRES_MIGRATIONS_DIR=migrations/postgres
+CLOUD_POSTGRES_BACKUP_DIR=data/cloud-backups
+MH_POS_VERSION=0.1.0
 ```
 
 `CLOUD_POSTGRES_DSN` обязателен.
 
 implemented now: PostgreSQL использует first-launch schema policy. `migrations/postgres` должен содержать ровно один canonical SQL file, `001_sync_receiver.sql`; исторические цепочки `002/003/...` не являются частью pre-pilot runtime.
+implemented now: startup policy использует таблицу `db_runtime_versions`; при `db version < module version` создается JSONL backup snapshot таблиц `public` перед schema upgrade.
+implemented now: после миграций Cloud upsert'ит canonical active ISO 4217 currency catalog в `cloud_currency_reference`.
 
 ## Локальный smoke test receiver-а
 

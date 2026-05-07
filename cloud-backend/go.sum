@@ -1,3 +1,5 @@
+github.com/JohannesJHN/iso4217 v0.0.0-20250910211824-d9ba0fe363a8 h1:d17pPc9OEenK5qGDNOyWjy54/rop2rg/ajxLJrWxCPs=
+github.com/JohannesJHN/iso4217 v0.0.0-20250910211824-d9ba0fe363a8/go.mod h1:EigOUF2OBoQ/J/WXl44atfjF+d9CuI9CuOAjpllOJE0=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

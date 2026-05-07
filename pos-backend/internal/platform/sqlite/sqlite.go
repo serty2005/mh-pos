@@ -3,12 +3,15 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -32,6 +35,13 @@ type RuntimeReport struct {
 	Synchronous   int
 	ForeignKeys   int
 	BusyTimeoutMS int
+}
+
+// MigrationOptions задает политику версионирования и backup перед обновлением схемы БД.
+type MigrationOptions struct {
+	ModuleName    string
+	ModuleVersion string
+	BackupDir     string
 }
 
 func Open(path string) (*sql.DB, error) {
@@ -177,9 +187,51 @@ func pinnedBackportsLabel() string {
 }
 
 func MigrateDir(ctx context.Context, db *sql.DB, dir string) error {
+	return MigrateDirWithPolicy(ctx, db, "", dir, MigrationOptions{})
+}
+
+// MigrateDirWithPolicy применяет миграции и обновляет module version contract с backup-before-upgrade.
+func MigrateDirWithPolicy(ctx context.Context, db *sql.DB, dbPath, dir string, options MigrationOptions) error {
+	if err := ensureSchemaMigrationsTable(ctx, db); err != nil {
+		return err
+	}
+	if err := ensureRuntimeVersionTable(ctx, db); err != nil {
+		return err
+	}
+	currentVersion := strings.TrimSpace(options.ModuleVersion)
+	currentModule := strings.TrimSpace(options.ModuleName)
+	previousVersion, err := readRuntimeVersion(ctx, db, currentModule)
+	if err != nil {
+		return err
+	}
+	needsUpgrade, err := shouldUpgradeVersion(previousVersion, currentVersion)
+	if err != nil {
+		return err
+	}
+	if needsUpgrade && previousVersion != "" && strings.TrimSpace(dbPath) != "" {
+		if err := backupSQLiteBeforeUpgrade(ctx, db, dbPath, options.BackupDir, currentModule, previousVersion, currentVersion); err != nil {
+			return err
+		}
+	}
+	if err := applyMigrationsDir(ctx, db, dir); err != nil {
+		return err
+	}
+	if currentModule != "" && currentVersion != "" {
+		if err := writeRuntimeVersion(ctx, db, currentModule, currentVersion); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureSchemaMigrationsTable(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`); err != nil {
 		return err
 	}
+	return nil
+}
+
+func applyMigrationsDir(ctx context.Context, db *sql.DB, dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
@@ -220,4 +272,159 @@ func MigrateDir(ctx context.Context, db *sql.DB, dir string) error {
 		}
 	}
 	return nil
+}
+
+func ensureRuntimeVersionTable(ctx context.Context, db *sql.DB) error {
+	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS db_runtime_versions (module_name TEXT PRIMARY KEY, module_version TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`); err != nil {
+		return err
+	}
+	return nil
+}
+
+func readRuntimeVersion(ctx context.Context, db *sql.DB, moduleName string) (string, error) {
+	if strings.TrimSpace(moduleName) == "" {
+		return "", nil
+	}
+	var version string
+	err := db.QueryRowContext(ctx, `SELECT module_version FROM db_runtime_versions WHERE module_name = ?`, moduleName).Scan(&version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(version), nil
+}
+
+func writeRuntimeVersion(ctx context.Context, db *sql.DB, moduleName, moduleVersion string) error {
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO db_runtime_versions(module_name,module_version,updated_at)
+VALUES (?,?,CURRENT_TIMESTAMP)
+ON CONFLICT(module_name) DO UPDATE SET
+  module_version = excluded.module_version,
+  updated_at = CURRENT_TIMESTAMP
+`, moduleName, moduleVersion); err != nil {
+		return err
+	}
+	return nil
+}
+
+func shouldUpgradeVersion(previous, current string) (bool, error) {
+	if strings.TrimSpace(current) == "" {
+		return false, nil
+	}
+	if strings.TrimSpace(previous) == "" {
+		return true, nil
+	}
+	compare, err := compareModuleVersion(previous, current)
+	if err != nil {
+		return false, err
+	}
+	return compare < 0, nil
+}
+
+func compareModuleVersion(left, right string) (int, error) {
+	leftParts, err := parseModuleVersion(left)
+	if err != nil {
+		return 0, fmt.Errorf("invalid module version %q: %w", left, err)
+	}
+	rightParts, err := parseModuleVersion(right)
+	if err != nil {
+		return 0, fmt.Errorf("invalid module version %q: %w", right, err)
+	}
+	for i := range leftParts {
+		if leftParts[i] < rightParts[i] {
+			return -1, nil
+		}
+		if leftParts[i] > rightParts[i] {
+			return 1, nil
+		}
+	}
+	return 0, nil
+}
+
+func parseModuleVersion(raw string) ([3]int, error) {
+	var parsed [3]int
+	normalized := strings.TrimPrefix(strings.TrimSpace(raw), "v")
+	normalized, _, _ = strings.Cut(normalized, "+")
+	normalized, _, _ = strings.Cut(normalized, "-")
+	parts := strings.Split(normalized, ".")
+	if len(parts) != len(parsed) {
+		return parsed, fmt.Errorf("expected semantic version major.minor.patch")
+	}
+	for i := range parsed {
+		value, err := strconv.Atoi(parts[i])
+		if err != nil || value < 0 {
+			return parsed, fmt.Errorf("invalid semantic segment %q", parts[i])
+		}
+		parsed[i] = value
+	}
+	return parsed, nil
+}
+
+func backupSQLiteBeforeUpgrade(ctx context.Context, db *sql.DB, dbPath, backupDir, moduleName, previousVersion, targetVersion string) error {
+	if _, err := db.ExecContext(ctx, `PRAGMA wal_checkpoint(FULL)`); err != nil {
+		return fmt.Errorf("sqlite backup checkpoint failed: %w", err)
+	}
+	if strings.TrimSpace(backupDir) == "" {
+		backupDir = filepath.Join(filepath.Dir(dbPath), "backups")
+	}
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		return err
+	}
+	stamp := time.Now().UTC().Format("20060102T150405Z")
+	stem := fmt.Sprintf("%s_%s_to_%s_%s", sanitizeFilenameToken(moduleName), sanitizeFilenameToken(previousVersion), sanitizeFilenameToken(targetVersion), stamp)
+	baseTarget := filepath.Join(backupDir, stem+".db")
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		source := dbPath + suffix
+		info, err := os.Stat(source)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			continue
+		}
+		target := baseTarget + suffix
+		if err := copyFile(source, target, info.Mode()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func copyFile(source, target string, mode os.FileMode) error {
+	in, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode.Perm())
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Sync()
+}
+
+func sanitizeFilenameToken(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "unknown"
+	}
+	var b strings.Builder
+	b.Grow(len(trimmed))
+	for _, r := range trimmed {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('_')
+		}
+	}
+	return b.String()
 }

@@ -20,6 +20,7 @@ Order -> Precheck -> Payment -> Check
 - SQLite runtime gate для POS Edge: startup fail-fast проверяет фактические `sqlite_version()`, `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout >= 5000`;
 - `cloud-backend/` - минимальный Cloud Sync Receiver на Go + PostgreSQL;
 - Cloud PostgreSQL first-launch schema path состоит из одного canonical `cloud-backend/migrations/postgres/001_sync_receiver.sql`;
+- runtime module/database version contract включен: на старте модулей выполняется программная миграция, проверка `db_runtime_versions`, backup-before-upgrade при `db version < module version`, затем запись новой версии;
 - approved frontend MVP: отдельный пакет `pos-ui` на Vue 3 + TypeScript + Quasar + Vue Router + Pinia + `@tanstack/vue-query` + `vue-i18n` + Zod; `/pair`, `/login`, `/lock` и рабочий POS Terminal Core `/pos` для single-terminal cashier flow реализованы;
 - `local_event_log`;
 - `pos_sync_outbox`;
@@ -452,7 +453,16 @@ planned next:
 
 implemented now:
 
-- POS backend validates currency codes using a canonical pilot ISO 4217 profile catalog and rejects unsupported codes;
-- pilot profile explicitly supports both 2-decimal and 3-decimal currencies;
+- POS backend validates currency codes using canonical active ISO 4217 catalog and rejects unsupported codes;
+- catalog explicitly covers full active ISO list (including SEA currencies such as `IDR`, `THB`, `VND`, `MYR`, `SGD`, `PHP`);
+- runtime precision is currency-code driven and supports 0/2/3/4 minor units where defined by ISO catalog;
 - POS UI uses precision-aware `minor <-> major` conversion helper by currency code (instead of fixed `/100`);
-- Cloud provisioning supports `currencies` stream and has canonical `cloud_currency_reference` template table in PostgreSQL.
+- Cloud provisioning supports `currencies` stream and Cloud startup upserts canonical active ISO currency reference into `cloud_currency_reference`.
+
+## Runtime DB versioning and backup
+
+implemented now:
+
+- shared product/runtime version env: `MH_POS_VERSION` (default `0.1.0`) for both POS and Cloud modules;
+- POS startup uses `db_runtime_versions` + `schema_migrations` and creates SQLite backup before schema upgrade (`POS_SQLITE_BACKUP_DIR`);
+- Cloud startup uses `db_runtime_versions` + `schema_migrations` and creates PostgreSQL JSONL backup snapshot before schema upgrade (`CLOUD_POSTGRES_BACKUP_DIR`).

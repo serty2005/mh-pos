@@ -313,8 +313,9 @@ planned next:
 
 implemented now:
 
-- backend validates runtime currency codes against a canonical pilot ISO 4217 profile catalog;
-- pilot catalog explicitly supports both 2-decimal and 3-decimal currencies;
+- backend validates runtime currency codes against canonical active ISO 4217 profile catalog;
+- catalog coverage is full active ISO list (including SEA currencies such as `IDR`, `THB`, `VND`, `MYR`, `SGD`, `PHP`);
+- precision is currency-code driven and supports minor units `0/2/3/4` where defined by ISO profile;
 - pricing/payment domain amounts continue to use integer minor units (no floating-point storage);
 - unsupported currency code is rejected as domain `invalid`.
 

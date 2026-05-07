@@ -24,6 +24,13 @@ describe('currency precision helpers', () => {
     expect(currencyInputStep('KWD')).toBe('0.001');
   });
 
+  it('supports zero-decimal currencies from ISO list', () => {
+    expect(currencyMinorUnit('VND')).toBe(0);
+    expect(moneyToMinor(123, 'VND')).toBe(123);
+    expect(minorToMoney(123, 'VND')).toBe(123);
+    expect(currencyInputStep('VND')).toBe('1');
+  });
+
   it('falls back to 2-decimal precision for unknown currencies', () => {
     const profile = resolveCurrencyProfile('zzz');
     expect(profile.alphaCode).toBe('ZZZ');

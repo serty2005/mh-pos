@@ -55,7 +55,9 @@ implemented now: master/reference/configuration data является Cloud-owne
 
 ## SQLite First Launch Schema
 
-`MigrateDir` применяет canonical `001_init.sql` на чистую БД. В этой стартовой схеме сразу присутствуют `prechecks`, `payments.precheck_id`, `auth_sessions` со status `active/revoked`, `edge_node_identity`, `client_devices`, `halls`, `tables`, `orders.table_id`, Cloud -> Edge metadata columns на master tables, `cloud_master_sync_state`, retry-safe поля `pos_sync_outbox` (`sequence_no`, `sync_direction`, `attempts`, `next_retry_at`, `locked_at`, `locked_by`, `sent_at`, `last_error`), actor/session/node/client metadata (`node_device_id`, `client_device_id`, `actor_employee_id`, `session_id`) в `local_event_log`, `pos_sync_outbox` и `SyncEnvelope`, `local_event_log.command_id`, `manager_override_audit`, constraints precheck lifecycle и outbox. Историческая dev-цепочка миграций не является обязательной частью первого пилотного запуска.
+`MigrateDirWithPolicy` применяет canonical `001_init.sql` на чистую БД. В этой стартовой схеме сразу присутствуют `prechecks`, `payments.precheck_id`, `auth_sessions` со status `active/revoked`, `edge_node_identity`, `client_devices`, `halls`, `tables`, `orders.table_id`, Cloud -> Edge metadata columns на master tables, `cloud_master_sync_state`, retry-safe поля `pos_sync_outbox` (`sequence_no`, `sync_direction`, `attempts`, `next_retry_at`, `locked_at`, `locked_by`, `sent_at`, `last_error`), actor/session/node/client metadata (`node_device_id`, `client_device_id`, `actor_employee_id`, `session_id`) в `local_event_log`, `pos_sync_outbox` и `SyncEnvelope`, `local_event_log.command_id`, `manager_override_audit`, constraints precheck lifecycle и outbox. Историческая dev-цепочка миграций не является обязательной частью первого пилотного запуска.
+
+implemented now: startup policy поддерживает таблицу `db_runtime_versions`; если версия БД ниже версии модуля (`MH_POS_VERSION`), перед апгрейдом схемы выполняется backup SQLite (`.db`, `.db-wal`, `.db-shm`) в `POS_SQLITE_BACKUP_DIR`.
 
 Write transactions в POS Edge открываются через `BEGIN IMMEDIATE`, чтобы writer lock бралась в начале транзакционного use case.
 
@@ -76,6 +78,8 @@ go run ./cmd/pos-edge
 $env:POS_HTTP_ADDR=":8080"
 $env:POS_SQLITE_PATH="data/pos-edge.db"
 $env:POS_SQLITE_MIGRATIONS_DIR="migrations/sqlite"
+$env:POS_SQLITE_BACKUP_DIR="data/backups"
+$env:MH_POS_VERSION="0.1.0"
 $env:POS_SYNC_SENDER_ENABLED="true"
 $env:POS_CLOUD_SYNC_URL="http://localhost:8090/api/v1/sync/edge-events"
 $env:POS_SYNC_SENDER_BATCH_SIZE="25"
@@ -170,7 +174,7 @@ Cloud -> Edge master-data ingest endpoints:
 - `POST /api/v1/sync/master-data/snapshots`
 - `POST /api/v1/sync/master-data/{stream}`
 
-Supported streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`. Payload accepts `node_device_id`, `sync_mode` (`full_snapshot` or `incremental`), optional `checkpoint_token`, `cloud_version`, optional `cloud_updated_at`, and stream arrays (`restaurants`, `devices`, `roles`, `employees`, `halls`, `tables`, `catalog_items`, `menu_items`). Ingest writes master tables and `cloud_master_sync_state` in one transaction and does not create Edge -> Cloud outbox rows.
+Supported streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `currencies`. Payload accepts `node_device_id`, `sync_mode` (`full_snapshot` or `incremental`), optional `checkpoint_token`, `cloud_version`, optional `cloud_updated_at`, and stream arrays (`restaurants`, `devices`, `roles`, `employees`, `halls`, `tables`, `catalog_items`, `menu_items`, `currencies`). Ingest writes master tables and `cloud_master_sync_state` in one transaction and does not create Edge -> Cloud outbox rows.
 
 Master-data write endpoints for restaurants/devices/roles/employees/halls/tables/catalog/menu are implemented as application-layer seed/cloud-sync write use cases. HTTP mutation routes are dev-only seed/admin helpers behind `POS_DEV_TOOLS=1`; normal POS runtime should use read endpoints and the Cloud -> Edge ingest endpoints above.
 

@@ -12,10 +12,12 @@ import (
 
 	"cloud-backend/internal/cloudsync/api"
 	"cloud-backend/internal/cloudsync/app"
+	"cloud-backend/internal/cloudsync/contracts"
 	syncpg "cloud-backend/internal/cloudsync/infra/postgres"
 	"cloud-backend/internal/platform/clock"
 	"cloud-backend/internal/platform/logging"
 	platformpg "cloud-backend/internal/platform/postgres"
+	"cloud-backend/internal/platform/version"
 )
 
 func main() {
@@ -31,6 +33,8 @@ func run() error {
 	addr := env("CLOUD_HTTP_ADDR", ":8090")
 	dsn := env("CLOUD_POSTGRES_DSN", "")
 	migrationsDir := env("CLOUD_POSTGRES_MIGRATIONS_DIR", "migrations/postgres")
+	backupDir := env("CLOUD_POSTGRES_BACKUP_DIR", "data/cloud-backups")
+	moduleVersion := version.Resolve("MH_POS_VERSION")
 	if dsn == "" {
 		return errors.New("CLOUD_POSTGRES_DSN is required")
 	}
@@ -41,7 +45,14 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
-	if err := platformpg.MigrateDir(ctx, pool, migrationsDir); err != nil {
+	if err := platformpg.MigrateDirWithPolicy(ctx, pool, migrationsDir, platformpg.MigrationOptions{
+		ModuleName:    "cloud-backend",
+		ModuleVersion: moduleVersion,
+		BackupDir:     backupDir,
+	}); err != nil {
+		return err
+	}
+	if err := syncpg.EnsureCurrencyReferenceCatalog(ctx, pool, contracts.CanonicalActiveCurrencyProfiles()); err != nil {
 		return err
 	}
 
