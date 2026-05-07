@@ -263,20 +263,20 @@ flowchart LR
 
 ### Logging hardening
 
-Статус: `implemented now`
+РЎС‚Р°С‚СѓСЃ: `implemented now`
 
-Сделано:
+РЎРґРµР»Р°РЅРѕ:
 
-- введен единый structured logging contract для backend операций;
-- добавлены уровни `TRACE/DEBUG/INFO/WARN/ERROR` с runtime env-конфигом;
-- добавлены правила masking/redaction чувствительных auth-данных.
+- РІРІРµРґРµРЅ РµРґРёРЅС‹Р№ structured logging contract РґР»СЏ backend РѕРїРµСЂР°С†РёР№;
+- РґРѕР±Р°РІР»РµРЅС‹ СѓСЂРѕРІРЅРё `TRACE/DEBUG/INFO/WARN/ERROR` СЃ runtime env-РєРѕРЅС„РёРіРѕРј;
+- РґРѕР±Р°РІР»РµРЅС‹ РїСЂР°РІРёР»Р° masking/redaction С‡СѓРІСЃС‚РІРёС‚РµР»СЊРЅС‹С… auth-РґР°РЅРЅС‹С….
 
 ### Worker telemetry unification
 
-Статус: `implemented now`
+РЎС‚Р°С‚СѓСЃ: `implemented now`
 
-Сделано:
+РЎРґРµР»Р°РЅРѕ:
 
-- добавлен shared helper для non-HTTP telemetry нормализации (`operation/action/result/error_code`);
-- sync sender покрыт TRACE lifecycle событиями;
-- временный локальный каталог `test_pipe/` очищен как unmanaged artifact.
+- РґРѕР±Р°РІР»РµРЅ shared helper РґР»СЏ non-HTTP telemetry РЅРѕСЂРјР°Р»РёР·Р°С†РёРё (`operation/action/result/error_code`);
+- sync sender РїРѕРєСЂС‹С‚ TRACE lifecycle СЃРѕР±С‹С‚РёСЏРјРё;
+- РІСЂРµРјРµРЅРЅС‹Р№ Р»РѕРєР°Р»СЊРЅС‹Р№ РєР°С‚Р°Р»РѕРі `test_pipe/` РѕС‡РёС‰РµРЅ РєР°Рє unmanaged artifact.
