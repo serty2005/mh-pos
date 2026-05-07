@@ -17,7 +17,7 @@ Edge backend является source of truth для всех активных P
 Cloud не является runtime dependency для:
 
 - смен;
-- кассовых сессий;
+- кассовых смен;
 - заказов;
 - пречеков;
 - оплат;
@@ -71,14 +71,28 @@ implemented now: halls, tables, catalog and menu are Cloud-owned master data. Pu
 
 ### Смены и касса
 
-- `GET /api/v1/shifts/current`
-- `POST /api/v1/shifts/open`
-- `POST /api/v1/shifts/{id}/close`
+- `GET /api/v1/employee-shifts/current`
+- `GET /api/v1/employee-shifts/recent`
+- `POST /api/v1/employee-shifts/open`
+- `POST /api/v1/employee-shifts/{id}/close`
 
-- `GET /api/v1/cash-sessions/current`
-- `POST /api/v1/cash-sessions/open`
-- `POST /api/v1/cash-sessions/{id}/close`
+- `GET /api/v1/cash-shifts/current`
+- `POST /api/v1/cash-shifts/open`
+- `POST /api/v1/cash-shifts/{id}/close`
 - `POST /api/v1/cash-drawer-events`
+
+implemented now:
+
+- `auth_sessions` остаются техническим login/logout-контекстом устройства и клиента.
+- `shifts` используются как личные смены сотрудника: открытая смена ищется по `restaurant_id + employee_id`, а не по устройству.
+- Без открытой личной смены сотрудника business/runtime операции запрещены; доступны только открытие личной смены и чтение последних личных смен текущего actor.
+- Заказы, позиции и пречеки требуют открытую личную смену, но не требуют открытую кассовую смену.
+- Оплаты и cash drawer events требуют открытую кассовую смену на устройстве.
+- `cash_sessions` являются текущей runtime-сущностью кассовой смены.
+
+planned next:
+
+- Данные личной смены сотрудника будут использоваться для учета рабочего времени post-MVP.
 
 ### Заказы
 

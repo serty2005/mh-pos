@@ -111,27 +111,29 @@ export function logout() {
 export function getCurrentShift() {
   const auth = useAuthStore();
   const query = new URLSearchParams({ node_device_id: auth.nodeDeviceId });
-  return requestOptional(`/shifts/current?${query}`, shiftSchema);
+  return requestOptional(`/employee-shifts/current?${query}`, shiftSchema);
 }
 
-export function openShift(openingCashAmount: number) {
+export function listRecentShifts() {
+  return request('/employee-shifts/recent?limit=5', z.array(shiftSchema));
+}
+
+export function openShift() {
   const auth = useAuthStore();
-  return request('/shifts/open', shiftSchema, {
+  return request('/employee-shifts/open', shiftSchema, {
     method: 'POST',
     body: JSON.stringify({
       restaurant_id: auth.restaurantId,
       opened_by_employee_id: actorId(),
-      opening_cash_amount: openingCashAmount,
     }),
   });
 }
 
-export function closeShift(shiftId: string, closingCashAmount: number) {
-  return request(`/shifts/${encodeURIComponent(shiftId)}/close`, shiftSchema, {
+export function closeShift(shiftId: string) {
+  return request(`/employee-shifts/${encodeURIComponent(shiftId)}/close`, shiftSchema, {
     method: 'POST',
     body: JSON.stringify({
       closed_by_employee_id: actorId(),
-      closing_cash_amount: closingCashAmount,
     }),
   });
 }
@@ -139,12 +141,12 @@ export function closeShift(shiftId: string, closingCashAmount: number) {
 export function getCurrentCashSession() {
   const auth = useAuthStore();
   const query = new URLSearchParams({ node_device_id: auth.nodeDeviceId });
-  return requestOptional(`/cash-sessions/current?${query}`, cashSessionSchema);
+  return requestOptional(`/cash-shifts/current?${query}`, cashSessionSchema);
 }
 
 export function openCashSession(openingCashAmount: number) {
   const auth = useAuthStore();
-  return request('/cash-sessions/open', cashSessionSchema, {
+  return request('/cash-shifts/open', cashSessionSchema, {
     method: 'POST',
     body: JSON.stringify({
       restaurant_id: auth.restaurantId,
@@ -155,7 +157,7 @@ export function openCashSession(openingCashAmount: number) {
 }
 
 export function closeCashSession(cashSessionId: string, closingCashAmount: number) {
-  return request(`/cash-sessions/${encodeURIComponent(cashSessionId)}/close`, cashSessionSchema, {
+  return request(`/cash-shifts/${encodeURIComponent(cashSessionId)}/close`, cashSessionSchema, {
     method: 'POST',
     body: JSON.stringify({
       closed_by_employee_id: actorId(),

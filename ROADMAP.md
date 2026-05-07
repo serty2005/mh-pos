@@ -37,8 +37,8 @@
 - pairing foundation
 - auth session foundation
 - halls/tables foundation
-- shifts foundation
-- cash sessions foundation
+- personal employee shifts foundation
+- cash shifts foundation (`cash_sessions`)
 - cash drawer events foundation
 - local E2E demo bootstrap и smoke scripts
 
@@ -68,6 +68,7 @@
 - cash payment
 - trusted manual card payment
 - final check display
+- личная смена сотрудника обязательна для POS runtime; кассовая смена обязательна только для оплат и cash drawer операций
 
 ## Что обязательно закрыть до первого пилота
 
@@ -140,7 +141,7 @@ implemented now:
 implemented now:
 
 - canonical backend permission catalog introduced for cashier runtime hardening;
-- app-layer permission enforcement added for shift/cash-session/order/precheck-issue/payment operations;
+- app-layer permission enforcement added for personal-shift/cash-shift/order/precheck-issue/payment operations;
 - app-layer permission enforcement added for cash drawer event recording;
 - operator-triggered `sync/retry-failed` is enforced via backend permission `pos.sync.retry_failed`.
 

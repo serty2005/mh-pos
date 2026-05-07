@@ -157,12 +157,12 @@ Auth/device и POS UI endpoints:
 - `POST /api/v1/orders/{id}/lines`
 - `PATCH /api/v1/orders/{id}/lines/{line_id}`
 - `POST /api/v1/orders/{id}/lines/{line_id}/void`
-- `GET /api/v1/shifts/current`
-- `POST /api/v1/shifts/open`
-- `POST /api/v1/shifts/{id}/close`
-- `GET /api/v1/cash-sessions/current`
-- `POST /api/v1/cash-sessions/open`
-- `POST /api/v1/cash-sessions/{id}/close`
+- `GET /api/v1/employee-shifts/current`
+- `POST /api/v1/employee-shifts/open`
+- `POST /api/v1/employee-shifts/{id}/close`
+- `GET /api/v1/cash-shifts/current`
+- `POST /api/v1/cash-shifts/open`
+- `POST /api/v1/cash-shifts/{id}/close`
 - `POST /api/v1/dev/bootstrap-demo` dev/local only, требует `POS_DEV_TOOLS=1`
 
 Cloud -> Edge master-data ingest endpoints:

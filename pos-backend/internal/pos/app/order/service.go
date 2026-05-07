@@ -118,34 +118,34 @@ func (s *Service) CreateOrder(ctx context.Context, cmd CreateOrderCommand) (*dom
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionOrderCreate)); err != nil {
+		operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionOrderCreate))
+		if err != nil {
 			return err
 		}
 		var shift *domain.Shift
-		var err error
 		if strings.TrimSpace(cmd.ShiftID) != "" {
 			shift, err = s.repo.GetShift(ctx, cmd.ShiftID)
 		} else {
-			shift, err = s.repo.GetOpenShiftByDevice(ctx, cmd.DeviceID)
+			shift, err = s.repo.GetOpenShiftByEmployee(ctx, operator.Employee.RestaurantID, operator.Employee.ID)
 		}
 		if err != nil {
 			if errors.Is(err, domain.ErrNotFound) {
-				return fmt.Errorf("%w: cannot create order without an open shift", domain.ErrConflict)
+				return fmt.Errorf("%w: нельзя создать заказ без открытой личной смены", domain.ErrConflict)
 			}
 			return err
 		}
-		if shift.Status != domain.ShiftOpen || shift.DeviceID != cmd.DeviceID {
-			return fmt.Errorf("%w: cannot create order without an open shift on device", domain.ErrConflict)
+		if shift.Status != domain.ShiftOpen || shift.OpenedByEmployeeID != operator.Employee.ID {
+			return fmt.Errorf("%w: нельзя создать заказ без открытой личной смены текущего сотрудника", domain.ErrConflict)
 		}
 		if restaurantID := strings.TrimSpace(cmd.RestaurantID); restaurantID != "" && restaurantID != shift.RestaurantID {
-			return fmt.Errorf("%w: restaurant_id does not match open shift", domain.ErrConflict)
+			return fmt.Errorf("%w: restaurant_id не совпадает с личной сменой", domain.ErrConflict)
 		}
 		table, err := s.repo.GetTable(ctx, cmd.TableID)
 		if err != nil {
 			return err
 		}
 		if !table.Active || table.RestaurantID != shift.RestaurantID {
-			return fmt.Errorf("%w: table is not active for open shift restaurant", domain.ErrConflict)
+			return fmt.Errorf("%w: стол не активен для ресторана личной смены", domain.ErrConflict)
 		}
 		order = &domain.Order{ID: s.ids.NewID(), EdgeOrderID: s.ids.NewID(), RestaurantID: shift.RestaurantID, DeviceID: cmd.DeviceID, ShiftID: shift.ID, Status: domain.OrderOpen, TableID: table.ID, TableName: table.Name, GuestCount: cmd.GuestCount, OpenedAt: now, CreatedAt: now, UpdatedAt: now}
 		if err := s.repo.CreateOrder(ctx, order); err != nil {

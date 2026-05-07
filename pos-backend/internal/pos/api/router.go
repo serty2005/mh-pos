@@ -69,9 +69,10 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/menu/items", h.createMenuItem)
 		r.Get("/menu/items", h.listMenuItems)
 
-		r.Post("/shifts/open", h.openShift)
-		r.Post("/shifts/{id}/close", h.closeShift)
-		r.Get("/shifts/current", h.currentShift)
+		r.Post("/employee-shifts/open", h.openShift)
+		r.Post("/employee-shifts/{id}/close", h.closeShift)
+		r.Get("/employee-shifts/current", h.currentShift)
+		r.Get("/employee-shifts/recent", h.recentShifts)
 
 		r.Post("/orders", h.createOrder)
 		r.Get("/orders/current", h.getCurrentOrder)
@@ -89,9 +90,9 @@ func NewRouter(service *app.Service) http.Handler {
 
 		r.Get("/checks/{id}", h.getCheck)
 
-		r.Post("/cash-sessions/open", h.openCashSession)
-		r.Post("/cash-sessions/{id}/close", h.closeCashSession)
-		r.Get("/cash-sessions/current", h.currentCashSession)
+		r.Post("/cash-shifts/open", h.openCashSession)
+		r.Post("/cash-shifts/{id}/close", h.closeCashSession)
+		r.Get("/cash-shifts/current", h.currentCashSession)
 		r.Post("/cash-drawer-events", h.recordCashDrawerEvent)
 
 		r.Get("/sync/outbox", h.listOutbox)
@@ -500,7 +501,17 @@ func (h *Handler) closeShift(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) currentShift(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.GetCurrentShift(r.Context(), requestNodeDeviceID(r))
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.GetCurrentShift(r.Context(), meta)
+	writeOK(w, v, err)
+}
+
+func (h *Handler) recentShifts(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	cmd := app.ListRecentShiftsCommand{Limit: limit}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.ListRecentShifts(r.Context(), cmd)
 	writeOK(w, v, err)
 }
 

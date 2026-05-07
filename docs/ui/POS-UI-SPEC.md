@@ -89,8 +89,9 @@ implemented now: backend отклоняет login, если PIN совпадае
 
 - текущий оператор и session status;
 - pairing/session status strip;
-- open/close shift;
-- open/close cash session;
+- open/close personal employee shift;
+- last personal employee shifts;
+- open/close cash shift;
 - halls list;
 - tables list;
 - active order by selected table;
@@ -122,9 +123,9 @@ implemented now: backend отклоняет login, если PIN совпадае
 flowchart LR
     Pair["/pair"] --> Login["/login"]
     Login --> POS["/pos"]
-    POS --> Shift["Open shift"]
-    Shift --> Cash["Open cash session"]
-    Cash --> Table["Select hall and table"]
+    POS --> Shift["Open personal employee shift"]
+    Shift --> Table["Select hall and table"]
+    Shift --> Cash["Open cash shift"]
     Table --> Order["Create / load order"]
     Order --> Edit["Add / edit / void lines"]
     Edit --> Precheck["Issue precheck"]
@@ -142,8 +143,9 @@ flowchart LR
 
 - pairing status;
 - auth session;
-- current shift;
-- current cash session;
+- current personal employee shift;
+- recent personal employee shifts;
+- current cash shift;
 - halls;
 - tables;
 - current order by table;
@@ -151,6 +153,16 @@ flowchart LR
 - prechecks by order;
 - menu items;
 - final check.
+
+implemented now:
+
+- Без открытой личной смены сотрудника `/pos` показывает только действие открытия личной смены и последние личные смены текущего actor.
+- Создание и редактирование заказов доступно после открытия личной смены сотрудника и не требует кассовой смены.
+- Оплата доступна только при открытой кассовой смене.
+
+planned next:
+
+- Личная смена сотрудника будет использоваться для учета рабочего времени post-MVP.
 
 ### Локальное состояние
 

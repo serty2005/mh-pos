@@ -50,6 +50,7 @@ type ArchiveTableCommand = appfloor.ArchiveTableCommand
 type CreateCatalogItemCommand = appcatalog.CreateCatalogItemCommand
 type CreateMenuItemCommand = appmenu.CreateMenuItemCommand
 type OpenShiftCommand = appshift.OpenShiftCommand
+type ListRecentShiftsCommand = appshift.ListRecentShiftsCommand
 type CloseShiftCommand = appshift.CloseShiftCommand
 type CreateOrderCommand = apporder.CreateOrderCommand
 type AddOrderLineCommand = apporder.AddOrderLineCommand
@@ -213,12 +214,16 @@ func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand)
 	return s.menu.CreateMenuItem(ctx, cmd)
 }
 
-func (s *Service) GetCurrentShift(ctx context.Context, deviceID string) (*domain.Shift, error) {
-	return s.shifts.GetCurrentShift(ctx, deviceID)
+func (s *Service) GetCurrentShift(ctx context.Context, meta CommandMeta) (*domain.Shift, error) {
+	return s.shifts.GetCurrentShift(ctx, meta)
 }
 
 func (s *Service) OpenShift(ctx context.Context, cmd OpenShiftCommand) (*domain.Shift, error) {
 	return s.shifts.OpenShift(ctx, cmd)
+}
+
+func (s *Service) ListRecentShifts(ctx context.Context, cmd ListRecentShiftsCommand) ([]domain.Shift, error) {
+	return s.shifts.ListRecentShifts(ctx, cmd)
 }
 
 func (s *Service) CloseShift(ctx context.Context, cmd CloseShiftCommand) (*domain.Shift, error) {

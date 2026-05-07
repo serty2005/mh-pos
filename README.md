@@ -35,10 +35,10 @@ Order -> Precheck -> Payment -> Check
 - halls/tables foundation для выбора стола в POS/Waiter UI;
 - read-only endpoint активного заказа по столу для cashier terminal: `GET /api/v1/orders/current?table_id=...`;
 - order line editing foundation: изменение количества и void позиции без физического удаления;
-- shifts, cash sessions, cash drawer events;
+- personal employee shifts, cash shifts (`cash_sessions`) and cash drawer events;
 - public precheck issue/read/list/cancel flow: `POST /api/v1/orders/{id}/precheck`, `GET /api/v1/prechecks/{id}`, `GET /api/v1/orders/{id}/prechecks`, `POST /api/v1/prechecks/{id}/cancel`;
 - manager override для `CancelPrecheck`: локальная PBKDF2 PIN verification, permission `precheck.cancel`, audit trail `manager_override_audit`;
-- precheck-based payment capture: `POST /api/v1/prechecks/{id}/payments`, partial payments, automatic final `Check` после полной оплаты и automatic order close;
+- precheck-based payment capture: `POST /api/v1/prechecks/{id}/payments`, partial payments, required open cash shift, automatic final `Check` после полной оплаты и automatic order close;
 - foundation финальных чеков и оплат;
 - `payment_attempts`;
 - retry-safe sync outbox foundation со status/claim/retry metadata и явным `sync_direction`;
@@ -182,7 +182,7 @@ npm run dev
 6. Открой `http://localhost:5173` и пройди ручной сценарий:
 
 ```text
-pairing -> login -> open shift -> open cash session -> select hall/table -> create order -> add lines -> change quantity -> void line -> issue precheck -> cancel unpaid precheck with manager override -> issue precheck again -> capture payment -> final check -> close cash session -> close shift -> lock/logout
+pairing -> login -> open personal shift -> open cash shift -> select hall/table -> create order -> add lines -> change quantity -> void line -> issue precheck -> cancel unpaid precheck with manager override -> issue precheck again -> capture payment -> final check -> close cash shift -> close personal shift -> lock/logout
 ```
 
 7. Проверь POS sync state:
@@ -287,10 +287,10 @@ implemented now: POS Edge автоматически доставляет Edge -
 
 - локальное хранение POS данных в SQLite;
 - JSON API для POS UI;
-- доменные инварианты заказов, смен, cash sessions и текущего financial foundation;
+- доменные инварианты заказов, смен, cash shifts и текущего financial foundation;
 - edge foundation для `local_event_log`, `SyncEnvelope` и sync outbox;
 - operational access к sync outbox, local events, aggregated sync status и manual retry failed/suspended;
-- financial foundation для precheck payments, final checks, `payment_attempts`, cash sessions и cash drawer events;
+- financial foundation для precheck payments, final checks, `payment_attempts`, cash shifts и cash drawer events;
 - foundation для будущих рецептов, склада и учета.
 
 Текущее состояние: публичный runtime `Order -> Precheck -> Payment -> Check` включен. `Precheck` является рабочим финансовым snapshot, payment привязан к precheck, а `Check` создается автоматически только после полной оплаты.
@@ -324,7 +324,7 @@ Approved frontend MVP - отдельный пакет `pos-ui` на Vue 3 + Type
 - `/pair` - ввод pairing code и вызов `POST /api/v1/system/pair`;
 - `/login` - реальный `POST /api/v1/auth/pin-login`;
 - `/lock` - реальный `POST /api/v1/auth/logout` и очистка локального session state;
-- `/pos` - cashier surface для одного терминала: смена, кассовая сессия, выбор зала/стола, активный заказ, позиции меню, изменение/void позиций, выпуск/отмена пречека, cash/trusted card payment и отображение final check.
+- `/pos` - cashier surface для одного терминала: личная смена сотрудника, кассовая смена, выбор зала/стола, активный заказ, позиции меню, изменение/void позиций, выпуск/отмена пречека, cash/trusted card payment и отображение final check.
 
 Identity model: `node_device_id` - Edge Node backend identity, назначается pairing/provisioning. `client_device_id` - конкретный UI-клиент, в MVP генерируется frontend через `crypto.randomUUID()` и хранится в `localStorage`; backend auto-registers новый client. `device_id` остается domain/storage field для POS Edge node identity в operational payload, а новые transport examples используют явные `node_device_id` и `client_device_id`.
 
@@ -370,12 +370,12 @@ go test ./...
 - `local_event_log` уже является частью edge foundation, хранит `command_id` той же write-операции, что и outbox rows (одна write-операция может породить несколько events), и доступен read-only через `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`.
 - Sync outbox имеет retry-safe поля `sequence_no`, `sync_direction`, `attempts`, `next_retry_at`, `locked_at`, `locked_by`, `sent_at`, `last_error` и статусы `pending`, `processing`, `sent`, `failed`, `suspended`.
 - Sync outbox доступен через `GET /api/v1/sync/outbox`, aggregated status через `GET /api/v1/sync/status`, manual retry failed/suspended через `POST /api/v1/sync/retry-failed`.
-- Edge financial foundation включает публичные precheck issue/read/list/cancel endpoints, precheck payment endpoint, `manager_override_audit`, `payment_attempts`, automatic final checks, `cash_sessions`, `cash_drawer_events`, PIN auth/session foundation, halls/tables API и базовые HTTP endpoints для cash session/drawer workflows.
+- Edge financial foundation включает публичные precheck issue/read/list/cancel endpoints, precheck payment endpoint, `manager_override_audit`, `payment_attempts`, automatic final checks, `cash_sessions` как кассовые смены, `cash_drawer_events`, PIN auth/session foundation, halls/tables API и базовые HTTP endpoints для cash shift/drawer workflows.
 - Cloud-owned master-data foundation запрещает Edge runtime mutation restaurants/devices metadata/roles/employees/halls/tables/catalog/menu/recipes/inventory reference data. POS Edge использует локальную read model offline; Cloud-authored master data applies through `/api/v1/sync/master-data/snapshots` or `/api/v1/sync/master-data/{stream}`; dev seed/admin write routes require `POS_DEV_TOOLS=1`.
 - Auth/device foundation включает pairing status/pair endpoints, `POST /api/v1/auth/logout`, revoked sessions, client device registry, `node_device_id`/`client_device_id` metadata в local events/outbox/SyncEnvelope.
 - Pairing verifier хранится в keyed format `pairing.hmac-sha256.v1`; plaintext pairing code не сохраняется.
 - PIN login должен однозначно определить одного active employee в paired restaurant; дубли active PIN отклоняются как conflict.
-- Закрытие смены в POS Edge запрещено при открытых заказах или active cash session.
+- Закрытие личной смены сотрудника в POS Edge запрещено при открытых заказах или active cash shift.
 - Cloud: минимальный `cloud-backend/` Sync Receiver реализован; Cloud не является зависимостью для критических POS Edge операций.
 - POS UI: `pos-ui` на Vue 3 + Quasar реализует `pairing -> login -> pos -> lock/logout` и POS Terminal Core для single-terminal cashier flow.
 - Источник истины для активных POS операций: локальный POS Edge Node.

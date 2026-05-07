@@ -44,10 +44,11 @@
 - `ui.system.pair`
 - `ui.system.logout`
 
-### Смены и касса
+### Личные смены и касса
 
-- `ui.pos.shift.open`
-- `ui.pos.shift.close`
+- `ui.pos.employee_shift.open`
+- `ui.pos.employee_shift.close`
+- `ui.pos.employee_shift.recent`
 - `ui.pos.cash_session.open`
 - `ui.pos.cash_session.close`
 - `ui.pos.cash_drawer.no_sale`
@@ -113,10 +114,11 @@
 |---|---:|---:|---:|---:|---:|---:|
 | Login to POS UI | A | A | A | A | A | A |
 | Pair terminal | - | - | - | A | - | A |
-| Open shift | A | A | - | A | - | - |
-| Close shift | - | A | - | A | - | - |
-| Open cash session | A | A | - | A | - | - |
-| Close cash session | - | A | - | A | - | - |
+| Open personal employee shift | A | A | A | A | - | - |
+| Close personal employee shift | A | A | A | A | - | - |
+| View own recent personal shifts | A | A | A | A | - | - |
+| Open cash shift | A | A | - | A | - | - |
+| Close cash shift | - | A | - | A | - | - |
 | No sale / drawer open | - | O | - | A | - | - |
 | Select hall/table | A | A | A | A | - | - |
 | Create order | A | A | A | A | - | - |
@@ -202,7 +204,7 @@ UI обязан:
 implemented now:
 
 - backend enforces a canonical RBAC slice for cashier runtime operations:
-  - `pos.shift.open`, `pos.shift.close`
+  - `pos.shift.open`, `pos.shift.close` for personal employee shifts
   - `pos.cash_session.open`, `pos.cash_session.close`
   - `pos.cash_drawer.record_event`
   - `pos.order.create`, `pos.order.add_line`, `pos.order.change_quantity`, `pos.order.void_line`
@@ -210,9 +212,11 @@ implemented now:
   - `pos.payment.capture`
   - `pos.sync.retry_failed` for operator-triggered retry API
 - manager override approver validation for precheck cancel uses `pos.precheck.cancel`.
+- личная смена сотрудника обязательна для runtime операций заказа и пречека; кассовая смена обязательна для оплат и cash drawer events.
 
 planned next:
 
+- переименовать backend permission ids с `pos.shift.*` на `pos.employee_shift.*` без compatibility tail перед pilot API freeze.
 - complete backend enforcement for the full matrix in this document (including waiter/senior_cashier override variants and non-cashier surfaces).
 
 out of scope:

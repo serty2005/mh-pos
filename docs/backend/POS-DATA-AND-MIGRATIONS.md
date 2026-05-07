@@ -47,7 +47,7 @@ Pilot path для SQLite:
 - `tables`
 - `catalog_items`
 - `menu_items`
-- `shifts`
+- `shifts` как личные смены сотрудников
 - `orders`
 - `order_lines`
 - `prechecks`
@@ -57,7 +57,7 @@ Pilot path для SQLite:
 
 ### Касса и sync
 
-- `cash_sessions`
+- `cash_sessions` как кассовые смены
 - `cash_drawer_events`
 - `manager_override_audit`
 - `cloud_master_sync_state`
@@ -77,14 +77,26 @@ Pilot path для SQLite:
 
 ## Схема связей
 
+implemented now:
+
+- `auth_sessions` фиксируют техническую авторизацию `node_device_id + client_device_id + employee_id` и не являются рабочей сменой.
+- `shifts` фиксируют личную смену сотрудника. Открытая личная смена уникальна для пары `restaurant_id + opened_by_employee_id`.
+- `cash_sessions` фиксируют кассовую смену устройства и открываются только при открытой личной смене текущего сотрудника.
+- `orders.shift_id`, `payments.shift_id`, `cash_sessions.shift_id`, `cash_drawer_events.shift_id` указывают на личную смену сотрудника.
+
+planned next:
+
+- Личная смена сотрудника станет входной сущностью для post-MVP учета рабочего времени.
+
 ```mermaid
 erDiagram
     RESTAURANTS ||--o{ DEVICES : has
     RESTAURANTS ||--o{ EMPLOYEES : employs
     ROLES ||--o{ EMPLOYEES : grants
     DEVICES ||--o{ CLIENT_DEVICES : registers
-    DEVICES ||--o{ SHIFTS : opens
-    SHIFTS ||--o{ CASH_SESSIONS : owns
+    DEVICES ||--o{ SHIFTS : records
+    EMPLOYEES ||--o{ SHIFTS : works
+    SHIFTS ||--o{ CASH_SESSIONS : opens
     RESTAURANTS ||--o{ HALLS : has
     HALLS ||--o{ TABLES : contains
     RESTAURANTS ||--o{ ORDERS : owns

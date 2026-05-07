@@ -68,7 +68,7 @@ export const shiftSchema = z.object({
   status: z.enum(['open', 'closed']),
   opened_at: z.string(),
   closed_at: optionalNullableString,
-  opening_cash_amount: z.number(),
+  opening_cash_amount: z.number().optional().default(0),
   closing_cash_amount: z.number().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),

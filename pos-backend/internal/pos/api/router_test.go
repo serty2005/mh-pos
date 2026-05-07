@@ -205,6 +205,20 @@ func (f *apiFixture) createOrderWithLine(t *testing.T) *domain.Order {
 	return order
 }
 
+func (f *apiFixture) openCashSession(t *testing.T) *domain.CashSession {
+	t.Helper()
+	session, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return session
+}
+
 func (f *apiFixture) postJSON(t *testing.T, path string, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body))
@@ -822,6 +836,7 @@ func TestCancelPrecheckThroughPublicAPIRequiresManagerOverride(t *testing.T) {
 func TestCapturePaymentThroughPrecheckAPICreatesFinalCheck(t *testing.T) {
 	f := newAPIFixture(t)
 	order := f.createOrderWithLine(t)
+	f.openCashSession(t)
 	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-payment-issue","node_device_id":"`+f.device.ID+`"}`)
 	if issued.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", issued.Code, issued.Body.String())

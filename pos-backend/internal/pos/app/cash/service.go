@@ -70,16 +70,17 @@ func (s *Service) OpenCashSession(ctx context.Context, cmd OpenCashSessionComman
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionCashSessionOpen)); err != nil {
+		operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionCashSessionOpen))
+		if err != nil {
 			return err
 		}
 		if cmd.Origin == domain.OriginEdgeDevice && cmd.ActorEmployeeID != cmd.OpenedByEmployeeID {
 			return fmt.Errorf("%w: opened_by_employee_id must match actor_employee_id", domain.ErrForbidden)
 		}
-		shift, err := s.repo.GetOpenShiftByDevice(ctx, cmd.DeviceID)
+		shift, err := s.repo.GetOpenShiftByEmployee(ctx, operator.Employee.RestaurantID, operator.Employee.ID)
 		if err != nil {
 			if errors.Is(err, domain.ErrNotFound) {
-				return fmt.Errorf("%w: cannot open cash session without an open shift", domain.ErrConflict)
+				return fmt.Errorf("%w: нельзя открыть кассовую смену без открытой личной смены", domain.ErrConflict)
 			}
 			return err
 		}
@@ -87,7 +88,7 @@ func (s *Service) OpenCashSession(ctx context.Context, cmd OpenCashSessionComman
 			return fmt.Errorf("%w: restaurant_id does not match open shift", domain.ErrConflict)
 		}
 		if _, err := s.repo.GetOpenCashSessionByDevice(ctx, cmd.DeviceID); err == nil {
-			return fmt.Errorf("%w: device already has an open cash session", domain.ErrConflict)
+			return fmt.Errorf("%w: на устройстве уже есть открытая кассовая смена", domain.ErrConflict)
 		} else if !errors.Is(err, domain.ErrNotFound) {
 			return err
 		}
@@ -138,10 +139,10 @@ func (s *Service) CloseCashSession(ctx context.Context, cmd CloseCashSessionComm
 			return err
 		}
 		if session.Status != domain.CashSessionOpen {
-			return fmt.Errorf("%w: cash session is not open", domain.ErrConflict)
+			return fmt.Errorf("%w: кассовая смена не открыта", domain.ErrConflict)
 		}
 		if session.DeviceID != cmd.DeviceID {
-			return fmt.Errorf("%w: cash session belongs to another device", domain.ErrConflict)
+			return fmt.Errorf("%w: кассовая смена принадлежит другому устройству", domain.ErrConflict)
 		}
 		session.Status = domain.CashSessionClosed
 		session.ClosedByEmployeeID = trimPtr(cmd.ClosedByEmployeeID)
@@ -213,15 +214,15 @@ func (s *Service) cashSessionForEvent(ctx context.Context, cmd RecordCashDrawerE
 	}
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			return nil, fmt.Errorf("%w: cannot record cash drawer event without active cash session", domain.ErrConflict)
+			return nil, fmt.Errorf("%w: нельзя записать событие кассы без открытой кассовой смены", domain.ErrConflict)
 		}
 		return nil, err
 	}
 	if session.Status != domain.CashSessionOpen {
-		return nil, fmt.Errorf("%w: cannot record cash drawer event without active cash session", domain.ErrConflict)
+		return nil, fmt.Errorf("%w: нельзя записать событие кассы без открытой кассовой смены", domain.ErrConflict)
 	}
 	if session.DeviceID != cmd.DeviceID {
-		return nil, fmt.Errorf("%w: cash session belongs to another device", domain.ErrConflict)
+		return nil, fmt.Errorf("%w: кассовая смена принадлежит другому устройству", domain.ErrConflict)
 	}
 	return session, nil
 }

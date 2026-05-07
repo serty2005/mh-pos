@@ -31,7 +31,7 @@ implemented now: UI проходит основной cashier flow через н
 Ручной UI flow:
 
 ```text
-pair -> login -> open shift -> open cash session -> select hall/table -> create order -> add lines -> change quantity -> void line -> issue precheck -> cancel precheck -> issue precheck again -> pay -> final check -> close cash session -> close shift -> lock/logout
+pair -> login -> open personal shift -> open cash shift -> select hall/table -> create order -> add lines -> change quantity -> void line -> issue precheck -> cancel precheck -> issue precheck again -> pay -> final check -> close cash shift -> close personal shift -> lock/logout
 ```
 
 ## Локальный E2E Prototype: получить pairing code и войти в POS UI
@@ -80,9 +80,9 @@ out of scope: waiter UI, KDS, inventory, fiscalization и production sync sender
 - `/lock` вызывает реальный `POST /api/v1/auth/logout`, очищает локальную session и требует новый PIN.
 - `/pos` реализует POS Terminal Core для одного кассира на одном Primary Edge Node:
   - показывает сотрудника, session, pairing/node status;
-  - показывает текущую смену и кассовую сессию;
-  - открывает смену и кассовую сессию;
-  - закрывает кассовую сессию и показывает безопасное действие закрытия смены;
+  - показывает текущую личную смену и кассовую смену;
+  - открывает личную смену и кассовую смену;
+  - закрывает кассовую смену и показывает безопасное действие закрытия личной смены;
   - выбирает зал и стол;
   - находит активный заказ по столу через backend;
   - создает заказ на выбранном столе;
@@ -111,12 +111,12 @@ Server state хранится только через `@tanstack/vue-query`. Fro
 - `POST /api/v1/auth/pin-login`
 - `GET /api/v1/auth/session`
 - `POST /api/v1/auth/logout`
-- `GET /api/v1/shifts/current`
-- `POST /api/v1/shifts/open`
-- `POST /api/v1/shifts/{id}/close`
-- `GET /api/v1/cash-sessions/current`
-- `POST /api/v1/cash-sessions/open`
-- `POST /api/v1/cash-sessions/{id}/close`
+- `GET /api/v1/employee-shifts/current`
+- `POST /api/v1/employee-shifts/open`
+- `POST /api/v1/employee-shifts/{id}/close`
+- `GET /api/v1/cash-shifts/current`
+- `POST /api/v1/cash-shifts/open`
+- `POST /api/v1/cash-shifts/{id}/close`
 - `GET /api/v1/halls`
 - `GET /api/v1/tables`
 - `GET /api/v1/menu/items`

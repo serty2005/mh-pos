@@ -313,9 +313,24 @@ func (f *fixture) openShift(t *testing.T) *domain.Shift {
 	return shift
 }
 
+func (f *fixture) openCashSession(t *testing.T) *domain.CashSession {
+	t.Helper()
+	session, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return session
+}
+
 func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 	t.Helper()
 	f.openShift(t)
+	f.openCashSession(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -1145,7 +1160,7 @@ func TestCannotCloseShiftWithActiveCashSession(t *testing.T) {
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
 	}
-	got, err := f.service.GetCurrentShift(f.ctx, f.device.ID)
+	got, err := f.service.GetCurrentShift(f.ctx, f.edgeMeta())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1773,6 +1788,7 @@ func TestCreateOrderRejectsMismatchedRestaurantID(t *testing.T) {
 func TestCannotOverpayPrecheck(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
+	f.openCashSession(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -1793,6 +1809,7 @@ func TestCannotOverpayPrecheck(t *testing.T) {
 func TestCapturePaymentCreatesFirstAttemptWithEdgeContext(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
+	f.openCashSession(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -1835,6 +1852,7 @@ func TestCapturePaymentCreatesFirstAttemptWithEdgeContext(t *testing.T) {
 func TestCapturePaymentRollbackRemovesAttemptPaymentOutboxAndLocalEvent(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
+	f.openCashSession(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -1890,6 +1908,7 @@ func TestCapturePaymentRollbackRemovesAttemptPaymentOutboxAndLocalEvent(t *testi
 func TestFullPaymentRollsBackFinalCheckWhenCheckCreatedOutboxFails(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
+	f.openCashSession(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -1941,6 +1960,7 @@ func TestFullPaymentRollsBackFinalCheckWhenCheckCreatedOutboxFails(t *testing.T)
 func TestPartialPaymentKeepsPrecheckOpenAndDoesNotCreateFinalCheck(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
+	f.openCashSession(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -1992,6 +2012,7 @@ func TestFullPaymentCreatesFinalCheckAndClosesOrder(t *testing.T) {
 func TestPaymentForCancelledPrecheckRejected(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
+	f.openCashSession(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -2015,6 +2036,7 @@ func TestPaymentForCancelledPrecheckRejected(t *testing.T) {
 func TestPaymentForSupersededPrecheckRejected(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
+	f.openCashSession(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -2041,6 +2063,7 @@ func TestPaymentForSupersededPrecheckRejected(t *testing.T) {
 func TestDuplicatePaymentCommandIDDoesNotDoubleCapture(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
+	f.openCashSession(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -2074,6 +2097,7 @@ func TestDuplicatePaymentCommandIDDoesNotDoubleCapture(t *testing.T) {
 func TestPaymentRequiresActiveShiftAndMatchingDevice(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
+	cashSession := f.openCashSession(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -2092,12 +2116,12 @@ func TestPaymentRequiresActiveShiftAndMatchingDevice(t *testing.T) {
 	if !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("expected session/device forbidden, got %v", err)
 	}
-	if _, err := f.db.ExecContext(f.ctx, `UPDATE shifts SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`, appshared.DBTime(fixedClock{}.Now()), appshared.DBTime(fixedClock{}.Now()), order.ShiftID); err != nil {
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE cash_sessions SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`, appshared.DBTime(fixedClock{}.Now()), appshared.DBTime(fixedClock{}.Now()), cashSession.ID); err != nil {
 		t.Fatal(err)
 	}
-	_, err = f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMetaCommand("cmd-payment-no-active-shift"), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"})
+	_, err = f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMetaCommand("cmd-payment-no-active-cash-session"), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"})
 	if !errors.Is(err, domain.ErrConflict) {
-		t.Fatalf("expected active shift conflict, got %v", err)
+		t.Fatalf("expected active cash session conflict, got %v", err)
 	}
 }
 
@@ -2248,6 +2272,7 @@ func TestListLocalEventsThroughServiceSupportsLimitAndFilter(t *testing.T) {
 func TestKeyWritesCreateLocalEventsAndMatchingOutboxEnvelopes(t *testing.T) {
 	f := newFixture(t)
 	shift := f.openShift(t)
+	cashSession := f.openCashSession(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -2260,6 +2285,9 @@ func TestKeyWritesCreateLocalEventsAndMatchingOutboxEnvelopes(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMetaCommand("cmd-key-write-full-payment"), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CloseCashSession(f.ctx, app.CloseCashSessionCommand{CommandMeta: f.edgeMeta(), ID: cashSession.ID, ClosedByEmployeeID: f.employee.ID, ClosingCashAmount: 0}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.service.CloseShift(f.ctx, app.CloseShiftCommand{CommandMeta: f.edgeMeta(), ID: shift.ID, ClosedByEmployeeID: f.employee.ID, ClosingCashAmount: 0}); err != nil {

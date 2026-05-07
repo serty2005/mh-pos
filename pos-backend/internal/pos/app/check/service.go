@@ -74,15 +74,15 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 		if order.DeviceID != cmd.DeviceID {
 			return fmt.Errorf("%w: payment device does not match order device", domain.ErrConflict)
 		}
-		shift, err := s.repo.GetOpenShiftByDevice(ctx, cmd.DeviceID)
+		cashSession, err := s.repo.GetOpenCashSessionByDevice(ctx, cmd.DeviceID)
 		if err != nil {
 			if errors.Is(err, domain.ErrNotFound) {
-				return fmt.Errorf("%w: payment requires an active shift", domain.ErrConflict)
+				return fmt.Errorf("%w: оплата требует открытую кассовую смену", domain.ErrConflict)
 			}
 			return err
 		}
-		if shift.ID != order.ShiftID || shift.RestaurantID != order.RestaurantID {
-			return fmt.Errorf("%w: payment shift does not match order", domain.ErrConflict)
+		if cashSession.ShiftID != order.ShiftID || cashSession.RestaurantID != order.RestaurantID {
+			return fmt.Errorf("%w: кассовая смена оплаты не совпадает с личной сменой заказа", domain.ErrConflict)
 		}
 		if err := precheck.ApplyCapturedPayment(cmd.Amount, now); err != nil {
 			return err

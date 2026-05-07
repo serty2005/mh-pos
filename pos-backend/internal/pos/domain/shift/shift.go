@@ -18,8 +18,8 @@ type Shift struct {
 	Status             ShiftStatus `json:"status"`
 	OpenedAt           time.Time   `json:"opened_at"`
 	ClosedAt           *time.Time  `json:"closed_at,omitempty"`
-	OpeningCashAmount  int64       `json:"opening_cash_amount"`
-	ClosingCashAmount  *int64      `json:"closing_cash_amount,omitempty"`
+	OpeningCashAmount  int64       `json:"-"`
+	ClosingCashAmount  *int64      `json:"-"`
 	CreatedAt          time.Time   `json:"created_at"`
 	UpdatedAt          time.Time   `json:"updated_at"`
 }

@@ -179,7 +179,7 @@ CREATE TABLE shifts (
   updated_at TEXT NOT NULL
 );
 
-CREATE UNIQUE INDEX shifts_one_open_per_device ON shifts(device_id) WHERE status = 'open';
+CREATE UNIQUE INDEX shifts_one_open_per_employee ON shifts(restaurant_id, opened_by_employee_id) WHERE status = 'open';
 
 CREATE TABLE orders (
   id TEXT PRIMARY KEY,

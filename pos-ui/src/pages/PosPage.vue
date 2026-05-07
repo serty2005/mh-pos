@@ -39,16 +39,6 @@
           <span>{{ shortId(currentShift.data.value.id) }}</span>
           <span>{{ formatDate(currentShift.data.value.opened_at) }}</span>
         </div>
-        <q-input
-          v-if="!currentShift.data.value"
-          v-model.number="openingShiftAmount"
-          dense
-          outlined
-          type="number"
-          min="0"
-          :label="t('common.amount')"
-          :suffix="currency"
-        />
         <q-btn
           v-if="!currentShift.data.value"
           color="primary"
@@ -56,8 +46,16 @@
           icon="schedule"
           :label="t('actions.openShift')"
           :loading="openShiftMutation.isPending.value"
-          @click="openShiftMutation.mutate(openingShiftAmount)"
+          @click="openShiftMutation.mutate()"
         />
+        <div v-if="!currentShift.data.value && recentShifts.data.value?.length" class="recent-shifts">
+          <p class="eyebrow">{{ t('pos.recentPersonalShifts') }}</p>
+          <div v-for="item in recentShifts.data.value" :key="item.id" class="meta-line">
+            <span>{{ shortId(item.id) }}</span>
+            <span>{{ formatDate(item.opened_at) }}</span>
+            <span>{{ statusLabel(item.status) }}</span>
+          </div>
+        </div>
 
         <q-separator />
 
@@ -115,22 +113,13 @@
         </div>
 
         <div v-else-if="currentShift.data.value" class="inline-action">
-          <q-input
-            v-model.number="closingShiftAmount"
-            dense
-            outlined
-            type="number"
-            min="0"
-            :label="t('common.amount')"
-            :suffix="currency"
-          />
           <q-btn
             outline
             color="secondary"
             icon="event_busy"
             :label="t('actions.closeShift')"
             :loading="closeShiftMutation.isPending.value"
-            @click="closeShiftMutation.mutate({ shiftId: currentShift.data.value.id, amount: closingShiftAmount })"
+            @click="closeShiftMutation.mutate(currentShift.data.value.id)"
           />
         </div>
 
@@ -395,6 +384,7 @@ import {
   issuePrecheck,
   listHalls,
   listMenuItems,
+  listRecentShifts,
   listPrechecksByOrder,
   listTables,
   openCashSession,
@@ -413,9 +403,7 @@ const queryClient = useQueryClient();
 const selectedHallId = ref('');
 const selectedTableId = ref('');
 const currentOrderId = ref('');
-const openingShiftAmount = ref(0);
 const openingCashAmount = ref(0);
-const closingShiftAmount = ref(0);
 const closingCashAmount = ref(0);
 const paymentAmount = ref(0);
 const cancelDialog = ref(false);
@@ -441,16 +429,22 @@ const currentShift = useQuery({
   enabled: () => Boolean(auth.nodeDeviceId && auth.sessionId),
 });
 
+const recentShifts = useQuery({
+  queryKey: ['recent-shifts', auth.sessionId],
+  queryFn: listRecentShifts,
+  enabled: () => Boolean(auth.nodeDeviceId && auth.sessionId && !currentShift.data.value),
+});
+
 const currentCashSession = useQuery({
   queryKey: ['current-cash-session', auth.nodeDeviceId],
   queryFn: getCurrentCashSession,
-  enabled: () => Boolean(auth.nodeDeviceId && auth.sessionId),
+  enabled: () => Boolean(auth.nodeDeviceId && auth.sessionId && currentShift.data.value),
 });
 
 const halls = useQuery({
   queryKey: ['halls', auth.restaurantId],
   queryFn: () => listHalls(auth.restaurantId),
-  enabled: () => Boolean(auth.restaurantId && auth.sessionId),
+  enabled: () => Boolean(auth.restaurantId && auth.sessionId && currentShift.data.value),
 });
 
 const activeHallId = computed(() => selectedHallId.value || halls.data.value?.find((hall) => hall.active)?.id || '');
@@ -458,31 +452,31 @@ const activeHallId = computed(() => selectedHallId.value || halls.data.value?.fi
 const tables = useQuery({
   queryKey: ['tables', auth.restaurantId, activeHallId],
   queryFn: () => listTables(auth.restaurantId, activeHallId.value),
-  enabled: () => Boolean(auth.restaurantId && activeHallId.value && auth.sessionId),
+  enabled: () => Boolean(auth.restaurantId && activeHallId.value && auth.sessionId && currentShift.data.value),
 });
 
 const tableOrder = useQuery({
   queryKey: ['current-order', selectedTableId],
   queryFn: () => getCurrentOrderByTable(selectedTableId.value),
-  enabled: () => Boolean(selectedTableId.value && auth.nodeDeviceId && auth.sessionId),
+  enabled: () => Boolean(selectedTableId.value && auth.nodeDeviceId && auth.sessionId && currentShift.data.value),
 });
 
 const order = useQuery({
   queryKey: ['order', currentOrderId],
   queryFn: () => getOrder(currentOrderId.value),
-  enabled: () => Boolean(currentOrderId.value && auth.sessionId),
+  enabled: () => Boolean(currentOrderId.value && auth.sessionId && currentShift.data.value),
 });
 
 const prechecks = useQuery({
   queryKey: ['prechecks', currentOrderId],
   queryFn: () => listPrechecksByOrder(currentOrderId.value),
-  enabled: () => Boolean(currentOrderId.value && auth.sessionId),
+  enabled: () => Boolean(currentOrderId.value && auth.sessionId && currentShift.data.value),
 });
 
 const menu = useQuery({
   queryKey: ['menu-items'],
   queryFn: listMenuItems,
-  enabled: () => Boolean(auth.sessionId),
+  enabled: () => Boolean(auth.sessionId && currentShift.data.value),
 });
 
 const activeHalls = computed(() => halls.data.value?.filter((hall) => hall.active) ?? []);
@@ -493,7 +487,7 @@ const finalCheckId = computed(() => activeOrder.value?.check?.id ?? '');
 const finalCheck = useQuery({
   queryKey: ['check', finalCheckId],
   queryFn: () => getCheck(finalCheckId.value),
-  enabled: () => Boolean(finalCheckId.value && auth.sessionId),
+  enabled: () => Boolean(finalCheckId.value && auth.sessionId && currentShift.data.value),
 });
 const activeLines = computed(() => activeOrder.value?.lines.filter((line) => line.status === 'active') ?? []);
 const activeMenuItems = computed(() => menu.data.value?.filter((item) => item.active) ?? []);
@@ -504,7 +498,7 @@ const orderCurrency = computed(() => activeMenuItems.value.find((item) => active
 const canCreateOrder = computed(() => Boolean(selectedTableId.value && currentShift.data.value && !activeOrder.value));
 const canEditOrder = computed(() => Boolean(activeOrder.value?.status === 'open' && !activePrecheck.value && !activeOrder.value.check));
 const canIssuePrecheck = computed(() => Boolean(activeOrder.value?.status === 'open' && activeLines.value.length > 0 && !activePrecheck.value));
-const canPay = computed(() => Boolean(activePrecheck.value && paymentAmount.value > 0 && paymentAmount.value <= remainingPayment.value));
+const canPay = computed(() => Boolean(currentCashSession.data.value && activePrecheck.value && paymentAmount.value > 0 && paymentAmount.value <= remainingPayment.value));
 const remainingPayment = computed(() => activePrecheck.value ? activePrecheck.value.total - activePrecheck.value.paid_total : 0);
 const orderLoading = computed(() => tableOrder.isPending.value || order.isPending.value);
 const statusError = computed(() => firstError([currentShift.error.value, currentCashSession.error.value]));
@@ -523,12 +517,12 @@ const actionError = computed(() => firstError([
 ]));
 
 const openShiftMutation = useMutation({
-  mutationFn: (amount: number) => openShift(moneyToMinor(amount)),
+  mutationFn: openShift,
   onSuccess: refreshOps,
 });
 
 const closeShiftMutation = useMutation({
-  mutationFn: (payload: { shiftId: string; amount: number }) => closeShift(payload.shiftId, moneyToMinor(payload.amount)),
+  mutationFn: closeShift,
   onSuccess: refreshOps,
 });
 
@@ -666,6 +660,7 @@ function closeCancelDialog() {
 
 function refreshOps() {
   void queryClient.invalidateQueries({ queryKey: ['current-shift'] });
+  void queryClient.invalidateQueries({ queryKey: ['recent-shifts'] });
   void queryClient.invalidateQueries({ queryKey: ['current-cash-session'] });
 }
 
