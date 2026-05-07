@@ -60,6 +60,22 @@ func (s fakeSender) Send(context.Context, domain.OutboxMessage) error {
 	return s.err
 }
 
+type fakeBatchSender struct {
+	results []BatchSendResult
+	err     error
+}
+
+func (s fakeBatchSender) Send(context.Context, domain.OutboxMessage) error {
+	return nil
+}
+
+func (s fakeBatchSender) SendBatch(context.Context, []domain.OutboxMessage) ([]BatchSendResult, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return append([]BatchSendResult(nil), s.results...), nil
+}
+
 func TestRunOnceSuspendsWrongDirectionMessageAndContinues(t *testing.T) {
 	service := &fakeOutboxService{claimed: []domain.OutboxMessage{
 		{ID: "outbox-config", SequenceNo: 1, Origin: domain.OriginSystemSeed, CommandType: "RestaurantCreated"},
@@ -166,5 +182,33 @@ func TestRunOnceWritesNormalizedTelemetryFields(t *testing.T) {
 	}
 	if strings.Contains(raw, "pin") || strings.Contains(raw, "manager_pin") {
 		t.Fatalf("expected no sensitive auth fields in logs, got: %s", raw)
+	}
+}
+
+func TestRunOnceProcessesBatchItemLevelAck(t *testing.T) {
+	service := &fakeOutboxService{claimed: []domain.OutboxMessage{
+		{ID: "outbox-1", SequenceNo: 1, Origin: domain.OriginEdgeDevice, SyncDirection: domain.SyncDirectionEdgeToCloud, CommandType: "OrderCreated", PayloadJSON: `{"event_id":"e1"}`},
+		{ID: "outbox-2", SequenceNo: 2, Origin: domain.OriginEdgeDevice, SyncDirection: domain.SyncDirectionEdgeToCloud, CommandType: "OrderCreated", PayloadJSON: `{"event_id":"e2"}`},
+		{ID: "outbox-3", SequenceNo: 3, Origin: domain.OriginEdgeDevice, SyncDirection: domain.SyncDirectionEdgeToCloud, CommandType: "OrderCreated", PayloadJSON: `{"event_id":"e3"}`},
+	}}
+	worker := NewWorker(service, fakeBatchSender{
+		results: []BatchSendResult{
+			{OutboxID: "outbox-1", Status: BatchSendAccepted},
+			{OutboxID: "outbox-2", Status: BatchSendRejected, Reason: "bad envelope"},
+			{OutboxID: "outbox-3", Status: BatchSendRetryable, Reason: "cloud temporary"},
+		},
+	}, Config{WorkerID: "worker-test", PollInterval: time.Hour}, nil)
+
+	if err := worker.RunOnce(context.Background()); err == nil {
+		t.Fatal("expected retryable batch result error")
+	}
+	if len(service.sent) != 1 || service.sent[0] != "outbox-1" {
+		t.Fatalf("expected one sent item, got sent=%v", service.sent)
+	}
+	if service.suspended["outbox-2"] == "" {
+		t.Fatalf("expected outbox-2 suspended, suspended=%v", service.suspended)
+	}
+	if len(service.retryable) != 1 || service.retryable[0] != "outbox-3" {
+		t.Fatalf("expected outbox-3 retryable, got retryable=%v", service.retryable)
 	}
 }

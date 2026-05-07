@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"cloud-backend/internal/cloudsync/contracts"
@@ -15,6 +17,8 @@ import (
 
 type Repository interface {
 	ReceiveEdgeEvent(context.Context, EdgeEventReceipt) (contracts.EventAck, error)
+	UpsertMasterDataPackage(context.Context, contracts.MasterDataPackage) (contracts.MasterDataPackage, error)
+	GetMasterDataPackage(context.Context, string, string) (contracts.MasterDataPackage, error)
 }
 
 type EdgeEventReceipt struct {
@@ -58,4 +62,76 @@ func (s *Service) Receive(ctx context.Context, raw []byte) (contracts.EventAck, 
 		RawPayloadSHA256: hex.EncodeToString(sum[:]),
 		CloudReceivedAt:  receivedAt,
 	})
+}
+
+// ReceiveBatch receives SyncEnvelope batch and returns item-level ACK decisions.
+func (s *Service) ReceiveBatch(ctx context.Context, raws [][]byte) contracts.BatchEventAck {
+	items := make([]contracts.BatchEventAckItem, 0, len(raws))
+	allAccepted := true
+	for i, raw := range raws {
+		ack, err := s.Receive(ctx, raw)
+		if err == nil {
+			items = append(items, contracts.BatchEventAckItem{
+				Index:  i,
+				Status: contracts.BatchItemAccepted,
+				Ack:    &ack,
+			})
+			continue
+		}
+		allAccepted = false
+		item := contracts.BatchEventAckItem{
+			Index: i,
+			Error: err.Error(),
+		}
+		switch {
+		case errors.Is(err, contracts.ErrInvalidEnvelope):
+			item.Status = contracts.BatchItemRejected
+			item.ErrorCode = "INVALID_ENVELOPE"
+		case errors.Is(err, contracts.ErrPayloadConflict):
+			item.Status = contracts.BatchItemRejected
+			item.ErrorCode = "PAYLOAD_CONFLICT"
+		default:
+			item.Status = contracts.BatchItemRetryable
+			item.ErrorCode = "INTERNAL"
+		}
+		items = append(items, item)
+	}
+	status := "accepted"
+	if !allAccepted {
+		status = "partial"
+	}
+	return contracts.BatchEventAck{
+		Status: status,
+		Items:  items,
+	}
+}
+
+// UpsertMasterDataPackage stores Cloud-authored master/reference/configuration payload for Edge import.
+func (s *Service) UpsertMasterDataPackage(ctx context.Context, v contracts.MasterDataPackage) (contracts.MasterDataPackage, error) {
+	now := s.clock.Now().UTC()
+	v.StreamName = strings.TrimSpace(v.StreamName)
+	v.NodeDeviceID = strings.TrimSpace(v.NodeDeviceID)
+	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
+	v.SyncMode = contracts.NormalizeSyncMode(v.SyncMode)
+	v.PayloadJSON = bytes.TrimSpace(v.PayloadJSON)
+	if err := contracts.ValidateMasterDataPackage(v); err != nil {
+		return contracts.MasterDataPackage{}, err
+	}
+	if v.CloudUpdatedAt != nil {
+		updated := v.CloudUpdatedAt.UTC()
+		v.CloudUpdatedAt = &updated
+	}
+	v.CreatedAt = now
+	v.UpdatedAt = now
+	return s.repo.UpsertMasterDataPackage(ctx, v)
+}
+
+// GetMasterDataPackage returns Cloud-authored package for requested stream/node.
+func (s *Service) GetMasterDataPackage(ctx context.Context, streamName, nodeDeviceID string) (contracts.MasterDataPackage, error) {
+	streamName = strings.TrimSpace(streamName)
+	nodeDeviceID = strings.TrimSpace(nodeDeviceID)
+	if err := contracts.ValidateMasterDataStream(streamName); err != nil {
+		return contracts.MasterDataPackage{}, err
+	}
+	return s.repo.GetMasterDataPackage(ctx, streamName, nodeDeviceID)
 }

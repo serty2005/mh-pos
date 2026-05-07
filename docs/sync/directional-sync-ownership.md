@@ -117,3 +117,10 @@ implemented now:
 - `cloud_master_sync_state` was added;
 - `pos_sync_outbox.sync_direction` was added;
 - Cloud-owned master tables received sync metadata columns.
+
+## Sync Hardening Update 2026-05-07
+
+implemented now:
+- Edge -> Cloud sender applies item-level ACK decisions from Cloud batch endpoint and preserves deterministic outbox transitions.
+- Cloud -> Edge provisioning packages are stored by stream and optional `node_device_id` for targeted import flows.
+- Operational projections are materialized in Cloud from `cloud_operational_events` ingestion pipeline without changing Edge runtime ownership.

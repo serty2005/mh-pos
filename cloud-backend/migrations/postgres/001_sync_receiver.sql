@@ -75,3 +75,50 @@ CREATE INDEX cloud_operational_events_type_received_at
 
 CREATE INDEX cloud_operational_events_restaurant_sequence
   ON cloud_operational_events(restaurant_id, device_id, occurred_at, event_id);
+
+CREATE TABLE cloud_projection_event_type_stats (
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  device_id TEXT NOT NULL CHECK (device_id <> ''),
+  event_type TEXT NOT NULL CHECK (event_type <> ''),
+  event_count BIGINT NOT NULL CHECK (event_count >= 0),
+  first_occurred_at TIMESTAMPTZ NOT NULL,
+  last_occurred_at TIMESTAMPTZ NOT NULL,
+  last_cloud_received_at TIMESTAMPTZ NOT NULL,
+  last_event_id TEXT NOT NULL CHECK (last_event_id <> ''),
+  last_command_id TEXT NOT NULL CHECK (last_command_id <> ''),
+  updated_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (restaurant_id, device_id, event_type)
+);
+
+CREATE TABLE cloud_projection_shift_finance (
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  device_id TEXT NOT NULL CHECK (device_id <> ''),
+  shift_id TEXT NOT NULL CHECK (shift_id <> ''),
+  payments_captured_count BIGINT NOT NULL DEFAULT 0 CHECK (payments_captured_count >= 0),
+  payments_captured_total BIGINT NOT NULL DEFAULT 0,
+  checks_created_count BIGINT NOT NULL DEFAULT 0 CHECK (checks_created_count >= 0),
+  checks_total_amount BIGINT NOT NULL DEFAULT 0,
+  last_event_id TEXT NOT NULL CHECK (last_event_id <> ''),
+  last_command_id TEXT NOT NULL CHECK (last_command_id <> ''),
+  last_occurred_at TIMESTAMPTZ NOT NULL,
+  last_cloud_received_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (restaurant_id, device_id, shift_id)
+);
+
+CREATE TABLE cloud_master_data_packages (
+  stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu')),
+  node_device_id TEXT NOT NULL DEFAULT '',
+  restaurant_id TEXT,
+  sync_mode TEXT NOT NULL CHECK (sync_mode IN ('full_snapshot','incremental')),
+  cloud_version BIGINT NOT NULL CHECK (cloud_version > 0),
+  checkpoint_token TEXT,
+  cloud_updated_at TIMESTAMPTZ,
+  payload_json JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (stream_name, node_device_id)
+);
+
+CREATE INDEX cloud_master_data_packages_stream_updated
+  ON cloud_master_data_packages(stream_name, updated_at DESC);

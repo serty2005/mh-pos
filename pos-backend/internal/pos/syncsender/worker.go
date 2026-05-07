@@ -26,6 +26,24 @@ type Sender interface {
 	Send(context.Context, domain.OutboxMessage) error
 }
 
+type BatchSender interface {
+	SendBatch(context.Context, []domain.OutboxMessage) ([]BatchSendResult, error)
+}
+
+type BatchSendResult struct {
+	OutboxID string
+	Status   BatchSendStatus
+	Reason   string
+}
+
+type BatchSendStatus string
+
+const (
+	BatchSendAccepted  BatchSendStatus = "accepted"
+	BatchSendRejected  BatchSendStatus = "rejected"
+	BatchSendRetryable BatchSendStatus = "retryable"
+)
+
 type NonRetryableError struct {
 	Reason string
 }
@@ -148,6 +166,7 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 		Action:    "claim.pending_batch",
 		Result:    "success",
 	}, "worker_id", w.config.WorkerID, "claimed_count", len(messages))
+	sendable := make([]domain.OutboxMessage, 0, len(messages))
 	for _, msg := range messages {
 		platformlog.Log(ctx, w.logger, platformlog.LevelTrace, "POS sync sender process message", platformlog.Event{
 			Operation:       "sync.sender",
@@ -178,6 +197,15 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 			}, "outbox_id", msg.ID, "sequence_no", msg.SequenceNo, "event_type", msg.CommandType, "reason", reason)
 			continue
 		}
+		sendable = append(sendable, msg)
+	}
+	if len(sendable) == 0 {
+		return nil
+	}
+	if batchSender, ok := w.sender.(BatchSender); ok && len(sendable) > 1 {
+		return w.sendBatch(ctx, batchSender, sendable)
+	}
+	for _, msg := range sendable {
 		platformlog.Log(ctx, w.logger, platformlog.LevelTrace, "POS sync sender send attempt", platformlog.Event{
 			Operation:       "sync.sender",
 			Action:          "message.send",
@@ -239,6 +267,105 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 			return fmt.Errorf("release remaining processing outbox after failure: %w", err)
 		}
 		return fmt.Errorf("retryable send failure for outbox %s: %w", msg.ID, sendErr)
+	}
+	return nil
+}
+
+func (w *Worker) sendBatch(ctx context.Context, sender BatchSender, messages []domain.OutboxMessage) error {
+	platformlog.Log(ctx, w.logger, platformlog.LevelTrace, "POS sync sender batch send attempt", platformlog.Event{
+		Operation: "sync.sender",
+		Action:    "batch.send",
+		Result:    "attempt",
+	}, "worker_id", w.config.WorkerID, "batch_count", len(messages))
+	sendCtx, cancel := context.WithTimeout(ctx, w.config.SendTimeout)
+	results, err := sender.SendBatch(sendCtx, messages)
+	cancel()
+	if err != nil {
+		for _, msg := range messages {
+			markErr := w.service.MarkOutboxRetryableFailure(ctx, msg.ID, err.Error())
+			if markErr != nil {
+				return fmt.Errorf("mark batch retryable outbox failure %s: %w", msg.ID, markErr)
+			}
+		}
+		return fmt.Errorf("batch send failure: %w", err)
+	}
+	resultByID := make(map[string]BatchSendResult, len(results))
+	for _, item := range results {
+		if strings.TrimSpace(item.OutboxID) == "" {
+			continue
+		}
+		resultByID[item.OutboxID] = item
+	}
+	var hadRetryable bool
+	for _, msg := range messages {
+		item, ok := resultByID[msg.ID]
+		if !ok {
+			hadRetryable = true
+			if markErr := w.service.MarkOutboxRetryableFailure(ctx, msg.ID, "cloud batch ack did not include outbox item result"); markErr != nil {
+				return fmt.Errorf("mark missing batch result retryable %s: %w", msg.ID, markErr)
+			}
+			continue
+		}
+		switch item.Status {
+		case BatchSendAccepted:
+			if err := w.service.MarkOutboxSent(ctx, msg.ID); err != nil {
+				return fmt.Errorf("mark outbox sent %s: %w", msg.ID, err)
+			}
+			platformlog.Log(ctx, w.logger, slog.LevelInfo, "POS sync sender delivered outbox message", platformlog.Event{
+				Operation:       "sync.sender",
+				Action:          "message.ack",
+				Result:          "success",
+				NodeDeviceID:    msg.NodeDeviceID,
+				ClientDeviceID:  derefOptional(msg.ClientDeviceID),
+				SessionID:       derefOptional(msg.SessionID),
+				ActorEmployeeID: derefOptional(msg.ActorEmployeeID),
+			}, "outbox_id", msg.ID, "sequence_no", msg.SequenceNo, "event_type", msg.CommandType)
+		case BatchSendRejected:
+			reason := strings.TrimSpace(item.Reason)
+			if reason == "" {
+				reason = "cloud rejected sync event item"
+			}
+			if err := w.service.SuspendOutboxMessage(ctx, msg.ID, reason); err != nil {
+				return fmt.Errorf("suspend non-retryable outbox %s: %w", msg.ID, err)
+			}
+			platformlog.Log(ctx, w.logger, slog.LevelWarn, "POS sync sender suspended non-retryable outbox message", platformlog.Event{
+				Operation:       "sync.sender",
+				Action:          "message.suspend",
+				Result:          "rejected",
+				ErrorCode:       "SEND_NON_RETRYABLE",
+				NodeDeviceID:    msg.NodeDeviceID,
+				ClientDeviceID:  derefOptional(msg.ClientDeviceID),
+				SessionID:       derefOptional(msg.SessionID),
+				ActorEmployeeID: derefOptional(msg.ActorEmployeeID),
+			}, "outbox_id", msg.ID, "sequence_no", msg.SequenceNo, "event_type", msg.CommandType, "error", reason)
+		case BatchSendRetryable:
+			hadRetryable = true
+			reason := strings.TrimSpace(item.Reason)
+			if reason == "" {
+				reason = "cloud retryable sync event item failure"
+			}
+			if err := w.service.MarkOutboxRetryableFailure(ctx, msg.ID, reason); err != nil {
+				return fmt.Errorf("mark retryable outbox failure %s: %w", msg.ID, err)
+			}
+			platformlog.Log(ctx, w.logger, platformlog.LevelTrace, "POS sync sender retry decision", platformlog.Event{
+				Operation:       "sync.sender",
+				Action:          "message.retryable_failure",
+				Result:          "attempt",
+				ErrorCode:       "SEND_RETRYABLE",
+				NodeDeviceID:    msg.NodeDeviceID,
+				ClientDeviceID:  derefOptional(msg.ClientDeviceID),
+				SessionID:       derefOptional(msg.SessionID),
+				ActorEmployeeID: derefOptional(msg.ActorEmployeeID),
+			}, "outbox_id", msg.ID, "sequence_no", msg.SequenceNo, "event_type", msg.CommandType, "error", reason)
+		default:
+			hadRetryable = true
+			if err := w.service.MarkOutboxRetryableFailure(ctx, msg.ID, "cloud returned unknown batch item status"); err != nil {
+				return fmt.Errorf("mark unknown batch status retryable %s: %w", msg.ID, err)
+			}
+		}
+	}
+	if hadRetryable {
+		return fmt.Errorf("batch send returned retryable item failures")
 	}
 	return nil
 }

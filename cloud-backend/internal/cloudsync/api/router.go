@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,6 +32,9 @@ func NewRouter(service *app.Service) http.Handler {
 	r.Get("/health", h.health)
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/sync/edge-events", h.receiveEdgeEvent)
+		r.Post("/sync/edge-events/batch", h.receiveEdgeEventBatch)
+		r.Put("/provisioning/master-data/{stream}", h.upsertMasterDataPackage)
+		r.Get("/provisioning/master-data/{stream}", h.getMasterDataPackage)
 	})
 	return r
 }
@@ -117,6 +121,85 @@ func (h *Handler) receiveEdgeEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, ack)
+}
+
+func (h *Handler) receiveEdgeEventBatch(w http.ResponseWriter, r *http.Request) {
+	var req contracts.BatchReceiveRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("%w: %v", contracts.ErrInvalidEnvelope, err))
+		return
+	}
+	if len(req.Items) == 0 || len(req.Items) > 100 {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("%w: items length must be between 1 and 100", contracts.ErrInvalidEnvelope))
+		return
+	}
+	raws := make([][]byte, 0, len(req.Items))
+	for _, item := range req.Items {
+		raw := bytes.TrimSpace(item)
+		if len(raw) == 0 || string(raw) == "null" {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("%w: batch item payload is required", contracts.ErrInvalidEnvelope))
+			return
+		}
+		raws = append(raws, raw)
+	}
+	ack := h.service.ReceiveBatch(r.Context(), raws)
+	writeJSON(w, http.StatusAccepted, ack)
+}
+
+func (h *Handler) upsertMasterDataPackage(w http.ResponseWriter, r *http.Request) {
+	streamName := chi.URLParam(r, "stream")
+	var req struct {
+		NodeDeviceID    string          `json:"node_device_id"`
+		RestaurantID    string          `json:"restaurant_id"`
+		SyncMode        string          `json:"sync_mode"`
+		CloudVersion    int64           `json:"cloud_version"`
+		CheckpointToken string          `json:"checkpoint_token"`
+		CloudUpdatedAt  *time.Time      `json:"cloud_updated_at"`
+		PayloadJSON     json.RawMessage `json:"payload_json"`
+	}
+	dec := json.NewDecoder(io.LimitReader(r.Body, 4<<20))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("%w: %v", contracts.ErrInvalidEnvelope, err))
+		return
+	}
+	v, err := h.service.UpsertMasterDataPackage(r.Context(), contracts.MasterDataPackage{
+		StreamName:      streamName,
+		NodeDeviceID:    req.NodeDeviceID,
+		RestaurantID:    req.RestaurantID,
+		SyncMode:        req.SyncMode,
+		CloudVersion:    req.CloudVersion,
+		CheckpointToken: req.CheckpointToken,
+		CloudUpdatedAt:  req.CloudUpdatedAt,
+		PayloadJSON:     req.PayloadJSON,
+	})
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, contracts.ErrInvalidEnvelope) {
+			status = http.StatusBadRequest
+		}
+		writeError(w, status, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (h *Handler) getMasterDataPackage(w http.ResponseWriter, r *http.Request) {
+	streamName := chi.URLParam(r, "stream")
+	nodeDeviceID := r.URL.Query().Get("node_device_id")
+	v, err := h.service.GetMasterDataPackage(r.Context(), streamName, nodeDeviceID)
+	if err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, contracts.ErrInvalidEnvelope):
+			status = http.StatusBadRequest
+		case errors.Is(err, contracts.ErrNotFound):
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

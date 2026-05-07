@@ -35,6 +35,7 @@ const (
 var (
 	ErrInvalidEnvelope = errors.New("invalid sync envelope")
 	ErrPayloadConflict = errors.New("sync envelope payload conflicts with accepted event")
+	ErrNotFound        = errors.New("not found")
 )
 
 type SyncEnvelope struct {

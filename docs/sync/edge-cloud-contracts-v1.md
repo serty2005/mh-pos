@@ -262,3 +262,20 @@ Cloud возвращает HTTP `202 Accepted` и для первого успе
 ```
 
 Ack стабилен при replay: повторный POST того же envelope возвращает те же `cloud_receipt_id`, timestamps, ids и payload hash.
+
+## Sync Contract Update 2026-05-07
+
+implemented now:
+- Cloud supports item-level ACK batch ingest endpoint `POST /api/v1/sync/edge-events/batch`.
+- POS sender supports batch delivery and maps per-item ACK status (`accepted`, `rejected`, `retryable`) to outbox lifecycle (`sent`, `suspended`, `failed/pending retry`).
+- Cloud writes richer deterministic projections on accepted operational events:
+  - `cloud_projection_event_type_stats`
+  - `cloud_projection_shift_finance`
+- Cloud exposes production-oriented provisioning/import package endpoints for Cloud -> Edge master/reference/configuration delivery:
+  - `PUT /api/v1/provisioning/master-data/{stream}`
+  - `GET /api/v1/provisioning/master-data/{stream}?node_device_id=...`
+- Cloud stores provisioning payloads in `cloud_master_data_packages`.
+
+next:
+- add authorization policy for provisioning endpoints in production perimeter;
+- add projection query APIs for ops dashboards.

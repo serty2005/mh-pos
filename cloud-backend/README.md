@@ -131,3 +131,16 @@ go test ./...
 ## Контракт
 
 См. `../docs/sync/edge-cloud-contracts-v1.md`.
+
+## Sync API update 2026-05-07
+
+implemented now endpoints:
+- `POST /api/v1/sync/edge-events`
+- `POST /api/v1/sync/edge-events/batch` (item-level ACK)
+- `PUT /api/v1/provisioning/master-data/{stream}` (store Cloud -> Edge package)
+- `GET /api/v1/provisioning/master-data/{stream}?node_device_id=...` (resolve package for Edge import)
+
+implemented now storage:
+- `cloud_projection_event_type_stats`
+- `cloud_projection_shift_finance`
+- `cloud_master_data_packages`

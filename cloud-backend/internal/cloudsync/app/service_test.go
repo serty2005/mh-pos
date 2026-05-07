@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"cloud-backend/internal/cloudsync/app"
+	"cloud-backend/internal/cloudsync/contracts"
 	"cloud-backend/internal/cloudsync/infra/memory"
 )
 
@@ -43,6 +44,54 @@ func TestReceiveDuplicateEnvelopeReturnsStableAckAndKeepsOneReceipt(t *testing.T
 	}
 	if first.EdgeEventID != first.EventID || first.EventID != "event-1" {
 		t.Fatalf("expected edge_event_id to equal event_id, got %+v", first)
+	}
+}
+
+func TestReceiveBatchReturnsItemLevelAck(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+	valid := sampleEnvelope(t)
+	invalid := []byte(`{"version":"1","event_type":"OrderCreated"}`)
+
+	ack := service.ReceiveBatch(context.Background(), [][]byte{valid, invalid})
+	if ack.Status != "partial" {
+		t.Fatalf("expected partial status, got %+v", ack)
+	}
+	if len(ack.Items) != 2 {
+		t.Fatalf("expected 2 ack items, got %+v", ack)
+	}
+	if ack.Items[0].Status != contracts.BatchItemAccepted || ack.Items[0].Ack == nil {
+		t.Fatalf("expected first item accepted, got %+v", ack.Items[0])
+	}
+	if ack.Items[1].Status != contracts.BatchItemRejected || ack.Items[1].ErrorCode != "INVALID_ENVELOPE" {
+		t.Fatalf("expected second item rejected by validation, got %+v", ack.Items[1])
+	}
+}
+
+func TestUpsertAndGetMasterDataPackage(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+	payload := json.RawMessage(`{"catalog_items":[{"id":"c-1","name":"Tea"}]}`)
+
+	stored, err := service.UpsertMasterDataPackage(context.Background(), contracts.MasterDataPackage{
+		StreamName:   contracts.MasterDataStreamCatalog,
+		NodeDeviceID: "node-1",
+		SyncMode:     contracts.SyncModeIncremental,
+		CloudVersion: 10,
+		PayloadJSON:  payload,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.StreamName != contracts.MasterDataStreamCatalog || stored.CloudVersion != 10 {
+		t.Fatalf("unexpected stored package: %+v", stored)
+	}
+	got, err := service.GetMasterDataPackage(context.Background(), contracts.MasterDataStreamCatalog, "node-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got.PayloadJSON) != string(payload) {
+		t.Fatalf("unexpected payload: %s", got.PayloadJSON)
 	}
 }
 

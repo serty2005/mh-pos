@@ -4,8 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -117,10 +120,194 @@ INSERT INTO cloud_operational_events(
 	); err != nil {
 		return contracts.EventAck{}, err
 	}
+	if err := r.applyEventProjections(ctx, tx, receipt); err != nil {
+		return contracts.EventAck{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return contracts.EventAck{}, err
 	}
 	return ack, nil
+}
+
+func (r *Repository) UpsertMasterDataPackage(ctx context.Context, v contracts.MasterDataPackage) (contracts.MasterDataPackage, error) {
+	nodeDeviceID := strings.TrimSpace(v.NodeDeviceID)
+	payload := bytesTrimSpace(v.PayloadJSON)
+	var stored contracts.MasterDataPackage
+	var cloudUpdatedAt *time.Time
+	err := r.pool.QueryRow(ctx, `
+INSERT INTO cloud_master_data_packages(
+  stream_name,node_device_id,restaurant_id,sync_mode,cloud_version,checkpoint_token,cloud_updated_at,payload_json,created_at,updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)
+ON CONFLICT (stream_name,node_device_id) DO UPDATE SET
+  restaurant_id = EXCLUDED.restaurant_id,
+  sync_mode = EXCLUDED.sync_mode,
+  cloud_version = EXCLUDED.cloud_version,
+  checkpoint_token = EXCLUDED.checkpoint_token,
+  cloud_updated_at = EXCLUDED.cloud_updated_at,
+  payload_json = EXCLUDED.payload_json,
+  updated_at = EXCLUDED.updated_at
+RETURNING stream_name,node_device_id,restaurant_id,sync_mode,cloud_version,checkpoint_token,cloud_updated_at,payload_json,created_at,updated_at`,
+		v.StreamName,
+		nodeDeviceID,
+		nullableText(v.RestaurantID),
+		v.SyncMode,
+		v.CloudVersion,
+		nullableText(v.CheckpointToken),
+		v.CloudUpdatedAt,
+		string(payload),
+		v.CreatedAt,
+		v.UpdatedAt,
+	).Scan(
+		&stored.StreamName,
+		&stored.NodeDeviceID,
+		&stored.RestaurantID,
+		&stored.SyncMode,
+		&stored.CloudVersion,
+		&stored.CheckpointToken,
+		&cloudUpdatedAt,
+		&stored.PayloadJSON,
+		&stored.CreatedAt,
+		&stored.UpdatedAt,
+	)
+	if err != nil {
+		return contracts.MasterDataPackage{}, err
+	}
+	stored.CloudUpdatedAt = cloudUpdatedAt
+	return stored, nil
+}
+
+func (r *Repository) GetMasterDataPackage(ctx context.Context, streamName, nodeDeviceID string) (contracts.MasterDataPackage, error) {
+	streamName = strings.TrimSpace(streamName)
+	nodeDeviceID = strings.TrimSpace(nodeDeviceID)
+	var out contracts.MasterDataPackage
+	var cloudUpdatedAt *time.Time
+	err := r.pool.QueryRow(ctx, `
+SELECT stream_name,node_device_id,COALESCE(restaurant_id,''),sync_mode,cloud_version,COALESCE(checkpoint_token,''),cloud_updated_at,payload_json,created_at,updated_at
+FROM cloud_master_data_packages
+WHERE stream_name = $1 AND node_device_id IN ($2, '')
+ORDER BY CASE WHEN node_device_id = $2 THEN 0 ELSE 1 END
+LIMIT 1`, streamName, nodeDeviceID).Scan(
+		&out.StreamName,
+		&out.NodeDeviceID,
+		&out.RestaurantID,
+		&out.SyncMode,
+		&out.CloudVersion,
+		&out.CheckpointToken,
+		&cloudUpdatedAt,
+		&out.PayloadJSON,
+		&out.CreatedAt,
+		&out.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return contracts.MasterDataPackage{}, contracts.ErrNotFound
+	}
+	if err != nil {
+		return contracts.MasterDataPackage{}, err
+	}
+	out.CloudUpdatedAt = cloudUpdatedAt
+	return out, nil
+}
+
+func (r *Repository) applyEventProjections(ctx context.Context, tx pgx.Tx, receipt app.EdgeEventReceipt) error {
+	if _, err := tx.Exec(ctx, `
+INSERT INTO cloud_projection_event_type_stats(
+  restaurant_id,device_id,event_type,event_count,first_occurred_at,last_occurred_at,last_cloud_received_at,last_event_id,last_command_id,updated_at
+) VALUES ($1,$2,$3,1,$4,$4,$5,$6,$7,$5)
+ON CONFLICT (restaurant_id,device_id,event_type) DO UPDATE SET
+  event_count = cloud_projection_event_type_stats.event_count + 1,
+  first_occurred_at = LEAST(cloud_projection_event_type_stats.first_occurred_at, EXCLUDED.first_occurred_at),
+  last_occurred_at = GREATEST(cloud_projection_event_type_stats.last_occurred_at, EXCLUDED.last_occurred_at),
+  last_cloud_received_at = EXCLUDED.last_cloud_received_at,
+  last_event_id = EXCLUDED.last_event_id,
+  last_command_id = EXCLUDED.last_command_id,
+  updated_at = EXCLUDED.updated_at`,
+		*receipt.Envelope.RestaurantID,
+		receipt.Envelope.DeviceID,
+		string(receipt.Envelope.EventType),
+		receipt.Envelope.OccurredAt,
+		receipt.CloudReceivedAt,
+		receipt.Envelope.EventID,
+		receipt.Envelope.CommandID,
+	); err != nil {
+		return err
+	}
+	if receipt.Envelope.ShiftID == nil || strings.TrimSpace(*receipt.Envelope.ShiftID) == "" {
+		return nil
+	}
+	shiftID := strings.TrimSpace(*receipt.Envelope.ShiftID)
+	switch receipt.Envelope.EventType {
+	case contracts.EventPaymentCaptured:
+		amount, err := paymentAmount(receipt.Envelope.Payload)
+		if err != nil {
+			return err
+		}
+		return upsertShiftFinanceProjection(ctx, tx, receipt, shiftID, 1, amount, 0, 0)
+	case contracts.EventCheckCreated:
+		total, err := checkTotal(receipt.Envelope.Payload)
+		if err != nil {
+			return err
+		}
+		return upsertShiftFinanceProjection(ctx, tx, receipt, shiftID, 0, 0, 1, total)
+	default:
+		return nil
+	}
+}
+
+func upsertShiftFinanceProjection(ctx context.Context, tx pgx.Tx, receipt app.EdgeEventReceipt, shiftID string, paymentCount, paymentTotal, checkCount, checkTotal int64) error {
+	_, err := tx.Exec(ctx, `
+INSERT INTO cloud_projection_shift_finance(
+  restaurant_id,device_id,shift_id,payments_captured_count,payments_captured_total,checks_created_count,checks_total_amount,last_event_id,last_command_id,last_occurred_at,last_cloud_received_at,updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)
+ON CONFLICT (restaurant_id,device_id,shift_id) DO UPDATE SET
+  payments_captured_count = cloud_projection_shift_finance.payments_captured_count + EXCLUDED.payments_captured_count,
+  payments_captured_total = cloud_projection_shift_finance.payments_captured_total + EXCLUDED.payments_captured_total,
+  checks_created_count = cloud_projection_shift_finance.checks_created_count + EXCLUDED.checks_created_count,
+  checks_total_amount = cloud_projection_shift_finance.checks_total_amount + EXCLUDED.checks_total_amount,
+  last_event_id = EXCLUDED.last_event_id,
+  last_command_id = EXCLUDED.last_command_id,
+  last_occurred_at = GREATEST(cloud_projection_shift_finance.last_occurred_at, EXCLUDED.last_occurred_at),
+  last_cloud_received_at = EXCLUDED.last_cloud_received_at,
+  updated_at = EXCLUDED.updated_at`,
+		*receipt.Envelope.RestaurantID,
+		receipt.Envelope.DeviceID,
+		shiftID,
+		paymentCount,
+		paymentTotal,
+		checkCount,
+		checkTotal,
+		receipt.Envelope.EventID,
+		receipt.Envelope.CommandID,
+		receipt.Envelope.OccurredAt,
+		receipt.CloudReceivedAt,
+	)
+	return err
+}
+
+func paymentAmount(payloadRaw json.RawMessage) (int64, error) {
+	var payload contracts.Payload[contracts.PaymentCaptured]
+	if err := json.Unmarshal(payloadRaw, &payload); err != nil {
+		return 0, fmt.Errorf("%w: invalid PaymentCaptured payload", contracts.ErrInvalidEnvelope)
+	}
+	return payload.Data.Amount, nil
+}
+
+func checkTotal(payloadRaw json.RawMessage) (int64, error) {
+	var payload contracts.Payload[contracts.CheckCreated]
+	if err := json.Unmarshal(payloadRaw, &payload); err != nil {
+		return 0, fmt.Errorf("%w: invalid CheckCreated payload", contracts.ErrInvalidEnvelope)
+	}
+	return payload.Data.Total, nil
+}
+
+func bytesTrimSpace(v []byte) []byte {
+	return []byte(strings.TrimSpace(string(v)))
+}
+
+func nullableText(v string) any {
+	if strings.TrimSpace(v) == "" {
+		return nil
+	}
+	return strings.TrimSpace(v)
 }
 
 func scanAck(row pgx.Row) (contracts.EventAck, error) {
