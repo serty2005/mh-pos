@@ -135,6 +135,49 @@ func TestProvisioningMasterDataPutAndGet(t *testing.T) {
 	}
 }
 
+func TestProvisioningCurrenciesPutAndGet(t *testing.T) {
+	repo := memory.NewRepository()
+	router := api.NewRouter(app.NewService(repo, fixedClock{}))
+	putBody := []byte(`{
+	  "sync_mode":"full_snapshot",
+	  "cloud_version":21,
+	  "payload_json":{
+		"currencies":[
+		  {
+			"currency_code":643,
+			"currency_alpha_code":"RUB",
+			"minor_unit":2,
+			"currency_iso_name":"Russian Ruble",
+			"currency_symbol":"₽",
+			"curr_basic_name":"р",
+			"curr_add_name":"коп.",
+			"show_add":true,
+			"show_currency_basic_name":true
+		  }
+		]
+	  }
+	}`)
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/provisioning/master-data/currencies", bytes.NewReader(putBody))
+	putRec := httptest.NewRecorder()
+	router.ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on currency package upsert, got %d: %s", putRec.Code, putRec.Body.String())
+	}
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/provisioning/master-data/currencies", nil)
+	getRec := httptest.NewRecorder()
+	router.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on currencies get, got %d: %s", getRec.Code, getRec.Body.String())
+	}
+	var pkg contracts.MasterDataPackage
+	if err := json.Unmarshal(getRec.Body.Bytes(), &pkg); err != nil {
+		t.Fatal(err)
+	}
+	if pkg.StreamName != contracts.MasterDataStreamCurrencies || pkg.CloudVersion != 21 {
+		t.Fatalf("unexpected currencies package: %+v", pkg)
+	}
+}
+
 func postEnvelope(t *testing.T, h http.Handler, raw []byte) contracts.EventAck {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/edge-events", bytes.NewReader(raw))

@@ -95,6 +95,42 @@ func TestUpsertAndGetMasterDataPackage(t *testing.T) {
 	}
 }
 
+func TestUpsertMasterDataPackageValidatesCurrenciesPayload(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+	payload := json.RawMessage(`{
+		"currencies":[
+			{
+				"currency_code":643,
+				"currency_alpha_code":"RUB",
+				"minor_unit":2,
+				"currency_iso_name":"Russian Ruble",
+				"currency_symbol":"₽",
+				"curr_basic_name":"р",
+				"curr_add_name":"коп.",
+				"show_add":true,
+				"show_currency_basic_name":true
+			}
+		]
+	}`)
+	if _, err := service.UpsertMasterDataPackage(context.Background(), contracts.MasterDataPackage{
+		StreamName:   contracts.MasterDataStreamCurrencies,
+		SyncMode:     contracts.SyncModeFullSnapshot,
+		CloudVersion: 1,
+		PayloadJSON:  payload,
+	}); err != nil {
+		t.Fatalf("expected valid currencies package, got %v", err)
+	}
+	if _, err := service.UpsertMasterDataPackage(context.Background(), contracts.MasterDataPackage{
+		StreamName:   contracts.MasterDataStreamCurrencies,
+		SyncMode:     contracts.SyncModeFullSnapshot,
+		CloudVersion: 2,
+		PayloadJSON:  json.RawMessage(`{"currencies":[]}`),
+	}); err == nil {
+		t.Fatal("expected empty currencies list to be rejected")
+	}
+}
+
 func sampleEnvelope(t *testing.T) []byte {
 	t.Helper()
 	body := map[string]any{

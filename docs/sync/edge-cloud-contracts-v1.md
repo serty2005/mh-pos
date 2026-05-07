@@ -275,6 +275,7 @@ implemented now:
   - `PUT /api/v1/provisioning/master-data/{stream}`
   - `GET /api/v1/provisioning/master-data/{stream}?node_device_id=...`
 - Cloud stores provisioning payloads in `cloud_master_data_packages`.
+- Provisioning stream catalog on Cloud includes: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `currencies`.
 
 next:
 - add authorization policy for provisioning endpoints in production perimeter;

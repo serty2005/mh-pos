@@ -373,6 +373,9 @@ func validateRestaurant(v domain.Restaurant) error {
 	if v.ID == "" || v.Name == "" || v.Timezone == "" || v.Currency == "" {
 		return fmt.Errorf("%w: restaurant id, name, timezone and currency are required", domain.ErrInvalid)
 	}
+	if _, err := shared.ValidateCurrencyCode(v.Currency); err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalid, err)
+	}
 	return nil
 }
 
@@ -386,6 +389,9 @@ func validateDevice(v domain.Device) error {
 func validateRole(v domain.Role) error {
 	if v.ID == "" || v.Name == "" || v.PermissionsJSON == "" || !json.Valid([]byte(v.PermissionsJSON)) {
 		return fmt.Errorf("%w: role id, name and valid permissions_json are required", domain.ErrInvalid)
+	}
+	if err := shared.ValidatePermissionsJSON(v.PermissionsJSON); err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalid, err)
 	}
 	return nil
 }
@@ -426,6 +432,9 @@ func validateCatalogItem(v domain.CatalogItem) error {
 func validateMenuItem(v domain.MenuItem) error {
 	if v.ID == "" || v.CatalogItemID == "" || v.Name == "" || v.Currency == "" || v.Price < 0 {
 		return fmt.Errorf("%w: menu item id, catalog_item_id, name, currency and non-negative price are required", domain.ErrInvalid)
+	}
+	if _, err := shared.ValidateCurrencyCode(v.Currency); err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalid, err)
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -18,6 +19,8 @@ const (
 	PermissionCashSessionClose       PermissionID = "pos.cash_session.close"
 	PermissionCashSessionViewCurrent PermissionID = "pos.cash_session.view_current"
 	PermissionCashDrawerEvent        PermissionID = "pos.cash_drawer.record_event"
+	PermissionFloorView              PermissionID = "pos.floor.view"
+	PermissionMenuView               PermissionID = "pos.menu.view"
 	PermissionOrderCreate            PermissionID = "pos.order.create"
 	PermissionOrderView              PermissionID = "pos.order.view"
 	PermissionOrderAddLine           PermissionID = "pos.order.add_line"
@@ -34,6 +37,32 @@ const (
 	// Manager/service sync operation permission id.
 	PermissionSyncRetryFailed PermissionID = "pos.sync.retry_failed"
 )
+
+var knownPermissionIDs = map[PermissionID]struct{}{
+	PermissionShiftOpen:              {},
+	PermissionShiftClose:             {},
+	PermissionShiftViewCurrent:       {},
+	PermissionShiftRecent:            {},
+	PermissionCashSessionOpen:        {},
+	PermissionCashSessionClose:       {},
+	PermissionCashSessionViewCurrent: {},
+	PermissionCashDrawerEvent:        {},
+	PermissionFloorView:              {},
+	PermissionMenuView:               {},
+	PermissionOrderCreate:            {},
+	PermissionOrderView:              {},
+	PermissionOrderAddLine:           {},
+	PermissionOrderChangeQuantity:    {},
+	PermissionOrderVoidLine:          {},
+	PermissionPrecheckIssue:          {},
+	PermissionPrecheckView:           {},
+	PermissionPrecheckCancelRequest:  {},
+	PermissionPrecheckCancel:         {},
+	PermissionPaymentCapture:         {},
+	PermissionCheckView:              {},
+	PermissionSyncView:               {},
+	PermissionSyncRetryFailed:        {},
+}
 
 // PermissionsJSON encodes a deterministic permissions JSON object for role seeds and tests.
 func PermissionsJSON(permissions ...PermissionID) string {
@@ -78,4 +107,20 @@ func HasAnyPermission(body string, permissions ...PermissionID) bool {
 		}
 	}
 	return false
+}
+
+// IsKnownPermissionID reports whether the provided permission id is part of the canonical backend catalog.
+func IsKnownPermissionID(permission PermissionID) bool {
+	_, ok := knownPermissionIDs[permission]
+	return ok
+}
+
+// ValidatePermissionsJSON verifies that all granted permissions belong to the canonical backend catalog.
+func ValidatePermissionsJSON(body string) error {
+	for _, permission := range PermissionsFromJSON(body) {
+		if !IsKnownPermissionID(PermissionID(permission)) {
+			return fmt.Errorf("unknown permission id %q", permission)
+		}
+	}
+	return nil
 }

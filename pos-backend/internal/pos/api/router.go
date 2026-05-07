@@ -382,7 +382,9 @@ func (h *Handler) createHall(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listHalls(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.ListHalls(r.Context(), r.URL.Query().Get("restaurant_id"))
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.ListHallsAsOperator(r.Context(), r.URL.Query().Get("restaurant_id"), meta)
 	writeOK(w, v, err)
 }
 
@@ -418,7 +420,9 @@ func (h *Handler) createTable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listTables(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.ListTables(r.Context(), r.URL.Query().Get("restaurant_id"), r.URL.Query().Get("hall_id"))
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.ListTablesAsOperator(r.Context(), r.URL.Query().Get("restaurant_id"), r.URL.Query().Get("hall_id"), meta)
 	writeOK(w, v, err)
 }
 
@@ -473,7 +477,9 @@ func (h *Handler) createMenuItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listMenuItems(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.ListMenuItems(r.Context())
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.ListMenuItemsAsOperator(r.Context(), meta)
 	writeOK(w, v, err)
 }
 
@@ -696,7 +702,9 @@ func (h *Handler) listOutbox(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listLocalEvents(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	v, err := h.service.ListLocalEvents(r.Context(), app.ListLocalEventsQuery{
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.ListLocalEventsAsOperator(r.Context(), meta, app.ListLocalEventsQuery{
 		Limit:     limit,
 		EventType: r.URL.Query().Get("event_type"),
 	})

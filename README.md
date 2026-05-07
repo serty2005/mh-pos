@@ -437,13 +437,22 @@ implemented now:
 
 - backend enforces canonical RBAC permission ids in app-layer for critical cashier runtime operations;
 - role permissions are still stored as JSON on roles, but authorization checks use stable ids;
-- read/runtime APIs (`employee-shifts/current|recent`, `cash-shifts/current`, `orders/current|{id}`, `prechecks`, `checks`) require explicit operator permissions;
+- read/runtime APIs (`employee-shifts/current|recent`, `cash-shifts/current`, `halls`, `tables`, `menu`, `orders/current|{id}`, `prechecks`, `checks`) require explicit operator permissions;
 - cash drawer event recording requires backend permission `pos.cash_drawer.record_event`;
 - precheck cancel override uses split permissions: actor requires `pos.precheck.cancel.request`, approver requires `pos.precheck.cancel`;
-- operator-triggered `GET /api/v1/sync/outbox` and `GET /api/v1/sync/status` require `pos.sync.view`;
+- operator-triggered `GET /api/v1/sync/outbox`, `GET /api/v1/sync/status`, `GET /api/v1/sync/local-events` require `pos.sync.view`;
 - operator-triggered `POST /api/v1/sync/retry-failed` requires `pos.sync.retry_failed`;
 - failed authorization returns `forbidden` without leaking PIN or PIN hash data.
 
 planned next:
 
 - expand backend enforcement coverage to the full UI RBAC matrix in `/docs/ui/POS-UI-RBAC.md`.
+
+## Currency precision (implemented now)
+
+implemented now:
+
+- POS backend validates currency codes using a canonical pilot ISO 4217 profile catalog and rejects unsupported codes;
+- pilot profile explicitly supports both 2-decimal and 3-decimal currencies;
+- POS UI uses precision-aware `minor <-> major` conversion helper by currency code (instead of fixed `/100`);
+- Cloud provisioning supports `currencies` stream and has canonical `cloud_currency_reference` template table in PostgreSQL.

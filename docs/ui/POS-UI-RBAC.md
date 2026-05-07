@@ -207,10 +207,11 @@ implemented now:
   - `pos.shift.open`, `pos.shift.close`, `pos.shift.view_current`, `pos.shift.recent` for personal employee shifts
   - `pos.cash_session.open`, `pos.cash_session.close`, `pos.cash_session.view_current`
   - `pos.cash_drawer.record_event`
+  - `pos.floor.view` and `pos.menu.view` for floor/menu runtime reads
   - `pos.order.create`, `pos.order.view`, `pos.order.add_line`, `pos.order.change_quantity`, `pos.order.void_line`
   - `pos.precheck.issue`, `pos.precheck.view`
   - `pos.payment.capture`, `pos.check.view`
-  - `pos.sync.view` and `pos.sync.retry_failed` for operator-triggered sync APIs
+  - `pos.sync.view` and `pos.sync.retry_failed` for operator-triggered sync APIs (`outbox`, `status`, `local-events`, `retry-failed`)
 - manager override precheck cancel enforces split permissions:
   - actor must have `pos.precheck.cancel.request`
   - approving manager must have `pos.precheck.cancel`

@@ -30,7 +30,7 @@ Frontend:
 - показывает состояние;
 - отправляет команды в backend;
 - не принимает финансовых решений;
-- не рассчитывает право на операцию;
+- использует backend-provided permission model для UX visibility, но не является security boundary;
 - не считает order/precheck/check totals;
 - не определяет самостоятельно, можно ли закрыть заказ, отменить пречек или завершить оплату.
 
@@ -159,6 +159,8 @@ implemented now:
 - Без открытой личной смены сотрудника `/pos` показывает только действие открытия личной смены и последние личные смены текущего actor.
 - Создание и редактирование заказов доступно после открытия личной смены сотрудника и не требует кассовой смены.
 - Оплата доступна только при открытой кассовой смене.
+- visibility критичных действий в `/pos` привязана к backend permission ids (shift/cash/order/precheck/payment/floor/menu); backend остается final enforcement layer.
+- денежный ввод/показ в UI использует currency precision helper по ISO code с pilot-поддержкой 2 и 3 decimal places.
 
 planned next:
 
@@ -202,6 +204,7 @@ planned next:
 - наличная оплата;
 - trusted manual card capture;
 - manager override только для отмены пречека.
+- money conversion в UI на основе integer minor units с currency-dependent precision (2/3 decimals).
 
 ## Explicitly unsupported now
 
@@ -216,7 +219,6 @@ planned next:
 - refund flow;
 - PSP integration;
 - hardware printer integration from UI;
-- multi-currency exponent handling beyond pilot assumptions;
 - offline write queue in frontend.
 
 ## Документационные правила для UI

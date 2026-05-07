@@ -63,6 +63,9 @@ func (s *Service) CreateRole(ctx context.Context, cmd CreateRoleCommand) (*domai
 	if strings.TrimSpace(cmd.Name) == "" || !json.Valid([]byte(permissions)) {
 		return nil, fmt.Errorf("%w: name and valid permissions_json are required", domain.ErrInvalid)
 	}
+	if err := shared.ValidatePermissionsJSON(permissions); err != nil {
+		return nil, fmt.Errorf("%w: %v", domain.ErrInvalid, err)
+	}
 	now := s.clock.Now()
 	v := &domain.Role{ID: s.ids.NewID(), Name: cmd.Name, PermissionsJSON: permissions, Active: true, CreatedAt: now, UpdatedAt: now}
 	return v, s.tx.WithinTx(ctx, func(ctx context.Context) error {

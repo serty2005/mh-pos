@@ -124,6 +124,7 @@ implemented now: operator-facing sync endpoints enforce app-layer RBAC:
 
 - `GET /api/v1/sync/outbox` requires `pos.sync.view`;
 - `GET /api/v1/sync/status` requires `pos.sync.view`;
+- `GET /api/v1/sync/local-events` requires `pos.sync.view`;
 - `POST /api/v1/sync/retry-failed` requires `pos.sync.retry_failed`.
 
 ### Cloud -> Edge master-data ingest endpoints
@@ -283,6 +284,8 @@ Canonical permission ids used by implemented now runtime:
 - `pos.cash_session.close`
 - `pos.cash_session.view_current`
 - `pos.cash_drawer.record_event`
+- `pos.floor.view`
+- `pos.menu.view`
 - `pos.order.create`
 - `pos.order.view`
 - `pos.order.add_line`
@@ -294,7 +297,7 @@ Canonical permission ids used by implemented now runtime:
 - `pos.precheck.cancel` (manager override approver permission)
 - `pos.payment.capture`
 - `pos.check.view`
-- `pos.sync.view` (required for operator-triggered `GET /api/v1/sync/outbox` and `GET /api/v1/sync/status`)
+- `pos.sync.view` (required for operator-triggered `GET /api/v1/sync/outbox`, `GET /api/v1/sync/status`, `GET /api/v1/sync/local-events`)
 - `pos.sync.retry_failed` (required for operator-triggered `POST /api/v1/sync/retry-failed`)
 
 Error behavior:
@@ -305,6 +308,15 @@ Error behavior:
 planned next:
 
 - extend canonical backend enforcement to the full UI RBAC matrix (`docs/ui/POS-UI-RBAC.md`) beyond the current runtime RBAC slice.
+
+## Currency policy (implemented now)
+
+implemented now:
+
+- backend validates runtime currency codes against a canonical pilot ISO 4217 profile catalog;
+- pilot catalog explicitly supports both 2-decimal and 3-decimal currencies;
+- pricing/payment domain amounts continue to use integer minor units (no floating-point storage);
+- unsupported currency code is rejected as domain `invalid`.
 
 ## Документационные правила
 

@@ -27,3 +27,14 @@ func TestHasAnyPermission(t *testing.T) {
 		t.Fatal("expected no requested permissions to be granted")
 	}
 }
+
+func TestValidatePermissionsJSON(t *testing.T) {
+	valid := shared.PermissionsJSON(shared.PermissionFloorView, shared.PermissionOrderCreate)
+	if err := shared.ValidatePermissionsJSON(valid); err != nil {
+		t.Fatalf("expected valid canonical permissions json, got %v", err)
+	}
+	invalid := `{"pos.order.create":true,"pos.unknown.permission":true}`
+	if err := shared.ValidatePermissionsJSON(invalid); err == nil {
+		t.Fatal("expected unknown permission to be rejected")
+	}
+}

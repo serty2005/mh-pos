@@ -45,6 +45,7 @@
           unelevated
           icon="schedule"
           :label="t('actions.openShift')"
+          :disable="!canOpenShift"
           :loading="openShiftMutation.isPending.value"
           @click="openShiftMutation.mutate()"
         />
@@ -77,6 +78,7 @@
           outlined
           type="number"
           min="0"
+          :step="currencyInputStep(currency)"
           :label="t('common.amount')"
           :suffix="currency"
           :disable="!currentShift.data.value"
@@ -87,7 +89,7 @@
           outline
           icon="point_of_sale"
           :label="t('actions.openCashSession')"
-          :disable="!currentShift.data.value"
+          :disable="!currentShift.data.value || !canOpenCashSession"
           :loading="openCashMutation.isPending.value"
           @click="openCashMutation.mutate(openingCashAmount)"
         />
@@ -99,6 +101,7 @@
             outlined
             type="number"
             min="0"
+            :step="currencyInputStep(currency)"
             :label="t('common.amount')"
             :suffix="currency"
           />
@@ -107,6 +110,7 @@
             color="secondary"
             icon="payments"
             :label="t('actions.closeCashSession')"
+            :disable="!canCloseCashSession"
             :loading="closeCashMutation.isPending.value"
             @click="closeCashMutation.mutate({ cashSessionId: currentCashSession.data.value.id, amount: closingCashAmount })"
           />
@@ -118,6 +122,7 @@
             color="secondary"
             icon="event_busy"
             :label="t('actions.closeShift')"
+            :disable="!canCloseShift"
             :loading="closeShiftMutation.isPending.value"
             @click="closeShiftMutation.mutate(currentShift.data.value.id)"
           />
@@ -225,14 +230,14 @@
                   dense
                   round
                   icon="remove"
-                  :disable="!canEditOrder || line.quantity <= 1"
+                  :disable="!canChangeOrderLine || line.quantity <= 1"
                   @click="changeQuantity(line.id, line.quantity - 1)"
                 />
                 <span>{{ line.quantity }}</span>
-                <q-btn flat dense round icon="add" :disable="!canEditOrder" @click="changeQuantity(line.id, line.quantity + 1)" />
+                <q-btn flat dense round icon="add" :disable="!canChangeOrderLine" @click="changeQuantity(line.id, line.quantity + 1)" />
               </div>
               <strong class="line-total">{{ money(line.total_price, orderCurrency) }}</strong>
-              <q-btn flat dense round icon="delete" color="negative" :disable="!canEditOrder" :aria-label="t('actions.voidLine')" @click="voidLine(line.id)" />
+              <q-btn flat dense round icon="delete" color="negative" :disable="!canVoidOrderLine" :aria-label="t('actions.voidLine')" @click="voidLine(line.id)" />
             </div>
           </div>
           <div v-else class="empty-state">{{ t('pos.emptyOrder') }}</div>
@@ -254,7 +259,7 @@
             :key="item.id"
             class="menu-button"
             type="button"
-            :disabled="!canEditOrder"
+            :disabled="!canAddOrderLine"
             @click="addLineMutation.mutate(item.id)"
           >
             <span>{{ item.name }}</span>
@@ -281,7 +286,7 @@
             <span>{{ t('pos.payment') }}</span>
             <strong>{{ money(activePrecheck.paid_total, orderCurrency) }}</strong>
           </div>
-          <q-btn outline color="negative" icon="undo" :label="t('pos.cancelPrecheck')" :disable="activePrecheck.paid_total > 0" @click="cancelDialog = true" />
+          <q-btn outline color="negative" icon="undo" :label="t('pos.cancelPrecheck')" :disable="activePrecheck.paid_total > 0 || !canCancelPrecheck" @click="cancelDialog = true" />
         </div>
         <q-btn
           v-else
@@ -301,6 +306,7 @@
             dense
             type="number"
             min="0"
+            :step="currencyInputStep(orderCurrency)"
             :label="t('pos.paymentAmount')"
             :suffix="orderCurrency"
             :disable="!activePrecheck"
@@ -392,6 +398,8 @@ import {
   voidOrderLine,
 } from '../shared/api';
 import { resolveProtectedPosFallback } from '../shared/sessionGuards';
+import { currencyInputStep, formatMinorCurrency, minorToMoney, moneyToMinor } from '../shared/currency';
+import { hasPermission, permissionCatalog } from '../shared/rbac';
 import type { Order } from '../shared/schemas';
 import { useAuthStore } from '../stores/auth';
 
@@ -410,6 +418,13 @@ const cancelDialog = ref(false);
 const managerEmployeeId = ref('');
 const managerPin = ref('');
 const cancelReason = ref('');
+const grantedPermissions = computed(() => auth.actor?.permissions ?? []);
+const canViewFloor = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.floorView));
+const canViewMenu = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.menuView));
+const canOpenShift = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.shiftOpen));
+const canCloseShift = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.shiftClose));
+const canOpenCashSession = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.cashSessionOpen));
+const canCloseCashSession = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.cashSessionClose));
 
 const pairing = useQuery({
   queryKey: ['pairing-status'],
@@ -444,7 +459,7 @@ const currentCashSession = useQuery({
 const halls = useQuery({
   queryKey: ['halls', auth.restaurantId],
   queryFn: () => listHalls(auth.restaurantId),
-  enabled: () => Boolean(auth.restaurantId && auth.sessionId && currentShift.data.value),
+  enabled: () => Boolean(auth.restaurantId && auth.sessionId && currentShift.data.value && canViewFloor.value),
 });
 
 const activeHallId = computed(() => selectedHallId.value || halls.data.value?.find((hall) => hall.active)?.id || '');
@@ -452,7 +467,7 @@ const activeHallId = computed(() => selectedHallId.value || halls.data.value?.fi
 const tables = useQuery({
   queryKey: ['tables', auth.restaurantId, activeHallId],
   queryFn: () => listTables(auth.restaurantId, activeHallId.value),
-  enabled: () => Boolean(auth.restaurantId && activeHallId.value && auth.sessionId && currentShift.data.value),
+  enabled: () => Boolean(auth.restaurantId && activeHallId.value && auth.sessionId && currentShift.data.value && canViewFloor.value),
 });
 
 const tableOrder = useQuery({
@@ -476,7 +491,7 @@ const prechecks = useQuery({
 const menu = useQuery({
   queryKey: ['menu-items'],
   queryFn: listMenuItems,
-  enabled: () => Boolean(auth.sessionId && currentShift.data.value),
+  enabled: () => Boolean(auth.sessionId && currentShift.data.value && canViewMenu.value),
 });
 
 const activeHalls = computed(() => halls.data.value?.filter((hall) => hall.active) ?? []);
@@ -495,10 +510,13 @@ const activePrecheck = computed(() => prechecks.data.value?.find((item) => item.
 const finalCheckData = computed(() => finalCheck.data.value ?? activeOrder.value?.check ?? null);
 const currency = computed(() => activeMenuItems.value[0]?.currency ?? 'RUB');
 const orderCurrency = computed(() => activeMenuItems.value.find((item) => activeLines.value.some((line) => line.menu_item_id === item.id))?.currency ?? currency.value);
-const canCreateOrder = computed(() => Boolean(selectedTableId.value && currentShift.data.value && !activeOrder.value));
-const canEditOrder = computed(() => Boolean(activeOrder.value?.status === 'open' && !activePrecheck.value && !activeOrder.value.check));
-const canIssuePrecheck = computed(() => Boolean(activeOrder.value?.status === 'open' && activeLines.value.length > 0 && !activePrecheck.value));
-const canPay = computed(() => Boolean(currentCashSession.data.value && activePrecheck.value && paymentAmount.value > 0 && paymentAmount.value <= remainingPayment.value));
+const canCreateOrder = computed(() => Boolean(selectedTableId.value && currentShift.data.value && !activeOrder.value && hasPermission(grantedPermissions.value, permissionCatalog.orderCreate)));
+const canAddOrderLine = computed(() => Boolean(activeOrder.value?.status === 'open' && !activePrecheck.value && !activeOrder.value.check && hasPermission(grantedPermissions.value, permissionCatalog.orderAddLine)));
+const canChangeOrderLine = computed(() => Boolean(activeOrder.value?.status === 'open' && !activePrecheck.value && !activeOrder.value.check && hasPermission(grantedPermissions.value, permissionCatalog.orderChangeQuantity)));
+const canVoidOrderLine = computed(() => Boolean(activeOrder.value?.status === 'open' && !activePrecheck.value && !activeOrder.value.check && hasPermission(grantedPermissions.value, permissionCatalog.orderVoidLine)));
+const canIssuePrecheck = computed(() => Boolean(activeOrder.value?.status === 'open' && activeLines.value.length > 0 && !activePrecheck.value && hasPermission(grantedPermissions.value, permissionCatalog.precheckIssue)));
+const canCancelPrecheck = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.precheckCancelRequest));
+const canPay = computed(() => Boolean(currentCashSession.data.value && activePrecheck.value && paymentAmount.value > 0 && paymentAmount.value <= remainingPayment.value && hasPermission(grantedPermissions.value, permissionCatalog.paymentCapture)));
 const remainingPayment = computed(() => activePrecheck.value ? activePrecheck.value.total - activePrecheck.value.paid_total : 0);
 const orderLoading = computed(() => tableOrder.isPending.value || order.isPending.value);
 const statusError = computed(() => firstError([currentShift.error.value, currentCashSession.error.value]));
@@ -527,12 +545,12 @@ const closeShiftMutation = useMutation({
 });
 
 const openCashMutation = useMutation({
-  mutationFn: (amount: number) => openCashSession(moneyToMinor(amount)),
+  mutationFn: (amount: number) => openCashSession(moneyToMinor(amount, currency.value)),
   onSuccess: refreshOps,
 });
 
 const closeCashMutation = useMutation({
-  mutationFn: (payload: { cashSessionId: string; amount: number }) => closeCashSession(payload.cashSessionId, moneyToMinor(payload.amount)),
+  mutationFn: (payload: { cashSessionId: string; amount: number }) => closeCashSession(payload.cashSessionId, moneyToMinor(payload.amount, currency.value)),
   onSuccess: refreshOps,
 });
 
@@ -576,7 +594,7 @@ const cancelPrecheckMutation = useMutation({
 });
 
 const paymentMutation = useMutation({
-  mutationFn: (method: 'cash' | 'card') => capturePrecheckPayment(activePrecheck.value?.id ?? '', method, moneyToMinor(paymentAmount.value), orderCurrency.value),
+  mutationFn: (method: 'cash' | 'card') => capturePrecheckPayment(activePrecheck.value?.id ?? '', method, moneyToMinor(paymentAmount.value, orderCurrency.value), orderCurrency.value),
   onSuccess() {
     paymentAmount.value = 0;
     void refreshOrder();
@@ -619,7 +637,7 @@ watch(tableOrder.data, (value) => {
 });
 
 watch(remainingPayment, (value) => {
-  paymentAmount.value = minorToMoney(value);
+  paymentAmount.value = minorToMoney(value, orderCurrency.value);
 });
 
 function selectHall(id: string) {
@@ -676,15 +694,7 @@ function refetchMenu() {
 }
 
 function money(value: number, code: string) {
-  return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: code }).format(minorToMoney(value));
-}
-
-function moneyToMinor(value: number) {
-  return Math.round((Number.isFinite(value) ? value : 0) * 100);
-}
-
-function minorToMoney(value: number) {
-  return Math.round(value) / 100;
+  return formatMinorCurrency(value, code, 'ru-RU');
 }
 
 function formatDate(value: string) {

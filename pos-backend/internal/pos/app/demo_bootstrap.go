@@ -47,6 +47,8 @@ func (s *Service) BootstrapDemo(ctx context.Context) (*DemoBootstrapResult, erro
 		appshared.PermissionCashSessionClose,
 		appshared.PermissionCashSessionViewCurrent,
 		appshared.PermissionCashDrawerEvent,
+		appshared.PermissionFloorView,
+		appshared.PermissionMenuView,
 		appshared.PermissionOrderCreate,
 		appshared.PermissionOrderView,
 		appshared.PermissionOrderAddLine,
@@ -56,7 +58,7 @@ func (s *Service) BootstrapDemo(ctx context.Context) (*DemoBootstrapResult, erro
 		appshared.PermissionPrecheckView,
 		appshared.PermissionPaymentCapture,
 		appshared.PermissionCheckView,
-	), appshared.PermissionShiftOpen, appshared.PermissionShiftRecent, appshared.PermissionOrderCreate, appshared.PermissionOrderView, appshared.PermissionPrecheckIssue, appshared.PermissionPrecheckView, appshared.PermissionPaymentCapture, appshared.PermissionCheckView)
+	), appshared.PermissionShiftOpen, appshared.PermissionShiftRecent, appshared.PermissionFloorView, appshared.PermissionMenuView, appshared.PermissionOrderCreate, appshared.PermissionOrderView, appshared.PermissionPrecheckIssue, appshared.PermissionPrecheckView, appshared.PermissionPaymentCapture, appshared.PermissionCheckView)
 	if err != nil {
 		return nil, err
 	}
@@ -68,6 +70,8 @@ func (s *Service) BootstrapDemo(ctx context.Context) (*DemoBootstrapResult, erro
 		appshared.PermissionCashSessionOpen,
 		appshared.PermissionCashSessionClose,
 		appshared.PermissionCashSessionViewCurrent,
+		appshared.PermissionFloorView,
+		appshared.PermissionMenuView,
 		appshared.PermissionOrderCreate,
 		appshared.PermissionOrderView,
 		appshared.PermissionOrderAddLine,
@@ -81,7 +85,7 @@ func (s *Service) BootstrapDemo(ctx context.Context) (*DemoBootstrapResult, erro
 		appshared.PermissionPrecheckCancel,
 		appshared.PermissionSyncView,
 		appshared.PermissionSyncRetryFailed,
-	), appshared.PermissionPrecheckCancelRequest, appshared.PermissionPrecheckCancel, appshared.PermissionSyncView, appshared.PermissionSyncRetryFailed)
+	), appshared.PermissionFloorView, appshared.PermissionMenuView, appshared.PermissionPrecheckCancelRequest, appshared.PermissionPrecheckCancel, appshared.PermissionSyncView, appshared.PermissionSyncRetryFailed)
 	if err != nil {
 		return nil, err
 	}

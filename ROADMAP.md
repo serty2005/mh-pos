@@ -146,21 +146,29 @@ implemented now:
 - operator-triggered `sync/retry-failed` is enforced via backend permission `pos.sync.retry_failed`.
 - app-layer permission enforcement added for read/runtime APIs: personal shift current/recent, current cash session, order/precheck/check read flows, sync status/outbox read flows;
 - precheck cancel override flow now enforces split actor/approver permissions (`pos.precheck.cancel.request` + `pos.precheck.cancel`).
+- app-layer permission enforcement added for floor/menu runtime reads and `GET /api/v1/sync/local-events`.
+- role creation/import now rejects unknown permission ids outside canonical backend catalog.
+- UI visibility in cashier flow is now wired to backend permission model (UX-only gate, backend remains final enforcement).
 
 planned next:
 
 - complete enforcement coverage for the entire UI RBAC matrix and override variants.
 ### Pilot scope hardening
 
-Статус: `next`
+Статус: `in_progress`
 
 Нужно явно решить до пилота:
 
-- поддерживаются ли только валюты с 2 decimal places;
 - вводится ли `business_date_local` как pilot blocker;
 - нужен ли reprint в pilot scope;
 - допускается ли waiter payment path в pilot scope;
 - какие diagnostics доступны менеджеру, а какие только support/admin.
+
+implemented now:
+
+- currency policy больше не ограничена только 2 decimals: pilot runtime поддерживает 2 и 3 decimal places по currency code;
+- Cloud PostgreSQL получил canonical ISO 4217 currency template (`cloud_currency_reference`);
+- Cloud provisioning contract поддерживает `currencies` stream для Cloud -> Edge master/reference payload.
 
 ## Что можно оставить после пилота
 

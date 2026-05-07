@@ -196,6 +196,8 @@ func (f *fixture) seed(t *testing.T) {
 			appshared.PermissionCashSessionOpen,
 			appshared.PermissionCashSessionClose,
 			appshared.PermissionCashSessionViewCurrent,
+			appshared.PermissionFloorView,
+			appshared.PermissionMenuView,
 			appshared.PermissionOrderCreate,
 			appshared.PermissionOrderView,
 			appshared.PermissionOrderAddLine,
@@ -221,6 +223,8 @@ func (f *fixture) seed(t *testing.T) {
 			appshared.PermissionCashSessionOpen,
 			appshared.PermissionCashSessionClose,
 			appshared.PermissionCashSessionViewCurrent,
+			appshared.PermissionFloorView,
+			appshared.PermissionMenuView,
 			appshared.PermissionOrderCreate,
 			appshared.PermissionOrderView,
 			appshared.PermissionOrderAddLine,
@@ -525,6 +529,80 @@ func TestListOutboxAsOperatorRequiresPermission(t *testing.T) {
 	}
 	if len(items) == 0 {
 		t.Fatal("expected non-empty outbox list for manager")
+	}
+}
+
+func TestListLocalEventsAsOperatorRequiresPermission(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.service.ListLocalEventsAsOperator(f.ctx, f.edgeMetaCommand("cmd-local-events-cashier-denied"), app.ListLocalEventsQuery{Limit: 5}); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden for cashier local events access, got %v", err)
+	}
+	items, err := f.service.ListLocalEventsAsOperator(f.ctx, f.managerEdgeMetaCommand(t, "cmd-local-events-manager-allow"), app.ListLocalEventsQuery{Limit: 5})
+	if err != nil {
+		t.Fatalf("expected manager local events access, got %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatal("expected non-empty local events list for manager")
+	}
+}
+
+func TestFloorAndMenuReadAsOperatorRequiresPermissions(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.service.ListHallsAsOperator(f.ctx, f.restaurant.ID, f.edgeMetaCommand("cmd-halls-cashier-allow")); err != nil {
+		t.Fatalf("expected cashier halls access, got %v", err)
+	}
+	if _, err := f.service.ListTablesAsOperator(f.ctx, f.restaurant.ID, f.hall.ID, f.edgeMetaCommand("cmd-tables-cashier-allow")); err != nil {
+		t.Fatalf("expected cashier tables access, got %v", err)
+	}
+	if _, err := f.service.ListMenuItemsAsOperator(f.ctx, f.edgeMetaCommand("cmd-menu-cashier-allow")); err != nil {
+		t.Fatalf("expected cashier menu access, got %v", err)
+	}
+
+	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta:     seedMeta(bootstrapDeviceID),
+		Name:            "read-restricted",
+		PermissionsJSON: appshared.PermissionsJSON(appshared.PermissionOrderCreate),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	employee, err := f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{
+		CommandMeta:  seedMeta(f.device.ID),
+		RestaurantID: f.restaurant.ID,
+		RoleID:       role.ID,
+		Name:         "Restricted",
+		PINHash:      testPINHash(t, "1357", "restricted-salt"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{
+			CommandID:      "cmd-login-restricted",
+			NodeDeviceID:   f.device.ID,
+			DeviceID:       f.device.ID,
+			ClientDeviceID: f.clientID,
+			Origin:         app.OriginEdgeDevice,
+		},
+		PIN: "1357",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := edgeMeta(f.device.ID)
+	meta.CommandID = "cmd-floor-menu-restricted-denied"
+	meta.ClientDeviceID = f.clientID
+	meta.ActorEmployeeID = employee.ID
+	meta.SessionID = login.Session.ID
+
+	if _, err := f.service.ListHallsAsOperator(f.ctx, f.restaurant.ID, meta); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected halls forbidden for restricted role, got %v", err)
+	}
+	if _, err := f.service.ListTablesAsOperator(f.ctx, f.restaurant.ID, f.hall.ID, meta); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected tables forbidden for restricted role, got %v", err)
+	}
+	if _, err := f.service.ListMenuItemsAsOperator(f.ctx, meta); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected menu forbidden for restricted role, got %v", err)
 	}
 }
 
@@ -902,6 +980,39 @@ func TestReferenceCreatesRequireDeviceID(t *testing.T) {
 	}
 	if _, err := f.service.CreateMenuItem(f.ctx, app.CreateMenuItemCommand{CatalogItemID: f.menuItem.CatalogItemID, Name: "Tea", Price: 300, Currency: "RUB"}); !errors.Is(err, domain.ErrInvalid) {
 		t.Fatalf("expected invalid menu command, got %v", err)
+	}
+}
+
+func TestCreateRoleRejectsUnknownPermissionID(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta:     seedMeta(f.device.ID),
+		Name:            "bad-role",
+		PermissionsJSON: `{"pos.order.create":true,"pos.permission.unknown":true}`,
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected invalid unknown permission id, got %v", err)
+	}
+}
+
+func TestCurrencyValidationRejectsUnsupportedISOCode(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.service.CreateRestaurant(f.ctx, app.CreateRestaurantCommand{
+		CommandMeta: seedMeta(f.device.ID),
+		Name:        "Unsupported Currency Restaurant",
+		Timezone:    "Europe/Moscow",
+		Currency:    "AAA",
+	}); !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected invalid unsupported restaurant currency, got %v", err)
+	}
+	if _, err := f.service.CreateMenuItem(f.ctx, app.CreateMenuItemCommand{
+		CommandMeta:   seedMeta(f.device.ID),
+		CatalogItemID: f.menuItem.CatalogItemID,
+		Name:          "Unknown Currency Item",
+		Price:         300,
+		Currency:      "AAA",
+	}); !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected invalid unsupported menu currency, got %v", err)
 	}
 }
 

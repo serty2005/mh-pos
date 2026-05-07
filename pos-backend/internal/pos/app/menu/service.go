@@ -35,6 +35,14 @@ func (s *Service) ListMenuItems(ctx context.Context) ([]domain.MenuItem, error) 
 	return s.repo.ListMenuItems(ctx)
 }
 
+// ListMenuItemsAsOperator returns menu items for authenticated operator flows with RBAC enforcement.
+func (s *Service) ListMenuItemsAsOperator(ctx context.Context, meta shared.CommandMeta) ([]domain.MenuItem, error) {
+	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionMenuView)); err != nil {
+		return nil, err
+	}
+	return s.ListMenuItems(ctx)
+}
+
 func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand) (*domain.MenuItem, error) {
 	if err := shared.EnsureMasterDataWriteAllowed(cmd.CommandMeta); err != nil {
 		return nil, err
@@ -42,8 +50,21 @@ func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand)
 	if strings.TrimSpace(cmd.CatalogItemID) == "" || strings.TrimSpace(cmd.Name) == "" || strings.TrimSpace(cmd.Currency) == "" || cmd.Price < 0 {
 		return nil, fmt.Errorf("%w: catalog_item_id, name, currency and non-negative price are required", domain.ErrInvalid)
 	}
+	currency, err := shared.ValidateCurrencyCode(cmd.Currency)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", domain.ErrInvalid, err)
+	}
 	now := s.clock.Now()
-	v := &domain.MenuItem{ID: s.ids.NewID(), CatalogItemID: cmd.CatalogItemID, Name: cmd.Name, Price: cmd.Price, Currency: strings.ToUpper(cmd.Currency), Active: true, CreatedAt: now, UpdatedAt: now}
+	v := &domain.MenuItem{
+		ID:            s.ids.NewID(),
+		CatalogItemID: strings.TrimSpace(cmd.CatalogItemID),
+		Name:          strings.TrimSpace(cmd.Name),
+		Price:         cmd.Price,
+		Currency:      currency,
+		Active:        true,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
 	return v, s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err

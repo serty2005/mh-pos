@@ -102,6 +102,8 @@ func (f *apiFixture) seed(t *testing.T) {
 			appshared.PermissionCashSessionOpen,
 			appshared.PermissionCashSessionClose,
 			appshared.PermissionCashSessionViewCurrent,
+			appshared.PermissionFloorView,
+			appshared.PermissionMenuView,
 			appshared.PermissionOrderCreate,
 			appshared.PermissionOrderView,
 			appshared.PermissionOrderAddLine,
@@ -127,6 +129,8 @@ func (f *apiFixture) seed(t *testing.T) {
 			appshared.PermissionCashSessionOpen,
 			appshared.PermissionCashSessionClose,
 			appshared.PermissionCashSessionViewCurrent,
+			appshared.PermissionFloorView,
+			appshared.PermissionMenuView,
 			appshared.PermissionOrderCreate,
 			appshared.PermissionOrderView,
 			appshared.PermissionOrderAddLine,
@@ -622,6 +626,23 @@ func TestListOutboxAPIRequiresSyncViewPermission(t *testing.T) {
 	items := decodeAPIResponse[[]domain.OutboxMessage](t, rr)
 	if len(items) == 0 {
 		t.Fatal("expected non-empty outbox list")
+	}
+}
+
+func TestListLocalEventsAPIRequiresSyncViewPermission(t *testing.T) {
+	f := newAPIFixture(t)
+	rr := f.get(t, "/api/v1/sync/local-events?limit=5")
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cashier local events access, got %d: %s", rr.Code, rr.Body.String())
+	}
+	f.useManagerOperator(t)
+	rr = f.get(t, "/api/v1/sync/local-events?limit=5")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for manager local events access, got %d: %s", rr.Code, rr.Body.String())
+	}
+	items := decodeAPIResponse[[]domain.LocalEvent](t, rr)
+	if len(items) == 0 {
+		t.Fatal("expected non-empty local events list")
 	}
 }
 

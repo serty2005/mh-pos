@@ -77,6 +77,14 @@ func (s *Service) ListHalls(ctx context.Context, restaurantID string) ([]domain.
 	return s.repo.ListHalls(ctx, restaurantID)
 }
 
+// ListHallsAsOperator returns restaurant halls for authenticated operator flows with RBAC enforcement.
+func (s *Service) ListHallsAsOperator(ctx context.Context, restaurantID string, meta shared.CommandMeta) ([]domain.Hall, error) {
+	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionFloorView)); err != nil {
+		return nil, err
+	}
+	return s.ListHalls(ctx, restaurantID)
+}
+
 func (s *Service) ArchiveHall(ctx context.Context, cmd ArchiveHallCommand) error {
 	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
 	if err := shared.EnsureMasterDataWriteAllowed(cmd.CommandMeta); err != nil {
@@ -137,6 +145,14 @@ func (s *Service) ListTables(ctx context.Context, restaurantID, hallID string) (
 		return nil, fmt.Errorf("%w: restaurant_id is required", domain.ErrInvalid)
 	}
 	return s.repo.ListTables(ctx, restaurantID, strings.TrimSpace(hallID))
+}
+
+// ListTablesAsOperator returns floor tables for authenticated operator flows with RBAC enforcement.
+func (s *Service) ListTablesAsOperator(ctx context.Context, restaurantID, hallID string, meta shared.CommandMeta) ([]domain.Table, error) {
+	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionFloorView)); err != nil {
+		return nil, err
+	}
+	return s.ListTables(ctx, restaurantID, hallID)
 }
 
 func (s *Service) ArchiveTable(ctx context.Context, cmd ArchiveTableCommand) error {

@@ -41,8 +41,20 @@ func (s *Service) CreateRestaurant(ctx context.Context, cmd CreateRestaurantComm
 	if strings.TrimSpace(cmd.Name) == "" || strings.TrimSpace(cmd.Timezone) == "" || strings.TrimSpace(cmd.Currency) == "" {
 		return nil, fmt.Errorf("%w: name, timezone and currency are required", domain.ErrInvalid)
 	}
+	currency, err := shared.ValidateCurrencyCode(cmd.Currency)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", domain.ErrInvalid, err)
+	}
 	now := s.clock.Now()
-	v := &domain.Restaurant{ID: s.ids.NewID(), Name: cmd.Name, Timezone: cmd.Timezone, Currency: strings.ToUpper(cmd.Currency), Active: true, CreatedAt: now, UpdatedAt: now}
+	v := &domain.Restaurant{
+		ID:        s.ids.NewID(),
+		Name:      strings.TrimSpace(cmd.Name),
+		Timezone:  strings.TrimSpace(cmd.Timezone),
+		Currency:  currency,
+		Active:    true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
 	return v, s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err

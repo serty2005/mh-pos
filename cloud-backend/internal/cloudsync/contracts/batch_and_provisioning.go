@@ -42,6 +42,7 @@ const (
 	MasterDataStreamFloor       = "floor"
 	MasterDataStreamCatalog     = "catalog"
 	MasterDataStreamMenu        = "menu"
+	MasterDataStreamCurrencies  = "currencies"
 )
 
 const (
@@ -65,7 +66,7 @@ type MasterDataPackage struct {
 
 func ValidateMasterDataStream(streamName string) error {
 	switch strings.TrimSpace(streamName) {
-	case MasterDataStreamRestaurants, MasterDataStreamDevices, MasterDataStreamStaff, MasterDataStreamFloor, MasterDataStreamCatalog, MasterDataStreamMenu:
+	case MasterDataStreamRestaurants, MasterDataStreamDevices, MasterDataStreamStaff, MasterDataStreamFloor, MasterDataStreamCatalog, MasterDataStreamMenu, MasterDataStreamCurrencies:
 		return nil
 	default:
 		return fmt.Errorf("%w: unsupported stream_name %q", ErrInvalidEnvelope, streamName)
@@ -96,6 +97,9 @@ func ValidateMasterDataPackage(v MasterDataPackage) error {
 	}
 	if len(v.PayloadJSON) == 0 || string(v.PayloadJSON) == "null" || string(v.PayloadJSON) == "{}" {
 		return fmt.Errorf("%w: payload_json is required", ErrInvalidEnvelope)
+	}
+	if err := ValidateMasterDataPayload(v.StreamName, v.PayloadJSON); err != nil {
+		return err
 	}
 	return nil
 }

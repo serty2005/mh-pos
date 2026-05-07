@@ -81,6 +81,7 @@ type ReclaimStaleOutboxCommand struct {
 }
 
 type Service struct {
+	repo        ports.Repository
 	restaurants *apprestaurant.Service
 	devices     *appdevice.Service
 	employees   *appemployee.Service
@@ -100,6 +101,7 @@ type Service struct {
 
 func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock) *Service {
 	return &Service{
+		repo:        repo,
 		restaurants: apprestaurant.NewService(repo, tx, ids, clock),
 		devices:     appdevice.NewService(repo, tx, ids, clock),
 		employees:   appemployee.NewService(repo, tx, ids, clock),
@@ -182,6 +184,11 @@ func (s *Service) ListHalls(ctx context.Context, restaurantID string) ([]domain.
 	return s.floor.ListHalls(ctx, restaurantID)
 }
 
+// ListHallsAsOperator returns halls for authenticated operator flows with RBAC enforcement.
+func (s *Service) ListHallsAsOperator(ctx context.Context, restaurantID string, meta CommandMeta) ([]domain.Hall, error) {
+	return s.floor.ListHallsAsOperator(ctx, restaurantID, meta)
+}
+
 func (s *Service) ArchiveHall(ctx context.Context, cmd ArchiveHallCommand) error {
 	return s.floor.ArchiveHall(ctx, cmd)
 }
@@ -192,6 +199,11 @@ func (s *Service) CreateTable(ctx context.Context, cmd CreateTableCommand) (*dom
 
 func (s *Service) ListTables(ctx context.Context, restaurantID, hallID string) ([]domain.Table, error) {
 	return s.floor.ListTables(ctx, restaurantID, hallID)
+}
+
+// ListTablesAsOperator returns tables for authenticated operator flows with RBAC enforcement.
+func (s *Service) ListTablesAsOperator(ctx context.Context, restaurantID, hallID string, meta CommandMeta) ([]domain.Table, error) {
+	return s.floor.ListTablesAsOperator(ctx, restaurantID, hallID, meta)
 }
 
 func (s *Service) ArchiveTable(ctx context.Context, cmd ArchiveTableCommand) error {
@@ -208,6 +220,11 @@ func (s *Service) CreateCatalogItem(ctx context.Context, cmd CreateCatalogItemCo
 
 func (s *Service) ListMenuItems(ctx context.Context) ([]domain.MenuItem, error) {
 	return s.menu.ListMenuItems(ctx)
+}
+
+// ListMenuItemsAsOperator returns menu items for authenticated operator flows with RBAC enforcement.
+func (s *Service) ListMenuItemsAsOperator(ctx context.Context, meta CommandMeta) ([]domain.MenuItem, error) {
+	return s.menu.ListMenuItemsAsOperator(ctx, meta)
 }
 
 func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand) (*domain.MenuItem, error) {
@@ -365,6 +382,14 @@ func (s *Service) ReleaseProcessingOutbox(ctx context.Context, lockedBy string) 
 
 func (s *Service) ListLocalEvents(ctx context.Context, query ListLocalEventsQuery) ([]domain.LocalEvent, error) {
 	return s.localEvents.ListLocalEvents(ctx, query.Limit, query.EventType)
+}
+
+// ListLocalEventsAsOperator returns local events for authenticated operator flows with RBAC enforcement.
+func (s *Service) ListLocalEventsAsOperator(ctx context.Context, meta CommandMeta, query ListLocalEventsQuery) ([]domain.LocalEvent, error) {
+	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionSyncView)); err != nil {
+		return nil, err
+	}
+	return s.ListLocalEvents(ctx, query)
 }
 
 func (s *Service) MarkOutboxSent(ctx context.Context, id string) error {

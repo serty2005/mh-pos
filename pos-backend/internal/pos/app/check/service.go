@@ -56,6 +56,10 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 	if strings.TrimSpace(cmd.PrecheckID) == "" || cmd.Amount <= 0 || strings.TrimSpace(cmd.Currency) == "" {
 		return nil, fmt.Errorf("%w: precheck_id, positive amount and currency are required", domain.ErrInvalid)
 	}
+	currency, err := shared.ValidateCurrencyCode(cmd.Currency)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", domain.ErrInvalid, err)
+	}
 	if cmd.Method != domain.PaymentCash && cmd.Method != domain.PaymentCard && cmd.Method != domain.PaymentOther {
 		return nil, fmt.Errorf("%w: unsupported payment method", domain.ErrInvalid)
 	}
@@ -64,7 +68,7 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 	}
 	now := s.clock.Now()
 	var payment *domain.Payment
-	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
@@ -111,7 +115,7 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 			PrecheckID:            precheck.ID,
 			Method:                cmd.Method,
 			Amount:                cmd.Amount,
-			Currency:              strings.ToUpper(cmd.Currency),
+			Currency:              currency,
 			Status:                domain.PaymentCaptured,
 			ProviderName:          optionalString(cmd.ProviderName),
 			ProviderTransactionID: optionalString(cmd.ProviderTransactionID),
