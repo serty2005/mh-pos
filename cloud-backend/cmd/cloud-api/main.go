@@ -14,6 +14,7 @@ import (
 	"cloud-backend/internal/cloudsync/app"
 	syncpg "cloud-backend/internal/cloudsync/infra/postgres"
 	"cloud-backend/internal/platform/clock"
+	"cloud-backend/internal/platform/logging"
 	platformpg "cloud-backend/internal/platform/postgres"
 )
 
@@ -25,6 +26,8 @@ func main() {
 }
 
 func run() error {
+	slog.SetDefault(logging.NewJSONLogger("CLOUD_LOG_LEVEL"))
+
 	addr := env("CLOUD_HTTP_ADDR", ":8090")
 	dsn := env("CLOUD_POSTGRES_DSN", "")
 	migrationsDir := env("CLOUD_POSTGRES_MIGRATIONS_DIR", "migrations/postgres")

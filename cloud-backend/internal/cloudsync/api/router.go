@@ -3,8 +3,11 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -22,7 +25,7 @@ func NewRouter(service *app.Service) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
+	r.Use(requestAuditLog)
 	r.Use(middleware.Recoverer)
 
 	r.Get("/health", h.health)
@@ -30,6 +33,65 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/sync/edge-events", h.receiveEdgeEvent)
 	})
 	return r
+}
+
+func requestAuditLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slog.Log(r.Context(), slog.LevelDebug, "http request started",
+			"request_id", middleware.GetReqID(r.Context()),
+			"operation", "http.request",
+			"action", r.Method+" "+r.URL.Path,
+		)
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		duration := time.Since(start)
+		level := slog.LevelInfo
+		if rec.status >= 500 {
+			level = slog.LevelError
+		} else if rec.status >= 400 {
+			level = slog.LevelWarn
+		}
+		slog.Log(r.Context(), level, "http request completed",
+			"request_id", middleware.GetReqID(r.Context()),
+			"operation", "http.request",
+			"action", r.Method+" "+r.URL.Path,
+			"result", requestResult(rec.status),
+			"error_code", requestErrorCode(rec.status),
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rec.status,
+			"duration_ms", duration.Milliseconds(),
+			"remote_ip", r.RemoteAddr,
+		)
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func requestResult(status int) string {
+	if status >= 200 && status < 300 {
+		return "success"
+	}
+	if status >= 400 && status < 500 {
+		return "rejected"
+	}
+	return "failed"
+}
+
+func requestErrorCode(status int) string {
+	if status >= 200 && status < 400 {
+		return ""
+	}
+	return fmt.Sprintf("HTTP_%d", status)
 }
 
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {

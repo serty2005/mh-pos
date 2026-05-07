@@ -309,6 +309,11 @@ func (s *Service) RetryFailedOutbox(ctx context.Context) (int, error) {
 	return s.outbox.RetryFailedOutbox(ctx)
 }
 
+// RetryFailedOutboxAsOperator retries failed outbox messages with operator RBAC enforcement.
+func (s *Service) RetryFailedOutboxAsOperator(ctx context.Context, meta CommandMeta) (int, error) {
+	return s.outbox.RetryFailedOutboxAsOperator(ctx, meta)
+}
+
 func (s *Service) ClaimPendingOutbox(ctx context.Context, cmd ClaimPendingOutboxCommand) ([]domain.OutboxMessage, error) {
 	return s.outbox.ClaimPendingOutbox(ctx, cmd.Limit, cmd.LockedBy)
 }

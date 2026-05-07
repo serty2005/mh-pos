@@ -53,6 +53,10 @@ Order -> Precheck -> Payment -> Check
 - `GET /api/v1/auth/session`
 - `POST /api/v1/auth/logout`
 
+implemented now: PIN login is rate-limited per `node_device_id + client_device_id`.
+implemented now: repeated invalid PIN attempts return `429 Too Many Requests`.
+implemented now: PIN values are never echoed back in response payloads.
+
 ### Залы и меню
 
 - `GET /api/v1/halls`
@@ -71,6 +75,7 @@ implemented now: halls, tables, catalog and menu are Cloud-owned master data. Pu
 - `GET /api/v1/cash-sessions/current`
 - `POST /api/v1/cash-sessions/open`
 - `POST /api/v1/cash-sessions/{id}/close`
+- `POST /api/v1/cash-drawer-events`
 
 ### Заказы
 
@@ -80,6 +85,7 @@ implemented now: halls, tables, catalog and menu are Cloud-owned master data. Pu
 - `POST /api/v1/orders/{id}/lines`
 - `PATCH /api/v1/orders/{id}/lines/{line_id}`
 - `POST /api/v1/orders/{id}/lines/{line_id}/void`
+- `POST /api/v1/orders/{id}/close`
 
 ### Пречеки и чеки
 
@@ -235,6 +241,38 @@ Backend обязан:
 - записать audit trail;
 - записать sync/local events транзакционно.
 
+## RBAC enforcement (implemented now)
+
+implemented now:
+
+- backend uses a canonical permission catalog in app-layer checks;
+- role permissions remain stored as JSON, but enforcement uses stable permission ids;
+- key cashier runtime operations are enforced in app services via `EnsureOperatorSession(...requiredPermissions...)`.
+
+Canonical permission ids used by implemented now runtime:
+
+- `pos.shift.open`
+- `pos.shift.close`
+- `pos.cash_session.open`
+- `pos.cash_session.close`
+- `pos.order.create`
+- `pos.order.add_line`
+- `pos.order.change_quantity`
+- `pos.order.void_line`
+- `pos.precheck.issue`
+- `pos.precheck.cancel` (manager override approver permission)
+- `pos.payment.capture`
+- `pos.sync.retry_failed` (required for operator-triggered `POST /api/v1/sync/retry-failed`)
+
+Error behavior:
+
+- missing permission returns domain `forbidden` and HTTP `403`;
+- authorization errors do not include sensitive auth fields (PIN, manager PIN, PIN hash).
+
+planned next:
+
+- extend canonical backend enforcement to the full UI RBAC matrix (`docs/ui/POS-UI-RBAC.md`) beyond the current cashier hardening slice.
+
 ## Документационные правила
 
 Любое изменение одного из пунктов ниже обновляет этот файл в том же PR:
@@ -247,3 +285,14 @@ Backend обязан:
 - manager override behavior.
 
 Если меняется только долгосрочная архитектурная цель, но не runtime contract, обновляется `SPECv1.3.md`, а не этот файл.
+
+## Operational logging (implemented now)
+
+- Backend writes structured operation logs with levels `TRACE|DEBUG|INFO|WARN|ERROR`.
+- Request audit logs include `request_id`, `operation`, `action`, `result`, `duration_ms`, `error_code` and masked actor/device/session identifiers.
+- Sensitive auth fields (`pin`, `manager_pin`, pin hash, raw auth payload) must not be logged.
+
+## Sync sender telemetry (implemented now)
+
+- `internal/pos/syncsender` emits normalized worker telemetry for non-HTTP paths with fields `operation`, `action`, `result`, `error_code` and masked correlation ids.
+- TRACE-level lifecycle events are emitted for reclaim, batch claim, per-message processing, send attempt, ack and retry decision steps.

@@ -5,18 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"pos-backend/internal/platform/clock"
 	"pos-backend/internal/platform/idgen"
+	platformlog "pos-backend/internal/platform/logging"
 	txmanager "pos-backend/internal/platform/tx"
 	"pos-backend/internal/pos/domain"
 	"pos-backend/internal/pos/ports"
 )
 
 type OutboxService struct {
-	repo  ports.OutboxRepository
+	repo  ports.Repository
 	tx    txmanager.Manager
 	clock clock.Clock
 }
@@ -32,7 +34,8 @@ type eventOutboxRepository interface {
 	ports.LocalEventRepository
 }
 
-func NewOutboxService(repo ports.OutboxRepository, tx txmanager.Manager, clock clock.Clock) *OutboxService {
+// NewOutboxService creates outbox application service backed by full POS repository.
+func NewOutboxService(repo ports.Repository, tx txmanager.Manager, clock clock.Clock) *OutboxService {
 	return &OutboxService{repo: repo, tx: tx, clock: clock}
 }
 
@@ -52,6 +55,14 @@ func (s *OutboxService) RetryFailedOutbox(ctx context.Context) (int, error) {
 		return err
 	})
 	return count, err
+}
+
+// RetryFailedOutboxAsOperator retries failed/suspended outbox rows using app-layer RBAC checks.
+func (s *OutboxService) RetryFailedOutboxAsOperator(ctx context.Context, meta CommandMeta) (int, error) {
+	if _, err := EnsureOperatorSession(ctx, s.repo, meta, string(PermissionSyncRetryFailed)); err != nil {
+		return 0, err
+	}
+	return s.RetryFailedOutbox(ctx)
 }
 
 func (s *OutboxService) ClaimPendingOutbox(ctx context.Context, limit int, lockedBy string) ([]domain.OutboxMessage, error) {
@@ -243,5 +254,17 @@ func WriteOutbox(ctx context.Context, repo eventOutboxRepository, ids idgen.Gene
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
-	return repo.CreateOutboxMessage(ctx, msg)
+	if err := repo.CreateOutboxMessage(ctx, msg); err != nil {
+		return err
+	}
+	platformlog.Log(ctx, nil, slog.LevelInfo, "domain action committed", platformlog.Event{
+		Operation:       "domain.write",
+		Action:          commandType,
+		Result:          "success",
+		NodeDeviceID:    nodeDeviceID,
+		ClientDeviceID:  meta.ClientDeviceID,
+		SessionID:       meta.SessionID,
+		ActorEmployeeID: meta.ActorEmployeeID,
+	}, "command_id", commandID, "event_id", eventID, "aggregate_type", aggregateType, "aggregate_id", aggregateID, "origin", string(origin))
+	return nil
 }

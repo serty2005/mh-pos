@@ -401,6 +401,7 @@ import {
   openShift,
   voidOrderLine,
 } from '../shared/api';
+import { resolveProtectedPosFallback } from '../shared/sessionGuards';
 import type { Order } from '../shared/schemas';
 import { useAuthStore } from '../stores/auth';
 
@@ -607,8 +608,10 @@ watch(session.data, (value) => {
 }, { immediate: true });
 
 watch(() => [auth.nodeDeviceId, auth.sessionId], () => {
-  if (!auth.nodeDeviceId) void router.replace('/pair');
-  if (!auth.sessionId) void router.replace('/login');
+  const fallback = resolveProtectedPosFallback({ nodeDeviceId: auth.nodeDeviceId, sessionId: auth.sessionId });
+  if (fallback) {
+    void router.replace(fallback);
+  }
 }, { immediate: true });
 
 watch(activeHalls, (items) => {

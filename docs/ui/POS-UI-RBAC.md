@@ -196,3 +196,24 @@ UI обязан:
 - backend enforcement note;
 - указания, нужна ли manager override;
 - теста или acceptance note для UX visibility.
+
+## Backend sync status
+
+implemented now:
+
+- backend enforces a canonical RBAC slice for cashier runtime operations:
+  - `pos.shift.open`, `pos.shift.close`
+  - `pos.cash_session.open`, `pos.cash_session.close`
+  - `pos.order.create`, `pos.order.add_line`, `pos.order.change_quantity`, `pos.order.void_line`
+  - `pos.precheck.issue`
+  - `pos.payment.capture`
+  - `pos.sync.retry_failed` for operator-triggered retry API
+- manager override approver validation for precheck cancel uses `pos.precheck.cancel`.
+
+planned next:
+
+- complete backend enforcement for the full matrix in this document (including waiter/senior_cashier override variants and non-cashier surfaces).
+
+out of scope:
+
+- treating UI visibility as a security boundary without backend authorization checks.

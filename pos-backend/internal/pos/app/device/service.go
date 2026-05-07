@@ -60,6 +60,20 @@ func (s *Service) PairEdgeNode(ctx context.Context, cmd PairEdgeNodeCommand) (*d
 	if err != nil {
 		return nil, err
 	}
+	restaurants, err := s.repo.ListRestaurants(ctx)
+	if err != nil {
+		return nil, err
+	}
+	knownRestaurant := false
+	for _, item := range restaurants {
+		if item.ID == restaurantID {
+			knownRestaurant = true
+			break
+		}
+	}
+	if !knownRestaurant {
+		return nil, fmt.Errorf("%w: pairing_code references unknown restaurant_id", domain.ErrInvalid)
+	}
 	now := s.clock.Now()
 	identity := &domain.EdgeNodeIdentity{
 		ID:              "local",
@@ -146,6 +160,9 @@ func parsePairingPayload(cmd PairEdgeNodeCommand) (string, string, error) {
 	}
 	if restaurantID == "" || nodeDeviceID == "" {
 		return "", "", fmt.Errorf("%w: MVP pairing code must be MHPOS:<restaurant_id>:<node_device_id>", domain.ErrInvalid)
+	}
+	if strings.ContainsAny(restaurantID, "<>") || strings.ContainsAny(nodeDeviceID, "<>") {
+		return "", "", fmt.Errorf("%w: pairing_code must contain real ids, not placeholders", domain.ErrInvalid)
 	}
 	return restaurantID, nodeDeviceID, nil
 }

@@ -16,14 +16,22 @@ import (
 )
 
 type Service struct {
-	repo  ports.Repository
-	tx    txmanager.Manager
-	ids   idgen.Generator
-	clock clock.Clock
+	repo    ports.Repository
+	tx      txmanager.Manager
+	ids     idgen.Generator
+	clock   clock.Clock
+	limiter *pinRateLimiter
 }
 
+// NewService creates auth application service with in-memory PIN rate limiting.
 func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock) *Service {
-	return &Service{repo: repo, tx: tx, ids: ids, clock: clock}
+	return &Service{
+		repo:    repo,
+		tx:      tx,
+		ids:     ids,
+		clock:   clock,
+		limiter: newPINRateLimiter(defaultPINAttemptsLimit, defaultPINAttemptsWindow, defaultPINLockoutWindow),
+	}
 }
 
 type PinLoginCommand struct {
@@ -51,6 +59,10 @@ func (s *Service) PinLogin(ctx context.Context, cmd PinLoginCommand) (*domain.Pi
 		cmd.CommandID = s.ids.NewID()
 	}
 	now := s.clock.Now()
+	limiterKey := strings.TrimSpace(cmd.NodeDeviceID) + ":" + strings.TrimSpace(cmd.ClientDeviceID)
+	if err := s.limiter.Allow(limiterKey, now); err != nil {
+		return nil, err
+	}
 	var result *domain.PinLoginResult
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
@@ -89,8 +101,12 @@ func (s *Service) PinLogin(ctx context.Context, cmd PinLoginCommand) (*domain.Pi
 			}
 		}
 		if employee == nil {
+			if err := s.limiter.RecordFailure(limiterKey, now); err != nil {
+				return err
+			}
 			return fmt.Errorf("%w: pin is invalid", domain.ErrForbidden)
 		}
+		s.limiter.Reset(limiterKey)
 		role, err := s.repo.GetRole(ctx, employee.RoleID)
 		if err != nil {
 			return err

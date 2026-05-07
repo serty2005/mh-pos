@@ -25,6 +25,7 @@ Order -> Precheck -> Payment -> Check
 - `pos_sync_outbox`;
 - `SyncEnvelope` foundation;
 - PIN auth/session foundation: `POST /api/v1/auth/pin-login`, `GET /api/v1/auth/session`, `POST /api/v1/auth/logout`;
+- implemented now: PIN login rate limiting returns `429 Too Many Requests` after repeated invalid attempts for the same `node_device_id + client_device_id` window;
 - strict lock/logout model: UI lock или auto-lock вызывает backend logout, session становится `revoked`, новый PIN создает новую session;
 - operator auth enforcement для business/operator flows: active employee session, `actor_employee_id`, `session_id`, matching `client_device_id` и permissions там, где нужны;
 - system/device flows (`sync`, pairing/status, diagnostics/hardware callbacks в будущих фазах) не требуют employee session и должны авторизоваться отдельным device/system path;
@@ -376,3 +377,39 @@ go test ./...
 - Cloud: минимальный `cloud-backend/` Sync Receiver реализован; Cloud не является зависимостью для критических POS Edge операций.
 - POS UI: `pos-ui` на Vue 3 + Quasar реализует `pairing -> login -> pos -> lock/logout` и POS Terminal Core для single-terminal cashier flow.
 - Источник истины для активных POS операций: локальный POS Edge Node.
+
+## Runtime logging config
+
+implemented now:
+
+- POS Edge log level env: `POS_LOG_LEVEL`
+- Cloud Backend log level env: `CLOUD_LOG_LEVEL`
+- Supported values: `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`
+- Default: `INFO`
+
+PowerShell example:
+
+```powershell
+$env:POS_LOG_LEVEL="DEBUG"
+$env:CLOUD_LOG_LEVEL="INFO"
+```
+
+### Worker telemetry
+
+implemented now:
+
+- POS sync sender writes structured non-HTTP telemetry events with normalized fields (`operation`, `action`, `result`, `error_code`).
+- TRACE can be enabled with `POS_LOG_LEVEL=TRACE` for lifecycle-level diagnostics of the sender worker.
+
+## Permission model (implemented now)
+
+implemented now:
+
+- backend enforces canonical RBAC permission ids in app-layer for critical cashier runtime operations;
+- role permissions are still stored as JSON on roles, but authorization checks use stable ids;
+- operator-triggered `POST /api/v1/sync/retry-failed` requires manager/service permission `pos.sync.retry_failed`;
+- failed authorization returns `forbidden` without leaking PIN or PIN hash data.
+
+planned next:
+
+- expand backend enforcement coverage to the full UI RBAC matrix in `/docs/ui/POS-UI-RBAC.md`.

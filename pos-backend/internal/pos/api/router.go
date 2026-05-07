@@ -2,10 +2,12 @@ package api
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -24,7 +26,7 @@ func NewRouter(service *app.Service) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
+	r.Use(requestAuditLog)
 	r.Use(middleware.Recoverer)
 	r.Use(localCORS)
 	r.Options("/*", func(w http.ResponseWriter, r *http.Request) {
@@ -147,6 +149,86 @@ func localCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func requestAuditLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slog.Log(r.Context(), slog.LevelDebug, "http request started",
+			"request_id", middleware.GetReqID(r.Context()),
+			"operation", "http.request",
+			"action", r.Method+" "+r.URL.Path,
+			"node_device_id", maskID(requestNodeDeviceID(r)),
+			"client_device_id", maskID(requestClientDeviceID(r)),
+		)
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		duration := time.Since(start)
+		level := slog.LevelInfo
+		if rec.status >= 500 {
+			level = slog.LevelError
+		} else if rec.status >= 400 {
+			level = slog.LevelWarn
+		}
+		args := []any{
+			"request_id", middleware.GetReqID(r.Context()),
+			"operation", "http.request",
+			"action", r.Method + " " + r.URL.Path,
+			"result", requestResult(rec.status),
+			"error_code", requestErrorCode(rec.status),
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rec.status,
+			"duration_ms", duration.Milliseconds(),
+			"remote_ip", r.RemoteAddr,
+			"node_device_id", maskID(requestNodeDeviceID(r)),
+			"client_device_id", maskID(requestClientDeviceID(r)),
+			"session_id", maskID(r.Header.Get("X-Session-ID")),
+			"actor_employee_id", maskID(r.Header.Get("X-Actor-Employee-ID")),
+		}
+		if q := r.URL.RawQuery; q != "" {
+			args = append(args, "raw_query", q)
+		}
+		slog.Log(r.Context(), level, "http request completed", args...)
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func maskID(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	if len(v) <= 8 {
+		return v
+	}
+	return v[:8] + "..."
+}
+
+func requestResult(status int) string {
+	if status >= 200 && status < 300 {
+		return "success"
+	}
+	if status >= 400 && status < 500 {
+		return "rejected"
+	}
+	return "failed"
+}
+
+func requestErrorCode(status int) string {
+	if status >= 200 && status < 400 {
+		return ""
+	}
+	return fmt.Sprintf("HTTP_%d", status)
 }
 
 func (h *Handler) createRestaurant(w http.ResponseWriter, r *http.Request) {
@@ -602,7 +684,9 @@ func (h *Handler) syncStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) retryFailedOutbox(w http.ResponseWriter, r *http.Request) {
-	n, err := h.service.RetryFailedOutbox(r.Context())
+	var cmd app.CommandMeta
+	setRequestMeta(&cmd, r)
+	n, err := h.service.RetryFailedOutboxAsOperator(r.Context(), cmd)
 	if err != nil {
 		httpx.Error(w, err)
 		return

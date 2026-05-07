@@ -108,6 +108,29 @@ func (f *fixture) edgeMetaCommand(commandID string) app.CommandMeta {
 	return meta
 }
 
+func (f *fixture) managerEdgeMetaCommand(t *testing.T, commandID string) app.CommandMeta {
+	t.Helper()
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{
+			CommandID:      "cmd-login-manager-" + commandID,
+			NodeDeviceID:   f.device.ID,
+			DeviceID:       f.device.ID,
+			ClientDeviceID: f.clientID,
+			Origin:         app.OriginEdgeDevice,
+		},
+		PIN: "2468",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := edgeMeta(f.device.ID)
+	meta.CommandID = commandID
+	meta.ClientDeviceID = f.clientID
+	meta.ActorEmployeeID = f.manager.ID
+	meta.SessionID = login.Session.ID
+	return meta
+}
+
 func (f *fixture) cancelPrecheckCommand(commandID, precheckID string) app.CancelPrecheckCommand {
 	return app.CancelPrecheckCommand{
 		CommandMeta:        f.edgeMetaCommand(commandID),
@@ -154,11 +177,43 @@ func (f *fixture) seed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{CommandMeta: seedMeta(bootstrapDeviceID), Name: "cashier", PermissionsJSON: `{"pos":true}`})
+	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta: seedMeta(bootstrapDeviceID),
+		Name:        "cashier",
+		PermissionsJSON: appshared.PermissionsJSON(
+			appshared.PermissionShiftOpen,
+			appshared.PermissionShiftClose,
+			appshared.PermissionCashSessionOpen,
+			appshared.PermissionCashSessionClose,
+			appshared.PermissionOrderCreate,
+			appshared.PermissionOrderAddLine,
+			appshared.PermissionOrderChangeQuantity,
+			appshared.PermissionOrderVoidLine,
+			appshared.PermissionPrecheckIssue,
+			appshared.PermissionPaymentCapture,
+		),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	managerRole, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{CommandMeta: seedMeta(bootstrapDeviceID), Name: "manager", PermissionsJSON: `{"precheck.cancel":true}`})
+	managerRole, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta: seedMeta(bootstrapDeviceID),
+		Name:        "manager",
+		PermissionsJSON: appshared.PermissionsJSON(
+			appshared.PermissionShiftOpen,
+			appshared.PermissionShiftClose,
+			appshared.PermissionCashSessionOpen,
+			appshared.PermissionCashSessionClose,
+			appshared.PermissionOrderCreate,
+			appshared.PermissionOrderAddLine,
+			appshared.PermissionOrderChangeQuantity,
+			appshared.PermissionOrderVoidLine,
+			appshared.PermissionPrecheckIssue,
+			appshared.PermissionPaymentCapture,
+			appshared.PermissionPrecheckCancel,
+			appshared.PermissionSyncRetryFailed,
+		),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,6 +384,37 @@ func TestRetryFailedOutboxResetsFailedAndSuspendedButNotSent(t *testing.T) {
 	status, _ := outboxStatusAttempts(t, f, ids[2])
 	if status != domain.OutboxSent {
 		t.Fatalf("expected sent outbox row to stay sent, got %s", status)
+	}
+}
+
+func TestRetryFailedOutboxAsOperatorRequiresPermission(t *testing.T) {
+	f := newFixture(t)
+	ids := outboxIDs(t, f, 2)
+	now := appshared.DBTime(fixedClock{}.Now())
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'failed', attempts = 1, last_error = 'temporary', updated_at = ? WHERE id = ?`, now, ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'suspended', attempts = 2, last_error = 'threshold', updated_at = ? WHERE id = ?`, now, ids[1]); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := f.service.RetryFailedOutboxAsOperator(f.ctx, f.edgeMetaCommand("cmd-retry-cashier-denied"))
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden for cashier retry, got %v", err)
+	}
+	for _, id := range ids {
+		status, _ := outboxStatusAttempts(t, f, id)
+		if status == domain.OutboxPending {
+			t.Fatalf("expected retry status to remain unchanged for %s", id)
+		}
+	}
+
+	retried, err := f.service.RetryFailedOutboxAsOperator(f.ctx, f.managerEdgeMetaCommand(t, "cmd-retry-manager-allow"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retried != 2 {
+		t.Fatalf("expected 2 retried messages for manager, got %d", retried)
 	}
 }
 
@@ -899,6 +985,55 @@ func TestCannotCloseShiftWithOpenOrders(t *testing.T) {
 	_, err := f.service.CloseShift(f.ctx, app.CloseShiftCommand{CommandMeta: f.edgeMeta(), ID: shift.ID, ClosedByEmployeeID: f.employee.ID, ClosingCashAmount: 0})
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
+	}
+}
+
+func TestOpenShiftRequiresPermission(t *testing.T) {
+	f := newFixture(t)
+	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta:     seedMeta(f.device.ID),
+		Name:            "no-shift-open",
+		PermissionsJSON: `{}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	employee, err := f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{
+		CommandMeta:  seedMeta(f.device.ID),
+		RestaurantID: f.restaurant.ID,
+		RoleID:       role.ID,
+		Name:         "Denied Operator",
+		PINHash:      testPINHash(t, "3579", "denied-operator-salt"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{
+			CommandID:      "cmd-login-denied-open-shift",
+			NodeDeviceID:   f.device.ID,
+			DeviceID:       f.device.ID,
+			ClientDeviceID: f.clientID,
+			Origin:         app.OriginEdgeDevice,
+		},
+		PIN: "3579",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := edgeMeta(f.device.ID)
+	meta.CommandID = "cmd-open-shift-denied"
+	meta.ClientDeviceID = f.clientID
+	meta.ActorEmployeeID = employee.ID
+	meta.SessionID = login.Session.ID
+	_, err = f.service.OpenShift(f.ctx, app.OpenShiftCommand{
+		CommandMeta:        meta,
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: employee.ID,
+		OpeningCashAmount:  0,
+	})
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden, got %v", err)
 	}
 }
 
@@ -1941,7 +2076,7 @@ func TestApplyMasterDataSnapshotUpsertsRowsStateAndDoesNotCreateOutbox(t *testin
 		Roles: []domain.Role{{
 			ID:              "cloud-role-1",
 			Name:            "cloud-cashier",
-			PermissionsJSON: `{"pos":true}`,
+			PermissionsJSON: appshared.PermissionsJSON(appshared.PermissionOrderCreate),
 			Active:          true,
 		}},
 		Employees: []domain.Employee{{

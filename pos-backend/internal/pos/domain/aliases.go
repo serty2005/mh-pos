@@ -21,6 +21,7 @@ var (
 	ErrNotFound         = shared.ErrNotFound
 	ErrConflict         = shared.ErrConflict
 	ErrForbidden        = shared.ErrForbidden
+	ErrTooManyRequests  = shared.ErrTooManyRequests
 	ErrDuplicate        = shared.ErrDuplicate
 	ErrDuplicateCommand = shared.ErrDuplicateCommand
 )

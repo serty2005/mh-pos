@@ -67,7 +67,7 @@ func (s *Service) IssuePrecheck(ctx context.Context, cmd IssuePrecheckCommand) (
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionPrecheckIssue)); err != nil {
 			return err
 		}
 		order, err := s.repo.GetOrder(ctx, cmd.OrderID)
@@ -168,7 +168,7 @@ func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand)
 		if err != nil {
 			return err
 		}
-		if !role.Active || !shared.HasPermission(role.PermissionsJSON, "precheck.cancel") {
+		if !role.Active || !shared.HasPermission(role.PermissionsJSON, string(shared.PermissionPrecheckCancel)) {
 			return fmt.Errorf("%w: manager override permission is required", domain.ErrForbidden)
 		}
 		if err := shared.VerifyPIN(manager.PINHash, cmd.ManagerPIN); err != nil {

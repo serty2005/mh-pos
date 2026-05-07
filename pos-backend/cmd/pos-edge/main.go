@@ -13,6 +13,7 @@ import (
 
 	"pos-backend/internal/platform/clock"
 	"pos-backend/internal/platform/idgen"
+	"pos-backend/internal/platform/logging"
 	platformsqlite "pos-backend/internal/platform/sqlite"
 	"pos-backend/internal/pos/api"
 	"pos-backend/internal/pos/app"
@@ -29,6 +30,8 @@ func main() {
 }
 
 func run() error {
+	slog.SetDefault(logging.NewJSONLogger("POS_LOG_LEVEL"))
+
 	addr := env("POS_HTTP_ADDR", ":8080")
 	dbPath := env("POS_SQLITE_PATH", "data/pos-edge.db")
 	migrationsDir := env("POS_SQLITE_MIGRATIONS_DIR", "migrations/sqlite")

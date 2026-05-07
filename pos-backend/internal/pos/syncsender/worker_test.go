@@ -1,8 +1,11 @@
 package syncsender
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -119,5 +122,49 @@ func TestDirectionFoundationKeepsDeviceRegisteredOperational(t *testing.T) {
 	direction := domain.DirectionForOutbox(domain.OriginEdgeDevice, "Device", "DeviceRegistered")
 	if direction != domain.SyncDirectionEdgeToCloud {
 		t.Fatalf("expected DeviceRegistered to stay edge_to_cloud, got %s", direction)
+	}
+}
+
+func TestRunOnceWritesNormalizedTelemetryFields(t *testing.T) {
+	clientID := "client-device-123456"
+	sessionID := "session-123456"
+	actorID := "employee-123456"
+	service := &fakeOutboxService{claimed: []domain.OutboxMessage{
+		{
+			ID:              "outbox-order",
+			SequenceNo:      1,
+			Origin:          domain.OriginEdgeDevice,
+			SyncDirection:   domain.SyncDirectionEdgeToCloud,
+			CommandType:     "OrderCreated",
+			NodeDeviceID:    "node-device-123456",
+			ClientDeviceID:  &clientID,
+			SessionID:       &sessionID,
+			ActorEmployeeID: &actorID,
+		},
+	}}
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.Level(-8)}))
+	worker := NewWorker(service, fakeSender{}, Config{WorkerID: "worker-test", PollInterval: time.Hour}, logger)
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	raw := logs.String()
+	for _, want := range []string{
+		`"operation":"sync.sender"`,
+		`"action":"message.ack"`,
+		`"result":"success"`,
+		`"error_code":""`,
+		`"node_device_id":"node-dev..."`,
+		`"client_device_id":"client-d..."`,
+		`"session_id":"session-..."`,
+		`"actor_employee_id":"employee..."`,
+	} {
+		if !strings.Contains(raw, want) {
+			t.Fatalf("expected telemetry field %q in logs: %s", want, raw)
+		}
+	}
+	if strings.Contains(raw, "pin") || strings.Contains(raw, "manager_pin") {
+		t.Fatalf("expected no sensitive auth fields in logs, got: %s", raw)
 	}
 }

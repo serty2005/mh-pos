@@ -118,7 +118,7 @@ func (s *Service) CreateOrder(ctx context.Context, cmd CreateOrderCommand) (*dom
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionOrderCreate)); err != nil {
 			return err
 		}
 		var shift *domain.Shift
@@ -170,7 +170,7 @@ func (s *Service) ChangeOrderLineQuantity(ctx context.Context, cmd ChangeOrderLi
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionOrderChangeQuantity)); err != nil {
 			return err
 		}
 		order, err := s.ensureEditableOrder(ctx, cmd.OrderID, cmd.DeviceID)
@@ -212,7 +212,7 @@ func (s *Service) VoidOrderLine(ctx context.Context, cmd VoidOrderLineCommand) (
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionOrderVoidLine)); err != nil {
 			return err
 		}
 		order, err := s.ensureEditableOrder(ctx, cmd.OrderID, cmd.DeviceID)
@@ -257,7 +257,7 @@ func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*d
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta); err != nil {
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionOrderAddLine)); err != nil {
 			return err
 		}
 		order, err := s.repo.GetOrder(ctx, cmd.OrderID)

@@ -7,6 +7,7 @@ var (
 	ErrNotFound         = errors.New("not found")
 	ErrConflict         = errors.New("domain invariant violation")
 	ErrForbidden        = errors.New("forbidden")
+	ErrTooManyRequests  = errors.New("too many requests")
 	ErrDuplicate        = errors.New("duplicate resource")
 	ErrDuplicateCommand = errors.New("duplicate command")
 )

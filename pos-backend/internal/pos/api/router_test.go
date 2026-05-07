@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -30,10 +31,20 @@ func (g *apiTestIDs) NewID() string {
 	return fmt.Sprintf("api-id-%03d", g.n)
 }
 
-type apiFixedClock struct{}
+type apiFixedClock struct {
+	now time.Time
+}
 
-func (apiFixedClock) Now() time.Time {
-	return time.Date(2026, 5, 4, 20, 0, 0, 0, time.UTC)
+func newAPIFixedClock() *apiFixedClock {
+	return &apiFixedClock{now: time.Date(2026, 5, 4, 20, 0, 0, 0, time.UTC)}
+}
+
+func (c *apiFixedClock) Now() time.Time {
+	return c.now
+}
+
+func (c *apiFixedClock) Advance(d time.Duration) {
+	c.now = c.now.Add(d)
 }
 
 type apiFixture struct {
@@ -51,6 +62,7 @@ type apiFixture struct {
 	table      *domain.Table
 	menuItem   *domain.MenuItem
 	clientID   string
+	clock      *apiFixedClock
 }
 
 func newAPIFixture(t *testing.T) *apiFixture {
@@ -65,8 +77,9 @@ func newAPIFixture(t *testing.T) *apiFixture {
 		t.Fatal(err)
 	}
 	repo := possqlite.NewRepository(db)
-	service := app.NewService(repo, platformsqlite.NewTxManager(db), &apiTestIDs{}, apiFixedClock{})
-	f := &apiFixture{ctx: ctx, db: db, repo: repo, service: service, router: api.NewRouter(service), clientID: "api-client-1"}
+	testClock := newAPIFixedClock()
+	service := app.NewService(repo, platformsqlite.NewTxManager(db), &apiTestIDs{}, testClock)
+	f := &apiFixture{ctx: ctx, db: db, repo: repo, service: service, router: api.NewRouter(service), clientID: "api-client-1", clock: testClock}
 	f.seed(t)
 	return f
 }
@@ -78,11 +91,43 @@ func (f *apiFixture) seed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{CommandMeta: apiSeedMeta("bootstrap-device"), Name: "cashier", PermissionsJSON: `{"pos":true}`})
+	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta: apiSeedMeta("bootstrap-device"),
+		Name:        "cashier",
+		PermissionsJSON: appshared.PermissionsJSON(
+			appshared.PermissionShiftOpen,
+			appshared.PermissionShiftClose,
+			appshared.PermissionCashSessionOpen,
+			appshared.PermissionCashSessionClose,
+			appshared.PermissionOrderCreate,
+			appshared.PermissionOrderAddLine,
+			appshared.PermissionOrderChangeQuantity,
+			appshared.PermissionOrderVoidLine,
+			appshared.PermissionPrecheckIssue,
+			appshared.PermissionPaymentCapture,
+		),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	managerRole, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{CommandMeta: apiSeedMeta("bootstrap-device"), Name: "manager", PermissionsJSON: `{"precheck.cancel":true}`})
+	managerRole, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta: apiSeedMeta("bootstrap-device"),
+		Name:        "manager",
+		PermissionsJSON: appshared.PermissionsJSON(
+			appshared.PermissionShiftOpen,
+			appshared.PermissionShiftClose,
+			appshared.PermissionCashSessionOpen,
+			appshared.PermissionCashSessionClose,
+			appshared.PermissionOrderCreate,
+			appshared.PermissionOrderAddLine,
+			appshared.PermissionOrderChangeQuantity,
+			appshared.PermissionOrderVoidLine,
+			appshared.PermissionPrecheckIssue,
+			appshared.PermissionPaymentCapture,
+			appshared.PermissionPrecheckCancel,
+			appshared.PermissionSyncRetryFailed,
+		),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,6 +244,25 @@ func (f *apiFixture) setOperatorHeaders(req *http.Request) {
 	req.Header.Set("X-Session-ID", f.session.ID)
 }
 
+func (f *apiFixture) useManagerOperator(t *testing.T) {
+	t.Helper()
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{
+			CommandID:      "cmd-api-manager-login",
+			NodeDeviceID:   f.device.ID,
+			DeviceID:       f.device.ID,
+			ClientDeviceID: f.clientID,
+			Origin:         app.OriginEdgeDevice,
+		},
+		PIN: "2468",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.employee = f.manager
+	f.session = &login.Session
+}
+
 func decodeAPIResponse[T any](t *testing.T, rr *httptest.ResponseRecorder) T {
 	t.Helper()
 	var out T
@@ -246,6 +310,123 @@ func TestPinLoginAndSessionAPI(t *testing.T) {
 	got := decodeAPIResponse[domain.PinLoginResult](t, current)
 	if got.Session.ID != result.Session.ID || got.Actor.EmployeeID != f.employee.ID {
 		t.Fatalf("unexpected current session: %+v", got)
+	}
+}
+
+func TestRequestAuditLogContainsContractFieldsAndNoPINLeak(t *testing.T) {
+	f := newAPIFixture(t)
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(prev)
+
+	body := `{"pairing_code":"MHPOS:<restaurant_id>:demo-edge-node-1","pin":"9999"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/system/pair", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Node-Device-ID", f.device.ID)
+	req.Header.Set("X-Client-Device-ID", f.clientID)
+	req.Header.Set("X-Actor-Employee-ID", f.employee.ID)
+	req.Header.Set("X-Session-ID", f.session.ID)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+
+	raw := logs.String()
+	for _, required := range []string{
+		`"operation":"http.request"`,
+		`"action":"POST /api/v1/system/pair"`,
+		`"result":"rejected"`,
+		`"error_code":"HTTP_400"`,
+		`"request_id":"`,
+		`"duration_ms":`,
+		`"node_device_id":"`,
+		`"client_device_id":"`,
+		`"session_id":"`,
+		`"actor_employee_id":"`,
+	} {
+		if !strings.Contains(raw, required) {
+			t.Fatalf("expected log to contain %q, logs=%s", required, raw)
+		}
+	}
+	if strings.Contains(raw, "9999") || strings.Contains(raw, `"pin"`) || strings.Contains(raw, "manager_pin") {
+		t.Fatalf("expected secret fields not to be logged, logs=%s", raw)
+	}
+}
+
+func TestPairingRejectsPlaceholderIDs(t *testing.T) {
+	f := newAPIFixture(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/system/pair", bytes.NewBufferString(`{"pairing_code":"MHPOS:<restaurant_id>:demo-edge-node-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for placeholder pairing code, got %d: %s", rr.Code, rr.Body.String())
+	}
+	body := decodeAPIResponse[map[string]string](t, rr)
+	if !strings.Contains(body["error"], "placeholders") {
+		t.Fatalf("expected placeholder validation error, got: %s", body["error"])
+	}
+}
+
+func TestPairingRejectsUnknownRestaurantID(t *testing.T) {
+	f := newAPIFixture(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/system/pair", bytes.NewBufferString(`{"pairing_code":"MHPOS:unknown-restaurant:demo-edge-node-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for unknown restaurant in pairing code, got %d: %s", rr.Code, rr.Body.String())
+	}
+	body := decodeAPIResponse[map[string]string](t, rr)
+	if !strings.Contains(body["error"], "unknown restaurant_id") {
+		t.Fatalf("expected unknown restaurant validation error, got: %s", body["error"])
+	}
+}
+
+func TestPinLoginRateLimitReturnsTooManyRequests(t *testing.T) {
+	f := newAPIFixture(t)
+	loginBody := `{"command_id":"cmd-api-pin-rate-limit","node_device_id":"` + f.device.ID + `","client_device_id":"` + f.clientID + `","pin":"9999"}`
+	for i := 0; i < 4; i++ {
+		rr := f.postJSON(t, "/api/v1/auth/pin-login", loginBody)
+		if rr.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 before limit reached, got %d: %s", rr.Code, rr.Body.String())
+		}
+		if strings.Contains(rr.Body.String(), "9999") {
+			t.Fatalf("expected login error body not to expose attempted pin: %s", rr.Body.String())
+		}
+	}
+	limited := f.postJSON(t, "/api/v1/auth/pin-login", loginBody)
+	if limited.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 after repeated attempts, got %d: %s", limited.Code, limited.Body.String())
+	}
+	errBody := decodeAPIResponse[map[string]string](t, limited)
+	if strings.Contains(errBody["error"], "9999") {
+		t.Fatalf("expected rate-limit error not to expose pin, got: %s", errBody["error"])
+	}
+	if !strings.Contains(errBody["error"], "too many requests") {
+		t.Fatalf("expected rate limit error, got: %s", errBody["error"])
+	}
+}
+
+func TestPinLoginRateLimitResetsAfterLockoutWindow(t *testing.T) {
+	f := newAPIFixture(t)
+	invalid := `{"command_id":"cmd-api-pin-rate-window","node_device_id":"` + f.device.ID + `","client_device_id":"` + f.clientID + `","pin":"0000"}`
+	for i := 0; i < 5; i++ {
+		_ = f.postJSON(t, "/api/v1/auth/pin-login", invalid)
+	}
+	limited := f.postJSON(t, "/api/v1/auth/pin-login", invalid)
+	if limited.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 while lockout active, got %d: %s", limited.Code, limited.Body.String())
+	}
+	f.clock.Advance(16 * time.Minute)
+	valid := `{"command_id":"cmd-api-pin-rate-window-valid","node_device_id":"` + f.device.ID + `","client_device_id":"` + f.clientID + `","pin":"1111"}`
+	recovered := f.postJSON(t, "/api/v1/auth/pin-login", valid)
+	if recovered.Code != http.StatusCreated {
+		t.Fatalf("expected successful login after lockout window, got %d: %s", recovered.Code, recovered.Body.String())
 	}
 }
 
@@ -374,7 +555,9 @@ func apiOutboxIDs(t *testing.T, f *apiFixture, n int) []string {
 func TestSyncStatusAPI(t *testing.T) {
 	f := newAPIFixture(t)
 	ids := apiOutboxIDs(t, f, 2)
-	now := appshared.DBTime(apiFixedClock{}.Now())
+	clock := &apiFixedClock{}
+	now := appshared.DBTime(clock.Now())
+
 	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'failed', attempts = 1, last_error = 'temporary', updated_at = ? WHERE id = ?`, now, ids[0]); err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +578,9 @@ func TestSyncStatusAPI(t *testing.T) {
 func TestRetryFailedAPIResetsFailedAndSuspendedButNotSent(t *testing.T) {
 	f := newAPIFixture(t)
 	ids := apiOutboxIDs(t, f, 3)
-	now := appshared.DBTime(apiFixedClock{}.Now())
+	clock := &apiFixedClock{}
+	now := appshared.DBTime(clock.Now())
+	//now := appshared.DBTime(apiFixedClock{}.Now())
 	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'failed', attempts = 1, last_error = 'temporary', updated_at = ? WHERE id = ?`, now, ids[0]); err != nil {
 		t.Fatal(err)
 	}
@@ -406,6 +591,7 @@ func TestRetryFailedAPIResetsFailedAndSuspendedButNotSent(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	f.useManagerOperator(t)
 	rr := f.postJSON(t, "/api/v1/sync/retry-failed", `{}`)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
@@ -426,6 +612,14 @@ func TestRetryFailedAPIResetsFailedAndSuspendedButNotSent(t *testing.T) {
 	}
 	if failedStatus != "pending" || suspendedStatus != "pending" || sentStatus != "sent" {
 		t.Fatalf("unexpected retry statuses: failed=%s suspended=%s sent=%s", failedStatus, suspendedStatus, sentStatus)
+	}
+}
+
+func TestRetryFailedAPIRequiresSyncRetryPermission(t *testing.T) {
+	f := newAPIFixture(t)
+	rr := f.postJSON(t, "/api/v1/sync/retry-failed", `{}`)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 

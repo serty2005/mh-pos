@@ -38,11 +38,35 @@ func (s *Service) BootstrapDemo(ctx context.Context) (*DemoBootstrapResult, erro
 	if _, err := s.PairEdgeNode(ctx, PairEdgeNodeCommand{PairingCode: pairingCode}); err != nil {
 		return nil, err
 	}
-	cashierRole, err := s.ensureDemoRole(ctx, "cashier", `{"pos":true}`, "pos")
+	cashierRole, err := s.ensureDemoRole(ctx, "cashier", appshared.PermissionsJSON(
+		appshared.PermissionShiftOpen,
+		appshared.PermissionShiftClose,
+		appshared.PermissionCashSessionOpen,
+		appshared.PermissionCashSessionClose,
+		appshared.PermissionOrderCreate,
+		appshared.PermissionOrderAddLine,
+		appshared.PermissionOrderChangeQuantity,
+		appshared.PermissionOrderVoidLine,
+		appshared.PermissionPrecheckIssue,
+		appshared.PermissionPaymentCapture,
+	), appshared.PermissionShiftOpen, appshared.PermissionOrderCreate, appshared.PermissionPrecheckIssue, appshared.PermissionPaymentCapture)
 	if err != nil {
 		return nil, err
 	}
-	managerRole, err := s.ensureDemoRole(ctx, "manager", `{"pos":true,"precheck.cancel":true}`, "precheck.cancel")
+	managerRole, err := s.ensureDemoRole(ctx, "manager", appshared.PermissionsJSON(
+		appshared.PermissionShiftOpen,
+		appshared.PermissionShiftClose,
+		appshared.PermissionCashSessionOpen,
+		appshared.PermissionCashSessionClose,
+		appshared.PermissionOrderCreate,
+		appshared.PermissionOrderAddLine,
+		appshared.PermissionOrderChangeQuantity,
+		appshared.PermissionOrderVoidLine,
+		appshared.PermissionPrecheckIssue,
+		appshared.PermissionPaymentCapture,
+		appshared.PermissionPrecheckCancel,
+		appshared.PermissionSyncRetryFailed,
+	), appshared.PermissionPrecheckCancel, appshared.PermissionSyncRetryFailed)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +123,7 @@ func (s *Service) ensureDemoRestaurant(ctx context.Context) (*domain.Restaurant,
 	})
 }
 
-func (s *Service) ensureDemoRole(ctx context.Context, name, permissions string, requiredPermissions ...string) (*domain.Role, error) {
+func (s *Service) ensureDemoRole(ctx context.Context, name, permissions string, requiredPermissions ...appshared.PermissionID) (*domain.Role, error) {
 	items, err := s.ListRoles(ctx)
 	if err != nil {
 		return nil, err
@@ -286,9 +310,9 @@ func idsOfMenuItems(items []domain.MenuItem) []string {
 	return ids
 }
 
-func roleHasAllPermissions(role domain.Role, required ...string) bool {
+func roleHasAllPermissions(role domain.Role, required ...appshared.PermissionID) bool {
 	for _, permission := range required {
-		if !appshared.HasPermission(role.PermissionsJSON, permission) {
+		if !appshared.HasPermission(role.PermissionsJSON, string(permission)) {
 			return false
 		}
 	}
