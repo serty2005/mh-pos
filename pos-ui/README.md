@@ -17,6 +17,23 @@ $env:VITE_POS_API_BASE="http://localhost:8080/api/v1"
 npm run dev
 ```
 
+## Local E2E Prototype Quickstart
+
+implemented now: UI проходит основной cashier flow через настоящий POS Edge backend.
+
+1. Запусти `pos-backend` с `$env:POS_DEV_TOOLS="1"`.
+2. Из корня репозитория выполни `.\scripts\bootstrap-pos-demo.ps1`.
+3. Открой `http://localhost:5173`.
+4. На `/pair` введи `pairing_code` из bootstrap.
+5. На `/login` используй cashier PIN `1111`.
+6. Для cancel unpaid precheck в manager override введи `manager_employee_id` из bootstrap и manager PIN `2222`.
+
+Ручной UI flow:
+
+```text
+pair -> login -> open shift -> open cash session -> select hall/table -> create order -> add lines -> change quantity -> void line -> issue precheck -> cancel precheck -> issue precheck again -> pay -> final check -> close cash session -> close shift -> lock/logout
+```
+
 ## Что Реализовано
 
 - `/pair` вызывает реальный `POST /api/v1/system/pair`.

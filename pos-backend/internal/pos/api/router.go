@@ -3,7 +3,9 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -98,9 +100,25 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Get("/sync/local-events", h.listLocalEvents)
 		r.Get("/sync/status", h.syncStatus)
 		r.Post("/sync/retry-failed", h.retryFailedOutbox)
+
+		r.Post("/dev/bootstrap-demo", h.bootstrapDemo)
 	})
 
 	return r
+}
+
+func (h *Handler) bootstrapDemo(w http.ResponseWriter, r *http.Request) {
+	if !devToolsEnabled() {
+		httpx.Error(w, fmt.Errorf("%w: dev bootstrap is disabled; set POS_DEV_TOOLS=1 for local prototype setup", domain.ErrForbidden))
+		return
+	}
+	v, err := h.service.BootstrapDemo(r.Context())
+	writeCreated(w, v, err)
+}
+
+func devToolsEnabled() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("POS_DEV_TOOLS")))
+	return value == "1" || value == "true" || value == "yes"
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {

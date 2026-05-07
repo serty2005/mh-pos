@@ -15,7 +15,7 @@
 
 ```text
 AGENTS.md
-ROADMAP_MVP.md
+ROADMAP.md
 README.md
 pos-backend/README.md
 docs/sync/edge-cloud-contracts-v1.md
@@ -2228,7 +2228,7 @@ outbox survives restore
 
 # 22. Roadmap Development Sequence
 
-Подробный roadmap живет в `ROADMAP_MVP.md`. Здесь фиксируется архитектурная последовательность.
+Подробный roadmap живет в `ROADMAP.md`. Здесь фиксируется архитектурная последовательность.
 
 ---
 
@@ -2480,7 +2480,7 @@ Cloud payload conflict returns conflict
 
 ```text
 AGENTS.md
-ROADMAP_MVP.md
+ROADMAP.md
 SPECv1.3.md
 README.md
 актуальную структуру репозитория
@@ -2492,7 +2492,7 @@ README.md
 AGENTS.md
 README.md
 pos-backend/README.md, если изменились команды/API
-ROADMAP_MVP.md, если изменился статус этапов
+ROADMAP.md, если изменился статус этапов
 SPECv1.3.md, если изменилось архитектурное решение
 ```
 

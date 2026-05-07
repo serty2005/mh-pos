@@ -51,7 +51,7 @@ Order -> Precheck -> Payment -> Check
 |-- AGENTS.md                 # архитектурные правила и быстрый вход для AI-агентов
 |-- README.md                 # карта монорепозитория
 |-- SPECv1.3.md               # целевая спецификация Architecture Lock v1.3
-|-- ROADMAP_MVP.md            # roadmap перехода к MVP v1.3
+|-- ROADMAP.md                # roadmap перехода к MVP v1.3
 |-- pos-backend/              # POS Edge Backend, текущая основная кодовая база
 |   |-- README.md             # запуск, Docker, smoke test, текущий API и first-launch schema
 |   |-- cmd/pos-edge/         # entrypoint локального POS backend сервиса
@@ -88,7 +88,7 @@ Order -> Precheck -> Payment -> Check
 
 - [AGENTS.md](AGENTS.md)
 - [SPECv1.3.md](SPECv1.3.md)
-- [ROADMAP_MVP.md](ROADMAP_MVP.md)
+- [ROADMAP.md](ROADMAP.md)
 
 Эти документы фиксируют edge-first, offline-first, Clean Architecture, транзакции для write операций, outbox в той же транзакции и целевую модель `Order -> Precheck -> Payment -> Check`.
 
@@ -121,6 +121,81 @@ npm run dev
 ```
 
 Dev server слушает `http://localhost:5173` и ходит в POS Edge backend `http://localhost:8080/api/v1` по умолчанию.
+
+## Local E2E Prototype Quickstart
+
+implemented now: локально можно поднять минимальную связку `pos-ui -> pos-backend -> cloud-backend` и пройти cashier flow вручную.
+
+1. Подними PostgreSQL для Cloud:
+
+```powershell
+docker run --name mh-pos-cloud-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=mh_pos_cloud -p 5432:5432 -d postgres:16
+```
+
+2. Запусти Cloud receiver:
+
+```powershell
+cd cloud-backend
+go mod tidy
+go test ./...
+$env:CLOUD_POSTGRES_DSN="postgres://postgres:postgres@localhost:5432/mh_pos_cloud?sslmode=disable"
+go run ./cmd/cloud-api
+```
+
+3. Запусти POS Edge backend с dev tools:
+
+```powershell
+cd pos-backend
+go mod tidy
+go test ./...
+$env:POS_DEV_TOOLS="1"
+go run ./cmd/pos-edge
+```
+
+4. В новом терминале из корня репозитория создай demo данные:
+
+```powershell
+.\scripts\bootstrap-pos-demo.ps1
+```
+
+Скрипт вызывает dev/local endpoint `POST /api/v1/dev/bootstrap-demo` и печатает:
+
+- `Pairing code`: `MHPOS:<restaurant_id>:demo-edge-node-1`
+- `Cashier PIN`: `1111`
+- `Manager PIN`: `2222`
+- `Manager employee`: employee id для cancel precheck override
+
+5. Запусти POS UI:
+
+```powershell
+cd pos-ui
+npm install
+npm run dev
+```
+
+6. Открой `http://localhost:5173` и пройди ручной сценарий:
+
+```text
+pairing -> login -> open shift -> open cash session -> select hall/table -> create order -> add lines -> change quantity -> void line -> issue precheck -> cancel unpaid precheck with manager override -> issue precheck again -> capture payment -> final check -> close cash session -> close shift -> lock/logout
+```
+
+7. Проверь POS sync state:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=20
+Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=20
+Invoke-RestMethod http://localhost:8080/api/v1/sync/status
+Invoke-RestMethod -Method Post http://localhost:8080/api/v1/sync/retry-failed
+```
+
+8. Проверь Cloud receiver:
+
+```powershell
+Invoke-RestMethod http://localhost:8090/health
+.\scripts\send-cloud-test-envelope.ps1 -ReplayTwice
+```
+
+`.\scripts\dev-smoke.ps1` выполняет health checks, POS demo bootstrap, POS sync endpoint checks и Cloud envelope replay, но не стартует серверы за тебя.
 
 ## Основные Контуры
 
@@ -192,7 +267,7 @@ go test ./...
 ## Где Искать
 
 - Целевая спецификация: `SPECv1.3.md`
-- Roadmap MVP: `ROADMAP_MVP.md`
+- Roadmap MVP: `ROADMAP.md`
 - Архитектурные правила: `AGENTS.md`
 - Запуск POS Edge backend: `pos-backend/README.md`
 - Запуск Cloud receiver: `cloud-backend/README.md`

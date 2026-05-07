@@ -381,6 +381,41 @@ func TestRetryFailedAPIResetsFailedAndSuspendedButNotSent(t *testing.T) {
 	}
 }
 
+func TestDevBootstrapDemoIsGatedAndCreatesLoginData(t *testing.T) {
+	f := newAPIFixture(t)
+
+	disabledReq := httptest.NewRequest(http.MethodPost, "/api/v1/dev/bootstrap-demo", nil)
+	disabled := httptest.NewRecorder()
+	f.router.ServeHTTP(disabled, disabledReq)
+	if disabled.Code != http.StatusForbidden {
+		t.Fatalf("expected disabled bootstrap to return 403, got %d: %s", disabled.Code, disabled.Body.String())
+	}
+
+	t.Setenv("POS_DEV_TOOLS", "1")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/dev/bootstrap-demo", nil)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var boot app.DemoBootstrapResult
+	if err := json.Unmarshal(rr.Body.Bytes(), &boot); err != nil {
+		t.Fatal(err)
+	}
+	if boot.PairingCode == "" || boot.CashierPIN != "1111" || boot.ManagerPIN != "2222" || boot.ManagerEmployeeID == "" || len(boot.TableIDs) == 0 || len(boot.MenuItemIDs) == 0 {
+		t.Fatalf("unexpected bootstrap result: %+v", boot)
+	}
+
+	loginBody := `{"node_device_id":"` + boot.NodeDeviceID + `","client_device_id":"api-demo-client","pin":"1111"}`
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/pin-login", bytes.NewBufferString(loginBody))
+	loginReq.Header.Set("Content-Type", "application/json")
+	login := httptest.NewRecorder()
+	f.router.ServeHTTP(login, loginReq)
+	if login.Code != http.StatusCreated {
+		t.Fatalf("expected demo cashier PIN login to work, got %d: %s", login.Code, login.Body.String())
+	}
+}
+
 func TestIssueFirstPrecheckThroughPublicAPI(t *testing.T) {
 	f := newAPIFixture(t)
 	order := f.createOrderWithLine(t)

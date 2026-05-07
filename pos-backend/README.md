@@ -74,6 +74,7 @@ go run ./cmd/pos-edge
 $env:POS_HTTP_ADDR=":8080"
 $env:POS_SQLITE_PATH="data/pos-edge.db"
 $env:POS_SQLITE_MIGRATIONS_DIR="migrations/sqlite"
+$env:POS_DEV_TOOLS="1" # только для локального demo bootstrap
 ```
 
 VSCode setup: открой папку `pos-backend`, установи официальный Go extension, выполни `Go: Install/Update Tools`, затем используй integrated terminal для `go test ./...` и `go run ./cmd/pos-edge`.
@@ -88,45 +89,37 @@ SQLite хранится в Docker volume `pos_edge_sqlite`. API доступен
 
 ## API Smoke Test
 
-???? smoke test ????????? ?????????? auth/device contract ? ????????? backend foundation. ? MVP pairing payload ????? ?????? `MHPOS:<restaurant_id>:<node_device_id>`; backend ?? ?????????? `node_device_id` ????????.
+implemented now: локальный demo bootstrap доступен только при `POS_DEV_TOOLS=1`.
 
 ```powershell
-curl http://localhost:8080/health
+Invoke-RestMethod http://localhost:8080/health
+..\scripts\bootstrap-pos-demo.ps1
 ```
 
-??????? bootstrap ??????, paired Edge Node ? operator session:
+Bootstrap создает `Demo Bistro`, paired Edge Node `demo-edge-node-1`, cashier/manager roles, сотрудников с PIN `1111` и `2222`, зал, столы и несколько menu items. Ответ содержит `pairing_code` и `manager_employee_id` для ручного UI flow.
+
+Проверка PIN login после bootstrap:
 
 ```powershell
-$bootstrapDeviceID = "bootstrap-$env:COMPUTERNAME"
+$demo = ..\scripts\bootstrap-pos-demo.ps1
 $clientDeviceID = [guid]::NewGuid().ToString()
-
-$restaurant = curl -s -X POST http://localhost:8080/api/v1/restaurants -H "Content-Type: application/json" -d "{`"node_device_id`":`"$bootstrapDeviceID`",`"name`":`"Demo Bistro`",`"timezone`":`"Europe/Moscow`",`"currency`":`"RUB`"}" | ConvertFrom-Json
-$role = curl -s -X POST http://localhost:8080/api/v1/roles -H "Content-Type: application/json" -d "{`"node_device_id`":`"$bootstrapDeviceID`",`"name`":`"cashier`",`"permissions_json`":`"{\`"pos\`":true}`"}" | ConvertFrom-Json
-$device = curl -s -X POST http://localhost:8080/api/v1/devices/register -H "Content-Type: application/json" -d "{`"node_device_id`":`"$bootstrapDeviceID`",`"restaurant_id`":`"$($restaurant.id)`",`"device_code`":`"POS-1`",`"name`":`"Main terminal`",`"type`":`"edge-node`"}" | ConvertFrom-Json
-curl -s -X POST http://localhost:8080/api/v1/system/pair -H "Content-Type: application/json" -d "{`"pairing_code`":`"MHPOS:$($restaurant.id):$($device.id)`"}"
-$employee = curl -s -X POST http://localhost:8080/api/v1/employees -H "Content-Type: application/json" -d "{`"node_device_id`":`"$($device.id)`",`"restaurant_id`":`"$($restaurant.id)`",`"role_id`":`"$($role.id)`",`"name`":`"Anna`",`"pin_hash`":`"pin.pbkdf2.sha256:v1:120000:ZG9jcy1jYXNoaWVyLXNhbHQ:eWsP+tV3U39cOBI/9yEY911+6u2U3RCc+4WNrhrfeOQ`"}" | ConvertFrom-Json
-$session = curl -s -X POST http://localhost:8080/api/v1/auth/pin-login -H "Content-Type: application/json" -d "{`"node_device_id`":`"$($device.id)`",`"client_device_id`":`"$clientDeviceID`",`"pin`":`"1111`"}" | ConvertFrom-Json
-curl -s "http://localhost:8080/api/v1/auth/session?node_device_id=$($device.id)&client_device_id=$clientDeviceID&session_id=$($session.session.id)"
+Invoke-RestMethod -Method Post http://localhost:8080/api/v1/auth/pin-login -ContentType "application/json" -Body (@{
+  node_device_id = $demo.node_device_id
+  client_device_id = $clientDeviceID
+  pin = "1111"
+} | ConvertTo-Json)
 ```
 
-Operator/business writes ?????? ?????????? node/client/actor/session context:
+Operational sync endpoints:
 
 ```powershell
-$meta = "`"node_device_id`":`"$($device.id)`",`"client_device_id`":`"$clientDeviceID`",`"actor_employee_id`":`"$($session.actor.employee_id)`",`"session_id`":`"$($session.session.id)`""
-$hall = curl -s -X POST http://localhost:8080/api/v1/halls -H "Content-Type: application/json" -d "{$meta,`"restaurant_id`":`"$($restaurant.id)`",`"name`":`"Main Hall`"}" | ConvertFrom-Json
-$table = curl -s -X POST http://localhost:8080/api/v1/tables -H "Content-Type: application/json" -d "{$meta,`"restaurant_id`":`"$($restaurant.id)`",`"hall_id`":`"$($hall.id)`",`"name`":`"A1`",`"seats`":2}" | ConvertFrom-Json
-curl -s "http://localhost:8080/api/v1/halls?restaurant_id=$($restaurant.id)"
-curl -s "http://localhost:8080/api/v1/tables?restaurant_id=$($restaurant.id)&hall_id=$($hall.id)"
+Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=20
+Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=20
+Invoke-RestMethod http://localhost:8080/api/v1/sync/status
+Invoke-RestMethod -Method Post http://localhost:8080/api/v1/sync/retry-failed
 ```
 
-Lock/logout semantics:
-
-```powershell
-curl -s -X POST http://localhost:8080/api/v1/auth/logout -H "Content-Type: application/json" -d "{`"node_device_id`":`"$($device.id)`",`"client_device_id`":`"$clientDeviceID`",`"session_id`":`"$($session.session.id)`"}"
-curl -s "http://localhost:8080/api/v1/auth/session?node_device_id=$($device.id)&client_device_id=$clientDeviceID&session_id=$($session.session.id)"
-```
-
-Financial precheck/payment endpoints ???????? ??????????, ?? operator writes ?????? ??????? ??? ?? metadata contract. Legacy `POST /api/v1/orders/{id}/check` ???????? deprecated alias ? `IssuePrecheck`; `POST /api/v1/checks/{id}/payments` ?????????? conflict.
+Legacy `POST /api/v1/orders/{id}/check` остается deprecated alias к `IssuePrecheck`; `POST /api/v1/checks/{id}/payments` возвращает conflict.
 
 ## Доступные API Endpoints
 
@@ -167,6 +160,7 @@ Auth/device и POS UI endpoints:
 - `GET /api/v1/cash-sessions/current`
 - `POST /api/v1/cash-sessions/open`
 - `POST /api/v1/cash-sessions/{id}/close`
+- `POST /api/v1/dev/bootstrap-demo` dev/local only, требует `POS_DEV_TOOLS=1`
 
 Operational sync endpoints: `GET /api/v1/sync/outbox?limit=50`, `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`, `GET /api/v1/sync/status`, `POST /api/v1/sync/retry-failed`. `retry-failed` ?? ?????????? ?????? ? Cloud ? ?? ?????? business state; ?? ?????? ?????????? `failed`/`suspended` outbox rows ? `pending`.
 

@@ -97,6 +97,10 @@
 - pilot gates;
 - sequencing.
 
+### Local E2E Prototype Quickstart
+
+`README.md` — источник истины для локального запуска `pos-ui -> pos-backend -> cloud-backend`, demo bootstrap и smoke scripts. Dev bootstrap endpoint `POST /api/v1/dev/bootstrap-demo` относится только к local/dev режиму и требует `POS_DEV_TOOLS=1`.
+
 ## Порядок приоритета при конфликте
 
 Если есть конфликт между документами, использовать такой порядок:

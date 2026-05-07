@@ -96,6 +96,16 @@ Order -> Precheck -> Payment -> Check
 - `GET /api/v1/sync/local-events`
 - `POST /api/v1/sync/retry-failed`
 
+### Dev/local bootstrap
+
+implemented now:
+
+- `POST /api/v1/dev/bootstrap-demo`
+- доступен только при `POS_DEV_TOOLS=1`;
+- создает demo restaurant, paired Edge Node, cashier/manager roles, сотрудников с PIN `1111`/`2222`, hall/table и menu items;
+- возвращает `pairing_code` и `manager_employee_id` для ручного POS UI smoke flow;
+- не является production path.
+
 ## Explicit compatibility tails
 
 На текущем этапе в backend существуют следующие tails:

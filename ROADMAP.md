@@ -38,6 +38,7 @@
 - shifts foundation
 - cash sessions foundation
 - cash drawer events foundation
+- local E2E demo bootstrap and smoke scripts
 
 ### Sales runtime
 
