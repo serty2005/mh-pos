@@ -62,3 +62,19 @@ func TestRequiredSchemaIncludesRuntimeProjectionTables(t *testing.T) {
 		}
 	}
 }
+
+func TestRequiredSchemaDocumentsProjectionMigration(t *testing.T) {
+	for _, req := range RequiredSchema() {
+		if req.Table != "cloud_projection_event_type_stats" {
+			continue
+		}
+		if req.MigrationFile != "002_projection_event_type_stats.sql" {
+			t.Fatalf("expected projection stats migration file, got %q", req.MigrationFile)
+		}
+		if req.RequiredBy == "" {
+			t.Fatal("expected required-by explanation for projection stats table")
+		}
+		return
+	}
+	t.Fatal("expected cloud_projection_event_type_stats in schema verification contract")
+}

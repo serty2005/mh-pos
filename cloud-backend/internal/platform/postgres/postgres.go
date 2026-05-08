@@ -29,11 +29,14 @@ type MigrationOptions struct {
 	SchemaRequirements []SchemaRequirement
 }
 
-// SchemaRequirement описывает критичные runtime-объекты, без которых модуль не должен стартовать.
+// SchemaRequirement describes implemented-now runtime schema that must exist before HTTP/workers start.
 type SchemaRequirement struct {
-	Table   string
-	Columns []string
-	Indexes []string
+	Table          string
+	Columns        []string
+	Indexes        []string
+	RequiredBy     string
+	MigrationFile  string
+	RecoveryAction string
 }
 
 type migrationFile struct {
@@ -41,6 +44,41 @@ type migrationFile struct {
 	Path           string
 	Body           []byte
 	ChecksumSHA256 string
+}
+
+type SchemaVerificationError struct {
+	ObjectType     string
+	Table          string
+	Column         string
+	Index          string
+	RequiredBy     string
+	MigrationFile  string
+	RecoveryAction string
+}
+
+func (e *SchemaVerificationError) Error() string {
+	switch e.ObjectType {
+	case "column":
+		return fmt.Sprintf("postgres schema verification failed: missing column %s.%s", e.Table, e.Column)
+	case "index":
+		return fmt.Sprintf("postgres schema verification failed: missing index %s on %s", e.Index, e.Table)
+	default:
+		return fmt.Sprintf("postgres schema verification failed: missing table %s", e.Table)
+	}
+}
+
+type migrationFileError struct {
+	Operation string
+	File      string
+	Err       error
+}
+
+func (e *migrationFileError) Error() string {
+	return fmt.Sprintf("postgres migration: %s %s: %v", e.Operation, e.File, e.Err)
+}
+
+func (e *migrationFileError) Unwrap() error {
+	return e.Err
 }
 
 type pgRunner interface {
@@ -71,6 +109,7 @@ func MigrateDirWithPolicy(ctx context.Context, pool *pgxpool.Pool, dir string, o
 	started := time.Now()
 	moduleName := strings.TrimSpace(options.ModuleName)
 	targetVersion := strings.TrimSpace(options.ModuleVersion)
+	previousVersion := ""
 	databaseName := ""
 	defer func() {
 		result := "success"
@@ -80,6 +119,10 @@ func MigrateDirWithPolicy(ctx context.Context, pool *pgxpool.Pool, dir string, o
 			result = "failed"
 			level = slog.LevelError
 			errorCode = "DB_MIGRATION_FAILED"
+			var verificationErr *SchemaVerificationError
+			if errors.As(err, &verificationErr) {
+				errorCode = "DB_SCHEMA_VERIFICATION_FAILED"
+			}
 		}
 		attrs := []any{
 			"operation", "db.migration",
@@ -90,11 +133,27 @@ func MigrateDirWithPolicy(ctx context.Context, pool *pgxpool.Pool, dir string, o
 			"database", databaseName,
 			"module_name", moduleName,
 			"target_version", targetVersion,
+			"current_version", previousVersion,
 			"migration_dir", dir,
 			"duration_ms", time.Since(started).Milliseconds(),
 		}
 		if err != nil {
 			attrs = append(attrs, "sql_state", pgSQLState(err), "internal_error", err.Error())
+			var verificationErr *SchemaVerificationError
+			if errors.As(err, &verificationErr) {
+				attrs = append(attrs,
+					"missing_table", verificationErr.Table,
+					"missing_column", verificationErr.Column,
+					"missing_index", verificationErr.Index,
+					"required_by", verificationErr.RequiredBy,
+					"migration_file", verificationErr.MigrationFile,
+					"recovery_action", verificationErr.RecoveryAction,
+				)
+			}
+			var fileErr *migrationFileError
+			if errors.As(err, &fileErr) {
+				attrs = append(attrs, "migration_file", fileErr.File)
+			}
 		}
 		slog.Log(ctx, level, "postgres startup migration завершена", attrs...)
 	}()
@@ -122,7 +181,6 @@ func MigrateDirWithPolicy(ctx context.Context, pool *pgxpool.Pool, dir string, o
 		slog.WarnContext(ctx, "postgres db_runtime_versions отсутствует, БД считается самой старой", "operation", "db.migration", "action", "inspect_version_table", "result", "oldest", "db_type", "postgres", "database", databaseName, "module_name", moduleName, "migration_dir", dir)
 	}
 
-	previousVersion := ""
 	if versionTableExisted {
 		previousVersion, err = readRuntimeVersion(ctx, conn, moduleName)
 		if err != nil {
@@ -138,7 +196,7 @@ func MigrateDirWithPolicy(ctx context.Context, pool *pgxpool.Pool, dir string, o
 	if err != nil {
 		return fmt.Errorf("postgres migration: read migration dir %s: %w", dir, err)
 	}
-	allowCanonicalUpgrade := allowSingleCanonicalUpgrade(files, needsVersionUpgrade, versionTableExisted)
+	allowCanonicalUpgrade := allowManagedChecksumUpgrade(needsVersionUpgrade, versionTableExisted)
 	pending, err := pendingMigrations(ctx, conn, files, schemaTableExisted, allowCanonicalUpgrade)
 	if err != nil {
 		return err
@@ -287,9 +345,8 @@ func pendingMigrations(ctx context.Context, runner pgRunner, files []migrationFi
 			if err != nil {
 				return nil, fmt.Errorf("postgres migration: read legacy migration marker for %s: %w", file.Name, err)
 			}
-			// Старый schema_migrations без checksum не доказывает, что текущий
-			// повторно применимый SQL уже применен полностью; canonical file должен
-			// довыравнять отсутствующие runtime-таблицы до verification.
+			// A legacy marker without checksum is not proof that implemented-now schema exists.
+			// Re-run idempotent SQL before verification so missing runtime tables can be repaired.
 			pending = append(pending, file)
 			continue
 		}
@@ -304,8 +361,8 @@ func pendingMigrations(ctx context.Context, runner pgRunner, files []migrationFi
 		}
 		storedChecksum = strings.TrimSpace(storedChecksum)
 		if storedChecksum == "" {
-			// Пустой checksum - старая запись, а не гарантия актуальной схемы.
-			// Повторно применяем idempotent migration и только затем пишем checksum/history.
+			// Empty checksum is a legacy marker, not proof of current schema.
+			// The migration history is updated only after the idempotent file succeeds.
 			pending = append(pending, file)
 			continue
 		}
@@ -325,11 +382,11 @@ func applyPendingMigrations(ctx context.Context, runner pgRunner, files []migrat
 		started := time.Now()
 		tx, err := runner.Begin(ctx)
 		if err != nil {
-			return fmt.Errorf("postgres migration: begin %s: %w", file.Name, err)
+			return &migrationFileError{Operation: "begin", File: file.Name, Err: err}
 		}
 		if _, err := tx.Exec(ctx, string(file.Body)); err != nil {
 			_ = tx.Rollback(ctx)
-			return fmt.Errorf("postgres migration: apply %s: %w", file.Name, err)
+			return &migrationFileError{Operation: "apply", File: file.Name, Err: err}
 		}
 		if _, err := tx.Exec(ctx, `
 INSERT INTO schema_migrations(version,checksum_sha256,status,applied_at)
@@ -340,10 +397,10 @@ ON CONFLICT(version) DO UPDATE SET
   applied_at = EXCLUDED.applied_at
 `, file.Name, file.ChecksumSHA256); err != nil {
 			_ = tx.Rollback(ctx)
-			return fmt.Errorf("postgres migration: record %s: %w", file.Name, err)
+			return &migrationFileError{Operation: "record", File: file.Name, Err: err}
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return fmt.Errorf("postgres migration: commit %s: %w", file.Name, err)
+			return &migrationFileError{Operation: "commit", File: file.Name, Err: err}
 		}
 		slog.InfoContext(ctx, "postgres migration применена", "operation", "db.migration", "action", "apply_migration", "result", "success", "db_type", "postgres", "migration_file", file.Name, "migration_checksum", file.ChecksumSHA256, "duration_ms", time.Since(started).Milliseconds())
 	}
@@ -362,7 +419,7 @@ func VerifySchema(ctx context.Context, runner pgRunner, requirements []SchemaReq
 			return fmt.Errorf("postgres schema verification: inspect table %s: %w", req.Table, err)
 		}
 		if !exists {
-			return fmt.Errorf("postgres schema verification failed: missing table %s", req.Table)
+			return missingSchemaObject(req, "table", "", "")
 		}
 		for _, column := range req.Columns {
 			if strings.TrimSpace(column) == "" {
@@ -373,7 +430,7 @@ func VerifySchema(ctx context.Context, runner pgRunner, requirements []SchemaReq
 				return fmt.Errorf("postgres schema verification: inspect column %s.%s: %w", req.Table, column, err)
 			}
 			if !columnExists {
-				return fmt.Errorf("postgres schema verification failed: missing column %s.%s", req.Table, column)
+				return missingSchemaObject(req, "column", column, "")
 			}
 		}
 		for _, index := range req.Indexes {
@@ -385,12 +442,28 @@ func VerifySchema(ctx context.Context, runner pgRunner, requirements []SchemaReq
 				return fmt.Errorf("postgres schema verification: inspect index %s: %w", index, err)
 			}
 			if !indexExists {
-				return fmt.Errorf("postgres schema verification failed: missing index %s on %s", index, req.Table)
+				return missingSchemaObject(req, "index", "", index)
 			}
 		}
 	}
 	slog.InfoContext(ctx, "postgres schema verification завершена", "operation", "db.schema_verification", "action", "verify_schema", "result", "success", "db_type", "postgres", "duration_ms", time.Since(started).Milliseconds())
 	return nil
+}
+
+func missingSchemaObject(req SchemaRequirement, objectType, column, index string) error {
+	recovery := strings.TrimSpace(req.RecoveryAction)
+	if recovery == "" {
+		recovery = "run startup migrations with the configured migration directory; for local/dev, recreate the database from migrations if repair is impossible"
+	}
+	return &SchemaVerificationError{
+		ObjectType:     objectType,
+		Table:          req.Table,
+		Column:         column,
+		Index:          index,
+		RequiredBy:     req.RequiredBy,
+		MigrationFile:  req.MigrationFile,
+		RecoveryAction: recovery,
+	}
 }
 
 func acquirePostgresMigrationLock(ctx context.Context, runner pgRunner) error {
@@ -444,8 +517,8 @@ func latestMigrationIdentity(files []migrationFile) (string, string) {
 	return latest.Name, latest.ChecksumSHA256
 }
 
-func allowSingleCanonicalUpgrade(files []migrationFile, needsVersionUpgrade bool, versionTableExisted bool) bool {
-	return len(files) == 1 && (needsVersionUpgrade || !versionTableExisted)
+func allowManagedChecksumUpgrade(needsVersionUpgrade bool, versionTableExisted bool) bool {
+	return needsVersionUpgrade || !versionTableExisted
 }
 
 func shouldUpgradeVersion(previous, current string) (bool, error) {

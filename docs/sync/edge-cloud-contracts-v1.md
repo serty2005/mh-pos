@@ -234,15 +234,17 @@ edge_event_id
 
 ## Хранение в Cloud
 
-Реализовано сейчас: Cloud append-safe сохраняет принятые envelopes в:
+implemented now: Cloud append-safe сохраняет принятые envelopes в:
 
 - `cloud_edge_event_receipts`;
 - `cloud_edge_event_raw_payloads`;
 - `cloud_operational_events`.
 
-`cloud_edge_event_raw_payloads` сохраняет полный raw envelope до будущей projection logic. `cloud_operational_events` является operational replay journal для последующих projections.
+`cloud_edge_event_raw_payloads` сохраняет полный raw envelope. `cloud_operational_events` является operational replay journal для projections.
 
-Реализовано сейчас: item-level ACKs поддерживаются batch endpoint `POST /api/v1/sync/edge-events/batch`; более богатые Cloud projections остаются развитием после текущей foundation.
+implemented now: item-level ACKs поддерживаются batch endpoint `POST /api/v1/sync/edge-events/batch`; Cloud receiver пишет deterministic projections `cloud_projection_event_type_stats` и `cloud_projection_shift_finance` во время accepted event ingest.
+
+planned next: projection query APIs и более богатые reporting projections для dashboards.
 
 ## Правила идемпотентности
 
@@ -282,10 +284,10 @@ Ack стабилен при replay: повторный POST того же envelo
 
 ## Обновление sync contract 2026-05-07
 
-Реализовано сейчас:
+implemented now:
 - Cloud supports item-level ACK batch ingest endpoint `POST /api/v1/sync/edge-events/batch`.
 - POS sender supports batch delivery and maps per-item ACK status (`accepted`, `rejected`, `retryable`) to outbox lifecycle (`sent`, `suspended`, `failed/pending retry`).
-- Cloud writes richer deterministic projections on accepted operational events:
+- Cloud writes deterministic projections on accepted operational events:
   - `cloud_projection_event_type_stats`
   - `cloud_projection_shift_finance`
 - Cloud exposes production-oriented provisioning/import package endpoints for Cloud -> Edge master/reference/configuration delivery:
@@ -295,8 +297,8 @@ Ack стабилен при replay: повторный POST того же envelo
 - Provisioning stream catalog on Cloud includes: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `currencies`.
 - `currencies` stream payload uses canonical active ISO 4217 catalog (`currency_code`, `currency_alpha_code`, `minor_unit`, display flags) and is validated before apply.
 - POS Edge реализует Cloud -> Edge master-data ingest streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`.
-- POS Edge `currencies` apply находится вне текущего объема до отдельного Edge import path, storage contract и тестов; Edge runtime сейчас валидирует валюты по локальному canonical catalog.
+- POS Edge `currencies` apply is out of scope до отдельного Edge import path, storage contract и тестов; Edge runtime сейчас валидирует валюты по локальному canonical catalog.
 
-Запланировано далее:
+planned next:
 - add authorization policy for provisioning endpoints in production perimeter;
 - add projection query APIs for ops dashboards.

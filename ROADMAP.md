@@ -121,7 +121,7 @@
 - Currency policy больше не ограничена локальным subset: pilot runtime использует полный active ISO 4217 catalog, включая валюты ЮВА, с precision по коду валюты.
 - Cloud PostgreSQL получил canonical ISO 4217 currency template (`cloud_currency_reference`).
 - Cloud provisioning contract поддерживает `currencies` stream для Cloud -> Edge master/reference payload.
-- Startup migration policy закрепляет `db_runtime_versions`, single managed SQL file per module, `schema_migrations` с checksum, backup-before-upgrade/data-upgrade, schema verification и fail-fast при downgrade для `SQLite` и `PostgreSQL`.
+- Startup migration policy закрепляет `db_runtime_versions`, managed SQL files per module, `schema_migrations` с checksum, backup-before-upgrade/data-upgrade, schema verification и fail-fast при downgrade для `SQLite` и `PostgreSQL`.
 
 ## Что обязательно закрыть до первого пилота
 
@@ -258,7 +258,7 @@ flowchart LR
 
 ### Logging hardening
 
-Статус: `выполнено`
+Status: `implemented now`
 
 - Введен единый structured logging contract для backend операций.
 - Добавлены уровни `TRACE/DEBUG/INFO/WARN/ERROR` с runtime env-конфигом.
@@ -296,10 +296,11 @@ flowchart LR
 
 - Item-level ACK batch flow реализован: `POST /api/v1/sync/edge-events/batch` + batch sender mapping на Edge.
 - Cloud projections поверх `cloud_operational_events` реализованы: `cloud_projection_event_type_stats`, `cloud_projection_shift_finance`.
-- Cloud PostgreSQL startup path довыравнивает реализованные сейчас projection tables через canonical `001_sync_receiver.sql`; запланированные далее query endpoints не блокируют startup verification.
+- Cloud PostgreSQL startup path довыравнивает implemented-now projection tables через ordered managed migrations; `002_projection_event_type_stats.sql` создает `cloud_projection_event_type_stats`.
+- planned next query endpoints не блокируют startup verification.
 - Production Cloud -> Edge provisioning/import package endpoints реализованы: `PUT/GET /api/v1/provisioning/master-data/{stream}`.
 
-Статус следующих шагов: `далее`
+Status next steps: `planned next`
 
 - Авторизация production perimeter для provisioning endpoints.
 - Projection query endpoints для ops dashboards.

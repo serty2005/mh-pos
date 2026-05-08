@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -124,25 +125,25 @@ func TestPendingMigrationsSkipsAppliedChecksum(t *testing.T) {
 	}
 }
 
-func TestCloudMigrationDirUsesSingleManagedCanonicalFile(t *testing.T) {
+func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 	files, err := readMigrationFiles(filepath.Join("..", "..", "..", "migrations", "postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 1 || files[0].Name != "001_sync_receiver.sql" {
-		t.Fatalf("expected single managed canonical migration file, got %+v", files)
+	if len(files) != 2 || files[0].Name != "001_sync_receiver.sql" || files[1].Name != "002_projection_event_type_stats.sql" {
+		t.Fatalf("expected ordered managed migrations, got %+v", files)
 	}
-	body := string(files[0].Body)
-	if !strings.Contains(body, "cloud_currency_reference") || !strings.Contains(body, "cloud_currency_reference_alpha_code_idx") {
+	baseBody := string(files[0].Body)
+	if !strings.Contains(baseBody, "cloud_currency_reference") || !strings.Contains(baseBody, "cloud_currency_reference_alpha_code_idx") {
 		t.Fatalf("expected canonical migration to manage currency reference schema")
 	}
+	projectionBody := string(files[1].Body)
 	for _, required := range []string{
 		"cloud_projection_event_type_stats",
 		"PRIMARY KEY (restaurant_id, device_id, event_type)",
-		"cloud_projection_shift_finance",
 	} {
-		if !strings.Contains(body, required) {
-			t.Fatalf("expected canonical migration to manage %s", required)
+		if !strings.Contains(projectionBody, required) {
+			t.Fatalf("expected projection migration to manage %s", required)
 		}
 	}
 }
@@ -161,26 +162,11 @@ func TestMigrateDirWithPolicyRepairsLegacyPostgresMissingProjectionStats(t *test
 	resetPublicSchema(t, ctx, pool)
 	t.Cleanup(func() { resetPublicSchema(t, context.Background(), pool) })
 
-	if _, err := pool.Exec(ctx, `
-CREATE TABLE db_runtime_versions (
-  module_name TEXT PRIMARY KEY,
-  module_version TEXT NOT NULL,
-  schema_version TEXT NOT NULL DEFAULT '',
-  checksum_sha256 TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'applied',
-  applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-INSERT INTO db_runtime_versions(module_name,module_version)
-VALUES ('cloud-backend','0.1.0');
-CREATE TABLE cloud_edge_event_receipts (id TEXT PRIMARY KEY);
-`); err != nil {
-		t.Fatal(err)
-	}
-
 	migrationsDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(migrationsDir, "001_sync_receiver.sql"), []byte(`
+	migration001 := `
 CREATE TABLE IF NOT EXISTS cloud_edge_event_receipts (id TEXT PRIMARY KEY);
+`
+	migration002 := `
 CREATE TABLE IF NOT EXISTS migration_apply_log (
   id BIGSERIAL PRIMARY KEY,
   applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -199,11 +185,46 @@ CREATE TABLE IF NOT EXISTS cloud_projection_event_type_stats (
   updated_at TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (restaurant_id, device_id, event_type)
 );
-`), 0o644); err != nil {
+`
+	if err := os.WriteFile(filepath.Join(migrationsDir, "001_sync_receiver.sql"), []byte(migration001), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(migrationsDir, "002_projection_event_type_stats.sql"), []byte(migration002), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files, err := readMigrationFiles(migrationsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := pool.Exec(ctx, `
+CREATE TABLE schema_migrations (
+  version TEXT PRIMARY KEY,
+  checksum_sha256 TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'applied',
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE db_runtime_versions (
+  module_name TEXT PRIMARY KEY,
+  module_version TEXT NOT NULL,
+  schema_version TEXT NOT NULL DEFAULT '',
+  checksum_sha256 TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'applied',
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO db_runtime_versions(module_name,module_version)
+VALUES ('cloud-backend','0.1.0');
+CREATE TABLE cloud_edge_event_receipts (id TEXT PRIMARY KEY);
+INSERT INTO schema_migrations(version, checksum_sha256, status)
+VALUES ($1, $2, 'applied');
+`, files[0].Name, files[0].ChecksumSHA256); err != nil {
 		t.Fatal(err)
 	}
 	requirements := []SchemaRequirement{{
-		Table: "cloud_projection_event_type_stats",
+		Table:         "cloud_projection_event_type_stats",
+		RequiredBy:    "cloudsync postgres repository applyEventProjections event type stats upsert",
+		MigrationFile: "002_projection_event_type_stats.sql",
 		Columns: []string{
 			"restaurant_id", "device_id", "event_type", "event_count", "first_occurred_at", "last_occurred_at",
 			"last_cloud_received_at", "last_event_id", "last_command_id", "updated_at",
@@ -220,7 +241,7 @@ CREATE TABLE IF NOT EXISTS cloud_projection_event_type_stats (
 	}
 	assertTableExists(t, ctx, pool, "cloud_projection_event_type_stats")
 	var status string
-	if err := pool.QueryRow(ctx, `SELECT status FROM schema_migrations WHERE version = '001_sync_receiver.sql'`).Scan(&status); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT status FROM schema_migrations WHERE version = '002_projection_event_type_stats.sql'`).Scan(&status); err != nil {
 		t.Fatal(err)
 	}
 	if status != "applied" {
@@ -241,6 +262,26 @@ CREATE TABLE IF NOT EXISTS cloud_projection_event_type_stats (
 	}
 	if appliedCount != 1 {
 		t.Fatalf("expected second startup to skip already recorded migration, got %d applies", appliedCount)
+	}
+}
+
+func TestVerifySchemaMissingTableReturnsStructuredError(t *testing.T) {
+	err := VerifySchema(context.Background(), postgresCatalogStub{
+		tables: map[string]bool{"schema_migrations": true},
+	}, []SchemaRequirement{{
+		Table:         "cloud_projection_event_type_stats",
+		RequiredBy:    "cloudsync postgres repository applyEventProjections event type stats upsert",
+		MigrationFile: "002_projection_event_type_stats.sql",
+	}})
+	var verificationErr *SchemaVerificationError
+	if !errors.As(err, &verificationErr) {
+		t.Fatalf("expected structured schema verification error, got %T %v", err, err)
+	}
+	if verificationErr.Table != "cloud_projection_event_type_stats" || verificationErr.MigrationFile != "002_projection_event_type_stats.sql" {
+		t.Fatalf("unexpected verification error details: %+v", verificationErr)
+	}
+	if !strings.Contains(err.Error(), "missing table cloud_projection_event_type_stats") {
+		t.Fatalf("expected clear missing table message, got %q", err.Error())
 	}
 }
 
@@ -266,6 +307,9 @@ type postgresCatalogStub struct {
 	hasChecksumColumn bool
 	legacyMarkers     map[string]bool
 	checksums         map[string]string
+	tables            map[string]bool
+	columns           map[string]bool
+	indexes           map[string]bool
 }
 
 func (s postgresCatalogStub) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
@@ -282,8 +326,22 @@ func (s postgresCatalogStub) Begin(context.Context) (pgx.Tx, error) {
 
 func (s postgresCatalogStub) QueryRow(_ context.Context, query string, args ...any) pgx.Row {
 	switch {
+	case strings.Contains(query, "to_regclass"):
+		if len(args) == 1 {
+			table := strings.TrimPrefix(fmt.Sprint(args[0]), "public.")
+			return stubRow{values: []any{s.tables[table]}}
+		}
+		return stubRow{values: []any{false}}
 	case strings.Contains(query, "information_schema.columns"):
 		if len(args) == 2 && args[0] == "schema_migrations" && args[1] == "checksum_sha256" && s.hasChecksumColumn {
+			return stubRow{values: []any{1}}
+		}
+		if len(args) == 2 && s.columns[fmt.Sprintf("%s.%s", args[0], args[1])] {
+			return stubRow{values: []any{1}}
+		}
+		return stubRow{values: []any{0}}
+	case strings.Contains(query, "pg_indexes"):
+		if len(args) == 2 && s.indexes[fmt.Sprintf("%s.%s", args[0], args[1])] {
 			return stubRow{values: []any{1}}
 		}
 		return stubRow{values: []any{0}}
@@ -328,6 +386,12 @@ func (r stubRow) Scan(dest ...any) error {
 			v, ok := r.values[i].(string)
 			if !ok {
 				return fmt.Errorf("value %d is not string", i)
+			}
+			*d = v
+		case *bool:
+			v, ok := r.values[i].(bool)
+			if !ok {
+				return fmt.Errorf("value %d is not bool", i)
 			}
 			*d = v
 		default:

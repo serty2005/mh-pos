@@ -26,18 +26,19 @@ Cloud не является runtime dependency для:
 
 ## DB startup и schema verification
 
-Реализовано сейчас:
+implemented now:
 
 - POS Edge до запуска HTTP server и sync worker открывает SQLite, проверяет runtime gate (`WAL`, `foreign_keys`, `busy_timeout`, SQLite version), применяет один managed canonical SQL file `001_init.sql` при version-gated upgrade и выполняет schema verification критичных таблиц/колонок/индексов.
 - POS Edge использует `db_runtime_versions` и `schema_migrations`; если `db_runtime_versions` отсутствует, БД считается самой старой и запускается upgrade path.
 - Перед safe schema/data upgrade существующей SQLite БД создается backup `.db/.db-wal/.db-shm` в `POS_SQLITE_BACKUP_DIR` после WAL checkpoint.
-- Cloud backend до запуска HTTP server применяет один managed canonical PostgreSQL SQL file `001_sync_receiver.sql` под advisory lock и выполняет schema verification runtime-таблиц.
+- Cloud backend до запуска HTTP server применяет ordered managed PostgreSQL SQL files под advisory lock и выполняет schema verification runtime-таблиц.
 - Cloud backend использует `db_runtime_versions` и `schema_migrations`; если `db_runtime_versions` отсутствует, БД считается самой старой и запускается upgrade path.
-- Если PostgreSQL `schema_migrations` отсутствует или содержит старую запись без checksum, startup повторно применяет idempotent `001_sync_receiver.sql`, чтобы создать недостающие реализованные сейчас runtime tables до schema verification.
+- Если PostgreSQL `schema_migrations` отсутствует или содержит старую запись без checksum, startup повторно применяет idempotent managed SQL files, чтобы создать недостающие implemented-now runtime tables до schema verification.
+- `002_projection_event_type_stats.sql` создает `cloud_projection_event_type_stats`, потому что Cloud receiver runtime upsert'ит event type stats при приеме Edge events.
 - Перед safe schema/data upgrade существующей PostgreSQL схемы создается JSONL snapshot таблиц `public` в `CLOUD_POSTGRES_BACKUP_DIR`.
 - `schema_migrations` хранит имя active SQL file, SHA-256 checksum, status и `applied_at`; checksum drift при той же версии завершает startup fail-fast, а при `db version < MH_POS_VERSION` применяется как управляемый upgrade.
 - `DB version > MH_POS_VERSION` завершает startup fail-fast, downgrade не поддерживается.
-- Ошибки открытия БД, lock, backup, migration и schema verification логируются structured logs с безопасным контекстом (`db_type`, `module_name`, `operation`, `action`, `result`, `migration_file`, `migration_dir`, `error_code`, `duration_ms`).
+- Ошибки открытия БД, lock, backup, migration и schema verification логируются structured logs с безопасным контекстом (`db_type`, `database`, `module_name`, `operation`, `action`, `result`, `current_version`, `target_version`, `migration_file`, `migration_dir`, `missing_table`, `missing_column`, `missing_index`, `error_code`, `duration_ms`).
 - Runtime-код не должен обращаться к business tables до успешных migrations и schema verification.
 
 Запланировано далее:

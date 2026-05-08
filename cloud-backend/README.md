@@ -9,8 +9,9 @@
 - `GET /health`;
 - `POST /api/v1/sync/edge-events`;
 - идемпотентный прием POS Edge `SyncEnvelope`;
-- хранение raw envelope до будущих projections;
-- operational event journal в PostgreSQL (`cloud_operational_events`).
+- хранение raw envelope;
+- operational event journal в PostgreSQL (`cloud_operational_events`);
+- deterministic runtime projections для event type stats и shift finance foundation.
 
 ## Запуск
 
@@ -39,13 +40,13 @@ MH_POS_VERSION=0.1.0
 
 `CLOUD_POSTGRES_DSN` обязателен.
 
-реализовано сейчас: PostgreSQL использует один управляемый canonical SQL file `migrations/postgres/001_sync_receiver.sql`. Файл re-runnable на version upgrade, `schema_migrations` хранит имя файла, checksum и status; checksum drift при той же версии останавливает startup.
-реализовано сейчас: если `schema_migrations` отсутствует или содержит старую запись без checksum, Cloud повторно применяет idempotent canonical SQL, довыравнивает недостающие runtime-таблицы и только после успешного apply записывает checksum/status в migration history.
-реализовано сейчас: startup policy использует `db_runtime_versions`; если таблица версий отсутствует, БД считается самой старой, перед safe upgrade существующей схемы создается JSONL backup snapshot таблиц `public`, а `DB version > MH_POS_VERSION` завершает startup fail-fast.
-реализовано сейчас: Cloud backend использует единую продуктовую версию `MH_POS_VERSION`, общую для всех модулей решения.
-реализовано сейчас: canonical `001_sync_receiver.sql` создает/довыравнивает runtime storage, включая `cloud_projection_event_type_stats`, `cloud_projection_shift_finance` и `cloud_currency_reference`, после чего Cloud upsert'ит canonical active ISO 4217 currency catalog.
-реализовано сейчас: любые изменения структуры БД (создание, изменение, удаление таблиц/колонок/ключей/индексов и прочие DDL-действия) выполняются только программно кодом модуля при старте.
-реализовано сейчас: ручной запуск SQL-скриптов для runtime-обновления БД не является поддерживаемым сценарием и не рассматривается как canonical upgrade path.
+implemented now: PostgreSQL использует ordered managed migrations из `migrations/postgres`: `001_sync_receiver.sql` задает baseline receiver storage, `002_projection_event_type_stats.sql` создает/ремонтирует required runtime projection table `cloud_projection_event_type_stats`.
+implemented now: `schema_migrations` хранит имя SQL file, checksum и status; уже примененные migrations не выполняются повторно, а новая ordered migration записывается в history после успешного apply.
+implemented now: если `schema_migrations` отсутствует или содержит старую запись без checksum, Cloud повторно применяет idempotent managed SQL, довыравнивает недостающие runtime-таблицы и только после успешного apply записывает checksum/status.
+implemented now: startup policy использует `db_runtime_versions`; если таблица версий отсутствует, БД считается самой старой, перед safe upgrade существующей схемы создается JSONL backup snapshot таблиц `public`, а `DB version > MH_POS_VERSION` завершает startup fail-fast.
+implemented now: schema verification проверяет только required runtime storage, включая `cloud_projection_event_type_stats`, `cloud_projection_shift_finance`, receiver journal/raw payload tables, provisioning packages и currency reference catalog.
+planned next: projection query endpoints для dashboards не блокируют startup verification.
+out of scope: ручной SQL repair вне startup migration framework; для local/dev recovery предпочтительно пересоздать БД или запустить приложение с корректным `CLOUD_POSTGRES_MIGRATIONS_DIR`.
 
 ## Локальный smoke test receiver-а
 
@@ -97,7 +98,7 @@ Invoke-RestMethod -Method Post http://localhost:8090/api/v1/sync/edge-events -Co
 Invoke-RestMethod -Method Post http://localhost:8090/api/v1/sync/edge-events -ContentType "application/json" -Body $body
 ```
 
-Повторный duplicate replay возвращает тот же стабильный ack. реализовано сейчас: Cloud хранит raw accepted envelopes и append-safe operational event journal. Полные Cloud projections являются запланировано далее.
+Повторный duplicate replay возвращает тот же стабильный ack. implemented now: Cloud хранит raw accepted envelopes, append-safe operational event journal и минимальные deterministic projections для runtime ingestion. planned next: richer projection query APIs.
 
 ## Локальный E2E Prototype: получить pairing code и войти в POS UI
 
@@ -142,13 +143,13 @@ go test ./...
 
 ## Sync API update 2026-05-07
 
-реализовано сейчас endpoints:
+implemented now endpoints:
 - `POST /api/v1/sync/edge-events`
 - `POST /api/v1/sync/edge-events/batch` (item-level ACK)
 - `PUT /api/v1/provisioning/master-data/{stream}` (store Cloud -> Edge package)
 - `GET /api/v1/provisioning/master-data/{stream}?node_device_id=...` (resolve package for Edge import)
 
-реализовано сейчас storage:
+implemented now storage:
 - `cloud_projection_event_type_stats`
 - `cloud_projection_shift_finance`
 - `cloud_master_data_packages`
