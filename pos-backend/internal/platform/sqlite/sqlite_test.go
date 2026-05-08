@@ -330,6 +330,13 @@ func TestMigrateDirWithPolicyFailsSchemaVerificationClearly(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "missing table missing_probe") {
 		t.Fatalf("expected clear missing table error, got %v", err)
 	}
+	var verificationErr *SchemaVerificationError
+	if !errors.As(err, &verificationErr) {
+		t.Fatalf("expected structured schema verification error, got %T", err)
+	}
+	if verificationErr.Table != "missing_probe" || verificationErr.ObjectType != "table" {
+		t.Fatalf("unexpected verification error details: %+v", verificationErr)
+	}
 }
 
 func TestCompareModuleVersion(t *testing.T) {

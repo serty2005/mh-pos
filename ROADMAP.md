@@ -26,7 +26,7 @@
 Статус: `выполнено`
 
 - Edge backend на Go + SQLite.
-- Canonical SQLite first-launch/startup path через один managed `pos-backend/migrations/sqlite/001_init.sql`.
+- Canonical SQLite first-launch/startup path через ordered managed SQL files `001_init.sql` + `002_runtime_schema_repair.sql`.
 - SQLite runtime gate.
 - `local_event_log`.
 - `pos_sync_outbox`.
@@ -122,6 +122,7 @@
 - Cloud PostgreSQL получил canonical ISO 4217 currency template (`cloud_currency_reference`).
 - Cloud provisioning contract поддерживает `currencies` stream для Cloud -> Edge master/reference payload.
 - Startup migration policy закрепляет `db_runtime_versions`, managed SQL files per module, `schema_migrations` с checksum, backup-before-upgrade/data-upgrade, schema verification и fail-fast при downgrade для `SQLite` и `PostgreSQL`.
+- POS SQLite startup path довыравнивает старые pre-pilot БД через `002_runtime_schema_repair.sql`, чтобы implemented-now runtime columns не ловились по одной на schema verification.
 
 ## Что обязательно закрыть до первого пилота
 

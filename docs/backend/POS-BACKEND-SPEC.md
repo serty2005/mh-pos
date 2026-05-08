@@ -28,7 +28,8 @@ Cloud не является runtime dependency для:
 
 implemented now:
 
-- POS Edge до запуска HTTP server и sync worker открывает SQLite, проверяет runtime gate (`WAL`, `foreign_keys`, `busy_timeout`, SQLite version), применяет один managed canonical SQL file `001_init.sql` при version-gated upgrade и выполняет schema verification критичных таблиц/колонок/индексов.
+- POS Edge до запуска HTTP server и sync worker открывает SQLite, проверяет runtime gate (`WAL`, `foreign_keys`, `busy_timeout`, SQLite version), применяет ordered managed SQL files из `migrations/sqlite` и выполняет schema verification критичных таблиц/колонок/индексов.
+- `001_init.sql` задает clean baseline, а `002_runtime_schema_repair.sql` idempotent-образом довыравнивает старые pre-pilot SQLite БД, где существующие таблицы не получили новые runtime columns через `CREATE TABLE IF NOT EXISTS`.
 - POS Edge использует `db_runtime_versions` и `schema_migrations`; если `db_runtime_versions` отсутствует, БД считается самой старой и запускается upgrade path.
 - Перед safe schema/data upgrade существующей SQLite БД создается backup `.db/.db-wal/.db-shm` в `POS_SQLITE_BACKUP_DIR` после WAL checkpoint.
 - Cloud backend до запуска HTTP server применяет ordered managed PostgreSQL SQL files под advisory lock и выполняет schema verification runtime-таблиц.
@@ -39,7 +40,7 @@ implemented now:
 - Перед safe schema/data upgrade существующей PostgreSQL схемы создается JSONL snapshot таблиц `public` в `CLOUD_POSTGRES_BACKUP_DIR`.
 - `schema_migrations` хранит имя active SQL file, SHA-256 checksum, status и `applied_at`; checksum drift при той же версии завершает startup fail-fast, а при `db version < MH_POS_VERSION` применяется как управляемый upgrade.
 - `DB version > MH_POS_VERSION` завершает startup fail-fast, downgrade не поддерживается.
-- Ошибки открытия БД, lock, backup, migration и schema verification логируются structured logs с безопасным контекстом (`db_type`, `database`, `module_name`, `operation`, `action`, `result`, `current_version`, `target_version`, `migration_file`, `migration_dir`, `missing_table`, `missing_column`, `missing_index`, `error_code`, `duration_ms`).
+- Ошибки открытия БД, lock, backup, migration и schema verification логируются structured logs с безопасным контекстом (`db_type`, `db_path`/`database`, `module_name`, `operation`, `action`, `result`, `current_version`, `target_version`, `migration_file`, `migration_dir`, `missing_table`, `missing_column`, `missing_index`, `error_code`, `duration_ms`).
 - Runtime-код не должен обращаться к business tables до успешных migrations и schema verification.
 
 Запланировано далее:

@@ -50,9 +50,34 @@ type MigrationOptions struct {
 
 // SchemaRequirement описывает критичные runtime-объекты SQLite, без которых модуль не должен стартовать.
 type SchemaRequirement struct {
-	Table   string
-	Columns []string
-	Indexes []string
+	Table          string
+	Columns        []string
+	Indexes        []string
+	RequiredBy     string
+	MigrationFile  string
+	RecoveryAction string
+}
+
+// SchemaVerificationError хранит безопасные детали отсутствующего runtime-объекта для structured logs.
+type SchemaVerificationError struct {
+	ObjectType     string
+	Table          string
+	Column         string
+	Index          string
+	RequiredBy     string
+	MigrationFile  string
+	RecoveryAction string
+}
+
+func (e *SchemaVerificationError) Error() string {
+	switch e.ObjectType {
+	case "column":
+		return fmt.Sprintf("sqlite schema verification failed: missing column %s.%s", e.Table, e.Column)
+	case "index":
+		return fmt.Sprintf("sqlite schema verification failed: missing index %s on %s", e.Index, e.Table)
+	default:
+		return fmt.Sprintf("sqlite schema verification failed: missing table %s", e.Table)
+	}
 }
 
 type migrationFile struct {
@@ -60,6 +85,14 @@ type migrationFile struct {
 	Path           string
 	Body           []byte
 	ChecksumSHA256 string
+}
+
+type sqliteRepairBlock struct {
+	Kind   string
+	Table  string
+	Column string
+	Index  string
+	SQL    string
 }
 
 type sqliteRunner interface {
@@ -219,6 +252,7 @@ func MigrateDirWithPolicy(ctx context.Context, db *sql.DB, dbPath, dir string, o
 	started := time.Now()
 	moduleName := strings.TrimSpace(options.ModuleName)
 	targetVersion := strings.TrimSpace(options.ModuleVersion)
+	previousVersion := ""
 	defer func() {
 		result := "success"
 		level := slog.LevelInfo
@@ -227,6 +261,10 @@ func MigrateDirWithPolicy(ctx context.Context, db *sql.DB, dbPath, dir string, o
 			result = "failed"
 			level = slog.LevelError
 			errorCode = "DB_MIGRATION_FAILED"
+			var verificationErr *SchemaVerificationError
+			if errors.As(err, &verificationErr) {
+				errorCode = "DB_SCHEMA_VERIFICATION_FAILED"
+			}
 		}
 		attrs := []any{
 			"operation", "db.migration",
@@ -237,11 +275,23 @@ func MigrateDirWithPolicy(ctx context.Context, db *sql.DB, dbPath, dir string, o
 			"db_path", dbPath,
 			"module_name", moduleName,
 			"target_version", targetVersion,
+			"current_version", previousVersion,
 			"migration_dir", dir,
 			"duration_ms", time.Since(started).Milliseconds(),
 		}
 		if err != nil {
 			attrs = append(attrs, "internal_error", err.Error())
+			var verificationErr *SchemaVerificationError
+			if errors.As(err, &verificationErr) {
+				attrs = append(attrs,
+					"missing_table", verificationErr.Table,
+					"missing_column", verificationErr.Column,
+					"missing_index", verificationErr.Index,
+					"required_by", verificationErr.RequiredBy,
+					"migration_file", verificationErr.MigrationFile,
+					"recovery_action", verificationErr.RecoveryAction,
+				)
+			}
 		}
 		slog.Log(ctx, level, "sqlite startup migration завершена", attrs...)
 	}()
@@ -262,7 +312,6 @@ func MigrateDirWithPolicy(ctx context.Context, db *sql.DB, dbPath, dir string, o
 		slog.WarnContext(ctx, "sqlite db_runtime_versions отсутствует, БД считается самой старой", "operation", "db.migration", "action", "inspect_version_table", "result", "oldest", "db_type", "sqlite", "db_path", dbPath, "module_name", moduleName, "migration_dir", dir)
 	}
 
-	previousVersion := ""
 	if versionTableExisted {
 		previousVersion, err = readRuntimeVersion(ctx, db, moduleName)
 		if err != nil {
@@ -277,7 +326,7 @@ func MigrateDirWithPolicy(ctx context.Context, db *sql.DB, dbPath, dir string, o
 	if err != nil {
 		return fmt.Errorf("sqlite migration: read migration dir %s: %w", dir, err)
 	}
-	allowCanonicalUpgrade := allowSingleCanonicalUpgrade(files, needsVersionUpgrade, versionTableExisted)
+	allowCanonicalUpgrade := allowManagedChecksumUpgrade(needsVersionUpgrade, versionTableExisted)
 	pending, err := pendingMigrations(ctx, db, files, schemaTableExisted, allowCanonicalUpgrade)
 	if err != nil {
 		return err
@@ -315,7 +364,10 @@ func MigrateDirWithPolicy(ctx context.Context, db *sql.DB, dbPath, dir string, o
 	if err != nil {
 		return err
 	}
-	adoptBase := !allowCanonicalUpgrade && !schemaTableExisted && existingTables > 0
+	// Старые pre-pilot БД без history считаются oldest DB: managed files должны
+	// выполняться idempotent-образом, иначе CREATE IF NOT EXISTS не создаст
+	// недостающие объекты перед repair migration и schema verification.
+	adoptBase := false
 	if err := applyPendingMigrations(ctx, conn, pending, adoptBase); err != nil {
 		return err
 	}
@@ -492,7 +544,7 @@ func applyPendingMigrations(ctx context.Context, runner sqliteRunner, files []mi
 			slog.WarnContext(ctx, "sqlite migration baseline adopted по фактической схеме", "operation", "db.migration", "action", "adopt_base_migration", "result", "adopted", "db_type", "sqlite", "migration_file", file.Name, "migration_checksum", file.ChecksumSHA256, "duration_ms", time.Since(started).Milliseconds())
 			continue
 		}
-		if _, err := runner.ExecContext(ctx, string(file.Body)); err != nil {
+		if err := applySQLiteMigrationFile(ctx, runner, file); err != nil {
 			return fmt.Errorf("sqlite migration: apply %s: %w", file.Name, err)
 		}
 		if _, err := runner.ExecContext(ctx, `
@@ -510,6 +562,125 @@ ON CONFLICT(version) DO UPDATE SET
 	return nil
 }
 
+func applySQLiteMigrationFile(ctx context.Context, runner sqliteRunner, file migrationFile) error {
+	preamble, blocks, err := parseSQLiteRepairBlocks(string(file.Body))
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(preamble) != "" {
+		if _, err := runner.ExecContext(ctx, preamble); err != nil {
+			return err
+		}
+	}
+	for _, block := range blocks {
+		shouldApply, err := shouldApplySQLiteRepairBlock(ctx, runner, block)
+		if err != nil {
+			return err
+		}
+		if !shouldApply {
+			continue
+		}
+		if strings.TrimSpace(block.SQL) == "" {
+			continue
+		}
+		if _, err := runner.ExecContext(ctx, block.SQL); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func shouldApplySQLiteRepairBlock(ctx context.Context, runner sqliteRunner, block sqliteRepairBlock) (bool, error) {
+	switch block.Kind {
+	case "repair-column":
+		tableExists, err := sqliteTableExists(ctx, runner, block.Table)
+		if err != nil {
+			return false, fmt.Errorf("sqlite repair: inspect table %s: %w", block.Table, err)
+		}
+		if !tableExists {
+			return false, nil
+		}
+		columnExists, err := sqliteColumnExists(ctx, runner, block.Table, block.Column)
+		if err != nil {
+			return false, fmt.Errorf("sqlite repair: inspect column %s.%s: %w", block.Table, block.Column, err)
+		}
+		return !columnExists, nil
+	case "repair-index":
+		indexExists, err := sqliteIndexExists(ctx, runner, block.Index)
+		if err != nil {
+			return false, fmt.Errorf("sqlite repair: inspect index %s: %w", block.Index, err)
+		}
+		return !indexExists, nil
+	case "repair-sql":
+		return true, nil
+	default:
+		return false, fmt.Errorf("sqlite repair: unsupported directive %q", block.Kind)
+	}
+}
+
+func parseSQLiteRepairBlocks(body string) (string, []sqliteRepairBlock, error) {
+	var preamble strings.Builder
+	var blocks []sqliteRepairBlock
+	var current *sqliteRepairBlock
+	var currentSQL strings.Builder
+	flush := func() {
+		if current == nil {
+			return
+		}
+		current.SQL = currentSQL.String()
+		blocks = append(blocks, *current)
+		current = nil
+		currentSQL.Reset()
+	}
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "-- sqlite:repair-") {
+			flush()
+			block, err := parseSQLiteRepairDirective(trimmed)
+			if err != nil {
+				return "", nil, err
+			}
+			current = &block
+			continue
+		}
+		if current == nil {
+			preamble.WriteString(line)
+			preamble.WriteByte('\n')
+			continue
+		}
+		currentSQL.WriteString(line)
+		currentSQL.WriteByte('\n')
+	}
+	flush()
+	return preamble.String(), blocks, nil
+}
+
+func parseSQLiteRepairDirective(line string) (sqliteRepairBlock, error) {
+	fields := strings.Fields(strings.TrimPrefix(strings.TrimSpace(line), "-- sqlite:"))
+	if len(fields) == 0 {
+		return sqliteRepairBlock{}, fmt.Errorf("sqlite repair: empty directive")
+	}
+	switch fields[0] {
+	case "repair-column":
+		if len(fields) != 3 {
+			return sqliteRepairBlock{}, fmt.Errorf("sqlite repair: repair-column requires table and column")
+		}
+		return sqliteRepairBlock{Kind: fields[0], Table: fields[1], Column: fields[2]}, nil
+	case "repair-index":
+		if len(fields) != 2 {
+			return sqliteRepairBlock{}, fmt.Errorf("sqlite repair: repair-index requires index")
+		}
+		return sqliteRepairBlock{Kind: fields[0], Index: fields[1]}, nil
+	case "repair-sql":
+		if len(fields) != 1 {
+			return sqliteRepairBlock{}, fmt.Errorf("sqlite repair: repair-sql does not accept arguments")
+		}
+		return sqliteRepairBlock{Kind: fields[0]}, nil
+	default:
+		return sqliteRepairBlock{}, fmt.Errorf("sqlite repair: unsupported directive %q", fields[0])
+	}
+}
+
 // VerifySchema проверяет критичные таблицы, колонки и индексы до запуска HTTP/workers.
 func VerifySchema(ctx context.Context, runner sqliteRunner, requirements []SchemaRequirement) error {
 	started := time.Now()
@@ -522,7 +693,7 @@ func VerifySchema(ctx context.Context, runner sqliteRunner, requirements []Schem
 			return fmt.Errorf("sqlite schema verification: inspect table %s: %w", req.Table, err)
 		}
 		if !exists {
-			return fmt.Errorf("sqlite schema verification failed: missing table %s", req.Table)
+			return missingSQLiteSchemaObject(req, "table", "", "")
 		}
 		for _, column := range req.Columns {
 			if strings.TrimSpace(column) == "" {
@@ -533,7 +704,7 @@ func VerifySchema(ctx context.Context, runner sqliteRunner, requirements []Schem
 				return fmt.Errorf("sqlite schema verification: inspect column %s.%s: %w", req.Table, column, err)
 			}
 			if !columnExists {
-				return fmt.Errorf("sqlite schema verification failed: missing column %s.%s", req.Table, column)
+				return missingSQLiteSchemaObject(req, "column", column, "")
 			}
 		}
 		for _, index := range req.Indexes {
@@ -545,12 +716,28 @@ func VerifySchema(ctx context.Context, runner sqliteRunner, requirements []Schem
 				return fmt.Errorf("sqlite schema verification: inspect index %s: %w", index, err)
 			}
 			if !indexExists {
-				return fmt.Errorf("sqlite schema verification failed: missing index %s on %s", index, req.Table)
+				return missingSQLiteSchemaObject(req, "index", "", index)
 			}
 		}
 	}
 	slog.InfoContext(ctx, "sqlite schema verification завершена", "operation", "db.schema_verification", "action", "verify_schema", "result", "success", "db_type", "sqlite", "duration_ms", time.Since(started).Milliseconds())
 	return nil
+}
+
+func missingSQLiteSchemaObject(req SchemaRequirement, objectType, column, index string) error {
+	recovery := strings.TrimSpace(req.RecoveryAction)
+	if recovery == "" {
+		recovery = "run startup migrations with the configured migration directory; for local/dev, recreate the SQLite database from migrations if repair is impossible"
+	}
+	return &SchemaVerificationError{
+		ObjectType:     objectType,
+		Table:          req.Table,
+		Column:         column,
+		Index:          index,
+		RequiredBy:     req.RequiredBy,
+		MigrationFile:  req.MigrationFile,
+		RecoveryAction: recovery,
+	}
 }
 
 func sqliteTableExists(ctx context.Context, runner sqliteRunner, table string) (bool, error) {
@@ -605,8 +792,8 @@ func latestMigrationIdentity(files []migrationFile) (string, string) {
 	return latest.Name, latest.ChecksumSHA256
 }
 
-func allowSingleCanonicalUpgrade(files []migrationFile, needsVersionUpgrade bool, versionTableExisted bool) bool {
-	return len(files) == 1 && (needsVersionUpgrade || !versionTableExisted)
+func allowManagedChecksumUpgrade(needsVersionUpgrade bool, versionTableExisted bool) bool {
+	return needsVersionUpgrade || !versionTableExisted
 }
 
 func shouldUpgradeVersion(previous, current string) (bool, error) {
