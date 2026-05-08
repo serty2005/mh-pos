@@ -2,23 +2,13 @@
 
 ## Назначение
 
-Этот документ задает **матрицу прав сотрудников по UI-операциям**.
+Документ фиксирует фактическую permission model для текущего POS UI и backend enforcement.
 
-Он отвечает на вопрос:
-какая роль может выполнить какое действие на UI
-и где требуется manager override.
-
-## Базовые принципы
-
-- UI скрывает или дизейблит действия ради UX.
-- Backend является финальным enforcement layer.
-- Любая опасная операция должна быть описана здесь до появления в UI.
-- Shared employee credential model запрещен.
-- Каждому сотруднику соответствует отдельная учетная запись и отдельный audit trail.
+Код и тесты остаются источником истины для `implemented now`. UI скрывает или блокирует действия только ради UX; финальная проверка всегда выполняется backend app-layer.
 
 ## Роли
 
-Поддерживаемые роли pilot baseline:
+implemented now:
 
 - `cashier`
 - `senior_cashier`
@@ -27,201 +17,133 @@
 - `kitchen`
 - `support_admin`
 
-## Типы разрешений
+Роли закреплены в backend role profiles и возвращаются пользователю через auth/session permissions. Permissions хранятся в `roles.permissions_json`, но валидируются через canonical backend catalog.
 
-Используются три класса решения:
+## Canonical Permission Catalog
 
-- `allow` - операция возможна без дополнительного подтверждения;
-- `override` - операция инициируется сотрудником, но требует manager override;
-- `deny` - операция недоступна.
+implemented now:
 
-## Каталог permission id
+- `pos.employee_shift.open`
+- `pos.employee_shift.close`
+- `pos.employee_shift.view_current`
+- `pos.employee_shift.recent`
+- `pos.cash_session.open`
+- `pos.cash_session.close`
+- `pos.cash_session.view_current`
+- `pos.cash_drawer.record_event`
+- `pos.catalog.view`
+- `pos.floor.view`
+- `pos.menu.view`
+- `pos.order.create`
+- `pos.order.view`
+- `pos.order.add_line`
+- `pos.order.change_quantity`
+- `pos.order.void_line`
+- `pos.order.close`
+- `pos.precheck.issue`
+- `pos.precheck.view`
+- `pos.precheck.cancel.request`
+- `pos.precheck.cancel`
+- `pos.payment.cash`
+- `pos.payment.card.manual`
+- `pos.payment.other`
+- `pos.check.view`
+- `pos.sync.view`
+- `pos.sync.retry_failed`
 
-### Session и terminal
+out of scope:
 
-- `ui.session.login`
-- `ui.session.lock`
-- `ui.system.pair`
-- `ui.system.logout`
+- UI-only permission ids вида `ui.*`.
+- Permission ids для несуществующих runtime endpoints.
 
-### Личные смены и касса
+## Manager Override
 
-- `ui.pos.employee_shift.open`
-- `ui.pos.employee_shift.close`
-- `ui.pos.employee_shift.recent`
-- `ui.pos.cash_session.open`
-- `ui.pos.cash_session.close`
-- `ui.pos.cash_drawer.no_sale`
+implemented now:
 
-### Order lifecycle
+- `CancelPrecheck` использует split permissions:
+  - actor должен иметь `pos.precheck.cancel.request`;
+  - approving manager должен иметь `pos.precheck.cancel`;
+  - reason и manager PIN обязательны;
+  - попытка пишет audit trail.
 
-- `ui.pos.order.select_table`
-- `ui.pos.order.create`
-- `ui.pos.order.add_line`
-- `ui.pos.order.change_quantity`
-- `ui.pos.order.void_line`
-- `ui.pos.order.transfer`
-- `ui.pos.order.view_other_employee_order`
+out of scope:
 
-### Финансовые действия
+- override для `order transfer`, `refund`, waiter payment и `cash drawer no sale`;
+- restaurant-level policy engine для включения/выключения override per operation.
 
-- `ui.pos.precheck.issue`
-- `ui.pos.precheck.cancel`
-- `ui.pos.payment.cash`
-- `ui.pos.payment.card.manual`
-- `ui.pos.check.view`
-- `ui.pos.check.reprint`
-- `ui.pos.payment.refund`
-
-### Manager и service operations
-
-- `ui.manager.sync.view`
-- `ui.manager.sync.retry_failed`
-- `ui.manager.diagnostics.view`
-- `ui.manager.diagnostics.actions`
-- `ui.manager.catalog.edit`
-- `ui.manager.floor.edit`
-- `ui.manager.roles.edit`
-- `ui.manager.employees.edit`
-
-## Правила manager override
-
-Операция через override допустима только если:
-
-- actor имеет право инициировать запрос override;
-- approving manager имеет право подтверждать эту операцию;
-- reason обязателен;
-- PIN manager обязателен;
-- попытка записывается в immutable audit trail.
-
-Для pilot baseline manager override обязателен как минимум для:
-
-- `ui.pos.precheck.cancel`
-- `ui.pos.order.transfer`
-- `ui.pos.payment.refund`
-- `ui.manager.sync.retry_failed` если ресторанская политика это требует
-- `ui.pos.cash_drawer.no_sale` если политика ресторана требует контроль менеджера
-
-## Матрица ролей к операциям
+## Implemented Runtime Matrix
 
 Обозначения:
 
 - `A` = allow
-- `O` = allow only via manager override
+- `O` = allow through implemented manager override
 - `-` = deny
 
-| Операция | cashier | senior_cashier | waiter | manager | kitchen | support_admin |
-|---|---:|---:|---:|---:|---:|---:|
-| Login to POS UI | A | A | A | A | A | A |
-| Pair terminal | - | - | - | A | - | A |
-| Open personal employee shift | A | A | A | A | - | - |
-| Close personal employee shift | A | A | A | A | - | - |
-| View own recent personal shifts | A | A | A | A | - | - |
-| Open cash shift | A | A | - | A | - | - |
-| Close cash shift | - | A | - | A | - | - |
-| No sale / drawer open | - | O | - | A | - | - |
-| Select hall/table | A | A | A | A | - | - |
-| Create order | A | A | A | A | - | - |
-| Add order line | A | A | A | A | - | - |
-| Change quantity before precheck | A | A | A | A | - | - |
-| Void line before precheck | A | A | A | A | - | - |
-| View other employee order | - | A | - | A | - | - |
-| Transfer order to another employee | - | O | O | A | - | - |
-| Issue precheck | A | A | A | A | - | - |
-| Cancel precheck | - | O | O | A | - | - |
-| Take cash payment | A | A | O | A | - | - |
-| Take trusted manual card payment | A | A | O | A | - | - |
-| View final check | A | A | A | A | - | - |
-| Reprint final check | - | A | - | A | - | - |
-| Refund payment | - | - | - | A | - | - |
-| View sync status | - | A | - | A | - | A |
-| Retry failed syncs | - | - | - | A | - | A |
-| View diagnostics | - | - | - | A | - | A |
-| Запустить diagnostics actions | - | - | - | A | - | A |
-| Edit halls/tables | - | - | - | A | - | A |
-| Edit menu/catalog | - | - | - | A | - | A |
-| Edit employees/roles | - | - | - | A | - | A |
+| Операция | permission id | cashier | senior_cashier | waiter | manager | kitchen | support_admin |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Login / active session | session flow | A | A | A | A | A | A |
+| Lock / logout | session flow | A | A | A | A | A | A |
+| Open personal employee shift | `pos.employee_shift.open` | A | A | A | A | - | - |
+| Close personal employee shift | `pos.employee_shift.close` | A | A | A | A | - | - |
+| View current personal shift | `pos.employee_shift.view_current` | A | A | A | A | - | - |
+| View recent personal shifts | `pos.employee_shift.recent` | A | A | A | A | - | - |
+| Open cash shift | `pos.cash_session.open` | A | A | - | A | - | - |
+| Close cash shift | `pos.cash_session.close` | - | A | - | A | - | - |
+| View current cash shift | `pos.cash_session.view_current` | A | A | - | A | - | - |
+| Cash drawer event / no sale | `pos.cash_drawer.record_event` | - | - | - | A | - | - |
+| View catalog reference | `pos.catalog.view` | A | A | A | A | - | - |
+| Select hall/table | `pos.floor.view` | A | A | A | A | - | - |
+| View menu | `pos.menu.view` | A | A | A | A | - | - |
+| Create order | `pos.order.create` | A | A | A | A | - | - |
+| View order | `pos.order.view` | A | A | A | A | - | - |
+| Add order line | `pos.order.add_line` | A | A | A | A | - | - |
+| Change quantity before precheck | `pos.order.change_quantity` | A | A | A | A | - | - |
+| Void line before precheck | `pos.order.void_line` | A | A | A | A | - | - |
+| Close order after final check | `pos.order.close` | A | A | A | A | - | - |
+| Issue precheck | `pos.precheck.issue` | A | A | A | A | - | - |
+| View precheck | `pos.precheck.view` | A | A | A | A | - | - |
+| Cancel precheck | `pos.precheck.cancel.request` + `pos.precheck.cancel` | - | O | - | A | - | - |
+| Take cash payment | `pos.payment.cash` | A | A | - | A | - | - |
+| Take trusted manual card payment | `pos.payment.card.manual` | A | A | - | A | - | - |
+| Other payment method | `pos.payment.other` | - | - | - | A | - | - |
+| View final check | `pos.check.view` | A | A | A | A | - | - |
+| View sync status/local events/outbox | `pos.sync.view` | - | A | - | A | - | A |
+| Retry failed syncs | `pos.sync.retry_failed` | - | - | - | A | - | A |
 
-## Рекомендуемые связки роли и режима
-
-### Cashier
-
-Видит:
-
-- `pair` только если это отдельная pilot policy не нужна;
-- `login`
-- `pos`
-- `lock`
-
-Не видит:
-
-- manager UI
-- diagnostics
-- catalog/settings/admin screens
-
-### Waiter
-
-Целевая роль для будущего waiter mode.
-
-В cashier pilot runtime waiter не должен получать кассовые и сервисные операции по умолчанию.
-
-### Manager
-
-Может:
-
-- подтверждать override;
-- выполнять опасные операции напрямую;
-- видеть sync/diagnostics;
-- управлять людьми и настройками.
-
-### Support admin
-
-Это не ресторанная операционная роль.
-Ее задача - pairing, service access, diagnostics, техническое обслуживание.
-Она не должна использоваться как обычная кассовая роль.
-
-## UX-требования к RBAC
-
-UI обязан:
-
-- скрывать операции, которые роль не может выполнить вообще;
-- показывать операции override как требующие manager approval;
-- не показывать “тихие” fallback paths;
-- не подменять backend decision локальной логикой.
-
-## Правила эволюции матрицы
-
-Нельзя добавлять новую UI-операцию без:
-
-- permission id;
-- строки в этой матрице;
-- backend enforcement note;
-- указания, нужна ли manager override;
-- теста или acceptance note для UX visibility.
-
-## Backend sync status
-
-implemented now:
-
-- backend enforces a canonical RBAC slice for cashier runtime operations:
-  - `pos.shift.open`, `pos.shift.close`, `pos.shift.view_current`, `pos.shift.recent` for personal employee shifts
-  - `pos.cash_session.open`, `pos.cash_session.close`, `pos.cash_session.view_current`
-  - `pos.cash_drawer.record_event`
-  - `pos.floor.view` and `pos.menu.view` for floor/menu runtime reads
-  - `pos.order.create`, `pos.order.view`, `pos.order.add_line`, `pos.order.change_quantity`, `pos.order.void_line`
-  - `pos.precheck.issue`, `pos.precheck.view`
-  - `pos.payment.capture`, `pos.check.view`
-  - `pos.sync.view` and `pos.sync.retry_failed` for operator-triggered sync APIs (`outbox`, `status`, `local-events`, `retry-failed`)
-- manager override precheck cancel enforces split permissions:
-  - actor must have `pos.precheck.cancel.request`
-  - approving manager must have `pos.precheck.cancel`
-- личная смена сотрудника обязательна для runtime операций заказа и пречека; кассовая смена обязательна для оплат и cash drawer events.
-
-planned next:
-
-- переименовать backend permission ids с `pos.shift.*` на `pos.employee_shift.*` без compatibility tail перед pilot API freeze.
-- complete backend enforcement for the full matrix in this document (including waiter/senior_cashier override variants and non-cashier surfaces).
+## Out Of Scope Runtime Rows
 
 out of scope:
 
-- treating UI visibility as a security boundary without backend authorization checks.
+- role-based terminal pairing UI;
+- view other employee order;
+- transfer order to another employee;
+- waiter payment override;
+- reprint final check;
+- refund payment;
+- diagnostics screens/actions;
+- manager/admin screens for editing halls, tables, menu, catalog, employees and roles.
+
+Эти строки не считаются `implemented now`, пока в коде нет соответствующего route/use-case, permission id, backend enforcement и тестов.
+
+## UX Requirements
+
+implemented now:
+
+- `pos-ui` использует backend permission ids напрямую в `src/shared/rbac.ts`;
+- критичные POS-действия в `/pos` скрываются или блокируются по текущему session actor permissions;
+- query-запросы к защищенным backend read endpoints не запускаются без соответствующего permission, чтобы не плодить ожидаемые `403` в браузерных devtools.
+
+out of scope:
+
+- считать UI visibility security boundary.
+
+## Evolution Rules
+
+Нельзя добавлять новую UI-операцию без:
+
+- canonical backend permission id;
+- строки в этой матрице;
+- backend enforcement note;
+- теста backend allow/deny;
+- UI visibility test или acceptance note;
+- документационного статуса `implemented now`, `planned next` или `out of scope`.

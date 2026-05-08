@@ -438,16 +438,20 @@ implemented now:
 
 - backend enforces canonical RBAC permission ids in app-layer for critical cashier runtime operations;
 - role permissions are still stored as JSON on roles, but authorization checks use stable ids;
-- read/runtime APIs (`employee-shifts/current|recent`, `cash-shifts/current`, `halls`, `tables`, `menu`, `orders/current|{id}`, `prechecks`, `checks`) require explicit operator permissions;
+- canonical role profiles are implemented for `cashier`, `senior_cashier`, `waiter`, `manager`, `kitchen`, `support_admin`;
+- read/runtime APIs (`employee-shifts/current|recent`, `cash-shifts/current`, `halls`, `tables`, `catalog`, `menu`, `orders/current|{id}`, `prechecks`, `checks`) require explicit operator permissions;
+- order close uses `pos.order.close`;
 - cash drawer event recording requires backend permission `pos.cash_drawer.record_event`;
+- payment capture is split by method: `pos.payment.cash`, `pos.payment.card.manual`, `pos.payment.other`;
 - precheck cancel override uses split permissions: actor requires `pos.precheck.cancel.request`, approver requires `pos.precheck.cancel`;
 - operator-triggered `GET /api/v1/sync/outbox`, `GET /api/v1/sync/status`, `GET /api/v1/sync/local-events` require `pos.sync.view`;
 - operator-triggered `POST /api/v1/sync/retry-failed` requires `pos.sync.retry_failed`;
+- POS UI visibility is wired to the same backend permission ids; backend remains the security boundary;
 - failed authorization returns `forbidden` without leaking PIN or PIN hash data.
 
-planned next:
+out of scope:
 
-- expand backend enforcement coverage to the full UI RBAC matrix in `/docs/ui/POS-UI-RBAC.md`.
+- operations that do not exist in the current runtime surface are not part of RBAC hardening until they have route/use-case/contracts and tests.
 
 ## Currency precision (implemented now)
 

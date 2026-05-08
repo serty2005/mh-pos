@@ -214,6 +214,11 @@ func (s *Service) ListCatalogItems(ctx context.Context) ([]domain.CatalogItem, e
 	return s.catalog.ListCatalogItems(ctx)
 }
 
+// ListCatalogItemsAsOperator returns catalog items for authenticated operator flows with RBAC enforcement.
+func (s *Service) ListCatalogItemsAsOperator(ctx context.Context, meta CommandMeta) ([]domain.CatalogItem, error) {
+	return s.catalog.ListCatalogItemsAsOperator(ctx, meta)
+}
+
 func (s *Service) CreateCatalogItem(ctx context.Context, cmd CreateCatalogItemCommand) (*domain.CatalogItem, error) {
 	return s.catalog.CreateCatalogItem(ctx, cmd)
 }

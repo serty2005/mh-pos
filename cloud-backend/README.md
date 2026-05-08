@@ -41,7 +41,10 @@ MH_POS_VERSION=0.1.0
 
 implemented now: PostgreSQL использует first-launch schema policy. `migrations/postgres` должен содержать ровно один canonical SQL file, `001_sync_receiver.sql`; исторические цепочки `002/003/...` не являются частью pre-pilot runtime.
 implemented now: startup policy использует таблицу `db_runtime_versions`; при `db version < module version` создается JSONL backup snapshot таблиц `public` перед schema upgrade.
+implemented now: Cloud backend использует единую продуктовую версию `MH_POS_VERSION`, общую для всех модулей решения.
 implemented now: после миграций Cloud upsert'ит canonical active ISO 4217 currency catalog в `cloud_currency_reference`.
+implemented now: любые изменения структуры БД (создание, изменение, удаление таблиц/колонок/ключей/индексов и прочие DDL-действия) выполняются только программно кодом модуля при старте.
+implemented now: ручной запуск SQL-скриптов для runtime-обновления БД не является поддерживаемым сценарием и не рассматривается как canonical upgrade path.
 
 ## Локальный smoke test receiver-а
 

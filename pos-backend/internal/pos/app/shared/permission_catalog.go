@@ -2,69 +2,216 @@ package shared
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
 
-// PermissionID is a canonical backend permission identifier used for app-layer RBAC enforcement.
+// PermissionID задает канонический backend-идентификатор права для app-layer RBAC enforcement.
 type PermissionID string
 
 const (
-	// Cashier runtime permission ids.
-	PermissionShiftOpen              PermissionID = "pos.shift.open"
-	PermissionShiftClose             PermissionID = "pos.shift.close"
-	PermissionShiftViewCurrent       PermissionID = "pos.shift.view_current"
-	PermissionShiftRecent            PermissionID = "pos.shift.recent"
-	PermissionCashSessionOpen        PermissionID = "pos.cash_session.open"
-	PermissionCashSessionClose       PermissionID = "pos.cash_session.close"
-	PermissionCashSessionViewCurrent PermissionID = "pos.cash_session.view_current"
-	PermissionCashDrawerEvent        PermissionID = "pos.cash_drawer.record_event"
-	PermissionFloorView              PermissionID = "pos.floor.view"
-	PermissionMenuView               PermissionID = "pos.menu.view"
-	PermissionOrderCreate            PermissionID = "pos.order.create"
-	PermissionOrderView              PermissionID = "pos.order.view"
-	PermissionOrderAddLine           PermissionID = "pos.order.add_line"
-	PermissionOrderChangeQuantity    PermissionID = "pos.order.change_quantity"
-	PermissionOrderVoidLine          PermissionID = "pos.order.void_line"
-	PermissionPrecheckIssue          PermissionID = "pos.precheck.issue"
-	PermissionPrecheckView           PermissionID = "pos.precheck.view"
-	// Manager override flow permission ids.
+	// Идентификаторы прав кассового runtime.
+	PermissionEmployeeShiftOpen        PermissionID = "pos.employee_shift.open"
+	PermissionEmployeeShiftClose       PermissionID = "pos.employee_shift.close"
+	PermissionEmployeeShiftViewCurrent PermissionID = "pos.employee_shift.view_current"
+	PermissionEmployeeShiftRecent      PermissionID = "pos.employee_shift.recent"
+	PermissionCashSessionOpen          PermissionID = "pos.cash_session.open"
+	PermissionCashSessionClose         PermissionID = "pos.cash_session.close"
+	PermissionCashSessionViewCurrent   PermissionID = "pos.cash_session.view_current"
+	PermissionCashDrawerEvent          PermissionID = "pos.cash_drawer.record_event"
+	PermissionCatalogView              PermissionID = "pos.catalog.view"
+	PermissionFloorView                PermissionID = "pos.floor.view"
+	PermissionMenuView                 PermissionID = "pos.menu.view"
+	PermissionOrderCreate              PermissionID = "pos.order.create"
+	PermissionOrderView                PermissionID = "pos.order.view"
+	PermissionOrderAddLine             PermissionID = "pos.order.add_line"
+	PermissionOrderChangeQuantity      PermissionID = "pos.order.change_quantity"
+	PermissionOrderVoidLine            PermissionID = "pos.order.void_line"
+	PermissionOrderClose               PermissionID = "pos.order.close"
+	PermissionPrecheckIssue            PermissionID = "pos.precheck.issue"
+	PermissionPrecheckView             PermissionID = "pos.precheck.view"
+	// Идентификаторы прав manager override flow.
 	PermissionPrecheckCancelRequest PermissionID = "pos.precheck.cancel.request"
 	PermissionPrecheckCancel        PermissionID = "pos.precheck.cancel"
-	PermissionPaymentCapture        PermissionID = "pos.payment.capture"
+	PermissionPaymentCash           PermissionID = "pos.payment.cash"
+	PermissionPaymentCardManual     PermissionID = "pos.payment.card.manual"
+	PermissionPaymentOther          PermissionID = "pos.payment.other"
 	PermissionCheckView             PermissionID = "pos.check.view"
 	PermissionSyncView              PermissionID = "pos.sync.view"
-	// Manager/service sync operation permission id.
+	// Идентификатор права manager/service sync operation.
 	PermissionSyncRetryFailed PermissionID = "pos.sync.retry_failed"
 )
 
 var knownPermissionIDs = map[PermissionID]struct{}{
-	PermissionShiftOpen:              {},
-	PermissionShiftClose:             {},
-	PermissionShiftViewCurrent:       {},
-	PermissionShiftRecent:            {},
-	PermissionCashSessionOpen:        {},
-	PermissionCashSessionClose:       {},
-	PermissionCashSessionViewCurrent: {},
-	PermissionCashDrawerEvent:        {},
-	PermissionFloorView:              {},
-	PermissionMenuView:               {},
-	PermissionOrderCreate:            {},
-	PermissionOrderView:              {},
-	PermissionOrderAddLine:           {},
-	PermissionOrderChangeQuantity:    {},
-	PermissionOrderVoidLine:          {},
-	PermissionPrecheckIssue:          {},
-	PermissionPrecheckView:           {},
-	PermissionPrecheckCancelRequest:  {},
-	PermissionPrecheckCancel:         {},
-	PermissionPaymentCapture:         {},
-	PermissionCheckView:              {},
-	PermissionSyncView:               {},
-	PermissionSyncRetryFailed:        {},
+	PermissionEmployeeShiftOpen:        {},
+	PermissionEmployeeShiftClose:       {},
+	PermissionEmployeeShiftViewCurrent: {},
+	PermissionEmployeeShiftRecent:      {},
+	PermissionCashSessionOpen:          {},
+	PermissionCashSessionClose:         {},
+	PermissionCashSessionViewCurrent:   {},
+	PermissionCashDrawerEvent:          {},
+	PermissionCatalogView:              {},
+	PermissionFloorView:                {},
+	PermissionMenuView:                 {},
+	PermissionOrderCreate:              {},
+	PermissionOrderView:                {},
+	PermissionOrderAddLine:             {},
+	PermissionOrderChangeQuantity:      {},
+	PermissionOrderVoidLine:            {},
+	PermissionOrderClose:               {},
+	PermissionPrecheckIssue:            {},
+	PermissionPrecheckView:             {},
+	PermissionPrecheckCancelRequest:    {},
+	PermissionPrecheckCancel:           {},
+	PermissionPaymentCash:              {},
+	PermissionPaymentCardManual:        {},
+	PermissionPaymentOther:             {},
+	PermissionCheckView:                {},
+	PermissionSyncView:                 {},
+	PermissionSyncRetryFailed:          {},
 }
 
-// PermissionsJSON encodes a deterministic permissions JSON object for role seeds and tests.
+// RoleName задает канонический идентификатор pilot-роли.
+type RoleName string
+
+const (
+	RoleCashier       RoleName = "cashier"
+	RoleSeniorCashier RoleName = "senior_cashier"
+	RoleWaiter        RoleName = "waiter"
+	RoleManager       RoleName = "manager"
+	RoleKitchen       RoleName = "kitchen"
+	RoleSupportAdmin  RoleName = "support_admin"
+)
+
+// RoleProfile описывает backend-права, выданные канонической pilot-роли.
+type RoleProfile struct {
+	Name        RoleName
+	Permissions []PermissionID
+}
+
+var canonicalRoleProfiles = map[RoleName]RoleProfile{
+	RoleCashier: {
+		Name: RoleCashier,
+		Permissions: []PermissionID{
+			PermissionEmployeeShiftOpen,
+			PermissionEmployeeShiftClose,
+			PermissionEmployeeShiftViewCurrent,
+			PermissionEmployeeShiftRecent,
+			PermissionCashSessionOpen,
+			PermissionCashSessionViewCurrent,
+			PermissionCatalogView,
+			PermissionFloorView,
+			PermissionMenuView,
+			PermissionOrderCreate,
+			PermissionOrderView,
+			PermissionOrderAddLine,
+			PermissionOrderChangeQuantity,
+			PermissionOrderVoidLine,
+			PermissionOrderClose,
+			PermissionPrecheckIssue,
+			PermissionPrecheckView,
+			PermissionPaymentCash,
+			PermissionPaymentCardManual,
+			PermissionCheckView,
+		},
+	},
+	RoleSeniorCashier: {
+		Name: RoleSeniorCashier,
+		Permissions: []PermissionID{
+			PermissionEmployeeShiftOpen,
+			PermissionEmployeeShiftClose,
+			PermissionEmployeeShiftViewCurrent,
+			PermissionEmployeeShiftRecent,
+			PermissionCashSessionOpen,
+			PermissionCashSessionClose,
+			PermissionCashSessionViewCurrent,
+			PermissionCatalogView,
+			PermissionFloorView,
+			PermissionMenuView,
+			PermissionOrderCreate,
+			PermissionOrderView,
+			PermissionOrderAddLine,
+			PermissionOrderChangeQuantity,
+			PermissionOrderVoidLine,
+			PermissionOrderClose,
+			PermissionPrecheckIssue,
+			PermissionPrecheckView,
+			PermissionPrecheckCancelRequest,
+			PermissionPaymentCash,
+			PermissionPaymentCardManual,
+			PermissionCheckView,
+			PermissionSyncView,
+		},
+	},
+	RoleWaiter: {
+		Name: RoleWaiter,
+		Permissions: []PermissionID{
+			PermissionEmployeeShiftOpen,
+			PermissionEmployeeShiftClose,
+			PermissionEmployeeShiftViewCurrent,
+			PermissionEmployeeShiftRecent,
+			PermissionCatalogView,
+			PermissionFloorView,
+			PermissionMenuView,
+			PermissionOrderCreate,
+			PermissionOrderView,
+			PermissionOrderAddLine,
+			PermissionOrderChangeQuantity,
+			PermissionOrderVoidLine,
+			PermissionOrderClose,
+			PermissionPrecheckIssue,
+			PermissionPrecheckView,
+			PermissionCheckView,
+		},
+	},
+	RoleManager: {
+		Name: RoleManager,
+		Permissions: []PermissionID{
+			PermissionEmployeeShiftOpen,
+			PermissionEmployeeShiftClose,
+			PermissionEmployeeShiftViewCurrent,
+			PermissionEmployeeShiftRecent,
+			PermissionCashSessionOpen,
+			PermissionCashSessionClose,
+			PermissionCashSessionViewCurrent,
+			PermissionCashDrawerEvent,
+			PermissionCatalogView,
+			PermissionFloorView,
+			PermissionMenuView,
+			PermissionOrderCreate,
+			PermissionOrderView,
+			PermissionOrderAddLine,
+			PermissionOrderChangeQuantity,
+			PermissionOrderVoidLine,
+			PermissionOrderClose,
+			PermissionPrecheckIssue,
+			PermissionPrecheckView,
+			PermissionPrecheckCancelRequest,
+			PermissionPrecheckCancel,
+			PermissionPaymentCash,
+			PermissionPaymentCardManual,
+			PermissionPaymentOther,
+			PermissionCheckView,
+			PermissionSyncView,
+			PermissionSyncRetryFailed,
+		},
+	},
+	RoleKitchen: {
+		Name:        RoleKitchen,
+		Permissions: []PermissionID{},
+	},
+	RoleSupportAdmin: {
+		Name: RoleSupportAdmin,
+		Permissions: []PermissionID{
+			PermissionSyncView,
+			PermissionSyncRetryFailed,
+		},
+	},
+}
+
+// PermissionsJSON кодирует детерминированный JSON-объект прав для role seeds и тестов.
 func PermissionsJSON(permissions ...PermissionID) string {
 	if len(permissions) == 0 {
 		return "{}"
@@ -99,7 +246,45 @@ func PermissionsJSON(permissions ...PermissionID) string {
 	return b.String()
 }
 
-// HasAnyPermission returns true when at least one permission is granted by role permissions JSON.
+// CanonicalRoleProfiles возвращает детерминированные snapshots профилей прав pilot-ролей.
+func CanonicalRoleProfiles() []RoleProfile {
+	names := []string{
+		string(RoleCashier),
+		string(RoleSeniorCashier),
+		string(RoleWaiter),
+		string(RoleManager),
+		string(RoleKitchen),
+		string(RoleSupportAdmin),
+	}
+	out := make([]RoleProfile, 0, len(names))
+	for _, name := range names {
+		profile := canonicalRoleProfiles[RoleName(name)]
+		profile.Permissions = slices.Clone(profile.Permissions)
+		out = append(out, profile)
+	}
+	return out
+}
+
+// RoleProfileByName возвращает канонический профиль прав для pilot-роли.
+func RoleProfileByName(name RoleName) (RoleProfile, bool) {
+	profile, ok := canonicalRoleProfiles[name]
+	if !ok {
+		return RoleProfile{}, false
+	}
+	profile.Permissions = slices.Clone(profile.Permissions)
+	return profile, true
+}
+
+// RolePermissionsJSON кодирует канонический профиль роли в permissions JSON.
+func RolePermissionsJSON(name RoleName) string {
+	profile, ok := RoleProfileByName(name)
+	if !ok {
+		return "{}"
+	}
+	return PermissionsJSON(profile.Permissions...)
+}
+
+// HasAnyPermission возвращает true, если role permissions JSON содержит хотя бы одно из прав.
 func HasAnyPermission(body string, permissions ...PermissionID) bool {
 	for _, permission := range permissions {
 		if HasPermission(body, string(permission)) {
@@ -109,13 +294,13 @@ func HasAnyPermission(body string, permissions ...PermissionID) bool {
 	return false
 }
 
-// IsKnownPermissionID reports whether the provided permission id is part of the canonical backend catalog.
+// IsKnownPermissionID сообщает, входит ли право в канонический backend-каталог.
 func IsKnownPermissionID(permission PermissionID) bool {
 	_, ok := knownPermissionIDs[permission]
 	return ok
 }
 
-// ValidatePermissionsJSON verifies that all granted permissions belong to the canonical backend catalog.
+// ValidatePermissionsJSON проверяет, что все выданные права входят в канонический backend-каталог.
 func ValidatePermissionsJSON(body string) error {
 	for _, permission := range PermissionsFromJSON(body) {
 		if !IsKnownPermissionID(PermissionID(permission)) {

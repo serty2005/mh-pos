@@ -92,59 +92,17 @@ func (f *apiFixture) seed(t *testing.T) {
 		t.Fatal(err)
 	}
 	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
-		CommandMeta: apiSeedMeta("bootstrap-device"),
-		Name:        "cashier",
-		PermissionsJSON: appshared.PermissionsJSON(
-			appshared.PermissionShiftOpen,
-			appshared.PermissionShiftClose,
-			appshared.PermissionShiftViewCurrent,
-			appshared.PermissionShiftRecent,
-			appshared.PermissionCashSessionOpen,
-			appshared.PermissionCashSessionClose,
-			appshared.PermissionCashSessionViewCurrent,
-			appshared.PermissionFloorView,
-			appshared.PermissionMenuView,
-			appshared.PermissionOrderCreate,
-			appshared.PermissionOrderView,
-			appshared.PermissionOrderAddLine,
-			appshared.PermissionOrderChangeQuantity,
-			appshared.PermissionOrderVoidLine,
-			appshared.PermissionPrecheckIssue,
-			appshared.PermissionPrecheckView,
-			appshared.PermissionPaymentCapture,
-			appshared.PermissionCheckView,
-		),
+		CommandMeta:     apiSeedMeta("bootstrap-device"),
+		Name:            string(appshared.RoleCashier),
+		PermissionsJSON: appshared.RolePermissionsJSON(appshared.RoleCashier),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	managerRole, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
-		CommandMeta: apiSeedMeta("bootstrap-device"),
-		Name:        "manager",
-		PermissionsJSON: appshared.PermissionsJSON(
-			appshared.PermissionShiftOpen,
-			appshared.PermissionShiftClose,
-			appshared.PermissionShiftViewCurrent,
-			appshared.PermissionShiftRecent,
-			appshared.PermissionCashSessionOpen,
-			appshared.PermissionCashSessionClose,
-			appshared.PermissionCashSessionViewCurrent,
-			appshared.PermissionFloorView,
-			appshared.PermissionMenuView,
-			appshared.PermissionOrderCreate,
-			appshared.PermissionOrderView,
-			appshared.PermissionOrderAddLine,
-			appshared.PermissionOrderChangeQuantity,
-			appshared.PermissionOrderVoidLine,
-			appshared.PermissionPrecheckIssue,
-			appshared.PermissionPrecheckView,
-			appshared.PermissionPrecheckCancelRequest,
-			appshared.PermissionPaymentCapture,
-			appshared.PermissionCheckView,
-			appshared.PermissionPrecheckCancel,
-			appshared.PermissionSyncView,
-			appshared.PermissionSyncRetryFailed,
-		),
+		CommandMeta:     apiSeedMeta("bootstrap-device"),
+		Name:            string(appshared.RoleManager),
+		PermissionsJSON: appshared.RolePermissionsJSON(appshared.RoleManager),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -471,6 +429,66 @@ func TestMasterDataWriteAPIsRejectEdgeRuntimeMutation(t *testing.T) {
 	menuResp := f.postJSON(t, "/api/v1/menu/items", `{"node_device_id":"`+f.device.ID+`","catalog_item_id":"`+f.menuItem.CatalogItemID+`","name":"Tea","price":3000,"currency":"RUB"}`)
 	if menuResp.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for Edge menu mutation, got %d: %s", menuResp.Code, menuResp.Body.String())
+	}
+}
+
+func TestMasterDataListAPIsAreDevOnly(t *testing.T) {
+	f := newAPIFixture(t)
+	for _, path := range []string{"/api/v1/restaurants", "/api/v1/devices", "/api/v1/roles", "/api/v1/employees"} {
+		rr := f.get(t, path)
+		if rr.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 for %s without dev tools, got %d: %s", path, rr.Code, rr.Body.String())
+		}
+	}
+}
+
+func TestCatalogReadAPIRequiresCatalogViewPermission(t *testing.T) {
+	f := newAPIFixture(t)
+	allowed := f.get(t, "/api/v1/catalog/items")
+	if allowed.Code != http.StatusOK {
+		t.Fatalf("expected 200 for catalog read with catalog view, got %d: %s", allowed.Code, allowed.Body.String())
+	}
+
+	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta:     apiSeedMeta(f.device.ID),
+		Name:            "no-catalog-view",
+		PermissionsJSON: `{}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinHash, err := appshared.HashPIN("9753", []byte("api-no-catalog-salt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	employee, err := f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{
+		CommandMeta:  apiSeedMeta(f.device.ID),
+		RestaurantID: f.restaurant.ID,
+		RoleID:       role.ID,
+		Name:         "No Catalog",
+		PINHash:      pinHash,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{
+			CommandID:      "cmd-api-login-no-catalog",
+			NodeDeviceID:   f.device.ID,
+			DeviceID:       f.device.ID,
+			ClientDeviceID: f.clientID,
+			Origin:         app.OriginEdgeDevice,
+		},
+		PIN: "9753",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.employee = employee
+	f.session = &login.Session
+	denied := f.get(t, "/api/v1/catalog/items")
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without catalog view permission, got %d: %s", denied.Code, denied.Body.String())
 	}
 }
 

@@ -38,54 +38,11 @@ func (s *Service) BootstrapDemo(ctx context.Context) (*DemoBootstrapResult, erro
 	if _, err := s.PairEdgeNode(ctx, PairEdgeNodeCommand{PairingCode: pairingCode}); err != nil {
 		return nil, err
 	}
-	cashierRole, err := s.ensureDemoRole(ctx, "cashier", appshared.PermissionsJSON(
-		appshared.PermissionShiftOpen,
-		appshared.PermissionShiftClose,
-		appshared.PermissionShiftViewCurrent,
-		appshared.PermissionShiftRecent,
-		appshared.PermissionCashSessionOpen,
-		appshared.PermissionCashSessionClose,
-		appshared.PermissionCashSessionViewCurrent,
-		appshared.PermissionCashDrawerEvent,
-		appshared.PermissionFloorView,
-		appshared.PermissionMenuView,
-		appshared.PermissionOrderCreate,
-		appshared.PermissionOrderView,
-		appshared.PermissionOrderAddLine,
-		appshared.PermissionOrderChangeQuantity,
-		appshared.PermissionOrderVoidLine,
-		appshared.PermissionPrecheckIssue,
-		appshared.PermissionPrecheckView,
-		appshared.PermissionPaymentCapture,
-		appshared.PermissionCheckView,
-	), appshared.PermissionShiftOpen, appshared.PermissionShiftRecent, appshared.PermissionFloorView, appshared.PermissionMenuView, appshared.PermissionOrderCreate, appshared.PermissionOrderView, appshared.PermissionPrecheckIssue, appshared.PermissionPrecheckView, appshared.PermissionPaymentCapture, appshared.PermissionCheckView)
+	cashierRole, err := s.ensureDemoRole(ctx, string(appshared.RoleCashier), appshared.RolePermissionsJSON(appshared.RoleCashier), appshared.PermissionEmployeeShiftOpen, appshared.PermissionEmployeeShiftRecent, appshared.PermissionFloorView, appshared.PermissionMenuView, appshared.PermissionOrderCreate, appshared.PermissionOrderView, appshared.PermissionPrecheckIssue, appshared.PermissionPrecheckView, appshared.PermissionPaymentCash, appshared.PermissionCheckView)
 	if err != nil {
 		return nil, err
 	}
-	managerRole, err := s.ensureDemoRole(ctx, "manager", appshared.PermissionsJSON(
-		appshared.PermissionShiftOpen,
-		appshared.PermissionShiftClose,
-		appshared.PermissionShiftViewCurrent,
-		appshared.PermissionShiftRecent,
-		appshared.PermissionCashSessionOpen,
-		appshared.PermissionCashSessionClose,
-		appshared.PermissionCashSessionViewCurrent,
-		appshared.PermissionFloorView,
-		appshared.PermissionMenuView,
-		appshared.PermissionOrderCreate,
-		appshared.PermissionOrderView,
-		appshared.PermissionOrderAddLine,
-		appshared.PermissionOrderChangeQuantity,
-		appshared.PermissionOrderVoidLine,
-		appshared.PermissionPrecheckIssue,
-		appshared.PermissionPrecheckView,
-		appshared.PermissionPrecheckCancelRequest,
-		appshared.PermissionPaymentCapture,
-		appshared.PermissionCheckView,
-		appshared.PermissionPrecheckCancel,
-		appshared.PermissionSyncView,
-		appshared.PermissionSyncRetryFailed,
-	), appshared.PermissionFloorView, appshared.PermissionMenuView, appshared.PermissionPrecheckCancelRequest, appshared.PermissionPrecheckCancel, appshared.PermissionSyncView, appshared.PermissionSyncRetryFailed)
+	managerRole, err := s.ensureDemoRole(ctx, string(appshared.RoleManager), appshared.RolePermissionsJSON(appshared.RoleManager), appshared.PermissionFloorView, appshared.PermissionMenuView, appshared.PermissionPrecheckCancelRequest, appshared.PermissionPrecheckCancel, appshared.PermissionSyncView, appshared.PermissionSyncRetryFailed)
 	if err != nil {
 		return nil, err
 	}

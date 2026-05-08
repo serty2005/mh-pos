@@ -72,7 +72,7 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionPaymentCapture)); err != nil {
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(requiredPaymentPermission(cmd.Method))); err != nil {
 			return err
 		}
 		precheck, err := s.repo.GetPrecheck(ctx, cmd.PrecheckID)
@@ -194,4 +194,15 @@ func optionalString(v string) *string {
 		return nil
 	}
 	return &v
+}
+
+func requiredPaymentPermission(method domain.PaymentMethod) shared.PermissionID {
+	switch method {
+	case domain.PaymentCash:
+		return shared.PermissionPaymentCash
+	case domain.PaymentCard:
+		return shared.PermissionPaymentCardManual
+	default:
+		return shared.PermissionPaymentOther
+	}
 }

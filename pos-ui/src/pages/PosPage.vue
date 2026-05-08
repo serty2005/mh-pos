@@ -317,7 +317,7 @@
               unelevated
               icon="payments"
               :label="t('actions.payCash')"
-              :disable="!canPay"
+              :disable="!canPayCash"
               :loading="paymentMutation.isPending.value"
               @click="pay('cash')"
             />
@@ -326,7 +326,7 @@
               unelevated
               icon="credit_card"
               :label="t('actions.payCard')"
-              :disable="!canPay"
+              :disable="!canPayCard"
               :loading="paymentMutation.isPending.value"
               @click="pay('card')"
             />
@@ -421,10 +421,13 @@ const cancelReason = ref('');
 const grantedPermissions = computed(() => auth.actor?.permissions ?? []);
 const canViewFloor = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.floorView));
 const canViewMenu = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.menuView));
-const canOpenShift = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.shiftOpen));
-const canCloseShift = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.shiftClose));
+const canViewCurrentShift = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.employeeShiftViewCurrent));
+const canViewRecentShifts = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.employeeShiftRecent));
+const canOpenShift = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.employeeShiftOpen));
+const canCloseShift = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.employeeShiftClose));
 const canOpenCashSession = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.cashSessionOpen));
 const canCloseCashSession = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.cashSessionClose));
+const canViewCurrentCashSession = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.cashSessionViewCurrent));
 
 const pairing = useQuery({
   queryKey: ['pairing-status'],
@@ -441,19 +444,19 @@ const session = useQuery({
 const currentShift = useQuery({
   queryKey: ['current-shift', auth.nodeDeviceId],
   queryFn: getCurrentShift,
-  enabled: () => Boolean(auth.nodeDeviceId && auth.sessionId),
+  enabled: () => Boolean(auth.nodeDeviceId && auth.sessionId && canViewCurrentShift.value),
 });
 
 const recentShifts = useQuery({
   queryKey: ['recent-shifts', auth.sessionId],
   queryFn: listRecentShifts,
-  enabled: () => Boolean(auth.nodeDeviceId && auth.sessionId && !currentShift.data.value),
+  enabled: () => Boolean(auth.nodeDeviceId && auth.sessionId && !currentShift.data.value && canViewRecentShifts.value),
 });
 
 const currentCashSession = useQuery({
   queryKey: ['current-cash-session', auth.nodeDeviceId],
   queryFn: getCurrentCashSession,
-  enabled: () => Boolean(auth.nodeDeviceId && auth.sessionId && currentShift.data.value),
+  enabled: () => Boolean(auth.nodeDeviceId && auth.sessionId && currentShift.data.value && canViewCurrentCashSession.value),
 });
 
 const halls = useQuery({
@@ -473,19 +476,19 @@ const tables = useQuery({
 const tableOrder = useQuery({
   queryKey: ['current-order', selectedTableId],
   queryFn: () => getCurrentOrderByTable(selectedTableId.value),
-  enabled: () => Boolean(selectedTableId.value && auth.nodeDeviceId && auth.sessionId && currentShift.data.value),
+  enabled: () => Boolean(selectedTableId.value && auth.nodeDeviceId && auth.sessionId && currentShift.data.value && hasPermission(grantedPermissions.value, permissionCatalog.orderView)),
 });
 
 const order = useQuery({
   queryKey: ['order', currentOrderId],
   queryFn: () => getOrder(currentOrderId.value),
-  enabled: () => Boolean(currentOrderId.value && auth.sessionId && currentShift.data.value),
+  enabled: () => Boolean(currentOrderId.value && auth.sessionId && currentShift.data.value && hasPermission(grantedPermissions.value, permissionCatalog.orderView)),
 });
 
 const prechecks = useQuery({
   queryKey: ['prechecks', currentOrderId],
   queryFn: () => listPrechecksByOrder(currentOrderId.value),
-  enabled: () => Boolean(currentOrderId.value && auth.sessionId && currentShift.data.value),
+  enabled: () => Boolean(currentOrderId.value && auth.sessionId && currentShift.data.value && hasPermission(grantedPermissions.value, permissionCatalog.precheckView)),
 });
 
 const menu = useQuery({
@@ -502,7 +505,7 @@ const finalCheckId = computed(() => activeOrder.value?.check?.id ?? '');
 const finalCheck = useQuery({
   queryKey: ['check', finalCheckId],
   queryFn: () => getCheck(finalCheckId.value),
-  enabled: () => Boolean(finalCheckId.value && auth.sessionId && currentShift.data.value),
+  enabled: () => Boolean(finalCheckId.value && auth.sessionId && currentShift.data.value && hasPermission(grantedPermissions.value, permissionCatalog.checkView)),
 });
 const activeLines = computed(() => activeOrder.value?.lines.filter((line) => line.status === 'active') ?? []);
 const activeMenuItems = computed(() => menu.data.value?.filter((item) => item.active) ?? []);
@@ -516,7 +519,8 @@ const canChangeOrderLine = computed(() => Boolean(activeOrder.value?.status === 
 const canVoidOrderLine = computed(() => Boolean(activeOrder.value?.status === 'open' && !activePrecheck.value && !activeOrder.value.check && hasPermission(grantedPermissions.value, permissionCatalog.orderVoidLine)));
 const canIssuePrecheck = computed(() => Boolean(activeOrder.value?.status === 'open' && activeLines.value.length > 0 && !activePrecheck.value && hasPermission(grantedPermissions.value, permissionCatalog.precheckIssue)));
 const canCancelPrecheck = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.precheckCancelRequest));
-const canPay = computed(() => Boolean(currentCashSession.data.value && activePrecheck.value && paymentAmount.value > 0 && paymentAmount.value <= remainingPayment.value && hasPermission(grantedPermissions.value, permissionCatalog.paymentCapture)));
+const canPayCash = computed(() => Boolean(currentCashSession.data.value && activePrecheck.value && paymentAmount.value > 0 && paymentAmount.value <= remainingPayment.value && hasPermission(grantedPermissions.value, permissionCatalog.paymentCash)));
+const canPayCard = computed(() => Boolean(currentCashSession.data.value && activePrecheck.value && paymentAmount.value > 0 && paymentAmount.value <= remainingPayment.value && hasPermission(grantedPermissions.value, permissionCatalog.paymentCardManual)));
 const remainingPayment = computed(() => activePrecheck.value ? activePrecheck.value.total - activePrecheck.value.paid_total : 0);
 const orderLoading = computed(() => tableOrder.isPending.value || order.isPending.value);
 const statusError = computed(() => firstError([currentShift.error.value, currentCashSession.error.value]));

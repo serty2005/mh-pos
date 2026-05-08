@@ -247,6 +247,9 @@ func (h *Handler) createRestaurant(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listRestaurants(w http.ResponseWriter, r *http.Request) {
+	if !requireDevTools(w) {
+		return
+	}
 	v, err := h.service.ListRestaurants(r.Context())
 	writeOK(w, v, err)
 }
@@ -266,6 +269,9 @@ func (h *Handler) registerDevice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listDevices(w http.ResponseWriter, r *http.Request) {
+	if !requireDevTools(w) {
+		return
+	}
 	v, err := h.service.ListDevices(r.Context())
 	writeOK(w, v, err)
 }
@@ -285,6 +291,9 @@ func (h *Handler) createRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listRoles(w http.ResponseWriter, r *http.Request) {
+	if !requireDevTools(w) {
+		return
+	}
 	v, err := h.service.ListRoles(r.Context())
 	writeOK(w, v, err)
 }
@@ -304,6 +313,9 @@ func (h *Handler) createEmployee(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listEmployees(w http.ResponseWriter, r *http.Request) {
+	if !requireDevTools(w) {
+		return
+	}
 	v, err := h.service.ListEmployees(r.Context())
 	writeOK(w, v, err)
 }
@@ -458,7 +470,9 @@ func (h *Handler) createCatalogItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listCatalogItems(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.ListCatalogItems(r.Context())
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.ListCatalogItemsAsOperator(r.Context(), meta)
 	writeOK(w, v, err)
 }
 

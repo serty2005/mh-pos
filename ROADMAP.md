@@ -129,30 +129,19 @@ implemented now:
 
 ### RBAC hardening
 
-Статус: `in_progress`
-
-Нужно:
-
-- завершить перевод remaining ad-hoc permission checks к canonical permission catalog
-- описать роли cashier / senior_cashier / waiter / manager / kitchen / support_admin
-- привязать UI visibility к permission model
-- расширить backend enforcement beyond current manager override minimum
+Статус: `done`
 
 implemented now:
 
-- canonical backend permission catalog introduced for cashier runtime hardening;
-- app-layer permission enforcement added for personal-shift/cash-shift/order/precheck-issue/payment operations;
-- app-layer permission enforcement added for cash drawer event recording;
-- operator-triggered `sync/retry-failed` is enforced via backend permission `pos.sync.retry_failed`.
-- app-layer permission enforcement added for read/runtime APIs: personal shift current/recent, current cash session, order/precheck/check read flows, sync status/outbox read flows;
-- precheck cancel override flow now enforces split actor/approver permissions (`pos.precheck.cancel.request` + `pos.precheck.cancel`).
-- app-layer permission enforcement added for floor/menu runtime reads and `GET /api/v1/sync/local-events`.
-- role creation/import now rejects unknown permission ids outside canonical backend catalog.
-- UI visibility in cashier flow is now wired to backend permission model (UX-only gate, backend remains final enforcement).
+- canonical backend permission catalog covers the implemented pilot runtime surface;
+- role profiles are fixed in code for `cashier`, `senior_cashier`, `waiter`, `manager`, `kitchen`, `support_admin`;
+- app-layer permission enforcement covers personal shifts, cash sessions, cash drawer events, catalog/floor/menu reads, order/precheck/payment/check runtime and operator-triggered sync APIs;
+- payment permissions are split by method (`pos.payment.cash`, `pos.payment.card.manual`, `pos.payment.other`);
+- precheck cancel override enforces split actor/approver permissions (`pos.precheck.cancel.request` + `pos.precheck.cancel`);
+- role creation/import rejects unknown permission ids outside canonical backend catalog;
+- UI visibility in cashier flow is wired to backend permission ids and avoids protected read calls without matching permissions;
+- non-implemented matrix rows are explicitly marked `out of scope` in `docs/ui/POS-UI-RBAC.md`.
 
-planned next:
-
-- complete enforcement coverage for the entire UI RBAC matrix and override variants.
 ### Pilot scope hardening
 
 Статус: `in_progress`

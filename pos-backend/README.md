@@ -58,6 +58,9 @@ implemented now: master/reference/configuration data является Cloud-owne
 `MigrateDirWithPolicy` применяет canonical `001_init.sql` на чистую БД. В этой стартовой схеме сразу присутствуют `prechecks`, `payments.precheck_id`, `auth_sessions` со status `active/revoked`, `edge_node_identity`, `client_devices`, `halls`, `tables`, `orders.table_id`, Cloud -> Edge metadata columns на master tables, `cloud_master_sync_state`, retry-safe поля `pos_sync_outbox` (`sequence_no`, `sync_direction`, `attempts`, `next_retry_at`, `locked_at`, `locked_by`, `sent_at`, `last_error`), actor/session/node/client metadata (`node_device_id`, `client_device_id`, `actor_employee_id`, `session_id`) в `local_event_log`, `pos_sync_outbox` и `SyncEnvelope`, `local_event_log.command_id`, `manager_override_audit`, constraints precheck lifecycle и outbox. Историческая dev-цепочка миграций не является обязательной частью первого пилотного запуска.
 
 implemented now: startup policy поддерживает таблицу `db_runtime_versions`; если версия БД ниже версии модуля (`MH_POS_VERSION`), перед апгрейдом схемы выполняется backup SQLite (`.db`, `.db-wal`, `.db-shm`) в `POS_SQLITE_BACKUP_DIR`.
+implemented now: POS Edge использует единую продуктовую версию `MH_POS_VERSION`, общую для всех модулей решения.
+implemented now: любые операции изменения схемы/структуры данных БД (создание, изменение, удаление таблиц/полей/ключей/индексов и сопутствующие DDL-действия) выполняются только программно кодом сервиса при старте через migration policy.
+implemented now: ручной путь применения SQL-скриптов для runtime-обновления БД не является поддерживаемым сценарием и не рассматривается как canonical upgrade path.
 
 Write transactions в POS Edge открываются через `BEGIN IMMEDIATE`, чтобы writer lock бралась в начале транзакционного use case.
 
@@ -174,7 +177,9 @@ Cloud -> Edge master-data ingest endpoints:
 - `POST /api/v1/sync/master-data/snapshots`
 - `POST /api/v1/sync/master-data/{stream}`
 
-Supported streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `currencies`. Payload accepts `node_device_id`, `sync_mode` (`full_snapshot` or `incremental`), optional `checkpoint_token`, `cloud_version`, optional `cloud_updated_at`, and stream arrays (`restaurants`, `devices`, `roles`, `employees`, `halls`, `tables`, `catalog_items`, `menu_items`, `currencies`). Ingest writes master tables and `cloud_master_sync_state` in one transaction and does not create Edge -> Cloud outbox rows.
+Supported POS Edge ingest streams implemented now: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`. Payload accepts `node_device_id`, `sync_mode` (`full_snapshot` or `incremental`), optional `checkpoint_token`, `cloud_version`, optional `cloud_updated_at`, and stream arrays (`restaurants`, `devices`, `roles`, `employees`, `halls`, `tables`, `catalog_items`, `menu_items`). Ingest writes master tables and `cloud_master_sync_state` in one transaction and does not create Edge -> Cloud outbox rows.
+
+out of scope: direct POS Edge apply for `currencies` stream. Cloud backend already owns canonical ISO 4217 currency reference/provisioning, but POS Edge currently validates currencies from its local canonical catalog rather than importing currency packages through master-data ingest.
 
 Master-data write endpoints for restaurants/devices/roles/employees/halls/tables/catalog/menu are implemented as application-layer seed/cloud-sync write use cases. HTTP mutation routes are dev-only seed/admin helpers behind `POS_DEV_TOOLS=1`; normal POS runtime should use read endpoints and the Cloud -> Edge ingest endpoints above.
 

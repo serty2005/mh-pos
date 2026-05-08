@@ -270,20 +270,23 @@ Backend обязан:
 
 implemented now:
 
-- backend uses a canonical permission catalog in app-layer checks;
-- role permissions remain stored as JSON, but enforcement uses stable permission ids;
-- key cashier runtime operations are enforced in app services via `EnsureOperatorSession(...requiredPermissions...)`.
+- backend uses a canonical permission catalog and canonical role profiles for `cashier`, `senior_cashier`, `waiter`, `manager`, `kitchen`, `support_admin`;
+- role permissions remain stored as JSON, but role creation/import rejects unknown permission ids;
+- implemented POS runtime operations are enforced in app services via `EnsureOperatorSession(...requiredPermissions...)`;
+- master-data list endpoints for restaurants/devices/roles/employees are dev-only behind `POS_DEV_TOOLS=1`;
+- `GET /api/v1/catalog/items` is an operator endpoint and requires `pos.catalog.view`.
 
 Canonical permission ids used by implemented now runtime:
 
-- `pos.shift.open`
-- `pos.shift.close`
-- `pos.shift.view_current`
-- `pos.shift.recent`
+- `pos.employee_shift.open`
+- `pos.employee_shift.close`
+- `pos.employee_shift.view_current`
+- `pos.employee_shift.recent`
 - `pos.cash_session.open`
 - `pos.cash_session.close`
 - `pos.cash_session.view_current`
 - `pos.cash_drawer.record_event`
+- `pos.catalog.view`
 - `pos.floor.view`
 - `pos.menu.view`
 - `pos.order.create`
@@ -291,23 +294,39 @@ Canonical permission ids used by implemented now runtime:
 - `pos.order.add_line`
 - `pos.order.change_quantity`
 - `pos.order.void_line`
+- `pos.order.close`
 - `pos.precheck.issue`
 - `pos.precheck.view`
 - `pos.precheck.cancel.request` (override actor permission)
 - `pos.precheck.cancel` (manager override approver permission)
-- `pos.payment.capture`
+- `pos.payment.cash`
+- `pos.payment.card.manual`
+- `pos.payment.other`
 - `pos.check.view`
 - `pos.sync.view` (required for operator-triggered `GET /api/v1/sync/outbox`, `GET /api/v1/sync/status`, `GET /api/v1/sync/local-events`)
 - `pos.sync.retry_failed` (required for operator-triggered `POST /api/v1/sync/retry-failed`)
+
+Role behavior:
+
+- `cashier`: cashier POS flow, cash/card payment, no cash session close and no sync/service permissions.
+- `senior_cashier`: cashier POS flow plus cash session close and sync read.
+- `waiter`: order/precheck/check read/write flow without cash session/payment permissions.
+- `manager`: full implemented POS runtime permissions, precheck cancel approval, sync retry.
+- `kitchen`: no implemented POS runtime permissions.
+- `support_admin`: sync read and retry service permissions only.
 
 Error behavior:
 
 - missing permission returns domain `forbidden` and HTTP `403`;
 - authorization errors do not include sensitive auth fields (PIN, manager PIN, PIN hash).
 
-planned next:
+out of scope:
 
-- extend canonical backend enforcement to the full UI RBAC matrix (`docs/ui/POS-UI-RBAC.md`) beyond the current runtime RBAC slice.
+- order transfer;
+- payment refund;
+- final check reprint;
+- diagnostics/admin UI routes;
+- waiter payment override and restaurant-level override policy engine.
 
 ## Currency policy (implemented now)
 

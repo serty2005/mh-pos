@@ -149,7 +149,8 @@ implemented now:
 
 - Cloud-owned master tables: `restaurants`, `devices`, `roles`, `employees`, `halls`, `tables`, `catalog_items`, `menu_items`, `recipe_versions`, `recipe_lines`, `item_costs`.
 - Эти таблицы являются локальной read model на POS Edge; application services запрещают Edge runtime mutation и принимают только `origin = cloud_sync` или `origin = system_seed`.
-- implemented now: Cloud-authored rows применяются через `POST /api/v1/sync/master-data/snapshots` или `POST /api/v1/sync/master-data/{stream}`. Supported streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `currencies`.
+- implemented now: Cloud-authored rows применяются на POS Edge через `POST /api/v1/sync/master-data/snapshots` или `POST /api/v1/sync/master-data/{stream}`. Supported Edge ingest streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`.
+- out of scope: POS Edge apply for `currencies` stream. Cloud backend owns canonical ISO 4217 reference/provisioning, while current POS Edge currency validation uses the local canonical catalog.
 - Cloud-owned master tables имеют `cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at`.
 - `cloud_master_sync_state` хранит Cloud -> Edge stream checkpoint: stream, mode, checkpoint token, last Cloud version/update, last apply time, status/error.
 - Master-data ingest writes master rows and `cloud_master_sync_state` in one transaction and does not write `local_event_log` or `pos_sync_outbox`.

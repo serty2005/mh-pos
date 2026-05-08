@@ -319,7 +319,7 @@ func (s *Service) CloseOrder(ctx context.Context, cmd CloseOrderCommand) (*domai
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionPaymentCapture)); err != nil {
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionOrderClose)); err != nil {
 			return err
 		}
 		var err error

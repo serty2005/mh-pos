@@ -59,7 +59,7 @@ function detectMinorUnit(alphaCode: string): number {
   let minorUnit = 2;
   try {
     const formatter = new Intl.NumberFormat('en', { style: 'currency', currency: alphaCode });
-    minorUnit = formatter.resolvedOptions().maximumFractionDigits;
+    minorUnit = formatter.resolvedOptions().maximumFractionDigits ?? 2;
   } catch {
     minorUnit = 2;
   }

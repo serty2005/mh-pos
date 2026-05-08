@@ -277,7 +277,9 @@ implemented now:
 - Cloud stores provisioning payloads in `cloud_master_data_packages`.
 - Provisioning stream catalog on Cloud includes: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `currencies`.
 - `currencies` stream payload uses canonical active ISO 4217 catalog (`currency_code`, `currency_alpha_code`, `minor_unit`, display flags) and is validated before apply.
+- POS Edge implemented now applies Cloud -> Edge master-data ingest streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`.
+- POS Edge `currencies` apply is out of scope until a dedicated Edge import path, storage contract and tests are added; Edge runtime currently validates currencies from its local canonical catalog.
 
-next:
+planned next:
 - add authorization policy for provisioning endpoints in production perimeter;
 - add projection query APIs for ops dashboards.

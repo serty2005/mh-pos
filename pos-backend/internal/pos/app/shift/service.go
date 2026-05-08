@@ -47,7 +47,7 @@ type CloseShiftCommand struct {
 }
 
 func (s *Service) GetCurrentShift(ctx context.Context, meta shared.CommandMeta) (*domain.Shift, error) {
-	operator, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionShiftViewCurrent))
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionEmployeeShiftViewCurrent))
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func (s *Service) GetCurrentShift(ctx context.Context, meta shared.CommandMeta) 
 }
 
 func (s *Service) ListRecentShifts(ctx context.Context, cmd ListRecentShiftsCommand) ([]domain.Shift, error) {
-	operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionShiftRecent))
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionEmployeeShiftRecent))
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func (s *Service) OpenShift(ctx context.Context, cmd OpenShiftCommand) (*domain.
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionShiftOpen)); err != nil {
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionEmployeeShiftOpen)); err != nil {
 			return err
 		}
 		if cmd.Origin == domain.OriginEdgeDevice && cmd.ActorEmployeeID != cmd.OpenedByEmployeeID {
@@ -123,7 +123,7 @@ func (s *Service) CloseShift(ctx context.Context, cmd CloseShiftCommand) (*domai
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionShiftClose)); err != nil {
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionEmployeeShiftClose)); err != nil {
 			return err
 		}
 		if cmd.Origin == domain.OriginEdgeDevice && cmd.ActorEmployeeID != cmd.ClosedByEmployeeID {

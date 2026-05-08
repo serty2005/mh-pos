@@ -35,6 +35,14 @@ func (s *Service) ListCatalogItems(ctx context.Context) ([]domain.CatalogItem, e
 	return s.repo.ListCatalogItems(ctx)
 }
 
+// ListCatalogItemsAsOperator возвращает каталог для authenticated operator flow с RBAC enforcement.
+func (s *Service) ListCatalogItemsAsOperator(ctx context.Context, meta shared.CommandMeta) ([]domain.CatalogItem, error) {
+	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionCatalogView)); err != nil {
+		return nil, err
+	}
+	return s.ListCatalogItems(ctx)
+}
+
 func (s *Service) CreateCatalogItem(ctx context.Context, cmd CreateCatalogItemCommand) (*domain.CatalogItem, error) {
 	if err := shared.EnsureMasterDataWriteAllowed(cmd.CommandMeta); err != nil {
 		return nil, err

@@ -19,12 +19,39 @@ func TestPermissionsJSONDeterministicAndDeduplicated(t *testing.T) {
 }
 
 func TestHasAnyPermission(t *testing.T) {
-	body := shared.PermissionsJSON(shared.PermissionShiftOpen, shared.PermissionPrecheckIssue)
-	if !shared.HasAnyPermission(body, shared.PermissionPrecheckIssue, shared.PermissionPaymentCapture) {
+	body := shared.PermissionsJSON(shared.PermissionEmployeeShiftOpen, shared.PermissionPrecheckIssue)
+	if !shared.HasAnyPermission(body, shared.PermissionPrecheckIssue, shared.PermissionPaymentCash) {
 		t.Fatal("expected one of requested permissions to be granted")
 	}
-	if shared.HasAnyPermission(body, shared.PermissionPaymentCapture, shared.PermissionSyncRetryFailed) {
+	if shared.HasAnyPermission(body, shared.PermissionPaymentCash, shared.PermissionSyncRetryFailed) {
 		t.Fatal("expected no requested permissions to be granted")
+	}
+}
+
+func TestCanonicalRoleProfiles(t *testing.T) {
+	profiles := shared.CanonicalRoleProfiles()
+	if len(profiles) != 6 {
+		t.Fatalf("expected six pilot role profiles, got %d", len(profiles))
+	}
+	cashier, ok := shared.RoleProfileByName(shared.RoleCashier)
+	if !ok {
+		t.Fatal("expected cashier role profile")
+	}
+	if !shared.HasPermission(shared.PermissionsJSON(cashier.Permissions...), string(shared.PermissionPaymentCash)) {
+		t.Fatal("expected cashier to support cash payment")
+	}
+	if shared.HasPermission(shared.PermissionsJSON(cashier.Permissions...), string(shared.PermissionCashSessionClose)) {
+		t.Fatal("expected cashier not to close cash session directly")
+	}
+	manager, ok := shared.RoleProfileByName(shared.RoleManager)
+	if !ok {
+		t.Fatal("expected manager role profile")
+	}
+	if !shared.HasPermission(shared.PermissionsJSON(manager.Permissions...), string(shared.PermissionPrecheckCancel)) {
+		t.Fatal("expected manager to approve precheck cancel")
+	}
+	if !shared.HasPermission(shared.RolePermissionsJSON(shared.RoleSupportAdmin), string(shared.PermissionSyncRetryFailed)) {
+		t.Fatal("expected support admin to retry failed syncs")
 	}
 }
 

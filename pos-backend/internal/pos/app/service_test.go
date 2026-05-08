@@ -186,60 +186,17 @@ func (f *fixture) seed(t *testing.T) {
 		t.Fatal(err)
 	}
 	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
-		CommandMeta: seedMeta(bootstrapDeviceID),
-		Name:        "cashier",
-		PermissionsJSON: appshared.PermissionsJSON(
-			appshared.PermissionShiftOpen,
-			appshared.PermissionShiftClose,
-			appshared.PermissionShiftViewCurrent,
-			appshared.PermissionShiftRecent,
-			appshared.PermissionCashSessionOpen,
-			appshared.PermissionCashSessionClose,
-			appshared.PermissionCashSessionViewCurrent,
-			appshared.PermissionFloorView,
-			appshared.PermissionMenuView,
-			appshared.PermissionOrderCreate,
-			appshared.PermissionOrderView,
-			appshared.PermissionOrderAddLine,
-			appshared.PermissionOrderChangeQuantity,
-			appshared.PermissionOrderVoidLine,
-			appshared.PermissionPrecheckIssue,
-			appshared.PermissionPrecheckView,
-			appshared.PermissionPaymentCapture,
-			appshared.PermissionCheckView,
-		),
+		CommandMeta:     seedMeta(bootstrapDeviceID),
+		Name:            string(appshared.RoleCashier),
+		PermissionsJSON: appshared.RolePermissionsJSON(appshared.RoleCashier),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	managerRole, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
-		CommandMeta: seedMeta(bootstrapDeviceID),
-		Name:        "manager",
-		PermissionsJSON: appshared.PermissionsJSON(
-			appshared.PermissionShiftOpen,
-			appshared.PermissionShiftClose,
-			appshared.PermissionShiftViewCurrent,
-			appshared.PermissionShiftRecent,
-			appshared.PermissionCashSessionOpen,
-			appshared.PermissionCashSessionClose,
-			appshared.PermissionCashSessionViewCurrent,
-			appshared.PermissionFloorView,
-			appshared.PermissionMenuView,
-			appshared.PermissionOrderCreate,
-			appshared.PermissionOrderView,
-			appshared.PermissionOrderAddLine,
-			appshared.PermissionOrderChangeQuantity,
-			appshared.PermissionOrderVoidLine,
-			appshared.PermissionPrecheckIssue,
-			appshared.PermissionPrecheckView,
-			appshared.PermissionPrecheckCancelRequest,
-			appshared.PermissionPaymentCapture,
-			appshared.PermissionCheckView,
-			appshared.PermissionPrecheckCancel,
-			appshared.PermissionCashDrawerEvent,
-			appshared.PermissionSyncView,
-			appshared.PermissionSyncRetryFailed,
-		),
+		CommandMeta:     seedMeta(bootstrapDeviceID),
+		Name:            string(appshared.RoleManager),
+		PermissionsJSON: appshared.RolePermissionsJSON(appshared.RoleManager),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1356,7 +1313,7 @@ func TestCannotCloseOrderWithoutFullPayment(t *testing.T) {
 	}
 }
 
-func TestCloseOrderRequiresPaymentCapturePermission(t *testing.T) {
+func TestCloseOrderRequiresOrderClosePermission(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{
@@ -1368,7 +1325,7 @@ func TestCloseOrderRequiresPaymentCapturePermission(t *testing.T) {
 	}
 	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
 		CommandMeta: seedMeta(f.device.ID),
-		Name:        "order-close-without-payment-capture",
+		Name:        "order-close-denied",
 		PermissionsJSON: appshared.PermissionsJSON(
 			appshared.PermissionOrderCreate,
 			appshared.PermissionOrderView,
@@ -2180,6 +2137,65 @@ func TestCapturePaymentCreatesFirstAttemptWithEdgeContext(t *testing.T) {
 	}
 }
 
+func TestCardPaymentRequiresManualCardPermission(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta: seedMeta(f.device.ID),
+		Name:        "cash-only-payment",
+		PermissionsJSON: appshared.PermissionsJSON(
+			appshared.PermissionPaymentCash,
+		),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	employee, err := f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{
+		CommandMeta:  seedMeta(f.device.ID),
+		RestaurantID: f.restaurant.ID,
+		RoleID:       role.ID,
+		Name:         "Cash Only",
+		PINHash:      testPINHash(t, "8642", "cash-only-salt"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{
+			CommandID:      "cmd-login-cash-only-payment",
+			NodeDeviceID:   f.device.ID,
+			DeviceID:       f.device.ID,
+			ClientDeviceID: f.clientID,
+			Origin:         app.OriginEdgeDevice,
+		},
+		PIN: "8642",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := edgeMeta(f.device.ID)
+	meta.CommandID = "cmd-card-payment-denied"
+	meta.ClientDeviceID = f.clientID
+	meta.ActorEmployeeID = employee.ID
+	meta.SessionID = login.Session.ID
+	_, err = f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: meta, PrecheckID: precheck.ID, Method: domain.PaymentCard, Amount: precheck.Total, Currency: "RUB"})
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden for card payment without card permission, got %v", err)
+	}
+}
+
 func TestCapturePaymentRollbackRemovesAttemptPaymentOutboxAndLocalEvent(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
@@ -2618,7 +2634,8 @@ func TestKeyWritesCreateLocalEventsAndMatchingOutboxEnvelopes(t *testing.T) {
 	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMetaCommand("cmd-key-write-full-payment"), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.CloseCashSession(f.ctx, app.CloseCashSessionCommand{CommandMeta: f.edgeMeta(), ID: cashSession.ID, ClosedByEmployeeID: f.employee.ID, ClosingCashAmount: 0}); err != nil {
+	managerMeta := f.managerEdgeMetaCommand(t, "cmd-key-write-close-cash")
+	if _, err := f.service.CloseCashSession(f.ctx, app.CloseCashSessionCommand{CommandMeta: managerMeta, ID: cashSession.ID, ClosedByEmployeeID: f.manager.ID, ClosingCashAmount: 0}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.service.CloseShift(f.ctx, app.CloseShiftCommand{CommandMeta: f.edgeMeta(), ID: shift.ID, ClosedByEmployeeID: f.employee.ID, ClosingCashAmount: 0}); err != nil {
