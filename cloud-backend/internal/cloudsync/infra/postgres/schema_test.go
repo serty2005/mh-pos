@@ -68,7 +68,7 @@ func TestRequiredSchemaDocumentsProjectionMigration(t *testing.T) {
 		if req.Table != "cloud_projection_event_type_stats" {
 			continue
 		}
-		if req.MigrationFile != "002_projection_event_type_stats.sql" {
+		if req.MigrationFile != "002_projection_event_type_stats.sql, 003_runtime_schema_repair.sql" {
 			t.Fatalf("expected projection stats migration file, got %q", req.MigrationFile)
 		}
 		if req.RequiredBy == "" {
@@ -77,4 +77,20 @@ func TestRequiredSchemaDocumentsProjectionMigration(t *testing.T) {
 		return
 	}
 	t.Fatal("expected cloud_projection_event_type_stats in schema verification contract")
+}
+
+func TestRequiredSchemaDocumentsRuntimeSchemaRepairMigration(t *testing.T) {
+	for _, req := range RequiredSchema() {
+		switch req.Table {
+		case "cloud_edge_event_receipts", "cloud_edge_event_raw_payloads", "cloud_operational_events",
+			"cloud_projection_event_type_stats", "cloud_projection_shift_finance",
+			"cloud_master_data_packages", "cloud_currency_reference":
+			if req.MigrationFile == "" {
+				t.Fatalf("expected migration file explanation for %s", req.Table)
+			}
+			if req.Table == "cloud_projection_shift_finance" && req.MigrationFile != "001_sync_receiver.sql, 003_runtime_schema_repair.sql" {
+				t.Fatalf("expected shift finance repair migration file, got %q", req.MigrationFile)
+			}
+		}
+	}
 }

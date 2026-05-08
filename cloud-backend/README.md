@@ -40,9 +40,9 @@ MH_POS_VERSION=0.1.0
 
 `CLOUD_POSTGRES_DSN` обязателен.
 
-implemented now: PostgreSQL использует ordered managed migrations из `migrations/postgres`: `001_sync_receiver.sql` задает baseline receiver storage, `002_projection_event_type_stats.sql` создает/ремонтирует required runtime projection table `cloud_projection_event_type_stats`.
+implemented now: PostgreSQL использует ordered managed migrations из `migrations/postgres`: `001_sync_receiver.sql` задает baseline receiver storage, `002_projection_event_type_stats.sql` создает/ремонтирует required runtime projection table `cloud_projection_event_type_stats`, `003_runtime_schema_repair.sql` довыравнивает весь implemented-now runtime schema set для старых БД.
 implemented now: `schema_migrations` хранит имя SQL file, checksum и status; уже примененные migrations не выполняются повторно, а новая ordered migration записывается в history после успешного apply.
-implemented now: если `schema_migrations` отсутствует или содержит старую запись без checksum, Cloud повторно применяет idempotent managed SQL, довыравнивает недостающие runtime-таблицы и только после успешного apply записывает checksum/status.
+implemented now: если `schema_migrations` отсутствует, содержит старую запись без checksum или не имеет новой ordered repair migration, Cloud применяет idempotent managed SQL, довыравнивает недостающие runtime-таблицы и только после успешного apply записывает checksum/status.
 implemented now: startup policy использует `db_runtime_versions`; если таблица версий отсутствует, БД считается самой старой, перед safe upgrade существующей схемы создается JSONL backup snapshot таблиц `public`, а `DB version > MH_POS_VERSION` завершает startup fail-fast.
 implemented now: schema verification проверяет только required runtime storage, включая `cloud_projection_event_type_stats`, `cloud_projection_shift_finance`, receiver journal/raw payload tables, provisioning packages и currency reference catalog.
 planned next: projection query endpoints для dashboards не блокируют startup verification.
@@ -135,7 +135,7 @@ cd cloud-backend
 go test ./...
 ```
 
-Стандартные тесты используют in-memory repository для service и HTTP replay checks. PostgreSQL runtime storage реализован в `internal/cloudsync/infra/postgres`, инициализируется через managed canonical SQL file, получает advisory lock на время upgrade и проходит schema verification до запуска HTTP server.
+Стандартные тесты используют in-memory repository для service и HTTP replay checks. PostgreSQL runtime storage реализован в `internal/cloudsync/infra/postgres`, инициализируется через ordered managed SQL files, получает advisory lock на время upgrade и проходит schema verification до запуска HTTP server.
 
 ## Контракт
 

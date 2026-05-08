@@ -130,7 +130,7 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 2 || files[0].Name != "001_sync_receiver.sql" || files[1].Name != "002_projection_event_type_stats.sql" {
+	if len(files) != 3 || files[0].Name != "001_sync_receiver.sql" || files[1].Name != "002_projection_event_type_stats.sql" || files[2].Name != "003_runtime_schema_repair.sql" {
 		t.Fatalf("expected ordered managed migrations, got %+v", files)
 	}
 	baseBody := string(files[0].Body)
@@ -146,9 +146,20 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 			t.Fatalf("expected projection migration to manage %s", required)
 		}
 	}
+	repairBody := string(files[2].Body)
+	for _, required := range []string{
+		"cloud_projection_event_type_stats",
+		"cloud_projection_shift_finance",
+		"cloud_master_data_packages",
+		"cloud_currency_reference",
+	} {
+		if !strings.Contains(repairBody, required) {
+			t.Fatalf("expected runtime schema repair migration to manage %s", required)
+		}
+	}
 }
 
-func TestMigrateDirWithPolicyRepairsLegacyPostgresMissingProjectionStats(t *testing.T) {
+func TestMigrateDirWithPolicyRepairsLegacyPostgresRuntimeSchema(t *testing.T) {
 	dsn := strings.TrimSpace(os.Getenv("CLOUD_POSTGRES_TEST_DSN"))
 	if dsn == "" {
 		t.Skip("CLOUD_POSTGRES_TEST_DSN is not set")
@@ -159,6 +170,7 @@ func TestMigrateDirWithPolicyRepairsLegacyPostgresMissingProjectionStats(t *test
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
+	lockPostgresIntegration(t, ctx, pool)
 	resetPublicSchema(t, ctx, pool)
 	t.Cleanup(func() { resetPublicSchema(t, context.Background(), pool) })
 
@@ -167,6 +179,21 @@ func TestMigrateDirWithPolicyRepairsLegacyPostgresMissingProjectionStats(t *test
 CREATE TABLE IF NOT EXISTS cloud_edge_event_receipts (id TEXT PRIMARY KEY);
 `
 	migration002 := `
+CREATE TABLE IF NOT EXISTS cloud_projection_event_type_stats (
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  device_id TEXT NOT NULL CHECK (device_id <> ''),
+  event_type TEXT NOT NULL CHECK (event_type <> ''),
+  event_count BIGINT NOT NULL CHECK (event_count >= 0),
+  first_occurred_at TIMESTAMPTZ NOT NULL,
+  last_occurred_at TIMESTAMPTZ NOT NULL,
+  last_cloud_received_at TIMESTAMPTZ NOT NULL,
+  last_event_id TEXT NOT NULL CHECK (last_event_id <> ''),
+  last_command_id TEXT NOT NULL CHECK (last_command_id <> ''),
+  updated_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (restaurant_id, device_id, event_type)
+);
+`
+	migration003 := `
 CREATE TABLE IF NOT EXISTS migration_apply_log (
   id BIGSERIAL PRIMARY KEY,
   applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -185,11 +212,29 @@ CREATE TABLE IF NOT EXISTS cloud_projection_event_type_stats (
   updated_at TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (restaurant_id, device_id, event_type)
 );
+CREATE TABLE IF NOT EXISTS cloud_projection_shift_finance (
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  device_id TEXT NOT NULL CHECK (device_id <> ''),
+  shift_id TEXT NOT NULL CHECK (shift_id <> ''),
+  payments_captured_count BIGINT NOT NULL DEFAULT 0 CHECK (payments_captured_count >= 0),
+  payments_captured_total BIGINT NOT NULL DEFAULT 0,
+  checks_created_count BIGINT NOT NULL DEFAULT 0 CHECK (checks_created_count >= 0),
+  checks_total_amount BIGINT NOT NULL DEFAULT 0,
+  last_event_id TEXT NOT NULL CHECK (last_event_id <> ''),
+  last_command_id TEXT NOT NULL CHECK (last_command_id <> ''),
+  last_occurred_at TIMESTAMPTZ NOT NULL,
+  last_cloud_received_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (restaurant_id, device_id, shift_id)
+);
 `
 	if err := os.WriteFile(filepath.Join(migrationsDir, "001_sync_receiver.sql"), []byte(migration001), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(migrationsDir, "002_projection_event_type_stats.sql"), []byte(migration002), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(migrationsDir, "003_runtime_schema_repair.sql"), []byte(migration003), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	files, err := readMigrationFiles(migrationsDir)
@@ -216,20 +261,49 @@ CREATE TABLE db_runtime_versions (
 INSERT INTO db_runtime_versions(module_name,module_version)
 VALUES ('cloud-backend','0.1.0');
 CREATE TABLE cloud_edge_event_receipts (id TEXT PRIMARY KEY);
-INSERT INTO schema_migrations(version, checksum_sha256, status)
-VALUES ($1, $2, 'applied');
-`, files[0].Name, files[0].ChecksumSHA256); err != nil {
+CREATE TABLE cloud_projection_event_type_stats (
+  restaurant_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  event_count BIGINT NOT NULL,
+  first_occurred_at TIMESTAMPTZ NOT NULL,
+  last_occurred_at TIMESTAMPTZ NOT NULL,
+  last_cloud_received_at TIMESTAMPTZ NOT NULL,
+  last_event_id TEXT NOT NULL,
+  last_command_id TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (restaurant_id, device_id, event_type)
+);
+`); err != nil {
 		t.Fatal(err)
 	}
-	requirements := []SchemaRequirement{{
-		Table:         "cloud_projection_event_type_stats",
-		RequiredBy:    "cloudsync postgres repository applyEventProjections event type stats upsert",
-		MigrationFile: "002_projection_event_type_stats.sql",
-		Columns: []string{
-			"restaurant_id", "device_id", "event_type", "event_count", "first_occurred_at", "last_occurred_at",
-			"last_cloud_received_at", "last_event_id", "last_command_id", "updated_at",
+	if _, err := pool.Exec(ctx, `
+INSERT INTO schema_migrations(version, checksum_sha256, status)
+VALUES ($1, $2, 'applied'), ($3, $4, 'applied');
+`, files[0].Name, files[0].ChecksumSHA256, files[1].Name, files[1].ChecksumSHA256); err != nil {
+		t.Fatal(err)
+	}
+	requirements := []SchemaRequirement{
+		{
+			Table:         "cloud_projection_event_type_stats",
+			RequiredBy:    "cloudsync postgres repository applyEventProjections event type stats upsert",
+			MigrationFile: "002_projection_event_type_stats.sql, 003_runtime_schema_repair.sql",
+			Columns: []string{
+				"restaurant_id", "device_id", "event_type", "event_count", "first_occurred_at", "last_occurred_at",
+				"last_cloud_received_at", "last_event_id", "last_command_id", "updated_at",
+			},
 		},
-	}}
+		{
+			Table:         "cloud_projection_shift_finance",
+			RequiredBy:    "cloudsync postgres repository applyEventProjections shift finance upsert",
+			MigrationFile: "001_sync_receiver.sql, 003_runtime_schema_repair.sql",
+			Columns: []string{
+				"restaurant_id", "device_id", "shift_id", "payments_captured_count", "payments_captured_total",
+				"checks_created_count", "checks_total_amount", "last_event_id", "last_command_id", "last_occurred_at",
+				"last_cloud_received_at", "updated_at",
+			},
+		},
+	}
 
 	if err := MigrateDirWithPolicy(ctx, pool, migrationsDir, MigrationOptions{
 		ModuleName:         "cloud-backend",
@@ -240,8 +314,9 @@ VALUES ($1, $2, 'applied');
 		t.Fatalf("legacy postgres migrate failed: %v", err)
 	}
 	assertTableExists(t, ctx, pool, "cloud_projection_event_type_stats")
+	assertTableExists(t, ctx, pool, "cloud_projection_shift_finance")
 	var status string
-	if err := pool.QueryRow(ctx, `SELECT status FROM schema_migrations WHERE version = '002_projection_event_type_stats.sql'`).Scan(&status); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT status FROM schema_migrations WHERE version = '003_runtime_schema_repair.sql'`).Scan(&status); err != nil {
 		t.Fatal(err)
 	}
 	if status != "applied" {
@@ -301,6 +376,18 @@ func assertTableExists(t *testing.T, ctx context.Context, pool *pgxpool.Pool, ta
 	if !exists {
 		t.Fatalf("expected table %s to exist", table)
 	}
+}
+
+func lockPostgresIntegration(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+	t.Helper()
+	if _, err := pool.Exec(ctx, `SELECT pg_advisory_lock(72905101)`); err != nil {
+		t.Fatalf("lock postgres integration db: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `SELECT pg_advisory_unlock(72905101)`); err != nil {
+			t.Logf("unlock postgres integration db: %v", err)
+		}
+	})
 }
 
 type postgresCatalogStub struct {

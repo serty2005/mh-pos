@@ -35,6 +35,7 @@ implemented now:
 - Cloud backend использует `db_runtime_versions` и `schema_migrations`; если `db_runtime_versions` отсутствует, БД считается самой старой и запускается upgrade path.
 - Если PostgreSQL `schema_migrations` отсутствует или содержит старую запись без checksum, startup повторно применяет idempotent managed SQL files, чтобы создать недостающие implemented-now runtime tables до schema verification.
 - `002_projection_event_type_stats.sql` создает `cloud_projection_event_type_stats`, потому что Cloud receiver runtime upsert'ит event type stats при приеме Edge events.
+- `003_runtime_schema_repair.sql` idempotent-образом создает отсутствующие implemented-now Cloud runtime tables, включая `cloud_projection_shift_finance`, если старая БД уже записала ранние migrations в history.
 - Перед safe schema/data upgrade существующей PostgreSQL схемы создается JSONL snapshot таблиц `public` в `CLOUD_POSTGRES_BACKUP_DIR`.
 - `schema_migrations` хранит имя active SQL file, SHA-256 checksum, status и `applied_at`; checksum drift при той же версии завершает startup fail-fast, а при `db version < MH_POS_VERSION` применяется как управляемый upgrade.
 - `DB version > MH_POS_VERSION` завершает startup fail-fast, downgrade не поддерживается.

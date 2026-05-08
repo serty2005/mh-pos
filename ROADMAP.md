@@ -296,7 +296,7 @@ Status: `implemented now`
 
 - Item-level ACK batch flow реализован: `POST /api/v1/sync/edge-events/batch` + batch sender mapping на Edge.
 - Cloud projections поверх `cloud_operational_events` реализованы: `cloud_projection_event_type_stats`, `cloud_projection_shift_finance`.
-- Cloud PostgreSQL startup path довыравнивает implemented-now projection tables через ordered managed migrations; `002_projection_event_type_stats.sql` создает `cloud_projection_event_type_stats`.
+- Cloud PostgreSQL startup path довыравнивает implemented-now projection/runtime tables через ordered managed migrations; `002_projection_event_type_stats.sql` создает `cloud_projection_event_type_stats`, `003_runtime_schema_repair.sql` ремонтирует весь required runtime schema set для старых БД.
 - planned next query endpoints не блокируют startup verification.
 - Production Cloud -> Edge provisioning/import package endpoints реализованы: `PUT/GET /api/v1/provisioning/master-data/{stream}`.
 

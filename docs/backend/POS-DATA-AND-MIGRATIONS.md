@@ -38,6 +38,7 @@ implemented now:
 - Cloud PostgreSQL использует ordered managed SQL files из `cloud-backend/migrations/postgres`;
 - `001_sync_receiver.sql` содержит baseline receiver, operational journal, shift finance, master-data package и currency reference storage;
 - `002_projection_event_type_stats.sql` создает required runtime table `cloud_projection_event_type_stats`, потому что Cloud receiver runtime выполняет `INSERT ... ON CONFLICT` в эту projection при приеме Edge events;
+- `003_runtime_schema_repair.sql` idempotent-образом довыравнивает весь implemented-now Cloud runtime schema set для старых БД, где history уже содержит ранние migrations, но отдельные runtime tables отсутствуют;
 - `schema_migrations` хранит отдельную запись с checksum/status для каждого SQL file, поэтому повторный startup не применяет уже recorded migrations повторно;
 - missing `db_runtime_versions` означает oldest DB и запускает upgrade path, а не immediate runtime crash;
 - schema verification проверяет только implemented-now runtime schema.
@@ -356,5 +357,5 @@ planned next:
 - runtime tests не создают legacy payment-to-check coupling;
 - precheck lifecycle constraints и outbox constraints не сломаны;
 - schema verification contract совпадает с фактическим managed migration path;
-- implemented now Cloud projections (`cloud_projection_event_type_stats`, `cloud_projection_shift_finance`) имеют таблицы в PostgreSQL migrations, потому что receiver runtime пишет в них при приеме Edge events;
+- implemented now Cloud projections (`cloud_projection_event_type_stats`, `cloud_projection_shift_finance`) имеют таблицы в PostgreSQL migrations и покрыты `003_runtime_schema_repair.sql`, потому что receiver runtime пишет в них при приеме Edge events;
 - документация отражает новое состояние схемы.
