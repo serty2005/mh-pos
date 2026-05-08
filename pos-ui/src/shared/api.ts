@@ -18,7 +18,15 @@ import {
   type PinLoginResult,
 } from './schemas';
 
-const apiBase = (import.meta.env.VITE_POS_API_BASE ?? 'http://localhost:8080/api/v1').replace(/\/$/, '');
+function defaultApiBase() {
+  const hostname = globalThis.location?.hostname;
+  if (hostname === 'host.docker.internal') {
+    return 'http://host.docker.internal:8080/api/v1';
+  }
+  return 'http://localhost:8080/api/v1';
+}
+
+const apiBase = (import.meta.env.VITE_POS_API_BASE ?? defaultApiBase()).replace(/\/$/, '');
 const defaultTimeoutMs = 15_000;
 
 const backendErrorSchema = z.object({
