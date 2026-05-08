@@ -41,7 +41,14 @@ describe('api request helpers', () => {
       ok: false,
       status: 429,
       statusText: 'Too Many Requests',
-      text: async () => JSON.stringify({ error: 'too many requests: retry later' }),
+      headers: new Headers({ 'X-Request-ID': 'req-1' }),
+      text: async () => JSON.stringify({
+        error: {
+          code: 'RATE_LIMITED',
+          message_key: 'errors.rateLimit',
+          correlation_id: 'req-1',
+        },
+      }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -52,6 +59,23 @@ describe('api request helpers', () => {
       thrown = error;
     }
     expect(thrown).toBeInstanceOf(ApiError);
-    expect(thrown).toMatchObject({ status: 429, message: 'too many requests: retry later' });
+    expect(thrown).toMatchObject({
+      status: 429,
+      code: 'RATE_LIMITED',
+      messageKey: 'errors.rateLimit',
+      category: 'rate_limit',
+      correlationId: 'req-1',
+    });
+  });
+
+  it('maps network failure without clearing client identity in api layer', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('failed to fetch')));
+
+    await expect(listMenuItems()).rejects.toMatchObject({
+      code: 'NETWORK_ERROR',
+      messageKey: 'errors.network.unavailable',
+      category: 'network',
+      retryable: true,
+    });
   });
 });

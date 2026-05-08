@@ -15,10 +15,7 @@
           inputmode="numeric"
           autocomplete="current-password"
         />
-        <q-banner v-if="login.isError.value" class="error-banner" rounded>
-          {{ errorMessage(login.error.value) }}
-        </q-banner>
-        <q-btn color="primary" unelevated icon="login" :label="t('actions.login')" type="submit" :loading="login.isPending.value" />
+        <q-btn color="primary" unelevated icon="login" :label="t('actions.login')" type="submit" :loading="login.isPending.value" :disable="login.isPending.value" />
       </q-form>
     </section>
   </q-page>
@@ -31,11 +28,13 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 
 import { getPairingStatus, pinLogin } from '../shared/api';
+import { useErrorHandling } from '../shared/errorHandling';
 import { useAuthStore } from '../stores/auth';
 
 const { t } = useI18n();
 const auth = useAuthStore();
 const router = useRouter();
+const { showBusinessError } = useErrorHandling();
 const pin = ref('');
 
 const pairing = useQuery({
@@ -50,9 +49,14 @@ const login = useMutation({
     pin.value = '';
     void router.replace('/pos');
   },
+  onError: showBusinessError,
 });
 
 watchEffect(() => {
+  if (pairing.error.value) {
+    showBusinessError(pairing.error.value);
+    return;
+  }
   if (pairing.data.value) {
     auth.applyPairing(pairing.data.value);
     if (!pairing.data.value.paired) {
@@ -66,7 +70,4 @@ function submit() {
   login.mutate(pin.value.trim());
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : t('common.error');
-}
 </script>

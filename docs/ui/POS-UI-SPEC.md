@@ -184,6 +184,27 @@ planned next:
 - финансовые итоги как source of truth;
 - решающее право на операцию.
 
+## Error handling и dialogs
+
+implemented now:
+
+- `src/shared/api.ts` содержит единый API client с `VITE_POS_API_BASE`, JSON serialization, empty-body handling, timeout и Zod validation ключевых backend responses.
+- Backend error envelope нормализуется в `ApiError` с `status`, `code`, `messageKey`, `category`, `correlationId`, `retryable`.
+- Поддерживаемые категории: `auth`, `permission`, `validation`, `not_found`, `conflict`, `rate_limit`, `server`, `network`, `timeout`, `unexpected`.
+- `401`/revoked session очищает local session state и ведет к controlled login flow.
+- `403` показывает permission dialog и не выполняет logout, если session валидна.
+- Network/timeout показывает degraded-state сообщение о недоступности POS Edge backend и не удаляет `client_device_id`.
+- Critical/business blocking errors показываются через global Quasar dialog, а не raw red banner.
+- Все user-facing сообщения ошибок идут через `vue-i18n` keys из backend `message_key` или safe frontend fallback.
+- Dialog показывает заголовок, описание, recommended action и optional support/debug code (`correlation_id`).
+- TanStack Query defaults: read/status запросы могут безопасно retry network/server ошибки; mutations не выполняют auto-retry.
+
+out of scope:
+
+- Cloud unavailable global banner для отдельного Cloud degraded-state UX;
+- build-time проверка полноты translation keys;
+- field-level backend validation map с деталями по каждому полю.
+
 ## Обязательные transport headers
 
 Для operator/business flows UI обязан передавать:

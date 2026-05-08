@@ -247,6 +247,8 @@ docker exec -it mh-pos-cloud-postgres psql -U postgres -d mh_pos_cloud -c "selec
 
 `.\scripts\send-cloud-test-envelope.ps1 -ReplayTwice` по-прежнему проверяет duplicate replay напрямую против Cloud. `.\scripts\dev-smoke.ps1` выполняет health checks, POS demo bootstrap, POS sync endpoint checks и Cloud envelope replay, но не стартует серверы за тебя.
 
+implemented now: `.\scripts\start-and-test-all.ps1` запускает Cloud, POS Edge и UI в отдельных видимых PowerShell окнах, пишет PID file `.dev-stack-pids.json`, сохраняет логи в `logs/dev-stack/`, проверяет порты `8090/8080/5173`, показывает tail логов при health timeout и выполняет authenticated sync smoke через demo manager session. Остановка выполняется через `.\scripts\stop-and-test-all.ps1`, который использует PID file и завершает process tree без небезопасного wildcard kill.
+
 ## Локальный E2E Prototype: получить pairing code и войти в POS UI
 
 implemented now: local developer flow использует реальные POS backend endpoints и реальный MVP pairing code.
@@ -409,6 +411,21 @@ go test ./...
 - POS UI: `pos-ui` на Vue 3 + Quasar реализует `pairing -> login -> pos -> lock/logout` и POS Terminal Core для single-terminal cashier flow.
 - Источник истины для активных POS операций: локальный POS Edge Node.
 
+## Error handling contract (implemented now)
+
+implemented now:
+
+- POS backend возвращает безопасный error envelope `{ "error": { "code", "message_key", "details", "correlation_id" } }`;
+- backend пишет internal cause и panic stack только в structured logs, а UI получает stable code и i18n key;
+- `X-Error-Code` содержит stable code для audit middleware;
+- `401 SESSION_REVOKED` очищает UI session state и ведет к controlled login flow;
+- `403 PERMISSION_DENIED` показывает modal "Недостаточно прав" без logout;
+- `409`, `429`, `5xx`, network/timeout различаются в UI и не показываются raw stack/SQL/Go errors;
+- POS UI использует global error dialog store и `vue-i18n` keys для user-facing ошибок;
+- TanStack mutations не имеют опасного auto-retry для финансовых write commands.
+
+Каталог кодов: `docs/backend/POS-ERROR-CATALOG.md`.
+
 ## Runtime logging config
 
 implemented now:
@@ -470,3 +487,20 @@ implemented now:
 - shared product/runtime version env: `MH_POS_VERSION` (default `0.1.0`) for both POS and Cloud modules;
 - POS startup uses `db_runtime_versions` + `schema_migrations` and creates SQLite backup before schema upgrade (`POS_SQLITE_BACKUP_DIR`);
 - Cloud startup uses `db_runtime_versions` + `schema_migrations` and creates PostgreSQL JSONL backup snapshot before schema upgrade (`CLOUD_POSTGRES_BACKUP_DIR`).
+
+## SQLite maintenance (implemented now)
+
+implemented now:
+
+- обычный startup не выполняет `VACUUM`;
+- `VACUUM`, `VACUUM INTO`, `PRAGMA optimize`, `PRAGMA wal_checkpoint(TRUNCATE)` доступны как explicit maintenance через `scripts/maintain-sqlite.ps1`;
+- `VACUUM`/`VACUUM INTO` требуют `-Force`;
+- `VACUUM INTO` не перезаписывает существующий target file;
+- операции выполняются вне active write transaction.
+
+Пример:
+
+```powershell
+.\scripts\maintain-sqlite.ps1 -DatabasePath "pos-backend\data\pos-edge.db" -Optimize -WalCheckpoint
+.\scripts\maintain-sqlite.ps1 -DatabasePath "pos-backend\data\pos-edge.db" -VacuumInto "pos-backend\data\snapshots\pos-edge.compact.db" -Force
+```

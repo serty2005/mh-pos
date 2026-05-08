@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -27,7 +28,7 @@ func NewRouter(service *app.Service) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(requestAuditLog)
-	r.Use(middleware.Recoverer)
+	r.Use(recoverJSON)
 	r.Use(localCORS)
 	r.Options("/*", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -110,11 +111,11 @@ func NewRouter(service *app.Service) http.Handler {
 
 func (h *Handler) bootstrapDemo(w http.ResponseWriter, r *http.Request) {
 	if !devToolsEnabled() {
-		httpx.Error(w, fmt.Errorf("%w: dev bootstrap is disabled; set POS_DEV_TOOLS=1 for local prototype setup", domain.ErrForbidden))
+		httpx.Error(w, fmt.Errorf("%w: dev bootstrap is disabled; set POS_DEV_TOOLS=1 for local prototype setup", domain.ErrForbidden), r)
 		return
 	}
 	v, err := h.service.BootstrapDemo(r.Context())
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func devToolsEnabled() bool {
@@ -122,11 +123,11 @@ func devToolsEnabled() bool {
 	return value == "1" || value == "true" || value == "yes"
 }
 
-func requireDevTools(w http.ResponseWriter) bool {
+func requireDevTools(w http.ResponseWriter, r *http.Request) bool {
 	if devToolsEnabled() {
 		return true
 	}
-	httpx.Error(w, fmt.Errorf("%w: master data mutation APIs are dev-only; use Cloud->Edge sync ingest or set POS_DEV_TOOLS=1 for local seed data", domain.ErrForbidden))
+	httpx.Error(w, fmt.Errorf("%w: master data mutation APIs are dev-only; use Cloud->Edge sync ingest or set POS_DEV_TOOLS=1 for local seed data", domain.ErrForbidden), r)
 	return false
 }
 
@@ -148,6 +149,30 @@ func localCORS(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func recoverJSON(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				slog.Log(r.Context(), slog.LevelError, "panic http обработан безопасным ответом",
+					"request_id", middleware.GetReqID(r.Context()),
+					"operation", "http.recover",
+					"action", r.Method+" "+r.URL.Path,
+					"result", "failed",
+					"error_code", "INTERNAL_ERROR",
+					"panic", fmt.Sprint(recovered),
+					"stack", string(debug.Stack()),
+					"node_device_id", maskID(requestNodeDeviceID(r)),
+					"client_device_id", maskID(requestClientDeviceID(r)),
+					"session_id", maskID(r.Header.Get("X-Session-ID")),
+					"actor_employee_id", maskID(r.Header.Get("X-Actor-Employee-ID")),
+				)
+				httpx.Error(w, fmt.Errorf("внутренняя ошибка сервера"), r)
+			}
+		}()
 		next.ServeHTTP(w, r)
 	})
 }
@@ -176,7 +201,7 @@ func requestAuditLog(next http.Handler) http.Handler {
 			"operation", "http.request",
 			"action", r.Method + " " + r.URL.Path,
 			"result", requestResult(rec.status),
-			"error_code", requestErrorCode(rec.status),
+			"error_code", requestErrorCode(rec.status, rec.Header().Get("X-Error-Code")),
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", rec.status,
@@ -225,7 +250,10 @@ func requestResult(status int) string {
 	return "failed"
 }
 
-func requestErrorCode(status int) string {
+func requestErrorCode(status int, explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
 	if status >= 200 && status < 400 {
 		return ""
 	}
@@ -233,95 +261,95 @@ func requestErrorCode(status int) string {
 }
 
 func (h *Handler) createRestaurant(w http.ResponseWriter, r *http.Request) {
-	if !requireDevTools(w) {
+	if !requireDevTools(w, r) {
 		return
 	}
 	var cmd app.CreateRestaurantCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateRestaurant(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) listRestaurants(w http.ResponseWriter, r *http.Request) {
-	if !requireDevTools(w) {
+	if !requireDevTools(w, r) {
 		return
 	}
 	v, err := h.service.ListRestaurants(r.Context())
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) registerDevice(w http.ResponseWriter, r *http.Request) {
-	if !requireDevTools(w) {
+	if !requireDevTools(w, r) {
 		return
 	}
 	var cmd app.RegisterDeviceCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.RegisterDevice(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) listDevices(w http.ResponseWriter, r *http.Request) {
-	if !requireDevTools(w) {
+	if !requireDevTools(w, r) {
 		return
 	}
 	v, err := h.service.ListDevices(r.Context())
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) createRole(w http.ResponseWriter, r *http.Request) {
-	if !requireDevTools(w) {
+	if !requireDevTools(w, r) {
 		return
 	}
 	var cmd app.CreateRoleCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateRole(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) listRoles(w http.ResponseWriter, r *http.Request) {
-	if !requireDevTools(w) {
+	if !requireDevTools(w, r) {
 		return
 	}
 	v, err := h.service.ListRoles(r.Context())
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) createEmployee(w http.ResponseWriter, r *http.Request) {
-	if !requireDevTools(w) {
+	if !requireDevTools(w, r) {
 		return
 	}
 	var cmd app.CreateEmployeeCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateEmployee(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) listEmployees(w http.ResponseWriter, r *http.Request) {
-	if !requireDevTools(w) {
+	if !requireDevTools(w, r) {
 		return
 	}
 	v, err := h.service.ListEmployees(r.Context())
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) archiveEmployee(w http.ResponseWriter, r *http.Request) {
-	if !requireDevTools(w) {
+	if !requireDevTools(w, r) {
 		return
 	}
 	var cmd app.ArchiveEmployeeCommand
@@ -331,7 +359,7 @@ func (h *Handler) archiveEmployee(w http.ResponseWriter, r *http.Request) {
 	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	cmd.ID = chi.URLParam(r, "id")
 	if err := h.service.ArchiveEmployee(r.Context(), cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]string{"status": "archived"})
@@ -340,68 +368,68 @@ func (h *Handler) archiveEmployee(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) pinLogin(w http.ResponseWriter, r *http.Request) {
 	var cmd app.PinLoginCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.PinLogin(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 	var cmd app.LogoutCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.Logout(r.Context(), cmd)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) getAuthSession(w http.ResponseWriter, r *http.Request) {
 	v, err := h.service.GetSession(r.Context(), r.URL.Query().Get("session_id"), requestNodeDeviceID(r), requestClientDeviceID(r))
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) pairEdgeNode(w http.ResponseWriter, r *http.Request) {
 	var cmd app.PairEdgeNodeCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	v, err := h.service.PairEdgeNode(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) getPairingStatus(w http.ResponseWriter, r *http.Request) {
 	v, err := h.service.GetPairingStatus(r.Context())
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) createHall(w http.ResponseWriter, r *http.Request) {
-	if !requireDevTools(w) {
+	if !requireDevTools(w, r) {
 		return
 	}
 	var cmd app.CreateHallCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateHall(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) listHalls(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.ListHallsAsOperator(r.Context(), r.URL.Query().Get("restaurant_id"), meta)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) archiveHall(w http.ResponseWriter, r *http.Request) {
-	if !requireDevTools(w) {
+	if !requireDevTools(w, r) {
 		return
 	}
 	var cmd app.ArchiveHallCommand
@@ -411,35 +439,35 @@ func (h *Handler) archiveHall(w http.ResponseWriter, r *http.Request) {
 	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	cmd.ID = chi.URLParam(r, "id")
 	if err := h.service.ArchiveHall(r.Context(), cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]string{"status": "archived"})
 }
 
 func (h *Handler) createTable(w http.ResponseWriter, r *http.Request) {
-	if !requireDevTools(w) {
+	if !requireDevTools(w, r) {
 		return
 	}
 	var cmd app.CreateTableCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateTable(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) listTables(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.ListTablesAsOperator(r.Context(), r.URL.Query().Get("restaurant_id"), r.URL.Query().Get("hall_id"), meta)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) archiveTable(w http.ResponseWriter, r *http.Request) {
-	if !requireDevTools(w) {
+	if !requireDevTools(w, r) {
 		return
 	}
 	var cmd app.ArchiveTableCommand
@@ -449,82 +477,82 @@ func (h *Handler) archiveTable(w http.ResponseWriter, r *http.Request) {
 	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	cmd.ID = chi.URLParam(r, "id")
 	if err := h.service.ArchiveTable(r.Context(), cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]string{"status": "archived"})
 }
 
 func (h *Handler) createCatalogItem(w http.ResponseWriter, r *http.Request) {
-	if !requireDevTools(w) {
+	if !requireDevTools(w, r) {
 		return
 	}
 	var cmd app.CreateCatalogItemCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateCatalogItem(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) listCatalogItems(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.ListCatalogItemsAsOperator(r.Context(), meta)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) createMenuItem(w http.ResponseWriter, r *http.Request) {
-	if !requireDevTools(w) {
+	if !requireDevTools(w, r) {
 		return
 	}
 	var cmd app.CreateMenuItemCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setSystemSeedRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateMenuItem(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) listMenuItems(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.ListMenuItemsAsOperator(r.Context(), meta)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) openShift(w http.ResponseWriter, r *http.Request) {
 	var cmd app.OpenShiftCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.OpenShift(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) closeShift(w http.ResponseWriter, r *http.Request) {
 	var cmd app.CloseShiftCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.ID = chi.URLParam(r, "id")
 	v, err := h.service.CloseShift(r.Context(), cmd)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) currentShift(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.GetCurrentShift(r.Context(), meta)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) recentShifts(w http.ResponseWriter, r *http.Request) {
@@ -532,57 +560,57 @@ func (h *Handler) recentShifts(w http.ResponseWriter, r *http.Request) {
 	cmd := app.ListRecentShiftsCommand{Limit: limit}
 	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.ListRecentShifts(r.Context(), cmd)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) createOrder(w http.ResponseWriter, r *http.Request) {
 	var cmd app.CreateOrderCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CreateOrder(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) getCurrentOrder(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.GetCurrentOrderByTableAsOperator(r.Context(), r.URL.Query().Get("table_id"), meta)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) getOrder(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.GetOrderAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) addOrderLine(w http.ResponseWriter, r *http.Request) {
 	var cmd app.AddOrderLineCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.OrderID = chi.URLParam(r, "id")
 	v, err := h.service.AddOrderLine(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) changeOrderLineQuantity(w http.ResponseWriter, r *http.Request) {
 	var cmd app.ChangeOrderLineQuantityCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.OrderID = chi.URLParam(r, "id")
 	cmd.LineID = chi.URLParam(r, "line_id")
 	v, err := h.service.ChangeOrderLineQuantity(r.Context(), cmd)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) voidOrderLine(w http.ResponseWriter, r *http.Request) {
@@ -594,19 +622,19 @@ func (h *Handler) voidOrderLine(w http.ResponseWriter, r *http.Request) {
 	cmd.OrderID = chi.URLParam(r, "id")
 	cmd.LineID = chi.URLParam(r, "line_id")
 	v, err := h.service.VoidOrderLine(r.Context(), cmd)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) issuePrecheck(w http.ResponseWriter, r *http.Request) {
 	var cmd app.IssuePrecheckCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.OrderID = chi.URLParam(r, "id")
 	v, err := h.service.IssuePrecheck(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) closeOrder(w http.ResponseWriter, r *http.Request) {
@@ -617,93 +645,93 @@ func (h *Handler) closeOrder(w http.ResponseWriter, r *http.Request) {
 	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.OrderID = chi.URLParam(r, "id")
 	v, err := h.service.CloseOrder(r.Context(), cmd)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) getPrecheck(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.GetPrecheckAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) listPrechecksByOrder(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.ListPrechecksByOrderAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) cancelPrecheck(w http.ResponseWriter, r *http.Request) {
 	var cmd app.CancelPrecheckCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.PrecheckID = chi.URLParam(r, "id")
 	v, err := h.service.CancelPrecheck(r.Context(), cmd)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) getCheck(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.GetCheckAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) capturePrecheckPayment(w http.ResponseWriter, r *http.Request) {
 	var cmd app.CapturePaymentCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.PrecheckID = chi.URLParam(r, "id")
 	v, err := h.service.CapturePayment(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) openCashSession(w http.ResponseWriter, r *http.Request) {
 	var cmd app.OpenCashSessionCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.OpenCashSession(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) closeCashSession(w http.ResponseWriter, r *http.Request) {
 	var cmd app.CloseCashSessionCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.ID = chi.URLParam(r, "id")
 	v, err := h.service.CloseCashSession(r.Context(), cmd)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) currentCashSession(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.GetCurrentCashSessionAsOperator(r.Context(), meta)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) recordCashDrawerEvent(w http.ResponseWriter, r *http.Request) {
 	var cmd app.RecordCashDrawerEventCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.RecordCashDrawerEvent(r.Context(), cmd)
-	writeCreated(w, v, err)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) listOutbox(w http.ResponseWriter, r *http.Request) {
@@ -711,7 +739,7 @@ func (h *Handler) listOutbox(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.ListOutboxAsOperator(r.Context(), meta, limit)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) listLocalEvents(w http.ResponseWriter, r *http.Request) {
@@ -722,14 +750,14 @@ func (h *Handler) listLocalEvents(w http.ResponseWriter, r *http.Request) {
 		Limit:     limit,
 		EventType: r.URL.Query().Get("event_type"),
 	})
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) syncStatus(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.GetSyncStatusAsOperator(r.Context(), meta)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) retryFailedOutbox(w http.ResponseWriter, r *http.Request) {
@@ -737,7 +765,7 @@ func (h *Handler) retryFailedOutbox(w http.ResponseWriter, r *http.Request) {
 	setRequestMeta(&cmd, r)
 	n, err := h.service.RetryFailedOutboxAsOperator(r.Context(), cmd)
 	if err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]int{"retried": n})
@@ -746,37 +774,37 @@ func (h *Handler) retryFailedOutbox(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) applyMasterDataSnapshot(w http.ResponseWriter, r *http.Request) {
 	var cmd app.ApplyMasterDataCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	setCloudSyncRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.ApplyMasterData(r.Context(), cmd)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) applyMasterDataStream(w http.ResponseWriter, r *http.Request) {
 	var cmd app.ApplyMasterDataCommand
 	if err := httpx.Decode(r, &cmd); err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	cmd.StreamName = domain.MasterDataStream(chi.URLParam(r, "stream"))
 	setCloudSyncRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.ApplyMasterData(r.Context(), cmd)
-	writeOK(w, v, err)
+	writeOK(w, r, v, err)
 }
 
-func writeCreated(w http.ResponseWriter, v any, err error) {
+func writeCreated(w http.ResponseWriter, r *http.Request, v any, err error) {
 	if err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, v)
 }
 
-func writeOK(w http.ResponseWriter, v any, err error) {
+func writeOK(w http.ResponseWriter, r *http.Request, v any, err error) {
 	if err != nil {
-		httpx.Error(w, err)
+		httpx.Error(w, err, r)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, v)

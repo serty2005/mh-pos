@@ -1049,12 +1049,8 @@ func TestLogoutRevokesBackendSession(t *testing.T) {
 	if logout.Status != domain.AuthSessionRevoked || logout.RevokedAt == nil {
 		t.Fatalf("expected revoked session, got %+v", logout)
 	}
-	current, err := f.service.GetSession(f.ctx, login.Session.ID, f.device.ID, f.clientID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if current.Session.Status != domain.AuthSessionRevoked {
-		t.Fatalf("expected session restore to show revoked status, got %+v", current.Session)
+	if _, err := f.service.GetSession(f.ctx, login.Session.ID, f.device.ID, f.clientID); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected revoked session to be rejected, got %v", err)
 	}
 }
 

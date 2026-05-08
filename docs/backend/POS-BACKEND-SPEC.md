@@ -59,6 +59,7 @@ implemented now: PIN login is rate-limited per `node_device_id + client_device_i
 implemented now: repeated invalid PIN attempts return `429 Too Many Requests`.
 implemented now: PIN values are never echoed back in response payloads.
 implemented now: PIN login must resolve exactly one active employee in the paired restaurant; duplicate active PIN matches return conflict instead of choosing an arbitrary employee.
+implemented now: `GET /api/v1/auth/session` returns a safe `401 SESSION_REVOKED` error for revoked sessions instead of returning revoked session data to operator UI.
 
 ### Залы и меню
 
@@ -317,8 +318,10 @@ Role behavior:
 
 Error behavior:
 
-- missing permission returns domain `forbidden` and HTTP `403`;
-- authorization errors do not include sensitive auth fields (PIN, manager PIN, PIN hash).
+- missing permission returns domain `forbidden` and safe HTTP `403` error code `PERMISSION_DENIED`;
+- revoked sessions return `401 SESSION_REVOKED`;
+- wrong `client_device_id`/session context returns `403 SESSION_CONTEXT_MISMATCH`;
+- authorization errors do not include sensitive auth fields (PIN, manager PIN, PIN hash) or raw permission internals in response payloads.
 
 out of scope:
 
@@ -337,6 +340,19 @@ implemented now:
 - precision is currency-code driven and supports minor units `0/2/3/4` where defined by ISO profile;
 - pricing/payment domain amounts continue to use integer minor units (no floating-point storage);
 - unsupported currency code is rejected as domain `invalid`.
+
+## API error contract (implemented now)
+
+implemented now:
+
+- API errors use one JSON envelope: `{ "error": { "code", "message_key", "details", "correlation_id" } }`;
+- `code` is stable and machine-readable; `message_key` is safe for UI i18n;
+- `X-Error-Code` carries the same stable code for audit middleware;
+- `X-Request-ID`/`correlation_id` is returned when request context has a request id;
+- internal Go/SQL/domain error text is logged, but not returned to UI;
+- panic recovery returns safe `500 INTERNAL_ERROR` and writes stack trace only to backend log.
+
+Implemented error codes and UI behavior are documented in `docs/backend/POS-ERROR-CATALOG.md`.
 
 ## Документационные правила
 

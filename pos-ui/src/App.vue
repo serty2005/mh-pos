@@ -20,6 +20,31 @@
     <q-page-container>
       <router-view />
     </q-page-container>
+    <q-dialog v-model="errorDialog.open" persistent>
+      <q-card class="dialog-card">
+        <q-card-section>
+          <p class="eyebrow">{{ t(`errors.severity.${errorDialog.severity}`) }}</p>
+          <h2>{{ t(errorDialog.titleKey) }}</h2>
+        </q-card-section>
+        <q-card-section class="form-stack">
+          <p>{{ t(errorDialog.messageKey) }}</p>
+          <p class="meta-line">{{ t(errorDialog.recommendationKey) }}</p>
+          <p v-if="errorDialog.correlationId" class="meta-line">
+            {{ t('errors.supportCode') }}: {{ errorDialog.correlationId }}
+          </p>
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat :label="t('actions.close')" @click="errorDialog.close" />
+          <q-btn
+            v-if="errorDialog.primaryAction === 'login'"
+            color="primary"
+            unelevated
+            :label="t('actions.backToLogin')"
+            @click="goLoginFromError"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-layout>
 </template>
 
@@ -28,10 +53,12 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 
+import { useErrorDialogStore } from './stores/errorDialog';
 import { useAuthStore } from './stores/auth';
 
 const { t } = useI18n();
 const auth = useAuthStore();
+const errorDialog = useErrorDialogStore();
 const route = useRoute();
 const router = useRouter();
 
@@ -39,5 +66,10 @@ const showHeader = computed(() => route.path !== '/pair' && route.path !== '/log
 
 function shortId(value: string) {
   return value.length > 10 ? `${value.slice(0, 8)}...` : value;
+}
+
+function goLoginFromError() {
+  errorDialog.close();
+  void router.replace('/login');
 }
 </script>

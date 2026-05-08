@@ -7,10 +7,7 @@
       </div>
       <q-form class="form-stack" @submit.prevent="submit">
         <q-input v-model="code" outlined :label="t('pair.code')" :hint="t('pair.hint')" autocomplete="off" />
-        <q-banner v-if="pairing.isError.value" class="error-banner" rounded>
-          {{ errorMessage(pairing.error.value) }}
-        </q-banner>
-        <q-btn color="primary" unelevated icon="link" :label="t('actions.pair')" type="submit" :loading="pairing.isPending.value" />
+        <q-btn color="primary" unelevated icon="link" :label="t('actions.pair')" type="submit" :loading="pairing.isPending.value" :disable="pairing.isPending.value" />
       </q-form>
     </section>
   </q-page>
@@ -23,12 +20,14 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 
 import { pairEdgeNodeAndRefresh } from '../shared/api';
+import { useErrorHandling } from '../shared/errorHandling';
 import { useAuthStore } from '../stores/auth';
 
 const { t } = useI18n();
 const auth = useAuthStore();
 const router = useRouter();
 const queryClient = useQueryClient();
+const { showBusinessError } = useErrorHandling();
 const code = ref('');
 
 const pairing = useMutation({
@@ -38,6 +37,7 @@ const pairing = useMutation({
     void queryClient.invalidateQueries({ queryKey: ['pairing-status'] });
     void router.replace('/login');
   },
+  onError: showBusinessError,
 });
 
 function submit() {
@@ -45,7 +45,4 @@ function submit() {
   pairing.mutate(code.value.trim());
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : t('common.error');
-}
 </script>

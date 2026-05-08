@@ -2,48 +2,121 @@ import { z } from 'zod';
 
 import { useAuthStore } from '../stores/auth';
 import {
-	cashSessionSchema,
-	checkSchema,
-	hallSchema,
-	menuItemSchema,
-	orderLineSchema,
-	orderSchema,
-	pairingStatusSchema,
-	paymentSchema,
-	pinLoginResultSchema,
-	precheckSchema,
-	shiftSchema,
-	tableSchema,
-	type PinLoginResult,
+  cashSessionSchema,
+  checkSchema,
+  hallSchema,
+  menuItemSchema,
+  orderLineSchema,
+  orderSchema,
+  pairingStatusSchema,
+  paymentSchema,
+  pinLoginResultSchema,
+  precheckSchema,
+  shiftSchema,
+  tableSchema,
+  type PinLoginResult,
 } from './schemas';
 
 const apiBase = (import.meta.env.VITE_POS_API_BASE ?? 'http://localhost:8080/api/v1').replace(/\/$/, '');
+const defaultTimeoutMs = 15_000;
 
+const backendErrorSchema = z.object({
+  error: z.union([
+    z.string(),
+    z.object({
+      code: z.string().optional(),
+      message_key: z.string().optional(),
+      details: z.record(z.string(), z.string()).optional(),
+      correlation_id: z.string().optional(),
+    }),
+  ]),
+});
+
+/** Категория ошибки API определяет UX-поток без разбора raw backend text в компонентах. */
+export type ApiErrorCategory =
+  | 'auth'
+  | 'permission'
+  | 'validation'
+  | 'not_found'
+  | 'conflict'
+  | 'rate_limit'
+  | 'server'
+  | 'network'
+  | 'timeout'
+  | 'unexpected';
+
+/** Параметры безопасной API-ошибки после нормализации backend/network ответа. */
+export type ApiErrorOptions = {
+  status: number;
+  code: string;
+  messageKey: string;
+  category: ApiErrorCategory;
+  details?: Record<string, string>;
+  correlationId?: string;
+  retryable?: boolean;
+};
+
+/** ApiError хранит stable code/message_key/correlation id без stack trace и секретов для UI. */
 export class ApiError extends Error {
   status: number;
+  code: string;
+  messageKey: string;
+  category: ApiErrorCategory;
+  details: Record<string, string>;
+  correlationId: string;
+  retryable: boolean;
 
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
+  constructor(options: ApiErrorOptions) {
+    super(options.code);
+    this.name = 'ApiError';
+    this.status = options.status;
+    this.code = options.code;
+    this.messageKey = options.messageKey;
+    this.category = options.category;
+    this.details = options.details ?? {};
+    this.correlationId = options.correlationId ?? '';
+    this.retryable = options.retryable ?? false;
   }
 }
 
 async function request<T>(path: string, schema: z.ZodType<T>, init: RequestInit = {}) {
   const auth = useAuthStore();
   const headers = new Headers(init.headers);
-  headers.set('Content-Type', 'application/json');
+  const hasBody = init.body !== undefined && init.body !== null;
+  if (hasBody && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
   headers.set('X-Client-Device-ID', auth.clientDeviceId);
   if (auth.nodeDeviceId) headers.set('X-Node-Device-ID', auth.nodeDeviceId);
   if (auth.sessionId) headers.set('X-Session-ID', auth.sessionId);
   if (auth.actor?.employee_id) headers.set('X-Actor-Employee-ID', auth.actor.employee_id);
 
-  const response = await fetch(`${apiBase}${path}`, { ...init, headers });
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!response.ok) {
-    throw new ApiError(response.status, data?.error ?? response.statusText);
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), defaultTimeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase}${path}`, { ...init, headers, signal: controller.signal });
+  } catch (error) {
+    throw networkApiError(error);
+  } finally {
+    globalThis.clearTimeout(timeout);
   }
-  return schema.parse(data);
+
+  const data = await parseResponseBody(response);
+  if (!response.ok) {
+    throw apiErrorFromResponse(response, data);
+  }
+  try {
+    return schema.parse(data);
+  } catch {
+    throw new ApiError({
+      status: 0,
+      code: 'INVALID_RESPONSE',
+      messageKey: 'errors.response.invalid',
+      category: 'unexpected',
+      retryable: false,
+    });
+  }
 }
 
 async function requestOptional<T>(path: string, schema: z.ZodType<T>, init: RequestInit = {}) {
@@ -55,6 +128,107 @@ async function requestOptional<T>(path: string, schema: z.ZodType<T>, init: Requ
     }
     throw error;
   }
+}
+
+async function parseResponseBody(response: Response) {
+  const text = await response.text();
+  if (!text.trim()) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    if (!response.ok) {
+      return null;
+    }
+    throw new ApiError({
+      status: response.status,
+      code: 'INVALID_JSON',
+      messageKey: 'errors.response.invalid',
+      category: 'unexpected',
+      correlationId: response.headers.get('X-Request-ID') ?? '',
+    });
+  }
+}
+
+function apiErrorFromResponse(response: Response, data: unknown) {
+  const parsed = backendErrorSchema.safeParse(data);
+  const errorValue = parsed.success ? parsed.data.error : null;
+  const structured = typeof errorValue === 'object' && errorValue !== null ? errorValue : null;
+  const code = structured?.code ?? codeForStatus(response.status);
+  return new ApiError({
+    status: response.status,
+    code,
+    messageKey: structured?.message_key ?? messageKeyForStatus(response.status),
+    category: categoryForStatusAndCode(response.status, code),
+    details: structured?.details,
+    correlationId: structured?.correlation_id ?? response.headers.get('X-Request-ID') ?? '',
+    retryable: isRetryable(response.status),
+  });
+}
+
+function networkApiError(error: unknown) {
+  const aborted = typeof DOMException !== 'undefined' && error instanceof DOMException && error.name === 'AbortError';
+  return new ApiError({
+    status: 0,
+    code: aborted ? 'REQUEST_TIMEOUT' : 'NETWORK_ERROR',
+    messageKey: aborted ? 'errors.network.timeout' : 'errors.network.unavailable',
+    category: aborted ? 'timeout' : 'network',
+    retryable: true,
+  });
+}
+
+function codeForStatus(status: number) {
+  switch (status) {
+    case 400:
+    case 422:
+      return 'VALIDATION_FAILED';
+    case 401:
+      return 'SESSION_REQUIRED';
+    case 403:
+      return 'PERMISSION_DENIED';
+    case 404:
+      return 'NOT_FOUND';
+    case 409:
+      return 'CONFLICT';
+    case 429:
+      return 'RATE_LIMITED';
+    default:
+      return status >= 500 ? 'INTERNAL_ERROR' : 'UNKNOWN_ERROR';
+  }
+}
+
+function messageKeyForStatus(status: number) {
+  switch (status) {
+    case 400:
+    case 422:
+      return 'errors.validation';
+    case 401:
+      return 'errors.session.required';
+    case 403:
+      return 'errors.permission.denied';
+    case 404:
+      return 'errors.notFound';
+    case 409:
+      return 'errors.conflict.default';
+    case 429:
+      return 'errors.rateLimit';
+    default:
+      return status >= 500 ? 'errors.server' : 'errors.unknown';
+  }
+}
+
+function categoryForStatusAndCode(status: number, code: string): ApiErrorCategory {
+  if (status === 401 || code.startsWith('SESSION_')) return 'auth';
+  if (status === 403) return 'permission';
+  if (status === 400 || status === 422) return 'validation';
+  if (status === 404) return 'not_found';
+  if (status === 409) return 'conflict';
+  if (status === 429) return 'rate_limit';
+  if (status >= 500) return 'server';
+  return 'unexpected';
+}
+
+function isRetryable(status: number) {
+  return status === 0 || status === 429 || status >= 500;
 }
 
 function actorId() {

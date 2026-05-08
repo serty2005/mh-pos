@@ -66,9 +66,20 @@ npm run dev
 
 ```powershell
 .\scripts\send-cloud-test-envelope.ps1 -RestaurantId $demo.restaurant_id -NodeDeviceId $demo.node_device_id -ReplayTwice
-Invoke-RestMethod http://localhost:8080/api/v1/sync/status
-Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=10
-Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10
+$login = Invoke-RestMethod -Method Post http://localhost:8080/api/v1/auth/pin-login -ContentType "application/json" -Body (@{
+  node_device_id = $demo.node_device_id
+  client_device_id = "dev-ui-readme-client"
+  pin = "2222"
+} | ConvertTo-Json)
+$headers = @{
+  "X-Node-Device-ID" = $demo.node_device_id
+  "X-Client-Device-ID" = "dev-ui-readme-client"
+  "X-Session-ID" = $login.session.id
+  "X-Actor-Employee-ID" = $login.actor.employee_id
+}
+Invoke-RestMethod http://localhost:8080/api/v1/sync/status -Headers $headers
+Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=10 -Headers $headers
+Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10 -Headers $headers
 ```
 
 out of scope: waiter UI, KDS, inventory, fiscalization и production sync sender worker.
@@ -103,6 +114,19 @@ Server state хранится только через `@tanstack/vue-query`. Fro
 - Каждый browser/tablet client генерирует свой `client_device_id` через `crypto.randomUUID()` и хранит его в `localStorage`.
 - Backend auto-registers новый `client_device_id` при PIN login.
 - Lock всегда вызывает backend logout.
+
+## Error handling
+
+implemented now:
+
+- `src/shared/api.ts` является единым API client и различает `401/403/404/409/429/5xx/network/timeout`.
+- Backend error envelope нормализуется в `ApiError` с `code`, `messageKey`, `category` и `correlationId`.
+- Critical/business errors показываются через global Quasar dialog из `src/stores/errorDialog.ts`.
+- Все user-facing ошибки идут через `vue-i18n` keys.
+- `401` очищает local session и ведет к login flow.
+- `403` показывает "Недостаточно прав" и не выполняет logout.
+- Network/timeout сообщает, что POS Edge backend недоступен, но не удаляет `client_device_id`.
+- TanStack mutations не используют auto-retry для write/financial commands.
 
 ## Используемые Backend Endpoints
 

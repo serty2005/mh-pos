@@ -64,6 +64,22 @@ implemented now: ручной путь применения SQL-скриптов
 
 Write transactions в POS Edge открываются через `BEGIN IMMEDIATE`, чтобы writer lock бралась в начале транзакционного use case.
 
+## SQLite maintenance
+
+implemented now:
+
+- `VACUUM`, `VACUUM INTO`, `PRAGMA optimize` и `PRAGMA wal_checkpoint(TRUNCATE)` являются явными maintenance/snapshot операциями.
+- Они не запускаются автоматически на каждом startup и не выполняются внутри active write transaction.
+- `VACUUM`/`VACUUM INTO` требуют явный `-Force`.
+- Wrapper из корня репозитория: `.\scripts\maintain-sqlite.ps1`.
+
+Пример:
+
+```powershell
+.\scripts\maintain-sqlite.ps1 -DatabasePath "pos-backend\data\pos-edge.db" -Optimize -WalCheckpoint
+.\scripts\maintain-sqlite.ps1 -DatabasePath "pos-backend\data\pos-edge.db" -Vacuum -Force
+```
+
 ## Запуск локально на Windows
 
 Из `pos-backend`:
@@ -185,6 +201,20 @@ Master-data write endpoints for restaurants/devices/roles/employees/halls/tables
 
 Operational sync endpoints: `GET /api/v1/sync/outbox?limit=50`, `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`, `GET /api/v1/sync/status`, `POST /api/v1/sync/retry-failed`. `retry-failed` не отправляет данные в Cloud и не меняет business state; он только возвращает `failed`/`suspended` outbox rows в `pending`.
 
+## Error contract
+
+implemented now:
+
+- Все API ошибки возвращаются в безопасном envelope `{ "error": { "code", "message_key", "details", "correlation_id" } }`.
+- Internal cause, SQL details и panic stack пишутся только в backend logs.
+- `X-Error-Code` дублирует stable `code` для audit middleware.
+- Revoked session возвращает `401 SESSION_REVOKED`.
+- Permission deny возвращает `403 PERMISSION_DENIED`.
+- Wrong client/session context возвращает `403 SESSION_CONTEXT_MISMATCH`.
+- PIN, manager PIN и PIN hash не возвращаются в error payloads и не должны логироваться.
+
+Каталог ошибок: `../docs/backend/POS-ERROR-CATALOG.md`.
+
 POS UI package: `../pos-ui` содержит Vue 3 + Quasar shell и рабочий POS Terminal Core на `/pos` для single-terminal cashier flow. См. `pos-ui/README.md`.
 
 ## Локальный E2E Prototype: получить pairing code и войти в POS UI
@@ -209,9 +239,20 @@ $demo.pairing_code
 Проверь локальные sync endpoints:
 
 ```powershell
-Invoke-RestMethod http://localhost:8080/api/v1/sync/status
-Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=10
-Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10
+$login = Invoke-RestMethod -Method Post http://localhost:8080/api/v1/auth/pin-login -ContentType "application/json" -Body (@{
+  node_device_id = $demo.node_device_id
+  client_device_id = "dev-readme-client"
+  pin = "2222"
+} | ConvertTo-Json)
+$headers = @{
+  "X-Node-Device-ID" = $demo.node_device_id
+  "X-Client-Device-ID" = "dev-readme-client"
+  "X-Session-ID" = $login.session.id
+  "X-Actor-Employee-ID" = $login.actor.employee_id
+}
+Invoke-RestMethod http://localhost:8080/api/v1/sync/status -Headers $headers
+Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=10 -Headers $headers
+Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10 -Headers $headers
 ```
 
 implemented now: production-like sync sender worker включен по умолчанию и отправляет operational Edge -> Cloud events в `POS_CLOUD_SYNC_URL`. Для изолированной локальной отладки установи `POS_SYNC_SENDER_ENABLED=false`.

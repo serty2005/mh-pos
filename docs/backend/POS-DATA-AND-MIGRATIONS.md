@@ -230,6 +230,37 @@ planned next:
 
 - добавить retention/purge policy для backup-артефактов и централизованный мониторинг успешности backup-before-upgrade.
 
+## SQLite maintenance: VACUUM / VACUUM INTO
+
+implemented now:
+
+- `VACUUM`, `VACUUM INTO`, `PRAGMA optimize` и `PRAGMA wal_checkpoint(TRUNCATE)` считаются явными maintenance/snapshot операциями.
+- Эти операции не выполняются автоматически на каждом startup и не входят в обычный POS write path.
+- `VACUUM` и `VACUUM INTO` запускаются только с явным подтверждением `-force`, чтобы не создать долгую блокирующую операцию случайно.
+- PowerShell wrapper: `scripts/maintain-sqlite.ps1`.
+- Go CLI: `pos-backend/cmd/sqlite-maintenance`.
+- Команды выполняются вне активной write transaction.
+- `VACUUM INTO` используется для compact snapshot/backup file, если нужен новый целевой файл; существующий target file не перезаписывается.
+
+Примеры:
+
+```powershell
+.\scripts\maintain-sqlite.ps1 -DatabasePath "pos-backend\data\pos-edge.db" -Optimize -WalCheckpoint
+.\scripts\maintain-sqlite.ps1 -DatabasePath "pos-backend\data\pos-edge.db" -Vacuum -Force
+.\scripts\maintain-sqlite.ps1 -DatabasePath "pos-backend\data\pos-edge.db" -VacuumInto "pos-backend\data\snapshots\pos-edge.compact.db" -Force
+```
+
+Риски:
+
+- `VACUUM` может занять заметное время на большой базе и требует свободное место.
+- `VACUUM` не должен запускаться внутри active write transaction.
+- Для production-like данных перед тяжелой maintenance-операцией нужен отдельный backup/snapshot.
+
+planned next:
+
+- добавить retention policy для maintenance snapshots;
+- добавить отдельный health/report output с размером DB/WAL до и после операции.
+
 ## Правило compatibility-хвостов на уровне данных
 
 Запрещены бессрочные data-model tails:

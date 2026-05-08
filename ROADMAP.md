@@ -230,7 +230,7 @@ implemented now:
 | Edge/Cloud event catalog снова расходится | Высокое | Средняя | Поддерживать canonical catalog в `docs/sync/edge-cloud-contracts-v1.md` и тестировать sender direction gate |
 | Pairing verifier остается plain hash | Высокое | Средняя | Перейти на keyed verifier до пилота |
 | Duplicate PIN / ambiguous login | Высокое | Средняя | Ввести уникальность PIN или employee-first login |
-| RBAC остается неявным | Среднее | Высокая | Утвердить permission catalog и matrix |
+| Future/runtime permission matrix может снова разойтись при добавлении новых экранов | Среднее | Средняя | Не добавлять runtime operation без canonical permission id, backend enforcement, UI visibility и тестов |
 | Пилотные assumptions по валюте и business date не зафиксированы | Высокое | Средняя | Зафиксировать policy в backend/data docs |
 | Reprint нужен операционно, но не описан и не реализован | Среднее | Средняя | Либо убрать из pilot scope, либо реализовать и зафиксировать |
 
@@ -274,6 +274,18 @@ flowchart LR
 - добавлены уровни `TRACE/DEBUG/INFO/WARN/ERROR` с runtime env-конфигом;
 - добавлены правила masking/redaction чувствительных auth-данных.
 
+### Error handling hardening
+
+Статус: `done`
+
+Сделано:
+
+- POS backend возвращает безопасный stable error envelope (`code/message_key/correlation_id`);
+- panic/unexpected errors превращаются в safe `500 INTERNAL_ERROR`, details остаются в backend logs;
+- POS UI нормализует backend/network errors в `ApiError`, показывает blocking business errors через modal dialog и использует `vue-i18n`;
+- TanStack mutations не имеют опасного auto-retry для write/financial commands;
+- каталог ошибок зафиксирован в `docs/backend/POS-ERROR-CATALOG.md`.
+
 ### Worker telemetry unification
 
 Статус: `done`
@@ -283,6 +295,16 @@ flowchart LR
 - добавлен shared helper для non-HTTP telemetry нормализации (`operation/action/result/error_code`);
 - sync sender покрыт TRACE lifecycle событиями;
 - временный локальный каталог `test_pipe/` очищен как unmanaged artifact.
+
+### SQLite maintenance hardening
+
+Статус: `done`
+
+Сделано:
+
+- добавлен explicit maintenance helper для `VACUUM`, `VACUUM INTO`, `PRAGMA optimize`, `PRAGMA wal_checkpoint(TRUNCATE)`;
+- `VACUUM`/`VACUUM INTO` требуют явный `-force`/`-Force`;
+- documented policy запрещает автоматический VACUUM на каждом startup и запуск внутри active write transaction.
 
 ### Sync contract hardening update (2026-05-07)
 

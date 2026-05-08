@@ -220,11 +220,12 @@ func (s *Service) GetSession(ctx context.Context, sessionID, nodeDeviceID, clien
 	if session.NodeDeviceID != nodeDeviceID || session.ClientDeviceID != clientDeviceID {
 		return nil, fmt.Errorf("%w: session is not for requested device context", domain.ErrForbidden)
 	}
-	if session.Status == domain.AuthSessionActive {
-		now := shared.DBTime(s.clock.Now())
-		_ = s.repo.UpdateAuthSessionSeen(ctx, session.ID, now)
-		_ = s.repo.TouchClientDevice(ctx, session.NodeDeviceID, session.ClientDeviceID, now)
+	if session.Status != domain.AuthSessionActive {
+		return nil, fmt.Errorf("%w: session is not active", domain.ErrForbidden)
 	}
+	now := shared.DBTime(s.clock.Now())
+	_ = s.repo.UpdateAuthSessionSeen(ctx, session.ID, now)
+	_ = s.repo.TouchClientDevice(ctx, session.NodeDeviceID, session.ClientDeviceID, now)
 	employee, err := s.repo.GetEmployee(ctx, session.EmployeeID)
 	if err != nil {
 		return nil, err

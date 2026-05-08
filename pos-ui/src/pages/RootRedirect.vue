@@ -10,10 +10,12 @@ import { watchEffect } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { getAuthSession, getPairingStatus } from '../shared/api';
+import { useErrorHandling } from '../shared/errorHandling';
 import { useAuthStore } from '../stores/auth';
 
 const auth = useAuthStore();
 const router = useRouter();
+const { showBusinessError } = useErrorHandling();
 
 const pairing = useQuery({
   queryKey: ['pairing-status'],
@@ -28,6 +30,15 @@ const session = useQuery({
 });
 
 watchEffect(() => {
+  if (pairing.error.value) {
+    showBusinessError(pairing.error.value);
+    return;
+  }
+  if (session.error.value) {
+    showBusinessError(session.error.value);
+    void router.replace('/login');
+    return;
+  }
   if (pairing.data.value) {
     auth.applyPairing(pairing.data.value);
   }

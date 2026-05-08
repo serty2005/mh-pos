@@ -332,8 +332,6 @@
             />
           </div>
         </div>
-
-        <q-banner v-if="actionError" class="error-banner dense-banner" rounded>{{ actionError }}</q-banner>
       </aside>
     </section>
 
@@ -346,9 +344,6 @@
           <q-input v-model="managerEmployeeId" outlined :label="t('pos.managerEmployeeId')" autocomplete="off" />
           <q-input v-model="managerPin" outlined :label="t('pos.managerPin')" type="password" inputmode="numeric" autocomplete="new-password" />
           <q-input v-model="cancelReason" outlined :label="t('pos.precheckCancelReason')" type="textarea" autogrow />
-          <q-banner v-if="cancelPrecheckMutation.isError.value" class="error-banner" rounded>
-            {{ errorMessage(cancelPrecheckMutation.error.value) }}
-          </q-banner>
         </q-card-section>
         <q-card-actions align="right">
           <q-btn flat :label="t('actions.cancel')" @click="closeCancelDialog" />
@@ -399,6 +394,7 @@ import {
 } from '../shared/api';
 import { resolveProtectedPosFallback } from '../shared/sessionGuards';
 import { currencyInputStep, formatMinorCurrency, minorToMoney, moneyToMinor } from '../shared/currency';
+import { displayErrorMessageKey, useErrorHandling } from '../shared/errorHandling';
 import { hasPermission, permissionCatalog } from '../shared/rbac';
 import type { Order } from '../shared/schemas';
 import { useAuthStore } from '../stores/auth';
@@ -407,6 +403,7 @@ const { t } = useI18n();
 const auth = useAuthStore();
 const router = useRouter();
 const queryClient = useQueryClient();
+const { showBusinessError } = useErrorHandling();
 
 const selectedHallId = ref('');
 const selectedTableId = ref('');
@@ -525,37 +522,28 @@ const remainingPayment = computed(() => activePrecheck.value ? activePrecheck.va
 const orderLoading = computed(() => tableOrder.isPending.value || order.isPending.value);
 const statusError = computed(() => firstError([currentShift.error.value, currentCashSession.error.value]));
 const orderError = computed(() => firstError([tableOrder.error.value, order.error.value, prechecks.error.value]));
-const actionError = computed(() => firstError([
-  openShiftMutation.error.value,
-  closeShiftMutation.error.value,
-  openCashMutation.error.value,
-  closeCashMutation.error.value,
-  createOrderMutation.error.value,
-  addLineMutation.error.value,
-  quantityMutation.error.value,
-  voidLineMutation.error.value,
-  issuePrecheckMutation.error.value,
-  paymentMutation.error.value,
-]));
-
 const openShiftMutation = useMutation({
   mutationFn: openShift,
   onSuccess: refreshOps,
+  onError: showBusinessError,
 });
 
 const closeShiftMutation = useMutation({
   mutationFn: closeShift,
   onSuccess: refreshOps,
+  onError: showBusinessError,
 });
 
 const openCashMutation = useMutation({
   mutationFn: (amount: number) => openCashSession(moneyToMinor(amount, currency.value)),
   onSuccess: refreshOps,
+  onError: showBusinessError,
 });
 
 const closeCashMutation = useMutation({
   mutationFn: (payload: { cashSessionId: string; amount: number }) => closeCashSession(payload.cashSessionId, moneyToMinor(payload.amount, currency.value)),
   onSuccess: refreshOps,
+  onError: showBusinessError,
 });
 
 const createOrderMutation = useMutation({
@@ -564,26 +552,31 @@ const createOrderMutation = useMutation({
     currentOrderId.value = result.id;
     void refreshOrder();
   },
+  onError: showBusinessError,
 });
 
 const addLineMutation = useMutation({
   mutationFn: (menuItemId: string) => addOrderLine(activeOrder.value?.id ?? '', menuItemId, 1),
   onSuccess: refreshOrder,
+  onError: showBusinessError,
 });
 
 const quantityMutation = useMutation({
   mutationFn: (payload: { lineId: string; quantity: number }) => changeOrderLineQuantity(activeOrder.value?.id ?? '', payload.lineId, payload.quantity),
   onSuccess: refreshOrder,
+  onError: showBusinessError,
 });
 
 const voidLineMutation = useMutation({
   mutationFn: (lineId: string) => voidOrderLine(activeOrder.value?.id ?? '', lineId, 'cashier_void'),
   onSuccess: refreshOrder,
+  onError: showBusinessError,
 });
 
 const issuePrecheckMutation = useMutation({
   mutationFn: issuePrecheck,
   onSuccess: refreshOrder,
+  onError: showBusinessError,
 });
 
 const cancelPrecheckMutation = useMutation({
@@ -595,6 +588,7 @@ const cancelPrecheckMutation = useMutation({
   onSettled() {
     managerPin.value = '';
   },
+  onError: showBusinessError,
 });
 
 const paymentMutation = useMutation({
@@ -603,6 +597,15 @@ const paymentMutation = useMutation({
     paymentAmount.value = 0;
     void refreshOrder();
   },
+  onError: showBusinessError,
+});
+
+watch(pairing.error, (error) => {
+  if (error) showBusinessError(error);
+});
+
+watch(session.error, (error) => {
+  if (error) showBusinessError(error);
 });
 
 watch(pairing.data, (value) => {
@@ -715,10 +718,6 @@ function statusLabel(status: string) {
 
 function firstError(errors: unknown[]) {
   const found = errors.find(Boolean);
-  return found ? errorMessage(found) : '';
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : t('common.error');
+  return found ? t(displayErrorMessageKey(found)) : '';
 }
 </script>

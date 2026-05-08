@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	httpx "pos-backend/internal/platform/http"
 	platformsqlite "pos-backend/internal/platform/sqlite"
 	"pos-backend/internal/pos/api"
 	"pos-backend/internal/pos/app"
@@ -303,6 +304,47 @@ func TestPinLoginAndSessionAPI(t *testing.T) {
 	}
 }
 
+func TestRevokedSessionReturnsSafeUnauthorizedError(t *testing.T) {
+	f := newAPIFixture(t)
+	if _, err := f.service.Logout(f.ctx, app.LogoutCommand{
+		CommandMeta: f.edgeMeta(),
+		SessionID:   f.session.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	current := f.get(t, "/api/v1/auth/session?node_device_id="+f.device.ID+"&session_id="+f.session.ID)
+	if current.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for revoked session, got %d: %s", current.Code, current.Body.String())
+	}
+	body := decodeAPIResponse[httpx.ErrorResponse](t, current)
+	if body.Error.Code != "SESSION_REVOKED" || body.Error.MessageKey != "errors.session.revoked" {
+		t.Fatalf("expected session revoked error contract, got: %+v", body.Error)
+	}
+	if strings.Contains(current.Body.String(), "pin") || strings.Contains(current.Body.String(), "hash") {
+		t.Fatalf("expected auth error not to expose sensitive data: %s", current.Body.String())
+	}
+}
+
+func TestWrongClientDeviceReturnsSafeForbiddenError(t *testing.T) {
+	f := newAPIFixture(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/employee-shifts/current?node_device_id="+f.device.ID, nil)
+	req.Header.Set("X-Node-Device-ID", f.device.ID)
+	req.Header.Set("X-Client-Device-ID", "wrong-client")
+	req.Header.Set("X-Actor-Employee-ID", f.employee.ID)
+	req.Header.Set("X-Session-ID", f.session.ID)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for wrong client device, got %d: %s", rr.Code, rr.Body.String())
+	}
+	body := decodeAPIResponse[httpx.ErrorResponse](t, rr)
+	if body.Error.Code != "SESSION_CONTEXT_MISMATCH" || body.Error.MessageKey != "errors.session.contextMismatch" {
+		t.Fatalf("expected session context mismatch contract, got: %+v", body.Error)
+	}
+}
+
 func TestRequestAuditLogContainsContractFieldsAndNoPINLeak(t *testing.T) {
 	f := newAPIFixture(t)
 	var logs bytes.Buffer
@@ -328,7 +370,7 @@ func TestRequestAuditLogContainsContractFieldsAndNoPINLeak(t *testing.T) {
 		`"operation":"http.request"`,
 		`"action":"POST /api/v1/system/pair"`,
 		`"result":"rejected"`,
-		`"error_code":"HTTP_400"`,
+		`"error_code":"VALIDATION_FAILED"`,
 		`"request_id":"`,
 		`"duration_ms":`,
 		`"node_device_id":"`,
@@ -355,9 +397,12 @@ func TestPairingRejectsPlaceholderIDs(t *testing.T) {
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for placeholder pairing code, got %d: %s", rr.Code, rr.Body.String())
 	}
-	body := decodeAPIResponse[map[string]string](t, rr)
-	if !strings.Contains(body["error"], "placeholders") {
-		t.Fatalf("expected placeholder validation error, got: %s", body["error"])
+	body := decodeAPIResponse[httpx.ErrorResponse](t, rr)
+	if body.Error.Code != "VALIDATION_FAILED" || body.Error.MessageKey != "errors.validation" {
+		t.Fatalf("expected validation error contract, got: %+v", body.Error)
+	}
+	if strings.Contains(rr.Body.String(), "MHPOS:<restaurant_id>") {
+		t.Fatalf("expected raw pairing payload not to be exposed, got: %s", rr.Body.String())
 	}
 }
 
@@ -371,9 +416,9 @@ func TestPairingRejectsUnknownRestaurantID(t *testing.T) {
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for unknown restaurant in pairing code, got %d: %s", rr.Code, rr.Body.String())
 	}
-	body := decodeAPIResponse[map[string]string](t, rr)
-	if !strings.Contains(body["error"], "unknown restaurant_id") {
-		t.Fatalf("expected unknown restaurant validation error, got: %s", body["error"])
+	body := decodeAPIResponse[httpx.ErrorResponse](t, rr)
+	if body.Error.Code != "VALIDATION_FAILED" || body.Error.MessageKey != "errors.validation" {
+		t.Fatalf("expected validation error contract, got: %+v", body.Error)
 	}
 }
 
@@ -393,12 +438,12 @@ func TestPinLoginRateLimitReturnsTooManyRequests(t *testing.T) {
 	if limited.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected 429 after repeated attempts, got %d: %s", limited.Code, limited.Body.String())
 	}
-	errBody := decodeAPIResponse[map[string]string](t, limited)
-	if strings.Contains(errBody["error"], "9999") {
-		t.Fatalf("expected rate-limit error not to expose pin, got: %s", errBody["error"])
+	errBody := decodeAPIResponse[httpx.ErrorResponse](t, limited)
+	if strings.Contains(limited.Body.String(), "9999") {
+		t.Fatalf("expected rate-limit error not to expose pin, got: %s", limited.Body.String())
 	}
-	if !strings.Contains(errBody["error"], "too many requests") {
-		t.Fatalf("expected rate limit error, got: %s", errBody["error"])
+	if errBody.Error.Code != "RATE_LIMITED" || errBody.Error.MessageKey != "errors.rateLimit" {
+		t.Fatalf("expected rate limit error contract, got: %+v", errBody.Error)
 	}
 }
 
