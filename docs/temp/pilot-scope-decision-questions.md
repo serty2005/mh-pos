@@ -166,3 +166,54 @@ Deadline:
 - reprint: вариант A, если печать не входит в пилот; вариант C, если печать реально проверяется.
 - waiter payment: вариант A.
 
+
+### business_date_local
+
+Decision: Hybrid logic (Standard & 24/7)
+Pilot rule: 
+- Введены два режима: "Стандартный" (граница смены в заданное время) и "24/7" (смена может длиться несколько дней).
+- Время закрытия дня (например, `05:00` по умолчанию) настраивается строго на уровне ресторана, а не глобально на сервере.
+- Для отчетов используются поля `business_date_local` (Учетный день) и `closed_at` (Время закрытия).
+- Финансовая принадлежность определяется только моментом закрытия заказа (созданием чека) и платежом. Время создания заказа не влияет на учетный день.
+- Перенос открытого заказа в новую смену разрешен.
+- Списание продуктов со склада происходит в момент "отбития" с кухни / подачи, а не в момент оплаты.
+Backend invariant: 
+- Бэкенд автоматически вычисляет `business_date_local` для чека и платежа на основе конфигурации ресторана (Стандарт или 24/7) в момент их создания.
+- После закрытия заказа поле `business_date_local` становится строго неизменяемым (immutable).
+Out of scope: 
+- Ручной перенос *закрытых* заказов или платежей в другую смену/бизнес-день. 
+- Настройка времени закрытия дня глобально на весь инстанс сервера.
+Reason: Заведениям 24/7 требуется привязка чеков к реальному дню закрытия без искусственных границ, тогда как стандартным заведениям нужна защита от попадания ночных чеков в следующий календарный день. 
+Owner: Backend Team / Code Agent
+Deadline: Pilot Readiness
+
+### reprint
+
+Decision: Controlled Reprint from Immutable Snapshot
+Allowed documents: Precheck, Final Check.
+Required permissions: 
+- `pos.precheck.reprint` (доступно: Waiter, Cashier, Manager).
+- `pos.check.reprint` (доступно строго: Manager).
+Audit requirements: 
+- Обязательная запись в `local_event_log` (события `CheckReprinted` / `PrecheckReprinted`) с фиксацией `actor_employee_id`.
+- Напечатанный документ обязан содержать явный маркер "КОПИЯ" (COPY).
+Snapshot/source of truth: Строго из сохраненных неизменяемых JSON-пейлоадов `check.snapshot` / `precheck.snapshot`. Использование текущего состояния заказа для репринта запрещено.
+Out of scope: 
+- Указание причины (reason) при репринте.
+- Отдельные политики печати для фискальных регистраторов (будет реализовано с появлением модуля ФР).
+Owner: Fullstack / Code Agent
+Deadline: Pilot Readiness
+
+### waiter payment
+
+Decision: Cashier-first flow (Waiter payment is Out of Scope / Post-MVP)
+Allowed roles: Кассирские операции доступны только ролям `cashier`, `senior_cashier`, `manager`.
+Allowed methods: Оплата проводится только на кассе (Terminal/Cashier).
+Cash session responsibility: Вся ответственность за наличные деньги и расхождения лежит на владельце общей кассовой смены (Кассире). Личные кассы официантов не создаются.
+UI scope: Полное скрытие или блокировка кнопок/экранов оплаты во Vue-клиенте, если у авторизованного пользователя (`actor`) нет пермишенов `pos.payment.*`.
+Out of scope: 
+- Оплата официантом за столом (Server Banking).
+- Создание личных кассовых смен для официантов.
+- Разделение прав на `pos.payment.cash` и `pos.payment.waiter_cash`.
+Owner: Fullstack / Code Agent
+Deadline: Post-MVP
