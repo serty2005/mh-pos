@@ -159,9 +159,11 @@ OrderLineAdded
 OrderLineQuantityChanged
 OrderLineVoided
 PrecheckIssued
+PrecheckReprinted
 PrecheckCancelled
 PaymentCaptured
 CheckCreated
+CheckReprinted
 OrderClosed
 AuthSessionStarted
 AuthSessionRevoked
@@ -214,6 +216,21 @@ edge_event_id
 ```
 
 `payload.data` - JSON-представление соответствующего Edge domain object или event payload.
+
+implemented now: financial payloads for `PaymentCaptured` and `CheckCreated` include backend-owned `business_date_local`. `CheckCreated` also includes `closed_at` and immutable `snapshot`.
+
+implemented now: reprint events `PrecheckReprinted` and `CheckReprinted` use immutable snapshot payload:
+
+```json
+{
+  "document_type": "check",
+  "source_id": "check-id",
+  "copy_marker": "COPY",
+  "actor_employee_id": "employee-id",
+  "reprinted_at": "2026-05-05T10:00:00Z",
+  "snapshot": {}
+}
+```
 
 ## Хранение в Cloud
 

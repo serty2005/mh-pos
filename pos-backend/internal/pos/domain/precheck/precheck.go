@@ -1,6 +1,7 @@
 package precheck
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -18,21 +19,22 @@ const (
 )
 
 type Precheck struct {
-	ID                    string         `json:"id"`
-	OrderID               string         `json:"order_id"`
-	Status                PrecheckStatus `json:"status"`
-	Version               int            `json:"version"`
-	SupersedesPrecheckID  *string        `json:"supersedes_precheck_id,omitempty"`
-	Subtotal              int64          `json:"subtotal"`
-	DiscountTotal         int64          `json:"discount_total"`
-	TaxTotal              int64          `json:"tax_total"`
-	Total                 int64          `json:"total"`
-	PaidTotal             int64          `json:"paid_total"`
-	CreatedAt             time.Time      `json:"created_at"`
-	IssuedAt              time.Time      `json:"issued_at"`
-	ClosedAt              *time.Time     `json:"closed_at,omitempty"`
-	CancelledByEmployeeID *string        `json:"cancelled_by_employee_id,omitempty"`
-	CancellationReason    *string        `json:"cancellation_reason,omitempty"`
+	ID                    string          `json:"id"`
+	OrderID               string          `json:"order_id"`
+	Status                PrecheckStatus  `json:"status"`
+	Version               int             `json:"version"`
+	SupersedesPrecheckID  *string         `json:"supersedes_precheck_id,omitempty"`
+	Subtotal              int64           `json:"subtotal"`
+	DiscountTotal         int64           `json:"discount_total"`
+	TaxTotal              int64           `json:"tax_total"`
+	Total                 int64           `json:"total"`
+	PaidTotal             int64           `json:"paid_total"`
+	Snapshot              json.RawMessage `json:"snapshot,omitempty"`
+	CreatedAt             time.Time       `json:"created_at"`
+	IssuedAt              time.Time       `json:"issued_at"`
+	ClosedAt              *time.Time      `json:"closed_at,omitempty"`
+	CancelledByEmployeeID *string         `json:"cancelled_by_employee_id,omitempty"`
+	CancellationReason    *string         `json:"cancellation_reason,omitempty"`
 }
 
 func NewIssued(id, orderID string, subtotal, discountTotal, taxTotal int64, now time.Time) (*Precheck, error) {
@@ -73,6 +75,7 @@ func NewIssuedVersion(id, orderID string, version int, supersedesPrecheckID *str
 		DiscountTotal:        discountTotal,
 		TaxTotal:             taxTotal,
 		Total:                total,
+		Snapshot:             json.RawMessage(`{}`),
 		CreatedAt:            now,
 		IssuedAt:             now,
 	}, nil

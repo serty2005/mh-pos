@@ -214,6 +214,16 @@
           <q-banner v-if="finalCheckData" class="success-banner" rounded>
             {{ t('pos.checkCreated') }}: {{ shortId(finalCheckData.id) }} · {{ money(finalCheckData.total, orderCurrency) }}
           </q-banner>
+          <q-btn
+            v-if="finalCheckData"
+            outline
+            color="secondary"
+            icon="print"
+            :label="t('actions.reprintCheck')"
+            :disable="!canReprintCheck"
+            :loading="reprintCheckMutation.isPending.value"
+            @click="reprintCheckMutation.mutate(finalCheckData.id)"
+          />
 
           <div class="section-head slim">
             <h2>{{ t('pos.orderLines') }}</h2>
@@ -287,6 +297,15 @@
             <strong>{{ money(activePrecheck.paid_total, orderCurrency) }}</strong>
           </div>
           <q-btn outline color="negative" icon="undo" :label="t('pos.cancelPrecheck')" :disable="activePrecheck.paid_total > 0 || !canCancelPrecheck" @click="cancelDialog = true" />
+          <q-btn
+            outline
+            color="secondary"
+            icon="print"
+            :label="t('actions.reprintPrecheck')"
+            :disable="!canReprintPrecheck"
+            :loading="reprintPrecheckMutation.isPending.value"
+            @click="reprintPrecheckMutation.mutate(activePrecheck.id)"
+          />
         </div>
         <q-btn
           v-else
@@ -297,6 +316,16 @@
           :disable="!canIssuePrecheck"
           :loading="issuePrecheckMutation.isPending.value"
           @click="issuePrecheckMutation.mutate(activeOrder?.id ?? '')"
+        />
+        <q-btn
+          v-if="!activePrecheck && latestPrecheck"
+          outline
+          color="secondary"
+          icon="print"
+          :label="t('actions.reprintPrecheck')"
+          :disable="!canReprintPrecheck"
+          :loading="reprintPrecheckMutation.isPending.value"
+          @click="reprintPrecheckMutation.mutate(latestPrecheck.id)"
         />
 
         <div class="payment-box">
@@ -363,6 +392,7 @@
 
 <script setup lang="ts">
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query';
+import { useQuasar } from 'quasar';
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
@@ -390,6 +420,8 @@ import {
   listTables,
   openCashSession,
   openShift,
+  reprintCheck,
+  reprintPrecheck,
   voidOrderLine,
 } from '../shared/api';
 import { resolveProtectedPosFallback } from '../shared/sessionGuards';
@@ -402,6 +434,7 @@ import { useAuthStore } from '../stores/auth';
 const { t } = useI18n();
 const auth = useAuthStore();
 const router = useRouter();
+const $q = useQuasar();
 const queryClient = useQueryClient();
 const { showBusinessError } = useErrorHandling();
 
@@ -507,6 +540,10 @@ const finalCheck = useQuery({
 const activeLines = computed(() => activeOrder.value?.lines.filter((line) => line.status === 'active') ?? []);
 const activeMenuItems = computed(() => menu.data.value?.filter((item) => item.active) ?? []);
 const activePrecheck = computed(() => prechecks.data.value?.find((item) => item.status === 'issued') ?? null);
+const latestPrecheck = computed(() => {
+  const items = prechecks.data.value ?? [];
+  return items.reduce((latest, item) => (latest === null || item.version > latest.version ? item : latest), null as (typeof items)[number] | null);
+});
 const finalCheckData = computed(() => finalCheck.data.value ?? activeOrder.value?.check ?? null);
 const currency = computed(() => activeMenuItems.value[0]?.currency ?? 'RUB');
 const orderCurrency = computed(() => activeMenuItems.value.find((item) => activeLines.value.some((line) => line.menu_item_id === item.id))?.currency ?? currency.value);
@@ -516,6 +553,8 @@ const canChangeOrderLine = computed(() => Boolean(activeOrder.value?.status === 
 const canVoidOrderLine = computed(() => Boolean(activeOrder.value?.status === 'open' && !activePrecheck.value && !activeOrder.value.check && hasPermission(grantedPermissions.value, permissionCatalog.orderVoidLine)));
 const canIssuePrecheck = computed(() => Boolean(activeOrder.value?.status === 'open' && activeLines.value.length > 0 && !activePrecheck.value && hasPermission(grantedPermissions.value, permissionCatalog.precheckIssue)));
 const canCancelPrecheck = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.precheckCancelRequest));
+const canReprintPrecheck = computed(() => Boolean(latestPrecheck.value && hasPermission(grantedPermissions.value, permissionCatalog.precheckReprint)));
+const canReprintCheck = computed(() => Boolean(finalCheckData.value && hasPermission(grantedPermissions.value, permissionCatalog.checkReprint)));
 const canPayCash = computed(() => Boolean(currentCashSession.data.value && activePrecheck.value && paymentAmount.value > 0 && paymentAmount.value <= remainingPayment.value && hasPermission(grantedPermissions.value, permissionCatalog.paymentCash)));
 const canPayCard = computed(() => Boolean(currentCashSession.data.value && activePrecheck.value && paymentAmount.value > 0 && paymentAmount.value <= remainingPayment.value && hasPermission(grantedPermissions.value, permissionCatalog.paymentCardManual)));
 const remainingPayment = computed(() => activePrecheck.value ? activePrecheck.value.total - activePrecheck.value.paid_total : 0);
@@ -576,6 +615,18 @@ const voidLineMutation = useMutation({
 const issuePrecheckMutation = useMutation({
   mutationFn: issuePrecheck,
   onSuccess: refreshOrder,
+  onError: showBusinessError,
+});
+
+const reprintPrecheckMutation = useMutation({
+  mutationFn: reprintPrecheck,
+  onSuccess: showReprintReady,
+  onError: showBusinessError,
+});
+
+const reprintCheckMutation = useMutation({
+  mutationFn: reprintCheck,
+  onSuccess: showReprintReady,
   onError: showBusinessError,
 });
 
@@ -669,6 +720,13 @@ function voidLine(lineId: string) {
 
 function pay(method: 'cash' | 'card') {
   paymentMutation.mutate(method);
+}
+
+function showReprintReady() {
+  $q.notify({
+    type: 'positive',
+    message: `${t('pos.reprintReady')} · ${t('pos.reprintCopy')}`,
+  });
 }
 
 function submitCancelPrecheck() {

@@ -26,6 +26,7 @@ type Payment struct {
 	Amount                int64         `json:"amount"`
 	Currency              string        `json:"currency"`
 	Status                PaymentStatus `json:"status"`
+	BusinessDateLocal     string        `json:"business_date_local"`
 	ProviderName          *string       `json:"provider_name,omitempty"`
 	ProviderTransactionID *string       `json:"provider_transaction_id,omitempty"`
 	ProviderReference     *string       `json:"provider_reference,omitempty"`

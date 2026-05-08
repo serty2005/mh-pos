@@ -101,8 +101,10 @@ implemented now: backend отклоняет login, если PIN совпадае
 - void line;
 - issue precheck;
 - cancel precheck через manager override dialog;
+- reprint precheck copy при наличии `pos.precheck.reprint`;
 - cash payment;
 - trusted manual card payment;
+- reprint final check copy при наличии `pos.check.reprint`;
 - final check display.
 
 ### Lock
@@ -159,6 +161,8 @@ implemented now:
 - Без открытой личной смены сотрудника `/pos` показывает только действие открытия личной смены и последние личные смены текущего actor.
 - Создание и редактирование заказов доступно после открытия личной смены сотрудника и не требует кассовой смены.
 - Оплата доступна только при открытой кассовой смене.
+- Оплата скрыта/заблокирована без `pos.payment.*`; waiter payment остается out of scope.
+- Reprint precheck/check отображается только при соответствующих backend permissions и вызывает backend audit command.
 - visibility критичных действий в `/pos` привязана к backend permission ids (shift/cash/order/precheck/payment/floor/menu); backend остается final enforcement layer.
 - денежный ввод/показ в UI использует currency precision helper по ISO code и опирается на active ISO 4217 catalog (precision `0/2/3/4` по коду валюты).
 
@@ -226,6 +230,8 @@ out of scope:
 - trusted manual card capture;
 - manager override только для отмены пречека.
 - money conversion в UI на основе integer minor units с currency-dependent precision (`0/2/3/4` decimals).
+- business date приходит из backend API payloads; UI не вычисляет `business_date_local` самостоятельно.
+- controlled reprint copy для precheck/final check из backend immutable snapshot.
 
 ## Explicitly unsupported now
 
@@ -236,10 +242,10 @@ out of scope:
 - manager runtime;
 - diagnostics runtime;
 - settings runtime;
-- reprint flow;
 - refund flow;
 - PSP integration;
 - hardware printer integration from UI;
+- ручной перенос закрытого заказа/платежа в другой business date;
 - offline write queue in frontend.
 
 ## Документационные правила для UI

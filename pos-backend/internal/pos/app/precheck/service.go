@@ -2,9 +2,11 @@ package precheck
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"pos-backend/internal/platform/clock"
 	"pos-backend/internal/platform/idgen"
@@ -37,6 +39,11 @@ type CancelPrecheckCommand struct {
 	ManagerEmployeeID  string `json:"manager_employee_id"`
 	ManagerPIN         string `json:"manager_pin"`
 	CancellationReason string `json:"cancellation_reason"`
+}
+
+type ReprintPrecheckCommand struct {
+	shared.CommandMeta
+	PrecheckID string `json:"precheck_id"`
 }
 
 func (s *Service) GetPrecheck(ctx context.Context, id string) (*domain.Precheck, error) {
@@ -128,6 +135,11 @@ func (s *Service) IssuePrecheck(ctx context.Context, cmd IssuePrecheckCommand) (
 		if err != nil {
 			return err
 		}
+		snapshot, err := buildPrecheckSnapshot(order, lines, precheck, now)
+		if err != nil {
+			return err
+		}
+		precheck.Snapshot = snapshot
 		if err := s.repo.CreatePrecheck(ctx, precheck); err != nil {
 			return err
 		}
@@ -139,6 +151,46 @@ func (s *Service) IssuePrecheck(ctx context.Context, cmd IssuePrecheckCommand) (
 		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Precheck", precheck.ID, "PrecheckIssued", precheck)
 	})
 	return precheck, err
+}
+
+func (s *Service) ReprintPrecheck(ctx context.Context, cmd ReprintPrecheckCommand) (*domain.ReprintDocument, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
+	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(cmd.PrecheckID) == "" {
+		return nil, fmt.Errorf("%w: precheck_id is required", domain.ErrInvalid)
+	}
+	if strings.TrimSpace(cmd.CommandID) == "" {
+		cmd.CommandID = s.ids.NewID()
+	}
+	now := s.clock.Now()
+	var document *domain.ReprintDocument
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
+			return err
+		}
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionPrecheckReprint)); err != nil {
+			return err
+		}
+		precheck, err := s.repo.GetPrecheck(ctx, cmd.PrecheckID)
+		if err != nil {
+			return err
+		}
+		order, err := s.repo.GetOrder(ctx, precheck.OrderID)
+		if err != nil {
+			return err
+		}
+		if order.DeviceID != cmd.DeviceID {
+			return fmt.Errorf("%w: precheck device does not match command device", domain.ErrConflict)
+		}
+		if len(precheck.Snapshot) == 0 || !json.Valid(precheck.Snapshot) {
+			return fmt.Errorf("%w: precheck snapshot is not available", domain.ErrConflict)
+		}
+		document = domain.NewReprintDocument("precheck", precheck.ID, precheck.Snapshot, cmd.ActorEmployeeID, now)
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Precheck", precheck.ID, "PrecheckReprinted", document)
+	})
+	return document, err
 }
 
 func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand) (*domain.Precheck, error) {
@@ -241,4 +293,64 @@ func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand)
 		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, eventMeta, order.RestaurantID, order.ShiftID, "Precheck", precheck.ID, "PrecheckCancelled", precheck)
 	})
 	return precheck, err
+}
+
+type precheckSnapshot struct {
+	DocumentType  string                 `json:"document_type"`
+	PrecheckID    string                 `json:"precheck_id"`
+	OrderID       string                 `json:"order_id"`
+	TableID       string                 `json:"table_id"`
+	TableName     string                 `json:"table_name"`
+	Version       int                    `json:"version"`
+	Subtotal      int64                  `json:"subtotal"`
+	DiscountTotal int64                  `json:"discount_total"`
+	TaxTotal      int64                  `json:"tax_total"`
+	Total         int64                  `json:"total"`
+	IssuedAt      string                 `json:"issued_at"`
+	Lines         []precheckSnapshotLine `json:"lines"`
+}
+
+type precheckSnapshotLine struct {
+	ID            string `json:"id"`
+	MenuItemID    string `json:"menu_item_id"`
+	CatalogItemID string `json:"catalog_item_id"`
+	Name          string `json:"name"`
+	Quantity      int64  `json:"quantity"`
+	UnitPrice     int64  `json:"unit_price"`
+	TotalPrice    int64  `json:"total_price"`
+}
+
+func buildPrecheckSnapshot(order *domain.Order, lines []domain.OrderLine, precheck *domain.Precheck, now time.Time) (json.RawMessage, error) {
+	snapshot := precheckSnapshot{
+		DocumentType:  "precheck",
+		PrecheckID:    precheck.ID,
+		OrderID:       order.ID,
+		TableID:       order.TableID,
+		TableName:     order.TableName,
+		Version:       precheck.Version,
+		Subtotal:      precheck.Subtotal,
+		DiscountTotal: precheck.DiscountTotal,
+		TaxTotal:      precheck.TaxTotal,
+		Total:         precheck.Total,
+		IssuedAt:      shared.DBTime(now),
+	}
+	for _, line := range lines {
+		if line.Status != domain.OrderLineActive {
+			continue
+		}
+		snapshot.Lines = append(snapshot.Lines, precheckSnapshotLine{
+			ID:            line.ID,
+			MenuItemID:    line.MenuItemID,
+			CatalogItemID: line.CatalogItemID,
+			Name:          line.Name,
+			Quantity:      line.Quantity,
+			UnitPrice:     line.UnitPrice,
+			TotalPrice:    line.TotalPrice,
+		})
+	}
+	body, err := json.Marshal(snapshot)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(body), nil
 }

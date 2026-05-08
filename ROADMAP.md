@@ -144,14 +144,15 @@ implemented now:
 
 ### Pilot scope hardening
 
-Статус: `in_progress`
+Статус: `done`
 
-Нужно явно решить до пилота:
+Сделано:
 
-- вводится ли `business_date_local` как pilot blocker;
-- нужен ли reprint в pilot scope;
-- допускается ли waiter payment path в pilot scope;
-- какие diagnostics доступны менеджеру, а какие только support/admin.
+- `business_date_local` введен как backend-owned policy для режимов `standard` и `24_7`;
+- `business_date_local` сохраняется в `checks`, `payments`, `shifts` и `cash_sessions`;
+- reprint включен в pilot scope как controlled reprint из immutable snapshots для precheck и final check;
+- reprint audit пишется через `local_event_log` и Edge -> Cloud события `PrecheckReprinted` / `CheckReprinted`;
+- waiter payment остается out of scope/post-MVP: waiter не получает `pos.payment.*`, личные кассы официантов не создаются.
 
 implemented now:
 
@@ -159,6 +160,7 @@ implemented now:
 - Cloud PostgreSQL получил canonical ISO 4217 currency template (`cloud_currency_reference`);
 - Cloud provisioning contract поддерживает `currencies` stream для Cloud -> Edge master/reference payload.
 - startup migration policy закрепляет `db_runtime_versions` + backup-before-upgrade для `SQLite` и `PostgreSQL`.
+- business-day, reprint и cashier-first waiter-payment decisions перенесены из temp decision note в профильные docs.
 
 ## Что можно оставить после пилота
 

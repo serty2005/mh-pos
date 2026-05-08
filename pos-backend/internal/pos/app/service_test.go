@@ -2133,6 +2133,119 @@ func TestCapturePaymentCreatesFirstAttemptWithEdgeContext(t *testing.T) {
 	}
 }
 
+func TestBusinessDateLocalStandardBoundaryAppliesToPaymentAndCheck(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE restaurants SET business_day_mode = 'standard', business_day_boundary_local_time = '23:30' WHERE id = ?`, f.restaurant.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.openShift(t)
+	f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payment.BusinessDateLocal != "2026-05-03" {
+		t.Fatalf("expected standard boundary business date 2026-05-03, got %s", payment.BusinessDateLocal)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if check.BusinessDateLocal != payment.BusinessDateLocal || check.ClosedAt.IsZero() {
+		t.Fatalf("expected check business date and closed_at, got %+v", check)
+	}
+}
+
+func TestBusinessDateLocal24x7UsesLocalCalendarDate(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE restaurants SET business_day_mode = '24_7', business_day_boundary_local_time = '23:30' WHERE id = ?`, f.restaurant.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.openShift(t)
+	f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payment.BusinessDateLocal != "2026-05-04" {
+		t.Fatalf("expected 24/7 local calendar business date 2026-05-04, got %s", payment.BusinessDateLocal)
+	}
+}
+
+func TestReprintPrecheckUsesSnapshotAndWritesAuditEvent(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := f.service.ReprintPrecheck(f.ctx, app.ReprintPrecheckCommand{CommandMeta: f.edgeMetaCommand("cmd-reprint-precheck"), PrecheckID: precheck.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.CopyMarker != "COPY" || document.DocumentType != "precheck" || !json.Valid(document.Snapshot) {
+		t.Fatalf("expected copy reprint document from snapshot, got %+v", document)
+	}
+	var eventCount int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM local_event_log WHERE command_id = 'cmd-reprint-precheck' AND event_type = 'PrecheckReprinted' AND actor_employee_id = ?`, f.employee.ID).Scan(&eventCount); err != nil {
+		t.Fatal(err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("expected one PrecheckReprinted audit event, got %d", eventCount)
+	}
+}
+
+func TestReprintCheckRequiresManagerAndWritesAuditEvent(t *testing.T) {
+	f := newFixture(t)
+	_, check := f.createPaidOrder(t)
+	if _, err := f.service.ReprintCheck(f.ctx, app.ReprintCheckCommand{CommandMeta: f.edgeMetaCommand("cmd-reprint-check-denied"), CheckID: check.ID}); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected cashier check reprint to be forbidden, got %v", err)
+	}
+	document, err := f.service.ReprintCheck(f.ctx, app.ReprintCheckCommand{CommandMeta: f.managerMetaCommand("cmd-reprint-check"), CheckID: check.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.CopyMarker != "COPY" || document.DocumentType != "check" || !json.Valid(document.Snapshot) {
+		t.Fatalf("expected check copy reprint document from snapshot, got %+v", document)
+	}
+	var eventCount int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM local_event_log WHERE command_id = 'cmd-reprint-check' AND event_type = 'CheckReprinted' AND actor_employee_id = ?`, f.manager.ID).Scan(&eventCount); err != nil {
+		t.Fatal(err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("expected one CheckReprinted audit event, got %d", eventCount)
+	}
+}
+
 func TestCardPaymentRequiresManualCardPermission(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)

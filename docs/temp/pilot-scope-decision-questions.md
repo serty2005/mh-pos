@@ -1,5 +1,18 @@
 # Вопросы для фиксации pilot scope decisions
 
+Статус: `implemented now` / archived note.
+
+Решения из этого документа перенесены в профильные источники истины:
+
+- `ROADMAP.md`;
+- `docs/backend/POS-BACKEND-SPEC.md`;
+- `docs/backend/POS-DATA-AND-MIGRATIONS.md`;
+- `docs/ui/POS-UI-SPEC.md`;
+- `docs/ui/POS-UI-RBAC.md`;
+- `docs/sync/edge-cloud-contracts-v1.md`.
+
+Документ оставлен как историческая заметка о принятых pilot scope решениях и больше не является рабочим источником требований.
+
 ## Назначение
 
 Этот временный документ нужен для обсуждения с коллегами трех pre-pilot решений:

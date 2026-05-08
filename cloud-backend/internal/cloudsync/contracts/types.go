@@ -20,8 +20,10 @@ const (
 	EventOrderLineQuantityChanged EventType = "OrderLineQuantityChanged"
 	EventOrderLineVoided          EventType = "OrderLineVoided"
 	EventPrecheckIssued           EventType = "PrecheckIssued"
+	EventPrecheckReprinted        EventType = "PrecheckReprinted"
 	EventPrecheckCancelled        EventType = "PrecheckCancelled"
 	EventCheckCreated             EventType = "CheckCreated"
+	EventCheckReprinted           EventType = "CheckReprinted"
 	EventPaymentCaptured          EventType = "PaymentCaptured"
 	EventOrderClosed              EventType = "OrderClosed"
 	EventCashSessionOpened        EventType = "CashSessionOpened"
@@ -118,16 +120,19 @@ type OrderLineAdded struct {
 }
 
 type CheckCreated struct {
-	ID            string    `json:"id"`
-	OrderID       string    `json:"order_id"`
-	Status        string    `json:"status"`
-	Subtotal      int64     `json:"subtotal"`
-	DiscountTotal int64     `json:"discount_total"`
-	TaxTotal      int64     `json:"tax_total"`
-	Total         int64     `json:"total"`
-	PaidTotal     int64     `json:"paid_total"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID                string          `json:"id"`
+	OrderID           string          `json:"order_id"`
+	Status            string          `json:"status"`
+	Subtotal          int64           `json:"subtotal"`
+	DiscountTotal     int64           `json:"discount_total"`
+	TaxTotal          int64           `json:"tax_total"`
+	Total             int64           `json:"total"`
+	PaidTotal         int64           `json:"paid_total"`
+	BusinessDateLocal string          `json:"business_date_local"`
+	ClosedAt          time.Time       `json:"closed_at"`
+	Snapshot          json.RawMessage `json:"snapshot,omitempty"`
+	CreatedAt         time.Time       `json:"created_at"`
+	UpdatedAt         time.Time       `json:"updated_at"`
 }
 
 type PaymentCaptured struct {
@@ -141,6 +146,7 @@ type PaymentCaptured struct {
 	Amount                int64     `json:"amount"`
 	Currency              string    `json:"currency"`
 	Status                string    `json:"status"`
+	BusinessDateLocal     string    `json:"business_date_local"`
 	ProviderName          *string   `json:"provider_name,omitempty"`
 	ProviderTransactionID *string   `json:"provider_transaction_id,omitempty"`
 	ProviderReference     *string   `json:"provider_reference,omitempty"`
@@ -198,6 +204,15 @@ type CashDrawerEventRecorded struct {
 	CreatedAt             time.Time `json:"created_at"`
 }
 
+type ReprintDocument struct {
+	DocumentType    string          `json:"document_type"`
+	SourceID        string          `json:"source_id"`
+	CopyMarker      string          `json:"copy_marker"`
+	ActorEmployeeID string          `json:"actor_employee_id,omitempty"`
+	ReprintedAt     time.Time       `json:"reprinted_at"`
+	Snapshot        json.RawMessage `json:"snapshot"`
+}
+
 type EventAck struct {
 	Status              string    `json:"status"`
 	IdempotencyKey      string    `json:"idempotency_key"`
@@ -253,6 +268,8 @@ func ValidateEventPayload(v SyncEnvelope) error {
 		return validatePayload[OrderLineAdded](v)
 	case EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckCancelled, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
 		return validateOperationalPayload(v)
+	case EventPrecheckReprinted, EventCheckReprinted:
+		return validatePayload[ReprintDocument](v)
 	case EventCheckCreated:
 		return validatePayload[CheckCreated](v)
 	case EventPaymentCaptured:
@@ -304,7 +321,7 @@ func validateOperationalPayload(v SyncEnvelope) error {
 
 func IsKnownEventType(v EventType) bool {
 	switch v {
-	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckCancelled, EventCheckCreated, EventPaymentCaptured, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
+	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckReprinted, EventPrecheckCancelled, EventCheckCreated, EventCheckReprinted, EventPaymentCaptured, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
 		return true
 	default:
 		return false

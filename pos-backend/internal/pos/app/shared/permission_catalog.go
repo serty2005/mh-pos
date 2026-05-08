@@ -31,6 +31,7 @@ const (
 	PermissionOrderClose               PermissionID = "pos.order.close"
 	PermissionPrecheckIssue            PermissionID = "pos.precheck.issue"
 	PermissionPrecheckView             PermissionID = "pos.precheck.view"
+	PermissionPrecheckReprint          PermissionID = "pos.precheck.reprint"
 	// Идентификаторы прав manager override flow.
 	PermissionPrecheckCancelRequest PermissionID = "pos.precheck.cancel.request"
 	PermissionPrecheckCancel        PermissionID = "pos.precheck.cancel"
@@ -38,6 +39,7 @@ const (
 	PermissionPaymentCardManual     PermissionID = "pos.payment.card.manual"
 	PermissionPaymentOther          PermissionID = "pos.payment.other"
 	PermissionCheckView             PermissionID = "pos.check.view"
+	PermissionCheckReprint          PermissionID = "pos.check.reprint"
 	PermissionSyncView              PermissionID = "pos.sync.view"
 	// Идентификатор права manager/service sync operation.
 	PermissionSyncRetryFailed PermissionID = "pos.sync.retry_failed"
@@ -63,12 +65,14 @@ var knownPermissionIDs = map[PermissionID]struct{}{
 	PermissionOrderClose:               {},
 	PermissionPrecheckIssue:            {},
 	PermissionPrecheckView:             {},
+	PermissionPrecheckReprint:          {},
 	PermissionPrecheckCancelRequest:    {},
 	PermissionPrecheckCancel:           {},
 	PermissionPaymentCash:              {},
 	PermissionPaymentCardManual:        {},
 	PermissionPaymentOther:             {},
 	PermissionCheckView:                {},
+	PermissionCheckReprint:             {},
 	PermissionSyncView:                 {},
 	PermissionSyncRetryFailed:          {},
 }
@@ -112,6 +116,7 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionOrderClose,
 			PermissionPrecheckIssue,
 			PermissionPrecheckView,
+			PermissionPrecheckReprint,
 			PermissionPaymentCash,
 			PermissionPaymentCardManual,
 			PermissionCheckView,
@@ -138,6 +143,7 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionOrderClose,
 			PermissionPrecheckIssue,
 			PermissionPrecheckView,
+			PermissionPrecheckReprint,
 			PermissionPrecheckCancelRequest,
 			PermissionPaymentCash,
 			PermissionPaymentCardManual,
@@ -163,6 +169,7 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionOrderClose,
 			PermissionPrecheckIssue,
 			PermissionPrecheckView,
+			PermissionPrecheckReprint,
 			PermissionCheckView,
 		},
 	},
@@ -188,12 +195,14 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionOrderClose,
 			PermissionPrecheckIssue,
 			PermissionPrecheckView,
+			PermissionPrecheckReprint,
 			PermissionPrecheckCancelRequest,
 			PermissionPrecheckCancel,
 			PermissionPaymentCash,
 			PermissionPaymentCardManual,
 			PermissionPaymentOther,
 			PermissionCheckView,
+			PermissionCheckReprint,
 			PermissionSyncView,
 			PermissionSyncRetryFailed,
 		},

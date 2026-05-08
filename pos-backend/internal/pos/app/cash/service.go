@@ -101,6 +101,14 @@ func (s *Service) OpenCashSession(ctx context.Context, cmd OpenCashSessionComman
 		} else if !errors.Is(err, domain.ErrNotFound) {
 			return err
 		}
+		restaurant, err := s.repo.GetRestaurant(ctx, shift.RestaurantID)
+		if err != nil {
+			return err
+		}
+		businessDate, err := shared.BusinessDateLocal(*restaurant, now)
+		if err != nil {
+			return err
+		}
 		session = &domain.CashSession{
 			ID:                 s.ids.NewID(),
 			EdgeCashSessionID:  s.ids.NewID(),
@@ -109,6 +117,7 @@ func (s *Service) OpenCashSession(ctx context.Context, cmd OpenCashSessionComman
 			ShiftID:            shift.ID,
 			OpenedByEmployeeID: cmd.OpenedByEmployeeID,
 			Status:             domain.CashSessionOpen,
+			BusinessDateLocal:  businessDate,
 			OpeningCashAmount:  cmd.OpeningCashAmount,
 			OpenedAt:           now,
 			CreatedAt:          now,

@@ -43,12 +43,26 @@ func TestCanonicalRoleProfiles(t *testing.T) {
 	if shared.HasPermission(shared.PermissionsJSON(cashier.Permissions...), string(shared.PermissionCashSessionClose)) {
 		t.Fatal("expected cashier not to close cash session directly")
 	}
+	waiter, ok := shared.RoleProfileByName(shared.RoleWaiter)
+	if !ok {
+		t.Fatal("expected waiter role profile")
+	}
+	waiterPermissions := shared.PermissionsJSON(waiter.Permissions...)
+	if shared.HasAnyPermission(waiterPermissions, shared.PermissionPaymentCash, shared.PermissionPaymentCardManual, shared.PermissionPaymentOther) {
+		t.Fatal("expected waiter payment to stay out of scope")
+	}
+	if !shared.HasPermission(waiterPermissions, string(shared.PermissionPrecheckReprint)) {
+		t.Fatal("expected waiter to reprint prechecks from immutable snapshot")
+	}
 	manager, ok := shared.RoleProfileByName(shared.RoleManager)
 	if !ok {
 		t.Fatal("expected manager role profile")
 	}
 	if !shared.HasPermission(shared.PermissionsJSON(manager.Permissions...), string(shared.PermissionPrecheckCancel)) {
 		t.Fatal("expected manager to approve precheck cancel")
+	}
+	if !shared.HasPermission(shared.PermissionsJSON(manager.Permissions...), string(shared.PermissionCheckReprint)) {
+		t.Fatal("expected manager to reprint final checks")
 	}
 	if !shared.HasPermission(shared.RolePermissionsJSON(shared.RoleSupportAdmin), string(shared.PermissionSyncRetryFailed)) {
 		t.Fatal("expected support admin to retry failed syncs")

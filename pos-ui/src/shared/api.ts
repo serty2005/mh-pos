@@ -12,6 +12,7 @@ import {
   paymentSchema,
   pinLoginResultSchema,
   precheckSchema,
+  reprintDocumentSchema,
   shiftSchema,
   tableSchema,
   type PinLoginResult,
@@ -421,6 +422,13 @@ export function cancelPrecheck(precheckId: string, managerEmployeeId: string, ma
   });
 }
 
+export function reprintPrecheck(precheckId: string) {
+  return request(`/prechecks/${encodeURIComponent(precheckId)}/reprint`, reprintDocumentSchema, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
 export function capturePrecheckPayment(precheckId: string, method: 'cash' | 'card', amount: number, currency: string) {
   return request(`/prechecks/${encodeURIComponent(precheckId)}/payments`, paymentSchema, {
     method: 'POST',
@@ -435,4 +443,11 @@ export function capturePrecheckPayment(precheckId: string, method: 'cash' | 'car
 
 export function getCheck(checkId: string) {
   return request(`/checks/${encodeURIComponent(checkId)}`, checkSchema);
+}
+
+export function reprintCheck(checkId: string) {
+  return request(`/checks/${encodeURIComponent(checkId)}/reprint`, reprintDocumentSchema, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
 }

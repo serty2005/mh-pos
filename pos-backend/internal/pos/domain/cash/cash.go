@@ -24,6 +24,7 @@ type CashSession struct {
 	OpenedByEmployeeID string            `json:"opened_by_employee_id"`
 	ClosedByEmployeeID *string           `json:"closed_by_employee_id,omitempty"`
 	Status             CashSessionStatus `json:"status"`
+	BusinessDateLocal  string            `json:"business_date_local"`
 	OpeningCashAmount  int64             `json:"opening_cash_amount"`
 	ClosingCashAmount  *int64            `json:"closing_cash_amount,omitempty"`
 	OpenedAt           time.Time         `json:"opened_at"`

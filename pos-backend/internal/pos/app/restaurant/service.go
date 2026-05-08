@@ -25,9 +25,11 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 
 type CreateRestaurantCommand struct {
 	shared.CommandMeta
-	Name     string `json:"name"`
-	Timezone string `json:"timezone"`
-	Currency string `json:"currency"`
+	Name                         string                 `json:"name"`
+	Timezone                     string                 `json:"timezone"`
+	Currency                     string                 `json:"currency"`
+	BusinessDayMode              domain.BusinessDayMode `json:"business_day_mode,omitempty"`
+	BusinessDayBoundaryLocalTime string                 `json:"business_day_boundary_local_time,omitempty"`
 }
 
 func (s *Service) ListRestaurants(ctx context.Context) ([]domain.Restaurant, error) {
@@ -45,15 +47,21 @@ func (s *Service) CreateRestaurant(ctx context.Context, cmd CreateRestaurantComm
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrInvalid, err)
 	}
+	mode, boundary, err := shared.NormalizeBusinessDayConfig(cmd.BusinessDayMode, cmd.BusinessDayBoundaryLocalTime)
+	if err != nil {
+		return nil, err
+	}
 	now := s.clock.Now()
 	v := &domain.Restaurant{
-		ID:        s.ids.NewID(),
-		Name:      strings.TrimSpace(cmd.Name),
-		Timezone:  strings.TrimSpace(cmd.Timezone),
-		Currency:  currency,
-		Active:    true,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:                           s.ids.NewID(),
+		Name:                         strings.TrimSpace(cmd.Name),
+		Timezone:                     strings.TrimSpace(cmd.Timezone),
+		Currency:                     currency,
+		BusinessDayMode:              mode,
+		BusinessDayBoundaryLocalTime: boundary,
+		Active:                       true,
+		CreatedAt:                    now,
+		UpdatedAt:                    now,
 	}
 	return v, s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {

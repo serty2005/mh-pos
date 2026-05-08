@@ -16,6 +16,8 @@ describe('rbac helpers', () => {
     expect(permissionCatalog.employeeShiftViewCurrent).toBe('pos.employee_shift.view_current');
     expect(permissionCatalog.paymentCash).toBe('pos.payment.cash');
     expect(permissionCatalog.paymentCardManual).toBe('pos.payment.card.manual');
+    expect(permissionCatalog.precheckReprint).toBe('pos.precheck.reprint');
+    expect(permissionCatalog.checkReprint).toBe('pos.check.reprint');
   });
 
   it('checks alternatives for role visibility decisions', () => {

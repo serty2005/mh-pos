@@ -86,7 +86,7 @@ func (s *Service) OpenShift(ctx context.Context, cmd OpenShiftCommand) (*domain.
 		return nil, fmt.Errorf("%w: restaurant_id, device_id и opened_by_employee_id обязательны", domain.ErrInvalid)
 	}
 	now := s.clock.Now()
-	v := &domain.Shift{ID: s.ids.NewID(), RestaurantID: cmd.RestaurantID, DeviceID: cmd.DeviceID, OpenedByEmployeeID: cmd.OpenedByEmployeeID, Status: domain.ShiftOpen, OpenedAt: now, OpeningCashAmount: cmd.OpeningCashAmount, CreatedAt: now, UpdatedAt: now}
+	var v *domain.Shift
 	return v, s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
@@ -102,6 +102,15 @@ func (s *Service) OpenShift(ctx context.Context, cmd OpenShiftCommand) (*domain.
 		} else if !errors.Is(err, domain.ErrNotFound) {
 			return err
 		}
+		restaurant, err := s.repo.GetRestaurant(ctx, cmd.RestaurantID)
+		if err != nil {
+			return err
+		}
+		businessDate, err := shared.BusinessDateLocal(*restaurant, now)
+		if err != nil {
+			return err
+		}
+		v = &domain.Shift{ID: s.ids.NewID(), RestaurantID: cmd.RestaurantID, DeviceID: cmd.DeviceID, OpenedByEmployeeID: cmd.OpenedByEmployeeID, Status: domain.ShiftOpen, BusinessDateLocal: businessDate, OpenedAt: now, OpeningCashAmount: cmd.OpeningCashAmount, CreatedAt: now, UpdatedAt: now}
 		if err := s.repo.CreateShift(ctx, v); err != nil {
 			return err
 		}

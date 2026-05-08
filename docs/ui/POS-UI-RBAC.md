@@ -42,12 +42,14 @@ implemented now:
 - `pos.order.close`
 - `pos.precheck.issue`
 - `pos.precheck.view`
+- `pos.precheck.reprint`
 - `pos.precheck.cancel.request`
 - `pos.precheck.cancel`
 - `pos.payment.cash`
 - `pos.payment.card.manual`
 - `pos.payment.other`
 - `pos.check.view`
+- `pos.check.reprint`
 - `pos.sync.view`
 - `pos.sync.retry_failed`
 
@@ -102,11 +104,13 @@ out of scope:
 | Close order after final check | `pos.order.close` | A | A | A | A | - | - |
 | Issue precheck | `pos.precheck.issue` | A | A | A | A | - | - |
 | View precheck | `pos.precheck.view` | A | A | A | A | - | - |
+| Reprint precheck copy | `pos.precheck.reprint` | A | A | A | A | - | - |
 | Cancel precheck | `pos.precheck.cancel.request` + `pos.precheck.cancel` | - | O | - | A | - | - |
 | Take cash payment | `pos.payment.cash` | A | A | - | A | - | - |
 | Take trusted manual card payment | `pos.payment.card.manual` | A | A | - | A | - | - |
 | Other payment method | `pos.payment.other` | - | - | - | A | - | - |
 | View final check | `pos.check.view` | A | A | A | A | - | - |
+| Reprint final check copy | `pos.check.reprint` | - | - | - | A | - | - |
 | View sync status/local events/outbox | `pos.sync.view` | - | A | - | A | - | A |
 | Retry failed syncs | `pos.sync.retry_failed` | - | - | - | A | - | A |
 
@@ -118,7 +122,6 @@ out of scope:
 - view other employee order;
 - transfer order to another employee;
 - waiter payment override;
-- reprint final check;
 - refund payment;
 - diagnostics screens/actions;
 - manager/admin screens for editing halls, tables, menu, catalog, employees and roles.

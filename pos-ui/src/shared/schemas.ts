@@ -125,6 +125,9 @@ export const checkSchema = z.object({
   tax_total: z.number(),
   total: z.number(),
   paid_total: z.number(),
+  business_date_local: z.string(),
+  closed_at: z.string(),
+  snapshot: z.unknown().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -162,6 +165,7 @@ export const precheckSchema = z.object({
   tax_total: z.number(),
   total: z.number(),
   paid_total: z.number(),
+  snapshot: z.unknown().optional(),
   created_at: z.string(),
   issued_at: z.string(),
   closed_at: optionalNullableString,
@@ -180,12 +184,22 @@ export const paymentSchema = z.object({
   amount: z.number(),
   currency: z.string(),
   status: z.enum(['captured', 'refunded', 'failed']),
+  business_date_local: z.string(),
   provider_name: optionalNullableString,
   provider_transaction_id: optionalNullableString,
   provider_reference: optionalNullableString,
   fingerprint_hash: optionalNullableString,
   created_at: z.string(),
   updated_at: z.string(),
+});
+
+export const reprintDocumentSchema = z.object({
+  document_type: z.enum(['precheck', 'check']),
+  source_id: z.string(),
+  copy_marker: z.string(),
+  actor_employee_id: z.string().optional(),
+  reprinted_at: z.string(),
+  snapshot: z.unknown(),
 });
 
 export type PairingStatus = z.infer<typeof pairingStatusSchema>;
@@ -202,3 +216,4 @@ export type OrderLine = z.infer<typeof orderLineSchema>;
 export type Precheck = z.infer<typeof precheckSchema>;
 export type Payment = z.infer<typeof paymentSchema>;
 export type Check = z.infer<typeof checkSchema>;
+export type ReprintDocument = z.infer<typeof reprintDocumentSchema>;

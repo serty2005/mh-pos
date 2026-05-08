@@ -8,5 +8,6 @@ import (
 
 type RestaurantRepository interface {
 	CreateRestaurant(context.Context, *restaurant.Restaurant) error
+	GetRestaurant(context.Context, string) (*restaurant.Restaurant, error)
 	ListRestaurants(context.Context) ([]restaurant.Restaurant, error)
 }

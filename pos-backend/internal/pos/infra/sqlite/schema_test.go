@@ -43,9 +43,9 @@ func seedFinancialForSchemaTests(t *testing.T, ctx context.Context, db *sql.DB) 
 	execSchema(t, ctx, db, `INSERT INTO halls(id,restaurant_id,name,active,created_at,updated_at) VALUES ('hall-1','restaurant-1','Main',1,?,?)`, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO tables(id,restaurant_id,hall_id,name,seats,active,created_at,updated_at) VALUES ('table-1','restaurant-1','hall-1','A1',2,1,?,?)`, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO tables(id,restaurant_id,hall_id,name,seats,active,created_at,updated_at) VALUES ('table-2','restaurant-1','hall-1','A2',2,1,?,?)`, schemaTestTime, schemaTestTime)
-	execSchema(t, ctx, db, `INSERT INTO shifts(id,restaurant_id,device_id,opened_by_employee_id,status,opened_at,opening_cash_amount,created_at,updated_at) VALUES ('shift-1','restaurant-1','device-1','employee-1','open',?,0,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO shifts(id,restaurant_id,device_id,opened_by_employee_id,status,business_date_local,opened_at,opening_cash_amount,created_at,updated_at) VALUES ('shift-1','restaurant-1','device-1','employee-1','open','2026-05-04',?,0,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO orders(id,edge_order_id,restaurant_id,device_id,shift_id,status,table_id,table_name,guest_count,opened_at,created_at,updated_at) VALUES ('order-1','edge-order-1','restaurant-1','device-1','shift-1','open','table-1','A1',1,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
-	execSchema(t, ctx, db, `INSERT INTO checks(id,order_id,status,subtotal,discount_total,tax_total,total,paid_total,created_at,updated_at) VALUES ('check-1','order-1','open',100,0,0,100,0,?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO checks(id,order_id,status,subtotal,discount_total,tax_total,total,paid_total,business_date_local,closed_at,snapshot,created_at,updated_at) VALUES ('check-1','order-1','open',100,0,0,100,0,'2026-05-04',?,'{}',?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
 }
 
 func execSchema(t *testing.T, ctx context.Context, db *sql.DB, query string, args ...any) {
@@ -174,10 +174,10 @@ func TestOrdersRequireTableEntity(t *testing.T) {
 func TestPrechecksAllowOnlyOneIssuedPrecheckPerOrder(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)
-	insert := `INSERT INTO prechecks(id,order_id,status,subtotal,discount_total,tax_total,total,created_at,issued_at) VALUES (?,?,?,?,?,?,?,?,?)`
-	execSchema(t, ctx, db, insert, "precheck-1", "order-1", "issued", 100, 0, 0, 100, schemaTestTime, schemaTestTime)
+	insert := `INSERT INTO prechecks(id,order_id,status,subtotal,discount_total,tax_total,total,snapshot,created_at,issued_at) VALUES (?,?,?,?,?,?,?,?,?,?)`
+	execSchema(t, ctx, db, insert, "precheck-1", "order-1", "issued", 100, 0, 0, 100, "{}", schemaTestTime, schemaTestTime)
 
-	_, err := db.ExecContext(ctx, insert, "precheck-2", "order-1", "issued", 100, 0, 0, 100, schemaTestTime, schemaTestTime)
+	_, err := db.ExecContext(ctx, insert, "precheck-2", "order-1", "issued", 100, 0, 0, 100, "{}", schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected second issued precheck for order to fail")
 	}
@@ -187,7 +187,7 @@ func TestPrecheckTotalsMustMatchSnapshotFormula(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)
 
-	_, err := db.ExecContext(ctx, `INSERT INTO prechecks(id,order_id,status,subtotal,discount_total,tax_total,total,created_at,issued_at) VALUES ('precheck-bad','order-1','issued',100,10,5,100,?,?)`, schemaTestTime, schemaTestTime)
+	_, err := db.ExecContext(ctx, `INSERT INTO prechecks(id,order_id,status,subtotal,discount_total,tax_total,total,snapshot,created_at,issued_at) VALUES ('precheck-bad','order-1','issued',100,10,5,100,'{}',?,?)`, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected inconsistent precheck total to fail")
 	}
@@ -196,19 +196,19 @@ func TestPrecheckTotalsMustMatchSnapshotFormula(t *testing.T) {
 func TestPrecheckLifecycleFoundationConstraints(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)
-	insert := `INSERT INTO prechecks(id,order_id,status,version,subtotal,discount_total,tax_total,total,paid_total,created_at,issued_at,closed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
-	execSchema(t, ctx, db, insert, "precheck-1", "order-1", "cancelled", 1, 100, 0, 0, 100, 0, schemaTestTime, schemaTestTime, schemaTestTime)
-	execSchema(t, ctx, db, insert, "precheck-2", "order-1", "superseded", 2, 100, 0, 0, 100, 0, schemaTestTime, schemaTestTime, schemaTestTime)
+	insert := `INSERT INTO prechecks(id,order_id,status,version,subtotal,discount_total,tax_total,total,paid_total,snapshot,created_at,issued_at,closed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+	execSchema(t, ctx, db, insert, "precheck-1", "order-1", "cancelled", 1, 100, 0, 0, 100, 0, "{}", schemaTestTime, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, insert, "precheck-2", "order-1", "superseded", 2, 100, 0, 0, 100, 0, "{}", schemaTestTime, schemaTestTime, schemaTestTime)
 
-	_, err := db.ExecContext(ctx, insert, "precheck-bad-version", "order-1", "cancelled", 0, 100, 0, 0, 100, 0, schemaTestTime, schemaTestTime, schemaTestTime)
+	_, err := db.ExecContext(ctx, insert, "precheck-bad-version", "order-1", "cancelled", 0, 100, 0, 0, 100, 0, "{}", schemaTestTime, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected non-positive precheck version to fail")
 	}
-	_, err = db.ExecContext(ctx, insert, "precheck-bad-paid-total", "order-1", "cancelled", 3, 100, 0, 0, 100, 101, schemaTestTime, schemaTestTime, schemaTestTime)
+	_, err = db.ExecContext(ctx, insert, "precheck-bad-paid-total", "order-1", "cancelled", 3, 100, 0, 0, 100, 101, "{}", schemaTestTime, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected paid_total above total to fail")
 	}
-	_, err = db.ExecContext(ctx, insert, "precheck-bad-terminal-time", "order-1", "cancelled", 4, 100, 0, 0, 100, 0, schemaTestTime, schemaTestTime, nil)
+	_, err = db.ExecContext(ctx, insert, "precheck-bad-terminal-time", "order-1", "cancelled", 4, 100, 0, 0, 100, 0, "{}", schemaTestTime, schemaTestTime, nil)
 	if err == nil {
 		t.Fatal("expected terminal precheck without closed_at to fail")
 	}
@@ -217,10 +217,10 @@ func TestPrecheckLifecycleFoundationConstraints(t *testing.T) {
 func TestCashSessionsAllowOnlyOneOpenSessionPerDevice(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)
-	insert := `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,shift_id,opened_by_employee_id,status,opening_cash_amount,opened_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`
-	execSchema(t, ctx, db, insert, "cash-session-1", "edge-cash-session-1", "restaurant-1", "device-1", "shift-1", "employee-1", "open", 100, schemaTestTime, schemaTestTime, schemaTestTime)
+	insert := `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,shift_id,opened_by_employee_id,status,business_date_local,opening_cash_amount,opened_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+	execSchema(t, ctx, db, insert, "cash-session-1", "edge-cash-session-1", "restaurant-1", "device-1", "shift-1", "employee-1", "open", "2026-05-04", 100, schemaTestTime, schemaTestTime, schemaTestTime)
 
-	_, err := db.ExecContext(ctx, insert, "cash-session-2", "edge-cash-session-2", "restaurant-1", "device-1", "shift-1", "employee-1", "open", 200, schemaTestTime, schemaTestTime, schemaTestTime)
+	_, err := db.ExecContext(ctx, insert, "cash-session-2", "edge-cash-session-2", "restaurant-1", "device-1", "shift-1", "employee-1", "open", "2026-05-04", 200, schemaTestTime, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected second open cash session on device to fail")
 	}
@@ -229,7 +229,7 @@ func TestCashSessionsAllowOnlyOneOpenSessionPerDevice(t *testing.T) {
 func TestCashDrawerEventsRequireSessionAndNonNegativeAmount(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)
-	execSchema(t, ctx, db, `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,shift_id,opened_by_employee_id,status,opening_cash_amount,opened_at,created_at,updated_at) VALUES ('cash-session-1','edge-cash-session-1','restaurant-1','device-1','shift-1','employee-1','open',100,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,shift_id,opened_by_employee_id,status,business_date_local,opening_cash_amount,opened_at,created_at,updated_at) VALUES ('cash-session-1','edge-cash-session-1','restaurant-1','device-1','shift-1','employee-1','open','2026-05-04',100,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO cash_drawer_events(id,edge_cash_drawer_event_id,cash_session_id,restaurant_id,device_id,shift_id,created_by_employee_id,event_type,amount,occurred_at,created_at) VALUES ('cash-event-1','edge-cash-event-1','cash-session-1','restaurant-1','device-1','shift-1','employee-1','cash_in',100,?,?)`, schemaTestTime, schemaTestTime)
 
 	_, err := db.ExecContext(ctx, `INSERT INTO cash_drawer_events(id,edge_cash_drawer_event_id,cash_session_id,restaurant_id,device_id,shift_id,created_by_employee_id,event_type,amount,occurred_at,created_at) VALUES ('cash-event-2','edge-cash-event-2','missing','restaurant-1','device-1','shift-1','employee-1','cash_in',100,?,?)`, schemaTestTime, schemaTestTime)
@@ -245,11 +245,11 @@ func TestCashDrawerEventsRequireSessionAndNonNegativeAmount(t *testing.T) {
 func TestPaymentsRequireEdgeContextAndPaymentAttemptsReferencePayment(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)
-	execSchema(t, ctx, db, `INSERT INTO prechecks(id,order_id,status,version,subtotal,discount_total,tax_total,total,paid_total,created_at,issued_at) VALUES ('precheck-1','order-1','issued',1,100,0,0,100,0,?,?)`, schemaTestTime, schemaTestTime)
-	execSchema(t, ctx, db, `INSERT INTO payments(id,edge_payment_id,restaurant_id,device_id,shift_id,precheck_id,method,amount,currency,status,created_at,updated_at) VALUES ('payment-1','edge-payment-1','restaurant-1','device-1','shift-1','precheck-1','cash',100,'RUB','captured',?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO prechecks(id,order_id,status,version,subtotal,discount_total,tax_total,total,paid_total,snapshot,created_at,issued_at) VALUES ('precheck-1','order-1','issued',1,100,0,0,100,0,'{}',?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO payments(id,edge_payment_id,restaurant_id,device_id,shift_id,precheck_id,method,amount,currency,status,business_date_local,created_at,updated_at) VALUES ('payment-1','edge-payment-1','restaurant-1','device-1','shift-1','precheck-1','cash',100,'RUB','captured','2026-05-04',?,?)`, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO payment_attempts(id,payment_id,attempt_no,method,amount,currency,status,attempted_at,created_at) VALUES ('attempt-1','payment-1',1,'cash',100,'RUB','captured',?,?)`, schemaTestTime, schemaTestTime)
 
-	_, err := db.ExecContext(ctx, `INSERT INTO payments(id,edge_payment_id,restaurant_id,device_id,shift_id,precheck_id,method,amount,currency,status,created_at,updated_at) VALUES ('payment-2','edge-payment-2',NULL,'device-1','shift-1','precheck-1','cash',100,'RUB','captured',?,?)`, schemaTestTime, schemaTestTime)
+	_, err := db.ExecContext(ctx, `INSERT INTO payments(id,edge_payment_id,restaurant_id,device_id,shift_id,precheck_id,method,amount,currency,status,business_date_local,created_at,updated_at) VALUES ('payment-2','edge-payment-2',NULL,'device-1','shift-1','precheck-1','cash',100,'RUB','captured','2026-05-04',?,?)`, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected payment without restaurant_id to fail")
 	}

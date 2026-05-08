@@ -283,6 +283,14 @@ func normalizeRestaurant(v domain.Restaurant, now time.Time) domain.Restaurant {
 	v.Name = strings.TrimSpace(v.Name)
 	v.Timezone = strings.TrimSpace(v.Timezone)
 	v.Currency = strings.ToUpper(strings.TrimSpace(v.Currency))
+	if v.BusinessDayMode == "" {
+		v.BusinessDayMode = shared.DefaultBusinessDayMode
+	}
+	if strings.TrimSpace(v.BusinessDayBoundaryLocalTime) == "" {
+		v.BusinessDayBoundaryLocalTime = shared.DefaultBusinessDayBoundaryLocalTime
+	} else {
+		v.BusinessDayBoundaryLocalTime = strings.TrimSpace(v.BusinessDayBoundaryLocalTime)
+	}
 	v.CreatedAt = defaultTime(v.CreatedAt, now)
 	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
 	return v
@@ -375,6 +383,9 @@ func validateRestaurant(v domain.Restaurant) error {
 	}
 	if _, err := shared.ValidateCurrencyCode(v.Currency); err != nil {
 		return fmt.Errorf("%w: %v", domain.ErrInvalid, err)
+	}
+	if _, _, err := shared.NormalizeBusinessDayConfig(v.BusinessDayMode, v.BusinessDayBoundaryLocalTime); err != nil {
+		return err
 	}
 	return nil
 }

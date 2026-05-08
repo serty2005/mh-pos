@@ -87,9 +87,11 @@ func NewRouter(service *app.Service) http.Handler {
 
 		r.Get("/prechecks/{id}", h.getPrecheck)
 		r.Post("/prechecks/{id}/cancel", h.cancelPrecheck)
+		r.Post("/prechecks/{id}/reprint", h.reprintPrecheck)
 		r.Post("/prechecks/{id}/payments", h.capturePrecheckPayment)
 
 		r.Get("/checks/{id}", h.getCheck)
+		r.Post("/checks/{id}/reprint", h.reprintCheck)
 
 		r.Post("/cash-shifts/open", h.openCashSession)
 		r.Post("/cash-shifts/{id}/close", h.closeCashSession)
@@ -674,11 +676,33 @@ func (h *Handler) cancelPrecheck(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, r, v, err)
 }
 
+func (h *Handler) reprintPrecheck(w http.ResponseWriter, r *http.Request) {
+	var cmd app.ReprintPrecheckCommand
+	if r.Body != nil {
+		_ = httpx.Decode(r, &cmd)
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	cmd.PrecheckID = chi.URLParam(r, "id")
+	v, err := h.service.ReprintPrecheck(r.Context(), cmd)
+	writeCreated(w, r, v, err)
+}
+
 func (h *Handler) getCheck(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.GetCheckAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
 	writeOK(w, r, v, err)
+}
+
+func (h *Handler) reprintCheck(w http.ResponseWriter, r *http.Request) {
+	var cmd app.ReprintCheckCommand
+	if r.Body != nil {
+		_ = httpx.Decode(r, &cmd)
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	cmd.CheckID = chi.URLParam(r, "id")
+	v, err := h.service.ReprintCheck(r.Context(), cmd)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) capturePrecheckPayment(w http.ResponseWriter, r *http.Request) {

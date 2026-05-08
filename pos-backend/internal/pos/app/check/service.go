@@ -2,6 +2,7 @@ package check
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"pos-backend/internal/platform/clock"
@@ -11,6 +12,7 @@ import (
 	"pos-backend/internal/pos/domain"
 	"pos-backend/internal/pos/ports"
 	"strings"
+	"time"
 )
 
 type Service struct {
@@ -34,6 +36,11 @@ type CapturePaymentCommand struct {
 	ProviderTransactionID string               `json:"provider_transaction_id,omitempty"`
 	ProviderReference     string               `json:"provider_reference,omitempty"`
 	FingerprintHash       string               `json:"fingerprint_hash,omitempty"`
+}
+
+type ReprintCheckCommand struct {
+	shared.CommandMeta
+	CheckID string `json:"check_id"`
 }
 
 func (s *Service) GetCheck(ctx context.Context, id string) (*domain.Check, error) {
@@ -96,6 +103,14 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 		if cashSession.ShiftID != order.ShiftID || cashSession.RestaurantID != order.RestaurantID {
 			return fmt.Errorf("%w: кассовая смена оплаты не совпадает с личной сменой заказа", domain.ErrConflict)
 		}
+		restaurant, err := s.repo.GetRestaurant(ctx, order.RestaurantID)
+		if err != nil {
+			return err
+		}
+		businessDate, err := shared.BusinessDateLocal(*restaurant, now)
+		if err != nil {
+			return err
+		}
 		if err := precheck.ApplyCapturedPayment(cmd.Amount, now); err != nil {
 			return err
 		}
@@ -117,6 +132,7 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 			Amount:                cmd.Amount,
 			Currency:              currency,
 			Status:                domain.PaymentCaptured,
+			BusinessDateLocal:     businessDate,
 			ProviderName:          optionalString(cmd.ProviderName),
 			ProviderTransactionID: optionalString(cmd.ProviderTransactionID),
 			ProviderReference:     optionalString(cmd.ProviderReference),
@@ -160,17 +176,28 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 			return err
 		}
 		check := &domain.Check{
-			ID:            s.ids.NewID(),
-			OrderID:       order.ID,
-			Status:        domain.CheckPaid,
-			Subtotal:      precheck.Subtotal,
-			DiscountTotal: precheck.DiscountTotal,
-			TaxTotal:      precheck.TaxTotal,
-			Total:         precheck.Total,
-			PaidTotal:     precheck.PaidTotal,
-			CreatedAt:     now,
-			UpdatedAt:     now,
+			ID:                s.ids.NewID(),
+			OrderID:           order.ID,
+			Status:            domain.CheckPaid,
+			Subtotal:          precheck.Subtotal,
+			DiscountTotal:     precheck.DiscountTotal,
+			TaxTotal:          precheck.TaxTotal,
+			Total:             precheck.Total,
+			PaidTotal:         precheck.PaidTotal,
+			BusinessDateLocal: businessDate,
+			ClosedAt:          now,
+			CreatedAt:         now,
+			UpdatedAt:         now,
 		}
+		payments, err := s.repo.ListPaymentsByPrecheck(ctx, precheck.ID)
+		if err != nil {
+			return err
+		}
+		snapshot, err := buildCheckSnapshot(order, precheck, payments, check, now)
+		if err != nil {
+			return err
+		}
+		check.Snapshot = snapshot
 		if err := s.repo.CreateCheck(ctx, check); err != nil {
 			return err
 		}
@@ -186,6 +213,46 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Order", order.ID, "OrderClosed", order)
 	})
 	return payment, err
+}
+
+func (s *Service) ReprintCheck(ctx context.Context, cmd ReprintCheckCommand) (*domain.ReprintDocument, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
+	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(cmd.CheckID) == "" {
+		return nil, fmt.Errorf("%w: check_id is required", domain.ErrInvalid)
+	}
+	if strings.TrimSpace(cmd.CommandID) == "" {
+		cmd.CommandID = s.ids.NewID()
+	}
+	now := s.clock.Now()
+	var document *domain.ReprintDocument
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
+			return err
+		}
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionCheckReprint)); err != nil {
+			return err
+		}
+		check, err := s.repo.GetCheck(ctx, cmd.CheckID)
+		if err != nil {
+			return err
+		}
+		order, err := s.repo.GetOrder(ctx, check.OrderID)
+		if err != nil {
+			return err
+		}
+		if order.DeviceID != cmd.DeviceID {
+			return fmt.Errorf("%w: check device does not match command device", domain.ErrConflict)
+		}
+		if len(check.Snapshot) == 0 || !json.Valid(check.Snapshot) {
+			return fmt.Errorf("%w: check snapshot is not available", domain.ErrConflict)
+		}
+		document = domain.NewReprintDocument("check", check.ID, check.Snapshot, cmd.ActorEmployeeID, now)
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Check", check.ID, "CheckReprinted", document)
+	})
+	return document, err
 }
 
 func optionalString(v string) *string {
@@ -205,4 +272,65 @@ func requiredPaymentPermission(method domain.PaymentMethod) shared.PermissionID 
 	default:
 		return shared.PermissionPaymentOther
 	}
+}
+
+type checkSnapshot struct {
+	DocumentType      string                 `json:"document_type"`
+	CheckID           string                 `json:"check_id"`
+	OrderID           string                 `json:"order_id"`
+	PrecheckID        string                 `json:"precheck_id"`
+	TableID           string                 `json:"table_id"`
+	TableName         string                 `json:"table_name"`
+	Subtotal          int64                  `json:"subtotal"`
+	DiscountTotal     int64                  `json:"discount_total"`
+	TaxTotal          int64                  `json:"tax_total"`
+	Total             int64                  `json:"total"`
+	PaidTotal         int64                  `json:"paid_total"`
+	BusinessDateLocal string                 `json:"business_date_local"`
+	ClosedAt          string                 `json:"closed_at"`
+	Payments          []checkSnapshotPayment `json:"payments"`
+	PrecheckSnapshot  json.RawMessage        `json:"precheck_snapshot"`
+}
+
+type checkSnapshotPayment struct {
+	ID                string `json:"id"`
+	Method            string `json:"method"`
+	Amount            int64  `json:"amount"`
+	Currency          string `json:"currency"`
+	BusinessDateLocal string `json:"business_date_local"`
+	CapturedAt        string `json:"captured_at"`
+}
+
+func buildCheckSnapshot(order *domain.Order, precheck *domain.Precheck, payments []domain.Payment, check *domain.Check, now time.Time) (json.RawMessage, error) {
+	snapshot := checkSnapshot{
+		DocumentType:      "check",
+		CheckID:           check.ID,
+		OrderID:           order.ID,
+		PrecheckID:        precheck.ID,
+		TableID:           order.TableID,
+		TableName:         order.TableName,
+		Subtotal:          check.Subtotal,
+		DiscountTotal:     check.DiscountTotal,
+		TaxTotal:          check.TaxTotal,
+		Total:             check.Total,
+		PaidTotal:         check.PaidTotal,
+		BusinessDateLocal: check.BusinessDateLocal,
+		ClosedAt:          shared.DBTime(now),
+		PrecheckSnapshot:  precheck.Snapshot,
+	}
+	for _, payment := range payments {
+		snapshot.Payments = append(snapshot.Payments, checkSnapshotPayment{
+			ID:                payment.ID,
+			Method:            string(payment.Method),
+			Amount:            payment.Amount,
+			Currency:          payment.Currency,
+			BusinessDateLocal: payment.BusinessDateLocal,
+			CapturedAt:        shared.DBTime(payment.CreatedAt),
+		})
+	}
+	body, err := json.Marshal(snapshot)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(body), nil
 }

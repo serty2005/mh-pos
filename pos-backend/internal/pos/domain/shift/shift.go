@@ -16,6 +16,7 @@ type Shift struct {
 	OpenedByEmployeeID string      `json:"opened_by_employee_id"`
 	ClosedByEmployeeID *string     `json:"closed_by_employee_id,omitempty"`
 	Status             ShiftStatus `json:"status"`
+	BusinessDateLocal  string      `json:"business_date_local"`
 	OpenedAt           time.Time   `json:"opened_at"`
 	ClosedAt           *time.Time  `json:"closed_at,omitempty"`
 	OpeningCashAmount  int64       `json:"-"`

@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"time"
+
 	"pos-backend/internal/pos/domain/cash"
 	"pos-backend/internal/pos/domain/catalog"
 	"pos-backend/internal/pos/domain/check"
@@ -27,6 +29,12 @@ var (
 )
 
 type Restaurant = restaurant.Restaurant
+type BusinessDayMode = restaurant.BusinessDayMode
+
+const (
+	BusinessDayStandard = restaurant.BusinessDayStandard
+	BusinessDay24x7     = restaurant.BusinessDay24x7
+)
 
 type Device = device.Device
 type EdgeNodeStatus = device.EdgeNodeStatus
@@ -154,6 +162,7 @@ type OutboxMessage = shared.OutboxMessage
 type SyncStatus = shared.SyncStatus
 type LocalEvent = shared.LocalEvent
 type SyncEnvelope = shared.SyncEnvelope
+type ReprintDocument = shared.ReprintDocument
 
 const (
 	OutboxPending    = shared.OutboxPending
@@ -198,6 +207,10 @@ func IsCloudOwnedAggregate(aggregateType string) bool {
 
 func DirectionForOutbox(origin CommandOrigin, aggregateType, eventType string) SyncDirection {
 	return shared.DirectionForOutbox(origin, aggregateType, eventType)
+}
+
+func NewReprintDocument(documentType, sourceID string, snapshot []byte, actorEmployeeID string, reprintedAt time.Time) *ReprintDocument {
+	return shared.NewReprintDocument(documentType, sourceID, snapshot, actorEmployeeID, reprintedAt)
 }
 
 type RecipeVersionStatus = inventory.RecipeVersionStatus

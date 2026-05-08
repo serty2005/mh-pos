@@ -58,7 +58,9 @@ type ChangeOrderLineQuantityCommand = apporder.ChangeOrderLineQuantityCommand
 type VoidOrderLineCommand = apporder.VoidOrderLineCommand
 type IssuePrecheckCommand = appprecheck.IssuePrecheckCommand
 type CancelPrecheckCommand = appprecheck.CancelPrecheckCommand
+type ReprintPrecheckCommand = appprecheck.ReprintPrecheckCommand
 type CapturePaymentCommand = appcheck.CapturePaymentCommand
+type ReprintCheckCommand = appcheck.ReprintCheckCommand
 type CloseOrderCommand = apporder.CloseOrderCommand
 type OpenCashSessionCommand = appcash.OpenCashSessionCommand
 type CloseCashSessionCommand = appcash.CloseCashSessionCommand
@@ -312,6 +314,10 @@ func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand)
 	return s.prechecks.CancelPrecheck(ctx, cmd)
 }
 
+func (s *Service) ReprintPrecheck(ctx context.Context, cmd ReprintPrecheckCommand) (*domain.ReprintDocument, error) {
+	return s.prechecks.ReprintPrecheck(ctx, cmd)
+}
+
 func (s *Service) GetCheck(ctx context.Context, id string) (*domain.Check, error) {
 	return s.checks.GetCheck(ctx, id)
 }
@@ -322,6 +328,10 @@ func (s *Service) GetCheckAsOperator(ctx context.Context, id string, meta Comman
 
 func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand) (*domain.Payment, error) {
 	return s.checks.CapturePayment(ctx, cmd)
+}
+
+func (s *Service) ReprintCheck(ctx context.Context, cmd ReprintCheckCommand) (*domain.ReprintDocument, error) {
+	return s.checks.ReprintCheck(ctx, cmd)
 }
 
 func (s *Service) GetCurrentCashSession(ctx context.Context, deviceID string) (*domain.CashSession, error) {

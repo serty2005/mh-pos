@@ -111,8 +111,18 @@ planned next:
 - `GET /api/v1/prechecks/{id}`
 - `GET /api/v1/orders/{id}/prechecks`
 - `POST /api/v1/prechecks/{id}/cancel`
+- `POST /api/v1/prechecks/{id}/reprint`
 - `POST /api/v1/prechecks/{id}/payments`
 - `GET /api/v1/checks/{id}`
+- `POST /api/v1/checks/{id}/reprint`
+
+implemented now:
+
+- reprint precheck требует `pos.precheck.reprint` и возвращает copy-document payload из immutable `prechecks.snapshot`;
+- reprint final check требует `pos.check.reprint` и возвращает copy-document payload из immutable `checks.snapshot`;
+- reprint не использует текущее состояние order как source of truth;
+- reprint response содержит `copy_marker = "COPY"`, а русская UI-метка `КОПИЯ` задается через i18n;
+- reprint пишет audit events `PrecheckReprinted` / `CheckReprinted` в `local_event_log` и outbox.
 
 ### Operational sync endpoints
 
@@ -201,7 +211,20 @@ implemented now: публичные compatibility tails удалены из back
 
 - создается только после полной оплаты precheck;
 - не является рабочим счетом гостя;
-- не создается вручную в нормальном runtime flow.
+- не создается вручную в нормальном runtime flow;
+- `business_date_local` вычисляется backend в момент создания final check и после этого immutable;
+- `closed_at` фиксирует фактическое время закрытия.
+
+### Business date
+
+implemented now:
+
+- restaurant config содержит `business_day_mode` (`standard` или `24_7`) и `business_day_boundary_local_time`;
+- в `standard` режиме учетный день вычисляется по локальному времени ресторана с учетом ресторанной границы дня;
+- в `24_7` режиме учетный день равен локальной календарной дате финансового события;
+- финансовая принадлежность определяется моментом capture payment / final check creation, а не временем создания order;
+- открытый order может пережить новую смену, но `business_date_local` для созданных checks/payments не меняется;
+- ручной перенос закрытых orders/payments в другой business date является out of scope.
 
 ## Каталог событий Edge runtime
 
@@ -233,9 +256,11 @@ implemented now: публичные compatibility tails удалены из back
 ### Финансы
 
 - `PrecheckIssued`
+- `PrecheckReprinted`
 - `PrecheckCancelled`
 - `PaymentCaptured`
 - `CheckCreated`
+- `CheckReprinted`
 
 ## Примечание к sync contract
 
@@ -298,12 +323,14 @@ Canonical permission ids used by implemented now runtime:
 - `pos.order.close`
 - `pos.precheck.issue`
 - `pos.precheck.view`
+- `pos.precheck.reprint`
 - `pos.precheck.cancel.request` (override actor permission)
 - `pos.precheck.cancel` (manager override approver permission)
 - `pos.payment.cash`
 - `pos.payment.card.manual`
 - `pos.payment.other`
 - `pos.check.view`
+- `pos.check.reprint`
 - `pos.sync.view` (required for operator-triggered `GET /api/v1/sync/outbox`, `GET /api/v1/sync/status`, `GET /api/v1/sync/local-events`)
 - `pos.sync.retry_failed` (required for operator-triggered `POST /api/v1/sync/retry-failed`)
 
@@ -311,8 +338,8 @@ Role behavior:
 
 - `cashier`: cashier POS flow, cash/card payment, no cash session close and no sync/service permissions.
 - `senior_cashier`: cashier POS flow plus cash session close and sync read.
-- `waiter`: order/precheck/check read/write flow without cash session/payment permissions.
-- `manager`: full implemented POS runtime permissions, precheck cancel approval, sync retry.
+- `waiter`: order/precheck/check read/write flow without cash session/payment permissions; precheck reprint allowed.
+- `manager`: full implemented POS runtime permissions, precheck cancel approval, final check reprint, sync retry.
 - `kitchen`: no implemented POS runtime permissions.
 - `support_admin`: sync read and retry service permissions only.
 
@@ -327,7 +354,6 @@ out of scope:
 
 - order transfer;
 - payment refund;
-- final check reprint;
 - diagnostics/admin UI routes;
 - waiter payment override and restaurant-level override policy engine.
 

@@ -13,4 +13,5 @@ type CheckRepository interface {
 	UpdateCheckPaidTotal(context.Context, *check.Check) error
 	CreatePayment(context.Context, *check.Payment) error
 	CreatePaymentAttempt(context.Context, *check.PaymentAttempt) error
+	ListPaymentsByPrecheck(context.Context, string) ([]check.Payment, error)
 }

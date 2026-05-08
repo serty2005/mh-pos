@@ -7,8 +7,8 @@ import (
 )
 
 func (r *Repository) CreateShift(ctx context.Context, v *domain.Shift) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO shifts(id,restaurant_id,device_id,opened_by_employee_id,closed_by_employee_id,status,opened_at,closed_at,opening_cash_amount,closing_cash_amount,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.RestaurantID, v.DeviceID, v.OpenedByEmployeeID, v.ClosedByEmployeeID, string(v.Status), dbTime(v.OpenedAt), nil, v.OpeningCashAmount, nil, dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO shifts(id,restaurant_id,device_id,opened_by_employee_id,closed_by_employee_id,status,business_date_local,opened_at,closed_at,opening_cash_amount,closing_cash_amount,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.RestaurantID, v.DeviceID, v.OpenedByEmployeeID, v.ClosedByEmployeeID, string(v.Status), v.BusinessDateLocal, dbTime(v.OpenedAt), nil, v.OpeningCashAmount, nil, dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }
 
@@ -23,19 +23,19 @@ func (r *Repository) UpdateShiftClosed(ctx context.Context, v *domain.Shift) err
 }
 
 func (r *Repository) GetShift(ctx context.Context, id string) (*domain.Shift, error) {
-	return r.scanShift(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,device_id,opened_by_employee_id,closed_by_employee_id,status,opened_at,closed_at,opening_cash_amount,closing_cash_amount,created_at,updated_at FROM shifts WHERE id = ?`, id))
+	return r.scanShift(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,device_id,opened_by_employee_id,closed_by_employee_id,status,business_date_local,opened_at,closed_at,opening_cash_amount,closing_cash_amount,created_at,updated_at FROM shifts WHERE id = ?`, id))
 }
 
 func (r *Repository) GetOpenShiftByDevice(ctx context.Context, deviceID string) (*domain.Shift, error) {
-	return r.scanShift(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,device_id,opened_by_employee_id,closed_by_employee_id,status,opened_at,closed_at,opening_cash_amount,closing_cash_amount,created_at,updated_at FROM shifts WHERE device_id = ? AND status = 'open'`, deviceID))
+	return r.scanShift(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,device_id,opened_by_employee_id,closed_by_employee_id,status,business_date_local,opened_at,closed_at,opening_cash_amount,closing_cash_amount,created_at,updated_at FROM shifts WHERE device_id = ? AND status = 'open'`, deviceID))
 }
 
 func (r *Repository) GetOpenShiftByEmployee(ctx context.Context, restaurantID, employeeID string) (*domain.Shift, error) {
-	return r.scanShift(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,device_id,opened_by_employee_id,closed_by_employee_id,status,opened_at,closed_at,opening_cash_amount,closing_cash_amount,created_at,updated_at FROM shifts WHERE restaurant_id = ? AND opened_by_employee_id = ? AND status = 'open'`, restaurantID, employeeID))
+	return r.scanShift(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,device_id,opened_by_employee_id,closed_by_employee_id,status,business_date_local,opened_at,closed_at,opening_cash_amount,closing_cash_amount,created_at,updated_at FROM shifts WHERE restaurant_id = ? AND opened_by_employee_id = ? AND status = 'open'`, restaurantID, employeeID))
 }
 
 func (r *Repository) ListRecentShiftsByEmployee(ctx context.Context, restaurantID, employeeID string, limit int) ([]domain.Shift, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,restaurant_id,device_id,opened_by_employee_id,closed_by_employee_id,status,opened_at,closed_at,opening_cash_amount,closing_cash_amount,created_at,updated_at FROM shifts WHERE restaurant_id = ? AND opened_by_employee_id = ? ORDER BY opened_at DESC LIMIT ?`, restaurantID, employeeID, limit)
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,restaurant_id,device_id,opened_by_employee_id,closed_by_employee_id,status,business_date_local,opened_at,closed_at,opening_cash_amount,closing_cash_amount,created_at,updated_at FROM shifts WHERE restaurant_id = ? AND opened_by_employee_id = ? ORDER BY opened_at DESC LIMIT ?`, restaurantID, employeeID, limit)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
@@ -65,7 +65,7 @@ func scanShiftRows(row shiftScanner) (*domain.Shift, error) {
 	var closedBy sql.NullString
 	var closedAt sql.NullString
 	var closingCash sql.NullInt64
-	err := row.Scan(&v.ID, &v.RestaurantID, &v.DeviceID, &v.OpenedByEmployeeID, &closedBy, &status, &opened, &closedAt, &v.OpeningCashAmount, &closingCash, &created, &updated)
+	err := row.Scan(&v.ID, &v.RestaurantID, &v.DeviceID, &v.OpenedByEmployeeID, &closedBy, &status, &v.BusinessDateLocal, &opened, &closedAt, &v.OpeningCashAmount, &closingCash, &created, &updated)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
