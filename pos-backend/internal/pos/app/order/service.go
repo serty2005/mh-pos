@@ -63,7 +63,7 @@ func (s *Service) GetOrder(ctx context.Context, id string) (*domain.Order, error
 	return s.hydrateOrder(ctx, id)
 }
 
-// GetOrderAsOperator loads order data for authenticated operator flows with RBAC enforcement.
+// GetOrderAsOperator загружает order data для аутентифицированных операторских сценариев с проверкой RBAC.
 func (s *Service) GetOrderAsOperator(ctx context.Context, id string, meta shared.CommandMeta) (*domain.Order, error) {
 	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionOrderView)); err != nil {
 		return nil, err
@@ -84,7 +84,7 @@ func (s *Service) GetCurrentOrderByTable(ctx context.Context, deviceID, tableID 
 	return s.hydrateOrder(ctx, order.ID)
 }
 
-// GetCurrentOrderByTableAsOperator loads active order for table in authenticated operator flows.
+// GetCurrentOrderByTableAsOperator загружает active order по table для аутентифицированных операторских сценариев.
 func (s *Service) GetCurrentOrderByTableAsOperator(ctx context.Context, tableID string, meta shared.CommandMeta) (*domain.Order, error) {
 	shared.NormalizeDeviceMeta(&meta)
 	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionOrderView)); err != nil {

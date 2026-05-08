@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// PermissionID задает канонический backend-идентификатор права для app-layer RBAC enforcement.
+// PermissionID задает канонический backend-идентификатор права для app-layer проверки RBAC.
 type PermissionID string
 
 const (

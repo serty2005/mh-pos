@@ -6,8 +6,8 @@ export type CurrencyProfile = {
 const minorUnitByAlphaCode = new Map<string, number>();
 
 /**
- * Возвращает canonical ISO 4217 alpha code profile.
- * Для неизвестных/неподдержанных окружением кодов оставляет fallback в 2 знака.
+ * Возвращает canonical profile для ISO 4217 alpha code.
+ * Для неизвестных или неподдержанных окружением кодов оставляет fallback в 2 знака.
  */
 export function resolveCurrencyProfile(code: string): CurrencyProfile {
   const alphaCode = normalizeCurrencyCode(code);

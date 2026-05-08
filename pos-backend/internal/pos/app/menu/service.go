@@ -35,7 +35,7 @@ func (s *Service) ListMenuItems(ctx context.Context) ([]domain.MenuItem, error) 
 	return s.repo.ListMenuItems(ctx)
 }
 
-// ListMenuItemsAsOperator returns menu items for authenticated operator flows with RBAC enforcement.
+// ListMenuItemsAsOperator возвращает menu items для аутентифицированных операторских сценариев с проверкой RBAC.
 func (s *Service) ListMenuItemsAsOperator(ctx context.Context, meta shared.CommandMeta) ([]domain.MenuItem, error) {
 	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionMenuView)); err != nil {
 		return nil, err

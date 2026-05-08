@@ -13,7 +13,7 @@ import (
 	"pos-backend/internal/pos/domain"
 )
 
-// ErrorBody описывает безопасный контракт ошибки для UI и support diagnostics.
+// ErrorBody описывает безопасный контракт ошибки для UI и диагностики поддержки.
 type ErrorBody struct {
 	Code          string            `json:"code"`
 	MessageKey    string            `json:"message_key"`
@@ -21,7 +21,7 @@ type ErrorBody struct {
 	CorrelationID string            `json:"correlation_id,omitempty"`
 }
 
-// ErrorResponse задает единый JSON-envelope для всех безопасных API ошибок.
+// ErrorResponse задает единый JSON-конверт для всех безопасных API-ошибок.
 type ErrorResponse struct {
 	Error ErrorBody `json:"error"`
 }
@@ -35,7 +35,7 @@ func JSON(w http.ResponseWriter, status int, v any) {
 	}
 }
 
-// Decode читает JSON-body строго по контракту, чтобы UI/backend payload mismatch не проходил молча.
+// Decode читает JSON-body строго по контракту, чтобы расхождение payload между UI и backend не проходило молча.
 func Decode(r *http.Request, dst any) error {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
@@ -45,7 +45,7 @@ func Decode(r *http.Request, dst any) error {
 	return nil
 }
 
-// Error возвращает безопасную API-ошибку и пишет internal cause только в structured log.
+// Error возвращает безопасную API-ошибку и пишет внутреннюю причину только в structured log.
 func Error(w http.ResponseWriter, err error, requests ...*http.Request) {
 	status, body := ClassifyError(err)
 	var r *http.Request
@@ -63,7 +63,7 @@ func Error(w http.ResponseWriter, err error, requests ...*http.Request) {
 	JSON(w, status, ErrorResponse{Error: body})
 }
 
-// ClassifyError преобразует internal/domain error в безопасный HTTP status и stable error code.
+// ClassifyError преобразует internal/domain error в безопасный HTTP status и стабильный error code.
 func ClassifyError(err error) (int, ErrorBody) {
 	status := statusForError(err)
 	body := ErrorBody{

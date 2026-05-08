@@ -64,7 +64,7 @@ func (s *Service) Receive(ctx context.Context, raw []byte) (contracts.EventAck, 
 	})
 }
 
-// ReceiveBatch receives SyncEnvelope batch and returns item-level ACK decisions.
+// ReceiveBatch принимает batch SyncEnvelope и возвращает item-level ACK decisions.
 func (s *Service) ReceiveBatch(ctx context.Context, raws [][]byte) contracts.BatchEventAck {
 	items := make([]contracts.BatchEventAckItem, 0, len(raws))
 	allAccepted := true
@@ -106,7 +106,7 @@ func (s *Service) ReceiveBatch(ctx context.Context, raws [][]byte) contracts.Bat
 	}
 }
 
-// UpsertMasterDataPackage stores Cloud-authored master/reference/configuration payload for Edge import.
+// UpsertMasterDataPackage сохраняет Cloud-authored master/reference/configuration payload для Edge import.
 func (s *Service) UpsertMasterDataPackage(ctx context.Context, v contracts.MasterDataPackage) (contracts.MasterDataPackage, error) {
 	now := s.clock.Now().UTC()
 	v.StreamName = strings.TrimSpace(v.StreamName)
@@ -126,7 +126,7 @@ func (s *Service) UpsertMasterDataPackage(ctx context.Context, v contracts.Maste
 	return s.repo.UpsertMasterDataPackage(ctx, v)
 }
 
-// GetMasterDataPackage returns Cloud-authored package for requested stream/node.
+// GetMasterDataPackage возвращает Cloud-authored package для запрошенных stream/node.
 func (s *Service) GetMasterDataPackage(ctx context.Context, streamName, nodeDeviceID string) (contracts.MasterDataPackage, error) {
 	streamName = strings.TrimSpace(streamName)
 	nodeDeviceID = strings.TrimSpace(nodeDeviceID)

@@ -4,7 +4,7 @@ export type SessionGuardInput = {
 };
 
 /**
- * Resolve protected POS route fallback when device pairing or auth session is missing.
+ * Выбирает fallback для protected POS route, когда нет device pairing или auth session.
  */
 export function resolveProtectedPosFallback(input: SessionGuardInput): '/pair' | '/login' | null {
   if (!input.nodeDeviceId) return '/pair';

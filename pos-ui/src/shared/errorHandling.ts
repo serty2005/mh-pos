@@ -13,7 +13,7 @@ export type NormalizedAppError = {
   retryable: boolean;
 };
 
-/** normalizeApiError приводит unknown/error в безопасную модель для i18n и modal dialog. */
+/** normalizeApiError приводит unknown/error к безопасной модели для i18n и modal dialog. */
 export function normalizeApiError(error: unknown): NormalizedAppError {
   if (error instanceof ApiError) {
     return {
@@ -39,7 +39,7 @@ export function normalizeApiError(error: unknown): NormalizedAppError {
   };
 }
 
-/** displayErrorMessageKey возвращает i18n key для компактного inline fallback без raw текста. */
+/** displayErrorMessageKey возвращает i18n key для компактного inline fallback без сырого текста. */
 export function displayErrorMessageKey(error: unknown) {
   return normalizeApiError(error).messageKey;
 }

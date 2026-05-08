@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Event defines normalized telemetry fields for non-HTTP operations.
+// Event задает нормализованные поля telemetry для non-HTTP операций.
 type Event struct {
 	Operation       string
 	Action          string
@@ -20,7 +20,7 @@ type Event struct {
 	ActorEmployeeID string
 }
 
-// Log writes a normalized structured telemetry event.
+// Log записывает нормализованное structured telemetry event.
 func Log(ctx context.Context, logger *slog.Logger, level slog.Level, message string, e Event, extra ...any) {
 	if logger == nil {
 		logger = slog.Default()
@@ -40,7 +40,7 @@ func Log(ctx context.Context, logger *slog.Logger, level slog.Level, message str
 	logger.Log(ctx, level, message, args...)
 }
 
-// ErrorCodeFromStatus maps status codes to a normalized error code.
+// ErrorCodeFromStatus сопоставляет status codes с нормализованным error code.
 func ErrorCodeFromStatus(status int) string {
 	if status >= 200 && status < 400 {
 		return ""
@@ -48,7 +48,7 @@ func ErrorCodeFromStatus(status int) string {
 	return fmt.Sprintf("HTTP_%d", status)
 }
 
-// ResultFromStatus maps HTTP status to normalized operation result.
+// ResultFromStatus сопоставляет HTTP status с нормализованным operation result.
 func ResultFromStatus(status int) string {
 	if status >= 200 && status < 300 {
 		return "success"
@@ -59,7 +59,7 @@ func ResultFromStatus(status int) string {
 	return "failed"
 }
 
-// MaskID masks identifiers for safe logs while preserving correlation.
+// MaskID маскирует identifiers для безопасных логов, сохраняя возможность correlation.
 func MaskID(v string) string {
 	v = strings.TrimSpace(v)
 	if v == "" {

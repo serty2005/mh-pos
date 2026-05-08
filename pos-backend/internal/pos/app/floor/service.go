@@ -77,7 +77,7 @@ func (s *Service) ListHalls(ctx context.Context, restaurantID string) ([]domain.
 	return s.repo.ListHalls(ctx, restaurantID)
 }
 
-// ListHallsAsOperator returns restaurant halls for authenticated operator flows with RBAC enforcement.
+// ListHallsAsOperator возвращает restaurant halls для аутентифицированных операторских сценариев с проверкой RBAC.
 func (s *Service) ListHallsAsOperator(ctx context.Context, restaurantID string, meta shared.CommandMeta) ([]domain.Hall, error) {
 	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionFloorView)); err != nil {
 		return nil, err
@@ -147,7 +147,7 @@ func (s *Service) ListTables(ctx context.Context, restaurantID, hallID string) (
 	return s.repo.ListTables(ctx, restaurantID, strings.TrimSpace(hallID))
 }
 
-// ListTablesAsOperator returns floor tables for authenticated operator flows with RBAC enforcement.
+// ListTablesAsOperator возвращает floor tables для аутентифицированных операторских сценариев с проверкой RBAC.
 func (s *Service) ListTablesAsOperator(ctx context.Context, restaurantID, hallID string, meta shared.CommandMeta) ([]domain.Table, error) {
 	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionFloorView)); err != nil {
 		return nil, err

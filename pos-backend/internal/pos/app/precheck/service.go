@@ -46,7 +46,7 @@ func (s *Service) GetPrecheck(ctx context.Context, id string) (*domain.Precheck,
 	return s.repo.GetPrecheck(ctx, id)
 }
 
-// GetPrecheckAsOperator loads precheck details for authenticated operator flows with RBAC enforcement.
+// GetPrecheckAsOperator загружает precheck details для аутентифицированных операторских сценариев с проверкой RBAC.
 func (s *Service) GetPrecheckAsOperator(ctx context.Context, id string, meta shared.CommandMeta) (*domain.Precheck, error) {
 	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionPrecheckView)); err != nil {
 		return nil, err
@@ -61,7 +61,7 @@ func (s *Service) ListPrechecksByOrder(ctx context.Context, orderID string) ([]d
 	return s.repo.ListPrechecksByOrder(ctx, orderID)
 }
 
-// ListPrechecksByOrderAsOperator returns precheck history for order in authenticated operator flows.
+// ListPrechecksByOrderAsOperator возвращает precheck history заказа для аутентифицированных операторских сценариев.
 func (s *Service) ListPrechecksByOrderAsOperator(ctx context.Context, orderID string, meta shared.CommandMeta) ([]domain.Precheck, error) {
 	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionPrecheckView)); err != nil {
 		return nil, err

@@ -34,7 +34,7 @@ type eventOutboxRepository interface {
 	ports.LocalEventRepository
 }
 
-// NewOutboxService creates outbox application service backed by full POS repository.
+// NewOutboxService создает outbox application service поверх полного POS repository.
 func NewOutboxService(repo ports.Repository, tx txmanager.Manager, clock clock.Clock) *OutboxService {
 	return &OutboxService{repo: repo, tx: tx, clock: clock}
 }
@@ -43,7 +43,7 @@ func (s *OutboxService) ListOutbox(ctx context.Context, limit int) ([]domain.Out
 	return s.repo.ListOutbox(ctx, limit)
 }
 
-// ListOutboxAsOperator returns outbox rows for authenticated operator flows with RBAC checks.
+// ListOutboxAsOperator возвращает outbox rows для аутентифицированных операторских сценариев с RBAC checks.
 func (s *OutboxService) ListOutboxAsOperator(ctx context.Context, meta CommandMeta, limit int) ([]domain.OutboxMessage, error) {
 	if _, err := EnsureOperatorSession(ctx, s.repo, meta, string(PermissionSyncView)); err != nil {
 		return nil, err
@@ -55,7 +55,7 @@ func (s *OutboxService) GetSyncStatus(ctx context.Context) (domain.SyncStatus, e
 	return s.repo.GetSyncStatus(ctx)
 }
 
-// GetSyncStatusAsOperator returns sync status for authenticated operator flows with RBAC checks.
+// GetSyncStatusAsOperator возвращает sync status для аутентифицированных операторских сценариев с RBAC checks.
 func (s *OutboxService) GetSyncStatusAsOperator(ctx context.Context, meta CommandMeta) (domain.SyncStatus, error) {
 	if _, err := EnsureOperatorSession(ctx, s.repo, meta, string(PermissionSyncView)); err != nil {
 		return domain.SyncStatus{}, err
@@ -73,7 +73,7 @@ func (s *OutboxService) RetryFailedOutbox(ctx context.Context) (int, error) {
 	return count, err
 }
 
-// RetryFailedOutboxAsOperator retries failed/suspended outbox rows using app-layer RBAC checks.
+// RetryFailedOutboxAsOperator повторяет failed/suspended outbox rows через app-layer RBAC checks.
 func (s *OutboxService) RetryFailedOutboxAsOperator(ctx context.Context, meta CommandMeta) (int, error) {
 	if _, err := EnsureOperatorSession(ctx, s.repo, meta, string(PermissionSyncRetryFailed)); err != nil {
 		return 0, err

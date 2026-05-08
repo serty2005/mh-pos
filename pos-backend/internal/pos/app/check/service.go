@@ -40,7 +40,7 @@ func (s *Service) GetCheck(ctx context.Context, id string) (*domain.Check, error
 	return s.repo.GetCheck(ctx, id)
 }
 
-// GetCheckAsOperator loads final check for authenticated operator flows with RBAC enforcement.
+// GetCheckAsOperator загружает final check для аутентифицированных операторских сценариев с проверкой RBAC.
 func (s *Service) GetCheckAsOperator(ctx context.Context, id string, meta shared.CommandMeta) (*domain.Check, error) {
 	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionCheckView)); err != nil {
 		return nil, err

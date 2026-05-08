@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 
 import type { ApiErrorCategory } from '../shared/api';
 
-/** Severity определяет визуальный приоритет modal error без связи с raw HTTP текстом. */
+/** Severity определяет визуальный приоритет modal error без связи с сырым HTTP текстом. */
 export type ErrorDialogSeverity =
   | 'info'
   | 'warning'

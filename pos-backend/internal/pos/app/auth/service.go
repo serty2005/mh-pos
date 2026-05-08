@@ -23,7 +23,7 @@ type Service struct {
 	limiter *pinRateLimiter
 }
 
-// NewService creates auth application service with in-memory PIN rate limiting.
+// NewService создает auth application service с in-memory rate limiting для PIN.
 func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock) *Service {
 	return &Service{
 		repo:    repo,

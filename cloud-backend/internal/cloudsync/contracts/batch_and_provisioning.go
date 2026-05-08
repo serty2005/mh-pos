@@ -15,12 +15,12 @@ const (
 	BatchItemRetryable BatchItemStatus = "retryable"
 )
 
-// BatchReceiveRequest contains raw SyncEnvelope items for item-level ACK processing.
+// BatchReceiveRequest содержит raw SyncEnvelope items для item-level ACK processing.
 type BatchReceiveRequest struct {
 	Items []json.RawMessage `json:"items"`
 }
 
-// BatchEventAckItem describes per-item receive result.
+// BatchEventAckItem описывает per-item receive result.
 type BatchEventAckItem struct {
 	Index     int             `json:"index"`
 	Status    BatchItemStatus `json:"status"`
@@ -29,7 +29,7 @@ type BatchEventAckItem struct {
 	Ack       *EventAck       `json:"ack,omitempty"`
 }
 
-// BatchEventAck aggregates item-level ACK decisions for one batch request.
+// BatchEventAck агрегирует item-level ACK decisions для одного batch request.
 type BatchEventAck struct {
 	Status string              `json:"status"`
 	Items  []BatchEventAckItem `json:"items"`
@@ -50,7 +50,7 @@ const (
 	SyncModeIncremental  = "incremental"
 )
 
-// MasterDataPackage stores Cloud-authored provisioning payload for Cloud -> Edge import.
+// MasterDataPackage хранит Cloud-authored provisioning payload для Cloud -> Edge import.
 type MasterDataPackage struct {
 	StreamName      string          `json:"stream_name"`
 	NodeDeviceID    string          `json:"node_device_id,omitempty"`

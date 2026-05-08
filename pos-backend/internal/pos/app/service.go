@@ -184,7 +184,7 @@ func (s *Service) ListHalls(ctx context.Context, restaurantID string) ([]domain.
 	return s.floor.ListHalls(ctx, restaurantID)
 }
 
-// ListHallsAsOperator returns halls for authenticated operator flows with RBAC enforcement.
+// ListHallsAsOperator возвращает halls для аутентифицированных операторских сценариев с проверкой RBAC.
 func (s *Service) ListHallsAsOperator(ctx context.Context, restaurantID string, meta CommandMeta) ([]domain.Hall, error) {
 	return s.floor.ListHallsAsOperator(ctx, restaurantID, meta)
 }
@@ -201,7 +201,7 @@ func (s *Service) ListTables(ctx context.Context, restaurantID, hallID string) (
 	return s.floor.ListTables(ctx, restaurantID, hallID)
 }
 
-// ListTablesAsOperator returns tables for authenticated operator flows with RBAC enforcement.
+// ListTablesAsOperator возвращает tables для аутентифицированных операторских сценариев с проверкой RBAC.
 func (s *Service) ListTablesAsOperator(ctx context.Context, restaurantID, hallID string, meta CommandMeta) ([]domain.Table, error) {
 	return s.floor.ListTablesAsOperator(ctx, restaurantID, hallID, meta)
 }
@@ -214,7 +214,7 @@ func (s *Service) ListCatalogItems(ctx context.Context) ([]domain.CatalogItem, e
 	return s.catalog.ListCatalogItems(ctx)
 }
 
-// ListCatalogItemsAsOperator returns catalog items for authenticated operator flows with RBAC enforcement.
+// ListCatalogItemsAsOperator возвращает catalog items для аутентифицированных операторских сценариев с проверкой RBAC.
 func (s *Service) ListCatalogItemsAsOperator(ctx context.Context, meta CommandMeta) ([]domain.CatalogItem, error) {
 	return s.catalog.ListCatalogItemsAsOperator(ctx, meta)
 }
@@ -227,7 +227,7 @@ func (s *Service) ListMenuItems(ctx context.Context) ([]domain.MenuItem, error) 
 	return s.menu.ListMenuItems(ctx)
 }
 
-// ListMenuItemsAsOperator returns menu items for authenticated operator flows with RBAC enforcement.
+// ListMenuItemsAsOperator возвращает menu items для аутентифицированных операторских сценариев с проверкой RBAC.
 func (s *Service) ListMenuItemsAsOperator(ctx context.Context, meta CommandMeta) ([]domain.MenuItem, error) {
 	return s.menu.ListMenuItemsAsOperator(ctx, meta)
 }
@@ -368,7 +368,7 @@ func (s *Service) RetryFailedOutbox(ctx context.Context) (int, error) {
 	return s.outbox.RetryFailedOutbox(ctx)
 }
 
-// RetryFailedOutboxAsOperator retries failed outbox messages with operator RBAC enforcement.
+// RetryFailedOutboxAsOperator повторяет failed outbox messages с операторской проверкой RBAC.
 func (s *Service) RetryFailedOutboxAsOperator(ctx context.Context, meta CommandMeta) (int, error) {
 	return s.outbox.RetryFailedOutboxAsOperator(ctx, meta)
 }
@@ -389,7 +389,7 @@ func (s *Service) ListLocalEvents(ctx context.Context, query ListLocalEventsQuer
 	return s.localEvents.ListLocalEvents(ctx, query.Limit, query.EventType)
 }
 
-// ListLocalEventsAsOperator returns local events for authenticated operator flows with RBAC enforcement.
+// ListLocalEventsAsOperator возвращает local events для аутентифицированных операторских сценариев с проверкой RBAC.
 func (s *Service) ListLocalEventsAsOperator(ctx context.Context, meta CommandMeta, query ListLocalEventsQuery) ([]domain.LocalEvent, error) {
 	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionSyncView)); err != nil {
 		return nil, err

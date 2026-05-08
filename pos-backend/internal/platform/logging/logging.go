@@ -8,11 +8,11 @@ import (
 )
 
 const (
-	// LevelTrace is a custom verbose level below slog debug.
+	// LevelTrace задает подробный уровень ниже slog debug.
 	LevelTrace = slog.Level(-8)
 )
 
-// ParseLevel converts env value into slog level.
+// ParseLevel преобразует значение env в уровень slog.
 func ParseLevel(raw string, fallback slog.Level) slog.Level {
 	switch strings.ToUpper(strings.TrimSpace(raw)) {
 	case "TRACE":
@@ -30,13 +30,13 @@ func ParseLevel(raw string, fallback slog.Level) slog.Level {
 	}
 }
 
-// NewJSONLogger builds structured logger configured from env.
+// NewJSONLogger создает структурированный logger с настройками из env.
 func NewJSONLogger(envVar string) *slog.Logger {
 	level := ParseLevel(os.Getenv(envVar), slog.LevelInfo)
 	return NewJSONLoggerWithWriter(os.Stdout, level).With("log_level_env", envVar)
 }
 
-// NewJSONLoggerWithWriter is test-friendly logger constructor.
+// NewJSONLoggerWithWriter создает logger с writer, удобным для тестов.
 func NewJSONLoggerWithWriter(out io.Writer, level slog.Leveler) *slog.Logger {
 	handler := slog.NewJSONHandler(out, &slog.HandlerOptions{
 		Level: level,

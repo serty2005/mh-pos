@@ -32,7 +32,7 @@ const backendErrorSchema = z.object({
   ]),
 });
 
-/** Категория ошибки API определяет UX-поток без разбора raw backend text в компонентах. */
+/** Категория ошибки API определяет UX-поток без разбора сырого backend text в компонентах. */
 export type ApiErrorCategory =
   | 'auth'
   | 'permission'
@@ -56,7 +56,7 @@ export type ApiErrorOptions = {
   retryable?: boolean;
 };
 
-/** ApiError хранит stable code/message_key/correlation id без stack trace и секретов для UI. */
+/** ApiError хранит стабильные code/message_key/correlation id без stack trace и секретов для UI. */
 export class ApiError extends Error {
   status: number;
   code: string;

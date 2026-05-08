@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// EnsureCurrencyReferenceCatalog upserts canonical active ISO 4217 catalog into cloud_currency_reference.
+// EnsureCurrencyReferenceCatalog upsert-ит canonical active ISO 4217 catalog в cloud_currency_reference.
 func EnsureCurrencyReferenceCatalog(ctx context.Context, pool *pgxpool.Pool, profiles []contracts.CurrencyProfile) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {

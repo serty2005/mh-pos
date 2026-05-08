@@ -11,7 +11,7 @@ import (
 	iso4217 "github.com/JohannesJHN/iso4217"
 )
 
-// CurrencyProfile defines canonical Cloud currency template used for pilot provisioning.
+// CurrencyProfile задает canonical Cloud currency template для pilot provisioning.
 type CurrencyProfile struct {
 	CurrencyCode          int    `json:"currency_code"`
 	CurrencyAlphaCode     string `json:"currency_alpha_code"`
@@ -55,12 +55,12 @@ var currencyDisplayOverrides = map[string]currencyDisplayOverride{
 
 var canonicalActiveCurrencyProfiles = buildCanonicalActiveCurrencyProfiles()
 
-// CanonicalActiveCurrencyProfiles returns deterministic active ISO 4217 cloud catalog snapshot.
+// CanonicalActiveCurrencyProfiles возвращает deterministic snapshot активного ISO 4217 cloud catalog.
 func CanonicalActiveCurrencyProfiles() []CurrencyProfile {
 	return slices.Clone(canonicalActiveCurrencyProfiles)
 }
 
-// ValidateMasterDataPayload verifies stream-specific payload constraints.
+// ValidateMasterDataPayload проверяет stream-specific payload constraints.
 func ValidateMasterDataPayload(streamName string, payload json.RawMessage) error {
 	if strings.TrimSpace(streamName) != MasterDataStreamCurrencies {
 		return nil

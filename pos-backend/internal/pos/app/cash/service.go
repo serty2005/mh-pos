@@ -56,7 +56,7 @@ func (s *Service) GetCurrentCashSession(ctx context.Context, deviceID string) (*
 	return s.repo.GetOpenCashSessionByDevice(ctx, deviceID)
 }
 
-// GetCurrentCashSessionAsOperator loads current cash session for authenticated operator flows.
+// GetCurrentCashSessionAsOperator загружает текущую cash session для аутентифицированных операторских сценариев.
 func (s *Service) GetCurrentCashSessionAsOperator(ctx context.Context, meta shared.CommandMeta) (*domain.CashSession, error) {
 	shared.NormalizeDeviceMeta(&meta)
 	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionCashSessionViewCurrent)); err != nil {

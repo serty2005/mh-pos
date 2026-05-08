@@ -10,7 +10,7 @@ import (
 	iso4217 "github.com/JohannesJHN/iso4217"
 )
 
-// CurrencyProfile описывает canonical metadata валюты для runtime-валидации и UI-форматирования.
+// CurrencyProfile описывает канонические metadata валюты для runtime-валидации и UI-форматирования.
 type CurrencyProfile struct {
 	NumericCode           int
 	AlphaCode             string
