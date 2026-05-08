@@ -1,14 +1,14 @@
-# Directional Sync Ownership
+# Владение направлениями синхронизации
 
-## Status
+## Статус
 
-implemented now: POS Edge separates Cloud-owned master data from Edge-owned operational data at the HTTP boundary, application boundary, outbox metadata, SQLite schema metadata and tests.
+Реализовано сейчас: POS Edge отделяет Cloud-owned master data от Edge-owned operational data на HTTP boundary, application boundary, outbox metadata, SQLite schema metadata и в тестах.
 
-planned next: Cloud-side master-data authoring UI and richer replacement policy for full snapshots.
+Запланировано далее: Cloud-side master-data authoring UI и более строгая replacement policy для full snapshots.
 
-out of scope: Kafka, distributed transactions, event sourcing as primary persistence, websocket sync and full Cloud projections.
+Вне текущего объема: Kafka, distributed transactions, event sourcing as primary persistence, websocket sync и full Cloud projections.
 
-## Ownership Matrix
+## Матрица владения
 
 | Entity | Owner | Writable On Edge Runtime | Sync Direction | Current Edge Role |
 | --- | --- | --- | --- | --- |
@@ -37,19 +37,19 @@ out of scope: Kafka, distributed transactions, event sourcing as primary persist
 | `pos_sync_outbox` | Edge | Yes | Edge -> Cloud for operational rows | delivery queue |
 | `cloud_master_sync_state` | Cloud/Edge boundary | Cloud sync/import only | Cloud -> Edge | checkpoint/readiness foundation |
 
-## Architectural Inconsistencies Found
+## Найденные архитектурные рассогласования
 
-implemented now fixed:
+Реализовано сейчас исправлено:
 
 - Public Edge runtime handlers allowed local mutation of Cloud-owned entities: restaurants, roles, employees, halls, tables, catalog items and menu items.
 - App services treated master data writes the same as operational writes.
 - `pos_sync_outbox` did not store an explicit sync direction, so direction was only inferred by sender code.
-- SQLite master tables had `updated_at`, but no Cloud version/checkpoint metadata for future snapshot/incremental import.
+- SQLite master tables имели `updated_at`, но не имели Cloud version/checkpoint metadata для будущего snapshot/incremental import.
 - Backend docs listed master-data mutation endpoints without explaining that they are not runtime-supported.
 
-## Implemented Boundary Rules
+## Реализованные правила границ
 
-implemented now:
+Реализовано сейчас:
 
 - Master-data write use cases accept only `origin = cloud_sync` or `origin = system_seed`.
 - POS runtime HTTP requests are normalized to Edge runtime origin.
@@ -64,7 +64,7 @@ implemented now:
 
 ## Cloud -> Edge
 
-implemented now:
+Реализовано сейчас:
 
 - read model storage exists for restaurants, devices, staff, roles, halls, tables, catalog, menu, recipes and inventory reference/cost data;
 - master tables are version/checkpoint-ready;
@@ -75,21 +75,21 @@ implemented now:
 - master-data ingestion does not create `local_event_log` or `pos_sync_outbox` rows;
 - local POS flow uses cached/read-model data and does not require Cloud online.
 
-planned next:
+Запланировано далее:
 
 - full snapshot replacement policy per stream;
 - incremental update policy using `cloud_version` and `updated_at` checkpoints.
 
 ## Edge -> Cloud
 
-implemented now:
+Реализовано сейчас:
 
 - operational events are written to `local_event_log` and `pos_sync_outbox` in the same transaction as the business write;
 - sender claims rows by `sequence_no`, sends only operational `edge_to_cloud` rows, retries transient failures and suspends non-sendable rows;
 - outbox lifecycle statuses are `pending`, `processing`, `sent`, `failed`, `suspended`;
 - retry metadata includes attempts, next retry time, lock owner/time, sent time and last error.
 
-Implemented Edge -> Cloud event catalog:
+Реализованный Edge -> Cloud event catalog:
 
 - `ShiftOpened`, `ShiftClosed`
 - `CashSessionOpened`, `CashSessionClosed`, `CashDrawerEventRecorded`
@@ -98,9 +98,9 @@ Implemented Edge -> Cloud event catalog:
 - `PaymentCaptured`, `CheckCreated`
 - `AuthSessionStarted`, `AuthSessionRevoked`, `DeviceRegistered`
 
-## Endpoint Impact
+## Влияние на endpoints
 
-implemented now:
+Реализовано сейчас:
 
 - Operational endpoints remain Edge-writable.
 - Master-data mutation endpoints are no longer valid Edge runtime flows; they are dev-only seed/admin helpers behind `POS_DEV_TOOLS=1`.
@@ -108,9 +108,9 @@ implemented now:
 - Read endpoints for master data remain available because POS must use the local read model offline.
 - `POST /api/v1/dev/bootstrap-demo` remains the supported local/demo bootstrap path.
 
-## Schema Impact
+## Влияние на схему
 
-implemented now:
+Реализовано сейчас:
 
 - canonical `pos-backend/migrations/sqlite/001_init.sql` was updated directly, per first-launch policy;
 - no historical `002+` SQLite migration was added;
@@ -118,9 +118,9 @@ implemented now:
 - `pos_sync_outbox.sync_direction` was added;
 - Cloud-owned master tables received sync metadata columns.
 
-## Sync Hardening Update 2026-05-07
+## Обновление sync hardening 2026-05-07
 
-implemented now:
+Реализовано сейчас:
 - Edge -> Cloud sender applies item-level ACK decisions from Cloud batch endpoint and preserves deterministic outbox transitions.
 - Cloud -> Edge provisioning packages are stored by stream and optional `node_device_id` for targeted import flows.
 - Operational projections are materialized in Cloud from `cloud_operational_events` ingestion pipeline without changing Edge runtime ownership.

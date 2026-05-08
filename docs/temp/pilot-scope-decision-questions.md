@@ -1,6 +1,6 @@
 # Вопросы для фиксации pilot scope decisions
 
-Статус: `implemented now` / archived note.
+Статус: архивная заметка.
 
 Решения из этого документа перенесены в профильные источники истины:
 
@@ -21,7 +21,7 @@
 - reprint;
 - waiter payment.
 
-Цель обсуждения — зафиксировать, что входит в первый пилот, что явно остается `out of scope`, и какие backend-инварианты должны быть реализованы до pilot readiness.
+Цель обсуждения — зафиксировать, что входит в первый пилот, что явно остается `вне текущего объема`, и какие backend-инварианты должны быть реализованы до pilot readiness.
 
 После принятия решений этот документ нужно либо удалить, либо перенести итоговые решения в профильные документы:
 
@@ -68,7 +68,7 @@
 
 Главный вопрос: разрешаем ли в пилоте повторную печать пречека/финального чека, и если да, из какого источника истины?
 
-Рекомендуемая позиция для обсуждения: либо явно оставить reprint `out of scope`, либо реализовать только controlled reprint из immutable snapshot с permission и audit. Не делать reprint из текущего состояния заказа.
+Рекомендуемая позиция для обсуждения: либо явно оставить reprint `вне текущего объема`, либо реализовать только controlled reprint из immutable snapshot с permission и audit. Не делать reprint из текущего состояния заказа.
 
 ### Вопросы
 
@@ -87,7 +87,7 @@
 
 ### Варианты решения
 
-- Вариант A: reprint полностью `out of scope` для пилота.
+- Вариант A: reprint полностью `вне текущего объема` для пилота.
 - Вариант B: только precheck reprint, без final check reprint.
 - Вариант C: precheck/final check reprint из immutable snapshot, с RBAC и audit.
 - Вариант D: реализовать print retry failure flow, но не reprint по запросу оператора.
@@ -102,7 +102,7 @@
 
 Главный вопрос: может ли официант принимать оплату, или все оплаты в пилоте проходят через кассира/manager на POS terminal?
 
-Рекомендуемая позиция для обсуждения: для cashier-first pilot оставить waiter payment `out of scope`, если нет явного требования пилотного ресторана. Backend должен не давать официанту оплату без permission.
+Рекомендуемая позиция для обсуждения: для cashier-first pilot оставить waiter payment `вне текущего объема`, если нет явного требования пилотного ресторана. Backend должен не давать официанту оплату без permission.
 
 ### Вопросы
 
@@ -122,7 +122,7 @@
 
 ### Варианты решения
 
-- Вариант A: waiter payment `out of scope`, оплаты только cashier/senior_cashier/manager.
+- Вариант A: waiter payment `вне текущего объема`, оплаты только cashier/senior_cashier/manager.
 - Вариант B: waiter может инициировать payment request, но backend payment capture делает кассир.
 - Вариант C: waiter может принимать только card/manual non-cash.
 - Вариант D: waiter full payment flow с отдельной ответственностью, permissions, UI и audit.

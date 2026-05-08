@@ -8,7 +8,7 @@
 - state transitions;
 - policy compatibility-хвостов для текущего публичного API;
 - event catalog Edge runtime;
-- границы между implemented now, planned next и out of scope.
+- границы между статусами `реализовано сейчас`, `запланировано далее` и `вне текущего объема`.
 
 ## Архитектурная позиция
 
@@ -47,7 +47,7 @@ Order -> Precheck -> Payment -> Check
 - `GET /api/v1/system/pairing-status`
 - `POST /api/v1/system/pair`
 
-implemented now: `POST /api/v1/system/pair` сохраняет verifier pairing code в keyed format `pairing.hmac-sha256.v1`; plaintext pairing code не сохраняется.
+Реализовано сейчас: `POST /api/v1/system/pair` сохраняет verifier pairing code в keyed format `pairing.hmac-sha256.v1`; plaintext pairing code не сохраняется.
 
 ### Auth
 
@@ -55,11 +55,11 @@ implemented now: `POST /api/v1/system/pair` сохраняет verifier pairing 
 - `GET /api/v1/auth/session`
 - `POST /api/v1/auth/logout`
 
-implemented now: PIN login is rate-limited per `node_device_id + client_device_id`.
-implemented now: repeated invalid PIN attempts return `429 Too Many Requests`.
-implemented now: PIN values are never echoed back in response payloads.
-implemented now: PIN login must resolve exactly one active employee in the paired restaurant; duplicate active PIN matches return conflict instead of choosing an arbitrary employee.
-implemented now: `GET /api/v1/auth/session` returns a safe `401 SESSION_REVOKED` error for revoked sessions instead of returning revoked session data to operator UI.
+Реализовано сейчас: PIN login имеет rate limit по `node_device_id + client_device_id`.
+Реализовано сейчас: повторные неверные PIN-попытки возвращают `429 Too Many Requests`.
+Реализовано сейчас: PIN values никогда не возвращаются в response payloads.
+Реализовано сейчас: PIN login должен найти ровно одного active employee в paired restaurant; duplicate active PIN matches возвращают conflict.
+Реализовано сейчас: `GET /api/v1/auth/session` возвращает безопасную `401 SESSION_REVOKED` ошибку для revoked sessions вместо revoked session data.
 
 ### Залы и меню
 
@@ -68,7 +68,7 @@ implemented now: `GET /api/v1/auth/session` returns a safe `401 SESSION_REVOKED`
 - `GET /api/v1/catalog/items`
 - `GET /api/v1/menu/items`
 
-implemented now: halls, tables, catalog and menu are Cloud-owned master data. Public Edge runtime writes to these entities return `403 Forbidden`; local/demo setup uses `POST /api/v1/dev/bootstrap-demo`.
+Реализовано сейчас: halls, tables, catalog и menu являются Cloud-owned master data. Public Edge runtime writes к этим сущностям возвращают `403 Forbidden`; local/demo setup использует `POST /api/v1/dev/bootstrap-demo`.
 
 ### Смены и касса
 
@@ -82,7 +82,7 @@ implemented now: halls, tables, catalog and menu are Cloud-owned master data. Pu
 - `POST /api/v1/cash-shifts/{id}/close`
 - `POST /api/v1/cash-drawer-events`
 
-implemented now:
+Реализовано сейчас:
 
 - `auth_sessions` остаются техническим login/logout-контекстом устройства и клиента.
 - `shifts` используются как личные смены сотрудника: открытая смена ищется по `restaurant_id + employee_id`, а не по устройству.
@@ -91,7 +91,7 @@ implemented now:
 - Оплаты и cash drawer events требуют открытую кассовую смену на устройстве.
 - `cash_sessions` являются текущей runtime-сущностью кассовой смены.
 
-planned next:
+Запланировано далее:
 
 - Данные личной смены сотрудника будут использоваться для учета рабочего времени post-MVP.
 
@@ -116,7 +116,7 @@ planned next:
 - `GET /api/v1/checks/{id}`
 - `POST /api/v1/checks/{id}/reprint`
 
-implemented now:
+Реализовано сейчас:
 
 - reprint precheck требует `pos.precheck.reprint` и возвращает copy-document payload из immutable `prechecks.snapshot`;
 - reprint final check требует `pos.check.reprint` и возвращает copy-document payload из immutable `checks.snapshot`;
@@ -131,7 +131,7 @@ implemented now:
 - `GET /api/v1/sync/local-events`
 - `POST /api/v1/sync/retry-failed`
 
-implemented now: operator-facing sync endpoints enforce app-layer RBAC:
+Реализовано сейчас: operator-facing sync endpoints enforced через app-layer RBAC:
 
 - `GET /api/v1/sync/outbox` requires `pos.sync.view`;
 - `GET /api/v1/sync/status` requires `pos.sync.view`;
@@ -140,7 +140,7 @@ implemented now: operator-facing sync endpoints enforce app-layer RBAC:
 
 ### Cloud -> Edge master-data ingest endpoints
 
-implemented now:
+Реализовано сейчас:
 
 - `POST /api/v1/sync/master-data/snapshots`
 - `POST /api/v1/sync/master-data/{stream}`
@@ -149,11 +149,11 @@ Supported streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`
 
 Payload accepts `node_device_id`, optional `restaurant_id`, `sync_mode` (`full_snapshot` or `incremental`), optional `checkpoint_token`, `cloud_version`, optional `cloud_updated_at`, and stream arrays: `restaurants`, `devices`, `roles`, `employees`, `halls`, `tables`, `catalog_items`, `menu_items`.
 
-implemented now: these endpoints are Cloud -> Edge ingest, not POS runtime mutation APIs. Handler sets origin `cloud_sync`, calls app-layer master sync use case, writes master rows and `cloud_master_sync_state` in one transaction, and does not create `local_event_log` or `pos_sync_outbox` rows.
+Реализовано сейчас: эти endpoints являются Cloud -> Edge ingest, а не POS runtime mutation APIs. Handler задает origin `cloud_sync`, вызывает app-layer master sync use case, пишет master rows и `cloud_master_sync_state` в одной транзакции и не создает строки `local_event_log` или `pos_sync_outbox`.
 
 ### Dev/local bootstrap
 
-implemented now:
+Реализовано сейчас:
 
 - `POST /api/v1/dev/bootstrap-demo`
 - доступен только при `POS_DEV_TOOLS=1`;
@@ -163,7 +163,7 @@ implemented now:
 
 ### Master-data mutation boundary
 
-implemented now:
+Реализовано сейчас:
 
 - `POST /api/v1/restaurants`
 - `POST /api/v1/devices/register`
@@ -177,11 +177,11 @@ implemented now:
 - `POST /api/v1/catalog/items`
 - `POST /api/v1/menu/items`
 
-Эти routes больше не являются runtime-supported Edge mutation flow. implemented now: HTTP layer держит их как dev-only seed/admin helpers за `POS_DEV_TOOLS=1`; без dev tools они возвращают `403 Forbidden`. В dev mode handler использует origin `system_seed`. Production Cloud-authored master data должна входить через `POST /api/v1/sync/master-data/snapshots` или `POST /api/v1/sync/master-data/{stream}` с origin `cloud_sync`.
+Эти routes больше не являются runtime-supported Edge mutation flow. Реализовано сейчас: HTTP layer держит их как dev-only seed/admin helpers за `POS_DEV_TOOLS=1`; без dev tools они возвращают `403 Forbidden`. В dev mode handler использует origin `system_seed`. Production Cloud-authored master data должна входить через `POST /api/v1/sync/master-data/snapshots` или `POST /api/v1/sync/master-data/{stream}` с origin `cloud_sync`.
 
 ## Policy compatibility-хвостов
 
-implemented now: публичные compatibility tails удалены из backend API surface.
+Реализовано сейчас: публичные compatibility tails удалены из backend API surface.
 
 `device_id` остается domain/storage field для POS Edge node identity в operational payloads. Новые transport examples используют явные `node_device_id` и `client_device_id`, когда нужен actor/device context.
 
@@ -198,7 +198,7 @@ implemented now: публичные compatibility tails удалены из back
 
 - `issued` -> `cancelled`;
 - `issued` -> `closed` при полной оплате;
-- `issued` -> `superseded` зарезервировано для future re-issue flow.
+- `issued` -> `superseded` зарезервировано для будущего re-issue flow.
 
 ### Payment
 
@@ -217,14 +217,14 @@ implemented now: публичные compatibility tails удалены из back
 
 ### Business date
 
-implemented now:
+Реализовано сейчас:
 
 - restaurant config содержит `business_day_mode` (`standard` или `24_7`) и `business_day_boundary_local_time`;
 - в `standard` режиме учетный день вычисляется по локальному времени ресторана с учетом ресторанной границы дня;
 - в `24_7` режиме учетный день равен локальной календарной дате финансового события;
 - финансовая принадлежность определяется моментом capture payment / final check creation, а не временем создания order;
 - открытый order может пережить новую смену, но `business_date_local` для созданных checks/payments не меняется;
-- ручной перенос закрытых orders/payments в другой business date является out of scope.
+- ручной перенос закрытых orders/payments в другой business date является вне текущего объема.
 
 ## Каталог событий Edge runtime
 
@@ -266,11 +266,11 @@ implemented now:
 
 Документация Cloud receiver и Edge event emission должны быть синхронизированы.
 
-implemented now: production sender path отправляет только Edge -> Cloud operational events. Cloud-managed/configuration events, например изменения restaurant, employee, role, catalog, menu, hall и table, не отправляются sender-ом вверх; они помечаются `suspended` с явной sync-direction причиной.
+Реализовано сейчас: production sender path отправляет только Edge -> Cloud operational events. Cloud-managed/configuration events, например изменения restaurant, employee, role, catalog, menu, hall и table, не отправляются sender-ом вверх; они помечаются `suspended` с явной sync-direction причиной.
 
-implemented now: Cloud принимает operational sender catalog, описанный в `docs/sync/edge-cloud-contracts-v1.md`, и хранит raw envelopes плюс `cloud_operational_events`. Ownership matrix и directional sync rules описаны в `docs/sync/directional-sync-ownership.md`.
+Реализовано сейчас: Cloud принимает operational sender catalog, описанный в `docs/sync/edge-cloud-contracts-v1.md`, и хранит raw envelopes плюс `cloud_operational_events`. Ownership matrix и directional sync rules описаны в `docs/sync/directional-sync-ownership.md`.
 
-implemented now: Cloud -> Edge provisioning/configuration имеет backend apply flow: `internal/pos/app/mastersync` принимает `cloud_sync`, master tables имеют sync metadata, `cloud_master_sync_state` хранит stream checkpoints, а dedicated sync endpoints применяют full snapshot/incremental payloads для supported streams. Full snapshot replacement policy beyond upserted payload rows является planned next.
+Реализовано сейчас: Cloud -> Edge provisioning/configuration имеет backend apply flow: `internal/pos/app/mastersync` принимает `cloud_sync`, master tables имеют sync metadata, `cloud_master_sync_state` хранит stream checkpoints, а dedicated sync endpoints применяют full snapshot/incremental payloads для supported streams. Full snapshot replacement policy beyond upserted payload rows запланирована далее.
 
 ## Manager override
 
@@ -292,17 +292,17 @@ Backend обязан:
 - записать audit trail;
 - записать sync/local events транзакционно.
 
-## RBAC enforcement (implemented now)
+## RBAC enforcement
 
-implemented now:
+Реализовано сейчас:
 
-- backend uses a canonical permission catalog and canonical role profiles for `cashier`, `senior_cashier`, `waiter`, `manager`, `kitchen`, `support_admin`;
+- backend uses canonical permission catalog and canonical role profiles for `cashier`, `senior_cashier`, `waiter`, `manager`, `kitchen`, `support_admin`;
 - role permissions remain stored as JSON, but role creation/import rejects unknown permission ids;
 - implemented POS runtime operations are enforced in app services via `EnsureOperatorSession(...requiredPermissions...)`;
 - master-data list endpoints for restaurants/devices/roles/employees are dev-only behind `POS_DEV_TOOLS=1`;
 - `GET /api/v1/catalog/items` is an operator endpoint and requires `pos.catalog.view`.
 
-Canonical permission ids used by implemented now runtime:
+Canonical permission IDs, используемые текущим runtime:
 
 - `pos.employee_shift.open`
 - `pos.employee_shift.close`
@@ -350,16 +350,16 @@ Error behavior:
 - wrong `client_device_id`/session context returns `403 SESSION_CONTEXT_MISMATCH`;
 - authorization errors do not include sensitive auth fields (PIN, manager PIN, PIN hash) or raw permission internals in response payloads.
 
-out of scope:
+Вне текущего объема:
 
 - order transfer;
 - payment refund;
 - diagnostics/admin UI routes;
 - waiter payment override and restaurant-level override policy engine.
 
-## Currency policy (implemented now)
+## Currency policy
 
-implemented now:
+Реализовано сейчас:
 
 - backend validates runtime currency codes against canonical active ISO 4217 profile catalog;
 - catalog coverage is full active ISO list (including SEA currencies such as `IDR`, `THB`, `VND`, `MYR`, `SGD`, `PHP`);
@@ -367,9 +367,9 @@ implemented now:
 - pricing/payment domain amounts continue to use integer minor units (no floating-point storage);
 - unsupported currency code is rejected as domain `invalid`.
 
-## API error contract (implemented now)
+## API error contract
 
-implemented now:
+Реализовано сейчас:
 
 - API errors use one JSON envelope: `{ "error": { "code", "message_key", "details", "correlation_id" } }`;
 - `code` is stable and machine-readable; `message_key` is safe for UI i18n;
@@ -378,7 +378,7 @@ implemented now:
 - internal Go/SQL/domain error text is logged, but not returned to UI;
 - panic recovery returns safe `500 INTERNAL_ERROR` and writes stack trace only to backend log.
 
-Implemented error codes and UI behavior are documented in `docs/backend/POS-ERROR-CATALOG.md`.
+Реализованные error codes и UI behavior описаны в `docs/backend/POS-ERROR-CATALOG.md`.
 
 ## Документационные правила
 
@@ -393,13 +393,13 @@ Implemented error codes and UI behavior are documented in `docs/backend/POS-ERRO
 
 Если меняется только долгосрочная архитектурная цель, но не runtime contract, обновляется `SPECv1.3.md`, а не этот файл.
 
-## Operational logging (implemented now)
+## Operational logging
 
 - Backend writes structured operation logs with levels `TRACE|DEBUG|INFO|WARN|ERROR`.
 - Request audit logs include `request_id`, `operation`, `action`, `result`, `duration_ms`, `error_code` and masked actor/device/session identifiers.
 - Sensitive auth fields (`pin`, `manager_pin`, pin hash, raw auth payload) must not be logged.
 
-## Sync sender telemetry (implemented now)
+## Sync sender telemetry
 
 - `internal/pos/syncsender` emits normalized worker telemetry for non-HTTP paths with fields `operation`, `action`, `result`, `error_code` and masked correlation ids.
 - TRACE-level lifecycle events are emitted for reclaim, batch claim, per-message processing, send attempt, ack and retry decision steps.

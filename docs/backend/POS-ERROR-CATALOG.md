@@ -2,13 +2,13 @@
 
 ## Назначение
 
-Документ фиксирует implemented now контракт безопасных API ошибок POS Edge backend.
+Документ фиксирует реализованный сейчас контракт безопасных API ошибок POS Edge backend.
 
 Код и тесты остаются источником истины. Этот каталог отражает фактическую реализацию `pos-backend/internal/platform/http/respond.go`, `pos-backend/internal/pos/api/router.go` и покрывающие тесты.
 
-## Error response contract
+## Контракт error response
 
-implemented now:
+Реализовано сейчас:
 
 ```json
 {
@@ -29,7 +29,7 @@ implemented now:
 
 Internal cause пишется только в structured backend log.
 
-## Каталог implemented now
+## Реализованный каталог
 
 | code | HTTP | message_key | Бизнес-смысл | UI behavior | Retryable | log level | Sensitive-data policy |
 |---|---:|---|---|---|---|---|---|
@@ -47,9 +47,9 @@ Internal cause пишется только в structured backend log.
 | `RATE_LIMITED` | 429 | `errors.rateLimit` | Превышен лимит PIN login attempts | Notice/modal с рекомендацией подождать | yes, вручную | WARN | PIN не возвращается и не логируется |
 | `INTERNAL_ERROR` | 500 | `errors.server` | Неожиданная или инфраструктурная ошибка | Modal с generic текстом и support code | no для write, осторожно для read/status | ERROR | Stack trace и SQL details только в backend log |
 
-## Logging behavior
+## Поведение логирования
 
-implemented now:
+Реализовано сейчас:
 
 - HTTP error path пишет structured log с `request_id`, `operation=http.error`, `action`, `result=rejected`, `status`, `error_code`, masked `node_device_id`, `client_device_id`, `session_id`, `actor_employee_id`, `internal_error`.
 - Panic recovery возвращает safe `INTERNAL_ERROR` response и пишет stack trace только в backend log.
@@ -57,13 +57,13 @@ implemented now:
 
 ## Retry policy
 
-implemented now:
+Реализовано сейчас:
 
 - UI может retry network/timeout/server для safe read/status запросов.
 - UI mutation defaults отключают auto-retry, чтобы не повторять финансовые write commands без explicit idempotency policy.
 - `429 RATE_LIMITED` считается retryable только вручную после ожидания.
 
-out of scope:
+Вне текущего объема:
 
 - расширенный per-endpoint retry-after contract;
 - локализованные backend message strings вместо `message_key`;

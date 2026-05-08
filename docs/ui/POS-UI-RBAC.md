@@ -4,11 +4,11 @@
 
 Документ фиксирует фактическую permission model для текущего POS UI и backend enforcement.
 
-Код и тесты остаются источником истины для `implemented now`. UI скрывает или блокирует действия только ради UX; финальная проверка всегда выполняется backend app-layer.
+Код и тесты остаются источником истины для статуса `реализовано сейчас`. UI скрывает или блокирует действия только ради UX; финальная проверка всегда выполняется backend app-layer.
 
 ## Роли
 
-implemented now:
+Реализовано сейчас:
 
 - `cashier`
 - `senior_cashier`
@@ -19,9 +19,9 @@ implemented now:
 
 Роли закреплены в backend role profiles и возвращаются пользователю через auth/session permissions. Permissions хранятся в `roles.permissions_json`, но валидируются через canonical backend catalog.
 
-## Canonical Permission Catalog
+## Canonical permission catalog
 
-implemented now:
+Реализовано сейчас:
 
 - `pos.employee_shift.open`
 - `pos.employee_shift.close`
@@ -53,14 +53,14 @@ implemented now:
 - `pos.sync.view`
 - `pos.sync.retry_failed`
 
-out of scope:
+Вне текущего объема:
 
 - UI-only permission ids вида `ui.*`.
 - Permission ids для несуществующих runtime endpoints.
 
 ## Manager Override
 
-implemented now:
+Реализовано сейчас:
 
 - `CancelPrecheck` использует split permissions:
   - actor должен иметь `pos.precheck.cancel.request`;
@@ -68,12 +68,12 @@ implemented now:
   - reason и manager PIN обязательны;
   - попытка пишет audit trail.
 
-out of scope:
+Вне текущего объема:
 
 - override для `order transfer`, `refund`, waiter payment и `cash drawer no sale`;
 - restaurant-level policy engine для включения/выключения override per operation.
 
-## Implemented Runtime Matrix
+## Реализованная runtime matrix
 
 Обозначения:
 
@@ -114,9 +114,9 @@ out of scope:
 | View sync status/local events/outbox | `pos.sync.view` | - | A | - | A | - | A |
 | Retry failed syncs | `pos.sync.retry_failed` | - | - | - | A | - | A |
 
-## Out Of Scope Runtime Rows
+## Строки runtime вне текущего объема
 
-out of scope:
+Вне текущего объема:
 
 - role-based terminal pairing UI;
 - view other employee order;
@@ -126,21 +126,21 @@ out of scope:
 - diagnostics screens/actions;
 - manager/admin screens for editing halls, tables, menu, catalog, employees and roles.
 
-Эти строки не считаются `implemented now`, пока в коде нет соответствующего route/use-case, permission id, backend enforcement и тестов.
+Эти строки не считаются реализованными сейчас, пока в коде нет соответствующего route/use-case, permission id, backend enforcement и тестов.
 
-## UX Requirements
+## UX-требования
 
-implemented now:
+Реализовано сейчас:
 
 - `pos-ui` использует backend permission ids напрямую в `src/shared/rbac.ts`;
 - критичные POS-действия в `/pos` скрываются или блокируются по текущему session actor permissions;
 - query-запросы к защищенным backend read endpoints не запускаются без соответствующего permission, чтобы не плодить ожидаемые `403` в браузерных devtools.
 
-out of scope:
+Вне текущего объема:
 
 - считать UI visibility security boundary.
 
-## Evolution Rules
+## Правила развития
 
 Нельзя добавлять новую UI-операцию без:
 
@@ -149,4 +149,4 @@ out of scope:
 - backend enforcement note;
 - теста backend allow/deny;
 - UI visibility test или acceptance note;
-- документационного статуса `implemented now`, `planned next` или `out of scope`.
+- документационного статуса `реализовано сейчас`, `запланировано далее` или `вне текущего объема`.

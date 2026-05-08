@@ -39,12 +39,12 @@ MH_POS_VERSION=0.1.0
 
 `CLOUD_POSTGRES_DSN` обязателен.
 
-implemented now: PostgreSQL использует first-launch schema policy. `migrations/postgres` должен содержать ровно один canonical SQL file, `001_sync_receiver.sql`; исторические цепочки `002/003/...` не являются частью pre-pilot runtime.
-implemented now: startup policy использует таблицу `db_runtime_versions`; при `db version < module version` создается JSONL backup snapshot таблиц `public` перед schema upgrade.
-implemented now: Cloud backend использует единую продуктовую версию `MH_POS_VERSION`, общую для всех модулей решения.
-implemented now: после миграций Cloud upsert'ит canonical active ISO 4217 currency catalog в `cloud_currency_reference`.
-implemented now: любые изменения структуры БД (создание, изменение, удаление таблиц/колонок/ключей/индексов и прочие DDL-действия) выполняются только программно кодом модуля при старте.
-implemented now: ручной запуск SQL-скриптов для runtime-обновления БД не является поддерживаемым сценарием и не рассматривается как canonical upgrade path.
+реализовано сейчас: PostgreSQL использует first-launch schema policy. `migrations/postgres` должен содержать ровно один canonical SQL file, `001_sync_receiver.sql`; исторические цепочки `002/003/...` не являются частью pre-pilot runtime.
+реализовано сейчас: startup policy использует таблицу `db_runtime_versions`; при `db version < module version` создается JSONL backup snapshot таблиц `public` перед schema upgrade.
+реализовано сейчас: Cloud backend использует единую продуктовую версию `MH_POS_VERSION`, общую для всех модулей решения.
+реализовано сейчас: после миграций Cloud upsert'ит canonical active ISO 4217 currency catalog в `cloud_currency_reference`.
+реализовано сейчас: любые изменения структуры БД (создание, изменение, удаление таблиц/колонок/ключей/индексов и прочие DDL-действия) выполняются только программно кодом модуля при старте.
+реализовано сейчас: ручной запуск SQL-скриптов для runtime-обновления БД не является поддерживаемым сценарием и не рассматривается как canonical upgrade path.
 
 ## Локальный smoke test receiver-а
 
@@ -96,11 +96,11 @@ Invoke-RestMethod -Method Post http://localhost:8090/api/v1/sync/edge-events -Co
 Invoke-RestMethod -Method Post http://localhost:8090/api/v1/sync/edge-events -ContentType "application/json" -Body $body
 ```
 
-Повторный duplicate replay возвращает тот же стабильный ack. implemented now: Cloud хранит raw accepted envelopes и append-safe operational event journal. Полные Cloud projections являются planned next.
+Повторный duplicate replay возвращает тот же стабильный ack. реализовано сейчас: Cloud хранит raw accepted envelopes и append-safe operational event journal. Полные Cloud projections являются запланировано далее.
 
 ## Локальный E2E Prototype: получить pairing code и войти в POS UI
 
-implemented now: Cloud участвует в локальном прототипе как идемпотентный receiver envelope-ов.
+реализовано сейчас: Cloud участвует в локальном прототипе как идемпотентный receiver envelope-ов.
 
 1. Запусти Cloud с PostgreSQL:
 
@@ -117,7 +117,7 @@ $demo = ..\scripts\bootstrap-pos-demo.ps1
 ..\scripts\send-cloud-test-envelope.ps1 -RestaurantId $demo.restaurant_id -NodeDeviceId $demo.node_device_id -ReplayTwice
 ```
 
-implemented now: POS outbox operational events автоматически доставляются в Cloud POS sender worker-ом, когда `POS_SYNC_SENDER_ENABLED=true`, а `POS_CLOUD_SYNC_URL` указывает на этот receiver.
+реализовано сейчас: POS outbox operational events автоматически доставляются в Cloud POS sender worker-ом, когда `POS_SYNC_SENDER_ENABLED=true`, а `POS_CLOUD_SYNC_URL` указывает на этот receiver.
 
 Проверка PostgreSQL:
 
@@ -141,13 +141,13 @@ go test ./...
 
 ## Sync API update 2026-05-07
 
-implemented now endpoints:
+реализовано сейчас endpoints:
 - `POST /api/v1/sync/edge-events`
 - `POST /api/v1/sync/edge-events/batch` (item-level ACK)
 - `PUT /api/v1/provisioning/master-data/{stream}` (store Cloud -> Edge package)
 - `GET /api/v1/provisioning/master-data/{stream}?node_device_id=...` (resolve package for Edge import)
 
-implemented now storage:
+реализовано сейчас storage:
 - `cloud_projection_event_type_stats`
 - `cloud_projection_shift_finance`
 - `cloud_master_data_packages`

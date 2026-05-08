@@ -1,14 +1,14 @@
 # Контракты синхронизации Edge -> Cloud v1
 
-Документ описывает implemented now sync contract между POS Edge и Cloud Sync Receiver.
+Документ описывает реализованный сейчас sync contract между POS Edge и Cloud Sync Receiver.
 
 ## Модель направлений
 
-implemented now: Edge -> Cloud отправляет только runtime operational events. POS Edge остается источником истины для кассовых runtime-операций и продолжает работать, когда Cloud недоступен.
+Реализовано сейчас: Edge -> Cloud отправляет только runtime operational events. POS Edge остается источником истины для кассовых runtime-операций и продолжает работать, когда Cloud недоступен.
 
-implemented now: Cloud -> Edge является направлением для master/reference/configuration данных. POS Edge принимает Cloud-authored master-data snapshots/incrementals через dedicated ingest API; этот flow не входит в Edge -> Cloud sender.
+Реализовано сейчас: Cloud -> Edge является направлением для master/reference/configuration данных. POS Edge принимает Cloud-authored master-data snapshots/incrementals через dedicated ingest API; этот flow не входит в Edge -> Cloud sender.
 
-implemented now: подробная ownership matrix зафиксирована в `docs/sync/directional-sync-ownership.md`.
+Реализовано сейчас: подробная ownership matrix зафиксирована в `docs/sync/directional-sync-ownership.md`.
 
 Cloud-managed/configuration сущности:
 
@@ -35,15 +35,15 @@ Edge-managed operational сущности и события:
 
 POS sender содержит direction gate. Если строка `pos_sync_outbox` не является Edge runtime operational event, sender не отправляет ее POST-запросом в Cloud; вместо тихого drop он переводит строку в `suspended` с явной причиной.
 
-implemented now: `pos_sync_outbox.sync_direction` хранит явное направление строки: `edge_to_cloud`, `cloud_to_edge` или `local_only`. Sender отправляет только operational rows с `sync_direction = edge_to_cloud`.
+Реализовано сейчас: `pos_sync_outbox.sync_direction` хранит явное направление строки: `edge_to_cloud`, `cloud_to_edge` или `local_only`. Sender отправляет только operational rows с `sync_direction = edge_to_cloud`.
 
-implemented now: Cloud -> Edge master-data ingestion доступен на POS Edge через backend API `POST /api/v1/sync/master-data/snapshots` и `POST /api/v1/sync/master-data/{stream}`. Apply flow выполняется application-layer сервисом `internal/pos/app/mastersync`, пишет master/read-model rows и `cloud_master_sync_state` в одной транзакции, использует origin `cloud_sync` и не создает Edge -> Cloud outbox/local events.
+Реализовано сейчас: Cloud -> Edge master-data ingestion доступен на POS Edge через backend API `POST /api/v1/sync/master-data/snapshots` и `POST /api/v1/sync/master-data/{stream}`. Apply flow выполняется application-layer сервисом `internal/pos/app/mastersync`, пишет master/read-model rows и `cloud_master_sync_state` в одной транзакции, использует origin `cloud_sync` и не создает Edge -> Cloud outbox/local events.
 
-implemented now: Cloud -> Edge state хранится на Edge в `cloud_master_sync_state` и sync metadata columns master tables (`cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at`).
+Реализовано сейчас: Cloud -> Edge state хранится на Edge в `cloud_master_sync_state` и sync metadata columns master tables (`cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at`).
 
 ## Cloud -> Edge master-data ingest
 
-implemented now: POS Edge принимает Cloud-authored full snapshot или incremental payload.
+Реализовано сейчас: POS Edge принимает Cloud-authored full snapshot или incremental payload.
 
 Endpoints:
 
@@ -99,11 +99,11 @@ Response body:
 }
 ```
 
-implemented now: stream apply order inside a multi-stream snapshot is restaurants, devices, staff, floor, catalog, menu so SQLite foreign keys can be satisfied by the same payload.
+Реализовано сейчас: stream apply order внутри multi-stream snapshot идет как restaurants, devices, staff, floor, catalog, menu, чтобы SQLite foreign keys могли быть удовлетворены тем же payload.
 
 ## POS Sender
 
-implemented now: `pos-backend` запускает background sender worker, когда `POS_SYNC_SENDER_ENABLED` равно true. По умолчанию sender включен.
+Реализовано сейчас: `pos-backend` запускает background sender worker, когда `POS_SYNC_SENDER_ENABLED` равно true. По умолчанию sender включен.
 
 Переменные окружения:
 
@@ -146,7 +146,7 @@ Content-Type: application/json
 
 Тело запроса - один `SyncEnvelope`.
 
-implemented now: Cloud принимает этот Edge -> Cloud operational catalog:
+Реализовано сейчас: Cloud принимает этот Edge -> Cloud operational catalog:
 
 ```text
 ShiftOpened
@@ -217,9 +217,9 @@ edge_event_id
 
 `payload.data` - JSON-представление соответствующего Edge domain object или event payload.
 
-implemented now: financial payloads for `PaymentCaptured` and `CheckCreated` include backend-owned `business_date_local`. `CheckCreated` also includes `closed_at` and immutable `snapshot`.
+Реализовано сейчас: financial payloads для `PaymentCaptured` и `CheckCreated` включают backend-owned `business_date_local`. `CheckCreated` также включает `closed_at` и immutable `snapshot`.
 
-implemented now: reprint events `PrecheckReprinted` and `CheckReprinted` use immutable snapshot payload:
+Реализовано сейчас: reprint events `PrecheckReprinted` и `CheckReprinted` используют immutable snapshot payload:
 
 ```json
 {
@@ -234,7 +234,7 @@ implemented now: reprint events `PrecheckReprinted` and `CheckReprinted` use imm
 
 ## Хранение в Cloud
 
-implemented now: Cloud append-safe сохраняет принятые envelopes в:
+Реализовано сейчас: Cloud append-safe сохраняет принятые envelopes в:
 
 - `cloud_edge_event_receipts`;
 - `cloud_edge_event_raw_payloads`;
@@ -242,7 +242,7 @@ implemented now: Cloud append-safe сохраняет принятые envelopes
 
 `cloud_edge_event_raw_payloads` сохраняет полный raw envelope до будущей projection logic. `cloud_operational_events` является operational replay journal для последующих projections.
 
-planned next: item-level ACKs и более богатые Cloud projections.
+Реализовано сейчас: item-level ACKs поддерживаются batch endpoint `POST /api/v1/sync/edge-events/batch`; более богатые Cloud projections остаются развитием после текущей foundation.
 
 ## Правила идемпотентности
 
@@ -280,9 +280,9 @@ Cloud возвращает HTTP `202 Accepted` и для первого успе
 
 Ack стабилен при replay: повторный POST того же envelope возвращает те же `cloud_receipt_id`, timestamps, ids и payload hash.
 
-## Sync Contract Update 2026-05-07
+## Обновление sync contract 2026-05-07
 
-implemented now:
+Реализовано сейчас:
 - Cloud supports item-level ACK batch ingest endpoint `POST /api/v1/sync/edge-events/batch`.
 - POS sender supports batch delivery and maps per-item ACK status (`accepted`, `rejected`, `retryable`) to outbox lifecycle (`sent`, `suspended`, `failed/pending retry`).
 - Cloud writes richer deterministic projections on accepted operational events:
@@ -294,9 +294,9 @@ implemented now:
 - Cloud stores provisioning payloads in `cloud_master_data_packages`.
 - Provisioning stream catalog on Cloud includes: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `currencies`.
 - `currencies` stream payload uses canonical active ISO 4217 catalog (`currency_code`, `currency_alpha_code`, `minor_unit`, display flags) and is validated before apply.
-- POS Edge implemented now applies Cloud -> Edge master-data ingest streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`.
-- POS Edge `currencies` apply is out of scope until a dedicated Edge import path, storage contract and tests are added; Edge runtime currently validates currencies from its local canonical catalog.
+- POS Edge реализует Cloud -> Edge master-data ingest streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`.
+- POS Edge `currencies` apply находится вне текущего объема до отдельного Edge import path, storage contract и тестов; Edge runtime сейчас валидирует валюты по локальному canonical catalog.
 
-planned next:
+Запланировано далее:
 - add authorization policy for provisioning endpoints in production perimeter;
 - add projection query APIs for ops dashboards.

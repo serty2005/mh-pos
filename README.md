@@ -26,7 +26,7 @@ Order -> Precheck -> Payment -> Check
 - `pos_sync_outbox`;
 - `SyncEnvelope` foundation;
 - PIN auth/session foundation: `POST /api/v1/auth/pin-login`, `GET /api/v1/auth/session`, `POST /api/v1/auth/logout`;
-- implemented now: PIN login rate limiting returns `429 Too Many Requests` after repeated invalid attempts for the same `node_device_id + client_device_id` window;
+- реализовано сейчас: PIN login rate limiting returns `429 Too Many Requests` after repeated invalid attempts for the same `node_device_id + client_device_id` window;
 - strict lock/logout model: UI lock или auto-lock вызывает backend logout, session становится `revoked`, новый PIN создает новую session;
 - operator auth enforcement для business/operator flows: active employee session, `actor_employee_id`, `session_id`, matching `client_device_id` и permissions там, где нужны;
 - system/device flows (`sync`, pairing/status, diagnostics/hardware callbacks в будущих фазах) не требуют employee session и должны авторизоваться отдельным device/system path;
@@ -131,7 +131,7 @@ Dev server слушает `http://localhost:5173` и ходит в POS Edge back
 
 ## Локальный E2E Prototype Quickstart
 
-implemented now: локально можно поднять минимальную связку `pos-ui -> pos-backend -> cloud-backend` и пройти cashier flow вручную.
+реализовано сейчас: локально можно поднять минимальную связку `pos-ui -> pos-backend -> cloud-backend` и пройти cashier flow вручную.
 
 1. Подними PostgreSQL для Cloud:
 
@@ -247,11 +247,11 @@ docker exec -it mh-pos-cloud-postgres psql -U postgres -d mh_pos_cloud -c "selec
 
 `.\scripts\send-cloud-test-envelope.ps1 -ReplayTwice` по-прежнему проверяет duplicate replay напрямую против Cloud. `.\scripts\dev-smoke.ps1` выполняет health checks, POS demo bootstrap, POS sync endpoint checks и Cloud envelope replay, но не стартует серверы за тебя.
 
-implemented now: `.\scripts\start-and-test-all.ps1` запускает Cloud, POS Edge и UI в отдельных видимых PowerShell окнах, пишет PID file `.dev-stack-pids.json`, сохраняет логи в `logs/dev-stack/`, проверяет порты `8090/8080/5173`, показывает tail логов при health timeout и выполняет authenticated sync smoke через demo manager session. Остановка выполняется через `.\scripts\stop-and-test-all.ps1`, который использует PID file и завершает process tree без небезопасного wildcard kill.
+реализовано сейчас: `.\scripts\start-and-test-all.ps1` запускает Cloud, POS Edge и UI в отдельных видимых PowerShell окнах, пишет PID file `.dev-stack-pids.json`, сохраняет логи в `logs/dev-stack/`, проверяет порты `8090/8080/5173`, показывает tail логов при health timeout и выполняет authenticated sync smoke через demo manager session. Остановка выполняется через `.\scripts\stop-and-test-all.ps1`, который использует PID file и завершает process tree без небезопасного wildcard kill.
 
 ## Локальный E2E Prototype: получить pairing code и войти в POS UI
 
-implemented now: local developer flow использует реальные POS backend endpoints и реальный MVP pairing code.
+реализовано сейчас: local developer flow использует реальные POS backend endpoints и реальный MVP pairing code.
 
 1. Запусти Cloud:
 
@@ -306,7 +306,7 @@ Invoke-RestMethod -Headers $syncHeaders http://localhost:8080/api/v1/sync/status
 Invoke-RestMethod -Headers $syncHeaders http://localhost:8080/api/v1/sync/outbox?limit=10
 ```
 
-implemented now: POS Edge автоматически доставляет Edge -> Cloud operational outbox rows в локальный Cloud receiver, когда sender включен. Недоступность Cloud не блокирует POS runtime writes.
+реализовано сейчас: POS Edge автоматически доставляет Edge -> Cloud operational outbox rows в локальный Cloud receiver, когда sender включен. Недоступность Cloud не блокирует POS runtime writes.
 
 ## Основные контуры
 
@@ -411,9 +411,9 @@ go test ./...
 - POS UI: `pos-ui` на Vue 3 + Quasar реализует `pairing -> login -> pos -> lock/logout` и POS Terminal Core для single-terminal cashier flow.
 - Источник истины для активных POS операций: локальный POS Edge Node.
 
-## Error handling contract (implemented now)
+## Error handling contract (реализовано сейчас)
 
-implemented now:
+реализовано сейчас:
 
 - POS backend возвращает безопасный error envelope `{ "error": { "code", "message_key", "details", "correlation_id" } }`;
 - backend пишет internal cause и panic stack только в structured logs, а UI получает stable code и i18n key;
@@ -428,7 +428,7 @@ implemented now:
 
 ## Runtime logging config
 
-implemented now:
+реализовано сейчас:
 
 - POS Edge log level env: `POS_LOG_LEVEL`
 - Cloud Backend log level env: `CLOUD_LOG_LEVEL`
@@ -444,14 +444,14 @@ $env:CLOUD_LOG_LEVEL="INFO"
 
 ### Worker telemetry
 
-implemented now:
+реализовано сейчас:
 
 - POS sync sender writes structured non-HTTP telemetry events with normalized fields (`operation`, `action`, `result`, `error_code`).
 - TRACE can be enabled with `POS_LOG_LEVEL=TRACE` for lifecycle-level diagnostics of the sender worker.
 
-## Permission model (implemented now)
+## Permission model (реализовано сейчас)
 
-implemented now:
+реализовано сейчас:
 
 - backend enforces canonical RBAC permission ids in app-layer for critical cashier runtime operations;
 - role permissions are still stored as JSON on roles, but authorization checks use stable ids;
@@ -466,13 +466,13 @@ implemented now:
 - POS UI visibility is wired to the same backend permission ids; backend remains the security boundary;
 - failed authorization returns `forbidden` without leaking PIN or PIN hash data.
 
-out of scope:
+вне текущего объема:
 
 - operations that do not exist in the current runtime surface are not part of RBAC hardening until they have route/use-case/contracts and tests.
 
-## Currency precision (implemented now)
+## Currency precision (реализовано сейчас)
 
-implemented now:
+реализовано сейчас:
 
 - POS backend validates currency codes using canonical active ISO 4217 catalog and rejects unsupported codes;
 - catalog explicitly covers full active ISO list (including SEA currencies such as `IDR`, `THB`, `VND`, `MYR`, `SGD`, `PHP`);
@@ -482,15 +482,15 @@ implemented now:
 
 ## Runtime DB versioning and backup
 
-implemented now:
+реализовано сейчас:
 
 - shared product/runtime version env: `MH_POS_VERSION` (default `0.1.0`) for both POS and Cloud modules;
 - POS startup uses `db_runtime_versions` + `schema_migrations` and creates SQLite backup before schema upgrade (`POS_SQLITE_BACKUP_DIR`);
 - Cloud startup uses `db_runtime_versions` + `schema_migrations` and creates PostgreSQL JSONL backup snapshot before schema upgrade (`CLOUD_POSTGRES_BACKUP_DIR`).
 
-## SQLite maintenance (implemented now)
+## SQLite maintenance (реализовано сейчас)
 
-implemented now:
+реализовано сейчас:
 
 - обычный startup не выполняет `VACUUM`;
 - `VACUUM`, `VACUUM INTO`, `PRAGMA optimize`, `PRAGMA wal_checkpoint(TRUNCATE)` доступны как explicit maintenance через `scripts/maintain-sqlite.ps1`;

@@ -77,7 +77,7 @@ UI использует два идентификатора устройства
 - получение session + actor context + permissions;
 - переход на `/pos`.
 
-implemented now: backend отклоняет login, если PIN совпадает с несколькими active employees; текущий UI не реализует employee selection flow.
+Реализовано сейчас: backend отклоняет login, если PIN совпадает с несколькими active employees; текущий UI не реализует employee selection flow.
 
 ### POS
 
@@ -156,17 +156,17 @@ flowchart LR
 - menu items;
 - final check.
 
-implemented now:
+Реализовано сейчас:
 
 - Без открытой личной смены сотрудника `/pos` показывает только действие открытия личной смены и последние личные смены текущего actor.
 - Создание и редактирование заказов доступно после открытия личной смены сотрудника и не требует кассовой смены.
 - Оплата доступна только при открытой кассовой смене.
-- Оплата скрыта/заблокирована без `pos.payment.*`; waiter payment остается out of scope.
+- Оплата скрыта/заблокирована без `pos.payment.*`; waiter payment остается вне текущего объема.
 - Reprint precheck/check отображается только при соответствующих backend permissions и вызывает backend audit command.
 - visibility критичных действий в `/pos` привязана к backend permission ids (shift/cash/order/precheck/payment/floor/menu); backend остается final enforcement layer.
 - денежный ввод/показ в UI использует currency precision helper по ISO code и опирается на active ISO 4217 catalog (precision `0/2/3/4` по коду валюты).
 
-planned next:
+Запланировано далее:
 
 - Личная смена сотрудника будет использоваться для учета рабочего времени post-MVP.
 
@@ -190,7 +190,7 @@ planned next:
 
 ## Error handling и dialogs
 
-implemented now:
+Реализовано сейчас:
 
 - `src/shared/api.ts` содержит единый API client с `VITE_POS_API_BASE`, JSON serialization, empty-body handling, timeout и Zod validation ключевых backend responses.
 - Backend error envelope нормализуется в `ApiError` с `status`, `code`, `messageKey`, `category`, `correlationId`, `retryable`.
@@ -203,7 +203,7 @@ implemented now:
 - Dialog показывает заголовок, описание, recommended action и optional support/debug code (`correlation_id`).
 - TanStack Query defaults: read/status запросы могут безопасно retry network/server ошибки; mutations не выполняют auto-retry.
 
-out of scope:
+Вне текущего объема:
 
 - Cloud unavailable global banner для отдельного Cloud degraded-state UX;
 - build-time проверка полноты translation keys;
@@ -233,9 +233,9 @@ out of scope:
 - business date приходит из backend API payloads; UI не вычисляет `business_date_local` самостоятельно.
 - controlled reprint copy для precheck/final check из backend immutable snapshot.
 
-## Explicitly unsupported now
+## Явно не поддерживается сейчас
 
-На текущем этапе **не считаются implemented now**:
+На текущем этапе **не считается реализованным сейчас**:
 
 - waiter mode runtime;
 - KDS runtime;

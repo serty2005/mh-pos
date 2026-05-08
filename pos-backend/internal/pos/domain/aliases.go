@@ -1,3 +1,5 @@
+// Package domain сохраняет transitional facade над разнесенными domain packages.
+// Новые bounded contexts не должны превращать этот пакет в общий god-domain.
 package domain
 
 import (
