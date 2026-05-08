@@ -2,8 +2,11 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,14 +15,39 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// MigrationOptions задает политику версионирования и backup перед обновлением схемы БД.
+const postgresMigrationLockKey int64 = 5501978001
+
+// MigrationOptions задает startup policy для module/schema version, backup и проверки схемы.
 type MigrationOptions struct {
-	ModuleName    string
-	ModuleVersion string
-	BackupDir     string
+	ModuleName         string
+	ModuleVersion      string
+	BackupDir          string
+	SchemaRequirements []SchemaRequirement
+}
+
+// SchemaRequirement описывает критичные runtime-объекты, без которых модуль не должен стартовать.
+type SchemaRequirement struct {
+	Table   string
+	Columns []string
+	Indexes []string
+}
+
+type migrationFile struct {
+	Name           string
+	Path           string
+	Body           []byte
+	ChecksumSHA256 string
+}
+
+type pgRunner interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
+	Begin(context.Context) (pgx.Tx, error)
 }
 
 func Open(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
@@ -38,109 +66,162 @@ func MigrateDir(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 	return MigrateDirWithPolicy(ctx, pool, dir, MigrationOptions{})
 }
 
-// MigrateDirWithPolicy применяет миграции и обновляет module version contract с backup-before-upgrade.
-func MigrateDirWithPolicy(ctx context.Context, pool *pgxpool.Pool, dir string, options MigrationOptions) error {
-	if err := ensureSchemaMigrationsTable(ctx, pool); err != nil {
-		return err
-	}
-	if err := ensureRuntimeVersionTable(ctx, pool); err != nil {
-		return err
-	}
-	currentModule := strings.TrimSpace(options.ModuleName)
-	currentVersion := strings.TrimSpace(options.ModuleVersion)
-	previousVersion, err := readRuntimeVersion(ctx, pool, currentModule)
-	if err != nil {
-		return err
-	}
-	needsUpgrade, err := shouldUpgradeVersion(previousVersion, currentVersion)
-	if err != nil {
-		return err
-	}
-	if needsUpgrade && previousVersion != "" {
-		if err := backupPostgresBeforeUpgrade(ctx, pool, options.BackupDir, currentModule, previousVersion, currentVersion); err != nil {
-			return err
-		}
-	}
-	if err := applyMigrationsDir(ctx, pool, dir); err != nil {
-		return err
-	}
-	if currentModule != "" && currentVersion != "" {
-		if err := writeRuntimeVersion(ctx, pool, currentModule, currentVersion); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func ensureSchemaMigrationsTable(ctx context.Context, pool *pgxpool.Pool) error {
-	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
-		return err
-	}
-	return nil
-}
-
-func applyMigrationsDir(ctx context.Context, pool *pgxpool.Pool, dir string) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
-	names := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
-			names = append(names, entry.Name())
-		}
-	}
-	sort.Strings(names)
-	if len(names) != 1 {
-		return fmt.Errorf("postgres first-launch migration path must contain exactly one canonical SQL file, got %d", len(names))
-	}
-	for _, name := range names {
-		tx, err := pool.Begin(ctx)
+// MigrateDirWithPolicy применяет ordered migrations до запуска runtime-кода и проверяет итоговую схему.
+func MigrateDirWithPolicy(ctx context.Context, pool *pgxpool.Pool, dir string, options MigrationOptions) (err error) {
+	started := time.Now()
+	moduleName := strings.TrimSpace(options.ModuleName)
+	targetVersion := strings.TrimSpace(options.ModuleVersion)
+	databaseName := ""
+	defer func() {
+		result := "success"
+		level := slog.LevelInfo
+		errorCode := ""
 		if err != nil {
-			return err
+			result = "failed"
+			level = slog.LevelError
+			errorCode = "DB_MIGRATION_FAILED"
 		}
-		var exists int
-		if err := tx.QueryRow(ctx, `SELECT COUNT(1) FROM schema_migrations WHERE version = $1`, name).Scan(&exists); err != nil {
-			_ = tx.Rollback(ctx)
-			return err
+		attrs := []any{
+			"operation", "db.migration",
+			"action", "startup_upgrade",
+			"result", result,
+			"error_code", errorCode,
+			"db_type", "postgres",
+			"database", databaseName,
+			"module_name", moduleName,
+			"target_version", targetVersion,
+			"migration_dir", dir,
+			"duration_ms", time.Since(started).Milliseconds(),
 		}
-		if exists > 0 {
-			_ = tx.Rollback(ctx)
-			continue
-		}
-		body, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
-			_ = tx.Rollback(ctx)
-			return err
+			attrs = append(attrs, "sql_state", pgSQLState(err), "internal_error", err.Error())
 		}
-		if _, err := tx.Exec(ctx, string(body)); err != nil {
-			_ = tx.Rollback(ctx)
-			return fmt.Errorf("apply migration %s: %w", name, err)
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ($1)`, name); err != nil {
-			_ = tx.Rollback(ctx)
-			return err
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return err
+		slog.Log(ctx, level, "postgres startup migration завершена", attrs...)
+	}()
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("postgres migration: acquire connection: %w", err)
+	}
+	defer conn.Release()
+
+	databaseName = currentDatabaseName(ctx, conn)
+	versionTableExisted, err := postgresTableExists(ctx, conn, "db_runtime_versions")
+	if err != nil {
+		return fmt.Errorf("postgres migration: inspect runtime version table: %w", err)
+	}
+	schemaTableExisted, err := postgresTableExists(ctx, conn, "schema_migrations")
+	if err != nil {
+		return fmt.Errorf("postgres migration: inspect schema_migrations table: %w", err)
+	}
+	existingTables, err := countPublicUserTables(ctx, conn)
+	if err != nil {
+		return fmt.Errorf("postgres migration: inspect existing public tables: %w", err)
+	}
+	if !versionTableExisted {
+		slog.WarnContext(ctx, "postgres db_runtime_versions отсутствует, БД считается самой старой", "operation", "db.migration", "action", "inspect_version_table", "result", "oldest", "db_type", "postgres", "database", databaseName, "module_name", moduleName, "migration_dir", dir)
+	}
+
+	previousVersion := ""
+	if versionTableExisted {
+		previousVersion, err = readRuntimeVersion(ctx, conn, moduleName)
+		if err != nil {
+			return fmt.Errorf("postgres migration: read runtime version: %w", err)
 		}
 	}
-	return nil
-}
-
-func ensureRuntimeVersionTable(ctx context.Context, pool *pgxpool.Pool) error {
-	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS db_runtime_versions (module_name TEXT PRIMARY KEY, module_version TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
+	needsVersionUpgrade, err := shouldUpgradeVersion(previousVersion, targetVersion)
+	if err != nil {
 		return err
 	}
+
+	files, err := readMigrationFiles(dir)
+	if err != nil {
+		return fmt.Errorf("postgres migration: read migration dir %s: %w", dir, err)
+	}
+	allowCanonicalUpgrade := allowSingleCanonicalUpgrade(files, needsVersionUpgrade, versionTableExisted)
+	pending, err := pendingMigrations(ctx, conn, files, schemaTableExisted, allowCanonicalUpgrade)
+	if err != nil {
+		return err
+	}
+	needsBackup := (needsVersionUpgrade || len(pending) > 0) && (previousVersion != "" || !versionTableExisted || existingTables > 0) && existingTables > 0
+	if needsBackup {
+		if err := backupPostgresBeforeUpgrade(ctx, conn, options.BackupDir, moduleName, previousVersion, targetVersion); err != nil {
+			return fmt.Errorf("postgres migration: backup before upgrade: %w", err)
+		}
+	}
+
+	if err := acquirePostgresMigrationLock(ctx, conn); err != nil {
+		return fmt.Errorf("postgres migration: acquire advisory lock: %w", err)
+	}
+	defer releasePostgresMigrationLock(context.Background(), conn)
+
+	if err := ensureSchemaMigrationsTable(ctx, conn); err != nil {
+		return fmt.Errorf("postgres migration: ensure schema_migrations: %w", err)
+	}
+	if err := ensureRuntimeVersionTable(ctx, conn); err != nil {
+		return fmt.Errorf("postgres migration: ensure db_runtime_versions: %w", err)
+	}
+
+	// После advisory lock план пересчитывается, чтобы второй instance не применил уже завершенные migrations повторно.
+	pending, err = pendingMigrations(ctx, conn, files, true, allowCanonicalUpgrade)
+	if err != nil {
+		return err
+	}
+	if err := applyPendingMigrations(ctx, conn, pending); err != nil {
+		return err
+	}
+	if err := VerifySchema(ctx, conn, options.SchemaRequirements); err != nil {
+		return err
+	}
+	latestName, latestChecksum := latestMigrationIdentity(files)
+	if moduleName != "" && targetVersion != "" {
+		if err := writeRuntimeVersion(ctx, conn, moduleName, targetVersion, latestName, latestChecksum, "applied"); err != nil {
+			return fmt.Errorf("postgres migration: write runtime version: %w", err)
+		}
+	}
 	return nil
 }
 
-func readRuntimeVersion(ctx context.Context, pool *pgxpool.Pool, moduleName string) (string, error) {
+func ensureSchemaMigrationsTable(ctx context.Context, runner pgRunner) error {
+	if _, err := runner.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, checksum_sha256 TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'applied', applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
+		return err
+	}
+	for _, stmt := range []string{
+		`ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum_sha256 TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'applied'`,
+		`ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS applied_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+	} {
+		if _, err := runner.Exec(ctx, stmt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureRuntimeVersionTable(ctx context.Context, runner pgRunner) error {
+	if _, err := runner.Exec(ctx, `CREATE TABLE IF NOT EXISTS db_runtime_versions (module_name TEXT PRIMARY KEY, module_version TEXT NOT NULL, schema_version TEXT NOT NULL DEFAULT '', checksum_sha256 TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'applied', applied_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
+		return err
+	}
+	for _, stmt := range []string{
+		`ALTER TABLE db_runtime_versions ADD COLUMN IF NOT EXISTS schema_version TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE db_runtime_versions ADD COLUMN IF NOT EXISTS checksum_sha256 TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE db_runtime_versions ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'applied'`,
+		`ALTER TABLE db_runtime_versions ADD COLUMN IF NOT EXISTS applied_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+		`ALTER TABLE db_runtime_versions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+	} {
+		if _, err := runner.Exec(ctx, stmt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func readRuntimeVersion(ctx context.Context, runner pgRunner, moduleName string) (string, error) {
 	if strings.TrimSpace(moduleName) == "" {
 		return "", nil
 	}
 	var version string
-	err := pool.QueryRow(ctx, `SELECT module_version FROM db_runtime_versions WHERE module_name = $1`, moduleName).Scan(&version)
+	err := runner.QueryRow(ctx, `SELECT module_version FROM db_runtime_versions WHERE module_name = $1`, moduleName).Scan(&version)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}
@@ -150,17 +231,221 @@ func readRuntimeVersion(ctx context.Context, pool *pgxpool.Pool, moduleName stri
 	return strings.TrimSpace(version), nil
 }
 
-func writeRuntimeVersion(ctx context.Context, pool *pgxpool.Pool, moduleName, moduleVersion string) error {
-	if _, err := pool.Exec(ctx, `
-INSERT INTO db_runtime_versions(module_name,module_version,updated_at)
-VALUES ($1,$2,now())
+func writeRuntimeVersion(ctx context.Context, runner pgRunner, moduleName, moduleVersion, schemaVersion, checksum, status string) error {
+	_, err := runner.Exec(ctx, `
+INSERT INTO db_runtime_versions(module_name,module_version,schema_version,checksum_sha256,status,applied_at,updated_at)
+VALUES ($1,$2,$3,$4,$5,now(),now())
 ON CONFLICT(module_name) DO UPDATE SET
   module_version = EXCLUDED.module_version,
+  schema_version = EXCLUDED.schema_version,
+  checksum_sha256 = EXCLUDED.checksum_sha256,
+  status = EXCLUDED.status,
+  applied_at = EXCLUDED.applied_at,
   updated_at = now()
-`, moduleName, moduleVersion); err != nil {
-		return err
+`, moduleName, moduleVersion, schemaVersion, checksum, status)
+	return err
+}
+
+func readMigrationFiles(dir string) ([]migrationFile, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
+			names = append(names, entry.Name())
+		}
+	}
+	sort.Strings(names)
+	files := make([]migrationFile, 0, len(names))
+	for _, name := range names {
+		path := filepath.Join(dir, name)
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		sum := sha256.Sum256(body)
+		files = append(files, migrationFile{Name: name, Path: path, Body: body, ChecksumSHA256: hex.EncodeToString(sum[:])})
+	}
+	return files, nil
+}
+
+func pendingMigrations(ctx context.Context, runner pgRunner, files []migrationFile, schemaTableExisted bool, allowCanonicalUpgrade bool) ([]migrationFile, error) {
+	if !schemaTableExisted {
+		return files, nil
+	}
+	hasChecksumColumn, err := postgresColumnExists(ctx, runner, "schema_migrations", "checksum_sha256")
+	if err != nil {
+		return nil, fmt.Errorf("postgres migration: inspect schema_migrations checksum column: %w", err)
+	}
+	pending := make([]migrationFile, 0, len(files))
+	for _, file := range files {
+		if !hasChecksumColumn {
+			var n int
+			err := runner.QueryRow(ctx, `SELECT COUNT(1) FROM schema_migrations WHERE version = $1`, file.Name).Scan(&n)
+			if err != nil {
+				return nil, fmt.Errorf("postgres migration: read legacy migration marker for %s: %w", file.Name, err)
+			}
+			// Старый schema_migrations без checksum не доказывает, что текущий
+			// повторно применимый SQL уже применен полностью; canonical file должен
+			// довыравнять отсутствующие runtime-таблицы до verification.
+			pending = append(pending, file)
+			continue
+		}
+		var storedChecksum string
+		err := runner.QueryRow(ctx, `SELECT checksum_sha256 FROM schema_migrations WHERE version = $1`, file.Name).Scan(&storedChecksum)
+		if errors.Is(err, pgx.ErrNoRows) {
+			pending = append(pending, file)
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("postgres migration: read checksum for %s: %w", file.Name, err)
+		}
+		storedChecksum = strings.TrimSpace(storedChecksum)
+		if storedChecksum == "" {
+			// Пустой checksum - старая запись, а не гарантия актуальной схемы.
+			// Повторно применяем idempotent migration и только затем пишем checksum/history.
+			pending = append(pending, file)
+			continue
+		}
+		if storedChecksum != file.ChecksumSHA256 {
+			if allowCanonicalUpgrade {
+				pending = append(pending, file)
+				continue
+			}
+			return nil, fmt.Errorf("postgres migration checksum mismatch for %s: database=%s file=%s", file.Name, storedChecksum, file.ChecksumSHA256)
+		}
+	}
+	return pending, nil
+}
+
+func applyPendingMigrations(ctx context.Context, runner pgRunner, files []migrationFile) error {
+	for _, file := range files {
+		started := time.Now()
+		tx, err := runner.Begin(ctx)
+		if err != nil {
+			return fmt.Errorf("postgres migration: begin %s: %w", file.Name, err)
+		}
+		if _, err := tx.Exec(ctx, string(file.Body)); err != nil {
+			_ = tx.Rollback(ctx)
+			return fmt.Errorf("postgres migration: apply %s: %w", file.Name, err)
+		}
+		if _, err := tx.Exec(ctx, `
+INSERT INTO schema_migrations(version,checksum_sha256,status,applied_at)
+VALUES ($1,$2,'applied',now())
+ON CONFLICT(version) DO UPDATE SET
+  checksum_sha256 = EXCLUDED.checksum_sha256,
+  status = EXCLUDED.status,
+  applied_at = EXCLUDED.applied_at
+`, file.Name, file.ChecksumSHA256); err != nil {
+			_ = tx.Rollback(ctx)
+			return fmt.Errorf("postgres migration: record %s: %w", file.Name, err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("postgres migration: commit %s: %w", file.Name, err)
+		}
+		slog.InfoContext(ctx, "postgres migration применена", "operation", "db.migration", "action", "apply_migration", "result", "success", "db_type", "postgres", "migration_file", file.Name, "migration_checksum", file.ChecksumSHA256, "duration_ms", time.Since(started).Milliseconds())
 	}
 	return nil
+}
+
+// VerifySchema проверяет критичные таблицы, колонки и индексы до запуска HTTP/workers.
+func VerifySchema(ctx context.Context, runner pgRunner, requirements []SchemaRequirement) error {
+	started := time.Now()
+	for _, req := range requirements {
+		if strings.TrimSpace(req.Table) == "" {
+			continue
+		}
+		exists, err := postgresTableExists(ctx, runner, req.Table)
+		if err != nil {
+			return fmt.Errorf("postgres schema verification: inspect table %s: %w", req.Table, err)
+		}
+		if !exists {
+			return fmt.Errorf("postgres schema verification failed: missing table %s", req.Table)
+		}
+		for _, column := range req.Columns {
+			if strings.TrimSpace(column) == "" {
+				continue
+			}
+			columnExists, err := postgresColumnExists(ctx, runner, req.Table, column)
+			if err != nil {
+				return fmt.Errorf("postgres schema verification: inspect column %s.%s: %w", req.Table, column, err)
+			}
+			if !columnExists {
+				return fmt.Errorf("postgres schema verification failed: missing column %s.%s", req.Table, column)
+			}
+		}
+		for _, index := range req.Indexes {
+			if strings.TrimSpace(index) == "" {
+				continue
+			}
+			indexExists, err := postgresIndexExists(ctx, runner, req.Table, index)
+			if err != nil {
+				return fmt.Errorf("postgres schema verification: inspect index %s: %w", index, err)
+			}
+			if !indexExists {
+				return fmt.Errorf("postgres schema verification failed: missing index %s on %s", index, req.Table)
+			}
+		}
+	}
+	slog.InfoContext(ctx, "postgres schema verification завершена", "operation", "db.schema_verification", "action", "verify_schema", "result", "success", "db_type", "postgres", "duration_ms", time.Since(started).Milliseconds())
+	return nil
+}
+
+func acquirePostgresMigrationLock(ctx context.Context, runner pgRunner) error {
+	_, err := runner.Exec(ctx, `SELECT pg_advisory_lock($1)`, postgresMigrationLockKey)
+	return err
+}
+
+func releasePostgresMigrationLock(ctx context.Context, runner pgRunner) {
+	if _, err := runner.Exec(ctx, `SELECT pg_advisory_unlock($1)`, postgresMigrationLockKey); err != nil {
+		slog.ErrorContext(ctx, "postgres migration advisory lock не освобожден", "operation", "db.migration", "action", "release_lock", "result", "failed", "db_type", "postgres", "error_code", "DB_MIGRATION_LOCK_RELEASE_FAILED", "sql_state", pgSQLState(err), "internal_error", err.Error())
+	}
+}
+
+func postgresTableExists(ctx context.Context, runner pgRunner, table string) (bool, error) {
+	var exists bool
+	err := runner.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, "public."+table).Scan(&exists)
+	return exists, err
+}
+
+func postgresColumnExists(ctx context.Context, runner pgRunner, table, column string) (bool, error) {
+	var n int
+	err := runner.QueryRow(ctx, `SELECT COUNT(1) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`, table, column).Scan(&n)
+	return n > 0, err
+}
+
+func postgresIndexExists(ctx context.Context, runner pgRunner, table, index string) (bool, error) {
+	var n int
+	err := runner.QueryRow(ctx, `SELECT COUNT(1) FROM pg_indexes WHERE schemaname = 'public' AND tablename = $1 AND indexname = $2`, table, index).Scan(&n)
+	return n > 0, err
+}
+
+func countPublicUserTables(ctx context.Context, runner pgRunner) (int, error) {
+	var n int
+	err := runner.QueryRow(ctx, `SELECT COUNT(1) FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('schema_migrations','db_runtime_versions')`).Scan(&n)
+	return n, err
+}
+
+func currentDatabaseName(ctx context.Context, runner pgRunner) string {
+	var name string
+	if err := runner.QueryRow(ctx, `SELECT current_database()`).Scan(&name); err != nil {
+		return ""
+	}
+	return name
+}
+
+func latestMigrationIdentity(files []migrationFile) (string, string) {
+	if len(files) == 0 {
+		return "", ""
+	}
+	latest := files[len(files)-1]
+	return latest.Name, latest.ChecksumSHA256
+}
+
+func allowSingleCanonicalUpgrade(files []migrationFile, needsVersionUpgrade bool, versionTableExisted bool) bool {
+	return len(files) == 1 && (needsVersionUpgrade || !versionTableExisted)
 }
 
 func shouldUpgradeVersion(previous, current string) (bool, error) {
@@ -173,6 +458,9 @@ func shouldUpgradeVersion(previous, current string) (bool, error) {
 	compare, err := compareModuleVersion(previous, current)
 	if err != nil {
 		return false, err
+	}
+	if compare > 0 {
+		return false, fmt.Errorf("database schema is newer than application; downgrade is not supported: database=%s application=%s", previous, current)
 	}
 	return compare < 0, nil
 }
@@ -216,7 +504,8 @@ func parseModuleVersion(raw string) ([3]int, error) {
 	return parsed, nil
 }
 
-func backupPostgresBeforeUpgrade(ctx context.Context, pool *pgxpool.Pool, backupDir, moduleName, previousVersion, targetVersion string) error {
+func backupPostgresBeforeUpgrade(ctx context.Context, runner pgRunner, backupDir, moduleName, previousVersion, targetVersion string) error {
+	started := time.Now()
 	if strings.TrimSpace(backupDir) == "" {
 		backupDir = filepath.Join("data", "cloud-backups")
 	}
@@ -231,7 +520,7 @@ func backupPostgresBeforeUpgrade(ctx context.Context, pool *pgxpool.Pool, backup
 	}
 	defer file.Close()
 
-	rows, err := pool.Query(ctx, `SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename`)
+	rows, err := runner.Query(ctx, `SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename`)
 	if err != nil {
 		return err
 	}
@@ -252,7 +541,7 @@ func backupPostgresBeforeUpgrade(ctx context.Context, pool *pgxpool.Pool, backup
 
 	for _, table := range tables {
 		query := fmt.Sprintf("SELECT row_to_json(t) FROM %s t", pgx.Identifier{"public", table}.Sanitize())
-		tableRows, err := pool.Query(ctx, query)
+		tableRows, err := runner.Query(ctx, query)
 		if err != nil {
 			return err
 		}
@@ -274,7 +563,11 @@ func backupPostgresBeforeUpgrade(ctx context.Context, pool *pgxpool.Pool, backup
 		}
 		tableRows.Close()
 	}
-	return file.Sync()
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	slog.InfoContext(ctx, "postgres backup перед миграцией создан", "operation", "db.backup", "action", "backup_before_upgrade", "result", "success", "db_type", "postgres", "backup_path", filePath, "module_name", moduleName, "current_version", previousVersion, "target_version", targetVersion, "duration_ms", time.Since(started).Milliseconds())
+	return nil
 }
 
 func sanitizeFilenameToken(raw string) string {
@@ -292,4 +585,12 @@ func sanitizeFilenameToken(raw string) string {
 		}
 	}
 	return b.String()
+}
+
+func pgSQLState(err error) string {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.SQLState()
+	}
+	return ""
 }

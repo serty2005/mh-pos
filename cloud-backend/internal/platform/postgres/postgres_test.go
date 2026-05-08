@@ -1,6 +1,17 @@
 package postgres
 
-import "testing"
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
 
 func TestCompareModuleVersion(t *testing.T) {
 	result, err := compareModuleVersion("0.1.0", "0.2.0")
@@ -30,10 +41,298 @@ func TestShouldUpgradeVersion(t *testing.T) {
 	if needsUpgrade {
 		t.Fatal("expected no upgrade when versions are equal")
 	}
+	if _, err := shouldUpgradeVersion("0.2.0", "0.1.0"); err == nil {
+		t.Fatal("expected newer database version to fail fast")
+	}
 }
 
 func TestSanitizeFilenameToken(t *testing.T) {
 	if got := sanitizeFilenameToken(" cloud backend / 0.1.0 "); got != "cloud_backend___0.1.0" {
 		t.Fatalf("unexpected sanitized token %q", got)
 	}
+}
+
+func TestReadMigrationFilesSortedAndChecksummed(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "002_second.sql"), []byte("SELECT 2;"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "001_first.sql"), []byte("SELECT 1;"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("ignored"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := readMigrationFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("expected two sql migrations, got %d", len(files))
+	}
+	if files[0].Name != "001_first.sql" || files[1].Name != "002_second.sql" {
+		t.Fatalf("expected lexicographic order, got %s then %s", files[0].Name, files[1].Name)
+	}
+	for _, file := range files {
+		if len(file.ChecksumSHA256) != 64 {
+			t.Fatalf("expected sha256 checksum for %s, got %q", file.Name, file.ChecksumSHA256)
+		}
+	}
+}
+
+func TestPendingMigrationsReappliesLegacyMarkerWithoutChecksumColumn(t *testing.T) {
+	files := []migrationFile{{Name: "001_sync_receiver.sql", ChecksumSHA256: strings.Repeat("a", 64)}}
+	pending, err := pendingMigrations(context.Background(), postgresCatalogStub{
+		hasChecksumColumn: false,
+		legacyMarkers:     map[string]bool{"001_sync_receiver.sql": true},
+	}, files, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Name != "001_sync_receiver.sql" {
+		t.Fatalf("expected legacy marker to re-run canonical migration, got %+v", pending)
+	}
+}
+
+func TestPendingMigrationsReappliesLegacyMarkerWithEmptyChecksum(t *testing.T) {
+	files := []migrationFile{{Name: "001_sync_receiver.sql", ChecksumSHA256: strings.Repeat("b", 64)}}
+	pending, err := pendingMigrations(context.Background(), postgresCatalogStub{
+		hasChecksumColumn: true,
+		checksums:         map[string]string{"001_sync_receiver.sql": ""},
+	}, files, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Name != "001_sync_receiver.sql" {
+		t.Fatalf("expected empty checksum marker to re-run canonical migration, got %+v", pending)
+	}
+}
+
+func TestPendingMigrationsSkipsAppliedChecksum(t *testing.T) {
+	checksum := strings.Repeat("c", 64)
+	files := []migrationFile{{Name: "001_sync_receiver.sql", ChecksumSHA256: checksum}}
+	pending, err := pendingMigrations(context.Background(), postgresCatalogStub{
+		hasChecksumColumn: true,
+		checksums:         map[string]string{"001_sync_receiver.sql": checksum},
+	}, files, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("expected applied checksum to stay idempotent, got %+v", pending)
+	}
+}
+
+func TestCloudMigrationDirUsesSingleManagedCanonicalFile(t *testing.T) {
+	files, err := readMigrationFiles(filepath.Join("..", "..", "..", "migrations", "postgres"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].Name != "001_sync_receiver.sql" {
+		t.Fatalf("expected single managed canonical migration file, got %+v", files)
+	}
+	body := string(files[0].Body)
+	if !strings.Contains(body, "cloud_currency_reference") || !strings.Contains(body, "cloud_currency_reference_alpha_code_idx") {
+		t.Fatalf("expected canonical migration to manage currency reference schema")
+	}
+	for _, required := range []string{
+		"cloud_projection_event_type_stats",
+		"PRIMARY KEY (restaurant_id, device_id, event_type)",
+		"cloud_projection_shift_finance",
+	} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("expected canonical migration to manage %s", required)
+		}
+	}
+}
+
+func TestMigrateDirWithPolicyRepairsLegacyPostgresMissingProjectionStats(t *testing.T) {
+	dsn := strings.TrimSpace(os.Getenv("CLOUD_POSTGRES_TEST_DSN"))
+	if dsn == "" {
+		t.Skip("CLOUD_POSTGRES_TEST_DSN is not set")
+	}
+	ctx := t.Context()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	resetPublicSchema(t, ctx, pool)
+	t.Cleanup(func() { resetPublicSchema(t, context.Background(), pool) })
+
+	if _, err := pool.Exec(ctx, `
+CREATE TABLE db_runtime_versions (
+  module_name TEXT PRIMARY KEY,
+  module_version TEXT NOT NULL,
+  schema_version TEXT NOT NULL DEFAULT '',
+  checksum_sha256 TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'applied',
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO db_runtime_versions(module_name,module_version)
+VALUES ('cloud-backend','0.1.0');
+CREATE TABLE cloud_edge_event_receipts (id TEXT PRIMARY KEY);
+`); err != nil {
+		t.Fatal(err)
+	}
+
+	migrationsDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(migrationsDir, "001_sync_receiver.sql"), []byte(`
+CREATE TABLE IF NOT EXISTS cloud_edge_event_receipts (id TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS migration_apply_log (
+  id BIGSERIAL PRIMARY KEY,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO migration_apply_log DEFAULT VALUES;
+CREATE TABLE IF NOT EXISTS cloud_projection_event_type_stats (
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  device_id TEXT NOT NULL CHECK (device_id <> ''),
+  event_type TEXT NOT NULL CHECK (event_type <> ''),
+  event_count BIGINT NOT NULL CHECK (event_count >= 0),
+  first_occurred_at TIMESTAMPTZ NOT NULL,
+  last_occurred_at TIMESTAMPTZ NOT NULL,
+  last_cloud_received_at TIMESTAMPTZ NOT NULL,
+  last_event_id TEXT NOT NULL CHECK (last_event_id <> ''),
+  last_command_id TEXT NOT NULL CHECK (last_command_id <> ''),
+  updated_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (restaurant_id, device_id, event_type)
+);
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	requirements := []SchemaRequirement{{
+		Table: "cloud_projection_event_type_stats",
+		Columns: []string{
+			"restaurant_id", "device_id", "event_type", "event_count", "first_occurred_at", "last_occurred_at",
+			"last_cloud_received_at", "last_event_id", "last_command_id", "updated_at",
+		},
+	}}
+
+	if err := MigrateDirWithPolicy(ctx, pool, migrationsDir, MigrationOptions{
+		ModuleName:         "cloud-backend",
+		ModuleVersion:      "0.1.0",
+		BackupDir:          t.TempDir(),
+		SchemaRequirements: requirements,
+	}); err != nil {
+		t.Fatalf("legacy postgres migrate failed: %v", err)
+	}
+	assertTableExists(t, ctx, pool, "cloud_projection_event_type_stats")
+	var status string
+	if err := pool.QueryRow(ctx, `SELECT status FROM schema_migrations WHERE version = '001_sync_receiver.sql'`).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "applied" {
+		t.Fatalf("expected migration history status applied, got %s", status)
+	}
+
+	if err := MigrateDirWithPolicy(ctx, pool, migrationsDir, MigrationOptions{
+		ModuleName:         "cloud-backend",
+		ModuleVersion:      "0.1.0",
+		BackupDir:          t.TempDir(),
+		SchemaRequirements: requirements,
+	}); err != nil {
+		t.Fatalf("second postgres migrate failed: %v", err)
+	}
+	var appliedCount int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(1) FROM migration_apply_log`).Scan(&appliedCount); err != nil {
+		t.Fatal(err)
+	}
+	if appliedCount != 1 {
+		t.Fatalf("expected second startup to skip already recorded migration, got %d applies", appliedCount)
+	}
+}
+
+func resetPublicSchema(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+	t.Helper()
+	if _, err := pool.Exec(ctx, `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`); err != nil {
+		t.Fatalf("reset public schema: %v", err)
+	}
+}
+
+func assertTableExists(t *testing.T, ctx context.Context, pool *pgxpool.Pool, table string) {
+	t.Helper()
+	var exists bool
+	if err := pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, "public."+table).Scan(&exists); err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Fatalf("expected table %s to exist", table)
+	}
+}
+
+type postgresCatalogStub struct {
+	hasChecksumColumn bool
+	legacyMarkers     map[string]bool
+	checksums         map[string]string
+}
+
+func (s postgresCatalogStub) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, nil
+}
+
+func (s postgresCatalogStub) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	return nil, nil
+}
+
+func (s postgresCatalogStub) Begin(context.Context) (pgx.Tx, error) {
+	return nil, nil
+}
+
+func (s postgresCatalogStub) QueryRow(_ context.Context, query string, args ...any) pgx.Row {
+	switch {
+	case strings.Contains(query, "information_schema.columns"):
+		if len(args) == 2 && args[0] == "schema_migrations" && args[1] == "checksum_sha256" && s.hasChecksumColumn {
+			return stubRow{values: []any{1}}
+		}
+		return stubRow{values: []any{0}}
+	case strings.Contains(query, "SELECT COUNT(1) FROM schema_migrations WHERE version"):
+		if len(args) == 1 && s.legacyMarkers[fmt.Sprint(args[0])] {
+			return stubRow{values: []any{1}}
+		}
+		return stubRow{values: []any{0}}
+	case strings.Contains(query, "SELECT checksum_sha256 FROM schema_migrations WHERE version"):
+		if len(args) == 1 {
+			if checksum, ok := s.checksums[fmt.Sprint(args[0])]; ok {
+				return stubRow{values: []any{checksum}}
+			}
+		}
+		return stubRow{err: pgx.ErrNoRows}
+	default:
+		return stubRow{err: fmt.Errorf("unexpected query: %s", query)}
+	}
+}
+
+type stubRow struct {
+	values []any
+	err    error
+}
+
+func (r stubRow) Scan(dest ...any) error {
+	if r.err != nil {
+		return r.err
+	}
+	if len(dest) != len(r.values) {
+		return fmt.Errorf("scan destination count %d does not match values %d", len(dest), len(r.values))
+	}
+	for i := range dest {
+		switch d := dest[i].(type) {
+		case *int:
+			v, ok := r.values[i].(int)
+			if !ok {
+				return fmt.Errorf("value %d is not int", i)
+			}
+			*d = v
+		case *string:
+			v, ok := r.values[i].(string)
+			if !ok {
+				return fmt.Errorf("value %d is not string", i)
+			}
+			*d = v
+		default:
+			return fmt.Errorf("unsupported scan destination %T", d)
+		}
+	}
+	return nil
 }

@@ -26,7 +26,7 @@
 Статус: `выполнено`
 
 - Edge backend на Go + SQLite.
-- Canonical SQLite first-launch path через `pos-backend/migrations/sqlite/001_init.sql`.
+- Canonical SQLite first-launch/startup path через один managed `pos-backend/migrations/sqlite/001_init.sql`.
 - SQLite runtime gate.
 - `local_event_log`.
 - `pos_sync_outbox`.
@@ -121,7 +121,7 @@
 - Currency policy больше не ограничена локальным subset: pilot runtime использует полный active ISO 4217 catalog, включая валюты ЮВА, с precision по коду валюты.
 - Cloud PostgreSQL получил canonical ISO 4217 currency template (`cloud_currency_reference`).
 - Cloud provisioning contract поддерживает `currencies` stream для Cloud -> Edge master/reference payload.
-- Startup migration policy закрепляет `db_runtime_versions` + backup-before-upgrade для `SQLite` и `PostgreSQL`.
+- Startup migration policy закрепляет `db_runtime_versions`, single managed SQL file per module, `schema_migrations` с checksum, backup-before-upgrade/data-upgrade, schema verification и fail-fast при downgrade для `SQLite` и `PostgreSQL`.
 
 ## Что обязательно закрыть до первого пилота
 
@@ -171,6 +171,8 @@
 - RBAC matrix утверждена;
 - supported currency/business-date policy зафиксирована;
 - print/reprint policy зафиксирована;
+- backup-before-data-load policy реализована для Cloud -> Edge full snapshot/master-data import;
+- административная UI-операция очистки/пересоздания SQLite реализована с backup, явным подтверждением, RBAC/audit и rebootstrap/restart path;
 - минимальная граница `Pricing` / `Catalog` зафиксирована.
 
 ### Pilot readiness
@@ -238,7 +240,7 @@ flowchart LR
 
 До первого пилота нельзя тратить время на:
 
-- historical DB migrations для несуществующего production;
+- manual/ad-hoc DB migrations для несуществующего production вместо программного startup-upgrade path;
 - dual-write;
 - сохранение obsolete API ради “может пригодится”;
 - расширение будущих modes без фиксации текущего cashier pilot scope;
@@ -294,9 +296,18 @@ flowchart LR
 
 - Item-level ACK batch flow реализован: `POST /api/v1/sync/edge-events/batch` + batch sender mapping на Edge.
 - Cloud projections поверх `cloud_operational_events` реализованы: `cloud_projection_event_type_stats`, `cloud_projection_shift_finance`.
+- Cloud PostgreSQL startup path довыравнивает реализованные сейчас projection tables через canonical `001_sync_receiver.sql`; запланированные далее query endpoints не блокируют startup verification.
 - Production Cloud -> Edge provisioning/import package endpoints реализованы: `PUT/GET /api/v1/provisioning/master-data/{stream}`.
 
 Статус следующих шагов: `далее`
 
 - Авторизация production perimeter для provisioning endpoints.
 - Projection query endpoints для ops dashboards.
+
+### Database Access & Reporting Architecture update 2026-05-08
+
+- [ ] Создать `docs/adr/ADR-012-persistence-and-analytics-strategy.md`
+- [ ] Зафиксировать sqlc как основной persistence-подход для SQLite/PostgreSQL
+- [ ] Зафиксировать ClickHouse как облачный OLAP/reporting accelerator
+- [ ] Добавить PostgreSQL → ClickHouse projection pipeline в будущие этапы
+- [ ] Запретить GORM/Ent в POS Core financial/offline/sync-critical flows

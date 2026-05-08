@@ -1,4 +1,4 @@
-CREATE TABLE restaurants (
+CREATE TABLE IF NOT EXISTS restaurants (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   timezone TEXT NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE restaurants (
   last_synced_at TEXT
 );
 
-CREATE TABLE devices (
+CREATE TABLE IF NOT EXISTS devices (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
   device_code TEXT NOT NULL,
@@ -31,7 +31,7 @@ CREATE TABLE devices (
   UNIQUE(restaurant_id, device_code)
 );
 
-CREATE TABLE edge_node_identity (
+CREATE TABLE IF NOT EXISTS edge_node_identity (
   id TEXT PRIMARY KEY CHECK (id = 'local'),
   node_device_id TEXT NOT NULL REFERENCES devices(id),
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
@@ -42,7 +42,7 @@ CREATE TABLE edge_node_identity (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE client_devices (
+CREATE TABLE IF NOT EXISTS client_devices (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
   node_device_id TEXT NOT NULL REFERENCES devices(id),
@@ -55,9 +55,9 @@ CREATE TABLE client_devices (
   UNIQUE(node_device_id, client_device_id)
 );
 
-CREATE INDEX client_devices_restaurant_node_status ON client_devices(restaurant_id, node_device_id, status);
+CREATE INDEX IF NOT EXISTS client_devices_restaurant_node_status ON client_devices(restaurant_id, node_device_id, status);
 
-CREATE TABLE roles (
+CREATE TABLE IF NOT EXISTS roles (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
   permissions_json TEXT NOT NULL,
@@ -70,7 +70,7 @@ CREATE TABLE roles (
   last_synced_at TEXT
 );
 
-CREATE TABLE employees (
+CREATE TABLE IF NOT EXISTS employees (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
   role_id TEXT NOT NULL REFERENCES roles(id),
@@ -85,7 +85,7 @@ CREATE TABLE employees (
   last_synced_at TEXT
 );
 
-CREATE TABLE auth_sessions (
+CREATE TABLE IF NOT EXISTS auth_sessions (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
   device_id TEXT NOT NULL REFERENCES devices(id),
@@ -102,9 +102,9 @@ CREATE TABLE auth_sessions (
   CHECK (device_id = node_device_id)
 );
 
-CREATE INDEX auth_sessions_device_employee_status ON auth_sessions(node_device_id, client_device_id, employee_id, status);
+CREATE INDEX IF NOT EXISTS auth_sessions_device_employee_status ON auth_sessions(node_device_id, client_device_id, employee_id, status);
 
-CREATE TABLE halls (
+CREATE TABLE IF NOT EXISTS halls (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
   name TEXT NOT NULL,
@@ -118,7 +118,7 @@ CREATE TABLE halls (
   UNIQUE(restaurant_id, name)
 );
 
-CREATE TABLE tables (
+CREATE TABLE IF NOT EXISTS tables (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
   hall_id TEXT NOT NULL REFERENCES halls(id),
@@ -134,9 +134,9 @@ CREATE TABLE tables (
   UNIQUE(hall_id, name)
 );
 
-CREATE INDEX tables_restaurant_hall ON tables(restaurant_id, hall_id);
+CREATE INDEX IF NOT EXISTS tables_restaurant_hall ON tables(restaurant_id, hall_id);
 
-CREATE TABLE catalog_items (
+CREATE TABLE IF NOT EXISTS catalog_items (
   id TEXT PRIMARY KEY,
   type TEXT NOT NULL CHECK (type IN ('ingredient', 'dish', 'good')),
   name TEXT NOT NULL,
@@ -151,7 +151,7 @@ CREATE TABLE catalog_items (
   last_synced_at TEXT
 );
 
-CREATE TABLE menu_items (
+CREATE TABLE IF NOT EXISTS menu_items (
   id TEXT PRIMARY KEY,
   catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
   name TEXT NOT NULL,
@@ -166,7 +166,7 @@ CREATE TABLE menu_items (
   last_synced_at TEXT
 );
 
-CREATE TABLE shifts (
+CREATE TABLE IF NOT EXISTS shifts (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
   device_id TEXT NOT NULL REFERENCES devices(id),
@@ -182,9 +182,9 @@ CREATE TABLE shifts (
   updated_at TEXT NOT NULL
 );
 
-CREATE UNIQUE INDEX shifts_one_open_per_employee ON shifts(restaurant_id, opened_by_employee_id) WHERE status = 'open';
+CREATE UNIQUE INDEX IF NOT EXISTS shifts_one_open_per_employee ON shifts(restaurant_id, opened_by_employee_id) WHERE status = 'open';
 
-CREATE TABLE orders (
+CREATE TABLE IF NOT EXISTS orders (
   id TEXT PRIMARY KEY,
   edge_order_id TEXT NOT NULL UNIQUE,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
@@ -200,7 +200,7 @@ CREATE TABLE orders (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE order_lines (
+CREATE TABLE IF NOT EXISTS order_lines (
   id TEXT PRIMARY KEY,
   order_id TEXT NOT NULL REFERENCES orders(id),
   menu_item_id TEXT NOT NULL REFERENCES menu_items(id),
@@ -214,7 +214,7 @@ CREATE TABLE order_lines (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE checks (
+CREATE TABLE IF NOT EXISTS checks (
   id TEXT PRIMARY KEY,
   order_id TEXT NOT NULL UNIQUE REFERENCES orders(id),
   status TEXT NOT NULL CHECK (status IN ('open', 'paid', 'refunded', 'voided')),
@@ -230,7 +230,7 @@ CREATE TABLE checks (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE prechecks (
+CREATE TABLE IF NOT EXISTS prechecks (
   id TEXT PRIMARY KEY,
   order_id TEXT NOT NULL REFERENCES orders(id),
   status TEXT NOT NULL CHECK (status IN ('issued', 'closed', 'cancelled', 'superseded')),
@@ -253,11 +253,11 @@ CREATE TABLE prechecks (
   CHECK (closed_at IS NOT NULL OR status = 'issued')
 );
 
-CREATE UNIQUE INDEX prechecks_one_issued_per_order ON prechecks(order_id) WHERE status = 'issued';
-CREATE UNIQUE INDEX prechecks_order_version ON prechecks(order_id, version);
-CREATE INDEX prechecks_order_id_created_at ON prechecks(order_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS prechecks_one_issued_per_order ON prechecks(order_id) WHERE status = 'issued';
+CREATE UNIQUE INDEX IF NOT EXISTS prechecks_order_version ON prechecks(order_id, version);
+CREATE INDEX IF NOT EXISTS prechecks_order_id_created_at ON prechecks(order_id, created_at);
 
-CREATE TABLE payments (
+CREATE TABLE IF NOT EXISTS payments (
   id TEXT PRIMARY KEY,
   edge_payment_id TEXT NOT NULL UNIQUE,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
@@ -277,11 +277,11 @@ CREATE TABLE payments (
   updated_at TEXT NOT NULL
 );
 
-CREATE INDEX payments_precheck_id_created_at ON payments(precheck_id, created_at);
-CREATE INDEX payments_provider_transaction_id ON payments(provider_name, provider_transaction_id) WHERE provider_transaction_id IS NOT NULL;
-CREATE INDEX payments_fingerprint_hash ON payments(fingerprint_hash) WHERE fingerprint_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS payments_precheck_id_created_at ON payments(precheck_id, created_at);
+CREATE INDEX IF NOT EXISTS payments_provider_transaction_id ON payments(provider_name, provider_transaction_id) WHERE provider_transaction_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS payments_fingerprint_hash ON payments(fingerprint_hash) WHERE fingerprint_hash IS NOT NULL;
 
-CREATE TABLE payment_attempts (
+CREATE TABLE IF NOT EXISTS payment_attempts (
   id TEXT PRIMARY KEY,
   payment_id TEXT NOT NULL REFERENCES payments(id),
   attempt_no INTEGER NOT NULL CHECK (attempt_no > 0),
@@ -298,10 +298,10 @@ CREATE TABLE payment_attempts (
   UNIQUE(payment_id, attempt_no)
 );
 
-CREATE INDEX payment_attempts_payment_id_attempt_no ON payment_attempts(payment_id, attempt_no);
-CREATE INDEX payment_attempts_provider_transaction_id ON payment_attempts(provider_name, provider_transaction_id) WHERE provider_transaction_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS payment_attempts_payment_id_attempt_no ON payment_attempts(payment_id, attempt_no);
+CREATE INDEX IF NOT EXISTS payment_attempts_provider_transaction_id ON payment_attempts(provider_name, provider_transaction_id) WHERE provider_transaction_id IS NOT NULL;
 
-CREATE TABLE cash_sessions (
+CREATE TABLE IF NOT EXISTS cash_sessions (
   id TEXT PRIMARY KEY,
   edge_cash_session_id TEXT NOT NULL UNIQUE,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
@@ -319,10 +319,10 @@ CREATE TABLE cash_sessions (
   updated_at TEXT NOT NULL
 );
 
-CREATE UNIQUE INDEX cash_sessions_one_open_per_device ON cash_sessions(device_id) WHERE status = 'open';
-CREATE INDEX cash_sessions_shift_id ON cash_sessions(shift_id);
+CREATE UNIQUE INDEX IF NOT EXISTS cash_sessions_one_open_per_device ON cash_sessions(device_id) WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS cash_sessions_shift_id ON cash_sessions(shift_id);
 
-CREATE TABLE cash_drawer_events (
+CREATE TABLE IF NOT EXISTS cash_drawer_events (
   id TEXT PRIMARY KEY,
   edge_cash_drawer_event_id TEXT NOT NULL UNIQUE,
   cash_session_id TEXT NOT NULL REFERENCES cash_sessions(id),
@@ -338,10 +338,10 @@ CREATE TABLE cash_drawer_events (
   created_at TEXT NOT NULL
 );
 
-CREATE INDEX cash_drawer_events_cash_session_created_at ON cash_drawer_events(cash_session_id, created_at);
-CREATE INDEX cash_drawer_events_shift_created_at ON cash_drawer_events(shift_id, created_at);
+CREATE INDEX IF NOT EXISTS cash_drawer_events_cash_session_created_at ON cash_drawer_events(cash_session_id, created_at);
+CREATE INDEX IF NOT EXISTS cash_drawer_events_shift_created_at ON cash_drawer_events(shift_id, created_at);
 
-CREATE TABLE manager_override_audit (
+CREATE TABLE IF NOT EXISTS manager_override_audit (
   id TEXT PRIMARY KEY,
   command_id TEXT NOT NULL,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
@@ -361,10 +361,10 @@ CREATE TABLE manager_override_audit (
   CHECK (device_id = node_device_id)
 );
 
-CREATE INDEX manager_override_audit_precheck_created_at ON manager_override_audit(precheck_id, created_at);
-CREATE INDEX manager_override_audit_manager_created_at ON manager_override_audit(manager_employee_id, created_at);
+CREATE INDEX IF NOT EXISTS manager_override_audit_precheck_created_at ON manager_override_audit(precheck_id, created_at);
+CREATE INDEX IF NOT EXISTS manager_override_audit_manager_created_at ON manager_override_audit(manager_employee_id, created_at);
 
-CREATE TABLE recipe_versions (
+CREATE TABLE IF NOT EXISTS recipe_versions (
   id TEXT PRIMARY KEY,
   dish_catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
   version INTEGER NOT NULL CHECK (version > 0),
@@ -382,7 +382,7 @@ CREATE TABLE recipe_versions (
   UNIQUE(dish_catalog_item_id, version)
 );
 
-CREATE TABLE recipe_lines (
+CREATE TABLE IF NOT EXISTS recipe_lines (
   id TEXT PRIMARY KEY,
   recipe_version_id TEXT NOT NULL REFERENCES recipe_versions(id),
   catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
@@ -398,7 +398,7 @@ CREATE TABLE recipe_lines (
   UNIQUE(recipe_version_id, catalog_item_id)
 );
 
-CREATE TABLE purchase_receipts (
+CREATE TABLE IF NOT EXISTS purchase_receipts (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
   device_id TEXT NOT NULL REFERENCES devices(id),
@@ -412,7 +412,7 @@ CREATE TABLE purchase_receipts (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE purchase_receipt_lines (
+CREATE TABLE IF NOT EXISTS purchase_receipt_lines (
   id TEXT PRIMARY KEY,
   purchase_receipt_id TEXT NOT NULL REFERENCES purchase_receipts(id),
   catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
@@ -425,7 +425,7 @@ CREATE TABLE purchase_receipt_lines (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE stock_documents (
+CREATE TABLE IF NOT EXISTS stock_documents (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
   device_id TEXT NOT NULL REFERENCES devices(id),
@@ -438,7 +438,7 @@ CREATE TABLE stock_documents (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE stock_moves (
+CREATE TABLE IF NOT EXISTS stock_moves (
   id TEXT PRIMARY KEY,
   stock_document_id TEXT NOT NULL REFERENCES stock_documents(id),
   catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
@@ -452,19 +452,19 @@ CREATE TABLE stock_moves (
   created_at TEXT NOT NULL
 );
 
-CREATE TRIGGER stock_moves_no_update
+CREATE TRIGGER IF NOT EXISTS stock_moves_no_update
 BEFORE UPDATE ON stock_moves
 BEGIN
   SELECT RAISE(ABORT, 'stock_moves are append-only');
 END;
 
-CREATE TRIGGER stock_moves_no_delete
+CREATE TRIGGER IF NOT EXISTS stock_moves_no_delete
 BEFORE DELETE ON stock_moves
 BEGIN
   SELECT RAISE(ABORT, 'stock_moves are append-only');
 END;
 
-CREATE TABLE stock_balances (
+CREATE TABLE IF NOT EXISTS stock_balances (
   id TEXT PRIMARY KEY,
   catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
   location_id TEXT,
@@ -473,9 +473,9 @@ CREATE TABLE stock_balances (
   updated_at TEXT NOT NULL
 );
 
-CREATE UNIQUE INDEX stock_balances_catalog_location ON stock_balances(catalog_item_id, location_id) WHERE location_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS stock_balances_catalog_location ON stock_balances(catalog_item_id, location_id) WHERE location_id IS NOT NULL;
 
-CREATE TABLE item_costs (
+CREATE TABLE IF NOT EXISTS item_costs (
   id TEXT PRIMARY KEY,
   catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
   cost_type TEXT NOT NULL CHECK (cost_type IN ('last_purchase', 'moving_average')),
@@ -491,9 +491,9 @@ CREATE TABLE item_costs (
   last_synced_at TEXT
 );
 
-CREATE INDEX item_costs_catalog_type_effective_at ON item_costs(catalog_item_id, cost_type, effective_at);
+CREATE INDEX IF NOT EXISTS item_costs_catalog_type_effective_at ON item_costs(catalog_item_id, cost_type, effective_at);
 
-CREATE TABLE cloud_master_sync_state (
+CREATE TABLE IF NOT EXISTS cloud_master_sync_state (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT CHECK (restaurant_id IS NULL OR restaurant_id <> ''),
   node_device_id TEXT NOT NULL CHECK (node_device_id <> ''),
@@ -511,9 +511,9 @@ CREATE TABLE cloud_master_sync_state (
   UNIQUE(node_device_id, stream_name)
 );
 
-CREATE INDEX cloud_master_sync_state_node_status ON cloud_master_sync_state(node_device_id, status);
+CREATE INDEX IF NOT EXISTS cloud_master_sync_state_node_status ON cloud_master_sync_state(node_device_id, status);
 
-CREATE TRIGGER recipe_versions_dish_catalog_item_insert
+CREATE TRIGGER IF NOT EXISTS recipe_versions_dish_catalog_item_insert
 BEFORE INSERT ON recipe_versions
 FOR EACH ROW
 WHEN NOT EXISTS (SELECT 1 FROM catalog_items WHERE id = NEW.dish_catalog_item_id AND type = 'dish')
@@ -521,7 +521,7 @@ BEGIN
   SELECT RAISE(ABORT, 'recipe version must reference dish catalog item');
 END;
 
-CREATE TRIGGER recipe_versions_dish_catalog_item_update
+CREATE TRIGGER IF NOT EXISTS recipe_versions_dish_catalog_item_update
 BEFORE UPDATE OF dish_catalog_item_id ON recipe_versions
 FOR EACH ROW
 WHEN NOT EXISTS (SELECT 1 FROM catalog_items WHERE id = NEW.dish_catalog_item_id AND type = 'dish')
@@ -529,7 +529,7 @@ BEGIN
   SELECT RAISE(ABORT, 'recipe version must reference dish catalog item');
 END;
 
-CREATE TRIGGER recipe_lines_ingredient_or_good_insert
+CREATE TRIGGER IF NOT EXISTS recipe_lines_ingredient_or_good_insert
 BEFORE INSERT ON recipe_lines
 FOR EACH ROW
 WHEN NOT EXISTS (SELECT 1 FROM catalog_items WHERE id = NEW.catalog_item_id AND type IN ('ingredient', 'good'))
@@ -537,7 +537,7 @@ BEGIN
   SELECT RAISE(ABORT, 'recipe line must reference ingredient or good catalog item');
 END;
 
-CREATE TRIGGER recipe_lines_ingredient_or_good_update
+CREATE TRIGGER IF NOT EXISTS recipe_lines_ingredient_or_good_update
 BEFORE UPDATE OF catalog_item_id ON recipe_lines
 FOR EACH ROW
 WHEN NOT EXISTS (SELECT 1 FROM catalog_items WHERE id = NEW.catalog_item_id AND type IN ('ingredient', 'good'))
@@ -545,7 +545,7 @@ BEGIN
   SELECT RAISE(ABORT, 'recipe line must reference ingredient or good catalog item');
 END;
 
-CREATE TABLE local_event_log (
+CREATE TABLE IF NOT EXISTS local_event_log (
   id TEXT PRIMARY KEY,
   event_id TEXT NOT NULL UNIQUE,
   command_id TEXT NOT NULL,
@@ -566,11 +566,11 @@ CREATE TABLE local_event_log (
   CHECK (device_id = node_device_id)
 );
 
-CREATE INDEX local_event_log_created_at ON local_event_log(created_at);
-CREATE INDEX local_event_log_event_type_created_at ON local_event_log(event_type, created_at);
-CREATE INDEX local_event_log_command_id_created_at ON local_event_log(command_id, created_at);
+CREATE INDEX IF NOT EXISTS local_event_log_created_at ON local_event_log(created_at);
+CREATE INDEX IF NOT EXISTS local_event_log_event_type_created_at ON local_event_log(event_type, created_at);
+CREATE INDEX IF NOT EXISTS local_event_log_command_id_created_at ON local_event_log(command_id, created_at);
 
-CREATE TABLE pos_sync_outbox (
+CREATE TABLE IF NOT EXISTS pos_sync_outbox (
   id TEXT PRIMARY KEY,
   command_id TEXT NOT NULL,
   sequence_no INTEGER NOT NULL UNIQUE CHECK (sequence_no > 0),
@@ -601,7 +601,7 @@ CREATE TABLE pos_sync_outbox (
   CHECK (device_id = node_device_id)
 );
 
-CREATE INDEX pos_sync_outbox_status_sequence_no ON pos_sync_outbox(status, sequence_no);
-CREATE INDEX pos_sync_outbox_pending_retry_sequence ON pos_sync_outbox(next_retry_at, sequence_no) WHERE status = 'pending';
-CREATE INDEX pos_sync_outbox_processing_locked_at ON pos_sync_outbox(locked_at) WHERE status = 'processing';
-CREATE INDEX pos_sync_outbox_command_id_created_at ON pos_sync_outbox(command_id, created_at);
+CREATE INDEX IF NOT EXISTS pos_sync_outbox_status_sequence_no ON pos_sync_outbox(status, sequence_no);
+CREATE INDEX IF NOT EXISTS pos_sync_outbox_pending_retry_sequence ON pos_sync_outbox(next_retry_at, sequence_no) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS pos_sync_outbox_processing_locked_at ON pos_sync_outbox(locked_at) WHERE status = 'processing';
+CREATE INDEX IF NOT EXISTS pos_sync_outbox_command_id_created_at ON pos_sync_outbox(command_id, created_at);

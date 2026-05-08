@@ -1,4 +1,4 @@
-CREATE TABLE cloud_edge_event_receipts (
+CREATE TABLE IF NOT EXISTS cloud_edge_event_receipts (
   id TEXT PRIMARY KEY,
   idempotency_key TEXT NOT NULL UNIQUE,
   restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
@@ -36,20 +36,20 @@ CREATE TABLE cloud_edge_event_receipts (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX cloud_edge_event_receipts_edge_event_key
+CREATE UNIQUE INDEX IF NOT EXISTS cloud_edge_event_receipts_edge_event_key
   ON cloud_edge_event_receipts(restaurant_id, device_id, edge_event_id);
 
-CREATE INDEX cloud_edge_event_receipts_event_type_received_at
+CREATE INDEX IF NOT EXISTS cloud_edge_event_receipts_event_type_received_at
   ON cloud_edge_event_receipts(event_type, cloud_received_at);
 
-CREATE TABLE cloud_edge_event_raw_payloads (
+CREATE TABLE IF NOT EXISTS cloud_edge_event_raw_payloads (
   receipt_id TEXT PRIMARY KEY REFERENCES cloud_edge_event_receipts(id) ON DELETE RESTRICT,
   raw_payload JSONB NOT NULL,
   raw_payload_sha256_hex TEXT NOT NULL CHECK (raw_payload_sha256_hex <> ''),
   created_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE TABLE cloud_operational_events (
+CREATE TABLE IF NOT EXISTS cloud_operational_events (
   id TEXT PRIMARY KEY,
   receipt_id TEXT NOT NULL UNIQUE REFERENCES cloud_edge_event_receipts(id) ON DELETE RESTRICT,
   idempotency_key TEXT NOT NULL UNIQUE,
@@ -69,16 +69,16 @@ CREATE TABLE cloud_operational_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX cloud_operational_events_edge_event_key
+CREATE UNIQUE INDEX IF NOT EXISTS cloud_operational_events_edge_event_key
   ON cloud_operational_events(restaurant_id, device_id, edge_event_id);
 
-CREATE INDEX cloud_operational_events_type_received_at
+CREATE INDEX IF NOT EXISTS cloud_operational_events_type_received_at
   ON cloud_operational_events(event_type, cloud_received_at);
 
-CREATE INDEX cloud_operational_events_restaurant_sequence
+CREATE INDEX IF NOT EXISTS cloud_operational_events_restaurant_sequence
   ON cloud_operational_events(restaurant_id, device_id, occurred_at, event_id);
 
-CREATE TABLE cloud_projection_event_type_stats (
+CREATE TABLE IF NOT EXISTS cloud_projection_event_type_stats (
   restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
   device_id TEXT NOT NULL CHECK (device_id <> ''),
   event_type TEXT NOT NULL CHECK (event_type <> ''),
@@ -92,7 +92,7 @@ CREATE TABLE cloud_projection_event_type_stats (
   PRIMARY KEY (restaurant_id, device_id, event_type)
 );
 
-CREATE TABLE cloud_projection_shift_finance (
+CREATE TABLE IF NOT EXISTS cloud_projection_shift_finance (
   restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
   device_id TEXT NOT NULL CHECK (device_id <> ''),
   shift_id TEXT NOT NULL CHECK (shift_id <> ''),
@@ -108,7 +108,7 @@ CREATE TABLE cloud_projection_shift_finance (
   PRIMARY KEY (restaurant_id, device_id, shift_id)
 );
 
-CREATE TABLE cloud_master_data_packages (
+CREATE TABLE IF NOT EXISTS cloud_master_data_packages (
   stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','currencies')),
   node_device_id TEXT NOT NULL DEFAULT '',
   restaurant_id TEXT,
@@ -122,10 +122,10 @@ CREATE TABLE cloud_master_data_packages (
   PRIMARY KEY (stream_name, node_device_id)
 );
 
-CREATE INDEX cloud_master_data_packages_stream_updated
+CREATE INDEX IF NOT EXISTS cloud_master_data_packages_stream_updated
   ON cloud_master_data_packages(stream_name, updated_at DESC);
 
-CREATE TABLE cloud_currency_reference (
+CREATE TABLE IF NOT EXISTS cloud_currency_reference (
   currency_code INTEGER PRIMARY KEY CHECK (currency_code > 0),
   currency_alpha_code TEXT NOT NULL UNIQUE CHECK (currency_alpha_code ~ '^[A-Z]{3}$'),
   minor_unit SMALLINT NOT NULL CHECK (minor_unit BETWEEN 0 AND 4),
@@ -139,3 +139,6 @@ CREATE TABLE cloud_currency_reference (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS cloud_currency_reference_alpha_code_idx
+  ON cloud_currency_reference(currency_alpha_code);

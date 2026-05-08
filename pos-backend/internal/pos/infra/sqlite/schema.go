@@ -1,0 +1,43 @@
+package sqlite
+
+import platformsqlite "pos-backend/internal/platform/sqlite"
+
+// RequiredSchema возвращает минимальный набор SQLite-объектов, которые POS runtime использует до старта HTTP/workers.
+func RequiredSchema() []platformsqlite.SchemaRequirement {
+	return []platformsqlite.SchemaRequirement{
+		{Table: "schema_migrations", Columns: []string{"version", "checksum_sha256", "status", "applied_at"}},
+		{Table: "db_runtime_versions", Columns: []string{"module_name", "module_version", "schema_version", "checksum_sha256", "status", "applied_at", "updated_at"}},
+		{Table: "restaurants", Columns: []string{"id", "name", "timezone", "currency", "active", "created_at", "updated_at"}},
+		{Table: "devices", Columns: []string{"id", "restaurant_id", "device_code", "name", "type", "active", "registered_at"}},
+		{Table: "edge_node_identity", Columns: []string{"node_device_id", "restaurant_id", "status", "paired_at"}},
+		{Table: "client_devices", Columns: []string{"id", "restaurant_id", "node_device_id", "client_device_id", "status", "first_seen_at", "last_seen_at"}, Indexes: []string{"client_devices_restaurant_node_status"}},
+		{Table: "roles", Columns: []string{"id", "name", "permissions_json", "active", "created_at", "updated_at"}},
+		{Table: "employees", Columns: []string{"id", "restaurant_id", "role_id", "name", "pin_hash", "active", "created_at", "updated_at"}},
+		{Table: "auth_sessions", Columns: []string{"id", "restaurant_id", "device_id", "node_device_id", "client_device_id", "employee_id", "status", "started_at", "last_seen_at"}, Indexes: []string{"auth_sessions_device_employee_status"}},
+		{Table: "halls", Columns: []string{"id", "restaurant_id", "name", "active", "created_at", "updated_at"}},
+		{Table: "tables", Columns: []string{"id", "restaurant_id", "hall_id", "name", "seats", "active", "created_at", "updated_at"}, Indexes: []string{"tables_restaurant_hall"}},
+		{Table: "catalog_items", Columns: []string{"id", "type", "name", "sku", "base_unit", "active", "created_at", "updated_at"}},
+		{Table: "menu_items", Columns: []string{"id", "catalog_item_id", "name", "price", "currency", "active", "created_at", "updated_at"}},
+		{Table: "shifts", Columns: []string{"id", "restaurant_id", "device_id", "opened_by_employee_id", "status", "business_date_local", "opened_at", "created_at", "updated_at"}, Indexes: []string{"shifts_one_open_per_employee"}},
+		{Table: "cash_sessions", Columns: []string{"id", "edge_cash_session_id", "restaurant_id", "device_id", "shift_id", "opened_by_employee_id", "status", "business_date_local", "opening_cash_amount", "opened_at", "created_at", "updated_at"}, Indexes: []string{"cash_sessions_one_open_per_device", "cash_sessions_shift_id"}},
+		{Table: "cash_drawer_events", Columns: []string{"id", "edge_cash_drawer_event_id", "cash_session_id", "restaurant_id", "device_id", "shift_id", "created_by_employee_id", "event_type", "amount", "occurred_at", "created_at"}, Indexes: []string{"cash_drawer_events_cash_session_created_at", "cash_drawer_events_shift_created_at"}},
+		{Table: "orders", Columns: []string{"id", "edge_order_id", "restaurant_id", "device_id", "shift_id", "status", "table_id", "table_name", "guest_count", "opened_at", "created_at", "updated_at"}},
+		{Table: "order_lines", Columns: []string{"id", "order_id", "menu_item_id", "catalog_item_id", "name", "quantity", "unit_price", "total_price", "status", "created_at", "updated_at"}},
+		{Table: "prechecks", Columns: []string{"id", "order_id", "status", "version", "subtotal", "discount_total", "tax_total", "total", "paid_total", "snapshot", "created_at"}, Indexes: []string{"prechecks_one_issued_per_order", "prechecks_order_version", "prechecks_order_id_created_at"}},
+		{Table: "payments", Columns: []string{"id", "edge_payment_id", "restaurant_id", "device_id", "shift_id", "precheck_id", "method", "amount", "currency", "status", "business_date_local", "created_at", "updated_at"}, Indexes: []string{"payments_precheck_id_created_at", "payments_provider_transaction_id", "payments_fingerprint_hash"}},
+		{Table: "payment_attempts", Columns: []string{"id", "payment_id", "attempt_no", "method", "amount", "currency", "status", "attempted_at", "created_at"}, Indexes: []string{"payment_attempts_payment_id_attempt_no", "payment_attempts_provider_transaction_id"}},
+		{Table: "checks", Columns: []string{"id", "order_id", "status", "subtotal", "discount_total", "tax_total", "total", "paid_total", "business_date_local", "snapshot", "created_at", "updated_at"}},
+		{Table: "manager_override_audit", Columns: []string{"id", "precheck_id", "manager_employee_id", "actor_employee_id", "reason", "created_at"}, Indexes: []string{"manager_override_audit_precheck_created_at", "manager_override_audit_manager_created_at"}},
+		{Table: "recipe_versions", Columns: []string{"id", "dish_catalog_item_id", "version", "name", "status", "yield_quantity", "yield_unit", "active", "created_at", "updated_at"}},
+		{Table: "recipe_lines", Columns: []string{"id", "recipe_version_id", "catalog_item_id", "quantity", "unit", "loss_percent", "created_at", "updated_at"}},
+		{Table: "purchase_receipts", Columns: []string{"id", "restaurant_id", "device_id", "supplier_name", "document_number", "status", "received_at", "total_amount", "currency", "created_at", "updated_at"}},
+		{Table: "purchase_receipt_lines", Columns: []string{"id", "purchase_receipt_id", "catalog_item_id", "quantity", "unit", "unit_cost", "created_at"}},
+		{Table: "stock_documents", Columns: []string{"id", "restaurant_id", "device_id", "document_type", "status", "occurred_at", "created_at", "updated_at"}},
+		{Table: "stock_moves", Columns: []string{"id", "stock_document_id", "catalog_item_id", "movement_type", "quantity", "unit", "occurred_at", "created_at"}},
+		{Table: "stock_balances", Columns: []string{"id", "catalog_item_id", "location_id", "quantity", "unit", "updated_at"}, Indexes: []string{"stock_balances_catalog_location"}},
+		{Table: "item_costs", Columns: []string{"id", "catalog_item_id", "cost_type", "amount", "currency", "effective_at", "created_at"}, Indexes: []string{"item_costs_catalog_type_effective_at"}},
+		{Table: "cloud_master_sync_state", Columns: []string{"id", "restaurant_id", "node_device_id", "stream_name", "direction", "sync_mode", "last_cloud_version", "status", "created_at", "updated_at"}, Indexes: []string{"cloud_master_sync_state_node_status"}},
+		{Table: "local_event_log", Columns: []string{"id", "event_id", "command_id", "envelope_version", "event_type", "aggregate_type", "aggregate_id", "restaurant_id", "device_id", "node_device_id", "payload_json", "occurred_at", "created_at"}, Indexes: []string{"local_event_log_created_at", "local_event_log_event_type_created_at", "local_event_log_command_id_created_at"}},
+		{Table: "pos_sync_outbox", Columns: []string{"id", "command_id", "sequence_no", "origin", "restaurant_id", "device_id", "node_device_id", "aggregate_type", "aggregate_id", "command_type", "sync_direction", "payload_json", "status", "attempts", "created_at", "updated_at"}, Indexes: []string{"pos_sync_outbox_status_sequence_no", "pos_sync_outbox_pending_retry_sequence", "pos_sync_outbox_processing_locked_at", "pos_sync_outbox_command_id_created_at"}},
+	}
+}

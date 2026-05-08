@@ -46,9 +46,10 @@ func run() error {
 	defer db.Close()
 
 	if err := platformsqlite.MigrateDirWithPolicy(context.Background(), db, dbPath, migrationsDir, platformsqlite.MigrationOptions{
-		ModuleName:    "pos-backend",
-		ModuleVersion: moduleVersion,
-		BackupDir:     backupDir,
+		ModuleName:         "pos-backend",
+		ModuleVersion:      moduleVersion,
+		BackupDir:          backupDir,
+		SchemaRequirements: possqlite.RequiredSchema(),
 	}); err != nil {
 		return err
 	}

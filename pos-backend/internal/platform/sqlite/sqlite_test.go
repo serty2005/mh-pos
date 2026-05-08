@@ -225,6 +225,113 @@ func TestMigrateDirWithPolicyWritesRuntimeVersionAndCreatesBackup(t *testing.T) 
 	}
 }
 
+func TestMigrateDirWithPolicyTreatsMissingVersionTableAsOldestAndBacksUp(t *testing.T) {
+	ctx := t.Context()
+	dbPath := filepath.Join(t.TempDir(), "legacy.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.ExecContext(ctx, `CREATE TABLE legacy_probe (id TEXT PRIMARY KEY)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO legacy_probe(id) VALUES ('old')`); err != nil {
+		t.Fatal(err)
+	}
+
+	migrationsDir := filepath.Join(t.TempDir(), "migrations")
+	if err := os.MkdirAll(migrationsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(migrationsDir, "001_init.sql"), []byte(`CREATE TABLE IF NOT EXISTS legacy_probe (id TEXT PRIMARY KEY); CREATE TABLE IF NOT EXISTS required_probe (id TEXT PRIMARY KEY);`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	if err := MigrateDirWithPolicy(ctx, db, dbPath, migrationsDir, MigrationOptions{
+		ModuleName:         "pos-backend",
+		ModuleVersion:      "0.1.0",
+		BackupDir:          backupDir,
+		SchemaRequirements: []SchemaRequirement{{Table: "required_probe", Columns: []string{"id"}}},
+	}); err != nil {
+		t.Fatalf("legacy migrate failed: %v", err)
+	}
+
+	var status string
+	if err := db.QueryRowContext(ctx, `SELECT status FROM schema_migrations WHERE version = '001_init.sql'`).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "applied" {
+		t.Fatalf("expected canonical migration to be re-applied for legacy DB, got %s", status)
+	}
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM required_probe`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	backupEntries, err := os.ReadDir(backupDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(backupEntries) == 0 {
+		t.Fatal("expected backup for existing DB without runtime version table")
+	}
+}
+
+func TestMigrateDirWithPolicyRejectsChecksumDrift(t *testing.T) {
+	ctx := t.Context()
+	dbPath := filepath.Join(t.TempDir(), "drift.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	migrationsDir := filepath.Join(t.TempDir(), "migrations")
+	if err := os.MkdirAll(migrationsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	migrationPath := filepath.Join(migrationsDir, "001_init.sql")
+	if err := os.WriteFile(migrationPath, []byte(`CREATE TABLE drift_probe (id TEXT PRIMARY KEY);`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateDirWithPolicy(ctx, db, dbPath, migrationsDir, MigrationOptions{ModuleName: "pos-backend", ModuleVersion: "0.1.0"}); err != nil {
+		t.Fatalf("first migrate failed: %v", err)
+	}
+	if err := os.WriteFile(migrationPath, []byte(`CREATE TABLE drift_probe_changed (id TEXT PRIMARY KEY);`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = MigrateDirWithPolicy(ctx, db, dbPath, migrationsDir, MigrationOptions{ModuleName: "pos-backend", ModuleVersion: "0.1.0"})
+	if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("expected checksum mismatch, got %v", err)
+	}
+}
+
+func TestMigrateDirWithPolicyFailsSchemaVerificationClearly(t *testing.T) {
+	ctx := t.Context()
+	dbPath := filepath.Join(t.TempDir(), "verify.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	migrationsDir := filepath.Join(t.TempDir(), "migrations")
+	if err := os.MkdirAll(migrationsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(migrationsDir, "001_init.sql"), []byte(`CREATE TABLE present_probe (id TEXT PRIMARY KEY);`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = MigrateDirWithPolicy(ctx, db, dbPath, migrationsDir, MigrationOptions{
+		ModuleName:         "pos-backend",
+		ModuleVersion:      "0.1.0",
+		SchemaRequirements: []SchemaRequirement{{Table: "missing_probe"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "missing table missing_probe") {
+		t.Fatalf("expected clear missing table error, got %v", err)
+	}
+}
+
 func TestCompareModuleVersion(t *testing.T) {
 	result, err := compareModuleVersion("0.1.0", "0.2.0")
 	if err != nil {
@@ -235,5 +342,11 @@ func TestCompareModuleVersion(t *testing.T) {
 	}
 	if _, err := compareModuleVersion("invalid", "0.2.0"); err == nil {
 		t.Fatal("expected invalid semantic version to fail")
+	}
+}
+
+func TestShouldUpgradeVersionRejectsNewerDatabase(t *testing.T) {
+	if _, err := shouldUpgradeVersion("0.2.0", "0.1.0"); err == nil {
+		t.Fatal("expected newer database version to fail fast")
 	}
 }

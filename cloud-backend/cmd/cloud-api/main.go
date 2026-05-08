@@ -46,9 +46,10 @@ func run() error {
 	}
 	defer pool.Close()
 	if err := platformpg.MigrateDirWithPolicy(ctx, pool, migrationsDir, platformpg.MigrationOptions{
-		ModuleName:    "cloud-backend",
-		ModuleVersion: moduleVersion,
-		BackupDir:     backupDir,
+		ModuleName:         "cloud-backend",
+		ModuleVersion:      moduleVersion,
+		BackupDir:          backupDir,
+		SchemaRequirements: syncpg.RequiredSchema(),
 	}); err != nil {
 		return err
 	}

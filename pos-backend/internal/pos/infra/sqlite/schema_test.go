@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	platformsqlite "pos-backend/internal/platform/sqlite"
+	possqlite "pos-backend/internal/pos/infra/sqlite"
 )
 
 const schemaTestTime = "2026-05-04T20:00:00Z"
@@ -289,7 +290,7 @@ func TestLocalEventLogRequiresDeviceID(t *testing.T) {
 	}
 }
 
-func TestActiveSQLiteMigrationPathIsSingleCanonicalFirstLaunchInit(t *testing.T) {
+func TestActiveSQLiteMigrationPathUsesSingleManagedCanonicalFile(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Join("..", "..", "..", "..", "migrations", "sqlite"))
 	if err != nil {
 		t.Fatal(err)
@@ -301,7 +302,7 @@ func TestActiveSQLiteMigrationPathIsSingleCanonicalFirstLaunchInit(t *testing.T)
 		}
 	}
 	if len(migrations) != 1 || migrations[0] != "001_init.sql" {
-		t.Fatalf("expected only canonical first-launch 001_init.sql, got %+v", migrations)
+		t.Fatalf("expected single managed canonical migration file, got %+v", migrations)
 	}
 }
 
@@ -316,21 +317,34 @@ func TestCleanInstallPaymentsUsePrecheckIDWithoutLegacyCheckID(t *testing.T) {
 	}
 }
 
-func TestCleanInstallRecordsOnlyCanonicalInitMigration(t *testing.T) {
+func TestCleanInstallRecordsCanonicalInitMigration(t *testing.T) {
 	db, ctx := newSchemaDB(t)
-	var version string
-	if err := db.QueryRowContext(ctx, `SELECT version FROM schema_migrations`).Scan(&version); err != nil {
+	var version, checksum, status string
+	if err := db.QueryRowContext(ctx, `SELECT version, checksum_sha256, status FROM schema_migrations`).Scan(&version, &checksum, &status); err != nil {
 		t.Fatal(err)
 	}
 	if version != "001_init.sql" {
-		t.Fatalf("expected schema_migrations to contain 001_init.sql, got %q", version)
+		t.Fatalf("expected canonical init migration, got %q", version)
+	}
+	if len(checksum) != 64 {
+		t.Fatalf("expected stored checksum for canonical init, got %q", checksum)
+	}
+	if status != "applied" {
+		t.Fatalf("expected canonical init status applied, got %s", status)
 	}
 	var n int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 1 {
-		t.Fatalf("expected one applied first-launch migration, got %d", n)
+		t.Fatalf("expected one managed migration row, got %d", n)
+	}
+}
+
+func TestRequiredSchemaContractMatchesCleanInstall(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	if err := platformsqlite.VerifySchema(ctx, db, possqlite.RequiredSchema()); err != nil {
+		t.Fatalf("required schema contract does not match clean install: %v", err)
 	}
 }
 

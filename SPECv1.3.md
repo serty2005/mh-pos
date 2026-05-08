@@ -4,7 +4,7 @@
 Язык проекта, документации, промптов и комментариев задач: русский  
 Дата фиксации версии: 2026-05-06
 Текущее обновление реализации: 2026-05-07 — backend auth/device contract и `pos-ui` POS Terminal Core приведены к модели `pairing -> login -> personal employee shift -> cash shift for money operations -> lock/logout`
-
+Текущее обновление реализации: 2026-05-08 — использования sqlc для работы с БД, а не DirectRaw
 ---
 
 ## 0. Назначение документа
@@ -35,8 +35,9 @@ docs/sync/edge-cloud-contracts-v1.md
 - правила DishServed и Inventory Ledger;
 - ограничения текущего этапа;
 - запреты и anti-patterns.
+- стратегию хранения данных: SQLite/PostgreSQL как OLTP/source of truth, sqlc и ClickHouse как запланированные далее направления;
 
-Важно: проект еще не был запущен в production. Реальных рабочих БД, которые нужно мигрировать, нет. Все новые вводные v1.3 внедряются как схема и логика для первого запуска, а не как production migration существующих данных.
+Важно: проект еще не был запущен в production. Реальных рабочих БД, которые нужно мигрировать, нет. Все новые вводные v1.3 внедряются как схема и логика для первого запуска, а не как production migration существующих данных. При этом runtime-модули уже обязаны выполнять программный startup-upgrade через один managed SQL file на модуль, `db_runtime_versions`, `schema_migrations` с checksum, backup-before-upgrade/data-upgrade, schema verification и fail-fast при `DB version > MH_POS_VERSION`; ручной ad-hoc SQL не является canonical path.
 
 ---
 
@@ -145,13 +146,14 @@ Order → Precheck → Payment → Check
 production DB migration
 multi-master Edge
 real PSP integration
-ClickHouse analytics
+production ClickHouse analytics pipeline
 complex AVCO costing
 multi-restaurant network operations
 fiscalization integrations
 full backoffice ERP
 Kubernetes/Helm production deployment
 ```
+ClickHouse разрешен как зафиксированное post-MVP архитектурное направление, но не внедряется до стабильного OLTP flow и корректной PostgreSQL projection модели.
 
 Отдельно: миграция БД не нужна, потому что проект еще не запускался в production и нет рабочих БД с данными клиентов. Все изменения v1.3 проектируются для первого запуска.
 
@@ -501,6 +503,74 @@ complex conflict resolution
 3. Android production storage — keystore-backed local storage.
 4. Windows production storage — local DPAPI-protected storage.
 5. Roaming credential stores для production `device_id` запрещены.
+
+---
+
+## ADR-015: Стратегия доступа к данным и аналитики
+
+Решение:
+
+1. Для операционного хранения данных используются:
+   - SQLite на POS Edge;
+   - PostgreSQL в Cloud.
+
+2. SQLite на POS Edge остается локальным source of truth для активных POS-операций.
+
+3. PostgreSQL в Cloud является операционной облачной базой данных для:
+   - приема SyncEnvelope;
+   - хранения cloud-side operational state;
+   - восстановления;
+   - cloud projections;
+   - backoffice/API read models.
+
+4. Реализовано сейчас: доступ к SQLite/PostgreSQL написан вручную в infrastructure repositories. Запланировано далее: рассмотреть `sqlc` для стабилизации persistence layer после фиксации схемы и boundaries.
+
+5. Если `sqlc` будет добавлен, generated code разрешен только внутри infrastructure слоя:
+   - `infra/sqlite`;
+   - `infra/postgres`;
+   - аналогичных adapter packages.
+
+6. Domain и application layers не должны зависеть напрямую от:
+   - `sqlc`;
+   - `database/sql`;
+   - `pgx`;
+   - SQLite;
+   - PostgreSQL;
+   - ClickHouse.
+
+7. Все core write use cases работают через repository interfaces в `ports`.
+
+8. GORM/Ent не используются в POS Core financial/offline/sync-critical flows.
+
+9. Использование ORM может быть рассмотрено отдельно только для изолированных non-core CRUD/admin/backoffice модулей, если это не нарушает layering и не создает второй persistence path для core-домена.
+
+10. Запланировано далее: ClickHouse может использоваться только в Cloud как OLAP/reporting accelerator.
+
+11. Запланировано далее: ClickHouse наполняется асинхронно из PostgreSQL через projection/ETL pipeline.
+
+12. ClickHouse не является source of truth.
+
+13. ClickHouse не участвует в POS transaction commit path.
+
+14. Недоступность ClickHouse не должна блокировать:
+    - открытие смены;
+    - создание заказа;
+    - выпуск precheck;
+    - прием оплаты;
+    - создание final check;
+    - закрытие смены;
+    - sync/outbox processing.
+
+15. Reporting/dashboard запросы должны идти в ClickHouse только после того, как OLTP flow стабилен и данные корректно проецируются из PostgreSQL.
+
+Следствие:
+
+```text
+SQLite/PostgreSQL = OLTP и source of truth
+ClickHouse = OLAP/read model/reporting acceleration
+sqlc = запланированный далее кандидат для генерации persistence-кода
+ORM = запрещен в POS Core
+```
 
 ---
 

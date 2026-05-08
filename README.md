@@ -19,8 +19,8 @@ Order -> Precheck -> Payment -> Check
 - `pos-backend/` - локальный POS Edge backend на Go + SQLite;
 - SQLite runtime gate для POS Edge: startup fail-fast проверяет фактические `sqlite_version()`, `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout >= 5000`;
 - `cloud-backend/` - минимальный Cloud Sync Receiver на Go + PostgreSQL;
-- Cloud PostgreSQL first-launch schema path состоит из одного canonical `cloud-backend/migrations/postgres/001_sync_receiver.sql`;
-- runtime module/database version contract включен: на старте модулей выполняется программная миграция, проверка `db_runtime_versions`, backup-before-upgrade при `db version < module version`, затем запись новой версии;
+- Cloud PostgreSQL startup schema path использует один управляемый canonical SQL file `cloud-backend/migrations/postgres/001_sync_receiver.sql`; версия/состояние фиксируются в runtime version tables;
+- runtime module/database version contract включен: на старте модулей проверяются `db_runtime_versions`, re-runnable canonical SQL file, checksum tracking в `schema_migrations`, backup-before-upgrade, schema verification и fail-fast при `DB version > app version`;
 - approved frontend MVP: отдельный пакет `pos-ui` на Vue 3 + TypeScript + Quasar + Vue Router + Pinia + `@tanstack/vue-query` + `vue-i18n` + Zod; `/pair`, `/login`, `/lock` и рабочий POS Terminal Core `/pos` для single-terminal cashier flow реализованы;
 - `local_event_log`;
 - `pos_sync_outbox`;
@@ -69,14 +69,14 @@ Order -> Precheck -> Payment -> Check
 |   |   |-- domain/           # доменные модели, ошибки и инварианты
 |   |   |-- ports/            # интерфейсы репозиториев
 |   |   `-- infra/sqlite/     # SQLite реализации репозиториев
-|   |-- migrations/sqlite/    # canonical SQLite first-launch init schema
+|   |-- migrations/sqlite/    # single managed canonical SQLite init/upgrade SQL file
 |   |-- docker/               # Dockerfile
 |   |-- docker-compose.yml    # локальный запуск через Docker Compose
 |   `-- docs/                 # отчеты и проектные документы по backend
 |-- cloud-backend/            # минимальный Cloud Sync Receiver foundation
 |   |-- README.md             # запуск и тесты cloud receiver
 |   |-- cmd/cloud-api/        # entrypoint Cloud API
-|   `-- migrations/postgres/  # canonical PostgreSQL first-launch schema
+|   `-- migrations/postgres/  # single managed canonical PostgreSQL SQL file
 |-- pos-ui/                   # Vue 3 + Quasar POS Terminal Core
 |-- docs/sync/                # sync contracts
 |-- .codex/skills/            # локальные skills для Codex
@@ -395,7 +395,7 @@ go test ./...
 - Architecture Lock: v1.3.
 - Целевая финансовая модель: `Order -> Precheck -> Payment -> Check`.
 - Production data migration before first launch: не требуется.
-- SQLite clean install: активный migration path состоит из canonical `001_init.sql`, который сразу создает текущую runtime-схему без `payments.check_id`.
+- SQLite clean install: активный migration path состоит из одного canonical `001_init.sql`, который сразу создает текущую runtime-схему без `payments.check_id`; служебные version tables создаются кодом startup upgrade framework.
 - POS Edge SQLite runtime contract: functional minimum `>= 3.37.0`, production WAL pilot baseline `>= 3.51.3` или pinned backport `3.50.7/3.44.6`; backend завершается при несоответствии.
 - POS Edge code: публичный runtime `Order -> Precheck -> Payment -> Check` включен; old check/payment compatibility endpoints удалены.
 - `local_event_log` уже является частью edge foundation, хранит `command_id` той же write-операции, что и outbox rows (одна write-операция может породить несколько events), и доступен read-only через `GET /api/v1/sync/local-events?limit=50&event_type=OrderCreated`.
@@ -485,8 +485,14 @@ $env:CLOUD_LOG_LEVEL="INFO"
 реализовано сейчас:
 
 - shared product/runtime version env: `MH_POS_VERSION` (default `0.1.0`) for both POS and Cloud modules;
-- POS startup uses `db_runtime_versions` + `schema_migrations` and creates SQLite backup before schema upgrade (`POS_SQLITE_BACKUP_DIR`);
-- Cloud startup uses `db_runtime_versions` + `schema_migrations` and creates PostgreSQL JSONL backup snapshot before schema upgrade (`CLOUD_POSTGRES_BACKUP_DIR`).
+- POS startup uses `db_runtime_versions` + `schema_migrations` and creates SQLite backup before schema/data upgrade (`POS_SQLITE_BACKUP_DIR`);
+- Cloud startup uses `db_runtime_versions` + `schema_migrations` and creates PostgreSQL JSONL backup snapshot before schema/data upgrade (`CLOUD_POSTGRES_BACKUP_DIR`);
+- missing `db_runtime_versions` is treated as the oldest DB state, not as an immediate crash;
+- active migration path uses one managed canonical SQL file per module; the file is re-runnable on version upgrade;
+- `schema_migrations` tracks the active SQL file with SHA-256 checksum; checksum drift at the same DB/app version fails fast;
+- required tables/columns/indexes are verified before HTTP server/workers start;
+- `DB version > MH_POS_VERSION` fails fast because downgrade is not supported;
+- planned next: UI/admin SQLite cleanup/reset operation with mandatory backup and explicit confirmation for collision/corruption recovery.
 
 ## SQLite maintenance (реализовано сейчас)
 

@@ -69,6 +69,19 @@ $env:PYTHONIOENCODING='utf-8'
 - Английские значения статусов допустимы только как машинно-читаемые значения, enum values, labels или цитаты из кода.
 - Не документировать будущую или неподдерживаемую функциональность как текущую.
 
+## Миграции и версии БД
+
+- Все изменения схемы SQLite/PostgreSQL выполняются программно при старте runtime-модуля; ручной ad-hoc SQL не является canonical path.
+- Active pre-pilot path использует один managed canonical SQL file на модуль: POS Edge SQLite `001_init.sql`, Cloud PostgreSQL `001_sync_receiver.sql`.
+- Версия и состояние схемы/данных фиксируются в `db_runtime_versions`; изменение active SQL file выполняется через повышение `MH_POS_VERSION` и программный startup upgrade.
+- Каждая БД должна иметь `db_runtime_versions`; если таблица отсутствует, модуль считает БД самой старой и запускает upgrade path.
+- `schema_migrations` должна хранить active SQL file, checksum, status и время применения, если это поддержано текущим модулем.
+- Перед safe schema/data upgrade существующей БД обязателен backup: SQLite `.db/.db-wal/.db-shm`, PostgreSQL безопасный snapshot/hook по текущей реализации.
+- После migrations обязательна schema verification критичных tables/columns/indexes до запуска HTTP server, workers и runtime access к business tables.
+- `DB version > MH_POS_VERSION` должен завершать startup fail-fast; downgrade не поддерживается.
+- Любое изменение managed SQL file, таблиц/колонок/индексов/constraints или загрузки master/reference/configuration данных должно иметь тесты, backup behavior и обновление профильной документации в том же PR.
+- UI/admin операция очистки SQLite допустима только как destructive-by-design flow: backup до очистки, явное подтверждение, RBAC/support permission, audit log и документированный rebootstrap/restart path.
+
 ## Комментарии к коду
 
 Комментарии обязательны для нетривиального кода, но не должны пересказывать очевидные строки.
