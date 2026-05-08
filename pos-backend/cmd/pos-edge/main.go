@@ -56,7 +56,18 @@ func run() error {
 
 	repo := possqlite.NewRepository(db)
 	tx := platformsqlite.NewTxManager(db)
-	service := app.NewService(repo, tx, idgen.UUIDGenerator{}, clock.SystemClock{})
+	service := app.NewServiceWithOptions(repo, tx, idgen.UUIDGenerator{}, clock.SystemClock{}, app.ServiceOptions{
+		MasterDataBackupBeforeFullSnapshot: func(ctx context.Context, req app.MasterDataBackupRequest) error {
+			_, err := platformsqlite.BackupDatabase(ctx, db, dbPath, backupDir, platformsqlite.BackupOptions{
+				Action:         "backup_before_data_load",
+				ModuleName:     "pos-backend",
+				CurrentVersion: "local_snapshot",
+				TargetVersion:  fmt.Sprintf("cloud_version_%d", req.CloudVersion),
+				Reason:         req.FullSnapshotReason,
+			})
+			return err
+		},
+	})
 	rootCtx, rootCancel := context.WithCancel(context.Background())
 	defer rootCancel()
 

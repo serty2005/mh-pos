@@ -484,7 +484,7 @@ $env:CLOUD_LOG_LEVEL="INFO"
 
 реализовано сейчас:
 
-- shared product/runtime version env: `MH_POS_VERSION` (default `0.1.0`) for both POS and Cloud modules;
+- shared product/runtime version env: `MH_POS_VERSION` (default `0.1.1`) for both POS and Cloud modules;
 - POS startup uses `db_runtime_versions` + `schema_migrations` and creates SQLite backup before schema/data upgrade (`POS_SQLITE_BACKUP_DIR`);
 - Cloud startup uses `db_runtime_versions` + `schema_migrations` and creates PostgreSQL JSONL backup snapshot before schema/data upgrade (`CLOUD_POSTGRES_BACKUP_DIR`);
 - missing `db_runtime_versions` is treated as the oldest DB state, not as an immediate crash;

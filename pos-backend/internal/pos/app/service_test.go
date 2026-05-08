@@ -2604,9 +2604,10 @@ func TestApplyMasterDataSnapshotUpsertsRowsStateAndDoesNotCreateOutbox(t *testin
 	outboxBefore := countRows(t, f, "pos_sync_outbox")
 	eventsBefore := countRows(t, f, "local_event_log")
 	applied, err := f.service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
-		CommandMeta:  app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
-		SyncMode:     domain.SyncModeFullSnapshot,
-		CloudVersion: 42,
+		CommandMeta:        app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		SyncMode:           domain.SyncModeFullSnapshot,
+		FullSnapshotReason: "terminal_restaurant_changed",
+		CloudVersion:       42,
 		Restaurants: []domain.Restaurant{{
 			ID:       "cloud-restaurant-1",
 			Name:     "Cloud Bistro",
@@ -2699,6 +2700,264 @@ func TestApplyMasterDataSnapshotUpsertsRowsStateAndDoesNotCreateOutbox(t *testin
 	}
 	if wrongDirection != 0 {
 		t.Fatalf("expected all master sync states applied/cloud_to_edge, got %d wrong rows", wrongDirection)
+	}
+}
+
+func TestApplyMasterDataFullSnapshotCreatesBackupBeforeApply(t *testing.T) {
+	f := newFixture(t)
+	backupCalls := 0
+	service := app.NewServiceWithOptions(f.repo, platformsqlite.NewTxManager(f.db), &testIDs{n: 8000}, fixedClock{}, app.ServiceOptions{
+		MasterDataBackupBeforeFullSnapshot: func(ctx context.Context, req app.MasterDataBackupRequest) error {
+			backupCalls++
+			if req.NodeDeviceID != f.device.ID || req.CloudVersion != 77 || len(req.Streams) != 1 || req.Streams[0] != domain.MasterDataStreamCatalog {
+				t.Fatalf("unexpected backup request: %+v", req)
+			}
+			var rowsBeforeApply int
+			if err := f.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM catalog_items WHERE id = 'cloud-backup-before-apply'`).Scan(&rowsBeforeApply); err != nil {
+				t.Fatal(err)
+			}
+			if rowsBeforeApply != 0 {
+				t.Fatalf("expected backup before catalog row apply, got %d rows", rowsBeforeApply)
+			}
+			var statesBeforeApply int
+			if err := f.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM cloud_master_sync_state WHERE node_device_id = ? AND stream_name = 'catalog'`, f.device.ID).Scan(&statesBeforeApply); err != nil {
+				t.Fatal(err)
+			}
+			if statesBeforeApply != 0 {
+				t.Fatalf("expected backup before sync state apply, got %d states", statesBeforeApply)
+			}
+			return nil
+		},
+	})
+
+	if _, err := service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:        app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		SyncMode:           domain.SyncModeFullSnapshot,
+		FullSnapshotReason: "terminal_restaurant_changed",
+		CloudVersion:       77,
+		CatalogItems: []domain.CatalogItem{{
+			ID:       "cloud-backup-before-apply",
+			Type:     domain.CatalogItemDish,
+			Name:     "Backup Tea",
+			SKU:      "BACKUP-TEA",
+			BaseUnit: "portion",
+			Active:   true,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if backupCalls != 1 {
+		t.Fatalf("expected one backup call, got %d", backupCalls)
+	}
+	if got := countRows(t, f, "cloud_master_sync_state"); got != 1 {
+		t.Fatalf("expected one sync state after apply, got %d", got)
+	}
+}
+
+func TestApplyMasterDataBackupErrorDoesNotWriteRowsOrState(t *testing.T) {
+	f := newFixture(t)
+	errBackup := errors.New("injected backup failure")
+	service := app.NewServiceWithOptions(f.repo, platformsqlite.NewTxManager(f.db), &testIDs{n: 8100}, fixedClock{}, app.ServiceOptions{
+		MasterDataBackupBeforeFullSnapshot: func(context.Context, app.MasterDataBackupRequest) error {
+			return errBackup
+		},
+	})
+	catalogBefore := countRows(t, f, "catalog_items")
+	stateBefore := countRows(t, f, "cloud_master_sync_state")
+
+	_, err := service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:        app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		SyncMode:           domain.SyncModeFullSnapshot,
+		FullSnapshotReason: "terminal_restaurant_changed",
+		CloudVersion:       78,
+		CatalogItems: []domain.CatalogItem{{
+			ID:       "cloud-backup-fails",
+			Type:     domain.CatalogItemDish,
+			Name:     "Backup Fail Tea",
+			SKU:      "BACKUP-FAIL-TEA",
+			BaseUnit: "portion",
+			Active:   true,
+		}},
+	})
+	if !errors.Is(err, errBackup) {
+		t.Fatalf("expected backup error, got %v", err)
+	}
+	if catalog := countRows(t, f, "catalog_items"); catalog != catalogBefore {
+		t.Fatalf("expected backup error not to write catalog rows, before=%d after=%d", catalogBefore, catalog)
+	}
+	if states := countRows(t, f, "cloud_master_sync_state"); states != stateBefore {
+		t.Fatalf("expected backup error not to write sync state, before=%d after=%d", stateBefore, states)
+	}
+}
+
+func TestApplyMasterDataIncrementalDoesNotCreateBackup(t *testing.T) {
+	f := newFixture(t)
+	backupCalls := 0
+	service := app.NewServiceWithOptions(f.repo, platformsqlite.NewTxManager(f.db), &testIDs{n: 8200}, fixedClock{}, app.ServiceOptions{
+		MasterDataBackupBeforeFullSnapshot: func(context.Context, app.MasterDataBackupRequest) error {
+			backupCalls++
+			return nil
+		},
+	})
+
+	if _, err := service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:  app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		SyncMode:     domain.SyncModeIncremental,
+		CloudVersion: 79,
+		CatalogItems: []domain.CatalogItem{{
+			ID:       "cloud-incremental-no-backup",
+			Type:     domain.CatalogItemDish,
+			Name:     "Incremental Tea",
+			SKU:      "INCREMENTAL-TEA",
+			BaseUnit: "portion",
+			Active:   true,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if backupCalls != 0 {
+		t.Fatalf("expected incremental ingest not to call backup, got %d calls", backupCalls)
+	}
+}
+
+func TestApplyMasterDataEmptySyncModeDefaultsToIncremental(t *testing.T) {
+	f := newFixture(t)
+	backupCalls := 0
+	service := app.NewServiceWithOptions(f.repo, platformsqlite.NewTxManager(f.db), &testIDs{n: 8250}, fixedClock{}, app.ServiceOptions{
+		MasterDataBackupBeforeFullSnapshot: func(context.Context, app.MasterDataBackupRequest) error {
+			backupCalls++
+			return nil
+		},
+	})
+
+	applied, err := service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:  app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		CloudVersion: 79,
+		CatalogItems: []domain.CatalogItem{{
+			ID:       "cloud-default-incremental",
+			Type:     domain.CatalogItemDish,
+			Name:     "Default Incremental Tea",
+			SKU:      "DEFAULT-INCREMENTAL-TEA",
+			BaseUnit: "portion",
+			Active:   true,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backupCalls != 0 {
+		t.Fatalf("expected default incremental ingest not to call backup, got %d calls", backupCalls)
+	}
+	if len(applied.SyncStates) != 1 || applied.SyncStates[0].SyncMode != domain.SyncModeIncremental {
+		t.Fatalf("expected default sync mode incremental, got %+v", applied.SyncStates)
+	}
+}
+
+func TestApplyMasterDataFullSnapshotRequiresReason(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:  app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		SyncMode:     domain.SyncModeFullSnapshot,
+		CloudVersion: 80,
+		CatalogItems: []domain.CatalogItem{{
+			ID:       "cloud-full-snapshot-no-reason",
+			Type:     domain.CatalogItemDish,
+			Name:     "No Reason Tea",
+			SKU:      "NO-REASON-TEA",
+			BaseUnit: "portion",
+			Active:   true,
+		}},
+	})
+	if err == nil {
+		t.Fatal("expected full_snapshot without reason to be rejected")
+	}
+}
+
+func TestApplyMasterDataIncrementalRejectsFullSnapshotReason(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:        app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		SyncMode:           domain.SyncModeIncremental,
+		FullSnapshotReason: "terminal_restaurant_changed",
+		CloudVersion:       80,
+		CatalogItems: []domain.CatalogItem{{
+			ID:       "cloud-incremental-with-reason",
+			Type:     domain.CatalogItemDish,
+			Name:     "Reason Tea",
+			SKU:      "REASON-TEA",
+			BaseUnit: "portion",
+			Active:   true,
+		}},
+	})
+	if err == nil {
+		t.Fatal("expected incremental with full_snapshot_reason to be rejected")
+	}
+}
+
+func TestApplyMasterDataInvalidPayloadDoesNotCreateBackup(t *testing.T) {
+	f := newFixture(t)
+	backupCalls := 0
+	service := app.NewServiceWithOptions(f.repo, platformsqlite.NewTxManager(f.db), &testIDs{n: 8300}, fixedClock{}, app.ServiceOptions{
+		MasterDataBackupBeforeFullSnapshot: func(context.Context, app.MasterDataBackupRequest) error {
+			backupCalls++
+			return nil
+		},
+	})
+
+	_, err := service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:        app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		SyncMode:           domain.SyncModeFullSnapshot,
+		FullSnapshotReason: "terminal_restaurant_changed",
+		CloudVersion:       80,
+		CatalogItems: []domain.CatalogItem{{
+			ID:       "cloud-invalid-no-backup",
+			Type:     domain.CatalogItemDish,
+			Name:     "Invalid Tea",
+			BaseUnit: "portion",
+			Active:   true,
+		}},
+	})
+	if err == nil {
+		t.Fatal("expected invalid payload error")
+	}
+	if backupCalls != 0 {
+		t.Fatalf("expected invalid payload not to call backup, got %d calls", backupCalls)
+	}
+	var rows int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM catalog_items WHERE id = 'cloud-invalid-no-backup'`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("expected invalid payload not to write catalog row, got %d", rows)
+	}
+}
+
+func TestApplyMasterDataEmptyFullSnapshotDoesNotCreateBackup(t *testing.T) {
+	f := newFixture(t)
+	backupCalls := 0
+	service := app.NewServiceWithOptions(f.repo, platformsqlite.NewTxManager(f.db), &testIDs{n: 8400}, fixedClock{}, app.ServiceOptions{
+		MasterDataBackupBeforeFullSnapshot: func(context.Context, app.MasterDataBackupRequest) error {
+			backupCalls++
+			return nil
+		},
+	})
+	stateBefore := countRows(t, f, "cloud_master_sync_state")
+
+	_, err := service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:        app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		StreamName:         domain.MasterDataStreamCatalog,
+		SyncMode:           domain.SyncModeFullSnapshot,
+		FullSnapshotReason: "terminal_restaurant_changed",
+		CloudVersion:       81,
+	})
+	if err == nil {
+		t.Fatal("expected empty full_snapshot error")
+	}
+	if backupCalls != 0 {
+		t.Fatalf("expected empty full_snapshot not to call backup, got %d calls", backupCalls)
+	}
+	if states := countRows(t, f, "cloud_master_sync_state"); states != stateBefore {
+		t.Fatalf("expected empty full_snapshot not to write sync state, before=%d after=%d", stateBefore, states)
 	}
 }
 

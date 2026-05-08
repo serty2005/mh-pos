@@ -79,13 +79,14 @@ func TestRepositoryUpsertAndGetMasterDataPackage(t *testing.T) {
 	repo := memory.NewRepository()
 	now := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
 	stored, err := repo.UpsertMasterDataPackage(context.Background(), contracts.MasterDataPackage{
-		StreamName:   contracts.MasterDataStreamCatalog,
-		NodeDeviceID: "node-1",
-		SyncMode:     contracts.SyncModeFullSnapshot,
-		CloudVersion: 2,
-		PayloadJSON:  json.RawMessage(`{"catalog_items":[{"id":"c-1"}]}`),
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		StreamName:         contracts.MasterDataStreamCatalog,
+		NodeDeviceID:       "node-1",
+		SyncMode:           contracts.SyncModeFullSnapshot,
+		FullSnapshotReason: contracts.FullSnapshotReasonTerminalRestaurantChanged,
+		CloudVersion:       2,
+		PayloadJSON:        json.RawMessage(`{"catalog_items":[{"id":"c-1"}]}`),
+		CreatedAt:          now,
+		UpdatedAt:          now,
 	})
 	if err != nil {
 		t.Fatal(err)

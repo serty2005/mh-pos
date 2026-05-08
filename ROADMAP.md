@@ -86,6 +86,8 @@
 - Item-level ACK batch flow реализован через `POST /api/v1/sync/edge-events/batch` и batch sender mapping на Edge.
 - Cloud projections поверх `cloud_operational_events` реализованы для event type stats и shift finance foundation.
 - Production Cloud -> Edge provisioning/import package endpoints реализованы через `PUT/GET /api/v1/provisioning/master-data/{stream}`.
+- POS Edge создает recoverable SQLite online backup перед применением Cloud -> Edge `full_snapshot` master-data import; `incremental` ingest backup не создает.
+- Cloud -> Edge master-data import по умолчанию является `incremental`; `full_snapshot` разрешен только при явной причине `terminal_restaurant_changed` или `node_role_changed`.
 
 ### Security hardening
 
@@ -259,7 +261,7 @@ flowchart LR
 
 ### Logging hardening
 
-Status: `implemented now`
+Статус: `выполнено`
 
 - Введен единый structured logging contract для backend операций.
 - Добавлены уровни `TRACE/DEBUG/INFO/WARN/ERROR` с runtime env-конфигом.
@@ -298,18 +300,18 @@ Status: `implemented now`
 - Item-level ACK batch flow реализован: `POST /api/v1/sync/edge-events/batch` + batch sender mapping на Edge.
 - Cloud projections поверх `cloud_operational_events` реализованы: `cloud_projection_event_type_stats`, `cloud_projection_shift_finance`.
 - Cloud PostgreSQL startup path довыравнивает implemented-now projection/runtime tables через ordered managed migrations; `002_projection_event_type_stats.sql` создает `cloud_projection_event_type_stats`, `003_runtime_schema_repair.sql` ремонтирует весь required runtime schema set для старых БД.
-- planned next query endpoints не блокируют startup verification.
+- Запланированные далее query endpoints не блокируют startup verification.
 - Production Cloud -> Edge provisioning/import package endpoints реализованы: `PUT/GET /api/v1/provisioning/master-data/{stream}`.
 
-Status next steps: `planned next`
+Следующие шаги: `далее`
 
 - Авторизация production perimeter для provisioning endpoints.
 - Projection query endpoints для ops dashboards.
 
 ### Database Access & Reporting Architecture update 2026-05-08
 
-- [ ] Создать `docs/adr/ADR-012-persistence-and-analytics-strategy.md`
-- [ ] Зафиксировать sqlc как основной persistence-подход для SQLite/PostgreSQL
-- [ ] Зафиксировать ClickHouse как облачный OLAP/reporting accelerator
-- [ ] Добавить PostgreSQL → ClickHouse projection pipeline в будущие этапы
-- [ ] Запретить GORM/Ent в POS Core financial/offline/sync-critical flows
+- [x] Зафиксировать persistence/reporting strategy в существующем `docs/adr/ADR-015-persistence-and-analytics-strategy.md`; отдельный `ADR-012` не нужен, чтобы не дублировать принятое решение.
+- [x] Зафиксировать sqlc как основной persistence-подход для SQLite/PostgreSQL.
+- [x] Зафиксировать ClickHouse как облачный OLAP/reporting accelerator.
+- [x] Добавить PostgreSQL -> ClickHouse projection pipeline в будущие этапы.
+- [x] Запретить GORM/Ent в POS Core financial/offline/sync-critical flows.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -15,33 +16,64 @@ import (
 	"pos-backend/internal/pos/ports"
 )
 
+const (
+	fullSnapshotReasonTerminalRestaurantChanged = "terminal_restaurant_changed"
+	fullSnapshotReasonNodeRoleChanged           = "node_role_changed"
+)
+
 type Service struct {
-	repo  ports.Repository
-	tx    txmanager.Manager
-	ids   idgen.Generator
-	clock clock.Clock
+	repo                     ports.Repository
+	tx                       txmanager.Manager
+	ids                      idgen.Generator
+	clock                    clock.Clock
+	backupBeforeFullSnapshot BackupFunc
 }
 
 func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock) *Service {
-	return &Service{repo: repo, tx: tx, ids: ids, clock: clock}
+	return NewServiceWithOptions(repo, tx, ids, clock, Options{})
+}
+
+// Options задает внешние runtime hooks для Cloud -> Edge master-data ingest.
+type Options struct {
+	BackupBeforeFullSnapshot BackupFunc
+}
+
+// BackupRequest содержит безопасные metadata для backup-before-data-load без payload dump.
+type BackupRequest struct {
+	NodeDeviceID       string
+	RestaurantID       string
+	Streams            []domain.MasterDataStream
+	CloudVersion       int64
+	FullSnapshotReason string
+	AppliedAt          string
+	CloudUpdatedAt     string
+}
+
+// BackupFunc выполняет recoverable backup перед применением master-data full_snapshot.
+type BackupFunc func(context.Context, BackupRequest) error
+
+// NewServiceWithOptions создает master sync service с явно заданными runtime hooks.
+func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, options Options) *Service {
+	return &Service{repo: repo, tx: tx, ids: ids, clock: clock, backupBeforeFullSnapshot: options.BackupBeforeFullSnapshot}
 }
 
 type ApplyMasterDataCommand struct {
 	shared.CommandMeta
-	RestaurantID    string                  `json:"restaurant_id,omitempty"`
-	StreamName      domain.MasterDataStream `json:"stream,omitempty"`
-	SyncMode        domain.SyncMode         `json:"sync_mode,omitempty"`
-	CheckpointToken string                  `json:"checkpoint_token,omitempty"`
-	CloudVersion    int64                   `json:"cloud_version,omitempty"`
-	CloudUpdatedAt  string                  `json:"cloud_updated_at,omitempty"`
-	Restaurants     []domain.Restaurant     `json:"restaurants,omitempty"`
-	Devices         []domain.Device         `json:"devices,omitempty"`
-	Roles           []domain.Role           `json:"roles,omitempty"`
-	Employees       []domain.Employee       `json:"employees,omitempty"`
-	Halls           []domain.Hall           `json:"halls,omitempty"`
-	Tables          []domain.Table          `json:"tables,omitempty"`
-	CatalogItems    []domain.CatalogItem    `json:"catalog_items,omitempty"`
-	MenuItems       []domain.MenuItem       `json:"menu_items,omitempty"`
+	RestaurantID       string                  `json:"restaurant_id,omitempty"`
+	StreamName         domain.MasterDataStream `json:"stream,omitempty"`
+	SyncMode           domain.SyncMode         `json:"sync_mode,omitempty"`
+	FullSnapshotReason string                  `json:"full_snapshot_reason,omitempty"`
+	CheckpointToken    string                  `json:"checkpoint_token,omitempty"`
+	CloudVersion       int64                   `json:"cloud_version,omitempty"`
+	CloudUpdatedAt     string                  `json:"cloud_updated_at,omitempty"`
+	Restaurants        []domain.Restaurant     `json:"restaurants,omitempty"`
+	Devices            []domain.Device         `json:"devices,omitempty"`
+	Roles              []domain.Role           `json:"roles,omitempty"`
+	Employees          []domain.Employee       `json:"employees,omitempty"`
+	Halls              []domain.Hall           `json:"halls,omitempty"`
+	Tables             []domain.Table          `json:"tables,omitempty"`
+	CatalogItems       []domain.CatalogItem    `json:"catalog_items,omitempty"`
+	MenuItems          []domain.MenuItem       `json:"menu_items,omitempty"`
 }
 
 type ApplyMasterDataResult struct {
@@ -65,14 +97,24 @@ func (s *Service) ApplyMasterData(ctx context.Context, cmd ApplyMasterDataComman
 	}
 	mode := cmd.SyncMode
 	if mode == "" {
-		mode = domain.SyncModeFullSnapshot
+		mode = domain.SyncModeIncremental
 	}
 	if mode != domain.SyncModeFullSnapshot && mode != domain.SyncModeIncremental {
 		return nil, fmt.Errorf("%w: sync_mode must be full_snapshot or incremental", domain.ErrInvalid)
 	}
+	fullSnapshotReason := normalizeFullSnapshotReason(cmd.FullSnapshotReason)
+	if mode == domain.SyncModeFullSnapshot && fullSnapshotReason == "" {
+		return nil, fmt.Errorf("%w: full_snapshot_reason must be terminal_restaurant_changed or node_role_changed", domain.ErrInvalid)
+	}
+	if mode == domain.SyncModeIncremental && strings.TrimSpace(cmd.FullSnapshotReason) != "" {
+		return nil, fmt.Errorf("%w: full_snapshot_reason is allowed only for full_snapshot", domain.ErrInvalid)
+	}
 	streams, err := streamsToApply(cmd)
 	if err != nil {
 		return nil, err
+	}
+	if mode == domain.SyncModeFullSnapshot && payloadRowCount(cmd, streams) == 0 {
+		return nil, fmt.Errorf("%w: full_snapshot requires at least one master row", domain.ErrInvalid)
 	}
 
 	now := s.clock.Now()
@@ -88,6 +130,36 @@ func (s *Service) ApplyMasterData(ctx context.Context, cmd ApplyMasterDataComman
 	}
 	counts := map[string]int{}
 	var states []domain.MasterDataSyncState
+	if err := validatePayload(cmd, streams, now); err != nil {
+		return nil, err
+	}
+	if mode == domain.SyncModeFullSnapshot && s.backupBeforeFullSnapshot != nil {
+		req := BackupRequest{
+			NodeDeviceID:       shared.EffectiveNodeDeviceID(cmd.CommandMeta),
+			RestaurantID:       strings.TrimSpace(cmd.RestaurantID),
+			Streams:            append([]domain.MasterDataStream(nil), streams...),
+			CloudVersion:       cmd.CloudVersion,
+			FullSnapshotReason: fullSnapshotReason,
+			AppliedAt:          appliedAt,
+			CloudUpdatedAt:     cloudUpdatedAt,
+		}
+		if err := s.backupBeforeFullSnapshot(ctx, req); err != nil {
+			slog.ErrorContext(ctx, "master-data backup перед full_snapshot не создан",
+				"operation", "sync.master_data",
+				"action", "backup_before_data_load",
+				"result", "failed",
+				"error_code", "DB_BACKUP_FAILED",
+				"node_device_id", req.NodeDeviceID,
+				"restaurant_id", req.RestaurantID,
+				"sync_mode", mode,
+				"full_snapshot_reason", req.FullSnapshotReason,
+				"cloud_version", req.CloudVersion,
+				"stream_count", len(req.Streams),
+				"internal_error", err.Error(),
+			)
+			return nil, fmt.Errorf("master-data ingest: backup before full_snapshot: %w", err)
+		}
+	}
 
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		for _, stream := range streams {
@@ -206,6 +278,83 @@ func (s *Service) applyStream(ctx context.Context, stream domain.MasterDataStrea
 	return nil
 }
 
+func validatePayload(cmd ApplyMasterDataCommand, streams []domain.MasterDataStream, now time.Time) error {
+	for _, stream := range streams {
+		switch stream {
+		case domain.MasterDataStreamRestaurants:
+			for i := range cmd.Restaurants {
+				if err := validateRestaurant(normalizeRestaurant(cmd.Restaurants[i], now)); err != nil {
+					return err
+				}
+			}
+		case domain.MasterDataStreamDevices:
+			for i := range cmd.Devices {
+				if err := validateDevice(normalizeDevice(cmd.Devices[i], now)); err != nil {
+					return err
+				}
+			}
+		case domain.MasterDataStreamStaff:
+			for i := range cmd.Roles {
+				if err := validateRole(normalizeRole(cmd.Roles[i], now)); err != nil {
+					return err
+				}
+			}
+			for i := range cmd.Employees {
+				if err := validateEmployee(normalizeEmployee(cmd.Employees[i], now)); err != nil {
+					return err
+				}
+			}
+		case domain.MasterDataStreamFloor:
+			for i := range cmd.Halls {
+				if err := validateHall(normalizeHall(cmd.Halls[i], now)); err != nil {
+					return err
+				}
+			}
+			for i := range cmd.Tables {
+				if err := validateTable(normalizeTable(cmd.Tables[i], now)); err != nil {
+					return err
+				}
+			}
+		case domain.MasterDataStreamCatalog:
+			for i := range cmd.CatalogItems {
+				if err := validateCatalogItem(normalizeCatalogItem(cmd.CatalogItems[i], now)); err != nil {
+					return err
+				}
+			}
+		case domain.MasterDataStreamMenu:
+			for i := range cmd.MenuItems {
+				if err := validateMenuItem(normalizeMenuItem(cmd.MenuItems[i], now)); err != nil {
+					return err
+				}
+			}
+		default:
+			return fmt.Errorf("%w: unsupported master data stream %q", domain.ErrInvalid, stream)
+		}
+	}
+	return nil
+}
+
+func payloadRowCount(cmd ApplyMasterDataCommand, streams []domain.MasterDataStream) int {
+	total := 0
+	for _, stream := range streams {
+		switch stream {
+		case domain.MasterDataStreamRestaurants:
+			total += len(cmd.Restaurants)
+		case domain.MasterDataStreamDevices:
+			total += len(cmd.Devices)
+		case domain.MasterDataStreamStaff:
+			total += len(cmd.Roles) + len(cmd.Employees)
+		case domain.MasterDataStreamFloor:
+			total += len(cmd.Halls) + len(cmd.Tables)
+		case domain.MasterDataStreamCatalog:
+			total += len(cmd.CatalogItems)
+		case domain.MasterDataStreamMenu:
+			total += len(cmd.MenuItems)
+		}
+	}
+	return total
+}
+
 func (s *Service) buildAppliedState(cmd ApplyMasterDataCommand, stream domain.MasterDataStream, mode domain.SyncMode, appliedAt, cloudUpdatedAt string) domain.MasterDataSyncState {
 	var restaurantID *string
 	if v := strings.TrimSpace(cmd.RestaurantID); v != "" {
@@ -275,6 +424,17 @@ func supportedStream(stream domain.MasterDataStream) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func normalizeFullSnapshotReason(reason string) string {
+	switch strings.TrimSpace(strings.ToLower(reason)) {
+	case fullSnapshotReasonTerminalRestaurantChanged:
+		return fullSnapshotReasonTerminalRestaurantChanged
+	case fullSnapshotReasonNodeRoleChanged:
+		return fullSnapshotReasonNodeRoleChanged
+	default:
+		return ""
 	}
 }
 

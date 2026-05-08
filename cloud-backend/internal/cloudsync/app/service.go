@@ -113,6 +113,7 @@ func (s *Service) UpsertMasterDataPackage(ctx context.Context, v contracts.Maste
 	v.NodeDeviceID = strings.TrimSpace(v.NodeDeviceID)
 	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
 	v.SyncMode = contracts.NormalizeSyncMode(v.SyncMode)
+	v.FullSnapshotReason = strings.TrimSpace(strings.ToLower(v.FullSnapshotReason))
 	v.PayloadJSON = bytes.TrimSpace(v.PayloadJSON)
 	if err := contracts.ValidateMasterDataPackage(v); err != nil {
 		return contracts.MasterDataPackage{}, err

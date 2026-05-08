@@ -149,13 +149,14 @@ func (h *Handler) receiveEdgeEventBatch(w http.ResponseWriter, r *http.Request) 
 func (h *Handler) upsertMasterDataPackage(w http.ResponseWriter, r *http.Request) {
 	streamName := chi.URLParam(r, "stream")
 	var req struct {
-		NodeDeviceID    string          `json:"node_device_id"`
-		RestaurantID    string          `json:"restaurant_id"`
-		SyncMode        string          `json:"sync_mode"`
-		CloudVersion    int64           `json:"cloud_version"`
-		CheckpointToken string          `json:"checkpoint_token"`
-		CloudUpdatedAt  *time.Time      `json:"cloud_updated_at"`
-		PayloadJSON     json.RawMessage `json:"payload_json"`
+		NodeDeviceID       string          `json:"node_device_id"`
+		RestaurantID       string          `json:"restaurant_id"`
+		SyncMode           string          `json:"sync_mode"`
+		FullSnapshotReason string          `json:"full_snapshot_reason"`
+		CloudVersion       int64           `json:"cloud_version"`
+		CheckpointToken    string          `json:"checkpoint_token"`
+		CloudUpdatedAt     *time.Time      `json:"cloud_updated_at"`
+		PayloadJSON        json.RawMessage `json:"payload_json"`
 	}
 	dec := json.NewDecoder(io.LimitReader(r.Body, 4<<20))
 	dec.DisallowUnknownFields()
@@ -164,14 +165,15 @@ func (h *Handler) upsertMasterDataPackage(w http.ResponseWriter, r *http.Request
 		return
 	}
 	v, err := h.service.UpsertMasterDataPackage(r.Context(), contracts.MasterDataPackage{
-		StreamName:      streamName,
-		NodeDeviceID:    req.NodeDeviceID,
-		RestaurantID:    req.RestaurantID,
-		SyncMode:        req.SyncMode,
-		CloudVersion:    req.CloudVersion,
-		CheckpointToken: req.CheckpointToken,
-		CloudUpdatedAt:  req.CloudUpdatedAt,
-		PayloadJSON:     req.PayloadJSON,
+		StreamName:         streamName,
+		NodeDeviceID:       req.NodeDeviceID,
+		RestaurantID:       req.RestaurantID,
+		SyncMode:           req.SyncMode,
+		FullSnapshotReason: req.FullSnapshotReason,
+		CloudVersion:       req.CloudVersion,
+		CheckpointToken:    req.CheckpointToken,
+		CloudUpdatedAt:     req.CloudUpdatedAt,
+		PayloadJSON:        req.PayloadJSON,
 	})
 	if err != nil {
 		status := http.StatusInternalServerError

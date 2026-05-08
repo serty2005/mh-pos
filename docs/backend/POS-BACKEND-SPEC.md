@@ -26,12 +26,12 @@ Cloud не является runtime dependency для:
 
 ## DB startup и schema verification
 
-implemented now:
+Реализовано сейчас:
 
 - POS Edge до запуска HTTP server и sync worker открывает SQLite, проверяет runtime gate (`WAL`, `foreign_keys`, `busy_timeout`, SQLite version), применяет ordered managed SQL files из `migrations/sqlite` и выполняет schema verification критичных таблиц/колонок/индексов.
 - `001_init.sql` задает clean baseline, а `002_runtime_schema_repair.sql` idempotent-образом довыравнивает старые pre-pilot SQLite БД, где существующие таблицы не получили новые runtime columns через `CREATE TABLE IF NOT EXISTS`.
 - POS Edge использует `db_runtime_versions` и `schema_migrations`; если `db_runtime_versions` отсутствует, БД считается самой старой и запускается upgrade path.
-- Перед safe schema/data upgrade существующей SQLite БД создается backup `.db/.db-wal/.db-shm` в `POS_SQLITE_BACKUP_DIR` после WAL checkpoint.
+- Перед safe schema/data upgrade существующей SQLite БД создается SQLite online backup artifact `.db` в `POS_SQLITE_BACKUP_DIR`.
 - Cloud backend до запуска HTTP server применяет ordered managed PostgreSQL SQL files под advisory lock и выполняет schema verification runtime-таблиц.
 - Cloud backend использует `db_runtime_versions` и `schema_migrations`; если `db_runtime_versions` отсутствует, БД считается самой старой и запускается upgrade path.
 - Если PostgreSQL `schema_migrations` отсутствует или содержит старую запись без checksum, startup повторно применяет idempotent managed SQL files, чтобы создать недостающие implemented-now runtime tables до schema verification.
@@ -46,7 +46,6 @@ implemented now:
 Запланировано далее:
 
 - production-grade backup retention/restore policy и отдельный observability report для миграций;
-- backup-before-data-load для Cloud -> Edge full snapshot/master-data import;
 - административная UI-операция очистки/пересоздания SQLite с backup, явным подтверждением, RBAC/audit и restart/rebootstrap flow.
 
 Вне текущего объема:
@@ -176,9 +175,13 @@ Order -> Precheck -> Payment -> Check
 
 Supported streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`.
 
-Payload accepts `node_device_id`, optional `restaurant_id`, `sync_mode` (`full_snapshot` or `incremental`), optional `checkpoint_token`, `cloud_version`, optional `cloud_updated_at`, and stream arrays: `restaurants`, `devices`, `roles`, `employees`, `halls`, `tables`, `catalog_items`, `menu_items`.
+Payload accepts `node_device_id`, optional `restaurant_id`, `sync_mode` (`incremental` by default, or explicit `full_snapshot`), optional `full_snapshot_reason`, optional `checkpoint_token`, `cloud_version`, optional `cloud_updated_at`, and stream arrays: `restaurants`, `devices`, `roles`, `employees`, `halls`, `tables`, `catalog_items`, `menu_items`.
 
 Реализовано сейчас: эти endpoints являются Cloud -> Edge ingest, а не POS runtime mutation APIs. Handler задает origin `cloud_sync`, вызывает app-layer master sync use case, пишет master rows и `cloud_master_sync_state` в одной транзакции и не создает строки `local_event_log` или `pos_sync_outbox`.
+
+Реализовано сейчас: если `sync_mode` не передан, POS Edge применяет payload как `incremental`. `full_snapshot` разрешен только при явном `full_snapshot_reason`: `terminal_restaurant_changed` или `node_role_changed` для смены main/slave роли узла внутри ресторана.
+
+Реализовано сейчас: перед применением `sync_mode = full_snapshot` POS Edge создает recoverable SQLite online backup artifact `.db` до записи master rows или `cloud_master_sync_state`. Backup использует `POS_SQLITE_BACKUP_DIR`, а если директория не задана, безопасный default рядом с SQLite DB в `backups`. Ошибка backup завершает ingest fail-fast без частичного apply. `incremental` ingest backup не создает; пустой `full_snapshot` или невалидный payload отклоняется до backup и до изменения данных.
 
 ### Dev/local bootstrap
 
@@ -299,7 +302,7 @@ Payload accepts `node_device_id`, optional `restaurant_id`, `sync_mode` (`full_s
 
 Реализовано сейчас: Cloud принимает operational sender catalog, описанный в `docs/sync/edge-cloud-contracts-v1.md`, и хранит raw envelopes плюс `cloud_operational_events`. Ownership matrix и directional sync rules описаны в `docs/sync/directional-sync-ownership.md`.
 
-Реализовано сейчас: Cloud -> Edge provisioning/configuration имеет backend apply flow: `internal/pos/app/mastersync` принимает `cloud_sync`, master tables имеют sync metadata, `cloud_master_sync_state` хранит stream checkpoints, а dedicated sync endpoints применяют full snapshot/incremental payloads для supported streams. Full snapshot replacement policy beyond upserted payload rows запланирована далее.
+Реализовано сейчас: Cloud -> Edge provisioning/configuration имеет backend apply flow: `internal/pos/app/mastersync` принимает `cloud_sync`, master tables имеют sync metadata, `cloud_master_sync_state` хранит stream checkpoints, а dedicated sync endpoints применяют incremental payloads по умолчанию и explicit full snapshot payloads только с причиной `terminal_restaurant_changed` или `node_role_changed`. Перед full snapshot apply создается SQLite online backup; full snapshot replacement policy beyond upserted payload rows запланирована далее.
 
 ## Manager override
 

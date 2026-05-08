@@ -37,7 +37,7 @@ POS sender содержит direction gate. Если строка `pos_sync_outb
 
 Реализовано сейчас: `pos_sync_outbox.sync_direction` хранит явное направление строки: `edge_to_cloud`, `cloud_to_edge` или `local_only`. Sender отправляет только operational rows с `sync_direction = edge_to_cloud`.
 
-Реализовано сейчас: Cloud -> Edge master-data ingestion доступен на POS Edge через backend API `POST /api/v1/sync/master-data/snapshots` и `POST /api/v1/sync/master-data/{stream}`. Apply flow выполняется application-layer сервисом `internal/pos/app/mastersync`, пишет master/read-model rows и `cloud_master_sync_state` в одной транзакции, использует origin `cloud_sync` и не создает Edge -> Cloud outbox/local events.
+Реализовано сейчас: Cloud -> Edge master-data ingestion доступен на POS Edge через backend API `POST /api/v1/sync/master-data/snapshots` и `POST /api/v1/sync/master-data/{stream}`. Apply flow выполняется application-layer сервисом `internal/pos/app/mastersync`, пишет master/read-model rows и `cloud_master_sync_state` в одной транзакции, использует origin `cloud_sync` и не создает Edge -> Cloud outbox/local events. По умолчанию apply является `incremental`; перед explicit `full_snapshot` apply POS Edge создает recoverable SQLite online backup artifact `.db`.
 
 Реализовано сейчас: Cloud -> Edge state хранится на Edge в `cloud_master_sync_state` и sync metadata columns master tables (`cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at`).
 
@@ -71,6 +71,7 @@ Request body shape:
   "node_device_id": "edge-node-device-id",
   "restaurant_id": "restaurant-id",
   "sync_mode": "full_snapshot",
+  "full_snapshot_reason": "terminal_restaurant_changed",
   "checkpoint_token": "optional-cloud-checkpoint",
   "cloud_version": 42,
   "cloud_updated_at": "2026-05-07T10:00:00Z",
@@ -85,7 +86,7 @@ Request body shape:
 }
 ```
 
-`sync_mode` может быть `full_snapshot` или `incremental`; если поле не передано, backend использует `full_snapshot`. `/snapshots` infers streams from non-empty arrays. `/{stream}` applies only the stream from the URL and may apply an empty stream to update checkpoint state.
+`sync_mode` может быть `incremental` или `full_snapshot`; если поле не передано, backend использует `incremental`. `full_snapshot` допустим только с `full_snapshot_reason = terminal_restaurant_changed` или `node_role_changed`. `/snapshots` выводит streams из непустых массивов. `/{stream}` применяет только stream из URL; пустой stream допустим для `incremental` checkpoint update, а пустой `full_snapshot` отклоняется до backup и до записи state.
 
 Response body:
 
@@ -100,6 +101,8 @@ Response body:
 ```
 
 Реализовано сейчас: stream apply order внутри multi-stream snapshot идет как restaurants, devices, staff, floor, catalog, menu, чтобы SQLite foreign keys могли быть удовлетворены тем же payload.
+
+Реализовано сейчас: для `full_snapshot` POS Edge выполняет pre-validation payload, затем SQLite online backup, затем transaction apply master rows и `cloud_master_sync_state`. Ошибка backup завершает request fail-fast без частичного apply. Backup directory задается `POS_SQLITE_BACKUP_DIR`; default находится рядом с SQLite DB в `backups`.
 
 ## POS Sender
 
@@ -234,7 +237,7 @@ edge_event_id
 
 ## Хранение в Cloud
 
-implemented now: Cloud append-safe сохраняет принятые envelopes в:
+Реализовано сейчас: Cloud append-safe сохраняет принятые envelopes в:
 
 - `cloud_edge_event_receipts`;
 - `cloud_edge_event_raw_payloads`;
@@ -242,9 +245,9 @@ implemented now: Cloud append-safe сохраняет принятые envelopes
 
 `cloud_edge_event_raw_payloads` сохраняет полный raw envelope. `cloud_operational_events` является operational replay journal для projections.
 
-implemented now: item-level ACKs поддерживаются batch endpoint `POST /api/v1/sync/edge-events/batch`; Cloud receiver пишет deterministic projections `cloud_projection_event_type_stats` и `cloud_projection_shift_finance` во время accepted event ingest.
+Реализовано сейчас: item-level ACKs поддерживаются batch endpoint `POST /api/v1/sync/edge-events/batch`; Cloud receiver пишет deterministic projections `cloud_projection_event_type_stats` и `cloud_projection_shift_finance` во время accepted event ingest.
 
-planned next: projection query APIs и более богатые reporting projections для dashboards.
+Запланировано далее: projection query APIs и более богатые reporting projections для dashboards.
 
 ## Правила идемпотентности
 
@@ -284,21 +287,23 @@ Ack стабилен при replay: повторный POST того же envelo
 
 ## Обновление sync contract 2026-05-07
 
-implemented now:
-- Cloud supports item-level ACK batch ingest endpoint `POST /api/v1/sync/edge-events/batch`.
-- POS sender supports batch delivery and maps per-item ACK status (`accepted`, `rejected`, `retryable`) to outbox lifecycle (`sent`, `suspended`, `failed/pending retry`).
-- Cloud writes deterministic projections on accepted operational events:
+Реализовано сейчас:
+- Cloud поддерживает item-level ACK batch ingest endpoint `POST /api/v1/sync/edge-events/batch`.
+- POS sender поддерживает batch delivery и маппит per-item ACK status (`accepted`, `rejected`, `retryable`) в outbox lifecycle (`sent`, `suspended`, `failed/pending retry`).
+- Cloud пишет deterministic projections при accepted operational events:
   - `cloud_projection_event_type_stats`
   - `cloud_projection_shift_finance`
-- Cloud exposes production-oriented provisioning/import package endpoints for Cloud -> Edge master/reference/configuration delivery:
+- Cloud предоставляет production-oriented provisioning/import package endpoints для Cloud -> Edge master/reference/configuration delivery:
   - `PUT /api/v1/provisioning/master-data/{stream}`
   - `GET /api/v1/provisioning/master-data/{stream}?node_device_id=...`
-- Cloud stores provisioning payloads in `cloud_master_data_packages`.
-- Provisioning stream catalog on Cloud includes: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `currencies`.
-- `currencies` stream payload uses canonical active ISO 4217 catalog (`currency_code`, `currency_alpha_code`, `minor_unit`, display flags) and is validated before apply.
+- Cloud хранит provisioning payloads в `cloud_master_data_packages`.
+- Provisioning stream catalog на Cloud включает: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `currencies`.
+- `currencies` stream payload использует canonical active ISO 4217 catalog (`currency_code`, `currency_alpha_code`, `minor_unit`, display flags) и валидируется до apply.
 - POS Edge реализует Cloud -> Edge master-data ingest streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`.
-- POS Edge `currencies` apply is out of scope до отдельного Edge import path, storage contract и тестов; Edge runtime сейчас валидирует валюты по локальному canonical catalog.
+- POS Edge создает SQLite online backup перед Cloud -> Edge explicit `full_snapshot` master-data apply; `incremental` apply backup не создает.
+- Cloud/POS contract разрешает `full_snapshot` только для `terminal_restaurant_changed` или `node_role_changed`; обычные package updates должны быть `incremental`.
+- POS Edge `currencies` apply находится вне текущего объема до отдельного Edge import path, storage contract и тестов; Edge runtime сейчас валидирует валюты по локальному canonical catalog.
 
-planned next:
-- add authorization policy for provisioning endpoints in production perimeter;
-- add projection query APIs for ops dashboards.
+Запланировано далее:
+- добавить authorization policy для provisioning endpoints в production perimeter;
+- добавить projection query APIs для ops dashboards.

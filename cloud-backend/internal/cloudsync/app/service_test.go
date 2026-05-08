@@ -114,18 +114,20 @@ func TestUpsertMasterDataPackageValidatesCurrenciesPayload(t *testing.T) {
 		]
 	}`)
 	if _, err := service.UpsertMasterDataPackage(context.Background(), contracts.MasterDataPackage{
-		StreamName:   contracts.MasterDataStreamCurrencies,
-		SyncMode:     contracts.SyncModeFullSnapshot,
-		CloudVersion: 1,
-		PayloadJSON:  payload,
+		StreamName:         contracts.MasterDataStreamCurrencies,
+		SyncMode:           contracts.SyncModeFullSnapshot,
+		FullSnapshotReason: contracts.FullSnapshotReasonNodeRoleChanged,
+		CloudVersion:       1,
+		PayloadJSON:        payload,
 	}); err != nil {
 		t.Fatalf("expected valid currencies package, got %v", err)
 	}
 	if _, err := service.UpsertMasterDataPackage(context.Background(), contracts.MasterDataPackage{
-		StreamName:   contracts.MasterDataStreamCurrencies,
-		SyncMode:     contracts.SyncModeFullSnapshot,
-		CloudVersion: 2,
-		PayloadJSON:  json.RawMessage(`{"currencies":[]}`),
+		StreamName:         contracts.MasterDataStreamCurrencies,
+		SyncMode:           contracts.SyncModeFullSnapshot,
+		FullSnapshotReason: contracts.FullSnapshotReasonNodeRoleChanged,
+		CloudVersion:       2,
+		PayloadJSON:        json.RawMessage(`{"currencies":[]}`),
 	}); err == nil {
 		t.Fatal("expected empty currencies list to be rejected")
 	}

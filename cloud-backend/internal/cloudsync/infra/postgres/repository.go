@@ -136,21 +136,23 @@ func (r *Repository) UpsertMasterDataPackage(ctx context.Context, v contracts.Ma
 	var cloudUpdatedAt *time.Time
 	err := r.pool.QueryRow(ctx, `
 INSERT INTO cloud_master_data_packages(
-  stream_name,node_device_id,restaurant_id,sync_mode,cloud_version,checkpoint_token,cloud_updated_at,payload_json,created_at,updated_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)
+  stream_name,node_device_id,restaurant_id,sync_mode,full_snapshot_reason,cloud_version,checkpoint_token,cloud_updated_at,payload_json,created_at,updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)
 ON CONFLICT (stream_name,node_device_id) DO UPDATE SET
   restaurant_id = EXCLUDED.restaurant_id,
   sync_mode = EXCLUDED.sync_mode,
+  full_snapshot_reason = EXCLUDED.full_snapshot_reason,
   cloud_version = EXCLUDED.cloud_version,
   checkpoint_token = EXCLUDED.checkpoint_token,
   cloud_updated_at = EXCLUDED.cloud_updated_at,
   payload_json = EXCLUDED.payload_json,
   updated_at = EXCLUDED.updated_at
-RETURNING stream_name,node_device_id,restaurant_id,sync_mode,cloud_version,checkpoint_token,cloud_updated_at,payload_json,created_at,updated_at`,
+RETURNING stream_name,node_device_id,restaurant_id,sync_mode,full_snapshot_reason,cloud_version,checkpoint_token,cloud_updated_at,payload_json,created_at,updated_at`,
 		v.StreamName,
 		nodeDeviceID,
 		nullableText(v.RestaurantID),
 		v.SyncMode,
+		v.FullSnapshotReason,
 		v.CloudVersion,
 		nullableText(v.CheckpointToken),
 		v.CloudUpdatedAt,
@@ -162,6 +164,7 @@ RETURNING stream_name,node_device_id,restaurant_id,sync_mode,cloud_version,check
 		&stored.NodeDeviceID,
 		&stored.RestaurantID,
 		&stored.SyncMode,
+		&stored.FullSnapshotReason,
 		&stored.CloudVersion,
 		&stored.CheckpointToken,
 		&cloudUpdatedAt,
@@ -182,7 +185,7 @@ func (r *Repository) GetMasterDataPackage(ctx context.Context, streamName, nodeD
 	var out contracts.MasterDataPackage
 	var cloudUpdatedAt *time.Time
 	err := r.pool.QueryRow(ctx, `
-SELECT stream_name,node_device_id,COALESCE(restaurant_id,''),sync_mode,cloud_version,COALESCE(checkpoint_token,''),cloud_updated_at,payload_json,created_at,updated_at
+SELECT stream_name,node_device_id,COALESCE(restaurant_id,''),sync_mode,full_snapshot_reason,cloud_version,COALESCE(checkpoint_token,''),cloud_updated_at,payload_json,created_at,updated_at
 FROM cloud_master_data_packages
 WHERE stream_name = $1 AND node_device_id IN ($2, '')
 ORDER BY CASE WHEN node_device_id = $2 THEN 0 ELSE 1 END
@@ -191,6 +194,7 @@ LIMIT 1`, streamName, nodeDeviceID).Scan(
 		&out.NodeDeviceID,
 		&out.RestaurantID,
 		&out.SyncMode,
+		&out.FullSnapshotReason,
 		&out.CloudVersion,
 		&out.CheckpointToken,
 		&cloudUpdatedAt,

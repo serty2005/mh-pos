@@ -79,7 +79,7 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			RequiredBy:    "cloudsync postgres repository master data package storage",
 			MigrationFile: "001_sync_receiver.sql, 003_runtime_schema_repair.sql",
 			Columns: []string{
-				"stream_name", "node_device_id", "restaurant_id", "sync_mode", "cloud_version", "checkpoint_token",
+				"stream_name", "node_device_id", "restaurant_id", "sync_mode", "full_snapshot_reason", "cloud_version", "checkpoint_token",
 				"cloud_updated_at", "payload_json", "created_at", "updated_at",
 			},
 			Indexes: []string{"cloud_master_data_packages_stream_updated"},

@@ -110,6 +110,7 @@ func TestProvisioningMasterDataPutAndGet(t *testing.T) {
 	  "node_device_id":"node-1",
 	  "restaurant_id":"restaurant-1",
 	  "sync_mode":"full_snapshot",
+	  "full_snapshot_reason":"terminal_restaurant_changed",
 	  "cloud_version":12,
 	  "payload_json":{"catalog_items":[{"id":"cat-1","name":"Tea"}]}
 	}`)
@@ -140,6 +141,7 @@ func TestProvisioningCurrenciesPutAndGet(t *testing.T) {
 	router := api.NewRouter(app.NewService(repo, fixedClock{}))
 	putBody := []byte(`{
 	  "sync_mode":"full_snapshot",
+	  "full_snapshot_reason":"node_role_changed",
 	  "cloud_version":21,
 	  "payload_json":{
 		"currencies":[

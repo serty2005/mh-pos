@@ -68,6 +68,12 @@ type RecordCashDrawerEventCommand = appcash.RecordCashDrawerEventCommand
 type ApplyMasterDataCommand = appmastersync.ApplyMasterDataCommand
 type ApplyMasterDataResult = appmastersync.ApplyMasterDataResult
 
+// MasterDataBackupRequest содержит безопасные metadata для backup-before-data-load.
+type MasterDataBackupRequest = appmastersync.BackupRequest
+
+// MasterDataBackupFunc выполняет backup перед Cloud -> Edge full_snapshot.
+type MasterDataBackupFunc = appmastersync.BackupFunc
+
 type ListLocalEventsQuery struct {
 	Limit     int
 	EventType string
@@ -101,7 +107,17 @@ type Service struct {
 	outbox      *shared.OutboxService
 }
 
+// ServiceOptions задает runtime hooks верхнего POS application service.
+type ServiceOptions struct {
+	MasterDataBackupBeforeFullSnapshot MasterDataBackupFunc
+}
+
 func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock) *Service {
+	return NewServiceWithOptions(repo, tx, ids, clock, ServiceOptions{})
+}
+
+// NewServiceWithOptions создает POS application service с дополнительными runtime hooks.
+func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, options ServiceOptions) *Service {
 	return &Service{
 		repo:        repo,
 		restaurants: apprestaurant.NewService(repo, tx, ids, clock),
@@ -116,7 +132,9 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 		prechecks:   appprecheck.NewService(repo, tx, ids, clock),
 		checks:      appcheck.NewService(repo, tx, ids, clock),
 		cash:        appcash.NewService(repo, tx, ids, clock),
-		masterSync:  appmastersync.NewService(repo, tx, ids, clock),
+		masterSync: appmastersync.NewServiceWithOptions(repo, tx, ids, clock, appmastersync.Options{
+			BackupBeforeFullSnapshot: options.MasterDataBackupBeforeFullSnapshot,
+		}),
 		localEvents: repo,
 		outbox:      shared.NewOutboxService(repo, tx, clock),
 	}

@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS cloud_master_data_packages (
   node_device_id TEXT NOT NULL DEFAULT '',
   restaurant_id TEXT,
   sync_mode TEXT NOT NULL CHECK (sync_mode IN ('full_snapshot','incremental')),
+  full_snapshot_reason TEXT NOT NULL DEFAULT '' CHECK (full_snapshot_reason IN ('','terminal_restaurant_changed','node_role_changed')),
   cloud_version BIGINT NOT NULL CHECK (cloud_version > 0),
   checkpoint_token TEXT,
   cloud_updated_at TIMESTAMPTZ,
@@ -121,6 +122,9 @@ CREATE TABLE IF NOT EXISTS cloud_master_data_packages (
   updated_at TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (stream_name, node_device_id)
 );
+
+ALTER TABLE cloud_master_data_packages
+  ADD COLUMN IF NOT EXISTS full_snapshot_reason TEXT NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS cloud_master_data_packages_stream_updated
   ON cloud_master_data_packages(stream_name, updated_at DESC);

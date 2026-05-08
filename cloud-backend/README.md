@@ -35,7 +35,7 @@ go run ./cmd/cloud-api
 CLOUD_HTTP_ADDR=:8090
 CLOUD_POSTGRES_MIGRATIONS_DIR=migrations/postgres
 CLOUD_POSTGRES_BACKUP_DIR=data/cloud-backups
-MH_POS_VERSION=0.1.0
+MH_POS_VERSION=0.1.1
 ```
 
 `CLOUD_POSTGRES_DSN` обязателен.
@@ -148,6 +148,8 @@ implemented now endpoints:
 - `POST /api/v1/sync/edge-events/batch` (item-level ACK)
 - `PUT /api/v1/provisioning/master-data/{stream}` (store Cloud -> Edge package)
 - `GET /api/v1/provisioning/master-data/{stream}?node_device_id=...` (resolve package for Edge import)
+
+`sync_mode` по умолчанию считается `incremental`. `full_snapshot` package принимается только с `full_snapshot_reason = terminal_restaurant_changed` или `node_role_changed`.
 
 implemented now storage:
 - `cloud_projection_event_type_stats`

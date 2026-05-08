@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -223,6 +224,7 @@ func TestMigrateDirWithPolicyWritesRuntimeVersionAndCreatesBackup(t *testing.T) 
 	if len(backupEntries) == 0 {
 		t.Fatal("expected backup files before version upgrade")
 	}
+	assertBackupHasRow(t, filepath.Join(backupDir, backupEntries[0].Name()), "migration_probe", "seed")
 }
 
 func TestMigrateDirWithPolicyTreatsMissingVersionTableAsOldestAndBacksUp(t *testing.T) {
@@ -274,6 +276,23 @@ func TestMigrateDirWithPolicyTreatsMissingVersionTableAsOldestAndBacksUp(t *test
 	}
 	if len(backupEntries) == 0 {
 		t.Fatal("expected backup for existing DB without runtime version table")
+	}
+	assertBackupHasRow(t, filepath.Join(backupDir, backupEntries[0].Name()), "legacy_probe", "old")
+}
+
+func assertBackupHasRow(t *testing.T, backupPath, table, id string) {
+	t.Helper()
+	backupDB, err := Open(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = backupDB.Close() })
+	var n int
+	if err := backupDB.QueryRowContext(t.Context(), fmt.Sprintf(`SELECT COUNT(1) FROM %s WHERE id = ?`, table), id).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected online backup %s to contain %s row %q, got %d", backupPath, table, id, n)
 	}
 }
 

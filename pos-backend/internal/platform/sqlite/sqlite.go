@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -16,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	moderncsqlite "modernc.org/sqlite"
 )
 
 const (
@@ -56,6 +55,15 @@ type SchemaRequirement struct {
 	RequiredBy     string
 	MigrationFile  string
 	RecoveryAction string
+}
+
+// BackupOptions задает безопасные metadata для SQLite backup logs и имени артефакта.
+type BackupOptions struct {
+	Action         string
+	ModuleName     string
+	CurrentVersion string
+	TargetVersion  string
+	Reason         string
 }
 
 // SchemaVerificationError хранит безопасные детали отсутствующего runtime-объекта для structured logs.
@@ -99,6 +107,10 @@ type sqliteRunner interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+type sqliteBackupDriverConn interface {
+	NewBackup(string) (*moderncsqlite.Backup, error)
 }
 
 func Open(path string) (*sql.DB, error) {
@@ -852,61 +864,85 @@ func parseModuleVersion(raw string) ([3]int, error) {
 	return parsed, nil
 }
 
-func backupSQLiteBeforeUpgrade(ctx context.Context, db *sql.DB, dbPath, backupDir, moduleName, previousVersion, targetVersion string) error {
+// BackupDatabase создает recoverable SQLite snapshot через online backup API.
+func BackupDatabase(ctx context.Context, db *sql.DB, dbPath, backupDir string, options BackupOptions) (string, error) {
 	started := time.Now()
-	if _, err := db.ExecContext(ctx, `PRAGMA wal_checkpoint(FULL)`); err != nil {
-		return fmt.Errorf("sqlite backup checkpoint failed: %w", err)
+	action := strings.TrimSpace(options.Action)
+	if action == "" {
+		action = "backup"
+	}
+	if strings.TrimSpace(dbPath) == "" {
+		return "", fmt.Errorf("sqlite backup failed: db path is required")
 	}
 	if strings.TrimSpace(backupDir) == "" {
 		backupDir = filepath.Join(filepath.Dir(dbPath), "backups")
 	}
 	if err := os.MkdirAll(backupDir, 0o755); err != nil {
-		return err
+		return "", err
 	}
 	stamp := time.Now().UTC().Format("20060102T150405Z")
-	stem := fmt.Sprintf("%s_%s_to_%s_%s", sanitizeFilenameToken(moduleName), sanitizeFilenameToken(previousVersion), sanitizeFilenameToken(targetVersion), stamp)
+	stemParts := []string{sanitizeFilenameToken(options.ModuleName), sanitizeFilenameToken(action)}
+	if strings.TrimSpace(options.CurrentVersion) != "" || strings.TrimSpace(options.TargetVersion) != "" {
+		stemParts = append(stemParts, sanitizeFilenameToken(options.CurrentVersion)+"_to_"+sanitizeFilenameToken(options.TargetVersion))
+	}
+	stemParts = append(stemParts, stamp)
+	stem := strings.Join(stemParts, "_")
 	baseTarget := filepath.Join(backupDir, stem+".db")
-	copied := 0
-	for _, suffix := range []string{"", "-wal", "-shm"} {
-		source := dbPath + suffix
-		info, err := os.Stat(source)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
+	if _, err := os.Stat(baseTarget); err == nil {
+		return "", fmt.Errorf("sqlite backup failed: target already exists: %s", baseTarget)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return "", fmt.Errorf("sqlite backup failed: acquire source connection: %w", err)
+	}
+	defer conn.Close()
+	if err := conn.Raw(func(driverConn any) error {
+		backuper, ok := driverConn.(sqliteBackupDriverConn)
+		if !ok {
+			return fmt.Errorf("sqlite backup failed: driver connection does not support online backup")
 		}
+		backup, err := backuper.NewBackup(baseTarget)
 		if err != nil {
 			return err
 		}
-		if info.IsDir() {
-			continue
+		for {
+			more, err := backup.Step(256)
+			if err != nil {
+				_ = backup.Finish()
+				return err
+			}
+			if !more {
+				break
+			}
+			if err := ctx.Err(); err != nil {
+				_ = backup.Finish()
+				return err
+			}
 		}
-		target := baseTarget + suffix
-		if err := copyFile(source, target, info.Mode()); err != nil {
-			return err
-		}
-		copied++
+		return backup.Finish()
+	}); err != nil {
+		_ = os.Remove(baseTarget)
+		return "", err
 	}
-	if copied == 0 {
-		return fmt.Errorf("sqlite backup failed: no db files copied for %s", dbPath)
-	}
-	slog.InfoContext(ctx, "sqlite backup перед миграцией создан", "operation", "db.backup", "action", "backup_before_upgrade", "result", "success", "db_type", "sqlite", "db_path", dbPath, "backup_path", baseTarget, "module_name", moduleName, "current_version", previousVersion, "target_version", targetVersion, "duration_ms", time.Since(started).Milliseconds())
-	return nil
+	slog.InfoContext(ctx, "sqlite online backup создан", "operation", "db.backup", "action", action, "result", "success", "db_type", "sqlite", "backup_method", "sqlite_online_backup", "db_path", dbPath, "backup_path", baseTarget, "module_name", options.ModuleName, "current_version", options.CurrentVersion, "target_version", options.TargetVersion, "reason", options.Reason, "duration_ms", time.Since(started).Milliseconds())
+	return baseTarget, nil
 }
 
-func copyFile(source, target string, mode os.FileMode) error {
-	in, err := os.Open(source)
+func backupSQLiteBeforeUpgrade(ctx context.Context, db *sql.DB, dbPath, backupDir, moduleName, previousVersion, targetVersion string) error {
+	_, err := BackupDatabase(ctx, db, dbPath, backupDir, BackupOptions{
+		Action:         "backup_before_upgrade",
+		ModuleName:     moduleName,
+		CurrentVersion: previousVersion,
+		TargetVersion:  targetVersion,
+		Reason:         "startup_migration",
+	})
 	if err != nil {
 		return err
 	}
-	defer in.Close()
-	out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode.Perm())
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-	return out.Sync()
+	return nil
 }
 
 func sanitizeFilenameToken(raw string) string {
