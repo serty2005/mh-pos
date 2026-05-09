@@ -40,6 +40,8 @@ Pilot path для SQLite:
 - `001_sync_receiver.sql` содержит baseline receiver, operational journal, shift finance, master-data package и currency reference storage;
 - `002_projection_event_type_stats.sql` создает required runtime table `cloud_projection_event_type_stats`, потому что Cloud receiver runtime выполняет `INSERT ... ON CONFLICT` в эту projection при приеме Edge events;
 - `003_runtime_schema_repair.sql` idempotent-образом довыравнивает весь implemented-now Cloud runtime schema set для старых БД, где history уже содержит ранние migrations, но отдельные runtime tables отсутствуют;
+- `004_master_data_authority.sql` добавляет Cloud-owned master-data authority storage для ролей, сотрудников, catalog/menu foundation и публикаций;
+- `005_master_data_restaurants_api.sql` добавляет `cloud_restaurants`, cloud-version metadata для Cloud master-data entities, `archived_at` для soft-delete и partial unique index `cloud_catalog_items_active_sku` для SKU в пределах ресторана среди неархивных items;
 - `schema_migrations` хранит отдельную запись с checksum/status для каждого SQL file, поэтому повторный startup не применяет уже recorded migrations повторно;
 - missing `db_runtime_versions` означает oldest DB и запускает upgrade path, а не immediate runtime crash;
 - schema verification проверяет только implemented-now runtime schema.
@@ -210,7 +212,8 @@ erDiagram
 - Реализовано сейчас: Cloud -> Edge master-data ingest по умолчанию применяет `incremental`; `full_snapshot` разрешен только при явной причине `terminal_restaurant_changed` или `node_role_changed`.
 - Реализовано сейчас: перед `full_snapshot` master-data ingest POS Edge создает recoverable SQLite online backup artifact `.db` до записи master rows или `cloud_master_sync_state`; `incremental` ingest backup не создает.
 - Вне текущего объема: POS Edge apply для `currencies` stream. Cloud backend владеет canonical ISO 4217 reference/provisioning, а текущий POS Edge валидирует валюты по локальному canonical catalog.
-- Cloud-owned master tables имеют `cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at`.
+- Cloud-owned Edge read-model tables имеют `cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at`.
+- Cloud-side source tables для restaurant/staff/catalog/menu имеют собственный `cloud_version`; publication package получает отдельный monotonic `cloud_version` версии публикации.
 - `cloud_master_sync_state` хранит Cloud -> Edge stream checkpoint: stream, mode, checkpoint token, last Cloud version/update, last apply time, status/error.
 - Master-data ingest пишет master rows и `cloud_master_sync_state` в одной транзакции и не пишет `local_event_log` или `pos_sync_outbox`.
 - Edge-owned operational tables: `shifts`, `cash_sessions`, `cash_drawer_events`, `orders`, `order_lines`, `prechecks`, `payments`, `payment_attempts`, `checks`, `manager_override_audit`, `auth_sessions`, `local_event_log`, `pos_sync_outbox`.

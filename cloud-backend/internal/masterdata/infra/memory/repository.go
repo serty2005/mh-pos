@@ -14,6 +14,7 @@ import (
 // Repository хранит Cloud master-data state в памяти для app/api tests.
 type Repository struct {
 	mu           sync.Mutex
+	restaurants  map[string]domain.Restaurant
 	roles        map[string]domain.Role
 	employees    map[string]domain.Employee
 	catalogItems map[string]domain.CatalogItem
@@ -33,12 +34,60 @@ func NewRepository() *Repository {
 		menuItems:    map[string]domain.MenuItem{},
 		publications: map[string][]domain.Publication{},
 		packages:     map[string]app.StreamPackage{},
+		restaurants:  map[string]domain.Restaurant{},
 	}
+}
+
+func (r *Repository) CreateRestaurant(_ context.Context, v domain.Restaurant) (domain.Restaurant, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.restaurants[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) UpdateRestaurant(_ context.Context, v domain.Restaurant) (domain.Restaurant, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.restaurants[v.ID]; !ok {
+		return domain.Restaurant{}, domain.ErrNotFound
+	}
+	r.restaurants[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) GetRestaurant(_ context.Context, id string) (domain.Restaurant, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.restaurants[strings.TrimSpace(id)]
+	if !ok {
+		return domain.Restaurant{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) ListRestaurants(_ context.Context) ([]domain.Restaurant, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.Restaurant, 0, len(r.restaurants))
+	for _, item := range r.restaurants {
+		out = append(out, item)
+	}
+	return out, nil
 }
 
 func (r *Repository) CreateRole(_ context.Context, v domain.Role) (domain.Role, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.roles[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) UpdateRole(_ context.Context, v domain.Role) (domain.Role, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.roles[v.ID]; !ok {
+		return domain.Role{}, domain.ErrNotFound
+	}
 	r.roles[v.ID] = v
 	return v, nil
 }
@@ -107,6 +156,11 @@ func (r *Repository) ListEmployees(_ context.Context, restaurantID string) ([]do
 func (r *Repository) CreateCatalogItem(_ context.Context, v domain.CatalogItem) (domain.CatalogItem, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	for _, item := range r.catalogItems {
+		if item.RestaurantID == v.RestaurantID && strings.EqualFold(item.SKU, v.SKU) && item.Status != domain.StatusArchived {
+			return domain.CatalogItem{}, domain.ErrConflict
+		}
+	}
 	r.catalogItems[v.ID] = v
 	return v, nil
 }
@@ -116,6 +170,11 @@ func (r *Repository) UpdateCatalogItem(_ context.Context, v domain.CatalogItem) 
 	defer r.mu.Unlock()
 	if _, ok := r.catalogItems[v.ID]; !ok {
 		return domain.CatalogItem{}, domain.ErrNotFound
+	}
+	for _, item := range r.catalogItems {
+		if item.ID != v.ID && item.RestaurantID == v.RestaurantID && strings.EqualFold(item.SKU, v.SKU) && item.Status != domain.StatusArchived && v.Status != domain.StatusArchived {
+			return domain.CatalogItem{}, domain.ErrConflict
+		}
 	}
 	r.catalogItems[v.ID] = v
 	return v, nil
@@ -225,6 +284,17 @@ func (r *Repository) GetCurrentPublication(_ context.Context, restaurantID strin
 		return domain.Publication{}, domain.ErrNotFound
 	}
 	return clonePublication(items[len(items)-1]), nil
+}
+
+func (r *Repository) GetPublication(_ context.Context, restaurantID, packageID string) (domain.Publication, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, item := range r.publications[strings.TrimSpace(restaurantID)] {
+		if item.ID == strings.TrimSpace(packageID) {
+			return clonePublication(item), nil
+		}
+	}
+	return domain.Publication{}, domain.ErrNotFound
 }
 
 func (r *Repository) Package(streamName, nodeDeviceID string) (app.StreamPackage, bool) {

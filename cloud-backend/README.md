@@ -12,8 +12,8 @@ Cloud backend для POS/RMS платформы: прием Edge operational eve
 - хранение raw envelope;
 - operational event journal в PostgreSQL (`cloud_operational_events`);
 - deterministic runtime projections для event type stats и shift finance foundation.
-- реализовано сейчас: Cloud-owned schema и API foundation для сотрудников, ролей, catalog items, categories, menu items и versioned master-data publications;
-- реализовано сейчас: publication workflow создает deterministic Cloud -> Edge packages для stream `staff`, `catalog`, `menu` и сохраняет их в `cloud_master_data_packages`;
+- реализовано сейчас: Cloud-owned production-oriented CRUD API для ресторанов, ролей, сотрудников/PIN credentials, catalog items, menu items и versioned master-data publications;
+- реализовано сейчас: publication workflow создает deterministic Cloud -> Edge packages для stream `restaurants`, `staff`, `catalog`, `menu` и сохраняет их в `cloud_master_data_packages`;
 - реализовано сейчас: Cloud UI API responses по сотрудникам и публикациям не возвращают PIN и `pin_hash`; PIN hash присутствует только внутри sync-ready staff package для device/system delivery на Edge.
 
 ## Запуск
@@ -43,7 +43,7 @@ MH_POS_VERSION=0.1.1
 
 `CLOUD_POSTGRES_DSN` обязателен.
 
-Реализовано сейчас: PostgreSQL использует ordered managed migrations из `migrations/postgres`: `001_sync_receiver.sql` задает baseline receiver storage, `002_projection_event_type_stats.sql` создает/ремонтирует required runtime projection table `cloud_projection_event_type_stats`, `003_runtime_schema_repair.sql` довыравнивает весь required receiver/projection/provisioning schema set для старых БД, `004_master_data_authority.sql` добавляет Cloud-owned master-data authority schema.
+Реализовано сейчас: PostgreSQL использует ordered managed migrations из `migrations/postgres`: `001_sync_receiver.sql` задает baseline receiver storage, `002_projection_event_type_stats.sql` создает/ремонтирует required runtime projection table `cloud_projection_event_type_stats`, `003_runtime_schema_repair.sql` довыравнивает весь required receiver/projection/provisioning schema set для старых БД, `004_master_data_authority.sql` добавляет Cloud-owned master-data authority schema, `005_master_data_restaurants_api.sql` добавляет `cloud_restaurants`, cloud-version metadata и partial unique SKU policy для неархивных catalog items.
 Реализовано сейчас: `schema_migrations` хранит имя SQL file, checksum и status; уже примененные migrations не выполняются повторно, а новая ordered migration записывается в history после успешного apply.
 Реализовано сейчас: если `schema_migrations` отсутствует, содержит старую запись без checksum или не имеет новой ordered repair migration, Cloud применяет idempotent managed SQL, довыравнивает недостающие runtime-таблицы и только после успешного apply записывает checksum/status.
 Реализовано сейчас: startup policy использует `db_runtime_versions`; если таблица версий отсутствует, БД считается самой старой, перед safe upgrade существующей схемы создается JSONL backup snapshot таблиц `public`, а `DB version > MH_POS_VERSION` завершает startup fail-fast.
@@ -55,30 +55,56 @@ MH_POS_VERSION=0.1.1
 
 Реализовано сейчас: Cloud является источником истины для production-oriented справочников сотрудников, ролей, каталога и меню. POS Edge не становится production CRUD для этих сущностей; Edge получает published state через Cloud -> Edge package/snapshot delivery и использует локальную read model offline.
 
-Cloud master-data API foundation для будущего `cloud-ui`:
+Cloud master-data production API для будущего `cloud-ui`:
 
 ```text
-POST  /api/v1/master-data/roles
-POST  /api/v1/master-data/employees
-PATCH /api/v1/master-data/employees/{id}
-POST  /api/v1/master-data/employees/{id}/suspend
-POST  /api/v1/master-data/employees/{id}/archive
-POST  /api/v1/master-data/employees/{id}/role
-POST  /api/v1/master-data/employees/{id}/pin
-POST  /api/v1/master-data/catalog/items
-PATCH /api/v1/master-data/catalog/items/{id}
-POST  /api/v1/master-data/menu/categories
-POST  /api/v1/master-data/menu/items
-PATCH /api/v1/master-data/menu/items/{id}
-POST  /api/v1/master-data/publications
-GET   /api/v1/master-data/published?restaurant_id=...
+POST  /api/v1/restaurants
+GET   /api/v1/restaurants
+GET   /api/v1/restaurants/{id}
+PATCH /api/v1/restaurants/{id}
+POST  /api/v1/restaurants/{id}/archive
+POST  /api/v1/roles
+GET   /api/v1/roles?restaurant_id=...
+GET   /api/v1/roles/{id}
+PATCH /api/v1/roles/{id}
+POST  /api/v1/roles/{id}/archive
+POST  /api/v1/employees
+GET   /api/v1/employees?restaurant_id=...
+GET   /api/v1/employees/{id}
+PATCH /api/v1/employees/{id}
+POST  /api/v1/employees/{id}/suspend
+POST  /api/v1/employees/{id}/activate
+POST  /api/v1/employees/{id}/archive
+POST  /api/v1/employees/{id}/pin
+POST  /api/v1/employees/{id}/pin/rotate
+POST  /api/v1/catalog/items
+GET   /api/v1/catalog/items?restaurant_id=...
+GET   /api/v1/catalog/items/{id}
+PATCH /api/v1/catalog/items/{id}
+POST  /api/v1/catalog/items/{id}/archive
+POST  /api/v1/menu/items
+GET   /api/v1/menu/items?restaurant_id=...
+GET   /api/v1/menu/items/{id}
+PATCH /api/v1/menu/items/{id}
+POST  /api/v1/menu/items/{id}/archive
+POST  /api/v1/restaurants/{id}/master-data/publish
+GET   /api/v1/restaurants/{id}/master-data/publication-state
+GET   /api/v1/restaurants/{id}/master-data/packages/latest
+GET   /api/v1/restaurants/{id}/master-data/packages/{package_id}
+GET   /api/v1/restaurants/{id}/edge-nodes/{node_device_id}/master-data/snapshot
 ```
 
-Реализовано сейчас: publication endpoint не делает каждое сохранение live. Он создает versioned publication (`version`, `cloud_version`, `published_at`, `published_by`, `package_sha256`) и deterministic packages для `staff`, `catalog`, `menu`. Generated packages сохраняются в `cloud_master_data_packages`, после чего Edge может получить их через существующий provisioning/import path.
+Совместимые legacy/foundation routes `/api/v1/master-data/...` сохранены для текущих тестов и low-level сценариев, но новый production onboarding path документируется через top-level routes выше.
+
+Реализовано сейчас: publication endpoint не делает каждое сохранение live. Он создает versioned publication (`version`, `cloud_version`, `published_at`, `published_by`, `package_sha256`) и deterministic packages для `restaurants`, `staff`, `catalog`, `menu`. Generated packages сохраняются в `cloud_master_data_packages`, после чего Edge может получить их через provisioning/import path или через Edge-ready snapshot endpoint.
 
 Реализовано сейчас: employee lifecycle поддерживает `active`, `suspended`, `archived`; role assignment обновляет permission snapshot для sync-safe POS usage; PIN rotation увеличивает credential version. API responses не возвращают PIN или `pin_hash`.
 
-Реализовано сейчас: catalog foundation разделяет `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_recipe_items`, `cloud_modifier_groups`, `cloud_modifier_options`; menu foundation хранит draft/published/archived lifecycle, price, category placement, availability, основу будущего station routing и будущих multi-location assignments.
+Реализовано сейчас: catalog foundation разделяет `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_recipe_items`, `cloud_modifier_groups`, `cloud_modifier_options`; menu foundation хранит draft/published/archived lifecycle, price, category placement, availability, основу будущего station routing и будущих multi-location assignments. Cloud catalog type `semi_finished` публикуется в текущий POS Edge-compatible catalog stream как `ingredient`; это совместимое foundation-решение до отдельного расширения Edge ingest enum.
+
+Реализовано сейчас: raw PIN и `pin_hash` не возвращаются Cloud UI-facing API responses. API responses используют безопасное `pin_configured`; `pin_hash` присутствует только в device/system snapshot package для offline PIN auth на POS Edge. Повтор PIN у нескольких active employees в одном ресторане отклоняется на Cloud-side как conflict.
+
+Вне текущего объема: production authorization perimeter Cloud API. Текущие endpoints предназначены для dev/pilot perimeter и не смешиваются с POS operator auth.
 
 ## Локальный smoke test receiver-а
 

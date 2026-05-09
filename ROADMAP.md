@@ -93,11 +93,15 @@
 
 Статус: `выполнено`
 
+- Cloud production API поддерживает onboarding ресторана без POS bootstrap scripts: restaurants CRUD, roles CRUD/archive, employees lifecycle/PIN rotation, catalog items CRUD/archive, menu items CRUD/archive.
 - Cloud PostgreSQL получил schema foundation для ролей, сотрудников, employee PIN credential metadata, catalog items, dishes, goods/raw materials, semi-finished products, recipe foundation, categories, modifier foundation, menu items, menu assignments и versioned publications.
-- Cloud API foundation подготовлен для будущего `cloud-ui`: создание/обновление сотрудников, suspend/archive, role assignment, PIN rotation, создание/обновление catalog/menu entities, publication и чтение текущего published state.
+- Cloud PostgreSQL получил `cloud_restaurants`, cloud-version metadata для master-data source tables и partial unique SKU policy для неархивных catalog items.
+- Cloud API подготовлен для будущего `cloud-ui`: создание/обновление ресторанов, сотрудников, ролей, PIN credentials, catalog/menu entities, publication и чтение текущего published state.
 - Employee lifecycle зафиксирован как `active`, `suspended`, `archived`; `suspended`/`archived` не должны становиться active POS login read model после sync.
-- Cloud UI-facing API responses не возвращают PIN или `pin_hash`; `pin_hash` остается только в staff package для offline PIN auth на Edge.
-- Publication workflow создает deterministic packages для `staff`, `catalog`, `menu`, хранит `version`, `cloud_version`, `published_at`, `published_by`, `package_sha256` и обновляет Cloud -> Edge provisioning storage.
+- Cloud UI-facing API responses не возвращают PIN или `pin_hash`; безопасный признак возвращается как `pin_configured`, а `pin_hash` остается только в staff package для offline PIN auth на Edge.
+- Duplicate active PIN в одном ресторане отклоняется на Cloud-side.
+- Publication workflow создает deterministic packages для `restaurants`, `staff`, `catalog`, `menu`, хранит `version`, `cloud_version`, `published_at`, `published_by`, `package_sha256` и обновляет Cloud -> Edge provisioning storage.
+- Cloud Edge-ready snapshot endpoint возвращает payload для прямого `POST /api/v1/sync/master-data/snapshots` на POS Edge.
 - POS Edge остается offline read-model consumer и не получает production CRUD API для справочников.
 
 ### Security hardening

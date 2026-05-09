@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -26,6 +27,34 @@ type fixedIDs struct {
 func (f *fixedIDs) NewID() string {
 	f.next++
 	return "id-" + strconv.Itoa(f.next)
+}
+
+func TestRestaurantCRUDAndValidation(t *testing.T) {
+	service, _ := newService()
+	ctx := context.Background()
+	restaurant, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{
+		Name:                         "Demo Bistro",
+		Timezone:                     "Asia/Jakarta",
+		Currency:                     "IDR",
+		BusinessDayMode:              "standard",
+		BusinessDayBoundaryLocalTime: "05:30",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restaurant.Status != domain.RestaurantActive || restaurant.CloudVersion != 1 {
+		t.Fatalf("unexpected restaurant: %+v", restaurant)
+	}
+	if _, err := service.UpdateRestaurant(ctx, restaurant.ID, app.UpdateRestaurantCommand{Currency: "ZZZ"}); !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected invalid currency, got %v", err)
+	}
+	archived, err := service.ArchiveRestaurant(ctx, restaurant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if archived.Status != domain.RestaurantArchived || archived.ArchivedAt == nil || archived.CloudVersion != 2 {
+		t.Fatalf("expected soft archive with version bump, got %+v", archived)
+	}
 }
 
 func TestEmployeeLifecyclePINAndPermissionSnapshot(t *testing.T) {
@@ -78,22 +107,53 @@ func TestEmployeeLifecyclePINAndPermissionSnapshot(t *testing.T) {
 	}
 }
 
-func TestCatalogMenuValidationAndPublicationPackageShape(t *testing.T) {
-	service, repo := newService()
+func TestRoleRejectsUnknownPermissionID(t *testing.T) {
+	service, _ := newService()
+	_, err := service.CreateRole(context.Background(), app.CreateRoleCommand{
+		RestaurantID:    "restaurant-1",
+		Name:            "broken",
+		PermissionsJSON: `{"pos.order.create":true,"pos.unknown.permission":true}`,
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected invalid unknown permission, got %v", err)
+	}
+}
+
+func TestDuplicateActivePINIsRejectedPerRestaurant(t *testing.T) {
+	service, _ := newService()
 	ctx := context.Background()
 	role, err := service.CreateRole(ctx, app.CreateRoleCommand{RestaurantID: "restaurant-1", Name: "cashier", PermissionsJSON: `{}`})
 	if err != nil {
 		t.Fatal(err)
 	}
-	employee, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: "restaurant-1", RoleID: role.ID, Name: "Oleg", PIN: "3333"})
+	if _, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: "restaurant-1", RoleID: role.ID, Name: "Anna", PIN: "1111"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: "restaurant-1", RoleID: role.ID, Name: "Ivan", PIN: "1111"}); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected duplicate PIN conflict, got %v", err)
+	}
+}
+
+func TestCatalogMenuValidationAndPublicationPackageShape(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	restaurant, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "Demo Bistro", Timezone: "Europe/Moscow", Currency: "RUB"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	category, err := service.CreateCategory(ctx, app.CreateCategoryCommand{RestaurantID: "restaurant-1", Name: "Bar", SortOrder: 10})
+	role, err := service.CreateRole(ctx, app.CreateRoleCommand{RestaurantID: restaurant.ID, Name: "cashier", PermissionsJSON: `{}`})
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: "restaurant-1", Kind: domain.CatalogItemSemiFinished, Name: "Syrup", SKU: "SYRUP", BaseUnit: "ml"})
+	employee, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: restaurant.ID, RoleID: role.ID, Name: "Oleg", PIN: "3333"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	category, err := service.CreateCategory(ctx, app.CreateCategoryCommand{RestaurantID: restaurant.ID, Name: "Bar", SortOrder: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: restaurant.ID, Kind: domain.CatalogItemSemiFinished, Name: "Syrup", SKU: "SYRUP", BaseUnit: "ml"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,10 +161,10 @@ func TestCatalogMenuValidationAndPublicationPackageShape(t *testing.T) {
 	if _, err := service.UpdateCatalogItem(ctx, catalog.ID, app.UpdateCatalogItemCommand{Status: &published}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CreateMenuItem(ctx, app.CreateMenuItemCommand{RestaurantID: "restaurant-1", CatalogItemID: catalog.ID, CategoryID: category.ID, Name: "Tea", Price: 2500, Currency: "rub", AvailabilityJSON: `not json`}); err == nil {
+	if _, err := service.CreateMenuItem(ctx, app.CreateMenuItemCommand{RestaurantID: restaurant.ID, CatalogItemID: catalog.ID, CategoryID: category.ID, Name: "Tea", Price: 2500, Currency: "rub", AvailabilityJSON: `not json`}); err == nil {
 		t.Fatal("expected invalid availability_json to be rejected")
 	}
-	menu, err := service.CreateMenuItem(ctx, app.CreateMenuItemCommand{RestaurantID: "restaurant-1", CatalogItemID: catalog.ID, CategoryID: category.ID, Name: "Tea", Price: 2500, Currency: "rub", AvailabilityJSON: `{"days":["mon"]}`})
+	menu, err := service.CreateMenuItem(ctx, app.CreateMenuItemCommand{RestaurantID: restaurant.ID, CatalogItemID: catalog.ID, CategoryID: category.ID, Name: "Tea", Price: 2500, Currency: "rub", AvailabilityJSON: `{"days":["mon"]}`})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,12 +172,19 @@ func TestCatalogMenuValidationAndPublicationPackageShape(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pub, err := service.Publish(ctx, app.PublishCommand{RestaurantID: "restaurant-1", PublishedBy: "operator-1", NodeDeviceID: "node-1"})
+	pub, err := service.Publish(ctx, app.PublishCommand{RestaurantID: restaurant.ID, PublishedBy: "operator-1", NodeDeviceID: "node-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if pub.Version != 1 || pub.CloudVersion != 1 || pub.Counts["employees"] != 1 || pub.Counts["menu_items"] != 1 {
 		t.Fatalf("unexpected publication summary: %+v", pub)
+	}
+	if pub.Counts["restaurants"] != 1 {
+		t.Fatalf("expected restaurant stream to be included, got %+v", pub.Counts)
+	}
+	restaurantPackage, ok := repo.Package("restaurants", "node-1")
+	if !ok || !strings.Contains(string(restaurantPackage.PayloadJSON), restaurant.ID) {
+		t.Fatalf("expected restaurants stream package, ok=%v payload=%s", ok, restaurantPackage.PayloadJSON)
 	}
 	staffPackage, ok := repo.Package("staff", "node-1")
 	if !ok {
@@ -135,6 +202,24 @@ func TestCatalogMenuValidationAndPublicationPackageShape(t *testing.T) {
 	menuPackage, ok := repo.Package("menu", "node-1")
 	if !ok || !strings.Contains(string(menuPackage.PayloadJSON), `"active":true`) {
 		t.Fatalf("expected active menu package, ok=%v payload=%s", ok, menuPackage.PayloadJSON)
+	}
+}
+
+func TestCatalogActiveSKUCanBeReusedAfterArchive(t *testing.T) {
+	service, _ := newService()
+	ctx := context.Background()
+	item, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: "restaurant-1", Type: domain.CatalogItemGood, Name: "Tea", SKU: "TEA", BaseUnit: "pcs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: "restaurant-1", Type: domain.CatalogItemGood, Name: "Tea 2", SKU: "TEA", BaseUnit: "pcs"}); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected active SKU conflict, got %v", err)
+	}
+	if _, err := service.ArchiveCatalogItem(ctx, item.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: "restaurant-1", Type: domain.CatalogItemGood, Name: "Tea 2", SKU: "TEA", BaseUnit: "pcs"}); err != nil {
+		t.Fatalf("expected SKU reuse after archive, got %v", err)
 	}
 }
 

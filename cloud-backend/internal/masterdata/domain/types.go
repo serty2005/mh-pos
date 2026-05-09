@@ -11,6 +11,15 @@ import (
 var (
 	ErrInvalid  = errors.New("invalid master data")
 	ErrNotFound = errors.New("master data not found")
+	ErrConflict = errors.New("master data conflict")
+)
+
+// RestaurantStatus задает Cloud-owned lifecycle ресторана.
+type RestaurantStatus string
+
+const (
+	RestaurantActive   RestaurantStatus = "active"
+	RestaurantArchived RestaurantStatus = "archived"
 )
 
 // EmployeeStatus задает Cloud-owned lifecycle сотрудника для sync-safe POS projection.
@@ -37,19 +46,36 @@ type CatalogItemKind string
 const (
 	CatalogItemDish         CatalogItemKind = "dish"
 	CatalogItemGood         CatalogItemKind = "good"
-	CatalogItemRawMaterial  CatalogItemKind = "raw_material"
+	CatalogItemIngredient   CatalogItemKind = "ingredient"
 	CatalogItemSemiFinished CatalogItemKind = "semi_finished"
 )
 
+// Restaurant описывает Cloud-owned ресторан и настройки учетного дня.
+type Restaurant struct {
+	ID                           string           `json:"id"`
+	Name                         string           `json:"name"`
+	Timezone                     string           `json:"timezone"`
+	Currency                     string           `json:"currency"`
+	BusinessDayMode              string           `json:"business_day_mode"`
+	BusinessDayBoundaryLocalTime string           `json:"business_day_boundary_local_time"`
+	Status                       RestaurantStatus `json:"status"`
+	CloudVersion                 int64            `json:"cloud_version"`
+	CreatedAt                    time.Time        `json:"created_at"`
+	UpdatedAt                    time.Time        `json:"updated_at"`
+	ArchivedAt                   *time.Time       `json:"archived_at,omitempty"`
+}
+
 // Role описывает Cloud-authored роль и snapshot прав для доставки на POS Edge.
 type Role struct {
-	ID              string    `json:"id"`
-	RestaurantID    string    `json:"restaurant_id"`
-	Name            string    `json:"name"`
-	PermissionsJSON string    `json:"permissions_json"`
-	Active          bool      `json:"active"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              string     `json:"id"`
+	RestaurantID    string     `json:"restaurant_id"`
+	Name            string     `json:"name"`
+	PermissionsJSON string     `json:"permissions_json"`
+	Active          bool       `json:"active"`
+	CloudVersion    int64      `json:"cloud_version"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	ArchivedAt      *time.Time `json:"archived_at,omitempty"`
 }
 
 // Employee описывает Cloud-authored сотрудника без раскрытия PIN credential в API JSON.
@@ -60,8 +86,10 @@ type Employee struct {
 	Name                   string         `json:"name"`
 	Status                 EmployeeStatus `json:"status"`
 	PINHash                string         `json:"-"`
+	PINConfigured          bool           `json:"pin_configured"`
 	PINCredentialVersion   int64          `json:"pin_credential_version"`
 	PermissionSnapshotJSON string         `json:"permission_snapshot_json"`
+	CloudVersion           int64          `json:"cloud_version"`
 	CreatedAt              time.Time      `json:"created_at"`
 	UpdatedAt              time.Time      `json:"updated_at"`
 	SuspendedAt            *time.Time     `json:"suspended_at,omitempty"`
@@ -93,8 +121,10 @@ type CatalogItem struct {
 	SKU          string          `json:"sku"`
 	BaseUnit     string          `json:"base_unit"`
 	Status       LifecycleStatus `json:"status"`
+	CloudVersion int64           `json:"cloud_version"`
 	CreatedAt    time.Time       `json:"created_at"`
 	UpdatedAt    time.Time       `json:"updated_at"`
+	ArchivedAt   *time.Time      `json:"archived_at,omitempty"`
 }
 
 // ActiveForPOS сообщает, должен ли catalog item быть активным в Edge read model.
@@ -109,7 +139,7 @@ func (c CatalogItem) EdgeType() string {
 		return "dish"
 	case CatalogItemGood:
 		return "good"
-	case CatalogItemRawMaterial, CatalogItemSemiFinished:
+	case CatalogItemIngredient, CatalogItemSemiFinished:
 		return "ingredient"
 	default:
 		return string(c.Kind)
@@ -128,8 +158,10 @@ type MenuItem struct {
 	Status            LifecycleStatus `json:"status"`
 	AvailabilityJSON  string          `json:"availability_json"`
 	StationRoutingKey string          `json:"station_routing_key,omitempty"`
+	CloudVersion      int64           `json:"cloud_version"`
 	CreatedAt         time.Time       `json:"created_at"`
 	UpdatedAt         time.Time       `json:"updated_at"`
+	ArchivedAt        *time.Time      `json:"archived_at,omitempty"`
 }
 
 // ActiveForPOS сообщает, должна ли позиция меню быть доступна в POS runtime.
@@ -166,6 +198,7 @@ type MasterDataPacket struct {
 	CheckpointToken string               `json:"checkpoint_token,omitempty"`
 	CloudVersion    int64                `json:"cloud_version"`
 	CloudUpdatedAt  time.Time            `json:"cloud_updated_at"`
+	Restaurants     []EdgeRestaurant     `json:"restaurants,omitempty"`
 	Roles           []EdgeRole           `json:"roles,omitempty"`
 	Employees       []EdgeEmployee       `json:"employees,omitempty"`
 	CatalogItems    []EdgeCatalogItem    `json:"catalog_items,omitempty"`
@@ -173,6 +206,18 @@ type MasterDataPacket struct {
 	Categories      []EdgeCategory       `json:"categories,omitempty"`
 	ModifierGroups  []EdgeModifierGroup  `json:"modifier_groups,omitempty"`
 	ModifierOptions []EdgeModifierOption `json:"modifier_options,omitempty"`
+}
+
+// EdgeRestaurant является projection ресторана в существующий POS Edge restaurants stream.
+type EdgeRestaurant struct {
+	ID                           string    `json:"id"`
+	Name                         string    `json:"name"`
+	Timezone                     string    `json:"timezone"`
+	Currency                     string    `json:"currency"`
+	BusinessDayMode              string    `json:"business_day_mode"`
+	BusinessDayBoundaryLocalTime string    `json:"business_day_boundary_local_time"`
+	CreatedAt                    time.Time `json:"created_at"`
+	UpdatedAt                    time.Time `json:"updated_at"`
 }
 
 // EdgeRole является projection роли в существующий POS Edge staff stream.
@@ -271,10 +316,20 @@ func ValidateLifecycleStatus(v LifecycleStatus) error {
 // ValidateCatalogItemKind проверяет допустимый Cloud catalog item kind.
 func ValidateCatalogItemKind(v CatalogItemKind) error {
 	switch v {
-	case CatalogItemDish, CatalogItemGood, CatalogItemRawMaterial, CatalogItemSemiFinished:
+	case CatalogItemDish, CatalogItemGood, CatalogItemIngredient, CatalogItemSemiFinished:
 		return nil
 	default:
 		return fmt.Errorf("%w: unsupported catalog item kind %q", ErrInvalid, v)
+	}
+}
+
+// ValidateRestaurantStatus проверяет допустимое lifecycle состояние ресторана.
+func ValidateRestaurantStatus(v RestaurantStatus) error {
+	switch v {
+	case RestaurantActive, RestaurantArchived:
+		return nil
+	default:
+		return fmt.Errorf("%w: unsupported restaurant status %q", ErrInvalid, v)
 	}
 }
 
@@ -284,9 +339,73 @@ func ValidatePermissionsJSON(raw string) error {
 	if raw == "" {
 		return fmt.Errorf("%w: permissions_json is required", ErrInvalid)
 	}
-	var value any
+	var value map[string]any
 	if err := json.Unmarshal([]byte(raw), &value); err != nil {
 		return fmt.Errorf("%w: permissions_json must be valid JSON", ErrInvalid)
 	}
+	for _, permission := range permissionsFromJSON(value) {
+		if _, ok := knownPermissionIDs[permission]; !ok {
+			return fmt.Errorf("%w: unknown permission id %q", ErrInvalid, permission)
+		}
+	}
 	return nil
+}
+
+func permissionsFromJSON(raw map[string]any) []string {
+	seen := map[string]struct{}{}
+	add := func(v string) {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			seen[v] = struct{}{}
+		}
+	}
+	for key, value := range raw {
+		if allowed, ok := value.(bool); ok && allowed {
+			add(key)
+		}
+	}
+	if values, ok := raw["permissions"].([]any); ok {
+		for _, value := range values {
+			if text, ok := value.(string); ok {
+				add(text)
+			}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for permission := range seen {
+		out = append(out, permission)
+	}
+	return out
+}
+
+var knownPermissionIDs = map[string]struct{}{
+	"pos.employee_shift.open":         {},
+	"pos.employee_shift.close":        {},
+	"pos.employee_shift.view_current": {},
+	"pos.employee_shift.recent":       {},
+	"pos.cash_session.open":           {},
+	"pos.cash_session.close":          {},
+	"pos.cash_session.view_current":   {},
+	"pos.cash_drawer.record_event":    {},
+	"pos.catalog.view":                {},
+	"pos.floor.view":                  {},
+	"pos.menu.view":                   {},
+	"pos.order.create":                {},
+	"pos.order.view":                  {},
+	"pos.order.add_line":              {},
+	"pos.order.change_quantity":       {},
+	"pos.order.void_line":             {},
+	"pos.order.close":                 {},
+	"pos.precheck.issue":              {},
+	"pos.precheck.view":               {},
+	"pos.precheck.reprint":            {},
+	"pos.precheck.cancel.request":     {},
+	"pos.precheck.cancel":             {},
+	"pos.payment.cash":                {},
+	"pos.payment.card.manual":         {},
+	"pos.payment.other":               {},
+	"pos.check.view":                  {},
+	"pos.check.reprint":               {},
+	"pos.sync.view":                   {},
+	"pos.sync.retry_failed":           {},
 }

@@ -47,7 +47,8 @@ Order -> Precheck -> Payment -> Check
 - Cloud operational event journal для принятых Edge runtime events;
 - directional sync ownership foundation: Cloud owns master/reference/configuration data, Edge owns operational POS runtime data; matrix в `docs/sync/directional-sync-ownership.md`;
 - Cloud-authored master-data authority foundation для сотрудников, ролей, catalog items, categories, menu items и versioned publications;
-- publication workflow создает deterministic Cloud -> Edge packages для `staff`, `catalog`, `menu` и сохраняет их в Cloud provisioning storage;
+- production-oriented Cloud master-data API создает рестораны, роли, сотрудников/PIN credentials, catalog items и menu items без POS bootstrap scripts;
+- publication workflow создает deterministic Cloud -> Edge packages для `restaurants`, `staff`, `catalog`, `menu` и сохраняет их в Cloud provisioning storage;
 - Cloud -> Edge master-data ingest API on POS Edge: `POST /api/v1/sync/master-data/snapshots` and `POST /api/v1/sync/master-data/{stream}` for `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`; applies `cloud_sync` payloads transactionally without creating Edge -> Cloud outbox rows;
 - operational sync endpoints для просмотра outbox, local events, aggregated status и ручного retry failed/suspended messages.
 
@@ -240,6 +241,28 @@ Invoke-RestMethod -Method Post http://localhost:8080/api/v1/sync/master-data/cat
 
 Этот endpoint является Cloud -> Edge ingest, а не POS runtime mutation route. Он обновляет master tables и `cloud_master_sync_state`; Edge -> Cloud outbox rows не создаются.
 
+Реализовано сейчас: production onboarding справочников выполняется через Cloud API, затем публикацию и доставку package на POS Edge:
+
+```powershell
+$restaurant = Invoke-RestMethod -Method Post http://localhost:8090/api/v1/restaurants -ContentType "application/json" -Body (@{
+  name = "Demo Bistro"
+  timezone = "Europe/Moscow"
+  currency = "RUB"
+  business_day_mode = "standard"
+  business_day_boundary_local_time = "04:00"
+} | ConvertTo-Json)
+
+$publication = Invoke-RestMethod -Method Post "http://localhost:8090/api/v1/restaurants/$($restaurant.id)/master-data/publish" -ContentType "application/json" -Body (@{
+  published_by = "operator"
+  node_device_id = "demo-edge-node-1"
+} | ConvertTo-Json)
+
+$snapshot = Invoke-RestMethod "http://localhost:8090/api/v1/restaurants/$($restaurant.id)/edge-nodes/demo-edge-node-1/master-data/snapshot"
+Invoke-RestMethod -Method Post http://localhost:8080/api/v1/sync/master-data/snapshots -ContentType "application/json" -Body ($snapshot | ConvertTo-Json -Depth 20)
+```
+
+`.\scripts\cloud-masterdata-e2e.ps1` проверяет путь Cloud CRUD -> publish -> Edge ingest -> POS read/PIN login. Скрипт является smoke/e2e validation, а не production bootstrap path.
+
 Проверка PostgreSQL:
 
 ```powershell
@@ -409,7 +432,7 @@ go test ./...
 - Pairing verifier хранится в keyed format `pairing.hmac-sha256.v1`; plaintext pairing code не сохраняется.
 - PIN login должен однозначно определить одного active employee в paired restaurant; дубли active PIN отклоняются как conflict.
 - Закрытие личной смены сотрудника в POS Edge запрещено при открытых заказах или active cash shift.
-- Cloud: `cloud-backend/` реализует Sync Receiver, Cloud-owned master-data schema/API foundation и publication package generation; Cloud не является зависимостью для критических POS Edge операций.
+- Cloud: `cloud-backend/` реализует Sync Receiver, Cloud-owned production master-data API и publication package generation; Cloud не является зависимостью для критических POS Edge операций.
 - POS UI: `pos-ui` на Vue 3 + Quasar реализует `pairing -> login -> pos -> lock/logout` и POS Terminal Core для single-terminal cashier flow.
 - Источник истины для активных POS операций: локальный POS Edge Node.
 

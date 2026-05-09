@@ -101,6 +101,50 @@ func TestPublicationEndpointsReturnSummary(t *testing.T) {
 	}
 }
 
+func TestProductionRestaurantPublishAndSnapshotEndpoints(t *testing.T) {
+	router := newRouter()
+	restaurant := post(t, router, "/api/v1/restaurants", `{"name":"Demo Bistro","timezone":"Europe/Moscow","currency":"RUB","business_day_mode":"standard","business_day_boundary_local_time":"04:00"}`)
+	if restaurant.Code != http.StatusCreated {
+		t.Fatalf("expected restaurant created, got %d: %s", restaurant.Code, restaurant.Body.String())
+	}
+	var restaurantBody struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(restaurant.Body.Bytes(), &restaurantBody)
+	role := post(t, router, "/api/v1/roles", `{"restaurant_id":"`+restaurantBody.ID+`","name":"cashier","permissions_json":"{}"}`)
+	var roleBody struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(role.Body.Bytes(), &roleBody)
+	_ = post(t, router, "/api/v1/employees", `{"restaurant_id":"`+restaurantBody.ID+`","role_id":"`+roleBody.ID+`","name":"Anna","pin":"1111"}`)
+	catalog := post(t, router, "/api/v1/catalog/items", `{"restaurant_id":"`+restaurantBody.ID+`","type":"dish","name":"Tea","sku":"TEA","base_unit":"portion"}`)
+	var catalogBody struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(catalog.Body.Bytes(), &catalogBody)
+	_ = post(t, router, "/api/v1/menu/items", `{"restaurant_id":"`+restaurantBody.ID+`","catalog_item_id":"`+catalogBody.ID+`","name":"Tea","price":1000,"currency":"RUB"}`)
+
+	pub := post(t, router, "/api/v1/restaurants/"+restaurantBody.ID+"/master-data/publish", `{"published_by":"operator-1"}`)
+	if pub.Code != http.StatusCreated {
+		t.Fatalf("expected publish created, got %d: %s", pub.Code, pub.Body.String())
+	}
+	snapshot := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/restaurants/"+restaurantBody.ID+"/edge-nodes/node-1/master-data/snapshot", nil)
+	router.ServeHTTP(snapshot, req)
+	if snapshot.Code != http.StatusOK {
+		t.Fatalf("expected snapshot, got %d: %s", snapshot.Code, snapshot.Body.String())
+	}
+	body := snapshot.Body.String()
+	for _, required := range []string{`"node_device_id":"node-1"`, `"restaurants"`, `"roles"`, `"employees"`, `"catalog_items"`, `"menu_items"`} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("expected snapshot to contain %s: %s", required, body)
+		}
+	}
+	if strings.Contains(body, "1111") {
+		t.Fatalf("snapshot leaked raw PIN: %s", body)
+	}
+}
+
 func newRouter() http.Handler {
 	r := chi.NewRouter()
 	service := app.NewService(memory.NewRepository(), fixedClock{}, &fixedIDs{})

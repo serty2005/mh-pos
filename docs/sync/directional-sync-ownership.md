@@ -2,7 +2,7 @@
 
 ## Статус
 
-Реализовано сейчас: POS Edge отделяет Cloud-owned master data от Edge-owned operational data на HTTP boundary, application boundary, outbox metadata, SQLite schema metadata и в тестах. Cloud backend получил master-data authority foundation для сотрудников, ролей, каталога, меню и публикаций.
+Реализовано сейчас: POS Edge отделяет Cloud-owned master data от Edge-owned operational data на HTTP boundary, application boundary, outbox metadata, SQLite schema metadata и в тестах. Cloud backend получил production-oriented master-data API для ресторанов, сотрудников, ролей, каталога, меню и публикаций.
 
 Запланировано далее: Cloud-side master-data authoring UI, pairing Edge Node из Cloud UI и более строгая replacement policy для full snapshots.
 
@@ -64,7 +64,7 @@
 - Sender still sends only `edge_to_cloud` operational events and suspends wrong-direction rows.
 - Cloud-owned master tables include `cloud_version`, `cloud_updated_at`, `cloud_deleted_at` and `last_synced_at`.
 - `cloud_master_sync_state` stores Cloud -> Edge stream checkpoint state for full snapshot and incremental foundations.
-- Cloud backend хранит Cloud-authored employees, roles, catalog, menu и publication versions в PostgreSQL и генерирует sync-ready packages вместо модели "любое сохранение сразу live".
+- Cloud backend хранит Cloud-authored restaurants, employees, roles, catalog, menu и publication versions в PostgreSQL и генерирует sync-ready packages вместо модели "любое сохранение сразу live".
 
 ## Cloud -> Edge
 
@@ -78,13 +78,13 @@
 - master-data ingestion writes master rows and `cloud_master_sync_state` in the same transaction;
 - master-data ingestion does not create `local_event_log` or `pos_sync_outbox` rows;
 - local POS flow uses cached/read-model data and does not require Cloud online.
-- Cloud publication создает versioned packages для `staff`, `catalog` и `menu`; Edge применяет их через тот же ingest path и оставляет operational writes локальными.
+- Cloud publication создает versioned packages для `restaurants`, `staff`, `catalog` и `menu`; Edge применяет их через тот же ingest path и оставляет operational writes локальными.
 
 Запланировано далее:
 
 - full snapshot replacement policy per stream;
 - incremental update policy using `cloud_version` and `updated_at` checkpoints.
-- Cloud UI становится production authoring surface для заведения ресторана, сотрудников, ролей/PIN credentials, каталога и меню.
+- Cloud UI будет строиться поверх реализованного Cloud production API для заведения ресторана, сотрудников, ролей/PIN credentials, каталога и меню.
 
 ## Edge -> Cloud
 
@@ -113,7 +113,7 @@
 - Cloud-authored master data enters through `/api/v1/sync/master-data/snapshots` or `/api/v1/sync/master-data/{stream}`.
 - Read endpoints for master data remain available because POS must use the local read model offline.
 - `POST /api/v1/dev/bootstrap-demo` remains the supported local/demo bootstrap path.
-- `POST /api/v1/master-data/publications` on Cloud creates versioned package state; POS Edge never calls Cloud master-data mutation routes as runtime CRUD.
+- `POST /api/v1/restaurants/{id}/master-data/publish` on Cloud creates versioned package state; POS Edge never calls Cloud master-data mutation routes as runtime CRUD.
 
 ## Влияние на схему
 
@@ -135,9 +135,9 @@
 ## Обновление master-data authority
 
 Реализовано сейчас:
-- Cloud владеет production master data для сотрудников, ролей, каталога и меню.
+- Cloud владеет production master data для ресторанов, сотрудников, ролей, каталога и меню.
 - Employee lifecycle использует `active`, `suspended`, `archived`; после sync только active employees могут входить в POS.
 - Permission snapshot генерируется на Cloud-side для sync-safe POS usage.
 - PIN и `pin_hash` не возвращаются Cloud UI-facing API responses; `pin_hash` присутствует только в device/system staff package payload, нужном для offline PIN auth на Edge.
 - Catalog foundation разделяет catalog item kinds, dish/good/raw-material/semi-finished и recipe/modifier foundations.
-- Menu publication является versioned и deterministic; сохранения остаются draft до явной публикации.
+- Master-data publication является versioned и deterministic; сохранения не становятся live на POS Edge до явной публикации. Cloud catalog type `semi_finished` доставляется в текущий POS Edge-compatible package как `ingredient` до отдельного расширения Edge catalog enum.

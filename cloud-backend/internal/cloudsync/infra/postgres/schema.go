@@ -95,16 +95,23 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Indexes: []string{"cloud_currency_reference_alpha_code_idx"},
 		},
 		{
+			Table:         "cloud_restaurants",
+			RequiredBy:    "cloud restaurant onboarding and master-data restaurants publication",
+			MigrationFile: "005_master_data_restaurants_api.sql",
+			Columns:       []string{"id", "name", "timezone", "currency", "business_day_mode", "business_day_boundary_local_time", "status", "cloud_version", "archived_at", "created_at", "updated_at"},
+			Indexes:       []string{"cloud_restaurants_status_updated"},
+		},
+		{
 			Table:         "cloud_roles",
 			RequiredBy:    "cloud master-data authority role storage",
-			MigrationFile: "004_master_data_authority.sql",
-			Columns:       []string{"id", "restaurant_id", "name", "permissions_json", "active", "created_at", "updated_at"},
+			MigrationFile: "004_master_data_authority.sql, 005_master_data_restaurants_api.sql",
+			Columns:       []string{"id", "restaurant_id", "name", "permissions_json", "active", "cloud_version", "archived_at", "created_at", "updated_at"},
 		},
 		{
 			Table:         "cloud_employees",
 			RequiredBy:    "cloud master-data authority employee lifecycle and PIN credential storage",
-			MigrationFile: "004_master_data_authority.sql",
-			Columns:       []string{"id", "restaurant_id", "role_id", "name", "status", "pin_hash", "pin_credential_version", "permission_snapshot_json", "suspended_at", "archived_at", "created_at", "updated_at"},
+			MigrationFile: "004_master_data_authority.sql, 005_master_data_restaurants_api.sql",
+			Columns:       []string{"id", "restaurant_id", "role_id", "name", "status", "pin_hash", "pin_credential_version", "permission_snapshot_json", "cloud_version", "suspended_at", "archived_at", "created_at", "updated_at"},
 			Indexes:       []string{"cloud_employees_restaurant_status"},
 		},
 		{
@@ -117,9 +124,9 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 		{
 			Table:         "cloud_catalog_items",
 			RequiredBy:    "cloud master-data authority catalog item storage",
-			MigrationFile: "004_master_data_authority.sql",
-			Columns:       []string{"id", "restaurant_id", "kind", "name", "sku", "base_unit", "status", "created_at", "updated_at"},
-			Indexes:       []string{"cloud_catalog_items_restaurant_kind_status"},
+			MigrationFile: "004_master_data_authority.sql, 005_master_data_restaurants_api.sql",
+			Columns:       []string{"id", "restaurant_id", "kind", "name", "sku", "base_unit", "status", "cloud_version", "archived_at", "created_at", "updated_at"},
+			Indexes:       []string{"cloud_catalog_items_restaurant_kind_status", "cloud_catalog_items_active_sku"},
 		},
 		{
 			Table:         "cloud_dishes",
@@ -160,8 +167,8 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 		{
 			Table:         "cloud_menu_items",
 			RequiredBy:    "cloud master-data authority menu item storage",
-			MigrationFile: "004_master_data_authority.sql",
-			Columns:       []string{"id", "restaurant_id", "catalog_item_id", "category_id", "name", "price", "currency", "status", "availability_json", "station_routing_key", "created_at", "updated_at"},
+			MigrationFile: "004_master_data_authority.sql, 005_master_data_restaurants_api.sql",
+			Columns:       []string{"id", "restaurant_id", "catalog_item_id", "category_id", "name", "price", "currency", "status", "availability_json", "station_routing_key", "cloud_version", "archived_at", "created_at", "updated_at"},
 			Indexes:       []string{"cloud_menu_items_restaurant_status"},
 		},
 		{

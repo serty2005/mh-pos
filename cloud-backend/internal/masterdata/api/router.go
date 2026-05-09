@@ -25,20 +25,103 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 	h := &Handler{service: service}
 	r.Route("/master-data", func(r chi.Router) {
 		r.Post("/roles", h.createRole)
+		r.Get("/roles", h.listRoles)
+		r.Get("/roles/{id}", h.getRole)
+		r.Patch("/roles/{id}", h.updateRole)
+		r.Post("/roles/{id}/archive", h.archiveRole)
 		r.Post("/employees", h.createEmployee)
+		r.Get("/employees", h.listEmployees)
+		r.Get("/employees/{id}", h.getEmployee)
 		r.Patch("/employees/{id}", h.updateEmployee)
 		r.Post("/employees/{id}/suspend", h.suspendEmployee)
+		r.Post("/employees/{id}/activate", h.activateEmployee)
 		r.Post("/employees/{id}/archive", h.archiveEmployee)
 		r.Post("/employees/{id}/role", h.assignEmployeeRole)
 		r.Post("/employees/{id}/pin", h.rotateEmployeePIN)
+		r.Post("/employees/{id}/pin/rotate", h.rotateEmployeePIN)
 		r.Post("/catalog/items", h.createCatalogItem)
+		r.Get("/catalog/items", h.listCatalogItems)
+		r.Get("/catalog/items/{id}", h.getCatalogItem)
 		r.Patch("/catalog/items/{id}", h.updateCatalogItem)
+		r.Post("/catalog/items/{id}/archive", h.archiveCatalogItem)
 		r.Post("/menu/categories", h.createCategory)
 		r.Post("/menu/items", h.createMenuItem)
+		r.Get("/menu/items", h.listMenuItems)
+		r.Get("/menu/items/{id}", h.getMenuItem)
 		r.Patch("/menu/items/{id}", h.updateMenuItem)
+		r.Post("/menu/items/{id}/archive", h.archiveMenuItem)
 		r.Post("/publications", h.publish)
 		r.Get("/published", h.getPublished)
 	})
+	r.Post("/restaurants", h.createRestaurant)
+	r.Get("/restaurants", h.listRestaurants)
+	r.Get("/restaurants/{id}", h.getRestaurant)
+	r.Patch("/restaurants/{id}", h.updateRestaurant)
+	r.Post("/restaurants/{id}/archive", h.archiveRestaurant)
+	r.Patch("/restaurants/{id}/archive", h.archiveRestaurant)
+	r.Post("/roles", h.createRole)
+	r.Get("/roles", h.listRoles)
+	r.Get("/roles/{id}", h.getRole)
+	r.Patch("/roles/{id}", h.updateRole)
+	r.Post("/roles/{id}/archive", h.archiveRole)
+	r.Patch("/roles/{id}/archive", h.archiveRole)
+	r.Post("/employees", h.createEmployee)
+	r.Get("/employees", h.listEmployees)
+	r.Get("/employees/{id}", h.getEmployee)
+	r.Patch("/employees/{id}", h.updateEmployee)
+	r.Post("/employees/{id}/suspend", h.suspendEmployee)
+	r.Post("/employees/{id}/activate", h.activateEmployee)
+	r.Post("/employees/{id}/archive", h.archiveEmployee)
+	r.Post("/employees/{id}/pin", h.rotateEmployeePIN)
+	r.Post("/employees/{id}/pin/rotate", h.rotateEmployeePIN)
+	r.Post("/catalog/items", h.createCatalogItem)
+	r.Get("/catalog/items", h.listCatalogItems)
+	r.Get("/catalog/items/{id}", h.getCatalogItem)
+	r.Patch("/catalog/items/{id}", h.updateCatalogItem)
+	r.Post("/catalog/items/{id}/archive", h.archiveCatalogItem)
+	r.Post("/menu/items", h.createMenuItem)
+	r.Get("/menu/items", h.listMenuItems)
+	r.Get("/menu/items/{id}", h.getMenuItem)
+	r.Patch("/menu/items/{id}", h.updateMenuItem)
+	r.Post("/menu/items/{id}/archive", h.archiveMenuItem)
+	r.Post("/restaurants/{id}/master-data/publish", h.publishRestaurant)
+	r.Get("/restaurants/{id}/master-data/publication-state", h.getRestaurantPublished)
+	r.Get("/restaurants/{id}/master-data/packages/latest", h.getLatestRestaurantPackage)
+	r.Get("/restaurants/{id}/master-data/packages/{package_id}", h.getRestaurantPackage)
+	r.Get("/restaurants/{id}/edge-nodes/{node_device_id}/master-data/snapshot", h.getEdgeNodeSnapshot)
+}
+
+func (h *Handler) createRestaurant(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateRestaurantCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.CreateRestaurant(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) listRestaurants(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListRestaurants(r.Context())
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) getRestaurant(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetRestaurant(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) updateRestaurant(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdateRestaurantCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpdateRestaurant(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) archiveRestaurant(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ArchiveRestaurant(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
 }
 
 func (h *Handler) createRole(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +133,30 @@ func (h *Handler) createRole(w http.ResponseWriter, r *http.Request) {
 	write(w, http.StatusCreated, v, err)
 }
 
+func (h *Handler) listRoles(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListRoles(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) getRole(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetRole(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) updateRole(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdateRoleCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpdateRole(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) archiveRole(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ArchiveRole(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
+}
+
 func (h *Handler) createEmployee(w http.ResponseWriter, r *http.Request) {
 	var cmd app.CreateEmployeeCommand
 	if !decode(w, r, &cmd) {
@@ -57,6 +164,16 @@ func (h *Handler) createEmployee(w http.ResponseWriter, r *http.Request) {
 	}
 	v, err := h.service.CreateEmployee(r.Context(), cmd)
 	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) listEmployees(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListEmployees(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) getEmployee(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetEmployee(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
 }
 
 func (h *Handler) updateEmployee(w http.ResponseWriter, r *http.Request) {
@@ -70,6 +187,11 @@ func (h *Handler) updateEmployee(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) suspendEmployee(w http.ResponseWriter, r *http.Request) {
 	v, err := h.service.SuspendEmployee(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) activateEmployee(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ActivateEmployee(r.Context(), chi.URLParam(r, "id"))
 	write(w, http.StatusOK, v, err)
 }
 
@@ -105,12 +227,27 @@ func (h *Handler) createCatalogItem(w http.ResponseWriter, r *http.Request) {
 	write(w, http.StatusCreated, v, err)
 }
 
+func (h *Handler) listCatalogItems(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListCatalogItems(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) getCatalogItem(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetCatalogItem(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
+}
+
 func (h *Handler) updateCatalogItem(w http.ResponseWriter, r *http.Request) {
 	var cmd app.UpdateCatalogItemCommand
 	if !decode(w, r, &cmd) {
 		return
 	}
 	v, err := h.service.UpdateCatalogItem(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) archiveCatalogItem(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ArchiveCatalogItem(r.Context(), chi.URLParam(r, "id"))
 	write(w, http.StatusOK, v, err)
 }
 
@@ -132,12 +269,27 @@ func (h *Handler) createMenuItem(w http.ResponseWriter, r *http.Request) {
 	write(w, http.StatusCreated, v, err)
 }
 
+func (h *Handler) listMenuItems(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListMenuItems(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) getMenuItem(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetMenuItem(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
+}
+
 func (h *Handler) updateMenuItem(w http.ResponseWriter, r *http.Request) {
 	var cmd app.UpdateMenuItemCommand
 	if !decode(w, r, &cmd) {
 		return
 	}
 	v, err := h.service.UpdateMenuItem(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) archiveMenuItem(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ArchiveMenuItem(r.Context(), chi.URLParam(r, "id"))
 	write(w, http.StatusOK, v, err)
 }
 
@@ -150,8 +302,38 @@ func (h *Handler) publish(w http.ResponseWriter, r *http.Request) {
 	write(w, http.StatusCreated, v, err)
 }
 
+func (h *Handler) publishRestaurant(w http.ResponseWriter, r *http.Request) {
+	var cmd app.PublishCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	cmd.RestaurantID = chi.URLParam(r, "id")
+	v, err := h.service.Publish(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
 func (h *Handler) getPublished(w http.ResponseWriter, r *http.Request) {
 	v, err := h.service.GetCurrentPublishedState(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) getRestaurantPublished(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetCurrentPublishedState(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) getLatestRestaurantPackage(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetCurrentPublishedPackage(r.Context(), chi.URLParam(r, "id"), r.URL.Query().Get("node_device_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) getRestaurantPackage(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetPublishedPackage(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "package_id"), r.URL.Query().Get("node_device_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) getEdgeNodeSnapshot(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetCurrentPublishedPackage(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "node_device_id"))
 	write(w, http.StatusOK, v, err)
 }
 
@@ -173,6 +355,8 @@ func write[T any](w http.ResponseWriter, status int, v T, err error) {
 			code = http.StatusBadRequest
 		case errors.Is(err, domain.ErrNotFound):
 			code = http.StatusNotFound
+		case errors.Is(err, domain.ErrConflict):
+			code = http.StatusConflict
 		}
 		writeError(w, code, err)
 		return

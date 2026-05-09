@@ -109,6 +109,8 @@ cloud-backend/
   POST /api/v1/sync/edge-events
   idempotent receive/dedupe
   raw SyncEnvelope storage
+  Production-oriented Cloud master-data API для restaurants/staff/catalog/menu
+  Versioned Cloud -> Edge master-data publication packages
 ```
 
 Фактическая стадия:

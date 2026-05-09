@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -16,6 +17,7 @@ import (
 
 	"crypto/pbkdf2"
 
+	"cloud-backend/internal/cloudsync/contracts"
 	"cloud-backend/internal/masterdata/domain"
 	"cloud-backend/internal/platform/clock"
 )
@@ -29,7 +31,12 @@ const (
 
 // Repository задает persistence port для Cloud master-data use cases.
 type Repository interface {
+	CreateRestaurant(context.Context, domain.Restaurant) (domain.Restaurant, error)
+	UpdateRestaurant(context.Context, domain.Restaurant) (domain.Restaurant, error)
+	GetRestaurant(context.Context, string) (domain.Restaurant, error)
+	ListRestaurants(context.Context) ([]domain.Restaurant, error)
 	CreateRole(context.Context, domain.Role) (domain.Role, error)
+	UpdateRole(context.Context, domain.Role) (domain.Role, error)
 	GetRole(context.Context, string) (domain.Role, error)
 	ListRoles(context.Context, string) ([]domain.Role, error)
 	CreateEmployee(context.Context, domain.Employee) (domain.Employee, error)
@@ -49,6 +56,7 @@ type Repository interface {
 	NextPublicationVersion(context.Context, string) (int64, error)
 	SavePublication(context.Context, domain.Publication, []StreamPackage) (domain.Publication, error)
 	GetCurrentPublication(context.Context, string) (domain.Publication, error)
+	GetPublication(context.Context, string, string) (domain.Publication, error)
 }
 
 // IDGenerator задает источник идентификаторов для use cases и тестов.
@@ -98,6 +106,32 @@ type CreateRoleCommand struct {
 	PermissionsJSON string `json:"permissions_json"`
 }
 
+// CreateRestaurantCommand описывает production onboarding ресторана в Cloud.
+type CreateRestaurantCommand struct {
+	Name                         string `json:"name"`
+	Timezone                     string `json:"timezone"`
+	Currency                     string `json:"currency"`
+	BusinessDayMode              string `json:"business_day_mode"`
+	BusinessDayBoundaryLocalTime string `json:"business_day_boundary_local_time"`
+}
+
+// UpdateRestaurantCommand описывает изменение Cloud-owned настроек ресторана.
+type UpdateRestaurantCommand struct {
+	Name                         string                   `json:"name,omitempty"`
+	Timezone                     string                   `json:"timezone,omitempty"`
+	Currency                     string                   `json:"currency,omitempty"`
+	BusinessDayMode              string                   `json:"business_day_mode,omitempty"`
+	BusinessDayBoundaryLocalTime string                   `json:"business_day_boundary_local_time,omitempty"`
+	Status                       *domain.RestaurantStatus `json:"status,omitempty"`
+}
+
+// UpdateRoleCommand описывает изменение роли и permission snapshot.
+type UpdateRoleCommand struct {
+	Name            string `json:"name,omitempty"`
+	PermissionsJSON string `json:"permissions_json,omitempty"`
+	Active          *bool  `json:"active,omitempty"`
+}
+
 // CreateEmployeeCommand описывает создание сотрудника с plaintext PIN только на входе use case.
 type CreateEmployeeCommand struct {
 	RestaurantID string `json:"restaurant_id"`
@@ -127,6 +161,7 @@ type RotatePINCommand struct {
 type CreateCatalogItemCommand struct {
 	RestaurantID string                 `json:"restaurant_id"`
 	Kind         domain.CatalogItemKind `json:"kind"`
+	Type         domain.CatalogItemKind `json:"type,omitempty"`
 	Name         string                 `json:"name"`
 	SKU          string                 `json:"sku"`
 	BaseUnit     string                 `json:"base_unit"`
@@ -135,6 +170,7 @@ type CreateCatalogItemCommand struct {
 // UpdateCatalogItemCommand описывает изменение Cloud-owned catalog item.
 type UpdateCatalogItemCommand struct {
 	Kind     *domain.CatalogItemKind `json:"kind,omitempty"`
+	Type     *domain.CatalogItemKind `json:"type,omitempty"`
 	Name     string                  `json:"name,omitempty"`
 	SKU      string                  `json:"sku,omitempty"`
 	BaseUnit string                  `json:"base_unit,omitempty"`
@@ -204,6 +240,95 @@ type StreamPackage struct {
 	PayloadJSON     json.RawMessage `json:"payload_json"`
 }
 
+// CreateRestaurant создает Cloud-owned ресторан с production-настройками учетного дня.
+func (s *Service) CreateRestaurant(ctx context.Context, cmd CreateRestaurantCommand) (domain.Restaurant, error) {
+	name := strings.TrimSpace(cmd.Name)
+	timezone := strings.TrimSpace(cmd.Timezone)
+	currency := strings.ToUpper(strings.TrimSpace(cmd.Currency))
+	mode, boundary, err := normalizeBusinessDayConfig(cmd.BusinessDayMode, cmd.BusinessDayBoundaryLocalTime)
+	if err != nil {
+		return domain.Restaurant{}, err
+	}
+	if name == "" || timezone == "" || currency == "" {
+		return domain.Restaurant{}, fmt.Errorf("%w: name, timezone and currency are required", domain.ErrInvalid)
+	}
+	if !isActiveCurrencyCode(currency) {
+		return domain.Restaurant{}, fmt.Errorf("%w: currency must be active ISO 4217 code", domain.ErrInvalid)
+	}
+	now := s.clock.Now().UTC()
+	restaurant := domain.Restaurant{
+		ID:                           s.ids.NewID(),
+		Name:                         name,
+		Timezone:                     timezone,
+		Currency:                     currency,
+		BusinessDayMode:              mode,
+		BusinessDayBoundaryLocalTime: boundary,
+		Status:                       domain.RestaurantActive,
+		CloudVersion:                 1,
+		CreatedAt:                    now,
+		UpdatedAt:                    now,
+	}
+	return s.repo.CreateRestaurant(ctx, restaurant)
+}
+
+// ListRestaurants возвращает рестораны для будущего Cloud UI/backoffice.
+func (s *Service) ListRestaurants(ctx context.Context) ([]domain.Restaurant, error) {
+	return s.repo.ListRestaurants(ctx)
+}
+
+// GetRestaurant возвращает один Cloud-owned ресторан.
+func (s *Service) GetRestaurant(ctx context.Context, id string) (domain.Restaurant, error) {
+	return s.repo.GetRestaurant(ctx, strings.TrimSpace(id))
+}
+
+// UpdateRestaurant изменяет настройки ресторана и увеличивает cloud_version.
+func (s *Service) UpdateRestaurant(ctx context.Context, id string, cmd UpdateRestaurantCommand) (domain.Restaurant, error) {
+	restaurant, err := s.repo.GetRestaurant(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.Restaurant{}, err
+	}
+	if strings.TrimSpace(cmd.Name) != "" {
+		restaurant.Name = strings.TrimSpace(cmd.Name)
+	}
+	if strings.TrimSpace(cmd.Timezone) != "" {
+		restaurant.Timezone = strings.TrimSpace(cmd.Timezone)
+	}
+	if strings.TrimSpace(cmd.Currency) != "" {
+		currency := strings.ToUpper(strings.TrimSpace(cmd.Currency))
+		if !isActiveCurrencyCode(currency) {
+			return domain.Restaurant{}, fmt.Errorf("%w: currency must be active ISO 4217 code", domain.ErrInvalid)
+		}
+		restaurant.Currency = currency
+	}
+	if strings.TrimSpace(cmd.BusinessDayMode) != "" || strings.TrimSpace(cmd.BusinessDayBoundaryLocalTime) != "" {
+		mode, boundary, err := normalizeBusinessDayConfig(firstNonEmpty(cmd.BusinessDayMode, restaurant.BusinessDayMode), firstNonEmpty(cmd.BusinessDayBoundaryLocalTime, restaurant.BusinessDayBoundaryLocalTime))
+		if err != nil {
+			return domain.Restaurant{}, err
+		}
+		restaurant.BusinessDayMode = mode
+		restaurant.BusinessDayBoundaryLocalTime = boundary
+	}
+	if cmd.Status != nil {
+		if err := domain.ValidateRestaurantStatus(*cmd.Status); err != nil {
+			return domain.Restaurant{}, err
+		}
+		restaurant.Status = *cmd.Status
+	}
+	restaurant.CloudVersion++
+	restaurant.UpdatedAt = s.clock.Now().UTC()
+	if restaurant.Status == domain.RestaurantArchived && restaurant.ArchivedAt == nil {
+		archivedAt := restaurant.UpdatedAt
+		restaurant.ArchivedAt = &archivedAt
+	}
+	return s.repo.UpdateRestaurant(ctx, restaurant)
+}
+
+// ArchiveRestaurant выполняет soft-delete ресторана.
+func (s *Service) ArchiveRestaurant(ctx context.Context, id string) (domain.Restaurant, error) {
+	status := domain.RestaurantArchived
+	return s.UpdateRestaurant(ctx, id, UpdateRestaurantCommand{Status: &status})
+}
+
 // CreateRole создает Cloud-authored роль.
 func (s *Service) CreateRole(ctx context.Context, cmd CreateRoleCommand) (domain.Role, error) {
 	restaurantID := strings.TrimSpace(cmd.RestaurantID)
@@ -225,10 +350,54 @@ func (s *Service) CreateRole(ctx context.Context, cmd CreateRoleCommand) (domain
 		Name:            name,
 		PermissionsJSON: canonicalJSON(permissions),
 		Active:          true,
+		CloudVersion:    1,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
 	return s.repo.CreateRole(ctx, role)
+}
+
+// ListRoles возвращает роли ресторана.
+func (s *Service) ListRoles(ctx context.Context, restaurantID string) ([]domain.Role, error) {
+	return s.repo.ListRoles(ctx, strings.TrimSpace(restaurantID))
+}
+
+// GetRole возвращает одну роль.
+func (s *Service) GetRole(ctx context.Context, id string) (domain.Role, error) {
+	return s.repo.GetRole(ctx, strings.TrimSpace(id))
+}
+
+// UpdateRole изменяет роль и увеличивает cloud_version.
+func (s *Service) UpdateRole(ctx context.Context, id string, cmd UpdateRoleCommand) (domain.Role, error) {
+	role, err := s.repo.GetRole(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.Role{}, err
+	}
+	if strings.TrimSpace(cmd.Name) != "" {
+		role.Name = strings.TrimSpace(cmd.Name)
+	}
+	if strings.TrimSpace(cmd.PermissionsJSON) != "" {
+		if err := domain.ValidatePermissionsJSON(cmd.PermissionsJSON); err != nil {
+			return domain.Role{}, err
+		}
+		role.PermissionsJSON = canonicalJSON(cmd.PermissionsJSON)
+	}
+	if cmd.Active != nil {
+		role.Active = *cmd.Active
+	}
+	role.CloudVersion++
+	role.UpdatedAt = s.clock.Now().UTC()
+	if !role.Active && role.ArchivedAt == nil {
+		archivedAt := role.UpdatedAt
+		role.ArchivedAt = &archivedAt
+	}
+	return s.repo.UpdateRole(ctx, role)
+}
+
+// ArchiveRole архивирует роль без физического удаления.
+func (s *Service) ArchiveRole(ctx context.Context, id string) (domain.Role, error) {
+	active := false
+	return s.UpdateRole(ctx, id, UpdateRoleCommand{Active: &active})
 }
 
 // CreateEmployee создает Cloud-authored сотрудника и хэширует PIN credential.
@@ -246,6 +415,9 @@ func (s *Service) CreateEmployee(ctx context.Context, cmd CreateEmployeeCommand)
 	if !role.Active || role.RestaurantID != restaurantID {
 		return domain.Employee{}, fmt.Errorf("%w: role is archived or belongs to another restaurant", domain.ErrInvalid)
 	}
+	if err := s.ensurePINUnique(ctx, restaurantID, "", cmd.PIN); err != nil {
+		return domain.Employee{}, err
+	}
 	pinHash, err := hashPIN(cmd.PIN)
 	if err != nil {
 		return domain.Employee{}, err
@@ -258,12 +430,36 @@ func (s *Service) CreateEmployee(ctx context.Context, cmd CreateEmployeeCommand)
 		Name:                   name,
 		Status:                 domain.EmployeeActive,
 		PINHash:                pinHash,
+		PINConfigured:          true,
 		PINCredentialVersion:   1,
 		PermissionSnapshotJSON: role.PermissionsJSON,
+		CloudVersion:           1,
 		CreatedAt:              now,
 		UpdatedAt:              now,
 	}
 	return s.repo.CreateEmployee(ctx, employee)
+}
+
+// ListEmployees возвращает сотрудников ресторана.
+func (s *Service) ListEmployees(ctx context.Context, restaurantID string) ([]domain.Employee, error) {
+	items, err := s.repo.ListEmployees(ctx, strings.TrimSpace(restaurantID))
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		items[i].PINConfigured = strings.TrimSpace(items[i].PINHash) != ""
+	}
+	return items, nil
+}
+
+// GetEmployee возвращает одного сотрудника без раскрытия PIN material в JSON.
+func (s *Service) GetEmployee(ctx context.Context, id string) (domain.Employee, error) {
+	employee, err := s.repo.GetEmployee(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.Employee{}, err
+	}
+	employee.PINConfigured = strings.TrimSpace(employee.PINHash) != ""
+	return employee, nil
 }
 
 // UpdateEmployee обновляет карточку сотрудника и permission snapshot при смене роли.
@@ -292,7 +488,16 @@ func (s *Service) UpdateEmployee(ctx context.Context, id string, cmd UpdateEmplo
 		employee.RoleID = role.ID
 		employee.PermissionSnapshotJSON = role.PermissionsJSON
 	}
+	employee.CloudVersion++
 	employee.UpdatedAt = s.clock.Now().UTC()
+	if employee.Status == domain.EmployeeSuspended && employee.SuspendedAt == nil {
+		suspendedAt := employee.UpdatedAt
+		employee.SuspendedAt = &suspendedAt
+	}
+	if employee.Status == domain.EmployeeArchived && employee.ArchivedAt == nil {
+		archivedAt := employee.UpdatedAt
+		employee.ArchivedAt = &archivedAt
+	}
 	return s.repo.UpdateEmployee(ctx, employee)
 }
 
@@ -305,13 +510,13 @@ func (s *Service) SuspendEmployee(ctx context.Context, id string) (domain.Employ
 // ArchiveEmployee архивирует сотрудника без удаления истории.
 func (s *Service) ArchiveEmployee(ctx context.Context, id string) (domain.Employee, error) {
 	status := domain.EmployeeArchived
-	employee, err := s.UpdateEmployee(ctx, id, UpdateEmployeeCommand{Status: &status})
-	if err != nil {
-		return domain.Employee{}, err
-	}
-	now := employee.UpdatedAt
-	employee.ArchivedAt = &now
-	return s.repo.UpdateEmployee(ctx, employee)
+	return s.UpdateEmployee(ctx, id, UpdateEmployeeCommand{Status: &status})
+}
+
+// ActivateEmployee возвращает сотрудника в active lifecycle.
+func (s *Service) ActivateEmployee(ctx context.Context, id string) (domain.Employee, error) {
+	status := domain.EmployeeActive
+	return s.UpdateEmployee(ctx, id, UpdateEmployeeCommand{Status: &status})
 }
 
 // AssignEmployeeRole назначает сотруднику роль и обновляет permission snapshot.
@@ -325,18 +530,26 @@ func (s *Service) RotateEmployeePIN(ctx context.Context, id string, cmd RotatePI
 	if err != nil {
 		return domain.Employee{}, err
 	}
+	if err := s.ensurePINUnique(ctx, employee.RestaurantID, employee.ID, cmd.PIN); err != nil {
+		return domain.Employee{}, err
+	}
 	pinHash, err := hashPIN(cmd.PIN)
 	if err != nil {
 		return domain.Employee{}, err
 	}
 	employee.PINHash = pinHash
+	employee.PINConfigured = true
 	employee.PINCredentialVersion++
+	employee.CloudVersion++
 	employee.UpdatedAt = s.clock.Now().UTC()
 	return s.repo.UpdateEmployee(ctx, employee)
 }
 
 // CreateCatalogItem создает draft catalog item в Cloud-owned catalog.
 func (s *Service) CreateCatalogItem(ctx context.Context, cmd CreateCatalogItemCommand) (domain.CatalogItem, error) {
+	if cmd.Kind == "" && cmd.Type != "" {
+		cmd.Kind = cmd.Type
+	}
 	if err := validateCatalogFields(cmd.RestaurantID, cmd.Kind, cmd.Name, cmd.SKU, cmd.BaseUnit); err != nil {
 		return domain.CatalogItem{}, err
 	}
@@ -348,11 +561,22 @@ func (s *Service) CreateCatalogItem(ctx context.Context, cmd CreateCatalogItemCo
 		Name:         strings.TrimSpace(cmd.Name),
 		SKU:          strings.TrimSpace(cmd.SKU),
 		BaseUnit:     strings.TrimSpace(cmd.BaseUnit),
-		Status:       domain.StatusDraft,
+		Status:       domain.StatusPublished,
+		CloudVersion: 1,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
 	return s.repo.CreateCatalogItem(ctx, item)
+}
+
+// ListCatalogItems возвращает catalog items ресторана.
+func (s *Service) ListCatalogItems(ctx context.Context, restaurantID string) ([]domain.CatalogItem, error) {
+	return s.repo.ListCatalogItems(ctx, strings.TrimSpace(restaurantID))
+}
+
+// GetCatalogItem возвращает один catalog item.
+func (s *Service) GetCatalogItem(ctx context.Context, id string) (domain.CatalogItem, error) {
+	return s.repo.GetCatalogItem(ctx, strings.TrimSpace(id))
 }
 
 // UpdateCatalogItem обновляет catalog item и его lifecycle.
@@ -366,6 +590,12 @@ func (s *Service) UpdateCatalogItem(ctx context.Context, id string, cmd UpdateCa
 			return domain.CatalogItem{}, err
 		}
 		item.Kind = *cmd.Kind
+	}
+	if cmd.Type != nil {
+		if err := domain.ValidateCatalogItemKind(*cmd.Type); err != nil {
+			return domain.CatalogItem{}, err
+		}
+		item.Kind = *cmd.Type
 	}
 	if strings.TrimSpace(cmd.Name) != "" {
 		item.Name = strings.TrimSpace(cmd.Name)
@@ -382,8 +612,19 @@ func (s *Service) UpdateCatalogItem(ctx context.Context, id string, cmd UpdateCa
 		}
 		item.Status = *cmd.Status
 	}
+	item.CloudVersion++
 	item.UpdatedAt = s.clock.Now().UTC()
+	if item.Status == domain.StatusArchived && item.ArchivedAt == nil {
+		archivedAt := item.UpdatedAt
+		item.ArchivedAt = &archivedAt
+	}
 	return s.repo.UpdateCatalogItem(ctx, item)
+}
+
+// ArchiveCatalogItem архивирует catalog item без физического удаления.
+func (s *Service) ArchiveCatalogItem(ctx context.Context, id string) (domain.CatalogItem, error) {
+	status := domain.StatusArchived
+	return s.UpdateCatalogItem(ctx, id, UpdateCatalogItemCommand{Status: &status})
 }
 
 // CreateCategory создает draft категорию меню.
@@ -436,13 +677,24 @@ func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand)
 		Name:              name,
 		Price:             cmd.Price,
 		Currency:          currency,
-		Status:            domain.StatusDraft,
+		Status:            domain.StatusPublished,
 		AvailabilityJSON:  availability,
 		StationRoutingKey: strings.TrimSpace(cmd.StationRoutingKey),
+		CloudVersion:      1,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
 	return s.repo.CreateMenuItem(ctx, item)
+}
+
+// ListMenuItems возвращает menu items ресторана.
+func (s *Service) ListMenuItems(ctx context.Context, restaurantID string) ([]domain.MenuItem, error) {
+	return s.repo.ListMenuItems(ctx, strings.TrimSpace(restaurantID))
+}
+
+// GetMenuItem возвращает один menu item.
+func (s *Service) GetMenuItem(ctx context.Context, id string) (domain.MenuItem, error) {
+	return s.repo.GetMenuItem(ctx, strings.TrimSpace(id))
 }
 
 // UpdateMenuItem обновляет menu item и его lifecycle.
@@ -486,6 +738,15 @@ func (s *Service) UpdateMenuItem(ctx context.Context, id string, cmd UpdateMenuI
 		}
 		item.Status = *cmd.Status
 	}
+	if item.Status == domain.StatusPublished {
+		catalogItem, err := s.repo.GetCatalogItem(ctx, item.CatalogItemID)
+		if err != nil {
+			return domain.MenuItem{}, err
+		}
+		if catalogItem.Status == domain.StatusArchived {
+			return domain.MenuItem{}, fmt.Errorf("%w: archived catalog item cannot be used by published menu item", domain.ErrInvalid)
+		}
+	}
 	if strings.TrimSpace(cmd.AvailabilityJSON) != "" {
 		availability, err := normalizeAvailability(cmd.AvailabilityJSON)
 		if err != nil {
@@ -496,8 +757,19 @@ func (s *Service) UpdateMenuItem(ctx context.Context, id string, cmd UpdateMenuI
 	if strings.TrimSpace(cmd.StationRoutingKey) != "" {
 		item.StationRoutingKey = strings.TrimSpace(cmd.StationRoutingKey)
 	}
+	item.CloudVersion++
 	item.UpdatedAt = s.clock.Now().UTC()
+	if item.Status == domain.StatusArchived && item.ArchivedAt == nil {
+		archivedAt := item.UpdatedAt
+		item.ArchivedAt = &archivedAt
+	}
 	return s.repo.UpdateMenuItem(ctx, item)
+}
+
+// ArchiveMenuItem архивирует menu item без физического удаления.
+func (s *Service) ArchiveMenuItem(ctx context.Context, id string) (domain.MenuItem, error) {
+	status := domain.StatusArchived
+	return s.UpdateMenuItem(ctx, id, UpdateMenuItemCommand{Status: &status})
 }
 
 // Publish создает versioned deterministic package для Cloud -> Edge sync.
@@ -550,6 +822,7 @@ func (s *Service) GetCurrentPublishedState(ctx context.Context, restaurantID str
 	var packet domain.MasterDataPacket
 	_ = json.Unmarshal(pub.PackageJSON, &packet)
 	counts := map[string]int{
+		"restaurants":   len(packet.Restaurants),
 		"roles":         len(packet.Roles),
 		"employees":     len(packet.Employees),
 		"catalog_items": len(packet.CatalogItems),
@@ -559,7 +832,29 @@ func (s *Service) GetCurrentPublishedState(ctx context.Context, restaurantID str
 	return summarizePublication(pub, counts), nil
 }
 
+// GetCurrentPublishedPackage возвращает последний full multi-stream payload для прямой доставки на POS Edge.
+func (s *Service) GetCurrentPublishedPackage(ctx context.Context, restaurantID, nodeDeviceID string) (domain.MasterDataPacket, error) {
+	pub, err := s.repo.GetCurrentPublication(ctx, strings.TrimSpace(restaurantID))
+	if err != nil {
+		return domain.MasterDataPacket{}, err
+	}
+	return packageFromPublication(pub, nodeDeviceID)
+}
+
+// GetPublishedPackage возвращает конкретный package по publication id.
+func (s *Service) GetPublishedPackage(ctx context.Context, restaurantID, packageID, nodeDeviceID string) (domain.MasterDataPacket, error) {
+	pub, err := s.repo.GetPublication(ctx, strings.TrimSpace(restaurantID), strings.TrimSpace(packageID))
+	if err != nil {
+		return domain.MasterDataPacket{}, err
+	}
+	return packageFromPublication(pub, nodeDeviceID)
+}
+
 func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID string, version int64, now time.Time) (domain.MasterDataPacket, map[string]int, []StreamPackage, error) {
+	restaurant, err := s.repo.GetRestaurant(ctx, restaurantID)
+	if err != nil && !errorsIsNotFound(err) {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
 	roles, err := s.repo.ListRoles(ctx, restaurantID)
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
@@ -586,6 +881,10 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 	sortMenu(menuItems)
 	sortCategories(categories)
 
+	restaurants := []domain.Restaurant{}
+	if restaurant.ID != "" && restaurant.Status == domain.RestaurantActive {
+		restaurants = append(restaurants, restaurant)
+	}
 	packet := domain.MasterDataPacket{
 		NodeDeviceID:    nodeDeviceID,
 		RestaurantID:    restaurantID,
@@ -593,6 +892,7 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 		CheckpointToken: fmt.Sprintf("master-data:%s:%d", restaurantID, version),
 		CloudVersion:    version,
 		CloudUpdatedAt:  now,
+		Restaurants:     edgeRestaurants(restaurants),
 		Roles:           edgeRoles(roles),
 		Employees:       edgeEmployees(employees),
 		CatalogItems:    edgeCatalogItems(catalogItems),
@@ -602,6 +902,7 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 		ModifierOptions: []domain.EdgeModifierOption{},
 	}
 	counts := map[string]int{
+		"restaurants":   len(packet.Restaurants),
 		"roles":         len(packet.Roles),
 		"employees":     len(packet.Employees),
 		"catalog_items": len(packet.CatalogItems),
@@ -616,6 +917,15 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 }
 
 func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
+	type restaurantsPayload struct {
+		NodeDeviceID    string                  `json:"node_device_id,omitempty"`
+		RestaurantID    string                  `json:"restaurant_id"`
+		SyncMode        string                  `json:"sync_mode"`
+		CheckpointToken string                  `json:"checkpoint_token,omitempty"`
+		CloudVersion    int64                   `json:"cloud_version"`
+		CloudUpdatedAt  time.Time               `json:"cloud_updated_at"`
+		Restaurants     []domain.EdgeRestaurant `json:"restaurants"`
+	}
 	type staffPayload struct {
 		NodeDeviceID    string                `json:"node_device_id,omitempty"`
 		RestaurantID    string                `json:"restaurant_id"`
@@ -661,6 +971,10 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 			PayloadJSON:     body,
 		}, nil
 	}
+	restaurants, err := build("restaurants", restaurantsPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, Restaurants: packet.Restaurants})
+	if err != nil {
+		return nil, err
+	}
 	staff, err := build("staff", staffPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, Roles: packet.Roles, Employees: packet.Employees})
 	if err != nil {
 		return nil, err
@@ -673,7 +987,24 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []StreamPackage{staff, catalog, menu}, nil
+	return []StreamPackage{restaurants, staff, catalog, menu}, nil
+}
+
+func edgeRestaurants(items []domain.Restaurant) []domain.EdgeRestaurant {
+	out := make([]domain.EdgeRestaurant, 0, len(items))
+	for _, item := range items {
+		out = append(out, domain.EdgeRestaurant{
+			ID:                           item.ID,
+			Name:                         item.Name,
+			Timezone:                     item.Timezone,
+			Currency:                     item.Currency,
+			BusinessDayMode:              item.BusinessDayMode,
+			BusinessDayBoundaryLocalTime: item.BusinessDayBoundaryLocalTime,
+			CreatedAt:                    item.CreatedAt,
+			UpdatedAt:                    item.UpdatedAt,
+		})
+	}
+	return out
 }
 
 func edgeRoles(items []domain.Role) []domain.EdgeRole {
@@ -738,15 +1069,49 @@ func validateCatalogFields(restaurantID string, kind domain.CatalogItemKind, nam
 }
 
 func isCurrencyCode(v string) bool {
+	return isActiveCurrencyCode(v)
+}
+
+func isActiveCurrencyCode(v string) bool {
+	v = strings.ToUpper(strings.TrimSpace(v))
 	if len(v) != 3 {
 		return false
 	}
-	for _, r := range v {
-		if r < 'A' || r > 'Z' {
-			return false
+	for _, profile := range contracts.CanonicalActiveCurrencyProfiles() {
+		if profile.CurrencyAlphaCode == v {
+			return true
 		}
 	}
-	return true
+	return false
+}
+
+func normalizeBusinessDayConfig(mode, boundary string) (string, string, error) {
+	mode = strings.TrimSpace(mode)
+	if mode == "" {
+		mode = "standard"
+	}
+	if mode != "standard" && mode != "24_7" {
+		return "", "", fmt.Errorf("%w: business_day_mode must be standard or 24_7", domain.ErrInvalid)
+	}
+	boundary = strings.TrimSpace(boundary)
+	if boundary == "" {
+		boundary = "04:00"
+	}
+	if len(boundary) != 5 || boundary[2] != ':' {
+		return "", "", fmt.Errorf("%w: business_day_boundary_local_time must be HH:MM", domain.ErrInvalid)
+	}
+	hour, err := strconv.Atoi(boundary[:2])
+	if err != nil {
+		return "", "", fmt.Errorf("%w: business_day_boundary_local_time must be HH:MM", domain.ErrInvalid)
+	}
+	minute, err := strconv.Atoi(boundary[3:])
+	if err != nil {
+		return "", "", fmt.Errorf("%w: business_day_boundary_local_time must be HH:MM", domain.ErrInvalid)
+	}
+	if hour < 0 || hour > 23 || minute < 0 || minute > 59 {
+		return "", "", fmt.Errorf("%w: business_day_boundary_local_time must be valid HH:MM", domain.ErrInvalid)
+	}
+	return mode, boundary, nil
 }
 
 func normalizeAvailability(raw string) (string, error) {
@@ -797,6 +1162,84 @@ func hashPIN(pin string) (string, error) {
 		base64.RawStdEncoding.EncodeToString(salt[:]),
 		base64.RawStdEncoding.EncodeToString(key),
 	}, ":"), nil
+}
+
+func (s *Service) ensurePINUnique(ctx context.Context, restaurantID, exceptEmployeeID, pin string) error {
+	pin = strings.TrimSpace(pin)
+	if pin == "" {
+		return fmt.Errorf("%w: pin is required", domain.ErrInvalid)
+	}
+	employees, err := s.repo.ListEmployees(ctx, strings.TrimSpace(restaurantID))
+	if err != nil {
+		return err
+	}
+	for _, employee := range employees {
+		if employee.ID == strings.TrimSpace(exceptEmployeeID) || employee.Status != domain.EmployeeActive {
+			continue
+		}
+		if verifyPIN(employee.PINHash, pin) == nil {
+			return fmt.Errorf("%w: duplicate active employee PIN in restaurant", domain.ErrConflict)
+		}
+	}
+	return nil
+}
+
+func verifyPIN(encoded, pin string) error {
+	parts := strings.Split(strings.TrimSpace(encoded), ":")
+	if len(parts) != 5 || parts[0] != pinHashPrefix || parts[1] != pinHashVersion {
+		return fmt.Errorf("%w: unsupported pin hash", domain.ErrInvalid)
+	}
+	iterations, err := strconv.Atoi(parts[2])
+	if err != nil || iterations <= 0 {
+		return fmt.Errorf("%w: invalid pin hash iterations", domain.ErrInvalid)
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[3])
+	if err != nil {
+		return err
+	}
+	want, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil {
+		return err
+	}
+	got, err := pbkdf2.Key(sha256.New, strings.TrimSpace(pin), salt, iterations, len(want))
+	if err != nil {
+		return err
+	}
+	if subtleCompare(got, want) {
+		return nil
+	}
+	return domain.ErrInvalid
+}
+
+func subtleCompare(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	var diff byte
+	for i := range a {
+		diff |= a[i] ^ b[i]
+	}
+	return diff == 0
+}
+
+func packageFromPublication(pub domain.Publication, nodeDeviceID string) (domain.MasterDataPacket, error) {
+	var packet domain.MasterDataPacket
+	if err := json.Unmarshal(pub.PackageJSON, &packet); err != nil {
+		return domain.MasterDataPacket{}, fmt.Errorf("%w: invalid publication package", domain.ErrInvalid)
+	}
+	packet.NodeDeviceID = strings.TrimSpace(nodeDeviceID)
+	return packet, nil
+}
+
+func errorsIsNotFound(err error) bool {
+	return errors.Is(err, domain.ErrNotFound)
+}
+
+func firstNonEmpty(v, fallback string) string {
+	if strings.TrimSpace(v) != "" {
+		return v
+	}
+	return fallback
 }
 
 func sortRoles(items []domain.Role) {
