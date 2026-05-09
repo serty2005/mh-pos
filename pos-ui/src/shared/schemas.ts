@@ -101,6 +101,22 @@ export const cashSessionSchema = z.object({
   updated_at: z.string(),
 });
 
+export const cashDrawerEventSchema = z.object({
+  id: z.string(),
+  edge_cash_drawer_event_id: z.string(),
+  cash_session_id: z.string(),
+  restaurant_id: z.string(),
+  device_id: z.string(),
+  shift_id: z.string(),
+  created_by_employee_id: z.string(),
+  event_type: z.enum(['cash_in', 'cash_out', 'no_sale', 'cash_count']),
+  amount: z.number(),
+  reason: optionalNullableString,
+  note: optionalNullableString,
+  occurred_at: z.string(),
+  created_at: z.string(),
+});
+
 export const menuItemSchema = z.object({
   id: z.string(),
   catalog_item_id: z.string(),
@@ -212,6 +228,48 @@ export const reprintDocumentSchema = z.object({
   snapshot: z.unknown(),
 });
 
+export const syncStatusSchema = z.object({
+  total: z.number(),
+  pending: z.number(),
+  processing: z.number(),
+  sent: z.number(),
+  failed: z.number(),
+  suspended: z.number(),
+  oldest_pending_sequence_no: z.number().optional(),
+});
+
+export const outboxMessageSchema = z.object({
+  id: z.string(),
+  command_id: z.string(),
+  sequence_no: z.number(),
+  origin: z.string(),
+  aggregate_type: z.string(),
+  aggregate_id: z.string(),
+  command_type: z.string(),
+  sync_direction: z.string(),
+  status: z.enum(['pending', 'processing', 'sent', 'failed', 'suspended']),
+  attempts: z.number(),
+  last_error: optionalNullableString,
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const localEventSchema = z.object({
+  id: z.string(),
+  event_id: z.string(),
+  command_id: z.string(),
+  event_type: z.string(),
+  aggregate_type: z.string(),
+  aggregate_id: z.string(),
+  payload_json: z.string(),
+  occurred_at: z.string(),
+  created_at: z.string(),
+});
+
+export const retryFailedOutboxResultSchema = z.object({
+  retried: z.number(),
+});
+
 export type PairingStatus = z.infer<typeof pairingStatusSchema>;
 export type ProvisioningStatus = z.infer<typeof provisioningStatusSchema>;
 export type AuthSession = z.infer<typeof authSessionSchema>;
@@ -221,6 +279,7 @@ export type Hall = z.infer<typeof hallSchema>;
 export type RestaurantTable = z.infer<typeof tableSchema>;
 export type Shift = z.infer<typeof shiftSchema>;
 export type CashSession = z.infer<typeof cashSessionSchema>;
+export type CashDrawerEvent = z.infer<typeof cashDrawerEventSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;
 export type Order = z.infer<typeof orderSchema>;
 export type OrderLine = z.infer<typeof orderLineSchema>;
@@ -228,3 +287,7 @@ export type Precheck = z.infer<typeof precheckSchema>;
 export type Payment = z.infer<typeof paymentSchema>;
 export type Check = z.infer<typeof checkSchema>;
 export type ReprintDocument = z.infer<typeof reprintDocumentSchema>;
+export type SyncStatus = z.infer<typeof syncStatusSchema>;
+export type OutboxMessage = z.infer<typeof outboxMessageSchema>;
+export type LocalEvent = z.infer<typeof localEventSchema>;
+export type RetryFailedOutboxResult = z.infer<typeof retryFailedOutboxResultSchema>;

@@ -3,18 +3,23 @@ import { z } from 'zod';
 import { useAuthStore } from '../stores/auth';
 import {
   cashSessionSchema,
+  cashDrawerEventSchema,
   checkSchema,
   hallSchema,
+  localEventSchema,
   menuItemSchema,
   orderLineSchema,
   orderSchema,
+  outboxMessageSchema,
   pairingStatusSchema,
   provisioningStatusSchema,
   paymentSchema,
   pinLoginResultSchema,
   precheckSchema,
   reprintDocumentSchema,
+  retryFailedOutboxResultSchema,
   shiftSchema,
+  syncStatusSchema,
   tableSchema,
   type PinLoginResult,
 } from './schemas';
@@ -372,6 +377,22 @@ export function closeCashSession(cashSessionId: string, closingCashAmount: numbe
   });
 }
 
+export type CashDrawerEventType = 'cash_in' | 'cash_out' | 'no_sale' | 'cash_count';
+
+export function recordCashDrawerEvent(cashSessionId: string, eventType: CashDrawerEventType, amount: number, reason = '', note = '') {
+  return request('/cash-drawer-events', cashDrawerEventSchema, {
+    method: 'POST',
+    body: JSON.stringify({
+      cash_session_id: cashSessionId,
+      created_by_employee_id: actorId(),
+      event_type: eventType,
+      amount,
+      reason,
+      note,
+    }),
+  });
+}
+
 export function listHalls(restaurantId: string) {
   return request(`/halls?restaurant_id=${encodeURIComponent(restaurantId)}`, z.array(hallSchema));
 }
@@ -431,6 +452,13 @@ export function voidOrderLine(orderId: string, lineId: string, reason: string) {
   });
 }
 
+export function closeOrder(orderId: string) {
+  return request(`/orders/${encodeURIComponent(orderId)}/close`, orderSchema, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
 export function listPrechecksByOrder(orderId: string) {
   return request(`/orders/${encodeURIComponent(orderId)}/prechecks`, z.array(precheckSchema));
 }
@@ -478,6 +506,27 @@ export function getCheck(checkId: string) {
 
 export function reprintCheck(checkId: string) {
   return request(`/checks/${encodeURIComponent(checkId)}/reprint`, reprintDocumentSchema, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export function getSyncStatus() {
+  return request('/sync/status', syncStatusSchema);
+}
+
+export function listSyncOutbox(limit = 5) {
+  return request(`/sync/outbox?limit=${limit}`, z.array(outboxMessageSchema));
+}
+
+export function listLocalEvents(limit = 5, eventType = '') {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (eventType.trim()) query.set('event_type', eventType.trim());
+  return request(`/sync/local-events?${query}`, z.array(localEventSchema));
+}
+
+export function retryFailedOutbox() {
+  return request('/sync/retry-failed', retryFailedOutboxResultSchema, {
     method: 'POST',
     body: JSON.stringify({}),
   });

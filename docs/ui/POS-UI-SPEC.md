@@ -85,6 +85,15 @@ UI использует два идентификатора устройства
 
 - основной cashier terminal flow.
 
+Реализовано сейчас:
+
+- `/pos` использует touch-first трехзонную компоновку для all-in-one terminal: слева готовность личной/кассовой смены и выбор зала/стола, в центре активный заказ и позиции, справа поиск меню, пречек и оплата.
+- Меню отображается крупными плитками с локальным поиском по названию позиции; поиск является только UX-фильтром уже загруженного backend menu read model.
+- Столы отображаются крупными touch-карточками внутри выбранного зала; текущий UI показывает active tables из backend, но не делает выводы об occupancy beyond selected table/current order.
+- Статусы смены, кассовой смены, pairing, node и session вынесены в верхний service strip; это не меняет backend enforcement и не добавляет новые runtime endpoints.
+- Кассовые операции `cash_in`, `cash_out`, `no_sale`, `cash_count` доступны из блока кассового ящика при `pos.cash_drawer.record_event` и открытой кассовой смене.
+- Менеджерский sync-блок показывает `sync/status`, последние `sync/outbox`, последние `sync/local-events` и позволяет выполнить `sync/retry-failed` при соответствующих backend permission ids.
+
 Поддерживаемые блоки:
 
 - текущий оператор и session status;
@@ -92,6 +101,7 @@ UI использует два идентификатора устройства
 - open/close personal employee shift;
 - last personal employee shifts;
 - open/close cash shift;
+- запись событий кассового ящика;
 - halls list;
 - tables list;
 - active order by selected table;
@@ -104,8 +114,11 @@ UI использует два идентификатора устройства
 - reprint precheck copy при наличии `pos.precheck.reprint`;
 - cash payment;
 - trusted manual card payment;
+- закрытие полностью оплаченного заказа;
 - reprint final check copy при наличии `pos.check.reprint`;
 - final check display.
+- диагностика синхронизации для ролей с `pos.sync.view`;
+- retry failed sync для ролей с `pos.sync.retry_failed`.
 
 ### Lock
 
@@ -155,6 +168,9 @@ flowchart LR
 - prechecks by order;
 - menu items;
 - final check.
+- статус синхронизации;
+- строки sync outbox;
+- строки local event log.
 
 Реализовано сейчас:
 
@@ -163,6 +179,9 @@ flowchart LR
 - Оплата доступна только при открытой кассовой смене.
 - Оплата скрыта/заблокирована без `pos.payment.*`; waiter payment остается вне текущего объема.
 - Reprint precheck/check отображается только при соответствующих backend permissions и вызывает backend audit command.
+- События кассового ящика отображаются только при открытой кассовой смене и `pos.cash_drawer.record_event`; суммы отправляются в backend в minor units.
+- Закрытие заказа отображается только после полной оплаты backend check и `pos.order.close`.
+- Диагностика синхронизации отображается только при `pos.sync.view`, retry failed/suspended outbox rows - только при `pos.sync.retry_failed`.
 - visibility критичных действий в `/pos` привязана к backend permission ids (shift/cash/order/precheck/payment/floor/menu); backend остается final enforcement layer.
 - денежный ввод/показ в UI использует currency precision helper по ISO code и опирается на active ISO 4217 catalog (precision `0/2/3/4` по коду валюты).
 
@@ -232,6 +251,8 @@ flowchart LR
 - money conversion в UI на основе integer minor units с currency-dependent precision (`0/2/3/4` decimals).
 - business date приходит из backend API payloads; UI не вычисляет `business_date_local` самостоятельно.
 - controlled reprint copy для precheck/final check из backend immutable snapshot.
+- кассовые drawer-события для текущей открытой кассовой смены;
+- manager/support sync diagnostics без изменения Cloud-managed master data.
 
 ## Явно не поддерживается сейчас
 
