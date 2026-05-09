@@ -14,6 +14,8 @@ import (
 	"cloud-backend/internal/cloudsync/app"
 	"cloud-backend/internal/cloudsync/contracts"
 	syncpg "cloud-backend/internal/cloudsync/infra/postgres"
+	masterapp "cloud-backend/internal/masterdata/app"
+	masterpg "cloud-backend/internal/masterdata/infra/postgres"
 	"cloud-backend/internal/platform/clock"
 	"cloud-backend/internal/platform/logging"
 	platformpg "cloud-backend/internal/platform/postgres"
@@ -59,9 +61,11 @@ func run() error {
 
 	repo := syncpg.NewRepository(pool)
 	service := app.NewService(repo, clock.SystemClock{})
+	masterRepo := masterpg.NewRepository(pool)
+	masterService := masterapp.NewService(masterRepo, clock.SystemClock{}, masterapp.RandomIDGenerator{})
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewRouter(service),
+		Handler:           api.NewRouter(service, masterService),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

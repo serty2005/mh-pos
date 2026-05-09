@@ -15,13 +15,15 @@ import (
 
 	"cloud-backend/internal/cloudsync/app"
 	"cloud-backend/internal/cloudsync/contracts"
+	masterapi "cloud-backend/internal/masterdata/api"
+	masterapp "cloud-backend/internal/masterdata/app"
 )
 
 type Handler struct {
 	service *app.Service
 }
 
-func NewRouter(service *app.Service) http.Handler {
+func NewRouter(service *app.Service, masterServices ...*masterapp.Service) http.Handler {
 	h := &Handler{service: service}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -35,6 +37,9 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/sync/edge-events/batch", h.receiveEdgeEventBatch)
 		r.Put("/provisioning/master-data/{stream}", h.upsertMasterDataPackage)
 		r.Get("/provisioning/master-data/{stream}", h.getMasterDataPackage)
+		if len(masterServices) > 0 {
+			masterapi.RegisterRoutes(r, masterServices[0])
+		}
 	})
 	return r
 }

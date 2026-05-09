@@ -2,9 +2,9 @@
 
 ## Статус
 
-Реализовано сейчас: POS Edge отделяет Cloud-owned master data от Edge-owned operational data на HTTP boundary, application boundary, outbox metadata, SQLite schema metadata и в тестах.
+Реализовано сейчас: POS Edge отделяет Cloud-owned master data от Edge-owned operational data на HTTP boundary, application boundary, outbox metadata, SQLite schema metadata и в тестах. Cloud backend получил master-data authority foundation для сотрудников, ролей, каталога, меню и публикаций.
 
-Запланировано далее: Cloud-side master-data authoring UI и более строгая replacement policy для full snapshots.
+Запланировано далее: Cloud-side master-data authoring UI, pairing Edge Node из Cloud UI и более строгая replacement policy для full snapshots.
 
 Вне текущего объема: Kafka, distributed transactions, event sourcing as primary persistence, websocket sync и full Cloud projections.
 
@@ -17,10 +17,13 @@
 | Client device presence | Edge | Yes | Edge -> Cloud as device event foundation | local runtime registry |
 | Role | Cloud | No | Cloud -> Edge | local read model for permission checks |
 | Employee | Cloud | No | Cloud -> Edge | local read model for PIN auth |
+| Employee PIN credential | Cloud | No | Cloud -> Edge staff package | локальный credential hash для offline PIN auth |
 | Hall | Cloud | No | Cloud -> Edge | local read model for table selection |
 | Table | Cloud | No | Cloud -> Edge | local read model for order context |
 | Catalog item | Cloud | No | Cloud -> Edge | local read model for menu/recipes |
+| Dish/good/raw material/semi-finished foundation | Cloud | No | Cloud -> Edge catalog package | schema/domain foundation |
 | Menu item | Cloud | No | Cloud -> Edge | local read model for order lines |
+| Menu category/modifier/location assignment foundation | Cloud | No | Cloud -> Edge menu/catalog package | foundation будущей структуры меню |
 | Recipe version/line | Cloud | No | Cloud -> Edge | schema foundation |
 | Inventory reference/costs | Cloud | No | Cloud -> Edge | schema foundation |
 | Shift | Edge | Yes | Edge -> Cloud | transactional operational state |
@@ -61,6 +64,7 @@
 - Sender still sends only `edge_to_cloud` operational events and suspends wrong-direction rows.
 - Cloud-owned master tables include `cloud_version`, `cloud_updated_at`, `cloud_deleted_at` and `last_synced_at`.
 - `cloud_master_sync_state` stores Cloud -> Edge stream checkpoint state for full snapshot and incremental foundations.
+- Cloud backend хранит Cloud-authored employees, roles, catalog, menu и publication versions в PostgreSQL и генерирует sync-ready packages вместо модели "любое сохранение сразу live".
 
 ## Cloud -> Edge
 
@@ -74,11 +78,13 @@
 - master-data ingestion writes master rows and `cloud_master_sync_state` in the same transaction;
 - master-data ingestion does not create `local_event_log` or `pos_sync_outbox` rows;
 - local POS flow uses cached/read-model data and does not require Cloud online.
+- Cloud publication создает versioned packages для `staff`, `catalog` и `menu`; Edge применяет их через тот же ingest path и оставляет operational writes локальными.
 
 Запланировано далее:
 
 - full snapshot replacement policy per stream;
 - incremental update policy using `cloud_version` and `updated_at` checkpoints.
+- Cloud UI становится production authoring surface для заведения ресторана, сотрудников, ролей/PIN credentials, каталога и меню.
 
 ## Edge -> Cloud
 
@@ -107,6 +113,7 @@
 - Cloud-authored master data enters through `/api/v1/sync/master-data/snapshots` or `/api/v1/sync/master-data/{stream}`.
 - Read endpoints for master data remain available because POS must use the local read model offline.
 - `POST /api/v1/dev/bootstrap-demo` remains the supported local/demo bootstrap path.
+- `POST /api/v1/master-data/publications` on Cloud creates versioned package state; POS Edge never calls Cloud master-data mutation routes as runtime CRUD.
 
 ## Влияние на схему
 
@@ -124,3 +131,13 @@
 - Edge -> Cloud sender applies item-level ACK decisions from Cloud batch endpoint and preserves deterministic outbox transitions.
 - Cloud -> Edge provisioning packages are stored by stream and optional `node_device_id` for targeted import flows.
 - Operational projections are materialized in Cloud from `cloud_operational_events` ingestion pipeline without changing Edge runtime ownership.
+
+## Обновление master-data authority
+
+Реализовано сейчас:
+- Cloud владеет production master data для сотрудников, ролей, каталога и меню.
+- Employee lifecycle использует `active`, `suspended`, `archived`; после sync только active employees могут входить в POS.
+- Permission snapshot генерируется на Cloud-side для sync-safe POS usage.
+- PIN и `pin_hash` не возвращаются Cloud UI-facing API responses; `pin_hash` присутствует только в device/system staff package payload, нужном для offline PIN auth на Edge.
+- Catalog foundation разделяет catalog item kinds, dish/good/raw-material/semi-finished и recipe/modifier foundations.
+- Menu publication является versioned и deterministic; сохранения остаются draft до явной публикации.

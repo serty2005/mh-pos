@@ -130,7 +130,7 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 3 || files[0].Name != "001_sync_receiver.sql" || files[1].Name != "002_projection_event_type_stats.sql" || files[2].Name != "003_runtime_schema_repair.sql" {
+	if len(files) != 4 || files[0].Name != "001_sync_receiver.sql" || files[1].Name != "002_projection_event_type_stats.sql" || files[2].Name != "003_runtime_schema_repair.sql" || files[3].Name != "004_master_data_authority.sql" {
 		t.Fatalf("expected ordered managed migrations, got %+v", files)
 	}
 	baseBody := string(files[0].Body)
@@ -155,6 +155,17 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 	} {
 		if !strings.Contains(repairBody, required) {
 			t.Fatalf("expected runtime schema repair migration to manage %s", required)
+		}
+	}
+	masterDataBody := string(files[3].Body)
+	for _, required := range []string{
+		"cloud_employees",
+		"cloud_catalog_items",
+		"cloud_menu_items",
+		"cloud_master_data_publications",
+	} {
+		if !strings.Contains(masterDataBody, required) {
+			t.Fatalf("expected master-data authority migration to manage %s", required)
 		}
 	}
 }

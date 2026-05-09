@@ -41,6 +41,8 @@ POS sender содержит direction gate. Если строка `pos_sync_outb
 
 Реализовано сейчас: Cloud -> Edge state хранится на Edge в `cloud_master_sync_state` и sync metadata columns master tables (`cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at`).
 
+Реализовано сейчас: Cloud backend формирует versioned master-data publications для `staff`, `catalog` и `menu`. Publication не является runtime CRUD event: это deterministic package/snapshot state с `cloud_version`, `checkpoint_token`, `cloud_updated_at`, `published_at` и `published_by`.
+
 ## Cloud -> Edge master-data ingest
 
 Реализовано сейчас: POS Edge принимает Cloud-authored full snapshot или incremental payload.
@@ -103,6 +105,35 @@ Response body:
 Реализовано сейчас: stream apply order внутри multi-stream snapshot идет как restaurants, devices, staff, floor, catalog, menu, чтобы SQLite foreign keys могли быть удовлетворены тем же payload.
 
 Реализовано сейчас: для `full_snapshot` POS Edge выполняет pre-validation payload, затем SQLite online backup, затем transaction apply master rows и `cloud_master_sync_state`. Ошибка backup завершает request fail-fast без частичного apply. Backup directory задается `POS_SQLITE_BACKUP_DIR`; default находится рядом с SQLite DB в `backups`.
+
+## Cloud publication package shape
+
+Реализовано сейчас: Cloud master-data authority создает packages по stream, совместимые с POS Edge ingest:
+
+```json
+{
+  "node_device_id": "optional-target-node",
+  "restaurant_id": "restaurant-id",
+  "sync_mode": "incremental",
+  "checkpoint_token": "master-data:restaurant-id:1",
+  "cloud_version": 1,
+  "cloud_updated_at": "2026-05-09T10:00:00Z",
+  "roles": [],
+  "employees": [],
+  "catalog_items": [],
+  "menu_items": []
+}
+```
+
+Stream-specific packages:
+
+- `staff`: `roles`, `employees`;
+- `catalog`: `catalog_items`, `categories`;
+- `menu`: `menu_items`.
+
+Реализовано сейчас: Cloud UI-facing employee/publication API responses не возвращают PIN и `pin_hash`. Staff package для device/system delivery содержит `pin_hash`, потому что POS Edge должен выполнять offline PIN verification локально. Этот package не является frontend business decision surface.
+
+Реализовано сейчас: publication package generation является deterministic по stable ordering IDs и versioned `cloud_version`. Обычные сохранения сотрудников/каталога/меню не становятся live на POS Edge до явной publication.
 
 ## POS Sender
 
@@ -297,6 +328,7 @@ Ack стабилен при replay: повторный POST того же envelo
   - `PUT /api/v1/provisioning/master-data/{stream}`
   - `GET /api/v1/provisioning/master-data/{stream}?node_device_id=...`
 - Cloud хранит provisioning payloads в `cloud_master_data_packages`.
+- Cloud master-data authority создает versioned publications и обновляет `cloud_master_data_packages` для `staff`, `catalog`, `menu`.
 - Provisioning stream catalog на Cloud включает: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `currencies`.
 - `currencies` stream payload использует canonical active ISO 4217 catalog (`currency_code`, `currency_alpha_code`, `minor_unit`, display flags) и валидируется до apply.
 - POS Edge реализует Cloud -> Edge master-data ingest streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`.

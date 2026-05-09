@@ -89,6 +89,17 @@
 - POS Edge создает recoverable SQLite online backup перед применением Cloud -> Edge `full_snapshot` master-data import; `incremental` ingest backup не создает.
 - Cloud -> Edge master-data import по умолчанию является `incremental`; `full_snapshot` разрешен только при явной причине `terminal_restaurant_changed` или `node_role_changed`.
 
+### Cloud-authored master data foundation
+
+Статус: `выполнено`
+
+- Cloud PostgreSQL получил schema foundation для ролей, сотрудников, employee PIN credential metadata, catalog items, dishes, goods/raw materials, semi-finished products, recipe foundation, categories, modifier foundation, menu items, menu assignments и versioned publications.
+- Cloud API foundation подготовлен для будущего `cloud-ui`: создание/обновление сотрудников, suspend/archive, role assignment, PIN rotation, создание/обновление catalog/menu entities, publication и чтение текущего published state.
+- Employee lifecycle зафиксирован как `active`, `suspended`, `archived`; `suspended`/`archived` не должны становиться active POS login read model после sync.
+- Cloud UI-facing API responses не возвращают PIN или `pin_hash`; `pin_hash` остается только в staff package для offline PIN auth на Edge.
+- Publication workflow создает deterministic packages для `staff`, `catalog`, `menu`, хранит `version`, `cloud_version`, `published_at`, `published_by`, `package_sha256` и обновляет Cloud -> Edge provisioning storage.
+- POS Edge остается offline read-model consumer и не получает production CRUD API для справочников.
+
 ### Security hardening
 
 Статус: `выполнено`
@@ -140,7 +151,7 @@
 - явно зафиксировать scope повторной печати;
 - зафиксировать `business_date_local` как закрытый backend-owned инвариант, а не pilot blocker;
 - явно решить минимальную модель `Pricing` перед MVP;
-- явно решить минимум `Catalog` modifiers/POS category перед MVP;
+- явно решить расширение `Catalog` modifiers/POS category после foundation;
 - явно решить, остается ли `Inventory` foundation schema-only или получает app services перед MVP.
 
 ### Documentation freeze

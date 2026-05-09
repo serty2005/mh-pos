@@ -37,6 +37,7 @@ Cloud не является runtime dependency для:
 - Если PostgreSQL `schema_migrations` отсутствует или содержит старую запись без checksum, startup повторно применяет idempotent managed SQL files, чтобы создать недостающие implemented-now runtime tables до schema verification.
 - `002_projection_event_type_stats.sql` создает `cloud_projection_event_type_stats`, потому что Cloud receiver runtime upsert'ит event type stats при приеме Edge events.
 - `003_runtime_schema_repair.sql` idempotent-образом создает отсутствующие implemented-now Cloud runtime tables, включая `cloud_projection_shift_finance`, если старая БД уже записала ранние migrations в history.
+- `004_master_data_authority.sql` создает Cloud-owned master-data authority foundation: roles, employees, employee credential metadata, catalog items, dishes, goods/raw materials, semi-finished products, recipe foundation, categories, modifier foundation, menu items, menu assignments и versioned publications.
 - Перед safe schema/data upgrade существующей PostgreSQL схемы создается JSONL snapshot таблиц `public` в `CLOUD_POSTGRES_BACKUP_DIR`.
 - `schema_migrations` хранит имя active SQL file, SHA-256 checksum, status и `applied_at`; checksum drift при той же версии завершает startup fail-fast, а при `db version < MH_POS_VERSION` применяется как управляемый upgrade.
 - `DB version > MH_POS_VERSION` завершает startup fail-fast, downgrade не поддерживается.
@@ -97,6 +98,8 @@ Order -> Precheck -> Payment -> Check
 - `GET /api/v1/menu/items`
 
 Реализовано сейчас: halls, tables, catalog и menu являются Cloud-owned master data. Public Edge runtime writes к этим сущностям возвращают `403 Forbidden`; local/demo setup использует `POST /api/v1/dev/bootstrap-demo`.
+
+Реализовано сейчас: сотрудники, роли, catalog items, categories и menu items имеют Cloud-authored foundation в `cloud-backend`. POS Edge не является production-местом создания и редактирования этих справочников; он хранит локальную read model для offline PIN login, RBAC checks, menu/catalog reads и order line creation.
 
 ### Смены и касса
 
@@ -210,6 +213,35 @@ Payload accepts `node_device_id`, optional `restaurant_id`, `sync_mode` (`increm
 - `POST /api/v1/menu/items`
 
 Эти routes больше не являются runtime-supported Edge mutation flow. Реализовано сейчас: HTTP layer держит их как dev-only seed/admin helpers за `POS_DEV_TOOLS=1`; без dev tools они возвращают `403 Forbidden`. В dev mode handler использует origin `system_seed`. Production Cloud-authored master data должна входить через `POST /api/v1/sync/master-data/snapshots` или `POST /api/v1/sync/master-data/{stream}` с origin `cloud_sync`.
+
+### Cloud master-data authority endpoints
+
+Реализовано сейчас: Cloud backend содержит production-oriented API foundation для будущего `cloud-ui`:
+
+```text
+POST  /api/v1/master-data/roles
+POST  /api/v1/master-data/employees
+PATCH /api/v1/master-data/employees/{id}
+POST  /api/v1/master-data/employees/{id}/suspend
+POST  /api/v1/master-data/employees/{id}/archive
+POST  /api/v1/master-data/employees/{id}/role
+POST  /api/v1/master-data/employees/{id}/pin
+POST  /api/v1/master-data/catalog/items
+PATCH /api/v1/master-data/catalog/items/{id}
+POST  /api/v1/master-data/menu/categories
+POST  /api/v1/master-data/menu/items
+PATCH /api/v1/master-data/menu/items/{id}
+POST  /api/v1/master-data/publications
+GET   /api/v1/master-data/published?restaurant_id=...
+```
+
+Реализовано сейчас: employee lifecycle states - `active`, `suspended`, `archived`. `suspended` и `archived` сотрудники попадают на POS Edge как inactive для PIN login. Role assignment обновляет permission snapshot, чтобы Edge мог безопасно работать offline. PIN rotation обновляет credential version; Cloud UI API responses не возвращают PIN и `pin_hash`.
+
+Реализовано сейчас: catalog foundation не сводится к плоской одной таблице. Cloud schema разделяет `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_recipe_items`; menu foundation хранит lifecycle `draft` / `published` / `archived`, price, category placement, availability, основу будущего station routing, будущих modifiers и будущих location assignments.
+
+Реализовано сейчас: publication workflow не делает любое сохранение live. `POST /api/v1/master-data/publications` создает versioned publication (`version`, `published_at`, `published_by`, `cloud_version`, `package_sha256`) и deterministic packages для `staff`, `catalog`, `menu`, которые сохраняются в `cloud_master_data_packages` для Cloud -> Edge delivery.
+
+Запланировано далее: `cloud-ui`, авторизация Cloud API, full restaurant onboarding flow, pairing Edge Node из Cloud UI и расширение publication/replacement policy.
 
 ## Policy compatibility-хвостов
 

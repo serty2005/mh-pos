@@ -1,6 +1,6 @@
 # MyHoReCa Cloud Backend
 
-Минимальный Cloud Sync Receiver для POS/RMS платформы.
+Cloud backend для POS/RMS платформы: прием Edge operational events, PostgreSQL runtime projections и foundation Cloud-authored master data.
 
 Текущий scope:
 
@@ -12,6 +12,9 @@
 - хранение raw envelope;
 - operational event journal в PostgreSQL (`cloud_operational_events`);
 - deterministic runtime projections для event type stats и shift finance foundation.
+- реализовано сейчас: Cloud-owned schema и API foundation для сотрудников, ролей, catalog items, categories, menu items и versioned master-data publications;
+- реализовано сейчас: publication workflow создает deterministic Cloud -> Edge packages для stream `staff`, `catalog`, `menu` и сохраняет их в `cloud_master_data_packages`;
+- реализовано сейчас: Cloud UI API responses по сотрудникам и публикациям не возвращают PIN и `pin_hash`; PIN hash присутствует только внутри sync-ready staff package для device/system delivery на Edge.
 
 ## Запуск
 
@@ -40,13 +43,42 @@ MH_POS_VERSION=0.1.1
 
 `CLOUD_POSTGRES_DSN` обязателен.
 
-implemented now: PostgreSQL использует ordered managed migrations из `migrations/postgres`: `001_sync_receiver.sql` задает baseline receiver storage, `002_projection_event_type_stats.sql` создает/ремонтирует required runtime projection table `cloud_projection_event_type_stats`, `003_runtime_schema_repair.sql` довыравнивает весь implemented-now runtime schema set для старых БД.
-implemented now: `schema_migrations` хранит имя SQL file, checksum и status; уже примененные migrations не выполняются повторно, а новая ordered migration записывается в history после успешного apply.
-implemented now: если `schema_migrations` отсутствует, содержит старую запись без checksum или не имеет новой ordered repair migration, Cloud применяет idempotent managed SQL, довыравнивает недостающие runtime-таблицы и только после успешного apply записывает checksum/status.
-implemented now: startup policy использует `db_runtime_versions`; если таблица версий отсутствует, БД считается самой старой, перед safe upgrade существующей схемы создается JSONL backup snapshot таблиц `public`, а `DB version > MH_POS_VERSION` завершает startup fail-fast.
-implemented now: schema verification проверяет только required runtime storage, включая `cloud_projection_event_type_stats`, `cloud_projection_shift_finance`, receiver journal/raw payload tables, provisioning packages и currency reference catalog.
-planned next: projection query endpoints для dashboards не блокируют startup verification.
-out of scope: ручной SQL repair вне startup migration framework; для local/dev recovery предпочтительно пересоздать БД или запустить приложение с корректным `CLOUD_POSTGRES_MIGRATIONS_DIR`.
+Реализовано сейчас: PostgreSQL использует ordered managed migrations из `migrations/postgres`: `001_sync_receiver.sql` задает baseline receiver storage, `002_projection_event_type_stats.sql` создает/ремонтирует required runtime projection table `cloud_projection_event_type_stats`, `003_runtime_schema_repair.sql` довыравнивает весь required receiver/projection/provisioning schema set для старых БД, `004_master_data_authority.sql` добавляет Cloud-owned master-data authority schema.
+Реализовано сейчас: `schema_migrations` хранит имя SQL file, checksum и status; уже примененные migrations не выполняются повторно, а новая ordered migration записывается в history после успешного apply.
+Реализовано сейчас: если `schema_migrations` отсутствует, содержит старую запись без checksum или не имеет новой ordered repair migration, Cloud применяет idempotent managed SQL, довыравнивает недостающие runtime-таблицы и только после успешного apply записывает checksum/status.
+Реализовано сейчас: startup policy использует `db_runtime_versions`; если таблица версий отсутствует, БД считается самой старой, перед safe upgrade существующей схемы создается JSONL backup snapshot таблиц `public`, а `DB version > MH_POS_VERSION` завершает startup fail-fast.
+Реализовано сейчас: schema verification проверяет required runtime storage, включая receiver journal/raw payload tables, projection tables, provisioning packages, currency reference catalog и Cloud master-data authority tables.
+Запланировано далее: projection query endpoints для dashboards не блокируют startup verification.
+Вне текущего объема: ручной SQL repair вне startup migration framework; для local/dev recovery предпочтительно пересоздать БД или запустить приложение с корректным `CLOUD_POSTGRES_MIGRATIONS_DIR`.
+
+## Master Data Authority
+
+Реализовано сейчас: Cloud является источником истины для production-oriented справочников сотрудников, ролей, каталога и меню. POS Edge не становится production CRUD для этих сущностей; Edge получает published state через Cloud -> Edge package/snapshot delivery и использует локальную read model offline.
+
+Cloud master-data API foundation для будущего `cloud-ui`:
+
+```text
+POST  /api/v1/master-data/roles
+POST  /api/v1/master-data/employees
+PATCH /api/v1/master-data/employees/{id}
+POST  /api/v1/master-data/employees/{id}/suspend
+POST  /api/v1/master-data/employees/{id}/archive
+POST  /api/v1/master-data/employees/{id}/role
+POST  /api/v1/master-data/employees/{id}/pin
+POST  /api/v1/master-data/catalog/items
+PATCH /api/v1/master-data/catalog/items/{id}
+POST  /api/v1/master-data/menu/categories
+POST  /api/v1/master-data/menu/items
+PATCH /api/v1/master-data/menu/items/{id}
+POST  /api/v1/master-data/publications
+GET   /api/v1/master-data/published?restaurant_id=...
+```
+
+Реализовано сейчас: publication endpoint не делает каждое сохранение live. Он создает versioned publication (`version`, `cloud_version`, `published_at`, `published_by`, `package_sha256`) и deterministic packages для `staff`, `catalog`, `menu`. Generated packages сохраняются в `cloud_master_data_packages`, после чего Edge может получить их через существующий provisioning/import path.
+
+Реализовано сейчас: employee lifecycle поддерживает `active`, `suspended`, `archived`; role assignment обновляет permission snapshot для sync-safe POS usage; PIN rotation увеличивает credential version. API responses не возвращают PIN или `pin_hash`.
+
+Реализовано сейчас: catalog foundation разделяет `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_recipe_items`, `cloud_modifier_groups`, `cloud_modifier_options`; menu foundation хранит draft/published/archived lifecycle, price, category placement, availability, основу будущего station routing и будущих multi-location assignments.
 
 ## Локальный smoke test receiver-а
 
@@ -98,7 +130,7 @@ Invoke-RestMethod -Method Post http://localhost:8090/api/v1/sync/edge-events -Co
 Invoke-RestMethod -Method Post http://localhost:8090/api/v1/sync/edge-events -ContentType "application/json" -Body $body
 ```
 
-Повторный duplicate replay возвращает тот же стабильный ack. implemented now: Cloud хранит raw accepted envelopes, append-safe operational event journal и минимальные deterministic projections для runtime ingestion. planned next: richer projection query APIs.
+Повторный duplicate replay возвращает тот же стабильный ack. Реализовано сейчас: Cloud хранит raw accepted envelopes, append-safe operational event journal и минимальные deterministic projections для runtime ingestion. Запланировано далее: richer projection query APIs.
 
 ## Локальный E2E Prototype: получить pairing code и войти в POS UI
 
@@ -143,7 +175,7 @@ go test ./...
 
 ## Sync API update 2026-05-07
 
-implemented now endpoints:
+Реализовано сейчас endpoints:
 - `POST /api/v1/sync/edge-events`
 - `POST /api/v1/sync/edge-events/batch` (item-level ACK)
 - `PUT /api/v1/provisioning/master-data/{stream}` (store Cloud -> Edge package)
@@ -151,7 +183,7 @@ implemented now endpoints:
 
 `sync_mode` по умолчанию считается `incremental`. `full_snapshot` package принимается только с `full_snapshot_reason = terminal_restaurant_changed` или `node_role_changed`.
 
-implemented now storage:
+Реализовано сейчас storage:
 - `cloud_projection_event_type_stats`
 - `cloud_projection_shift_finance`
 - `cloud_master_data_packages`
