@@ -12,8 +12,9 @@ Cloud backend для POS/RMS платформы: прием Edge operational eve
 - хранение raw envelope;
 - operational event journal в PostgreSQL (`cloud_operational_events`);
 - deterministic runtime projections для event type stats и shift finance foundation.
-- реализовано сейчас: Cloud-owned production-oriented CRUD API для ресторанов, ролей, сотрудников/PIN credentials, catalog items, menu items и versioned master-data publications;
-- реализовано сейчас: publication workflow создает deterministic Cloud -> Edge packages для stream `restaurants`, `staff`, `catalog`, `menu` и сохраняет их в `cloud_master_data_packages`;
+- реализовано сейчас: Cloud-owned production-oriented CRUD API для ресторанов, залов/столов, ролей, сотрудников/PIN credentials, catalog items, menu items и versioned master-data publications;
+- реализовано сейчас: publication workflow создает deterministic Cloud -> Edge packages для stream `restaurants`, `staff`, `floor`, `catalog`, `menu` и сохраняет их в `cloud_master_data_packages`;
+- реализовано сейчас: device provisioning поддерживает Cloud Approve и License Code flow для чистого подключения POS Edge без dev bootstrap;
 - реализовано сейчас: Cloud UI API responses по сотрудникам и публикациям не возвращают PIN и `pin_hash`; PIN hash присутствует только внутри sync-ready staff package для device/system delivery на Edge.
 
 ## Запуск
@@ -38,12 +39,14 @@ go run ./cmd/cloud-api
 CLOUD_HTTP_ADDR=:8090
 CLOUD_POSTGRES_MIGRATIONS_DIR=migrations/postgres
 CLOUD_POSTGRES_BACKUP_DIR=data/cloud-backups
+CLOUD_PUBLIC_URL=http://localhost:8090
+LICENSE_SERVER_URL=http://localhost:8095
 MH_POS_VERSION=0.1.1
 ```
 
 `CLOUD_POSTGRES_DSN` обязателен.
 
-Реализовано сейчас: PostgreSQL использует ordered managed migrations из `migrations/postgres`: `001_sync_receiver.sql` задает baseline receiver storage, `002_projection_event_type_stats.sql` создает/ремонтирует required runtime projection table `cloud_projection_event_type_stats`, `003_runtime_schema_repair.sql` довыравнивает весь required receiver/projection/provisioning schema set для старых БД, `004_master_data_authority.sql` добавляет Cloud-owned master-data authority schema, `005_master_data_restaurants_api.sql` добавляет `cloud_restaurants`, cloud-version metadata и partial unique SKU policy для неархивных catalog items.
+Реализовано сейчас: PostgreSQL использует ordered managed migrations из `migrations/postgres`: `001_sync_receiver.sql` задает baseline receiver storage, `002_projection_event_type_stats.sql` создает/ремонтирует required runtime projection table `cloud_projection_event_type_stats`, `003_runtime_schema_repair.sql` довыравнивает весь required receiver/projection/provisioning schema set для старых БД, `004_master_data_authority.sql` добавляет Cloud-owned master-data authority schema, `005_master_data_restaurants_api.sql` добавляет `cloud_restaurants`, cloud-version metadata и partial unique SKU policy для неархивных catalog items, `006_zero_to_cashier_provisioning.sql` добавляет Cloud halls/tables и device provisioning таблицы.
 Реализовано сейчас: `schema_migrations` хранит имя SQL file, checksum и status; уже примененные migrations не выполняются повторно, а новая ordered migration записывается в history после успешного apply.
 Реализовано сейчас: если `schema_migrations` отсутствует, содержит старую запись без checksum или не имеет новой ordered repair migration, Cloud применяет idempotent managed SQL, довыравнивает недостающие runtime-таблицы и только после успешного apply записывает checksum/status.
 Реализовано сейчас: startup policy использует `db_runtime_versions`; если таблица версий отсутствует, БД считается самой старой, перед safe upgrade существующей схемы создается JSONL backup snapshot таблиц `public`, а `DB version > MH_POS_VERSION` завершает startup fail-fast.
@@ -77,6 +80,14 @@ POST  /api/v1/employees/{id}/activate
 POST  /api/v1/employees/{id}/archive
 POST  /api/v1/employees/{id}/pin
 POST  /api/v1/employees/{id}/pin/rotate
+POST  /api/v1/halls
+GET   /api/v1/halls?restaurant_id=...
+PATCH /api/v1/halls/{id}
+POST  /api/v1/halls/{id}/archive
+POST  /api/v1/tables
+GET   /api/v1/tables?restaurant_id=...
+PATCH /api/v1/tables/{id}
+POST  /api/v1/tables/{id}/archive
 POST  /api/v1/catalog/items
 GET   /api/v1/catalog/items?restaurant_id=...
 GET   /api/v1/catalog/items/{id}
@@ -96,13 +107,36 @@ GET   /api/v1/restaurants/{id}/edge-nodes/{node_device_id}/master-data/snapshot
 
 Совместимые legacy/foundation routes `/api/v1/master-data/...` сохранены для текущих тестов и low-level сценариев, но новый production onboarding path документируется через top-level routes выше.
 
-Реализовано сейчас: publication endpoint не делает каждое сохранение live. Он создает versioned publication (`version`, `cloud_version`, `published_at`, `published_by`, `package_sha256`) и deterministic packages для `restaurants`, `staff`, `catalog`, `menu`. Generated packages сохраняются в `cloud_master_data_packages`, после чего Edge может получить их через provisioning/import path или через Edge-ready snapshot endpoint.
+Реализовано сейчас: publication endpoint не делает каждое сохранение live. Он создает versioned publication (`version`, `cloud_version`, `published_at`, `published_by`, `package_sha256`) и deterministic packages для `restaurants`, `staff`, `floor`, `catalog`, `menu`. Generated packages сохраняются в `cloud_master_data_packages`, после чего Edge может получить их через provisioning/import path или через Edge-ready snapshot endpoint.
 
 Реализовано сейчас: employee lifecycle поддерживает `active`, `suspended`, `archived`; role assignment обновляет permission snapshot для sync-safe POS usage; PIN rotation увеличивает credential version. API responses не возвращают PIN или `pin_hash`.
 
 Реализовано сейчас: catalog foundation разделяет `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_recipe_items`, `cloud_modifier_groups`, `cloud_modifier_options`; menu foundation хранит draft/published/archived lifecycle, price, category placement, availability, основу будущего station routing и будущих multi-location assignments. Cloud catalog type `semi_finished` публикуется в текущий POS Edge-compatible catalog stream как `ingredient`; это совместимое foundation-решение до отдельного расширения Edge ingest enum.
 
-Реализовано сейчас: raw PIN и `pin_hash` не возвращаются Cloud UI-facing API responses. API responses используют безопасное `pin_configured`; `pin_hash` присутствует только в device/system snapshot package для offline PIN auth на POS Edge. Повтор PIN у нескольких active employees в одном ресторане отклоняется на Cloud-side как conflict.
+Реализовано сейчас: raw PIN и `pin_hash` не возвращаются Cloud UI-facing API responses. API responses используют безопасное `pin_configured`; `pin_hash` присутствует только в device/system snapshot package для offline PIN auth на POS Edge. PIN должен быть уникален в рамках ресторана среди всех сотрудников не в статусе `archived`; `active` и `suspended` сотрудники удерживают PIN, archived сотрудник не блокирует повторное использование. При нарушении API возвращает `409` с `X-Error-Code: PIN_ALREADY_EXISTS`.
+
+## Device Provisioning
+
+Реализовано сейчас: Cloud API возвращает безопасный error envelope `{ "error": { "code", "message_key", "details", "correlation_id" } }` и всегда выставляет `X-Error-Code` для ошибок.
+
+Option A, Cloud Approve:
+
+```text
+POST /api/v1/devices/register
+GET  /api/v1/devices/unassigned
+POST /api/v1/restaurants/{restaurant_id}/devices/{node_device_id}/assign
+GET  /api/v1/devices/{node_device_id}/assignment-status
+```
+
+`assign` проверяет active restaurant, создает/обновляет assigned edge node, при необходимости публикует master-data и возвращает snapshot URL. `assignment-status` после назначения возвращает `restaurant_id`, `cloud_url`, snapshot URL и одноразовый node token; Cloud хранит только hash/verifier.
+
+Option B, License Server Code:
+
+```text
+POST /api/v1/restaurants/{restaurant_id}/devices/generate-pairing-code
+```
+
+Cloud генерирует короткий одноразовый code и node token, сохраняет hashes, регистрирует code в `LICENSE_SERVER_URL` и возвращает plaintext code только в response. Если License Server недоступен, возвращается `503 LICENSE_SERVER_UNAVAILABLE`.
 
 Вне текущего объема: production authorization perimeter Cloud API. Текущие endpoints предназначены для dev/pilot perimeter и не смешиваются с POS operator auth.
 

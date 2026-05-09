@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"pos-backend/internal/pos/api"
 	"pos-backend/internal/pos/app"
 	poscloudsync "pos-backend/internal/pos/infra/cloudsync"
+	posprovisioninghttp "pos-backend/internal/pos/infra/provisioninghttp"
 	possqlite "pos-backend/internal/pos/infra/sqlite"
 	"pos-backend/internal/pos/syncsender"
 )
@@ -38,6 +40,12 @@ func run() error {
 	migrationsDir := env("POS_SQLITE_MIGRATIONS_DIR", "migrations/sqlite")
 	backupDir := env("POS_SQLITE_BACKUP_DIR", "data/backups")
 	moduleVersion := version.Resolve("MH_POS_VERSION")
+	rawCloudURL := env("POS_CLOUD_SYNC_URL", "")
+	cloudProvisioningURL := rawCloudURL
+	if strings.HasSuffix(cloudProvisioningURL, "/api/v1/sync/edge-events") {
+		cloudProvisioningURL = strings.TrimSuffix(cloudProvisioningURL, "/api/v1/sync/edge-events")
+	}
+	licenseURL := env("LICENSE_SERVER_URL", "")
 
 	db, err := platformsqlite.Open(dbPath)
 	if err != nil {
@@ -57,6 +65,10 @@ func run() error {
 	repo := possqlite.NewRepository(db)
 	tx := platformsqlite.NewTxManager(db)
 	service := app.NewServiceWithOptions(repo, tx, idgen.UUIDGenerator{}, clock.SystemClock{}, app.ServiceOptions{
+		CloudProvisioningURL:      cloudProvisioningURL,
+		LicenseServerURL:          licenseURL,
+		CloudProvisioningClient:   posprovisioninghttp.NewCloudClient(10 * time.Second),
+		LicenseProvisioningClient: posprovisioninghttp.NewLicenseClient(10 * time.Second),
 		MasterDataBackupBeforeFullSnapshot: func(ctx context.Context, req app.MasterDataBackupRequest) error {
 			_, err := platformsqlite.BackupDatabase(ctx, db, dbPath, backupDir, platformsqlite.BackupOptions{
 				Action:         "backup_before_data_load",
@@ -78,7 +90,7 @@ func run() error {
 	}
 
 	if envBool("POS_SYNC_SENDER_ENABLED", true) {
-		cloudEndpoint := env("POS_CLOUD_SYNC_URL", "http://localhost:8090/api/v1/sync/edge-events")
+		cloudEndpoint := syncEndpoint(rawCloudURL)
 		worker := syncsender.NewWorker(service, poscloudsync.NewClient(cloudEndpoint), syncsender.Config{
 			WorkerID:     env("POS_SYNC_SENDER_ID", "pos-sync-sender-main"),
 			BatchSize:    envInt("POS_SYNC_SENDER_BATCH_SIZE", 25),
@@ -89,6 +101,21 @@ func run() error {
 		go worker.Run(rootCtx)
 	} else {
 		slog.Info("POS sync sender disabled")
+	}
+
+	if cloudProvisioningURL != "" {
+		go func() {
+			ticker := time.NewTicker(envDuration("POS_PROVISIONING_POLL_INTERVAL", 3*time.Second))
+			defer ticker.Stop()
+			for {
+				select {
+				case <-rootCtx.Done():
+					return
+				case <-ticker.C:
+					_, _ = service.RegisterCloudProvisioning(rootCtx, app.RegisterCloudProvisioningCommand{CloudURL: cloudProvisioningURL, DisplayName: env("POS_EDGE_DISPLAY_NAME", "POS Terminal"), AppVersion: moduleVersion})
+				}
+			}
+		}()
 	}
 
 	go func() {
@@ -113,6 +140,17 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func syncEndpoint(rawCloudURL string) string {
+	if rawCloudURL == "" {
+		return "http://localhost:8090/api/v1/sync/edge-events"
+	}
+	trimmed := strings.TrimRight(rawCloudURL, "/")
+	if strings.HasSuffix(trimmed, "/api/v1/sync/edge-events") {
+		return trimmed
+	}
+	return trimmed + "/api/v1/sync/edge-events"
 }
 
 func envBool(key string, fallback bool) bool {

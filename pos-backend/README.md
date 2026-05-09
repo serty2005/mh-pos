@@ -17,9 +17,9 @@ Order -> Precheck -> Payment -> Check
 Граница auth/device:
 
 - operator/business flows требуют active employee session, `actor_employee_id`, `session_id`, matching `client_device_id` и permissions там, где нужны;
-- system/device flows (`sync`, `system/pair`, pairing status, будущие diagnostics/hardware callbacks) не требуют employee session;
+- system/device flows (`sync`, `system/pair`, pairing status, provisioning status/register/license, будущие diagnostics/hardware callbacks) не требуют employee session;
 - lock screen = backend logout через `POST /api/v1/auth/logout`; session становится `revoked`, новый PIN login создает новую session;
-- `node_device_id` обозначает POS Edge Backend / Edge Node и приходит через pairing;
+- `node_device_id` обозначает POS Edge Backend / Edge Node; на чистом Edge он генерируется один раз, сохраняется локально и затем подтверждается Cloud provisioning/pairing;
 - `client_device_id` обозначает frontend-клиент, в MVP генерируется `pos-ui` и auto-registers на Edge;
 - `device_id` остается domain/storage field для POS Edge node identity в operational payload; новый transport contract использует явные `node_device_id` и `client_device_id`.
 
@@ -27,7 +27,7 @@ Sync/outbox foundation поддерживает retry-safe состояние о
 
 Реализовано сейчас: master/reference/configuration data является Cloud-owned. POS Edge хранит локальную read model для offline POS flow, но Edge runtime не редактирует restaurants, devices metadata, roles, employees, halls, tables, catalog, menu, recipes и inventory reference data. Cloud-authored master data применяется через `POST /api/v1/sync/master-data/snapshots` или `POST /api/v1/sync/master-data/{stream}` с origin `cloud_sync`; dev seed/admin mutation routes требуют `POS_DEV_TOOLS=1` и используют `system_seed`. Ownership matrix: `../docs/sync/directional-sync-ownership.md`.
 
-Реализовано сейчас: production path для ресторанов, сотрудников, ролей, каталога и меню - Cloud CRUD API, Cloud-authored publication/package, затем Cloud -> Edge ingest. POS Edge остается offline read-model consumer; local/demo bootstrap и mutation helpers нужны только для dev/local smoke flow.
+Реализовано сейчас: production path для ресторанов, сотрудников, ролей, залов/столов, каталога и меню - Cloud CRUD API, Cloud-authored publication/package, затем Cloud -> Edge ingest. POS Edge остается offline read-model consumer; local/demo bootstrap и mutation helpers нужны только для dev/local smoke flow.
 
 Проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. SQLite clean install использует managed baseline `migrations/sqlite/001_init.sql`, а старые pre-pilot БД довыравниваются ordered repair migration `002_runtime_schema_repair.sql`; runtime version/checksum metadata создается кодом startup framework.
 
@@ -102,7 +102,8 @@ $env:POS_SQLITE_MIGRATIONS_DIR="migrations/sqlite"
 $env:POS_SQLITE_BACKUP_DIR="data/backups"
 $env:MH_POS_VERSION="0.1.1"
 $env:POS_SYNC_SENDER_ENABLED="true"
-$env:POS_CLOUD_SYNC_URL="http://localhost:8090/api/v1/sync/edge-events"
+$env:POS_CLOUD_SYNC_URL="http://localhost:8090" # можно также указать legacy sender endpoint .../api/v1/sync/edge-events
+$env:LICENSE_SERVER_URL="http://localhost:8095"
 $env:POS_SYNC_SENDER_BATCH_SIZE="25"
 $env:POS_SYNC_SENDER_POLL_INTERVAL="2s"
 $env:POS_SYNC_SENDER_RECLAIM_AFTER="5m"
@@ -169,6 +170,9 @@ Auth/device и POS UI endpoints:
 
 - `GET /api/v1/system/pairing-status`
 - `POST /api/v1/system/pair`
+- `GET /api/v1/system/provisioning-status`
+- `POST /api/v1/system/provisioning/register-cloud`
+- `POST /api/v1/system/provisioning/pair-via-license`
 - `POST /api/v1/auth/pin-login`
 - `GET /api/v1/auth/session`
 - `POST /api/v1/auth/logout`
@@ -200,9 +204,16 @@ Cloud -> Edge master-data ingest endpoints:
 Cloud production delivery path:
 
 - Cloud создает master data через `/api/v1/restaurants`, `/api/v1/roles`, `/api/v1/employees`, `/api/v1/catalog/items`, `/api/v1/menu/items`;
+- Cloud создает минимальный floor через `/api/v1/halls` и `/api/v1/tables`, потому что cashier order flow требует зал и стол;
 - Cloud публикует package через `POST /api/v1/restaurants/{id}/master-data/publish`;
 - Cloud отдает Edge-ready payload через `GET /api/v1/restaurants/{id}/edge-nodes/{node_device_id}/master-data/snapshot`;
 - POS Edge применяет payload через `POST /api/v1/sync/master-data/snapshots`.
+
+Zero-to-Cashier provisioning path:
+
+- Option A: при `POS_CLOUD_SYNC_URL=http://localhost:8090` Edge регистрируется в Cloud через `POST /api/v1/devices/register`, хранит локальный статус `pending_admin_approval`, polling получает assignment, скачивает snapshot и вызывает существующий local pair use case.
+- Option B: UI или оператор отправляет license code в `POST /api/v1/system/provisioning/pair-via-license`; Edge resolve-ит code через `LICENSE_SERVER_URL`, сохраняет cloud config/token, скачивает snapshot, применяет master-data и переходит в статус `paired`.
+- `node_device_id` не равен `client_device_id`: первый принадлежит Edge Backend и хранится в SQLite, второй принадлежит браузеру/UI и auto-registers при PIN login.
 
 `..\scripts\cloud-masterdata-e2e.ps1` проверяет этот путь локально: Cloud CRUD -> publish -> POS Edge ingest -> POS catalog/menu read -> PIN login Cloud-created employee.
 

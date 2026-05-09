@@ -74,6 +74,20 @@ CREATE TABLE IF NOT EXISTS prechecks (
   CHECK (status <> 'cancelled' OR cancelled_by_employee_id IS NOT NULL)
 );
 
+CREATE TABLE IF NOT EXISTS edge_provisioning_state (
+  id TEXT PRIMARY KEY CHECK (id = 'local'),
+  node_device_id TEXT NOT NULL CHECK (node_device_id <> ''),
+  cloud_url TEXT,
+  license_url TEXT,
+  restaurant_id TEXT,
+  status TEXT NOT NULL CHECK (status IN ('not_configured','pending_admin_approval','assigned_downloading_snapshot','paired','error')),
+  credentials_type TEXT,
+  credentials_token TEXT,
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS prechecks_one_issued_per_order ON prechecks(order_id) WHERE status = 'issued';
 CREATE UNIQUE INDEX IF NOT EXISTS prechecks_order_version ON prechecks(order_id, version);
 CREATE INDEX IF NOT EXISTS prechecks_order_id_created_at ON prechecks(order_id, created_at);

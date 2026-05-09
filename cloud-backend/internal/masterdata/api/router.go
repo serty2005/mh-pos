@@ -10,6 +10,7 @@ import (
 
 	"cloud-backend/internal/masterdata/app"
 	"cloud-backend/internal/masterdata/domain"
+	httpx "cloud-backend/internal/platform/httpx"
 )
 
 // Handler содержит thin HTTP handlers для Cloud master-data API.
@@ -45,6 +46,14 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 		r.Patch("/catalog/items/{id}", h.updateCatalogItem)
 		r.Post("/catalog/items/{id}/archive", h.archiveCatalogItem)
 		r.Post("/menu/categories", h.createCategory)
+		r.Post("/floor/halls", h.createHall)
+		r.Get("/floor/halls", h.listHalls)
+		r.Patch("/floor/halls/{id}", h.updateHall)
+		r.Post("/floor/halls/{id}/archive", h.archiveHall)
+		r.Post("/floor/tables", h.createTable)
+		r.Get("/floor/tables", h.listTables)
+		r.Patch("/floor/tables/{id}", h.updateTable)
+		r.Post("/floor/tables/{id}/archive", h.archiveTable)
 		r.Post("/menu/items", h.createMenuItem)
 		r.Get("/menu/items", h.listMenuItems)
 		r.Get("/menu/items/{id}", h.getMenuItem)
@@ -84,6 +93,14 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 	r.Get("/menu/items/{id}", h.getMenuItem)
 	r.Patch("/menu/items/{id}", h.updateMenuItem)
 	r.Post("/menu/items/{id}/archive", h.archiveMenuItem)
+	r.Post("/halls", h.createHall)
+	r.Get("/halls", h.listHalls)
+	r.Patch("/halls/{id}", h.updateHall)
+	r.Post("/halls/{id}/archive", h.archiveHall)
+	r.Post("/tables", h.createTable)
+	r.Get("/tables", h.listTables)
+	r.Patch("/tables/{id}", h.updateTable)
+	r.Post("/tables/{id}/archive", h.archiveTable)
 	r.Post("/restaurants/{id}/master-data/publish", h.publishRestaurant)
 	r.Get("/restaurants/{id}/master-data/publication-state", h.getRestaurantPublished)
 	r.Get("/restaurants/{id}/master-data/packages/latest", h.getLatestRestaurantPackage)
@@ -260,6 +277,62 @@ func (h *Handler) createCategory(w http.ResponseWriter, r *http.Request) {
 	write(w, http.StatusCreated, v, err)
 }
 
+func (h *Handler) createHall(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateHallCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.CreateHall(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) listHalls(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListHalls(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) updateHall(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdateHallCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpdateHall(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) archiveHall(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ArchiveHall(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) createTable(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateTableCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.CreateTable(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) listTables(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListTables(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) updateTable(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdateTableCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpdateTable(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) archiveTable(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ArchiveTable(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
+}
+
 func (h *Handler) createMenuItem(w http.ResponseWriter, r *http.Request) {
 	var cmd app.CreateMenuItemCommand
 	if !decode(w, r, &cmd) {
@@ -355,7 +428,7 @@ func write[T any](w http.ResponseWriter, status int, v T, err error) {
 			code = http.StatusBadRequest
 		case errors.Is(err, domain.ErrNotFound):
 			code = http.StatusNotFound
-		case errors.Is(err, domain.ErrConflict):
+		case errors.Is(err, domain.ErrConflict), errors.Is(err, domain.ErrPINAlreadyExists):
 			code = http.StatusConflict
 		}
 		writeError(w, code, err)
@@ -365,11 +438,10 @@ func write[T any](w http.ResponseWriter, status int, v T, err error) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	httpx.JSON(w, status, v)
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
-	writeJSON(w, status, map[string]string{"error": err.Error()})
+	_ = status
+	httpx.Error(w, err)
 }

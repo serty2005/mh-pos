@@ -41,7 +41,7 @@ POS sender содержит direction gate. Если строка `pos_sync_outb
 
 Реализовано сейчас: Cloud -> Edge state хранится на Edge в `cloud_master_sync_state` и sync metadata columns master tables (`cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at`).
 
-Реализовано сейчас: Cloud backend формирует versioned master-data publications для `restaurants`, `staff`, `catalog` и `menu`. Publication не является runtime CRUD event: это deterministic package/snapshot state с `cloud_version`, `checkpoint_token`, `cloud_updated_at`, `published_at` и `published_by`.
+Реализовано сейчас: Cloud backend формирует versioned master-data publications для `restaurants`, `staff`, `floor`, `catalog` и `menu`. Publication не является runtime CRUD event: это deterministic package/snapshot state с `cloud_version`, `checkpoint_token`, `cloud_updated_at`, `published_at` и `published_by`.
 
 ## Cloud -> Edge master-data ingest
 
@@ -121,6 +121,8 @@ Response body:
   "restaurants": [],
   "roles": [],
   "employees": [],
+  "halls": [],
+  "tables": [],
   "catalog_items": [],
   "menu_items": []
 }
@@ -130,10 +132,11 @@ Stream-specific packages:
 
 - `restaurants`: `restaurants`;
 - `staff`: `roles`, `employees`;
+- `floor`: `halls`, `tables`;
 - `catalog`: `catalog_items`, `categories`;
 - `menu`: `menu_items`.
 
-Реализовано сейчас: Cloud UI-facing employee/publication API responses не возвращают PIN и `pin_hash`; безопасный признак возвращается как `pin_configured`. Staff package для device/system delivery содержит `pin_hash`, потому что POS Edge должен выполнять offline PIN verification локально. Этот package не является frontend business decision surface.
+Реализовано сейчас: Cloud UI-facing employee/publication API responses не возвращают PIN и `pin_hash`; безопасный признак возвращается как `pin_configured`. Staff package для device/system delivery содержит `pin_hash`, потому что POS Edge должен выполнять offline PIN verification локально. Этот package не является frontend business decision surface. PIN уникален в рамках ресторана среди сотрудников со статусом не `archived`; duplicate returns `409 PIN_ALREADY_EXISTS`.
 
 Реализовано сейчас: publication package generation является deterministic по stable ordering IDs и versioned `cloud_version`. Обычные сохранения ресторанов/сотрудников/каталога/меню не становятся live на POS Edge до явной publication.
 
@@ -145,6 +148,42 @@ GET /api/v1/restaurants/{id}/edge-nodes/{node_device_id}/master-data/snapshot
 
 возвращает multi-stream payload, совместимый с `POST /api/v1/sync/master-data/snapshots` на POS Edge. Обычный publication payload использует `sync_mode = incremental`; `full_snapshot` остается только для `terminal_restaurant_changed` и `node_role_changed`.
 
+## Edge Provisioning
+
+Реализовано сейчас: POS Edge хранит стабильный `node_device_id` локально в SQLite до pairing. `node_device_id` принадлежит Edge Backend; `client_device_id` принадлежит конкретному браузеру/UI-клиенту и не используется как Cloud device identity.
+
+Option A, Cloud Approve:
+
+```text
+Cloud:
+POST /api/v1/devices/register
+GET  /api/v1/devices/unassigned
+POST /api/v1/restaurants/{restaurant_id}/devices/{node_device_id}/assign
+GET  /api/v1/devices/{node_device_id}/assignment-status
+
+POS Edge:
+GET  /api/v1/system/provisioning-status
+POST /api/v1/system/provisioning/register-cloud
+```
+
+Edge регистрирует pending device, Cloud admin назначает его ресторану, Edge polling получает assignment, скачивает snapshot endpoint и применяет его через application service `mastersync`, а затем вызывает local pair use case.
+
+Option B, License Server Code:
+
+```text
+Cloud:
+POST /api/v1/restaurants/{restaurant_id}/devices/generate-pairing-code
+
+License Server:
+POST /api/v1/pairing-codes
+POST /api/v1/pairing-codes/resolve
+
+POS Edge:
+POST /api/v1/system/provisioning/pair-via-license
+```
+
+Cloud хранит hash code/token, License Server хранит hash pairing code и TTL, resolve является одноразовым. Plaintext code/token возвращаются только в provisioning responses и не должны логироваться.
+
 ## POS Sender
 
 Реализовано сейчас: `pos-backend` запускает background sender worker, когда `POS_SYNC_SENDER_ENABLED` равно true. По умолчанию sender включен.
@@ -153,7 +192,8 @@ GET /api/v1/restaurants/{id}/edge-nodes/{node_device_id}/master-data/snapshot
 
 ```text
 POS_SYNC_SENDER_ENABLED=true
-POS_CLOUD_SYNC_URL=http://localhost:8090/api/v1/sync/edge-events
+POS_CLOUD_SYNC_URL=http://localhost:8090
+LICENSE_SERVER_URL=http://localhost:8095
 POS_SYNC_SENDER_ID=pos-sync-sender-main
 POS_SYNC_SENDER_BATCH_SIZE=25
 POS_SYNC_SENDER_POLL_INTERVAL=2s

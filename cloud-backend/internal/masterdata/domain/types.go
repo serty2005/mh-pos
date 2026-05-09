@@ -9,9 +9,10 @@ import (
 )
 
 var (
-	ErrInvalid  = errors.New("invalid master data")
-	ErrNotFound = errors.New("master data not found")
-	ErrConflict = errors.New("master data conflict")
+	ErrInvalid          = errors.New("invalid master data")
+	ErrNotFound         = errors.New("master data not found")
+	ErrConflict         = errors.New("master data conflict")
+	ErrPINAlreadyExists = errors.New("pin already exists")
 )
 
 // RestaurantStatus задает Cloud-owned lifecycle ресторана.
@@ -112,6 +113,42 @@ type Category struct {
 	UpdatedAt    time.Time       `json:"updated_at"`
 }
 
+// Hall описывает Cloud-owned зал ресторана для доставки floor read model на POS Edge.
+type Hall struct {
+	ID           string          `json:"id"`
+	RestaurantID string          `json:"restaurant_id"`
+	Name         string          `json:"name"`
+	Status       LifecycleStatus `json:"status"`
+	CloudVersion int64           `json:"cloud_version"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	ArchivedAt   *time.Time      `json:"archived_at,omitempty"`
+}
+
+// ActiveForPOS сообщает, должен ли зал быть доступен в POS runtime.
+func (h Hall) ActiveForPOS() bool {
+	return h.Status == StatusPublished
+}
+
+// Table описывает Cloud-owned стол ресторана для доставки floor read model на POS Edge.
+type Table struct {
+	ID           string          `json:"id"`
+	RestaurantID string          `json:"restaurant_id"`
+	HallID       string          `json:"hall_id"`
+	Name         string          `json:"name"`
+	Seats        int64           `json:"seats"`
+	Status       LifecycleStatus `json:"status"`
+	CloudVersion int64           `json:"cloud_version"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	ArchivedAt   *time.Time      `json:"archived_at,omitempty"`
+}
+
+// ActiveForPOS сообщает, должен ли стол быть доступен в POS runtime.
+func (t Table) ActiveForPOS() bool {
+	return t.Status == StatusPublished
+}
+
 // CatalogItem описывает общую Cloud-owned номенклатуру без сведения всех видов в одну финальную модель.
 type CatalogItem struct {
 	ID           string          `json:"id"`
@@ -204,6 +241,8 @@ type MasterDataPacket struct {
 	CatalogItems    []EdgeCatalogItem    `json:"catalog_items,omitempty"`
 	MenuItems       []EdgeMenuItem       `json:"menu_items,omitempty"`
 	Categories      []EdgeCategory       `json:"categories,omitempty"`
+	Halls           []EdgeHall           `json:"halls,omitempty"`
+	Tables          []EdgeTable          `json:"tables,omitempty"`
 	ModifierGroups  []EdgeModifierGroup  `json:"modifier_groups,omitempty"`
 	ModifierOptions []EdgeModifierOption `json:"modifier_options,omitempty"`
 }
@@ -272,6 +311,28 @@ type EdgeCategory struct {
 	Name      string `json:"name"`
 	SortOrder int64  `json:"sort_order"`
 	Active    bool   `json:"active"`
+}
+
+// EdgeHall является projection зала для существующего POS Edge floor stream.
+type EdgeHall struct {
+	ID           string    `json:"id"`
+	RestaurantID string    `json:"restaurant_id"`
+	Name         string    `json:"name"`
+	Active       bool      `json:"active"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// EdgeTable является projection стола для существующего POS Edge floor stream.
+type EdgeTable struct {
+	ID           string    `json:"id"`
+	RestaurantID string    `json:"restaurant_id"`
+	HallID       string    `json:"hall_id"`
+	Name         string    `json:"name"`
+	Seats        int64     `json:"seats"`
+	Active       bool      `json:"active"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // EdgeModifierGroup является foundation projection modifier group для будущего Edge menu layout.

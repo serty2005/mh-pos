@@ -93,15 +93,16 @@
 
 Статус: `выполнено`
 
-- Cloud production API поддерживает onboarding ресторана без POS bootstrap scripts: restaurants CRUD, roles CRUD/archive, employees lifecycle/PIN rotation, catalog items CRUD/archive, menu items CRUD/archive.
+- Cloud production API поддерживает onboarding ресторана без POS bootstrap scripts: restaurants CRUD, halls/tables CRUD/archive, roles CRUD/archive, employees lifecycle/PIN rotation, catalog items CRUD/archive, menu items CRUD/archive.
 - Cloud PostgreSQL получил schema foundation для ролей, сотрудников, employee PIN credential metadata, catalog items, dishes, goods/raw materials, semi-finished products, recipe foundation, categories, modifier foundation, menu items, menu assignments и versioned publications.
 - Cloud PostgreSQL получил `cloud_restaurants`, cloud-version metadata для master-data source tables и partial unique SKU policy для неархивных catalog items.
 - Cloud API подготовлен для будущего `cloud-ui`: создание/обновление ресторанов, сотрудников, ролей, PIN credentials, catalog/menu entities, publication и чтение текущего published state.
 - Employee lifecycle зафиксирован как `active`, `suspended`, `archived`; `suspended`/`archived` не должны становиться active POS login read model после sync.
 - Cloud UI-facing API responses не возвращают PIN или `pin_hash`; безопасный признак возвращается как `pin_configured`, а `pin_hash` остается только в staff package для offline PIN auth на Edge.
-- Duplicate active PIN в одном ресторане отклоняется на Cloud-side.
-- Publication workflow создает deterministic packages для `restaurants`, `staff`, `catalog`, `menu`, хранит `version`, `cloud_version`, `published_at`, `published_by`, `package_sha256` и обновляет Cloud -> Edge provisioning storage.
+- Duplicate PIN в одном ресторане среди сотрудников не в статусе `archived` отклоняется на Cloud-side как `PIN_ALREADY_EXISTS`.
+- Publication workflow создает deterministic packages для `restaurants`, `staff`, `floor`, `catalog`, `menu`, хранит `version`, `cloud_version`, `published_at`, `published_by`, `package_sha256` и обновляет Cloud -> Edge provisioning storage.
 - Cloud Edge-ready snapshot endpoint возвращает payload для прямого `POST /api/v1/sync/master-data/snapshots` на POS Edge.
+- Zero-to-Cashier provisioning реализован: Cloud Approve endpoints, License Server code flow, POS Edge auto snapshot apply и `/pair` с двумя режимами.
 - POS Edge остается offline read-model consumer и не получает production CRUD API для справочников.
 
 ### Security hardening
@@ -109,7 +110,7 @@
 Статус: `выполнено`
 
 - Pairing verifier хранится в keyed format `pairing.hmac-sha256.v1`.
-- PIN login policy: PIN должен однозначно определить одного active employee в ресторане; дубль active PIN отклоняется как conflict.
+- PIN login policy: PIN должен однозначно определить одного active employee в ресторане; Cloud не допускает одинаковый PIN у сотрудников одного ресторана, если оба не `archived`.
 - PIN login rate limiting добавлен и задокументирован.
 - Тесты проверяют, что PIN, manager PIN и PIN hash не попадают в HTTP audit logs, local events, outbox payloads и manager override audit.
 

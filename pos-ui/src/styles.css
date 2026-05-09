@@ -105,6 +105,87 @@ h2 {
   gap: 18px;
 }
 
+.pair-page {
+  min-height: 100dvh;
+  padding: 32px;
+  display: grid;
+  place-items: center;
+}
+
+.pair-shell {
+  width: min(100%, 760px);
+  display: grid;
+  gap: 18px;
+  padding: 28px;
+  background: #ffffff;
+  border: 1px solid #d9ded8;
+  border-radius: 8px;
+}
+
+.pair-header {
+  display: grid;
+  gap: 10px;
+  max-width: 620px;
+}
+
+.pair-lead,
+.status-copy {
+  color: #66706b;
+  line-height: 1.5;
+}
+
+.pair-tabs {
+  border-bottom: 1px solid #d9ded8;
+}
+
+.pair-panels {
+  background: transparent;
+}
+
+.pair-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 18px;
+  align-items: start;
+}
+
+.pair-status {
+  display: grid;
+  gap: 16px;
+}
+
+.pair-actions,
+.license-form {
+  display: grid;
+  gap: 12px;
+}
+
+.meta-label {
+  margin-bottom: 4px;
+  color: #66706b;
+  font-size: 12px;
+}
+
+.mono-value {
+  overflow-wrap: anywhere;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  color: #202124;
+}
+
+@media (max-width: 720px) {
+  .pair-page {
+    padding: 16px;
+  }
+
+  .pair-shell {
+    padding: 20px;
+  }
+
+  .pair-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .error-banner {
   color: #7a2e20;
   background: #f9e7df;

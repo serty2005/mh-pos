@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 
 import { getClientDeviceId } from '../shared/clientIdentity';
-import type { ActorContext, AuthSession, PairingStatus } from '../shared/schemas';
+import type { ActorContext, AuthSession, PairingStatus, ProvisioningStatus } from '../shared/schemas';
 
 type AuthState = {
   clientDeviceId: string;
@@ -30,6 +30,19 @@ export const useAuthStore = defineStore('auth', {
         this.restaurantId = '';
         localStorage.removeItem(nodeKey);
         localStorage.removeItem(restaurantKey);
+        return;
+      }
+      this.nodeDeviceId = status.node_device_id;
+      this.restaurantId = status.restaurant_id;
+      localStorage.setItem(nodeKey, status.node_device_id);
+      localStorage.setItem(restaurantKey, status.restaurant_id);
+    },
+    applyProvisioning(status: ProvisioningStatus) {
+      if (!status.paired || !status.node_device_id || !status.restaurant_id) {
+        this.nodeDeviceId = status.node_device_id ?? '';
+        if (this.nodeDeviceId) {
+          localStorage.setItem(nodeKey, this.nodeDeviceId);
+        }
         return;
       }
       this.nodeDeviceId = status.node_device_id;

@@ -9,6 +9,7 @@ import {
   orderLineSchema,
   orderSchema,
   pairingStatusSchema,
+  provisioningStatusSchema,
   paymentSchema,
   pinLoginResultSchema,
   precheckSchema,
@@ -247,6 +248,28 @@ function actorId() {
 
 export function getPairingStatus() {
   return request('/system/pairing-status', pairingStatusSchema);
+}
+
+export function getProvisioningStatus() {
+  return request('/system/provisioning-status', provisioningStatusSchema);
+}
+
+export function registerCloudProvisioning(cloudUrl?: string) {
+  return request('/system/provisioning/register-cloud', provisioningStatusSchema, {
+    method: 'POST',
+    body: JSON.stringify({
+      cloud_url: cloudUrl ?? '',
+      display_name: 'POS Terminal',
+      app_version: import.meta.env.VITE_APP_VERSION ?? 'pos-ui',
+    }),
+  });
+}
+
+export function pairViaLicense(pairingCode: string) {
+  return request('/system/provisioning/pair-via-license', provisioningStatusSchema, {
+    method: 'POST',
+    body: JSON.stringify({ pairing_code: pairingCode }),
+  });
 }
 
 export async function pairEdgeNodeAndRefresh(pairingCode: string) {

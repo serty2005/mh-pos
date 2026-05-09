@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"pos-backend/internal/pos/domain"
 )
 
@@ -73,6 +74,44 @@ func (r *Repository) GetEdgeNodeIdentity(ctx context.Context) (*domain.EdgeNodeI
 	return &v, nil
 }
 
+func (r *Repository) UpsertEdgeProvisioningState(ctx context.Context, v *domain.EdgeProvisioningState) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO edge_provisioning_state(id,node_device_id,cloud_url,license_url,restaurant_id,status,credentials_type,credentials_token,last_error,created_at,updated_at)
+VALUES ('local',?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET
+  node_device_id = excluded.node_device_id,
+  cloud_url = excluded.cloud_url,
+  license_url = excluded.license_url,
+  restaurant_id = excluded.restaurant_id,
+  status = excluded.status,
+  credentials_type = excluded.credentials_type,
+  credentials_token = excluded.credentials_token,
+  last_error = excluded.last_error,
+  updated_at = excluded.updated_at`,
+		v.NodeDeviceID, nullableStringValue(v.CloudURL), nullableStringValue(v.LicenseURL), nullableStringValue(v.RestaurantID), string(v.Status), nullableStringValue(v.CredentialsType), nullableStringValue(v.CredentialsToken), nullableStringValue(v.LastError), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	return normalizeErr(err)
+}
+
+func (r *Repository) GetEdgeProvisioningState(ctx context.Context) (*domain.EdgeProvisioningState, error) {
+	var v domain.EdgeProvisioningState
+	var cloudURL, licenseURL, restaurantID, credentialsType, credentialsToken, lastError sql.NullString
+	var status, created, updated string
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,node_device_id,cloud_url,license_url,restaurant_id,status,credentials_type,credentials_token,last_error,created_at,updated_at FROM edge_provisioning_state WHERE id = 'local'`).
+		Scan(&v.ID, &v.NodeDeviceID, &cloudURL, &licenseURL, &restaurantID, &status, &credentialsType, &credentialsToken, &lastError, &created, &updated)
+	if err != nil {
+		return nil, normalizeErr(err)
+	}
+	v.CloudURL = stringFromNull(cloudURL)
+	v.LicenseURL = stringFromNull(licenseURL)
+	v.RestaurantID = stringFromNull(restaurantID)
+	v.Status = domain.ProvisioningStatus(status)
+	v.CredentialsType = stringFromNull(credentialsType)
+	v.CredentialsToken = stringFromNull(credentialsToken)
+	v.LastError = stringFromNull(lastError)
+	v.CreatedAt = parseTime(created)
+	v.UpdatedAt = parseTime(updated)
+	return &v, nil
+}
+
 func (r *Repository) CreateClientDevice(ctx context.Context, v *domain.ClientDevice) error {
 	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO client_devices(id,restaurant_id,node_device_id,client_device_id,status,first_seen_at,last_seen_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
 		v.ID, v.RestaurantID, v.NodeDeviceID, v.ClientDeviceID, string(v.Status), dbTime(v.FirstSeenAt), dbTime(v.LastSeenAt), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
@@ -105,4 +144,18 @@ func (r *Repository) TouchClientDevice(ctx context.Context, nodeDeviceID, client
 		return domain.ErrNotFound
 	}
 	return nil
+}
+
+func nullableStringValue(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
+}
+
+func stringFromNull(v sql.NullString) string {
+	if !v.Valid {
+		return ""
+	}
+	return v.String
 }

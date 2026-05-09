@@ -1,6 +1,6 @@
 # MyHoReCa POS UI
 
-`pos-ui` - Vue 3 + TypeScript + Quasar интерфейс для модели `pairing -> login -> pos -> lock/logout`.
+`pos-ui` - Vue 3 + TypeScript + Quasar интерфейс для модели `provisioning/pairing -> login -> pos -> lock/logout`.
 
 ## Запуск
 
@@ -17,6 +17,22 @@ $env:VITE_POS_API_BASE="http://localhost:8080/api/v1"
 npm run dev
 ```
 
+## Zero-to-Cashier Quickstart
+
+Реализовано сейчас: `/pair` поддерживает два режима production onboarding без dev bootstrap.
+
+- Cloud approval: экран показывает `node_device_id`, `cloud_url`, статус регистрации и polling; после Cloud assign Edge скачивает snapshot и UI автоматически переходит на `/login`.
+- License code: оператор вводит code, UI вызывает `POST /api/v1/system/provisioning/pair-via-license`; после успешного snapshot apply UI переходит на `/login`.
+
+Локальная проверка:
+
+```powershell
+.\scripts\zero-to-cashier-option-a.ps1
+.\scripts\zero-to-cashier-option-b.ps1
+```
+
+После provisioning войди на `/login` с cashier PIN `1111`.
+
 ## Локальный E2E Prototype Quickstart
 
 implemented now: UI проходит основной cashier flow через настоящий POS Edge backend.
@@ -24,7 +40,7 @@ implemented now: UI проходит основной cashier flow через н
 1. Запусти `pos-backend` с `$env:POS_DEV_TOOLS="1"`.
 2. Из корня репозитория выполни `.\scripts\bootstrap-pos-demo.ps1`.
 3. Открой `http://localhost:5173`.
-4. На `/pair` введи `pairing_code` из bootstrap.
+4. На `/pair` для dev bootstrap используй legacy pairing code flow через backend compatibility path.
 5. На `/login` используй cashier PIN `1111`.
 6. Для cancel unpaid precheck в manager override введи `manager_employee_id` из bootstrap и manager PIN `2222`.
 
@@ -82,11 +98,11 @@ Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=10 -Heade
 Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10 -Headers $headers
 ```
 
-out of scope: waiter UI, KDS, inventory, fiscalization и production sync sender worker.
+out of scope: waiter UI, KDS, inventory и fiscalization.
 
 ## Что реализовано
 
-- `/pair` вызывает реальный `POST /api/v1/system/pair`.
+- `/pair` показывает Cloud approval status, license code form и после `paired` ведет на `/login`; legacy `POST /api/v1/system/pair` остается backend compatibility path для dev bootstrap.
 - `/login` вызывает реальный `POST /api/v1/auth/pin-login`.
 - `/lock` вызывает реальный `POST /api/v1/auth/logout`, очищает локальную session и требует новый PIN.
 - `/pos` реализует POS Terminal Core для одного кассира на одном Primary Edge Node:
@@ -109,8 +125,8 @@ Server state хранится только через `@tanstack/vue-query`. Fro
 
 ## Поток identity
 
-- MVP pairing code имеет временный формат `MHPOS:<restaurant_id>:<node_device_id>`.
-- `node_device_id` не генерируется frontend-клиентом; он приходит из pairing payload и обозначает Edge Node backend.
+- Production pairing использует Cloud approval или License Server code; legacy MVP pairing code имеет формат `MHPOS:<restaurant_id>:<node_device_id>`.
+- `node_device_id` не генерируется frontend-клиентом; он хранится в POS Edge backend и обозначает Edge Node backend.
 - Каждый browser/tablet client генерирует свой `client_device_id` через `crypto.randomUUID()` и хранит его в `localStorage`.
 - Backend auto-registers новый `client_device_id` при PIN login.
 - Lock всегда вызывает backend logout.
@@ -132,6 +148,9 @@ implemented now:
 
 - `GET /api/v1/system/pairing-status`
 - `POST /api/v1/system/pair`
+- `GET /api/v1/system/provisioning-status`
+- `POST /api/v1/system/provisioning/register-cloud`
+- `POST /api/v1/system/provisioning/pair-via-license`
 - `POST /api/v1/auth/pin-login`
 - `GET /api/v1/auth/session`
 - `POST /api/v1/auth/logout`

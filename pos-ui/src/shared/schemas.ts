@@ -17,6 +17,16 @@ export const pairingStatusSchema = z.object({
   restaurant_id: z.string().optional(),
 });
 
+export const provisioningStatusSchema = z.object({
+  node_device_id: z.string(),
+  cloud_url: z.string().optional(),
+  license_url: z.string().optional(),
+  restaurant_id: z.string().optional(),
+  status: z.enum(['not_configured', 'pending_admin_approval', 'assigned_downloading_snapshot', 'paired', 'error']),
+  paired: z.boolean(),
+  last_error: z.string().optional(),
+});
+
 export const authSessionSchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
@@ -203,6 +213,7 @@ export const reprintDocumentSchema = z.object({
 });
 
 export type PairingStatus = z.infer<typeof pairingStatusSchema>;
+export type ProvisioningStatus = z.infer<typeof provisioningStatusSchema>;
 export type AuthSession = z.infer<typeof authSessionSchema>;
 export type ActorContext = z.infer<typeof actorContextSchema>;
 export type PinLoginResult = z.infer<typeof pinLoginResultSchema>;

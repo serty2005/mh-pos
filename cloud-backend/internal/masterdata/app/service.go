@@ -49,6 +49,14 @@ type Repository interface {
 	ListCatalogItems(context.Context, string) ([]domain.CatalogItem, error)
 	CreateCategory(context.Context, domain.Category) (domain.Category, error)
 	ListCategories(context.Context, string) ([]domain.Category, error)
+	CreateHall(context.Context, domain.Hall) (domain.Hall, error)
+	UpdateHall(context.Context, domain.Hall) (domain.Hall, error)
+	GetHall(context.Context, string) (domain.Hall, error)
+	ListHalls(context.Context, string) ([]domain.Hall, error)
+	CreateTable(context.Context, domain.Table) (domain.Table, error)
+	UpdateTable(context.Context, domain.Table) (domain.Table, error)
+	GetTable(context.Context, string) (domain.Table, error)
+	ListTables(context.Context, string) ([]domain.Table, error)
 	CreateMenuItem(context.Context, domain.MenuItem) (domain.MenuItem, error)
 	UpdateMenuItem(context.Context, domain.MenuItem) (domain.MenuItem, error)
 	GetMenuItem(context.Context, string) (domain.MenuItem, error)
@@ -182,6 +190,34 @@ type CreateCategoryCommand struct {
 	RestaurantID string `json:"restaurant_id"`
 	Name         string `json:"name"`
 	SortOrder    int64  `json:"sort_order"`
+}
+
+// CreateHallCommand описывает создание Cloud-owned зала.
+type CreateHallCommand struct {
+	RestaurantID string `json:"restaurant_id"`
+	Name         string `json:"name"`
+}
+
+// UpdateHallCommand описывает изменение Cloud-owned зала.
+type UpdateHallCommand struct {
+	Name   string                  `json:"name,omitempty"`
+	Status *domain.LifecycleStatus `json:"status,omitempty"`
+}
+
+// CreateTableCommand описывает создание Cloud-owned стола.
+type CreateTableCommand struct {
+	RestaurantID string `json:"restaurant_id"`
+	HallID       string `json:"hall_id"`
+	Name         string `json:"name"`
+	Seats        int64  `json:"seats"`
+}
+
+// UpdateTableCommand описывает изменение Cloud-owned стола.
+type UpdateTableCommand struct {
+	HallID string                  `json:"hall_id,omitempty"`
+	Name   string                  `json:"name,omitempty"`
+	Seats  *int64                  `json:"seats,omitempty"`
+	Status *domain.LifecycleStatus `json:"status,omitempty"`
 }
 
 // CreateMenuItemCommand описывает создание draft menu item.
@@ -645,6 +681,148 @@ func (s *Service) CreateCategory(ctx context.Context, cmd CreateCategoryCommand)
 	return s.repo.CreateCategory(ctx, category)
 }
 
+// CreateHall создает published зал для Zero-to-Cashier floor stream.
+func (s *Service) CreateHall(ctx context.Context, cmd CreateHallCommand) (domain.Hall, error) {
+	restaurantID := strings.TrimSpace(cmd.RestaurantID)
+	name := strings.TrimSpace(cmd.Name)
+	if restaurantID == "" || name == "" {
+		return domain.Hall{}, fmt.Errorf("%w: restaurant_id and name are required", domain.ErrInvalid)
+	}
+	if err := s.ensureActiveRestaurant(ctx, restaurantID); err != nil {
+		return domain.Hall{}, err
+	}
+	now := s.clock.Now().UTC()
+	hall := domain.Hall{
+		ID:           s.ids.NewID(),
+		RestaurantID: restaurantID,
+		Name:         name,
+		Status:       domain.StatusPublished,
+		CloudVersion: 1,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	return s.repo.CreateHall(ctx, hall)
+}
+
+// ListHalls возвращает Cloud-owned залы ресторана.
+func (s *Service) ListHalls(ctx context.Context, restaurantID string) ([]domain.Hall, error) {
+	return s.repo.ListHalls(ctx, strings.TrimSpace(restaurantID))
+}
+
+// UpdateHall изменяет зал и его lifecycle.
+func (s *Service) UpdateHall(ctx context.Context, id string, cmd UpdateHallCommand) (domain.Hall, error) {
+	hall, err := s.repo.GetHall(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.Hall{}, err
+	}
+	if strings.TrimSpace(cmd.Name) != "" {
+		hall.Name = strings.TrimSpace(cmd.Name)
+	}
+	if cmd.Status != nil {
+		if err := domain.ValidateLifecycleStatus(*cmd.Status); err != nil {
+			return domain.Hall{}, err
+		}
+		hall.Status = *cmd.Status
+	}
+	hall.CloudVersion++
+	hall.UpdatedAt = s.clock.Now().UTC()
+	if hall.Status == domain.StatusArchived && hall.ArchivedAt == nil {
+		archivedAt := hall.UpdatedAt
+		hall.ArchivedAt = &archivedAt
+	}
+	return s.repo.UpdateHall(ctx, hall)
+}
+
+// ArchiveHall архивирует зал без физического удаления.
+func (s *Service) ArchiveHall(ctx context.Context, id string) (domain.Hall, error) {
+	status := domain.StatusArchived
+	return s.UpdateHall(ctx, id, UpdateHallCommand{Status: &status})
+}
+
+// CreateTable создает published стол для Zero-to-Cashier floor stream.
+func (s *Service) CreateTable(ctx context.Context, cmd CreateTableCommand) (domain.Table, error) {
+	restaurantID := strings.TrimSpace(cmd.RestaurantID)
+	hallID := strings.TrimSpace(cmd.HallID)
+	name := strings.TrimSpace(cmd.Name)
+	if restaurantID == "" || hallID == "" || name == "" || cmd.Seats < 0 {
+		return domain.Table{}, fmt.Errorf("%w: restaurant_id, hall_id, name and non-negative seats are required", domain.ErrInvalid)
+	}
+	if err := s.ensureActiveRestaurant(ctx, restaurantID); err != nil {
+		return domain.Table{}, err
+	}
+	hall, err := s.repo.GetHall(ctx, hallID)
+	if err != nil {
+		return domain.Table{}, err
+	}
+	if hall.RestaurantID != restaurantID || hall.Status == domain.StatusArchived {
+		return domain.Table{}, fmt.Errorf("%w: hall is archived or belongs to another restaurant", domain.ErrInvalid)
+	}
+	now := s.clock.Now().UTC()
+	table := domain.Table{
+		ID:           s.ids.NewID(),
+		RestaurantID: restaurantID,
+		HallID:       hallID,
+		Name:         name,
+		Seats:        cmd.Seats,
+		Status:       domain.StatusPublished,
+		CloudVersion: 1,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	return s.repo.CreateTable(ctx, table)
+}
+
+// ListTables возвращает Cloud-owned столы ресторана.
+func (s *Service) ListTables(ctx context.Context, restaurantID string) ([]domain.Table, error) {
+	return s.repo.ListTables(ctx, strings.TrimSpace(restaurantID))
+}
+
+// UpdateTable изменяет стол и его lifecycle.
+func (s *Service) UpdateTable(ctx context.Context, id string, cmd UpdateTableCommand) (domain.Table, error) {
+	table, err := s.repo.GetTable(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.Table{}, err
+	}
+	if strings.TrimSpace(cmd.HallID) != "" {
+		hall, err := s.repo.GetHall(ctx, strings.TrimSpace(cmd.HallID))
+		if err != nil {
+			return domain.Table{}, err
+		}
+		if hall.RestaurantID != table.RestaurantID || hall.Status == domain.StatusArchived {
+			return domain.Table{}, fmt.Errorf("%w: hall is archived or belongs to another restaurant", domain.ErrInvalid)
+		}
+		table.HallID = hall.ID
+	}
+	if strings.TrimSpace(cmd.Name) != "" {
+		table.Name = strings.TrimSpace(cmd.Name)
+	}
+	if cmd.Seats != nil {
+		if *cmd.Seats < 0 {
+			return domain.Table{}, fmt.Errorf("%w: seats must be non-negative", domain.ErrInvalid)
+		}
+		table.Seats = *cmd.Seats
+	}
+	if cmd.Status != nil {
+		if err := domain.ValidateLifecycleStatus(*cmd.Status); err != nil {
+			return domain.Table{}, err
+		}
+		table.Status = *cmd.Status
+	}
+	table.CloudVersion++
+	table.UpdatedAt = s.clock.Now().UTC()
+	if table.Status == domain.StatusArchived && table.ArchivedAt == nil {
+		archivedAt := table.UpdatedAt
+		table.ArchivedAt = &archivedAt
+	}
+	return s.repo.UpdateTable(ctx, table)
+}
+
+// ArchiveTable архивирует стол без физического удаления.
+func (s *Service) ArchiveTable(ctx context.Context, id string) (domain.Table, error) {
+	status := domain.StatusArchived
+	return s.UpdateTable(ctx, id, UpdateTableCommand{Status: &status})
+}
+
 // CreateMenuItem создает draft menu item поверх catalog item.
 func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand) (domain.MenuItem, error) {
 	restaurantID := strings.TrimSpace(cmd.RestaurantID)
@@ -656,6 +834,16 @@ func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand)
 	}
 	if !isCurrencyCode(currency) {
 		return domain.MenuItem{}, fmt.Errorf("%w: currency must be ISO-like alpha-3 code", domain.ErrInvalid)
+	}
+	restaurant, err := s.repo.GetRestaurant(ctx, restaurantID)
+	if err != nil {
+		return domain.MenuItem{}, err
+	}
+	if restaurant.Status != domain.RestaurantActive {
+		return domain.MenuItem{}, fmt.Errorf("%w: restaurant is archived", domain.ErrInvalid)
+	}
+	if currency != restaurant.Currency {
+		return domain.MenuItem{}, fmt.Errorf("%w: menu item currency must match restaurant currency", domain.ErrInvalid)
 	}
 	catalogItem, err := s.repo.GetCatalogItem(ctx, catalogItemID)
 	if err != nil {
@@ -729,6 +917,16 @@ func (s *Service) UpdateMenuItem(ctx context.Context, id string, cmd UpdateMenuI
 		currency := strings.ToUpper(strings.TrimSpace(cmd.Currency))
 		if !isCurrencyCode(currency) {
 			return domain.MenuItem{}, fmt.Errorf("%w: currency must be ISO-like alpha-3 code", domain.ErrInvalid)
+		}
+		restaurant, err := s.repo.GetRestaurant(ctx, item.RestaurantID)
+		if err != nil {
+			return domain.MenuItem{}, err
+		}
+		if restaurant.Status != domain.RestaurantActive {
+			return domain.MenuItem{}, fmt.Errorf("%w: restaurant is archived", domain.ErrInvalid)
+		}
+		if currency != restaurant.Currency {
+			return domain.MenuItem{}, fmt.Errorf("%w: menu item currency must match restaurant currency", domain.ErrInvalid)
 		}
 		item.Currency = currency
 	}
@@ -828,6 +1026,8 @@ func (s *Service) GetCurrentPublishedState(ctx context.Context, restaurantID str
 		"catalog_items": len(packet.CatalogItems),
 		"menu_items":    len(packet.MenuItems),
 		"categories":    len(packet.Categories),
+		"halls":         len(packet.Halls),
+		"tables":        len(packet.Tables),
 	}
 	return summarizePublication(pub, counts), nil
 }
@@ -867,6 +1067,14 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
 	}
+	halls, err := s.repo.ListHalls(ctx, restaurantID)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
+	tables, err := s.repo.ListTables(ctx, restaurantID)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
 	catalogItems, err := s.repo.ListCatalogItems(ctx, restaurantID)
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
@@ -880,6 +1088,8 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 	sortCatalog(catalogItems)
 	sortMenu(menuItems)
 	sortCategories(categories)
+	sortHalls(halls)
+	sortTables(tables)
 
 	restaurants := []domain.Restaurant{}
 	if restaurant.ID != "" && restaurant.Status == domain.RestaurantActive {
@@ -898,6 +1108,8 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 		CatalogItems:    edgeCatalogItems(catalogItems),
 		MenuItems:       edgeMenuItems(menuItems),
 		Categories:      edgeCategories(categories),
+		Halls:           edgeHalls(halls),
+		Tables:          edgeTables(tables),
 		ModifierGroups:  []domain.EdgeModifierGroup{},
 		ModifierOptions: []domain.EdgeModifierOption{},
 	}
@@ -908,6 +1120,8 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 		"catalog_items": len(packet.CatalogItems),
 		"menu_items":    len(packet.MenuItems),
 		"categories":    len(packet.Categories),
+		"halls":         len(packet.Halls),
+		"tables":        len(packet.Tables),
 	}
 	streams, err := streamPackages(packet)
 	if err != nil {
@@ -946,6 +1160,16 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 		CatalogItems    []domain.EdgeCatalogItem `json:"catalog_items"`
 		Categories      []domain.EdgeCategory    `json:"categories,omitempty"`
 	}
+	type floorPayload struct {
+		NodeDeviceID    string             `json:"node_device_id,omitempty"`
+		RestaurantID    string             `json:"restaurant_id"`
+		SyncMode        string             `json:"sync_mode"`
+		CheckpointToken string             `json:"checkpoint_token,omitempty"`
+		CloudVersion    int64              `json:"cloud_version"`
+		CloudUpdatedAt  time.Time          `json:"cloud_updated_at"`
+		Halls           []domain.EdgeHall  `json:"halls"`
+		Tables          []domain.EdgeTable `json:"tables"`
+	}
 	type menuPayload struct {
 		NodeDeviceID    string                `json:"node_device_id,omitempty"`
 		RestaurantID    string                `json:"restaurant_id"`
@@ -983,11 +1207,15 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 	if err != nil {
 		return nil, err
 	}
+	floor, err := build("floor", floorPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, Halls: packet.Halls, Tables: packet.Tables})
+	if err != nil {
+		return nil, err
+	}
 	menu, err := build("menu", menuPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, MenuItems: packet.MenuItems})
 	if err != nil {
 		return nil, err
 	}
-	return []StreamPackage{restaurants, staff, catalog, menu}, nil
+	return []StreamPackage{restaurants, staff, catalog, floor, menu}, nil
 }
 
 func edgeRestaurants(items []domain.Restaurant) []domain.EdgeRestaurant {
@@ -1174,12 +1402,39 @@ func (s *Service) ensurePINUnique(ctx context.Context, restaurantID, exceptEmplo
 		return err
 	}
 	for _, employee := range employees {
-		if employee.ID == strings.TrimSpace(exceptEmployeeID) || employee.Status != domain.EmployeeActive {
+		if employee.ID == strings.TrimSpace(exceptEmployeeID) || employee.Status == domain.EmployeeArchived {
 			continue
 		}
 		if verifyPIN(employee.PINHash, pin) == nil {
-			return fmt.Errorf("%w: duplicate active employee PIN in restaurant", domain.ErrConflict)
+			return fmt.Errorf("%w: duplicate non-archived employee PIN in restaurant", domain.ErrPINAlreadyExists)
 		}
+	}
+	return nil
+}
+
+func edgeHalls(items []domain.Hall) []domain.EdgeHall {
+	out := make([]domain.EdgeHall, 0, len(items))
+	for _, item := range items {
+		out = append(out, domain.EdgeHall{ID: item.ID, RestaurantID: item.RestaurantID, Name: item.Name, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+	}
+	return out
+}
+
+func edgeTables(items []domain.Table) []domain.EdgeTable {
+	out := make([]domain.EdgeTable, 0, len(items))
+	for _, item := range items {
+		out = append(out, domain.EdgeTable{ID: item.ID, RestaurantID: item.RestaurantID, HallID: item.HallID, Name: item.Name, Seats: item.Seats, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+	}
+	return out
+}
+
+func (s *Service) ensureActiveRestaurant(ctx context.Context, restaurantID string) error {
+	restaurant, err := s.repo.GetRestaurant(ctx, strings.TrimSpace(restaurantID))
+	if err != nil {
+		return err
+	}
+	if restaurant.Status != domain.RestaurantActive {
+		return fmt.Errorf("%w: restaurant is archived", domain.ErrInvalid)
 	}
 	return nil
 }
@@ -1264,6 +1519,19 @@ func sortCategories(items []domain.Category) {
 			return items[i].ID < items[j].ID
 		}
 		return items[i].SortOrder < items[j].SortOrder
+	})
+}
+
+func sortHalls(items []domain.Hall) {
+	sort.SliceStable(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+}
+
+func sortTables(items []domain.Table) {
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].HallID == items[j].HallID {
+			return items[i].ID < items[j].ID
+		}
+		return items[i].HallID < items[j].HallID
 	})
 }
 

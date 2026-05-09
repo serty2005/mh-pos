@@ -172,6 +172,20 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Indexes:       []string{"cloud_menu_items_restaurant_status"},
 		},
 		{
+			Table:         "cloud_halls",
+			RequiredBy:    "cloud floor master-data publication",
+			MigrationFile: "006_zero_to_cashier_provisioning.sql",
+			Columns:       []string{"id", "restaurant_id", "name", "status", "cloud_version", "archived_at", "created_at", "updated_at"},
+			Indexes:       []string{"cloud_halls_active_name"},
+		},
+		{
+			Table:         "cloud_tables",
+			RequiredBy:    "cloud floor master-data publication",
+			MigrationFile: "006_zero_to_cashier_provisioning.sql",
+			Columns:       []string{"id", "restaurant_id", "hall_id", "name", "seats", "status", "cloud_version", "archived_at", "created_at", "updated_at"},
+			Indexes:       []string{"cloud_tables_active_name"},
+		},
+		{
 			Table:         "cloud_menu_item_modifier_groups",
 			RequiredBy:    "future cloud menu modifier assignment foundation",
 			MigrationFile: "004_master_data_authority.sql",
@@ -189,6 +203,27 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			MigrationFile: "004_master_data_authority.sql",
 			Columns:       []string{"id", "restaurant_id", "version", "status", "cloud_version", "published_at", "published_by", "package_json", "package_sha256", "created_at", "updated_at"},
 			Indexes:       []string{"cloud_master_data_publications_current"},
+		},
+		{
+			Table:         "cloud_edge_nodes",
+			RequiredBy:    "cloud edge device provisioning",
+			MigrationFile: "006_zero_to_cashier_provisioning.sql",
+			Columns:       []string{"id", "restaurant_id", "node_device_id", "display_name", "status", "credentials_hash", "last_seen_at", "assigned_at", "revoked_at", "created_at", "updated_at"},
+			Indexes:       []string{"cloud_edge_nodes_restaurant_status"},
+		},
+		{
+			Table:         "cloud_unassigned_edge_nodes",
+			RequiredBy:    "cloud edge device pending approval queue",
+			MigrationFile: "006_zero_to_cashier_provisioning.sql",
+			Columns:       []string{"id", "node_device_id", "claimed_cloud_url", "display_name", "app_version", "status", "first_seen_at", "last_seen_at", "assigned_restaurant_id", "assigned_at", "created_at", "updated_at"},
+			Indexes:       []string{"cloud_unassigned_edge_nodes_status_seen"},
+		},
+		{
+			Table:         "cloud_pairing_codes",
+			RequiredBy:    "cloud license server pairing code registration",
+			MigrationFile: "006_zero_to_cashier_provisioning.sql",
+			Columns:       []string{"id", "pairing_code_hash", "restaurant_id", "node_device_id", "cloud_url", "status", "expires_at", "consumed_at", "created_at", "updated_at"},
+			Indexes:       []string{"cloud_pairing_codes_restaurant_status"},
 		},
 	}
 }

@@ -20,6 +20,9 @@ import (
 	"cloud-backend/internal/platform/logging"
 	platformpg "cloud-backend/internal/platform/postgres"
 	"cloud-backend/internal/platform/version"
+	provisioningapp "cloud-backend/internal/provisioning/app"
+	"cloud-backend/internal/provisioning/infra/licensehttp"
+	provisioningpg "cloud-backend/internal/provisioning/infra/postgres"
 )
 
 func main() {
@@ -33,6 +36,8 @@ func run() error {
 	slog.SetDefault(logging.NewJSONLogger("CLOUD_LOG_LEVEL"))
 
 	addr := env("CLOUD_HTTP_ADDR", ":8090")
+	publicURL := env("CLOUD_PUBLIC_URL", "http://localhost:8090")
+	licenseURL := env("LICENSE_SERVER_URL", "")
 	dsn := env("CLOUD_POSTGRES_DSN", "")
 	migrationsDir := env("CLOUD_POSTGRES_MIGRATIONS_DIR", "migrations/postgres")
 	backupDir := env("CLOUD_POSTGRES_BACKUP_DIR", "data/cloud-backups")
@@ -63,9 +68,14 @@ func run() error {
 	service := app.NewService(repo, clock.SystemClock{})
 	masterRepo := masterpg.NewRepository(pool)
 	masterService := masterapp.NewService(masterRepo, clock.SystemClock{}, masterapp.RandomIDGenerator{})
+	var licenseClient provisioningapp.LicenseClient
+	if licenseURL != "" {
+		licenseClient = licensehttp.NewClient(licenseURL)
+	}
+	provisioningService := provisioningapp.NewService(provisioningpg.NewRepository(pool), masterService, clock.SystemClock{}, masterapp.RandomIDGenerator{}, publicURL, licenseClient)
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewRouter(service, masterService),
+		Handler:           api.NewRouterWithProvisioning(service, provisioningService, masterService),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

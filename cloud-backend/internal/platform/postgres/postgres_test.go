@@ -130,7 +130,7 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 5 || files[0].Name != "001_sync_receiver.sql" || files[1].Name != "002_projection_event_type_stats.sql" || files[2].Name != "003_runtime_schema_repair.sql" || files[3].Name != "004_master_data_authority.sql" || files[4].Name != "005_master_data_restaurants_api.sql" {
+	if len(files) != 6 || files[0].Name != "001_sync_receiver.sql" || files[1].Name != "002_projection_event_type_stats.sql" || files[2].Name != "003_runtime_schema_repair.sql" || files[3].Name != "004_master_data_authority.sql" || files[4].Name != "005_master_data_restaurants_api.sql" || files[5].Name != "006_zero_to_cashier_provisioning.sql" {
 		t.Fatalf("expected ordered managed migrations, got %+v", files)
 	}
 	baseBody := string(files[0].Body)
@@ -176,6 +176,18 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 	} {
 		if !strings.Contains(restaurantsBody, required) {
 			t.Fatalf("expected restaurants/API migration to manage %s", required)
+		}
+	}
+	zeroToCashierBody := string(files[5].Body)
+	for _, required := range []string{
+		"cloud_halls",
+		"cloud_tables",
+		"cloud_edge_nodes",
+		"cloud_unassigned_edge_nodes",
+		"cloud_pairing_codes",
+	} {
+		if !strings.Contains(zeroToCashierBody, required) {
+			t.Fatalf("expected zero-to-cashier migration to manage %s", required)
 		}
 	}
 }

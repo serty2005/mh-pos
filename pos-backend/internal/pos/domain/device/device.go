@@ -55,3 +55,37 @@ type PairingStatus struct {
 	NodeDeviceID string            `json:"node_device_id,omitempty"`
 	RestaurantID string            `json:"restaurant_id,omitempty"`
 }
+
+type ProvisioningStatus string
+
+const (
+	ProvisioningNotConfigured               ProvisioningStatus = "not_configured"
+	ProvisioningUnpairedRegistered          ProvisioningStatus = "pending_admin_approval"
+	ProvisioningAssignedDownloadingSnapshot ProvisioningStatus = "assigned_downloading_snapshot"
+	ProvisioningPaired                      ProvisioningStatus = "paired"
+	ProvisioningError                       ProvisioningStatus = "error"
+)
+
+type EdgeProvisioningState struct {
+	ID               string             `json:"id"`
+	NodeDeviceID     string             `json:"node_device_id"`
+	CloudURL         string             `json:"cloud_url,omitempty"`
+	LicenseURL       string             `json:"license_url,omitempty"`
+	RestaurantID     string             `json:"restaurant_id,omitempty"`
+	Status           ProvisioningStatus `json:"status"`
+	CredentialsType  string             `json:"credentials_type,omitempty"`
+	CredentialsToken string             `json:"-"`
+	LastError        string             `json:"last_error,omitempty"`
+	CreatedAt        time.Time          `json:"created_at"`
+	UpdatedAt        time.Time          `json:"updated_at"`
+}
+
+type ProvisioningStatusView struct {
+	NodeDeviceID string             `json:"node_device_id"`
+	CloudURL     string             `json:"cloud_url,omitempty"`
+	LicenseURL   string             `json:"license_url,omitempty"`
+	RestaurantID string             `json:"restaurant_id,omitempty"`
+	Status       ProvisioningStatus `json:"status"`
+	Paired       bool               `json:"paired"`
+	LastError    string             `json:"last_error,omitempty"`
+}

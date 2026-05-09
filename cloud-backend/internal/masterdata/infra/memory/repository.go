@@ -19,6 +19,8 @@ type Repository struct {
 	employees    map[string]domain.Employee
 	catalogItems map[string]domain.CatalogItem
 	categories   map[string]domain.Category
+	halls        map[string]domain.Hall
+	tables       map[string]domain.Table
 	menuItems    map[string]domain.MenuItem
 	publications map[string][]domain.Publication
 	packages     map[string]app.StreamPackage
@@ -31,6 +33,8 @@ func NewRepository() *Repository {
 		employees:    map[string]domain.Employee{},
 		catalogItems: map[string]domain.CatalogItem{},
 		categories:   map[string]domain.Category{},
+		halls:        map[string]domain.Hall{},
+		tables:       map[string]domain.Table{},
 		menuItems:    map[string]domain.MenuItem{},
 		publications: map[string][]domain.Publication{},
 		packages:     map[string]app.StreamPackage{},
@@ -214,6 +218,94 @@ func (r *Repository) ListCategories(_ context.Context, restaurantID string) ([]d
 	defer r.mu.Unlock()
 	var out []domain.Category
 	for _, item := range r.categories {
+		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) CreateHall(_ context.Context, v domain.Hall) (domain.Hall, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, item := range r.halls {
+		if item.RestaurantID == v.RestaurantID && strings.EqualFold(item.Name, v.Name) && item.Status != domain.StatusArchived {
+			return domain.Hall{}, domain.ErrConflict
+		}
+	}
+	r.halls[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) UpdateHall(_ context.Context, v domain.Hall) (domain.Hall, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.halls[v.ID]; !ok {
+		return domain.Hall{}, domain.ErrNotFound
+	}
+	r.halls[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) GetHall(_ context.Context, id string) (domain.Hall, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.halls[strings.TrimSpace(id)]
+	if !ok {
+		return domain.Hall{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) ListHalls(_ context.Context, restaurantID string) ([]domain.Hall, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.Hall
+	for _, item := range r.halls {
+		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) CreateTable(_ context.Context, v domain.Table) (domain.Table, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, item := range r.tables {
+		if item.HallID == v.HallID && strings.EqualFold(item.Name, v.Name) && item.Status != domain.StatusArchived {
+			return domain.Table{}, domain.ErrConflict
+		}
+	}
+	r.tables[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) UpdateTable(_ context.Context, v domain.Table) (domain.Table, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.tables[v.ID]; !ok {
+		return domain.Table{}, domain.ErrNotFound
+	}
+	r.tables[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) GetTable(_ context.Context, id string) (domain.Table, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.tables[strings.TrimSpace(id)]
+	if !ok {
+		return domain.Table{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) ListTables(_ context.Context, restaurantID string) ([]domain.Table, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.Table
+	for _, item := range r.tables {
 		if item.RestaurantID == strings.TrimSpace(restaurantID) {
 			out = append(out, item)
 		}

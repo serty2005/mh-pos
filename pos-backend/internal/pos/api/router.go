@@ -56,6 +56,9 @@ func NewRouter(service *app.Service) http.Handler {
 
 		r.Post("/system/pair", h.pairEdgeNode)
 		r.Get("/system/pairing-status", h.getPairingStatus)
+		r.Get("/system/provisioning-status", h.getProvisioningStatus)
+		r.Post("/system/provisioning/register-cloud", h.registerCloudProvisioning)
+		r.Post("/system/provisioning/pair-via-license", h.pairViaLicense)
 
 		r.Post("/halls", h.createHall)
 		r.Get("/halls", h.listHalls)
@@ -406,6 +409,34 @@ func (h *Handler) pairEdgeNode(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) getPairingStatus(w http.ResponseWriter, r *http.Request) {
 	v, err := h.service.GetPairingStatus(r.Context())
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) getProvisioningStatus(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetProvisioningStatus(r.Context())
+	if err == nil && v.Status == domain.ProvisioningUnpairedRegistered {
+		v, err = h.service.PollCloudAssignment(r.Context())
+	}
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) registerCloudProvisioning(w http.ResponseWriter, r *http.Request) {
+	var cmd app.RegisterCloudProvisioningCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	v, err := h.service.RegisterCloudProvisioning(r.Context(), cmd)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) pairViaLicense(w http.ResponseWriter, r *http.Request) {
+	var cmd app.PairViaLicenseCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	v, err := h.service.PairViaLicense(r.Context(), cmd)
 	writeOK(w, r, v, err)
 }
 

@@ -30,7 +30,7 @@ Order -> Precheck -> Payment -> Check
 - strict lock/logout model: UI lock или auto-lock вызывает backend logout, session становится `revoked`, новый PIN создает новую session;
 - operator auth enforcement для business/operator flows: active employee session, `actor_employee_id`, `session_id`, matching `client_device_id` и permissions там, где нужны;
 - system/device flows (`sync`, pairing/status, diagnostics/hardware callbacks в будущих фазах) не требуют employee session и должны авторизоваться отдельным device/system path;
-- Edge Node pairing foundation: `POST /api/v1/system/pair`, `GET /api/v1/system/pairing-status`;
+- Edge Node pairing/provisioning foundation: legacy `POST /api/v1/system/pair`, `GET /api/v1/system/pairing-status`, production `GET /api/v1/system/provisioning-status`, `POST /api/v1/system/provisioning/register-cloud`, `POST /api/v1/system/provisioning/pair-via-license`;
 - identity split: `node_device_id` обозначает Edge Backend и назначается pairing flow; `client_device_id` обозначает frontend-клиент, генерируется `pos-ui` в `localStorage` и auto-registers на Edge;
 - actor/session/client/node metadata в write commands, `local_event_log`, `pos_sync_outbox` и `SyncEnvelope`: `node_device_id`, `client_device_id`, `actor_employee_id`, `session_id`;
 - halls/tables foundation для выбора стола в POS/Waiter UI;
@@ -48,11 +48,26 @@ Order -> Precheck -> Payment -> Check
 - directional sync ownership foundation: Cloud owns master/reference/configuration data, Edge owns operational POS runtime data; matrix в `docs/sync/directional-sync-ownership.md`;
 - Cloud-authored master-data authority foundation для сотрудников, ролей, catalog items, categories, menu items и versioned publications;
 - production-oriented Cloud master-data API создает рестораны, роли, сотрудников/PIN credentials, catalog items и menu items без POS bootstrap scripts;
-- publication workflow создает deterministic Cloud -> Edge packages для `restaurants`, `staff`, `catalog`, `menu` и сохраняет их в Cloud provisioning storage;
+- publication workflow создает deterministic Cloud -> Edge packages для `restaurants`, `staff`, `floor`, `catalog`, `menu` и сохраняет их в Cloud provisioning storage;
 - Cloud -> Edge master-data ingest API on POS Edge: `POST /api/v1/sync/master-data/snapshots` and `POST /api/v1/sync/master-data/{stream}` for `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`; applies `cloud_sync` payloads transactionally without creating Edge -> Cloud outbox rows;
 - operational sync endpoints для просмотра outbox, local events, aggregated status и ручного retry failed/suspended messages.
 
 Честное состояние текущего кода: POS Edge backend уже выполняет runtime flow `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` переводит order в `locked`; публичный `CancelPrecheck` требует manager employee id, PIN и reason, пишет audit trail и возвращает unpaid active issued precheck в `open`; payment capture идет через `precheck_id`, а final `Check` создается только после полной оплаты. Публичные compatibility endpoints для старой check/payment модели удалены. KDS/Waiter UI еще не готовы: backend сейчас дает только halls/tables и базовое редактирование order lines.
+
+## Zero-to-Cashier
+
+Реализовано сейчас: чистый production-like старт больше не требует `POST /api/v1/dev/bootstrap-demo`. Cloud создает ресторан, настройки, роли, сотрудников с PIN, hall/table, catalog/menu, публикует snapshot, а POS Edge получает его через provisioning и после этого кассир входит по `POST /api/v1/auth/pin-login`.
+
+Вариант A, Cloud Approve: POS Edge с `POS_CLOUD_SYNC_URL=http://localhost:8090` сам регистрируется в Cloud через `POST /api/v1/devices/register`; администратор Cloud привязывает устройство к ресторану через `POST /api/v1/restaurants/{restaurant_id}/devices/{node_device_id}/assign`; Edge polling скачивает snapshot и выполняет local pairing.
+
+Вариант B, License Code: Cloud вызывает `POST /api/v1/restaurants/{restaurant_id}/devices/generate-pairing-code`, регистрирует одноразовый код в `license-server`, UI `/pair` отправляет код в POS Edge через `POST /api/v1/system/provisioning/pair-via-license`, после чего Edge resolve-ит код, скачивает snapshot и переходит на `/login`.
+
+Локальные smoke scripts:
+
+```powershell
+.\scripts\zero-to-cashier-option-a.ps1
+.\scripts\zero-to-cashier-option-b.ps1
+```
 
 ## Структура монорепозитория
 
@@ -80,6 +95,7 @@ Order -> Precheck -> Payment -> Check
 |   |-- README.md             # запуск и тесты cloud receiver
 |   |-- cmd/cloud-api/        # entrypoint Cloud API
 |   `-- migrations/postgres/  # single managed canonical PostgreSQL SQL file
+|-- license-server/           # License Server stub для pairing code resolve
 |-- pos-ui/                   # Vue 3 + Quasar POS Terminal Core
 |-- docs/sync/                # sync contracts
 |-- .codex/skills/            # локальные skills для Codex
@@ -377,7 +393,7 @@ Approved frontend MVP - отдельный пакет `pos-ui` на Vue 3 + Type
 
 `pos-ui` уже содержит рабочий shell и POS Terminal Core:
 
-- `/pair` - ввод pairing code и вызов `POST /api/v1/system/pair`;
+- `/pair` - два production режима: Cloud approval polling и ввод license code; legacy `POST /api/v1/system/pair` остается backend compatibility path;
 - `/login` - реальный `POST /api/v1/auth/pin-login`;
 - `/lock` - реальный `POST /api/v1/auth/logout` и очистка локального session state;
 - `/pos` - cashier surface для одного терминала: личная смена сотрудника, кассовая смена, выбор зала/стола, активный заказ, позиции меню, изменение/void позиций, выпуск/отмена пречека, cash/trusted card payment и отображение final check.

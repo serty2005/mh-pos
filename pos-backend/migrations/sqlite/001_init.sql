@@ -42,6 +42,20 @@ CREATE TABLE IF NOT EXISTS edge_node_identity (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS edge_provisioning_state (
+  id TEXT PRIMARY KEY CHECK (id = 'local'),
+  node_device_id TEXT NOT NULL CHECK (node_device_id <> ''),
+  cloud_url TEXT,
+  license_url TEXT,
+  restaurant_id TEXT,
+  status TEXT NOT NULL CHECK (status IN ('not_configured','pending_admin_approval','assigned_downloading_snapshot','paired','error')),
+  credentials_type TEXT,
+  credentials_token TEXT,
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS client_devices (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),

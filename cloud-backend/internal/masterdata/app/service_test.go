@@ -129,8 +129,46 @@ func TestDuplicateActivePINIsRejectedPerRestaurant(t *testing.T) {
 	if _, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: "restaurant-1", RoleID: role.ID, Name: "Anna", PIN: "1111"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: "restaurant-1", RoleID: role.ID, Name: "Ivan", PIN: "1111"}); !errors.Is(err, domain.ErrConflict) {
+	if _, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: "restaurant-1", RoleID: role.ID, Name: "Ivan", PIN: "1111"}); !errors.Is(err, domain.ErrPINAlreadyExists) {
 		t.Fatalf("expected duplicate PIN conflict, got %v", err)
+	}
+}
+
+func TestSuspendedEmployeePINStillBlocksReuse(t *testing.T) {
+	service, _ := newService()
+	ctx := context.Background()
+	role, err := service.CreateRole(ctx, app.CreateRoleCommand{RestaurantID: "restaurant-1", Name: "cashier", PermissionsJSON: `{}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	employee, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: "restaurant-1", RoleID: role.ID, Name: "Anna", PIN: "1111"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SuspendEmployee(ctx, employee.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: "restaurant-1", RoleID: role.ID, Name: "Ivan", PIN: "1111"}); !errors.Is(err, domain.ErrPINAlreadyExists) {
+		t.Fatalf("expected suspended employee PIN to stay reserved, got %v", err)
+	}
+}
+
+func TestArchivedEmployeePINCanBeReused(t *testing.T) {
+	service, _ := newService()
+	ctx := context.Background()
+	role, err := service.CreateRole(ctx, app.CreateRoleCommand{RestaurantID: "restaurant-1", Name: "cashier", PermissionsJSON: `{}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	employee, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: "restaurant-1", RoleID: role.ID, Name: "Anna", PIN: "1111"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ArchiveEmployee(ctx, employee.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: "restaurant-1", RoleID: role.ID, Name: "Ivan", PIN: "1111"}); err != nil {
+		t.Fatalf("expected archived employee PIN to be reusable, got %v", err)
 	}
 }
 

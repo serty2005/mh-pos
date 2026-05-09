@@ -44,10 +44,18 @@ type EdgeNodeIdentity = device.EdgeNodeIdentity
 type ClientDeviceStatus = device.ClientDeviceStatus
 type ClientDevice = device.ClientDevice
 type PairingStatus = device.PairingStatus
+type ProvisioningStatus = device.ProvisioningStatus
+type EdgeProvisioningState = device.EdgeProvisioningState
+type ProvisioningStatusView = device.ProvisioningStatusView
 
 const (
-	EdgeNodePaired     = device.EdgeNodePaired
-	ClientDeviceActive = device.ClientDeviceActive
+	EdgeNodePaired                          = device.EdgeNodePaired
+	ClientDeviceActive                      = device.ClientDeviceActive
+	ProvisioningNotConfigured               = device.ProvisioningNotConfigured
+	ProvisioningUnpairedRegistered          = device.ProvisioningUnpairedRegistered
+	ProvisioningAssignedDownloadingSnapshot = device.ProvisioningAssignedDownloadingSnapshot
+	ProvisioningPaired                      = device.ProvisioningPaired
+	ProvisioningError                       = device.ProvisioningError
 )
 
 type Role = employee.Role

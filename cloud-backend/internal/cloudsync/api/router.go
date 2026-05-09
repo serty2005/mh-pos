@@ -17,6 +17,9 @@ import (
 	"cloud-backend/internal/cloudsync/contracts"
 	masterapi "cloud-backend/internal/masterdata/api"
 	masterapp "cloud-backend/internal/masterdata/app"
+	httpx "cloud-backend/internal/platform/httpx"
+	provisioningapi "cloud-backend/internal/provisioning/api"
+	provisioningapp "cloud-backend/internal/provisioning/app"
 )
 
 type Handler struct {
@@ -24,6 +27,10 @@ type Handler struct {
 }
 
 func NewRouter(service *app.Service, masterServices ...*masterapp.Service) http.Handler {
+	return NewRouterWithProvisioning(service, nil, masterServices...)
+}
+
+func NewRouterWithProvisioning(service *app.Service, provisioningService *provisioningapp.Service, masterServices ...*masterapp.Service) http.Handler {
 	h := &Handler{service: service}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -40,6 +47,7 @@ func NewRouter(service *app.Service, masterServices ...*masterapp.Service) http.
 		if len(masterServices) > 0 {
 			masterapi.RegisterRoutes(r, masterServices[0])
 		}
+		provisioningapi.RegisterRoutes(r, provisioningService)
 	})
 	return r
 }
@@ -210,11 +218,10 @@ func (h *Handler) getMasterDataPackage(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	httpx.JSON(w, status, v)
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
-	writeJSON(w, status, map[string]string{"error": err.Error()})
+	_ = status
+	httpx.Error(w, err)
 }

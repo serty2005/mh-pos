@@ -18,6 +18,7 @@ import (
 	appmenu "pos-backend/internal/pos/app/menu"
 	apporder "pos-backend/internal/pos/app/order"
 	appprecheck "pos-backend/internal/pos/app/precheck"
+	appprovisioning "pos-backend/internal/pos/app/provisioning"
 	apprestaurant "pos-backend/internal/pos/app/restaurant"
 	"pos-backend/internal/pos/app/shared"
 	appshift "pos-backend/internal/pos/app/shift"
@@ -67,6 +68,8 @@ type CloseCashSessionCommand = appcash.CloseCashSessionCommand
 type RecordCashDrawerEventCommand = appcash.RecordCashDrawerEventCommand
 type ApplyMasterDataCommand = appmastersync.ApplyMasterDataCommand
 type ApplyMasterDataResult = appmastersync.ApplyMasterDataResult
+type RegisterCloudProvisioningCommand = appprovisioning.RegisterCloudCommand
+type PairViaLicenseCommand = appprovisioning.PairViaLicenseCommand
 
 // MasterDataBackupRequest содержит безопасные metadata для backup-before-data-load.
 type MasterDataBackupRequest = appmastersync.BackupRequest
@@ -89,27 +92,32 @@ type ReclaimStaleOutboxCommand struct {
 }
 
 type Service struct {
-	repo        ports.Repository
-	restaurants *apprestaurant.Service
-	devices     *appdevice.Service
-	employees   *appemployee.Service
-	auth        *appauth.Service
-	floor       *appfloor.Service
-	catalog     *appcatalog.Service
-	menu        *appmenu.Service
-	shifts      *appshift.Service
-	orders      *apporder.Service
-	prechecks   *appprecheck.Service
-	checks      *appcheck.Service
-	cash        *appcash.Service
-	masterSync  *appmastersync.Service
-	localEvents ports.LocalEventRepository
-	outbox      *shared.OutboxService
+	repo         ports.Repository
+	restaurants  *apprestaurant.Service
+	devices      *appdevice.Service
+	employees    *appemployee.Service
+	auth         *appauth.Service
+	floor        *appfloor.Service
+	catalog      *appcatalog.Service
+	menu         *appmenu.Service
+	shifts       *appshift.Service
+	orders       *apporder.Service
+	prechecks    *appprecheck.Service
+	checks       *appcheck.Service
+	cash         *appcash.Service
+	masterSync   *appmastersync.Service
+	provisioning *appprovisioning.Service
+	localEvents  ports.LocalEventRepository
+	outbox       *shared.OutboxService
 }
 
 // ServiceOptions задает runtime hooks верхнего POS application service.
 type ServiceOptions struct {
 	MasterDataBackupBeforeFullSnapshot MasterDataBackupFunc
+	CloudProvisioningURL               string
+	LicenseServerURL                   string
+	CloudProvisioningClient            appprovisioning.CloudClient
+	LicenseProvisioningClient          appprovisioning.LicenseClient
 }
 
 func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock) *Service {
@@ -118,7 +126,7 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 
 // NewServiceWithOptions создает POS application service с дополнительными runtime hooks.
 func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, options ServiceOptions) *Service {
-	return &Service{
+	s := &Service{
 		repo:        repo,
 		restaurants: apprestaurant.NewService(repo, tx, ids, clock),
 		devices:     appdevice.NewService(repo, tx, ids, clock),
@@ -138,6 +146,15 @@ func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idge
 		localEvents: repo,
 		outbox:      shared.NewOutboxService(repo, tx, clock),
 	}
+	s.provisioning = appprovisioning.NewService(repo, tx, ids, clock, appprovisioning.Options{
+		CloudURL:   options.CloudProvisioningURL,
+		LicenseURL: options.LicenseServerURL,
+		Cloud:      options.CloudProvisioningClient,
+		License:    options.LicenseProvisioningClient,
+		Apply:      s.masterSync.ApplyMasterData,
+		Pair:       s.devices.PairEdgeNode,
+	})
+	return s
 }
 
 func (s *Service) ListRestaurants(ctx context.Context) ([]domain.Restaurant, error) {
@@ -162,6 +179,22 @@ func (s *Service) PairEdgeNode(ctx context.Context, cmd PairEdgeNodeCommand) (*d
 
 func (s *Service) GetPairingStatus(ctx context.Context) (domain.PairingStatus, error) {
 	return s.devices.GetPairingStatus(ctx)
+}
+
+func (s *Service) GetProvisioningStatus(ctx context.Context) (domain.ProvisioningStatusView, error) {
+	return s.provisioning.GetStatus(ctx)
+}
+
+func (s *Service) RegisterCloudProvisioning(ctx context.Context, cmd RegisterCloudProvisioningCommand) (domain.ProvisioningStatusView, error) {
+	return s.provisioning.RegisterCloud(ctx, cmd)
+}
+
+func (s *Service) PollCloudAssignment(ctx context.Context) (domain.ProvisioningStatusView, error) {
+	return s.provisioning.PollAssignment(ctx)
+}
+
+func (s *Service) PairViaLicense(ctx context.Context, cmd PairViaLicenseCommand) (domain.ProvisioningStatusView, error) {
+	return s.provisioning.PairViaLicense(ctx, cmd)
 }
 
 func (s *Service) ListRoles(ctx context.Context) ([]domain.Role, error) {

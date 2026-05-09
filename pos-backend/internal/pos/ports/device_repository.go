@@ -12,6 +12,8 @@ type DeviceRepository interface {
 	ListDevices(context.Context) ([]device.Device, error)
 	UpsertEdgeNodeIdentity(context.Context, *device.EdgeNodeIdentity) error
 	GetEdgeNodeIdentity(context.Context) (*device.EdgeNodeIdentity, error)
+	UpsertEdgeProvisioningState(context.Context, *device.EdgeProvisioningState) error
+	GetEdgeProvisioningState(context.Context) (*device.EdgeProvisioningState, error)
 	CreateClientDevice(context.Context, *device.ClientDevice) error
 	GetClientDevice(context.Context, string, string) (*device.ClientDevice, error)
 	TouchClientDevice(context.Context, string, string, string) error

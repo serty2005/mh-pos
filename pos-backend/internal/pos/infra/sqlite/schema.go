@@ -10,6 +10,7 @@ func RequiredSchema() []platformsqlite.SchemaRequirement {
 		{Table: "restaurants", RequiredBy: "pos repository restaurant settings and business date policy", MigrationFile: "001_init.sql, 002_runtime_schema_repair.sql", Columns: []string{"id", "name", "timezone", "currency", "business_day_mode", "business_day_boundary_local_time", "active", "created_at", "updated_at"}},
 		{Table: "devices", Columns: []string{"id", "restaurant_id", "device_code", "name", "type", "active", "registered_at"}},
 		{Table: "edge_node_identity", Columns: []string{"node_device_id", "restaurant_id", "status", "paired_at"}},
+		{Table: "edge_provisioning_state", Columns: []string{"id", "node_device_id", "cloud_url", "license_url", "restaurant_id", "status", "credentials_type", "credentials_token", "created_at", "updated_at"}},
 		{Table: "client_devices", Columns: []string{"id", "restaurant_id", "node_device_id", "client_device_id", "status", "first_seen_at", "last_seen_at"}, Indexes: []string{"client_devices_restaurant_node_status"}},
 		{Table: "roles", Columns: []string{"id", "name", "permissions_json", "active", "created_at", "updated_at"}},
 		{Table: "employees", Columns: []string{"id", "restaurant_id", "role_id", "name", "pin_hash", "active", "created_at", "updated_at"}},
