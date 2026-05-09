@@ -19,10 +19,10 @@ import (
 	"cloud-backend/internal/platform/clock"
 	"cloud-backend/internal/platform/logging"
 	platformpg "cloud-backend/internal/platform/postgres"
-	"cloud-backend/internal/platform/version"
 	provisioningapp "cloud-backend/internal/provisioning/app"
 	"cloud-backend/internal/provisioning/infra/licensehttp"
 	provisioningpg "cloud-backend/internal/provisioning/infra/postgres"
+	"mh-pos-platform/config"
 )
 
 func main() {
@@ -33,15 +33,22 @@ func main() {
 }
 
 func run() error {
-	slog.SetDefault(logging.NewJSONLogger("CLOUD_LOG_LEVEL"))
+	cfg, err := config.Load("CLOUD_CONFIG_PATH", "config/cloud-api.json")
+	if err != nil {
+		return err
+	}
+	slog.SetDefault(logging.NewJSONLoggerWithLevel(cfg.Get("CLOUD_LOG_LEVEL", "")))
+	if cfg.Path() != "" {
+		slog.Info("Cloud config file applied", "config_path", cfg.Path())
+	}
 
-	addr := env("CLOUD_HTTP_ADDR", ":8090")
-	publicURL := env("CLOUD_PUBLIC_URL", "http://localhost:8090")
-	licenseURL := env("LICENSE_SERVER_URL", "")
-	dsn := env("CLOUD_POSTGRES_DSN", "")
-	migrationsDir := env("CLOUD_POSTGRES_MIGRATIONS_DIR", "migrations/postgres")
-	backupDir := env("CLOUD_POSTGRES_BACKUP_DIR", "data/cloud-backups")
-	moduleVersion := version.Resolve("MH_POS_VERSION")
+	addr := cfg.Get("CLOUD_HTTP_ADDR", ":8090")
+	publicURL := cfg.Get("CLOUD_PUBLIC_URL", "http://localhost:8090")
+	licenseURL := cfg.Get("LICENSE_SERVER_URL", "")
+	dsn := cfg.Get("CLOUD_POSTGRES_DSN", "")
+	migrationsDir := cfg.Get("CLOUD_POSTGRES_MIGRATIONS_DIR", "migrations/postgres")
+	backupDir := cfg.Get("CLOUD_POSTGRES_BACKUP_DIR", "data/cloud-backups")
+	moduleVersion := cfg.Get("MH_POS_VERSION", "0.1.1")
 	if dsn == "" {
 		return errors.New("CLOUD_POSTGRES_DSN is required")
 	}
@@ -93,11 +100,4 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return server.Shutdown(shutdownCtx)
-}
-
-func env(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }

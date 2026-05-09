@@ -6,7 +6,10 @@ require (
 	github.com/JohannesJHN/iso4217 v0.0.0-20250910211824-d9ba0fe363a8
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/jackc/pgx/v5 v5.7.6
+	mh-pos-platform v0.0.0
 )
+
+replace mh-pos-platform => ../shared/platform
 
 require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect

@@ -16,6 +16,7 @@ import (
 	"license-server/internal/license/api"
 	"license-server/internal/license/app"
 	"license-server/internal/license/infra/sqlite"
+	"mh-pos-platform/config"
 )
 
 func main() {
@@ -26,8 +27,16 @@ func main() {
 }
 
 func run() error {
-	addr := env("LICENSE_HTTP_ADDR", ":8095")
-	dbPath := env("LICENSE_SQLITE_PATH", "data/license-server.db")
+	cfg, err := config.Load("LICENSE_CONFIG_PATH", "config/license-api.json")
+	if err != nil {
+		return err
+	}
+	if cfg.Path() != "" {
+		slog.Info("License config file applied", "config_path", cfg.Path())
+	}
+
+	addr := cfg.Get("LICENSE_HTTP_ADDR", ":8095")
+	dbPath := cfg.Get("LICENSE_SQLITE_PATH", "data/license-server.db")
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return err
@@ -50,11 +59,4 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return server.Shutdown(ctx)
-}
-
-func env(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }

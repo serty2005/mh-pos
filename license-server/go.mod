@@ -4,8 +4,11 @@ go 1.26.2
 
 require (
 	github.com/go-chi/chi/v5 v5.2.5
+	mh-pos-platform v0.0.0
 	modernc.org/sqlite v1.50.0
 )
+
+replace mh-pos-platform => ../shared/platform
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

@@ -96,6 +96,7 @@ go run ./cmd/pos-edge
 Полезные environment variables:
 
 ```powershell
+$env:POS_CONFIG_PATH="config/pos-edge.json" # optional; файл имеет приоритет над env
 $env:POS_HTTP_ADDR=":8080"
 $env:POS_SQLITE_PATH="data/pos-edge.db"
 $env:POS_SQLITE_MIGRATIONS_DIR="migrations/sqlite"
@@ -110,6 +111,8 @@ $env:POS_SYNC_SENDER_RECLAIM_AFTER="5m"
 $env:POS_SYNC_SENDER_SEND_TIMEOUT="10s"
 $env:POS_DEV_TOOLS="1" # только для локального demo bootstrap/dev seed/admin master-data helpers
 ```
+
+Реализовано сейчас: POS Edge также читает optional `config/pos-edge.json`; пример полного файла находится в `config/pos-edge.example.json`. Если `POS_CONFIG_PATH` задан явно, файл обязателен. Порядок приоритета: defaults -> env -> JSON-файл. Общий контракт описан в `../docs/backend/RUNTIME-CONFIG.md`.
 
 VSCode setup: открой папку `pos-backend`, установи официальный Go extension, выполни `Go: Install/Update Tools`, затем используй integrated terminal для `go test ./...` и `go run ./cmd/pos-edge`.
 

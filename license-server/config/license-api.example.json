@@ -1,0 +1,4 @@
+{
+  "LICENSE_HTTP_ADDR": ":8095",
+  "LICENSE_SQLITE_PATH": "data/license-server.db"
+}

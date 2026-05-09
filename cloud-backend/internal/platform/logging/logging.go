@@ -31,6 +31,11 @@ func NewJSONLogger(envVar string) *slog.Logger {
 	return NewJSONLoggerWithWriter(os.Stdout, level).With("log_level_env", envVar)
 }
 
+func NewJSONLoggerWithLevel(rawLevel string) *slog.Logger {
+	level := ParseLevel(rawLevel, slog.LevelInfo)
+	return NewJSONLoggerWithWriter(os.Stdout, level)
+}
+
 func NewJSONLoggerWithWriter(out io.Writer, level slog.Leveler) *slog.Logger {
 	handler := slog.NewJSONHandler(out, &slog.HandlerOptions{
 		Level: level,

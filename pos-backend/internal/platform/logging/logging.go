@@ -36,6 +36,12 @@ func NewJSONLogger(envVar string) *slog.Logger {
 	return NewJSONLoggerWithWriter(os.Stdout, level).With("log_level_env", envVar)
 }
 
+// NewJSONLoggerWithLevel создает structured logger с явно переданным уровнем.
+func NewJSONLoggerWithLevel(rawLevel string) *slog.Logger {
+	level := ParseLevel(rawLevel, slog.LevelInfo)
+	return NewJSONLoggerWithWriter(os.Stdout, level)
+}
+
 // NewJSONLoggerWithWriter создает logger с writer, удобным для тестов.
 func NewJSONLoggerWithWriter(out io.Writer, level slog.Leveler) *slog.Logger {
 	handler := slog.NewJSONHandler(out, &slog.HandlerOptions{

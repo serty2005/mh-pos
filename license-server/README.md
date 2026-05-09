@@ -8,10 +8,13 @@
 cd license-server
 go mod tidy
 go test ./...
+$env:LICENSE_CONFIG_PATH="config/license-api.json" # optional; файл имеет приоритет над env
 $env:LICENSE_HTTP_ADDR=":8095"
 $env:LICENSE_SQLITE_PATH="data/license-server.db"
 go run ./cmd/license-api
 ```
+
+Реализовано сейчас: License Server также читает optional `config/license-api.json`; пример полного файла находится в `config/license-api.example.json`. Если `LICENSE_CONFIG_PATH` задан явно, файл обязателен. Порядок приоритета: defaults -> env -> JSON-файл. Общий контракт описан в `../docs/backend/RUNTIME-CONFIG.md`.
 
 ## API
 

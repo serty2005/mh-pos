@@ -27,6 +27,7 @@ docker run --name mh-pos-cloud-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRE
 
 ```powershell
 cd cloud-backend
+$env:CLOUD_CONFIG_PATH="config/cloud-api.json" # optional; файл имеет приоритет над env
 $env:CLOUD_POSTGRES_DSN="postgres://postgres:postgres@localhost:5432/mh_pos_cloud?sslmode=disable"
 go mod tidy
 go test ./...
@@ -45,6 +46,8 @@ MH_POS_VERSION=0.1.1
 ```
 
 `CLOUD_POSTGRES_DSN` обязателен.
+
+Реализовано сейчас: Cloud Backend также читает optional `config/cloud-api.json`; пример полного файла находится в `config/cloud-api.example.json`. Если `CLOUD_CONFIG_PATH` задан явно, файл обязателен. Порядок приоритета: defaults -> env -> JSON-файл. Общий контракт описан в `../docs/backend/RUNTIME-CONFIG.md`.
 
 Реализовано сейчас: PostgreSQL использует ordered managed migrations из `migrations/postgres`: `001_sync_receiver.sql` задает baseline receiver storage, `002_projection_event_type_stats.sql` создает/ремонтирует required runtime projection table `cloud_projection_event_type_stats`, `003_runtime_schema_repair.sql` довыравнивает весь required receiver/projection/provisioning schema set для старых БД, `004_master_data_authority.sql` добавляет Cloud-owned master-data authority schema, `005_master_data_restaurants_api.sql` добавляет `cloud_restaurants`, cloud-version metadata и partial unique SKU policy для неархивных catalog items, `006_zero_to_cashier_provisioning.sql` добавляет Cloud halls/tables и device provisioning таблицы.
 Реализовано сейчас: `schema_migrations` хранит имя SQL file, checksum и status; уже примененные migrations не выполняются повторно, а новая ordered migration записывается в history после успешного apply.

@@ -129,6 +129,8 @@ go run ./cmd/pos-edge
 
 Сервис по умолчанию слушает `http://localhost:8080`.
 
+Реализовано сейчас: Go-сервисы поддерживают внешний JSON-конфиг поверх env. POS Edge читает `POS_CONFIG_PATH` или optional `config/pos-edge.json`, Cloud Backend читает `CLOUD_CONFIG_PATH` или optional `config/cloud-api.json`, License Server читает `LICENSE_CONFIG_PATH` или optional `config/license-api.json`. Файловый конфиг имеет приоритет над env; примеры лежат в `*/config/*.example.json`, общий контракт - `docs/backend/RUNTIME-CONFIG.md`.
+
 Для Cloud Sync Receiver:
 
 ```powershell
@@ -473,6 +475,7 @@ go test ./...
 
 - POS Edge log level env: `POS_LOG_LEVEL`
 - Cloud Backend log level env: `CLOUD_LOG_LEVEL`
+- эти же ключи можно задать во внешних JSON-файлах `config/pos-edge.json` и `config/cloud-api.json`; файловое значение имеет приоритет над env
 - Supported values: `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`
 - Default: `INFO`
 
