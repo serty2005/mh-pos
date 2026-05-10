@@ -81,6 +81,7 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/orders", h.createOrder)
 		r.Get("/orders/current", h.getCurrentOrder)
 		r.Get("/orders/{id}", h.getOrder)
+		r.Get("/orders/closed", h.listClosedOrders)
 		r.Post("/orders/{id}/lines", h.addOrderLine)
 		r.Patch("/orders/{id}/lines/{line_id}", h.changeOrderLineQuantity)
 		r.Post("/orders/{id}/lines/{line_id}/void", h.voidOrderLine)
@@ -619,6 +620,20 @@ func (h *Handler) getOrder(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.GetOrderAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) listClosedOrders(w http.ResponseWriter, r *http.Request) {
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+	v, err := h.service.ListClosedOrders(r.Context(), limit, meta)
 	writeOK(w, r, v, err)
 }
 

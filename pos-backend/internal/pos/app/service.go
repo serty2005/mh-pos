@@ -382,6 +382,10 @@ func (s *Service) GetCheckAsOperator(ctx context.Context, id string, meta Comman
 	return s.checks.GetCheckAsOperator(ctx, id, meta)
 }
 
+func (s *Service) ListClosedOrders(ctx context.Context, limit int, meta CommandMeta) ([]domain.OrderSummary, error) {
+	return s.checks.ListClosedOrders(ctx, limit, meta)
+}
+
 func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand) (*domain.Payment, error) {
 	return s.checks.CapturePayment(ctx, cmd)
 }

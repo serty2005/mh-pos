@@ -10,6 +10,7 @@ import (
 	txmanager "pos-backend/internal/platform/tx"
 	"pos-backend/internal/pos/app/shared"
 	"pos-backend/internal/pos/domain"
+	"pos-backend/internal/pos/domain/order"
 	"pos-backend/internal/pos/ports"
 	"strings"
 	"time"
@@ -59,6 +60,13 @@ func (s *Service) GetCheckAsOperator(ctx context.Context, id string, meta shared
 		return nil, err
 	}
 	return s.GetCheck(ctx, id)
+}
+
+func (s *Service) ListClosedOrders(ctx context.Context, limit int, meta shared.CommandMeta) ([]order.OrderSummary, error) {
+	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionCheckView)); err != nil {
+		return nil, err
+	}
+	return s.repo.ListClosedOrders(ctx, limit)
 }
 
 func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand) (*domain.Payment, error) {
@@ -386,14 +394,7 @@ func requiredPaymentPermission(method domain.PaymentMethod) shared.PermissionID 
 }
 
 func requiredRefundPermission(method domain.PaymentMethod) shared.PermissionID {
-	switch method {
-	case domain.PaymentCash:
-		return shared.PermissionPaymentCash
-	case domain.PaymentCard:
-		return shared.PermissionPaymentCardManual
-	default:
-		return shared.PermissionPaymentRefund
-	}
+	return shared.PermissionPaymentRefund
 }
 
 type checkSnapshot struct {

@@ -231,6 +231,16 @@
           </div>
           <div v-else class="empty-state small">{{ t('pos.noTables') }}</div>
 
+          <q-btn
+            v-if="canViewClosedOrders"
+            outline
+            color="secondary"
+            class="touch-button"
+            icon="history"
+            :label="t('pos.closedOrders')"
+            @click="closedOrdersMode = !closedOrdersMode"
+          />
+
           <div v-if="canViewSync" class="sync-panel">
             <q-separator />
             <div class="section-head slim">
@@ -286,107 +296,158 @@
       </aside>
 
       <main class="order-pane">
-        <div class="order-hero">
-          <div>
-            <p class="eyebrow">{{ selectedTable?.name ? `${t('pos.selectedTable')} ${selectedTable.name}` : t('pos.chooseTable') }}</p>
-            <h2>{{ t('pos.activeOrder') }}</h2>
+        <div v-if="closedOrdersMode" class="closed-orders-workspace">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">{{ t('common.status') }}</p>
+              <h2>{{ t('pos.closedOrders') }}</h2>
+            </div>
+            <q-btn flat round icon="refresh" class="icon-touch" :aria-label="t('actions.retry')" @click="() => closedOrders.refetch()" />
           </div>
-          <div v-if="activeOrder" class="total-chip">
-            <span>{{ t('pos.total') }}</span>
-            <strong>{{ money(activeOrder.total, orderCurrency) }}</strong>
+
+          <q-banner v-if="closedOrders.error.value" class="error-banner dense-banner" rounded>{{ t(displayErrorMessageKey(closedOrders.error.value)) }}</q-banner>
+          <q-skeleton v-if="closedOrders.isFetching.value" class="order-skeleton" />
+
+          <div v-else-if="closedOrders.data.value" class="closed-orders-list">
+            <div v-for="order in closedOrders.data.value" :key="order.id" class="closed-order-item">
+              <div class="order-summary">
+                <div>
+                  <span>{{ t('pos.order') }}</span>
+                  <strong>{{ shortId(order.id) }}</strong>
+                </div>
+                <div>
+                  <span>{{ t('pos.table') }}</span>
+                  <strong>{{ order.table_name }}</strong>
+                </div>
+                <div>
+                  <span>{{ t('pos.total') }}</span>
+                  <strong>{{ money(order.total, 'RUB') }}</strong>
+                </div>
+                <div>
+                  <span>{{ t('common.status') }}</span>
+                  <q-chip :color="order.status === 'closed' ? 'green' : 'orange'" :label="statusLabel(order.status)" />
+                </div>
+              </div>
+              <div class="order-actions">
+                <q-btn
+                  v-if="order.check?.payments?.some(p => p.status === 'captured')"
+                  color="negative"
+                  unelevated
+                  class="touch-button"
+                  icon="undo"
+                  :label="t('pos.refund')"
+                  :disable="!canRefundPayment || !currentCashSession.data.value"
+                  @click="openRefundDialogForOrder(order)"
+                />
+              </div>
+            </div>
           </div>
-          <q-btn
-            color="primary"
-            unelevated
-            class="touch-button"
-            icon="receipt_long"
-            :label="t('actions.createOrder')"
-            :disable="!canCreateOrder"
-            :loading="createOrderMutation.isPending.value"
-            @click="createOrderMutation.mutate()"
-          />
+          <div v-else class="empty-state wide">{{ t('pos.noActiveOrder') }}</div>
         </div>
 
-        <q-banner v-if="orderError" class="error-banner dense-banner" rounded>{{ orderError }}</q-banner>
-        <q-skeleton v-if="orderLoading" class="order-skeleton" />
-
-        <div v-else-if="activeOrder" class="order-workspace">
-          <div class="order-summary">
+        <template v-else>
+          <div class="order-hero">
             <div>
-              <span>{{ t('pos.order') }}</span>
-              <strong>{{ shortId(activeOrder.id) }}</strong>
+              <p class="eyebrow">{{ selectedTable?.name ? `${t('pos.selectedTable')} ${selectedTable.name}` : t('pos.chooseTable') }}</p>
+              <h2>{{ t('pos.activeOrder') }}</h2>
             </div>
-            <div>
-              <span>{{ t('common.status') }}</span>
-              <strong>{{ statusLabel(activeOrder.status) }}</strong>
-            </div>
-            <div>
+            <div v-if="activeOrder" class="total-chip">
               <span>{{ t('pos.total') }}</span>
               <strong>{{ money(activeOrder.total, orderCurrency) }}</strong>
             </div>
+            <q-btn
+              color="primary"
+              unelevated
+              class="touch-button"
+              icon="receipt_long"
+              :label="t('actions.createOrder')"
+              :disable="!canCreateOrder"
+              :loading="createOrderMutation.isPending.value"
+              @click="createOrderMutation.mutate()"
+            />
           </div>
 
-          <q-banner v-if="activeOrder.status === 'locked'" class="info-banner" rounded>
-            {{ t('pos.lockedOrder') }}
-          </q-banner>
-          <q-banner v-if="finalCheckData" class="success-banner" rounded>
-            {{ t('pos.checkCreated') }}: {{ shortId(finalCheckData.id) }} · {{ money(finalCheckData.total, orderCurrency) }}
-          </q-banner>
-          <q-btn
-            v-if="finalCheckData"
-            outline
-            color="secondary"
-            class="touch-button"
-            icon="print"
-            :label="t('actions.reprintCheck')"
-            :disable="!canReprintCheck"
-            :loading="reprintCheckMutation.isPending.value"
-            @click="reprintCheckMutation.mutate(finalCheckData.id)"
-          />
-          <q-btn
-            v-if="finalCheckData && activeOrder.status !== 'closed'"
-            color="primary"
-            unelevated
-            class="touch-button"
-            icon="done_all"
-            :label="t('actions.closeOrder')"
-            :disable="!canCloseOrder"
-            :loading="closeOrderMutation.isPending.value"
-            @click="closeOrderMutation.mutate(activeOrder.id)"
-          />
+          <q-banner v-if="orderError" class="error-banner dense-banner" rounded>{{ orderError }}</q-banner>
+          <q-skeleton v-if="orderLoading" class="order-skeleton" />
 
-          <div class="section-head slim">
-            <h2>{{ t('pos.orderLines') }}</h2>
-          </div>
-          <div v-if="activeLines.length" class="line-table">
-            <div v-for="line in activeLines" :key="line.id" class="line-row">
-              <div class="line-title">
-                <strong>{{ line.name }}</strong>
-                <span>{{ money(line.unit_price, orderCurrency) }}</span>
+          <div v-else-if="activeOrder" class="order-workspace">
+            <div class="order-summary">
+              <div>
+                <span>{{ t('pos.order') }}</span>
+                <strong>{{ shortId(activeOrder.id) }}</strong>
               </div>
-              <div class="quantity-stepper">
-                <q-btn
-                  flat
-                  round
-                  class="stepper-button"
-                  icon="remove"
-                  :disable="!canChangeOrderLine || line.quantity <= 1"
-                  @click="changeQuantity(line.id, line.quantity - 1)"
-                />
-                <span>{{ line.quantity }}</span>
-                <q-btn flat round class="stepper-button" icon="add" :disable="!canChangeOrderLine" @click="changeQuantity(line.id, line.quantity + 1)" />
+              <div>
+                <span>{{ t('common.status') }}</span>
+                <strong>{{ statusLabel(activeOrder.status) }}</strong>
               </div>
-              <strong class="line-total">{{ money(line.total_price, orderCurrency) }}</strong>
-              <q-btn flat round class="stepper-button" icon="delete" color="negative" :disable="!canVoidOrderLine" :aria-label="t('actions.voidLine')" @click="voidLine(line.id)" />
+              <div>
+                <span>{{ t('pos.total') }}</span>
+                <strong>{{ money(activeOrder.total, orderCurrency) }}</strong>
+              </div>
             </div>
-          </div>
-          <div v-else class="empty-state">{{ t('pos.emptyOrder') }}</div>
-        </div>
 
-        <div v-else class="empty-state wide">{{ selectedTableId ? t('pos.noActiveOrder') : t('pos.chooseTable') }}</div>
+            <q-banner v-if="activeOrder.status === 'locked'" class="info-banner" rounded>
+              {{ t('pos.lockedOrder') }}
+            </q-banner>
+            <q-banner v-if="finalCheckData" class="success-banner" rounded>
+              {{ t('pos.checkCreated') }}: {{ shortId(finalCheckData.id) }} · {{ money(finalCheckData.total, orderCurrency) }}
+            </q-banner>
+            <q-btn
+              v-if="finalCheckData"
+              outline
+              color="secondary"
+              class="touch-button"
+              icon="print"
+              :label="t('actions.reprintCheck')"
+              :disable="!canReprintCheck"
+              :loading="reprintCheckMutation.isPending.value"
+              @click="reprintCheckMutation.mutate(finalCheckData.id)"
+            />
+            <q-btn
+              v-if="finalCheckData && activeOrder.status !== 'closed'"
+              color="primary"
+              unelevated
+              class="touch-button"
+              icon="done_all"
+              :label="t('actions.closeOrder')"
+              :disable="!canCloseOrder"
+              :loading="closeOrderMutation.isPending.value"
+              @click="closeOrderMutation.mutate(activeOrder.id)"
+            />
+
+            <div class="section-head slim">
+              <h2>{{ t('pos.orderLines') }}</h2>
+            </div>
+            <div v-if="activeLines.length" class="line-table">
+              <div v-for="line in activeLines" :key="line.id" class="line-row">
+                <div class="line-title">
+                  <strong>{{ line.name }}</strong>
+                  <span>{{ money(line.unit_price, orderCurrency) }}</span>
+                </div>
+                <div class="quantity-stepper">
+                  <q-btn
+                    flat
+                    round
+                    class="stepper-button"
+                    icon="remove"
+                    :disable="!canChangeOrderLine || line.quantity <= 1"
+                    @click="changeQuantity(line.id, line.quantity - 1)"
+                  />
+                  <span>{{ line.quantity }}</span>
+                  <q-btn flat round class="stepper-button" icon="add" :disable="!canChangeOrderLine" @click="changeQuantity(line.id, line.quantity + 1)" />
+                </div>
+                <strong class="line-total">{{ money(line.total_price, orderCurrency) }}</strong>
+                <q-btn flat round class="stepper-button" icon="delete" color="negative" :disable="!canVoidOrderLine" :aria-label="t('actions.voidLine')" @click="voidLine(line.id)" />
+              </div>
+            </div>
+            <div v-else class="empty-state">{{ t('pos.emptyOrder') }}</div>
+          </div>
+
+          <div v-else class="empty-state wide">{{ selectedTableId ? t('pos.noActiveOrder') : t('pos.chooseTable') }}</div>
+        </template>
       </main>
 
-      <aside class="action-pane">
+      <aside v-if="!closedOrdersMode" class="action-pane">
         <div class="pane-scroll action-scroll">
           <div class="section-head">
             <h2>{{ t('pos.menu') }}</h2>
@@ -538,6 +599,28 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <q-dialog v-model="refundDialog" persistent>
+      <q-card class="dialog-card">
+        <q-card-section>
+          <h2>{{ t('pos.refund') }}</h2>
+        </q-card-section>
+        <q-card-section class="form-stack">
+          <q-input v-model="refundReason" outlined :label="t('pos.refundReason')" type="textarea" autogrow />
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat :label="t('actions.cancel')" @click="refundDialog = false" />
+          <q-btn
+            color="negative"
+            unelevated
+            icon="undo"
+            :label="t('pos.refund')"
+            :loading="refundMutation.isPending.value"
+            @click="refundMutation.mutate()"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -568,14 +651,16 @@ import {
   issuePrecheck,
   listHalls,
   listLocalEvents,
+  listClosedOrders,
   listMenuItems,
-  listSyncOutbox,
-  listRecentShifts,
   listPrechecksByOrder,
+  listRecentShifts,
+  listSyncOutbox,
   listTables,
   openCashSession,
   openShift,
   recordCashDrawerEvent,
+  refundPayment,
   reprintCheck,
   reprintPrecheck,
   retryFailedOutbox,
@@ -586,7 +671,7 @@ import { resolveProtectedPosFallback } from '../shared/sessionGuards';
 import { currencyInputStep, formatMinorCurrency, minorToMoney, moneyToMinor } from '../shared/currency';
 import { displayErrorMessageKey, useErrorHandling } from '../shared/errorHandling';
 import { hasPermission, permissionCatalog } from '../shared/rbac';
-import type { Order } from '../shared/schemas';
+import type { ClosedOrder, Order } from '../shared/schemas';
 import { useAuthStore } from '../stores/auth';
 
 const { t } = useI18n();
@@ -612,6 +697,10 @@ const cancelDialog = ref(false);
 const managerEmployeeId = ref('');
 const managerPin = ref('');
 const cancelReason = ref('');
+const closedOrdersMode = ref(false);
+const refundDialog = ref(false);
+const refundPaymentId = ref('');
+const refundReason = ref('');
 const grantedPermissions = computed(() => auth.actor?.permissions ?? []);
 const canViewFloor = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.floorView));
 const canViewMenu = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.menuView));
@@ -625,6 +714,8 @@ const canViewCurrentCashSession = computed(() => hasPermission(grantedPermission
 const canRecordCashDrawerEvent = computed(() => Boolean(currentCashSession.data.value && hasPermission(grantedPermissions.value, permissionCatalog.cashDrawerRecordEvent)));
 const canViewSync = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.syncView));
 const canRetrySync = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.syncRetryFailed));
+const canViewClosedOrders = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.checkView));
+const canRefundPayment = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.paymentRefund));
 const cashDrawerTypeOptions = computed(() => [
   { label: t('pos.cashDrawerTypes.no_sale'), value: 'no_sale' },
   { label: t('pos.cashDrawerTypes.cash_in'), value: 'cash_in' },
@@ -735,6 +826,11 @@ const localEvents = useQuery({
   queryKey: ['local-events', auth.sessionId, localEventFilter],
   queryFn: () => listLocalEvents(5, localEventFilter.value),
   enabled: () => Boolean(auth.nodeDeviceId && auth.sessionId && canViewSync.value),
+});
+const closedOrders = useQuery({
+  queryKey: ['closed-orders'],
+  queryFn: () => listClosedOrders(50),
+  enabled: () => Boolean(auth.nodeDeviceId && auth.sessionId && canViewClosedOrders.value && closedOrdersMode.value),
 });
 const activePrecheck = computed(() => prechecks.data.value?.find((item) => item.status === 'issued') ?? null);
 const latestPrecheck = computed(() => {
@@ -878,11 +974,40 @@ const paymentMutation = useMutation({
   onError: showBusinessError,
 });
 
+const refundMutation = useMutation({
+  mutationFn: () => refundPayment(refundPaymentId.value, refundReason.value),
+  onSuccess() {
+    refundDialog.value = false;
+    refundPaymentId.value = '';
+    refundReason.value = '';
+    void queryClient.invalidateQueries({ queryKey: ['closed-orders'] });
+    void queryClient.invalidateQueries({ queryKey: ['sync-outbox'] });
+    void queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+    $q.notify({
+      message: t('pos.refundSuccess'),
+      type: 'positive',
+      position: 'top',
+    });
+  },
+  onError: showBusinessError,
+});
+
 const retrySyncMutation = useMutation({
   mutationFn: retryFailedOutbox,
   onSuccess: refreshSync,
   onError: showBusinessError,
 });
+
+const openRefundDialog = (paymentId: string) => {
+  refundPaymentId.value = paymentId;
+  refundReason.value = '';
+  refundDialog.value = true;
+};
+
+const openRefundDialogForOrder = (order: ClosedOrder) => {
+  const payment = order.check?.payments?.find((item) => item.status === 'captured');
+  if (payment) openRefundDialog(payment.id);
+};
 
 watch(pairing.error, (error) => {
   if (error) showBusinessError(error);

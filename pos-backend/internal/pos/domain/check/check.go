@@ -29,6 +29,7 @@ type Check struct {
 	BusinessDateLocal string          `json:"business_date_local"`
 	ClosedAt          time.Time       `json:"closed_at"`
 	Snapshot          json.RawMessage `json:"snapshot,omitempty"`
+	Payments          []Payment       `json:"payments,omitempty"`
 	CreatedAt         time.Time       `json:"created_at"`
 	UpdatedAt         time.Time       `json:"updated_at"`
 }

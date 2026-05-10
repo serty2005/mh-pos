@@ -130,6 +130,7 @@ Order -> Precheck -> Payment -> Check
 ### Заказы
 
 - `GET /api/v1/orders/current?table_id=...`
+- `GET /api/v1/orders/closed?limit=...`
 - `GET /api/v1/orders/{id}`
 - `POST /api/v1/orders`
 - `POST /api/v1/orders/{id}/lines`
@@ -145,6 +146,7 @@ Order -> Precheck -> Payment -> Check
 - `POST /api/v1/prechecks/{id}/cancel`
 - `POST /api/v1/prechecks/{id}/reprint`
 - `POST /api/v1/prechecks/{id}/payments`
+- `POST /api/v1/payments/{id}/refund`
 - `GET /api/v1/checks/{id}`
 - `POST /api/v1/checks/{id}/reprint`
 
@@ -153,6 +155,8 @@ Order -> Precheck -> Payment -> Check
 - reprint precheck требует `pos.precheck.reprint` и возвращает copy-document payload из immutable `prechecks.snapshot`;
 - reprint final check требует `pos.check.reprint` и возвращает copy-document payload из immutable `checks.snapshot`;
 - reprint не использует текущее состояние order как source of truth;
+- список закрытых заказов требует `pos.check.view` и возвращает summary заказа с final check и payments последнего precheck, чтобы UI мог показать доступные возвраты;
+- возврат оплаты требует `pos.payment.refund`, открытую кассовую смену того же устройства/смены и переводит captured payment в `refunded`, уменьшая `paid_total` precheck/check;
 - reprint response содержит `copy_marker = "COPY"`, а русская UI-метка `КОПИЯ` задается через i18n;
 - reprint пишет audit events `PrecheckReprinted` / `CheckReprinted` в `local_event_log` и outbox.
 
@@ -435,6 +439,7 @@ Canonical permission IDs, используемые текущим runtime:
 - `pos.payment.cash`
 - `pos.payment.card.manual`
 - `pos.payment.other`
+- `pos.payment.refund`
 - `pos.check.view`
 - `pos.check.reprint`
 - `pos.sync.view` (required for operator-triggered `GET /api/v1/sync/outbox`, `GET /api/v1/sync/status`, `GET /api/v1/sync/local-events`)
@@ -459,7 +464,6 @@ Error behavior:
 Вне текущего объема:
 
 - order transfer;
-- payment refund;
 - diagnostics/admin UI routes;
 - waiter payment override and restaurant-level override policy engine.
 

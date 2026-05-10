@@ -142,6 +142,26 @@ export const orderLineSchema = z.object({
   updated_at: z.string(),
 });
 
+export const paymentSchema = z.object({
+  id: z.string(),
+  edge_payment_id: z.string(),
+  restaurant_id: z.string(),
+  device_id: z.string(),
+  shift_id: z.string(),
+  precheck_id: z.string(),
+  method: z.enum(['cash', 'card', 'other']),
+  amount: z.number(),
+  currency: z.string(),
+  status: z.enum(['captured', 'refunded', 'failed']),
+  business_date_local: z.string(),
+  provider_name: optionalNullableString,
+  provider_transaction_id: optionalNullableString,
+  provider_reference: optionalNullableString,
+  fingerprint_hash: optionalNullableString,
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
 export const checkSchema = z.object({
   id: z.string(),
   order_id: z.string(),
@@ -154,6 +174,7 @@ export const checkSchema = z.object({
   business_date_local: z.string(),
   closed_at: z.string(),
   snapshot: z.unknown().optional(),
+  payments: z.array(paymentSchema).optional(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -180,6 +201,16 @@ export const orderSchema = z.object({
   check: checkSchema.optional(),
 });
 
+export const closedOrderSchema = z.object({
+  id: z.string(),
+  table_name: z.string(),
+  opened_at: z.string(),
+  closed_at: optionalNullableString,
+  total: z.number().optional().default(0),
+  status: z.enum(['open', 'locked', 'closed', 'cancelled']),
+  check: checkSchema.optional(),
+});
+
 export const precheckSchema = z.object({
   id: z.string(),
   order_id: z.string(),
@@ -197,26 +228,6 @@ export const precheckSchema = z.object({
   closed_at: optionalNullableString,
   cancelled_by_employee_id: optionalNullableString,
   cancellation_reason: optionalNullableString,
-});
-
-export const paymentSchema = z.object({
-  id: z.string(),
-  edge_payment_id: z.string(),
-  restaurant_id: z.string(),
-  device_id: z.string(),
-  shift_id: z.string(),
-  precheck_id: z.string(),
-  method: z.enum(['cash', 'card', 'other']),
-  amount: z.number(),
-  currency: z.string(),
-  status: z.enum(['captured', 'refunded', 'failed']),
-  business_date_local: z.string(),
-  provider_name: optionalNullableString,
-  provider_transaction_id: optionalNullableString,
-  provider_reference: optionalNullableString,
-  fingerprint_hash: optionalNullableString,
-  created_at: z.string(),
-  updated_at: z.string(),
 });
 
 export const reprintDocumentSchema = z.object({
@@ -282,6 +293,7 @@ export type CashSession = z.infer<typeof cashSessionSchema>;
 export type CashDrawerEvent = z.infer<typeof cashDrawerEventSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;
 export type Order = z.infer<typeof orderSchema>;
+export type ClosedOrder = z.infer<typeof closedOrderSchema>;
 export type OrderLine = z.infer<typeof orderLineSchema>;
 export type Precheck = z.infer<typeof precheckSchema>;
 export type Payment = z.infer<typeof paymentSchema>;

@@ -5,6 +5,7 @@ import {
   cashSessionSchema,
   cashDrawerEventSchema,
   checkSchema,
+  closedOrderSchema,
   hallSchema,
   localEventSchema,
   menuItemSchema,
@@ -529,5 +530,16 @@ export function retryFailedOutbox() {
   return request('/sync/retry-failed', retryFailedOutboxResultSchema, {
     method: 'POST',
     body: JSON.stringify({}),
+  });
+}
+
+export function listClosedOrders(limit = 50) {
+  return request(`/orders/closed?limit=${limit}`, z.array(closedOrderSchema));
+}
+
+export function refundPayment(paymentId: string, reason = '') {
+  return request(`/payments/${encodeURIComponent(paymentId)}/refund`, paymentSchema, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
   });
 }

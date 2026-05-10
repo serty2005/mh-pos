@@ -25,6 +25,7 @@ export const permissionCatalog = {
   paymentCash: 'pos.payment.cash',
   paymentCardManual: 'pos.payment.card.manual',
   paymentOther: 'pos.payment.other',
+  paymentRefund: 'pos.payment.refund',
   checkView: 'pos.check.view',
   checkReprint: 'pos.check.reprint',
   syncView: 'pos.sync.view',

@@ -12,7 +12,7 @@ Order -> Precheck -> Payment -> Check
 
 `Precheck` - рабочий финансовый snapshot для гостя. `Check` - только финальный неизменяемый расчетный документ после полной оплаты precheck.
 
-Текущее состояние кода: backend выполняет runtime flow `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` создает issued precheck и переводит order в `locked`; публичный `CancelPrecheck` требует manager employee id, PIN и reason, проверяет локальный PBKDF2 `pin_hash`, пишет `manager_override_audit` и возвращает unpaid active issued precheck в `open`; payment capture идет через `precheck_id`, поддерживает partial payments и создает final `Check` только после полной оплаты. Backend также включает строгую PIN auth/session/logout foundation, Edge Node pairing, client device auto-registration, actor/session/node/client metadata, halls/tables API, read endpoint текущего активного заказа по столу, order line quantity/void API и рассчитанные backend-ом order totals в `GET /api/v1/orders/{id}`. Публичные compatibility endpoints для старой check/payment модели удалены.
+Текущее состояние кода: backend выполняет runtime flow `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` создает issued precheck и переводит order в `locked`; публичный `CancelPrecheck` требует manager employee id, PIN и reason, проверяет локальный PBKDF2 `pin_hash`, пишет `manager_override_audit` и возвращает unpaid active issued precheck в `open`; payment capture идет через `precheck_id`, поддерживает partial payments и создает final `Check` только после полной оплаты. Возврат captured payment доступен через `POST /api/v1/payments/{id}/refund`, требует `pos.payment.refund` и открытую кассовую смену. Backend также включает строгую PIN auth/session/logout foundation, Edge Node pairing, client device auto-registration, actor/session/node/client metadata, halls/tables API, read endpoint текущего активного заказа по столу, меню закрытых заказов `GET /api/v1/orders/closed`, order line quantity/void API и рассчитанные backend-ом order totals в `GET /api/v1/orders/{id}`. Публичные compatibility endpoints для старой check/payment модели удалены.
 
 Граница auth/device:
 
@@ -156,7 +156,7 @@ Invoke-RestMethod http://localhost:8080/api/v1/sync/status
 Invoke-RestMethod -Method Post http://localhost:8080/api/v1/sync/retry-failed
 ```
 
-Для выпуска precheck используй `POST /api/v1/orders/{id}/precheck`, для payment capture - `POST /api/v1/prechecks/{id}/payments`.
+Для выпуска precheck используй `POST /api/v1/orders/{id}/precheck`, для payment capture - `POST /api/v1/prechecks/{id}/payments`, для возврата оплаты - `POST /api/v1/payments/{id}/refund`.
 
 ## Доступные API Endpoints
 
@@ -166,6 +166,7 @@ Invoke-RestMethod -Method Post http://localhost:8080/api/v1/sync/retry-failed
 - `GET /api/v1/prechecks/{id}`
 - `POST /api/v1/prechecks/{id}/cancel`
 - `POST /api/v1/prechecks/{id}/payments`
+- `POST /api/v1/payments/{id}/refund`
 - `GET /api/v1/orders/{id}/prechecks`
 - `GET /api/v1/checks/{id}`
 
@@ -185,6 +186,7 @@ Auth/device и POS UI endpoints:
 - `GET /api/v1/menu/items`
 - `POST /api/v1/orders`
 - `GET /api/v1/orders/current?table_id=...`
+- `GET /api/v1/orders/closed?limit=...`
 - `GET /api/v1/orders/{id}`
 - `POST /api/v1/orders/{id}/lines`
 - `PATCH /api/v1/orders/{id}/lines/{line_id}`

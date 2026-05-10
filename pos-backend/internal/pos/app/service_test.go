@@ -2376,20 +2376,20 @@ func TestRefundPaymentOnActivePrecheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
-		CommandMeta: f.edgeMeta(),
-		PrecheckID:  precheck.ID,
-		Method:      domain.PaymentCash,
-		Amount:      precheck.Total,
-		Currency:    "rub",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	refundedPayment, err := f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
-		CommandMeta: f.edgeMeta(),
-		PaymentID:   payment.ID,
-	})
+ 	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+ 		CommandMeta: f.edgeMeta(),
+ 		PrecheckID:  precheck.ID,
+ 		Method:      domain.PaymentCash,
+ 		Amount:      precheck.Total,
+ 		Currency:    "rub",
+ 	})
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+ 	refundedPayment, err := f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
+ 		CommandMeta: f.managerEdgeMetaCommand(t, "refund-cmd"),
+ 		PaymentID:   payment.ID,
+ 	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2441,17 +2441,17 @@ func TestRefundPaymentAfterFullPaymentWithCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if check == nil {
-		t.Fatal("expected check after full payment")
-	}
-	refundedPayment, err := f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
-		CommandMeta: f.edgeMeta(),
-		PaymentID:   payment.ID,
-	})
+ 	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+ 	if check == nil {
+ 		t.Fatal("expected check after full payment")
+ 	}
+ 	refundedPayment, err := f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
+ 		CommandMeta: f.managerEdgeMetaCommand(t, "refund-cmd"),
+ 		PaymentID:   payment.ID,
+ 	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2486,6 +2486,44 @@ func TestRefundPaymentAfterFullPaymentWithCheck(t *testing.T) {
 	}
 	if attempts != 1 {
 		t.Fatalf("expected one refunded attempt, got %d", attempts)
+	}
+}
+
+func TestRefundPaymentRequiresPermission(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+		CommandMeta: f.edgeMeta(),
+		PrecheckID:  precheck.ID,
+		Method:      domain.PaymentCash,
+		Amount:      precheck.Total,
+		Currency:    "rub",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Attempt refund with cashier permissions (which lack pos.payment.refund)
+	_, err = f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
+		CommandMeta: f.edgeMeta(),
+		PaymentID:   payment.ID,
+	})
+	if err == nil {
+		t.Fatal("expected permission denied error for refund without pos.payment.refund permission")
+	}
+	if !strings.Contains(err.Error(), "permission") {
+		t.Fatalf("expected permission error, got %v", err)
 	}
 }
 

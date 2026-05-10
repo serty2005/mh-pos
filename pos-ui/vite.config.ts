@@ -1,6 +1,6 @@
 import { quasar, transformAssetUrls } from '@quasar/vite-plugin';
 import vue from '@vitejs/plugin-vue';
-import { defineConfig } from 'vite';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
   plugins: [
@@ -14,5 +14,8 @@ export default defineConfig({
   server: {
     allowedHosts: ['host.docker.internal'],
     port: 5173,
+  },
+  test: {
+    exclude: [...configDefaults.exclude, 'e2e/**'],
   },
 });

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"pos-backend/internal/pos/domain"
+	"pos-backend/internal/pos/domain/order"
 )
 
 func (r *Repository) CreateOrder(ctx context.Context, v *domain.Order) error {
@@ -102,6 +103,84 @@ func (r *Repository) UpdateOrderLine(ctx context.Context, v *domain.OrderLine) e
 		return domain.ErrNotFound
 	}
 	return nil
+}
+
+func (r *Repository) ListClosedOrders(ctx context.Context, limit int) ([]order.OrderSummary, error) {
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT o.id, o.table_name, o.opened_at, o.closed_at, c.id, c.status, c.subtotal, c.discount_total, c.tax_total, c.total, c.paid_total, c.business_date_local, c.closed_at, c.created_at, c.updated_at, (SELECT pr.id FROM prechecks pr WHERE pr.order_id = o.id ORDER BY pr.version DESC, pr.created_at DESC LIMIT 1), o.status FROM orders o LEFT JOIN checks c ON o.id = c.order_id WHERE o.status = 'closed' ORDER BY o.closed_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	type closedOrderRow struct {
+		summary    order.OrderSummary
+		precheckID string
+	}
+
+	var scanned []closedOrderRow
+	for rows.Next() {
+		var v order.OrderSummary
+		var status, opened string
+		var closed sql.NullString
+		var checkID sql.NullString
+		var checkStatus sql.NullString
+		var subtotal, discountTotal, taxTotal, total, paidTotal sql.NullInt64
+		var businessDateLocal, checkClosedAt, checkCreatedAt, checkUpdatedAt sql.NullString
+		var precheckID sql.NullString
+		if err := rows.Scan(&v.ID, &v.TableName, &opened, &closed, &checkID, &checkStatus, &subtotal, &discountTotal, &taxTotal, &total, &paidTotal, &businessDateLocal, &checkClosedAt, &checkCreatedAt, &checkUpdatedAt, &precheckID, &status); err != nil {
+			return nil, err
+		}
+		v.Status = domain.OrderStatus(status)
+		v.OpenedAt = parseTime(opened)
+		if closed.Valid {
+			t := parseTime(closed.String)
+			v.ClosedAt = &t
+		}
+		if total.Valid {
+			v.Total = total.Int64
+		}
+		if checkID.Valid {
+			v.Check = &domain.Check{
+				ID:                checkID.String,
+				OrderID:           v.ID,
+				Status:            domain.CheckStatus(checkStatus.String),
+				Subtotal:          subtotal.Int64,
+				DiscountTotal:     discountTotal.Int64,
+				TaxTotal:          taxTotal.Int64,
+				Total:             total.Int64,
+				PaidTotal:         paidTotal.Int64,
+				BusinessDateLocal: businessDateLocal.String,
+				ClosedAt:          parseTime(checkClosedAt.String),
+				CreatedAt:         parseTime(checkCreatedAt.String),
+				UpdatedAt:         parseTime(checkUpdatedAt.String),
+			}
+		}
+		row := closedOrderRow{summary: v}
+		if precheckID.Valid {
+			row.precheckID = precheckID.String
+		}
+		scanned = append(scanned, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	out := make([]order.OrderSummary, 0, len(scanned))
+	for _, row := range scanned {
+		v := row.summary
+		if v.Check != nil && row.precheckID != "" {
+			// Платежи нужны экрану закрытых заказов для операции возврата.
+			payments, err := r.ListPaymentsByPrecheck(ctx, row.precheckID)
+			if err != nil {
+				return nil, err
+			}
+			v.Check.Payments = payments
+		}
+		out = append(out, v)
+	}
+	return out, nil
 }
 
 func (r *Repository) ListOrderLines(ctx context.Context, orderID string) ([]domain.OrderLine, error) {

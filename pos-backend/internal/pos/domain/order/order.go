@@ -15,6 +15,16 @@ const (
 	OrderCancelled OrderStatus = "cancelled"
 )
 
+type OrderSummary struct {
+	ID        string       `json:"id"`
+	TableName string       `json:"table_name"`
+	OpenedAt  time.Time    `json:"opened_at"`
+	ClosedAt  *time.Time   `json:"closed_at,omitempty"`
+	Total     int64        `json:"total"`
+	Status    OrderStatus  `json:"status"`
+	Check     *check.Check `json:"check,omitempty"`
+}
+
 type Order struct {
 	ID            string       `json:"id"`
 	EdgeOrderID   string       `json:"edge_order_id"`

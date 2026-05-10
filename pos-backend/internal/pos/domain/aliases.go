@@ -95,6 +95,7 @@ const (
 
 type OrderStatus = order.OrderStatus
 type Order = order.Order
+type OrderSummary = order.OrderSummary
 
 const (
 	OrderOpen      = order.OrderOpen
