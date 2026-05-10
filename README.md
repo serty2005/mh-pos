@@ -281,6 +281,8 @@ Invoke-RestMethod -Method Post http://localhost:8080/api/v1/sync/master-data/sna
 
 `.\scripts\cloud-masterdata-e2e.ps1` проверяет путь Cloud CRUD -> publish -> Edge ingest -> POS read/PIN login. Скрипт является smoke/e2e validation, а не production bootstrap path.
 
+Реализовано сейчас: общий Docker Compose для локального запуска всего backend/runtime стека без POS UI находится в `docker-compose.local.yml`; инструкция и docker-oriented config files описаны в `docs/backend/LOCAL-DOCKER-STACK.md`.
+
 Проверка PostgreSQL:
 
 ```powershell

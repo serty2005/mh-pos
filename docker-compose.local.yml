@@ -1,0 +1,61 @@
+name: mh-pos-local
+
+services:
+  cloud-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mh_pos_cloud
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - cloud_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mh_pos_cloud"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  license-api:
+    build:
+      context: .
+      dockerfile: docker/license-api.Dockerfile
+    ports:
+      - "8095:8095"
+    volumes:
+      - license_sqlite_data:/app/data
+
+  cloud-api:
+    build:
+      context: .
+      dockerfile: docker/cloud-api.Dockerfile
+    depends_on:
+      cloud-postgres:
+        condition: service_healthy
+      license-api:
+        condition: service_started
+    ports:
+      - "8090:8090"
+    volumes:
+      - cloud_api_data:/app/data
+
+  pos-edge:
+    build:
+      context: .
+      dockerfile: docker/pos-edge.Dockerfile
+    depends_on:
+      cloud-api:
+        condition: service_started
+      license-api:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    volumes:
+      - pos_edge_sqlite_data:/app/data
+
+volumes:
+  cloud_postgres_data:
+  cloud_api_data:
+  license_sqlite_data:
+  pos_edge_sqlite_data:
