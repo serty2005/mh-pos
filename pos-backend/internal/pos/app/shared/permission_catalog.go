@@ -38,6 +38,7 @@ const (
 	PermissionPaymentCash           PermissionID = "pos.payment.cash"
 	PermissionPaymentCardManual     PermissionID = "pos.payment.card.manual"
 	PermissionPaymentOther          PermissionID = "pos.payment.other"
+	PermissionPaymentRefund         PermissionID = "pos.payment.refund"
 	PermissionCheckView             PermissionID = "pos.check.view"
 	PermissionCheckReprint          PermissionID = "pos.check.reprint"
 	PermissionSyncView              PermissionID = "pos.sync.view"
@@ -71,6 +72,7 @@ var knownPermissionIDs = map[PermissionID]struct{}{
 	PermissionPaymentCash:              {},
 	PermissionPaymentCardManual:        {},
 	PermissionPaymentOther:             {},
+	PermissionPaymentRefund:            {},
 	PermissionCheckView:                {},
 	PermissionCheckReprint:             {},
 	PermissionSyncView:                 {},
@@ -147,6 +149,7 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionPrecheckCancelRequest,
 			PermissionPaymentCash,
 			PermissionPaymentCardManual,
+			PermissionPaymentRefund,
 			PermissionCheckView,
 			PermissionSyncView,
 		},
@@ -201,6 +204,7 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionPaymentCash,
 			PermissionPaymentCardManual,
 			PermissionPaymentOther,
+			PermissionPaymentRefund,
 			PermissionCheckView,
 			PermissionCheckReprint,
 			PermissionSyncView,

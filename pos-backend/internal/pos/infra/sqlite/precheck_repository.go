@@ -60,8 +60,8 @@ func (r *Repository) UpdatePrecheckLifecycle(ctx context.Context, v *domain.Prec
 }
 
 func (r *Repository) UpdatePrecheckPayment(ctx context.Context, v *domain.Precheck) error {
-	result, err := r.execer(ctx).ExecContext(ctx, `UPDATE prechecks SET status = ?, paid_total = ?, closed_at = ? WHERE id = ? AND paid_total <= ?`,
-		string(v.Status), v.PaidTotal, nullableTime(v.ClosedAt), v.ID, v.PaidTotal)
+	result, err := r.execer(ctx).ExecContext(ctx, `UPDATE prechecks SET status = ?, paid_total = ?, closed_at = ? WHERE id = ?`,
+		string(v.Status), v.PaidTotal, nullableTime(v.ClosedAt), v.ID)
 	if err != nil {
 		return normalizeErr(err)
 	}
@@ -70,7 +70,7 @@ func (r *Repository) UpdatePrecheckPayment(ctx context.Context, v *domain.Preche
 		return err
 	}
 	if affected == 0 {
-		return domain.ErrConflict
+		return domain.ErrNotFound
 	}
 	return nil
 }

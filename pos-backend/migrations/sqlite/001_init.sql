@@ -302,7 +302,7 @@ CREATE TABLE IF NOT EXISTS payment_attempts (
   method TEXT NOT NULL CHECK (method IN ('cash', 'card', 'other')),
   amount INTEGER NOT NULL CHECK (amount > 0),
   currency TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('captured', 'failed')),
+  status TEXT NOT NULL CHECK (status IN ('captured', 'refunded', 'failed')),
   provider_name TEXT CHECK (provider_name IS NULL OR provider_name <> ''),
   provider_transaction_id TEXT CHECK (provider_transaction_id IS NULL OR provider_transaction_id <> ''),
   provider_reference TEXT CHECK (provider_reference IS NULL OR provider_reference <> ''),

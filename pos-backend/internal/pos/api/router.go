@@ -95,6 +95,7 @@ func NewRouter(service *app.Service) http.Handler {
 
 		r.Get("/checks/{id}", h.getCheck)
 		r.Post("/checks/{id}/reprint", h.reprintCheck)
+		r.Post("/payments/{id}/refund", h.refundPayment)
 
 		r.Post("/cash-shifts/open", h.openCashSession)
 		r.Post("/cash-shifts/{id}/close", h.closeCashSession)
@@ -745,6 +746,18 @@ func (h *Handler) capturePrecheckPayment(w http.ResponseWriter, r *http.Request)
 	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.PrecheckID = chi.URLParam(r, "id")
 	v, err := h.service.CapturePayment(r.Context(), cmd)
+	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) refundPayment(w http.ResponseWriter, r *http.Request) {
+	var cmd app.RefundPaymentCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	cmd.PaymentID = chi.URLParam(r, "id")
+	v, err := h.service.RefundPayment(r.Context(), cmd)
 	writeCreated(w, r, v, err)
 }
 

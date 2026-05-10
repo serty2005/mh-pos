@@ -121,6 +121,24 @@ func (p Precheck) IsFullyPaid() bool {
 	return p.Status == PrecheckClosed && p.PaidTotal == p.Total
 }
 
+func (p *Precheck) ApplyRefundedPayment(amount int64, now time.Time) error {
+	if p.Status != PrecheckIssued && p.Status != PrecheckClosed {
+		return fmt.Errorf("%w: precheck cannot accept refunds", shared.ErrConflict)
+	}
+	if amount <= 0 {
+		return fmt.Errorf("%w: refund amount must be positive", shared.ErrInvalid)
+	}
+	if p.PaidTotal-amount < 0 {
+		return fmt.Errorf("%w: precheck refund would cause negative paid_total", shared.ErrConflict)
+	}
+	p.PaidTotal -= amount
+	if p.Status == PrecheckClosed && p.PaidTotal < p.Total {
+		p.Status = PrecheckIssued
+		p.ClosedAt = nil
+	}
+	return nil
+}
+
 func (p *Precheck) Supersede(now time.Time) error {
 	if p.Status != PrecheckIssued {
 		return fmt.Errorf("%w: only issued precheck can be superseded", shared.ErrConflict)

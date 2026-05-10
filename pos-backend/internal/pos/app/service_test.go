@@ -1040,7 +1040,7 @@ func TestLogoutRevokesBackendSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	logout, err := f.service.Logout(f.ctx, app.LogoutCommand{
-		CommandMeta: app.CommandMeta{CommandID: "cmd-logout-session", NodeDeviceID: f.device.ID, DeviceID: f.device.ID, ClientDeviceID: f.clientID, Origin: app.OriginEdgeDevice},
+		CommandMeta: app.CommandMeta{CommandID: "cmd-logout", NodeDeviceID: f.device.ID, DeviceID: f.device.ID, ClientDeviceID: f.clientID, Origin: app.OriginEdgeDevice},
 		SessionID:   login.Session.ID,
 	})
 	if err != nil {
@@ -2358,6 +2358,134 @@ func TestCapturePaymentRollbackRemovesAttemptPaymentOutboxAndLocalEvent(t *testi
 	}
 	if checks := countRows(t, f, "checks"); checks != 0 {
 		t.Fatalf("expected no final check after rollback, got %d", checks)
+	}
+}
+
+func TestRefundPaymentOnActivePrecheck(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+		CommandMeta: f.edgeMeta(),
+		PrecheckID:  precheck.ID,
+		Method:      domain.PaymentCash,
+		Amount:      precheck.Total,
+		Currency:    "rub",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refundedPayment, err := f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
+		CommandMeta: f.edgeMeta(),
+		PaymentID:   payment.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refundedPayment.Status != domain.PaymentRefunded {
+		t.Fatalf("expected payment status refunded, got %s", refundedPayment.Status)
+	}
+	var precheckPaidTotal int64
+	var precheckStatus string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT paid_total, status FROM prechecks WHERE id = ?`, precheck.ID).Scan(&precheckPaidTotal, &precheckStatus); err != nil {
+		t.Fatal(err)
+	}
+	if precheckPaidTotal != 0 {
+		t.Fatalf("expected precheck paid_total 0 after refund, got %d", precheckPaidTotal)
+	}
+	if precheckStatus != string(domain.PrecheckIssued) {
+		t.Fatalf("expected precheck status issued, got %s", precheckStatus)
+	}
+	var attempts int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM payment_attempts WHERE payment_id = ? AND status = 'refunded'`, payment.ID).Scan(&attempts); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 1 {
+		t.Fatalf("expected one refunded attempt, got %d", attempts)
+	}
+}
+
+func TestRefundPaymentAfterFullPaymentWithCheck(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+		CommandMeta: f.edgeMeta(),
+		PrecheckID:  precheck.ID,
+		Method:      domain.PaymentCash,
+		Amount:      precheck.Total,
+		Currency:    "rub",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if check == nil {
+		t.Fatal("expected check after full payment")
+	}
+	refundedPayment, err := f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
+		CommandMeta: f.edgeMeta(),
+		PaymentID:   payment.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refundedPayment.Status != domain.PaymentRefunded {
+		t.Fatalf("expected payment status refunded, got %s", refundedPayment.Status)
+	}
+	var precheckPaidTotal int64
+	var precheckStatus string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT paid_total, status FROM prechecks WHERE id = ?`, precheck.ID).Scan(&precheckPaidTotal, &precheckStatus); err != nil {
+		t.Fatal(err)
+	}
+	if precheckPaidTotal != 0 {
+		t.Fatalf("expected precheck paid_total 0 after refund, got %d", precheckPaidTotal)
+	}
+	if precheckStatus != string(domain.PrecheckIssued) {
+		t.Fatalf("expected precheck status issued, got %s", precheckStatus)
+	}
+	var checkPaidTotal int64
+	var checkStatus string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT paid_total, status FROM checks WHERE id = ?`, check.ID).Scan(&checkPaidTotal, &checkStatus); err != nil {
+		t.Fatal(err)
+	}
+	if checkPaidTotal != 0 {
+		t.Fatalf("expected check paid_total 0 after refund, got %d", checkPaidTotal)
+	}
+	if checkStatus != string(domain.CheckRefunded) {
+		t.Fatalf("expected check status refunded, got %s", checkStatus)
+	}
+	var attempts int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM payment_attempts WHERE payment_id = ? AND status = 'refunded'`, payment.ID).Scan(&attempts); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 1 {
+		t.Fatalf("expected one refunded attempt, got %d", attempts)
 	}
 }
 

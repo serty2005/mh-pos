@@ -48,6 +48,10 @@ func (r *Repository) UpdateCheckPaidTotal(ctx context.Context, v *domain.Check) 
 	return normalizeErr(err)
 }
 
+func (r *Repository) GetPayment(ctx context.Context, id string) (*domain.Payment, error) {
+	return scanPaymentRows(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,edge_payment_id,restaurant_id,device_id,shift_id,precheck_id,method,amount,currency,status,business_date_local,provider_name,provider_transaction_id,provider_reference,fingerprint_hash,created_at,updated_at FROM payments WHERE id = ?`, id))
+}
+
 func (r *Repository) CreatePayment(ctx context.Context, v *domain.Payment) error {
 	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO payments(id,edge_payment_id,restaurant_id,device_id,shift_id,precheck_id,method,amount,currency,status,business_date_local,provider_name,provider_transaction_id,provider_reference,fingerprint_hash,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		v.ID, v.EdgePaymentID, v.RestaurantID, v.DeviceID, v.ShiftID, v.PrecheckID, string(v.Method), v.Amount, v.Currency, string(v.Status), v.BusinessDateLocal, nullableString(v.ProviderName), nullableString(v.ProviderTransactionID), nullableString(v.ProviderReference), nullableString(v.FingerprintHash), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
@@ -58,6 +62,18 @@ func (r *Repository) CreatePaymentAttempt(ctx context.Context, v *domain.Payment
 	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO payment_attempts(id,payment_id,attempt_no,method,amount,currency,status,provider_name,provider_transaction_id,provider_reference,fingerprint_hash,attempted_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		v.ID, v.PaymentID, v.AttemptNo, string(v.Method), v.Amount, v.Currency, string(v.Status), nullableString(v.ProviderName), nullableString(v.ProviderTransactionID), nullableString(v.ProviderReference), nullableString(v.FingerprintHash), dbTime(v.AttemptedAt), dbTime(v.CreatedAt))
 	return normalizeErr(err)
+}
+
+func (r *Repository) UpdatePaymentStatus(ctx context.Context, v *domain.Payment) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `UPDATE payments SET status = ?, updated_at = ? WHERE id = ?`,
+		string(v.Status), dbTime(v.UpdatedAt), v.ID)
+	return normalizeErr(err)
+}
+
+func (r *Repository) NextPaymentAttemptNo(ctx context.Context, paymentID string) (int, error) {
+	var no int
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT COALESCE(MAX(attempt_no), 0) + 1 FROM payment_attempts WHERE payment_id = ?`, paymentID).Scan(&no)
+	return no, normalizeErr(err)
 }
 
 func (r *Repository) ListPaymentsByPrecheck(ctx context.Context, precheckID string) ([]domain.Payment, error) {

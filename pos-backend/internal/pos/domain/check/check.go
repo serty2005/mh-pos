@@ -2,7 +2,10 @@ package check
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
+
+	"pos-backend/internal/pos/domain/shared"
 )
 
 type CheckStatus string
@@ -28,4 +31,19 @@ type Check struct {
 	Snapshot          json.RawMessage `json:"snapshot,omitempty"`
 	CreatedAt         time.Time       `json:"created_at"`
 	UpdatedAt         time.Time       `json:"updated_at"`
+}
+
+func (c *Check) ApplyRefund(amount int64, now time.Time) error {
+	if amount <= 0 {
+		return fmt.Errorf("%w: refund amount must be positive", shared.ErrInvalid)
+	}
+	if c.PaidTotal-amount < 0 {
+		return fmt.Errorf("%w: check refund would cause negative paid_total", shared.ErrConflict)
+	}
+	c.PaidTotal -= amount
+	c.UpdatedAt = now
+	if c.PaidTotal < c.Total {
+		c.Status = CheckRefunded
+	}
+	return nil
 }

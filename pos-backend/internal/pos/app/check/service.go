@@ -43,6 +43,12 @@ type ReprintCheckCommand struct {
 	CheckID string `json:"check_id"`
 }
 
+type RefundPaymentCommand struct {
+	shared.CommandMeta
+	PaymentID string `json:"payment_id"`
+	Reason    string `json:"reason,omitempty"`
+}
+
 func (s *Service) GetCheck(ctx context.Context, id string) (*domain.Check, error) {
 	return s.repo.GetCheck(ctx, id)
 }
@@ -255,6 +261,111 @@ func (s *Service) ReprintCheck(ctx context.Context, cmd ReprintCheckCommand) (*d
 	return document, err
 }
 
+func (s *Service) RefundPayment(ctx context.Context, cmd RefundPaymentCommand) (*domain.Payment, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
+	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(cmd.PaymentID) == "" {
+		return nil, fmt.Errorf("%w: payment_id is required", domain.ErrInvalid)
+	}
+	if strings.TrimSpace(cmd.CommandID) == "" {
+		cmd.CommandID = s.ids.NewID()
+	}
+	now := s.clock.Now()
+	var payment *domain.Payment
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
+			return err
+		}
+		var err error
+		payment, err = s.repo.GetPayment(ctx, cmd.PaymentID)
+		if err != nil {
+			return err
+		}
+		if payment.Status != domain.PaymentCaptured {
+			return fmt.Errorf("%w: payment is not captured", domain.ErrConflict)
+		}
+		precheck, err := s.repo.GetPrecheck(ctx, payment.PrecheckID)
+		if err != nil {
+			return err
+		}
+		order, err := s.repo.GetOrder(ctx, precheck.OrderID)
+		if err != nil {
+			return err
+		}
+		if order.DeviceID != cmd.DeviceID {
+			return fmt.Errorf("%w: payment device does not match order device", domain.ErrConflict)
+		}
+		cashSession, err := s.repo.GetOpenCashSessionByDevice(ctx, cmd.DeviceID)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return fmt.Errorf("%w: возврат оплаты требует открытую кассовую смену", domain.ErrConflict)
+			}
+			return err
+		}
+		if cashSession.ShiftID != order.ShiftID || cashSession.RestaurantID != order.RestaurantID {
+			return fmt.Errorf("%w: кассовая смена оплаты не совпадает с личной сменой заказа", domain.ErrConflict)
+		}
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(requiredRefundPermission(payment.Method))); err != nil {
+			return err
+		}
+		if err := precheck.ApplyRefundedPayment(payment.Amount, now); err != nil {
+			return err
+		}
+		if err := s.repo.UpdatePrecheckPayment(ctx, precheck); err != nil {
+			return err
+		}
+		payment.Status = domain.PaymentRefunded
+		payment.UpdatedAt = now
+		if err := s.repo.UpdatePaymentStatus(ctx, payment); err != nil {
+			return err
+		}
+		nextAttemptNo, err := s.repo.NextPaymentAttemptNo(ctx, payment.ID)
+		if err != nil {
+			return err
+		}
+		attempt := &domain.PaymentAttempt{
+			ID:                    s.ids.NewID(),
+			PaymentID:             payment.ID,
+			AttemptNo:             nextAttemptNo,
+			Method:                payment.Method,
+			Amount:                payment.Amount,
+			Currency:              payment.Currency,
+			Status:                domain.PaymentRefunded,
+			ProviderName:          payment.ProviderName,
+			ProviderTransactionID: payment.ProviderTransactionID,
+			ProviderReference:     payment.ProviderReference,
+			FingerprintHash:       payment.FingerprintHash,
+			AttemptedAt:           now,
+			CreatedAt:             now,
+		}
+		if err := s.repo.CreatePaymentAttempt(ctx, attempt); err != nil {
+			return err
+		}
+		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Payment", payment.ID, "PaymentRefunded", payment); err != nil {
+			return err
+		}
+		check, err := s.repo.GetCheckByOrder(ctx, order.ID)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return err
+		}
+		if check != nil {
+			if err := check.ApplyRefund(payment.Amount, now); err != nil {
+				return err
+			}
+			if err := s.repo.UpdateCheckPaidTotal(ctx, check); err != nil {
+				return err
+			}
+			if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Check", check.ID, "CheckRefunded", check); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return payment, err
+}
+
 func optionalString(v string) *string {
 	v = strings.TrimSpace(v)
 	if v == "" {
@@ -271,6 +382,17 @@ func requiredPaymentPermission(method domain.PaymentMethod) shared.PermissionID 
 		return shared.PermissionPaymentCardManual
 	default:
 		return shared.PermissionPaymentOther
+	}
+}
+
+func requiredRefundPermission(method domain.PaymentMethod) shared.PermissionID {
+	switch method {
+	case domain.PaymentCash:
+		return shared.PermissionPaymentCash
+	case domain.PaymentCard:
+		return shared.PermissionPaymentCardManual
+	default:
+		return shared.PermissionPaymentRefund
 	}
 }
 
