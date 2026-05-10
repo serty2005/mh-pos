@@ -35,12 +35,12 @@ npm run dev
 
 ## Локальный E2E Prototype Quickstart
 
-implemented now: UI проходит основной cashier flow через настоящий POS Edge backend.
+Реализовано сейчас: UI проходит основной cashier flow через настоящий POS Edge backend и production-way Cloud -> Edge bootstrap.
 
-1. Запусти `pos-backend` с `$env:POS_DEV_TOOLS="1"`.
-2. Из корня репозитория выполни `.\scripts\bootstrap-pos-demo.ps1`.
+1. Запусти `cloud-backend` и `pos-backend`.
+2. Из корня репозитория выполни `.\scripts\bootstrap-production-way.ps1`.
 3. Открой `http://localhost:5173`.
-4. На `/pair` для dev bootstrap используй legacy pairing code flow через backend compatibility path.
+4. На `/pair` используй Cloud provisioning/license code, если он был выдан; при Cloud-approved assignment Edge уже paired.
 5. На `/login` используй cashier PIN `1111`.
 6. Для cancel unpaid precheck в manager override введи `manager_employee_id` из bootstrap и manager PIN `2222`.
 
@@ -52,20 +52,20 @@ pair -> login -> open personal shift -> open cash shift -> select hall/table -> 
 
 ## Локальный E2E Prototype: получить pairing code и войти в POS UI
 
-implemented now: UI `/pair` и `/login` используют реальные POS backend endpoints.
+Реализовано сейчас: UI `/pair` и `/login` используют реальные POS backend endpoints.
 
-1. Запусти POS backend с включенным dev bootstrap:
+1. Запусти POS backend:
 
 ```powershell
 cd pos-backend
-$env:POS_DEV_TOOLS="1"
+$env:POS_CLOUD_SYNC_URL="http://localhost:8090"
 go run ./cmd/pos-edge
 ```
 
 2. Из корня репозитория получи учетные данные:
 
 ```powershell
-$demo = .\scripts\bootstrap-pos-demo.ps1
+$demo = .\scripts\bootstrap-production-way.ps1
 ```
 
 3. Запусти UI:
@@ -76,7 +76,7 @@ npm install
 npm run dev
 ```
 
-4. Открой `http://localhost:5173/pair`, введи `$demo.pairing_code`, затем войди на `/login` с cashier PIN `1111`. UI сохраняет paired `node_device_id` и `restaurant_id`, возвращенные `GET /api/v1/system/pairing-status`, затем читает demo hall/table/menu data из backend endpoints.
+4. Открой `http://localhost:5173/pair`, введи `$demo.pairing_code`, если требуется license flow, затем войди на `/login` с cashier PIN `1111`. UI сохраняет paired `node_device_id` и `restaurant_id`, возвращенные `GET /api/v1/system/pairing-status`, затем читает Cloud-authored hall/table/menu data из Edge read endpoints.
 
 Из корня репозитория можно проверить Cloud replay и локальный sync:
 
@@ -98,11 +98,11 @@ Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=10 -Heade
 Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10 -Headers $headers
 ```
 
-out of scope: waiter UI, KDS, inventory и fiscalization.
+Вне текущего объема: waiter UI, KDS, inventory и fiscalization.
 
 ## Что реализовано
 
-- `/pair` показывает Cloud approval status, license code form и после `paired` ведет на `/login`; legacy `POST /api/v1/system/pair` остается backend compatibility path для dev bootstrap.
+- `/pair` показывает Cloud approval status, license code form и после `paired` ведет на `/login`.
 - `/login` вызывает реальный `POST /api/v1/auth/pin-login`.
 - `/lock` вызывает реальный `POST /api/v1/auth/logout`, очищает локальную session и требует новый PIN.
 - `/pos` реализует POS Terminal Core для одного кассира на одном Primary Edge Node:
@@ -133,7 +133,7 @@ Server state хранится только через `@tanstack/vue-query`. Fro
 
 ## Error handling
 
-implemented now:
+Реализовано сейчас:
 
 - `src/shared/api.ts` является единым API client и различает `401/403/404/409/429/5xx/network/timeout`.
 - Backend error envelope нормализуется в `ApiError` с `code`, `messageKey`, `category` и `correlationId`.

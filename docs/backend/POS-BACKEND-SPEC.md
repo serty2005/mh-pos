@@ -98,7 +98,7 @@ Order -> Precheck -> Payment -> Check
 - `GET /api/v1/catalog/items`
 - `GET /api/v1/menu/items`
 
-Реализовано сейчас: halls, tables, catalog и menu являются Cloud-owned master data. Public Edge runtime writes к этим сущностям возвращают `403 Forbidden`; local/demo setup использует `POST /api/v1/dev/bootstrap-demo`.
+Реализовано сейчас: halls, tables, catalog и menu являются Cloud-owned master data. Public Edge runtime writes к этим сущностям не являются supported/current routes; local/e2e setup использует Cloud CRUD, Cloud publish и Cloud -> Edge ingest.
 
 Реализовано сейчас: сотрудники, роли, catalog items, categories и menu items имеют Cloud-authored foundation в `cloud-backend`. POS Edge не является production-местом создания и редактирования этих справочников; он хранит локальную read model для offline PIN login, RBAC checks, menu/catalog reads и order line creation.
 
@@ -191,15 +191,15 @@ Payload accepts `node_device_id`, optional `restaurant_id`, `sync_mode` (`increm
 
 Реализовано сейчас: перед применением `sync_mode = full_snapshot` POS Edge создает recoverable SQLite online backup artifact `.db` до записи master rows или `cloud_master_sync_state`. Backup использует `POS_SQLITE_BACKUP_DIR`, а если директория не задана, безопасный default рядом с SQLite DB в `backups`. Ошибка backup завершает ingest fail-fast без частичного apply. `incremental` ingest backup не создает; пустой `full_snapshot` или невалидный payload отклоняется до backup и до изменения данных.
 
-### Dev/local bootstrap
+### Local/e2e bootstrap
 
 Реализовано сейчас:
 
-- `POST /api/v1/dev/bootstrap-demo`
-- доступен только при `POS_DEV_TOOLS=1`;
-- создает demo restaurant, paired Edge Node, cashier/manager roles, сотрудников с PIN `1111`/`2222`, hall/table и menu items;
-- возвращает `pairing_code` и `manager_employee_id` для ручного POS UI smoke flow;
-- не является production path.
+- supported bootstrap script: `scripts/bootstrap-production-way.ps1`;
+- script создает restaurant, roles, employees/PIN, hall/table и catalog/menu через Cloud API;
+- script публикует Cloud master-data package и применяет Edge-ready snapshot через `POST /api/v1/sync/master-data/snapshots`;
+- script выводит `restaurant_id`, `node_device_id`, provisioning code/marker, cashier/manager PIN, hall/table ids и menu item ids;
+- `POST /api/v1/dev/bootstrap-demo` не является supported/current Edge route.
 
 ### Master-data mutation boundary
 
@@ -217,7 +217,7 @@ Payload accepts `node_device_id`, optional `restaurant_id`, `sync_mode` (`increm
 - `POST /api/v1/catalog/items`
 - `POST /api/v1/menu/items`
 
-Эти routes больше не являются runtime-supported Edge mutation flow. Реализовано сейчас: HTTP layer держит их как dev-only seed/admin helpers за `POS_DEV_TOOLS=1`; без dev tools они возвращают `403 Forbidden`. В dev mode handler использует origin `system_seed`. Production Cloud-authored master data должна входить через `POST /api/v1/sync/master-data/snapshots` или `POST /api/v1/sync/master-data/{stream}` с origin `cloud_sync`.
+Эти routes больше не являются runtime-supported Edge mutation flow. Реализовано сейчас: POS Edge HTTP layer не документирует их как current onboarding path; production Cloud-authored master data должна входить через `POST /api/v1/sync/master-data/snapshots` или `POST /api/v1/sync/master-data/{stream}` с origin `cloud_sync`.
 
 ### Cloud master-data authority endpoints
 
@@ -409,7 +409,7 @@ Backend обязан:
 - backend uses canonical permission catalog and canonical role profiles for `cashier`, `senior_cashier`, `waiter`, `manager`, `kitchen`, `support_admin`;
 - role permissions remain stored as JSON, but role creation/import rejects unknown permission ids;
 - implemented POS runtime operations are enforced in app services via `EnsureOperatorSession(...requiredPermissions...)`;
-- master-data list endpoints for restaurants/devices/roles/employees are dev-only behind `POS_DEV_TOOLS=1`;
+- master-data list endpoints for restaurants/devices/roles/employees are outside current POS runtime API;
 - `GET /api/v1/catalog/items` is an operator endpoint and requires `pos.catalog.view`.
 
 Canonical permission IDs, используемые текущим runtime:

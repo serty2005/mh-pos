@@ -468,21 +468,21 @@ func TestPinLoginRateLimitResetsAfterLockoutWindow(t *testing.T) {
 func TestMasterDataWriteAPIsRejectEdgeRuntimeMutation(t *testing.T) {
 	f := newAPIFixture(t)
 	hallResp := f.postJSON(t, "/api/v1/halls", `{"node_device_id":"`+f.device.ID+`","restaurant_id":"`+f.restaurant.ID+`","name":"Terrace"}`)
-	if hallResp.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for Edge hall mutation, got %d: %s", hallResp.Code, hallResp.Body.String())
+	if hallResp.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for removed Edge hall mutation route, got %d: %s", hallResp.Code, hallResp.Body.String())
 	}
 	menuResp := f.postJSON(t, "/api/v1/menu/items", `{"node_device_id":"`+f.device.ID+`","catalog_item_id":"`+f.menuItem.CatalogItemID+`","name":"Tea","price":3000,"currency":"RUB"}`)
-	if menuResp.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for Edge menu mutation, got %d: %s", menuResp.Code, menuResp.Body.String())
+	if menuResp.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for removed Edge menu mutation route, got %d: %s", menuResp.Code, menuResp.Body.String())
 	}
 }
 
-func TestMasterDataListAPIsAreDevOnly(t *testing.T) {
+func TestMasterDataListAPIsAreNotRuntimeRoutes(t *testing.T) {
 	f := newAPIFixture(t)
 	for _, path := range []string{"/api/v1/restaurants", "/api/v1/devices", "/api/v1/roles", "/api/v1/employees"} {
 		rr := f.get(t, path)
-		if rr.Code != http.StatusForbidden {
-			t.Fatalf("expected 403 for %s without dev tools, got %d: %s", path, rr.Code, rr.Body.String())
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 for removed %s runtime route, got %d: %s", path, rr.Code, rr.Body.String())
 		}
 	}
 }
@@ -757,38 +757,14 @@ func TestRetryFailedAPIRequiresSyncRetryPermission(t *testing.T) {
 	}
 }
 
-func TestDevBootstrapDemoIsGatedAndCreatesLoginData(t *testing.T) {
+func TestRemovedLocalBootstrapRouteReturnsNotFound(t *testing.T) {
 	f := newAPIFixture(t)
 
-	disabledReq := httptest.NewRequest(http.MethodPost, "/api/v1/dev/bootstrap-demo", nil)
-	disabled := httptest.NewRecorder()
-	f.router.ServeHTTP(disabled, disabledReq)
-	if disabled.Code != http.StatusForbidden {
-		t.Fatalf("expected disabled bootstrap to return 403, got %d: %s", disabled.Code, disabled.Body.String())
-	}
-
-	t.Setenv("POS_DEV_TOOLS", "1")
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/dev/bootstrap-demo", nil)
 	rr := httptest.NewRecorder()
 	f.router.ServeHTTP(rr, req)
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
-	}
-	var boot app.DemoBootstrapResult
-	if err := json.Unmarshal(rr.Body.Bytes(), &boot); err != nil {
-		t.Fatal(err)
-	}
-	if boot.PairingCode == "" || boot.CashierPIN != "1111" || boot.ManagerPIN != "2222" || boot.ManagerEmployeeID == "" || len(boot.TableIDs) == 0 || len(boot.MenuItemIDs) == 0 {
-		t.Fatalf("unexpected bootstrap result: %+v", boot)
-	}
-
-	loginBody := `{"node_device_id":"` + boot.NodeDeviceID + `","client_device_id":"api-demo-client","pin":"1111"}`
-	loginReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/pin-login", bytes.NewBufferString(loginBody))
-	loginReq.Header.Set("Content-Type", "application/json")
-	login := httptest.NewRecorder()
-	f.router.ServeHTTP(login, loginReq)
-	if login.Code != http.StatusCreated {
-		t.Fatalf("expected demo cashier PIN login to work, got %d: %s", login.Code, login.Body.String())
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected removed bootstrap route to return 404, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 

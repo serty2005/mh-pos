@@ -301,7 +301,7 @@ node_device_id   = POS Edge Backend / Edge Node identity
 client_device_id = UI-клиент: планшет, касса, браузер
 ```
 
-Реализовано сейчас: на чистом POS Edge `node_device_id` генерируется один раз backend-ом, сохраняется локально в SQLite и используется для Cloud registration/polling. Cloud provisioning подтверждает assignment к ресторану и возвращает snapshot credentials. Legacy foundation: `POST /api/v1/system/pair` принимает pairing payload `MHPOS:<restaurant_id>:<node_device_id>` как compatibility path для dev bootstrap.
+Реализовано сейчас: на чистом POS Edge `node_device_id` генерируется один раз backend-ом, сохраняется локально в SQLite и используется для Cloud registration/polling. Cloud provisioning подтверждает assignment к ресторану и возвращает snapshot credentials. `POST /api/v1/system/pair` остается низкоуровневым local pair use case для provisioning service, но local/e2e happy path использует Cloud approve/license flow и Cloud -> Edge snapshot ingest.
 
 Production provisioning:
 

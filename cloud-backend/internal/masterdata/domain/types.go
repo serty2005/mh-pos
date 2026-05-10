@@ -465,6 +465,7 @@ var knownPermissionIDs = map[string]struct{}{
 	"pos.payment.cash":                {},
 	"pos.payment.card.manual":         {},
 	"pos.payment.other":               {},
+	"pos.payment.refund":              {},
 	"pos.check.view":                  {},
 	"pos.check.reprint":               {},
 	"pos.sync.view":                   {},

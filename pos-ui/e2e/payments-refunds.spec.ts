@@ -12,6 +12,8 @@ type DemoBootstrap = {
   menu_item_ids: string[];
 };
 
+const bootstrapJson = process.env.POS_E2E_BOOTSTRAP_JSON;
+
 type AuthHeaders = Record<'X-Node-Device-ID' | 'X-Client-Device-ID' | 'X-Actor-Employee-ID' | 'X-Session-ID', string>;
 
 type LoginResult = {
@@ -59,7 +61,8 @@ let commandSequence = 0;
 test.beforeAll(async ({ playwright }) => {
   const request = await playwright.request.newContext();
   try {
-    demo = await post<DemoBootstrap>(request, '/dev/bootstrap-demo');
+    expect(bootstrapJson, 'Run scripts/bootstrap-production-way.ps1 and pass its JSON as POS_E2E_BOOTSTRAP_JSON').toBeTruthy();
+    demo = JSON.parse(bootstrapJson ?? '{}') as DemoBootstrap;
     const login = await post<LoginResult>(request, '/auth/pin-login', {
       node_device_id: demo.node_device_id,
       client_device_id: clientDeviceId,

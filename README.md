@@ -170,28 +170,30 @@ $env:CLOUD_POSTGRES_DSN="postgres://postgres:postgres@localhost:5432/mh_pos_clou
 go run ./cmd/cloud-api
 ```
 
-3. Запусти POS Edge backend с dev tools:
+3. Запусти POS Edge backend:
 
 ```powershell
 cd pos-backend
 go mod tidy
 go test ./...
-$env:POS_DEV_TOOLS="1"
+$env:POS_CLOUD_SYNC_URL="http://localhost:8090"
 go run ./cmd/pos-edge
 ```
 
-4. В новом терминале из корня репозитория создай demo данные:
+4. В новом терминале из корня репозитория создай Cloud-owned справочники, опубликуй package, примени snapshot на Edge и прогони runtime smoke до refund:
 
 ```powershell
-.\scripts\bootstrap-pos-demo.ps1
+.\scripts\bootstrap-production-way.ps1 -RunRuntimeSmoke -VerboseOutput
 ```
 
-Скрипт вызывает dev/local endpoint `POST /api/v1/dev/bootstrap-demo` и печатает:
+Скрипт использует Cloud API и Cloud -> Edge ingest, не создает справочники на POS Edge и печатает:
 
-- `Pairing code`: `MHPOS:<restaurant_id>:demo-edge-node-1`
+- `restaurant_id`
+- `node_device_id`
+- `pairing_code` или Cloud approval marker
 - `Cashier PIN`: `1111`
 - `Manager PIN`: `2222`
-- `Manager employee`: employee id для cancel precheck override
+- hall/table/catalog/menu ids
 
 5. Запусти POS UI:
 
@@ -237,7 +239,7 @@ Invoke-RestMethod http://localhost:8090/health
 Invoke-RestMethod -Headers $syncHeaders http://localhost:8080/api/v1/sync/status
 ```
 
-Runtime POS actions автоматически перемещают operational outbox rows в Cloud, когда `POS_SYNC_SENDER_ENABLED=true`, а `POS_CLOUD_SYNC_URL` указывает на Cloud. Configuration/bootstrap rows, которые не являются допустимыми Edge -> Cloud operational events, имеют `sync_direction = cloud_to_edge` или `local_only` и помечаются `suspended` с явной sync-direction причиной.
+Runtime POS actions автоматически перемещают operational outbox rows в Cloud, когда `POS_SYNC_SENDER_ENABLED=true`, а `POS_CLOUD_SYNC_URL` указывает на Cloud. Cloud-authored master-data rows входят на Edge только через Cloud -> Edge ingest и не создают Edge -> Cloud operational outbox rows.
 
 Для local/dev checks Cloud-authored master data можно применить напрямую в POS Edge без полного Cloud master flow:
 
@@ -279,7 +281,7 @@ $snapshot = Invoke-RestMethod "http://localhost:8090/api/v1/restaurants/$($resta
 Invoke-RestMethod -Method Post http://localhost:8080/api/v1/sync/master-data/snapshots -ContentType "application/json" -Body ($snapshot | ConvertTo-Json -Depth 20)
 ```
 
-`.\scripts\cloud-masterdata-e2e.ps1` проверяет путь Cloud CRUD -> publish -> Edge ingest -> POS read/PIN login. Скрипт является smoke/e2e validation, а не production bootstrap path.
+`.\scripts\cloud-masterdata-e2e.ps1` и `.\scripts\bootstrap-production-way.ps1` проверяют путь Cloud CRUD -> publish -> Edge ingest -> POS read/PIN login. С флагом `-RunRuntimeSmoke` выполняется cashier runtime path до refund.
 
 Реализовано сейчас: общий Docker Compose для локального запуска всего backend/runtime стека без POS UI находится в `docker-compose.local.yml`; инструкция и docker-oriented config files описаны в `docs/backend/LOCAL-DOCKER-STACK.md`.
 
@@ -290,13 +292,13 @@ docker exec -it mh-pos-cloud-postgres psql -U postgres -d mh_pos_cloud -c "selec
 docker exec -it mh-pos-cloud-postgres psql -U postgres -d mh_pos_cloud -c "select event_type, count(*) from cloud_edge_event_receipts group by event_type order by event_type;"
 ```
 
-`.\scripts\send-cloud-test-envelope.ps1 -ReplayTwice` по-прежнему проверяет duplicate replay напрямую против Cloud. `.\scripts\dev-smoke.ps1` выполняет health checks, POS demo bootstrap, POS sync endpoint checks и Cloud envelope replay, но не стартует серверы за тебя.
+`.\scripts\send-cloud-test-envelope.ps1 -ReplayTwice` по-прежнему проверяет duplicate replay напрямую против Cloud. `.\scripts\dev-smoke.ps1` выполняет health checks, production-way bootstrap/runtime smoke и Cloud envelope replay, но не стартует серверы за тебя.
 
-реализовано сейчас: `.\scripts\start-and-test-all.ps1` запускает Cloud, POS Edge и UI в отдельных видимых PowerShell окнах, пишет PID file `.dev-stack-pids.json`, сохраняет логи в `logs/dev-stack/`, проверяет порты `8090/8080/5173`, показывает tail логов при health timeout и выполняет authenticated sync smoke через demo manager session. Остановка выполняется через `.\scripts\stop-and-test-all.ps1`, который использует PID file и завершает process tree без небезопасного wildcard kill.
+Реализовано сейчас: `.\scripts\start-and-test-all.ps1` запускает License Server, Cloud, POS Edge и UI в скрытых PowerShell процессах, пишет PID file `.dev-stack-pids.json`, сохраняет логи в `logs/dev-stack/`, проверяет порты `8095/8090/8080/5173`, ждет readiness PostgreSQL, очищает локальные SQLite БД dev stack по умолчанию и выполняет production-way bootstrap/runtime smoke. Остановка выполняется через `.\scripts\stop-and-test-all.ps1`, который использует PID file и завершает process tree без небезопасного wildcard kill. Для сохранения локальных SQLite данных используй `-PreserveLocalData`.
 
 ## Локальный E2E Prototype: получить pairing code и войти в POS UI
 
-реализовано сейчас: local developer flow использует реальные POS backend endpoints и реальный MVP pairing code.
+реализовано сейчас: local developer flow использует Cloud-owned production-way provisioning и реальные POS backend runtime endpoints.
 
 1. Запусти Cloud:
 
@@ -306,18 +308,18 @@ $env:CLOUD_POSTGRES_DSN="postgres://postgres:postgres@localhost:5432/mh_pos_clou
 go run ./cmd/cloud-api
 ```
 
-2. Запусти POS с dev tools:
+2. Запусти POS Edge:
 
 ```powershell
 cd pos-backend
-$env:POS_DEV_TOOLS="1"
+$env:POS_CLOUD_SYNC_URL="http://localhost:8090"
 go run ./cmd/pos-edge
 ```
 
-3. Из корня репозитория получи demo credentials:
+3. Из корня репозитория получи production-way credentials:
 
 ```powershell
-.\scripts\bootstrap-pos-demo.ps1
+.\scripts\bootstrap-production-way.ps1 -RunRuntimeSmoke
 ```
 
 Используй возвращенный `pairing_code` на `http://localhost:5173/pair`, затем войди на `/login` с cashier PIN `1111`. Скрипт также возвращает `restaurant_id`, `node_device_id`, employee ids, `hall_id`, `table_ids` и `menu_item_ids`.
@@ -325,7 +327,7 @@ go run ./cmd/pos-edge
 4. Проверь Cloud replay с реальными bootstrap IDs:
 
 ```powershell
-$demo = .\scripts\bootstrap-pos-demo.ps1
+$demo = .\scripts\bootstrap-production-way.ps1
 .\scripts\send-cloud-test-envelope.ps1 -RestaurantId $demo.restaurant_id -NodeDeviceId $demo.node_device_id -ReplayTwice
 ```
 
@@ -447,7 +449,7 @@ go test ./...
 - Sync outbox имеет retry-safe поля `sequence_no`, `sync_direction`, `attempts`, `next_retry_at`, `locked_at`, `locked_by`, `sent_at`, `last_error` и статусы `pending`, `processing`, `sent`, `failed`, `suspended`.
 - Sync outbox доступен через `GET /api/v1/sync/outbox`, aggregated status через `GET /api/v1/sync/status`, manual retry failed/suspended через `POST /api/v1/sync/retry-failed`; эти operator endpoints требуют заголовки `X-Node-Device-ID`, `X-Client-Device-ID`, `X-Session-ID`, `X-Actor-Employee-ID` и соответствующие permissions (`pos.sync.view`, `pos.sync.retry_failed`).
 - Edge financial foundation включает публичные precheck issue/read/list/cancel endpoints, precheck payment endpoint, `manager_override_audit`, `payment_attempts`, automatic final checks, `cash_sessions` как кассовые смены, `cash_drawer_events`, PIN auth/session foundation, halls/tables API и базовые HTTP endpoints для cash shift/drawer workflows.
-- Cloud-owned master-data foundation запрещает Edge runtime mutation restaurants/devices metadata/roles/employees/halls/tables/catalog/menu/recipes/inventory reference data. POS Edge использует локальную read model offline; Cloud-authored master data применяется через `/api/v1/sync/master-data/snapshots` или `/api/v1/sync/master-data/{stream}`; dev seed/admin write routes требуют `POS_DEV_TOOLS=1`.
+- Cloud-owned master-data foundation запрещает Edge runtime mutation restaurants/devices metadata/roles/employees/halls/tables/catalog/menu/recipes/inventory reference data. POS Edge использует локальную read model offline; Cloud-authored master data применяется через `/api/v1/sync/master-data/snapshots` или `/api/v1/sync/master-data/{stream}`; Edge dev bootstrap route удален из supported/current runtime.
 - Auth/device foundation включает pairing status/pair endpoints, `POST /api/v1/auth/logout`, revoked sessions, client device registry, `node_device_id`/`client_device_id` metadata в local events/outbox/SyncEnvelope.
 - Pairing verifier хранится в keyed format `pairing.hmac-sha256.v1`; plaintext pairing code не сохраняется.
 - PIN login должен однозначно определить одного active employee в paired restaurant; дубли active PIN отклоняются как conflict.

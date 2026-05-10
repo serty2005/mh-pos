@@ -39,6 +39,7 @@ $pids = Get-Content $pidFile | ConvertFrom-Json
 Stop-IfRunning -ProcessId $pids.pos_ui_pid -Name "pos-ui"
 Stop-IfRunning -ProcessId $pids.pos_backend_pid -Name "pos-backend"
 Stop-IfRunning -ProcessId $pids.cloud_backend_pid -Name "cloud-backend"
+Stop-IfRunning -ProcessId $pids.license_server_pid -Name "license-server"
 
 if ($StopDocker) {
     Write-Host "Останавливаю Docker container: $dockerName"

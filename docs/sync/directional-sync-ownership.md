@@ -12,7 +12,7 @@
 
 | Entity | Owner | Writable On Edge Runtime | Sync Direction | Current Edge Role |
 | --- | --- | --- | --- | --- |
-| Restaurant | Cloud | No | Cloud -> Edge | local read model, seed/dev bootstrap only |
+| Restaurant | Cloud | No | Cloud -> Edge | local read model only |
 | Edge node device metadata | Cloud | No, except pairing foundation | Cloud -> Edge | local identity/read model |
 | Client device presence | Edge | Yes | Edge -> Cloud as device event foundation | local runtime registry |
 | Role | Cloud | No | Cloud -> Edge | local read model for permission checks |
@@ -54,11 +54,11 @@
 
 Реализовано сейчас:
 
-- Master-data write use cases accept only `origin = cloud_sync` or `origin = system_seed`.
+- Master-data write use cases accept Cloud-sync apply origin for production delivery; `system_seed` remains only internal test/setup origin, not an HTTP bootstrap path.
 - POS runtime HTTP requests are normalized to Edge runtime origin.
-- Public master-data mutation routes are dev-only and require `POS_DEV_TOOLS=1`; without it they return forbidden and do not write business rows, local events or outbox rows.
+- Public Edge master-data mutation routes are not part of supported/current runtime; local/e2e/smoke provisioning uses Cloud CRUD and Cloud -> Edge ingest.
 - Cloud -> Edge master-data ingestion uses dedicated sync endpoints, sets origin to `cloud_sync`, and is not a POS runtime route.
-- Demo bootstrap remains available only through `POST /api/v1/dev/bootstrap-demo` with `POS_DEV_TOOLS=1`; it uses `system_seed`.
+- Edge dev bootstrap route is removed from supported/current runtime.
 - Operational writes remain local, transactional and outbox-backed.
 - `pos_sync_outbox.sync_direction` is explicit: `edge_to_cloud`, `cloud_to_edge` or `local_only`.
 - Sender still sends only `edge_to_cloud` operational events and suspends wrong-direction rows.
@@ -109,10 +109,10 @@
 Реализовано сейчас:
 
 - Operational endpoints remain Edge-writable.
-- Master-data mutation endpoints are no longer valid Edge runtime flows; they are dev-only seed/admin helpers behind `POS_DEV_TOOLS=1`.
+- Master-data mutation endpoints are no longer valid Edge runtime flows and are not used by local/e2e/smoke happy paths.
 - Cloud-authored master data enters through `/api/v1/sync/master-data/snapshots` or `/api/v1/sync/master-data/{stream}`.
 - Read endpoints for master data remain available because POS must use the local read model offline.
-- `POST /api/v1/dev/bootstrap-demo` remains the supported local/demo bootstrap path.
+- `scripts/bootstrap-production-way.ps1` is the supported local/e2e bootstrap path: Cloud CRUD -> publish -> Edge ingest -> POS runtime smoke.
 - `POST /api/v1/restaurants/{id}/master-data/publish` on Cloud creates versioned package state; POS Edge never calls Cloud master-data mutation routes as runtime CRUD.
 
 ## Влияние на схему

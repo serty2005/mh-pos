@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -37,19 +36,6 @@ func NewRouter(service *app.Service) http.Handler {
 	r.Get("/health", h.health)
 
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Post("/restaurants", h.createRestaurant)
-		r.Get("/restaurants", h.listRestaurants)
-
-		r.Post("/devices/register", h.registerDevice)
-		r.Get("/devices", h.listDevices)
-
-		r.Post("/roles", h.createRole)
-		r.Get("/roles", h.listRoles)
-
-		r.Post("/employees", h.createEmployee)
-		r.Get("/employees", h.listEmployees)
-		r.Patch("/employees/{id}/archive", h.archiveEmployee)
-
 		r.Post("/auth/pin-login", h.pinLogin)
 		r.Post("/auth/logout", h.logout)
 		r.Get("/auth/session", h.getAuthSession)
@@ -60,17 +46,11 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/system/provisioning/register-cloud", h.registerCloudProvisioning)
 		r.Post("/system/provisioning/pair-via-license", h.pairViaLicense)
 
-		r.Post("/halls", h.createHall)
 		r.Get("/halls", h.listHalls)
-		r.Patch("/halls/{id}/archive", h.archiveHall)
-		r.Post("/tables", h.createTable)
 		r.Get("/tables", h.listTables)
-		r.Patch("/tables/{id}/archive", h.archiveTable)
 
-		r.Post("/catalog/items", h.createCatalogItem)
 		r.Get("/catalog/items", h.listCatalogItems)
 
-		r.Post("/menu/items", h.createMenuItem)
 		r.Get("/menu/items", h.listMenuItems)
 
 		r.Post("/employee-shifts/open", h.openShift)
@@ -109,32 +89,13 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/sync/retry-failed", h.retryFailedOutbox)
 		r.Post("/sync/master-data/snapshots", h.applyMasterDataSnapshot)
 		r.Post("/sync/master-data/{stream}", h.applyMasterDataStream)
-
-		r.Post("/dev/bootstrap-demo", h.bootstrapDemo)
 	})
 
 	return r
 }
 
-func (h *Handler) bootstrapDemo(w http.ResponseWriter, r *http.Request) {
-	if !devToolsEnabled() {
-		httpx.Error(w, fmt.Errorf("%w: dev bootstrap is disabled; set POS_DEV_TOOLS=1 for local prototype setup", domain.ErrForbidden), r)
-		return
-	}
-	v, err := h.service.BootstrapDemo(r.Context())
-	writeCreated(w, r, v, err)
-}
-
-func devToolsEnabled() bool {
-	value := strings.ToLower(strings.TrimSpace(os.Getenv("POS_DEV_TOOLS")))
-	return value == "1" || value == "true" || value == "yes"
-}
-
 func requireDevTools(w http.ResponseWriter, r *http.Request) bool {
-	if devToolsEnabled() {
-		return true
-	}
-	httpx.Error(w, fmt.Errorf("%w: master data mutation APIs are dev-only; use Cloud->Edge sync ingest or set POS_DEV_TOOLS=1 for local seed data", domain.ErrForbidden), r)
+	httpx.Error(w, fmt.Errorf("%w: Edge master-data mutation APIs are not supported; use Cloud API and Cloud->Edge sync ingest", domain.ErrForbidden), r)
 	return false
 }
 

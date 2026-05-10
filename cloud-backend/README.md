@@ -150,10 +150,10 @@ Invoke-RestMethod http://localhost:8090/health
 ..\scripts\send-cloud-test-envelope.ps1 -ReplayTwice
 ```
 
-Replay envelope с ID из POS demo bootstrap:
+Replay envelope с ID из production-way bootstrap:
 
 ```powershell
-$demo = ..\scripts\bootstrap-pos-demo.ps1
+$demo = ..\scripts\bootstrap-production-way.ps1
 ..\scripts\send-cloud-test-envelope.ps1 -RestaurantId $demo.restaurant_id -NodeDeviceId $demo.node_device_id -ReplayTwice
 ```
 
@@ -210,7 +210,7 @@ go run ./cmd/cloud-api
 2. После POS bootstrap проверь replay с реальными ID:
 
 ```powershell
-$demo = ..\scripts\bootstrap-pos-demo.ps1
+$demo = ..\scripts\bootstrap-production-way.ps1
 ..\scripts\send-cloud-test-envelope.ps1 -RestaurantId $demo.restaurant_id -NodeDeviceId $demo.node_device_id -ReplayTwice
 ```
 
