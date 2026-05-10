@@ -6,3 +6,4 @@ data
 *.exe
 .dev-stack-pids.json
 .lazyweb/
+.kilo
