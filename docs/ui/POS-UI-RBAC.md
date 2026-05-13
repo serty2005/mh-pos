@@ -1,44 +1,26 @@
-# RBAC-матрица POS UI
+# POS UI RBAC
 
-## Назначение
+Статус: синхронизировано с текущим cashier UI/backend permissions.
 
-Документ фиксирует фактическую permission model для текущего POS UI и backend enforcement.
+UI visibility is UX only. Backend app-layer permissions remain authoritative.
 
-Код и тесты остаются источником истины для статуса `реализовано сейчас`. UI скрывает или блокирует действия только ради UX; финальная проверка всегда выполняется backend app-layer.
+## Реализовано Сейчас
 
-## Роли
+Permission ids used by cashier UI:
 
-Реализовано сейчас:
-
-- `cashier`
-- `senior_cashier`
-- `waiter`
-- `manager`
-- `kitchen`
-- `support_admin`
-
-Роли закреплены в backend role profiles и возвращаются пользователю через auth/session permissions. Permissions хранятся в `roles.permissions_json`, но валидируются через canonical backend catalog.
-
-## Canonical permission catalog
-
-Реализовано сейчас:
-
-- `pos.employee_shift.open`
-- `pos.employee_shift.close`
-- `pos.employee_shift.view_current`
-- `pos.employee_shift.recent`
+- `pos.shift.open`
+- `pos.shift.close`
 - `pos.cash_session.open`
 - `pos.cash_session.close`
-- `pos.cash_session.view_current`
-- `pos.cash_drawer.record_event`
-- `pos.catalog.view`
+- `pos.cash_drawer.record`
 - `pos.floor.view`
 - `pos.menu.view`
+- `pos.catalog.view`
 - `pos.order.create`
 - `pos.order.view`
-- `pos.order.add_line`
-- `pos.order.change_quantity`
-- `pos.order.void_line`
+- `pos.order.line.add`
+- `pos.order.line.update`
+- `pos.order.line.void`
 - `pos.order.close`
 - `pos.precheck.issue`
 - `pos.precheck.view`
@@ -48,105 +30,48 @@
 - `pos.payment.cash`
 - `pos.payment.card.manual`
 - `pos.payment.other`
+- `pos.payment.refund`
 - `pos.check.view`
 - `pos.check.reprint`
 - `pos.sync.view`
-- `pos.sync.retry_failed`
+- `pos.sync.retry`
 
-Вне текущего объема:
+## Cashier UI Actions
 
-- UI-only permission ids вида `ui.*`.
-- Permission ids для несуществующих runtime endpoints.
+| UI action | Permission | Статус |
+| --- | --- | --- |
+| Open employee shift | `pos.shift.open` | реализовано сейчас |
+| Close employee shift | `pos.shift.close` | реализовано сейчас |
+| Open cash session | `pos.cash_session.open` | реализовано сейчас |
+| Close cash session | `pos.cash_session.close` | реализовано сейчас |
+| View floor/tables | `pos.floor.view` | реализовано сейчас |
+| View menu/catalog | `pos.menu.view`, `pos.catalog.view` | реализовано сейчас |
+| Create order | `pos.order.create` | реализовано сейчас |
+| Add order line | `pos.order.line.add` | реализовано сейчас |
+| Change line quantity | `pos.order.line.update` | реализовано сейчас |
+| Void line | `pos.order.line.void` | реализовано сейчас |
+| Issue precheck | `pos.precheck.issue` | реализовано сейчас |
+| Cancel precheck request | `pos.precheck.cancel.request` | реализовано сейчас |
+| Manager approve precheck cancel | `pos.precheck.cancel` | реализовано сейчас |
+| Reprint precheck | `pos.precheck.reprint` | реализовано сейчас |
+| Capture cash payment | `pos.payment.cash` | реализовано сейчас |
+| Capture manual card payment | `pos.payment.card.manual` | реализовано сейчас |
+| Refund captured payment | `pos.payment.refund` | реализовано сейчас |
+| View final check / closed orders | `pos.check.view` | реализовано сейчас |
+| Reprint final check | `pos.check.reprint` | реализовано сейчас |
 
-## Manager Override
+## Вне Текущего UI Объема
 
-Реализовано сейчас:
+- waiter payment without cashier permissions;
+- order transfer/split/merge;
+- modifier selection;
+- discount/surcharge/tax override controls;
+- inventory/procurement operations;
+- KDS screens;
+- PSP terminal/fiscal device operation screens.
 
-- `CancelPrecheck` использует split permissions:
-  - actor должен иметь `pos.precheck.cancel.request`;
-  - approving manager должен иметь `pos.precheck.cancel`;
-  - reason и manager PIN обязательны;
-  - попытка пишет audit trail.
+## Notes
 
-Вне текущего объема:
-
-- override для `order transfer`, `refund`, waiter payment и `cash drawer no sale`;
-- restaurant-level policy engine для включения/выключения override per operation.
-
-## Реализованная runtime matrix
-
-Обозначения:
-
-- `A` = allow
-- `O` = allow through implemented manager override
-- `-` = deny
-
-| Операция | permission id | cashier | senior_cashier | waiter | manager | kitchen | support_admin |
-|---|---|---:|---:|---:|---:|---:|---:|
-| Login / active session | session flow | A | A | A | A | A | A |
-| Lock / logout | session flow | A | A | A | A | A | A |
-| Open personal employee shift | `pos.employee_shift.open` | A | A | A | A | - | - |
-| Close personal employee shift | `pos.employee_shift.close` | A | A | A | A | - | - |
-| View current personal shift | `pos.employee_shift.view_current` | A | A | A | A | - | - |
-| View recent personal shifts | `pos.employee_shift.recent` | A | A | A | A | - | - |
-| Open cash shift | `pos.cash_session.open` | A | A | - | A | - | - |
-| Close cash shift | `pos.cash_session.close` | - | A | - | A | - | - |
-| View current cash shift | `pos.cash_session.view_current` | A | A | - | A | - | - |
-| Cash drawer event / no sale | `pos.cash_drawer.record_event` | - | - | - | A | - | - |
-| View catalog reference | `pos.catalog.view` | A | A | A | A | - | - |
-| Select hall/table | `pos.floor.view` | A | A | A | A | - | - |
-| View menu | `pos.menu.view` | A | A | A | A | - | - |
-| Create order | `pos.order.create` | A | A | A | A | - | - |
-| View order | `pos.order.view` | A | A | A | A | - | - |
-| Add order line | `pos.order.add_line` | A | A | A | A | - | - |
-| Change quantity before precheck | `pos.order.change_quantity` | A | A | A | A | - | - |
-| Void line before precheck | `pos.order.void_line` | A | A | A | A | - | - |
-| Close order after final check | `pos.order.close` | A | A | A | A | - | - |
-| Issue precheck | `pos.precheck.issue` | A | A | A | A | - | - |
-| View precheck | `pos.precheck.view` | A | A | A | A | - | - |
-| Reprint precheck copy | `pos.precheck.reprint` | A | A | A | A | - | - |
-| Cancel precheck | `pos.precheck.cancel.request` + `pos.precheck.cancel` | - | O | - | A | - | - |
-| Take cash payment | `pos.payment.cash` | A | A | - | A | - | - |
-| Take trusted manual card payment | `pos.payment.card.manual` | A | A | - | A | - | - |
-| Other payment method | `pos.payment.other` | - | - | - | A | - | - |
-| View final check | `pos.check.view` | A | A | A | A | - | - |
-| Reprint final check copy | `pos.check.reprint` | - | - | - | A | - | - |
-| View sync status/local events/outbox | `pos.sync.view` | - | A | - | A | - | A |
-| Retry failed syncs | `pos.sync.retry_failed` | - | - | - | A | - | A |
-
-## Строки runtime вне текущего объема
-
-Вне текущего объема:
-
-- role-based terminal pairing UI;
-- view other employee order;
-- transfer order to another employee;
-- waiter payment override;
-- refund payment;
-- diagnostics screens/actions;
-- manager/admin screens for editing halls, tables, menu, catalog, employees and roles.
-
-Эти строки не считаются реализованными сейчас, пока в коде нет соответствующего route/use-case, permission id, backend enforcement и тестов.
-
-## UX-требования
-
-Реализовано сейчас:
-
-- `pos-ui` использует backend permission ids напрямую в `src/shared/rbac.ts`;
-- критичные POS-действия в `/pos` скрываются или блокируются по текущему session actor permissions;
-- query-запросы к защищенным backend read endpoints не запускаются без соответствующего permission, чтобы не плодить ожидаемые `403` в браузерных devtools.
-
-Вне текущего объема:
-
-- считать UI visibility security boundary.
-
-## Правила развития
-
-Нельзя добавлять новую UI-операцию без:
-
-- canonical backend permission id;
-- строки в этой матрице;
-- backend enforcement note;
-- теста backend allow/deny;
-- UI visibility test или acceptance note;
-- документационного статуса `реализовано сейчас`, `запланировано далее` или `вне текущего объема`.
+- Refund is not completely absent: backend route and cashier UI flow are implemented.
+- Refund policy still needs pilot acceptance for audit/sync/reporting expectations.
+- UI must not show raw backend/internal errors or calculate authoritative financial totals.

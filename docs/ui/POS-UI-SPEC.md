@@ -1,284 +1,112 @@
-# Спецификация POS UI
+# POS UI Spec
 
-## Назначение
+Статус: актуальный cashier UI contract для frozen pilot.
 
-Этот документ описывает **текущий и целевой UI surface** пакета `pos-ui`.
+UI не является security boundary. Backend RBAC и application-layer checks остаются авторитетными.
 
-Он не описывает backend domain logic.
-Он не подменяет backend API spec.
-Он не подменяет RBAC matrix.
+## Реализовано Сейчас
 
-## Текущее состояние
+Cashier UI in `pos-ui/src/pages/PosPage.vue` supports:
 
-`pos-ui` на текущем этапе - это cashier-first UI для одного all-in-one pilot terminal.
-
-Реально поддерживаемые маршруты:
-
-- `/pair`
-- `/login`
-- `/pos`
-- `/lock`
-
-Route `/` используется только как redirect entrypoint.
-
-## Архитектурная позиция
-
-Frontend не является source of truth.
-
-Frontend:
-
-- показывает состояние;
-- отправляет команды в backend;
-- не принимает финансовых решений;
-- использует backend-provided permission model для UX visibility, но не является security boundary;
-- не считает order/precheck/check totals;
-- не определяет самостоятельно, можно ли закрыть заказ, отменить пречек или завершить оплату.
-
-Все бизнес-решения принимает Edge backend.
-
-## Identity model
-
-UI использует два идентификатора устройства:
-
-- `node_device_id` - identity Edge backend / Edge node;
-- `client_device_id` - identity конкретного UI-клиента.
-
-Правила:
-
-- `node_device_id` не генерируется frontend;
-- `node_device_id` приходит через pairing;
-- `client_device_id` генерируется frontend через `crypto.randomUUID()` и хранится локально;
-- все operator commands должны нести session/device/actor metadata.
-
-## Экраны
-
-### Pair
-
-Назначение:
-
-- первичное связывание UI-клиента с Edge node.
-
-Действия:
-
-- ввод pairing code;
-- вызов `POST /api/v1/system/pair`;
-- переход на `/login` после успешного pairing.
-
-### Login
-
-Назначение:
-
-- вход сотрудника по PIN.
-
-Действия:
-
-- ввод PIN;
-- вызов `POST /api/v1/auth/pin-login`;
-- получение session + actor context + permissions;
-- переход на `/pos`.
-
-Реализовано сейчас: backend отклоняет login, если PIN совпадает с несколькими active employees; текущий UI не реализует employee selection flow.
-
-### POS
-
-Назначение:
-
-- основной cashier terminal flow.
-
-Реализовано сейчас:
-
-- `/pos` использует touch-first трехзонную компоновку для all-in-one terminal: слева готовность личной/кассовой смены и выбор зала/стола, в центре активный заказ и позиции, справа поиск меню, пречек и оплата.
-- Меню отображается крупными плитками с локальным поиском по названию позиции; поиск является только UX-фильтром уже загруженного backend menu read model.
-- Столы отображаются крупными touch-карточками внутри выбранного зала; текущий UI показывает active tables из backend, но не делает выводы об occupancy beyond selected table/current order.
-- Статусы смены, кассовой смены, pairing, node и session вынесены в верхний service strip; это не меняет backend enforcement и не добавляет новые runtime endpoints.
-- Кассовые операции `cash_in`, `cash_out`, `no_sale`, `cash_count` доступны из блока кассового ящика при `pos.cash_drawer.record_event` и открытой кассовой смене.
-- Менеджерский sync-блок показывает `sync/status`, последние `sync/outbox`, последние `sync/local-events` и позволяет выполнить `sync/retry-failed` при соответствующих backend permission ids.
-
-Поддерживаемые блоки:
-
-- текущий оператор и session status;
-- pairing/session status strip;
-- open/close personal employee shift;
-- last personal employee shifts;
-- open/close cash shift;
-- запись событий кассового ящика;
-- halls list;
-- tables list;
-- active order by selected table;
-- order creation;
-- add line;
+- PIN login/session-based operator context;
+- employee shift open/close;
+- cash session open/close;
+- halls/tables selection;
+- current order lookup by table;
+- create order;
+- add order line from menu;
 - change quantity;
 - void line;
 - issue precheck;
-- cancel precheck через manager override dialog;
-- reprint precheck copy при наличии `pos.precheck.reprint`;
+- cancel precheck through manager override dialog;
+- reprint precheck copy;
 - cash payment;
 - trusted manual card payment;
-- закрытие полностью оплаченного заказа;
-- reprint final check copy при наличии `pos.check.reprint`;
-- final check display.
-- диагностика синхронизации для ролей с `pos.sync.view`;
-- retry failed sync для ролей с `pos.sync.retry_failed`.
+- final check display after full payment;
+- reprint final check copy;
+- closed orders list;
+- refund captured payment from closed orders when operator has permission and cash session is open.
 
-### Lock
+UI calls backend APIs for authoritative state and does not compute authoritative totals.
 
-Назначение:
+## Backend Capability Vs UI Capability
 
-- завершение локальной рабочей сессии.
+Refund:
 
-Действия:
+- Backend capability is implemented through `POST /api/v1/payments/{id}/refund`.
+- Cashier UI capability is also implemented for closed orders with captured payments.
+- UI shows refund action only when `pos.payment.refund` is granted and current cash session exists.
+- Backend remains final enforcement layer.
 
-- backend logout;
-- очистка локального session state;
-- переход к `/login`.
+Reprint:
 
-## Реализованный пользовательский поток
+- Backend precheck/check reprint is implemented from immutable snapshots.
+- UI has reprint actions guarded by `pos.precheck.reprint` and `pos.check.reprint`.
+- UI displays copy readiness through i18n text, not hardcoded source strings outside locale.
 
-```mermaid
-flowchart LR
-    Pair["/pair"] --> Login["/login"]
-    Login --> POS["/pos"]
-    POS --> Shift["Open personal employee shift"]
-    Shift --> Table["Select hall and table"]
-    Shift --> Cash["Open cash shift"]
-    Table --> Order["Create / load order"]
-    Order --> Edit["Add / edit / void lines"]
-    Edit --> Precheck["Issue precheck"]
-    Precheck --> Pay["Capture payment"]
-    Pay --> Check["Display final check"]
-    POS --> Lock["/lock"]
-    Lock --> Login
-```
-
-## Server-state и local-state
-
-### Server state
-
-Через query-layer загружаются:
-
-- pairing status;
-- auth session;
-- current personal employee shift;
-- recent personal employee shifts;
-- current cash shift;
-- halls;
-- tables;
-- current order by table;
-- order by id;
-- prechecks by order;
-- menu items;
-- final check.
-- статус синхронизации;
-- строки sync outbox;
-- строки local event log.
+## Financial Boundaries
 
 Реализовано сейчас:
 
-- Без открытой личной смены сотрудника `/pos` показывает только действие открытия личной смены и последние личные смены текущего actor.
-- Создание и редактирование заказов доступно после открытия личной смены сотрудника и не требует кассовой смены.
-- Оплата доступна только при открытой кассовой смене.
-- Оплата скрыта/заблокирована без `pos.payment.*`; waiter payment остается вне текущего объема.
-- Reprint precheck/check отображается только при соответствующих backend permissions и вызывает backend audit command.
-- События кассового ящика отображаются только при открытой кассовой смене и `pos.cash_drawer.record_event`; суммы отправляются в backend в minor units.
-- Закрытие заказа отображается только после полной оплаты backend check и `pos.order.close`.
-- Диагностика синхронизации отображается только при `pos.sync.view`, retry failed/suspended outbox rows - только при `pos.sync.retry_failed`.
-- visibility критичных действий в `/pos` привязана к backend permission ids (shift/cash/order/precheck/payment/floor/menu); backend остается final enforcement layer.
-- денежный ввод/показ в UI использует currency precision helper по ISO code и опирается на active ISO 4217 catalog (precision `0/2/3/4` по коду валюты).
+- UI displays backend-provided order/precheck/check totals.
+- UI sends payment amount and method to backend.
+- UI does not calculate authoritative discount/tax/check totals.
+- UI does not apply tax rules, discount rules or modifier price deltas.
 
-Запланировано далее:
+Не реализовано сейчас:
 
-- Личная смена сотрудника будет использоваться для учета рабочего времени post-MVP.
+- discount/surcharge editor in cashier UI;
+- tax profile editor in cashier UI;
+- modifier selection in cashier order flow;
+- inventory consumption UI.
 
-### Локальное состояние
+Запланировано до пилота, if accepted:
 
-Локально разрешено хранить только:
+- modifier selection must submit a command to backend and render backend-calculated totals;
+- discount/manual override controls must exist only if backend policy/API exists;
+- no UI-side authoritative financial calculation.
 
-- `client_device_id`;
-- `node_device_id`;
-- `restaurant_id`;
-- `session_id`;
-- actor context;
-- purely visual UI state.
-
-Запрещено хранить:
-
-- PIN;
-- manager PIN;
-- финансовые итоги как source of truth;
-- решающее право на операцию.
-
-## Error handling и dialogs
+## RBAC Visibility
 
 Реализовано сейчас:
 
-- `src/shared/api.ts` содержит единый API client с `VITE_POS_API_BASE`, JSON serialization, empty-body handling, timeout и Zod validation ключевых backend responses.
-- Backend error envelope нормализуется в `ApiError` с `status`, `code`, `messageKey`, `category`, `correlationId`, `retryable`.
-- Поддерживаемые категории: `auth`, `permission`, `validation`, `not_found`, `conflict`, `rate_limit`, `server`, `network`, `timeout`, `unexpected`.
-- `401`/revoked session очищает local session state и ведет к controlled login flow.
-- `403` показывает permission dialog и не выполняет logout, если session валидна.
-- Network/timeout показывает degraded-state сообщение о недоступности POS Edge backend и не удаляет `client_device_id`.
-- Critical/business blocking errors показываются через global Quasar dialog, а не raw red banner.
-- Все user-facing сообщения ошибок идут через `vue-i18n` keys из backend `message_key` или safe frontend fallback.
-- Dialog показывает заголовок, описание, recommended action и optional support/debug code (`correlation_id`).
-- TanStack Query defaults: read/status запросы могут безопасно retry network/server ошибки; mutations не выполняют auto-retry.
+- UI maps backend permission ids in `pos-ui/src/shared/rbac.ts`.
+- Critical actions are hidden/disabled based on permissions for UX.
+- Backend validates permissions again.
 
-Вне текущего объема:
+Relevant permissions:
 
-- Cloud unavailable global banner для отдельного Cloud degraded-state UX;
-- build-time проверка полноты translation keys;
-- field-level backend validation map с деталями по каждому полю.
+- `pos.order.create`
+- `pos.order.line.add`
+- `pos.order.line.update`
+- `pos.order.line.void`
+- `pos.precheck.issue`
+- `pos.precheck.view`
+- `pos.precheck.cancel.request`
+- `pos.precheck.reprint`
+- `pos.payment.cash`
+- `pos.payment.card.manual`
+- `pos.payment.other`
+- `pos.payment.refund`
+- `pos.check.view`
+- `pos.check.reprint`
 
-## Обязательные transport headers
+## Locale And Text
 
-Для operator/business flows UI обязан передавать:
+Requirements:
 
-- `X-Client-Device-ID`
-- `X-Node-Device-ID`
-- `X-Session-ID`
-- `X-Actor-Employee-ID`
+- User-visible labels, dialogs, validation messages, notifications and empty states go through `vue-i18n`.
+- Russian UI strings belong in locale definitions, not scattered hardcoded source code.
+- Error display must not expose raw Go errors, SQL errors, stack traces, request dumps, PINs, tokens or sensitive payloads.
 
-## Поддерживаемый pilot scope
+## Вне Текущего Объема
 
-Для первого пилота supported:
+Вне текущего cashier pilot UI:
 
-- cashier flow на одном all-in-one terminal;
-- pairing -> login -> pos -> lock/logout;
-- один локальный Edge backend;
-- один локальный SQLite source of truth;
-- наличная оплата;
-- trusted manual card capture;
-- manager override только для отмены пречека.
-- money conversion в UI на основе integer minor units с currency-dependent precision (`0/2/3/4` decimals).
-- business date приходит из backend API payloads; UI не вычисляет `business_date_local` самостоятельно.
-- controlled reprint copy для precheck/final check из backend immutable snapshot.
-- кассовые drawer-события для текущей открытой кассовой смены;
-- manager/support sync diagnostics без изменения Cloud-managed master data.
-
-## Явно не поддерживается сейчас
-
-На текущем этапе **не считается реализованным сейчас**:
-
-- waiter mode runtime;
-- KDS runtime;
-- manager runtime;
-- diagnostics runtime;
-- settings runtime;
-- refund flow;
-- PSP integration;
-- hardware printer integration from UI;
-- ручной перенос закрытого заказа/платежа в другой business date;
-- offline write queue in frontend.
-
-## Документационные правила для UI
-
-Если меняется хотя бы один из пунктов ниже, этот документ обновляется в том же PR:
-
-- routes;
-- visible screens;
-- supported cashier actions;
-- identity/session flow;
-- supported/unsupported scope;
-- manager override UI;
-- transport headers used by UI.
-
-Будущие режимы (`waiter`, `kds`, `manager`, `diagnostics`, `settings`) добавляются в этот документ только после появления router entrypoint, page shell и backend contract.
+- KDS runtime screens;
+- delivery/channel screens;
+- real PSP terminal integration UI;
+- fiscal device operation UI;
+- full inventory/procurement UI;
+- modifiers UI until backend order runtime exists;
+- discount/surcharge/tax policy UI until backend pricing policy exists.

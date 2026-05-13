@@ -1,515 +1,199 @@
-# Спецификация POS Backend
+# POS Backend Spec
 
-## Назначение
+Статус: актуальный backend contract для frozen cashier pilot.
 
-Этот документ фиксирует:
+Код и тесты являются источником истины. Этот документ не описывает будущие API как реализованные.
 
-- текущий публичный backend surface;
-- state transitions;
-- policy compatibility-хвостов для текущего публичного API;
-- event catalog Edge runtime;
-- границы между статусами `реализовано сейчас`, `запланировано далее` и `вне текущего объема`.
-
-## Архитектурная позиция
-
-Edge backend является source of truth для всех активных POS-операций.
-
-Cloud не является runtime dependency для:
-
-- смен;
-- кассовых смен;
-- заказов;
-- пречеков;
-- оплат;
-- финальных чеков;
-- manager override.
-
-## DB startup и schema verification
+## Runtime Modules
 
 Реализовано сейчас:
 
-- POS Edge до запуска HTTP server и sync worker открывает SQLite, проверяет runtime gate (`WAL`, `foreign_keys`, `busy_timeout`, SQLite version), применяет ordered managed SQL files из `migrations/sqlite` и выполняет schema verification критичных таблиц/колонок/индексов.
-- `001_init.sql` задает clean baseline, а `002_runtime_schema_repair.sql` idempotent-образом довыравнивает старые pre-pilot SQLite БД, где существующие таблицы не получили новые runtime columns через `CREATE TABLE IF NOT EXISTS`.
-- POS Edge использует `db_runtime_versions` и `schema_migrations`; если `db_runtime_versions` отсутствует, БД считается самой старой и запускается upgrade path.
-- Перед safe schema/data upgrade существующей SQLite БД создается SQLite online backup artifact `.db` в `POS_SQLITE_BACKUP_DIR`.
-- Cloud backend до запуска HTTP server применяет ordered managed PostgreSQL SQL files под advisory lock и выполняет schema verification runtime-таблиц.
-- Cloud backend использует `db_runtime_versions` и `schema_migrations`; если `db_runtime_versions` отсутствует, БД считается самой старой и запускается upgrade path.
-- Если PostgreSQL `schema_migrations` отсутствует или содержит старую запись без checksum, startup повторно применяет idempotent managed SQL files, чтобы создать недостающие implemented-now runtime tables до schema verification.
-- `002_projection_event_type_stats.sql` создает `cloud_projection_event_type_stats`, потому что Cloud receiver runtime upsert'ит event type stats при приеме Edge events.
-- `003_runtime_schema_repair.sql` idempotent-образом создает отсутствующие implemented-now Cloud runtime tables, включая `cloud_projection_shift_finance`, если старая БД уже записала ранние migrations в history.
-- `004_master_data_authority.sql` создает Cloud-owned master-data authority foundation: roles, employees, employee credential metadata, catalog items, dishes, goods/raw materials, semi-finished products, recipe foundation, categories, modifier foundation, menu items, menu assignments и versioned publications.
-- `005_master_data_restaurants_api.sql` создает Cloud-owned restaurants storage, cloud-version metadata для master entities и partial unique SKU policy для неархивных catalog items.
-- Перед safe schema/data upgrade существующей PostgreSQL схемы создается JSONL snapshot таблиц `public` в `CLOUD_POSTGRES_BACKUP_DIR`.
-- `schema_migrations` хранит имя active SQL file, SHA-256 checksum, status и `applied_at`; checksum drift при той же версии завершает startup fail-fast, а при `db version < MH_POS_VERSION` применяется как управляемый upgrade.
-- `DB version > MH_POS_VERSION` завершает startup fail-fast, downgrade не поддерживается.
-- Ошибки открытия БД, lock, backup, migration и schema verification логируются structured logs с безопасным контекстом (`db_type`, `db_path`/`database`, `module_name`, `operation`, `action`, `result`, `current_version`, `target_version`, `migration_file`, `migration_dir`, `missing_table`, `missing_column`, `missing_index`, `error_code`, `duration_ms`).
-- Runtime-код не должен обращаться к business tables до успешных migrations и schema verification.
+- POS Edge HTTP API на `chi`.
+- SQLite repository/migration/runtime verification.
+- Application services для auth, staff shifts, cash sessions, floor/menu/catalog reads, order, precheck, payment/check, master-data ingest, outbox.
+- Manual persistence implementation в infrastructure repositories.
 
-Запланировано далее:
+Не реализовано сейчас:
 
-- production-grade backup retention/restore policy и отдельный observability report для миграций;
-- административная UI-операция очистки/пересоздания SQLite с backup, явным подтверждением, RBAC/audit и restart/rebootstrap flow.
+- `sqlc` как текущий persistence implementation;
+- ClickHouse runtime;
+- discount/surcharge/tax engine;
+- POS order modifiers runtime;
+- inventory consumption engine;
+- payment processor module;
+- fiscal adapter.
 
-Вне текущего объема:
+## Public Routes
 
-- online zero-downtime production migration orchestration и rollback arbitrary destructive migrations.
-
-## Финансовая модель
-
-Каноническая модель:
-
-```text
-Order -> Precheck -> Payment -> Check
-```
-
-Правила:
-
-- `Order` - рабочая сущность обслуживания;
-- `Precheck` - рабочий финансовый snapshot;
-- `Payment` - immutable финансовый факт;
-- `Check` - финальный расчетный документ после полной оплаты precheck.
-
-## Текущий публичный API
-
-### Health и system
+Реализовано сейчас в `pos-backend/internal/pos/api/router.go`:
 
 - `GET /health`
-- `GET /api/v1/system/pairing-status`
-- `POST /api/v1/system/pair`
-
-Реализовано сейчас: `POST /api/v1/system/pair` сохраняет verifier pairing code в keyed format `pairing.hmac-sha256.v1`; plaintext pairing code не сохраняется.
-
-### Auth
-
 - `POST /api/v1/auth/pin-login`
-- `GET /api/v1/auth/session`
 - `POST /api/v1/auth/logout`
-
-Реализовано сейчас: PIN login имеет rate limit по `node_device_id + client_device_id`.
-Реализовано сейчас: повторные неверные PIN-попытки возвращают `429 Too Many Requests`.
-Реализовано сейчас: PIN values никогда не возвращаются в response payloads.
-Реализовано сейчас: PIN login должен найти ровно одного active employee в paired restaurant; duplicate active PIN matches возвращают conflict.
-Реализовано сейчас: `GET /api/v1/auth/session` возвращает безопасную `401 SESSION_REVOKED` ошибку для revoked sessions вместо revoked session data.
-
-### Залы и меню
-
+- `GET /api/v1/auth/session`
+- `POST /api/v1/system/pair`
+- `GET /api/v1/system/pairing-status`
+- `GET /api/v1/system/provisioning-status`
+- `POST /api/v1/system/provisioning/register-cloud`
+- `POST /api/v1/system/provisioning/pair-via-license`
 - `GET /api/v1/halls`
 - `GET /api/v1/tables`
 - `GET /api/v1/catalog/items`
 - `GET /api/v1/menu/items`
-
-Реализовано сейчас: halls, tables, catalog и menu являются Cloud-owned master data. Public Edge runtime writes к этим сущностям не являются supported/current routes; local/e2e setup использует Cloud CRUD, Cloud publish и Cloud -> Edge ingest.
-
-Реализовано сейчас: сотрудники, роли, catalog items, categories и menu items имеют Cloud-authored foundation в `cloud-backend`. POS Edge не является production-местом создания и редактирования этих справочников; он хранит локальную read model для offline PIN login, RBAC checks, menu/catalog reads и order line creation.
-
-### Смены и касса
-
-- `GET /api/v1/employee-shifts/current`
-- `GET /api/v1/employee-shifts/recent`
 - `POST /api/v1/employee-shifts/open`
 - `POST /api/v1/employee-shifts/{id}/close`
-
-- `GET /api/v1/cash-shifts/current`
-- `POST /api/v1/cash-shifts/open`
-- `POST /api/v1/cash-shifts/{id}/close`
-- `POST /api/v1/cash-drawer-events`
-
-Реализовано сейчас:
-
-- `auth_sessions` остаются техническим login/logout-контекстом устройства и клиента.
-- `shifts` используются как личные смены сотрудника: открытая смена ищется по `restaurant_id + employee_id`, а не по устройству.
-- Без открытой личной смены сотрудника business/runtime операции запрещены; доступны только открытие личной смены и чтение последних личных смен текущего actor.
-- Заказы, позиции и пречеки требуют открытую личную смену, но не требуют открытую кассовую смену.
-- Оплаты и cash drawer events требуют открытую кассовую смену на устройстве.
-- `cash_sessions` являются текущей runtime-сущностью кассовой смены.
-
-Запланировано далее:
-
-- Данные личной смены сотрудника будут использоваться для учета рабочего времени post-MVP.
-
-### Заказы
-
-- `GET /api/v1/orders/current?table_id=...`
-- `GET /api/v1/orders/closed?limit=...`
-- `GET /api/v1/orders/{id}`
+- `GET /api/v1/employee-shifts/current`
+- `GET /api/v1/employee-shifts/recent`
 - `POST /api/v1/orders`
+- `GET /api/v1/orders/current`
+- `GET /api/v1/orders/{id}`
+- `GET /api/v1/orders/closed`
 - `POST /api/v1/orders/{id}/lines`
 - `PATCH /api/v1/orders/{id}/lines/{line_id}`
 - `POST /api/v1/orders/{id}/lines/{line_id}/void`
-- `POST /api/v1/orders/{id}/close`
-
-### Пречеки и чеки
-
 - `POST /api/v1/orders/{id}/precheck`
-- `GET /api/v1/prechecks/{id}`
 - `GET /api/v1/orders/{id}/prechecks`
+- `POST /api/v1/orders/{id}/close`
+- `GET /api/v1/prechecks/{id}`
 - `POST /api/v1/prechecks/{id}/cancel`
 - `POST /api/v1/prechecks/{id}/reprint`
 - `POST /api/v1/prechecks/{id}/payments`
-- `POST /api/v1/payments/{id}/refund`
 - `GET /api/v1/checks/{id}`
 - `POST /api/v1/checks/{id}/reprint`
-
-Реализовано сейчас:
-
-- reprint precheck требует `pos.precheck.reprint` и возвращает copy-document payload из immutable `prechecks.snapshot`;
-- reprint final check требует `pos.check.reprint` и возвращает copy-document payload из immutable `checks.snapshot`;
-- reprint не использует текущее состояние order как source of truth;
-- список закрытых заказов требует `pos.check.view` и возвращает summary заказа с final check и payments последнего precheck, чтобы UI мог показать доступные возвраты;
-- возврат оплаты требует `pos.payment.refund`, открытую кассовую смену того же устройства/смены и переводит captured payment в `refunded`, уменьшая `paid_total` precheck/check;
-- reprint response содержит `copy_marker = "COPY"`, а русская UI-метка `КОПИЯ` задается через i18n;
-- reprint пишет audit events `PrecheckReprinted` / `CheckReprinted` в `local_event_log` и outbox.
-
-### Operational sync endpoints
-
+- `POST /api/v1/payments/{id}/refund`
+- `POST /api/v1/cash-shifts/open`
+- `POST /api/v1/cash-shifts/{id}/close`
+- `GET /api/v1/cash-shifts/current`
+- `POST /api/v1/cash-drawer-events`
 - `GET /api/v1/sync/outbox`
-- `GET /api/v1/sync/status`
 - `GET /api/v1/sync/local-events`
+- `GET /api/v1/sync/status`
 - `POST /api/v1/sync/retry-failed`
-
-Реализовано сейчас: operator-facing sync endpoints enforced через app-layer RBAC:
-
-- `GET /api/v1/sync/outbox` requires `pos.sync.view`;
-- `GET /api/v1/sync/status` requires `pos.sync.view`;
-- `GET /api/v1/sync/local-events` requires `pos.sync.view`;
-- `POST /api/v1/sync/retry-failed` requires `pos.sync.retry_failed`.
-
-### Cloud -> Edge master-data ingest endpoints
-
-Реализовано сейчас:
-
 - `POST /api/v1/sync/master-data/snapshots`
 - `POST /api/v1/sync/master-data/{stream}`
 
-Supported streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`.
-
-Payload accepts `node_device_id`, optional `restaurant_id`, `sync_mode` (`incremental` by default, or explicit `full_snapshot`), optional `full_snapshot_reason`, optional `checkpoint_token`, `cloud_version`, optional `cloud_updated_at`, and stream arrays: `restaurants`, `devices`, `roles`, `employees`, `halls`, `tables`, `catalog_items`, `menu_items`.
-
-Реализовано сейчас: эти endpoints являются Cloud -> Edge ingest, а не POS runtime mutation APIs. Handler задает origin `cloud_sync`, вызывает app-layer master sync use case, пишет master rows и `cloud_master_sync_state` в одной транзакции и не создает строки `local_event_log` или `pos_sync_outbox`.
-
-Реализовано сейчас: если `sync_mode` не передан, POS Edge применяет payload как `incremental`. `full_snapshot` разрешен только при явном `full_snapshot_reason`: `terminal_restaurant_changed` или `node_role_changed` для смены main/slave роли узла внутри ресторана.
-
-Реализовано сейчас: перед применением `sync_mode = full_snapshot` POS Edge создает recoverable SQLite online backup artifact `.db` до записи master rows или `cloud_master_sync_state`. Backup использует `POS_SQLITE_BACKUP_DIR`, а если директория не задана, безопасный default рядом с SQLite DB в `backups`. Ошибка backup завершает ingest fail-fast без частичного apply. `incremental` ingest backup не создает; пустой `full_snapshot` или невалидный payload отклоняется до backup и до изменения данных.
-
-### Local/e2e bootstrap
+## Cashier Flow
 
 Реализовано сейчас:
 
-- supported bootstrap script: `scripts/bootstrap-production-way.ps1`;
-- script создает restaurant, roles, employees/PIN, hall/table и catalog/menu через Cloud API;
-- script публикует Cloud master-data package и применяет Edge-ready snapshot через `POST /api/v1/sync/master-data/snapshots`;
-- script выводит `restaurant_id`, `node_device_id`, provisioning code/marker, cashier/manager PIN, hall/table ids и menu item ids;
-- `POST /api/v1/dev/bootstrap-demo` не является supported/current Edge route.
+1. Cashier opens employee shift.
+2. Cashier opens cash session for device.
+3. Cashier creates order for table.
+4. Cashier adds/changes/voids active order lines.
+5. Cashier issues precheck.
+6. Backend locks order and creates immutable precheck snapshot.
+7. Cashier captures one or more payments through `precheck_id`.
+8. Backend creates final check only after full payment.
+9. Cashier/manager can reprint precheck/check copy from immutable snapshot.
+10. Authorized operator can refund captured payment.
 
-### Master-data mutation boundary
-
-Реализовано сейчас:
-
-- `POST /api/v1/restaurants`
-- `POST /api/v1/devices/register`
-- `POST /api/v1/roles`
-- `POST /api/v1/employees`
-- `PATCH /api/v1/employees/{id}/archive`
-- `POST /api/v1/halls`
-- `PATCH /api/v1/halls/{id}/archive`
-- `POST /api/v1/tables`
-- `PATCH /api/v1/tables/{id}/archive`
-- `POST /api/v1/catalog/items`
-- `POST /api/v1/menu/items`
-
-Эти routes больше не являются runtime-supported Edge mutation flow. Реализовано сейчас: POS Edge HTTP layer не документирует их как current onboarding path; production Cloud-authored master data должна входить через `POST /api/v1/sync/master-data/snapshots` или `POST /api/v1/sync/master-data/{stream}` с origin `cloud_sync`.
-
-### Cloud master-data authority endpoints
-
-Реализовано сейчас: Cloud backend содержит production-oriented API для будущего `cloud-ui`:
-
-```text
-POST  /api/v1/restaurants
-GET   /api/v1/restaurants
-GET   /api/v1/restaurants/{id}
-PATCH /api/v1/restaurants/{id}
-POST  /api/v1/restaurants/{id}/archive
-POST  /api/v1/roles
-GET   /api/v1/roles?restaurant_id=...
-GET   /api/v1/roles/{id}
-PATCH /api/v1/roles/{id}
-POST  /api/v1/roles/{id}/archive
-POST  /api/v1/employees
-GET   /api/v1/employees?restaurant_id=...
-GET   /api/v1/employees/{id}
-PATCH /api/v1/employees/{id}
-POST  /api/v1/employees/{id}/suspend
-POST  /api/v1/employees/{id}/activate
-POST  /api/v1/employees/{id}/archive
-POST  /api/v1/employees/{id}/pin
-POST  /api/v1/employees/{id}/pin/rotate
-POST  /api/v1/catalog/items
-GET   /api/v1/catalog/items?restaurant_id=...
-GET   /api/v1/catalog/items/{id}
-PATCH /api/v1/catalog/items/{id}
-POST  /api/v1/catalog/items/{id}/archive
-POST  /api/v1/menu/items
-GET   /api/v1/menu/items?restaurant_id=...
-GET   /api/v1/menu/items/{id}
-PATCH /api/v1/menu/items/{id}
-POST  /api/v1/menu/items/{id}/archive
-POST  /api/v1/restaurants/{id}/master-data/publish
-GET   /api/v1/restaurants/{id}/master-data/publication-state
-GET   /api/v1/restaurants/{id}/master-data/packages/latest
-GET   /api/v1/restaurants/{id}/master-data/packages/{package_id}
-GET   /api/v1/restaurants/{id}/edge-nodes/{node_device_id}/master-data/snapshot
-```
-
-Реализовано сейчас: legacy/foundation routes ниже остаются совместимыми алиасами текущего Cloud master-data service:
-
-```text
-POST  /api/v1/master-data/roles
-POST  /api/v1/master-data/employees
-PATCH /api/v1/master-data/employees/{id}
-POST  /api/v1/master-data/employees/{id}/suspend
-POST  /api/v1/master-data/employees/{id}/archive
-POST  /api/v1/master-data/employees/{id}/role
-POST  /api/v1/master-data/employees/{id}/pin
-POST  /api/v1/master-data/catalog/items
-PATCH /api/v1/master-data/catalog/items/{id}
-POST  /api/v1/master-data/menu/categories
-POST  /api/v1/master-data/menu/items
-PATCH /api/v1/master-data/menu/items/{id}
-POST  /api/v1/master-data/publications
-GET   /api/v1/master-data/published?restaurant_id=...
-```
-
-Реализовано сейчас: restaurant lifecycle states - `active`, `archived`; archive является soft-delete. Employee lifecycle states - `active`, `suspended`, `archived`. `suspended` и `archived` сотрудники попадают на POS Edge как inactive для PIN login. Role assignment обновляет permission snapshot, чтобы Edge мог безопасно работать offline. PIN rotation обновляет credential version; Cloud UI API responses не возвращают PIN и `pin_hash`, а используют безопасное `pin_configured`. Duplicate active PIN в одном ресторане отклоняется Cloud-side как conflict.
-
-Реализовано сейчас: catalog foundation не сводится к плоской одной таблице. Cloud schema разделяет `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_recipe_items`; menu foundation хранит lifecycle `draft` / `published` / `archived`, price, category placement, availability, основу будущего station routing, будущих modifiers и будущих location assignments.
-
-Реализовано сейчас: publication workflow не делает любое сохранение live. `POST /api/v1/restaurants/{id}/master-data/publish` и совместимый `POST /api/v1/master-data/publications` создают versioned publication (`version`, `published_at`, `published_by`, `cloud_version`, `package_sha256`) и deterministic packages для `restaurants`, `staff`, `catalog`, `menu`, которые сохраняются в `cloud_master_data_packages` для Cloud -> Edge delivery. Обычные packages имеют `sync_mode = incremental`; `full_snapshot` остается только для специальных сценариев provisioning/import.
-
-Реализовано сейчас: Cloud Edge-ready snapshot endpoint возвращает payload, который можно напрямую отправить в POS Edge `POST /api/v1/sync/master-data/snapshots`.
-
-Запланировано далее: `cloud-ui`, авторизация Cloud API, pairing Edge Node из Cloud UI и расширение publication/replacement policy.
-
-## Policy compatibility-хвостов
-
-Реализовано сейчас: публичные compatibility tails удалены из backend API surface.
-
-`device_id` остается domain/storage field для POS Edge node identity в operational payloads. Новые transport examples используют явные `node_device_id` и `client_device_id`, когда нужен actor/device context.
-
-## Переходы состояния
-
-### Order
-
-- `open` -> `locked` при `IssuePrecheck`;
-- `locked` -> `open` при `CancelPrecheck`;
-- `open` или `locked` -> `closed` только после полной оплаты и final check;
-- `closed` не редактируется.
-
-### Precheck
-
-- `issued` -> `cancelled`;
-- `issued` -> `closed` при полной оплате;
-- `issued` -> `superseded` зарезервировано для будущего re-issue flow.
-
-### Payment
-
-- создается как immutable факт;
-- не редактируется;
-- не удаляется;
-- correction делается отдельными финансовыми операциями, а не mutate-in-place.
-
-### Check
-
-- создается только после полной оплаты precheck;
-- не является рабочим счетом гостя;
-- не создается вручную в нормальном runtime flow;
-- `business_date_local` вычисляется backend в момент создания final check и после этого immutable;
-- `closed_at` фиксирует фактическое время закрытия.
-
-### Business date
+## Precheck Contract
 
 Реализовано сейчас:
 
-- restaurant config содержит `business_day_mode` (`standard` или `24_7`) и `business_day_boundary_local_time`;
-- в `standard` режиме учетный день вычисляется по локальному времени ресторана с учетом ресторанной границы дня;
-- в `24_7` режиме учетный день равен локальной календарной дате финансового события;
-- финансовая принадлежность определяется моментом capture payment / final check creation, а не временем создания order;
-- открытый order может пережить новую смену, но `business_date_local` для созданных checks/payments не меняется;
-- ручной перенос закрытых orders/payments в другой business date является вне текущего объема.
+- `IssuePrecheckCommand` contains `order_id`.
+- Precheck can be issued only for `open` order.
+- Order device must match command device.
+- Only one active issued precheck per order is allowed.
+- Snapshot contains active lines at issue time.
+- Order becomes `locked`.
+- `CancelPrecheckCommand` requires `precheck_id`, `manager_employee_id`, `manager_pin`, `cancellation_reason`.
+- Cancel requires operator permission `pos.precheck.cancel.request` and manager permission `pos.precheck.cancel`.
+- Cancel writes manager override audit and returns order to `open`.
+- Reprint requires `pos.precheck.reprint` and valid immutable snapshot.
 
-## Каталог событий Edge runtime
+Pricing note:
 
-На Edge runtime уже существуют или должны существовать в outbox/local event log события следующих групп:
+- Current `IssuePrecheck` computes subtotal from active lines and passes `discount_total = 0`, `tax_total = 0`.
+- Existing fields do not mean discount/tax engine is implemented.
 
-### System и auth
-
-- `EdgeNodePaired`
-- `AuthSessionStarted`
-- `AuthSessionRevoked`
-- `DeviceRegistered`
-
-### Смены и касса
-
-- `ShiftOpened`
-- `ShiftClosed`
-- `CashSessionOpened`
-- `CashSessionClosed`
-- `CashDrawerEventRecorded`
-
-### Заказы
-
-- `OrderCreated`
-- `OrderLineAdded`
-- `OrderLineQuantityChanged`
-- `OrderLineVoided`
-- `OrderClosed`
-
-### Финансы
-
-- `PrecheckIssued`
-- `PrecheckReprinted`
-- `PrecheckCancelled`
-- `PaymentCaptured`
-- `CheckCreated`
-- `CheckReprinted`
-
-## Примечание к sync contract
-
-Документация Cloud receiver и Edge event emission должны быть синхронизированы.
-
-Реализовано сейчас: production sender path отправляет только Edge -> Cloud operational events. Cloud-managed/configuration events, например изменения restaurant, employee, role, catalog, menu, hall и table, не отправляются sender-ом вверх; они помечаются `suspended` с явной sync-direction причиной.
-
-Реализовано сейчас: Cloud принимает operational sender catalog, описанный в `docs/sync/edge-cloud-contracts-v1.md`, и хранит raw envelopes плюс `cloud_operational_events`. Ownership matrix и directional sync rules описаны в `docs/sync/directional-sync-ownership.md`.
-
-Реализовано сейчас: Cloud -> Edge provisioning/configuration имеет backend apply flow: `internal/pos/app/mastersync` принимает `cloud_sync`, master tables имеют sync metadata, `cloud_master_sync_state` хранит stream checkpoints, а dedicated sync endpoints применяют incremental payloads по умолчанию и explicit full snapshot payloads только с причиной `terminal_restaurant_changed` или `node_role_changed`. Перед full snapshot apply создается SQLite online backup; full snapshot replacement policy beyond upserted payload rows запланирована далее.
-
-## Manager override
-
-На текущем этапе manager override обязателен как минимум для отмены пречека.
-
-Минимальный контракт payload для override-операции:
-
-- actor context;
-- manager employee id;
-- manager PIN;
-- reason.
-
-Backend обязан:
-
-- проверить active session actor;
-- проверить actor permission `pos.precheck.cancel.request` для инициации override-операции;
-- проверить manager employee и manager permission;
-- проверить manager PIN;
-- записать audit trail;
-- записать sync/local events транзакционно.
-
-## RBAC enforcement
+## Payment, Check And Refund Contract
 
 Реализовано сейчас:
 
-- backend uses canonical permission catalog and canonical role profiles for `cashier`, `senior_cashier`, `waiter`, `manager`, `kitchen`, `support_admin`;
-- role permissions remain stored as JSON, but role creation/import rejects unknown permission ids;
-- implemented POS runtime operations are enforced in app services via `EnsureOperatorSession(...requiredPermissions...)`;
-- master-data list endpoints for restaurants/devices/roles/employees are outside current POS runtime API;
-- `GET /api/v1/catalog/items` is an operator endpoint and requires `pos.catalog.view`.
+- Payment capture endpoint is `POST /api/v1/prechecks/{id}/payments`.
+- Capture command accepts `method`, `amount`, `currency` and optional provider metadata.
+- Supported methods are `cash`, `card`, `other`.
+- Payment requires open cash session for the same device, shift and restaurant.
+- Payment updates `prechecks.paid_total`.
+- Partial payments are allowed; overpayment is rejected.
+- Full payment creates one final check and closes order.
+- Check snapshot includes immutable precheck snapshot and payment snapshot.
+- Reprint check requires `pos.check.reprint`.
+- Refund endpoint is `POST /api/v1/payments/{id}/refund`.
+- Refund requires `pos.payment.refund`, open cash session and same device/shift/restaurant.
+- Refund changes payment status from `captured` to `refunded`.
+- Refund decreases precheck `paid_total`; if a check exists, it decreases check `paid_total` and can mark check `refunded`.
 
-Canonical permission IDs, используемые текущим runtime:
+Не реализовано сейчас:
 
-- `pos.employee_shift.open`
-- `pos.employee_shift.close`
-- `pos.employee_shift.view_current`
-- `pos.employee_shift.recent`
-- `pos.cash_session.open`
-- `pos.cash_session.close`
-- `pos.cash_session.view_current`
-- `pos.cash_drawer.record_event`
-- `pos.catalog.view`
-- `pos.floor.view`
-- `pos.menu.view`
-- `pos.order.create`
-- `pos.order.view`
-- `pos.order.add_line`
-- `pos.order.change_quantity`
-- `pos.order.void_line`
-- `pos.order.close`
-- `pos.precheck.issue`
-- `pos.precheck.view`
-- `pos.precheck.reprint`
-- `pos.precheck.cancel.request` (override actor permission)
-- `pos.precheck.cancel` (manager override approver permission)
-- `pos.payment.cash`
-- `pos.payment.card.manual`
-- `pos.payment.other`
-- `pos.payment.refund`
-- `pos.check.view`
-- `pos.check.reprint`
-- `pos.sync.view` (required for operator-triggered `GET /api/v1/sync/outbox`, `GET /api/v1/sync/status`, `GET /api/v1/sync/local-events`)
-- `pos.sync.retry_failed` (required for operator-triggered `POST /api/v1/sync/retry-failed`)
+- automatic PSP authorization/capture/refund;
+- fiscal receipt creation;
+- refund manager PIN policy beyond current RBAC permission check;
+- full refund ledger model beyond current payment attempt/status behavior.
 
-Role behavior:
-
-- `cashier`: cashier POS flow, cash/card payment, no cash session close and no sync/service permissions.
-- `senior_cashier`: cashier POS flow plus cash session close and sync read.
-- `waiter`: order/precheck/check read/write flow without cash session/payment permissions; precheck reprint allowed.
-- `manager`: full implemented POS runtime permissions, precheck cancel approval, final check reprint, sync retry.
-- `kitchen`: no implemented POS runtime permissions.
-- `support_admin`: sync read and retry service permissions only.
-
-Error behavior:
-
-- missing permission returns domain `forbidden` and safe HTTP `403` error code `PERMISSION_DENIED`;
-- revoked sessions return `401 SESSION_REVOKED`;
-- wrong `client_device_id`/session context returns `403 SESSION_CONTEXT_MISMATCH`;
-- authorization errors do not include sensitive auth fields (PIN, manager PIN, PIN hash) or raw permission internals in response payloads.
-
-Вне текущего объема:
-
-- order transfer;
-- diagnostics/admin UI routes;
-- waiter payment override and restaurant-level override policy engine.
-
-## Currency policy
+## Master Data Ingest
 
 Реализовано сейчас:
 
-- backend validates runtime currency codes against canonical active ISO 4217 profile catalog;
-- catalog coverage is full active ISO list (including SEA currencies such as `IDR`, `THB`, `VND`, `MYR`, `SGD`, `PHP`);
-- precision is currency-code driven and supports minor units `0/2/3/4` where defined by ISO profile;
-- pricing/payment domain amounts continue to use integer minor units (no floating-point storage);
-- unsupported currency code is rejected as domain `invalid`.
+- `ApplyMasterData` accepts `full_snapshot` and `incremental`.
+- `full_snapshot` requires `full_snapshot_reason` of `terminal_restaurant_changed` or `node_role_changed`.
+- Backup hook exists for full snapshot when configured.
+- Supported POS Edge ingest streams:
+  - `restaurants`
+  - `devices`
+  - `staff`
+  - `floor`
+  - `catalog`
+  - `menu`
 
-## API error contract
+Foundation only:
+
+- Domain constants and SQLite state know about `recipes` and `inventory_reference`, but `mastersync.Service` does not apply those streams yet.
+- Cloud schema foundation for modifiers/recipes/inventory-adjacent data does not make them supported POS Edge ingest payloads.
+
+## Pricing, Modifiers And Inventory Boundaries
+
+Discounts/taxes:
+
+- Реализовано сейчас: only `discount_total` and `tax_total` fields with zero values in current issue precheck flow.
+- Запланировано до пилота: separate `Pricing` policy area, Cloud-authored rules, backend authoritative calculation, no UI authoritative totals.
+
+Modifiers:
+
+- Foundation only: Cloud modifier group/option tables and menu item assignments.
+- Не реализовано сейчас: selected modifiers in order lines, precheck/check snapshots and cashier UI.
+- Запланировано до пилота only if accepted: order line snapshot support and backend price impact calculation.
+
+Recipes/inventory:
+
+- Foundation only: SQLite recipe and stock tables.
+- Не реализовано сейчас: recipe expansion, modifier-to-recipe expansion, automatic stock consumption.
+- Запланировано далее: stock documents/moves app services and consumption policy.
+
+## RBAC
 
 Реализовано сейчас:
 
-- API errors use one JSON envelope: `{ "error": { "code", "message_key", "details", "correlation_id" } }`;
-- `code` is stable and machine-readable; `message_key` is safe for UI i18n;
-- `X-Error-Code` carries the same stable code for audit middleware;
-- `X-Request-ID`/`correlation_id` is returned when request context has a request id;
-- internal Go/SQL/domain error text is logged, but not returned to UI;
-- panic recovery returns safe `500 INTERNAL_ERROR` and writes stack trace only to backend log.
+- UI visibility is UX only.
+- Backend app-layer permissions are authoritative.
+- Payment permissions are method-specific:
+  - `pos.payment.cash`
+  - `pos.payment.card.manual`
+  - `pos.payment.other`
+- Refund uses `pos.payment.refund`.
+- Precheck cancel uses split request/approval:
+  - `pos.precheck.cancel.request`
+  - `pos.precheck.cancel`
+- Reprint permissions:
+  - `pos.precheck.reprint`
+  - `pos.check.reprint`
 
-Реализованные error codes и UI behavior описаны в `docs/backend/POS-ERROR-CATALOG.md`.
+## Error And Logging Contract
 
-## Документационные правила
+Реализовано сейчас:
 
-Любое изменение одного из пунктов ниже обновляет этот файл в том же PR:
-
-- список endpoints;
-- контракт запроса/ответа;
-- переходы состояния;
-- event catalog;
-- compatibility tails;
-- manager override behavior.
-
-Если меняется только долгосрочная архитектурная цель, но не runtime contract, обновляется `SPECv1.3.md`, а не этот файл.
-
-## Operational logging
-
-- Backend writes structured operation logs with levels `TRACE|DEBUG|INFO|WARN|ERROR`.
-- Request audit logs include `request_id`, `operation`, `action`, `result`, `duration_ms`, `error_code` and masked actor/device/session identifiers.
-- Sensitive auth fields (`pin`, `manager_pin`, pin hash, raw auth payload) must not be logged.
-
-## Sync sender telemetry
-
-- `internal/pos/syncsender` emits normalized worker telemetry for non-HTTP paths with fields `operation`, `action`, `result`, `error_code` and masked correlation ids.
-- TRACE-level lifecycle events are emitted for reclaim, batch claim, per-message processing, send attempt, ack and retry decision steps.
+- HTTP panic recovery returns safe JSON error.
+- Request audit log records method/path/status/duration and masked IDs.
+- Sensitive data such as PINs, tokens and raw payment-sensitive payloads must not be logged.
+- Stable permission/error behavior is enforced in backend services; UI must not expose raw Go/SQL errors.

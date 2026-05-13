@@ -98,7 +98,7 @@ Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=10 -Heade
 Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10 -Headers $headers
 ```
 
-Вне текущего объема: waiter UI, KDS, inventory и fiscalization.
+Вне текущего объема: waiter UI, KDS, modifiers, inventory consumption и fiscalization.
 
 ## Что реализовано
 
@@ -179,7 +179,7 @@ Server state хранится только через `@tanstack/vue-query`. Fro
 
 - Нет waiter mode.
 - Нет KDS runtime.
-- Нет refund flow.
+- Refund flow реализован для закрытых заказов с captured payment при наличии `pos.payment.refund` и открытой кассовой смены.
 - Нет tax engine rewrite.
 - Нет print/reprint UI.
 - Нет backoffice.

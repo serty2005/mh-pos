@@ -4,30 +4,33 @@
 
 ## Контекст
 
-Проект использует локальный POS Edge runtime и Cloud Sync Receiver. Для текущего pilot scope важны предсказуемость OLTP-хранилища, offline-first работа Edge и безопасное восстановление после проблем с локальной БД.
+Проект использует локальный POS Edge runtime и Cloud backend. Для текущего pilot scope важны предсказуемость OLTP-хранилища, offline-first работа Edge и безопасное восстановление после проблем с локальной БД.
 
 ## Решение
 
 Реализовано сейчас:
 
 - SQLite используется как локальный POS Edge OLTP/source of truth для активных POS операций.
-- PostgreSQL используется как Cloud OLTP/source of truth для sync receiver, operational journal, projections и master/reference packages.
-- Active migration path до пилота использует один managed SQL file на модуль: `pos-backend/migrations/sqlite/001_init.sql` и `cloud-backend/migrations/postgres/001_sync_receiver.sql`.
-- Версия и состояние БД фиксируются в `db_runtime_versions`; примененный managed SQL file фиксируется в `schema_migrations` с checksum/status.
-- Изменение managed SQL file выполняется через повышение `MH_POS_VERSION`, backup-before-upgrade и schema verification до запуска runtime.
-- Cloud `cloud_currency_reference` является частью managed PostgreSQL file и затем наполняется canonical active ISO 4217 catalog при startup.
+- PostgreSQL используется как Cloud OLTP/source of truth для sync receiver, operational projections и master/reference packages.
+- Active migration path использует managed SQL migration files, которые применяются runtime startup path.
+- POS Edge migration files сейчас включают `001_init.sql` и `002_runtime_schema_repair.sql`.
+- Cloud PostgreSQL migration files сейчас включают `001_sync_receiver.sql` ... `006_zero_to_cashier_provisioning.sql`.
+- Версия и состояние БД фиксируются runtime migration/versioning механизмом; schema verification выполняется до business runtime access.
+- Persistence implementation сейчас написан вручную в repository/infrastructure layer.
 
 Запланировано далее:
 
-- sqlc может быть использован как основной persistence-подход после стабилизации схемы и package boundaries.
+- `sqlc` может быть использован как основной persistence-подход после стабилизации схемы и package boundaries.
 - ClickHouse может быть добавлен в Cloud как OLAP/reporting accelerator, наполняемый асинхронно из PostgreSQL/projection pipeline.
-- Backup-before-data-load должен быть добавлен для Cloud -> Edge full snapshot/master-data import.
+- Backup-before-data-load должен оставаться обязательной границей для Cloud -> Edge full snapshot/master-data import.
 - UI/admin SQLite cleanup/reset flow должен быть реализован как destructive-by-design операция с backup, явным подтверждением, RBAC/audit и rebootstrap/restart path.
 
 Вне текущего объема:
 
+- `sqlc` как уже внедренный persistence implementation.
 - GORM/Ent для POS Core financial/offline/sync-critical flows.
 - ClickHouse как source of truth.
+- ClickHouse как POS transaction path dependency.
 - Ручной ad-hoc SQL как canonical upgrade/repair path.
 - Online zero-downtime production migration orchestration.
 

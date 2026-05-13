@@ -1,333 +1,132 @@
 # ROADMAP
 
-## Назначение
+Статус документа: актуализировано под фактический код на 2026-05-13.
 
-Этот документ описывает:
+Roadmap фиксирует статусы, блокеры и следующий план. Архитектурный контракт находится в `SPECv1.3.md`, backend contract — в `docs/backend/POS-BACKEND-SPEC.md`.
 
-- что уже завершено;
-- что обязательно закрыть до первого пилота;
-- что остается после пилота;
-- основные риски и меры снижения риска.
+## Выполнено
 
-## Статусы
+### Cashier Runtime
 
-Используются только русские статусы:
+Выполнено:
 
-- `выполнено`
-- `в работе`
-- `заблокировано`
-- `далее`
-- `после пилота`
-
-## Что уже сделано
-
-### Foundation
-
-Статус: `выполнено`
-
-- Edge backend на Go + SQLite.
-- Canonical SQLite first-launch/startup path через ordered managed SQL files `001_init.sql` + `002_runtime_schema_repair.sql`.
-- SQLite runtime gate.
-- `local_event_log`.
-- `pos_sync_outbox`.
-- Retry-safe outbox foundation.
-- Explicit directional sync ownership foundation.
-- Cloud -> Edge master sync metadata/checkpoint schema foundation.
-- Cloud sync receiver foundation.
-- Pairing foundation.
-- Auth session foundation.
-- Halls/tables foundation.
-- Personal employee shifts foundation.
-- Cash sessions foundation (`cash_sessions`).
-- Cash drawer events foundation.
-- Local E2E demo bootstrap и smoke scripts.
-
-### Sales runtime
-
-Статус: `выполнено`
-
-- Публичный runtime `Order -> Precheck -> Payment -> Check`.
-- Issue precheck.
+- PIN login/session/RBAC foundation.
+- Personal employee shifts.
+- Cash sessions and cash drawer events.
+- Halls/tables read model.
+- Menu/catalog read model.
+- Order create/read/current/closed.
+- Add/change/void order lines.
+- `IssuePrecheck`.
 - List/get prechecks.
 - Manager override cancel precheck.
-- Precheck-based payments.
+- Reprint precheck from immutable snapshot.
+- Precheck-based payments through `precheck_id`.
 - Partial payments.
-- Automatic final check.
-- Automatic order close.
-
-### UI cashier slice
-
-Статус: `выполнено`
-
-- `/pair`.
-- `/login`.
-- `/pos`.
-- `/lock`.
-- Hall/table selection.
-- Order editing.
-- Issue/cancel precheck.
-- Cash payment.
-- Trusted manual card payment.
-- Final check display.
-- Личная смена сотрудника обязательна для POS runtime; кассовая смена обязательна только для оплат и cash drawer операций.
-
-### Sync contract hardening
-
-Статус: `выполнено`
-
-- Cloud принимает фактический Edge -> Cloud operational event catalog.
-- Production sender path имеет direction gate и не отправляет Cloud-managed/configuration события вверх.
-- `pos_sync_outbox.sync_direction` явно разделяет `edge_to_cloud`, `cloud_to_edge` и `local_only`.
-- Edge runtime mutation Cloud-owned master data запрещен application boundary.
-- Ownership matrix добавлена в `docs/sync/directional-sync-ownership.md`.
-- Canonical Edge/Cloud sync contract обновлен в `docs/sync/edge-cloud-contracts-v1.md`.
-- POS sender включен как отдельный background worker с retry/backoff, stale lock reclaim и idempotent resend.
-- Cloud хранит raw envelopes и append-safe operational event journal.
-- Item-level ACK batch flow реализован через `POST /api/v1/sync/edge-events/batch` и batch sender mapping на Edge.
-- Cloud projections поверх `cloud_operational_events` реализованы для event type stats и shift finance foundation.
-- Production Cloud -> Edge provisioning/import package endpoints реализованы через `PUT/GET /api/v1/provisioning/master-data/{stream}`.
-- POS Edge создает recoverable SQLite online backup перед применением Cloud -> Edge `full_snapshot` master-data import; `incremental` ingest backup не создает.
-- Cloud -> Edge master-data import по умолчанию является `incremental`; `full_snapshot` разрешен только при явной причине `terminal_restaurant_changed` или `node_role_changed`.
+- Final check creation after full payment.
+- Reprint final check from immutable snapshot.
+- Payment refund route and cashier UI flow.
+- `business_date_local` for shifts, cash sessions, payments and checks.
 
-### Cloud-authored master data foundation
-
-Статус: `выполнено`
-
-- Cloud production API поддерживает onboarding ресторана без POS bootstrap scripts: restaurants CRUD, halls/tables CRUD/archive, roles CRUD/archive, employees lifecycle/PIN rotation, catalog items CRUD/archive, menu items CRUD/archive.
-- Cloud PostgreSQL получил schema foundation для ролей, сотрудников, employee PIN credential metadata, catalog items, dishes, goods/raw materials, semi-finished products, recipe foundation, categories, modifier foundation, menu items, menu assignments и versioned publications.
-- Cloud PostgreSQL получил `cloud_restaurants`, cloud-version metadata для master-data source tables и partial unique SKU policy для неархивных catalog items.
-- Cloud API подготовлен для будущего `cloud-ui`: создание/обновление ресторанов, сотрудников, ролей, PIN credentials, catalog/menu entities, publication и чтение текущего published state.
-- Employee lifecycle зафиксирован как `active`, `suspended`, `archived`; `suspended`/`archived` не должны становиться active POS login read model после sync.
-- Cloud UI-facing API responses не возвращают PIN или `pin_hash`; безопасный признак возвращается как `pin_configured`, а `pin_hash` остается только в staff package для offline PIN auth на Edge.
-- Duplicate PIN в одном ресторане среди сотрудников не в статусе `archived` отклоняется на Cloud-side как `PIN_ALREADY_EXISTS`.
-- Publication workflow создает deterministic packages для `restaurants`, `staff`, `floor`, `catalog`, `menu`, хранит `version`, `cloud_version`, `published_at`, `published_by`, `package_sha256` и обновляет Cloud -> Edge provisioning storage.
-- Cloud Edge-ready snapshot endpoint возвращает payload для прямого `POST /api/v1/sync/master-data/snapshots` на POS Edge.
-- Zero-to-Cashier provisioning реализован: Cloud Approve endpoints, License Server code flow, POS Edge auto snapshot apply и `/pair` с двумя режимами.
-- POS Edge остается offline read-model consumer и не получает production CRUD API для справочников.
-
-### Security hardening
-
-Статус: `выполнено`
-
-- Pairing verifier хранится в keyed format `pairing.hmac-sha256.v1`.
-- PIN login policy: PIN должен однозначно определить одного active employee в ресторане; Cloud не допускает одинаковый PIN у сотрудников одного ресторана, если оба не `archived`.
-- PIN login rate limiting добавлен и задокументирован.
-- Тесты проверяют, что PIN, manager PIN и PIN hash не попадают в HTTP audit logs, local events, outbox payloads и manager override audit.
-
-### RBAC hardening
-
-Статус: `выполнено`
-
-- Canonical backend permission catalog покрывает реализованный pilot runtime surface.
-- Role profiles зафиксированы в коде для `cashier`, `senior_cashier`, `waiter`, `manager`, `kitchen`, `support_admin`.
-- App-layer permission enforcement покрывает personal shifts, cash sessions, cash drawer events, catalog/floor/menu reads, order/precheck/payment/check runtime и operator-triggered sync APIs.
-- Payment permissions разделены по method: `pos.payment.cash`, `pos.payment.card.manual`, `pos.payment.other`.
-- Precheck cancel override проверяет split actor/approver permissions: `pos.precheck.cancel.request` + `pos.precheck.cancel`.
-- Role creation/import отклоняет неизвестные permission IDs вне canonical backend catalog.
-- UI visibility в cashier flow привязан к backend permission IDs и не делает protected read calls без нужных permissions.
-- Нереализованные строки матрицы явно отмечены как `вне текущего объема` в `docs/ui/POS-UI-RBAC.md`.
-
-### Pilot scope hardening
-
-Статус: `выполнено`
-
-- `business_date_local` введен как backend-owned policy для режимов `standard` и `24_7`.
-- `business_date_local` сохраняется в `checks`, `payments`, `shifts` и `cash_sessions`.
-- Controlled reprint включен в pilot scope и строится из immutable snapshots для precheck и final check.
-- Reprint audit пишется через `local_event_log` и Edge -> Cloud события `PrecheckReprinted` / `CheckReprinted`.
-- Waiter payment остается после MVP: waiter не получает `pos.payment.*`, личные кассы официантов не создаются.
-- Currency policy больше не ограничена локальным subset: pilot runtime использует полный active ISO 4217 catalog, включая валюты ЮВА, с precision по коду валюты.
-- Cloud PostgreSQL получил canonical ISO 4217 currency template (`cloud_currency_reference`).
-- Cloud provisioning contract поддерживает `currencies` stream для Cloud -> Edge master/reference payload.
-- Startup migration policy закрепляет `db_runtime_versions`, managed SQL files per module, `schema_migrations` с checksum, backup-before-upgrade/data-upgrade, schema verification и fail-fast при downgrade для `SQLite` и `PostgreSQL`.
-- POS SQLite startup path довыравнивает старые pre-pilot БД через `002_runtime_schema_repair.sql`, чтобы implemented-now runtime columns не ловились по одной на schema verification.
-
-## Что обязательно закрыть до первого пилота
-
-### Фиксация владения DDD-контекстов
-
-Статус: `в работе`
-
-Задачи:
-
-- создать `docs/architecture/DDD-CONTEXT-MAP.md`;
-- перенести architecture/business content out of `AGENTS.md` в профильные документы;
-- согласовать `SPECv1.3.md`, `ROADMAP.md` и `docs/backend/POS-DATA-AND-MIGRATIONS.md`;
-- явно зафиксировать scope повторной печати;
-- зафиксировать `business_date_local` как закрытый backend-owned инвариант, а не pilot blocker;
-- явно решить минимальную модель `Pricing` перед MVP;
-- явно решить расширение `Catalog` modifiers/POS category после foundation;
-- явно решить, остается ли `Inventory` foundation schema-only или получает app services перед MVP.
-
-### Documentation freeze
-
-Статус: `далее`
-
-Нужно:
-
-- убедиться, что `AGENTS.md` остается tooling guide, а не архитектурной спецификацией;
-- проверить, что cashier-first UI spec, backend spec, data/migration policy, sync docs и DDD context map согласованы;
-- перестать документировать будущие modes как current runtime;
-- убрать англоязычные человекочитаемые статусы из русской документации, кроме машинно-читаемых значений.
-
-### Pilot API freeze
-
-Статус: `далее`
-
-Критерий:
-
-- compatibility endpoints удалены;
-- event catalog опубликован;
-- first-launch API не содержит unresolved public compatibility tails.
-
-### Pilot hardening freeze
-
-Статус: `далее`
-
-Критерий:
-
-- pairing/PIN policy закрыта;
-- RBAC matrix утверждена;
-- supported currency/business-date policy зафиксирована;
-- print/reprint policy зафиксирована;
-- backup-before-data-load policy реализована для Cloud -> Edge full snapshot/master-data import;
-- административная UI-операция очистки/пересоздания SQLite реализована с backup, явным подтверждением, RBAC/audit и rebootstrap/restart path;
-- минимальная граница `Pricing` / `Catalog` зафиксирована.
-
-### Pilot readiness
-
-Статус: `заблокировано`
-
-Критерий снятия блокировки:
-
-- sync contract aligned;
-- security hardening closed;
-- docs freeze closed;
-- нет unresolved critical compatibility tails;
-- решены pilot blockers по `Pricing`, `Catalog` minimum и inventory scope.
-
-## Что можно оставить после пилота
-
-Статус: `после пилота`
-
-- Waiter UI runtime.
-- KDS runtime.
-- Manager runtime.
-- Settings runtime.
-- Diagnostics runtime expansion.
-- Full CRM.
-- Full Loyalty.
-- Full Delivery/Aggregator.
-- Full Procurement.
-- Full Reservation.
-- Real PSP.
-- Real Fiscalization.
-- Advanced Accounting.
-- Complex Inventory costing.
-- Refund ledger flow.
-- Print adapter layer.
-- Inventory write-off from `DishServed`, если пилот не требует этого раньше.
-- Full Cloud projections.
-- Advanced analytics.
-- Multi-device / multi-client coordination beyond pilot topology.
-
-## Риски и mitigation
-
-| Риск | Влияние | Вероятность | Митигирующее действие |
-| --- | --- | --- | --- |
-| Документация обещает больше, чем реально поддерживает runtime | Высокое | Высокая | Разделить docs по владельцам и обновлять их в одном PR |
-| Старый compatibility endpoint вернется в public surface | Среднее | Средняя | Проверять `rg` по API routes/docs перед freeze |
-| Edge/Cloud event catalog снова расходится | Высокое | Средняя | Поддерживать canonical catalog в `docs/sync/edge-cloud-contracts-v1.md` и тестировать sender direction gate |
-| Duplicate PIN / ambiguous login | Высокое | Средняя | Сохранять текущую policy rejection или перейти к employee-first login |
-| Future/runtime permission matrix может снова разойтись при добавлении новых экранов | Среднее | Средняя | Не добавлять runtime operation без canonical permission ID, backend enforcement, UI visibility и тестов |
-| Pilot assumptions по `Pricing` не зафиксированы как отдельное владение | Среднее | Средняя | Принять минимальную модель цены до API freeze |
-| Inventory foundation может быть ошибочно прочитан как готовый складской runtime | Среднее | Средняя | Явно держать schema/domain foundation отдельно от app services до отдельного решения |
-
-## Последовательность работ
-
-```mermaid
-flowchart LR
-    Docs["Docs freeze"] --> Contexts["DDD context ownership"]
-    Contexts --> Tails["Compatibility tail cleanup"]
-    Tails --> Sync["Sync contract alignment"]
-    Sync --> Security["Security hardening"]
-    Security --> RBAC["RBAC hardening"]
-    RBAC --> Pilot["Pilot readiness gate"]
-```
-
-## Правило stop-doing
-
-До первого пилота нельзя тратить время на:
-
-- manual/ad-hoc DB migrations для несуществующего production вместо программного startup-upgrade path;
-- dual-write;
-- сохранение obsolete API ради “может пригодится”;
-- расширение будущих modes без фиксации текущего cashier pilot scope;
-- большой package refactor только ради целевой DDD-карты.
-
-## Критерии готовности pre-pilot изменений
-
-Изменение считается завершенным только если:
-
-- код и тесты обновлены, если менялся runtime;
-- профильная документация обновлена;
-- roadmap status изменен;
-- compatibility tail удален из public surface или получил владельца, причину, срок удаления, тест и запись в спецификации;
-- изменение не создало новый historical хвост.
-
-### Logging hardening
-
-Статус: `выполнено`
-
-- Введен единый structured logging contract для backend операций.
-- Добавлены уровни `TRACE/DEBUG/INFO/WARN/ERROR` с runtime env-конфигом.
-- Добавлены правила masking/redaction чувствительных auth-данных.
-
-### Error handling hardening
-
-Статус: `выполнено`
-
-- POS backend возвращает безопасный stable error envelope: `code`, `message_key`, `correlation_id`.
-- Panic/unexpected errors превращаются в safe `500 INTERNAL_ERROR`, details остаются в backend logs.
-- POS UI нормализует backend/network errors в `ApiError`, показывает blocking business errors через modal dialog и использует `vue-i18n`.
-- TanStack mutations не имеют опасного auto-retry для write/financial commands.
-- Каталог ошибок зафиксирован в `docs/backend/POS-ERROR-CATALOG.md`.
-
-### Worker telemetry unification
-
-Статус: `выполнено`
-
-- Добавлен shared helper для non-HTTP telemetry normalization: `operation`, `action`, `result`, `error_code`.
-- Sync sender покрыт TRACE lifecycle events.
-- Временный локальный каталог `test_pipe/` очищен как unmanaged artifact.
-
-### SQLite maintenance hardening
-
-Статус: `выполнено`
-
-- Добавлен explicit maintenance helper для `VACUUM`, `VACUUM INTO`, `PRAGMA optimize`, `PRAGMA wal_checkpoint(TRUNCATE)`.
-- `VACUUM` / `VACUUM INTO` требуют явный `-force` / `-Force`.
-- Documented policy запрещает автоматический `VACUUM` на каждом startup и запуск внутри active write transaction.
-
-### Sync contract hardening update 2026-05-07
-
-Статус: `выполнено`
-
-- Item-level ACK batch flow реализован: `POST /api/v1/sync/edge-events/batch` + batch sender mapping на Edge.
-- Cloud projections поверх `cloud_operational_events` реализованы: `cloud_projection_event_type_stats`, `cloud_projection_shift_finance`.
-- Cloud PostgreSQL startup path довыравнивает implemented-now projection/runtime tables через ordered managed migrations; `002_projection_event_type_stats.sql` создает `cloud_projection_event_type_stats`, `003_runtime_schema_repair.sql` ремонтирует весь required runtime schema set для старых БД.
-- Запланированные далее query endpoints не блокируют startup verification.
-- Production Cloud -> Edge provisioning/import package endpoints реализованы: `PUT/GET /api/v1/provisioning/master-data/{stream}`.
-
-Следующие шаги: `далее`
-
-- Авторизация production perimeter для provisioning endpoints.
-- Projection query endpoints для ops dashboards.
-
-### Database Access & Reporting Architecture update 2026-05-08
-
-- [x] Зафиксировать persistence/reporting strategy в существующем `docs/adr/ADR-015-persistence-and-analytics-strategy.md`; отдельный `ADR-012` не нужен, чтобы не дублировать принятое решение.
-- [x] Зафиксировать sqlc как основной persistence-подход для SQLite/PostgreSQL.
-- [x] Зафиксировать ClickHouse как облачный OLAP/reporting accelerator.
-- [x] Добавить PostgreSQL -> ClickHouse projection pipeline в будущие этапы.
-- [x] Запретить GORM/Ent в POS Core financial/offline/sync-critical flows.
+### Cloud And Sync Foundation
+
+Выполнено:
+
+- Cloud PostgreSQL sync receiver and operational projections foundation.
+- Cloud master-data authority foundation in `004_master_data_authority.sql`.
+- Cloud schema foundation for roles, employees, catalog items, dishes, goods/raw materials, semi-finished products, recipe items, categories, modifier groups/options, menu items, menu assignments and versioned publications.
+- POS Edge Cloud -> Edge ingest for streams `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`.
+- POS Edge outbox/local event foundation for cashier operational events.
+- DDD context map exists in `docs/architecture/DDD-CONTEXT-MAP.md`.
+
+### Persistence Policy
+
+Выполнено:
+
+- POS Edge SQLite as local OLTP/source of truth.
+- Cloud PostgreSQL as Cloud OLTP/source of truth.
+- Managed SQL files and startup migration/verification policy.
+- ADR-015 accepted for persistence and analytics strategy.
+
+Не выполнено и не должно считаться завершенным:
+
+- `sqlc` rollout как текущий persistence implementation.
+- ClickHouse runtime/projection pipeline.
+
+## Foundation Only
+
+Эти зоны имеют schema/domain foundation, но не являются готовым pilot runtime:
+
+- Modifiers: Cloud tables `cloud_modifier_groups`, `cloud_modifier_options`, `cloud_menu_item_modifier_groups`.
+- Recipes: SQLite `recipe_versions`, `recipe_lines`; Cloud `cloud_recipe_items`.
+- Inventory: SQLite `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, purchase receipt foundation.
+- Master-data publications: Cloud package/publication foundation шире текущего POS Edge ingest.
+
+## В Работе / До Пилота
+
+Pilot blockers:
+
+- Pricing/Discounts boundary:
+  - отделить `Pricing` от `Catalog`;
+  - описать и реализовать discount/surcharge/tax calculation только если это нужно для pilot acceptance;
+  - не выдавать текущие `discount_total` / `tax_total` fields за готовый engine.
+- Tax policy:
+  - ввести `tax_profile` / tax policy concept при необходимости пилотного налога;
+  - зафиксировать порядок расчета после скидок, если такая pilot policy утверждена.
+- Modifiers:
+  - решить, входят ли modifiers в первый pilot;
+  - если входят, добавить Cloud publication payload, POS Edge ingest, order line snapshot, precheck/check snapshot и cashier UI flow.
+- Recipes/inventory:
+  - решить, входит ли automatic consumption в первый pilot;
+  - если входит, реализовать consumption trigger, stock document/move service и snapshot requirements.
+- Refund/reprint hardening:
+  - backend и UI flow реализованы;
+  - требуется финальная проверка operator policy, audit/sync expectations и acceptance tests для pilot script.
+- Documentation freeze:
+  - поддерживать `SPECv1.3.md` как frozen pilot contract;
+  - дальние контуры переносить в roadmap/ADR, а не в pilot spec.
+
+## Далее
+
+После закрытия pilot blockers:
+
+- Полный pre-pilot smoke path: Cloud master data -> Edge ingest -> login -> shift/cash session -> order -> precheck -> payment -> check -> refund/reprint.
+- Сверка RBAC matrix с фактическим UI и backend permissions.
+- Проверка migration/backup behavior на старой SQLite DB.
+- Уточнение sync direction для refund events, если Cloud должен получать возвраты как operational events.
+
+## После Пилота
+
+После пилота:
+
+- KDS runtime and kitchen ticket lifecycle.
+- DishServed / production triggers.
+- Full inventory engine, recipe expansion, semi-finished consumption policies.
+- Real PSP/payment processor integrations.
+- Fiscal adapter/fiscalization integrations.
+- Delivery/channel integrations.
+- ClickHouse OLAP/reporting accelerator and PostgreSQL projection pipeline.
+- `sqlc` adoption, если после стабилизации схемы это уменьшит риск persistence layer.
+- Full accounting/ERP integrations.
+
+## Вне Текущего Объема
+
+Вне текущего объема первого cashier pilot:
+
+- KDS as required runtime dependency.
+- Real PSP authorization/capture/refund flow.
+- Fiscal device integration.
+- Full inventory/procurement engine.
+- ClickHouse runtime dependency.
+- UI-side authoritative financial calculation.
+- Edge-side creation of Cloud-owned master data.
+
+## Definition Of Ready For Cashier Pilot
+
+Готовность к первому cashier pilot означает:
+
+- текущий cashier flow проходит smoke/e2e без ручной правки данных;
+- документация не обещает runtime, которого нет в коде;
+- pricing/modifiers/inventory либо реализованы и протестированы, либо явно исключены из pilot acceptance;
+- backend and UI docs согласованы по refund/reprint/current routes;
+- `sqlc` и ClickHouse описаны только как planned/post-pilot options, не как текущий runtime.
