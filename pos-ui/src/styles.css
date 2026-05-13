@@ -391,8 +391,11 @@ button.status-box {
 
 button:focus-visible,
 .q-btn:focus-visible,
+.q-btn:focus,
+.q-focusable:focus-visible,
+.q-focusable:focus,
 .q-field:focus-within {
-  outline: 3px solid rgba(184, 86, 63, 0.42);
+  outline: 3px solid rgba(184, 86, 63, 0.42) !important;
   outline-offset: 2px;
 }
 
@@ -871,6 +874,10 @@ button:focus-visible,
   background: #f8faf6;
 }
 
+.q-drawer.q-layout--prevent-focus {
+  display: none;
+}
+
 .drawer-body {
   min-height: 100%;
   display: grid;
@@ -906,7 +913,7 @@ button:focus-visible,
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .terminal-grid {
     grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
   }

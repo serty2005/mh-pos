@@ -10,7 +10,7 @@
         <q-btn
           v-if="auth.sessionId && route.path.startsWith('/pos')"
           flat
-          dense
+          class="icon-touch"
           icon="lock"
           :aria-label="t('actions.lock')"
           @click="router.push('/lock')"

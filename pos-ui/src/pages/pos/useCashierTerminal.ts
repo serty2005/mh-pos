@@ -421,7 +421,10 @@ export function useCashierTerminal() {
   });
 
   watch(tableOrder.data, (value) => {
-    currentOrderId.value = value?.id ?? '';
+    // После оплаты current-order по столу становится пустым, но прямой order query еще нужен для финального чека.
+    if (value?.id) {
+      currentOrderId.value = value.id;
+    }
   });
 
   watch(remainingPayment, (value) => {
