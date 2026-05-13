@@ -8,7 +8,7 @@
           <span>{{ t('common.client') }} {{ shortId(auth.clientDeviceId) }}</span>
         </div>
         <q-btn
-          v-if="auth.sessionId && route.path === '/pos'"
+          v-if="auth.sessionId && route.path.startsWith('/pos')"
           flat
           dense
           icon="lock"

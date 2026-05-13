@@ -4,6 +4,8 @@
 
 UI visibility is UX only. Backend app-layer permissions remain authoritative.
 
+Интерфейс кассира теперь разделен на переиспользуемые компоненты в `pos-ui/src/pages/pos/*`, но все visibility guards по-прежнему используют backend permission ids из `pos-ui/src/shared/rbac.ts`.
+
 ## Реализовано Сейчас
 
 Permission ids used by cashier UI:
@@ -63,11 +65,13 @@ Permission ids used by cashier UI:
 ## Вне Текущего UI Объема
 
 - waiter payment without cashier permissions;
+- waiter mobile runtime;
 - order transfer/split/merge;
 - modifier selection;
 - discount/surcharge/tax override controls;
 - inventory/procurement operations;
 - KDS screens;
+- manager tools runtime beyond cashier-visible sync/closed-orders/cash-drawer panels;
 - PSP terminal/fiscal device operation screens.
 
 ## Notes

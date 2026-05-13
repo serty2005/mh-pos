@@ -6,9 +6,10 @@ UI не является security boundary. Backend RBAC и application-layer ch
 
 ## Реализовано Сейчас
 
-Cashier UI in `pos-ui/src/pages/PosPage.vue` supports:
+Cashier UI in `pos-ui/src/pages/PosPage.vue` разделен на переиспользуемые компоненты терминала кассира в `pos-ui/src/pages/pos/*` и поддерживает:
 
 - PIN login/session-based operator context;
+- role-first layout терминала кассира: верхний status bar, выбор зала/стола слева, рабочая область активного заказа в центре и catalog/checkout panel справа;
 - employee shift open/close;
 - cash session open/close;
 - halls/tables selection;
@@ -24,8 +25,10 @@ Cashier UI in `pos-ui/src/pages/PosPage.vue` supports:
 - trusted manual card payment;
 - final check display after full payment;
 - reprint final check copy;
-- closed orders list;
+- closed orders list в отдельном drawer;
 - refund captured payment from closed orders when operator has permission and cash session is open.
+- cash drawer events в отдельном dialog;
+- sync status, outbox и local events в отдельном drawer.
 
 UI calls backend APIs for authoritative state and does not compute authoritative totals.
 
@@ -98,6 +101,18 @@ Requirements:
 - User-visible labels, dialogs, validation messages, notifications and empty states go through `vue-i18n`.
 - Russian UI strings belong in locale definitions, not scattered hardcoded source code.
 - Error display must not expose raw Go errors, SQL errors, stack traces, request dumps, PINs, tokens or sensitive payloads.
+
+## Разделение Интерфейсов
+
+Реализовано сейчас:
+
+- `/pos` and `/pos/cashier` load the current cashier pilot terminal.
+- Код cashier terminal разделен на composable для runtime/API state и presentation components для status, floor, order, catalog/checkout и utility panels.
+- Основные route components загружаются через lazy imports/code splitting, чтобы снизить нагрузку на initial bundle.
+
+Вне текущего объема:
+
+- `/pos/waiter`, `/pos/kitchen` и `/pos/manager` являются только route shells. Они не реализуют waiter mobile, KDS или manager runtime без backend/API contracts.
 
 ## Вне Текущего Объема
 
