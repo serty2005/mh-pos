@@ -2,17 +2,18 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"pos-backend/internal/pos/domain"
 )
 
 func (r *Repository) CreateMenuItem(ctx context.Context, v *domain.MenuItem) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO menu_items(id,catalog_item_id,name,price,currency,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)`,
-		v.ID, v.CatalogItemID, v.Name, v.Price, v.Currency, boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO menu_items(id,catalog_item_id,name,price,currency,tax_profile_id,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.CatalogItemID, v.Name, v.Price, v.Currency, nullableString(v.TaxProfileID), boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }
 
 func (r *Repository) ListMenuItems(ctx context.Context) ([]domain.MenuItem, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,catalog_item_id,name,price,currency,active,created_at,updated_at FROM menu_items ORDER BY created_at`)
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,catalog_item_id,name,price,currency,tax_profile_id,active,created_at,updated_at FROM menu_items ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -22,9 +23,11 @@ func (r *Repository) ListMenuItems(ctx context.Context) ([]domain.MenuItem, erro
 		var v domain.MenuItem
 		var active int
 		var created, updated string
-		if err := rows.Scan(&v.ID, &v.CatalogItemID, &v.Name, &v.Price, &v.Currency, &active, &created, &updated); err != nil {
+		var taxProfileID sql.NullString
+		if err := rows.Scan(&v.ID, &v.CatalogItemID, &v.Name, &v.Price, &v.Currency, &taxProfileID, &active, &created, &updated); err != nil {
 			return nil, err
 		}
+		v.TaxProfileID = stringPtr(taxProfileID)
 		v.Active = active == 1
 		v.CreatedAt = parseTime(created)
 		v.UpdatedAt = parseTime(updated)
@@ -37,12 +40,14 @@ func (r *Repository) GetMenuItem(ctx context.Context, id string) (*domain.MenuIt
 	var v domain.MenuItem
 	var active int
 	var created, updated string
-	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,catalog_item_id,name,price,currency,active,created_at,updated_at FROM menu_items WHERE id = ?`, id).
-		Scan(&v.ID, &v.CatalogItemID, &v.Name, &v.Price, &v.Currency, &active, &created, &updated)
+	var taxProfileID sql.NullString
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,catalog_item_id,name,price,currency,tax_profile_id,active,created_at,updated_at FROM menu_items WHERE id = ?`, id).
+		Scan(&v.ID, &v.CatalogItemID, &v.Name, &v.Price, &v.Currency, &taxProfileID, &active, &created, &updated)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
 	v.Active = active == 1
+	v.TaxProfileID = stringPtr(taxProfileID)
 	v.CreatedAt = parseTime(created)
 	v.UpdatedAt = parseTime(updated)
 	return &v, nil

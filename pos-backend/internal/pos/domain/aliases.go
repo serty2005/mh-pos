@@ -15,6 +15,7 @@ import (
 	"pos-backend/internal/pos/domain/menu"
 	"pos-backend/internal/pos/domain/order"
 	"pos-backend/internal/pos/domain/precheck"
+	"pos-backend/internal/pos/domain/pricing"
 	"pos-backend/internal/pos/domain/restaurant"
 	"pos-backend/internal/pos/domain/shared"
 	"pos-backend/internal/pos/domain/shift"
@@ -145,6 +146,40 @@ const (
 	PaymentCash     = check.PaymentCash
 	PaymentCard     = check.PaymentCard
 	PaymentOther    = check.PaymentOther
+)
+
+type AmountKind = pricing.AmountKind
+type DiscountScope = pricing.DiscountScope
+type SurchargeKind = pricing.SurchargeKind
+type TaxMode = pricing.TaxMode
+type TaxRuleKind = pricing.TaxRuleKind
+type OrderDiscount = pricing.OrderDiscount
+type OrderSurcharge = pricing.OrderSurcharge
+type TaxProfile = pricing.TaxProfile
+type TaxRule = pricing.TaxRule
+type CalculationInput = pricing.CalculationInput
+type CalculationResult = pricing.CalculationResult
+type LineBreakdown = pricing.LineBreakdown
+type DiscountBreakdown = pricing.DiscountBreakdown
+type SurchargeBreakdown = pricing.SurchargeBreakdown
+type TaxComponentBreakdown = pricing.TaxComponentBreakdown
+
+const (
+	AmountPercentage = pricing.AmountPercentage
+	AmountFixed      = pricing.AmountFixed
+
+	DiscountScopeLine  = pricing.DiscountScopeLine
+	DiscountScopeOrder = pricing.DiscountScopeOrder
+
+	SurchargeServiceCharge = pricing.SurchargeServiceCharge
+	SurchargePB1ServiceFee = pricing.SurchargePB1ServiceFee
+	SurchargeManual        = pricing.SurchargeManual
+
+	TaxModeExclusive = pricing.TaxModeExclusive
+	TaxModeInclusive = pricing.TaxModeInclusive
+
+	TaxRulePercentage = pricing.TaxRulePercentage
+	TaxRuleFixed      = pricing.TaxRuleFixed
 )
 
 type CashSessionStatus = cash.CashSessionStatus

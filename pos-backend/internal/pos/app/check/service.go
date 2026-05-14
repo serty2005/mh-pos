@@ -107,6 +107,9 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 		if order.DeviceID != cmd.DeviceID {
 			return fmt.Errorf("%w: payment device does not match order device", domain.ErrConflict)
 		}
+		if precheck.CurrencyCode != "" && currency != precheck.CurrencyCode {
+			return fmt.Errorf("%w: payment currency does not match precheck currency", domain.ErrConflict)
+		}
 		cashSession, err := s.repo.GetOpenCashSessionByDevice(ctx, cmd.DeviceID)
 		if err != nil {
 			if errors.Is(err, domain.ErrNotFound) {
@@ -178,7 +181,22 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 		if err := s.repo.UpdatePrecheckPayment(ctx, precheck); err != nil {
 			return err
 		}
-		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Payment", payment.ID, "PaymentCaptured", payment); err != nil {
+		paymentEvent := struct {
+			Payment             *domain.Payment `json:"payment"`
+			PrecheckID          string          `json:"precheck_id"`
+			CurrencyCode        string          `json:"currency_code"`
+			GrandTotalMinor     int64           `json:"grand_total_minor"`
+			PaidTotalMinor      int64           `json:"paid_total_minor"`
+			RemainingTotalMinor int64           `json:"remaining_total_minor"`
+		}{
+			Payment:             payment,
+			PrecheckID:          precheck.ID,
+			CurrencyCode:        precheck.CurrencyCode,
+			GrandTotalMinor:     precheck.Total,
+			PaidTotalMinor:      precheck.PaidTotal,
+			RemainingTotalMinor: precheck.RemainingTotal,
+		}
+		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Payment", payment.ID, "PaymentCaptured", paymentEvent); err != nil {
 			return err
 		}
 		if !precheck.IsFullyPaid() {
@@ -193,11 +211,14 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 			ID:                s.ids.NewID(),
 			OrderID:           order.ID,
 			Status:            domain.CheckPaid,
+			CurrencyCode:      precheck.CurrencyCode,
 			Subtotal:          precheck.Subtotal,
 			DiscountTotal:     precheck.DiscountTotal,
+			SurchargeTotal:    precheck.SurchargeTotal,
 			TaxTotal:          precheck.TaxTotal,
 			Total:             precheck.Total,
 			PaidTotal:         precheck.PaidTotal,
+			RemainingTotal:    precheck.RemainingTotal,
 			BusinessDateLocal: businessDate,
 			ClosedAt:          now,
 			CreatedAt:         now,
@@ -406,9 +427,12 @@ type checkSnapshot struct {
 	TableName         string                 `json:"table_name"`
 	Subtotal          int64                  `json:"subtotal"`
 	DiscountTotal     int64                  `json:"discount_total"`
+	SurchargeTotal    int64                  `json:"surcharge_total"`
 	TaxTotal          int64                  `json:"tax_total"`
 	Total             int64                  `json:"total"`
 	PaidTotal         int64                  `json:"paid_total"`
+	RemainingTotal    int64                  `json:"remaining_total"`
+	CurrencyCode      string                 `json:"currency_code"`
 	BusinessDateLocal string                 `json:"business_date_local"`
 	ClosedAt          string                 `json:"closed_at"`
 	Payments          []checkSnapshotPayment `json:"payments"`
@@ -432,11 +456,14 @@ func buildCheckSnapshot(order *domain.Order, precheck *domain.Precheck, payments
 		PrecheckID:        precheck.ID,
 		TableID:           order.TableID,
 		TableName:         order.TableName,
+		CurrencyCode:      check.CurrencyCode,
 		Subtotal:          check.Subtotal,
 		DiscountTotal:     check.DiscountTotal,
+		SurchargeTotal:    check.SurchargeTotal,
 		TaxTotal:          check.TaxTotal,
 		Total:             check.Total,
 		PaidTotal:         check.PaidTotal,
+		RemainingTotal:    check.RemainingTotal,
 		BusinessDateLocal: check.BusinessDateLocal,
 		ClosedAt:          shared.DBTime(now),
 		PrecheckSnapshot:  precheck.Snapshot,

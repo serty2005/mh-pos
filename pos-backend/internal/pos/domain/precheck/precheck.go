@@ -24,11 +24,14 @@ type Precheck struct {
 	Status                PrecheckStatus  `json:"status"`
 	Version               int             `json:"version"`
 	SupersedesPrecheckID  *string         `json:"supersedes_precheck_id,omitempty"`
+	CurrencyCode          string          `json:"currency_code"`
 	Subtotal              int64           `json:"subtotal"`
 	DiscountTotal         int64           `json:"discount_total"`
+	SurchargeTotal        int64           `json:"surcharge_total"`
 	TaxTotal              int64           `json:"tax_total"`
 	Total                 int64           `json:"total"`
 	PaidTotal             int64           `json:"paid_total"`
+	RemainingTotal        int64           `json:"remaining_total"`
 	Snapshot              json.RawMessage `json:"snapshot,omitempty"`
 	CreatedAt             time.Time       `json:"created_at"`
 	IssuedAt              time.Time       `json:"issued_at"`
@@ -38,22 +41,25 @@ type Precheck struct {
 }
 
 func NewIssued(id, orderID string, subtotal, discountTotal, taxTotal int64, now time.Time) (*Precheck, error) {
-	return NewIssuedVersion(id, orderID, 1, nil, subtotal, discountTotal, taxTotal, now)
+	return NewIssuedVersion(id, orderID, 1, nil, "RUB", subtotal, discountTotal, 0, taxTotal, subtotal-discountTotal+taxTotal, now)
 }
 
-func NewIssuedVersion(id, orderID string, version int, supersedesPrecheckID *string, subtotal, discountTotal, taxTotal int64, now time.Time) (*Precheck, error) {
+func NewIssuedVersion(id, orderID string, version int, supersedesPrecheckID *string, currencyCode string, subtotal, discountTotal, surchargeTotal, taxTotal, total int64, now time.Time) (*Precheck, error) {
 	id = strings.TrimSpace(id)
 	orderID = strings.TrimSpace(orderID)
+	currencyCode = strings.ToUpper(strings.TrimSpace(currencyCode))
 	if id == "" || orderID == "" {
 		return nil, fmt.Errorf("%w: precheck id and order_id are required", shared.ErrInvalid)
+	}
+	if len(currencyCode) != 3 {
+		return nil, fmt.Errorf("%w: currency_code is required", shared.ErrInvalid)
 	}
 	if version <= 0 {
 		return nil, fmt.Errorf("%w: precheck version must be positive", shared.ErrInvalid)
 	}
-	if subtotal < 0 || discountTotal < 0 || taxTotal < 0 {
+	if subtotal < 0 || discountTotal < 0 || surchargeTotal < 0 || taxTotal < 0 {
 		return nil, fmt.Errorf("%w: precheck totals must be non-negative", shared.ErrInvalid)
 	}
-	total := subtotal - discountTotal + taxTotal
 	if total < 0 {
 		return nil, fmt.Errorf("%w: precheck total cannot be negative", shared.ErrInvalid)
 	}
@@ -71,10 +77,13 @@ func NewIssuedVersion(id, orderID string, version int, supersedesPrecheckID *str
 		Status:               PrecheckIssued,
 		Version:              version,
 		SupersedesPrecheckID: supersedes,
+		CurrencyCode:         currencyCode,
 		Subtotal:             subtotal,
 		DiscountTotal:        discountTotal,
+		SurchargeTotal:       surchargeTotal,
 		TaxTotal:             taxTotal,
 		Total:                total,
+		RemainingTotal:       total,
 		Snapshot:             json.RawMessage(`{}`),
 		CreatedAt:            now,
 		IssuedAt:             now,
@@ -110,6 +119,7 @@ func (p *Precheck) ApplyCapturedPayment(amount int64, now time.Time) error {
 		return fmt.Errorf("%w: precheck overpayment is not allowed", shared.ErrConflict)
 	}
 	p.PaidTotal += amount
+	p.RemainingTotal = p.Total - p.PaidTotal
 	if p.PaidTotal == p.Total {
 		p.Status = PrecheckClosed
 		p.ClosedAt = &now
@@ -132,6 +142,7 @@ func (p *Precheck) ApplyRefundedPayment(amount int64, now time.Time) error {
 		return fmt.Errorf("%w: precheck refund would cause negative paid_total", shared.ErrConflict)
 	}
 	p.PaidTotal -= amount
+	p.RemainingTotal = p.Total - p.PaidTotal
 	if p.Status == PrecheckClosed && p.PaidTotal < p.Total {
 		p.Status = PrecheckIssued
 		p.ClosedAt = nil
@@ -161,11 +172,14 @@ func (p Precheck) Validate() error {
 	if p.Version <= 0 {
 		return fmt.Errorf("%w: precheck version must be positive", shared.ErrInvalid)
 	}
-	if p.Subtotal < 0 || p.DiscountTotal < 0 || p.TaxTotal < 0 || p.Total < 0 || p.PaidTotal < 0 {
+	if strings.TrimSpace(p.CurrencyCode) == "" {
+		return fmt.Errorf("%w: precheck currency_code is required", shared.ErrInvalid)
+	}
+	if p.Subtotal < 0 || p.DiscountTotal < 0 || p.SurchargeTotal < 0 || p.TaxTotal < 0 || p.Total < 0 || p.PaidTotal < 0 || p.RemainingTotal < 0 {
 		return fmt.Errorf("%w: precheck totals must be non-negative", shared.ErrInvalid)
 	}
-	if p.Total != p.Subtotal-p.DiscountTotal+p.TaxTotal {
-		return fmt.Errorf("%w: precheck total snapshot is inconsistent", shared.ErrInvalid)
+	if p.RemainingTotal != p.Total-p.PaidTotal {
+		return fmt.Errorf("%w: precheck remaining_total is inconsistent", shared.ErrInvalid)
 	}
 	if p.PaidTotal > p.Total {
 		return fmt.Errorf("%w: precheck paid_total cannot exceed total", shared.ErrInvalid)

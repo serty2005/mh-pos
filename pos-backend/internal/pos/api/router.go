@@ -65,6 +65,9 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/orders/{id}/lines", h.addOrderLine)
 		r.Patch("/orders/{id}/lines/{line_id}", h.changeOrderLineQuantity)
 		r.Post("/orders/{id}/lines/{line_id}/void", h.voidOrderLine)
+		r.Post("/orders/{id}/discounts", h.addOrderDiscount)
+		r.Post("/orders/{id}/surcharges", h.addOrderSurcharge)
+		r.Get("/orders/{id}/pricing", h.getOrderPricing)
 		r.Post("/orders/{id}/precheck", h.issuePrecheck)
 		r.Get("/orders/{id}/prechecks", h.listPrechecksByOrder)
 		r.Post("/orders/{id}/close", h.closeOrder)
@@ -645,6 +648,37 @@ func (h *Handler) issuePrecheck(w http.ResponseWriter, r *http.Request) {
 	cmd.OrderID = chi.URLParam(r, "id")
 	v, err := h.service.IssuePrecheck(r.Context(), cmd)
 	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) addOrderDiscount(w http.ResponseWriter, r *http.Request) {
+	var cmd app.AddDiscountCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	cmd.OrderID = chi.URLParam(r, "id")
+	v, err := h.service.AddDiscount(r.Context(), cmd)
+	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) addOrderSurcharge(w http.ResponseWriter, r *http.Request) {
+	var cmd app.AddSurchargeCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	cmd.OrderID = chi.URLParam(r, "id")
+	v, err := h.service.AddSurcharge(r.Context(), cmd)
+	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) getOrderPricing(w http.ResponseWriter, r *http.Request) {
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.GetOrderPricingAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) closeOrder(w http.ResponseWriter, r *http.Request) {

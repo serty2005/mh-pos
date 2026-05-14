@@ -29,6 +29,7 @@ type CreateMenuItemCommand struct {
 	Name          string `json:"name"`
 	Price         int64  `json:"price"`
 	Currency      string `json:"currency"`
+	TaxProfileID  string `json:"tax_profile_id,omitempty"`
 }
 
 func (s *Service) ListMenuItems(ctx context.Context) ([]domain.MenuItem, error) {
@@ -61,6 +62,7 @@ func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand)
 		Name:          strings.TrimSpace(cmd.Name),
 		Price:         cmd.Price,
 		Currency:      currency,
+		TaxProfileID:  optionalString(cmd.TaxProfileID),
 		Active:        true,
 		CreatedAt:     now,
 		UpdatedAt:     now,
@@ -81,4 +83,12 @@ func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand)
 		}
 		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, "", "", "MenuItem", v.ID, "MenuItemCreated", v)
 	})
+}
+
+func optionalString(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
 }

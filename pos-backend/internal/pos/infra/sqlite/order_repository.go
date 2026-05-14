@@ -73,20 +73,22 @@ func (r *Repository) UpdateOrderClosed(ctx context.Context, v *domain.Order) err
 }
 
 func (r *Repository) CreateOrderLine(ctx context.Context, v *domain.OrderLine) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO order_lines(id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.OrderID, v.MenuItemID, v.CatalogItemID, v.Name, v.Quantity, v.UnitPrice, v.TotalPrice, string(v.Status), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO order_lines(id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,currency_code,tax_profile_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.OrderID, v.MenuItemID, v.CatalogItemID, v.Name, v.Quantity, v.UnitPrice, v.TotalPrice, v.CurrencyCode, nullableString(v.TaxProfileID), string(v.Status), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }
 
 func (r *Repository) GetOrderLine(ctx context.Context, id string) (*domain.OrderLine, error) {
 	var v domain.OrderLine
 	var status, created, updated string
-	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,status,created_at,updated_at FROM order_lines WHERE id = ?`, id).
-		Scan(&v.ID, &v.OrderID, &v.MenuItemID, &v.CatalogItemID, &v.Name, &v.Quantity, &v.UnitPrice, &v.TotalPrice, &status, &created, &updated)
+	var taxProfileID sql.NullString
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,currency_code,tax_profile_id,status,created_at,updated_at FROM order_lines WHERE id = ?`, id).
+		Scan(&v.ID, &v.OrderID, &v.MenuItemID, &v.CatalogItemID, &v.Name, &v.Quantity, &v.UnitPrice, &v.TotalPrice, &v.CurrencyCode, &taxProfileID, &status, &created, &updated)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
 	v.Status = domain.OrderLineStatus(status)
+	v.TaxProfileID = stringPtr(taxProfileID)
 	v.CreatedAt = parseTime(created)
 	v.UpdatedAt = parseTime(updated)
 	return &v, nil
@@ -106,7 +108,7 @@ func (r *Repository) UpdateOrderLine(ctx context.Context, v *domain.OrderLine) e
 }
 
 func (r *Repository) ListClosedOrders(ctx context.Context, limit int) ([]order.OrderSummary, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT o.id, o.table_name, o.opened_at, o.closed_at, c.id, c.status, c.subtotal, c.discount_total, c.tax_total, c.total, c.paid_total, c.business_date_local, c.closed_at, c.created_at, c.updated_at, (SELECT pr.id FROM prechecks pr WHERE pr.order_id = o.id ORDER BY pr.version DESC, pr.created_at DESC LIMIT 1), o.status FROM orders o LEFT JOIN checks c ON o.id = c.order_id WHERE o.status = 'closed' ORDER BY o.closed_at DESC LIMIT ?`, limit)
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT o.id, o.table_name, o.opened_at, o.closed_at, c.id, c.status, c.currency_code, c.subtotal, c.discount_total, c.surcharge_total, c.tax_total, c.total, c.paid_total, c.remaining_total, c.business_date_local, c.closed_at, c.created_at, c.updated_at, (SELECT pr.id FROM prechecks pr WHERE pr.order_id = o.id ORDER BY pr.version DESC, pr.created_at DESC LIMIT 1), o.status FROM orders o LEFT JOIN checks c ON o.id = c.order_id WHERE o.status = 'closed' ORDER BY o.closed_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -123,10 +125,11 @@ func (r *Repository) ListClosedOrders(ctx context.Context, limit int) ([]order.O
 		var closed sql.NullString
 		var checkID sql.NullString
 		var checkStatus sql.NullString
-		var subtotal, discountTotal, taxTotal, total, paidTotal sql.NullInt64
+		var currencyCode sql.NullString
+		var subtotal, discountTotal, surchargeTotal, taxTotal, total, paidTotal, remainingTotal sql.NullInt64
 		var businessDateLocal, checkClosedAt, checkCreatedAt, checkUpdatedAt sql.NullString
 		var precheckID sql.NullString
-		if err := rows.Scan(&v.ID, &v.TableName, &opened, &closed, &checkID, &checkStatus, &subtotal, &discountTotal, &taxTotal, &total, &paidTotal, &businessDateLocal, &checkClosedAt, &checkCreatedAt, &checkUpdatedAt, &precheckID, &status); err != nil {
+		if err := rows.Scan(&v.ID, &v.TableName, &opened, &closed, &checkID, &checkStatus, &currencyCode, &subtotal, &discountTotal, &surchargeTotal, &taxTotal, &total, &paidTotal, &remainingTotal, &businessDateLocal, &checkClosedAt, &checkCreatedAt, &checkUpdatedAt, &precheckID, &status); err != nil {
 			return nil, err
 		}
 		v.Status = domain.OrderStatus(status)
@@ -143,11 +146,14 @@ func (r *Repository) ListClosedOrders(ctx context.Context, limit int) ([]order.O
 				ID:                checkID.String,
 				OrderID:           v.ID,
 				Status:            domain.CheckStatus(checkStatus.String),
+				CurrencyCode:      currencyCode.String,
 				Subtotal:          subtotal.Int64,
 				DiscountTotal:     discountTotal.Int64,
+				SurchargeTotal:    surchargeTotal.Int64,
 				TaxTotal:          taxTotal.Int64,
 				Total:             total.Int64,
 				PaidTotal:         paidTotal.Int64,
+				RemainingTotal:    remainingTotal.Int64,
 				BusinessDateLocal: businessDateLocal.String,
 				ClosedAt:          parseTime(checkClosedAt.String),
 				CreatedAt:         parseTime(checkCreatedAt.String),
@@ -184,7 +190,7 @@ func (r *Repository) ListClosedOrders(ctx context.Context, limit int) ([]order.O
 }
 
 func (r *Repository) ListOrderLines(ctx context.Context, orderID string) ([]domain.OrderLine, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,status,created_at,updated_at FROM order_lines WHERE order_id = ? ORDER BY created_at`, orderID)
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,currency_code,tax_profile_id,status,created_at,updated_at FROM order_lines WHERE order_id = ? ORDER BY created_at`, orderID)
 	if err != nil {
 		return nil, err
 	}
@@ -193,10 +199,12 @@ func (r *Repository) ListOrderLines(ctx context.Context, orderID string) ([]doma
 	for rows.Next() {
 		var v domain.OrderLine
 		var status, created, updated string
-		if err := rows.Scan(&v.ID, &v.OrderID, &v.MenuItemID, &v.CatalogItemID, &v.Name, &v.Quantity, &v.UnitPrice, &v.TotalPrice, &status, &created, &updated); err != nil {
+		var taxProfileID sql.NullString
+		if err := rows.Scan(&v.ID, &v.OrderID, &v.MenuItemID, &v.CatalogItemID, &v.Name, &v.Quantity, &v.UnitPrice, &v.TotalPrice, &v.CurrencyCode, &taxProfileID, &status, &created, &updated); err != nil {
 			return nil, err
 		}
 		v.Status = domain.OrderLineStatus(status)
+		v.TaxProfileID = stringPtr(taxProfileID)
 		v.CreatedAt = parseTime(created)
 		v.UpdatedAt = parseTime(updated)
 		out = append(out, v)

@@ -10,14 +10,13 @@
 
 - POS Edge HTTP API на `chi`.
 - SQLite repository/migration/runtime verification.
-- Application services для auth, staff shifts, cash sessions, floor/menu/catalog reads, order, precheck, payment/check, master-data ingest, outbox.
+- Application services для auth, staff shifts, cash sessions, floor/menu/catalog reads, order, pricing, precheck, payment/check, master-data ingest, outbox.
 - Manual persistence implementation в infrastructure repositories.
 
 Не реализовано сейчас:
 
 - `sqlc` как текущий persistence implementation;
 - ClickHouse runtime;
-- discount/surcharge/tax engine;
 - POS order modifiers runtime;
 - inventory consumption engine;
 - payment processor module;
@@ -51,6 +50,9 @@
 - `POST /api/v1/orders/{id}/lines`
 - `PATCH /api/v1/orders/{id}/lines/{line_id}`
 - `POST /api/v1/orders/{id}/lines/{line_id}/void`
+- `GET /api/v1/orders/{id}/pricing`
+- `POST /api/v1/orders/{id}/discounts`
+- `POST /api/v1/orders/{id}/surcharges`
 - `POST /api/v1/orders/{id}/precheck`
 - `GET /api/v1/orders/{id}/prechecks`
 - `POST /api/v1/orders/{id}/close`
@@ -80,12 +82,13 @@
 2. Cashier opens cash session for device.
 3. Cashier creates order for table.
 4. Cashier adds/changes/voids active order lines.
-5. Cashier issues precheck.
-6. Backend locks order and creates immutable precheck snapshot.
-7. Cashier captures one or more payments through `precheck_id`.
-8. Backend creates final check only after full payment.
-9. Cashier/manager can reprint precheck/check copy from immutable snapshot.
-10. Authorized operator can refund captured payment.
+5. Cashier can apply backend-authoritative discount/surcharge commands and read pricing preview.
+6. Cashier issues precheck.
+7. Backend locks order and creates immutable financial precheck snapshot.
+8. Cashier captures one or more payments through `precheck_id`.
+9. Backend creates final check only after full payment.
+10. Cashier/manager can reprint precheck/check copy from immutable snapshot.
+11. Authorized operator can refund captured payment.
 
 ## Precheck Contract
 
@@ -95,17 +98,24 @@
 - Precheck can be issued only for `open` order.
 - Order device must match command device.
 - Only one active issued precheck per order is allowed.
-- Snapshot contains active lines at issue time.
+- Snapshot contains active lines, currency, discounts, surcharges, taxes, totals and calculation breakdown at issue time.
 - Order becomes `locked`.
 - `CancelPrecheckCommand` requires `precheck_id`, `manager_employee_id`, `manager_pin`, `cancellation_reason`.
 - Cancel requires operator permission `pos.precheck.cancel.request` and manager permission `pos.precheck.cancel`.
 - Cancel writes manager override audit and returns order to `open`.
 - Reprint requires `pos.precheck.reprint` and valid immutable snapshot.
 
-Pricing note:
+Pricing contract:
 
-- Current `IssuePrecheck` computes subtotal from active lines and passes `discount_total = 0`, `tax_total = 0`.
-- Existing fields do not mean discount/tax engine is implemented.
+- `GET /api/v1/orders/{id}/pricing` returns backend-calculated preview for open/current order state.
+- `POST /api/v1/orders/{id}/discounts` supports line/order discounts with `amount_kind = percentage|fixed`.
+- `POST /api/v1/orders/{id}/surcharges` supports `service_charge`, `pb1_service_fee` and `manual` surcharge foundation with `amount_kind = percentage|fixed`.
+- Canonical pipeline is `order lines subtotal -> line discounts -> order discounts -> surcharge/service charge -> taxable base -> taxes -> grand total`.
+- Discount Before Tax is enforced by the calculation pipeline.
+- Rounding policy is deterministic integer half-up minor units (`integer_half_up_minor_units_v1`).
+- Tax foundation supports `tax_profiles`, `tax_rules`, percentage/fixed components, inclusive/exclusive mode, compound foundation and tax exempt profile foundation; inclusive tax is included in `tax_total`, but does not increase grand total.
+- Precheck issue persists immutable breakdown in `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`.
+- Menu price/tax rule changes after precheck issue do not mutate old precheck/check snapshots.
 
 ## Payment, Check And Refund Contract
 
@@ -116,6 +126,7 @@ Pricing note:
 - Supported methods are `cash`, `card`, `other`.
 - Payment requires open cash session for the same device, shift and restaurant.
 - Payment updates `prechecks.paid_total`.
+- Payment updates `prechecks.remaining_total`.
 - Partial payments are allowed; overpayment is rejected.
 - Full payment creates one final check and closes order.
 - Check snapshot includes immutable precheck snapshot and payment snapshot.
@@ -156,8 +167,8 @@ Foundation only:
 
 Discounts/taxes:
 
-- Реализовано сейчас: only `discount_total` and `tax_total` fields with zero values in current issue precheck flow.
-- Запланировано до пилота: separate `Pricing` policy area, Cloud-authored rules, backend authoritative calculation, no UI authoritative totals.
+- Реализовано сейчас: separate `Pricing` policy area, backend authoritative calculation, discount/surcharge/tax totals, immutable precheck breakdown and no UI authoritative totals.
+- Запланировано далее: Cloud-authored pricing/tax rule publication into Edge runtime.
 
 Modifiers:
 
@@ -181,6 +192,10 @@ Recipes/inventory:
   - `pos.payment.cash`
   - `pos.payment.card.manual`
   - `pos.payment.other`
+- Pricing permissions:
+  - `pos.pricing.view`
+  - `pos.pricing.discount.apply`
+  - `pos.pricing.surcharge.apply`
 - Refund uses `pos.payment.refund`.
 - Precheck cancel uses split request/approval:
   - `pos.precheck.cancel.request`

@@ -11,6 +11,7 @@ type Repository interface {
 	OrderRepository
 	PrecheckRepository
 	CheckRepository
+	PricingRepository
 	CashRepository
 	InventoryRepository
 	MasterSyncRepository

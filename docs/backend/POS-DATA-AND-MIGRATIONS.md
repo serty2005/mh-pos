@@ -29,17 +29,19 @@ Managed files:
 - `restaurants`, `devices`, `edge_node_identity`, `edge_provisioning_state`, `client_devices`
 - `roles`, `employees`, `auth_sessions`
 - `halls`, `tables`
-- `catalog_items`, `menu_items`
+- `catalog_items`, `menu_items`, `tax_profiles`, `tax_rules`
 - `shifts`, `cash_sessions`, `cash_drawer_events`
 - `orders`, `order_lines`
-- `prechecks`, `payments`, `payment_attempts`, `checks`
+- `prechecks`, `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`, `payments`, `payment_attempts`, `checks`
+- `order_line_discounts`, `order_level_discounts`, `order_surcharges`, `service_charge_rules`
 - `manager_override_audit`
 - `local_event_log`, `pos_sync_outbox`, `cloud_master_sync_state`
 
 Cashier runtime invariants:
 
 - `orders.status` includes `open`, `locked`, `closed`, `cancelled`.
-- `prechecks` has immutable `snapshot`, `version`, `paid_total`, `discount_total`, `tax_total`, `total`.
+- `prechecks` has immutable `snapshot`, `version`, `currency_code`, `paid_total`, `remaining_total`, `discount_total`, `surcharge_total`, `tax_total`, `total`.
+- `precheck_*` breakdown tables persist lines, discounts, surcharges and tax components for audit/reprint/sync replay.
 - `payments` references `precheck_id`, not legacy `check_id`.
 - `checks` references `order_id` and stores immutable `snapshot`.
 - `business_date_local` is stored for shifts, cash sessions, payments and checks.
@@ -100,21 +102,25 @@ Foundation warning:
 
 Реализовано сейчас:
 
-- `prechecks` and `checks` contain `discount_total` and `tax_total`.
-- No schema-backed discount rule engine is confirmed in POS Edge runtime.
-- No tax profile table is confirmed in current POS Edge runtime.
+- `Pricing` is a separate runtime boundary from Order, Payment and Catalog.
+- `order_line_discounts` stores line/order discount commands for open orders.
+- `order_surcharges` stores manual/service/PB1 surcharge commands for open orders.
+- `service_charge_rules` is schema foundation for managed service-charge policy.
+- `tax_profiles` and `tax_rules` store tax profile/rule foundation.
+- `menu_items.tax_profile_id` and `order_lines.tax_profile_id` allow tax policy snapshotting without mixing tax behavior into Catalog.
+- `prechecks` and `checks` contain `currency_code`, `discount_total`, `surcharge_total`, `tax_total`, `total`, `paid_total`, `remaining_total`.
+- Precheck breakdown persistence uses `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`.
+- Canonical calculation pipeline is `order lines subtotal -> line discounts -> order discounts -> surcharge/service charge -> taxable base -> taxes -> grand total`.
+- Inclusive tax is stored in tax breakdown/tax total but does not increase grand total; `tax_added_minor` in line breakdown records the tax part that was added to payable total.
+- Rounding policy is deterministic integer half-up minor units; persistent money values remain `INTEGER` minor units.
 
-Запланировано до пилота:
+Запланировано далее:
 
-- separate `Pricing` ownership for discount/surcharge rules;
-- separate `tax_profile` / tax policy concept;
 - Cloud-authored policy data published to Edge;
-- backend-only authoritative totals.
+- regional fiscal/legal tax adapter only after pilot foundation is stable.
 
-Не документировать как реализованное:
+Вне текущего runtime:
 
-- discount/surcharge API;
-- tax engine;
 - UI-side financial calculation.
 
 ## Modifier Data

@@ -27,6 +27,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Reprint final check from immutable snapshot.
 - Payment refund route and cashier UI flow.
 - `business_date_local` for shifts, cash sessions, payments and checks.
+- Pricing/Discounts boundary: backend `Pricing` domain/application layer, line/order discounts, surcharge foundation, tax profile/rule foundation, deterministic integer rounding и immutable precheck breakdown persistence.
 
 ### Cloud And Sync Foundation
 
@@ -66,13 +67,9 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 Pilot blockers:
 
-- Pricing/Discounts boundary:
-  - отделить `Pricing` от `Catalog`;
-  - описать и реализовать discount/surcharge/tax calculation только если это нужно для pilot acceptance;
-  - не выдавать текущие `discount_total` / `tax_total` fields за готовый engine.
-- Tax policy:
-  - ввести `tax_profile` / tax policy concept при необходимости пилотного налога;
-  - зафиксировать порядок расчета после скидок, если такая pilot policy утверждена.
+- Pricing/Discounts publication:
+  - довести Cloud-authored publication/ingest для pricing/tax rules, если pilot acceptance требует централизованного управления правилами;
+  - уточнить operator policy для manual discount/surcharge permissions в pilot script.
 - Modifiers:
   - решить, входят ли modifiers в первый pilot;
   - если входят, добавить Cloud publication payload, POS Edge ingest, order line snapshot, precheck/check snapshot и cashier UI flow.

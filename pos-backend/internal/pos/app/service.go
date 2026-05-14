@@ -18,6 +18,7 @@ import (
 	appmenu "pos-backend/internal/pos/app/menu"
 	apporder "pos-backend/internal/pos/app/order"
 	appprecheck "pos-backend/internal/pos/app/precheck"
+	apppricing "pos-backend/internal/pos/app/pricing"
 	appprovisioning "pos-backend/internal/pos/app/provisioning"
 	apprestaurant "pos-backend/internal/pos/app/restaurant"
 	"pos-backend/internal/pos/app/shared"
@@ -60,6 +61,8 @@ type VoidOrderLineCommand = apporder.VoidOrderLineCommand
 type IssuePrecheckCommand = appprecheck.IssuePrecheckCommand
 type CancelPrecheckCommand = appprecheck.CancelPrecheckCommand
 type ReprintPrecheckCommand = appprecheck.ReprintPrecheckCommand
+type AddDiscountCommand = apppricing.AddDiscountCommand
+type AddSurchargeCommand = apppricing.AddSurchargeCommand
 type CapturePaymentCommand = appcheck.CapturePaymentCommand
 type RefundPaymentCommand = appcheck.RefundPaymentCommand
 type ReprintCheckCommand = appcheck.ReprintCheckCommand
@@ -104,6 +107,7 @@ type Service struct {
 	shifts       *appshift.Service
 	orders       *apporder.Service
 	prechecks    *appprecheck.Service
+	pricing      *apppricing.Service
 	checks       *appcheck.Service
 	cash         *appcash.Service
 	masterSync   *appmastersync.Service
@@ -127,6 +131,7 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 
 // NewServiceWithOptions создает POS application service с дополнительными runtime hooks.
 func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, options ServiceOptions) *Service {
+	pricingSvc := apppricing.NewService(repo, tx, ids, clock)
 	s := &Service{
 		repo:        repo,
 		restaurants: apprestaurant.NewService(repo, tx, ids, clock),
@@ -138,7 +143,8 @@ func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idge
 		menu:        appmenu.NewService(repo, tx, ids, clock),
 		shifts:      appshift.NewService(repo, tx, ids, clock),
 		orders:      apporder.NewService(repo, tx, ids, clock),
-		prechecks:   appprecheck.NewService(repo, tx, ids, clock),
+		pricing:     pricingSvc,
+		prechecks:   appprecheck.NewService(repo, tx, ids, clock, pricingSvc),
 		checks:      appcheck.NewService(repo, tx, ids, clock),
 		cash:        appcash.NewService(repo, tx, ids, clock),
 		masterSync: appmastersync.NewServiceWithOptions(repo, tx, ids, clock, appmastersync.Options{
@@ -344,6 +350,18 @@ func (s *Service) CloseOrder(ctx context.Context, cmd CloseOrderCommand) (*domai
 
 func (s *Service) IssuePrecheck(ctx context.Context, cmd IssuePrecheckCommand) (*domain.Precheck, error) {
 	return s.prechecks.IssuePrecheck(ctx, cmd)
+}
+
+func (s *Service) AddDiscount(ctx context.Context, cmd AddDiscountCommand) (*domain.OrderDiscount, error) {
+	return s.pricing.AddDiscount(ctx, cmd)
+}
+
+func (s *Service) AddSurcharge(ctx context.Context, cmd AddSurchargeCommand) (*domain.OrderSurcharge, error) {
+	return s.pricing.AddSurcharge(ctx, cmd)
+}
+
+func (s *Service) GetOrderPricingAsOperator(ctx context.Context, orderID string, meta CommandMeta) (*domain.CalculationResult, error) {
+	return s.pricing.GetOrderPricingAsOperator(ctx, orderID, meta)
 }
 
 func (s *Service) GetPrecheck(ctx context.Context, id string) (*domain.Precheck, error) {

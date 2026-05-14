@@ -12,8 +12,14 @@ func (r *Repository) CreateCheck(ctx context.Context, v *domain.Check) error {
 	if len(snapshot) == 0 {
 		snapshot = json.RawMessage(`{}`)
 	}
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO checks(id,order_id,status,subtotal,discount_total,tax_total,total,paid_total,business_date_local,closed_at,snapshot,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.OrderID, string(v.Status), v.Subtotal, v.DiscountTotal, v.TaxTotal, v.Total, v.PaidTotal, v.BusinessDateLocal, dbTime(v.ClosedAt), string(snapshot), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	if v.CurrencyCode == "" {
+		v.CurrencyCode = "RUB"
+	}
+	if v.RemainingTotal == 0 && v.Total >= v.PaidTotal {
+		v.RemainingTotal = v.Total - v.PaidTotal
+	}
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO checks(id,order_id,status,currency_code,subtotal,discount_total,surcharge_total,tax_total,total,paid_total,remaining_total,business_date_local,closed_at,snapshot,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.OrderID, string(v.Status), v.CurrencyCode, v.Subtotal, v.DiscountTotal, v.SurchargeTotal, v.TaxTotal, v.Total, v.PaidTotal, v.RemainingTotal, v.BusinessDateLocal, dbTime(v.ClosedAt), string(snapshot), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }
 
@@ -28,7 +34,7 @@ func (r *Repository) GetCheckByOrder(ctx context.Context, orderID string) (*doma
 func (r *Repository) scanCheck(row *sql.Row) (*domain.Check, error) {
 	var v domain.Check
 	var status, closed, snapshot, created, updated string
-	err := row.Scan(&v.ID, &v.OrderID, &status, &v.Subtotal, &v.DiscountTotal, &v.TaxTotal, &v.Total, &v.PaidTotal, &v.BusinessDateLocal, &closed, &snapshot, &created, &updated)
+	err := row.Scan(&v.ID, &v.OrderID, &status, &v.CurrencyCode, &v.Subtotal, &v.DiscountTotal, &v.SurchargeTotal, &v.TaxTotal, &v.Total, &v.PaidTotal, &v.RemainingTotal, &v.BusinessDateLocal, &closed, &snapshot, &created, &updated)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
@@ -40,11 +46,11 @@ func (r *Repository) scanCheck(row *sql.Row) (*domain.Check, error) {
 	return &v, nil
 }
 
-const checkSelectSQL = `SELECT id,order_id,status,subtotal,discount_total,tax_total,total,paid_total,business_date_local,closed_at,snapshot,created_at,updated_at FROM checks`
+const checkSelectSQL = `SELECT id,order_id,status,currency_code,subtotal,discount_total,surcharge_total,tax_total,total,paid_total,remaining_total,business_date_local,closed_at,snapshot,created_at,updated_at FROM checks`
 
 func (r *Repository) UpdateCheckPaidTotal(ctx context.Context, v *domain.Check) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `UPDATE checks SET status = ?, paid_total = ?, updated_at = ? WHERE id = ?`,
-		string(v.Status), v.PaidTotal, dbTime(v.UpdatedAt), v.ID)
+	_, err := r.execer(ctx).ExecContext(ctx, `UPDATE checks SET status = ?, paid_total = ?, remaining_total = ?, updated_at = ? WHERE id = ?`,
+		string(v.Status), v.PaidTotal, v.RemainingTotal, dbTime(v.UpdatedAt), v.ID)
 	return normalizeErr(err)
 }
 

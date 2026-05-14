@@ -13,8 +13,14 @@ func (r *Repository) CreatePrecheck(ctx context.Context, v *domain.Precheck) err
 	if len(snapshot) == 0 {
 		snapshot = json.RawMessage(`{}`)
 	}
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO prechecks(id,order_id,status,version,supersedes_precheck_id,subtotal,discount_total,tax_total,total,paid_total,snapshot,created_at,issued_at,closed_at,cancelled_by_employee_id,cancellation_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.OrderID, string(v.Status), v.Version, nullableString(v.SupersedesPrecheckID), v.Subtotal, v.DiscountTotal, v.TaxTotal, v.Total, v.PaidTotal, string(snapshot), dbTime(v.CreatedAt), dbTime(v.IssuedAt), nullableTime(v.ClosedAt), nullableString(v.CancelledByEmployeeID), nullableString(v.CancellationReason))
+	if v.CurrencyCode == "" {
+		v.CurrencyCode = "RUB"
+	}
+	if v.RemainingTotal == 0 && v.Total >= v.PaidTotal {
+		v.RemainingTotal = v.Total - v.PaidTotal
+	}
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO prechecks(id,order_id,status,version,supersedes_precheck_id,currency_code,subtotal,discount_total,surcharge_total,tax_total,total,paid_total,remaining_total,snapshot,created_at,issued_at,closed_at,cancelled_by_employee_id,cancellation_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.OrderID, string(v.Status), v.Version, nullableString(v.SupersedesPrecheckID), v.CurrencyCode, v.Subtotal, v.DiscountTotal, v.SurchargeTotal, v.TaxTotal, v.Total, v.PaidTotal, v.RemainingTotal, string(snapshot), dbTime(v.CreatedAt), dbTime(v.IssuedAt), nullableTime(v.ClosedAt), nullableString(v.CancelledByEmployeeID), nullableString(v.CancellationReason))
 	return normalizeErr(err)
 }
 
@@ -60,8 +66,8 @@ func (r *Repository) UpdatePrecheckLifecycle(ctx context.Context, v *domain.Prec
 }
 
 func (r *Repository) UpdatePrecheckPayment(ctx context.Context, v *domain.Precheck) error {
-	result, err := r.execer(ctx).ExecContext(ctx, `UPDATE prechecks SET status = ?, paid_total = ?, closed_at = ? WHERE id = ?`,
-		string(v.Status), v.PaidTotal, nullableTime(v.ClosedAt), v.ID)
+	result, err := r.execer(ctx).ExecContext(ctx, `UPDATE prechecks SET status = ?, paid_total = ?, remaining_total = ?, closed_at = ? WHERE id = ?`,
+		string(v.Status), v.PaidTotal, v.RemainingTotal, nullableTime(v.ClosedAt), v.ID)
 	if err != nil {
 		return normalizeErr(err)
 	}
@@ -83,7 +89,7 @@ func (r *Repository) scanPrecheck(row *sql.Row) (*domain.Precheck, error) {
 	return v, nil
 }
 
-const precheckSelectSQL = `SELECT id,order_id,status,version,supersedes_precheck_id,subtotal,discount_total,tax_total,total,paid_total,snapshot,created_at,issued_at,closed_at,cancelled_by_employee_id,cancellation_reason FROM prechecks`
+const precheckSelectSQL = `SELECT id,order_id,status,version,supersedes_precheck_id,currency_code,subtotal,discount_total,surcharge_total,tax_total,total,paid_total,remaining_total,snapshot,created_at,issued_at,closed_at,cancelled_by_employee_id,cancellation_reason FROM prechecks`
 
 type precheckScanner interface {
 	Scan(dest ...any) error
@@ -93,7 +99,7 @@ func scanPrecheckFields(scanner precheckScanner) (*domain.Precheck, error) {
 	var v domain.Precheck
 	var status, snapshot, created, issued string
 	var supersedes, closed, cancelledBy, reason sql.NullString
-	err := scanner.Scan(&v.ID, &v.OrderID, &status, &v.Version, &supersedes, &v.Subtotal, &v.DiscountTotal, &v.TaxTotal, &v.Total, &v.PaidTotal, &snapshot, &created, &issued, &closed, &cancelledBy, &reason)
+	err := scanner.Scan(&v.ID, &v.OrderID, &status, &v.Version, &supersedes, &v.CurrencyCode, &v.Subtotal, &v.DiscountTotal, &v.SurchargeTotal, &v.TaxTotal, &v.Total, &v.PaidTotal, &v.RemainingTotal, &snapshot, &created, &issued, &closed, &cancelledBy, &reason)
 	if err != nil {
 		return nil, err
 	}

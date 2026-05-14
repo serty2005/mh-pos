@@ -184,14 +184,11 @@ func TestPrechecksAllowOnlyOneIssuedPrecheckPerOrder(t *testing.T) {
 	}
 }
 
-func TestPrecheckTotalsMustMatchSnapshotFormula(t *testing.T) {
+func TestPrecheckTotalsAllowInclusiveTaxSnapshot(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)
 
-	_, err := db.ExecContext(ctx, `INSERT INTO prechecks(id,order_id,status,subtotal,discount_total,tax_total,total,snapshot,created_at,issued_at) VALUES ('precheck-bad','order-1','issued',100,10,5,100,'{}',?,?)`, schemaTestTime, schemaTestTime)
-	if err == nil {
-		t.Fatal("expected inconsistent precheck total to fail")
-	}
+	execSchema(t, ctx, db, `INSERT INTO prechecks(id,order_id,status,subtotal,discount_total,tax_total,total,snapshot,created_at,issued_at) VALUES ('precheck-inclusive','order-1','issued',100,0,20,100,'{}',?,?)`, schemaTestTime, schemaTestTime)
 }
 
 func TestPrecheckLifecycleFoundationConstraints(t *testing.T) {

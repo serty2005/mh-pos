@@ -165,12 +165,39 @@ CREATE TABLE IF NOT EXISTS catalog_items (
   last_synced_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS tax_profiles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  tax_exempt INTEGER NOT NULL DEFAULT 0 CHECK (tax_exempt IN (0,1)),
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tax_rules (
+  id TEXT PRIMARY KEY,
+  tax_profile_id TEXT NOT NULL REFERENCES tax_profiles(id),
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('percentage','fixed')),
+  mode TEXT NOT NULL CHECK (mode IN ('inclusive','exclusive')),
+  rate_basis_points INTEGER NOT NULL DEFAULT 0 CHECK (rate_basis_points >= 0),
+  amount_minor INTEGER NOT NULL DEFAULT 0 CHECK (amount_minor >= 0),
+  compound INTEGER NOT NULL DEFAULT 0 CHECK (compound IN (0,1)),
+  priority INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS tax_rules_profile_priority ON tax_rules(tax_profile_id, priority, id);
+
 CREATE TABLE IF NOT EXISTS menu_items (
   id TEXT PRIMARY KEY,
   catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
   name TEXT NOT NULL,
   price INTEGER NOT NULL CHECK (price >= 0),
   currency TEXT NOT NULL,
+  tax_profile_id TEXT REFERENCES tax_profiles(id),
   active INTEGER NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -223,6 +250,8 @@ CREATE TABLE IF NOT EXISTS order_lines (
   quantity INTEGER NOT NULL CHECK (quantity > 0),
   unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
   total_price INTEGER NOT NULL CHECK (total_price >= 0),
+  currency_code TEXT NOT NULL DEFAULT 'RUB' CHECK (currency_code GLOB '[A-Z][A-Z][A-Z]'),
+  tax_profile_id TEXT REFERENCES tax_profiles(id),
   status TEXT NOT NULL CHECK (status IN ('active', 'cancelled', 'voided')),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -232,11 +261,14 @@ CREATE TABLE IF NOT EXISTS checks (
   id TEXT PRIMARY KEY,
   order_id TEXT NOT NULL UNIQUE REFERENCES orders(id),
   status TEXT NOT NULL CHECK (status IN ('open', 'paid', 'refunded', 'voided')),
+  currency_code TEXT NOT NULL DEFAULT 'RUB' CHECK (currency_code GLOB '[A-Z][A-Z][A-Z]'),
   subtotal INTEGER NOT NULL CHECK (subtotal >= 0),
   discount_total INTEGER NOT NULL CHECK (discount_total >= 0),
+  surcharge_total INTEGER NOT NULL DEFAULT 0 CHECK (surcharge_total >= 0),
   tax_total INTEGER NOT NULL CHECK (tax_total >= 0),
   total INTEGER NOT NULL CHECK (total >= 0),
   paid_total INTEGER NOT NULL CHECK (paid_total >= 0),
+  remaining_total INTEGER NOT NULL DEFAULT 0 CHECK (remaining_total >= 0),
   business_date_local TEXT NOT NULL CHECK (business_date_local GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
   closed_at TEXT NOT NULL,
   snapshot TEXT NOT NULL CHECK (json_valid(snapshot)),
@@ -250,18 +282,20 @@ CREATE TABLE IF NOT EXISTS prechecks (
   status TEXT NOT NULL CHECK (status IN ('issued', 'closed', 'cancelled', 'superseded')),
   version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
   supersedes_precheck_id TEXT CHECK (supersedes_precheck_id IS NULL OR supersedes_precheck_id <> ''),
+  currency_code TEXT NOT NULL DEFAULT 'RUB' CHECK (currency_code GLOB '[A-Z][A-Z][A-Z]'),
   subtotal INTEGER NOT NULL CHECK (subtotal >= 0),
   discount_total INTEGER NOT NULL CHECK (discount_total >= 0),
+  surcharge_total INTEGER NOT NULL DEFAULT 0 CHECK (surcharge_total >= 0),
   tax_total INTEGER NOT NULL CHECK (tax_total >= 0),
   total INTEGER NOT NULL CHECK (total >= 0),
   paid_total INTEGER NOT NULL DEFAULT 0 CHECK (paid_total >= 0),
+  remaining_total INTEGER NOT NULL DEFAULT 0 CHECK (remaining_total >= 0),
   snapshot TEXT NOT NULL CHECK (json_valid(snapshot)),
   created_at TEXT NOT NULL,
   issued_at TEXT NOT NULL,
   closed_at TEXT,
   cancelled_by_employee_id TEXT REFERENCES employees(id),
   cancellation_reason TEXT CHECK (cancellation_reason IS NULL OR cancellation_reason <> ''),
-  CHECK (total = subtotal - discount_total + tax_total),
   CHECK (paid_total <= total),
   CHECK (closed_at IS NULL OR status IN ('closed', 'cancelled', 'superseded')),
   CHECK (closed_at IS NOT NULL OR status = 'issued')
@@ -270,6 +304,111 @@ CREATE TABLE IF NOT EXISTS prechecks (
 CREATE UNIQUE INDEX IF NOT EXISTS prechecks_one_issued_per_order ON prechecks(order_id) WHERE status = 'issued';
 CREATE UNIQUE INDEX IF NOT EXISTS prechecks_order_version ON prechecks(order_id, version);
 CREATE INDEX IF NOT EXISTS prechecks_order_id_created_at ON prechecks(order_id, created_at);
+
+CREATE TABLE IF NOT EXISTS order_line_discounts (
+  id TEXT PRIMARY KEY,
+  order_id TEXT NOT NULL REFERENCES orders(id),
+  order_line_id TEXT REFERENCES order_lines(id),
+  scope TEXT NOT NULL CHECK (scope IN ('line','order')),
+  amount_kind TEXT NOT NULL CHECK (amount_kind IN ('percentage','fixed')),
+  amount_minor INTEGER NOT NULL DEFAULT 0 CHECK (amount_minor >= 0),
+  value_basis_points INTEGER NOT NULL DEFAULT 0 CHECK (value_basis_points >= 0),
+  reason TEXT,
+  created_at TEXT NOT NULL,
+  CHECK (scope = 'order' OR order_line_id IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS order_line_discounts_order_created_at ON order_line_discounts(order_id, created_at);
+
+CREATE TABLE IF NOT EXISTS order_level_discounts (
+  id TEXT PRIMARY KEY,
+  order_discount_id TEXT NOT NULL UNIQUE REFERENCES order_line_discounts(id),
+  order_id TEXT NOT NULL REFERENCES orders(id),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS order_surcharges (
+  id TEXT PRIMARY KEY,
+  order_id TEXT NOT NULL REFERENCES orders(id),
+  kind TEXT NOT NULL CHECK (kind IN ('service_charge','pb1_service_fee','manual')),
+  amount_kind TEXT NOT NULL CHECK (amount_kind IN ('percentage','fixed')),
+  amount_minor INTEGER NOT NULL DEFAULT 0 CHECK (amount_minor >= 0),
+  value_basis_points INTEGER NOT NULL DEFAULT 0 CHECK (value_basis_points >= 0),
+  reason TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS order_surcharges_order_created_at ON order_surcharges(order_id, created_at);
+
+CREATE TABLE IF NOT EXISTS service_charge_rules (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('service_charge','pb1_service_fee','manual')),
+  amount_kind TEXT NOT NULL CHECK (amount_kind IN ('percentage','fixed')),
+  amount_minor INTEGER NOT NULL DEFAULT 0 CHECK (amount_minor >= 0),
+  value_basis_points INTEGER NOT NULL DEFAULT 0 CHECK (value_basis_points >= 0),
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS precheck_lines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  precheck_id TEXT NOT NULL REFERENCES prechecks(id),
+  order_line_id TEXT NOT NULL,
+  menu_item_id TEXT NOT NULL,
+  catalog_item_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  unit_price_minor INTEGER NOT NULL CHECK (unit_price_minor >= 0),
+  subtotal_minor INTEGER NOT NULL CHECK (subtotal_minor >= 0),
+  discount_total_minor INTEGER NOT NULL CHECK (discount_total_minor >= 0),
+  surcharge_total_minor INTEGER NOT NULL CHECK (surcharge_total_minor >= 0),
+  taxable_base_minor INTEGER NOT NULL CHECK (taxable_base_minor >= 0),
+  tax_total_minor INTEGER NOT NULL CHECK (tax_total_minor >= 0),
+  tax_added_minor INTEGER NOT NULL DEFAULT 0 CHECK (tax_added_minor >= 0),
+  total_minor INTEGER NOT NULL CHECK (total_minor >= 0),
+  currency_code TEXT NOT NULL CHECK (currency_code GLOB '[A-Z][A-Z][A-Z]'),
+  tax_profile_id TEXT
+);
+
+CREATE TABLE IF NOT EXISTS precheck_discounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  precheck_id TEXT NOT NULL REFERENCES prechecks(id),
+  discount_id TEXT NOT NULL,
+  scope TEXT NOT NULL CHECK (scope IN ('line','order')),
+  order_line_id TEXT,
+  amount_kind TEXT NOT NULL CHECK (amount_kind IN ('percentage','fixed')),
+  amount_minor INTEGER NOT NULL CHECK (amount_minor >= 0),
+  reason TEXT
+);
+
+CREATE TABLE IF NOT EXISTS precheck_surcharges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  precheck_id TEXT NOT NULL REFERENCES prechecks(id),
+  surcharge_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('service_charge','pb1_service_fee','manual')),
+  amount_kind TEXT NOT NULL CHECK (amount_kind IN ('percentage','fixed')),
+  amount_minor INTEGER NOT NULL CHECK (amount_minor >= 0),
+  reason TEXT
+);
+
+CREATE TABLE IF NOT EXISTS precheck_taxes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  precheck_id TEXT NOT NULL REFERENCES prechecks(id),
+  order_line_id TEXT NOT NULL,
+  tax_profile_id TEXT NOT NULL,
+  tax_rule_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('percentage','fixed')),
+  mode TEXT NOT NULL CHECK (mode IN ('inclusive','exclusive')),
+  rate_basis_points INTEGER NOT NULL DEFAULT 0 CHECK (rate_basis_points >= 0),
+  taxable_base_minor INTEGER NOT NULL CHECK (taxable_base_minor >= 0),
+  tax_amount_minor INTEGER NOT NULL CHECK (tax_amount_minor >= 0),
+  compound INTEGER NOT NULL DEFAULT 0 CHECK (compound IN (0,1)),
+  priority INTEGER NOT NULL DEFAULT 0
+);
 
 CREATE TABLE IF NOT EXISTS payments (
   id TEXT PRIMARY KEY,

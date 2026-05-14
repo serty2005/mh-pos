@@ -29,6 +29,9 @@ const (
 	PermissionOrderChangeQuantity      PermissionID = "pos.order.change_quantity"
 	PermissionOrderVoidLine            PermissionID = "pos.order.void_line"
 	PermissionOrderClose               PermissionID = "pos.order.close"
+	PermissionPricingView              PermissionID = "pos.pricing.view"
+	PermissionPricingDiscountApply     PermissionID = "pos.pricing.discount.apply"
+	PermissionPricingSurchargeApply    PermissionID = "pos.pricing.surcharge.apply"
 	PermissionPrecheckIssue            PermissionID = "pos.precheck.issue"
 	PermissionPrecheckView             PermissionID = "pos.precheck.view"
 	PermissionPrecheckReprint          PermissionID = "pos.precheck.reprint"
@@ -64,6 +67,9 @@ var knownPermissionIDs = map[PermissionID]struct{}{
 	PermissionOrderChangeQuantity:      {},
 	PermissionOrderVoidLine:            {},
 	PermissionOrderClose:               {},
+	PermissionPricingView:              {},
+	PermissionPricingDiscountApply:     {},
+	PermissionPricingSurchargeApply:    {},
 	PermissionPrecheckIssue:            {},
 	PermissionPrecheckView:             {},
 	PermissionPrecheckReprint:          {},
@@ -116,6 +122,9 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionOrderChangeQuantity,
 			PermissionOrderVoidLine,
 			PermissionOrderClose,
+			PermissionPricingView,
+			PermissionPricingDiscountApply,
+			PermissionPricingSurchargeApply,
 			PermissionPrecheckIssue,
 			PermissionPrecheckView,
 			PermissionPrecheckReprint,
@@ -143,6 +152,9 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionOrderChangeQuantity,
 			PermissionOrderVoidLine,
 			PermissionOrderClose,
+			PermissionPricingView,
+			PermissionPricingDiscountApply,
+			PermissionPricingSurchargeApply,
 			PermissionPrecheckIssue,
 			PermissionPrecheckView,
 			PermissionPrecheckReprint,
@@ -170,6 +182,7 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionOrderChangeQuantity,
 			PermissionOrderVoidLine,
 			PermissionOrderClose,
+			PermissionPricingView,
 			PermissionPrecheckIssue,
 			PermissionPrecheckView,
 			PermissionPrecheckReprint,
@@ -196,6 +209,9 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionOrderChangeQuantity,
 			PermissionOrderVoidLine,
 			PermissionOrderClose,
+			PermissionPricingView,
+			PermissionPricingDiscountApply,
+			PermissionPricingSurchargeApply,
 			PermissionPrecheckIssue,
 			PermissionPrecheckView,
 			PermissionPrecheckReprint,

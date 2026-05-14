@@ -19,6 +19,8 @@ type OrderLine struct {
 	Quantity      int64           `json:"quantity"`
 	UnitPrice     int64           `json:"unit_price"`
 	TotalPrice    int64           `json:"total_price"`
+	CurrencyCode  string          `json:"currency_code"`
+	TaxProfileID  *string         `json:"tax_profile_id,omitempty"`
 	Status        OrderLineStatus `json:"status"`
 	CreatedAt     time.Time       `json:"created_at"`
 	UpdatedAt     time.Time       `json:"updated_at"`

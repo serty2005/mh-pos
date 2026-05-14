@@ -14,18 +14,24 @@ import (
 	"pos-backend/internal/pos/app/shared"
 	"pos-backend/internal/pos/domain"
 	domainprecheck "pos-backend/internal/pos/domain/precheck"
+	domainpricing "pos-backend/internal/pos/domain/pricing"
 	"pos-backend/internal/pos/ports"
 )
 
 type Service struct {
-	repo  ports.Repository
-	tx    txmanager.Manager
-	ids   idgen.Generator
-	clock clock.Clock
+	repo    ports.Repository
+	tx      txmanager.Manager
+	ids     idgen.Generator
+	clock   clock.Clock
+	pricing pricingCalculator
 }
 
-func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock) *Service {
-	return &Service{repo: repo, tx: tx, ids: ids, clock: clock}
+type pricingCalculator interface {
+	CalculateOrderPricing(context.Context, string) (domainpricing.CalculationResult, error)
+}
+
+func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, pricing pricingCalculator) *Service {
+	return &Service{repo: repo, tx: tx, ids: ids, clock: clock, pricing: pricing}
 }
 
 type IssuePrecheckCommand struct {
@@ -108,10 +114,6 @@ func (s *Service) IssuePrecheck(ctx context.Context, cmd IssuePrecheckCommand) (
 		} else if !errors.Is(err, domain.ErrNotFound) {
 			return err
 		}
-		lines, err := s.repo.ListOrderLines(ctx, order.ID)
-		if err != nil {
-			return err
-		}
 		existing, err := s.repo.ListPrechecksByOrder(ctx, order.ID)
 		if err != nil {
 			return err
@@ -125,22 +127,23 @@ func (s *Service) IssuePrecheck(ctx context.Context, cmd IssuePrecheckCommand) (
 				supersedesPrecheckID = &id
 			}
 		}
-		var subtotal int64
-		for _, line := range lines {
-			if line.Status == domain.OrderLineActive {
-				subtotal += line.TotalPrice
-			}
-		}
-		precheck, err = domainprecheck.NewIssuedVersion(s.ids.NewID(), order.ID, version, supersedesPrecheckID, subtotal, 0, 0, now)
+		calculation, err := s.pricing.CalculateOrderPricing(ctx, order.ID)
 		if err != nil {
 			return err
 		}
-		snapshot, err := buildPrecheckSnapshot(order, lines, precheck, now)
+		precheck, err = domainprecheck.NewIssuedVersion(s.ids.NewID(), order.ID, version, supersedesPrecheckID, calculation.CurrencyCode, calculation.SubtotalMinor, calculation.DiscountTotalMinor, calculation.SurchargeTotalMinor, calculation.TaxTotalMinor, calculation.GrandTotalMinor, now)
+		if err != nil {
+			return err
+		}
+		snapshot, err := buildPrecheckSnapshot(order, precheck, calculation, now)
 		if err != nil {
 			return err
 		}
 		precheck.Snapshot = snapshot
 		if err := s.repo.CreatePrecheck(ctx, precheck); err != nil {
+			return err
+		}
+		if err := s.repo.CreatePrecheckBreakdown(ctx, precheck.ID, calculation); err != nil {
 			return err
 		}
 		order.Status = domain.OrderLocked
@@ -296,57 +299,44 @@ func (s *Service) CancelPrecheck(ctx context.Context, cmd CancelPrecheckCommand)
 }
 
 type precheckSnapshot struct {
-	DocumentType  string                 `json:"document_type"`
-	PrecheckID    string                 `json:"precheck_id"`
-	OrderID       string                 `json:"order_id"`
-	TableID       string                 `json:"table_id"`
-	TableName     string                 `json:"table_name"`
-	Version       int                    `json:"version"`
-	Subtotal      int64                  `json:"subtotal"`
-	DiscountTotal int64                  `json:"discount_total"`
-	TaxTotal      int64                  `json:"tax_total"`
-	Total         int64                  `json:"total"`
-	IssuedAt      string                 `json:"issued_at"`
-	Lines         []precheckSnapshotLine `json:"lines"`
+	DocumentType   string                          `json:"document_type"`
+	PrecheckID     string                          `json:"precheck_id"`
+	OrderID        string                          `json:"order_id"`
+	TableID        string                          `json:"table_id"`
+	TableName      string                          `json:"table_name"`
+	Version        int                             `json:"version"`
+	Subtotal       int64                           `json:"subtotal"`
+	DiscountTotal  int64                           `json:"discount_total"`
+	TaxTotal       int64                           `json:"tax_total"`
+	Total          int64                           `json:"total"`
+	PaidTotal      int64                           `json:"paid_total"`
+	RemainingTotal int64                           `json:"remaining_total"`
+	CurrencyCode   string                          `json:"currency_code"`
+	SurchargeTotal int64                           `json:"surcharge_total"`
+	Breakdown      domainpricing.CalculationResult `json:"breakdown"`
+	IssuedAt       string                          `json:"issued_at"`
+	Lines          []domainpricing.LineBreakdown   `json:"lines"`
 }
 
-type precheckSnapshotLine struct {
-	ID            string `json:"id"`
-	MenuItemID    string `json:"menu_item_id"`
-	CatalogItemID string `json:"catalog_item_id"`
-	Name          string `json:"name"`
-	Quantity      int64  `json:"quantity"`
-	UnitPrice     int64  `json:"unit_price"`
-	TotalPrice    int64  `json:"total_price"`
-}
-
-func buildPrecheckSnapshot(order *domain.Order, lines []domain.OrderLine, precheck *domain.Precheck, now time.Time) (json.RawMessage, error) {
+func buildPrecheckSnapshot(order *domain.Order, precheck *domain.Precheck, calculation domainpricing.CalculationResult, now time.Time) (json.RawMessage, error) {
 	snapshot := precheckSnapshot{
-		DocumentType:  "precheck",
-		PrecheckID:    precheck.ID,
-		OrderID:       order.ID,
-		TableID:       order.TableID,
-		TableName:     order.TableName,
-		Version:       precheck.Version,
-		Subtotal:      precheck.Subtotal,
-		DiscountTotal: precheck.DiscountTotal,
-		TaxTotal:      precheck.TaxTotal,
-		Total:         precheck.Total,
-		IssuedAt:      shared.DBTime(now),
-	}
-	for _, line := range lines {
-		if line.Status != domain.OrderLineActive {
-			continue
-		}
-		snapshot.Lines = append(snapshot.Lines, precheckSnapshotLine{
-			ID:            line.ID,
-			MenuItemID:    line.MenuItemID,
-			CatalogItemID: line.CatalogItemID,
-			Name:          line.Name,
-			Quantity:      line.Quantity,
-			UnitPrice:     line.UnitPrice,
-			TotalPrice:    line.TotalPrice,
-		})
+		DocumentType:   "precheck",
+		PrecheckID:     precheck.ID,
+		OrderID:        order.ID,
+		TableID:        order.TableID,
+		TableName:      order.TableName,
+		Version:        precheck.Version,
+		CurrencyCode:   precheck.CurrencyCode,
+		Subtotal:       precheck.Subtotal,
+		DiscountTotal:  precheck.DiscountTotal,
+		SurchargeTotal: precheck.SurchargeTotal,
+		TaxTotal:       precheck.TaxTotal,
+		Total:          precheck.Total,
+		PaidTotal:      precheck.PaidTotal,
+		RemainingTotal: precheck.RemainingTotal,
+		Breakdown:      calculation,
+		IssuedAt:       shared.DBTime(now),
+		Lines:          calculation.Lines,
 	}
 	body, err := json.Marshal(snapshot)
 	if err != nil {

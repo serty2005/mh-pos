@@ -21,11 +21,14 @@ type Check struct {
 	ID                string          `json:"id"`
 	OrderID           string          `json:"order_id"`
 	Status            CheckStatus     `json:"status"`
+	CurrencyCode      string          `json:"currency_code"`
 	Subtotal          int64           `json:"subtotal"`
 	DiscountTotal     int64           `json:"discount_total"`
+	SurchargeTotal    int64           `json:"surcharge_total"`
 	TaxTotal          int64           `json:"tax_total"`
 	Total             int64           `json:"total"`
 	PaidTotal         int64           `json:"paid_total"`
+	RemainingTotal    int64           `json:"remaining_total"`
 	BusinessDateLocal string          `json:"business_date_local"`
 	ClosedAt          time.Time       `json:"closed_at"`
 	Snapshot          json.RawMessage `json:"snapshot,omitempty"`
@@ -42,6 +45,7 @@ func (c *Check) ApplyRefund(amount int64, now time.Time) error {
 		return fmt.Errorf("%w: check refund would cause negative paid_total", shared.ErrConflict)
 	}
 	c.PaidTotal -= amount
+	c.RemainingTotal = c.Total - c.PaidTotal
 	c.UpdatedAt = now
 	if c.PaidTotal < c.Total {
 		c.Status = CheckRefunded

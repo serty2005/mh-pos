@@ -77,8 +77,8 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
 - `IssuePrecheck` разрешен только для `open` order.
 - Active issued precheck блокирует order и переводит order в `locked`.
 - Precheck snapshot immutable и используется как source для reprint.
-- В текущем коде subtotal считается по active order lines.
-- В текущем коде `discount_total` и `tax_total` при issue precheck передаются как `0`.
+- В текущем коде subtotal, discounts, surcharges, taxes и grand total считаются backend `Pricing` boundary по active order lines и сохраненным order pricing adjustments.
+- Snapshot сохраняет `currency_code`, `subtotal_minor`, `discount_total_minor`, `surcharge_total_minor`, `tax_total_minor`, `grand_total_minor`, `paid_total_minor`, `remaining_total_minor` и breakdown строк/скидок/надбавок/налогов.
 - `CancelPrecheck` требует manager employee id, manager PIN, reason и permissions `pos.precheck.cancel.request` + `pos.precheck.cancel`.
 - Cancel unpaid active precheck переводит order обратно в `open`.
 
@@ -127,34 +127,35 @@ Foundation only:
 
 Реализовано сейчас:
 
-- В runtime есть поля `discount_total` и `tax_total` на precheck/check.
-- Полноценного discount/surcharge/tax engine в коде нет.
-- `IssuePrecheck` фактически создает precheck с нулевыми discount/tax totals при текущей реализации.
-- UI не считает authoritative totals.
+- В runtime есть отдельный domain/application boundary `Pricing`; он не смешан с Order, Payment или Catalog aggregate.
+- Backend считает authoritative totals; UI отправляет команды и отображает результат, но не является financial authority.
+- Канонический pipeline:
+  - order lines subtotal;
+  - line discounts;
+  - order discounts;
+  - surcharge/service charge;
+  - taxable base;
+  - taxes;
+  - grand total.
+- Discount Before Tax является текущим backend-инвариантом.
+- Все persistent money values хранятся как `INTEGER` minor units; проценты хранятся как basis points.
+- Rounding policy: deterministic integer half-up minor units (`integer_half_up_minor_units_v1`), без float/decimal runtime math.
+- Поддержаны line/order manual discounts, percentage/fixed discounts, manual/service/PB1 surcharge foundation, percentage/fixed surcharge.
+- Discount cannot exceed target amount; negative line/precheck/check totals rejected by domain calculation.
+- Tax foundation поддерживает `tax_profiles`, `tax_rules`, percentage/fixed components, inclusive/exclusive mode, multiple components per line, compound tax foundation и tax exempt profile foundation; inclusive tax попадает в `tax_total_minor`, но не увеличивает `grand_total_minor`.
+- `GET /api/v1/orders/{id}/pricing` возвращает calculated preview.
+- `POST /api/v1/orders/{id}/discounts` и `POST /api/v1/orders/{id}/surcharges` сохраняют order pricing adjustments для open order.
+- `IssuePrecheck` сохраняет immutable financial snapshot и persistence breakdown в `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`.
 
 Запланировано до пилота:
 
-- Ввести отдельную bounded context / policy area `Pricing`.
 - Скидки и надбавки редактируются только на Cloud-стороне.
 - Edge получает pricing rules только как master-data/publication payload и не создает их локально.
-- Rule model должен поддержать минимум:
-  - percentage discount;
-  - fixed-amount discount;
-  - surcharge/service charge;
-  - manual line override / manual amount override только при явном разрешении policy.
-- Порядок расчета:
-  - line subtotal;
-  - применение скидок/надбавок по определенному порядку;
-  - затем расчет налога на итоговую taxable base, если такая pilot policy утверждена.
-- Налог нельзя смешивать с каталогом.
-- Нужен отдельный `tax_profile` / tax policy concept, привязываемый к menu/catalog item.
-- Authoritative discount/tax/totals считает только backend.
-- UI отправляет команды и отображает результат, но не рассчитывает authoritative financial totals.
+- Cloud -> Edge publication для pricing/tax rules должен быть доведен отдельно; сейчас локальный Edge schema/runtime foundation уже есть.
+- Manual line override / manual amount override допускается только при явном разрешении policy.
 
 Вне текущего объема до реализации:
 
-- любые claims о готовом discount engine;
-- API/payload fields скидок, которых нет в коде;
 - fiscal/legal tax adapter.
 
 ## Modifiers

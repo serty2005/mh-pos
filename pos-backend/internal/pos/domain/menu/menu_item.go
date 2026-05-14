@@ -8,6 +8,7 @@ type MenuItem struct {
 	Name          string    `json:"name"`
 	Price         int64     `json:"price"`
 	Currency      string    `json:"currency"`
+	TaxProfileID  *string   `json:"tax_profile_id,omitempty"`
 	Active        bool      `json:"active"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`

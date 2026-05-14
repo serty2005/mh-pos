@@ -343,7 +343,7 @@ func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
-	case "restaurants", "devices", "orders", "order_lines", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "roles", "employees", "catalog_items", "menu_items", "auth_sessions", "halls", "tables", "cloud_master_sync_state":
+	case "restaurants", "devices", "orders", "order_lines", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "roles", "employees", "catalog_items", "menu_items", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_discounts", "precheck_surcharges", "precheck_taxes":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -1417,6 +1417,98 @@ func TestIssuePrecheckCreatesDormantSnapshotAndLocksOrderWithoutLegacyCheck(t *t
 	}
 }
 
+func TestIssuePrecheckPersistsPricingBreakdownAndCheckUsesSnapshotTotals(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	now := fixedClock{}.Now().Format(time.RFC3339Nano)
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO tax_profiles(id,name,tax_exempt,active,created_at,updated_at) VALUES ('tax-profile-1','VAT',0,1,?,?)`, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO tax_rules(id,tax_profile_id,name,kind,mode,rate_basis_points,amount_minor,compound,priority,active,created_at,updated_at) VALUES ('tax-rule-1','tax-profile-1','VAT 10','percentage','exclusive',1000,0,0,1,1,?,?)`, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE menu_items SET tax_profile_id = 'tax-profile-1' WHERE id = ?`, f.menuItem.ID); err != nil {
+		t.Fatal(err)
+	}
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddDiscount(f.ctx, app.AddDiscountCommand{
+		CommandMeta: f.edgeMetaCommand("cmd-pricing-discount"),
+		OrderID:     order.ID,
+		OrderLineID: line.ID,
+		Scope:       domain.DiscountScopeLine,
+		AmountKind:  domain.AmountFixed,
+		AmountMinor: 300,
+		Reason:      "manual",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddSurcharge(f.ctx, app.AddSurchargeCommand{
+		CommandMeta:      f.edgeMetaCommand("cmd-pricing-surcharge"),
+		OrderID:          order.ID,
+		Kind:             domain.SurchargeServiceCharge,
+		AmountKind:       domain.AmountPercentage,
+		ValueBasisPoints: 1000,
+		Reason:           "service",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pricing, err := f.service.GetOrderPricingAsOperator(f.ctx, order.ID, f.edgeMeta())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pricing.SubtotalMinor != 2000 || pricing.DiscountTotalMinor != 300 || pricing.SurchargeTotalMinor != 170 || pricing.TaxTotalMinor != 187 || pricing.GrandTotalMinor != 2057 {
+		t.Fatalf("unexpected pricing preview: %+v", pricing)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMetaCommand("cmd-issue-pricing-precheck"), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if precheck.CurrencyCode != "RUB" || precheck.Subtotal != 2000 || precheck.DiscountTotal != 300 || precheck.SurchargeTotal != 170 || precheck.TaxTotal != 187 || precheck.Total != 2057 || precheck.RemainingTotal != 2057 {
+		t.Fatalf("unexpected priced precheck: %+v", precheck)
+	}
+	for table, want := range map[string]int{
+		"precheck_lines":      1,
+		"precheck_discounts":  1,
+		"precheck_surcharges": 1,
+		"precheck_taxes":      1,
+	} {
+		if got := countRows(t, f, table); got != want {
+			t.Fatalf("expected %s rows %d, got %d", table, want, got)
+		}
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE menu_items SET price = 9999 WHERE id = ?`, f.menuItem.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE tax_rules SET rate_basis_points = 5000 WHERE id = 'tax-rule-1'`); err != nil {
+		t.Fatal(err)
+	}
+	storedPrecheck, err := f.service.GetPrecheck(f.ctx, precheck.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storedPrecheck.Total != 2057 || storedPrecheck.TaxTotal != 187 {
+		t.Fatalf("precheck snapshot was mutated by menu/tax changes: %+v", storedPrecheck)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMetaCommand("cmd-pay-priced-precheck"), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if check.Total != precheck.Total || check.TaxTotal != precheck.TaxTotal || check.SurchargeTotal != precheck.SurchargeTotal || check.PaidTotal != precheck.Total {
+		t.Fatalf("check did not use precheck snapshot totals: check=%+v precheck=%+v", check, precheck)
+	}
+}
+
 func TestCannotAddLineToLockedOrder(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
@@ -2376,20 +2468,20 @@ func TestRefundPaymentOnActivePrecheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
- 	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
- 		CommandMeta: f.edgeMeta(),
- 		PrecheckID:  precheck.ID,
- 		Method:      domain.PaymentCash,
- 		Amount:      precheck.Total,
- 		Currency:    "rub",
- 	})
- 	if err != nil {
- 		t.Fatal(err)
- 	}
- 	refundedPayment, err := f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
- 		CommandMeta: f.managerEdgeMetaCommand(t, "refund-cmd"),
- 		PaymentID:   payment.ID,
- 	})
+	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+		CommandMeta: f.edgeMeta(),
+		PrecheckID:  precheck.ID,
+		Method:      domain.PaymentCash,
+		Amount:      precheck.Total,
+		Currency:    "rub",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refundedPayment, err := f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
+		CommandMeta: f.managerEdgeMetaCommand(t, "refund-cmd"),
+		PaymentID:   payment.ID,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2441,17 +2533,17 @@ func TestRefundPaymentAfterFullPaymentWithCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
- 	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
- 	if err != nil {
- 		t.Fatal(err)
- 	}
- 	if check == nil {
- 		t.Fatal("expected check after full payment")
- 	}
- 	refundedPayment, err := f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
- 		CommandMeta: f.managerEdgeMetaCommand(t, "refund-cmd"),
- 		PaymentID:   payment.ID,
- 	})
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if check == nil {
+		t.Fatal("expected check after full payment")
+	}
+	refundedPayment, err := f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
+		CommandMeta: f.managerEdgeMetaCommand(t, "refund-cmd"),
+		PaymentID:   payment.ID,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

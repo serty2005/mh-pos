@@ -296,7 +296,7 @@ func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*d
 		if !menuItem.Active {
 			return fmt.Errorf("%w: menu item is archived", domain.ErrConflict)
 		}
-		line = &domain.OrderLine{ID: s.ids.NewID(), OrderID: order.ID, MenuItemID: menuItem.ID, CatalogItemID: menuItem.CatalogItemID, Name: menuItem.Name, Quantity: cmd.Quantity, UnitPrice: menuItem.Price, TotalPrice: menuItem.Price * cmd.Quantity, Status: domain.OrderLineActive, CreatedAt: now, UpdatedAt: now}
+		line = &domain.OrderLine{ID: s.ids.NewID(), OrderID: order.ID, MenuItemID: menuItem.ID, CatalogItemID: menuItem.CatalogItemID, Name: menuItem.Name, Quantity: cmd.Quantity, UnitPrice: menuItem.Price, TotalPrice: menuItem.Price * cmd.Quantity, CurrencyCode: menuItem.Currency, TaxProfileID: menuItem.TaxProfileID, Status: domain.OrderLineActive, CreatedAt: now, UpdatedAt: now}
 		if err := s.repo.CreateOrderLine(ctx, line); err != nil {
 			return err
 		}
