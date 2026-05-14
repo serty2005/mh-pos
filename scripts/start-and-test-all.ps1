@@ -1,4 +1,4 @@
-п»їparam(
+param(
     [switch]$SkipDocker,
     [switch]$SkipUI,
     [switch]$SkipLicense,
@@ -45,7 +45,7 @@ function Test-PortOpen([int]$Port) {
 
 function Assert-PortFree([int]$Port, [string]$Name) {
     if (Test-PortOpen -Port $Port) {
-        throw "${Name}: РїРѕСЂС‚ $Port СѓР¶Рµ Р·Р°РЅСЏС‚. РћСЃС‚Р°РЅРѕРІРё С‚РµРєСѓС‰РёР№ РїСЂРѕС†РµСЃСЃ РёР»Рё РІС‹РїРѕР»РЅРё scripts\stop-and-test-all.ps1 РїРµСЂРµРґ Р·Р°РїСѓСЃРєРѕРј РЅРѕРІРѕРіРѕ СЃС‚РµРєР°."
+        throw "${Name}: порт $Port уже занят. Останови текущий процесс или выполни scripts\stop-and-test-all.ps1 перед запуском нового стека."
     }
 }
 
@@ -62,17 +62,17 @@ function Remove-LocalSqlite([string]$BasePath, [string]$Name) {
     foreach ($path in @($BasePath, "$BasePath-wal", "$BasePath-shm")) {
         if (Test-Path -LiteralPath $path) {
             Remove-Item -LiteralPath $path -Force
-            Write-Host "РЈРґР°Р»РµРЅ ${Name} SQLite С„Р°Р№Р»: $path"
+            Write-Host "Удален ${Name} SQLite файл: $path"
         }
     }
 }
 
 function Show-LogTail([string]$Name, [string]$LogPath) {
-    Write-Host "РџРѕСЃР»РµРґРЅРёРµ СЃС‚СЂРѕРєРё Р»РѕРіР° РґР»СЏ ${Name}: $LogPath" -ForegroundColor Yellow
+    Write-Host "Последние строки лога для ${Name}: $LogPath" -ForegroundColor Yellow
     if (Test-Path -LiteralPath $LogPath) {
         Get-Content -LiteralPath $LogPath -Tail 80 -Encoding UTF8 | ForEach-Object { Write-Host $_ }
     } else {
-        Write-Host "Р¤Р°Р№Р» Р»РѕРіР° РїРѕРєР° РЅРµ СЃРѕР·РґР°РЅ."
+        Write-Host "Файл лога пока не создан."
     }
 }
 
@@ -108,29 +108,29 @@ function Start-ServiceWindow([string]$Name, [string]$WorkDir, [string]$Command, 
         -WorkingDirectory $WorkDir `
         -WindowStyle Hidden `
         -PassThru
-    Write-Host "Р—Р°РїСѓС‰РµРЅ $Name (PID=$($proc.Id), log=$LogPath)"
+    Write-Host "Запущен $Name (PID=$($proc.Id), log=$LogPath)"
     return $proc
 }
 
 function Ensure-DockerPostgres() {
-    Write-Step "РџСЂРѕРІРµСЂСЏСЋ Docker PostgreSQL container: $dockerName"
+    Write-Step "Проверяю Docker PostgreSQL container: $dockerName"
     $exists = docker ps -a --filter "name=^${dockerName}$" --format "{{.Names}}" 2>$null
     if (-not $exists) {
-        Write-Host "Container РЅРµ РЅР°Р№РґРµРЅ. РЎРѕР·РґР°СЋ..."
+        Write-Host "Container не найден. Создаю..."
         docker run --name $dockerName -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=mh_pos_cloud -p 5432:5432 -d postgres:16 | Out-Null
     } else {
         $running = docker ps --filter "name=^${dockerName}$" --format "{{.Names}}"
         if (-not $running) {
-            Write-Host "Container РЅР°Р№РґРµРЅ, РЅРѕ РѕСЃС‚Р°РЅРѕРІР»РµРЅ. Р—Р°РїСѓСЃРєР°СЋ..."
+            Write-Host "Container найден, но остановлен. Запускаю..."
             docker start $dockerName | Out-Null
         } else {
-            Write-Host "Container СѓР¶Рµ Р·Р°РїСѓС‰РµРЅ."
+            Write-Host "Container уже запущен."
         }
     }
 }
 
 function Wait-DockerPostgresReady([int]$TimeoutSec) {
-    Write-Step "Р–РґСѓ РіРѕС‚РѕРІРЅРѕСЃС‚СЊ Docker PostgreSQL"
+    Write-Step "Жду готовность Docker PostgreSQL"
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     while ((Get-Date) -lt $deadline) {
         docker exec $dockerName pg_isready -U postgres -d mh_pos_cloud 2>$null | Out-Null
@@ -139,7 +139,7 @@ function Wait-DockerPostgresReady([int]$TimeoutSec) {
         }
         Start-Sleep -Seconds 2
     }
-    throw "Docker PostgreSQL РЅРµ РїРµСЂРµС€РµР» РІ ready Р·Р° ${TimeoutSec}s"
+    throw "Docker PostgreSQL не перешел в ready за ${TimeoutSec}s"
 }
 
 function Stop-StartedProcess([object]$Process, [string]$Name) {
@@ -149,13 +149,13 @@ function Stop-StartedProcess([object]$Process, [string]$Name) {
     try {
         Get-Process -Id $Process.Id -ErrorAction Stop | Out-Null
         taskkill.exe /PID $Process.Id /T /F | Out-Null
-        Write-Host "РћСЃС‚Р°РЅРѕРІР»РµРЅ $Name РїРѕСЃР»Рµ РѕС€РёР±РєРё (PID=$($Process.Id))" -ForegroundColor Yellow
+        Write-Host "Остановлен $Name после ошибки (PID=$($Process.Id))" -ForegroundColor Yellow
     } catch {
     }
 }
 
 if (Test-Path -LiteralPath $pidFile) {
-    throw "PID file СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚: $pidFile. Р’С‹РїРѕР»РЅРё scripts\stop-and-test-all.ps1 РїРµСЂРµРґ Р·Р°РїСѓСЃРєРѕРј РЅРѕРІРѕРіРѕ Р»РѕРєР°Р»СЊРЅРѕРіРѕ СЃС‚РµРєР°."
+    throw "PID file уже существует: $pidFile. Выполни scripts\stop-and-test-all.ps1 перед запуском нового локального стека."
 }
 
 New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
@@ -189,14 +189,14 @@ if (-not $SkipDocker) {
 }
 
 if (-not $PreserveLocalData) {
-    Write-Step "РћС‡РёС‰Р°СЋ Р»РѕРєР°Р»СЊРЅС‹Рµ SQLite Р‘Р” dev stack"
+    Write-Step "Очищаю локальные SQLite БД dev stack"
     Remove-LocalSqlite -BasePath (Join-Path $posDir "data\pos-edge.db") -Name "POS Edge"
     Remove-LocalSqlite -BasePath (Join-Path $licenseDir "data\license-server.db") -Name "License Server"
 }
 
 try {
 if (-not $SkipLicense) {
-    Write-Step "Р—Р°РїСѓСЃРєР°СЋ license-server"
+    Write-Step "Запускаю license-server"
     $started.license_server = Start-ServiceWindow `
         -Name "license-server" `
         -WorkDir $licenseDir `
@@ -204,13 +204,13 @@ if (-not $SkipLicense) {
         -EnvVars @{} `
         -LogPath $licenseLog
 
-    Write-Step "Р–РґСѓ health endpoint license-server"
+    Write-Step "Жду health endpoint license-server"
     if (-not (Wait-HttpOk -Url "http://localhost:8095/health" -TimeoutSec $StartupTimeoutSec -Name "license-server" -LogPath $licenseLog)) {
-        throw "license-server РЅРµ РїРµСЂРµС€РµР» РІ healthy Р·Р° ${StartupTimeoutSec}s"
+        throw "license-server не перешел в healthy за ${StartupTimeoutSec}s"
     }
 }
 
-Write-Step "Р—Р°РїСѓСЃРєР°СЋ cloud-backend"
+Write-Step "Запускаю cloud-backend"
 $started.cloud_backend = Start-ServiceWindow `
     -Name "cloud-backend" `
     -WorkDir $cloudDir `
@@ -222,12 +222,12 @@ $started.cloud_backend = Start-ServiceWindow `
     } `
     -LogPath $cloudLog
 
-Write-Step "Р–РґСѓ health endpoint cloud-backend"
+Write-Step "Жду health endpoint cloud-backend"
 if (-not (Wait-HttpOk -Url "http://localhost:8090/health" -TimeoutSec $StartupTimeoutSec -Name "cloud-backend" -LogPath $cloudLog)) {
-    throw "cloud-backend РЅРµ РїРµСЂРµС€РµР» РІ healthy Р·Р° ${StartupTimeoutSec}s"
+    throw "cloud-backend не перешел в healthy за ${StartupTimeoutSec}s"
 }
 
-Write-Step "Р—Р°РїСѓСЃРєР°СЋ pos-backend"
+Write-Step "Запускаю pos-backend"
 $started.pos_backend = Start-ServiceWindow `
     -Name "pos-backend" `
     -WorkDir $posDir `
@@ -238,13 +238,13 @@ $started.pos_backend = Start-ServiceWindow `
     } `
     -LogPath $posLog
 
-Write-Step "Р–РґСѓ health endpoint POS"
+Write-Step "Жду health endpoint POS"
 if (-not (Wait-HttpOk -Url "http://localhost:8080/health" -TimeoutSec $StartupTimeoutSec -Name "pos-backend" -LogPath $posLog)) {
-    throw "pos-backend РЅРµ РїРµСЂРµС€РµР» РІ healthy Р·Р° ${StartupTimeoutSec}s"
+    throw "pos-backend не перешел в healthy за ${StartupTimeoutSec}s"
 }
 
 if (-not $SkipUI) {
-    Write-Step "Р—Р°РїСѓСЃРєР°СЋ pos-ui"
+    Write-Step "Запускаю pos-ui"
     $started.pos_ui = Start-ServiceWindow `
         -Name "pos-ui" `
         -WorkDir $uiDir `
@@ -252,21 +252,21 @@ if (-not $SkipUI) {
         -EnvVars @{} `
         -LogPath $uiLog
 
-    Write-Step "Р–РґСѓ UI endpoint"
+    Write-Step "Жду UI endpoint"
     if (-not (Wait-HttpOk -Url "http://localhost:5173" -TimeoutSec $StartupTimeoutSec -Name "pos-ui" -LogPath $uiLog)) {
-        throw "pos-ui РЅРµ РїРµСЂРµС€РµР» РІ healthy Р·Р° ${StartupTimeoutSec}s"
+        throw "pos-ui не перешел в healthy за ${StartupTimeoutSec}s"
     }
 }
 
 $bootstrap = $null
 if (-not $SkipBootstrap) {
-    Write-Step "Р’С‹РїРѕР»РЅСЏСЋ production-way Cloud -> Edge bootstrap"
+    Write-Step "Выполняю production-way Cloud -> Edge bootstrap"
     $bootstrap = & $bootstrapScript -RunRuntimeSmoke
     $bootstrap | Out-Host
 }
 
 if ($bootstrap) {
-    Write-Step "Р’С‹РїРѕР»РЅСЏСЋ authenticated POS sync smoke checks"
+    Write-Step "Выполняю authenticated POS sync smoke checks"
     $clientDeviceId = "dev-smoke-client"
     $loginBody = @{
         node_device_id   = $bootstrap.node_device_id
@@ -296,7 +296,7 @@ $pidPayload = @{
 $pidPayload | Set-Content -Path $pidFile -Encoding UTF8
 
 Write-Host ""
-Write-Host "Р“РѕС‚РѕРІРѕ. РЎРµСЂРІРёСЃС‹ Р·Р°РїСѓС‰РµРЅС‹, Р±Р°Р·РѕРІС‹Рµ РїСЂРѕРІРµСЂРєРё РїСЂРѕС€Р»Рё." -ForegroundColor Green
+Write-Host "Готово. Сервисы запущены, базовые проверки прошли." -ForegroundColor Green
 Write-Host "Cloud health: http://localhost:8090/health"
 if (-not $SkipLicense) {
     Write-Host "License health: http://localhost:8095/health"
@@ -305,9 +305,9 @@ Write-Host "POS health:   http://localhost:8080/health"
 if (-not $SkipUI) {
     Write-Host "POS UI:       http://localhost:5173"
 }
-Write-Host "Р›РѕРіРё:         $logsDir"
+Write-Host "Логи:         $logsDir"
 Write-Host "PID file:     $pidFile"
-Write-Host "РћСЃС‚Р°РЅРѕРІРєР°:"
+Write-Host "Остановка:"
 Write-Host '  powershell -ExecutionPolicy Bypass -File .\scripts\stop-and-test-all.ps1'
 } catch {
     Stop-StartedProcess -Process $started.pos_ui -Name "pos-ui"
