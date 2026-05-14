@@ -7,3 +7,6 @@ data
 .dev-stack-pids.json
 .lazyweb/
 .kilo
+*.png
+*.jpg
+*.webp
