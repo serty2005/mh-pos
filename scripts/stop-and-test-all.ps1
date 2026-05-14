@@ -1,4 +1,4 @@
-п»їparam(
+param(
     [switch]$StopDocker,
     [switch]$KeepPidFile
 )
@@ -18,19 +18,19 @@ function Stop-IfRunning([Nullable[int]]$ProcessId, [string]$Name) {
     try {
         Get-Process -Id $ProcessId -ErrorAction Stop | Out-Null
         taskkill.exe /PID $ProcessId /T /F | Out-Null
-        Write-Host "РћСЃС‚Р°РЅРѕРІР»РµРЅ $Name (PID=$ProcessId)"
+        Write-Host "Остановлен $Name (PID=$ProcessId)"
     } catch {
-        Write-Host "$Name (PID=$ProcessId) СѓР¶Рµ РЅРµ Р·Р°РїСѓС‰РµРЅ"
+        Write-Host "$Name (PID=$ProcessId) уже не запущен"
     }
 }
 
 if (-not (Test-Path $pidFile)) {
-    Write-Host "PID file РЅРµ РЅР°Р№РґРµРЅ: $pidFile"
+    Write-Host "PID file не найден: $pidFile"
     if ($StopDocker) {
-        Write-Host "РћСЃС‚Р°РЅР°РІР»РёРІР°СЋ Docker container: $dockerName"
+        Write-Host "Останавливаю Docker container: $dockerName"
         docker stop $dockerName | Out-Null
     }
-    Write-Host "Р‘РµР· PID file РЅРµС‚ Р±РµР·РѕРїР°СЃРЅРѕ РёР·РІРµСЃС‚РЅРѕРіРѕ process tree. РџСЂРё РЅРµРѕР±С…РѕРґРёРјРѕСЃС‚Рё РѕСЃС‚Р°РЅРѕРІРё РІСЂСѓС‡РЅСѓСЋ РїРѕ РїРѕСЂС‚Сѓ/РїСЂРѕС†РµСЃСЃСѓ."
+    Write-Host "Без PID file нет безопасно известного process tree. При необходимости останови вручную по порту/процессу."
     exit 0
 }
 
@@ -42,20 +42,20 @@ Stop-IfRunning -ProcessId $pids.cloud_backend_pid -Name "cloud-backend"
 Stop-IfRunning -ProcessId $pids.license_server_pid -Name "license-server"
 
 if ($StopDocker) {
-    Write-Host "РћСЃС‚Р°РЅР°РІР»РёРІР°СЋ Docker container: $dockerName"
+    Write-Host "Останавливаю Docker container: $dockerName"
     try {
         docker stop $dockerName | Out-Null
     } catch {
-        Write-Host "Docker container $dockerName РЅРµ Р·Р°РїСѓС‰РµРЅ РёР»Рё РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚"
+        Write-Host "Docker container $dockerName не запущен или отсутствует"
     }
 }
 
 if (-not $KeepPidFile) {
     Remove-Item $pidFile -Force
-    Write-Host "РЈРґР°Р»РµРЅ PID file: $pidFile"
+    Write-Host "Удален PID file: $pidFile"
 } else {
-    Write-Host "PID file СЃРѕС…СЂР°РЅРµРЅ: $pidFile"
+    Write-Host "PID file сохранен: $pidFile"
 }
 
 
-Write-Host "Р“РѕС‚РѕРІРѕ."
+Write-Host "Готово."
