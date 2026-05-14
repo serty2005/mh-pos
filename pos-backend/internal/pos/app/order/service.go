@@ -35,9 +35,16 @@ type CreateOrderCommand struct {
 
 type AddOrderLineCommand struct {
 	shared.CommandMeta
-	OrderID    string `json:"order_id"`
-	MenuItemID string `json:"menu_item_id"`
-	Quantity   int64  `json:"quantity"`
+	OrderID           string                    `json:"order_id"`
+	MenuItemID        string                    `json:"menu_item_id"`
+	Quantity          int64                     `json:"quantity"`
+	SelectedModifiers []SelectedModifierCommand `json:"selected_modifiers,omitempty"`
+}
+
+type SelectedModifierCommand struct {
+	ModifierGroupID  string `json:"modifier_group_id"`
+	ModifierOptionID string `json:"modifier_option_id"`
+	Quantity         int64  `json:"quantity"`
 }
 
 type CloseOrderCommand struct {
@@ -296,13 +303,104 @@ func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*d
 		if !menuItem.Active {
 			return fmt.Errorf("%w: menu item is archived", domain.ErrConflict)
 		}
-		line = &domain.OrderLine{ID: s.ids.NewID(), OrderID: order.ID, MenuItemID: menuItem.ID, CatalogItemID: menuItem.CatalogItemID, Name: menuItem.Name, Quantity: cmd.Quantity, UnitPrice: menuItem.Price, TotalPrice: menuItem.Price * cmd.Quantity, CurrencyCode: menuItem.Currency, TaxProfileID: menuItem.TaxProfileID, Status: domain.OrderLineActive, CreatedAt: now, UpdatedAt: now}
+		selectedModifiers, modifierTotal, err := s.buildSelectedModifiers(ctx, cmd.SelectedModifiers)
+		if err != nil {
+			return err
+		}
+		line = &domain.OrderLine{ID: s.ids.NewID(), OrderID: order.ID, MenuItemID: menuItem.ID, CatalogItemID: menuItem.CatalogItemID, Name: menuItem.Name, Quantity: cmd.Quantity, UnitPrice: menuItem.Price, TotalPrice: menuItem.Price*cmd.Quantity + modifierTotal, CurrencyCode: menuItem.Currency, TaxProfileID: menuItem.TaxProfileID, Status: domain.OrderLineActive, CreatedAt: now, UpdatedAt: now}
+		for i := range selectedModifiers {
+			selectedModifiers[i].ID = s.ids.NewID()
+			selectedModifiers[i].OrderLineID = line.ID
+		}
+		if err := s.validateSelectedModifiers(ctx, menuItem.ID, selectedModifiers); err != nil {
+			return err
+		}
+		line.Modifiers = selectedModifiers
 		if err := s.repo.CreateOrderLine(ctx, line); err != nil {
 			return err
+		}
+		for i := range selectedModifiers {
+			if err := s.repo.CreateOrderLineModifier(ctx, &selectedModifiers[i]); err != nil {
+				return err
+			}
 		}
 		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Order", order.ID, "OrderLineAdded", line)
 	})
 	return line, err
+}
+
+func (s *Service) buildSelectedModifiers(ctx context.Context, selected []SelectedModifierCommand) ([]domain.LineModifier, int64, error) {
+	if len(selected) == 0 {
+		return nil, 0, nil
+	}
+	groupIDs := make([]string, 0, len(selected))
+	for _, modifier := range selected {
+		groupID := strings.TrimSpace(modifier.ModifierGroupID)
+		optionID := strings.TrimSpace(modifier.ModifierOptionID)
+		if groupID == "" || optionID == "" || modifier.Quantity <= 0 {
+			return nil, 0, fmt.Errorf("%w: selected modifier group, option and positive quantity are required", domain.ErrInvalid)
+		}
+		groupIDs = append(groupIDs, groupID)
+	}
+	optionsByGroup, err := s.repo.ListModifierOptionsByGroupIDs(ctx, groupIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	var out []domain.LineModifier
+	var total int64
+	for _, selectedModifier := range selected {
+		groupID := strings.TrimSpace(selectedModifier.ModifierGroupID)
+		optionID := strings.TrimSpace(selectedModifier.ModifierOptionID)
+		var option *domain.ModifierOption
+		for i := range optionsByGroup[groupID] {
+			if optionsByGroup[groupID][i].ID == optionID {
+				option = &optionsByGroup[groupID][i]
+				break
+			}
+		}
+		if option == nil {
+			return nil, 0, fmt.Errorf("%w: selected modifier option is not active in group", domain.ErrInvalid)
+		}
+		lineTotal := option.PriceMinor * selectedModifier.Quantity
+		total += lineTotal
+		out = append(out, domain.LineModifier{ModifierGroupID: groupID, ModifierOptionID: optionID, Name: option.Name, Quantity: selectedModifier.Quantity, UnitPrice: option.PriceMinor, TotalPrice: lineTotal})
+	}
+	return out, total, nil
+}
+
+func (s *Service) validateSelectedModifiers(ctx context.Context, menuItemID string, selected []domain.LineModifier) error {
+	groups, err := s.repo.ListModifierGroupsForMenuItem(ctx, menuItemID)
+	if err != nil {
+		return err
+	}
+	if len(groups) == 0 && len(selected) > 0 {
+		return fmt.Errorf("%w: menu item has no modifiers", domain.ErrInvalid)
+	}
+	counts := map[string]int64{}
+	allowed := map[string]domain.ModifierGroup{}
+	for _, group := range groups {
+		allowed[group.ID] = group
+	}
+	for _, modifier := range selected {
+		group, ok := allowed[modifier.ModifierGroupID]
+		if !ok || !group.Active {
+			return fmt.Errorf("%w: selected modifier group is not active for menu item", domain.ErrInvalid)
+		}
+		counts[modifier.ModifierGroupID] += modifier.Quantity
+	}
+	for _, group := range groups {
+		count := counts[group.ID]
+		if group.Required && count == 0 {
+			return fmt.Errorf("%w: required modifier group is missing", domain.ErrInvalid)
+		}
+		if count < int64(group.MinCount) {
+			return fmt.Errorf("%w: modifier group min_count is not satisfied", domain.ErrInvalid)
+		}
+		if group.MaxCount > 0 && count > int64(group.MaxCount) {
+			return fmt.Errorf("%w: modifier group max_count exceeded", domain.ErrInvalid)
+		}
+	}
+	return nil
 }
 
 func (s *Service) CloseOrder(ctx context.Context, cmd CloseOrderCommand) (*domain.Order, error) {

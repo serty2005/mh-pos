@@ -25,10 +25,13 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 
 type CreateCatalogItemCommand struct {
 	shared.CommandMeta
-	Type     domain.CatalogItemType `json:"type"`
-	Name     string                 `json:"name"`
-	SKU      string                 `json:"sku"`
-	BaseUnit string                 `json:"base_unit"`
+	Type               domain.CatalogItemType `json:"type"`
+	FolderID           string                 `json:"folder_id,omitempty"`
+	Name               string                 `json:"name"`
+	SKU                string                 `json:"sku"`
+	BaseUnit           string                 `json:"base_unit"`
+	KitchenType        string                 `json:"kitchen_type,omitempty"`
+	AccountingCategory string                 `json:"accounting_category,omitempty"`
 }
 
 func (s *Service) ListCatalogItems(ctx context.Context) ([]domain.CatalogItem, error) {
@@ -47,14 +50,20 @@ func (s *Service) CreateCatalogItem(ctx context.Context, cmd CreateCatalogItemCo
 	if err := shared.EnsureMasterDataWriteAllowed(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
-	if cmd.Type != domain.CatalogItemIngredient && cmd.Type != domain.CatalogItemDish && cmd.Type != domain.CatalogItemGood {
+	switch cmd.Type {
+	case domain.CatalogItemDish, domain.CatalogItemGood, domain.CatalogItemSemiFinished, domain.CatalogItemService:
+	default:
 		return nil, fmt.Errorf("%w: unsupported catalog item type", domain.ErrInvalid)
 	}
 	if strings.TrimSpace(cmd.Name) == "" || strings.TrimSpace(cmd.SKU) == "" || strings.TrimSpace(cmd.BaseUnit) == "" {
 		return nil, fmt.Errorf("%w: name, sku and base_unit are required", domain.ErrInvalid)
 	}
 	now := s.clock.Now()
-	v := &domain.CatalogItem{ID: s.ids.NewID(), Type: cmd.Type, Name: cmd.Name, SKU: cmd.SKU, BaseUnit: cmd.BaseUnit, Active: true, CreatedAt: now, UpdatedAt: now}
+	var folderID *string
+	if v := strings.TrimSpace(cmd.FolderID); v != "" {
+		folderID = &v
+	}
+	v := &domain.CatalogItem{ID: s.ids.NewID(), Type: cmd.Type, FolderID: folderID, Name: strings.TrimSpace(cmd.Name), SKU: strings.TrimSpace(cmd.SKU), BaseUnit: strings.TrimSpace(cmd.BaseUnit), KitchenType: strings.TrimSpace(cmd.KitchenType), AccountingCategory: strings.TrimSpace(cmd.AccountingCategory), Active: true, CreatedAt: now, UpdatedAt: now}
 	return v, s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err

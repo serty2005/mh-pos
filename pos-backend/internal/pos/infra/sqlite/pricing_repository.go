@@ -55,6 +55,31 @@ func (r *Repository) ListOrderSurcharges(ctx context.Context, orderID string) ([
 	return out, normalizeErr(rows.Err())
 }
 
+func (r *Repository) ListActivePricingPolicies(ctx context.Context, restaurantID string) ([]pricing.PricingPolicy, error) {
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,restaurant_id,kind,name,scope,amount_kind,amount_minor,value_basis_points,application_index,requires_permission,active,created_at,updated_at FROM pricing_policies WHERE restaurant_id = ? AND active = 1 ORDER BY application_index, id`, restaurantID)
+	if err != nil {
+		return nil, normalizeErr(err)
+	}
+	defer rows.Close()
+	var out []pricing.PricingPolicy
+	for rows.Next() {
+		var v pricing.PricingPolicy
+		var kind, scope, amountKind, created, updated string
+		var active int
+		if err := rows.Scan(&v.ID, &v.RestaurantID, &kind, &v.Name, &scope, &amountKind, &v.AmountMinor, &v.ValueBasisPoints, &v.ApplicationIndex, &v.RequiresPermission, &active, &created, &updated); err != nil {
+			return nil, normalizeErr(err)
+		}
+		v.Kind = pricing.PricingPolicyKind(kind)
+		v.Scope = pricing.DiscountScope(scope)
+		v.AmountKind = pricing.AmountKind(amountKind)
+		v.Active = active == 1
+		v.CreatedAt = parseTime(created)
+		v.UpdatedAt = parseTime(updated)
+		out = append(out, v)
+	}
+	return out, normalizeErr(rows.Err())
+}
+
 func (r *Repository) ListTaxProfilesByIDs(ctx context.Context, ids []string) (map[string]pricing.TaxProfile, error) {
 	out := map[string]pricing.TaxProfile{}
 	for _, id := range ids {
@@ -119,6 +144,13 @@ func (r *Repository) CreatePrecheckBreakdown(ctx context.Context, precheckID str
 			precheckID, line.OrderLineID, line.MenuItemID, line.CatalogItemID, line.Name, line.Quantity, line.UnitPriceMinor, line.SubtotalMinor, line.DiscountTotalMinor, line.SurchargeTotalMinor, line.TaxableBaseMinor, line.TaxTotalMinor, line.TaxAddedMinor, line.TotalMinor, line.CurrencyCode, nullableString(line.TaxProfileID))
 		if err != nil {
 			return normalizeErr(err)
+		}
+		for _, modifier := range line.Modifiers {
+			_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO precheck_line_modifiers(precheck_id,order_line_id,modifier_group_id,modifier_option_id,name,quantity,unit_price_minor,total_minor) VALUES (?,?,?,?,?,?,?,?)`,
+				precheckID, line.OrderLineID, modifier.ModifierGroupID, modifier.ModifierOptionID, modifier.Name, modifier.Quantity, modifier.UnitPriceMinor, modifier.TotalMinor)
+			if err != nil {
+				return normalizeErr(err)
+			}
 		}
 	}
 	for _, discount := range result.Discounts {

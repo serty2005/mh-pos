@@ -58,6 +58,7 @@ func (Calculator) Calculate(input CalculationInput) (CalculationResult, error) {
 			Name:           line.Name,
 			Quantity:       line.Quantity,
 			UnitPriceMinor: line.UnitPrice,
+			Modifiers:      append([]LineModifierInput(nil), line.Modifiers...),
 			SubtotalMinor:  line.Subtotal,
 			CurrencyCode:   line.CurrencyCode,
 			TaxProfileID:   line.TaxProfileID,
@@ -122,7 +123,28 @@ func validateLine(line OrderLineInput, currency string) error {
 	if line.Quantity <= 0 || line.UnitPrice < 0 || line.Subtotal < 0 {
 		return fmt.Errorf("%w: order line money values must be non-negative", shared.ErrInvalid)
 	}
-	if line.UnitPrice*line.Quantity != line.Subtotal {
+	modifierTotal := int64(0)
+	for _, modifier := range line.Modifiers {
+		if strings.TrimSpace(modifier.ModifierGroupID) == "" || strings.TrimSpace(modifier.ModifierOptionID) == "" || strings.TrimSpace(modifier.Name) == "" {
+			return fmt.Errorf("%w: line modifier identity is required", shared.ErrInvalid)
+		}
+		if modifier.Quantity <= 0 || modifier.UnitPriceMinor < 0 || modifier.TotalMinor < 0 {
+			return fmt.Errorf("%w: line modifier money values must be non-negative", shared.ErrInvalid)
+		}
+		if modifier.Quantity*modifier.UnitPriceMinor != modifier.TotalMinor {
+			return fmt.Errorf("%w: line modifier subtotal is inconsistent", shared.ErrInvalid)
+		}
+		next, err := safeAddNonNegative(modifierTotal, modifier.TotalMinor, "line modifier total overflow")
+		if err != nil {
+			return err
+		}
+		modifierTotal = next
+	}
+	expectedSubtotal, err := safeAddNonNegative(line.UnitPrice*line.Quantity, modifierTotal, "line subtotal overflow")
+	if err != nil {
+		return err
+	}
+	if expectedSubtotal != line.Subtotal {
 		return fmt.Errorf("%w: order line subtotal is inconsistent", shared.ErrInvalid)
 	}
 	if strings.ToUpper(strings.TrimSpace(line.CurrencyCode)) != currency {

@@ -79,9 +79,27 @@ type CatalogItemType = catalog.CatalogItemType
 type CatalogItem = catalog.CatalogItem
 
 const (
-	CatalogItemIngredient = catalog.CatalogItemIngredient
-	CatalogItemDish       = catalog.CatalogItemDish
-	CatalogItemGood       = catalog.CatalogItemGood
+	CatalogItemDish         = catalog.CatalogItemDish
+	CatalogItemGood         = catalog.CatalogItemGood
+	CatalogItemSemiFinished = catalog.CatalogItemSemiFinished
+	CatalogItemService      = catalog.CatalogItemService
+)
+
+type CatalogFolder = catalog.CatalogFolder
+type FolderParameter = catalog.FolderParameter
+type CatalogTag = catalog.CatalogTag
+type CatalogItemTag = catalog.CatalogItemTag
+type ModifierTargetType = catalog.ModifierTargetType
+type ModifierGroup = catalog.ModifierGroup
+type ModifierOption = catalog.ModifierOption
+type ModifierGroupBinding = catalog.ModifierGroupBinding
+type MenuItemModifierGroup = catalog.MenuItemModifierGroup
+
+const (
+	ModifierTargetMenuItem    = catalog.ModifierTargetMenuItem
+	ModifierTargetCatalogItem = catalog.ModifierTargetCatalogItem
+	ModifierTargetFolder      = catalog.ModifierTargetFolder
+	ModifierTargetTag         = catalog.ModifierTargetTag
 )
 
 type MenuItem = menu.MenuItem
@@ -107,6 +125,7 @@ const (
 
 type OrderLineStatus = order.OrderLineStatus
 type OrderLine = order.OrderLine
+type LineModifier = order.LineModifier
 
 const (
 	OrderLineActive    = order.OrderLineActive
@@ -161,6 +180,8 @@ type OrderSurcharge = pricing.OrderSurcharge
 type TaxProfile = pricing.TaxProfile
 type TaxRule = pricing.TaxRule
 type ServiceChargeRule = pricing.ServiceChargeRule
+type PricingPolicyKind = pricing.PricingPolicyKind
+type PricingPolicy = pricing.PricingPolicy
 type CalculationModifier = pricing.CalculationModifier
 type CalculationInput = pricing.CalculationInput
 type CalculationResult = pricing.CalculationResult
@@ -170,6 +191,7 @@ type DiscountBreakdown = pricing.DiscountBreakdown
 type SurchargeBreakdown = pricing.SurchargeBreakdown
 type TaxComponent = pricing.TaxComponent
 type TaxComponentBreakdown = pricing.TaxComponentBreakdown
+type LineModifierInput = pricing.LineModifierInput
 
 const (
 	AmountPercentage = pricing.AmountPercentage
@@ -180,6 +202,9 @@ const (
 
 	ModifierTypeDiscount  = pricing.ModifierTypeDiscount
 	ModifierTypeSurcharge = pricing.ModifierTypeSurcharge
+
+	PricingPolicyDiscount  = pricing.PricingPolicyDiscount
+	PricingPolicySurcharge = pricing.PricingPolicySurcharge
 
 	SurchargeServiceCharge = pricing.SurchargeServiceCharge
 	SurchargePB1ServiceFee = pricing.SurchargePB1ServiceFee

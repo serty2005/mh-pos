@@ -47,6 +47,36 @@ type Repository interface {
 	UpdateCatalogItem(context.Context, domain.CatalogItem) (domain.CatalogItem, error)
 	GetCatalogItem(context.Context, string) (domain.CatalogItem, error)
 	ListCatalogItems(context.Context, string) ([]domain.CatalogItem, error)
+	CreateCatalogFolder(context.Context, domain.CatalogFolder) (domain.CatalogFolder, error)
+	UpdateCatalogFolder(context.Context, domain.CatalogFolder) (domain.CatalogFolder, error)
+	GetCatalogFolder(context.Context, string) (domain.CatalogFolder, error)
+	ListCatalogFolders(context.Context, string) ([]domain.CatalogFolder, error)
+	CreateFolderParameter(context.Context, domain.FolderParameter) (domain.FolderParameter, error)
+	UpdateFolderParameter(context.Context, domain.FolderParameter) (domain.FolderParameter, error)
+	GetFolderParameter(context.Context, string) (domain.FolderParameter, error)
+	ListFolderParameters(context.Context, string) ([]domain.FolderParameter, error)
+	CreateCatalogTag(context.Context, domain.CatalogTag) (domain.CatalogTag, error)
+	UpdateCatalogTag(context.Context, domain.CatalogTag) (domain.CatalogTag, error)
+	GetCatalogTag(context.Context, string) (domain.CatalogTag, error)
+	ListCatalogTags(context.Context, string) ([]domain.CatalogTag, error)
+	AssignCatalogItemTag(context.Context, domain.CatalogItemTag) (domain.CatalogItemTag, error)
+	ListCatalogItemTags(context.Context, string) ([]domain.CatalogItemTag, error)
+	CreateModifierGroup(context.Context, domain.ModifierGroup) (domain.ModifierGroup, error)
+	UpdateModifierGroup(context.Context, domain.ModifierGroup) (domain.ModifierGroup, error)
+	GetModifierGroup(context.Context, string) (domain.ModifierGroup, error)
+	ListModifierGroups(context.Context, string) ([]domain.ModifierGroup, error)
+	CreateModifierOption(context.Context, domain.ModifierOption) (domain.ModifierOption, error)
+	UpdateModifierOption(context.Context, domain.ModifierOption) (domain.ModifierOption, error)
+	GetModifierOption(context.Context, string) (domain.ModifierOption, error)
+	ListModifierOptions(context.Context, string) ([]domain.ModifierOption, error)
+	CreateModifierGroupBinding(context.Context, domain.ModifierGroupBinding) (domain.ModifierGroupBinding, error)
+	UpdateModifierGroupBinding(context.Context, domain.ModifierGroupBinding) (domain.ModifierGroupBinding, error)
+	GetModifierGroupBinding(context.Context, string) (domain.ModifierGroupBinding, error)
+	ListModifierGroupBindings(context.Context, string) ([]domain.ModifierGroupBinding, error)
+	CreatePricingPolicy(context.Context, domain.PricingPolicy) (domain.PricingPolicy, error)
+	UpdatePricingPolicy(context.Context, domain.PricingPolicy) (domain.PricingPolicy, error)
+	GetPricingPolicy(context.Context, string) (domain.PricingPolicy, error)
+	ListPricingPolicies(context.Context, string) ([]domain.PricingPolicy, error)
 	CreateCategory(context.Context, domain.Category) (domain.Category, error)
 	ListCategories(context.Context, string) ([]domain.Category, error)
 	CreateHall(context.Context, domain.Hall) (domain.Hall, error)
@@ -167,22 +197,142 @@ type RotatePINCommand struct {
 
 // CreateCatalogItemCommand описывает создание Cloud-owned catalog item.
 type CreateCatalogItemCommand struct {
-	RestaurantID string                 `json:"restaurant_id"`
-	Kind         domain.CatalogItemKind `json:"kind"`
-	Type         domain.CatalogItemKind `json:"type,omitempty"`
-	Name         string                 `json:"name"`
-	SKU          string                 `json:"sku"`
-	BaseUnit     string                 `json:"base_unit"`
+	RestaurantID       string                 `json:"restaurant_id"`
+	Kind               domain.CatalogItemKind `json:"kind"`
+	Type               domain.CatalogItemKind `json:"type,omitempty"`
+	FolderID           string                 `json:"folder_id,omitempty"`
+	Name               string                 `json:"name"`
+	SKU                string                 `json:"sku"`
+	BaseUnit           string                 `json:"base_unit"`
+	KitchenType        string                 `json:"kitchen_type,omitempty"`
+	AccountingCategory string                 `json:"accounting_category,omitempty"`
 }
 
 // UpdateCatalogItemCommand описывает изменение Cloud-owned catalog item.
 type UpdateCatalogItemCommand struct {
-	Kind     *domain.CatalogItemKind `json:"kind,omitempty"`
-	Type     *domain.CatalogItemKind `json:"type,omitempty"`
+	Kind               *domain.CatalogItemKind `json:"kind,omitempty"`
+	Type               *domain.CatalogItemKind `json:"type,omitempty"`
+	FolderID           *string                 `json:"folder_id,omitempty"`
+	Name               string                  `json:"name,omitempty"`
+	SKU                string                  `json:"sku,omitempty"`
+	BaseUnit           string                  `json:"base_unit,omitempty"`
+	KitchenType        *string                 `json:"kitchen_type,omitempty"`
+	AccountingCategory *string                 `json:"accounting_category,omitempty"`
+	Status             *domain.LifecycleStatus `json:"status,omitempty"`
+}
+
+type CreateCatalogFolderCommand struct {
+	RestaurantID string `json:"restaurant_id"`
+	ParentID     string `json:"parent_id,omitempty"`
+	Name         string `json:"name"`
+	SortOrder    int64  `json:"sort_order"`
+}
+
+type UpdateCatalogFolderCommand struct {
+	ParentID  *string                 `json:"parent_id,omitempty"`
+	Name      string                  `json:"name,omitempty"`
+	SortOrder *int64                  `json:"sort_order,omitempty"`
+	Status    *domain.LifecycleStatus `json:"status,omitempty"`
+}
+
+type CreateFolderParameterCommand struct {
+	RestaurantID string `json:"restaurant_id"`
+	FolderID     string `json:"folder_id"`
+	Key          string `json:"parameter_key"`
+	ValueType    string `json:"value_type"`
+	ValueJSON    string `json:"value_json"`
+}
+
+type UpdateFolderParameterCommand struct {
+	ValueType string                  `json:"value_type,omitempty"`
+	ValueJSON string                  `json:"value_json,omitempty"`
+	Status    *domain.LifecycleStatus `json:"status,omitempty"`
+}
+
+type CreateCatalogTagCommand struct {
+	RestaurantID string `json:"restaurant_id"`
+	Name         string `json:"name"`
+	Code         string `json:"code"`
+}
+
+type UpdateCatalogTagCommand struct {
+	Name   string                  `json:"name,omitempty"`
+	Code   string                  `json:"code,omitempty"`
+	Status *domain.LifecycleStatus `json:"status,omitempty"`
+}
+
+type AssignCatalogItemTagCommand struct {
+	RestaurantID  string `json:"restaurant_id"`
+	CatalogItemID string `json:"catalog_item_id"`
+	TagID         string `json:"tag_id"`
+}
+
+type CreateModifierGroupCommand struct {
+	RestaurantID string `json:"restaurant_id"`
+	Name         string `json:"name"`
+	Required     bool   `json:"required"`
+	MinCount     int64  `json:"min_count"`
+	MaxCount     int64  `json:"max_count"`
+}
+
+type UpdateModifierGroupCommand struct {
 	Name     string                  `json:"name,omitempty"`
-	SKU      string                  `json:"sku,omitempty"`
-	BaseUnit string                  `json:"base_unit,omitempty"`
+	Required *bool                   `json:"required,omitempty"`
+	MinCount *int64                  `json:"min_count,omitempty"`
+	MaxCount *int64                  `json:"max_count,omitempty"`
 	Status   *domain.LifecycleStatus `json:"status,omitempty"`
+}
+
+type CreateModifierOptionCommand struct {
+	RestaurantID     string `json:"restaurant_id"`
+	ModifierGroupID  string `json:"modifier_group_id"`
+	Name             string `json:"name"`
+	PriceMinor       int64  `json:"price_minor"`
+	LegacyPriceDelta *int64 `json:"price_delta,omitempty"`
+}
+
+type UpdateModifierOptionCommand struct {
+	Name       string                  `json:"name,omitempty"`
+	PriceMinor *int64                  `json:"price_minor,omitempty"`
+	Status     *domain.LifecycleStatus `json:"status,omitempty"`
+}
+
+type CreateModifierGroupBindingCommand struct {
+	RestaurantID    string                    `json:"restaurant_id"`
+	ModifierGroupID string                    `json:"modifier_group_id"`
+	TargetType      domain.ModifierTargetType `json:"target_type"`
+	TargetID        string                    `json:"target_id"`
+	SortOrder       int64                     `json:"sort_order"`
+}
+
+type UpdateModifierGroupBindingCommand struct {
+	SortOrder *int64                  `json:"sort_order,omitempty"`
+	Status    *domain.LifecycleStatus `json:"status,omitempty"`
+}
+
+type CreatePricingPolicyCommand struct {
+	RestaurantID       string                   `json:"restaurant_id"`
+	Name               string                   `json:"name"`
+	Kind               domain.PricingPolicyKind `json:"kind"`
+	Scope              string                   `json:"scope"`
+	AmountKind         string                   `json:"amount_kind"`
+	AmountMinor        int64                    `json:"amount_minor,omitempty"`
+	ValueBasisPoints   int64                    `json:"value_basis_points,omitempty"`
+	ApplicationIndex   int                      `json:"application_index"`
+	Manual             bool                     `json:"manual"`
+	RequiresPermission string                   `json:"requires_permission,omitempty"`
+}
+
+type UpdatePricingPolicyCommand struct {
+	Name               string                  `json:"name,omitempty"`
+	Scope              string                  `json:"scope,omitempty"`
+	AmountKind         string                  `json:"amount_kind,omitempty"`
+	AmountMinor        *int64                  `json:"amount_minor,omitempty"`
+	ValueBasisPoints   *int64                  `json:"value_basis_points,omitempty"`
+	ApplicationIndex   *int                    `json:"application_index,omitempty"`
+	Manual             *bool                   `json:"manual,omitempty"`
+	RequiresPermission *string                 `json:"requires_permission,omitempty"`
+	Status             *domain.LifecycleStatus `json:"status,omitempty"`
 }
 
 // CreateCategoryCommand описывает создание категории меню.
@@ -591,16 +741,19 @@ func (s *Service) CreateCatalogItem(ctx context.Context, cmd CreateCatalogItemCo
 	}
 	now := s.clock.Now().UTC()
 	item := domain.CatalogItem{
-		ID:           s.ids.NewID(),
-		RestaurantID: strings.TrimSpace(cmd.RestaurantID),
-		Kind:         cmd.Kind,
-		Name:         strings.TrimSpace(cmd.Name),
-		SKU:          strings.TrimSpace(cmd.SKU),
-		BaseUnit:     strings.TrimSpace(cmd.BaseUnit),
-		Status:       domain.StatusPublished,
-		CloudVersion: 1,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:                 s.ids.NewID(),
+		RestaurantID:       strings.TrimSpace(cmd.RestaurantID),
+		Kind:               cmd.Kind,
+		FolderID:           strings.TrimSpace(cmd.FolderID),
+		Name:               strings.TrimSpace(cmd.Name),
+		SKU:                strings.TrimSpace(cmd.SKU),
+		BaseUnit:           strings.TrimSpace(cmd.BaseUnit),
+		KitchenType:        strings.TrimSpace(cmd.KitchenType),
+		AccountingCategory: strings.TrimSpace(cmd.AccountingCategory),
+		Status:             domain.StatusPublished,
+		CloudVersion:       1,
+		CreatedAt:          now,
+		UpdatedAt:          now,
 	}
 	return s.repo.CreateCatalogItem(ctx, item)
 }
@@ -642,6 +795,15 @@ func (s *Service) UpdateCatalogItem(ctx context.Context, id string, cmd UpdateCa
 	if strings.TrimSpace(cmd.BaseUnit) != "" {
 		item.BaseUnit = strings.TrimSpace(cmd.BaseUnit)
 	}
+	if cmd.FolderID != nil {
+		item.FolderID = strings.TrimSpace(*cmd.FolderID)
+	}
+	if cmd.KitchenType != nil {
+		item.KitchenType = strings.TrimSpace(*cmd.KitchenType)
+	}
+	if cmd.AccountingCategory != nil {
+		item.AccountingCategory = strings.TrimSpace(*cmd.AccountingCategory)
+	}
 	if cmd.Status != nil {
 		if err := domain.ValidateLifecycleStatus(*cmd.Status); err != nil {
 			return domain.CatalogItem{}, err
@@ -661,6 +823,353 @@ func (s *Service) UpdateCatalogItem(ctx context.Context, id string, cmd UpdateCa
 func (s *Service) ArchiveCatalogItem(ctx context.Context, id string) (domain.CatalogItem, error) {
 	status := domain.StatusArchived
 	return s.UpdateCatalogItem(ctx, id, UpdateCatalogItemCommand{Status: &status})
+}
+
+func (s *Service) CreateCatalogFolder(ctx context.Context, cmd CreateCatalogFolderCommand) (domain.CatalogFolder, error) {
+	restaurantID, name := strings.TrimSpace(cmd.RestaurantID), strings.TrimSpace(cmd.Name)
+	if restaurantID == "" || name == "" {
+		return domain.CatalogFolder{}, fmt.Errorf("%w: restaurant_id and name are required", domain.ErrInvalid)
+	}
+	now := s.clock.Now().UTC()
+	folder := domain.CatalogFolder{ID: s.ids.NewID(), RestaurantID: restaurantID, ParentID: strings.TrimSpace(cmd.ParentID), Name: name, SortOrder: cmd.SortOrder, Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
+	return s.repo.CreateCatalogFolder(ctx, folder)
+}
+
+func (s *Service) ListCatalogFolders(ctx context.Context, restaurantID string) ([]domain.CatalogFolder, error) {
+	return s.repo.ListCatalogFolders(ctx, strings.TrimSpace(restaurantID))
+}
+
+func (s *Service) UpdateCatalogFolder(ctx context.Context, id string, cmd UpdateCatalogFolderCommand) (domain.CatalogFolder, error) {
+	folder, err := s.repo.GetCatalogFolder(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.CatalogFolder{}, err
+	}
+	if cmd.ParentID != nil {
+		folder.ParentID = strings.TrimSpace(*cmd.ParentID)
+	}
+	if strings.TrimSpace(cmd.Name) != "" {
+		folder.Name = strings.TrimSpace(cmd.Name)
+	}
+	if cmd.SortOrder != nil {
+		folder.SortOrder = *cmd.SortOrder
+	}
+	if cmd.Status != nil {
+		if err := domain.ValidateLifecycleStatus(*cmd.Status); err != nil {
+			return domain.CatalogFolder{}, err
+		}
+		folder.Status = *cmd.Status
+	}
+	folder.CloudVersion++
+	folder.UpdatedAt = s.clock.Now().UTC()
+	if folder.Status == domain.StatusArchived && folder.ArchivedAt == nil {
+		archivedAt := folder.UpdatedAt
+		folder.ArchivedAt = &archivedAt
+	}
+	return s.repo.UpdateCatalogFolder(ctx, folder)
+}
+
+func (s *Service) ArchiveCatalogFolder(ctx context.Context, id string) (domain.CatalogFolder, error) {
+	status := domain.StatusArchived
+	return s.UpdateCatalogFolder(ctx, id, UpdateCatalogFolderCommand{Status: &status})
+}
+
+func (s *Service) CreateFolderParameter(ctx context.Context, cmd CreateFolderParameterCommand) (domain.FolderParameter, error) {
+	restaurantID, folderID, key := strings.TrimSpace(cmd.RestaurantID), strings.TrimSpace(cmd.FolderID), strings.TrimSpace(cmd.Key)
+	valueType, valueJSON := strings.TrimSpace(cmd.ValueType), strings.TrimSpace(cmd.ValueJSON)
+	if restaurantID == "" || folderID == "" || key == "" || valueType == "" || valueJSON == "" || !json.Valid([]byte(valueJSON)) {
+		return domain.FolderParameter{}, fmt.Errorf("%w: folder parameter requires restaurant_id, folder_id, parameter_key, value_type and valid value_json", domain.ErrInvalid)
+	}
+	now := s.clock.Now().UTC()
+	parameter := domain.FolderParameter{ID: s.ids.NewID(), RestaurantID: restaurantID, FolderID: folderID, Key: key, ValueType: valueType, ValueJSON: canonicalJSON(valueJSON), Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
+	return s.repo.CreateFolderParameter(ctx, parameter)
+}
+
+func (s *Service) ListFolderParameters(ctx context.Context, restaurantID string) ([]domain.FolderParameter, error) {
+	return s.repo.ListFolderParameters(ctx, strings.TrimSpace(restaurantID))
+}
+
+func (s *Service) UpdateFolderParameter(ctx context.Context, id string, cmd UpdateFolderParameterCommand) (domain.FolderParameter, error) {
+	parameter, err := s.repo.GetFolderParameter(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.FolderParameter{}, err
+	}
+	if strings.TrimSpace(cmd.ValueType) != "" {
+		parameter.ValueType = strings.TrimSpace(cmd.ValueType)
+	}
+	if strings.TrimSpace(cmd.ValueJSON) != "" {
+		if !json.Valid([]byte(cmd.ValueJSON)) {
+			return domain.FolderParameter{}, fmt.Errorf("%w: value_json must be valid JSON", domain.ErrInvalid)
+		}
+		parameter.ValueJSON = canonicalJSON(cmd.ValueJSON)
+	}
+	if cmd.Status != nil {
+		if err := domain.ValidateLifecycleStatus(*cmd.Status); err != nil {
+			return domain.FolderParameter{}, err
+		}
+		parameter.Status = *cmd.Status
+	}
+	parameter.CloudVersion++
+	parameter.UpdatedAt = s.clock.Now().UTC()
+	if parameter.Status == domain.StatusArchived && parameter.ArchivedAt == nil {
+		archivedAt := parameter.UpdatedAt
+		parameter.ArchivedAt = &archivedAt
+	}
+	return s.repo.UpdateFolderParameter(ctx, parameter)
+}
+
+func (s *Service) CreateCatalogTag(ctx context.Context, cmd CreateCatalogTagCommand) (domain.CatalogTag, error) {
+	restaurantID, name, code := strings.TrimSpace(cmd.RestaurantID), strings.TrimSpace(cmd.Name), strings.TrimSpace(cmd.Code)
+	if restaurantID == "" || name == "" || code == "" {
+		return domain.CatalogTag{}, fmt.Errorf("%w: restaurant_id, name and code are required", domain.ErrInvalid)
+	}
+	now := s.clock.Now().UTC()
+	tag := domain.CatalogTag{ID: s.ids.NewID(), RestaurantID: restaurantID, Name: name, Code: code, Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
+	return s.repo.CreateCatalogTag(ctx, tag)
+}
+
+func (s *Service) ListCatalogTags(ctx context.Context, restaurantID string) ([]domain.CatalogTag, error) {
+	return s.repo.ListCatalogTags(ctx, strings.TrimSpace(restaurantID))
+}
+
+func (s *Service) UpdateCatalogTag(ctx context.Context, id string, cmd UpdateCatalogTagCommand) (domain.CatalogTag, error) {
+	tag, err := s.repo.GetCatalogTag(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.CatalogTag{}, err
+	}
+	if strings.TrimSpace(cmd.Name) != "" {
+		tag.Name = strings.TrimSpace(cmd.Name)
+	}
+	if strings.TrimSpace(cmd.Code) != "" {
+		tag.Code = strings.TrimSpace(cmd.Code)
+	}
+	if cmd.Status != nil {
+		if err := domain.ValidateLifecycleStatus(*cmd.Status); err != nil {
+			return domain.CatalogTag{}, err
+		}
+		tag.Status = *cmd.Status
+	}
+	tag.CloudVersion++
+	tag.UpdatedAt = s.clock.Now().UTC()
+	if tag.Status == domain.StatusArchived && tag.ArchivedAt == nil {
+		archivedAt := tag.UpdatedAt
+		tag.ArchivedAt = &archivedAt
+	}
+	return s.repo.UpdateCatalogTag(ctx, tag)
+}
+
+func (s *Service) AssignCatalogItemTag(ctx context.Context, cmd AssignCatalogItemTagCommand) (domain.CatalogItemTag, error) {
+	restaurantID, itemID, tagID := strings.TrimSpace(cmd.RestaurantID), strings.TrimSpace(cmd.CatalogItemID), strings.TrimSpace(cmd.TagID)
+	if restaurantID == "" || itemID == "" || tagID == "" {
+		return domain.CatalogItemTag{}, fmt.Errorf("%w: restaurant_id, catalog_item_id and tag_id are required", domain.ErrInvalid)
+	}
+	tag := domain.CatalogItemTag{RestaurantID: restaurantID, CatalogItemID: itemID, TagID: tagID, CloudVersion: 1, CreatedAt: s.clock.Now().UTC()}
+	return s.repo.AssignCatalogItemTag(ctx, tag)
+}
+
+func (s *Service) CreateModifierGroup(ctx context.Context, cmd CreateModifierGroupCommand) (domain.ModifierGroup, error) {
+	restaurantID, name := strings.TrimSpace(cmd.RestaurantID), strings.TrimSpace(cmd.Name)
+	if restaurantID == "" || name == "" || cmd.MinCount < 0 || cmd.MaxCount < 0 || (cmd.MaxCount > 0 && cmd.MinCount > cmd.MaxCount) {
+		return domain.ModifierGroup{}, fmt.Errorf("%w: modifier group requires valid restaurant_id, name and min/max counts", domain.ErrInvalid)
+	}
+	now := s.clock.Now().UTC()
+	group := domain.ModifierGroup{ID: s.ids.NewID(), RestaurantID: restaurantID, Name: name, Required: cmd.Required, MinCount: cmd.MinCount, MaxCount: cmd.MaxCount, Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
+	return s.repo.CreateModifierGroup(ctx, group)
+}
+
+func (s *Service) ListModifierGroups(ctx context.Context, restaurantID string) ([]domain.ModifierGroup, error) {
+	return s.repo.ListModifierGroups(ctx, strings.TrimSpace(restaurantID))
+}
+
+func (s *Service) UpdateModifierGroup(ctx context.Context, id string, cmd UpdateModifierGroupCommand) (domain.ModifierGroup, error) {
+	group, err := s.repo.GetModifierGroup(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.ModifierGroup{}, err
+	}
+	if strings.TrimSpace(cmd.Name) != "" {
+		group.Name = strings.TrimSpace(cmd.Name)
+	}
+	if cmd.Required != nil {
+		group.Required = *cmd.Required
+	}
+	if cmd.MinCount != nil {
+		group.MinCount = *cmd.MinCount
+	}
+	if cmd.MaxCount != nil {
+		group.MaxCount = *cmd.MaxCount
+	}
+	if group.MinCount < 0 || group.MaxCount < 0 || (group.MaxCount > 0 && group.MinCount > group.MaxCount) {
+		return domain.ModifierGroup{}, fmt.Errorf("%w: modifier group min/max counts are invalid", domain.ErrInvalid)
+	}
+	if cmd.Status != nil {
+		if err := domain.ValidateLifecycleStatus(*cmd.Status); err != nil {
+			return domain.ModifierGroup{}, err
+		}
+		group.Status = *cmd.Status
+	}
+	group.CloudVersion++
+	group.UpdatedAt = s.clock.Now().UTC()
+	if group.Status == domain.StatusArchived && group.ArchivedAt == nil {
+		archivedAt := group.UpdatedAt
+		group.ArchivedAt = &archivedAt
+	}
+	return s.repo.UpdateModifierGroup(ctx, group)
+}
+
+func (s *Service) CreateModifierOption(ctx context.Context, cmd CreateModifierOptionCommand) (domain.ModifierOption, error) {
+	restaurantID, groupID, name := strings.TrimSpace(cmd.RestaurantID), strings.TrimSpace(cmd.ModifierGroupID), strings.TrimSpace(cmd.Name)
+	price := cmd.PriceMinor
+	if cmd.LegacyPriceDelta != nil && price == 0 {
+		price = *cmd.LegacyPriceDelta
+	}
+	if restaurantID == "" || groupID == "" || name == "" || price < 0 {
+		return domain.ModifierOption{}, fmt.Errorf("%w: modifier option requires restaurant_id, modifier_group_id, name and non-negative price_minor", domain.ErrInvalid)
+	}
+	now := s.clock.Now().UTC()
+	option := domain.ModifierOption{ID: s.ids.NewID(), RestaurantID: restaurantID, ModifierGroupID: groupID, Name: name, PriceMinor: price, Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
+	return s.repo.CreateModifierOption(ctx, option)
+}
+
+func (s *Service) ListModifierOptions(ctx context.Context, restaurantID string) ([]domain.ModifierOption, error) {
+	return s.repo.ListModifierOptions(ctx, strings.TrimSpace(restaurantID))
+}
+
+func (s *Service) UpdateModifierOption(ctx context.Context, id string, cmd UpdateModifierOptionCommand) (domain.ModifierOption, error) {
+	option, err := s.repo.GetModifierOption(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.ModifierOption{}, err
+	}
+	if strings.TrimSpace(cmd.Name) != "" {
+		option.Name = strings.TrimSpace(cmd.Name)
+	}
+	if cmd.PriceMinor != nil {
+		if *cmd.PriceMinor < 0 {
+			return domain.ModifierOption{}, fmt.Errorf("%w: price_minor must be non-negative", domain.ErrInvalid)
+		}
+		option.PriceMinor = *cmd.PriceMinor
+	}
+	if cmd.Status != nil {
+		if err := domain.ValidateLifecycleStatus(*cmd.Status); err != nil {
+			return domain.ModifierOption{}, err
+		}
+		option.Status = *cmd.Status
+	}
+	option.CloudVersion++
+	option.UpdatedAt = s.clock.Now().UTC()
+	if option.Status == domain.StatusArchived && option.ArchivedAt == nil {
+		archivedAt := option.UpdatedAt
+		option.ArchivedAt = &archivedAt
+	}
+	return s.repo.UpdateModifierOption(ctx, option)
+}
+
+func (s *Service) CreateModifierGroupBinding(ctx context.Context, cmd CreateModifierGroupBindingCommand) (domain.ModifierGroupBinding, error) {
+	restaurantID, groupID, targetID := strings.TrimSpace(cmd.RestaurantID), strings.TrimSpace(cmd.ModifierGroupID), strings.TrimSpace(cmd.TargetID)
+	if restaurantID == "" || groupID == "" || targetID == "" {
+		return domain.ModifierGroupBinding{}, fmt.Errorf("%w: modifier binding requires restaurant_id, modifier_group_id and target_id", domain.ErrInvalid)
+	}
+	if err := domain.ValidateModifierTargetType(cmd.TargetType); err != nil {
+		return domain.ModifierGroupBinding{}, err
+	}
+	now := s.clock.Now().UTC()
+	binding := domain.ModifierGroupBinding{ID: s.ids.NewID(), RestaurantID: restaurantID, ModifierGroupID: groupID, TargetType: cmd.TargetType, TargetID: targetID, SortOrder: cmd.SortOrder, Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
+	return s.repo.CreateModifierGroupBinding(ctx, binding)
+}
+
+func (s *Service) ListModifierGroupBindings(ctx context.Context, restaurantID string) ([]domain.ModifierGroupBinding, error) {
+	return s.repo.ListModifierGroupBindings(ctx, strings.TrimSpace(restaurantID))
+}
+
+func (s *Service) UpdateModifierGroupBinding(ctx context.Context, id string, cmd UpdateModifierGroupBindingCommand) (domain.ModifierGroupBinding, error) {
+	binding, err := s.repo.GetModifierGroupBinding(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.ModifierGroupBinding{}, err
+	}
+	if cmd.SortOrder != nil {
+		binding.SortOrder = *cmd.SortOrder
+	}
+	if cmd.Status != nil {
+		if err := domain.ValidateLifecycleStatus(*cmd.Status); err != nil {
+			return domain.ModifierGroupBinding{}, err
+		}
+		binding.Status = *cmd.Status
+	}
+	binding.CloudVersion++
+	binding.UpdatedAt = s.clock.Now().UTC()
+	if binding.Status == domain.StatusArchived && binding.ArchivedAt == nil {
+		archivedAt := binding.UpdatedAt
+		binding.ArchivedAt = &archivedAt
+	}
+	return s.repo.UpdateModifierGroupBinding(ctx, binding)
+}
+
+func (s *Service) CreatePricingPolicy(ctx context.Context, cmd CreatePricingPolicyCommand) (domain.PricingPolicy, error) {
+	restaurantID, name := strings.TrimSpace(cmd.RestaurantID), strings.TrimSpace(cmd.Name)
+	if restaurantID == "" || name == "" || cmd.ApplicationIndex <= 0 {
+		return domain.PricingPolicy{}, fmt.Errorf("%w: pricing policy requires restaurant_id, name and positive application_index", domain.ErrInvalid)
+	}
+	if err := domain.ValidatePricingPolicyKind(cmd.Kind); err != nil {
+		return domain.PricingPolicy{}, err
+	}
+	if err := validatePolicyAmount(cmd.AmountKind, cmd.AmountMinor, cmd.ValueBasisPoints); err != nil {
+		return domain.PricingPolicy{}, err
+	}
+	now := s.clock.Now().UTC()
+	policy := domain.PricingPolicy{ID: s.ids.NewID(), RestaurantID: restaurantID, Name: name, Kind: cmd.Kind, Scope: strings.TrimSpace(cmd.Scope), AmountKind: strings.TrimSpace(cmd.AmountKind), AmountMinor: cmd.AmountMinor, ValueBasisPoints: cmd.ValueBasisPoints, ApplicationIndex: cmd.ApplicationIndex, Manual: cmd.Manual, RequiresPermission: strings.TrimSpace(cmd.RequiresPermission), Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
+	return s.repo.CreatePricingPolicy(ctx, policy)
+}
+
+func (s *Service) ListPricingPolicies(ctx context.Context, restaurantID string) ([]domain.PricingPolicy, error) {
+	return s.repo.ListPricingPolicies(ctx, strings.TrimSpace(restaurantID))
+}
+
+func (s *Service) UpdatePricingPolicy(ctx context.Context, id string, cmd UpdatePricingPolicyCommand) (domain.PricingPolicy, error) {
+	policy, err := s.repo.GetPricingPolicy(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.PricingPolicy{}, err
+	}
+	if strings.TrimSpace(cmd.Name) != "" {
+		policy.Name = strings.TrimSpace(cmd.Name)
+	}
+	if strings.TrimSpace(cmd.Scope) != "" {
+		policy.Scope = strings.TrimSpace(cmd.Scope)
+	}
+	if strings.TrimSpace(cmd.AmountKind) != "" {
+		policy.AmountKind = strings.TrimSpace(cmd.AmountKind)
+	}
+	if cmd.AmountMinor != nil {
+		policy.AmountMinor = *cmd.AmountMinor
+	}
+	if cmd.ValueBasisPoints != nil {
+		policy.ValueBasisPoints = *cmd.ValueBasisPoints
+	}
+	if cmd.ApplicationIndex != nil {
+		policy.ApplicationIndex = *cmd.ApplicationIndex
+	}
+	if cmd.Manual != nil {
+		policy.Manual = *cmd.Manual
+	}
+	if cmd.RequiresPermission != nil {
+		policy.RequiresPermission = strings.TrimSpace(*cmd.RequiresPermission)
+	}
+	if err := validatePolicyAmount(policy.AmountKind, policy.AmountMinor, policy.ValueBasisPoints); err != nil {
+		return domain.PricingPolicy{}, err
+	}
+	if policy.ApplicationIndex <= 0 {
+		return domain.PricingPolicy{}, fmt.Errorf("%w: application_index must be positive", domain.ErrInvalid)
+	}
+	if cmd.Status != nil {
+		if err := domain.ValidateLifecycleStatus(*cmd.Status); err != nil {
+			return domain.PricingPolicy{}, err
+		}
+		policy.Status = *cmd.Status
+	}
+	policy.CloudVersion++
+	policy.UpdatedAt = s.clock.Now().UTC()
+	if policy.Status == domain.StatusArchived && policy.ArchivedAt == nil {
+		archivedAt := policy.UpdatedAt
+		policy.ArchivedAt = &archivedAt
+	}
+	return s.repo.UpdatePricingPolicy(ctx, policy)
 }
 
 // CreateCategory создает draft категорию меню.
@@ -1074,6 +1583,38 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
 	}
+	folders, err := s.repo.ListCatalogFolders(ctx, restaurantID)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
+	folderParameters, err := s.repo.ListFolderParameters(ctx, restaurantID)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
+	tags, err := s.repo.ListCatalogTags(ctx, restaurantID)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
+	itemTags, err := s.repo.ListCatalogItemTags(ctx, restaurantID)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
+	modifierGroups, err := s.repo.ListModifierGroups(ctx, restaurantID)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
+	modifierOptions, err := s.repo.ListModifierOptions(ctx, restaurantID)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
+	modifierBindings, err := s.repo.ListModifierGroupBindings(ctx, restaurantID)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
+	pricingPolicies, err := s.repo.ListPricingPolicies(ctx, restaurantID)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
 	menuItems, err := s.repo.ListMenuItems(ctx, restaurantID)
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
@@ -1090,30 +1631,46 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 		restaurants = append(restaurants, restaurant)
 	}
 	packet := domain.MasterDataPacket{
-		NodeDeviceID:    nodeDeviceID,
-		RestaurantID:    restaurantID,
-		SyncMode:        "incremental",
-		CheckpointToken: fmt.Sprintf("master-data:%s:%d", restaurantID, version),
-		CloudVersion:    version,
-		CloudUpdatedAt:  now,
-		Restaurants:     edgeRestaurants(restaurants),
-		Roles:           edgeRoles(roles),
-		Employees:       edgeEmployees(employees),
-		CatalogItems:    edgeCatalogItems(catalogItems),
-		MenuItems:       edgeMenuItems(menuItems),
-		Halls:           edgeHalls(halls),
-		Tables:          edgeTables(tables),
-		ModifierGroups:  []domain.EdgeModifierGroup{},
-		ModifierOptions: []domain.EdgeModifierOption{},
+		NodeDeviceID:           nodeDeviceID,
+		RestaurantID:           restaurantID,
+		SyncMode:               "incremental",
+		CheckpointToken:        fmt.Sprintf("master-data:%s:%d", restaurantID, version),
+		CloudVersion:           version,
+		CloudUpdatedAt:         now,
+		Restaurants:            edgeRestaurants(restaurants),
+		Roles:                  edgeRoles(roles),
+		Employees:              edgeEmployees(employees),
+		CatalogItems:           edgeCatalogItems(catalogItems),
+		Folders:                edgeFolders(folders),
+		FolderParameters:       edgeFolderParameters(folderParameters),
+		Tags:                   edgeTags(tags),
+		ItemTags:               edgeItemTags(itemTags),
+		ModifierGroups:         edgeModifierGroups(modifierGroups),
+		ModifierOptions:        edgeModifierOptions(modifierOptions),
+		ModifierBindings:       edgeModifierBindings(modifierBindings),
+		MenuItemModifierGroups: edgeMenuItemModifierGroups(menuItems, catalogItems, itemTags, modifierGroups, modifierBindings),
+		MenuItems:              edgeMenuItems(menuItems),
+		Halls:                  edgeHalls(halls),
+		Tables:                 edgeTables(tables),
+		PricingPolicies:        edgePricingPolicies(pricingPolicies),
 	}
 	counts := map[string]int{
-		"restaurants":   len(packet.Restaurants),
-		"roles":         len(packet.Roles),
-		"employees":     len(packet.Employees),
-		"catalog_items": len(packet.CatalogItems),
-		"menu_items":    len(packet.MenuItems),
-		"halls":         len(packet.Halls),
-		"tables":        len(packet.Tables),
+		"restaurants":               len(packet.Restaurants),
+		"roles":                     len(packet.Roles),
+		"employees":                 len(packet.Employees),
+		"catalog_items":             len(packet.CatalogItems),
+		"folders":                   len(packet.Folders),
+		"folder_parameters":         len(packet.FolderParameters),
+		"tags":                      len(packet.Tags),
+		"item_tags":                 len(packet.ItemTags),
+		"modifier_groups":           len(packet.ModifierGroups),
+		"modifier_options":          len(packet.ModifierOptions),
+		"modifier_bindings":         len(packet.ModifierBindings),
+		"menu_item_modifier_groups": len(packet.MenuItemModifierGroups),
+		"pricing_policies":          len(packet.PricingPolicies),
+		"menu_items":                len(packet.MenuItems),
+		"halls":                     len(packet.Halls),
+		"tables":                    len(packet.Tables),
 	}
 	streams, err := streamPackages(packet)
 	if err != nil {
@@ -1143,13 +1700,21 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 		Employees       []domain.EdgeEmployee `json:"employees"`
 	}
 	type catalogPayload struct {
-		NodeDeviceID    string                   `json:"node_device_id,omitempty"`
-		RestaurantID    string                   `json:"restaurant_id"`
-		SyncMode        string                   `json:"sync_mode"`
-		CheckpointToken string                   `json:"checkpoint_token,omitempty"`
-		CloudVersion    int64                    `json:"cloud_version"`
-		CloudUpdatedAt  time.Time                `json:"cloud_updated_at"`
-		CatalogItems    []domain.EdgeCatalogItem `json:"catalog_items"`
+		NodeDeviceID           string                             `json:"node_device_id,omitempty"`
+		RestaurantID           string                             `json:"restaurant_id"`
+		SyncMode               string                             `json:"sync_mode"`
+		CheckpointToken        string                             `json:"checkpoint_token,omitempty"`
+		CloudVersion           int64                              `json:"cloud_version"`
+		CloudUpdatedAt         time.Time                          `json:"cloud_updated_at"`
+		CatalogItems           []domain.EdgeCatalogItem           `json:"catalog_items"`
+		Folders                []domain.EdgeCatalogFolder         `json:"folders,omitempty"`
+		FolderParameters       []domain.EdgeFolderParameter       `json:"folder_parameters,omitempty"`
+		Tags                   []domain.EdgeCatalogTag            `json:"tags,omitempty"`
+		ItemTags               []domain.EdgeCatalogItemTag        `json:"item_tags,omitempty"`
+		ModifierGroups         []domain.EdgeModifierGroup         `json:"modifier_groups,omitempty"`
+		ModifierOptions        []domain.EdgeModifierOption        `json:"modifier_options,omitempty"`
+		ModifierBindings       []domain.EdgeModifierGroupBinding  `json:"modifier_bindings,omitempty"`
+		MenuItemModifierGroups []domain.EdgeMenuItemModifierGroup `json:"menu_item_modifier_groups,omitempty"`
 	}
 	type floorPayload struct {
 		NodeDeviceID    string             `json:"node_device_id,omitempty"`
@@ -1169,6 +1734,15 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 		CloudVersion    int64                 `json:"cloud_version"`
 		CloudUpdatedAt  time.Time             `json:"cloud_updated_at"`
 		MenuItems       []domain.EdgeMenuItem `json:"menu_items"`
+	}
+	type pricingPayload struct {
+		NodeDeviceID    string                     `json:"node_device_id,omitempty"`
+		RestaurantID    string                     `json:"restaurant_id"`
+		SyncMode        string                     `json:"sync_mode"`
+		CheckpointToken string                     `json:"checkpoint_token,omitempty"`
+		CloudVersion    int64                      `json:"cloud_version"`
+		CloudUpdatedAt  time.Time                  `json:"cloud_updated_at"`
+		PricingPolicies []domain.EdgePricingPolicy `json:"pricing_policies,omitempty"`
 	}
 	build := func(stream string, payload any) (StreamPackage, error) {
 		body, err := json.Marshal(payload)
@@ -1194,7 +1768,7 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	catalog, err := build("catalog", catalogPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, CatalogItems: packet.CatalogItems})
+	catalog, err := build("catalog", catalogPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, CatalogItems: packet.CatalogItems, Folders: packet.Folders, FolderParameters: packet.FolderParameters, Tags: packet.Tags, ItemTags: packet.ItemTags, ModifierGroups: packet.ModifierGroups, ModifierOptions: packet.ModifierOptions, ModifierBindings: packet.ModifierBindings, MenuItemModifierGroups: packet.MenuItemModifierGroups})
 	if err != nil {
 		return nil, err
 	}
@@ -1206,7 +1780,11 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []StreamPackage{restaurants, staff, catalog, floor, menu}, nil
+	pricing, err := build("pricing_policy", pricingPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, PricingPolicies: packet.PricingPolicies})
+	if err != nil {
+		return nil, err
+	}
+	return []StreamPackage{restaurants, staff, catalog, floor, menu, pricing}, nil
 }
 
 func edgeRestaurants(items []domain.Restaurant) []domain.EdgeRestaurant {
@@ -1245,7 +1823,132 @@ func edgeEmployees(items []domain.Employee) []domain.EdgeEmployee {
 func edgeCatalogItems(items []domain.CatalogItem) []domain.EdgeCatalogItem {
 	out := make([]domain.EdgeCatalogItem, 0, len(items))
 	for _, item := range items {
-		out = append(out, domain.EdgeCatalogItem{ID: item.ID, Type: item.EdgeType(), Name: item.Name, SKU: item.SKU, BaseUnit: item.BaseUnit, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+		out = append(out, domain.EdgeCatalogItem{ID: item.ID, Type: item.EdgeType(), FolderID: item.FolderID, Name: item.Name, SKU: item.SKU, BaseUnit: item.BaseUnit, KitchenType: item.KitchenType, AccountingCategory: item.AccountingCategory, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+	}
+	return out
+}
+
+func edgeFolders(items []domain.CatalogFolder) []domain.EdgeCatalogFolder {
+	out := make([]domain.EdgeCatalogFolder, 0, len(items))
+	for _, item := range items {
+		out = append(out, domain.EdgeCatalogFolder{ID: item.ID, RestaurantID: item.RestaurantID, ParentID: item.ParentID, Name: item.Name, SortOrder: item.SortOrder, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+	}
+	return out
+}
+
+func edgeFolderParameters(items []domain.FolderParameter) []domain.EdgeFolderParameter {
+	out := make([]domain.EdgeFolderParameter, 0, len(items))
+	for _, item := range items {
+		out = append(out, domain.EdgeFolderParameter{ID: item.ID, FolderID: item.FolderID, Key: item.Key, ValueType: item.ValueType, ValueJSON: item.ValueJSON, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+	}
+	return out
+}
+
+func edgeTags(items []domain.CatalogTag) []domain.EdgeCatalogTag {
+	out := make([]domain.EdgeCatalogTag, 0, len(items))
+	for _, item := range items {
+		out = append(out, domain.EdgeCatalogTag{ID: item.ID, Name: item.Name, Code: item.Code, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+	}
+	return out
+}
+
+func edgeItemTags(items []domain.CatalogItemTag) []domain.EdgeCatalogItemTag {
+	out := make([]domain.EdgeCatalogItemTag, 0, len(items))
+	for _, item := range items {
+		out = append(out, domain.EdgeCatalogItemTag{CatalogItemID: item.CatalogItemID, TagID: item.TagID})
+	}
+	return out
+}
+
+func edgeModifierGroups(items []domain.ModifierGroup) []domain.EdgeModifierGroup {
+	out := make([]domain.EdgeModifierGroup, 0, len(items))
+	for _, item := range items {
+		out = append(out, domain.EdgeModifierGroup{ID: item.ID, Name: item.Name, Required: item.Required, MinCount: item.MinCount, MaxCount: item.MaxCount, Active: item.ActiveForPOS()})
+	}
+	return out
+}
+
+func edgeModifierOptions(items []domain.ModifierOption) []domain.EdgeModifierOption {
+	out := make([]domain.EdgeModifierOption, 0, len(items))
+	for _, item := range items {
+		out = append(out, domain.EdgeModifierOption{ID: item.ID, ModifierGroupID: item.ModifierGroupID, Name: item.Name, PriceMinor: item.PriceMinor, Active: item.ActiveForPOS()})
+	}
+	return out
+}
+
+func edgeModifierBindings(items []domain.ModifierGroupBinding) []domain.EdgeModifierGroupBinding {
+	out := make([]domain.EdgeModifierGroupBinding, 0, len(items))
+	for _, item := range items {
+		out = append(out, domain.EdgeModifierGroupBinding{ID: item.ID, ModifierGroupID: item.ModifierGroupID, TargetType: string(item.TargetType), TargetID: item.TargetID, SortOrder: item.SortOrder, Active: item.ActiveForPOS()})
+	}
+	return out
+}
+
+func edgeMenuItemModifierGroups(menuItems []domain.MenuItem, catalogItems []domain.CatalogItem, itemTags []domain.CatalogItemTag, groups []domain.ModifierGroup, bindings []domain.ModifierGroupBinding) []domain.EdgeMenuItemModifierGroup {
+	catalogByID := map[string]domain.CatalogItem{}
+	for _, item := range catalogItems {
+		catalogByID[item.ID] = item
+	}
+	groupByID := map[string]domain.ModifierGroup{}
+	for _, group := range groups {
+		groupByID[group.ID] = group
+	}
+	tagsByItem := map[string]map[string]struct{}{}
+	for _, link := range itemTags {
+		if tagsByItem[link.CatalogItemID] == nil {
+			tagsByItem[link.CatalogItemID] = map[string]struct{}{}
+		}
+		tagsByItem[link.CatalogItemID][link.TagID] = struct{}{}
+	}
+	seen := map[string]struct{}{}
+	var out []domain.EdgeMenuItemModifierGroup
+	for _, menuItem := range menuItems {
+		catalog := catalogByID[menuItem.CatalogItemID]
+		for _, binding := range bindings {
+			if !binding.ActiveForPOS() {
+				continue
+			}
+			group, ok := groupByID[binding.ModifierGroupID]
+			if !ok || !group.ActiveForPOS() {
+				continue
+			}
+			matches := false
+			switch binding.TargetType {
+			case domain.ModifierTargetMenuItem:
+				matches = binding.TargetID == menuItem.ID
+			case domain.ModifierTargetCatalogItem:
+				matches = binding.TargetID == menuItem.CatalogItemID
+			case domain.ModifierTargetFolder:
+				matches = binding.TargetID != "" && binding.TargetID == catalog.FolderID
+			case domain.ModifierTargetTag:
+				_, matches = tagsByItem[menuItem.CatalogItemID][binding.TargetID]
+			}
+			key := menuItem.ID + "|" + binding.ModifierGroupID
+			if matches {
+				if _, ok := seen[key]; ok {
+					continue
+				}
+				seen[key] = struct{}{}
+				out = append(out, domain.EdgeMenuItemModifierGroup{MenuItemID: menuItem.ID, ModifierGroupID: binding.ModifierGroupID, SortOrder: binding.SortOrder, Required: group.Required, MinCount: group.MinCount, MaxCount: group.MaxCount, Active: true})
+			}
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].MenuItemID == out[j].MenuItemID {
+			if out[i].SortOrder == out[j].SortOrder {
+				return out[i].ModifierGroupID < out[j].ModifierGroupID
+			}
+			return out[i].SortOrder < out[j].SortOrder
+		}
+		return out[i].MenuItemID < out[j].MenuItemID
+	})
+	return out
+}
+
+func edgePricingPolicies(items []domain.PricingPolicy) []domain.EdgePricingPolicy {
+	out := make([]domain.EdgePricingPolicy, 0, len(items))
+	for _, item := range items {
+		out = append(out, domain.EdgePricingPolicy{ID: item.ID, RestaurantID: item.RestaurantID, Name: item.Name, Kind: string(item.Kind), Scope: item.Scope, AmountKind: item.AmountKind, AmountMinor: item.AmountMinor, ValueBasisPoints: item.ValueBasisPoints, ApplicationIndex: item.ApplicationIndex, Manual: item.Manual, RequiresPermission: item.RequiresPermission, Active: item.ActiveForPOS()})
 	}
 	return out
 }
@@ -1277,6 +1980,22 @@ func validateCatalogFields(restaurantID string, kind domain.CatalogItemKind, nam
 		return fmt.Errorf("%w: restaurant_id, name, sku and base_unit are required", domain.ErrInvalid)
 	}
 	return domain.ValidateCatalogItemKind(kind)
+}
+
+func validatePolicyAmount(amountKind string, amountMinor, valueBasisPoints int64) error {
+	switch strings.TrimSpace(amountKind) {
+	case "fixed":
+		if amountMinor <= 0 || valueBasisPoints != 0 {
+			return fmt.Errorf("%w: fixed pricing policy requires positive amount_minor only", domain.ErrInvalid)
+		}
+	case "percentage":
+		if valueBasisPoints <= 0 || amountMinor != 0 {
+			return fmt.Errorf("%w: percentage pricing policy requires positive value_basis_points only", domain.ErrInvalid)
+		}
+	default:
+		return fmt.Errorf("%w: amount_kind must be fixed or percentage", domain.ErrInvalid)
+	}
+	return nil
 }
 
 func isCurrencyCode(v string) bool {

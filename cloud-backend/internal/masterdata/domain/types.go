@@ -47,8 +47,8 @@ type CatalogItemKind string
 const (
 	CatalogItemDish         CatalogItemKind = "dish"
 	CatalogItemGood         CatalogItemKind = "good"
-	CatalogItemIngredient   CatalogItemKind = "ingredient"
 	CatalogItemSemiFinished CatalogItemKind = "semi_finished"
+	CatalogItemService      CatalogItemKind = "service"
 )
 
 // Restaurant описывает Cloud-owned ресторан и настройки учетного дня.
@@ -151,17 +151,20 @@ func (t Table) ActiveForPOS() bool {
 
 // CatalogItem описывает общую Cloud-owned номенклатуру без сведения всех видов в одну финальную модель.
 type CatalogItem struct {
-	ID           string          `json:"id"`
-	RestaurantID string          `json:"restaurant_id"`
-	Kind         CatalogItemKind `json:"kind"`
-	Name         string          `json:"name"`
-	SKU          string          `json:"sku"`
-	BaseUnit     string          `json:"base_unit"`
-	Status       LifecycleStatus `json:"status"`
-	CloudVersion int64           `json:"cloud_version"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
-	ArchivedAt   *time.Time      `json:"archived_at,omitempty"`
+	ID                 string          `json:"id"`
+	RestaurantID       string          `json:"restaurant_id"`
+	Kind               CatalogItemKind `json:"kind"`
+	FolderID           string          `json:"folder_id,omitempty"`
+	Name               string          `json:"name"`
+	SKU                string          `json:"sku"`
+	BaseUnit           string          `json:"base_unit"`
+	KitchenType        string          `json:"kitchen_type,omitempty"`
+	AccountingCategory string          `json:"accounting_category,omitempty"`
+	Status             LifecycleStatus `json:"status"`
+	CloudVersion       int64           `json:"cloud_version"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
+	ArchivedAt         *time.Time      `json:"archived_at,omitempty"`
 }
 
 // ActiveForPOS сообщает, должен ли catalog item быть активным в Edge read model.
@@ -171,16 +174,176 @@ func (c CatalogItem) ActiveForPOS() bool {
 
 // EdgeType возвращает текущий POS Edge-compatible тип для существующего ingest contract.
 func (c CatalogItem) EdgeType() string {
-	switch c.Kind {
-	case CatalogItemDish:
-		return "dish"
-	case CatalogItemGood:
-		return "good"
-	case CatalogItemIngredient, CatalogItemSemiFinished:
-		return "ingredient"
-	default:
-		return string(c.Kind)
-	}
+	return string(c.Kind)
+}
+
+// CatalogFolder описывает Cloud-owned папку номенклатуры, отдельную от категорий меню.
+type CatalogFolder struct {
+	ID           string          `json:"id"`
+	RestaurantID string          `json:"restaurant_id"`
+	ParentID     string          `json:"parent_id,omitempty"`
+	Name         string          `json:"name"`
+	SortOrder    int64           `json:"sort_order"`
+	Status       LifecycleStatus `json:"status"`
+	CloudVersion int64           `json:"cloud_version"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	ArchivedAt   *time.Time      `json:"archived_at,omitempty"`
+}
+
+// ActiveForPOS сообщает, должна ли папка номенклатуры быть опубликована на Edge.
+func (f CatalogFolder) ActiveForPOS() bool {
+	return f.Status == StatusPublished
+}
+
+// FolderParameter задает наследуемый параметр папки номенклатуры в расширяемом формате.
+type FolderParameter struct {
+	ID           string          `json:"id"`
+	RestaurantID string          `json:"restaurant_id"`
+	FolderID     string          `json:"folder_id"`
+	Key          string          `json:"parameter_key"`
+	ValueType    string          `json:"value_type"`
+	ValueJSON    string          `json:"value_json"`
+	Status       LifecycleStatus `json:"status"`
+	CloudVersion int64           `json:"cloud_version"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	ArchivedAt   *time.Time      `json:"archived_at,omitempty"`
+}
+
+// ActiveForPOS сообщает, должен ли параметр папки участвовать в публикации.
+func (p FolderParameter) ActiveForPOS() bool {
+	return p.Status == StatusPublished
+}
+
+// CatalogTag описывает аналитическую метку каталога, не участвующую в иерархии папок.
+type CatalogTag struct {
+	ID           string          `json:"id"`
+	RestaurantID string          `json:"restaurant_id"`
+	Name         string          `json:"name"`
+	Code         string          `json:"code"`
+	Status       LifecycleStatus `json:"status"`
+	CloudVersion int64           `json:"cloud_version"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	ArchivedAt   *time.Time      `json:"archived_at,omitempty"`
+}
+
+// ActiveForPOS сообщает, должна ли метка каталога быть опубликована на Edge.
+func (t CatalogTag) ActiveForPOS() bool {
+	return t.Status == StatusPublished
+}
+
+// CatalogItemTag связывает позицию каталога с аналитической меткой.
+type CatalogItemTag struct {
+	RestaurantID    string    `json:"restaurant_id"`
+	CatalogItemID   string    `json:"catalog_item_id"`
+	TagID           string    `json:"tag_id"`
+	CloudVersion    int64     `json:"cloud_version"`
+	CreatedAt       time.Time `json:"created_at"`
+	LastSyncedAtUTC time.Time `json:"-"`
+}
+
+// ModifierTargetType задает тип цели, к которой привязана группа модификаторов.
+type ModifierTargetType string
+
+const (
+	ModifierTargetMenuItem    ModifierTargetType = "menu_item"
+	ModifierTargetCatalogItem ModifierTargetType = "catalog_item"
+	ModifierTargetFolder      ModifierTargetType = "folder"
+	ModifierTargetTag         ModifierTargetType = "tag"
+)
+
+// ModifierGroup описывает Cloud-owned группу модификаторов.
+type ModifierGroup struct {
+	ID           string          `json:"id"`
+	RestaurantID string          `json:"restaurant_id"`
+	Name         string          `json:"name"`
+	Status       LifecycleStatus `json:"status"`
+	Required     bool            `json:"required"`
+	MinCount     int64           `json:"min_count"`
+	MaxCount     int64           `json:"max_count"`
+	CloudVersion int64           `json:"cloud_version"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	ArchivedAt   *time.Time      `json:"archived_at,omitempty"`
+}
+
+// ActiveForPOS сообщает, должна ли группа модификаторов быть опубликована на Edge.
+func (g ModifierGroup) ActiveForPOS() bool {
+	return g.Status == StatusPublished
+}
+
+// ModifierOption описывает вариант модификатора с канонической ценой, а не price_delta.
+type ModifierOption struct {
+	ID              string          `json:"id"`
+	RestaurantID    string          `json:"restaurant_id"`
+	ModifierGroupID string          `json:"modifier_group_id"`
+	Name            string          `json:"name"`
+	PriceMinor      int64           `json:"price_minor"`
+	Status          LifecycleStatus `json:"status"`
+	CloudVersion    int64           `json:"cloud_version"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
+	ArchivedAt      *time.Time      `json:"archived_at,omitempty"`
+}
+
+// ActiveForPOS сообщает, должен ли вариант модификатора быть опубликован на Edge.
+func (o ModifierOption) ActiveForPOS() bool {
+	return o.Status == StatusPublished
+}
+
+// ModifierGroupBinding задает явную привязку группы модификаторов к menu item, catalog item, folder или tag.
+type ModifierGroupBinding struct {
+	ID              string             `json:"id"`
+	RestaurantID    string             `json:"restaurant_id"`
+	ModifierGroupID string             `json:"modifier_group_id"`
+	TargetType      ModifierTargetType `json:"target_type"`
+	TargetID        string             `json:"target_id"`
+	SortOrder       int64              `json:"sort_order"`
+	Status          LifecycleStatus    `json:"status"`
+	CloudVersion    int64              `json:"cloud_version"`
+	CreatedAt       time.Time          `json:"created_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
+	ArchivedAt      *time.Time         `json:"archived_at,omitempty"`
+}
+
+// ActiveForPOS сообщает, должна ли привязка модификаторов быть опубликована на Edge.
+func (b ModifierGroupBinding) ActiveForPOS() bool {
+	return b.Status == StatusPublished
+}
+
+// PricingPolicyKind различает Cloud-owned правила скидок и надбавок.
+type PricingPolicyKind string
+
+const (
+	PricingPolicyDiscount  PricingPolicyKind = "discount"
+	PricingPolicySurcharge PricingPolicyKind = "surcharge"
+)
+
+// PricingPolicy описывает Cloud-authored правило скидки или надбавки для Edge calculator.
+type PricingPolicy struct {
+	ID                 string            `json:"id"`
+	RestaurantID       string            `json:"restaurant_id"`
+	Name               string            `json:"name"`
+	Kind               PricingPolicyKind `json:"kind"`
+	Scope              string            `json:"scope"`
+	AmountKind         string            `json:"amount_kind"`
+	AmountMinor        int64             `json:"amount_minor,omitempty"`
+	ValueBasisPoints   int64             `json:"value_basis_points,omitempty"`
+	ApplicationIndex   int               `json:"application_index"`
+	Manual             bool              `json:"manual"`
+	RequiresPermission string            `json:"requires_permission,omitempty"`
+	Status             LifecycleStatus   `json:"status"`
+	CloudVersion       int64             `json:"cloud_version"`
+	CreatedAt          time.Time         `json:"created_at"`
+	UpdatedAt          time.Time         `json:"updated_at"`
+	ArchivedAt         *time.Time        `json:"archived_at,omitempty"`
+}
+
+// ActiveForPOS сообщает, должна ли pricing policy применяться на Edge.
+func (p PricingPolicy) ActiveForPOS() bool {
+	return p.Status == StatusPublished
 }
 
 // MenuItem описывает продаваемую позицию меню с lifecycle и основой routing/availability.
@@ -229,21 +392,28 @@ type PublishedState struct {
 
 // MasterDataPacket описывает deterministic Cloud -> Edge package payload.
 type MasterDataPacket struct {
-	NodeDeviceID    string               `json:"node_device_id,omitempty"`
-	RestaurantID    string               `json:"restaurant_id"`
-	SyncMode        string               `json:"sync_mode"`
-	CheckpointToken string               `json:"checkpoint_token,omitempty"`
-	CloudVersion    int64                `json:"cloud_version"`
-	CloudUpdatedAt  time.Time            `json:"cloud_updated_at"`
-	Restaurants     []EdgeRestaurant     `json:"restaurants,omitempty"`
-	Roles           []EdgeRole           `json:"roles,omitempty"`
-	Employees       []EdgeEmployee       `json:"employees,omitempty"`
-	CatalogItems    []EdgeCatalogItem    `json:"catalog_items,omitempty"`
-	MenuItems       []EdgeMenuItem       `json:"menu_items,omitempty"`
-	Halls           []EdgeHall           `json:"halls,omitempty"`
-	Tables          []EdgeTable          `json:"tables,omitempty"`
-	ModifierGroups  []EdgeModifierGroup  `json:"modifier_groups,omitempty"`
-	ModifierOptions []EdgeModifierOption `json:"modifier_options,omitempty"`
+	NodeDeviceID           string                      `json:"node_device_id,omitempty"`
+	RestaurantID           string                      `json:"restaurant_id"`
+	SyncMode               string                      `json:"sync_mode"`
+	CheckpointToken        string                      `json:"checkpoint_token,omitempty"`
+	CloudVersion           int64                       `json:"cloud_version"`
+	CloudUpdatedAt         time.Time                   `json:"cloud_updated_at"`
+	Restaurants            []EdgeRestaurant            `json:"restaurants,omitempty"`
+	Roles                  []EdgeRole                  `json:"roles,omitempty"`
+	Employees              []EdgeEmployee              `json:"employees,omitempty"`
+	CatalogItems           []EdgeCatalogItem           `json:"catalog_items,omitempty"`
+	Folders                []EdgeCatalogFolder         `json:"folders,omitempty"`
+	FolderParameters       []EdgeFolderParameter       `json:"folder_parameters,omitempty"`
+	Tags                   []EdgeCatalogTag            `json:"tags,omitempty"`
+	ItemTags               []EdgeCatalogItemTag        `json:"item_tags,omitempty"`
+	ModifierGroups         []EdgeModifierGroup         `json:"modifier_groups,omitempty"`
+	ModifierOptions        []EdgeModifierOption        `json:"modifier_options,omitempty"`
+	ModifierBindings       []EdgeModifierGroupBinding  `json:"modifier_bindings,omitempty"`
+	MenuItemModifierGroups []EdgeMenuItemModifierGroup `json:"menu_item_modifier_groups,omitempty"`
+	MenuItems              []EdgeMenuItem              `json:"menu_items,omitempty"`
+	Halls                  []EdgeHall                  `json:"halls,omitempty"`
+	Tables                 []EdgeTable                 `json:"tables,omitempty"`
+	PricingPolicies        []EdgePricingPolicy         `json:"pricing_policies,omitempty"`
 }
 
 // EdgeRestaurant является projection ресторана в существующий POS Edge restaurants stream.
@@ -282,14 +452,57 @@ type EdgeEmployee struct {
 
 // EdgeCatalogItem является projection catalog item в существующий POS Edge catalog stream.
 type EdgeCatalogItem struct {
+	ID                 string    `json:"id"`
+	Type               string    `json:"type"`
+	FolderID           string    `json:"folder_id,omitempty"`
+	Name               string    `json:"name"`
+	SKU                string    `json:"sku"`
+	BaseUnit           string    `json:"base_unit"`
+	KitchenType        string    `json:"kitchen_type,omitempty"`
+	AccountingCategory string    `json:"accounting_category,omitempty"`
+	Active             bool      `json:"active"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+}
+
+// EdgeCatalogFolder является projection папки номенклатуры в catalog stream.
+type EdgeCatalogFolder struct {
+	ID           string    `json:"id"`
+	RestaurantID string    `json:"restaurant_id"`
+	ParentID     string    `json:"parent_id,omitempty"`
+	Name         string    `json:"name"`
+	SortOrder    int64     `json:"sort_order"`
+	Active       bool      `json:"active"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// EdgeFolderParameter является projection наследуемого параметра папки.
+type EdgeFolderParameter struct {
 	ID        string    `json:"id"`
-	Type      string    `json:"type"`
-	Name      string    `json:"name"`
-	SKU       string    `json:"sku"`
-	BaseUnit  string    `json:"base_unit"`
+	FolderID  string    `json:"folder_id"`
+	Key       string    `json:"parameter_key"`
+	ValueType string    `json:"value_type"`
+	ValueJSON string    `json:"value_json"`
 	Active    bool      `json:"active"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// EdgeCatalogTag является projection аналитической метки каталога.
+type EdgeCatalogTag struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Code      string    `json:"code"`
+	Active    bool      `json:"active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// EdgeCatalogItemTag является projection связи catalog item и tag.
+type EdgeCatalogItemTag struct {
+	CatalogItemID string `json:"catalog_item_id"`
+	TagID         string `json:"tag_id"`
 }
 
 // EdgeMenuItem является projection menu item в существующий POS Edge menu stream.
@@ -341,8 +554,45 @@ type EdgeModifierOption struct {
 	ID              string `json:"id"`
 	ModifierGroupID string `json:"modifier_group_id"`
 	Name            string `json:"name"`
-	PriceDelta      int64  `json:"price_delta"`
+	PriceMinor      int64  `json:"price_minor"`
 	Active          bool   `json:"active"`
+}
+
+// EdgeModifierGroupBinding является projection явной привязки группы модификаторов.
+type EdgeModifierGroupBinding struct {
+	ID              string `json:"id"`
+	ModifierGroupID string `json:"modifier_group_id"`
+	TargetType      string `json:"target_type"`
+	TargetID        string `json:"target_id"`
+	SortOrder       int64  `json:"sort_order"`
+	Active          bool   `json:"active"`
+}
+
+// EdgeMenuItemModifierGroup является precomputed привязкой модификаторов к menu item для Edge runtime.
+type EdgeMenuItemModifierGroup struct {
+	MenuItemID      string `json:"menu_item_id"`
+	ModifierGroupID string `json:"modifier_group_id"`
+	SortOrder       int64  `json:"sort_order"`
+	Required        bool   `json:"required"`
+	MinCount        int64  `json:"min_count"`
+	MaxCount        int64  `json:"max_count"`
+	Active          bool   `json:"active"`
+}
+
+// EdgePricingPolicy является projection Cloud-authored discount/surcharge policy.
+type EdgePricingPolicy struct {
+	ID                 string `json:"id"`
+	RestaurantID       string `json:"restaurant_id"`
+	Name               string `json:"name"`
+	Kind               string `json:"kind"`
+	Scope              string `json:"scope"`
+	AmountKind         string `json:"amount_kind"`
+	AmountMinor        int64  `json:"amount_minor,omitempty"`
+	ValueBasisPoints   int64  `json:"value_basis_points,omitempty"`
+	ApplicationIndex   int    `json:"application_index"`
+	Manual             bool   `json:"manual"`
+	RequiresPermission string `json:"requires_permission,omitempty"`
+	Active             bool   `json:"active"`
 }
 
 // ValidateEmployeeStatus проверяет допустимое lifecycle состояние сотрудника.
@@ -368,10 +618,30 @@ func ValidateLifecycleStatus(v LifecycleStatus) error {
 // ValidateCatalogItemKind проверяет допустимый Cloud catalog item kind.
 func ValidateCatalogItemKind(v CatalogItemKind) error {
 	switch v {
-	case CatalogItemDish, CatalogItemGood, CatalogItemIngredient, CatalogItemSemiFinished:
+	case CatalogItemDish, CatalogItemGood, CatalogItemSemiFinished, CatalogItemService:
 		return nil
 	default:
 		return fmt.Errorf("%w: unsupported catalog item kind %q", ErrInvalid, v)
+	}
+}
+
+// ValidateModifierTargetType проверяет допустимую цель привязки модификатора.
+func ValidateModifierTargetType(v ModifierTargetType) error {
+	switch v {
+	case ModifierTargetMenuItem, ModifierTargetCatalogItem, ModifierTargetFolder, ModifierTargetTag:
+		return nil
+	default:
+		return fmt.Errorf("%w: unsupported modifier target_type %q", ErrInvalid, v)
+	}
+}
+
+// ValidatePricingPolicyKind проверяет допустимый тип Cloud pricing policy.
+func ValidatePricingPolicyKind(v PricingPolicyKind) error {
+	switch v {
+	case PricingPolicyDiscount, PricingPolicySurcharge:
+		return nil
+	default:
+		return fmt.Errorf("%w: unsupported pricing policy kind %q", ErrInvalid, v)
 	}
 }
 

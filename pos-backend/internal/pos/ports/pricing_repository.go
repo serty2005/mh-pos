@@ -11,6 +11,7 @@ type PricingRepository interface {
 	CreateOrderSurcharge(context.Context, *pricing.OrderSurcharge) error
 	ListOrderDiscounts(context.Context, string) ([]pricing.OrderDiscount, error)
 	ListOrderSurcharges(context.Context, string) ([]pricing.OrderSurcharge, error)
+	ListActivePricingPolicies(context.Context, string) ([]pricing.PricingPolicy, error)
 	ListTaxProfilesByIDs(context.Context, []string) (map[string]pricing.TaxProfile, error)
 	ListTaxRulesByProfileIDs(context.Context, []string) (map[string][]pricing.TaxRule, error)
 	CreatePrecheckBreakdown(context.Context, string, pricing.CalculationResult) error

@@ -75,11 +75,11 @@ func ValidateMasterDataPayload(streamName string, payload json.RawMessage) error
 	case MasterDataStreamFloor:
 		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "halls", "tables"}, []string{"halls", "tables"})
 	case MasterDataStreamCatalog:
-		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "catalog_items"}, []string{"catalog_items"})
+		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "catalog_items", "folders", "folder_parameters", "tags", "item_tags", "modifier_groups", "modifier_options", "modifier_bindings", "menu_item_modifier_groups"}, []string{"catalog_items", "folders", "folder_parameters", "tags", "item_tags", "modifier_groups", "modifier_options", "modifier_bindings", "menu_item_modifier_groups"})
 	case MasterDataStreamMenu:
 		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "menu_items"}, []string{"menu_items"})
 	case MasterDataStreamPricing:
-		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "tax_profiles", "tax_rules", "service_charge_rules"}, []string{"tax_profiles", "tax_rules", "service_charge_rules"})
+		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "tax_profiles", "tax_rules", "service_charge_rules", "pricing_policies"}, []string{"tax_profiles", "tax_rules", "service_charge_rules", "pricing_policies"})
 	default:
 		return nil
 	}

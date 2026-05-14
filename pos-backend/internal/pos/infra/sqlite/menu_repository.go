@@ -13,7 +13,7 @@ func (r *Repository) CreateMenuItem(ctx context.Context, v *domain.MenuItem) err
 }
 
 func (r *Repository) ListMenuItems(ctx context.Context) ([]domain.MenuItem, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,catalog_item_id,name,price,currency,tax_profile_id,active,created_at,updated_at FROM menu_items ORDER BY created_at`)
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT m.id,m.catalog_item_id,COALESCE(c.type,''),m.name,m.price,m.currency,m.tax_profile_id,m.active,m.created_at,m.updated_at FROM menu_items m LEFT JOIN catalog_items c ON c.id = m.catalog_item_id ORDER BY m.created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +24,7 @@ func (r *Repository) ListMenuItems(ctx context.Context) ([]domain.MenuItem, erro
 		var active int
 		var created, updated string
 		var taxProfileID sql.NullString
-		if err := rows.Scan(&v.ID, &v.CatalogItemID, &v.Name, &v.Price, &v.Currency, &taxProfileID, &active, &created, &updated); err != nil {
+		if err := rows.Scan(&v.ID, &v.CatalogItemID, &v.ItemType, &v.Name, &v.Price, &v.Currency, &taxProfileID, &active, &created, &updated); err != nil {
 			return nil, err
 		}
 		v.TaxProfileID = stringPtr(taxProfileID)
@@ -41,8 +41,8 @@ func (r *Repository) GetMenuItem(ctx context.Context, id string) (*domain.MenuIt
 	var active int
 	var created, updated string
 	var taxProfileID sql.NullString
-	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,catalog_item_id,name,price,currency,tax_profile_id,active,created_at,updated_at FROM menu_items WHERE id = ?`, id).
-		Scan(&v.ID, &v.CatalogItemID, &v.Name, &v.Price, &v.Currency, &taxProfileID, &active, &created, &updated)
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT m.id,m.catalog_item_id,COALESCE(c.type,''),m.name,m.price,m.currency,m.tax_profile_id,m.active,m.created_at,m.updated_at FROM menu_items m LEFT JOIN catalog_items c ON c.id = m.catalog_item_id WHERE m.id = ?`, id).
+		Scan(&v.ID, &v.CatalogItemID, &v.ItemType, &v.Name, &v.Price, &v.Currency, &taxProfileID, &active, &created, &updated)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}

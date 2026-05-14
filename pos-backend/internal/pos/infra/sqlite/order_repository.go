@@ -78,6 +78,12 @@ func (r *Repository) CreateOrderLine(ctx context.Context, v *domain.OrderLine) e
 	return normalizeErr(err)
 }
 
+func (r *Repository) CreateOrderLineModifier(ctx context.Context, v *domain.LineModifier) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO order_line_modifiers(id,order_line_id,modifier_group_id,modifier_option_id,name,quantity,unit_price,total_price) VALUES (?,?,?,?,?,?,?,?)`,
+		v.ID, v.OrderLineID, v.ModifierGroupID, v.ModifierOptionID, v.Name, v.Quantity, v.UnitPrice, v.TotalPrice)
+	return normalizeErr(err)
+}
+
 func (r *Repository) GetOrderLine(ctx context.Context, id string) (*domain.OrderLine, error) {
 	var v domain.OrderLine
 	var status, created, updated string
@@ -91,6 +97,11 @@ func (r *Repository) GetOrderLine(ctx context.Context, id string) (*domain.Order
 	v.TaxProfileID = stringPtr(taxProfileID)
 	v.CreatedAt = parseTime(created)
 	v.UpdatedAt = parseTime(updated)
+	modifiers, err := r.listOrderLineModifiers(ctx, v.ID)
+	if err != nil {
+		return nil, err
+	}
+	v.Modifiers = modifiers
 	return &v, nil
 }
 
@@ -207,7 +218,29 @@ func (r *Repository) ListOrderLines(ctx context.Context, orderID string) ([]doma
 		v.TaxProfileID = stringPtr(taxProfileID)
 		v.CreatedAt = parseTime(created)
 		v.UpdatedAt = parseTime(updated)
+		modifiers, err := r.listOrderLineModifiers(ctx, v.ID)
+		if err != nil {
+			return nil, err
+		}
+		v.Modifiers = modifiers
 		out = append(out, v)
 	}
 	return out, rows.Err()
+}
+
+func (r *Repository) listOrderLineModifiers(ctx context.Context, lineID string) ([]domain.LineModifier, error) {
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,order_line_id,modifier_group_id,modifier_option_id,name,quantity,unit_price,total_price FROM order_line_modifiers WHERE order_line_id = ? ORDER BY id`, lineID)
+	if err != nil {
+		return nil, normalizeErr(err)
+	}
+	defer rows.Close()
+	var out []domain.LineModifier
+	for rows.Next() {
+		var v domain.LineModifier
+		if err := rows.Scan(&v.ID, &v.OrderLineID, &v.ModifierGroupID, &v.ModifierOptionID, &v.Name, &v.Quantity, &v.UnitPrice, &v.TotalPrice); err != nil {
+			return nil, normalizeErr(err)
+		}
+		out = append(out, v)
+	}
+	return out, normalizeErr(rows.Err())
 }

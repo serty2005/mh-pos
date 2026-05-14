@@ -5,6 +5,7 @@ import "time"
 type MenuItem struct {
 	ID            string    `json:"id"`
 	CatalogItemID string    `json:"catalog_item_id"`
+	ItemType      string    `json:"item_type,omitempty"`
 	Name          string    `json:"name"`
 	Price         int64     `json:"price"`
 	Currency      string    `json:"currency"`

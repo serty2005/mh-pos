@@ -37,9 +37,19 @@ type OrderLineInput struct {
 	Name          string
 	Quantity      int64
 	UnitPrice     int64
+	Modifiers     []LineModifierInput
 	Subtotal      int64
 	CurrencyCode  string
 	TaxProfileID  *string
+}
+
+type LineModifierInput struct {
+	ModifierGroupID  string `json:"modifier_group_id"`
+	ModifierOptionID string `json:"modifier_option_id"`
+	Name             string `json:"name"`
+	Quantity         int64  `json:"quantity"`
+	UnitPriceMinor   int64  `json:"unit_price_minor"`
+	TotalMinor       int64  `json:"total_minor"`
 }
 
 type OrderDiscount struct {
@@ -105,6 +115,29 @@ type ServiceChargeRule struct {
 	UpdatedAt        time.Time     `json:"updated_at"`
 }
 
+type PricingPolicyKind string
+
+const (
+	PricingPolicyDiscount  PricingPolicyKind = "discount"
+	PricingPolicySurcharge PricingPolicyKind = "surcharge"
+)
+
+type PricingPolicy struct {
+	ID                 string            `json:"id"`
+	RestaurantID       string            `json:"restaurant_id"`
+	Kind               PricingPolicyKind `json:"kind"`
+	Name               string            `json:"name"`
+	Scope              DiscountScope     `json:"scope"`
+	AmountKind         AmountKind        `json:"amount_kind"`
+	AmountMinor        int64             `json:"amount_minor,omitempty"`
+	ValueBasisPoints   int64             `json:"value_basis_points,omitempty"`
+	ApplicationIndex   int               `json:"application_index"`
+	RequiresPermission string            `json:"requires_permission,omitempty"`
+	Active             bool              `json:"active"`
+	CreatedAt          time.Time         `json:"created_at"`
+	UpdatedAt          time.Time         `json:"updated_at"`
+}
+
 type CalculationInput struct {
 	CurrencyCode string
 	Lines        []OrderLineInput
@@ -144,21 +177,22 @@ type CalculationResult struct {
 }
 
 type LineBreakdown struct {
-	OrderLineID         string  `json:"order_line_id"`
-	MenuItemID          string  `json:"menu_item_id"`
-	CatalogItemID       string  `json:"catalog_item_id"`
-	Name                string  `json:"name"`
-	Quantity            int64   `json:"quantity"`
-	UnitPriceMinor      int64   `json:"unit_price_minor"`
-	SubtotalMinor       int64   `json:"subtotal_minor"`
-	DiscountTotalMinor  int64   `json:"discount_total_minor"`
-	SurchargeTotalMinor int64   `json:"surcharge_total_minor"`
-	TaxableBaseMinor    int64   `json:"taxable_base_minor"`
-	TaxTotalMinor       int64   `json:"tax_total_minor"`
-	TaxAddedMinor       int64   `json:"tax_added_minor"`
-	TotalMinor          int64   `json:"total_minor"`
-	CurrencyCode        string  `json:"currency_code"`
-	TaxProfileID        *string `json:"tax_profile_id,omitempty"`
+	OrderLineID         string              `json:"order_line_id"`
+	MenuItemID          string              `json:"menu_item_id"`
+	CatalogItemID       string              `json:"catalog_item_id"`
+	Name                string              `json:"name"`
+	Quantity            int64               `json:"quantity"`
+	UnitPriceMinor      int64               `json:"unit_price_minor"`
+	Modifiers           []LineModifierInput `json:"modifiers,omitempty"`
+	SubtotalMinor       int64               `json:"subtotal_minor"`
+	DiscountTotalMinor  int64               `json:"discount_total_minor"`
+	SurchargeTotalMinor int64               `json:"surcharge_total_minor"`
+	TaxableBaseMinor    int64               `json:"taxable_base_minor"`
+	TaxTotalMinor       int64               `json:"tax_total_minor"`
+	TaxAddedMinor       int64               `json:"tax_added_minor"`
+	TotalMinor          int64               `json:"total_minor"`
+	CurrencyCode        string              `json:"currency_code"`
+	TaxProfileID        *string             `json:"tax_profile_id,omitempty"`
 }
 
 type DiscountBreakdown struct {
