@@ -240,7 +240,6 @@ type MasterDataPacket struct {
 	Employees       []EdgeEmployee       `json:"employees,omitempty"`
 	CatalogItems    []EdgeCatalogItem    `json:"catalog_items,omitempty"`
 	MenuItems       []EdgeMenuItem       `json:"menu_items,omitempty"`
-	Categories      []EdgeCategory       `json:"categories,omitempty"`
 	Halls           []EdgeHall           `json:"halls,omitempty"`
 	Tables          []EdgeTable          `json:"tables,omitempty"`
 	ModifierGroups  []EdgeModifierGroup  `json:"modifier_groups,omitempty"`
@@ -303,14 +302,6 @@ type EdgeMenuItem struct {
 	Active        bool      `json:"active"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
-}
-
-// EdgeCategory является foundation projection категории для будущего Edge menu layout.
-type EdgeCategory struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	SortOrder int64  `json:"sort_order"`
-	Active    bool   `json:"active"`
 }
 
 // EdgeHall является projection зала для существующего POS Edge floor stream.

@@ -236,7 +236,7 @@ export function useCashierTerminal() {
     if (cashDrawerType.value === 'no_sale') return true;
     return cashDrawerAmount.value >= 0;
   });
-  const remainingPayment = computed(() => activePrecheck.value ? activePrecheck.value.total - activePrecheck.value.paid_total : 0);
+  const remainingPayment = computed(() => activePrecheck.value?.remaining_total ?? 0);
   const orderLoading = computed(() => tableOrder.isFetching.value || order.isFetching.value);
   const statusError = computed(() => firstError([currentShift.error.value, currentCashSession.error.value]));
   const orderError = computed(() => firstError([tableOrder.error.value, order.error.value, prechecks.error.value]));

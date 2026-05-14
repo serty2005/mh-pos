@@ -3009,6 +3009,51 @@ func TestApplyMasterDataSnapshotUpsertsRowsStateAndDoesNotCreateOutbox(t *testin
 	}
 }
 
+func TestApplyMasterDataAcceptsCloudCatalogStreamPackageShape(t *testing.T) {
+	f := newFixture(t)
+	payload := []byte(`{
+		"node_device_id":"` + f.device.ID + `",
+		"restaurant_id":"cloud-restaurant-1",
+		"stream":"catalog",
+		"sync_mode":"incremental",
+		"checkpoint_token":"master-data:cloud-restaurant-1:43",
+		"cloud_version":43,
+		"cloud_updated_at":"2026-05-09T10:00:00Z",
+		"catalog_items":[{
+			"id":"cloud-ingredient-1",
+			"type":"ingredient",
+			"name":"Cloud Potato",
+			"sku":"CLOUD-POTATO",
+			"base_unit":"kg",
+			"active":true,
+			"created_at":"2026-05-09T10:00:00Z",
+			"updated_at":"2026-05-09T10:00:00Z"
+		}]
+	}`)
+	if strings.Contains(string(payload), `"categories"`) {
+		t.Fatalf("Cloud catalog stream fixture must not contain unsupported categories field: %s", payload)
+	}
+	var cmd app.ApplyMasterDataCommand
+	if err := json.Unmarshal(payload, &cmd); err != nil {
+		t.Fatal(err)
+	}
+	cmd.CommandMeta = app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync}
+	applied, err := f.service.ApplyMasterData(f.ctx, cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(applied.AppliedStreams) != 1 || applied.AppliedStreams[0] != domain.MasterDataStreamCatalog || applied.Counts["catalog"] != 1 {
+		t.Fatalf("expected catalog stream apply, got %+v", applied)
+	}
+	var itemType, sku string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT type,sku FROM catalog_items WHERE id = 'cloud-ingredient-1'`).Scan(&itemType, &sku); err != nil {
+		t.Fatal(err)
+	}
+	if itemType != string(domain.CatalogItemIngredient) || sku != "CLOUD-POTATO" {
+		t.Fatalf("expected ingredient catalog row, got type=%q sku=%q", itemType, sku)
+	}
+}
+
 func TestApplyMasterDataFullSnapshotCreatesBackupBeforeApply(t *testing.T) {
 	f := newFixture(t)
 	backupCalls := 0

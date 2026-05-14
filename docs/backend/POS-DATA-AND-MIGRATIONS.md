@@ -83,7 +83,7 @@ Managed files currently present:
 
 - roles and employees;
 - categories;
-- catalog items with kinds `dish`, `good`, `raw_material`, `semi_finished`;
+- catalog items with canonical kinds `dish`, `good`, `ingredient`, `semi_finished`;
 - dishes, goods and semi-finished products;
 - recipe items;
 - modifier groups/options;
@@ -96,6 +96,7 @@ Foundation warning:
 
 - Cloud modifier/recipe/catalog foundation is not equal to POS Edge runtime support.
 - POS Edge `ApplyMasterData` currently ingests only `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`.
+- Cloud stores menu categories as master-data foundation, but current publication payload omits `categories` until POS Edge has a supported category ingest contract.
 - `recipes` and `inventory_reference` may exist in constants/schema state, but they are not supported by `mastersync.Service` apply path yet.
 
 ## Discount, Tax And Pricing Data

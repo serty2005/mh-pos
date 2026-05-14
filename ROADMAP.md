@@ -35,7 +35,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 - Cloud PostgreSQL sync receiver and operational projections foundation.
 - Cloud master-data authority foundation in `004_master_data_authority.sql`.
-- Cloud schema foundation for roles, employees, catalog items, dishes, goods/raw materials, semi-finished products, recipe items, categories, modifier groups/options, menu items, menu assignments and versioned publications.
+- Cloud schema foundation for roles, employees, catalog items, dishes, goods/ingredients, semi-finished products, recipe items, categories, modifier groups/options, menu items, menu assignments and versioned publications.
 - POS Edge Cloud -> Edge ingest for streams `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`.
 - POS Edge outbox/local event foundation for cashier operational events.
 - DDD context map exists in `docs/architecture/DDD-CONTEXT-MAP.md`.

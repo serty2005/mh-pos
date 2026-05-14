@@ -136,7 +136,7 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 		},
 		{
 			Table:         "cloud_goods",
-			RequiredBy:    "cloud catalog goods/raw material foundation",
+			RequiredBy:    "cloud catalog goods/ingredient foundation",
 			MigrationFile: "004_master_data_authority.sql",
 			Columns:       []string{"catalog_item_id", "restaurant_id", "stock_tracking_mode", "updated_at"},
 		},

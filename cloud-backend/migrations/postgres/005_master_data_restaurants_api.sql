@@ -33,9 +33,13 @@ ALTER TABLE cloud_catalog_items
 ALTER TABLE cloud_catalog_items
   DROP CONSTRAINT IF EXISTS cloud_catalog_items_kind_check;
 
+UPDATE cloud_catalog_items
+SET kind = 'ingredient'
+WHERE kind = 'raw_material';
+
 ALTER TABLE cloud_catalog_items
   ADD CONSTRAINT cloud_catalog_items_kind_check
-  CHECK (kind IN ('dish','good','ingredient','raw_material','semi_finished'));
+  CHECK (kind IN ('dish','good','ingredient','semi_finished'));
 
 ALTER TABLE cloud_menu_items
   ADD COLUMN IF NOT EXISTS cloud_version BIGINT NOT NULL DEFAULT 1 CHECK (cloud_version > 0);

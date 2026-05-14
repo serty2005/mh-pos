@@ -43,7 +43,7 @@ CREATE INDEX IF NOT EXISTS cloud_categories_restaurant_status
 CREATE TABLE IF NOT EXISTS cloud_catalog_items (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
-  kind TEXT NOT NULL CHECK (kind IN ('dish','good','raw_material','semi_finished')),
+  kind TEXT NOT NULL CHECK (kind IN ('dish','good','ingredient','semi_finished')),
   name TEXT NOT NULL CHECK (name <> ''),
   sku TEXT NOT NULL CHECK (sku <> ''),
   base_unit TEXT NOT NULL CHECK (base_unit <> ''),

@@ -168,6 +168,9 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 			t.Fatalf("expected master-data authority migration to manage %s", required)
 		}
 	}
+	if !strings.Contains(masterDataBody, "kind IN ('dish','good','ingredient','semi_finished')") || strings.Contains(masterDataBody, "raw_material") {
+		t.Fatalf("expected first-launch catalog item kind check to use canonical ingredient enum only")
+	}
 	restaurantsBody := string(files[4].Body)
 	for _, required := range []string{
 		"cloud_restaurants",
@@ -177,6 +180,9 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 		if !strings.Contains(restaurantsBody, required) {
 			t.Fatalf("expected restaurants/API migration to manage %s", required)
 		}
+	}
+	if !strings.Contains(restaurantsBody, "WHERE kind = 'raw_material'") || !strings.Contains(restaurantsBody, "kind IN ('dish','good','ingredient','semi_finished')") {
+		t.Fatalf("expected API migration to normalize legacy raw_material rows before enforcing canonical ingredient enum")
 	}
 	zeroToCashierBody := string(files[5].Body)
 	for _, required := range []string{

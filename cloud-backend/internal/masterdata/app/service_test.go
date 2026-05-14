@@ -241,6 +241,80 @@ func TestCatalogMenuValidationAndPublicationPackageShape(t *testing.T) {
 	if !ok || !strings.Contains(string(menuPackage.PayloadJSON), `"active":true`) {
 		t.Fatalf("expected active menu package, ok=%v payload=%s", ok, menuPackage.PayloadJSON)
 	}
+	catalogPackage, ok := repo.Package("catalog", "node-1")
+	if !ok {
+		t.Fatal("expected catalog stream package to be generated")
+	}
+	if strings.Contains(string(catalogPackage.PayloadJSON), `"categories"`) {
+		t.Fatalf("catalog stream must not publish unsupported categories payload: %s", catalogPackage.PayloadJSON)
+	}
+	fullPackage, err := service.GetCurrentPublishedPackage(ctx, restaurant.ID, "node-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fullBody, err := json.Marshal(fullPackage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(fullBody), `"categories"`) {
+		t.Fatalf("full package must not publish unsupported categories payload: %s", fullBody)
+	}
+}
+
+func TestCatalogItemKindIngredientRoundTripAndPublication(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	restaurant, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "Demo Bistro", Timezone: "Europe/Moscow", Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: restaurant.ID, Kind: domain.CatalogItemIngredient, Name: "Potato", SKU: "POTATO", BaseUnit: "kg"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Kind != domain.CatalogItemIngredient {
+		t.Fatalf("expected canonical ingredient kind after create, got %q", item.Kind)
+	}
+	got, err := service.GetCatalogItem(ctx, item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := service.ListCatalogItems(ctx, restaurant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Kind != domain.CatalogItemIngredient || len(listed) != 1 || listed[0].Kind != domain.CatalogItemIngredient {
+		t.Fatalf("expected ingredient round-trip through get/list, got=%+v listed=%+v", got, listed)
+	}
+	good := domain.CatalogItemGood
+	updated, err := service.UpdateCatalogItem(ctx, item.ID, app.UpdateCatalogItemCommand{Kind: &good})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Kind != domain.CatalogItemGood {
+		t.Fatalf("expected update to keep canonical good kind, got %q", updated.Kind)
+	}
+	ingredient := domain.CatalogItemIngredient
+	updated, err = service.UpdateCatalogItem(ctx, item.ID, app.UpdateCatalogItemCommand{Type: &ingredient})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Kind != domain.CatalogItemIngredient {
+		t.Fatalf("expected legacy type alias to update canonical kind, got %q", updated.Kind)
+	}
+	if _, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: restaurant.ID, Kind: domain.CatalogItemKind("raw_material"), Name: "Flour", SKU: "FLOUR", BaseUnit: "kg"}); !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected raw_material to be rejected, got %v", err)
+	}
+	if _, err := service.Publish(ctx, app.PublishCommand{RestaurantID: restaurant.ID, PublishedBy: "operator-1", NodeDeviceID: "node-1"}); err != nil {
+		t.Fatal(err)
+	}
+	catalogPackage, ok := repo.Package("catalog", "node-1")
+	if !ok {
+		t.Fatal("expected catalog stream package to be generated")
+	}
+	if !strings.Contains(string(catalogPackage.PayloadJSON), `"type":"ingredient"`) || strings.Contains(string(catalogPackage.PayloadJSON), "raw_material") {
+		t.Fatalf("expected published Edge catalog type to stay ingredient only, payload=%s", catalogPackage.PayloadJSON)
+	}
 }
 
 func TestCatalogActiveSKUCanBeReusedAfterArchive(t *testing.T) {

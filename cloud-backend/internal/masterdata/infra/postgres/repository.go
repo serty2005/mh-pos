@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -440,7 +441,7 @@ func upsertKindFoundation(ctx context.Context, tx pgx.Tx, v domain.CatalogItem) 
 		_, err := tx.Exec(ctx, `INSERT INTO cloud_semi_finished_products(catalog_item_id,restaurant_id,updated_at) VALUES ($1,$2,$3) ON CONFLICT (catalog_item_id) DO UPDATE SET updated_at = EXCLUDED.updated_at`, v.ID, v.RestaurantID, v.UpdatedAt)
 		return err
 	default:
-		return nil
+		return fmt.Errorf("%w: unsupported catalog item kind %q", domain.ErrInvalid, v.Kind)
 	}
 }
 
@@ -475,9 +476,15 @@ func scanCatalogItem(row scanner) (domain.CatalogItem, error) {
 	var v domain.CatalogItem
 	var kind, status string
 	err := row.Scan(&v.ID, &v.RestaurantID, &kind, &v.Name, &v.SKU, &v.BaseUnit, &status, &v.CloudVersion, &v.ArchivedAt, &v.CreatedAt, &v.UpdatedAt)
+	if err != nil {
+		return v, err
+	}
 	v.Kind = domain.CatalogItemKind(kind)
 	v.Status = domain.LifecycleStatus(status)
-	return v, err
+	if err := domain.ValidateCatalogItemKind(v.Kind); err != nil {
+		return v, fmt.Errorf("%w: scanned catalog item %s has unsupported kind", err, v.ID)
+	}
+	return v, nil
 }
 
 func scanCategory(row scanner) (domain.Category, error) {

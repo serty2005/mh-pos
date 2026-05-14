@@ -1025,7 +1025,6 @@ func (s *Service) GetCurrentPublishedState(ctx context.Context, restaurantID str
 		"employees":     len(packet.Employees),
 		"catalog_items": len(packet.CatalogItems),
 		"menu_items":    len(packet.MenuItems),
-		"categories":    len(packet.Categories),
 		"halls":         len(packet.Halls),
 		"tables":        len(packet.Tables),
 	}
@@ -1063,10 +1062,6 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
 	}
-	categories, err := s.repo.ListCategories(ctx, restaurantID)
-	if err != nil {
-		return domain.MasterDataPacket{}, nil, nil, err
-	}
 	halls, err := s.repo.ListHalls(ctx, restaurantID)
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
@@ -1087,7 +1082,6 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 	sortEmployees(employees)
 	sortCatalog(catalogItems)
 	sortMenu(menuItems)
-	sortCategories(categories)
 	sortHalls(halls)
 	sortTables(tables)
 
@@ -1107,7 +1101,6 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 		Employees:       edgeEmployees(employees),
 		CatalogItems:    edgeCatalogItems(catalogItems),
 		MenuItems:       edgeMenuItems(menuItems),
-		Categories:      edgeCategories(categories),
 		Halls:           edgeHalls(halls),
 		Tables:          edgeTables(tables),
 		ModifierGroups:  []domain.EdgeModifierGroup{},
@@ -1119,7 +1112,6 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 		"employees":     len(packet.Employees),
 		"catalog_items": len(packet.CatalogItems),
 		"menu_items":    len(packet.MenuItems),
-		"categories":    len(packet.Categories),
 		"halls":         len(packet.Halls),
 		"tables":        len(packet.Tables),
 	}
@@ -1158,7 +1150,6 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 		CloudVersion    int64                    `json:"cloud_version"`
 		CloudUpdatedAt  time.Time                `json:"cloud_updated_at"`
 		CatalogItems    []domain.EdgeCatalogItem `json:"catalog_items"`
-		Categories      []domain.EdgeCategory    `json:"categories,omitempty"`
 	}
 	type floorPayload struct {
 		NodeDeviceID    string             `json:"node_device_id,omitempty"`
@@ -1203,7 +1194,7 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	catalog, err := build("catalog", catalogPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, CatalogItems: packet.CatalogItems, Categories: packet.Categories})
+	catalog, err := build("catalog", catalogPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, CatalogItems: packet.CatalogItems})
 	if err != nil {
 		return nil, err
 	}
@@ -1263,14 +1254,6 @@ func edgeMenuItems(items []domain.MenuItem) []domain.EdgeMenuItem {
 	out := make([]domain.EdgeMenuItem, 0, len(items))
 	for _, item := range items {
 		out = append(out, domain.EdgeMenuItem{ID: item.ID, CatalogItemID: item.CatalogItemID, Name: item.Name, Price: item.Price, Currency: item.Currency, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
-	}
-	return out
-}
-
-func edgeCategories(items []domain.Category) []domain.EdgeCategory {
-	out := make([]domain.EdgeCategory, 0, len(items))
-	for _, item := range items {
-		out = append(out, domain.EdgeCategory{ID: item.ID, Name: item.Name, SortOrder: item.SortOrder, Active: item.Status != domain.StatusArchived})
 	}
 	return out
 }
@@ -1511,15 +1494,6 @@ func sortCatalog(items []domain.CatalogItem) {
 
 func sortMenu(items []domain.MenuItem) {
 	sort.SliceStable(items, func(i, j int) bool { return items[i].ID < items[j].ID })
-}
-
-func sortCategories(items []domain.Category) {
-	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].SortOrder == items[j].SortOrder {
-			return items[i].ID < items[j].ID
-		}
-		return items[i].SortOrder < items[j].SortOrder
-	})
 }
 
 func sortHalls(items []domain.Hall) {
