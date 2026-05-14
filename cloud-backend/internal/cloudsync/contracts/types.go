@@ -23,8 +23,10 @@ const (
 	EventPrecheckReprinted        EventType = "PrecheckReprinted"
 	EventPrecheckCancelled        EventType = "PrecheckCancelled"
 	EventCheckCreated             EventType = "CheckCreated"
+	EventCheckRefunded            EventType = "CheckRefunded"
 	EventCheckReprinted           EventType = "CheckReprinted"
 	EventPaymentCaptured          EventType = "PaymentCaptured"
+	EventPaymentRefunded          EventType = "PaymentRefunded"
 	EventOrderClosed              EventType = "OrderClosed"
 	EventCashSessionOpened        EventType = "CashSessionOpened"
 	EventCashSessionClosed        EventType = "CashSessionClosed"
@@ -155,6 +157,12 @@ type PaymentCaptured struct {
 	UpdatedAt             time.Time `json:"updated_at"`
 }
 
+// PaymentRefunded использует payload shape платежа, где status фиксирует возврат.
+type PaymentRefunded = PaymentCaptured
+
+// CheckRefunded использует check payload shape для подтвержденного возврата чека.
+type CheckRefunded = CheckCreated
+
 type OrderClosed = OrderCreated
 
 type CashSessionOpened struct {
@@ -272,8 +280,12 @@ func ValidateEventPayload(v SyncEnvelope) error {
 		return validatePayload[ReprintDocument](v)
 	case EventCheckCreated:
 		return validatePayload[CheckCreated](v)
+	case EventCheckRefunded:
+		return validatePayload[CheckRefunded](v)
 	case EventPaymentCaptured:
 		return validatePayload[PaymentCaptured](v)
+	case EventPaymentRefunded:
+		return validatePayload[PaymentRefunded](v)
 	case EventOrderClosed:
 		return validatePayload[OrderClosed](v)
 	case EventCashSessionOpened:
@@ -321,7 +333,7 @@ func validateOperationalPayload(v SyncEnvelope) error {
 
 func IsKnownEventType(v EventType) bool {
 	switch v {
-	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckReprinted, EventPrecheckCancelled, EventCheckCreated, EventCheckReprinted, EventPaymentCaptured, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
+	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckReprinted, EventPrecheckCancelled, EventCheckCreated, EventCheckRefunded, EventCheckReprinted, EventPaymentCaptured, EventPaymentRefunded, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
 		return true
 	default:
 		return false

@@ -137,6 +137,7 @@ Pricing contract:
 - Refund requires `pos.payment.refund`, open cash session and same device/shift/restaurant.
 - Refund changes payment status from `captured` to `refunded`.
 - Refund decreases precheck `paid_total`; if a check exists, it decreases check `paid_total` and can mark check `refunded`.
+- Refund writes confirmed Edge -> Cloud operational events `PaymentRefunded` and, when a final check exists, `CheckRefunded`.
 
 Не реализовано сейчас:
 
@@ -149,28 +150,33 @@ Pricing contract:
 
 Реализовано сейчас:
 
-- `ApplyMasterData` accepts `full_snapshot` and `incremental`.
-- `full_snapshot` requires `full_snapshot_reason` of `terminal_restaurant_changed` or `node_role_changed`.
-- Backup hook exists for full snapshot when configured.
-- Supported POS Edge ingest streams:
+- `ApplyMasterData` принимает `full_snapshot` и `incremental`.
+- `full_snapshot` требует `full_snapshot_reason` со значением `terminal_restaurant_changed` или `node_role_changed`.
+- Backup hook для full snapshot существует, если он настроен.
+- Поддерживаемые POS Edge ingest streams:
   - `restaurants`
   - `devices`
   - `staff`
   - `floor`
   - `catalog`
   - `menu`
+  - `pricing_policy`
+- `pricing_policy` применяет `tax_profiles`, `tax_rules` и `service_charge_rules` с sync metadata.
+- Strict JSON decode отклоняет неизвестные request fields; unsupported stream names отклоняются до partial apply.
 
-Foundation only:
+Только foundation:
 
-- Domain constants and SQLite state know about `recipes` and `inventory_reference`, but `mastersync.Service` does not apply those streams yet.
-- Cloud schema foundation for modifiers/recipes/inventory-adjacent data does not make them supported POS Edge ingest payloads.
+- Domain constants и SQLite state знают о `recipes` и `inventory_reference`, но `mastersync.Service` пока не применяет эти streams.
+- Cloud schema foundation для modifiers/recipes/inventory-adjacent data не делает их поддерживаемыми POS Edge ingest payloads.
 
 ## Pricing, Modifiers And Inventory Boundaries
 
 Discounts/taxes:
 
 - Реализовано сейчас: separate `Pricing` policy area, backend authoritative calculation, unified ordered discount/surcharge pipeline, tax-last invariant, immutable precheck breakdown and no UI authoritative totals.
-- Запланировано далее: Cloud-authored pricing/tax rule publication into Edge runtime.
+- Реализовано сейчас: Cloud-authored tax/service-charge reference rows применяются через `pricing_policy`.
+- Запланировано далее: полный Cloud-authored pricing UI/publication workflow и policy-id-backed runtime adjustments.
+- Ручные order discounts/surcharges остаются Edge operational commands и требуют pricing permissions; manual policy exceptions требуют отдельный permission/audit boundary до поддержки.
 
 Modifiers:
 

@@ -59,21 +59,24 @@ func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idge
 
 type ApplyMasterDataCommand struct {
 	shared.CommandMeta
-	RestaurantID       string                  `json:"restaurant_id,omitempty"`
-	StreamName         domain.MasterDataStream `json:"stream,omitempty"`
-	SyncMode           domain.SyncMode         `json:"sync_mode,omitempty"`
-	FullSnapshotReason string                  `json:"full_snapshot_reason,omitempty"`
-	CheckpointToken    string                  `json:"checkpoint_token,omitempty"`
-	CloudVersion       int64                   `json:"cloud_version,omitempty"`
-	CloudUpdatedAt     string                  `json:"cloud_updated_at,omitempty"`
-	Restaurants        []domain.Restaurant     `json:"restaurants,omitempty"`
-	Devices            []domain.Device         `json:"devices,omitempty"`
-	Roles              []domain.Role           `json:"roles,omitempty"`
-	Employees          []domain.Employee       `json:"employees,omitempty"`
-	Halls              []domain.Hall           `json:"halls,omitempty"`
-	Tables             []domain.Table          `json:"tables,omitempty"`
-	CatalogItems       []domain.CatalogItem    `json:"catalog_items,omitempty"`
-	MenuItems          []domain.MenuItem       `json:"menu_items,omitempty"`
+	RestaurantID       string                     `json:"restaurant_id,omitempty"`
+	StreamName         domain.MasterDataStream    `json:"stream,omitempty"`
+	SyncMode           domain.SyncMode            `json:"sync_mode,omitempty"`
+	FullSnapshotReason string                     `json:"full_snapshot_reason,omitempty"`
+	CheckpointToken    string                     `json:"checkpoint_token,omitempty"`
+	CloudVersion       int64                      `json:"cloud_version,omitempty"`
+	CloudUpdatedAt     string                     `json:"cloud_updated_at,omitempty"`
+	Restaurants        []domain.Restaurant        `json:"restaurants,omitempty"`
+	Devices            []domain.Device            `json:"devices,omitempty"`
+	Roles              []domain.Role              `json:"roles,omitempty"`
+	Employees          []domain.Employee          `json:"employees,omitempty"`
+	Halls              []domain.Hall              `json:"halls,omitempty"`
+	Tables             []domain.Table             `json:"tables,omitempty"`
+	CatalogItems       []domain.CatalogItem       `json:"catalog_items,omitempty"`
+	MenuItems          []domain.MenuItem          `json:"menu_items,omitempty"`
+	TaxProfiles        []domain.TaxProfile        `json:"tax_profiles,omitempty"`
+	TaxRules           []domain.TaxRule           `json:"tax_rules,omitempty"`
+	ServiceChargeRules []domain.ServiceChargeRule `json:"service_charge_rules,omitempty"`
 }
 
 type ApplyMasterDataResult struct {
@@ -272,6 +275,35 @@ func (s *Service) applyStream(ctx context.Context, stream domain.MasterDataStrea
 			}
 		}
 		counts[string(stream)] = len(cmd.MenuItems)
+	case domain.MasterDataStreamPricing:
+		for i := range cmd.TaxProfiles {
+			v := normalizeTaxProfile(cmd.TaxProfiles[i], now)
+			if err := validateTaxProfile(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterTaxProfile(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
+		for i := range cmd.TaxRules {
+			v := normalizeTaxRule(cmd.TaxRules[i], now)
+			if err := validateTaxRule(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterTaxRule(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
+		for i := range cmd.ServiceChargeRules {
+			v := normalizeServiceChargeRule(cmd.ServiceChargeRules[i], now)
+			if err := validateServiceChargeRule(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterServiceChargeRule(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
+		counts[string(stream)] = len(cmd.TaxProfiles) + len(cmd.TaxRules) + len(cmd.ServiceChargeRules)
 	default:
 		return fmt.Errorf("%w: unsupported master data stream %q", domain.ErrInvalid, stream)
 	}
@@ -327,6 +359,22 @@ func validatePayload(cmd ApplyMasterDataCommand, streams []domain.MasterDataStre
 					return err
 				}
 			}
+		case domain.MasterDataStreamPricing:
+			for i := range cmd.TaxProfiles {
+				if err := validateTaxProfile(normalizeTaxProfile(cmd.TaxProfiles[i], now)); err != nil {
+					return err
+				}
+			}
+			for i := range cmd.TaxRules {
+				if err := validateTaxRule(normalizeTaxRule(cmd.TaxRules[i], now)); err != nil {
+					return err
+				}
+			}
+			for i := range cmd.ServiceChargeRules {
+				if err := validateServiceChargeRule(normalizeServiceChargeRule(cmd.ServiceChargeRules[i], now)); err != nil {
+					return err
+				}
+			}
 		default:
 			return fmt.Errorf("%w: unsupported master data stream %q", domain.ErrInvalid, stream)
 		}
@@ -350,6 +398,8 @@ func payloadRowCount(cmd ApplyMasterDataCommand, streams []domain.MasterDataStre
 			total += len(cmd.CatalogItems)
 		case domain.MasterDataStreamMenu:
 			total += len(cmd.MenuItems)
+		case domain.MasterDataStreamPricing:
+			total += len(cmd.TaxProfiles) + len(cmd.TaxRules) + len(cmd.ServiceChargeRules)
 		}
 	}
 	return total
@@ -407,6 +457,9 @@ func streamsToApply(cmd ApplyMasterDataCommand) ([]domain.MasterDataStream, erro
 	if len(cmd.MenuItems) > 0 {
 		streams = append(streams, domain.MasterDataStreamMenu)
 	}
+	if len(cmd.TaxProfiles) > 0 || len(cmd.TaxRules) > 0 || len(cmd.ServiceChargeRules) > 0 {
+		streams = append(streams, domain.MasterDataStreamPricing)
+	}
 	if len(streams) == 0 {
 		return nil, fmt.Errorf("%w: at least one supported master data stream is required", domain.ErrInvalid)
 	}
@@ -420,7 +473,8 @@ func supportedStream(stream domain.MasterDataStream) bool {
 		domain.MasterDataStreamStaff,
 		domain.MasterDataStreamFloor,
 		domain.MasterDataStreamCatalog,
-		domain.MasterDataStreamMenu:
+		domain.MasterDataStreamMenu,
+		domain.MasterDataStreamPricing:
 		return true
 	default:
 		return false
@@ -530,6 +584,32 @@ func normalizeMenuItem(v domain.MenuItem, now time.Time) domain.MenuItem {
 	return v
 }
 
+func normalizeTaxProfile(v domain.TaxProfile, now time.Time) domain.TaxProfile {
+	v.ID = strings.TrimSpace(v.ID)
+	v.Name = strings.TrimSpace(v.Name)
+	v.CreatedAt = defaultTime(v.CreatedAt, now)
+	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
+	return v
+}
+
+func normalizeTaxRule(v domain.TaxRule, now time.Time) domain.TaxRule {
+	v.ID = strings.TrimSpace(v.ID)
+	v.TaxProfileID = strings.TrimSpace(v.TaxProfileID)
+	v.Name = strings.TrimSpace(v.Name)
+	v.CreatedAt = defaultTime(v.CreatedAt, now)
+	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
+	return v
+}
+
+func normalizeServiceChargeRule(v domain.ServiceChargeRule, now time.Time) domain.ServiceChargeRule {
+	v.ID = strings.TrimSpace(v.ID)
+	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
+	v.Name = strings.TrimSpace(v.Name)
+	v.CreatedAt = defaultTime(v.CreatedAt, now)
+	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
+	return v
+}
+
 func defaultTime(v, fallback time.Time) time.Time {
 	if v.IsZero() {
 		return fallback
@@ -606,6 +686,67 @@ func validateMenuItem(v domain.MenuItem) error {
 	}
 	if _, err := shared.ValidateCurrencyCode(v.Currency); err != nil {
 		return fmt.Errorf("%w: %v", domain.ErrInvalid, err)
+	}
+	return nil
+}
+
+func validateTaxProfile(v domain.TaxProfile) error {
+	if v.ID == "" || v.Name == "" {
+		return fmt.Errorf("%w: tax profile id and name are required", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func validateTaxRule(v domain.TaxRule) error {
+	if v.ID == "" || v.TaxProfileID == "" || v.Name == "" {
+		return fmt.Errorf("%w: tax rule id, tax_profile_id and name are required", domain.ErrInvalid)
+	}
+	switch v.Kind {
+	case domain.TaxRulePercentage:
+		if v.RateBasisPoints <= 0 {
+			return fmt.Errorf("%w: percentage tax rule requires positive rate_basis_points", domain.ErrInvalid)
+		}
+	case domain.TaxRuleFixed:
+		if v.AmountMinor <= 0 {
+			return fmt.Errorf("%w: fixed tax rule requires positive amount_minor", domain.ErrInvalid)
+		}
+	default:
+		return fmt.Errorf("%w: unsupported tax rule kind", domain.ErrInvalid)
+	}
+	switch v.Mode {
+	case domain.TaxModeInclusive, domain.TaxModeExclusive:
+	default:
+		return fmt.Errorf("%w: unsupported tax mode", domain.ErrInvalid)
+	}
+	if v.RateBasisPoints < 0 || v.AmountMinor < 0 {
+		return fmt.Errorf("%w: tax rule amounts must be non-negative", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func validateServiceChargeRule(v domain.ServiceChargeRule) error {
+	if v.ID == "" || v.RestaurantID == "" || v.Name == "" {
+		return fmt.Errorf("%w: service charge rule id, restaurant_id and name are required", domain.ErrInvalid)
+	}
+	switch v.Kind {
+	case domain.SurchargeServiceCharge, domain.SurchargePB1ServiceFee, domain.SurchargeManual:
+	default:
+		return fmt.Errorf("%w: unsupported service charge kind", domain.ErrInvalid)
+	}
+	switch v.AmountKind {
+	case domain.AmountPercentage:
+		if v.ValueBasisPoints <= 0 {
+			return fmt.Errorf("%w: percentage service charge rule requires positive value_basis_points", domain.ErrInvalid)
+		}
+	case domain.AmountFixed:
+		if v.AmountMinor <= 0 {
+			return fmt.Errorf("%w: fixed service charge rule requires positive amount_minor", domain.ErrInvalid)
+		}
+	default:
+		return fmt.Errorf("%w: unsupported service charge amount_kind", domain.ErrInvalid)
+	}
+	if v.AmountMinor < 0 || v.ValueBasisPoints < 0 {
+		return fmt.Errorf("%w: service charge amounts must be non-negative", domain.ErrInvalid)
 	}
 	return nil
 }

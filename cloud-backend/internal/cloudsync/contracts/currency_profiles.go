@@ -1,6 +1,7 @@
 package contracts
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -62,11 +63,33 @@ func CanonicalActiveCurrencyProfiles() []CurrencyProfile {
 
 // ValidateMasterDataPayload проверяет stream-specific payload constraints.
 func ValidateMasterDataPayload(streamName string, payload json.RawMessage) error {
-	if strings.TrimSpace(streamName) != MasterDataStreamCurrencies {
+	switch strings.TrimSpace(streamName) {
+	case MasterDataStreamCurrencies:
+		return validateCurrenciesPayload(payload)
+	case MasterDataStreamRestaurants:
+		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "restaurants"}, []string{"restaurants"})
+	case MasterDataStreamDevices:
+		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "devices"}, []string{"devices"})
+	case MasterDataStreamStaff:
+		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "roles", "employees"}, []string{"roles", "employees"})
+	case MasterDataStreamFloor:
+		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "halls", "tables"}, []string{"halls", "tables"})
+	case MasterDataStreamCatalog:
+		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "catalog_items"}, []string{"catalog_items"})
+	case MasterDataStreamMenu:
+		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "menu_items"}, []string{"menu_items"})
+	case MasterDataStreamPricing:
+		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "tax_profiles", "tax_rules", "service_charge_rules"}, []string{"tax_profiles", "tax_rules", "service_charge_rules"})
+	default:
 		return nil
 	}
+}
+
+func validateCurrenciesPayload(payload json.RawMessage) error {
 	var body currencyProfilesPayload
-	if err := json.Unmarshal(payload, &body); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(payload))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
 		return fmt.Errorf("%w: currencies payload must be valid JSON object", ErrInvalidEnvelope)
 	}
 	if len(body.Currencies) == 0 {
@@ -101,6 +124,44 @@ func ValidateMasterDataPayload(streamName string, payload json.RawMessage) error
 		seenAlpha[alpha] = struct{}{}
 	}
 	return nil
+}
+
+func validateMasterDataObjectPayload(streamName string, payload json.RawMessage, allowedKeys, dataKeys []string) error {
+	var body map[string]json.RawMessage
+	dec := json.NewDecoder(bytes.NewReader(payload))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		return fmt.Errorf("%w: %s payload must be valid JSON object", ErrInvalidEnvelope, streamName)
+	}
+	if len(body) == 0 {
+		return fmt.Errorf("%w: %s payload must not be empty", ErrInvalidEnvelope, streamName)
+	}
+	allowed := make(map[string]struct{}, len(allowedKeys))
+	for _, key := range allowedKeys {
+		allowed[key] = struct{}{}
+	}
+	for key := range body {
+		if _, ok := allowed[key]; !ok {
+			return fmt.Errorf("%w: unsupported %s payload field %q", ErrInvalidEnvelope, streamName, key)
+		}
+	}
+	hasData := false
+	for _, key := range dataKeys {
+		if raw, ok := body[key]; ok && string(raw) != "null" {
+			if len(raw) == 0 {
+				continue
+			}
+			var items []json.RawMessage
+			if err := json.Unmarshal(raw, &items); err != nil {
+				return fmt.Errorf("%w: %s.%s must be an array", ErrInvalidEnvelope, streamName, key)
+			}
+			hasData = true
+		}
+	}
+	if hasData {
+		return nil
+	}
+	return fmt.Errorf("%w: %s payload must include supported stream data", ErrInvalidEnvelope, streamName)
 }
 
 func buildCanonicalActiveCurrencyProfiles() []CurrencyProfile {

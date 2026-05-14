@@ -23,6 +23,7 @@ const (
 	MasterDataStreamFloor       MasterDataStream = "floor"
 	MasterDataStreamCatalog     MasterDataStream = "catalog"
 	MasterDataStreamMenu        MasterDataStream = "menu"
+	MasterDataStreamPricing     MasterDataStream = "pricing_policy"
 	MasterDataStreamRecipes     MasterDataStream = "recipes"
 	MasterDataStreamInventory   MasterDataStream = "inventory_reference"
 )
@@ -66,7 +67,9 @@ func IsEdgeToCloudOperationalEvent(eventType string) bool {
 		"PrecheckReprinted",
 		"PrecheckCancelled",
 		"PaymentCaptured",
+		"PaymentRefunded",
 		"CheckCreated",
+		"CheckRefunded",
 		"CheckReprinted",
 		"OrderClosed",
 		"AuthSessionStarted",

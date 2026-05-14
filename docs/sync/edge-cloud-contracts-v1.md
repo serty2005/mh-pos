@@ -29,6 +29,7 @@ staff
 floor
 catalog
 menu
+pricing_policy
 ```
 
 Request body shape currently supported by POS Edge:
@@ -49,32 +50,37 @@ Request body shape currently supported by POS Edge:
   "halls": [],
   "tables": [],
   "catalog_items": [],
-  "menu_items": []
+  "menu_items": [],
+  "tax_profiles": [],
+  "tax_rules": [],
+  "service_charge_rules": []
 }
 ```
 
-Rules:
+Правила:
 
-- `sync_mode` is `incremental` by default.
-- Supported values are `incremental` and `full_snapshot`.
-- `full_snapshot` requires `full_snapshot_reason` of `terminal_restaurant_changed` or `node_role_changed`.
-- Unsupported streams are rejected.
-- `recipes`, `inventory_reference`, modifiers, pricing rules and tax profiles are not supported POS Edge apply payloads yet.
+- `sync_mode` по умолчанию равен `incremental`.
+- Поддерживаемые значения: `incremental` и `full_snapshot`.
+- `full_snapshot` требует `full_snapshot_reason` со значением `terminal_restaurant_changed` или `node_role_changed`.
+- Unsupported streams отклоняются.
+- `pricing_policy` применяет Cloud-authored `tax_profiles`, `tax_rules` и `service_charge_rules` в Edge read-model tables с sync metadata.
+- Unsupported JSON fields отклоняются strict decode; неизвестные stream names не применяются.
+- `recipes`, `inventory_reference` и modifiers пока не являются поддерживаемыми POS Edge apply payloads.
 
-Foundation only:
+Только foundation:
 
-- Cloud schema has modifier/recipe/menu publication foundations.
-- SQLite schema has recipe/inventory foundation.
-- These foundations must not be documented as supported POS Edge runtime ingest until `mastersync.Service` applies them.
+- Cloud schema содержит modifier/recipe/menu publication foundation.
+- SQLite schema содержит recipe/inventory foundation.
+- Эти foundation нельзя документировать как поддерживаемый POS Edge runtime ingest, пока `mastersync.Service` не применяет их payloads.
 
 ## Edge -> Cloud Operational Events
 
 Реализовано сейчас:
 
-- POS Edge writes local operational events and outbox rows for cashier runtime commands.
-- Sender/cloud receiver details are implementation-specific; documentation must not claim Cloud reporting semantics for events that are not in the confirmed edge-to-cloud catalog.
+- POS Edge пишет local operational events и outbox rows для cashier runtime commands.
+- Детали sender/cloud receiver являются implementation-specific; документация не должна обещать Cloud reporting semantics для events, которых нет в подтвержденном Edge -> Cloud catalog.
 
-Confirmed current edge-to-cloud catalog in domain boundary:
+Подтвержденный текущий Edge -> Cloud catalog в domain boundary:
 
 ```text
 ShiftOpened
@@ -90,7 +96,9 @@ PrecheckIssued
 PrecheckReprinted
 PrecheckCancelled
 PaymentCaptured
+PaymentRefunded
 CheckCreated
+CheckRefunded
 CheckReprinted
 OrderClosed
 AuthSessionStarted
@@ -98,33 +106,32 @@ AuthSessionRevoked
 DeviceRegistered
 ```
 
-Refund note:
+Refund sync behavior:
 
-- Backend refund flow is implemented and writes local event/outbox records.
-- `PaymentRefunded` / `CheckRefunded` should not be documented as confirmed Cloud reporting events until sync direction and Cloud receiver behavior are explicitly hardened.
+- `PaymentRefunded` и `CheckRefunded` являются подтвержденными Edge -> Cloud operational events.
+- Cloud receiver валидирует эти event types, сохраняет raw envelope/journal rows и обновляет event-type stats.
+- Shift finance projection хранит payment refund count/total и check refunded count/current refunded paid-total foundation. Подробное отображение возвратов должно читать stored raw/journal payloads, пока не добавлена более богатая refund ledger projection.
 
 ## Financial Payload Boundaries
 
 Реализовано сейчас:
 
-- `PaymentCaptured` and `CheckCreated` payloads include backend-owned `business_date_local`.
-- Precheck/check reprint uses immutable snapshot payload.
-- Payment references `precheck_id`, not legacy `check_id`.
+- Payloads `PaymentCaptured`, `PaymentRefunded`, `CheckCreated` и `CheckRefunded` включают backend-owned `business_date_local`, если он есть у source aggregate.
+- Precheck/check reprint использует immutable snapshot payload.
+- Payment ссылается на `precheck_id`, а не на legacy `check_id`.
 
 Не реализовано сейчас:
 
-- discount/surcharge/tax policy payloads;
-- modifier selections in operational snapshots;
+- modifier selections в operational snapshots;
 - inventory consumption events;
 - PSP/fiscal event streams.
 
 ## Planned Boundaries
 
-Запланировано до пилота only if accepted:
+Запланировано до пилота только при отдельном принятии:
 
-- pricing/tax publication payloads after backend policy exists;
-- modifier publication and order snapshot support;
-- refund sync/reporting hardening.
+- Cloud-authored pricing/tax UI и полный publication workflow поверх generic `pricing_policy` package storage/apply;
+- modifier publication и order snapshot support;
 
 После пилота:
 

@@ -100,6 +100,7 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
 - Partial payments разрешены до суммы precheck total.
 - Final check создается только после полной оплаты active precheck.
 - Refund переводит captured payment в `refunded`, уменьшает `paid_total` precheck и, если check уже есть, уменьшает `paid_total` check.
+- Refund пишет подтвержденные Edge -> Cloud operational events `PaymentRefunded` и, если затронут final check, `CheckRefunded`.
 - Check snapshot включает precheck snapshot и payments snapshot.
 
 ## Master Data And Sync
@@ -116,6 +117,9 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
   - `floor`
   - `catalog`
   - `menu`
+  - `pricing_policy`
+- `pricing_policy` применяет Cloud-authored `tax_profiles`, `tax_rules`, `service_charge_rules` как reference/read-model data с sync metadata.
+- Unknown JSON fields и unsupported stream names отклоняются до partial apply.
 
 Foundation only:
 
@@ -146,13 +150,13 @@ Foundation only:
 - `GET /api/v1/orders/{id}/pricing` возвращает calculated preview.
 - `POST /api/v1/orders/{id}/discounts` и `POST /api/v1/orders/{id}/surcharges` сохраняют order pricing adjustments для open order; оба payload требуют `application_index`.
 - `IssuePrecheck` сохраняет immutable financial snapshot и persistence breakdown в `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`.
+- Edge operational adjustments пока остаются runtime-командами; Cloud-authored tax/service-charge reference data приходит через `pricing_policy`.
 
 Запланировано до пилота:
 
-- Скидки и надбавки редактируются только на Cloud-стороне.
-- Edge получает pricing rules только как master-data/publication payload и не создает их локально.
-- Cloud -> Edge publication для pricing/tax rules должен быть доведен отдельно; сейчас локальный Edge schema/runtime foundation уже есть.
-- Manual line override / manual amount override допускается только при явном разрешении policy.
+- Runtime adjustments должны ссылаться на synced policy ids там, где центральная policy уже существует.
+- Full Cloud UI/publication workflow для pricing/tax policy должен быть доведен отдельно; текущий шаг подтверждает только generic package storage/apply для `pricing_policy`.
+- Manual line override / manual amount override допускается только при явном разрешении policy, отдельном permission boundary и audit trail.
 
 Вне текущего объема до реализации:
 

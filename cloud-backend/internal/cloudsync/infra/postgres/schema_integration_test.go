@@ -31,7 +31,7 @@ func TestActualCloudMigrationsInitializeEmptyPostgres(t *testing.T) {
 	for _, req := range RequiredSchema() {
 		assertTableExists(t, ctx, pool, req.Table)
 	}
-	assertRecordedMigrationCount(t, ctx, pool, 4)
+	assertRecordedMigrationCount(t, ctx, pool, 7)
 
 	if err := platformpg.MigrateDirWithPolicy(ctx, pool, actualMigrationsDir(), platformpg.MigrationOptions{
 		ModuleName:         "cloud-backend",
@@ -41,7 +41,7 @@ func TestActualCloudMigrationsInitializeEmptyPostgres(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("second empty postgres migration failed: %v", err)
 	}
-	assertRecordedMigrationCount(t, ctx, pool, 4)
+	assertRecordedMigrationCount(t, ctx, pool, 7)
 }
 
 func TestActualCloudMigrationsRepairOldPostgresMissingRuntimeTable(t *testing.T) {
@@ -186,7 +186,7 @@ VALUES ($1, $2, 'applied'), ($3, $4, 'applied');
 		t.Fatalf("old postgres repair migration failed: %v", err)
 	}
 	assertTableExists(t, ctx, pool, "cloud_projection_shift_finance")
-	assertRecordedMigrationCount(t, ctx, pool, 4)
+	assertRecordedMigrationCount(t, ctx, pool, 7)
 
 	if err := platformpg.MigrateDirWithPolicy(ctx, pool, actualMigrationsDir(), platformpg.MigrationOptions{
 		ModuleName:         "cloud-backend",
@@ -196,7 +196,7 @@ VALUES ($1, $2, 'applied'), ($3, $4, 'applied');
 	}); err != nil {
 		t.Fatalf("second old postgres repair migration failed: %v", err)
 	}
-	assertRecordedMigrationCount(t, ctx, pool, 4)
+	assertRecordedMigrationCount(t, ctx, pool, 7)
 }
 
 func actualMigrationsDir() string {

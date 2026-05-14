@@ -46,8 +46,12 @@ type ShiftFinanceProjection struct {
 	ShiftID               string
 	PaymentsCapturedCount int64
 	PaymentsCapturedTotal int64
+	PaymentsRefundedCount int64
+	PaymentsRefundedTotal int64
 	ChecksCreatedCount    int64
 	ChecksTotalAmount     int64
+	ChecksRefundedCount   int64
+	ChecksRefundedTotal   int64
 	LastEventID           string
 	LastCommandID         string
 	LastOccurredAt        time.Time
@@ -203,11 +207,23 @@ func (r *Repository) applyShiftFinanceProjection(receipt app.EdgeEventReceipt) {
 			current.PaymentsCapturedCount++
 			current.PaymentsCapturedTotal += payload.Data.Amount
 		}
+	case contracts.EventPaymentRefunded:
+		var payload contracts.Payload[contracts.PaymentRefunded]
+		if err := json.Unmarshal(receipt.Envelope.Payload, &payload); err == nil {
+			current.PaymentsRefundedCount++
+			current.PaymentsRefundedTotal += payload.Data.Amount
+		}
 	case contracts.EventCheckCreated:
 		var payload contracts.Payload[contracts.CheckCreated]
 		if err := json.Unmarshal(receipt.Envelope.Payload, &payload); err == nil {
 			current.ChecksCreatedCount++
 			current.ChecksTotalAmount += payload.Data.Total
+		}
+	case contracts.EventCheckRefunded:
+		var payload contracts.Payload[contracts.CheckRefunded]
+		if err := json.Unmarshal(receipt.Envelope.Payload, &payload); err == nil {
+			current.ChecksRefundedCount++
+			current.ChecksRefundedTotal += payload.Data.PaidTotal
 		}
 	default:
 		return

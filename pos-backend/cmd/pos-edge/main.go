@@ -46,7 +46,7 @@ func run() error {
 	dbPath := cfg.Get("POS_SQLITE_PATH", "data/pos-edge.db")
 	migrationsDir := cfg.Get("POS_SQLITE_MIGRATIONS_DIR", "migrations/sqlite")
 	backupDir := cfg.Get("POS_SQLITE_BACKUP_DIR", "data/backups")
-	moduleVersion := cfg.Get("MH_POS_VERSION", "0.1.1")
+	moduleVersion := cfg.Get("MH_POS_VERSION", "0.1.2")
 	rawCloudURL := cfg.Get("POS_CLOUD_SYNC_URL", "")
 	cloudProvisioningURL := rawCloudURL
 	if strings.HasSuffix(cloudProvisioningURL, "/api/v1/sync/edge-events") {

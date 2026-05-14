@@ -160,6 +160,7 @@ type OrderDiscount = pricing.OrderDiscount
 type OrderSurcharge = pricing.OrderSurcharge
 type TaxProfile = pricing.TaxProfile
 type TaxRule = pricing.TaxRule
+type ServiceChargeRule = pricing.ServiceChargeRule
 type CalculationModifier = pricing.CalculationModifier
 type CalculationInput = pricing.CalculationInput
 type CalculationResult = pricing.CalculationResult
@@ -246,6 +247,7 @@ const (
 	MasterDataStreamFloor       = shared.MasterDataStreamFloor
 	MasterDataStreamCatalog     = shared.MasterDataStreamCatalog
 	MasterDataStreamMenu        = shared.MasterDataStreamMenu
+	MasterDataStreamPricing     = shared.MasterDataStreamPricing
 	MasterDataStreamRecipes     = shared.MasterDataStreamRecipes
 	MasterDataStreamInventory   = shared.MasterDataStreamInventory
 
