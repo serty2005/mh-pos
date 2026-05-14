@@ -150,18 +150,24 @@ const (
 
 type AmountKind = pricing.AmountKind
 type DiscountScope = pricing.DiscountScope
+type ModifierType = pricing.ModifierType
 type SurchargeKind = pricing.SurchargeKind
 type TaxMode = pricing.TaxMode
 type TaxRuleKind = pricing.TaxRuleKind
+type Discount = pricing.Discount
+type Surcharge = pricing.Surcharge
 type OrderDiscount = pricing.OrderDiscount
 type OrderSurcharge = pricing.OrderSurcharge
 type TaxProfile = pricing.TaxProfile
 type TaxRule = pricing.TaxRule
+type CalculationModifier = pricing.CalculationModifier
 type CalculationInput = pricing.CalculationInput
 type CalculationResult = pricing.CalculationResult
+type CalculationSnapshot = pricing.CalculationSnapshot
 type LineBreakdown = pricing.LineBreakdown
 type DiscountBreakdown = pricing.DiscountBreakdown
 type SurchargeBreakdown = pricing.SurchargeBreakdown
+type TaxComponent = pricing.TaxComponent
 type TaxComponentBreakdown = pricing.TaxComponentBreakdown
 
 const (
@@ -170,6 +176,9 @@ const (
 
 	DiscountScopeLine  = pricing.DiscountScopeLine
 	DiscountScopeOrder = pricing.DiscountScopeOrder
+
+	ModifierTypeDiscount  = pricing.ModifierTypeDiscount
+	ModifierTypeSurcharge = pricing.ModifierTypeSurcharge
 
 	SurchargeServiceCharge = pricing.SurchargeServiceCharge
 	SurchargePB1ServiceFee = pricing.SurchargePB1ServiceFee

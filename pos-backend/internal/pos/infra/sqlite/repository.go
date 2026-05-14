@@ -113,7 +113,7 @@ func normalizeErr(err error) error {
 	if strings.Contains(msg, "unique constraint") {
 		return fmt.Errorf("%w: %v", domain.ErrDuplicate, err)
 	}
-	if strings.Contains(msg, "foreign key constraint") || strings.Contains(msg, "check constraint") {
+	if strings.Contains(msg, "foreign key constraint") || strings.Contains(msg, "check constraint") || strings.Contains(msg, "duplicate application_index") {
 		return fmt.Errorf("%w: %v", domain.ErrInvalid, err)
 	}
 	return err

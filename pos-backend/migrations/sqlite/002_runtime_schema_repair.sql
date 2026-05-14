@@ -242,6 +242,7 @@ CREATE TABLE IF NOT EXISTS order_line_discounts (
   order_id TEXT NOT NULL REFERENCES orders(id),
   order_line_id TEXT REFERENCES order_lines(id),
   scope TEXT NOT NULL CHECK (scope IN ('line','order')),
+  application_index INTEGER NOT NULL CHECK (application_index > 0),
   amount_kind TEXT NOT NULL CHECK (amount_kind IN ('percentage','fixed')),
   amount_minor INTEGER NOT NULL DEFAULT 0 CHECK (amount_minor >= 0),
   value_basis_points INTEGER NOT NULL DEFAULT 0 CHECK (value_basis_points >= 0),
@@ -250,6 +251,10 @@ CREATE TABLE IF NOT EXISTS order_line_discounts (
   CHECK (scope = 'order' OR order_line_id IS NOT NULL)
 );
 
+-- sqlite:repair-column order_line_discounts application_index
+ALTER TABLE order_line_discounts ADD COLUMN application_index INTEGER NOT NULL DEFAULT 0;
+
+-- sqlite:repair-sql
 CREATE INDEX IF NOT EXISTS order_line_discounts_order_created_at ON order_line_discounts(order_id, created_at);
 
 CREATE TABLE IF NOT EXISTS order_level_discounts (
@@ -263,6 +268,7 @@ CREATE TABLE IF NOT EXISTS order_surcharges (
   id TEXT PRIMARY KEY,
   order_id TEXT NOT NULL REFERENCES orders(id),
   kind TEXT NOT NULL CHECK (kind IN ('service_charge','pb1_service_fee','manual')),
+  application_index INTEGER NOT NULL CHECK (application_index > 0),
   amount_kind TEXT NOT NULL CHECK (amount_kind IN ('percentage','fixed')),
   amount_minor INTEGER NOT NULL DEFAULT 0 CHECK (amount_minor >= 0),
   value_basis_points INTEGER NOT NULL DEFAULT 0 CHECK (value_basis_points >= 0),
@@ -270,6 +276,10 @@ CREATE TABLE IF NOT EXISTS order_surcharges (
   created_at TEXT NOT NULL
 );
 
+-- sqlite:repair-column order_surcharges application_index
+ALTER TABLE order_surcharges ADD COLUMN application_index INTEGER NOT NULL DEFAULT 0;
+
+-- sqlite:repair-sql
 CREATE INDEX IF NOT EXISTS order_surcharges_order_created_at ON order_surcharges(order_id, created_at);
 
 CREATE TABLE IF NOT EXISTS service_charge_rules (
@@ -310,21 +320,132 @@ CREATE TABLE IF NOT EXISTS precheck_discounts (
   precheck_id TEXT NOT NULL REFERENCES prechecks(id),
   discount_id TEXT NOT NULL,
   scope TEXT NOT NULL CHECK (scope IN ('line','order')),
+  application_index INTEGER NOT NULL CHECK (application_index > 0),
   order_line_id TEXT,
   amount_kind TEXT NOT NULL CHECK (amount_kind IN ('percentage','fixed')),
   amount_minor INTEGER NOT NULL CHECK (amount_minor >= 0),
   reason TEXT
 );
 
+-- sqlite:repair-column precheck_discounts application_index
+ALTER TABLE precheck_discounts ADD COLUMN application_index INTEGER NOT NULL DEFAULT 0;
+
+-- sqlite:repair-sql
 CREATE TABLE IF NOT EXISTS precheck_surcharges (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   precheck_id TEXT NOT NULL REFERENCES prechecks(id),
   surcharge_id TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('service_charge','pb1_service_fee','manual')),
+  application_index INTEGER NOT NULL CHECK (application_index > 0),
   amount_kind TEXT NOT NULL CHECK (amount_kind IN ('percentage','fixed')),
   amount_minor INTEGER NOT NULL CHECK (amount_minor >= 0),
   reason TEXT
 );
+
+-- sqlite:repair-column precheck_surcharges application_index
+ALTER TABLE precheck_surcharges ADD COLUMN application_index INTEGER NOT NULL DEFAULT 0;
+
+-- sqlite:repair-sql
+WITH ordered_modifiers AS (
+  SELECT modifier_type, id, ROW_NUMBER() OVER (PARTITION BY order_id ORDER BY created_at, modifier_type, id) * 10 AS next_application_index
+  FROM (
+    SELECT 'discount' AS modifier_type, id, order_id, created_at
+    FROM order_line_discounts
+    WHERE application_index <= 0
+    UNION ALL
+    SELECT 'surcharge' AS modifier_type, id, order_id, created_at
+    FROM order_surcharges
+    WHERE application_index <= 0
+  )
+)
+UPDATE order_line_discounts
+SET application_index = (
+  SELECT next_application_index
+  FROM ordered_modifiers
+  WHERE ordered_modifiers.modifier_type = 'discount'
+    AND ordered_modifiers.id = order_line_discounts.id
+)
+WHERE application_index <= 0;
+
+-- sqlite:repair-sql
+WITH ordered_modifiers AS (
+  SELECT modifier_type, id, ROW_NUMBER() OVER (PARTITION BY order_id ORDER BY created_at, modifier_type, id) * 10 AS next_application_index
+  FROM (
+    SELECT 'discount' AS modifier_type, id, order_id, created_at
+    FROM order_line_discounts
+    UNION ALL
+    SELECT 'surcharge' AS modifier_type, id, order_id, created_at
+    FROM order_surcharges
+    WHERE application_index <= 0
+  )
+)
+UPDATE order_surcharges
+SET application_index = (
+  SELECT next_application_index
+  FROM ordered_modifiers
+  WHERE ordered_modifiers.modifier_type = 'surcharge'
+    AND ordered_modifiers.id = order_surcharges.id
+)
+WHERE application_index <= 0;
+
+-- sqlite:repair-sql
+UPDATE precheck_discounts
+SET application_index = COALESCE(
+  (SELECT application_index FROM order_line_discounts WHERE order_line_discounts.id = precheck_discounts.discount_id),
+  100000 + id * 20
+)
+WHERE application_index <= 0;
+
+-- sqlite:repair-sql
+UPDATE precheck_surcharges
+SET application_index = COALESCE(
+  (SELECT application_index FROM order_surcharges WHERE order_surcharges.id = precheck_surcharges.surcharge_id),
+  100000 + id * 20 + 10
+)
+WHERE application_index <= 0;
+
+CREATE UNIQUE INDEX IF NOT EXISTS order_line_discounts_order_application_index ON order_line_discounts(order_id, application_index);
+CREATE UNIQUE INDEX IF NOT EXISTS order_surcharges_order_application_index ON order_surcharges(order_id, application_index);
+
+CREATE TRIGGER IF NOT EXISTS order_line_discounts_application_index_unique_insert
+BEFORE INSERT ON order_line_discounts
+WHEN EXISTS (
+  SELECT 1 FROM order_surcharges s
+  WHERE s.order_id = NEW.order_id AND s.application_index = NEW.application_index
+)
+BEGIN
+  SELECT RAISE(ABORT, 'duplicate application_index for order financial modifiers');
+END;
+
+CREATE TRIGGER IF NOT EXISTS order_line_discounts_application_index_unique_update
+BEFORE UPDATE OF order_id, application_index ON order_line_discounts
+WHEN EXISTS (
+  SELECT 1 FROM order_surcharges s
+  WHERE s.order_id = NEW.order_id AND s.application_index = NEW.application_index
+)
+BEGIN
+  SELECT RAISE(ABORT, 'duplicate application_index for order financial modifiers');
+END;
+
+CREATE TRIGGER IF NOT EXISTS order_surcharges_application_index_unique_insert
+BEFORE INSERT ON order_surcharges
+WHEN EXISTS (
+  SELECT 1 FROM order_line_discounts d
+  WHERE d.order_id = NEW.order_id AND d.application_index = NEW.application_index
+)
+BEGIN
+  SELECT RAISE(ABORT, 'duplicate application_index for order financial modifiers');
+END;
+
+CREATE TRIGGER IF NOT EXISTS order_surcharges_application_index_unique_update
+BEFORE UPDATE OF order_id, application_index ON order_surcharges
+WHEN EXISTS (
+  SELECT 1 FROM order_line_discounts d
+  WHERE d.order_id = NEW.order_id AND d.application_index = NEW.application_index
+)
+BEGIN
+  SELECT RAISE(ABORT, 'duplicate application_index for order financial modifiers');
+END;
 
 CREATE TABLE IF NOT EXISTS precheck_taxes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

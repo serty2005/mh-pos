@@ -124,4 +124,4 @@ Requirements:
 - fiscal device operation UI;
 - full inventory/procurement UI;
 - modifiers UI until backend order runtime exists;
-- discount/surcharge/tax policy UI until backend pricing policy exists.
+- discount/surcharge cashier editor and tax policy UI on top of existing backend pricing foundation.

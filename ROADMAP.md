@@ -27,7 +27,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Reprint final check from immutable snapshot.
 - Payment refund route and cashier UI flow.
 - `business_date_local` for shifts, cash sessions, payments and checks.
-- Pricing/Discounts boundary: backend `Pricing` domain/application layer, line/order discounts, surcharge foundation, tax profile/rule foundation, deterministic integer rounding и immutable precheck breakdown persistence.
+- Pricing/Discounts boundary: backend `Pricing` domain/application layer, line/order discounts, separate surcharge foundation, unified ordered modifier pipeline по `application_index`, tax-last invariant, tax profile/rule foundation, deterministic integer rounding и immutable precheck breakdown persistence.
 
 ### Cloud And Sync Foundation
 

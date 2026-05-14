@@ -4,6 +4,7 @@ import "time"
 
 type AmountKind string
 type DiscountScope string
+type ModifierType string
 type SurchargeKind string
 type TaxMode string
 type TaxRuleKind string
@@ -14,6 +15,9 @@ const (
 
 	DiscountScopeLine  DiscountScope = "line"
 	DiscountScopeOrder DiscountScope = "order"
+
+	ModifierTypeDiscount  ModifierType = "discount"
+	ModifierTypeSurcharge ModifierType = "surcharge"
 
 	SurchargeServiceCharge SurchargeKind = "service_charge"
 	SurchargePB1ServiceFee SurchargeKind = "pb1_service_fee"
@@ -43,6 +47,7 @@ type OrderDiscount struct {
 	OrderID          string        `json:"order_id"`
 	OrderLineID      *string       `json:"order_line_id,omitempty"`
 	Scope            DiscountScope `json:"scope"`
+	ApplicationIndex int           `json:"application_index"`
 	AmountKind       AmountKind    `json:"amount_kind"`
 	AmountMinor      int64         `json:"amount_minor,omitempty"`
 	ValueBasisPoints int64         `json:"value_basis_points,omitempty"`
@@ -54,6 +59,7 @@ type OrderSurcharge struct {
 	ID               string        `json:"id"`
 	OrderID          string        `json:"order_id"`
 	Kind             SurchargeKind `json:"kind"`
+	ApplicationIndex int           `json:"application_index"`
 	AmountKind       AmountKind    `json:"amount_kind"`
 	AmountMinor      int64         `json:"amount_minor,omitempty"`
 	ValueBasisPoints int64         `json:"value_basis_points,omitempty"`
@@ -94,6 +100,19 @@ type CalculationInput struct {
 	TaxRules     map[string][]TaxRule
 }
 
+// CalculationModifier фиксирует единое ordered-пространство скидок и надбавок.
+type CalculationModifier struct {
+	Type             ModifierType
+	ApplicationIndex int
+	Discount         *OrderDiscount
+	Surcharge        *OrderSurcharge
+}
+
+type Discount = OrderDiscount
+type Surcharge = OrderSurcharge
+type TaxComponent = TaxComponentBreakdown
+type CalculationSnapshot = CalculationResult
+
 type CalculationResult struct {
 	CurrencyCode        string                  `json:"currency_code"`
 	SubtotalMinor       int64                   `json:"subtotal_minor"`
@@ -129,20 +148,22 @@ type LineBreakdown struct {
 }
 
 type DiscountBreakdown struct {
-	DiscountID  string        `json:"discount_id"`
-	Scope       DiscountScope `json:"scope"`
-	OrderLineID *string       `json:"order_line_id,omitempty"`
-	AmountKind  AmountKind    `json:"amount_kind"`
-	AmountMinor int64         `json:"amount_minor"`
-	Reason      *string       `json:"reason,omitempty"`
+	DiscountID       string        `json:"discount_id"`
+	Scope            DiscountScope `json:"scope"`
+	ApplicationIndex int           `json:"application_index"`
+	OrderLineID      *string       `json:"order_line_id,omitempty"`
+	AmountKind       AmountKind    `json:"amount_kind"`
+	AmountMinor      int64         `json:"amount_minor"`
+	Reason           *string       `json:"reason,omitempty"`
 }
 
 type SurchargeBreakdown struct {
-	SurchargeID string        `json:"surcharge_id"`
-	Kind        SurchargeKind `json:"kind"`
-	AmountKind  AmountKind    `json:"amount_kind"`
-	AmountMinor int64         `json:"amount_minor"`
-	Reason      *string       `json:"reason,omitempty"`
+	SurchargeID      string        `json:"surcharge_id"`
+	Kind             SurchargeKind `json:"kind"`
+	ApplicationIndex int           `json:"application_index"`
+	AmountKind       AmountKind    `json:"amount_kind"`
+	AmountMinor      int64         `json:"amount_minor"`
+	Reason           *string       `json:"reason,omitempty"`
 }
 
 type TaxComponentBreakdown struct {

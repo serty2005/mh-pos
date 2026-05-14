@@ -103,14 +103,16 @@ Foundation warning:
 Реализовано сейчас:
 
 - `Pricing` is a separate runtime boundary from Order, Payment and Catalog.
-- `order_line_discounts` stores line/order discount commands for open orders.
-- `order_surcharges` stores manual/service/PB1 surcharge commands for open orders.
+- `order_line_discounts` stores line/order discount commands for open orders and requires `application_index`.
+- `order_surcharges` stores manual/service/PB1 surcharge commands for open orders and requires `application_index`.
+- `order_line_discounts.application_index` and `order_surcharges.application_index` use one ordered modifier space per order; application code and SQLite triggers reject duplicate indexes across discount/surcharge tables where possible.
 - `service_charge_rules` is schema foundation for managed service-charge policy.
 - `tax_profiles` and `tax_rules` store tax profile/rule foundation.
 - `menu_items.tax_profile_id` and `order_lines.tax_profile_id` allow tax policy snapshotting without mixing tax behavior into Catalog.
 - `prechecks` and `checks` contain `currency_code`, `discount_total`, `surcharge_total`, `tax_total`, `total`, `paid_total`, `remaining_total`.
-- Precheck breakdown persistence uses `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`.
-- Canonical calculation pipeline is `order lines subtotal -> line discounts -> order discounts -> surcharge/service charge -> taxable base -> taxes -> grand total`.
+- Precheck breakdown persistence uses `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`; discount/surcharge breakdown rows persist `application_index`.
+- Canonical calculation pipeline is `order lines subtotal -> unified ordered modifiers by application_index -> taxable base -> taxes -> grand total`.
+- Taxes are always calculated after all discount/surcharge modifiers.
 - Inclusive tax is stored in tax breakdown/tax total but does not increase grand total; `tax_added_minor` in line breakdown records the tax part that was added to payable total.
 - Rounding policy is deterministic integer half-up minor units; persistent money values remain `INTEGER` minor units.
 

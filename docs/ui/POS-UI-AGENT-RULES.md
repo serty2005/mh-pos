@@ -49,8 +49,8 @@
 
 ## Backend boundaries
 
-- Сейчас реализованы: halls/tables read, menu/catalog read, orders, order lines quantity/void, precheck, payments, refund, shifts, cash sessions, cash drawer events, sync status.
-- Сейчас не реализованы как runtime: modifiers, discounts/taxes engine, split bill, transfer/merge tables, KDS lifecycle, delivery/pickup/QR/reservations, real PSP, fiscal adapter.
+- Сейчас реализованы: halls/tables read, menu/catalog read, orders, order lines quantity/void, backend pricing preview, precheck, payments, refund, shifts, cash sessions, cash drawer events, sync status.
+- Сейчас не реализованы как UI runtime: modifiers, cashier discount/surcharge editor, tax policy editor, split bill, transfer/merge tables, KDS lifecycle, delivery/pickup/QR/reservations, real PSP, fiscal adapter.
 - Для будущих функций компоненты можно проектировать extensible, но не показывать активную кнопку без ручки.
 
 ## RBAC

@@ -1440,13 +1440,14 @@ func TestIssuePrecheckPersistsPricingBreakdownAndCheckUsesSnapshotTotals(t *test
 		t.Fatal(err)
 	}
 	if _, err := f.service.AddDiscount(f.ctx, app.AddDiscountCommand{
-		CommandMeta: f.edgeMetaCommand("cmd-pricing-discount"),
-		OrderID:     order.ID,
-		OrderLineID: line.ID,
-		Scope:       domain.DiscountScopeLine,
-		AmountKind:  domain.AmountFixed,
-		AmountMinor: 300,
-		Reason:      "manual",
+		CommandMeta:      f.edgeMetaCommand("cmd-pricing-discount"),
+		OrderID:          order.ID,
+		OrderLineID:      line.ID,
+		Scope:            domain.DiscountScopeLine,
+		ApplicationIndex: 10,
+		AmountKind:       domain.AmountFixed,
+		AmountMinor:      300,
+		Reason:           "manual",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1454,6 +1455,7 @@ func TestIssuePrecheckPersistsPricingBreakdownAndCheckUsesSnapshotTotals(t *test
 		CommandMeta:      f.edgeMetaCommand("cmd-pricing-surcharge"),
 		OrderID:          order.ID,
 		Kind:             domain.SurchargeServiceCharge,
+		ApplicationIndex: 20,
 		AmountKind:       domain.AmountPercentage,
 		ValueBasisPoints: 1000,
 		Reason:           "service",
@@ -1484,6 +1486,16 @@ func TestIssuePrecheckPersistsPricingBreakdownAndCheckUsesSnapshotTotals(t *test
 			t.Fatalf("expected %s rows %d, got %d", table, want, got)
 		}
 	}
+	var discountIndex, surchargeIndex int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT application_index FROM precheck_discounts WHERE precheck_id = ?`, precheck.ID).Scan(&discountIndex); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRowContext(f.ctx, `SELECT application_index FROM precheck_surcharges WHERE precheck_id = ?`, precheck.ID).Scan(&surchargeIndex); err != nil {
+		t.Fatal(err)
+	}
+	if discountIndex != 10 || surchargeIndex != 20 {
+		t.Fatalf("expected precheck modifier application indexes 10/20, got %d/%d", discountIndex, surchargeIndex)
+	}
 	if _, err := f.db.ExecContext(f.ctx, `UPDATE menu_items SET price = 9999 WHERE id = ?`, f.menuItem.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -1506,6 +1518,42 @@ func TestIssuePrecheckPersistsPricingBreakdownAndCheckUsesSnapshotTotals(t *test
 	}
 	if check.Total != precheck.Total || check.TaxTotal != precheck.TaxTotal || check.SurchargeTotal != precheck.SurchargeTotal || check.PaidTotal != precheck.Total {
 		t.Fatalf("check did not use precheck snapshot totals: check=%+v precheck=%+v", check, precheck)
+	}
+}
+
+func TestPricingRejectsDuplicateApplicationIndexAcrossDiscountsAndSurcharges(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddDiscount(f.ctx, app.AddDiscountCommand{
+		CommandMeta:      f.edgeMetaCommand("cmd-duplicate-index-discount"),
+		OrderID:          order.ID,
+		Scope:            domain.DiscountScopeOrder,
+		ApplicationIndex: 10,
+		AmountKind:       domain.AmountFixed,
+		AmountMinor:      100,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.AddSurcharge(f.ctx, app.AddSurchargeCommand{
+		CommandMeta:      f.edgeMetaCommand("cmd-duplicate-index-surcharge"),
+		OrderID:          order.ID,
+		Kind:             domain.SurchargeManual,
+		ApplicationIndex: 10,
+		AmountKind:       domain.AmountFixed,
+		AmountMinor:      50,
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected duplicate application_index to be invalid, got %v", err)
+	}
+	if got := countRows(t, f, "order_surcharges"); got != 0 {
+		t.Fatalf("expected duplicate surcharge not to be persisted, got %d rows", got)
 	}
 }
 

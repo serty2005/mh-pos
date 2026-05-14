@@ -8,7 +8,7 @@
 
 - POS Edge backend поддерживает cashier runtime `Order -> Precheck -> Payment -> Check`.
 - `IssuePrecheck` блокирует заказ, создает immutable financial snapshot precheck и фиксирует `currency_code`, subtotal, discounts, surcharges, taxes, grand total, paid/remaining totals и breakdown строк/налогов/скидок/надбавок.
-- POS Edge backend содержит MVP `Pricing` boundary: line/order discounts, manual/service/PB1 surcharge foundation, percentage/fixed amounts, percentage/fixed tax rules, inclusive/exclusive tax foundation и deterministic integer rounding.
+- POS Edge backend содержит MVP `Pricing` boundary: line/order discounts, manual/service/PB1 surcharge foundation, единый ordered discount/surcharge pipeline по `application_index`, percentage/fixed amounts, percentage/fixed tax rules, inclusive/exclusive tax foundation и deterministic integer rounding.
 - `CancelPrecheck` требует manager override, проверяет PIN/permission и возвращает unpaid active precheck order в `open`.
 - Оплата выполняется через `precheck_id`; partial payments разрешены; final check создается только после полной оплаты.
 - `POST /api/v1/payments/{id}/refund` переводит captured payment в `refunded` и уменьшает `paid_total` у precheck/check.

@@ -19,18 +19,55 @@ func TestCalculatorTotalsPipeline(t *testing.T) {
 		{
 			name: "line discount before exclusive tax",
 			input: baseInput([]OrderDiscount{
-				{ID: "discount-1", OrderID: "order-1", OrderLineID: &lineID, Scope: DiscountScopeLine, AmountKind: AmountPercentage, ValueBasisPoints: 1000, CreatedAt: now},
+				{ID: "discount-1", OrderID: "order-1", OrderLineID: &lineID, Scope: DiscountScopeLine, ApplicationIndex: 10, AmountKind: AmountPercentage, ValueBasisPoints: 1000, CreatedAt: now},
 			}, nil, []TaxRule{{ID: "tax-1", TaxProfileID: profileID, Name: "VAT 10", Kind: TaxRulePercentage, Mode: TaxModeExclusive, RateBasisPoints: 1000, Active: true}}),
 			want: resultTotals(1000, 100, 0, 90, 990),
 		},
 		{
 			name: "order discount and surcharge are allocated before tax",
 			input: baseInput([]OrderDiscount{
-				{ID: "discount-1", OrderID: "order-1", Scope: DiscountScopeOrder, AmountKind: AmountFixed, AmountMinor: 100, CreatedAt: now},
+				{ID: "discount-1", OrderID: "order-1", Scope: DiscountScopeOrder, ApplicationIndex: 10, AmountKind: AmountFixed, AmountMinor: 100, CreatedAt: now},
 			}, []OrderSurcharge{
-				{ID: "surcharge-1", OrderID: "order-1", Kind: SurchargeServiceCharge, AmountKind: AmountPercentage, ValueBasisPoints: 1000, CreatedAt: now},
+				{ID: "surcharge-1", OrderID: "order-1", Kind: SurchargeServiceCharge, ApplicationIndex: 20, AmountKind: AmountPercentage, ValueBasisPoints: 1000, CreatedAt: now},
 			}, []TaxRule{{ID: "tax-1", TaxProfileID: profileID, Name: "VAT 10", Kind: TaxRulePercentage, Mode: TaxModeExclusive, RateBasisPoints: 1000, Active: true}}),
 			want: resultTotals(1000, 100, 90, 99, 1089),
+		},
+		{
+			name: "surcharge before percentage discount follows application index",
+			input: baseInput([]OrderDiscount{
+				{ID: "discount-1", OrderID: "order-1", Scope: DiscountScopeOrder, ApplicationIndex: 20, AmountKind: AmountPercentage, ValueBasisPoints: 1000, CreatedAt: now},
+			}, []OrderSurcharge{
+				{ID: "surcharge-1", OrderID: "order-1", Kind: SurchargeManual, ApplicationIndex: 10, AmountKind: AmountPercentage, ValueBasisPoints: 1000, CreatedAt: now},
+			}, nil),
+			want: resultTotals(1000, 110, 100, 0, 990),
+		},
+		{
+			name: "percentage discount before surcharge follows application index",
+			input: baseInput([]OrderDiscount{
+				{ID: "discount-1", OrderID: "order-1", Scope: DiscountScopeOrder, ApplicationIndex: 10, AmountKind: AmountPercentage, ValueBasisPoints: 1000, CreatedAt: now},
+			}, []OrderSurcharge{
+				{ID: "surcharge-1", OrderID: "order-1", Kind: SurchargeManual, ApplicationIndex: 20, AmountKind: AmountPercentage, ValueBasisPoints: 1000, CreatedAt: now},
+			}, nil),
+			want: resultTotals(1000, 100, 90, 0, 990),
+		},
+		{
+			name: "unordered input modifiers are sorted by application index",
+			input: baseInput([]OrderDiscount{
+				{ID: "discount-1", OrderID: "order-1", Scope: DiscountScopeOrder, ApplicationIndex: 30, AmountKind: AmountFixed, AmountMinor: 50, CreatedAt: now},
+				{ID: "discount-2", OrderID: "order-1", Scope: DiscountScopeOrder, ApplicationIndex: 10, AmountKind: AmountFixed, AmountMinor: 100, CreatedAt: now},
+			}, []OrderSurcharge{
+				{ID: "surcharge-1", OrderID: "order-1", Kind: SurchargeManual, ApplicationIndex: 20, AmountKind: AmountFixed, AmountMinor: 25, CreatedAt: now},
+			}, nil),
+			want: resultTotals(1000, 150, 25, 0, 875),
+		},
+		{
+			name: "duplicate application index is rejected across discounts and surcharges",
+			input: baseInput([]OrderDiscount{
+				{ID: "discount-1", OrderID: "order-1", Scope: DiscountScopeOrder, ApplicationIndex: 10, AmountKind: AmountFixed, AmountMinor: 100, CreatedAt: now},
+			}, []OrderSurcharge{
+				{ID: "surcharge-1", OrderID: "order-1", Kind: SurchargeManual, ApplicationIndex: 10, AmountKind: AmountFixed, AmountMinor: 50, CreatedAt: now},
+			}, nil),
+			wantErr: true,
 		},
 		{
 			name:  "inclusive tax extracts tax from taxable base",
@@ -53,7 +90,7 @@ func TestCalculatorTotalsPipeline(t *testing.T) {
 		{
 			name: "over discount rejected",
 			input: baseInput([]OrderDiscount{
-				{ID: "discount-1", OrderID: "order-1", Scope: DiscountScopeOrder, AmountKind: AmountFixed, AmountMinor: 1001, CreatedAt: now},
+				{ID: "discount-1", OrderID: "order-1", Scope: DiscountScopeOrder, ApplicationIndex: 10, AmountKind: AmountFixed, AmountMinor: 1001, CreatedAt: now},
 			}, nil, nil),
 			wantErr: true,
 		},
@@ -65,7 +102,7 @@ func TestCalculatorTotalsPipeline(t *testing.T) {
 					{ID: "line-1", MenuItemID: "menu-1", CatalogItemID: "catalog-1", Name: "A", Quantity: 1, UnitPrice: 1, Subtotal: 1, CurrencyCode: "RUB"},
 					{ID: "line-2", MenuItemID: "menu-2", CatalogItemID: "catalog-2", Name: "B", Quantity: 1, UnitPrice: 1, Subtotal: 1, CurrencyCode: "RUB"},
 				},
-				Discounts: []OrderDiscount{{ID: "discount-1", OrderID: "order-1", Scope: DiscountScopeOrder, AmountKind: AmountFixed, AmountMinor: 1}},
+				Discounts: []OrderDiscount{{ID: "discount-1", OrderID: "order-1", Scope: DiscountScopeOrder, ApplicationIndex: 10, AmountKind: AmountFixed, AmountMinor: 1}},
 			},
 			want: resultTotals(2, 1, 0, 0, 1),
 		},
@@ -88,6 +125,9 @@ func TestCalculatorTotalsPipeline(t *testing.T) {
 				got.TaxTotalMinor != tt.want.TaxTotalMinor ||
 				got.GrandTotalMinor != tt.want.GrandTotalMinor {
 				t.Fatalf("unexpected totals: %+v", got)
+			}
+			if len(got.Taxes) > 0 && got.Pipeline[len(got.Pipeline)-2] != "taxes" {
+				t.Fatalf("expected taxes to be the last calculation stage before grand_total, got %+v", got.Pipeline)
 			}
 			gotAgain, err := NewCalculator().Calculate(tt.input)
 			if err != nil {

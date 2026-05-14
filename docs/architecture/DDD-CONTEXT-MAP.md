@@ -19,7 +19,7 @@
 | `Staff / Shift` | employees, roles, auth session actor context, personal shifts, cash sessions, cash drawer events, manager override audit | реализовано сейчас | RBAC matrix final acceptance | HR/timekeeping | payment processor/fiscal state |
 | `Floor` | halls, tables | реализовано сейчас: Cloud-owned read model on Edge | table UX polish if needed | reservations | order lifecycle |
 | `Catalog` | catalog item identity, menu-visible item identity, units, SKU, menu publication identity | реализовано сейчас for simple catalog/menu read model; foundation only for modifiers/recipes | modifier publication only if accepted | allergens/nutrition/media-heavy catalog | pricing, tax policy, order facts |
-| `Pricing` | price policy, discounts, surcharges, manual override policy, rounding inputs for totals | реализовано сейчас: calculation engine, line/order discounts, surcharge foundation, integer rounding, pricing preview | Cloud-authored rule publication/ingest if pilot acceptance requires central policy | advanced promos, dynamic pricing, loyalty coupling | catalog identity, tax/fiscal law mapping, UI authoritative totals |
+| `Pricing` | price policy, discounts, surcharges, manual override policy, rounding inputs for totals | реализовано сейчас: calculation engine, line/order discounts, separate surcharge foundation, unified ordered modifier pipeline by `application_index`, tax-last invariant, integer rounding, pricing preview | Cloud-authored rule publication/ingest if pilot acceptance requires central policy | advanced promos, dynamic pricing, loyalty coupling | catalog identity, tax/fiscal law mapping, UI authoritative totals |
 | `Fiscal / Tax` | tax profiles/policy, fiscal/legal receipt mapping, fiscal adapter boundary | реализовано сейчас: tax profile/rule foundation, inclusive/exclusive percentage/fixed components, precheck tax breakdown | regional/legal policy hardening if pilot needs tax | real fiscalization adapter | PSP/payment processor, order lifecycle |
 | `Order` | orders, order lines, order status, precheck issue intent | реализовано сейчас for `Order -> Precheck` runtime | modifiers/order line snapshot only if accepted | split/merge/transfer/courses | inventory mutation, payment facts, pricing policy ownership |
 | `Precheck` | immutable precheck snapshot, order lock/cancel lifecycle | реализовано сейчас | snapshot expansion for modifiers/pricing if accepted | print device orchestration | payment processor and stock movement |
@@ -61,7 +61,7 @@ Foundation only:
 
 Pricing/Discounts:
 
-- реализовано сейчас: separate backend calculation boundary, Discount Before Tax, deterministic integer rounding and precheck breakdown persistence;
+- реализовано сейчас: separate backend calculation boundary, unified ordered discount/surcharge pipeline, Tax Always Last, deterministic integer rounding and precheck breakdown persistence;
 - запланировано далее: Cloud-authored rules, Edge ingest only;
 - backend authoritative calculation;
 - tax profile separate from catalog.

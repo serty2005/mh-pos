@@ -108,10 +108,12 @@
 Pricing contract:
 
 - `GET /api/v1/orders/{id}/pricing` returns backend-calculated preview for open/current order state.
-- `POST /api/v1/orders/{id}/discounts` supports line/order discounts with `amount_kind = percentage|fixed`.
-- `POST /api/v1/orders/{id}/surcharges` supports `service_charge`, `pb1_service_fee` and `manual` surcharge foundation with `amount_kind = percentage|fixed`.
-- Canonical pipeline is `order lines subtotal -> line discounts -> order discounts -> surcharge/service charge -> taxable base -> taxes -> grand total`.
-- Discount Before Tax is enforced by the calculation pipeline.
+- `POST /api/v1/orders/{id}/discounts` supports line/order discounts with `amount_kind = percentage|fixed` and required `application_index`.
+- `POST /api/v1/orders/{id}/surcharges` supports `service_charge`, `pb1_service_fee` and `manual` surcharge foundation with `amount_kind = percentage|fixed` and required `application_index`.
+- Canonical pipeline is `order lines subtotal -> unified ordered modifiers by application_index -> taxable base -> taxes -> grand total`.
+- Discounts and surcharges share one `application_index` space per calculation snapshot; duplicate indexes are rejected.
+- Surcharge is a separate domain operation and is not represented as a negative discount.
+- Tax Always Last is enforced by the calculation pipeline.
 - Rounding policy is deterministic integer half-up minor units (`integer_half_up_minor_units_v1`).
 - Tax foundation supports `tax_profiles`, `tax_rules`, percentage/fixed components, inclusive/exclusive mode, compound foundation and tax exempt profile foundation; inclusive tax is included in `tax_total`, but does not increase grand total.
 - Precheck issue persists immutable breakdown in `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`.
@@ -167,7 +169,7 @@ Foundation only:
 
 Discounts/taxes:
 
-- Реализовано сейчас: separate `Pricing` policy area, backend authoritative calculation, discount/surcharge/tax totals, immutable precheck breakdown and no UI authoritative totals.
+- Реализовано сейчас: separate `Pricing` policy area, backend authoritative calculation, unified ordered discount/surcharge pipeline, tax-last invariant, immutable precheck breakdown and no UI authoritative totals.
 - Запланировано далее: Cloud-authored pricing/tax rule publication into Edge runtime.
 
 Modifiers:

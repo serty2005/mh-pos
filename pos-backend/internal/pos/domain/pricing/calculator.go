@@ -29,9 +29,7 @@ func (Calculator) Calculate(input CalculationInput) (CalculationResult, error) {
 		RoundingPolicy: RoundingPolicyHalfUpMinorUnits,
 		Pipeline: []string{
 			"order_lines_subtotal",
-			"line_discounts",
-			"order_discounts",
-			"surcharges",
+			"ordered_modifiers_by_application_index",
 			"taxable_base",
 			"taxes",
 			"grand_total",
@@ -48,7 +46,11 @@ func (Calculator) Calculate(input CalculationInput) (CalculationResult, error) {
 			return CalculationResult{}, err
 		}
 		lineIndex[line.ID] = len(result.Lines)
-		result.SubtotalMinor += line.Subtotal
+		subtotal, err := safeAddNonNegative(result.SubtotalMinor, line.Subtotal, "subtotal overflow")
+		if err != nil {
+			return CalculationResult{}, err
+		}
+		result.SubtotalMinor = subtotal
 		result.Lines = append(result.Lines, LineBreakdown{
 			OrderLineID:    line.ID,
 			MenuItemID:     line.MenuItemID,
@@ -61,29 +63,51 @@ func (Calculator) Calculate(input CalculationInput) (CalculationResult, error) {
 			TaxProfileID:   line.TaxProfileID,
 		})
 	}
-	if err := applyDiscounts(&result, lineIndex, input.Discounts); err != nil {
+	modifiers, err := buildOrderedModifiers(input.Discounts, input.Surcharges)
+	if err != nil {
 		return CalculationResult{}, err
 	}
-	if err := applySurcharges(&result, input.Surcharges); err != nil {
+	if err := applyModifiers(&result, lineIndex, modifiers); err != nil {
 		return CalculationResult{}, err
 	}
 	for i := range result.Lines {
 		line := &result.Lines[i]
-		line.TaxableBaseMinor = line.SubtotalMinor - line.DiscountTotalMinor + line.SurchargeTotalMinor
-		if line.TaxableBaseMinor < 0 {
-			return CalculationResult{}, fmt.Errorf("%w: taxable base cannot be negative", shared.ErrInvalid)
+		taxableBase, err := currentLineAmount(*line)
+		if err != nil {
+			return CalculationResult{}, err
 		}
+		line.TaxableBaseMinor = taxableBase
 	}
 	if err := applyTaxes(&result, input.TaxProfiles, input.TaxRules); err != nil {
 		return CalculationResult{}, err
 	}
-	result.GrandTotalMinor = result.SubtotalMinor - result.DiscountTotalMinor + result.SurchargeTotalMinor + result.TaxAddedTotalMinor
+	grand, err := safeSubNonNegative(result.SubtotalMinor, result.DiscountTotalMinor, "subtotal cannot become negative")
+	if err != nil {
+		return CalculationResult{}, err
+	}
+	grand, err = safeAddNonNegative(grand, result.SurchargeTotalMinor, "grand total overflow")
+	if err != nil {
+		return CalculationResult{}, err
+	}
+	grand, err = safeAddNonNegative(grand, result.TaxAddedTotalMinor, "grand total overflow")
+	if err != nil {
+		return CalculationResult{}, err
+	}
+	result.GrandTotalMinor = grand
 	if result.GrandTotalMinor < 0 {
 		return CalculationResult{}, fmt.Errorf("%w: grand total cannot be negative", shared.ErrInvalid)
 	}
 	for i := range result.Lines {
 		line := &result.Lines[i]
-		line.TotalMinor = line.SubtotalMinor - line.DiscountTotalMinor + line.SurchargeTotalMinor + line.TaxAddedMinor
+		total, err := currentLineAmount(*line)
+		if err != nil {
+			return CalculationResult{}, err
+		}
+		total, err = safeAddNonNegative(total, line.TaxAddedMinor, "line total overflow")
+		if err != nil {
+			return CalculationResult{}, err
+		}
+		line.TotalMinor = total
 		if line.TotalMinor < 0 {
 			return CalculationResult{}, fmt.Errorf("%w: line total cannot be negative", shared.ErrInvalid)
 		}
@@ -107,82 +131,172 @@ func validateLine(line OrderLineInput, currency string) error {
 	return nil
 }
 
-func applyDiscounts(result *CalculationResult, lineIndex map[string]int, discounts []OrderDiscount) error {
-	items := append([]OrderDiscount(nil), discounts...)
-	sort.SliceStable(items, func(i, j int) bool { return items[i].ID < items[j].ID })
-	for _, discount := range items {
-		switch discount.Scope {
-		case DiscountScopeLine:
-			if discount.OrderLineID == nil || strings.TrimSpace(*discount.OrderLineID) == "" {
-				return fmt.Errorf("%w: line discount requires order_line_id", shared.ErrInvalid)
+func buildOrderedModifiers(discounts []OrderDiscount, surcharges []OrderSurcharge) ([]CalculationModifier, error) {
+	modifiers := make([]CalculationModifier, 0, len(discounts)+len(surcharges))
+	seen := make(map[int]string, len(discounts)+len(surcharges))
+	for i := range discounts {
+		discount := discounts[i]
+		if err := registerApplicationIndex(seen, discount.ApplicationIndex, string(ModifierTypeDiscount), discount.ID); err != nil {
+			return nil, err
+		}
+		modifiers = append(modifiers, CalculationModifier{Type: ModifierTypeDiscount, ApplicationIndex: discount.ApplicationIndex, Discount: &discount})
+	}
+	for i := range surcharges {
+		surcharge := surcharges[i]
+		if err := registerApplicationIndex(seen, surcharge.ApplicationIndex, string(ModifierTypeSurcharge), surcharge.ID); err != nil {
+			return nil, err
+		}
+		modifiers = append(modifiers, CalculationModifier{Type: ModifierTypeSurcharge, ApplicationIndex: surcharge.ApplicationIndex, Surcharge: &surcharge})
+	}
+	sort.SliceStable(modifiers, func(i, j int) bool {
+		return modifiers[i].ApplicationIndex < modifiers[j].ApplicationIndex
+	})
+	return modifiers, nil
+}
+
+func registerApplicationIndex(seen map[int]string, index int, modifierType, id string) error {
+	if index <= 0 {
+		return fmt.Errorf("%w: application_index must be positive", shared.ErrInvalid)
+	}
+	if previous, ok := seen[index]; ok {
+		return fmt.Errorf("%w: duplicate application_index %d between %s and %s", shared.ErrInvalid, index, previous, modifierType)
+	}
+	seen[index] = modifierType + ":" + strings.TrimSpace(id)
+	return nil
+}
+
+func applyModifiers(result *CalculationResult, lineIndex map[string]int, modifiers []CalculationModifier) error {
+	for _, modifier := range modifiers {
+		switch modifier.Type {
+		case ModifierTypeDiscount:
+			if modifier.Discount == nil {
+				return fmt.Errorf("%w: discount modifier is empty", shared.ErrInvalid)
 			}
-			idx, ok := lineIndex[*discount.OrderLineID]
-			if !ok {
-				return fmt.Errorf("%w: line discount target is not in order", shared.ErrInvalid)
-			}
-			line := &result.Lines[idx]
-			target := line.SubtotalMinor - line.DiscountTotalMinor
-			amount, err := adjustmentAmount(discount.AmountKind, discount.AmountMinor, discount.ValueBasisPoints, target)
-			if err != nil {
+			if err := applyDiscount(result, lineIndex, *modifier.Discount); err != nil {
 				return err
 			}
-			if amount > target {
-				return fmt.Errorf("%w: discount cannot exceed target amount", shared.ErrInvalid)
+		case ModifierTypeSurcharge:
+			if modifier.Surcharge == nil {
+				return fmt.Errorf("%w: surcharge modifier is empty", shared.ErrInvalid)
 			}
-			line.DiscountTotalMinor += amount
-			result.DiscountTotalMinor += amount
-			result.Discounts = append(result.Discounts, DiscountBreakdown{DiscountID: discount.ID, Scope: discount.Scope, OrderLineID: discount.OrderLineID, AmountKind: discount.AmountKind, AmountMinor: amount, Reason: discount.Reason})
-		case DiscountScopeOrder:
-			var bases []int64
-			var target int64
-			for _, line := range result.Lines {
-				base := line.SubtotalMinor - line.DiscountTotalMinor
-				bases = append(bases, base)
-				target += base
-			}
-			amount, err := adjustmentAmount(discount.AmountKind, discount.AmountMinor, discount.ValueBasisPoints, target)
-			if err != nil {
+			if err := applySurcharge(result, *modifier.Surcharge); err != nil {
 				return err
 			}
-			if amount > target {
-				return fmt.Errorf("%w: discount cannot exceed target amount", shared.ErrInvalid)
-			}
-			allocated := allocateProportionally(amount, bases)
-			for i, value := range allocated {
-				result.Lines[i].DiscountTotalMinor += value
-			}
-			result.DiscountTotalMinor += amount
-			result.Discounts = append(result.Discounts, DiscountBreakdown{DiscountID: discount.ID, Scope: discount.Scope, AmountKind: discount.AmountKind, AmountMinor: amount, Reason: discount.Reason})
 		default:
-			return fmt.Errorf("%w: unsupported discount scope", shared.ErrInvalid)
+			return fmt.Errorf("%w: unsupported modifier type", shared.ErrInvalid)
 		}
 	}
 	return nil
 }
 
-func applySurcharges(result *CalculationResult, surcharges []OrderSurcharge) error {
-	items := append([]OrderSurcharge(nil), surcharges...)
-	sort.SliceStable(items, func(i, j int) bool { return items[i].ID < items[j].ID })
-	for _, surcharge := range items {
-		var bases []int64
-		var target int64
-		for _, line := range result.Lines {
-			base := line.SubtotalMinor - line.DiscountTotalMinor + line.SurchargeTotalMinor
-			bases = append(bases, base)
-			target += base
+func applyDiscount(result *CalculationResult, lineIndex map[string]int, discount OrderDiscount) error {
+	switch discount.Scope {
+	case DiscountScopeLine:
+		if discount.OrderLineID == nil || strings.TrimSpace(*discount.OrderLineID) == "" {
+			return fmt.Errorf("%w: line discount requires order_line_id", shared.ErrInvalid)
 		}
-		amount, err := adjustmentAmount(surcharge.AmountKind, surcharge.AmountMinor, surcharge.ValueBasisPoints, target)
+		idx, ok := lineIndex[*discount.OrderLineID]
+		if !ok {
+			return fmt.Errorf("%w: line discount target is not in order", shared.ErrInvalid)
+		}
+		line := &result.Lines[idx]
+		target, err := currentLineAmount(*line)
 		if err != nil {
 			return err
 		}
+		amount, err := adjustmentAmount(discount.AmountKind, discount.AmountMinor, discount.ValueBasisPoints, target)
+		if err != nil {
+			return err
+		}
+		if amount > target {
+			return fmt.Errorf("%w: discount cannot exceed target amount", shared.ErrInvalid)
+		}
+		line.DiscountTotalMinor, err = safeAddNonNegative(line.DiscountTotalMinor, amount, "line discount overflow")
+		if err != nil {
+			return err
+		}
+		result.DiscountTotalMinor, err = safeAddNonNegative(result.DiscountTotalMinor, amount, "discount total overflow")
+		if err != nil {
+			return err
+		}
+		result.Discounts = append(result.Discounts, DiscountBreakdown{DiscountID: discount.ID, Scope: discount.Scope, ApplicationIndex: discount.ApplicationIndex, OrderLineID: discount.OrderLineID, AmountKind: discount.AmountKind, AmountMinor: amount, Reason: discount.Reason})
+	case DiscountScopeOrder:
+		bases, target, err := currentLineAmounts(result.Lines)
+		if err != nil {
+			return err
+		}
+		amount, err := adjustmentAmount(discount.AmountKind, discount.AmountMinor, discount.ValueBasisPoints, target)
+		if err != nil {
+			return err
+		}
+		if amount > target {
+			return fmt.Errorf("%w: discount cannot exceed target amount", shared.ErrInvalid)
+		}
 		allocated := allocateProportionally(amount, bases)
 		for i, value := range allocated {
-			result.Lines[i].SurchargeTotalMinor += value
+			result.Lines[i].DiscountTotalMinor, err = safeAddNonNegative(result.Lines[i].DiscountTotalMinor, value, "line discount overflow")
+			if err != nil {
+				return err
+			}
 		}
-		result.SurchargeTotalMinor += amount
-		result.Surcharges = append(result.Surcharges, SurchargeBreakdown{SurchargeID: surcharge.ID, Kind: surcharge.Kind, AmountKind: surcharge.AmountKind, AmountMinor: amount, Reason: surcharge.Reason})
+		result.DiscountTotalMinor, err = safeAddNonNegative(result.DiscountTotalMinor, amount, "discount total overflow")
+		if err != nil {
+			return err
+		}
+		result.Discounts = append(result.Discounts, DiscountBreakdown{DiscountID: discount.ID, Scope: discount.Scope, ApplicationIndex: discount.ApplicationIndex, AmountKind: discount.AmountKind, AmountMinor: amount, Reason: discount.Reason})
+	default:
+		return fmt.Errorf("%w: unsupported discount scope", shared.ErrInvalid)
 	}
 	return nil
+}
+
+func applySurcharge(result *CalculationResult, surcharge OrderSurcharge) error {
+	bases, target, err := currentLineAmounts(result.Lines)
+	if err != nil {
+		return err
+	}
+	amount, err := adjustmentAmount(surcharge.AmountKind, surcharge.AmountMinor, surcharge.ValueBasisPoints, target)
+	if err != nil {
+		return err
+	}
+	allocated := allocateProportionally(amount, bases)
+	for i, value := range allocated {
+		result.Lines[i].SurchargeTotalMinor, err = safeAddNonNegative(result.Lines[i].SurchargeTotalMinor, value, "line surcharge overflow")
+		if err != nil {
+			return err
+		}
+	}
+	result.SurchargeTotalMinor, err = safeAddNonNegative(result.SurchargeTotalMinor, amount, "surcharge total overflow")
+	if err != nil {
+		return err
+	}
+	result.Surcharges = append(result.Surcharges, SurchargeBreakdown{SurchargeID: surcharge.ID, Kind: surcharge.Kind, ApplicationIndex: surcharge.ApplicationIndex, AmountKind: surcharge.AmountKind, AmountMinor: amount, Reason: surcharge.Reason})
+	return nil
+}
+
+func currentLineAmounts(lines []LineBreakdown) ([]int64, int64, error) {
+	bases := make([]int64, 0, len(lines))
+	var target int64
+	for _, line := range lines {
+		base, err := currentLineAmount(line)
+		if err != nil {
+			return nil, 0, err
+		}
+		bases = append(bases, base)
+		target, err = safeAddNonNegative(target, base, "modifier target overflow")
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+	return bases, target, nil
+}
+
+func currentLineAmount(line LineBreakdown) (int64, error) {
+	current, err := safeSubNonNegative(line.SubtotalMinor, line.DiscountTotalMinor, "subtotal cannot become negative")
+	if err != nil {
+		return 0, err
+	}
+	return safeAddNonNegative(current, line.SurchargeTotalMinor, "line modifier target overflow")
 }
 
 func adjustmentAmount(kind AmountKind, amountMinor, basisPoints, target int64) (int64, error) {
@@ -200,6 +314,28 @@ func adjustmentAmount(kind AmountKind, amountMinor, basisPoints, target int64) (
 	default:
 		return 0, fmt.Errorf("%w: unsupported adjustment amount kind", shared.ErrInvalid)
 	}
+}
+
+const maxInt64 = int64(1<<63 - 1)
+
+func safeAddNonNegative(a, b int64, message string) (int64, error) {
+	if a < 0 || b < 0 {
+		return 0, fmt.Errorf("%w: money values must be non-negative", shared.ErrInvalid)
+	}
+	if a > maxInt64-b {
+		return 0, fmt.Errorf("%w: %s", shared.ErrInvalid, message)
+	}
+	return a + b, nil
+}
+
+func safeSubNonNegative(a, b int64, message string) (int64, error) {
+	if a < 0 || b < 0 {
+		return 0, fmt.Errorf("%w: money values must be non-negative", shared.ErrInvalid)
+	}
+	if b > a {
+		return 0, fmt.Errorf("%w: %s", shared.ErrInvalid, message)
+	}
+	return a - b, nil
 }
 
 func applyTaxes(result *CalculationResult, profiles map[string]TaxProfile, rulesByProfile map[string][]TaxRule) error {
@@ -227,20 +363,39 @@ func applyTaxes(result *CalculationResult, profiles map[string]TaxProfile, rules
 			}
 			base := line.TaxableBaseMinor
 			if rule.Compound {
-				base += previousExclusiveTax
+				var err error
+				base, err = safeAddNonNegative(base, previousExclusiveTax, "compound tax base overflow")
+				if err != nil {
+					return err
+				}
 			}
 			amount, err := taxAmount(rule, base)
 			if err != nil {
 				return err
 			}
-			line.TaxTotalMinor += amount
-			result.TaxTotalMinor += amount
-			if rule.Mode == TaxModeExclusive {
-				line.TaxAddedMinor += amount
-				result.TaxAddedTotalMinor += amount
+			line.TaxTotalMinor, err = safeAddNonNegative(line.TaxTotalMinor, amount, "line tax total overflow")
+			if err != nil {
+				return err
+			}
+			result.TaxTotalMinor, err = safeAddNonNegative(result.TaxTotalMinor, amount, "tax total overflow")
+			if err != nil {
+				return err
 			}
 			if rule.Mode == TaxModeExclusive {
-				previousExclusiveTax += amount
+				line.TaxAddedMinor, err = safeAddNonNegative(line.TaxAddedMinor, amount, "line tax added overflow")
+				if err != nil {
+					return err
+				}
+				result.TaxAddedTotalMinor, err = safeAddNonNegative(result.TaxAddedTotalMinor, amount, "tax added total overflow")
+				if err != nil {
+					return err
+				}
+			}
+			if rule.Mode == TaxModeExclusive {
+				previousExclusiveTax, err = safeAddNonNegative(previousExclusiveTax, amount, "compound tax accumulator overflow")
+				if err != nil {
+					return err
+				}
 			}
 			result.Taxes = append(result.Taxes, TaxComponentBreakdown{
 				OrderLineID:      line.OrderLineID,

@@ -131,20 +131,20 @@ Foundation only:
 - Backend считает authoritative totals; UI отправляет команды и отображает результат, но не является financial authority.
 - Канонический pipeline:
   - order lines subtotal;
-  - line discounts;
-  - order discounts;
-  - surcharge/service charge;
+  - unified ordered modifiers pipeline: discounts и surcharges по `application_index ASC`;
   - taxable base;
   - taxes;
   - grand total.
-- Discount Before Tax является текущим backend-инвариантом.
+- Все discounts и surcharges используют единое пространство `application_index`; duplicate index между скидкой и надбавкой одного расчета отклоняется.
+- Surcharge является отдельной доменной семантикой и не реализуется как negative discount.
+- Tax Always Last является текущим backend-инвариантом: налоги считаются только после всех discounts/surcharges.
 - Все persistent money values хранятся как `INTEGER` minor units; проценты хранятся как basis points.
 - Rounding policy: deterministic integer half-up minor units (`integer_half_up_minor_units_v1`), без float/decimal runtime math.
 - Поддержаны line/order manual discounts, percentage/fixed discounts, manual/service/PB1 surcharge foundation, percentage/fixed surcharge.
 - Discount cannot exceed target amount; negative line/precheck/check totals rejected by domain calculation.
 - Tax foundation поддерживает `tax_profiles`, `tax_rules`, percentage/fixed components, inclusive/exclusive mode, multiple components per line, compound tax foundation и tax exempt profile foundation; inclusive tax попадает в `tax_total_minor`, но не увеличивает `grand_total_minor`.
 - `GET /api/v1/orders/{id}/pricing` возвращает calculated preview.
-- `POST /api/v1/orders/{id}/discounts` и `POST /api/v1/orders/{id}/surcharges` сохраняют order pricing adjustments для open order.
+- `POST /api/v1/orders/{id}/discounts` и `POST /api/v1/orders/{id}/surcharges` сохраняют order pricing adjustments для open order; оба payload требуют `application_index`.
 - `IssuePrecheck` сохраняет immutable financial snapshot и persistence breakdown в `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`.
 
 Запланировано до пилота:

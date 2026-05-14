@@ -31,6 +31,7 @@ type AddDiscountCommand struct {
 	OrderID          string                      `json:"order_id"`
 	OrderLineID      string                      `json:"order_line_id,omitempty"`
 	Scope            domainpricing.DiscountScope `json:"scope"`
+	ApplicationIndex int                         `json:"application_index"`
 	AmountKind       domainpricing.AmountKind    `json:"amount_kind"`
 	AmountMinor      int64                       `json:"amount_minor,omitempty"`
 	ValueBasisPoints int64                       `json:"value_basis_points,omitempty"`
@@ -41,6 +42,7 @@ type AddSurchargeCommand struct {
 	shared.CommandMeta
 	OrderID          string                      `json:"order_id"`
 	Kind             domainpricing.SurchargeKind `json:"kind"`
+	ApplicationIndex int                         `json:"application_index"`
 	AmountKind       domainpricing.AmountKind    `json:"amount_kind"`
 	AmountMinor      int64                       `json:"amount_minor,omitempty"`
 	ValueBasisPoints int64                       `json:"value_basis_points,omitempty"`
@@ -54,6 +56,9 @@ func (s *Service) AddDiscount(ctx context.Context, cmd AddDiscountCommand) (*dom
 	}
 	if strings.TrimSpace(cmd.OrderID) == "" {
 		return nil, fmt.Errorf("%w: order_id is required", domain.ErrInvalid)
+	}
+	if cmd.ApplicationIndex <= 0 {
+		return nil, fmt.Errorf("%w: application_index must be positive", domain.ErrInvalid)
 	}
 	if strings.TrimSpace(cmd.CommandID) == "" {
 		cmd.CommandID = s.ids.NewID()
@@ -69,6 +74,9 @@ func (s *Service) AddDiscount(ctx context.Context, cmd AddDiscountCommand) (*dom
 		}
 		order, err := ensurePricingEditableOrder(ctx, s.repo, cmd.OrderID, cmd.DeviceID)
 		if err != nil {
+			return err
+		}
+		if err := ensureApplicationIndexAvailable(ctx, s.repo, order.ID, cmd.ApplicationIndex); err != nil {
 			return err
 		}
 		var lineID *string
@@ -87,6 +95,7 @@ func (s *Service) AddDiscount(ctx context.Context, cmd AddDiscountCommand) (*dom
 			OrderID:          order.ID,
 			OrderLineID:      lineID,
 			Scope:            cmd.Scope,
+			ApplicationIndex: cmd.ApplicationIndex,
 			AmountKind:       cmd.AmountKind,
 			AmountMinor:      cmd.AmountMinor,
 			ValueBasisPoints: cmd.ValueBasisPoints,
@@ -112,6 +121,9 @@ func (s *Service) AddSurcharge(ctx context.Context, cmd AddSurchargeCommand) (*d
 	if strings.TrimSpace(cmd.OrderID) == "" {
 		return nil, fmt.Errorf("%w: order_id is required", domain.ErrInvalid)
 	}
+	if cmd.ApplicationIndex <= 0 {
+		return nil, fmt.Errorf("%w: application_index must be positive", domain.ErrInvalid)
+	}
 	if strings.TrimSpace(cmd.CommandID) == "" {
 		cmd.CommandID = s.ids.NewID()
 	}
@@ -128,10 +140,14 @@ func (s *Service) AddSurcharge(ctx context.Context, cmd AddSurchargeCommand) (*d
 		if err != nil {
 			return err
 		}
+		if err := ensureApplicationIndexAvailable(ctx, s.repo, order.ID, cmd.ApplicationIndex); err != nil {
+			return err
+		}
 		surcharge = &domain.OrderSurcharge{
 			ID:               s.ids.NewID(),
 			OrderID:          order.ID,
 			Kind:             cmd.Kind,
+			ApplicationIndex: cmd.ApplicationIndex,
 			AmountKind:       cmd.AmountKind,
 			AmountMinor:      cmd.AmountMinor,
 			ValueBasisPoints: cmd.ValueBasisPoints,
@@ -245,6 +261,28 @@ func ensurePricingEditableOrder(ctx context.Context, repo ports.Repository, orde
 		return nil, err
 	}
 	return order, nil
+}
+
+func ensureApplicationIndexAvailable(ctx context.Context, repo ports.Repository, orderID string, applicationIndex int) error {
+	discounts, err := repo.ListOrderDiscounts(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	for _, discount := range discounts {
+		if discount.ApplicationIndex == applicationIndex {
+			return fmt.Errorf("%w: duplicate application_index", domain.ErrInvalid)
+		}
+	}
+	surcharges, err := repo.ListOrderSurcharges(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	for _, surcharge := range surcharges {
+		if surcharge.ApplicationIndex == applicationIndex {
+			return fmt.Errorf("%w: duplicate application_index", domain.ErrInvalid)
+		}
+	}
+	return nil
 }
 
 func optionalString(value string) *string {
