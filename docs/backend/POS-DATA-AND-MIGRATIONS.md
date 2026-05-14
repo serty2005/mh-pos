@@ -23,6 +23,7 @@ Managed files:
 
 - `pos-backend/migrations/sqlite/001_init.sql`
 - `pos-backend/migrations/sqlite/002_runtime_schema_repair.sql`
+- `pos-backend/migrations/sqlite/003_pricing_policy_sync_foundation.sql`
 
 Таблицы, реализованные сейчас:
 
@@ -78,6 +79,7 @@ Managed files currently present:
 - `004_master_data_authority.sql`
 - `005_master_data_restaurants_api.sql`
 - `006_zero_to_cashier_provisioning.sql`
+- `007_refund_and_pricing_policy_hardening.sql`
 
 `004_master_data_authority.sql` provides foundation for:
 
@@ -95,27 +97,30 @@ Managed files currently present:
 Foundation warning:
 
 - Cloud modifier/recipe/catalog foundation is not equal to POS Edge runtime support.
-- POS Edge `ApplyMasterData` currently ingests only `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`.
-- Cloud stores menu categories as master-data foundation, but current publication payload omits `categories` until POS Edge has a supported category ingest contract.
-- `recipes` and `inventory_reference` may exist in constants/schema state, but they are not supported by `mastersync.Service` apply path yet.
+- POS Edge `ApplyMasterData` сейчас принимает `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
+- Cloud хранит menu categories как master-data foundation, но текущий publication payload не включает `categories`, пока POS Edge не имеет поддерживаемого category ingest contract.
+- `recipes` и `inventory_reference` могут существовать в constants/schema state, но пока не поддерживаются `mastersync.Service` apply path.
 
 ## Discount, Tax And Pricing Data
 
 Реализовано сейчас:
 
-- `Pricing` is a separate runtime boundary from Order, Payment and Catalog.
-- `order_line_discounts` stores line/order discount commands for open orders and requires `application_index`.
-- `order_surcharges` stores manual/service/PB1 surcharge commands for open orders and requires `application_index`.
-- `order_line_discounts.application_index` and `order_surcharges.application_index` use one ordered modifier space per order; application code and SQLite triggers reject duplicate indexes across discount/surcharge tables where possible.
-- `service_charge_rules` is schema foundation for managed service-charge policy.
-- `tax_profiles` and `tax_rules` store tax profile/rule foundation.
-- `menu_items.tax_profile_id` and `order_lines.tax_profile_id` allow tax policy snapshotting without mixing tax behavior into Catalog.
-- `prechecks` and `checks` contain `currency_code`, `discount_total`, `surcharge_total`, `tax_total`, `total`, `paid_total`, `remaining_total`.
-- Precheck breakdown persistence uses `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`; discount/surcharge breakdown rows persist `application_index`.
-- Canonical calculation pipeline is `order lines subtotal -> unified ordered modifiers by application_index -> taxable base -> taxes -> grand total`.
-- Taxes are always calculated after all discount/surcharge modifiers.
-- Inclusive tax is stored in tax breakdown/tax total but does not increase grand total; `tax_added_minor` in line breakdown records the tax part that was added to payable total.
-- Rounding policy is deterministic integer half-up minor units; persistent money values remain `INTEGER` minor units.
+- `Pricing` является отдельным runtime boundary от Order, Payment и Catalog.
+- `order_line_discounts` хранит line/order discount commands для открытых orders и требует `application_index`.
+- `order_surcharges` хранит manual/service/PB1 surcharge commands для открытых orders и требует `application_index`.
+- `order_line_discounts.application_index` и `order_surcharges.application_index` используют одно ordered modifier space на order; application code и SQLite triggers отклоняют duplicate indexes между discount/surcharge tables там, где возможно.
+- `service_charge_rules` является schema foundation для managed service-charge policy.
+- `tax_profiles` и `tax_rules` хранят tax profile/rule foundation.
+- `tax_profiles`, `tax_rules` и `service_charge_rules` включают Cloud -> Edge sync metadata: `cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at`.
+- `menu_items.tax_profile_id` и `order_lines.tax_profile_id` позволяют snapshot tax policy без смешивания tax behavior с Catalog.
+- `prechecks` и `checks` содержат `currency_code`, `discount_total`, `surcharge_total`, `tax_total`, `total`, `paid_total`, `remaining_total`.
+- Precheck breakdown persistence использует `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`; discount/surcharge breakdown rows сохраняют `application_index`.
+- Canonical calculation pipeline: `order lines subtotal -> unified ordered modifiers by application_index -> taxable base -> taxes -> grand total`.
+- Taxes всегда считаются после всех discount/surcharge modifiers.
+- `pricing_policy` применяет Cloud-authored tax/service-charge reference rows как incremental или full snapshot payloads; он не включает modifiers runtime или advanced Cloud-owned pricing logic.
+- Edge operational adjustments остаются runtime commands на открытых orders. Будущие policy-backed adjustments должны ссылаться на synced policy ids; manual policy exceptions требуют отдельный permission/audit boundary до поддержки.
+- Inclusive tax хранится в tax breakdown/tax total, но не увеличивает grand total; `tax_added_minor` в line breakdown фиксирует tax part, который добавлен к payable total.
+- Rounding policy является deterministic integer half-up minor units; persistent money values остаются `INTEGER` minor units.
 
 Запланировано далее:
 

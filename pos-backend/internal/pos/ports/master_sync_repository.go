@@ -8,6 +8,7 @@ import (
 	"pos-backend/internal/pos/domain/employee"
 	"pos-backend/internal/pos/domain/floor"
 	"pos-backend/internal/pos/domain/menu"
+	"pos-backend/internal/pos/domain/pricing"
 	"pos-backend/internal/pos/domain/restaurant"
 	"pos-backend/internal/pos/domain/shared"
 )
@@ -21,6 +22,9 @@ type MasterSyncRepository interface {
 	UpsertMasterTable(context.Context, *floor.Table, shared.MasterRecordSyncMeta) error
 	UpsertMasterCatalogItem(context.Context, *catalog.CatalogItem, shared.MasterRecordSyncMeta) error
 	UpsertMasterMenuItem(context.Context, *menu.MenuItem, shared.MasterRecordSyncMeta) error
+	UpsertMasterTaxProfile(context.Context, *pricing.TaxProfile, shared.MasterRecordSyncMeta) error
+	UpsertMasterTaxRule(context.Context, *pricing.TaxRule, shared.MasterRecordSyncMeta) error
+	UpsertMasterServiceChargeRule(context.Context, *pricing.ServiceChargeRule, shared.MasterRecordSyncMeta) error
 	UpsertMasterDataSyncState(context.Context, *shared.MasterDataSyncState) error
 	GetMasterDataSyncState(context.Context, string, shared.MasterDataStream) (*shared.MasterDataSyncState, error)
 	ListMasterDataSyncStates(context.Context, string) ([]shared.MasterDataSyncState, error)

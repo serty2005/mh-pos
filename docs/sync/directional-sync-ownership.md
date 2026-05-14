@@ -18,14 +18,16 @@
 | Cash session/drawer event | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Order/order line | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Precheck | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
-| Payment | Edge | Yes | Edge -> Cloud operational events for capture | реализовано сейчас |
-| Payment refund | Edge | Yes | sync/reporting policy needs final hardening | backend/UI реализовано сейчас |
-| Check | Edge | Generated after full payment | Edge -> Cloud operational events | реализовано сейчас |
+| Payment | Edge | Yes | Edge -> Cloud operational events for capture and refund | реализовано сейчас |
+| Payment refund | Edge | Yes | `PaymentRefunded` is confirmed Edge -> Cloud operational event | реализовано сейчас |
+| Check | Edge | Generated after full payment/refund status | `CheckCreated` and `CheckRefunded` are confirmed Edge -> Cloud operational events | реализовано сейчас |
+| Tax/pricing policy reference | Cloud | Edge read model only | `pricing_policy` Cloud -> Edge stream for `tax_profiles`, `tax_rules`, `service_charge_rules` | реализовано сейчас |
+| Operational order adjustments | Edge | Yes while order is open | runtime-команды; будущие policy ids могут ограничивать допустимые варианты | реализовано сейчас |
 | Stock document/move | Inventory context | Not from cashier runtime | planned | foundation only |
 
 ## Current Cloud -> Edge Ingest
 
-`mastersync.Service` currently supports only:
+`mastersync.Service` сейчас поддерживает только:
 
 - `restaurants`
 - `devices`
@@ -33,22 +35,41 @@
 - `floor`
 - `catalog`
 - `menu`
+- `pricing_policy`
 
-`recipes` and `inventory_reference` must not be documented as supported POS Edge ingest streams until `mastersync.Service` applies their payloads.
+`recipes` и `inventory_reference` нельзя документировать как поддерживаемые POS Edge ingest streams, пока `mastersync.Service` не применяет их payloads.
+`pricing_policy` намеренно ограничен tax/service-charge reference tables; он не включает modifiers runtime или Cloud-authored advanced pricing.
 
 ## Current Edge -> Cloud Runtime
 
 Реализовано сейчас:
 
-- cashier commands write local event/outbox foundation;
-- POS runtime can continue while Cloud is unavailable;
-- Cloud receiver/projection foundation exists.
+- cashier commands пишут local event/outbox foundation;
+- POS runtime продолжает работу, если Cloud недоступен;
+- Cloud receiver/projection foundation существует.
 
-Needs final hardening:
+Реализовано сейчас:
 
-- explicit Cloud reporting treatment for refund events;
-- modifiers/pricing/inventory event contracts only after runtime is implemented.
+- `PaymentRefunded` и `CheckRefunded` принимаются Cloud receiver и сохраняются как operational events;
+- Cloud shift finance foundation хранит refund counters/totals из этих events.
+
+Запланировано далее:
+
+- modifiers/pricing/inventory event contracts только после реализации runtime.
 
 ## Master Data Rule
 
-Cloud owns authoring of master data. POS Edge uses local read model and sync ingest. Edge runtime mutation APIs for Cloud-owned master data are not part of supported pilot runtime.
+Cloud владеет authoring master data. POS Edge использует local read model и sync ingest. Edge runtime mutation APIs для Cloud-owned master data не входят в поддерживаемый pilot runtime.
+
+## Pricing Policy Boundary
+
+Реализовано сейчас:
+
+- Edge operational adjustments являются cashier runtime commands для line/order discounts и surcharges на открытом order.
+- Cloud-authored tax/pricing policy reference data применяется через `pricing_policy` и хранится с `cloud_version`, `cloud_updated_at`, `cloud_deleted_at` и `last_synced_at`.
+- Manual surcharge/discount commands остаются runtime actions и требуют существующих pricing permissions.
+
+Запланировано далее:
+
+- Runtime adjustments должны ссылаться на synced policy ids там, где существует central policy.
+- Manual override flows для policy exceptions должны иметь отдельный permission boundary и audit trail до того, как они станут supported pilot behavior.

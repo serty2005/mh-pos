@@ -298,7 +298,7 @@ func TestActiveSQLiteMigrationPathUsesSingleManagedCanonicalFile(t *testing.T) {
 			migrations = append(migrations, entry.Name())
 		}
 	}
-	if len(migrations) != 2 || migrations[0] != "001_init.sql" || migrations[1] != "002_runtime_schema_repair.sql" {
+	if len(migrations) != 3 || migrations[0] != "001_init.sql" || migrations[1] != "002_runtime_schema_repair.sql" || migrations[2] != "003_pricing_policy_sync_foundation.sql" {
 		t.Fatalf("expected ordered managed sqlite migration files, got %+v", migrations)
 	}
 }
@@ -320,8 +320,8 @@ func TestCleanInstallRecordsCanonicalInitMigration(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Fatalf("expected two managed migration rows, got %d", n)
+	if n != 3 {
+		t.Fatalf("expected three managed migration rows, got %d", n)
 	}
 	rows, err := db.QueryContext(ctx, `SELECT version, checksum_sha256, status FROM schema_migrations ORDER BY version`)
 	if err != nil {
@@ -345,7 +345,7 @@ func TestCleanInstallRecordsCanonicalInitMigration(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if len(versions) != 2 || versions[0] != "001_init.sql" || versions[1] != "002_runtime_schema_repair.sql" {
+	if len(versions) != 3 || versions[0] != "001_init.sql" || versions[1] != "002_runtime_schema_repair.sql" || versions[2] != "003_pricing_policy_sync_foundation.sql" {
 		t.Fatalf("expected ordered migration history, got %+v", versions)
 	}
 }
@@ -489,8 +489,8 @@ CREATE TABLE cash_sessions (
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations WHERE status = 'applied'`).Scan(&appliedCount); err != nil {
 		t.Fatal(err)
 	}
-	if appliedCount != 2 {
-		t.Fatalf("expected second startup to keep two applied migrations, got %d", appliedCount)
+	if appliedCount != 3 {
+		t.Fatalf("expected second startup to keep three applied migrations, got %d", appliedCount)
 	}
 }
 
@@ -569,7 +569,7 @@ func TestRetrySafeOutboxSchemaColumnsAndConstraints(t *testing.T) {
 
 func TestCloudMasterDataSyncFoundationSchema(t *testing.T) {
 	db, ctx := newSchemaDB(t)
-	for _, table := range []string{"restaurants", "devices", "roles", "employees", "halls", "tables", "catalog_items", "menu_items", "recipe_versions", "recipe_lines", "item_costs"} {
+	for _, table := range []string{"restaurants", "devices", "roles", "employees", "halls", "tables", "catalog_items", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "recipe_versions", "recipe_lines", "item_costs"} {
 		columns := tableColumns(t, ctx, db, table)
 		for _, column := range []string{"cloud_version", "cloud_updated_at", "cloud_deleted_at", "last_synced_at"} {
 			if !columns[column] {
@@ -586,6 +586,7 @@ func TestCloudMasterDataSyncFoundationSchema(t *testing.T) {
 		t.Fatal("expected cloud_master_sync_state table to exist")
 	}
 	execSchema(t, ctx, db, `INSERT INTO cloud_master_sync_state(id,restaurant_id,node_device_id,stream_name,direction,sync_mode,last_cloud_version,status,created_at,updated_at) VALUES ('sync-state-1','restaurant-1','device-1','menu','cloud_to_edge','full_snapshot',1,'applied',?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO cloud_master_sync_state(id,restaurant_id,node_device_id,stream_name,direction,sync_mode,last_cloud_version,status,created_at,updated_at) VALUES ('sync-state-pricing','restaurant-1','device-1','pricing_policy','cloud_to_edge','incremental',2,'applied',?,?)`, schemaTestTime, schemaTestTime)
 	_, err := db.ExecContext(ctx, `INSERT INTO cloud_master_sync_state(id,node_device_id,stream_name,direction,sync_mode,status,created_at,updated_at) VALUES ('sync-state-bad','device-1','menu','edge_to_cloud','incremental','applied',?,?)`, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected Cloud master sync state to reject non cloud_to_edge direction")

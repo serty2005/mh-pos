@@ -130,7 +130,7 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 6 || files[0].Name != "001_sync_receiver.sql" || files[1].Name != "002_projection_event_type_stats.sql" || files[2].Name != "003_runtime_schema_repair.sql" || files[3].Name != "004_master_data_authority.sql" || files[4].Name != "005_master_data_restaurants_api.sql" || files[5].Name != "006_zero_to_cashier_provisioning.sql" {
+	if len(files) != 7 || files[0].Name != "001_sync_receiver.sql" || files[1].Name != "002_projection_event_type_stats.sql" || files[2].Name != "003_runtime_schema_repair.sql" || files[3].Name != "004_master_data_authority.sql" || files[4].Name != "005_master_data_restaurants_api.sql" || files[5].Name != "006_zero_to_cashier_provisioning.sql" || files[6].Name != "007_refund_and_pricing_policy_hardening.sql" {
 		t.Fatalf("expected ordered managed migrations, got %+v", files)
 	}
 	baseBody := string(files[0].Body)
@@ -194,6 +194,12 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 	} {
 		if !strings.Contains(zeroToCashierBody, required) {
 			t.Fatalf("expected zero-to-cashier migration to manage %s", required)
+		}
+	}
+	hardeningBody := string(files[6].Body)
+	for _, required := range []string{"PaymentRefunded", "CheckRefunded", "pricing_policy", "payments_refunded_count"} {
+		if !strings.Contains(hardeningBody, required) {
+			t.Fatalf("expected hardening migration to manage %s", required)
 		}
 	}
 }

@@ -95,6 +95,49 @@ func TestUpsertAndGetMasterDataPackage(t *testing.T) {
 	}
 }
 
+func TestUpsertAndGetPricingPolicyMasterDataPackage(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+	payload := json.RawMessage(`{
+		"tax_profiles":[{"id":"tax-vat-10","name":"VAT 10","tax_exempt":false,"active":true}],
+		"tax_rules":[{"id":"tax-rule-10","tax_profile_id":"tax-vat-10","name":"VAT 10","kind":"percentage","mode":"exclusive","rate_basis_points":1000,"active":true}],
+		"service_charge_rules":[{"id":"svc-10","restaurant_id":"restaurant-1","name":"Service 10","kind":"service_charge","amount_kind":"percentage","value_basis_points":1000,"active":true}]
+	}`)
+
+	stored, err := service.UpsertMasterDataPackage(context.Background(), contracts.MasterDataPackage{
+		StreamName:   contracts.MasterDataStreamPricing,
+		NodeDeviceID: "node-1",
+		RestaurantID: "restaurant-1",
+		SyncMode:     contracts.SyncModeIncremental,
+		CloudVersion: 11,
+		PayloadJSON:  payload,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := service.GetMasterDataPackage(context.Background(), contracts.MasterDataStreamPricing, "node-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.StreamName != contracts.MasterDataStreamPricing || got.CloudVersion != 11 || string(got.PayloadJSON) != string(payload) {
+		t.Fatalf("unexpected pricing policy package: stored=%+v got=%+v", stored, got)
+	}
+}
+
+func TestUpsertMasterDataPackageRejectsUnknownPayloadShape(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+	_, err := service.UpsertMasterDataPackage(context.Background(), contracts.MasterDataPackage{
+		StreamName:   contracts.MasterDataStreamMenu,
+		SyncMode:     contracts.SyncModeIncremental,
+		CloudVersion: 12,
+		PayloadJSON:  json.RawMessage(`{"menu_items":[{"id":"m-1"}],"shadow_stream":[{"id":"x"}]}`),
+	})
+	if err == nil {
+		t.Fatal("expected unknown payload shape to be rejected")
+	}
+}
+
 func TestUpsertMasterDataPackageValidatesCurrenciesPayload(t *testing.T) {
 	repo := memory.NewRepository()
 	service := app.NewService(repo, fixedClock{})

@@ -65,6 +65,34 @@ func TestValidateMasterDataPackageCurrenciesStream(t *testing.T) {
 	}
 }
 
+func TestValidateMasterDataPackagePricingPolicyStream(t *testing.T) {
+	err := contracts.ValidateMasterDataPackage(contracts.MasterDataPackage{
+		StreamName:   contracts.MasterDataStreamPricing,
+		SyncMode:     contracts.SyncModeIncremental,
+		CloudVersion: 2,
+		PayloadJSON: json.RawMessage(`{
+			"tax_profiles":[{"id":"tax-vat-10","name":"VAT 10","tax_exempt":false,"active":true}],
+			"tax_rules":[{"id":"tax-rule-10","tax_profile_id":"tax-vat-10","name":"VAT 10","kind":"percentage","mode":"exclusive","rate_basis_points":1000,"active":true}],
+			"service_charge_rules":[{"id":"svc-10","restaurant_id":"restaurant-1","name":"Service 10","kind":"service_charge","amount_kind":"percentage","value_basis_points":1000,"active":true}]
+		}`),
+	})
+	if err != nil {
+		t.Fatalf("expected valid pricing_policy stream package, got %v", err)
+	}
+}
+
+func TestValidateMasterDataPackageRejectsUnknownPayloadShape(t *testing.T) {
+	err := contracts.ValidateMasterDataPackage(contracts.MasterDataPackage{
+		StreamName:   contracts.MasterDataStreamCatalog,
+		SyncMode:     contracts.SyncModeIncremental,
+		CloudVersion: 3,
+		PayloadJSON:  json.RawMessage(`{"catalog_items":[{"id":"c-1"}],"unexpected":true}`),
+	})
+	if err == nil {
+		t.Fatal("expected unknown catalog payload field to be rejected")
+	}
+}
+
 func TestValidateMasterDataPackageRequiresReasonForFullSnapshot(t *testing.T) {
 	err := contracts.ValidateMasterDataPackage(contracts.MasterDataPackage{
 		StreamName:   contracts.MasterDataStreamCatalog,

@@ -132,20 +132,79 @@ ON CONFLICT(id) DO UPDATE SET
 }
 
 func (r *Repository) UpsertMasterMenuItem(ctx context.Context, v *domain.MenuItem, meta domain.MasterRecordSyncMeta) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO menu_items(id,catalog_item_id,name,price,currency,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO menu_items(id,catalog_item_id,name,price,currency,tax_profile_id,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(id) DO UPDATE SET
   catalog_item_id = excluded.catalog_item_id,
   name = excluded.name,
   price = excluded.price,
   currency = excluded.currency,
+  tax_profile_id = excluded.tax_profile_id,
   active = excluded.active,
   updated_at = excluded.updated_at,
   cloud_version = excluded.cloud_version,
   cloud_updated_at = excluded.cloud_updated_at,
   cloud_deleted_at = excluded.cloud_deleted_at,
   last_synced_at = excluded.last_synced_at`,
-		v.ID, v.CatalogItemID, v.Name, v.Price, v.Currency, boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+		v.ID, v.CatalogItemID, v.Name, v.Price, v.Currency, nullableString(v.TaxProfileID), boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+	return normalizeErr(err)
+}
+
+func (r *Repository) UpsertMasterTaxProfile(ctx context.Context, v *domain.TaxProfile, meta domain.MasterRecordSyncMeta) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO tax_profiles(id,name,tax_exempt,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET
+  name = excluded.name,
+  tax_exempt = excluded.tax_exempt,
+  active = excluded.active,
+  updated_at = excluded.updated_at,
+  cloud_version = excluded.cloud_version,
+  cloud_updated_at = excluded.cloud_updated_at,
+  cloud_deleted_at = excluded.cloud_deleted_at,
+  last_synced_at = excluded.last_synced_at`,
+		v.ID, v.Name, boolInt(v.TaxExempt), boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+	return normalizeErr(err)
+}
+
+func (r *Repository) UpsertMasterTaxRule(ctx context.Context, v *domain.TaxRule, meta domain.MasterRecordSyncMeta) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO tax_rules(id,tax_profile_id,name,kind,mode,rate_basis_points,amount_minor,compound,priority,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET
+  tax_profile_id = excluded.tax_profile_id,
+  name = excluded.name,
+  kind = excluded.kind,
+  mode = excluded.mode,
+  rate_basis_points = excluded.rate_basis_points,
+  amount_minor = excluded.amount_minor,
+  compound = excluded.compound,
+  priority = excluded.priority,
+  active = excluded.active,
+  updated_at = excluded.updated_at,
+  cloud_version = excluded.cloud_version,
+  cloud_updated_at = excluded.cloud_updated_at,
+  cloud_deleted_at = excluded.cloud_deleted_at,
+  last_synced_at = excluded.last_synced_at`,
+		v.ID, v.TaxProfileID, v.Name, string(v.Kind), string(v.Mode), v.RateBasisPoints, v.AmountMinor, boolInt(v.Compound), v.Priority, boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+	return normalizeErr(err)
+}
+
+func (r *Repository) UpsertMasterServiceChargeRule(ctx context.Context, v *domain.ServiceChargeRule, meta domain.MasterRecordSyncMeta) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO service_charge_rules(id,restaurant_id,name,kind,amount_kind,amount_minor,value_basis_points,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET
+  restaurant_id = excluded.restaurant_id,
+  name = excluded.name,
+  kind = excluded.kind,
+  amount_kind = excluded.amount_kind,
+  amount_minor = excluded.amount_minor,
+  value_basis_points = excluded.value_basis_points,
+  active = excluded.active,
+  updated_at = excluded.updated_at,
+  cloud_version = excluded.cloud_version,
+  cloud_updated_at = excluded.cloud_updated_at,
+  cloud_deleted_at = excluded.cloud_deleted_at,
+  last_synced_at = excluded.last_synced_at`,
+		v.ID, v.RestaurantID, v.Name, string(v.Kind), string(v.AmountKind), v.AmountMinor, v.ValueBasisPoints, boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
 	return normalizeErr(err)
 }
 

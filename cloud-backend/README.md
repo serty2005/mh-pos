@@ -11,9 +11,10 @@ Cloud backend для POS/RMS платформы: прием Edge operational eve
 - идемпотентный прием POS Edge `SyncEnvelope`;
 - хранение raw envelope;
 - operational event journal в PostgreSQL (`cloud_operational_events`);
-- deterministic runtime projections для event type stats и shift finance foundation.
+- deterministic runtime projections для event type stats и shift finance/refund foundation.
 - реализовано сейчас: Cloud-owned production-oriented CRUD API для ресторанов, залов/столов, ролей, сотрудников/PIN credentials, catalog items, menu items и versioned master-data publications;
 - реализовано сейчас: publication workflow создает deterministic Cloud -> Edge packages для stream `restaurants`, `staff`, `floor`, `catalog`, `menu` и сохраняет их в `cloud_master_data_packages`;
+- реализовано сейчас: generic Cloud -> Edge package storage/validation поддерживает stream `pricing_policy` для tax/service-charge reference payloads; full Cloud UI/publication workflow для pricing/tax остается запланирован далее;
 - реализовано сейчас: device provisioning поддерживает Cloud Approve и License Code flow для чистого подключения POS Edge без dev bootstrap;
 - реализовано сейчас: Cloud UI API responses по сотрудникам и публикациям не возвращают PIN и `pin_hash`; PIN hash присутствует только внутри sync-ready staff package для device/system delivery на Edge.
 
@@ -42,14 +43,14 @@ CLOUD_POSTGRES_MIGRATIONS_DIR=migrations/postgres
 CLOUD_POSTGRES_BACKUP_DIR=data/cloud-backups
 CLOUD_PUBLIC_URL=http://localhost:8090
 LICENSE_SERVER_URL=http://localhost:8095
-MH_POS_VERSION=0.1.1
+MH_POS_VERSION=0.1.2
 ```
 
 `CLOUD_POSTGRES_DSN` обязателен.
 
 Реализовано сейчас: Cloud Backend также читает optional `config/cloud-api.json`; пример полного файла находится в `config/cloud-api.example.json`. Если `CLOUD_CONFIG_PATH` задан явно, файл обязателен. Порядок приоритета: defaults -> env -> JSON-файл. Общий контракт описан в `../docs/backend/RUNTIME-CONFIG.md`.
 
-Реализовано сейчас: PostgreSQL использует ordered managed migrations из `migrations/postgres`: `001_sync_receiver.sql` задает baseline receiver storage, `002_projection_event_type_stats.sql` создает/ремонтирует required runtime projection table `cloud_projection_event_type_stats`, `003_runtime_schema_repair.sql` довыравнивает весь required receiver/projection/provisioning schema set для старых БД, `004_master_data_authority.sql` добавляет Cloud-owned master-data authority schema, `005_master_data_restaurants_api.sql` добавляет `cloud_restaurants`, cloud-version metadata и partial unique SKU policy для неархивных catalog items, `006_zero_to_cashier_provisioning.sql` добавляет Cloud halls/tables и device provisioning таблицы.
+Реализовано сейчас: PostgreSQL использует ordered managed migrations из `migrations/postgres`: `001_sync_receiver.sql` задает baseline receiver storage, `002_projection_event_type_stats.sql` создает/ремонтирует required runtime projection table `cloud_projection_event_type_stats`, `003_runtime_schema_repair.sql` довыравнивает весь required receiver/projection/provisioning schema set для старых БД, `004_master_data_authority.sql` добавляет Cloud-owned master-data authority schema, `005_master_data_restaurants_api.sql` добавляет `cloud_restaurants`, cloud-version metadata и partial unique SKU policy для неархивных catalog items, `006_zero_to_cashier_provisioning.sql` добавляет Cloud halls/tables и device provisioning таблицы, `007_refund_and_pricing_policy_hardening.sql` подтверждает refund event catalog, refund finance projection columns и `pricing_policy` package stream.
 Реализовано сейчас: `schema_migrations` хранит имя SQL file, checksum и status; уже примененные migrations не выполняются повторно, а новая ordered migration записывается в history после успешного apply.
 Реализовано сейчас: если `schema_migrations` отсутствует, содержит старую запись без checksum или не имеет новой ordered repair migration, Cloud применяет idempotent managed SQL, довыравнивает недостающие runtime-таблицы и только после успешного apply записывает checksum/status.
 Реализовано сейчас: startup policy использует `db_runtime_versions`; если таблица версий отсутствует, БД считается самой старой, перед safe upgrade существующей схемы создается JSONL backup snapshot таблиц `public`, а `DB version > MH_POS_VERSION` завершает startup fail-fast.
@@ -250,3 +251,8 @@ go test ./...
 - `cloud_projection_event_type_stats`
 - `cloud_projection_shift_finance`
 - `cloud_master_data_packages`
+
+Реализовано сейчас refund behavior:
+- `PaymentRefunded` and `CheckRefunded` are accepted Edge -> Cloud operational events.
+- Cloud stores raw payloads and operational journal rows for detailed refund display.
+- `cloud_projection_shift_finance` tracks refund counters/totals as reporting foundation.

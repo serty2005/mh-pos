@@ -6,7 +6,7 @@
 
 - Код, тесты и backend specs являются источником истины.
 - Не объявлять UI-функцию реализованной, если backend/API ее не поддерживает.
-- Planned/future функции можно описывать только как reserved/backlog/disabled design.
+- Запланированные/будущие функции можно описывать только как reserved/backlog/disabled design.
 
 ## Product mode
 
@@ -36,7 +36,7 @@
 
 ## Modals
 
-- Модалки используются для процессов: payment, refund, manager override, cash drawer event, precheck cancel, future modifiers/split.
+- Модалки используются для процессов: payment, refund, manager override, cash drawer event, precheck cancel, запланированные modifiers/split.
 - Modal не меняет текущий section/context.
 - Financial/destructive modal должен показывать сумму, действие, последствия и confirmation.
 

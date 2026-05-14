@@ -583,6 +583,23 @@ func TestMasterDataIngestAPIAppliesCloudAuthoredCatalogWithoutOutbox(t *testing.
 	}
 }
 
+func TestMasterDataIngestAPIRejectsUnknownJSONField(t *testing.T) {
+	f := newAPIFixture(t)
+	rr := f.postJSON(t, "/api/v1/sync/master-data/pricing_policy", `{
+		"node_device_id":"`+f.device.ID+`",
+		"cloud_version":56,
+		"tax_profiles":[{"id":"tax-api-1","name":"VAT","active":true}],
+		"unknown_payload_shape":true
+	}`)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+	body := decodeAPIResponse[httpx.ErrorResponse](t, rr)
+	if body.Error.Code != "VALIDATION_FAILED" {
+		t.Fatalf("expected validation error contract, got %+v", body.Error)
+	}
+}
+
 func TestFloorReadAndOrderLineEditingAPI(t *testing.T) {
 	f := newAPIFixture(t)
 	listTables := f.get(t, "/api/v1/tables?restaurant_id="+f.restaurant.ID+"&hall_id="+f.hall.ID)

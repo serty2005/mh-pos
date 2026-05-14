@@ -91,6 +91,20 @@ type TaxRule struct {
 	UpdatedAt       time.Time   `json:"updated_at"`
 }
 
+// ServiceChargeRule описывает Cloud-authored правило сервисной надбавки в Edge read-model.
+type ServiceChargeRule struct {
+	ID               string        `json:"id"`
+	RestaurantID     string        `json:"restaurant_id"`
+	Name             string        `json:"name"`
+	Kind             SurchargeKind `json:"kind"`
+	AmountKind       AmountKind    `json:"amount_kind"`
+	AmountMinor      int64         `json:"amount_minor,omitempty"`
+	ValueBasisPoints int64         `json:"value_basis_points,omitempty"`
+	Active           bool          `json:"active"`
+	CreatedAt        time.Time     `json:"created_at"`
+	UpdatedAt        time.Time     `json:"updated_at"`
+}
+
 type CalculationInput struct {
 	CurrencyCode string
 	Lines        []OrderLineInput

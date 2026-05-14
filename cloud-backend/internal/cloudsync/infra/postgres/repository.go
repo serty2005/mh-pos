@@ -245,28 +245,44 @@ ON CONFLICT (restaurant_id,device_id,event_type) DO UPDATE SET
 		if err != nil {
 			return err
 		}
-		return upsertShiftFinanceProjection(ctx, tx, receipt, shiftID, 1, amount, 0, 0)
+		return upsertShiftFinanceProjection(ctx, tx, receipt, shiftID, 1, amount, 0, 0, 0, 0, 0, 0)
+	case contracts.EventPaymentRefunded:
+		amount, err := paymentRefundAmount(receipt.Envelope.Payload)
+		if err != nil {
+			return err
+		}
+		return upsertShiftFinanceProjection(ctx, tx, receipt, shiftID, 0, 0, 1, amount, 0, 0, 0, 0)
 	case contracts.EventCheckCreated:
 		total, err := checkTotal(receipt.Envelope.Payload)
 		if err != nil {
 			return err
 		}
-		return upsertShiftFinanceProjection(ctx, tx, receipt, shiftID, 0, 0, 1, total)
+		return upsertShiftFinanceProjection(ctx, tx, receipt, shiftID, 0, 0, 0, 0, 1, total, 0, 0)
+	case contracts.EventCheckRefunded:
+		total, err := checkRefundedPaidTotal(receipt.Envelope.Payload)
+		if err != nil {
+			return err
+		}
+		return upsertShiftFinanceProjection(ctx, tx, receipt, shiftID, 0, 0, 0, 0, 0, 0, 1, total)
 	default:
 		return nil
 	}
 }
 
-func upsertShiftFinanceProjection(ctx context.Context, tx pgx.Tx, receipt app.EdgeEventReceipt, shiftID string, paymentCount, paymentTotal, checkCount, checkTotal int64) error {
+func upsertShiftFinanceProjection(ctx context.Context, tx pgx.Tx, receipt app.EdgeEventReceipt, shiftID string, paymentCount, paymentTotal, paymentRefundCount, paymentRefundTotal, checkCount, checkTotal, checkRefundCount, checkRefundTotal int64) error {
 	_, err := tx.Exec(ctx, `
 INSERT INTO cloud_projection_shift_finance(
-  restaurant_id,device_id,shift_id,payments_captured_count,payments_captured_total,checks_created_count,checks_total_amount,last_event_id,last_command_id,last_occurred_at,last_cloud_received_at,updated_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)
+  restaurant_id,device_id,shift_id,payments_captured_count,payments_captured_total,payments_refunded_count,payments_refunded_total,checks_created_count,checks_total_amount,checks_refunded_count,checks_refunded_total,last_event_id,last_command_id,last_occurred_at,last_cloud_received_at,updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15)
 ON CONFLICT (restaurant_id,device_id,shift_id) DO UPDATE SET
   payments_captured_count = cloud_projection_shift_finance.payments_captured_count + EXCLUDED.payments_captured_count,
   payments_captured_total = cloud_projection_shift_finance.payments_captured_total + EXCLUDED.payments_captured_total,
+  payments_refunded_count = cloud_projection_shift_finance.payments_refunded_count + EXCLUDED.payments_refunded_count,
+  payments_refunded_total = cloud_projection_shift_finance.payments_refunded_total + EXCLUDED.payments_refunded_total,
   checks_created_count = cloud_projection_shift_finance.checks_created_count + EXCLUDED.checks_created_count,
   checks_total_amount = cloud_projection_shift_finance.checks_total_amount + EXCLUDED.checks_total_amount,
+  checks_refunded_count = cloud_projection_shift_finance.checks_refunded_count + EXCLUDED.checks_refunded_count,
+  checks_refunded_total = cloud_projection_shift_finance.checks_refunded_total + EXCLUDED.checks_refunded_total,
   last_event_id = EXCLUDED.last_event_id,
   last_command_id = EXCLUDED.last_command_id,
   last_occurred_at = GREATEST(cloud_projection_shift_finance.last_occurred_at, EXCLUDED.last_occurred_at),
@@ -277,8 +293,12 @@ ON CONFLICT (restaurant_id,device_id,shift_id) DO UPDATE SET
 		shiftID,
 		paymentCount,
 		paymentTotal,
+		paymentRefundCount,
+		paymentRefundTotal,
 		checkCount,
 		checkTotal,
+		checkRefundCount,
+		checkRefundTotal,
 		receipt.Envelope.EventID,
 		receipt.Envelope.CommandID,
 		receipt.Envelope.OccurredAt,
@@ -295,12 +315,28 @@ func paymentAmount(payloadRaw json.RawMessage) (int64, error) {
 	return payload.Data.Amount, nil
 }
 
+func paymentRefundAmount(payloadRaw json.RawMessage) (int64, error) {
+	var payload contracts.Payload[contracts.PaymentRefunded]
+	if err := json.Unmarshal(payloadRaw, &payload); err != nil {
+		return 0, fmt.Errorf("%w: invalid PaymentRefunded payload", contracts.ErrInvalidEnvelope)
+	}
+	return payload.Data.Amount, nil
+}
+
 func checkTotal(payloadRaw json.RawMessage) (int64, error) {
 	var payload contracts.Payload[contracts.CheckCreated]
 	if err := json.Unmarshal(payloadRaw, &payload); err != nil {
 		return 0, fmt.Errorf("%w: invalid CheckCreated payload", contracts.ErrInvalidEnvelope)
 	}
 	return payload.Data.Total, nil
+}
+
+func checkRefundedPaidTotal(payloadRaw json.RawMessage) (int64, error) {
+	var payload contracts.Payload[contracts.CheckRefunded]
+	if err := json.Unmarshal(payloadRaw, &payload); err != nil {
+		return 0, fmt.Errorf("%w: invalid CheckRefunded payload", contracts.ErrInvalidEnvelope)
+	}
+	return payload.Data.PaidTotal, nil
 }
 
 func bytesTrimSpace(v []byte) []byte {

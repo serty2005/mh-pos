@@ -48,7 +48,7 @@ func run() error {
 	dsn := cfg.Get("CLOUD_POSTGRES_DSN", "")
 	migrationsDir := cfg.Get("CLOUD_POSTGRES_MIGRATIONS_DIR", "migrations/postgres")
 	backupDir := cfg.Get("CLOUD_POSTGRES_BACKUP_DIR", "data/cloud-backups")
-	moduleVersion := cfg.Get("MH_POS_VERSION", "0.1.1")
+	moduleVersion := cfg.Get("MH_POS_VERSION", "0.1.2")
 	if dsn == "" {
 		return errors.New("CLOUD_POSTGRES_DSN is required")
 	}

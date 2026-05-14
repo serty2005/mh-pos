@@ -47,8 +47,9 @@ func TestRequiredSchemaIncludesRuntimeProjectionTables(t *testing.T) {
 		},
 		"cloud_projection_shift_finance": {
 			"restaurant_id", "device_id", "shift_id", "payments_captured_count", "payments_captured_total",
-			"checks_created_count", "checks_total_amount", "last_event_id", "last_command_id", "last_occurred_at",
-			"last_cloud_received_at", "updated_at",
+			"payments_refunded_count", "payments_refunded_total", "checks_created_count", "checks_total_amount",
+			"checks_refunded_count", "checks_refunded_total", "last_event_id", "last_command_id",
+			"last_occurred_at", "last_cloud_received_at", "updated_at",
 		},
 	} {
 		foundColumns, ok := requirements[table]
@@ -88,7 +89,7 @@ func TestRequiredSchemaDocumentsRuntimeSchemaRepairMigration(t *testing.T) {
 			if req.MigrationFile == "" {
 				t.Fatalf("expected migration file explanation for %s", req.Table)
 			}
-			if req.Table == "cloud_projection_shift_finance" && req.MigrationFile != "001_sync_receiver.sql, 003_runtime_schema_repair.sql" {
+			if req.Table == "cloud_projection_shift_finance" && req.MigrationFile != "001_sync_receiver.sql, 003_runtime_schema_repair.sql, 007_refund_and_pricing_policy_hardening.sql" {
 				t.Fatalf("expected shift finance repair migration file, got %q", req.MigrationFile)
 			}
 		}

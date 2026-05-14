@@ -37,7 +37,9 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Cloud master-data authority foundation in `004_master_data_authority.sql`.
 - Cloud schema foundation for roles, employees, catalog items, dishes, goods/ingredients, semi-finished products, recipe items, categories, modifier groups/options, menu items, menu assignments and versioned publications.
 - POS Edge Cloud -> Edge ingest for streams `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`.
+- POS Edge Cloud -> Edge ingest for `pricing_policy` tax/service-charge reference rows.
 - POS Edge outbox/local event foundation for cashier operational events.
+- Refund events `PaymentRefunded` and `CheckRefunded` are confirmed Edge -> Cloud operational events and Cloud receiver/projection inputs.
 - DDD context map exists in `docs/architecture/DDD-CONTEXT-MAP.md`.
 
 ### Persistence Policy
@@ -65,10 +67,10 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 ## В Работе / До Пилота
 
-Pilot blockers:
+Блокеры пилота:
 
 - Pricing/Discounts publication:
-  - довести Cloud-authored publication/ingest для pricing/tax rules, если pilot acceptance требует централизованного управления правилами;
+  - довести Cloud-authored UI/publication workflow и policy-id-backed runtime adjustments для pricing/tax rules, если pilot acceptance требует централизованного управления правилами;
   - уточнить operator policy для manual discount/surcharge permissions в pilot script.
 - Modifiers:
   - решить, входят ли modifiers в первый pilot;
@@ -90,7 +92,7 @@ Pilot blockers:
 - Полный pre-pilot smoke path: Cloud master data -> Edge ingest -> login -> shift/cash session -> order -> precheck -> payment -> check -> refund/reprint.
 - Сверка RBAC matrix с фактическим UI и backend permissions.
 - Проверка migration/backup behavior на старой SQLite DB.
-- Уточнение sync direction для refund events, если Cloud должен получать возвраты как operational events.
+- Богатая refund ledger projection для отчетности, если raw/journal payload и текущих finance counters недостаточно.
 
 ## После Пилота
 

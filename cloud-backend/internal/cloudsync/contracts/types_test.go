@@ -31,6 +31,36 @@ func TestValidateEnvelopeRejectsUnknownEvent(t *testing.T) {
 	}
 }
 
+func TestValidateEnvelopeAcceptsRefundEvents(t *testing.T) {
+	for _, eventType := range []contracts.EventType{contracts.EventPaymentRefunded, contracts.EventCheckRefunded} {
+		envelope := validEnvelope(t, eventType)
+		if eventType == contracts.EventCheckRefunded {
+			envelope.AggregateType = "Check"
+			envelope.AggregateID = "check-1"
+			envelope.Payload = json.RawMessage(`{
+				"origin":"edge_device",
+				"data":{
+					"id":"check-1",
+					"order_id":"order-1",
+					"status":"refunded",
+					"subtotal":1000,
+					"discount_total":0,
+					"tax_total":0,
+					"total":1000,
+					"paid_total":0,
+					"business_date_local":"2026-05-05",
+					"closed_at":"2026-05-05T09:00:00Z",
+					"created_at":"2026-05-05T09:00:00Z",
+					"updated_at":"2026-05-05T09:00:00Z"
+				}
+			}`)
+		}
+		if err := contracts.ValidateEnvelope(envelope); err != nil {
+			t.Fatalf("expected %s to be accepted, got %v", eventType, err)
+		}
+	}
+}
+
 func validEnvelope(t *testing.T, eventType contracts.EventType) contracts.SyncEnvelope {
 	t.Helper()
 	raw := []byte(`{

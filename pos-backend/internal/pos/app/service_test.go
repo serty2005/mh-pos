@@ -343,7 +343,7 @@ func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
-	case "restaurants", "devices", "orders", "order_lines", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "roles", "employees", "catalog_items", "menu_items", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_discounts", "precheck_surcharges", "precheck_taxes":
+	case "restaurants", "devices", "orders", "order_lines", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "roles", "employees", "catalog_items", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_discounts", "precheck_surcharges", "precheck_taxes":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -3309,6 +3309,101 @@ func TestApplyMasterDataEmptyFullSnapshotDoesNotCreateBackup(t *testing.T) {
 	}
 	if states := countRows(t, f, "cloud_master_sync_state"); states != stateBefore {
 		t.Fatalf("expected empty full_snapshot not to write sync state, before=%d after=%d", stateBefore, states)
+	}
+}
+
+func TestApplyMasterDataPricingPolicyAppliesReferenceRowsAndSyncState(t *testing.T) {
+	f := newFixture(t)
+
+	applied, err := f.service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:    app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		RestaurantID:   f.restaurant.ID,
+		StreamName:     domain.MasterDataStreamPricing,
+		SyncMode:       domain.SyncModeIncremental,
+		CloudVersion:   91,
+		CloudUpdatedAt: "2026-05-04T19:00:00Z",
+		TaxProfiles: []domain.TaxProfile{{
+			ID:        "tax-vat-10",
+			Name:      "VAT 10",
+			TaxExempt: false,
+			Active:    true,
+		}},
+		TaxRules: []domain.TaxRule{{
+			ID:              "tax-rule-vat-10",
+			TaxProfileID:    "tax-vat-10",
+			Name:            "VAT 10 exclusive",
+			Kind:            domain.TaxRulePercentage,
+			Mode:            domain.TaxModeExclusive,
+			RateBasisPoints: 1000,
+			Priority:        10,
+			Active:          true,
+		}},
+		ServiceChargeRules: []domain.ServiceChargeRule{{
+			ID:               "service-charge-10",
+			RestaurantID:     f.restaurant.ID,
+			Name:             "Service charge 10",
+			Kind:             domain.SurchargeServiceCharge,
+			AmountKind:       domain.AmountPercentage,
+			ValueBasisPoints: 1000,
+			Active:           true,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(applied.AppliedStreams) != 1 || applied.AppliedStreams[0] != domain.MasterDataStreamPricing {
+		t.Fatalf("expected pricing_policy stream, got %+v", applied.AppliedStreams)
+	}
+	if applied.Counts[string(domain.MasterDataStreamPricing)] != 3 {
+		t.Fatalf("expected three pricing policy rows, got %+v", applied.Counts)
+	}
+	for table, id := range map[string]string{
+		"tax_profiles":         "tax-vat-10",
+		"tax_rules":            "tax-rule-vat-10",
+		"service_charge_rules": "service-charge-10",
+	} {
+		var cloudVersion int64
+		var lastSyncedAt string
+		if err := f.db.QueryRowContext(f.ctx, `SELECT cloud_version,last_synced_at FROM `+table+` WHERE id = ?`, id).Scan(&cloudVersion, &lastSyncedAt); err != nil {
+			t.Fatal(err)
+		}
+		if cloudVersion != 91 || lastSyncedAt == "" {
+			t.Fatalf("expected sync metadata for %s.%s, got version=%d last_synced_at=%q", table, id, cloudVersion, lastSyncedAt)
+		}
+	}
+	state, err := f.repo.GetMasterDataSyncState(f.ctx, f.device.ID, domain.MasterDataStreamPricing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.LastCloudVersion != 91 || state.Status != "applied" || state.SyncMode != domain.SyncModeIncremental {
+		t.Fatalf("unexpected pricing sync state: %+v", state)
+	}
+}
+
+func TestApplyMasterDataRejectsUnsupportedStreamWithoutPartialWrite(t *testing.T) {
+	f := newFixture(t)
+	stateBefore := countRows(t, f, "cloud_master_sync_state")
+	taxBefore := countRows(t, f, "tax_profiles")
+
+	_, err := f.service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:  app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		StreamName:   domain.MasterDataStream("unknown_payload"),
+		SyncMode:     domain.SyncModeIncremental,
+		CloudVersion: 92,
+		TaxProfiles: []domain.TaxProfile{{
+			ID:     "tax-should-not-write",
+			Name:   "Should not write",
+			Active: true,
+		}},
+	})
+	if err == nil {
+		t.Fatal("expected unsupported stream to be rejected")
+	}
+	if states := countRows(t, f, "cloud_master_sync_state"); states != stateBefore {
+		t.Fatalf("expected unsupported stream not to write sync state, before=%d after=%d", stateBefore, states)
+	}
+	if rows := countRows(t, f, "tax_profiles"); rows != taxBefore {
+		t.Fatalf("expected unsupported stream not to write tax rows, before=%d after=%d", taxBefore, rows)
 	}
 }
 

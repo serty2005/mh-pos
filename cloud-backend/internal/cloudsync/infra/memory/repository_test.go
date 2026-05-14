@@ -65,12 +65,23 @@ func TestRepositoryTracksProjections(t *testing.T) {
 	if _, err := repo.ReceiveEdgeEvent(context.Background(), receipt); err != nil {
 		t.Fatal(err)
 	}
+	refund := receipt
+	refund.Envelope.EventID = "event-payment-refund-1"
+	refund.Envelope.CommandID = "command-payment-refund-1"
+	refund.Envelope.EventType = contracts.EventPaymentRefunded
+	refund.Envelope.Payload = mustPayloadJSON(t, map[string]any{"id": "payment-1", "amount": 1500, "status": "refunded"})
+	refund.IdempotencyKey = "restaurant-1:device-1:event-payment-refund-1"
+	refund.RawPayload = []byte(`{"event_id":"event-payment-refund-1"}`)
+	refund.RawPayloadSHA256 = "hash-2"
+	if _, err := repo.ReceiveEdgeEvent(context.Background(), refund); err != nil {
+		t.Fatal(err)
+	}
 	stats := repo.EventTypeStats()
-	if len(stats) != 1 || stats[0].EventCount != 1 || stats[0].EventType != string(contracts.EventPaymentCaptured) {
+	if len(stats) != 2 {
 		t.Fatalf("unexpected event stats: %+v", stats)
 	}
 	finance := repo.ShiftFinance()
-	if len(finance) != 1 || finance[0].PaymentsCapturedCount != 1 || finance[0].PaymentsCapturedTotal != 1500 {
+	if len(finance) != 1 || finance[0].PaymentsCapturedCount != 1 || finance[0].PaymentsCapturedTotal != 1500 || finance[0].PaymentsRefundedCount != 1 || finance[0].PaymentsRefundedTotal != 1500 {
 		t.Fatalf("unexpected shift finance projection: %+v", finance)
 	}
 }
