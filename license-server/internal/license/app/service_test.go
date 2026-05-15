@@ -25,7 +25,7 @@ func (r *memoryRepo) Save(_ context.Context, item app.PairingCode) error {
 func (r *memoryRepo) GetByHash(_ context.Context, hash string) (app.PairingCode, error) {
 	item, ok := r.items[hash]
 	if !ok {
-		return app.PairingCode{}, errors.New("not found")
+		return app.PairingCode{}, app.ErrInvalid
 	}
 	return item, nil
 }
@@ -74,6 +74,9 @@ func TestResolveRejectsInvalidAndExpiredCodes(t *testing.T) {
 	if _, err := service.Resolve(ctx, app.ResolveCommand{PairingCode: "missing"}); !errors.Is(err, app.ErrInvalid) {
 		t.Fatalf("expected invalid code, got %v", err)
 	}
+	if got := app.SafeErrorReason(errFromResolve(t, service, app.ResolveCommand{PairingCode: "missing"})); got != "pairing_code_not_found" {
+		t.Fatalf("expected safe not-found reason, got %q", got)
+	}
 	if _, err := service.Register(ctx, app.RegisterPairingCodeCommand{
 		PairingCode:  "654321",
 		CloudURL:     "http://localhost:8090",
@@ -84,4 +87,13 @@ func TestResolveRejectsInvalidAndExpiredCodes(t *testing.T) {
 	}); !errors.Is(err, app.ErrExpired) {
 		t.Fatalf("expected expired code registration to be rejected, got %v", err)
 	}
+}
+
+func errFromResolve(t *testing.T, service *app.Service, cmd app.ResolveCommand) error {
+	t.Helper()
+	_, err := service.Resolve(context.Background(), cmd)
+	if err == nil {
+		t.Fatal("expected resolve error")
+	}
+	return err
 }

@@ -47,6 +47,10 @@ Internal cause пишется только в structured backend log.
 | `RATE_LIMITED` | 429 | `errors.rateLimit` | Превышен лимит PIN login attempts | Notice/modal с рекомендацией подождать | yes, вручную | WARN | PIN не возвращается и не логируется |
 | `INTERNAL_ERROR` | 500 | `errors.server` | Неожиданная или инфраструктурная ошибка | Modal с generic текстом и support code | no для write, осторожно для read/status | ERROR | Stack trace и SQL details только в backend log |
 
+Примечания:
+
+- реализовано сейчас: `POST /api/v1/system/provisioning/pair-via-license` мапит ожидаемые `PAIRING_CODE_INVALID` и `PAIRING_CODE_EXPIRED` от License Server в `400 VALIDATION_FAILED`, а не в `500 INTERNAL_ERROR`; внутренняя причина остается только в structured log и `edge_provisioning_state.last_error`.
+
 ## Поведение логирования
 
 Реализовано сейчас:

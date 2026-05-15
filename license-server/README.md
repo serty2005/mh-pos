@@ -58,4 +58,13 @@ POST /api/v1/pairing-codes/resolve
 - successful resolve переводит code в `consumed`, повторный resolve возвращает `PAIRING_CODE_INVALID`;
 - ошибки возвращаются в structured envelope и выставляют `X-Error-Code`.
 
+## Логирование
+
+Реализовано сейчас:
+
+- request audit пишет `operation=http.request`, `action`, `result`, `status`, `error_code`, `duration_ms` и `remote_ip`;
+- register/resolve flow пишет `operation=license.pairing.register` или `operation=license.pairing.resolve`, `result`, masked `restaurant_id`, masked `node_device_id`, `pairing_code_present`, `pairing_code_length` и безопасную `reason` для отказов;
+- безопасные причины отказа включают `registration_required_fields_missing`, `registration_expires_at_not_future`, `pairing_code_required`, `pairing_code_not_found`, `pairing_code_consumed`, `pairing_code_expired` и `node_device_id_mismatch`;
+- pairing code, node token и credentials payload не пишутся в логи.
+
 Вне текущего объема: настоящий внешний licensing/billing, multi-tenant admin UI и production auth perimeter между Cloud и License Server.

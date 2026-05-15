@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -14,6 +15,49 @@ var (
 	ErrExpired  = fmt.Errorf("pairing code expired")
 	ErrConsumed = fmt.Errorf("pairing code invalid: consumed")
 )
+
+// SafeErrorReason возвращает стабильную внутреннюю причину отказа без pairing code и токенов.
+func SafeErrorReason(err error) string {
+	var safe *safeError
+	if errors.As(err, &safe) {
+		return safe.reason
+	}
+	switch {
+	case errors.Is(err, ErrExpired):
+		return "expired"
+	case errors.Is(err, ErrConsumed):
+		return "consumed"
+	case errors.Is(err, ErrInvalid):
+		return "invalid"
+	default:
+		return "internal_error"
+	}
+}
+
+type safeError struct {
+	err    error
+	reason string
+}
+
+func (e *safeError) Error() string {
+	return e.err.Error() + ": " + e.reason
+}
+
+func (e *safeError) Unwrap() error {
+	return e.err
+}
+
+func invalid(reason string) error {
+	return &safeError{err: ErrInvalid, reason: reason}
+}
+
+func expired(reason string) error {
+	return &safeError{err: ErrExpired, reason: reason}
+}
+
+func consumed(reason string) error {
+	return &safeError{err: ErrConsumed, reason: reason}
+}
 
 type Credentials struct {
 	Type  string `json:"type"`
@@ -74,11 +118,11 @@ type ResolveResult struct {
 func (s *Service) Register(ctx context.Context, cmd RegisterPairingCodeCommand) (RegisterResult, error) {
 	code := strings.TrimSpace(cmd.PairingCode)
 	if code == "" || strings.TrimSpace(cmd.CloudURL) == "" || strings.TrimSpace(cmd.RestaurantID) == "" || strings.TrimSpace(cmd.NodeDeviceID) == "" || strings.TrimSpace(cmd.Credentials.Token) == "" {
-		return RegisterResult{}, ErrInvalid
+		return RegisterResult{}, invalid("registration_required_fields_missing")
 	}
 	expiresAt := cmd.ExpiresAt.UTC()
 	if expiresAt.IsZero() || !expiresAt.After(time.Now().UTC()) {
-		return RegisterResult{}, ErrExpired
+		return RegisterResult{}, expired("registration_expires_at_not_future")
 	}
 	err := s.repo.Save(ctx, PairingCode{
 		PairingCodeHash: Hash(code),
@@ -98,20 +142,23 @@ func (s *Service) Register(ctx context.Context, cmd RegisterPairingCodeCommand) 
 func (s *Service) Resolve(ctx context.Context, cmd ResolveCommand) (ResolveResult, error) {
 	code := strings.TrimSpace(cmd.PairingCode)
 	if code == "" {
-		return ResolveResult{}, ErrInvalid
+		return ResolveResult{}, invalid("pairing_code_required")
 	}
 	item, err := s.repo.GetByHash(ctx, Hash(code))
 	if err != nil {
-		return ResolveResult{}, ErrInvalid
+		if errors.Is(err, ErrInvalid) {
+			return ResolveResult{}, invalid("pairing_code_not_found")
+		}
+		return ResolveResult{}, err
 	}
 	if item.ConsumedAt != nil {
-		return ResolveResult{}, ErrConsumed
+		return ResolveResult{}, consumed("pairing_code_consumed")
 	}
 	if !item.ExpiresAt.After(time.Now().UTC()) {
-		return ResolveResult{}, ErrExpired
+		return ResolveResult{}, expired("pairing_code_expired")
 	}
 	if requested := strings.TrimSpace(cmd.NodeDeviceID); requested != "" && requested != item.NodeDeviceID {
-		return ResolveResult{}, ErrInvalid
+		return ResolveResult{}, invalid("node_device_id_mismatch")
 	}
 	now := time.Now().UTC()
 	if err := s.repo.MarkConsumed(ctx, item.PairingCodeHash, now); err != nil {
