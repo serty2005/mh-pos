@@ -4,7 +4,9 @@
 
 UI visibility is UX only. Backend app-layer permissions remain authoritative.
 
-Интерфейс кассира теперь разделен на переиспользуемые компоненты в `pos-ui/src/pages/pos/*`, но все visibility guards по-прежнему используют backend permission ids из `pos-ui/src/shared/rbac.ts`.
+Интерфейс кассира теперь разделен на переиспользуемые компоненты POS shell в `pos-ui/src/pages/pos/*`, но все visibility guards по-прежнему используют backend permission ids из `pos-ui/src/shared/rbac.ts`.
+
+Нижняя quick access bar, скрываемое меню разделов, redesigned `Заказы`, разделы `Залы и столы`, `Активность`, `Отчеты` и `Касса` являются UX-навигацией. Они не добавляют новых backend permission ids и не заменяют backend application-layer checks.
 
 ## Реализовано Сейчас
 

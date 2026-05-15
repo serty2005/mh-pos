@@ -63,17 +63,6 @@
           :loading="terminal.reprintCheckMutation.isPending.value"
           @click="terminal.reprintCheckMutation.mutate(terminal.finalCheckData.value.id)"
         />
-        <q-btn
-          v-if="terminal.activeOrder.value.status !== 'closed'"
-          color="primary"
-          unelevated
-          class="touch-button"
-          icon="done_all"
-          :label="terminal.t('actions.closeOrder')"
-          :disable="!terminal.canCloseOrder.value"
-          :loading="terminal.closeOrderMutation.isPending.value"
-          @click="terminal.closeOrderMutation.mutate(terminal.activeOrder.value.id)"
-        />
       </div>
 
       <div class="section-head slim">
