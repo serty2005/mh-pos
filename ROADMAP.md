@@ -37,7 +37,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 Выполнено:
 
 - Cloud PostgreSQL sync receiver and operational projections foundation.
-- Cloud master-data authority foundation in `004_master_data_authority.sql`.
+- Cloud master-data authority foundation in collapsed PostgreSQL baseline `001_init.sql`.
 - Cloud schema foundation for roles, employees, catalog items, dishes, goods, semi-finished products, services, recipe items, menu categories, catalog folders, folder parameters, catalog tags, item tags, modifier groups/options/bindings, menu items, menu assignments and versioned publications.
 - POS Edge Cloud -> Edge ingest for streams `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
 - POS Edge Cloud -> Edge ingest for catalog folders/tags/item tags, services, modifier groups/options/menu item links and `pricing_policy` tax/service-charge/automatic discount-surcharge reference rows.

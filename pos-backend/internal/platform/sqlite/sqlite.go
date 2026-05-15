@@ -378,7 +378,7 @@ func MigrateDirWithPolicy(ctx context.Context, db *sql.DB, dbPath, dir string, o
 	}
 	// Старые pre-pilot БД без history считаются oldest DB: managed files должны
 	// выполняться idempotent-образом, иначе CREATE IF NOT EXISTS не создаст
-	// недостающие объекты перед repair migration и schema verification.
+	// недостающие объекты перед schema verification.
 	adoptBase := false
 	if err := applyPendingMigrations(ctx, conn, pending, adoptBase); err != nil {
 		return err

@@ -75,7 +75,7 @@ $env:PYTHONIOENCODING='utf-8'
 ## Миграции и версии БД
 
 - Все изменения схемы SQLite/PostgreSQL выполняются программно при старте runtime-модуля; ручной ad-hoc SQL не является canonical path.
-- Active pre-pilot path использует managed SQL migration files, описанные в `docs/backend/POS-DATA-AND-MIGRATIONS.md`; нельзя считать `001_init.sql` / `001_sync_receiver.sql` единственными актуальными файлами, если в репозитории уже есть последующие managed migrations.
+- Active pre-pilot path использует один managed SQL baseline `001_init.sql` на runtime-модуль, описанный в `docs/backend/POS-DATA-AND-MIGRATIONS.md`; существующие dev/test БД до первого клиента пересоздаются, а реальные data-preserving migrations начинаются после первого внедрения.
 - Версия и состояние схемы/данных фиксируются в `db_runtime_versions`; изменение active SQL file выполняется через повышение `MH_POS_VERSION` и программный startup upgrade.
 - Каждая БД должна иметь `db_runtime_versions`; если таблица отсутствует, модуль считает БД самой старой и запускает upgrade path.
 - `schema_migrations` должна хранить active SQL file, checksum, status и время применения, если это поддержано текущим модулем.

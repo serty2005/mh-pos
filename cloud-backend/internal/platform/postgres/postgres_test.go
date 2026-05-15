@@ -130,83 +130,46 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 8 || files[0].Name != "001_sync_receiver.sql" || files[1].Name != "002_projection_event_type_stats.sql" || files[2].Name != "003_runtime_schema_repair.sql" || files[3].Name != "004_master_data_authority.sql" || files[4].Name != "005_master_data_restaurants_api.sql" || files[5].Name != "006_zero_to_cashier_provisioning.sql" || files[6].Name != "007_refund_and_pricing_policy_hardening.sql" || files[7].Name != "008_catalog_v2_modifiers_pricing_policy.sql" {
-		t.Fatalf("expected ordered managed migrations, got %+v", files)
+	if len(files) != 1 || files[0].Name != "001_init.sql" {
+		t.Fatalf("expected single managed postgres baseline migration file, got %+v", files)
 	}
 	baseBody := string(files[0].Body)
-	if !strings.Contains(baseBody, "cloud_currency_reference") || !strings.Contains(baseBody, "cloud_currency_reference_alpha_code_idx") {
-		t.Fatalf("expected canonical migration to manage currency reference schema")
-	}
-	projectionBody := string(files[1].Body)
 	for _, required := range []string{
+		"cloud_currency_reference",
+		"cloud_currency_reference_alpha_code_idx",
 		"cloud_projection_event_type_stats",
 		"PRIMARY KEY (restaurant_id, device_id, event_type)",
-	} {
-		if !strings.Contains(projectionBody, required) {
-			t.Fatalf("expected projection migration to manage %s", required)
-		}
-	}
-	repairBody := string(files[2].Body)
-	for _, required := range []string{
-		"cloud_projection_event_type_stats",
 		"cloud_projection_shift_finance",
 		"cloud_master_data_packages",
-		"cloud_currency_reference",
-	} {
-		if !strings.Contains(repairBody, required) {
-			t.Fatalf("expected runtime schema repair migration to manage %s", required)
-		}
-	}
-	masterDataBody := string(files[3].Body)
-	for _, required := range []string{
 		"cloud_employees",
 		"cloud_catalog_items",
 		"cloud_menu_items",
 		"cloud_master_data_publications",
-	} {
-		if !strings.Contains(masterDataBody, required) {
-			t.Fatalf("expected master-data authority migration to manage %s", required)
-		}
-	}
-	if !strings.Contains(masterDataBody, "kind IN ('dish','good','semi_finished','service')") || strings.Contains(masterDataBody, "raw_material") {
-		t.Fatalf("expected first-launch catalog item kind check to use canonical catalog v2 enum")
-	}
-	restaurantsBody := string(files[4].Body)
-	for _, required := range []string{
 		"cloud_restaurants",
 		"cloud_catalog_items_active_sku",
 		"cloud_version",
-	} {
-		if !strings.Contains(restaurantsBody, required) {
-			t.Fatalf("expected restaurants/API migration to manage %s", required)
-		}
-	}
-	if !strings.Contains(restaurantsBody, "WHERE kind = 'raw_material'") || !strings.Contains(restaurantsBody, "kind IN ('dish','good','semi_finished','service')") {
-		t.Fatalf("expected API migration to normalize legacy raw_material rows before enforcing canonical catalog v2 enum")
-	}
-	zeroToCashierBody := string(files[5].Body)
-	for _, required := range []string{
 		"cloud_halls",
 		"cloud_tables",
 		"cloud_edge_nodes",
 		"cloud_unassigned_edge_nodes",
 		"cloud_pairing_codes",
+		"PaymentRefunded",
+		"CheckRefunded",
+		"pricing_policy",
+		"payments_refunded_count",
+		"cloud_catalog_folders",
+		"cloud_catalog_tags",
+		"cloud_services",
+		"cloud_modifier_group_bindings",
+		"cloud_pricing_policies",
+		"price_minor",
 	} {
-		if !strings.Contains(zeroToCashierBody, required) {
-			t.Fatalf("expected zero-to-cashier migration to manage %s", required)
+		if !strings.Contains(baseBody, required) {
+			t.Fatalf("expected canonical postgres baseline to manage %s", required)
 		}
 	}
-	hardeningBody := string(files[6].Body)
-	for _, required := range []string{"PaymentRefunded", "CheckRefunded", "pricing_policy", "payments_refunded_count"} {
-		if !strings.Contains(hardeningBody, required) {
-			t.Fatalf("expected hardening migration to manage %s", required)
-		}
-	}
-	catalogV2Body := string(files[7].Body)
-	for _, required := range []string{"cloud_catalog_folders", "cloud_catalog_tags", "cloud_services", "cloud_modifier_group_bindings", "cloud_pricing_policies", "price_minor"} {
-		if !strings.Contains(catalogV2Body, required) {
-			t.Fatalf("expected catalog v2 migration to manage %s", required)
-		}
+	if !strings.Contains(baseBody, "kind IN ('dish','good','semi_finished','service')") {
+		t.Fatalf("expected first-launch catalog item kind check to use canonical catalog v2 enum")
 	}
 }
 

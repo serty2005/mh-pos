@@ -12,9 +12,10 @@
 
 - SQLite используется как локальный POS Edge OLTP/source of truth для активных POS операций.
 - PostgreSQL используется как Cloud OLTP/source of truth для sync receiver, operational projections и master/reference packages.
-- Active migration path использует managed SQL migration files, которые применяются runtime startup path.
-- POS Edge migration files сейчас включают `001_init.sql` ... `003_pricing_policy_sync_foundation.sql`.
-- Cloud PostgreSQL migration files сейчас включают `001_sync_receiver.sql` ... `007_refund_and_pricing_policy_hardening.sql`.
+- Active pre-pilot migration path использует один managed SQL baseline на runtime-модуль, который применяется runtime startup path.
+- POS Edge migration files сейчас включают `migrations/sqlite/001_init.sql`.
+- Cloud PostgreSQL migration files сейчас включают `migrations/postgres/001_init.sql`.
+- До первого клиента существующие dev/test БД пересоздаются; data-preserving migrations начинаются после первого внедрения.
 - Версия и состояние БД фиксируются runtime migration/versioning механизмом; schema verification выполняется до business runtime access.
 - Persistence implementation сейчас написан вручную в repository/infrastructure layer.
 

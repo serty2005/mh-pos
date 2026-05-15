@@ -50,10 +50,10 @@ MH_POS_VERSION=0.1.2
 
 Реализовано сейчас: Cloud Backend также читает optional `config/cloud-api.json`; пример полного файла находится в `config/cloud-api.example.json`. Если `CLOUD_CONFIG_PATH` задан явно, файл обязателен. Порядок приоритета: defaults -> env -> JSON-файл. Общий контракт описан в `../docs/backend/RUNTIME-CONFIG.md`.
 
-Реализовано сейчас: PostgreSQL использует ordered managed migrations из `migrations/postgres`: `001_sync_receiver.sql` задает baseline receiver storage, `002_projection_event_type_stats.sql` создает/ремонтирует required runtime projection table `cloud_projection_event_type_stats`, `003_runtime_schema_repair.sql` довыравнивает весь required receiver/projection/provisioning schema set для старых БД, `004_master_data_authority.sql` добавляет Cloud-owned master-data authority schema, `005_master_data_restaurants_api.sql` добавляет `cloud_restaurants`, cloud-version metadata и partial unique SKU policy для неархивных catalog items, `006_zero_to_cashier_provisioning.sql` добавляет Cloud halls/tables и device provisioning таблицы, `007_refund_and_pricing_policy_hardening.sql` подтверждает refund event catalog, refund finance projection columns и `pricing_policy` package stream.
-Реализовано сейчас: `schema_migrations` хранит имя SQL file, checksum и status; уже примененные migrations не выполняются повторно, а новая ordered migration записывается в history после успешного apply.
-Реализовано сейчас: если `schema_migrations` отсутствует, содержит старую запись без checksum или не имеет новой ordered repair migration, Cloud применяет idempotent managed SQL, довыравнивает недостающие runtime-таблицы и только после успешного apply записывает checksum/status.
-Реализовано сейчас: startup policy использует `db_runtime_versions`; если таблица версий отсутствует, БД считается самой старой, перед safe upgrade существующей схемы создается JSONL backup snapshot таблиц `public`, а `DB version > MH_POS_VERSION` завершает startup fail-fast.
+Реализовано сейчас: PostgreSQL использует managed migrations из `migrations/postgres`; в pre-pilot режиме активен один схлопнутый baseline `001_init.sql`, который содержит receiver storage, projection tables, Cloud-owned master-data authority schema, restaurants API tables, provisioning tables, refund event catalog, refund finance projection columns и `pricing_policy` package stream.
+Реализовано сейчас: `schema_migrations` хранит имя SQL file, checksum и status; уже примененный baseline не выполняется повторно.
+Реализовано сейчас: до первого клиента существующие dev/test БД не поддерживаются как data-preserving upgrade path и пересоздаются из baseline. Startup migration framework сохраняет version/checksum policy для будущих post-client migrations.
+Реализовано сейчас: startup policy использует `db_runtime_versions`; checksum drift при той же версии останавливает startup, а `DB version > MH_POS_VERSION` завершает startup fail-fast.
 Реализовано сейчас: schema verification проверяет required runtime storage, включая receiver journal/raw payload tables, projection tables, provisioning packages, currency reference catalog и Cloud master-data authority tables.
 Запланировано далее: projection query endpoints для dashboards не блокируют startup verification.
 Вне текущего объема: ручной SQL repair вне startup migration framework; для local/dev recovery предпочтительно пересоздать БД или запустить приложение с корректным `CLOUD_POSTGRES_MIGRATIONS_DIR`.
@@ -231,7 +231,7 @@ cd cloud-backend
 go test ./...
 ```
 
-Стандартные тесты используют in-memory repository для service и HTTP replay checks. PostgreSQL runtime storage реализован в `internal/cloudsync/infra/postgres`, инициализируется через ordered managed SQL files, получает advisory lock на время upgrade и проходит schema verification до запуска HTTP server.
+Стандартные тесты используют in-memory repository для service и HTTP replay checks. PostgreSQL runtime storage реализован в `internal/cloudsync/infra/postgres`, инициализируется через managed SQL baseline, получает advisory lock на время upgrade и проходит schema verification до запуска HTTP server.
 
 ## Контракт
 

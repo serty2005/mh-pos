@@ -8,7 +8,8 @@
 
 - POS Edge uses SQLite as local OLTP/source of truth.
 - Cloud backend uses PostgreSQL as Cloud OLTP/source of truth.
-- Active migration path uses managed SQL files and runtime startup migration/verification.
+- Active pre-pilot migration path uses one managed baseline SQL file per runtime module and runtime startup migration/verification.
+- Existing dev/test databases are recreated from the baseline; data-preserving upgrade migrations are outside the current pre-client scope.
 - Manual ad-hoc SQL is not canonical upgrade path.
 - Current persistence implementation is handwritten repository code, not confirmed `sqlc`.
 
@@ -22,9 +23,6 @@
 Managed files:
 
 - `pos-backend/migrations/sqlite/001_init.sql`
-- `pos-backend/migrations/sqlite/002_runtime_schema_repair.sql`
-- `pos-backend/migrations/sqlite/003_pricing_policy_sync_foundation.sql`
-- `pos-backend/migrations/sqlite/004_catalog_v2_modifiers_runtime.sql`
 
 Таблицы, реализованные сейчас:
 
@@ -76,16 +74,9 @@ These tables are not proof of a finished inventory runtime. Current code does no
 
 Managed files currently present:
 
-- `001_sync_receiver.sql`
-- `002_projection_event_type_stats.sql`
-- `003_runtime_schema_repair.sql`
-- `004_master_data_authority.sql`
-- `005_master_data_restaurants_api.sql`
-- `006_zero_to_cashier_provisioning.sql`
-- `007_refund_and_pricing_policy_hardening.sql`
-- `008_catalog_v2_modifiers_pricing_policy.sql`
+- `cloud-backend/migrations/postgres/001_init.sql`
 
-`004_master_data_authority.sql` provides foundation for:
+`001_init.sql` provides foundation for:
 
 - roles and employees;
 - menu categories;
@@ -180,5 +171,5 @@ Required behavior:
 - startup must run schema upgrade before business runtime access;
 - DB version newer than runtime version must fail fast;
 - schema verification must check critical tables/columns/indexes before HTTP runtime;
-- existing DB upgrade must have backup path;
+- after the first client deployment, existing DB upgrade must have backup path and explicit data-preserving migration files;
 - destructive SQLite cleanup/reset must be explicit, audited and documented before being exposed in UI/admin flows.

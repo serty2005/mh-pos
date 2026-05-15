@@ -13,7 +13,7 @@
 - `pos-backend/internal/pos/app/check/service.go`
 - `pos-backend/internal/pos/app/mastersync/service.go`
 - `pos-backend/migrations/sqlite/001_init.sql`
-- `cloud-backend/migrations/postgres/004_master_data_authority.sql`
+- `cloud-backend/migrations/postgres/001_init.sql`
 - `docs/adr/ADR-015-persistence-and-analytics-strategy.md`
 
 Если этот документ конфликтует с кодом, источником истины является код.

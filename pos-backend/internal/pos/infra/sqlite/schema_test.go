@@ -298,8 +298,8 @@ func TestActiveSQLiteMigrationPathUsesSingleManagedCanonicalFile(t *testing.T) {
 			migrations = append(migrations, entry.Name())
 		}
 	}
-	if len(migrations) != 4 || migrations[0] != "001_init.sql" || migrations[1] != "002_runtime_schema_repair.sql" || migrations[2] != "003_pricing_policy_sync_foundation.sql" || migrations[3] != "004_catalog_v2_modifiers_runtime.sql" {
-		t.Fatalf("expected ordered managed sqlite migration files, got %+v", migrations)
+	if len(migrations) != 1 || migrations[0] != "001_init.sql" {
+		t.Fatalf("expected single managed sqlite baseline migration file, got %+v", migrations)
 	}
 }
 
@@ -320,8 +320,8 @@ func TestCleanInstallRecordsCanonicalInitMigration(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 4 {
-		t.Fatalf("expected four managed migration rows, got %d", n)
+	if n != 1 {
+		t.Fatalf("expected one managed migration row, got %d", n)
 	}
 	rows, err := db.QueryContext(ctx, `SELECT version, checksum_sha256, status FROM schema_migrations ORDER BY version`)
 	if err != nil {
@@ -345,8 +345,8 @@ func TestCleanInstallRecordsCanonicalInitMigration(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if len(versions) != 4 || versions[0] != "001_init.sql" || versions[1] != "002_runtime_schema_repair.sql" || versions[2] != "003_pricing_policy_sync_foundation.sql" || versions[3] != "004_catalog_v2_modifiers_runtime.sql" {
-		t.Fatalf("expected ordered migration history, got %+v", versions)
+	if len(versions) != 1 || versions[0] != "001_init.sql" {
+		t.Fatalf("expected collapsed baseline migration history, got %+v", versions)
 	}
 }
 
@@ -354,143 +354,6 @@ func TestRequiredSchemaContractMatchesCleanInstall(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	if err := platformsqlite.VerifySchema(ctx, db, possqlite.RequiredSchema()); err != nil {
 		t.Fatalf("required schema contract does not match clean install: %v", err)
-	}
-}
-
-func TestRuntimeSchemaRepairMigratesLegacyBusinessDateColumns(t *testing.T) {
-	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "legacy-pos.db")
-	db, err := platformsqlite.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	execSchema(t, ctx, db, `
-CREATE TABLE restaurants (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  timezone TEXT NOT NULL,
-  currency TEXT NOT NULL,
-  active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE TABLE shifts (
-  id TEXT PRIMARY KEY,
-  restaurant_id TEXT NOT NULL,
-  device_id TEXT NOT NULL,
-  opened_by_employee_id TEXT NOT NULL,
-  closed_by_employee_id TEXT,
-  status TEXT NOT NULL,
-  opened_at TEXT NOT NULL,
-  closed_at TEXT,
-  opening_cash_amount INTEGER NOT NULL,
-  closing_cash_amount INTEGER,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE TABLE prechecks (
-  id TEXT PRIMARY KEY,
-  order_id TEXT NOT NULL,
-  status TEXT NOT NULL,
-  version INTEGER NOT NULL,
-  supersedes_precheck_id TEXT,
-  subtotal INTEGER NOT NULL,
-  discount_total INTEGER NOT NULL,
-  tax_total INTEGER NOT NULL,
-  total INTEGER NOT NULL,
-  paid_total INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL,
-  issued_at TEXT NOT NULL,
-  closed_at TEXT,
-  cancelled_by_employee_id TEXT,
-  cancellation_reason TEXT
-);
-CREATE TABLE checks (
-  id TEXT PRIMARY KEY,
-  order_id TEXT NOT NULL UNIQUE,
-  status TEXT NOT NULL,
-  subtotal INTEGER NOT NULL,
-  discount_total INTEGER NOT NULL,
-  tax_total INTEGER NOT NULL,
-  total INTEGER NOT NULL,
-  paid_total INTEGER NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE TABLE payments (
-  id TEXT PRIMARY KEY,
-  edge_payment_id TEXT NOT NULL UNIQUE,
-  restaurant_id TEXT NOT NULL,
-  device_id TEXT NOT NULL,
-  shift_id TEXT NOT NULL,
-  precheck_id TEXT NOT NULL,
-  method TEXT NOT NULL,
-  amount INTEGER NOT NULL,
-  currency TEXT NOT NULL,
-  status TEXT NOT NULL,
-  provider_name TEXT,
-  provider_transaction_id TEXT,
-  provider_reference TEXT,
-  fingerprint_hash TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE TABLE cash_sessions (
-  id TEXT PRIMARY KEY,
-  edge_cash_session_id TEXT NOT NULL UNIQUE,
-  restaurant_id TEXT NOT NULL,
-  device_id TEXT NOT NULL,
-  shift_id TEXT NOT NULL,
-  opened_by_employee_id TEXT NOT NULL,
-  closed_by_employee_id TEXT,
-  status TEXT NOT NULL,
-  opening_cash_amount INTEGER NOT NULL,
-  closing_cash_amount INTEGER,
-  opened_at TEXT NOT NULL,
-  closed_at TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-`)
-
-	if err := platformsqlite.MigrateDirWithPolicy(ctx, db, dbPath, filepath.Join("..", "..", "..", "..", "migrations", "sqlite"), platformsqlite.MigrationOptions{
-		ModuleName:         "pos-backend",
-		ModuleVersion:      "0.1.0",
-		BackupDir:          t.TempDir(),
-		SchemaRequirements: possqlite.RequiredSchema(),
-	}); err != nil {
-		t.Fatalf("legacy sqlite repair migration failed: %v", err)
-	}
-	for table, columns := range map[string][]string{
-		"restaurants":   {"business_day_mode", "business_day_boundary_local_time"},
-		"shifts":        {"business_date_local"},
-		"prechecks":     {"snapshot"},
-		"checks":        {"business_date_local", "closed_at", "snapshot"},
-		"payments":      {"business_date_local"},
-		"cash_sessions": {"business_date_local"},
-	} {
-		found := tableColumns(t, ctx, db, table)
-		for _, column := range columns {
-			if !found[column] {
-				t.Fatalf("expected repair migration to add %s.%s", table, column)
-			}
-		}
-	}
-	if err := platformsqlite.MigrateDirWithPolicy(ctx, db, dbPath, filepath.Join("..", "..", "..", "..", "migrations", "sqlite"), platformsqlite.MigrationOptions{
-		ModuleName:         "pos-backend",
-		ModuleVersion:      "0.1.0",
-		BackupDir:          t.TempDir(),
-		SchemaRequirements: possqlite.RequiredSchema(),
-	}); err != nil {
-		t.Fatalf("second legacy sqlite repair migration failed: %v", err)
-	}
-	var appliedCount int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations WHERE status = 'applied'`).Scan(&appliedCount); err != nil {
-		t.Fatal(err)
-	}
-	if appliedCount != 4 {
-		t.Fatalf("expected second startup to keep four applied migrations, got %d", appliedCount)
 	}
 }
 

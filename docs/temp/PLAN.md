@@ -7,7 +7,7 @@ Canonical catalog kinds становятся: `dish`, `good`, `semi_finished`, `
 
 ## Key Changes
 - **Cloud master data**
-  - Добавить PostgreSQL migration `008_*` и обновить first-install master-data schema: `cloud_catalog_folders`, `cloud_catalog_folder_parameters`, `cloud_catalog_tags`, `cloud_catalog_item_tags`, `cloud_modifier_group_bindings`, `cloud_services`, Cloud discount/surcharge policy tables.
+  - Обновить схлопнутый PostgreSQL baseline `001_init.sql`: `cloud_catalog_folders`, `cloud_catalog_folder_parameters`, `cloud_catalog_tags`, `cloud_catalog_item_tags`, `cloud_modifier_group_bindings`, `cloud_services`, Cloud discount/surcharge policy tables.
   - `cloud_categories` оставить только menu categories; folders не связывать с menu categories.
   - У catalog item добавить `folder_id`, `kitchen_type`, `accounting_category`; folder parameters хранить расширяемо через `parameter_key`, `value_type`, `value_json`, с публикацией effective values вниз по дереву.
   - `cloud_modifier_options.price_delta` заменить канонически на `price_minor`; модификатор может быть без техкарты и с ценой `0`.
@@ -20,7 +20,7 @@ Canonical catalog kinds становятся: `dish`, `good`, `semi_finished`, `
   - Обновить `MasterDataPacket`, `cloudsync` payload validation, stream package generation и package tests.
 
 - **Edge schema, ingest and catalog model**
-  - Добавить SQLite migration `004_*` и обновить baseline schema: `catalog_items.type IN ('dish','good','semi_finished','service')`, folder/tag/modifier/policy tables, `order_line_modifiers`, precheck modifier snapshot rows.
+  - Обновить схлопнутый SQLite baseline `001_init.sql`: `catalog_items.type IN ('dish','good','semi_finished','service')`, folder/tag/modifier/policy tables, `order_line_modifiers`, precheck modifier snapshot rows.
   - Edge ingest расширить новыми arrays и upsert methods; strict unknown-field behavior сохранить.
   - Recipe model поменять на owner `dish|semi_finished`, component только `good|semi_finished`; `dish`, `service` и удалённый `ingredient` запрещены DB triggers + app validation.
 
@@ -49,7 +49,7 @@ Canonical catalog kinds становятся: `dish`, `good`, `semi_finished`, `
 - Verification commands after implementation: `go test ./...` in `pos-backend` and `cloud-backend`; `npm install && npm run build` in `pos-ui`.
 
 ## Assumptions
-- Production DB/data migration is not required; existing `ingredient` rows do not need conversion.
+- Production DB/data migration is not required до первого клиента; existing dev/test БД пересоздаются из baseline.
 - New Edge compatibility policy: old strict Edge rejects new payload; new Edge accepts expanded streams.
 - Modifier binding canonical model is target bindings with `target_type=menu_item|catalog_item|folder|tag`; publication also provides effective menu item links for fast Edge validation.
 - Documentation updates happen only after code and tests reflect the implemented behavior.

@@ -64,12 +64,12 @@ func TestRequiredSchemaIncludesRuntimeProjectionTables(t *testing.T) {
 	}
 }
 
-func TestRequiredSchemaDocumentsProjectionMigration(t *testing.T) {
+func TestRequiredSchemaDocumentsProjectionBaseline(t *testing.T) {
 	for _, req := range RequiredSchema() {
 		if req.Table != "cloud_projection_event_type_stats" {
 			continue
 		}
-		if req.MigrationFile != "002_projection_event_type_stats.sql, 003_runtime_schema_repair.sql" {
+		if req.MigrationFile != "001_init.sql" {
 			t.Fatalf("expected projection stats migration file, got %q", req.MigrationFile)
 		}
 		if req.RequiredBy == "" {
@@ -80,7 +80,7 @@ func TestRequiredSchemaDocumentsProjectionMigration(t *testing.T) {
 	t.Fatal("expected cloud_projection_event_type_stats in schema verification contract")
 }
 
-func TestRequiredSchemaDocumentsRuntimeSchemaRepairMigration(t *testing.T) {
+func TestRequiredSchemaDocumentsRuntimeSchemaBaseline(t *testing.T) {
 	for _, req := range RequiredSchema() {
 		switch req.Table {
 		case "cloud_edge_event_receipts", "cloud_edge_event_raw_payloads", "cloud_operational_events",
@@ -89,8 +89,8 @@ func TestRequiredSchemaDocumentsRuntimeSchemaRepairMigration(t *testing.T) {
 			if req.MigrationFile == "" {
 				t.Fatalf("expected migration file explanation for %s", req.Table)
 			}
-			if req.Table == "cloud_projection_shift_finance" && req.MigrationFile != "001_sync_receiver.sql, 003_runtime_schema_repair.sql, 007_refund_and_pricing_policy_hardening.sql" {
-				t.Fatalf("expected shift finance repair migration file, got %q", req.MigrationFile)
+			if req.Table == "cloud_projection_shift_finance" && req.MigrationFile != "001_init.sql" {
+				t.Fatalf("expected shift finance baseline migration file, got %q", req.MigrationFile)
 			}
 		}
 	}
