@@ -2548,6 +2548,51 @@ func TestCapturePaymentRollbackRemovesAttemptPaymentOutboxAndLocalEvent(t *testi
 	}
 }
 
+func TestRefundPaymentRejectsActiveIssuedPrecheckWithoutFinalCheck(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 2}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+		CommandMeta: f.edgeMetaCommand("cmd-refund-active-precheck-payment-capture"),
+		PrecheckID:  precheck.ID,
+		Method:      domain.PaymentCash,
+		Amount:      1000,
+		Currency:    "RUB",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.repo.GetCheckByOrder(f.ctx, order.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("expected no final check for partial payment, got %v", err)
+	}
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+	_, err = f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
+		CommandMeta: f.managerEdgeMetaCommand(t, "cmd-refund-active-issued-precheck"),
+		PaymentID:   payment.ID,
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected refund without finalized check to conflict, got %v", err)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no refund outbox for active precheck payment, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected no refund local event for active precheck payment, before=%d after=%d", eventsBefore, events)
+	}
+}
+
 func TestRefundPaymentRequiresClosedOriginalShift(t *testing.T) {
 	f := newFixture(t)
 	shift := f.openShift(t)
@@ -2629,6 +2674,50 @@ func TestRefundPaymentRequiresClosedOriginalShift(t *testing.T) {
 	}
 	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
 		t.Fatalf("expected no local event on rejected refund, before=%d after=%d", eventsBefore, events)
+	}
+}
+
+func TestRefundPaymentRequiresOpenCashSession(t *testing.T) {
+	f := newFixture(t)
+	shift := f.openShift(t)
+	cashSession := f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+		CommandMeta: f.edgeMetaCommand("cmd-refund-no-cash-payment"),
+		PrecheckID:  precheck.ID,
+		Method:      domain.PaymentCash,
+		Amount:      precheck.Total,
+		Currency:    "RUB",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.closeCashSessionAndShift(t, shift, cashSession, "refund-no-open-cash-session")
+	f.openShift(t)
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+	_, err = f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
+		CommandMeta: f.managerEdgeMetaCommand(t, "cmd-refund-without-open-cash-session"),
+		PaymentID:   payment.ID,
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected refund without open cash session to conflict, got %v", err)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no outbox write without cash session, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected no local event without cash session, before=%d after=%d", eventsBefore, events)
 	}
 }
 
@@ -2740,6 +2829,46 @@ func TestRefundPaymentAfterFullPaymentWithCheck(t *testing.T) {
 	}
 	if refundEvents != 1 {
 		t.Fatalf("expected one RefundRecorded local event, got %d", refundEvents)
+	}
+	var refundOutbox int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM pos_sync_outbox WHERE command_id = 'refund-cmd' AND command_type = 'RefundRecorded' AND aggregate_type = 'FinancialOperation' AND aggregate_id = ? AND sync_direction = 'edge_to_cloud'`, operation.ID).Scan(&refundOutbox); err != nil {
+		t.Fatal(err)
+	}
+	if refundOutbox != 1 {
+		t.Fatalf("expected one edge_to_cloud RefundRecorded outbox row, got %d", refundOutbox)
+	}
+	var legacyEvents int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM local_event_log WHERE command_id = 'refund-cmd' AND event_type IN ('PaymentRefunded','CheckRefunded')`).Scan(&legacyEvents); err != nil {
+		t.Fatal(err)
+	}
+	if legacyEvents != 0 {
+		t.Fatalf("expected compatibility refund to emit RefundRecorded, not legacy PaymentRefunded/CheckRefunded, got %d legacy events", legacyEvents)
+	}
+	var orderStatus string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM orders WHERE id = ?`, order.ID).Scan(&orderStatus); err != nil {
+		t.Fatal(err)
+	}
+	if orderStatus != string(domain.OrderClosed) {
+		t.Fatalf("expected refund to preserve closed order status, got %s", orderStatus)
+	}
+	outboxAfterRefund := countRows(t, f, "pos_sync_outbox")
+	eventsAfterRefund := countRows(t, f, "local_event_log")
+	operationsAfterRefund := countRows(t, f, "financial_operations")
+	_, err = f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
+		CommandMeta: f.managerEdgeMetaCommand(t, "refund-cmd-repeat"),
+		PaymentID:   payment.ID,
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected repeated full refund to conflict, got %v", err)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxAfterRefund {
+		t.Fatalf("expected repeated refund not to write outbox, before=%d after=%d", outboxAfterRefund, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsAfterRefund {
+		t.Fatalf("expected repeated refund not to write local event, before=%d after=%d", eventsAfterRefund, events)
+	}
+	if operations := countRows(t, f, "financial_operations"); operations != operationsAfterRefund {
+		t.Fatalf("expected repeated refund not to write operation, before=%d after=%d", operationsAfterRefund, operations)
 	}
 }
 

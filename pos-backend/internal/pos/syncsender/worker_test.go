@@ -141,6 +141,13 @@ func TestDirectionFoundationKeepsDeviceRegisteredOperational(t *testing.T) {
 	}
 }
 
+func TestDirectionKeepsRefundRecordedOperational(t *testing.T) {
+	direction := domain.DirectionForOutbox(domain.OriginEdgeDevice, "FinancialOperation", "RefundRecorded")
+	if direction != domain.SyncDirectionEdgeToCloud {
+		t.Fatalf("expected RefundRecorded to stay edge_to_cloud, got %s", direction)
+	}
+}
+
 func TestRunOnceWritesNormalizedTelemetryFields(t *testing.T) {
 	clientID := "client-device-123456"
 	sessionID := "session-123456"

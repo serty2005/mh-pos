@@ -30,7 +30,7 @@
 | `Production` | KDS tickets, stations, cooking/dish served lifecycle | вне текущего объема | none unless pilot changes | KDS runtime | financial close and inventory direct writes |
 | `CRM` | customer identity/preferences/history | вне текущего объема except `guest_count` | none | full CRM | order/payment lifecycle |
 | `Loyalty` | bonuses/coupons/customer promos | вне текущего объема | none | full loyalty engine | backend authoritative totals unless integrated through Pricing |
-| `Accounting / Finance` | reporting/reconciliation/profit views | реализована только основа in Cloud projections | pilot reports if needed | ERP/accounting integration, ClickHouse acceleration | runtime capture/check mutation |
+| `Accounting / Finance` | reporting/reconciliation/profit views | реализована только основа in Cloud projections: event-type stats and coarse shift finance counters including current `RefundRecorded` totals | detailed financial operation projection if pilot reports need it | ERP/accounting integration, ClickHouse acceleration | runtime capture/check mutation |
 
 ## Mandatory Boundaries
 
@@ -54,7 +54,7 @@
 - Catalog/menu sync includes folders, tags, services and modifier groups/options/links; menu categories remain separate from catalog folders.
 - Reprint events use immutable snapshots.
 - Cancellation/refund backend flow writes local event/outbox records; `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud operational events.
-- `PaymentRefunded` and `CheckRefunded` remain accepted legacy event types for older payloads.
+- `PaymentRefunded` and `CheckRefunded` remain accepted legacy inbound event types for older payloads; new POS Edge refund runtime emits `RefundRecorded`.
 
 Реализована только основа:
 

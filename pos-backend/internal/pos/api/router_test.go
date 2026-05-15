@@ -345,6 +345,39 @@ func TestWrongClientDeviceReturnsSafeForbiddenError(t *testing.T) {
 	}
 }
 
+func TestCurrentShiftAPIReturnsNullWhenEmployeeHasNoOpenShift(t *testing.T) {
+	f := newAPIFixture(t)
+
+	rr := f.get(t, "/api/v1/employee-shifts/current?node_device_id="+f.device.ID)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for optional current shift empty state, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if strings.TrimSpace(rr.Body.String()) != "null" {
+		t.Fatalf("expected JSON null body for optional current shift empty state, got %q", rr.Body.String())
+	}
+}
+
+func TestCurrentShiftAPIReturnsAuthenticatedEmployeeOpenShift(t *testing.T) {
+	f := newAPIFixture(t)
+	shift, err := f.service.OpenShift(f.ctx, app.OpenShiftCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr := f.get(t, "/api/v1/employee-shifts/current?node_device_id="+f.device.ID)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for current shift, got %d: %s", rr.Code, rr.Body.String())
+	}
+	got := decodeAPIResponse[domain.Shift](t, rr)
+	if got.ID != shift.ID || got.OpenedByEmployeeID != f.employee.ID || got.Status != domain.ShiftOpen {
+		t.Fatalf("unexpected current shift: %+v", got)
+	}
+}
+
 func TestRequestAuditLogContainsContractFieldsAndNoPINLeak(t *testing.T) {
 	f := newAPIFixture(t)
 	var logs bytes.Buffer

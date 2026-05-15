@@ -264,6 +264,12 @@ ON CONFLICT (restaurant_id,device_id,event_type) DO UPDATE SET
 			return err
 		}
 		return upsertShiftFinanceProjection(ctx, tx, receipt, shiftID, 0, 0, 0, 0, 0, 0, 1, total)
+	case contracts.EventRefundRecorded:
+		total, err := financialOperationAmount(receipt.Envelope.Payload)
+		if err != nil {
+			return err
+		}
+		return upsertShiftFinanceProjection(ctx, tx, receipt, shiftID, 0, 0, 0, 0, 0, 0, 1, total)
 	default:
 		return nil
 	}
@@ -337,6 +343,14 @@ func checkRefundedPaidTotal(payloadRaw json.RawMessage) (int64, error) {
 		return 0, fmt.Errorf("%w: invalid CheckRefunded payload", contracts.ErrInvalidEnvelope)
 	}
 	return payload.Data.PaidTotal, nil
+}
+
+func financialOperationAmount(payloadRaw json.RawMessage) (int64, error) {
+	var payload contracts.Payload[contracts.FinancialOperationRecorded]
+	if err := json.Unmarshal(payloadRaw, &payload); err != nil {
+		return 0, fmt.Errorf("%w: invalid financial operation payload", contracts.ErrInvalidEnvelope)
+	}
+	return payload.Data.Amount, nil
 }
 
 func bytesTrimSpace(v []byte) []byte {

@@ -130,6 +130,19 @@ describe('api request helpers', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('treats current shift 200 null as optional empty state', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: async () => 'null',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getCurrentShift()).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('maps network failure without clearing client identity in api layer', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('failed to fetch')));
 

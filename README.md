@@ -7,6 +7,7 @@
 Реализовано сейчас:
 
 - POS Edge backend поддерживает cashier runtime `Order -> Precheck -> Payment -> Check`.
+- Текущая личная смена сотрудника ищется по authenticated employee; отсутствие открытой личной смены возвращается как optional `200 null`, а не как runtime error.
 - `IssuePrecheck` блокирует заказ, создает immutable financial snapshot precheck и фиксирует `currency_code`, subtotal, discounts, surcharges, taxes, grand total, paid/remaining totals и breakdown строк/налогов/скидок/надбавок.
 - POS Edge backend содержит MVP `Pricing` boundary: line/order discounts, synced automatic discount/surcharge policies, manual/service/PB1 surcharge foundation, единый ordered discount/surcharge pipeline по `application_index`, percentage/fixed amounts, percentage/fixed tax rules, inclusive/exclusive tax foundation и deterministic integer rounding.
 - POS Edge order runtime хранит selected modifiers в строках заказа, учитывает цену modifiers в backend authoritative totals и сохраняет modifiers в precheck/check snapshots.
@@ -14,7 +15,8 @@
 - `CancelPrecheck` требует manager override, проверяет PIN/permission и возвращает unpaid active precheck order в `open`.
 - Оплата выполняется через `precheck_id`; partial payments разрешены; final check создается только после полной оплаты.
 - `POST /api/v1/checks/{id}/cancellations` и `POST /api/v1/checks/{id}/refunds` пишут append-only ledger `financial_operations`/`financial_operation_items` для full/partial cancellation и refund без мутации finalized payment/precheck/check.
-- `POST /api/v1/payments/{id}/refund` оставлен как compatibility wrapper: он записывает refund operation по payment allocation и не переводит payment/check обратно в mutable состояние.
+- `POST /api/v1/payments/{id}/refund` оставлен как compatibility wrapper: он требует finalized check, записывает `RefundRecorded` operation по payment allocation и не переводит payment/check обратно в mutable состояние.
+- Cloud receiver принимает current `RefundRecorded` и legacy inbound-only `PaymentRefunded`/`CheckRefunded`; richer financial operation reporting остается отдельной задачей.
 - Reprint precheck/check строится из immutable snapshot.
 - Cloud -> Edge master-data ingest в POS Edge runtime поддерживает потоки `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
 - Cloud/Edge master data разделяет menu categories, catalog folders и tags; catalog/menu publication передает folders, folder parameters, tags, item tags, services и modifier groups/options/links.

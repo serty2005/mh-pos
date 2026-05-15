@@ -225,6 +225,12 @@ func (r *Repository) applyShiftFinanceProjection(receipt app.EdgeEventReceipt) {
 			current.ChecksRefundedCount++
 			current.ChecksRefundedTotal += payload.Data.PaidTotal
 		}
+	case contracts.EventRefundRecorded:
+		var payload contracts.Payload[contracts.FinancialOperationRecorded]
+		if err := json.Unmarshal(receipt.Envelope.Payload, &payload); err == nil {
+			current.ChecksRefundedCount++
+			current.ChecksRefundedTotal += payload.Data.Amount
+		}
 	default:
 		return
 	}

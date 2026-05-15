@@ -68,6 +68,38 @@ func TestReceiveBatchReturnsItemLevelAck(t *testing.T) {
 	}
 }
 
+func TestReceiveRefundRecordedReplaysIdempotentlyAndUpdatesShiftFinance(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+	raw := sampleRefundRecordedEnvelope(t)
+
+	first, err := service.Receive(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.Receive(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatalf("expected stable ack on RefundRecorded replay\nfirst=%+v\nsecond=%+v", first, second)
+	}
+	if repo.Count() != 1 {
+		t.Fatalf("expected one refund receipt after replay, got %d", repo.Count())
+	}
+	if got := string(repo.RawPayload(first.CloudReceiptID)); got != string(raw) {
+		t.Fatalf("raw refund payload was not preserved\nwant=%s\ngot=%s", raw, got)
+	}
+	stats := repo.EventTypeStats()
+	if len(stats) != 1 || stats[0].EventType != string(contracts.EventRefundRecorded) || stats[0].EventCount != 1 {
+		t.Fatalf("unexpected refund event stats: %+v", stats)
+	}
+	finance := repo.ShiftFinance()
+	if len(finance) != 1 || finance[0].ChecksRefundedCount != 1 || finance[0].ChecksRefundedTotal != 1000 {
+		t.Fatalf("unexpected refund shift finance projection: %+v", finance)
+	}
+}
+
 func TestUpsertAndGetMasterDataPackage(t *testing.T) {
 	repo := memory.NewRepository()
 	service := app.NewService(repo, fixedClock{})
@@ -207,6 +239,53 @@ func sampleEnvelope(t *testing.T) []byte {
 				"opened_at":     "2026-05-05T09:00:00Z",
 				"created_at":    "2026-05-05T09:00:00Z",
 				"updated_at":    "2026-05-05T09:00:00Z",
+			},
+		},
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func sampleRefundRecordedEnvelope(t *testing.T) []byte {
+	t.Helper()
+	body := map[string]any{
+		"version":           "1",
+		"event_id":          "event-refund-1",
+		"command_id":        "command-refund-1",
+		"event_type":        string(contracts.EventRefundRecorded),
+		"aggregate_type":    "FinancialOperation",
+		"aggregate_id":      "financial-operation-1",
+		"restaurant_id":     "restaurant-1",
+		"device_id":         "device-1",
+		"node_device_id":    "device-1",
+		"client_device_id":  "client-1",
+		"actor_employee_id": "manager-1",
+		"session_id":        "session-1",
+		"shift_id":          "shift-refund-1",
+		"occurred_at":       "2026-05-06T09:00:00Z",
+		"payload": map[string]any{
+			"origin": "edge_device",
+			"data": map[string]any{
+				"id":                    "financial-operation-1",
+				"edge_operation_id":     "edge-financial-operation-1",
+				"restaurant_id":         "restaurant-1",
+				"device_id":             "device-1",
+				"shift_id":              "shift-refund-1",
+				"original_shift_id":     "shift-sale-1",
+				"check_id":              "check-1",
+				"precheck_id":           "precheck-1",
+				"operation_type":        "refund",
+				"operation_kind":        "full",
+				"status":                "recorded",
+				"amount":                1000,
+				"currency":              "RUB",
+				"business_date_local":   "2026-05-06",
+				"inventory_disposition": "no_stock_effect",
+				"reason":                "guest return",
+				"created_at":            "2026-05-06T09:00:00Z",
 			},
 		},
 	}
