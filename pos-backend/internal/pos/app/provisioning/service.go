@@ -183,6 +183,10 @@ func (s *Service) PairViaLicense(ctx context.Context, cmd PairViaLicenseCommand)
 	}
 	resp, err := s.license.Resolve(ctx, s.licenseURL, LicenseResolveRequest{PairingCode: strings.TrimSpace(cmd.PairingCode), NodeDeviceID: state.NodeDeviceID})
 	if err != nil {
+		state.Status = domain.ProvisioningError
+		state.LastError = safeError(err)
+		state.UpdatedAt = s.clock.Now()
+		_ = s.repo.UpsertEdgeProvisioningState(ctx, state)
 		return domain.ProvisioningStatusView{}, err
 	}
 	if resp.NodeDeviceID != "" && resp.NodeDeviceID != state.NodeDeviceID {

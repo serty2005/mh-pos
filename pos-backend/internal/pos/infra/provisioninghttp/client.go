@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	appmastersync "pos-backend/internal/pos/app/mastersync"
 	"pos-backend/internal/pos/app/provisioning"
+	"pos-backend/internal/pos/domain"
 )
 
 type CloudClient struct {
@@ -113,7 +115,42 @@ func (c *LicenseClient) Resolve(ctx context.Context, licenseURL string, req prov
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return out, fmt.Errorf("license resolve returned %d", resp.StatusCode)
+		return out, classifyLicenseResolveError(resp)
 	}
 	return out, json.NewDecoder(resp.Body).Decode(&out)
+}
+
+func classifyLicenseResolveError(resp *http.Response) error {
+	code := remoteErrorCode(resp)
+	switch {
+	case resp.StatusCode == http.StatusBadRequest && code == "PAIRING_CODE_EXPIRED":
+		return fmt.Errorf("%w: license pairing code expired", domain.ErrInvalid)
+	case resp.StatusCode == http.StatusBadRequest && code == "PAIRING_CODE_INVALID":
+		return fmt.Errorf("%w: license pairing code invalid", domain.ErrInvalid)
+	case resp.StatusCode == http.StatusBadRequest:
+		return fmt.Errorf("%w: license resolve rejected with %s", domain.ErrInvalid, code)
+	case resp.StatusCode == http.StatusConflict:
+		return fmt.Errorf("%w: license resolve rejected with %s", domain.ErrConflict, code)
+	default:
+		return fmt.Errorf("license resolve returned %d", resp.StatusCode)
+	}
+}
+
+func remoteErrorCode(resp *http.Response) string {
+	if code := strings.TrimSpace(resp.Header.Get("X-Error-Code")); code != "" {
+		return code
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil || len(body) == 0 {
+		return fmt.Sprintf("HTTP_%d", resp.StatusCode)
+	}
+	var parsed struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil || strings.TrimSpace(parsed.Error.Code) == "" {
+		return fmt.Sprintf("HTTP_%d", resp.StatusCode)
+	}
+	return strings.TrimSpace(parsed.Error.Code)
 }
