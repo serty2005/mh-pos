@@ -1695,7 +1695,9 @@ button:focus-visible,
 .context-chip,
 .bottom-status,
 .bottom-actor {
-  min-height: 38px;
+  flex: 0 0 auto;
+  min-width: 48px;
+  min-height: 48px;
   display: inline-flex;
   align-items: center;
   max-width: 190px;
@@ -1750,6 +1752,7 @@ button.bottom-status {
   gap: 8px;
   padding: 12px;
   background: #f8faf6;
+  pointer-events: auto;
 }
 
 .section-menu-item {

@@ -32,14 +32,12 @@ test.afterEach(async ({ page }) => {
   expect(runtimeErrors).toEqual([]);
 });
 
-test('lazy routes load cashier terminal and out-of-scope workspace shells', async ({ page }, testInfo) => {
+test('lazy routes load redesigned POS shell and out-of-scope workspace shells', async ({ page }, testInfo) => {
   await loginAsManager(page);
 
   for (const path of ['/pos', '/pos/cashier']) {
     await page.goto(path);
-    await expect(page.locator('.cashier-status-bar')).toBeVisible();
-    await expect(page.locator('.terminal-grid')).toBeVisible();
-    await expect(page.getByRole('heading', { name: /Активный заказ/i })).toBeVisible();
+    await expectRedesignedShell(page);
     await expect(page.locator('.q-layout')).not.toContainText(/vite|webpack|uncaught|stack trace/i);
     await saveViewportScreenshot(page, testInfo, `route-${path.replaceAll('/', '-') || 'root'}.png`);
   }
@@ -53,44 +51,50 @@ test('lazy routes load cashier terminal and out-of-scope workspace shells', asyn
   }
 });
 
-test('cashier terminal supports floor, order, checkout, drawers and safe manager override UX', async ({ page }, testInfo) => {
+test('redesigned POS shell supports section navigation and cashier flow', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await loginAsManager(page);
   await page.goto('/pos');
 
-  await expect(page.locator('.cashier-status-bar')).toBeVisible();
+  await expectRedesignedShell(page);
   await expect(page.getByText('Production Manager')).toBeVisible();
-  await expect(page.getByText('Личная смена')).toBeVisible();
-  await expect(page.getByText('Кассовая смена')).toBeVisible();
-  await expect(page.locator('.cashier-status-bar').getByText('Синхронизация')).toBeVisible();
-  await expect(page.locator('.cashier-status-bar').getByRole('button', { name: /Заблокировать/i })).toBeVisible();
-  await expectNoStatusOverlap(page);
   await expectTouchTargets(page);
 
   await page.keyboard.press('Tab');
   await expectVisibleFocusRing(page);
 
+  await assertSectionMenuNavigation(page, testInfo);
+  await ensureOperationsReady(page);
+  await saveViewportScreenshot(page, testInfo, 'redesign-cash-ready-desktop.png');
+
+  await openSection(page, 'Залы и столы');
   const hall = page.locator('.hall-chip').first();
   await expect(hall).toHaveAttribute('aria-pressed', 'true');
 
-  const table = page.locator('.table-button').first();
+  const table = page.locator('.floor-table-tile').first();
   await table.click();
-  await expect(table).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByText(/На выбранном столе нет активного заказа|В заказе нет активных позиций/i)).toBeVisible();
+  await expect(page.locator('.pos-menu-area')).toBeVisible();
+  await expect(page.locator('.pos-order-rail')).toBeVisible();
+  await expect(page.locator('.pos-order-rail')).toContainText(/На выбранном столе нет активного заказа|В заказе нет активных позиций|Активный заказ/i);
+  await saveViewportScreenshot(page, testInfo, 'redesign-order-empty-desktop.png');
 
-  await expect(page.locator('.checkout-dock')).toBeInViewport();
-  await expect(page.locator('.pane-scroll').last()).toHaveCSS('overflow-y', 'auto');
-  await saveViewportScreenshot(page, testInfo, 'cashier-empty-desktop.png');
+  const createOrder = page.getByRole('button', { name: /Создать заказ/i }).last();
+  if (await createOrder.isVisible()) {
+    await expect(createOrder).toBeEnabled();
+    await createOrder.click();
+  }
+  await expect(page.locator('.rail-summary')).toBeVisible();
 
-  await page.getByRole('button', { name: /Создать заказ/i }).click();
-  await expect(page.locator('.order-summary')).toBeVisible();
-
-  await page.locator('.menu-button').first().click();
-  await expect(page.locator('.line-row')).toHaveCount(1);
-  await saveViewportScreenshot(page, testInfo, 'cashier-order-line.png');
+  await cancelIssuedPrecheckIfPresent(page);
+  const lineCountBeforeAdd = await page.locator('.rail-line').count();
+  const menuTile = page.locator('.menu-tile:not([disabled])').filter({ hasNotText: /Есть модификаторы/i }).first();
+  await expect(menuTile).toBeVisible();
+  await menuTile.click();
+  await expect.poll(() => page.locator('.rail-line').count()).toBeGreaterThan(lineCountBeforeAdd);
+  await saveViewportScreenshot(page, testInfo, 'redesign-order-line.png');
 
   await page.getByRole('button', { name: /Выпустить пречек/i }).click();
-  await expect(page.getByText('Пречек выпущен')).toBeVisible();
+  await expect(page.locator('.pos-order-rail')).toContainText('Пречек выпущен');
 
   await page.getByRole('button', { name: /Отмена пречека/i }).click();
   const cancelDialog = page.locator('.q-dialog').filter({ hasText: 'Отмена пречека' });
@@ -111,21 +115,16 @@ test('cashier terminal supports floor, order, checkout, drawers and safe manager
   await expect(page.getByRole('button', { name: /Выпустить пречек/i })).toBeEnabled();
 
   await page.getByRole('button', { name: /Выпустить пречек/i }).click();
-  await expect(page.getByText('Пречек выпущен')).toBeVisible();
-  await page.getByRole('button', { name: /Наличные/i }).click();
-  await expect(page.getByText(/Финальный чек создан/i)).toBeVisible();
+  await expect(page.locator('.pos-order-rail')).toContainText('Пречек выпущен');
+  await page.getByRole('button', { name: /^Касса$/i }).click();
+  const paymentDialog = page.locator('.q-dialog').filter({ hasText: 'Оплата' });
+  await expect(paymentDialog).toBeVisible();
+  await paymentDialog.getByRole('button', { name: /Наличные/i }).click();
+  await expect(page.locator('.pos-order-rail')).toContainText(/Финальный чек создан/i);
+  await paymentDialog.getByRole('button', { name: /Закрыть/i }).click();
+  await expect(paymentDialog).toBeHidden();
 
-  await page.getByRole('button', { name: /Кассовый ящик/i }).click();
-  await expect(page.locator('.q-dialog').filter({ hasText: 'Кассовый ящик' })).toBeVisible();
-  await saveViewportScreenshot(page, testInfo, 'cash-drawer-dialog.png');
-  await page.getByRole('button', { name: /^Отменить$/i }).click();
-
-  await page.getByRole('button', { name: /Синхронизация/i }).last().click();
-  const syncDrawer = page.locator('.q-drawer').filter({ hasText: 'Синхронизация' });
-  await expect(syncDrawer).toBeVisible();
-  await saveViewportScreenshot(page, testInfo, 'sync-drawer.png');
-  await syncDrawer.getByRole('button', { name: /^Закрыть$/i }).click();
-
+  await openSection(page, 'Активность');
   await page.getByRole('button', { name: /Закрытые заказы/i }).click();
   const closedOrdersDrawer = page.locator('.q-drawer').filter({ hasText: 'Закрытые заказы' });
   await expect(closedOrdersDrawer).toBeVisible();
@@ -136,7 +135,7 @@ test('cashier terminal supports floor, order, checkout, drawers and safe manager
   await saveViewportScreenshot(page, testInfo, 'refund-dialog-supported-flow.png');
 });
 
-test('cashier terminal remains usable on tablet and mobile viewports', async ({ page }, testInfo) => {
+test('redesigned POS shell remains usable on tablet and mobile viewports', async ({ page }, testInfo) => {
   await loginAsManager(page);
 
   for (const viewport of [
@@ -145,29 +144,25 @@ test('cashier terminal remains usable on tablet and mobile viewports', async ({ 
   ]) {
     await page.setViewportSize(viewport);
     await page.goto('/pos');
-    await expect(page.locator('.cashier-status-bar')).toBeVisible();
-    await expect(page.locator('.terminal-grid')).toBeVisible();
-    await expect(page.getByRole('heading', { name: /Активный заказ/i })).toBeVisible();
+    await expectRedesignedShell(page);
     await expectNoHorizontalOverflow(page);
     await expectTouchTargets(page);
-    await saveViewportScreenshot(page, testInfo, `${viewport.name}-cashier.png`);
+    await saveViewportScreenshot(page, testInfo, `${viewport.name}-redesign-shell.png`);
 
-    await page.getByRole('button', { name: /Закрытые заказы/i }).click();
-    await expect(page.locator('.q-drawer').filter({ hasText: 'Закрытые заказы' })).toBeVisible();
-    await expectOverlayFitsViewport(page, '.q-drawer');
-    await saveViewportScreenshot(page, testInfo, `${viewport.name}-closed-orders-drawer.png`);
-    await page.locator('.q-drawer').filter({ hasText: 'Закрытые заказы' }).getByRole('button', { name: /^Закрыть$/i }).click();
+    await openSection(page, 'Активность');
+    await expect(page.locator('.simple-pos-section')).toBeVisible();
+    await saveViewportScreenshot(page, testInfo, `${viewport.name}-activity-section.png`);
 
-    await page.getByRole('button', { name: /Кассовый ящик/i }).click();
-    await expect(page.locator('.q-dialog').filter({ hasText: 'Кассовый ящик' })).toBeVisible();
-    await expectOverlayFitsViewport(page, '.q-dialog .dialog-card');
-    await saveViewportScreenshot(page, testInfo, `${viewport.name}-cash-drawer-dialog.png`);
-    await page.getByRole('button', { name: /^Отменить$/i }).click();
+    await openSection(page, 'Касса');
+    await expect(page.locator('.simple-pos-section')).toBeVisible();
+    await expect(page.locator('.pos-bottom-bar')).toBeInViewport();
+    await saveViewportScreenshot(page, testInfo, `${viewport.name}-cash-section.png`);
   }
 });
 
 test('loading and error states are readable without raw backend details', async ({ page }, testInfo) => {
   await loginAsManager(page);
+  await ensureOperationsReady(page);
   await page.route('**/api/v1/orders/current?**', async (route) => {
     await route.fulfill({
       status: 500,
@@ -182,8 +177,8 @@ test('loading and error states are readable without raw backend details', async 
     });
   });
 
-  await page.goto('/pos');
-  await page.locator('.table-button').first().click();
+  await openSection(page, 'Залы и столы');
+  await page.locator('.floor-table-tile').first().click();
   await expect(page.locator('.order-skeleton')).toBeVisible();
   await expect(page.getByText(/Ошибка backend|POS Edge backend вернул внутреннюю ошибку|Не удалось загрузить данные/i)).toBeVisible();
   await expectNoSensitiveText(page, ['SELECT ', 'sqlite', 'panic:', 'stack trace', 'manager_pin', 'token']);
@@ -195,23 +190,74 @@ async function loginAsManager(page: Page) {
   await expect(page.getByRole('heading', { name: /Вход по PIN/i })).toBeVisible();
   await page.getByLabel(/^PIN$/i).fill(demo.manager_pin);
   await page.getByRole('button', { name: /Войти/i }).click();
-  await expect(page.locator('.cashier-status-bar')).toBeVisible();
+  await expect(page.locator('.pos-bottom-bar')).toBeVisible();
+}
+
+async function expectRedesignedShell(page: Page) {
+  await expect(page.locator('.pos-stage')).toBeVisible();
+  await expect(page.locator('.pos-bottom-bar')).toBeVisible();
+  await expect(page.locator('.bottom-section-button')).toBeVisible();
+}
+
+async function assertSectionMenuNavigation(page: Page, testInfo: TestInfo) {
+  for (const section of ['Залы и столы', 'Заказы', 'Активность', 'Отчеты', 'Касса']) {
+    await openSection(page, section);
+    await expect(page.locator('.bottom-section-button')).toContainText(section);
+    await expect(page.locator('.pos-section-menu')).toBeHidden();
+  }
+  await page.locator('.bottom-section-button').click();
+  await expect(page.locator('.pos-section-menu')).toBeVisible();
+  await expect(page.locator('.section-menu-item')).toHaveCount(5);
+  await saveViewportScreenshot(page, testInfo, 'section-menu-open.png');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.pos-section-menu')).toBeHidden();
+}
+
+async function openSection(page: Page, section: string) {
+  await page.locator('.bottom-section-button').click();
+  await expect(page.locator('.pos-section-menu')).toBeVisible();
+  await page.locator('.section-menu-item').filter({ hasText: section }).click();
+}
+
+async function ensureOperationsReady(page: Page) {
+  await openSection(page, 'Касса');
+  const openShift = page.getByRole('button', { name: /Открыть личную смену/i });
+  if (await openShift.isVisible().catch(() => false)) {
+    await expect(openShift).toBeEnabled();
+    await openShift.click();
+    await expect(openShift).toBeHidden();
+  }
+
+  const openCash = page.getByRole('button', { name: /Открыть кассовую смену/i });
+  if (await openCash.isVisible().catch(() => false)) {
+    await expect(openCash).toBeEnabled();
+    await openCash.click();
+    await expect(openCash).toBeHidden();
+  }
+
+  await expect(page.locator('.pos-bottom-bar')).toContainText('открыт');
+}
+
+async function cancelIssuedPrecheckIfPresent(page: Page) {
+  const cancelPrecheck = page.getByRole('button', { name: /Отмена пречека/i });
+  if (!(await cancelPrecheck.isVisible().catch(() => false)) || !(await cancelPrecheck.isEnabled().catch(() => false))) {
+    return;
+  }
+  await cancelPrecheck.click();
+  const cancelDialog = page.locator('.q-dialog').filter({ hasText: 'Отмена пречека' });
+  await expect(cancelDialog).toBeVisible();
+  await cancelDialog.getByLabel(/ID менеджера/i).fill(demo.manager_employee_id);
+  await cancelDialog.getByLabel(/PIN менеджера/i).fill(demo.manager_pin);
+  await cancelDialog.getByLabel(/Причина отмены/i).fill('playwright prepare editable order');
+  await cancelDialog.getByRole('button', { name: /Отмена пречека/i }).click();
+  await expect(cancelDialog).toBeHidden();
+  await expect(page.getByRole('button', { name: /Выпустить пречек/i })).toBeEnabled();
 }
 
 async function saveViewportScreenshot(page: Page, testInfo: TestInfo, name: string) {
   const path = testInfo.outputPath(name);
   await page.screenshot({ path, fullPage: false });
   await testInfo.attach(name, { path, contentType: 'image/png' });
-}
-
-async function expectNoStatusOverlap(page: Page) {
-  const boxes = await page.evaluate(() => {
-    const status = document.querySelector('.cashier-status-bar')?.getBoundingClientRect();
-    const grid = document.querySelector('.terminal-grid')?.getBoundingClientRect();
-    return status && grid ? { statusBottom: status.bottom, gridTop: grid.top } : null;
-  });
-  expect(boxes).not.toBeNull();
-  expect(boxes!.statusBottom).toBeLessThanOrEqual(boxes!.gridTop);
 }
 
 async function expectNoHorizontalOverflow(page: Page) {
@@ -242,14 +288,6 @@ async function expectVisibleFocusRing(page: Page) {
   });
   expect(focused).not.toBeNull();
   expect(focused!.outlineStyle !== 'none' || focused!.outlineWidth > 0 || focused!.boxShadow !== 'none').toBe(true);
-}
-
-async function expectOverlayFitsViewport(page: Page, selector: string) {
-  const fits = await page.locator(selector).last().evaluate((element) => {
-    const rect = element.getBoundingClientRect();
-    return rect.left >= -1 && rect.top >= -1 && rect.right <= window.innerWidth + 1 && rect.bottom <= window.innerHeight + 1;
-  });
-  expect(fits).toBe(true);
 }
 
 async function expectNoSensitiveText(page: Page, needles: string[]) {

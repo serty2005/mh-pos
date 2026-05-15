@@ -101,9 +101,9 @@ Reprint:
 Relevant permissions:
 
 - `pos.order.create`
-- `pos.order.line.add`
-- `pos.order.line.update`
-- `pos.order.line.void`
+- `pos.order.add_line`
+- `pos.order.change_quantity`
+- `pos.order.void_line`
 - `pos.precheck.issue`
 - `pos.precheck.view`
 - `pos.precheck.cancel.request`
