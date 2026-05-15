@@ -27,8 +27,9 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Partial payments.
 - Final check creation after full payment.
 - Reprint final check from immutable snapshot.
-- Payment refund route and cashier UI flow.
-- `business_date_local` for shifts, cash sessions, payments and checks.
+- Append-only financial operation ledger для full/partial cancellation и full/partial refund: `financial_operations`, `financial_operation_items`, `CancellationRecorded`, `RefundRecorded`.
+- Compatibility payment refund route and cashier UI flow: UI вызывает `/payments/{id}/refund`, backend записывает refund operation по captured payment allocation.
+- `business_date_local` for shifts, cash sessions, payments, checks and financial operations.
 - Pricing/Discounts boundary: backend `Pricing` domain/application layer, line/order discounts, separate surcharge foundation, unified ordered modifier pipeline по `application_index`, tax-last invariant, tax profile/rule foundation, deterministic integer rounding и immutable precheck breakdown persistence.
 - Cloud-authored automatic discount/surcharge policies synced through `pricing_policy`; manual discount/surcharge commands remain backend RBAC-controlled operational actions.
 
@@ -42,7 +43,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - POS Edge Cloud -> Edge ingest for streams `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
 - POS Edge Cloud -> Edge ingest for catalog folders/tags/item tags, services, modifier groups/options/menu item links and `pricing_policy` tax/service-charge/automatic discount-surcharge reference rows.
 - POS Edge outbox/local event foundation for cashier operational events.
-- Refund events `PaymentRefunded` and `CheckRefunded` are confirmed Edge -> Cloud operational events and Cloud receiver/projection inputs.
+- `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud financial operation events. `PaymentRefunded` and `CheckRefunded` remain accepted legacy operational event types for older payloads.
 - DDD context map exists in `docs/architecture/DDD-CONTEXT-MAP.md`.
 
 ### Persistence Policy
@@ -82,9 +83,10 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - старая recipe validation была частичной; новая policy запрещает `dish` как компонент и разрешает `good`/`semi_finished`;
   - решить, входит ли automatic consumption в первый pilot;
   - если входит, реализовать consumption trigger, stock document/move service и snapshot requirements.
-- Refund/reprint hardening:
-  - backend и UI flow реализованы;
-  - требуется финальная проверка operator policy, audit/sync expectations и acceptance tests для pilot script.
+- Cancellation/refund/reprint hardening:
+  - backend ledger, immutable snapshots, no-over-cancel/no-over-refund tests and sync event contracts реализованы;
+  - UI пока поддерживает только compatibility refund по captured payment из closed orders;
+  - требуется финальная проверка operator policy, fiscal wording и cashier acceptance script.
 - Documentation freeze:
   - поддерживать `SPECv1.3.md` как frozen pilot contract;
   - дальние контуры переносить в roadmap/ADR, а не в pilot spec.
@@ -96,7 +98,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Полный pre-pilot smoke path: Cloud master data -> Edge ingest -> login -> shift/cash session -> order -> precheck -> payment -> check -> refund/reprint.
 - Сверка RBAC matrix с фактическим UI и backend permissions.
 - Проверка migration/backup behavior на старой SQLite DB.
-- Богатая refund ledger projection для отчетности, если raw/journal payload и текущих finance counters недостаточно.
+- Богатая financial operation ledger projection для отчетности, если raw/journal payload и текущих event counters недостаточно.
 
 ## После Пилота
 
@@ -132,4 +134,5 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - документация не обещает runtime, которого нет в коде;
 - pricing/modifiers/inventory либо реализованы и протестированы, либо явно исключены из pilot acceptance;
 - backend and UI docs согласованы по refund/reprint/current routes;
-- `sqlc` и ClickHouse описаны только как planned/post-pilot options, не как текущий runtime.
+- cancellation/refund boundaries явно разделены: cancellation внутри открытой исходной смены/дня, refund после закрытия исходной смены или на следующую business date;
+- `sqlc` и ClickHouse описаны только как запланировано далее/после пилота, не как текущий runtime.

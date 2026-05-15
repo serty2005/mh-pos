@@ -10,6 +10,7 @@ import (
 	"pos-backend/internal/pos/domain/check"
 	"pos-backend/internal/pos/domain/device"
 	"pos-backend/internal/pos/domain/employee"
+	"pos-backend/internal/pos/domain/financial"
 	"pos-backend/internal/pos/domain/floor"
 	"pos-backend/internal/pos/domain/inventory"
 	"pos-backend/internal/pos/domain/menu"
@@ -165,6 +166,32 @@ const (
 	PaymentCash     = check.PaymentCash
 	PaymentCard     = check.PaymentCard
 	PaymentOther    = check.PaymentOther
+)
+
+type FinancialOperationType = financial.OperationType
+type FinancialOperationKind = financial.OperationKind
+type FinancialOperationStatus = financial.OperationStatus
+type InventoryDisposition = financial.InventoryDisposition
+type FinancialOperationItemScope = financial.OperationItemScope
+type FinancialOperation = financial.Operation
+type FinancialOperationItem = financial.OperationItem
+
+const (
+	FinancialOperationCancellation = financial.OperationCancellation
+	FinancialOperationRefund       = financial.OperationRefund
+	FinancialOperationFull         = financial.OperationFull
+	FinancialOperationPartial      = financial.OperationPartial
+	FinancialOperationRecorded     = financial.OperationRecorded
+	InventoryNoStockEffect         = financial.InventoryNoStockEffect
+	InventoryReturnToStock         = financial.InventoryReturnToStock
+	InventoryWriteOffWaste         = financial.InventoryWriteOffWaste
+	InventoryManualReview          = financial.InventoryManualReview
+	FinancialItemWholeCheck        = financial.ItemWholeCheck
+	FinancialItemOrderLine         = financial.ItemOrderLine
+	FinancialItemModifierLine      = financial.ItemModifierLine
+	FinancialItemServiceCharge     = financial.ItemServiceCharge
+	FinancialItemTip               = financial.ItemTip
+	FinancialItemPayment           = financial.ItemPayment
 )
 
 type AmountKind = pricing.AmountKind

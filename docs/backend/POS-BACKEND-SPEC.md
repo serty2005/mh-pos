@@ -63,6 +63,8 @@
 - `POST /api/v1/prechecks/{id}/payments`
 - `GET /api/v1/checks/{id}`
 - `POST /api/v1/checks/{id}/reprint`
+- `POST /api/v1/checks/{id}/cancellations`
+- `POST /api/v1/checks/{id}/refunds`
 - `POST /api/v1/payments/{id}/refund`
 - `POST /api/v1/cash-shifts/open`
 - `POST /api/v1/cash-shifts/{id}/close`
@@ -89,7 +91,7 @@
 8. Cashier captures one or more payments through `precheck_id`.
 9. Backend creates final check only after full payment.
 10. Cashier/manager can reprint precheck/check copy from immutable snapshot.
-11. Authorized operator can refund captured payment.
+11. Authorized operator can record cancellation/refund operation; current cashier UI uses the compatibility payment refund route for closed orders.
 
 ## Precheck Contract
 
@@ -122,7 +124,7 @@ Pricing contract:
 - Selected modifiers are priced by backend calculation and persisted in order/precheck/check snapshots.
 - Service items use the same order/pricing/precheck/check flow as other sellable menu items and do not imply recipe semantics.
 
-## Payment, Check And Refund Contract
+## Payment, Check, Cancellation And Refund Contract
 
 Реализовано сейчас:
 
@@ -137,18 +139,47 @@ Pricing contract:
 - Check snapshot includes immutable precheck snapshot and payment snapshot.
 - Check reprint/refund use immutable snapshots and do not re-read current menu modifier data.
 - Reprint check requires `pos.check.reprint`.
-- Refund endpoint is `POST /api/v1/payments/{id}/refund`.
-- Refund requires `pos.payment.refund`, open cash session and same device/shift/restaurant.
-- Refund changes payment status from `captured` to `refunded`.
-- Refund decreases precheck `paid_total`; if a check exists, it decreases check `paid_total` and can mark check `refunded`.
-- Refund writes confirmed Edge -> Cloud operational events `PaymentRefunded` and, when a final check exists, `CheckRefunded`.
+- Cancellation endpoint is `POST /api/v1/checks/{id}/cancellations`.
+- Refund endpoint is `POST /api/v1/checks/{id}/refunds`.
+- Compatibility refund endpoint is `POST /api/v1/payments/{id}/refund`; it records a refund operation with payment allocation and does not mutate finalized payment/check/precheck totals.
+- Cancellation uses permission `pos.precheck.cancel`; refund uses permission `pos.payment.refund`.
+- Cancellation requires the original personal shift to be open, the current cash session to belong to that shift and the same `business_date_local`.
+- Refund requires the original personal shift to be closed or the current `business_date_local` to differ from the check business date; a current open cash session is still required.
+- Financial operations are append-only rows in `financial_operations` and `financial_operation_items`.
+- Operation type is `cancellation` or `refund`; operation kind is `full` or `partial`.
+- Item scopes are `whole_check`, `order_line`, `modifier_line`, `service_charge`, `tip`, `payment`.
+- Backend rejects over-cancel, over-refund, over-line-quantity and over-payment-allocation scenarios.
+- Operation snapshot embeds immutable check snapshot and operation items.
+- Inventory disposition is explicit: `no_stock_effect`, `return_to_stock`, `write_off_waste`, `manual_review`; financial operation does not mutate stock tables.
+- Current events are `CancellationRecorded` and `RefundRecorded`. `PaymentRefunded` and `CheckRefunded` remain accepted legacy sync event types.
 
 Не реализовано сейчас:
 
 - automatic PSP authorization/capture/refund;
 - fiscal receipt creation;
 - refund manager PIN policy beyond current RBAC permission check;
-- full refund ledger model beyond current payment attempt/status behavior.
+- cashier UI for line/quantity/modifier/service/tip partial cancellation/refund;
+- automatic stock return/write-off;
+- separate `business_day` and `fiscal_shift` runtime aggregates.
+
+## Shift, Business Date And Fiscal Boundary
+
+Реализовано сейчас:
+
+- Runtime имеет personal employee shift (`shifts`) и device cash session (`cash_sessions`).
+- `cashier_shift` в текущем коде представлен personal employee shift aggregate/table `shifts`; отдельного объекта с именем `cashier_shift` нет.
+- `business_date_local` хранится у shifts, cash sessions, payments, checks и financial operations.
+- Отдельной сущности `business_day` нет; текущая business date вычисляется из restaurant settings.
+- Отдельной сущности `fiscal_shift` нет.
+- Final check является finalized internal POS document после полной оплаты.
+- Cancellation/refund являются compensating operations и не переписывают finalized check/payment.
+
+Вне текущего объема:
+
+- fiscalized receipt state;
+- correction document flow;
+- fiscal document reprint vs ordinary POS snapshot reprint distinction in runtime;
+- reopen business day policy as a first-class operation.
 
 ## Master Data Ingest
 
@@ -197,6 +228,8 @@ Recipes/inventory:
 
 - Реализована только основа: SQLite recipe and stock tables.
 - Не реализовано сейчас: recipe expansion, modifier-to-recipe expansion, automatic stock consumption.
+- Реализовано сейчас: cancellation/refund ledger stores explicit `inventory_disposition`, but does not mutate stock tables.
+- Не реализовано сейчас: automatic stock return on refund/cancellation.
 - Запланировано далее: stock documents/moves app services and consumption policy.
 
 ## RBAC
@@ -214,6 +247,7 @@ Recipes/inventory:
   - `pos.pricing.discount.apply`
   - `pos.pricing.surcharge.apply`
 - Refund uses `pos.payment.refund`.
+- Check cancellation ledger uses `pos.precheck.cancel` in current backend service.
 - Precheck cancel uses split request/approval:
   - `pos.precheck.cancel.request`
   - `pos.precheck.cancel`

@@ -90,7 +90,7 @@ Request body shape currently supported by POS Edge:
 - POS Edge пишет local operational events и outbox rows для cashier runtime commands.
 - Детали sender/cloud receiver являются implementation-specific; документация не должна обещать Cloud reporting semantics для events, которых нет в подтвержденном Edge -> Cloud catalog.
 
-Подтвержденный текущий Edge -> Cloud catalog в domain boundary:
+Подтвержденный Edge -> Cloud catalog в domain boundary включает текущие события и legacy accepted refund events:
 
 ```text
 ShiftOpened
@@ -107,6 +107,8 @@ PrecheckReprinted
 PrecheckCancelled
 PaymentCaptured
 PaymentRefunded
+CancellationRecorded
+RefundRecorded
 CheckCreated
 CheckRefunded
 CheckReprinted
@@ -116,23 +118,26 @@ AuthSessionRevoked
 DeviceRegistered
 ```
 
-Refund sync behavior:
+Cancellation/refund sync behavior:
 
-- `PaymentRefunded` и `CheckRefunded` являются подтвержденными Edge -> Cloud operational events.
+- `CancellationRecorded` и `RefundRecorded` являются текущими Edge -> Cloud operational events для append-only financial operation ledger.
+- `PaymentRefunded` и `CheckRefunded` остаются валидируемыми legacy event types, но новый POS Edge refund flow пишет `RefundRecorded`.
 - Cloud receiver валидирует эти event types, сохраняет raw envelope/journal rows и обновляет event-type stats.
-- Shift finance projection хранит payment refund count/total и check refunded count/current refunded paid-total foundation. Подробное отображение возвратов должно читать stored raw/journal payloads, пока не добавлена более богатая refund ledger projection.
+- Shift finance projection не является полной ledger projection для cancellation/refund; подробное отображение должно читать stored raw/journal payloads, пока не добавлена отдельная financial operation projection.
 
 ## Financial Payload Boundaries
 
 Реализовано сейчас:
 
-- Payloads `PaymentCaptured`, `PaymentRefunded`, `CheckCreated` и `CheckRefunded` включают backend-owned `business_date_local`, если он есть у source aggregate.
+- Payloads `PaymentCaptured`, `CheckCreated`, `CancellationRecorded` и `RefundRecorded` включают backend-owned `business_date_local`, если он есть у source aggregate.
 - Precheck/check reprint использует immutable snapshot payload.
 - Payment ссылается на `precheck_id`, а не на legacy `check_id`.
+- `RefundRecorded`/`CancellationRecorded` payload содержит immutable operation snapshot with embedded check snapshot and item scopes.
 
 Не реализовано сейчас:
 
 - inventory consumption events;
+- stock movement events for refund/cancellation disposition;
 - PSP/fiscal event streams.
 
 ## Запланированные Границы
@@ -147,4 +152,4 @@ Refund sync behavior:
 - KDS/Production events;
 - inventory stock movement events;
 - PSP/fiscal integration events;
-- richer reporting projections and optional ClickHouse acceleration.
+- richer financial operation reporting projections and optional ClickHouse acceleration.

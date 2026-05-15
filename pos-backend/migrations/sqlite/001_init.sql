@@ -1,5 +1,5 @@
--- ?????????? pre-pilot baseline. ?? ??????? ??????? ???????????? dev/test ?? ?????????????,
--- ???????? upgrade migrations ??? ?????????? ?????? ?????????? ????? ??????? ?????????.
+-- Схлопнутый pre-pilot baseline. До первого клиента dev/test базы пересоздаются,
+-- реальные data-preserving migrations начинаются после первого внедрения.
 
 -- === 001_init.sql ===
 CREATE TABLE IF NOT EXISTS restaurants (
@@ -656,6 +656,76 @@ CREATE TABLE IF NOT EXISTS payment_attempts (
 
 CREATE INDEX IF NOT EXISTS payment_attempts_payment_id_attempt_no ON payment_attempts(payment_id, attempt_no);
 CREATE INDEX IF NOT EXISTS payment_attempts_provider_transaction_id ON payment_attempts(provider_name, provider_transaction_id) WHERE provider_transaction_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS financial_operations (
+  id TEXT PRIMARY KEY,
+  edge_operation_id TEXT NOT NULL UNIQUE,
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+  device_id TEXT NOT NULL REFERENCES devices(id),
+  shift_id TEXT NOT NULL REFERENCES shifts(id),
+  original_shift_id TEXT NOT NULL REFERENCES shifts(id),
+  check_id TEXT NOT NULL REFERENCES checks(id),
+  precheck_id TEXT NOT NULL REFERENCES prechecks(id),
+  operation_type TEXT NOT NULL CHECK (operation_type IN ('cancellation','refund')),
+  operation_kind TEXT NOT NULL CHECK (operation_kind IN ('full','partial')),
+  status TEXT NOT NULL CHECK (status = 'recorded'),
+  amount INTEGER NOT NULL CHECK (amount > 0),
+  currency TEXT NOT NULL CHECK (currency GLOB '[A-Z][A-Z][A-Z]'),
+  business_date_local TEXT NOT NULL CHECK (business_date_local GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  inventory_disposition TEXT NOT NULL CHECK (inventory_disposition IN ('no_stock_effect','return_to_stock','write_off_waste','manual_review')),
+  reason TEXT NOT NULL CHECK (reason <> ''),
+  created_by_employee_id TEXT NOT NULL REFERENCES employees(id),
+  approved_by_employee_id TEXT REFERENCES employees(id),
+  snapshot TEXT NOT NULL CHECK (json_valid(snapshot)),
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS financial_operations_check_type_created_at ON financial_operations(check_id, operation_type, created_at);
+CREATE INDEX IF NOT EXISTS financial_operations_shift_created_at ON financial_operations(shift_id, created_at);
+
+CREATE TABLE IF NOT EXISTS financial_operation_items (
+  id TEXT PRIMARY KEY,
+  operation_id TEXT NOT NULL REFERENCES financial_operations(id),
+  scope TEXT NOT NULL CHECK (scope IN ('whole_check','order_line','modifier_line','service_charge','tip','payment')),
+  order_line_id TEXT REFERENCES order_lines(id),
+  payment_id TEXT REFERENCES payments(id),
+  quantity INTEGER CHECK (quantity IS NULL OR quantity > 0),
+  amount INTEGER NOT NULL CHECK (amount > 0),
+  currency TEXT NOT NULL CHECK (currency GLOB '[A-Z][A-Z][A-Z]'),
+  tax_amount INTEGER NOT NULL DEFAULT 0 CHECK (tax_amount >= 0),
+  snapshot TEXT NOT NULL CHECK (json_valid(snapshot)),
+  created_at TEXT NOT NULL,
+  CHECK (scope <> 'order_line' OR order_line_id IS NOT NULL),
+  CHECK (scope <> 'payment' OR payment_id IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS financial_operation_items_operation_id ON financial_operation_items(operation_id);
+CREATE INDEX IF NOT EXISTS financial_operation_items_payment_id ON financial_operation_items(payment_id) WHERE payment_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS financial_operation_items_order_line_id ON financial_operation_items(order_line_id) WHERE order_line_id IS NOT NULL;
+
+CREATE TRIGGER IF NOT EXISTS financial_operations_no_update
+BEFORE UPDATE ON financial_operations
+BEGIN
+  SELECT RAISE(ABORT, 'financial_operations are append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS financial_operations_no_delete
+BEFORE DELETE ON financial_operations
+BEGIN
+  SELECT RAISE(ABORT, 'financial_operations are append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS financial_operation_items_no_update
+BEFORE UPDATE ON financial_operation_items
+BEGIN
+  SELECT RAISE(ABORT, 'financial_operation_items are append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS financial_operation_items_no_delete
+BEFORE DELETE ON financial_operation_items
+BEGIN
+  SELECT RAISE(ABORT, 'financial_operation_items are append-only');
+END;
 
 CREATE TABLE IF NOT EXISTS cash_sessions (
   id TEXT PRIMARY KEY,

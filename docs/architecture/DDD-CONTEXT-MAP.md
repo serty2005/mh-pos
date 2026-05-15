@@ -23,8 +23,9 @@
 | `Fiscal / Tax` | tax profiles/policy, fiscal/legal receipt mapping, fiscal adapter boundary | реализовано сейчас: tax profile/rule foundation, inclusive/exclusive percentage/fixed components, precheck tax breakdown, Cloud -> Edge `pricing_policy` ingest for tax profiles/rules | regional/legal policy hardening if pilot needs tax | real fiscalization adapter | PSP/payment processor, order lifecycle |
 | `Order` | orders, order lines, selected modifiers, order status, precheck issue intent | реализовано сейчас for `Order -> Precheck` runtime with selected modifiers | service/modifier pilot UX hardening if accepted | split/merge/transfer/courses | inventory mutation, payment facts, pricing policy ownership |
 | `Precheck` | immutable precheck snapshot, selected modifier snapshot, order lock/cancel lifecycle | реализовано сейчас | print/reporting snapshot polish if accepted | print device orchestration | payment processor and stock movement |
-| `Payment` | captured payments, payment attempts, payment methods, refund status | реализовано сейчас for manual/trusted `cash/card/other`, refund and confirmed refund operational sync | richer refund ledger projection if reporting needs it | real PSP integration | fiscalization, order line pricing, inventory |
+| `Payment` | captured payments, payment attempts, payment methods, provider metadata | реализовано сейчас for manual/trusted `cash/card/other` | PSP boundary decision only if pilot needs it | real PSP integration | fiscalization, order line pricing, inventory, cancellation/refund ledger |
 | `Check` | final paid document after full precheck payment, immutable check snapshot | реализовано сейчас | fiscal/tax fields only if policy exists | legal fiscal receipt adapter | PSP authorization and stock consumption |
+| `Financial Operations` | append-only cancellation/refund ledger, operation item scopes, inventory disposition, no-over-compensation rules | реализовано сейчас: full/partial cancellation and refund records, `CancellationRecorded`, `RefundRecorded` | UI expansion beyond payment-level refund only if included in pilot acceptance | richer accounting projections | inventory mutation, PSP refund execution, fiscal correction documents |
 | `Inventory` | stock documents, stock moves, stock balances, item costs, consumption policy | реализована только основа | consumption trigger only if accepted as pilot blocker | full recipe expansion, KDS/DishServed trigger, AVCO/FIFO/batches | order/payment/check direct mutation |
 | `Production` | KDS tickets, stations, cooking/dish served lifecycle | вне текущего объема | none unless pilot changes | KDS runtime | financial close and inventory direct writes |
 | `CRM` | customer identity/preferences/history | вне текущего объема except `guest_count` | none | full CRM | order/payment lifecycle |
@@ -39,6 +40,8 @@
 - `Payment` and fiscalization are separate boundaries.
 - `Order` does not write inventory directly.
 - `Inventory` changes only through stock documents / stock moves.
+- Cancellation/refund records financial compensation and explicit inventory disposition; it does not move stock by itself.
+- Finalized checks/payments are not rewritten by compensation flows.
 - UI never owns authoritative discount/tax/totals.
 - Cloud owns master data authoring; POS Edge uses local read models and ingest.
 
@@ -50,7 +53,8 @@
 - Cloud -> Edge `mastersync.Service` applies `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
 - Catalog/menu sync includes folders, tags, services and modifier groups/options/links; menu categories remain separate from catalog folders.
 - Reprint events use immutable snapshots.
-- Refund backend flow writes local event/outbox records; `PaymentRefunded` and `CheckRefunded` are confirmed Edge -> Cloud operational events accepted by Cloud receiver/projections.
+- Cancellation/refund backend flow writes local event/outbox records; `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud operational events.
+- `PaymentRefunded` and `CheckRefunded` remain accepted legacy event types for older payloads.
 
 Реализована только основа:
 
@@ -84,5 +88,6 @@ Recipes/Inventory:
 Payment/Fiscal:
 
 - manual/trusted capture is current runtime;
-- payment processor boundary is planned, not implemented;
-- fiscal adapter boundary is planned, not implemented.
+- cancellation/refund ledger is current runtime, PSP refund execution is not;
+- payment processor boundary запланирован далее, не реализован;
+- fiscal adapter boundary запланирован далее, не реализован.

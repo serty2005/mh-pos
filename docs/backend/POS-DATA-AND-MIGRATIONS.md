@@ -20,7 +20,7 @@
 
 ## POS Edge SQLite
 
-Managed files:
+Managed SQL files, реализовано сейчас:
 
 - `pos-backend/migrations/sqlite/001_init.sql`
 
@@ -34,6 +34,7 @@ Managed files:
 - `orders`, `order_lines`
 - `prechecks`, `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`, `payments`, `payment_attempts`, `checks`
 - `order_line_modifiers`, `order_line_discounts`, `order_level_discounts`, `order_surcharges`, `service_charge_rules`, `pricing_policies`
+- `financial_operations`, `financial_operation_items`
 - `manager_override_audit`
 - `local_event_log`, `pos_sync_outbox`, `cloud_master_sync_state`
 
@@ -46,7 +47,10 @@ Cashier runtime invariants:
 - `checks` references `order_id` and stores immutable `snapshot`.
 - `order_line_modifiers` stores selected modifiers for active order lines; precheck/check snapshots preserve selected modifiers for reprint/refund.
 - `catalog_items.type` supports canonical `dish`, `good`, `semi_finished`, `service`; legacy `ingredient` is not accepted by current active catalog v2 path.
-- `business_date_local` is stored for shifts, cash sessions, payments and checks.
+- `financial_operations` and `financial_operation_items` are append-only ledger tables for cancellation/refund; they do not mutate finalized payment/check/precheck rows.
+- `financial_operation_items.scope` supports `whole_check`, `order_line`, `modifier_line`, `service_charge`, `tip`, `payment`.
+- `financial_operations.inventory_disposition` stores `no_stock_effect`, `return_to_stock`, `write_off_waste` or `manual_review`; it is not an automatic stock movement.
+- `business_date_local` is stored for shifts, cash sessions, payments, checks and financial operations.
 - `stock_moves` are append-only by trigger.
 
 ## Таблицы Только Основы
@@ -62,7 +66,7 @@ SQLite: реализована только основа:
 - `stock_balances`
 - `item_costs`
 
-These tables are not proof of a finished inventory runtime. Current code does not confirm:
+Эти таблицы не означают готовый inventory runtime. Текущий код не подтверждает:
 
 - automatic stock consumption;
 - recipe expansion;
@@ -72,7 +76,7 @@ These tables are not proof of a finished inventory runtime. Current code does no
 
 ## Cloud PostgreSQL
 
-Managed files currently present:
+Managed SQL files, реализовано сейчас:
 
 - `cloud-backend/migrations/postgres/001_init.sql`
 
@@ -92,7 +96,7 @@ Managed files currently present:
 - menu location assignments;
 - master-data publications.
 
-Foundation warning:
+Ограничение текущей основы:
 
 - Cloud recipe/inventory-adjacent foundation is not equal to POS Edge recipe/inventory runtime support.
 - POS Edge `ApplyMasterData` сейчас принимает `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
@@ -129,6 +133,22 @@ Foundation warning:
 
 - UI-side financial calculation.
 
+## Cancellation/Refund Ledger Data
+
+Реализовано сейчас:
+
+- `financial_operations` stores one append-only operation with type `cancellation` or `refund`, kind `full` or `partial`, amount, currency, `business_date_local`, original shift, current shift, check/precheck ids and immutable operation snapshot.
+- `financial_operation_items` stores item allocations for whole check, order line, modifier line, service charge, tip and payment scope.
+- SQLite triggers reject update/delete for both financial operation tables.
+- Backend records `CancellationRecorded` and `RefundRecorded` outbox/local events.
+- Legacy payment refund route writes the same ledger through payment scope instead of updating payment/check/precheck statuses.
+
+Не реализовано сейчас:
+
+- separate refund projection tables in Cloud;
+- fiscal/correction document storage;
+- automatic inventory stock moves from `inventory_disposition`.
+
 ## Modifier Data
 
 Реализовано сейчас:
@@ -137,7 +157,7 @@ Foundation warning:
 - POS Edge stores synced modifier groups/options/menu item links in read-model tables.
 - POS Edge stores selected modifiers in `order_line_modifiers`.
 - Precheck/check immutable snapshots include selected modifiers and their financial effect.
-- Modifier price is included in backend authoritative calculation.
+- Modifier price is included in backend authoritative calculation and immutable precheck/check snapshots.
 
 Запланировано далее:
 
@@ -151,6 +171,7 @@ Foundation warning:
 - Recipes are versioned in SQLite via `recipe_versions` and `recipe_lines`.
 - Cloud has recipe item foundation.
 - Stock movement foundation exists through stock documents/moves/balances/costs.
+- Cancellation/refund ledger can record intended inventory disposition, but stock tables stay unchanged until an explicit Inventory service posts stock documents/moves.
 
 Запланировано далее:
 
@@ -161,6 +182,7 @@ Foundation warning:
 Вне текущего runtime:
 
 - automatic recipe consumption after check;
+- automatic return-to-stock/write-off after cancellation/refund;
 - KDS/DishServed inventory trigger;
 - semi-finished fallback expansion.
 

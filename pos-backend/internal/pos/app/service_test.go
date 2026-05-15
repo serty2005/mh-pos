@@ -315,6 +315,26 @@ func (f *fixture) openCashSession(t *testing.T) *domain.CashSession {
 	return session
 }
 
+func (f *fixture) closeCashSessionAndShift(t *testing.T, shift *domain.Shift, cashSession *domain.CashSession, suffix string) {
+	t.Helper()
+	if _, err := f.service.CloseCashSession(f.ctx, app.CloseCashSessionCommand{
+		CommandMeta:        f.managerEdgeMetaCommand(t, "cmd-close-cash-"+suffix),
+		ID:                 cashSession.ID,
+		ClosedByEmployeeID: f.manager.ID,
+		ClosingCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CloseShift(f.ctx, app.CloseShiftCommand{
+		CommandMeta:        f.edgeMetaCommand("cmd-close-shift-" + suffix),
+		ID:                 shift.ID,
+		ClosedByEmployeeID: f.employee.ID,
+		ClosingCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 	t.Helper()
 	f.openShift(t)
@@ -343,7 +363,7 @@ func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
-	case "restaurants", "devices", "orders", "order_lines", "order_line_modifiers", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "roles", "employees", "catalog_items", "catalog_folders", "catalog_tags", "catalog_item_tags", "modifier_groups", "modifier_options", "modifier_group_bindings", "menu_item_modifier_groups", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "pricing_policies", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_line_modifiers", "precheck_discounts", "precheck_surcharges", "precheck_taxes":
+	case "restaurants", "devices", "orders", "order_lines", "order_line_modifiers", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "roles", "employees", "catalog_items", "catalog_folders", "catalog_tags", "catalog_item_tags", "modifier_groups", "modifier_options", "modifier_group_bindings", "menu_item_modifier_groups", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "pricing_policies", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_line_modifiers", "precheck_discounts", "precheck_surcharges", "precheck_taxes", "financial_operations", "financial_operation_items", "stock_moves":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -2508,9 +2528,9 @@ func TestCapturePaymentRollbackRemovesAttemptPaymentOutboxAndLocalEvent(t *testi
 	}
 }
 
-func TestRefundPaymentOnActivePrecheck(t *testing.T) {
+func TestRefundPaymentRequiresClosedOriginalShift(t *testing.T) {
 	f := newFixture(t)
-	f.openShift(t)
+	shift := f.openShift(t)
 	f.openCashSession(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
 	if err != nil {
@@ -2533,40 +2553,69 @@ func TestRefundPaymentOnActivePrecheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	refundedPayment, err := f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
-		CommandMeta: f.managerEdgeMetaCommand(t, "refund-cmd"),
-		PaymentID:   payment.ID,
-	})
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if refundedPayment.Status != domain.PaymentRefunded {
-		t.Fatalf("expected payment status refunded, got %s", refundedPayment.Status)
+	if check == nil {
+		t.Fatal("expected check after full payment")
+	}
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+	_, err = f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
+		CommandMeta: f.managerEdgeMetaCommand(t, "refund-cmd"),
+		PaymentID:   payment.ID,
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected refund before original shift close to conflict, got %v", err)
 	}
 	var precheckPaidTotal int64
 	var precheckStatus string
 	if err := f.db.QueryRowContext(f.ctx, `SELECT paid_total, status FROM prechecks WHERE id = ?`, precheck.ID).Scan(&precheckPaidTotal, &precheckStatus); err != nil {
 		t.Fatal(err)
 	}
-	if precheckPaidTotal != 0 {
-		t.Fatalf("expected precheck paid_total 0 after refund, got %d", precheckPaidTotal)
+	if precheckPaidTotal != precheck.Total {
+		t.Fatalf("expected immutable precheck paid_total %d, got %d", precheck.Total, precheckPaidTotal)
 	}
-	if precheckStatus != string(domain.PrecheckIssued) {
-		t.Fatalf("expected precheck status issued, got %s", precheckStatus)
+	if precheckStatus != string(domain.PrecheckClosed) {
+		t.Fatalf("expected precheck status closed, got %s", precheckStatus)
+	}
+	var paymentStatus string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM payments WHERE id = ?`, payment.ID).Scan(&paymentStatus); err != nil {
+		t.Fatal(err)
+	}
+	if paymentStatus != string(domain.PaymentCaptured) {
+		t.Fatalf("expected payment to remain captured, got %s", paymentStatus)
+	}
+	var checkStatus string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM checks WHERE id = ?`, check.ID).Scan(&checkStatus); err != nil {
+		t.Fatal(err)
+	}
+	if checkStatus != string(domain.CheckPaid) {
+		t.Fatalf("expected check to remain paid, got %s", checkStatus)
 	}
 	var attempts int
 	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM payment_attempts WHERE payment_id = ? AND status = 'refunded'`, payment.ID).Scan(&attempts); err != nil {
 		t.Fatal(err)
 	}
-	if attempts != 1 {
-		t.Fatalf("expected one refunded attempt, got %d", attempts)
+	if attempts != 0 {
+		t.Fatalf("expected no refunded attempts before boundary, got %d", attempts)
+	}
+	if operations := countRows(t, f, "financial_operations"); operations != 0 {
+		t.Fatalf("expected no financial operation before original shift %s is closed, got %d", shift.ID, operations)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no outbox write on rejected refund, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected no local event on rejected refund, before=%d after=%d", eventsBefore, events)
 	}
 }
 
 func TestRefundPaymentAfterFullPaymentWithCheck(t *testing.T) {
 	f := newFixture(t)
-	f.openShift(t)
-	f.openCashSession(t)
+	shift := f.openShift(t)
+	cashSession := f.openCashSession(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -2595,6 +2644,11 @@ func TestRefundPaymentAfterFullPaymentWithCheck(t *testing.T) {
 	if check == nil {
 		t.Fatal("expected check after full payment")
 	}
+	f.closeCashSessionAndShift(t, shift, cashSession, "before-refund")
+	refundShift := f.openShift(t)
+	f.openCashSession(t)
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
 	refundedPayment, err := f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
 		CommandMeta: f.managerEdgeMetaCommand(t, "refund-cmd"),
 		PaymentID:   payment.ID,
@@ -2602,37 +2656,491 @@ func TestRefundPaymentAfterFullPaymentWithCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if refundedPayment.Status != domain.PaymentRefunded {
-		t.Fatalf("expected payment status refunded, got %s", refundedPayment.Status)
+	if refundedPayment.Status != domain.PaymentCaptured {
+		t.Fatalf("expected legacy refund wrapper to keep payment captured, got %s", refundedPayment.Status)
 	}
 	var precheckPaidTotal int64
 	var precheckStatus string
 	if err := f.db.QueryRowContext(f.ctx, `SELECT paid_total, status FROM prechecks WHERE id = ?`, precheck.ID).Scan(&precheckPaidTotal, &precheckStatus); err != nil {
 		t.Fatal(err)
 	}
-	if precheckPaidTotal != 0 {
-		t.Fatalf("expected precheck paid_total 0 after refund, got %d", precheckPaidTotal)
+	if precheckPaidTotal != precheck.Total {
+		t.Fatalf("expected immutable precheck paid_total %d after refund ledger write, got %d", precheck.Total, precheckPaidTotal)
 	}
-	if precheckStatus != string(domain.PrecheckIssued) {
-		t.Fatalf("expected precheck status issued, got %s", precheckStatus)
+	if precheckStatus != string(domain.PrecheckClosed) {
+		t.Fatalf("expected precheck status closed, got %s", precheckStatus)
 	}
 	var checkPaidTotal int64
 	var checkStatus string
 	if err := f.db.QueryRowContext(f.ctx, `SELECT paid_total, status FROM checks WHERE id = ?`, check.ID).Scan(&checkPaidTotal, &checkStatus); err != nil {
 		t.Fatal(err)
 	}
-	if checkPaidTotal != 0 {
-		t.Fatalf("expected check paid_total 0 after refund, got %d", checkPaidTotal)
+	if checkPaidTotal != check.Total {
+		t.Fatalf("expected immutable check paid_total %d after refund ledger write, got %d", check.Total, checkPaidTotal)
 	}
-	if checkStatus != string(domain.CheckRefunded) {
-		t.Fatalf("expected check status refunded, got %s", checkStatus)
+	if checkStatus != string(domain.CheckPaid) {
+		t.Fatalf("expected check status paid, got %s", checkStatus)
 	}
 	var attempts int
 	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM payment_attempts WHERE payment_id = ? AND status = 'refunded'`, payment.ID).Scan(&attempts); err != nil {
 		t.Fatal(err)
 	}
-	if attempts != 1 {
-		t.Fatalf("expected one refunded attempt, got %d", attempts)
+	if attempts != 0 {
+		t.Fatalf("expected no mutable refunded attempts, got %d", attempts)
+	}
+	operations, err := f.repo.ListFinancialOperationsByCheck(f.ctx, check.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(operations) != 1 {
+		t.Fatalf("expected one refund operation, got %d", len(operations))
+	}
+	operation := operations[0]
+	if operation.Type != domain.FinancialOperationRefund || operation.Kind != domain.FinancialOperationFull || operation.Amount != payment.Amount || operation.InventoryDisposition != domain.InventoryNoStockEffect {
+		t.Fatalf("unexpected refund operation: type=%s kind=%s amount=%d disposition=%s", operation.Type, operation.Kind, operation.Amount, operation.InventoryDisposition)
+	}
+	if operation.ShiftID != refundShift.ID || operation.OriginalShiftID != shift.ID {
+		t.Fatalf("unexpected operation shift boundary: shift_id=%s original_shift_id=%s", operation.ShiftID, operation.OriginalShiftID)
+	}
+	if operation.Reason != "legacy_payment_refund" {
+		t.Fatalf("expected default legacy reason, got %q", operation.Reason)
+	}
+	if len(operation.Items) != 1 || operation.Items[0].Scope != domain.FinancialItemPayment || operation.Items[0].PaymentID == nil || *operation.Items[0].PaymentID != payment.ID {
+		t.Fatalf("expected one payment-scope operation item, got %+v", operation.Items)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+1 {
+		t.Fatalf("expected one refund outbox envelope, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore+1 {
+		t.Fatalf("expected one refund local event, before=%d after=%d", eventsBefore, events)
+	}
+	var refundEvents int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM local_event_log WHERE event_type = 'RefundRecorded' AND aggregate_type = 'FinancialOperation' AND aggregate_id = ?`, operation.ID).Scan(&refundEvents); err != nil {
+		t.Fatal(err)
+	}
+	if refundEvents != 1 {
+		t.Fatalf("expected one RefundRecorded local event, got %d", refundEvents)
+	}
+}
+
+func TestRecordCancellationDuringOpenShiftSupportsFullAndRejectsOverCancel(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+		CommandMeta: f.edgeMeta(),
+		PrecheckID:  precheck.ID,
+		Method:      domain.PaymentCash,
+		Amount:      precheck.Total,
+		Currency:    "RUB",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-cancel-full"),
+		CheckID:              check.ID,
+		Reason:               "guest cancelled before shift close",
+		InventoryDisposition: domain.InventoryNoStockEffect,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if operation.Type != domain.FinancialOperationCancellation || operation.Kind != domain.FinancialOperationFull || operation.Amount != check.Total {
+		t.Fatalf("unexpected full cancellation operation: type=%s kind=%s amount=%d", operation.Type, operation.Kind, operation.Amount)
+	}
+	if operation.Status != domain.FinancialOperationRecorded || len(operation.Items) != 1 || operation.Items[0].Scope != domain.FinancialItemWholeCheck {
+		t.Fatalf("unexpected cancellation ledger shape: status=%s items=%+v", operation.Status, operation.Items)
+	}
+	if _, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta: f.managerEdgeMetaCommand(t, "cmd-cancel-full"),
+		CheckID:     check.ID,
+		Reason:      "same offline command replay",
+	}); !errors.Is(err, domain.ErrDuplicateCommand) {
+		t.Fatalf("expected duplicate cancellation command to be rejected, got %v", err)
+	}
+	if _, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta: f.managerEdgeMetaCommand(t, "cmd-cancel-over"),
+		CheckID:     check.ID,
+		Reason:      "second cancellation exceeds check",
+	}); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected over-cancel to conflict, got %v", err)
+	}
+	if operations := countRows(t, f, "financial_operations"); operations != 1 {
+		t.Fatalf("expected one cancellation operation, got %d", operations)
+	}
+	var paymentStatus string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM payments WHERE id = ?`, payment.ID).Scan(&paymentStatus); err != nil {
+		t.Fatal(err)
+	}
+	if paymentStatus != string(domain.PaymentCaptured) {
+		t.Fatalf("expected finalized payment to remain captured, got %s", paymentStatus)
+	}
+	var checkStatus string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM checks WHERE id = ?`, check.ID).Scan(&checkStatus); err != nil {
+		t.Fatal(err)
+	}
+	if checkStatus != string(domain.CheckPaid) {
+		t.Fatalf("expected finalized check to remain paid, got %s", checkStatus)
+	}
+}
+
+func TestRecordCancellationSupportsPartialLineQuantityAndInventoryDisposition(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+		CommandMeta: f.edgeMeta(),
+		PrecheckID:  precheck.ID,
+		Method:      domain.PaymentCash,
+		Amount:      precheck.Total,
+		Currency:    "RUB",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quantity := int64(1)
+	operation, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-cancel-partial-line"),
+		CheckID:              check.ID,
+		OperationKind:        domain.FinancialOperationPartial,
+		InventoryDisposition: domain.InventoryWriteOffWaste,
+		Reason:               "one prepared item cancelled",
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:       domain.FinancialItemOrderLine,
+			OrderLineID: line.ID,
+			Quantity:    quantity,
+			Amount:      1000,
+			Currency:    "RUB",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if operation.Kind != domain.FinancialOperationPartial || operation.InventoryDisposition != domain.InventoryWriteOffWaste {
+		t.Fatalf("unexpected partial cancellation operation: kind=%s disposition=%s", operation.Kind, operation.InventoryDisposition)
+	}
+	if len(operation.Items) != 1 || operation.Items[0].Quantity == nil || *operation.Items[0].Quantity != quantity || operation.Items[0].OrderLineID == nil || *operation.Items[0].OrderLineID != line.ID {
+		t.Fatalf("unexpected partial line item: %+v", operation.Items)
+	}
+	if stockMoves := countRows(t, f, "stock_moves"); stockMoves != 0 {
+		t.Fatalf("expected financial cancellation not to mutate stock_moves, got %d", stockMoves)
+	}
+	_, err = f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-cancel-line-over-quantity"),
+		CheckID:              check.ID,
+		OperationKind:        domain.FinancialOperationPartial,
+		InventoryDisposition: domain.InventoryManualReview,
+		Reason:               "line quantity replay",
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:       domain.FinancialItemOrderLine,
+			OrderLineID: line.ID,
+			Quantity:    2,
+			Amount:      500,
+			Currency:    "RUB",
+		}},
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected line quantity over-cancel to conflict, got %v", err)
+	}
+}
+
+func TestRecordRefundAfterShiftCloseSupportsRepeatedPartialRefunds(t *testing.T) {
+	f := newFixture(t)
+	shift := f.openShift(t)
+	cashSession := f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 2}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.closeCashSessionAndShift(t, shift, cashSession, "partial-refunds")
+	f.openShift(t)
+	f.openCashSession(t)
+	for i, amount := range []int64{700, 300} {
+		operation, err := f.service.RecordRefund(f.ctx, app.RecordCheckRefundCommand{
+			CommandMeta:          f.managerEdgeMetaCommand(t, fmt.Sprintf("cmd-refund-partial-%d", i)),
+			CheckID:              check.ID,
+			OperationKind:        domain.FinancialOperationPartial,
+			InventoryDisposition: domain.InventoryManualReview,
+			Reason:               "partial guest return",
+			Items: []app.FinancialOperationItemCommand{{
+				Scope:    domain.FinancialItemWholeCheck,
+				Amount:   amount,
+				Currency: "RUB",
+			}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if operation.Type != domain.FinancialOperationRefund || operation.Kind != domain.FinancialOperationPartial || operation.Amount != amount {
+			t.Fatalf("unexpected partial refund operation: type=%s kind=%s amount=%d", operation.Type, operation.Kind, operation.Amount)
+		}
+	}
+	_, err = f.service.RecordRefund(f.ctx, app.RecordCheckRefundCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-refund-over"),
+		CheckID:              check.ID,
+		InventoryDisposition: domain.InventoryManualReview,
+		Reason:               "over refund",
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:    domain.FinancialItemWholeCheck,
+			Amount:   1001,
+			Currency: "RUB",
+		}},
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected over-refund to conflict, got %v", err)
+	}
+	total, err := f.repo.SumFinancialOperationAmountByCheck(f.ctx, check.ID, domain.FinancialOperationRefund)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1000 {
+		t.Fatalf("expected recorded partial refunds to sum to 1000, got %d", total)
+	}
+}
+
+func TestRecordRefundSupportsMixedPaymentAllocations(t *testing.T) {
+	f := newFixture(t)
+	shift := f.openShift(t)
+	cashSession := f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cashPayment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMetaCommand("cmd-split-cash"), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: 400, Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cardPayment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMetaCommand("cmd-split-card"), PrecheckID: precheck.ID, Method: domain.PaymentCard, Amount: 600, Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.closeCashSessionAndShift(t, shift, cashSession, "mixed-refund")
+	f.openShift(t)
+	f.openCashSession(t)
+	operation, err := f.service.RecordRefund(f.ctx, app.RecordCheckRefundCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-refund-cash-payment"),
+		CheckID:              check.ID,
+		OperationKind:        domain.FinancialOperationPartial,
+		InventoryDisposition: domain.InventoryNoStockEffect,
+		Reason:               "cash tender return",
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:     domain.FinancialItemPayment,
+			PaymentID: cashPayment.ID,
+			Amount:    cashPayment.Amount,
+			Currency:  "RUB",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(operation.Items) != 1 || operation.Items[0].PaymentID == nil || *operation.Items[0].PaymentID != cashPayment.ID {
+		t.Fatalf("expected refund item to be allocated to cash payment, got %+v", operation.Items)
+	}
+	if cardPayment.Status != domain.PaymentCaptured {
+		t.Fatalf("expected card payment to remain captured, got %s", cardPayment.Status)
+	}
+	_, err = f.service.RecordRefund(f.ctx, app.RecordCheckRefundCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-refund-cash-payment-over"),
+		CheckID:              check.ID,
+		OperationKind:        domain.FinancialOperationPartial,
+		InventoryDisposition: domain.InventoryNoStockEffect,
+		Reason:               "cash tender duplicate",
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:     domain.FinancialItemPayment,
+			PaymentID: cashPayment.ID,
+			Amount:    1,
+			Currency:  "RUB",
+		}},
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected repeated refund over original tender to conflict, got %v", err)
+	}
+}
+
+func TestFinancialOperationLedgerIsAppendOnlyAndPreservesSnapshot(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE menu_items SET name = 'Changed soup', price = 9999 WHERE id = ?`, f.menuItem.ID); err != nil {
+		t.Fatal(err)
+	}
+	stockMovesBefore := countRows(t, f, "stock_moves")
+	operation, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-cancel-snapshot"),
+		CheckID:              check.ID,
+		OperationKind:        domain.FinancialOperationPartial,
+		InventoryDisposition: domain.InventoryReturnToStock,
+		Reason:               "snapshot and inventory disposition check",
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:    domain.FinancialItemWholeCheck,
+			Amount:   100,
+			Currency: "RUB",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := string(operation.Snapshot)
+	if !strings.Contains(snapshot, `"name":"Soup"`) {
+		t.Fatalf("expected financial operation snapshot to preserve original commercial name, got %s", snapshot)
+	}
+	if strings.Contains(snapshot, "Changed soup") || strings.Contains(snapshot, "9999") {
+		t.Fatalf("expected financial operation snapshot not to use changed menu data, got %s", snapshot)
+	}
+	if stockMoves := countRows(t, f, "stock_moves"); stockMoves != stockMovesBefore {
+		t.Fatalf("expected inventory disposition to stay explicit without automatic stock move, before=%d after=%d", stockMovesBefore, stockMoves)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE financial_operations SET reason = 'edited' WHERE id = ?`, operation.ID); err == nil {
+		t.Fatal("expected financial_operations update to be rejected by append-only trigger")
+	}
+	if _, err := f.db.ExecContext(f.ctx, `DELETE FROM financial_operation_items WHERE operation_id = ?`, operation.ID); err == nil {
+		t.Fatal("expected financial_operation_items delete to be rejected by append-only trigger")
+	}
+}
+
+func TestFinancialOperationModifierAndTipScopesRequireExplicitSnapshot(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-cancel-modifier-no-snapshot"),
+		CheckID:              check.ID,
+		OperationKind:        domain.FinancialOperationPartial,
+		InventoryDisposition: domain.InventoryNoStockEffect,
+		Reason:               "modifier scope without snapshot",
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:    domain.FinancialItemModifierLine,
+			Amount:   50,
+			Currency: "RUB",
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "snapshot") {
+		t.Fatalf("expected explicit snapshot validation for modifier/tip scopes, got %v", err)
+	}
+	operation, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-cancel-modifier-tip"),
+		CheckID:              check.ID,
+		OperationKind:        domain.FinancialOperationPartial,
+		InventoryDisposition: domain.InventoryNoStockEffect,
+		Reason:               "modifier and tip scope ledger",
+		Items: []app.FinancialOperationItemCommand{
+			{
+				Scope:    domain.FinancialItemModifierLine,
+				Amount:   50,
+				Currency: "RUB",
+				Snapshot: json.RawMessage(`{"modifier_name":"extra herbs","unit_price_minor":50}`),
+			},
+			{
+				Scope:    domain.FinancialItemTip,
+				Amount:   50,
+				Currency: "RUB",
+				Snapshot: json.RawMessage(`{"tip_policy":"manual","amount_minor":50}`),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(operation.Items) != 2 {
+		t.Fatalf("expected modifier and tip operation items, got %+v", operation.Items)
+	}
+	if operation.Items[0].Scope != domain.FinancialItemModifierLine || !strings.Contains(string(operation.Items[0].Snapshot), "extra herbs") {
+		t.Fatalf("unexpected modifier snapshot: %+v", operation.Items[0])
+	}
+	if operation.Items[1].Scope != domain.FinancialItemTip || !strings.Contains(string(operation.Items[1].Snapshot), "tip_policy") {
+		t.Fatalf("unexpected tip snapshot: %+v", operation.Items[1])
 	}
 }
 

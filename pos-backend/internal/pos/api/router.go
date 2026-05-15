@@ -79,6 +79,8 @@ func NewRouter(service *app.Service) http.Handler {
 
 		r.Get("/checks/{id}", h.getCheck)
 		r.Post("/checks/{id}/reprint", h.reprintCheck)
+		r.Post("/checks/{id}/cancellations", h.recordCheckCancellation)
+		r.Post("/checks/{id}/refunds", h.recordCheckRefund)
 		r.Post("/payments/{id}/refund", h.refundPayment)
 
 		r.Post("/cash-shifts/open", h.openCashSession)
@@ -768,6 +770,30 @@ func (h *Handler) refundPayment(w http.ResponseWriter, r *http.Request) {
 	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.PaymentID = chi.URLParam(r, "id")
 	v, err := h.service.RefundPayment(r.Context(), cmd)
+	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) recordCheckCancellation(w http.ResponseWriter, r *http.Request) {
+	var cmd app.RecordCheckCancellationCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	cmd.CheckID = chi.URLParam(r, "id")
+	v, err := h.service.RecordCancellation(r.Context(), cmd)
+	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) recordCheckRefund(w http.ResponseWriter, r *http.Request) {
+	var cmd app.RecordCheckRefundCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	cmd.CheckID = chi.URLParam(r, "id")
+	v, err := h.service.RecordRefund(r.Context(), cmd)
 	writeCreated(w, r, v, err)
 }
 

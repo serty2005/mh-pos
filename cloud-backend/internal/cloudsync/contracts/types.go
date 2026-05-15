@@ -27,6 +27,8 @@ const (
 	EventCheckReprinted           EventType = "CheckReprinted"
 	EventPaymentCaptured          EventType = "PaymentCaptured"
 	EventPaymentRefunded          EventType = "PaymentRefunded"
+	EventCancellationRecorded     EventType = "CancellationRecorded"
+	EventRefundRecorded           EventType = "RefundRecorded"
 	EventOrderClosed              EventType = "OrderClosed"
 	EventCashSessionOpened        EventType = "CashSessionOpened"
 	EventCashSessionClosed        EventType = "CashSessionClosed"
@@ -163,6 +165,27 @@ type PaymentRefunded = PaymentCaptured
 // CheckRefunded использует check payload shape для подтвержденного возврата чека.
 type CheckRefunded = CheckCreated
 
+type FinancialOperationRecorded struct {
+	ID                   string          `json:"id"`
+	EdgeOperationID      string          `json:"edge_operation_id"`
+	RestaurantID         string          `json:"restaurant_id"`
+	DeviceID             string          `json:"device_id"`
+	ShiftID              string          `json:"shift_id"`
+	OriginalShiftID      string          `json:"original_shift_id"`
+	CheckID              string          `json:"check_id"`
+	PrecheckID           string          `json:"precheck_id"`
+	OperationType        string          `json:"operation_type"`
+	OperationKind        string          `json:"operation_kind"`
+	Status               string          `json:"status"`
+	Amount               int64           `json:"amount"`
+	Currency             string          `json:"currency"`
+	BusinessDateLocal    string          `json:"business_date_local"`
+	InventoryDisposition string          `json:"inventory_disposition"`
+	Reason               string          `json:"reason"`
+	Snapshot             json.RawMessage `json:"snapshot,omitempty"`
+	CreatedAt            time.Time       `json:"created_at"`
+}
+
 type OrderClosed = OrderCreated
 
 type CashSessionOpened struct {
@@ -286,6 +309,8 @@ func ValidateEventPayload(v SyncEnvelope) error {
 		return validatePayload[PaymentCaptured](v)
 	case EventPaymentRefunded:
 		return validatePayload[PaymentRefunded](v)
+	case EventCancellationRecorded, EventRefundRecorded:
+		return validatePayload[FinancialOperationRecorded](v)
 	case EventOrderClosed:
 		return validatePayload[OrderClosed](v)
 	case EventCashSessionOpened:
@@ -333,7 +358,7 @@ func validateOperationalPayload(v SyncEnvelope) error {
 
 func IsKnownEventType(v EventType) bool {
 	switch v {
-	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckReprinted, EventPrecheckCancelled, EventCheckCreated, EventCheckRefunded, EventCheckReprinted, EventPaymentCaptured, EventPaymentRefunded, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
+	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckReprinted, EventPrecheckCancelled, EventCheckCreated, EventCheckRefunded, EventCheckReprinted, EventPaymentCaptured, EventPaymentRefunded, EventCancellationRecorded, EventRefundRecorded, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
 		return true
 	default:
 		return false

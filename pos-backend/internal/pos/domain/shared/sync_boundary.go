@@ -71,6 +71,8 @@ func IsEdgeToCloudOperationalEvent(eventType string) bool {
 		"CheckCreated",
 		"CheckRefunded",
 		"CheckReprinted",
+		"CancellationRecorded",
+		"RefundRecorded",
 		"OrderClosed",
 		"AuthSessionStarted",
 		"AuthSessionRevoked",

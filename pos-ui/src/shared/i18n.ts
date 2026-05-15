@@ -160,7 +160,7 @@ export const i18n = createI18n({
         closedOrders: 'Закрытые заказы',
         refund: 'Вернуть оплату',
         refundReason: 'Причина возврата',
-        refundSuccess: 'Оплата возвращена',
+        refundSuccess: 'Возврат записан',
         chooseTable: 'Выберите стол',
         emptyMenu: 'Меню пока пустое',
         emptyOrder: 'В заказе нет активных позиций',

@@ -155,6 +155,8 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 		"cloud_pairing_codes",
 		"PaymentRefunded",
 		"CheckRefunded",
+		"CancellationRecorded",
+		"RefundRecorded",
 		"pricing_policy",
 		"payments_refunded_count",
 		"cloud_catalog_folders",

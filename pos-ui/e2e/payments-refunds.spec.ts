@@ -52,6 +52,14 @@ type Check = {
   payments?: Payment[];
 };
 
+type Shift = {
+  id: string;
+};
+
+type CashSession = {
+  id: string;
+};
+
 test.describe.configure({ mode: 'serial' });
 
 let demo: DemoBootstrap;
@@ -117,24 +125,27 @@ test('частичные оплаты не создают финальный ч�
   expect(paidOrder.check?.paid_total).toBe(precheck.total);
 });
 
-test('возврат оплаты переводит payment и check в refunded', async ({ request }) => {
+test('compatibility refund records ledger operation without mutating finalized payment/check', async ({ request }) => {
   const { order, precheck } = await createOrderWithPrecheck(request, 0, 1);
   const payment = await capturePayment(request, precheck.id, 'cash', precheck.total);
+
+  await closeCurrentShiftAndCashSession(request);
+  await ensureShiftAndCashSession(request);
 
   const refunded = await post<Payment>(request, `/payments/${payment.id}/refund`, {
     command_id: nextCommandID('refund-payment'),
     reason: 'e2e refund',
   }, headers);
-  expect(refunded.status).toBe('refunded');
+  expect(refunded.status).toBe('captured');
 
   const refundedOrder = await get<Order>(request, `/orders/${order.id}`);
-  expect(refundedOrder.check?.status).toBe('refunded');
-  expect(refundedOrder.check?.paid_total).toBe(0);
+  expect(refundedOrder.check?.status).toBe('paid');
+  expect(refundedOrder.check?.paid_total).toBe(precheck.total);
 
   const closedOrders = await get<Order[]>(request, '/orders/closed?limit=20');
   const closed = closedOrders.find((item) => item.id === order.id);
-  expect(closed?.check?.status).toBe('refunded');
-  expect(closed?.check?.payments?.some((item) => item.id === payment.id && item.status === 'refunded')).toBe(true);
+  expect(closed?.check?.status).toBe('paid');
+  expect(closed?.check?.payments?.some((item) => item.id === payment.id && item.status === 'captured')).toBe(true);
 });
 
 async function ensureShiftAndCashSession(request: APIRequestContext) {
@@ -150,6 +161,21 @@ async function ensureShiftAndCashSession(request: APIRequestContext) {
     opened_by_employee_id: headers['X-Actor-Employee-ID'],
     opening_cash_amount: 0,
   }, headers, [201, 409]);
+}
+
+async function closeCurrentShiftAndCashSession(request: APIRequestContext) {
+  const cashSession = await get<CashSession>(request, '/cash-shifts/current');
+  await post<CashSession>(request, `/cash-shifts/${cashSession.id}/close`, {
+    command_id: nextCommandID('close-cash-session'),
+    closed_by_employee_id: headers['X-Actor-Employee-ID'],
+    closing_cash_amount: 0,
+  }, headers, [200]);
+
+  const shift = await get<Shift>(request, '/employee-shifts/current');
+  await post<Shift>(request, `/employee-shifts/${shift.id}/close`, {
+    command_id: nextCommandID('close-shift'),
+    closed_by_employee_id: headers['X-Actor-Employee-ID'],
+  }, headers, [200]);
 }
 
 async function createOrderWithPrecheck(request: APIRequestContext, tableIndex: number, quantity: number) {

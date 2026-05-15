@@ -19,9 +19,9 @@
 | Cash session/drawer event | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Order/order line | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Precheck | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
-| Payment | Edge | Yes | Edge -> Cloud operational events for capture and refund | реализовано сейчас |
-| Payment refund | Edge | Yes | `PaymentRefunded` is confirmed Edge -> Cloud operational event | реализовано сейчас |
-| Check | Edge | Generated after full payment/refund status | `CheckCreated` and `CheckRefunded` are confirmed Edge -> Cloud operational events | реализовано сейчас |
+| Payment | Edge | Yes | Edge -> Cloud operational events for capture | реализовано сейчас |
+| Financial operation | Edge | Yes | `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud operational events | реализовано сейчас |
+| Check | Edge | Generated after full payment; finalized checks are not rewritten by cancellation/refund | `CheckCreated` is current Edge -> Cloud operational event; `CheckRefunded` is legacy accepted | реализовано сейчас |
 | Tax/pricing policy reference | Cloud | Edge read model only | `pricing_policy` Cloud -> Edge stream for `tax_profiles`, `tax_rules`, `service_charge_rules`, `pricing_policies` | реализовано сейчас |
 | Operational order adjustments | Edge | Yes while order is open | runtime-команды; будущие policy ids могут ограничивать допустимые варианты | реализовано сейчас |
 | Stock document/move | Inventory context | Not from cashier runtime | planned | реализована только основа |
@@ -52,8 +52,9 @@
 
 Реализовано сейчас:
 
-- `PaymentRefunded` и `CheckRefunded` принимаются Cloud receiver и сохраняются как operational events;
-- Cloud shift finance foundation хранит refund counters/totals из этих events.
+- `CancellationRecorded` и `RefundRecorded` принимаются Cloud receiver и сохраняются как operational events;
+- `PaymentRefunded` и `CheckRefunded` остаются legacy accepted event types для старых payloads;
+- Cloud shift finance foundation не является полной projection для financial operation ledger.
 
 Запланировано далее:
 

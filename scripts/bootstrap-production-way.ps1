@@ -144,13 +144,13 @@ function Invoke-RuntimeSmoke {
     command_id = New-CommandId "open-employee-shift"
     restaurant_id = $RestaurantId
     opened_by_employee_id = $ManagerEmployeeId
-  } -Headers $headers -ExpectedStatus @(201, 409)
+  } -Headers $headers -ExpectedStatus @(201)
   $cashShift = Invoke-JsonPost "$edgeApi/cash-shifts/open" @{
     command_id = New-CommandId "open-cash-shift"
     restaurant_id = $RestaurantId
     opened_by_employee_id = $ManagerEmployeeId
     opening_cash_amount = 0
-  } -Headers $headers -ExpectedStatus @(201, 409)
+  } -Headers $headers -ExpectedStatus @(201)
 
   Write-Step "Creating order with two dishes"
   $order = Invoke-JsonPost "$edgeApi/orders" @{
@@ -190,26 +190,69 @@ function Invoke-RuntimeSmoke {
     throw "Expected closed paid order after full payment."
   }
 
-  Write-Step "Refunding payment and checking local sync artifacts"
-  $refund = Invoke-JsonPost "$edgeApi/payments/$($payment.id)/refund" @{
-    command_id = New-CommandId "refund-payment"
-    reason = "production-way smoke refund"
+  Write-Step "Closing original shift before refund boundary"
+  Invoke-JsonPost "$edgeApi/cash-shifts/$($cashShift.id)/close" @{
+    command_id = New-CommandId "close-cash-shift-before-refund"
+    closed_by_employee_id = $ManagerEmployeeId
+    closing_cash_amount = 0
+  } -Headers $headers -ExpectedStatus @(200) | Out-Null
+  Invoke-JsonPost "$edgeApi/employee-shifts/$($shift.id)/close" @{
+    command_id = New-CommandId "close-employee-shift-before-refund"
+    closed_by_employee_id = $ManagerEmployeeId
+  } -Headers $headers -ExpectedStatus @(200) | Out-Null
+
+  Write-Step "Opening refund shift and cash shift"
+  $refundShift = Invoke-JsonPost "$edgeApi/employee-shifts/open" @{
+    command_id = New-CommandId "open-refund-employee-shift"
+    restaurant_id = $RestaurantId
+    opened_by_employee_id = $ManagerEmployeeId
   } -Headers $headers -ExpectedStatus @(201)
-  if ($refund.status -ne "refunded") {
-    throw "Expected refunded payment, got $($refund.status)"
+  $refundCashShift = Invoke-JsonPost "$edgeApi/cash-shifts/open" @{
+    command_id = New-CommandId "open-refund-cash-shift"
+    restaurant_id = $RestaurantId
+    opened_by_employee_id = $ManagerEmployeeId
+    opening_cash_amount = 0
+  } -Headers $headers -ExpectedStatus @(201)
+
+  Write-Step "Recording refund operation and checking local sync artifacts"
+  $refund = Invoke-JsonPost "$edgeApi/checks/$($closedOrder.check.id)/refunds" @{
+    command_id = New-CommandId "record-refund"
+    operation_kind = "full"
+    inventory_disposition = "no_stock_effect"
+    reason = "production-way smoke refund"
+    items = @(
+      @{
+        scope = "payment"
+        payment_id = $payment.id
+        amount = $payment.amount
+        currency = $payment.currency
+        snapshot = @{
+          payment_id = $payment.id
+          method = $payment.method
+          amount = $payment.amount
+          currency = $payment.currency
+        }
+      }
+    )
+  } -Headers $headers -ExpectedStatus @(201)
+  if ($refund.operation_type -ne "refund" -or $refund.status -ne "recorded") {
+    throw "Expected recorded refund operation, got operation_type=$($refund.operation_type), status=$($refund.status)"
   }
   $outbox = Invoke-JsonGet "$edgeApi/sync/outbox?limit=50" -Headers $headers
   $localEvents = Invoke-JsonGet "$edgeApi/sync/local-events?limit=50" -Headers $headers
-  Assert-JsonContains $outbox $payment.id "Expected payment/order events in Edge outbox."
+  Assert-JsonContains $outbox $refund.id "Expected refund operation event in Edge outbox."
   Assert-JsonContains $localEvents $order.id "Expected order events in Edge local event log."
 
   return [pscustomobject]@{
-    shift_id = if ($shift) { $shift.id } else { $null }
-    cash_shift_id = if ($cashShift) { $cashShift.id } else { $null }
+    shift_id = $refundShift.id
+    cash_shift_id = $refundCashShift.id
+    original_shift_id = $shift.id
+    original_cash_shift_id = $cashShift.id
     order_id = $order.id
     precheck_id = $precheck.id
     payment_id = $payment.id
     check_id = $closedOrder.check.id
+    refund_operation_id = $refund.id
     refund_status = $refund.status
   }
 }

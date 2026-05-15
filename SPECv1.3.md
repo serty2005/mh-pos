@@ -11,6 +11,7 @@
 - `pos-backend/internal/pos/api/router.go`
 - `pos-backend/internal/pos/app/precheck/service.go`
 - `pos-backend/internal/pos/app/check/service.go`
+- `pos-backend/internal/pos/app/check/financial_operations.go`
 - `pos-backend/internal/pos/app/mastersync/service.go`
 - `pos-backend/migrations/sqlite/001_init.sql`
 - `cloud-backend/migrations/postgres/001_init.sql`
@@ -33,7 +34,7 @@
 - service catalog items as sellable POS items;
 - cashier modifier selection flow for menu items with modifier groups;
 - controlled precheck/check reprint from immutable snapshots;
-- payment refund route and UI flow;
+- append-only cancellation/refund ledger и compatibility payment refund UI flow;
 - Edge -> Cloud operational outbox foundation;
 - Cloud -> Edge master-data ingest for supported streams.
 
@@ -92,6 +93,8 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
 - `POST /api/v1/payments/{id}/refund`
 - `GET /api/v1/checks/{id}`
 - `POST /api/v1/checks/{id}/reprint`
+- `POST /api/v1/checks/{id}/cancellations`
+- `POST /api/v1/checks/{id}/refunds`
 
 Инварианты:
 
@@ -101,10 +104,40 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
 - Provider metadata (`provider_name`, `provider_transaction_id`, `provider_reference`, `fingerprint_hash`) существует как metadata, а не как подтверждение PSP module.
 - Partial payments разрешены до суммы precheck total.
 - Final check создается только после полной оплаты active precheck.
-- Refund переводит captured payment в `refunded`, уменьшает `paid_total` precheck и, если check уже есть, уменьшает `paid_total` check.
-- Refund пишет подтвержденные Edge -> Cloud operational events `PaymentRefunded` и, если затронут final check, `CheckRefunded`.
 - Check snapshot включает precheck snapshot и payments snapshot.
 - Check snapshot сохраняет selected modifiers через immutable precheck snapshot; reprint/refund не обращаются к текущему каталогу для восстановления старых modifiers.
+- Finalized check/payment/precheck после создания final check не переписываются cancellation/refund flow.
+- `/payments/{id}/refund` является compatibility wrapper поверх `/checks/{id}/refunds`: он требует captured payment и записывает refund operation scope `payment`; статус payment остается `captured`.
+
+### Cancellation / Refund Boundary
+
+Реализовано сейчас:
+
+- Cancellation и refund являются разными operation types в append-only ledger `financial_operations`.
+- Operation kind: `full` или `partial`.
+- Operation item scopes: `whole_check`, `order_line`, `modifier_line`, `service_charge`, `tip`, `payment`.
+- Whole check, specific order line, quantity of order line и split payment allocation проверяются backend service.
+- Modifier/service/tip scopes поддержаны как ledger scopes с explicit snapshot; cashier UI уже поддерживает выбор modifiers в заказе, но отдельного UI для partial modifier/service/tip cancellation/refund сейчас нет.
+- Inventory disposition фиксируется явно: `no_stock_effect`, `return_to_stock`, `write_off_waste`, `manual_review`.
+- Financial operation не создает `stock_moves` автоматически.
+- No-over-refund/no-over-cancel проверяется по сумме check; для order line quantity проверяется сумма уже записанных quantities по operation type.
+- `CancellationRecorded` и `RefundRecorded` являются текущими Edge -> Cloud operational events для этих операций.
+
+Boundary rules:
+
+- Cancellation применяется в пределах открытой исходной personal shift/current cash session и той же `business_date_local`.
+- Refund применяется после закрытия исходной personal shift или на более поздней `business_date_local`; для записи refund все равно нужна текущая open cash session.
+- Refund денег не означает возврат товара на склад; stock effect задается только `inventory_disposition` и требует отдельного inventory service, которого в cashier runtime сейчас нет.
+- Legacy events `PaymentRefunded` и `CheckRefunded` остаются распознаваемыми sync event types для старых payloads, но новый runtime пишет `RefundRecorded`.
+
+Не реализовано сейчас:
+
+- отдельные runtime aggregates `business_day` и `fiscal_shift`;
+- отдельный aggregate `cashier_shift`; текущий cashier shift представлен personal employee shift/table `shifts`;
+- fiscal receipt/correction document generation;
+- PSP refund integration;
+- cashier UI для line/quantity/modifier/service/tip partial cancellation/refund;
+- automatic refund-to-original-tender policy beyond captured payment allocation cap.
 
 ## Master Data And Sync
 
@@ -126,7 +159,7 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
 - `menu` применяет menu items, menu-visible `item_type`, modifier groups/options and menu item modifier group links.
 - Unknown JSON fields и unsupported stream names отклоняются до partial apply.
 
-Остается только основа:
+Реализована только основа:
 
 - SQLite schema содержит `recipe_versions`, `recipe_lines`, `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`.
 - Cloud schema содержит recipe/inventory-adjacent foundation для recipe items, semi-finished products и publications.
@@ -203,6 +236,7 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
 - recipe expansion runtime;
 - modifier-to-recipe expansion;
 - inventory consumption trigger from check/KDS;
+- automatic stock return on cancellation/refund;
 - stock movement app services for cashier runtime.
 
 Запланировано до пилота как boundary decision, если inventory входит в pilot acceptance:
@@ -213,6 +247,7 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
 - Для semi-finished/preparation сначала списывается баланс заготовки; разворачивание в компоненты при нехватке разрешается только если эта policy отдельно утверждена.
 - Order/precheck/check snapshots должны хранить достаточно данных, чтобы inventory/fiscal/reporting logic не зависела от текущего menu state.
 - Inventory changes должны происходить только через immutable stock documents / stock moves, а не прямым mutation counters.
+- Cancellation/refund flow может фиксировать только `inventory_disposition`; фактическое движение склада должно выполняться отдельным Inventory service.
 
 После пилота:
 
@@ -228,6 +263,8 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
 - Provider/reference fields являются payment metadata.
 - Нет подтвержденного payment processor module.
 - Нет fiscal adapter/fiscalization module.
+- Final check считается finalized internal POS document после полной оплаты, но не fiscalized document.
+- Reprint precheck/check является POS snapshot reprint; fiscal document reprint сейчас не реализован.
 
 Запланировано далее:
 
@@ -235,6 +272,7 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
 - Payment processor отвечает за authorization/capture/refund integration с провайдером.
 - Fiscal adapter отвечает за legal/fiscal receipt mapping и устройство/сервис фискализации.
 - Нельзя смешивать PSP state и fiscal/legal receipt state в одной модели.
+- Void/correction/refund fiscal document semantics должны появиться только вместе с fiscal adapter contract.
 
 ## Persistence And Analytics
 

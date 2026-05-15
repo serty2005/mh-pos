@@ -29,7 +29,7 @@ Cashier UI in `pos-ui/src/pages/PosPage.vue` разделен на переис�
 - final check display after full payment;
 - reprint final check copy;
 - closed orders list в отдельном drawer;
-- refund captured payment from closed orders when operator has permission and cash session is open.
+- compatibility refund for captured payment from closed orders when operator has permission and cash session is open.
 - cash drawer events в отдельном dialog;
 - sync status, outbox и local events в отдельном drawer.
 
@@ -39,8 +39,9 @@ UI calls backend APIs for authoritative state and does not compute authoritative
 
 Refund:
 
-- Backend capability is implemented through `POST /api/v1/payments/{id}/refund`.
-- Cashier UI capability is also implemented for closed orders with captured payments.
+- Backend ledger capability is implemented through `POST /api/v1/checks/{id}/cancellations` and `POST /api/v1/checks/{id}/refunds`.
+- Cashier UI capability is implemented only through the compatibility route `POST /api/v1/payments/{id}/refund` for closed orders with captured payments.
+- The compatibility route records a refund ledger operation and does not make UI authoritative for payment/check mutation.
 - UI shows refund action only when `pos.payment.refund` is granted and current cash session exists.
 - Backend remains final enforcement layer.
 
@@ -64,6 +65,8 @@ Reprint:
 
 - discount/surcharge editor in cashier UI;
 - tax profile editor in cashier UI;
+- check-level full/partial cancellation UI;
+- line/quantity/modifier/service-charge/tip refund UI;
 - inventory consumption UI.
 
 Запланировано далее:
@@ -125,4 +128,5 @@ Requirements:
 - real PSP terminal integration UI;
 - fiscal device operation UI;
 - full inventory/procurement UI;
+- rich cancellation/refund ledger UI beyond captured-payment compatibility action;
 - discount/surcharge cashier editor and tax policy UI on top of existing backend pricing foundation.

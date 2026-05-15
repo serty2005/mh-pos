@@ -67,6 +67,9 @@ type AddSurchargeCommand = apppricing.AddSurchargeCommand
 type CapturePaymentCommand = appcheck.CapturePaymentCommand
 type RefundPaymentCommand = appcheck.RefundPaymentCommand
 type ReprintCheckCommand = appcheck.ReprintCheckCommand
+type FinancialOperationItemCommand = appcheck.FinancialOperationItemCommand
+type RecordCheckCancellationCommand = appcheck.RecordCheckCancellationCommand
+type RecordCheckRefundCommand = appcheck.RecordCheckRefundCommand
 type CloseOrderCommand = apporder.CloseOrderCommand
 type OpenCashSessionCommand = appcash.OpenCashSessionCommand
 type CloseCashSessionCommand = appcash.CloseCashSessionCommand
@@ -415,6 +418,14 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 
 func (s *Service) RefundPayment(ctx context.Context, cmd RefundPaymentCommand) (*domain.Payment, error) {
 	return s.checks.RefundPayment(ctx, cmd)
+}
+
+func (s *Service) RecordCancellation(ctx context.Context, cmd RecordCheckCancellationCommand) (*domain.FinancialOperation, error) {
+	return s.checks.RecordCancellation(ctx, cmd)
+}
+
+func (s *Service) RecordRefund(ctx context.Context, cmd RecordCheckRefundCommand) (*domain.FinancialOperation, error) {
+	return s.checks.RecordRefund(ctx, cmd)
 }
 
 func (s *Service) ReprintCheck(ctx context.Context, cmd ReprintCheckCommand) (*domain.ReprintDocument, error) {

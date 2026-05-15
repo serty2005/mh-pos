@@ -13,7 +13,8 @@
 - POS cashier UI показывает отдельную секцию услуг, открывает выбор modifiers для позиций с modifier groups и отображает выбранные modifiers в активном заказе.
 - `CancelPrecheck` требует manager override, проверяет PIN/permission и возвращает unpaid active precheck order в `open`.
 - Оплата выполняется через `precheck_id`; partial payments разрешены; final check создается только после полной оплаты.
-- `POST /api/v1/payments/{id}/refund` переводит captured payment в `refunded` и уменьшает `paid_total` у precheck/check.
+- `POST /api/v1/checks/{id}/cancellations` и `POST /api/v1/checks/{id}/refunds` пишут append-only ledger `financial_operations`/`financial_operation_items` для full/partial cancellation и refund без мутации finalized payment/precheck/check.
+- `POST /api/v1/payments/{id}/refund` оставлен как compatibility wrapper: он записывает refund operation по payment allocation и не переводит payment/check обратно в mutable состояние.
 - Reprint precheck/check строится из immutable snapshot.
 - Cloud -> Edge master-data ingest в POS Edge runtime поддерживает потоки `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
 - Cloud/Edge master data разделяет menu categories, catalog folders и tags; catalog/menu publication передает folders, folder parameters, tags, item tags, services и modifier groups/options/links.
@@ -22,6 +23,7 @@
 Вне текущего runtime:
 
 - automatic recipe expansion / stock consumption engine;
+- fiscal shift/business day сущности как отдельные runtime aggregates;
 - real payment processor module, PSP webhooks и fiscal adapter;
 - ClickHouse runtime pipeline;
 - подтвержденный `sqlc` persistence rollout.
