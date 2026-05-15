@@ -81,11 +81,12 @@
 
 Реализовано сейчас:
 
-- `GET /api/v1/employee-shifts/current`, `GET /api/v1/cash-shifts/current` и `GET /api/v1/orders/current?table_id=...` используют `404 NOT_FOUND` как empty state, когда текущая сущность отсутствует.
-- Это не retryable error и не означает инфраструктурный сбой. Cashier UI превращает такой `404` в `null` через optional read helper и показывает состояние "нет открытой смены/кассовой смены/активного заказа".
+- `GET /api/v1/employee-shifts/current` возвращает `200` с JSON `null`, когда у authenticated employee нет открытой личной смены.
+- `GET /api/v1/cash-shifts/current` и `GET /api/v1/orders/current?table_id=...` пока используют `404 NOT_FOUND` как empty state, когда текущая сущность отсутствует.
+- Эти empty states не retryable и не означают инфраструктурный сбой. Cashier UI превращает `200 null` или optional `404` в `null` через optional read helper и показывает состояние "нет открытой смены/кассовой смены/активного заказа".
 - `GET /api/v1/employee-shifts/current` ищет текущую личную смену по authenticated employee в restaurant context, а не по устройству.
 - `GET /api/v1/cash-shifts/current` ищет открытую кассовую смену по устройству из authenticated request context.
-- Переход на `200 null` для этих optional current endpoints не реализован сейчас и требует согласованного изменения backend, UI, tests и документации.
+- `node_device_id` в query/header остается частью authenticated device/session metadata; он не выбирает personal employee shift вместо actor session.
 
 ## Cashier Flow
 

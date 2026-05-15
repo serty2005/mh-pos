@@ -39,7 +39,7 @@ Internal cause пишется только в structured backend log.
 | `SESSION_CONTEXT_MISMATCH` | 403 | `errors.session.contextMismatch` | `node_device_id`/`client_device_id` не совпадает с session context | Modal с безопасным объяснением, без destructive logout | no | WARN | Mask device/session ids в логах |
 | `PERMISSION_DENIED` | 403 | `errors.permission` | Actor session активна, но permission отсутствует | Modal "Недостаточно прав", не делать logout | no | WARN | Не возвращать required permission id, если это раскрывает внутреннюю политику |
 | `FORBIDDEN` | 403 | `errors.permission` | Общий ожидаемый отказ доступа | Modal "Недостаточно прав" | no | WARN | Без секретов |
-| `NOT_FOUND` | 404 | `errors.not_found` | Сущность не найдена | Compact notice или modal для blocking flow; для optional current reads UI может трактовать как empty state | no | WARN | Не раскрывать SQL/query details |
+| `NOT_FOUND` | 404 | `errors.not_found` | Сущность не найдена | Compact notice или modal для blocking flow; optional cash-shift/order current reads UI может трактовать как empty state | no | WARN | Не раскрывать SQL/query details |
 | `CONFLICT` | 409 | `errors.conflict` | Нарушен текущий state/business invariant | Modal с предложением обновить состояние; payment 409 требует refetch order/precheck/check/cash session без auto-retry оплаты | no | WARN | Без internal state dump |
 | `DUPLICATE_PIN` | 409 | `errors.conflict_duplicate_pin` | PIN совпал с несколькими active employees | Modal с бизнес-сообщением, не показывать PIN | no | WARN | PIN не возвращается и не логируется |
 | `ACTIVE_PRECHECK_CONFLICT` | 409 | `errors.conflict_active_precheck` | Для заказа уже есть активный precheck | Modal с предложением обновить заказ/precheck | no | WARN | Без raw domain error |
@@ -50,6 +50,7 @@ Internal cause пишется только в structured backend log.
 Примечания:
 
 - реализовано сейчас: `POST /api/v1/system/provisioning/pair-via-license` мапит ожидаемые `PAIRING_CODE_INVALID` и `PAIRING_CODE_EXPIRED` от License Server в `400 VALIDATION_FAILED`, а не в `500 INTERNAL_ERROR`; внутренняя причина остается только в structured log и `edge_provisioning_state.last_error`.
+- реализовано сейчас: `GET /api/v1/employee-shifts/current` при отсутствии открытой личной смены возвращает `200 null`, а не `404 NOT_FOUND`; это empty state, а не error contract.
 - реализовано сейчас: `POST /api/v1/prechecks/{id}/payments` возвращает `409 CONFLICT` / `errors.conflict` для state conflicts, включая отсутствие открытой кассовой смены, несовпадение кассовой смены с личной сменой заказа, stale/inactive precheck, overpayment и уже созданный final check. Backend не возвращает raw internal reason в response; UI обязан показать безопасное бизнес-сообщение, обновить состояние заказа/precheck/check/current cash session и не повторять оплату автоматически.
 
 ## Поведение логирования

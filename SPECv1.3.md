@@ -50,6 +50,25 @@
 
 ## Current Runtime Contract
 
+### Shift And Cash Session
+
+Реализовано сейчас:
+
+- `POST /api/v1/employee-shifts/open`
+- `POST /api/v1/employee-shifts/{id}/close`
+- `GET /api/v1/employee-shifts/current`
+- `GET /api/v1/employee-shifts/recent`
+- `POST /api/v1/cash-shifts/open`
+- `POST /api/v1/cash-shifts/{id}/close`
+- `GET /api/v1/cash-shifts/current`
+
+Инварианты:
+
+- Personal employee shift (`shifts`) и device cash session (`cash_sessions`) являются разными runtime concepts.
+- `GET /api/v1/employee-shifts/current` ищет открытую личную смену по authenticated employee в restaurant context; query/header `node_device_id` является session/device metadata, а не ключом выбора личной смены.
+- Если у authenticated employee нет открытой личной смены, `GET /api/v1/employee-shifts/current` возвращает `200 null`.
+- `GET /api/v1/cash-shifts/current` ищет открытую cash session по authenticated device context; empty state для cash session остается `404 NOT_FOUND` и трактуется POS UI как optional `null`.
+
 ### Order
 
 Реализовано сейчас:

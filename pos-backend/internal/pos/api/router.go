@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -553,7 +554,7 @@ func (h *Handler) currentShift(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.GetCurrentShift(r.Context(), meta)
-	writeOK(w, r, v, err)
+	writeOptionalOK(w, r, v, err)
 }
 
 func (h *Handler) recentShifts(w http.ResponseWriter, r *http.Request) {
@@ -912,6 +913,16 @@ func writeOK(w http.ResponseWriter, r *http.Request, v any, err error) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, v)
+}
+
+func writeOptionalOK(w http.ResponseWriter, r *http.Request, v any, err error) {
+	if errors.Is(err, domain.ErrNotFound) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("null\n"))
+		return
+	}
+	writeOK(w, r, v, err)
 }
 
 func setEdgeOrigin(meta *app.CommandMeta) {
