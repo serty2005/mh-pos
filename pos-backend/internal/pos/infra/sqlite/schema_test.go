@@ -298,7 +298,7 @@ func TestActiveSQLiteMigrationPathUsesSingleManagedCanonicalFile(t *testing.T) {
 			migrations = append(migrations, entry.Name())
 		}
 	}
-	if len(migrations) != 3 || migrations[0] != "001_init.sql" || migrations[1] != "002_runtime_schema_repair.sql" || migrations[2] != "003_pricing_policy_sync_foundation.sql" {
+	if len(migrations) != 4 || migrations[0] != "001_init.sql" || migrations[1] != "002_runtime_schema_repair.sql" || migrations[2] != "003_pricing_policy_sync_foundation.sql" || migrations[3] != "004_catalog_v2_modifiers_runtime.sql" {
 		t.Fatalf("expected ordered managed sqlite migration files, got %+v", migrations)
 	}
 }

@@ -39,12 +39,13 @@ import {
   retryFailedOutbox,
   voidOrderLine,
   type CashDrawerEventType,
+  type SelectedModifierPayload,
 } from '../../shared/api';
 import { currencyInputStep, formatMinorCurrency, minorToMoney, moneyToMinor } from '../../shared/currency';
 import { displayErrorMessageKey, useErrorHandling } from '../../shared/errorHandling';
 import { hasPermission, permissionCatalog } from '../../shared/rbac';
 import { resolveProtectedPosFallback } from '../../shared/sessionGuards';
-import type { ClosedOrder, Order } from '../../shared/schemas';
+import type { ClosedOrder, MenuItem, Order } from '../../shared/schemas';
 import { useAuthStore } from '../../stores/auth';
 
 export function useCashierTerminal() {
@@ -77,6 +78,10 @@ export function useCashierTerminal() {
   const refundDialog = ref(false);
   const refundPaymentId = ref('');
   const refundReason = ref('');
+  const modifierDialog = ref(false);
+  const modifierMenuItem = ref<MenuItem | null>(null);
+  const modifierQuantities = ref<Record<string, number>>({});
+  const modifierValidationKey = ref('');
 
   const grantedPermissions = computed(() => auth.actor?.permissions ?? []);
   const canViewFloor = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.floorView));
@@ -180,11 +185,47 @@ export function useCashierTerminal() {
   });
   const activeLines = computed(() => activeOrder.value?.lines.filter((line) => line.status === 'active') ?? []);
   const activeMenuItems = computed(() => menu.data.value?.filter((item) => item.active) ?? []);
+  const regularMenuItems = computed(() => activeMenuItems.value.filter((item) => item.item_type !== 'service'));
+  const serviceMenuItems = computed(() => activeMenuItems.value.filter((item) => item.item_type === 'service'));
   const visibleMenuItems = computed(() => {
     const query = menuSearch.value.trim().toLocaleLowerCase('ru-RU');
-    if (!query) return activeMenuItems.value;
-    return activeMenuItems.value.filter((item) => item.name.toLocaleLowerCase('ru-RU').includes(query));
+    if (!query) return regularMenuItems.value;
+    return regularMenuItems.value.filter((item) => item.name.toLocaleLowerCase('ru-RU').includes(query));
   });
+  const visibleServiceItems = computed(() => {
+    const query = menuSearch.value.trim().toLocaleLowerCase('ru-RU');
+    if (!query) return serviceMenuItems.value;
+    return serviceMenuItems.value.filter((item) => item.name.toLocaleLowerCase('ru-RU').includes(query));
+  });
+  const modifierGroupsForDialog = computed(() => modifierMenuItem.value?.modifier_groups.filter((group) => group.active && group.options.some((option) => option.active)) ?? []);
+  const selectedModifierPayload = computed<SelectedModifierPayload[]>(() => {
+    const item = modifierMenuItem.value;
+    if (!item) return [];
+    const payload: SelectedModifierPayload[] = [];
+    for (const group of modifierGroupsForDialog.value) {
+      for (const option of group.options) {
+        const quantity = modifierQuantities.value[option.id] ?? 0;
+        if (quantity > 0) {
+          payload.push({
+            modifier_group_id: group.id,
+            modifier_option_id: option.id,
+            quantity,
+          });
+        }
+      }
+    }
+    return payload;
+  });
+  const selectedModifierTotal = computed(() => {
+    let total = 0;
+    for (const group of modifierGroupsForDialog.value) {
+      for (const option of group.options) {
+        total += (modifierQuantities.value[option.id] ?? 0) * option.price_minor;
+      }
+    }
+    return total;
+  });
+  const canSubmitModifierSelection = computed(() => Boolean(modifierMenuItem.value && validateModifierSelection() === ''));
 
   const syncStatus = useQuery({
     queryKey: ['sync-status', auth.sessionId],
@@ -295,8 +336,11 @@ export function useCashierTerminal() {
   });
 
   const addLineMutation = useMutation({
-    mutationFn: (menuItemId: string) => addOrderLine(activeOrder.value?.id ?? '', menuItemId, 1),
-    onSuccess: refreshOrder,
+    mutationFn: (payload: { menuItemId: string; selectedModifiers?: SelectedModifierPayload[] }) => addOrderLine(activeOrder.value?.id ?? '', payload.menuItemId, 1, payload.selectedModifiers ?? []),
+    onSuccess() {
+      closeModifierDialog();
+      void refreshOrder();
+    },
     onError: showBusinessError,
   });
 
@@ -451,6 +495,59 @@ export function useCashierTerminal() {
     voidLineMutation.mutate(lineId);
   }
 
+  function openMenuItem(item: MenuItem) {
+    const groups = item.modifier_groups.filter((group) => group.active && group.options.some((option) => option.active));
+    if (groups.length === 0) {
+      addLineMutation.mutate({ menuItemId: item.id });
+      return;
+    }
+    modifierMenuItem.value = item;
+    modifierQuantities.value = {};
+    modifierValidationKey.value = '';
+    modifierDialog.value = true;
+  }
+
+  function modifierGroupCount(groupId: string) {
+    const group = modifierGroupsForDialog.value.find((item) => item.id === groupId);
+    if (!group) return 0;
+    return group.options.reduce((sum, option) => sum + (modifierQuantities.value[option.id] ?? 0), 0);
+  }
+
+  function changeModifierQuantity(optionId: string, nextQuantity: number) {
+    modifierValidationKey.value = '';
+    modifierQuantities.value = {
+      ...modifierQuantities.value,
+      [optionId]: Math.max(0, nextQuantity),
+    };
+  }
+
+  function validateModifierSelection() {
+    for (const group of modifierGroupsForDialog.value) {
+      const count = modifierGroupCount(group.id);
+      if (group.required && count === 0) return 'pos.modifierRequired';
+      if (count < group.min_count) return 'pos.modifierMin';
+      if (group.max_count > 0 && count > group.max_count) return 'pos.modifierMax';
+    }
+    return '';
+  }
+
+  function submitModifierSelection() {
+    const validationKey = validateModifierSelection();
+    if (validationKey) {
+      modifierValidationKey.value = validationKey;
+      return;
+    }
+    if (!modifierMenuItem.value) return;
+    addLineMutation.mutate({ menuItemId: modifierMenuItem.value.id, selectedModifiers: selectedModifierPayload.value });
+  }
+
+  function closeModifierDialog() {
+    modifierDialog.value = false;
+    modifierMenuItem.value = null;
+    modifierQuantities.value = {};
+    modifierValidationKey.value = '';
+  }
+
   function pay(method: 'cash' | 'card') {
     paymentMutation.mutate(method);
   }
@@ -556,6 +653,10 @@ export function useCashierTerminal() {
     syncDrawer,
     refundDialog,
     refundReason,
+    modifierDialog,
+    modifierMenuItem,
+    modifierQuantities,
+    modifierValidationKey,
     canOpenShift,
     canCloseShift,
     canOpenCashSession,
@@ -595,7 +696,13 @@ export function useCashierTerminal() {
     activeOrder,
     activeLines,
     activeMenuItems,
+    regularMenuItems,
+    serviceMenuItems,
     visibleMenuItems,
+    visibleServiceItems,
+    modifierGroupsForDialog,
+    selectedModifierTotal,
+    canSubmitModifierSelection,
     activePrecheck,
     latestPrecheck,
     finalCheckData,
@@ -624,6 +731,11 @@ export function useCashierTerminal() {
     retrySyncMutation,
     selectHall,
     selectTable,
+    openMenuItem,
+    modifierGroupCount,
+    changeModifierQuantity,
+    submitModifierSelection,
+    closeModifierDialog,
     changeQuantity,
     voidLine,
     pay,

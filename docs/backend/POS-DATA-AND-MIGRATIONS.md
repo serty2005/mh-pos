@@ -24,17 +24,18 @@ Managed files:
 - `pos-backend/migrations/sqlite/001_init.sql`
 - `pos-backend/migrations/sqlite/002_runtime_schema_repair.sql`
 - `pos-backend/migrations/sqlite/003_pricing_policy_sync_foundation.sql`
+- `pos-backend/migrations/sqlite/004_catalog_v2_modifiers_runtime.sql`
 
 Таблицы, реализованные сейчас:
 
 - `restaurants`, `devices`, `edge_node_identity`, `edge_provisioning_state`, `client_devices`
 - `roles`, `employees`, `auth_sessions`
 - `halls`, `tables`
-- `catalog_items`, `menu_items`, `tax_profiles`, `tax_rules`
+- `catalog_items`, `catalog_folders`, `catalog_folder_parameters`, `catalog_tags`, `catalog_item_tags`, `menu_items`, `modifier_groups`, `modifier_options`, `menu_item_modifier_groups`, `tax_profiles`, `tax_rules`
 - `shifts`, `cash_sessions`, `cash_drawer_events`
 - `orders`, `order_lines`
 - `prechecks`, `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`, `payments`, `payment_attempts`, `checks`
-- `order_line_discounts`, `order_level_discounts`, `order_surcharges`, `service_charge_rules`
+- `order_line_modifiers`, `order_line_discounts`, `order_level_discounts`, `order_surcharges`, `service_charge_rules`, `pricing_policies`
 - `manager_override_audit`
 - `local_event_log`, `pos_sync_outbox`, `cloud_master_sync_state`
 
@@ -45,12 +46,14 @@ Cashier runtime invariants:
 - `precheck_*` breakdown tables persist lines, discounts, surcharges and tax components for audit/reprint/sync replay.
 - `payments` references `precheck_id`, not legacy `check_id`.
 - `checks` references `order_id` and stores immutable `snapshot`.
+- `order_line_modifiers` stores selected modifiers for active order lines; precheck/check snapshots preserve selected modifiers for reprint/refund.
+- `catalog_items.type` supports canonical `dish`, `good`, `semi_finished`, `service`; legacy `ingredient` is not accepted by current active catalog v2 path.
 - `business_date_local` is stored for shifts, cash sessions, payments and checks.
 - `stock_moves` are append-only by trigger.
 
-## Foundation Only Tables
+## Таблицы Только Основы
 
-SQLite foundation only:
+SQLite: реализована только основа:
 
 - `recipe_versions`
 - `recipe_lines`
@@ -80,25 +83,29 @@ Managed files currently present:
 - `005_master_data_restaurants_api.sql`
 - `006_zero_to_cashier_provisioning.sql`
 - `007_refund_and_pricing_policy_hardening.sql`
+- `008_catalog_v2_modifiers_pricing_policy.sql`
 
 `004_master_data_authority.sql` provides foundation for:
 
 - roles and employees;
-- categories;
-- catalog items with canonical kinds `dish`, `good`, `ingredient`, `semi_finished`;
-- dishes, goods and semi-finished products;
+- menu categories;
+- catalog folders and inherited folder parameters;
+- catalog tags and item-tag assignments;
+- catalog items with canonical kinds `dish`, `good`, `semi_finished`, `service`;
+- dishes, goods, semi-finished products and services;
 - recipe items;
-- modifier groups/options;
+- modifier groups/options and binding rules;
 - menu items;
 - menu item modifier group assignments;
+- pricing policies for automatic discounts/surcharges;
 - menu location assignments;
 - master-data publications.
 
 Foundation warning:
 
-- Cloud modifier/recipe/catalog foundation is not equal to POS Edge runtime support.
+- Cloud recipe/inventory-adjacent foundation is not equal to POS Edge recipe/inventory runtime support.
 - POS Edge `ApplyMasterData` сейчас принимает `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
-- Cloud хранит menu categories как master-data foundation, но текущий publication payload не включает `categories`, пока POS Edge не имеет поддерживаемого category ingest contract.
+- Cloud хранит menu categories отдельно от catalog folders; catalog publication не использует menu categories как замену folder hierarchy.
 - `recipes` и `inventory_reference` могут существовать в constants/schema state, но пока не поддерживаются `mastersync.Service` apply path.
 
 ## Discount, Tax And Pricing Data
@@ -117,14 +124,14 @@ Foundation warning:
 - Precheck breakdown persistence использует `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`; discount/surcharge breakdown rows сохраняют `application_index`.
 - Canonical calculation pipeline: `order lines subtotal -> unified ordered modifiers by application_index -> taxable base -> taxes -> grand total`.
 - Taxes всегда считаются после всех discount/surcharge modifiers.
-- `pricing_policy` применяет Cloud-authored tax/service-charge reference rows как incremental или full snapshot payloads; он не включает modifiers runtime или advanced Cloud-owned pricing logic.
-- Edge operational adjustments остаются runtime commands на открытых orders. Будущие policy-backed adjustments должны ссылаться на synced policy ids; manual policy exceptions требуют отдельный permission/audit boundary до поддержки.
+- `pricing_policy` применяет Cloud-authored tax/service-charge reference rows and automatic discount/surcharge `pricing_policies` как incremental или full snapshot payloads.
+- Edge operational manual adjustments остаются runtime commands на открытых orders и требуют backend permissions. Будущие policy-backed manual adjustments должны ссылаться на synced policy ids; manual policy exceptions требуют отдельный permission/audit boundary до поддержки.
 - Inclusive tax хранится в tax breakdown/tax total, но не увеличивает grand total; `tax_added_minor` в line breakdown фиксирует tax part, который добавлен к payable total.
 - Rounding policy является deterministic integer half-up minor units; persistent money values остаются `INTEGER` minor units.
 
 Запланировано далее:
 
-- Cloud-authored policy data published to Edge;
+- Cloud-authored policy authoring UI and policy-id-backed manual runtime adjustments;
 - regional fiscal/legal tax adapter only after pilot foundation is stable.
 
 Вне текущего runtime:
@@ -133,20 +140,22 @@ Foundation warning:
 
 ## Modifier Data
 
-Foundation only:
+Реализовано сейчас:
 
-- Cloud has `cloud_modifier_groups`, `cloud_modifier_options`, `cloud_menu_item_modifier_groups`.
-- POS Edge order/precheck/check tables do not currently store selected modifiers.
+- Cloud has `cloud_modifier_groups`, `cloud_modifier_options`, `cloud_menu_item_modifier_groups` and modifier binding foundation.
+- POS Edge stores synced modifier groups/options/menu item links in read-model tables.
+- POS Edge stores selected modifiers in `order_line_modifiers`.
+- Precheck/check immutable snapshots include selected modifiers and their financial effect.
+- Modifier price is included in backend authoritative calculation.
 
-Запланировано до пилота if accepted:
+Запланировано далее:
 
-- Edge read model and publication payload for modifier groups/options.
-- Order line selected modifiers snapshot.
-- Modifier price delta included in backend authoritative calculation.
+- modifier-to-recipe expansion belongs to recipe/inventory runtime;
+- richer reporting/print formatting can be added after pilot acceptance.
 
 ## Recipe And Inventory Data
 
-Foundation only:
+Реализована только основа:
 
 - Recipes are versioned in SQLite via `recipe_versions` and `recipe_lines`.
 - Cloud has recipe item foundation.

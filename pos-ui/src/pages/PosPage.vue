@@ -11,6 +11,7 @@
     <closed-orders-drawer :terminal="terminal" />
     <sync-drawer :terminal="terminal" />
     <cash-drawer-dialog :terminal="terminal" />
+    <modifier-selection-dialog :terminal="terminal" />
     <precheck-cancel-dialog :terminal="terminal" />
     <refund-dialog :terminal="terminal" />
   </q-page>
@@ -22,6 +23,7 @@ import CashierStatusBar from './pos/CashierStatusBar.vue';
 import CatalogCheckoutPanel from './pos/CatalogCheckoutPanel.vue';
 import ClosedOrdersDrawer from './pos/ClosedOrdersDrawer.vue';
 import FloorTableSelector from './pos/FloorTableSelector.vue';
+import ModifierSelectionDialog from './pos/ModifierSelectionDialog.vue';
 import OrderWorkspace from './pos/OrderWorkspace.vue';
 import PrecheckCancelDialog from './pos/PrecheckCancelDialog.vue';
 import RefundDialog from './pos/RefundDialog.vue';

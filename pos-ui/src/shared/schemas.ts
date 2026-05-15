@@ -120,12 +120,41 @@ export const cashDrawerEventSchema = z.object({
 export const menuItemSchema = z.object({
   id: z.string(),
   catalog_item_id: z.string(),
+  item_type: z.enum(['dish', 'good', 'semi_finished', 'service']).optional().default('dish'),
   name: z.string(),
   price: z.number(),
   currency: z.string(),
+  modifier_groups: z.array(z.object({
+    id: z.string(),
+    restaurant_id: z.string(),
+    name: z.string(),
+    required: z.boolean(),
+    min_count: z.number(),
+    max_count: z.number(),
+    active: z.boolean(),
+    options: z.array(z.object({
+      id: z.string(),
+      restaurant_id: z.string(),
+      modifier_group_id: z.string(),
+      name: z.string(),
+      price_minor: z.number(),
+      active: z.boolean(),
+    })).optional().default([]),
+  })).optional().default([]),
   active: z.boolean(),
   created_at: z.string(),
   updated_at: z.string(),
+});
+
+export const orderLineModifierSchema = z.object({
+  id: z.string(),
+  order_line_id: z.string(),
+  modifier_group_id: z.string(),
+  modifier_option_id: z.string(),
+  name: z.string(),
+  quantity: z.number(),
+  unit_price: z.number(),
+  total_price: z.number(),
 });
 
 export const orderLineSchema = z.object({
@@ -139,6 +168,7 @@ export const orderLineSchema = z.object({
   total_price: z.number(),
   currency_code: z.string(),
   tax_profile_id: optionalNullableString,
+  modifiers: z.array(orderLineModifierSchema).optional().default([]),
   status: z.enum(['active', 'cancelled', 'voided']),
   created_at: z.string(),
   updated_at: z.string(),
@@ -300,6 +330,7 @@ export type Shift = z.infer<typeof shiftSchema>;
 export type CashSession = z.infer<typeof cashSessionSchema>;
 export type CashDrawerEvent = z.infer<typeof cashDrawerEventSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;
+export type OrderLineModifier = z.infer<typeof orderLineModifierSchema>;
 export type Order = z.infer<typeof orderSchema>;
 export type ClosedOrder = z.infer<typeof closedOrderSchema>;
 export type OrderLine = z.infer<typeof orderLineSchema>;

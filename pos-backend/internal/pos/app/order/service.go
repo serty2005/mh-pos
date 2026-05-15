@@ -212,7 +212,7 @@ func (s *Service) ChangeOrderLineQuantity(ctx context.Context, cmd ChangeOrderLi
 			return fmt.Errorf("%w: cannot change non-active order line", domain.ErrConflict)
 		}
 		line.Quantity = cmd.Quantity
-		line.TotalPrice = line.UnitPrice * cmd.Quantity
+		line.TotalPrice = line.UnitPrice*cmd.Quantity + orderLineModifierTotal(line.Modifiers)
 		line.UpdatedAt = now
 		if err := s.repo.UpdateOrderLine(ctx, line); err != nil {
 			return err
@@ -366,6 +366,14 @@ func (s *Service) buildSelectedModifiers(ctx context.Context, selected []Selecte
 		out = append(out, domain.LineModifier{ModifierGroupID: groupID, ModifierOptionID: optionID, Name: option.Name, Quantity: selectedModifier.Quantity, UnitPrice: option.PriceMinor, TotalPrice: lineTotal})
 	}
 	return out, total, nil
+}
+
+func orderLineModifierTotal(modifiers []domain.LineModifier) int64 {
+	var total int64
+	for _, modifier := range modifiers {
+		total += modifier.TotalPrice
+	}
+	return total
 }
 
 func (s *Service) validateSelectedModifiers(ctx context.Context, menuItemID string, selected []domain.LineModifier) error {

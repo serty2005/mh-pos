@@ -79,6 +79,12 @@
           <div class="line-title">
             <strong>{{ line.name }}</strong>
             <span>{{ terminal.money(line.unit_price, terminal.orderCurrency.value) }}</span>
+            <ul v-if="line.modifiers.length" class="line-modifiers">
+              <li v-for="modifier in line.modifiers" :key="modifier.id">
+                <span>{{ modifier.name }} × {{ modifier.quantity }}</span>
+                <strong>{{ terminal.money(modifier.total_price, terminal.orderCurrency.value) }}</strong>
+              </li>
+            </ul>
           </div>
           <div class="quantity-stepper" :aria-label="line.name">
             <q-btn

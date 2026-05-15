@@ -3464,6 +3464,168 @@ func TestOrderLineSelectedModifiersAffectPricingAndPrecheckSnapshot(t *testing.T
 	}
 }
 
+func TestOrderLineQuantityChangeKeepsSelectedModifierTotal(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	execTestSQL(t, f, `INSERT INTO modifier_groups(id,restaurant_id,name,required,min_count,max_count,active,cloud_version) VALUES ('group-spice',?,'Spice',0,0,3,1,1)`, f.restaurant.ID)
+	execTestSQL(t, f, `INSERT INTO modifier_options(id,restaurant_id,modifier_group_id,name,price_minor,active,cloud_version) VALUES ('option-hot',?,'group-spice','Hot',250,1,1)`, f.restaurant.ID)
+	execTestSQL(t, f, `INSERT INTO menu_item_modifier_groups(menu_item_id,modifier_group_id,sort_order,cloud_version) VALUES (?, 'group-spice', 10, 1)`, f.menuItem.ID)
+
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{
+		CommandMeta: f.edgeMetaCommand("cmd-add-line-with-modifier-qty"),
+		OrderID:     order.ID,
+		MenuItemID:  f.menuItem.ID,
+		Quantity:    1,
+		SelectedModifiers: []app.SelectedModifierCommand{{
+			ModifierGroupID:  "group-spice",
+			ModifierOptionID: "option-hot",
+			Quantity:         2,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := f.service.ChangeOrderLineQuantity(f.ctx, app.ChangeOrderLineQuantityCommand{
+		CommandMeta: f.edgeMetaCommand("cmd-change-line-with-modifier-qty"),
+		OrderID:     order.ID,
+		LineID:      line.ID,
+		Quantity:    3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed.TotalPrice != 3500 {
+		t.Fatalf("expected base quantity total plus fixed selected modifier total, got %+v", changed)
+	}
+	calculation, err := f.service.CalculateOrderPricing(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calculation.SubtotalMinor != 3500 || len(calculation.Lines) != 1 || len(calculation.Lines[0].Modifiers) != 1 || calculation.Lines[0].Modifiers[0].TotalMinor != 500 {
+		t.Fatalf("expected recalculated pricing with preserved modifier total, got %+v", calculation)
+	}
+}
+
+func TestCheckSnapshotIncludesSelectedModifiersFromPrecheckSnapshot(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	execTestSQL(t, f, `INSERT INTO modifier_groups(id,restaurant_id,name,required,min_count,max_count,active,cloud_version) VALUES ('group-spice',?,'Spice',0,0,2,1,1)`, f.restaurant.ID)
+	execTestSQL(t, f, `INSERT INTO modifier_options(id,restaurant_id,modifier_group_id,name,price_minor,active,cloud_version) VALUES ('option-hot',?,'group-spice','Hot',250,1,1)`, f.restaurant.ID)
+	execTestSQL(t, f, `INSERT INTO menu_item_modifier_groups(menu_item_id,modifier_group_id,sort_order,cloud_version) VALUES (?, 'group-spice', 10, 1)`, f.menuItem.ID)
+
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{
+		CommandMeta: f.edgeMetaCommand("cmd-add-line-check-modifier"),
+		OrderID:     order.ID,
+		MenuItemID:  f.menuItem.ID,
+		Quantity:    1,
+		SelectedModifiers: []app.SelectedModifierCommand{{
+			ModifierGroupID:  "group-spice",
+			ModifierOptionID: "option-hot",
+			Quantity:         1,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMetaCommand("cmd-precheck-check-modifier"), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMetaCommand("cmd-pay-check-modifier"), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(check.Snapshot), `"precheck_snapshot"`) || !strings.Contains(string(check.Snapshot), `"modifiers"`) || check.Total != 1250 {
+		t.Fatalf("expected check snapshot and totals to preserve selected modifiers, check=%+v snapshot=%s", check, check.Snapshot)
+	}
+}
+
+func TestServiceCatalogItemSellsThroughOrderPricingPrecheckAndCheck(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	serviceCatalog, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{
+		CommandMeta: seedMeta(f.device.ID),
+		Type:        domain.CatalogItemService,
+		Name:        "Delivery",
+		SKU:         "DELIVERY",
+		BaseUnit:    "service",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceMenuItem, err := f.service.CreateMenuItem(f.ctx, app.CreateMenuItemCommand{
+		CommandMeta:   seedMeta(f.device.ID),
+		CatalogItemID: serviceCatalog.ID,
+		Name:          "Delivery",
+		Price:         300,
+		Currency:      "RUB",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	menuItems, err := f.service.ListMenuItemsAsOperator(f.ctx, f.edgeMeta())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var foundService bool
+	for _, item := range menuItems {
+		if item.ID == serviceMenuItem.ID && item.ItemType == string(domain.CatalogItemService) {
+			foundService = true
+		}
+	}
+	if !foundService {
+		t.Fatalf("expected service menu item to expose item_type=service, got %+v", menuItems)
+	}
+
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMetaCommand("cmd-add-service-line"), OrderID: order.ID, MenuItemID: serviceMenuItem.ID, Quantity: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if line.CatalogItemID != serviceCatalog.ID || line.TotalPrice != 600 {
+		t.Fatalf("expected service item line to sell as normal catalog item, got %+v", line)
+	}
+	calculation, err := f.service.CalculateOrderPricing(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calculation.SubtotalMinor != 600 || calculation.GrandTotalMinor != 600 {
+		t.Fatalf("expected service item pricing total, got %+v", calculation)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMetaCommand("cmd-service-precheck"), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if precheck.Total != 600 {
+		t.Fatalf("expected service item precheck total, got %+v", precheck)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMetaCommand("cmd-service-payment"), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if check.Total != 600 || !strings.Contains(string(check.Snapshot), `"Delivery"`) {
+		t.Fatalf("expected service item check snapshot and total, check=%+v snapshot=%s", check, check.Snapshot)
+	}
+}
+
 func TestApplyMasterDataRejectsUnsupportedStreamWithoutPartialWrite(t *testing.T) {
 	f := newFixture(t)
 	stateBefore := countRows(t, f, "cloud_master_sync_state")

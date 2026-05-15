@@ -25,6 +25,12 @@ import {
   type PinLoginResult,
 } from './schemas';
 
+export type SelectedModifierPayload = {
+  modifier_group_id: string;
+  modifier_option_id: string;
+  quantity: number;
+};
+
 function defaultApiBase() {
   const hostname = globalThis.location?.hostname;
   if (hostname === 'host.docker.internal') {
@@ -429,12 +435,13 @@ export function createOrder(tableId: string, tableName: string, guestCount: numb
   });
 }
 
-export function addOrderLine(orderId: string, menuItemId: string, quantity = 1) {
+export function addOrderLine(orderId: string, menuItemId: string, quantity = 1, selectedModifiers: SelectedModifierPayload[] = []) {
   return request(`/orders/${encodeURIComponent(orderId)}/lines`, orderLineSchema, {
     method: 'POST',
     body: JSON.stringify({
       menu_item_id: menuItemId,
       quantity,
+      selected_modifiers: selectedModifiers,
     }),
   });
 }

@@ -56,6 +56,7 @@ type ListRecentShiftsCommand = appshift.ListRecentShiftsCommand
 type CloseShiftCommand = appshift.CloseShiftCommand
 type CreateOrderCommand = apporder.CreateOrderCommand
 type AddOrderLineCommand = apporder.AddOrderLineCommand
+type SelectedModifierCommand = apporder.SelectedModifierCommand
 type ChangeOrderLineQuantityCommand = apporder.ChangeOrderLineQuantityCommand
 type VoidOrderLineCommand = apporder.VoidOrderLineCommand
 type IssuePrecheckCommand = appprecheck.IssuePrecheckCommand
@@ -362,6 +363,10 @@ func (s *Service) AddSurcharge(ctx context.Context, cmd AddSurchargeCommand) (*d
 
 func (s *Service) GetOrderPricingAsOperator(ctx context.Context, orderID string, meta CommandMeta) (*domain.CalculationResult, error) {
 	return s.pricing.GetOrderPricingAsOperator(ctx, orderID, meta)
+}
+
+func (s *Service) CalculateOrderPricing(ctx context.Context, orderID string) (domain.CalculationResult, error) {
+	return s.pricing.CalculateOrderPricing(ctx, orderID)
 }
 
 func (s *Service) GetPrecheck(ctx context.Context, id string) (*domain.Precheck, error) {

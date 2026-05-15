@@ -16,6 +16,9 @@ Cashier UI in `pos-ui/src/pages/PosPage.vue` разделен на переис�
 - current order lookup by table;
 - create order;
 - add order line from menu;
+- select modifiers for menu items with modifier groups;
+- show selected modifiers under active order lines;
+- sell service items from a separate services section;
 - change quantity;
 - void line;
 - issue precheck;
@@ -54,18 +57,17 @@ Reprint:
 - UI displays backend-provided order/precheck/check totals.
 - UI sends payment amount and method to backend.
 - UI does not calculate authoritative discount/tax/check totals.
-- UI does not apply tax rules, discount rules or modifier price deltas.
+- UI does not apply tax rules, discount rules or modifier prices as authoritative financial logic.
+- UI validates modifier required/min/max constraints only as UX feedback before sending the backend command.
 
 Не реализовано сейчас:
 
 - discount/surcharge editor in cashier UI;
 - tax profile editor in cashier UI;
-- modifier selection in cashier order flow;
 - inventory consumption UI.
 
-Запланировано до пилота, if accepted:
+Запланировано далее:
 
-- modifier selection must submit a command to backend and render backend-calculated totals;
 - discount/manual override controls must exist only if backend policy/API exists;
 - no UI-side authoritative financial calculation.
 
@@ -123,5 +125,4 @@ Requirements:
 - real PSP terminal integration UI;
 - fiscal device operation UI;
 - full inventory/procurement UI;
-- modifiers UI until backend order runtime exists;
 - discount/surcharge cashier editor and tax policy UI on top of existing backend pricing foundation.

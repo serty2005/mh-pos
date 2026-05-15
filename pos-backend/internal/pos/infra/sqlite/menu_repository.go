@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"pos-backend/internal/pos/domain"
+	menudomain "pos-backend/internal/pos/domain/menu"
 )
 
 func (r *Repository) CreateMenuItem(ctx context.Context, v *domain.MenuItem) error {
@@ -17,7 +18,6 @@ func (r *Repository) ListMenuItems(ctx context.Context) ([]domain.MenuItem, erro
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var out []domain.MenuItem
 	for rows.Next() {
 		var v domain.MenuItem
@@ -33,7 +33,19 @@ func (r *Repository) ListMenuItems(ctx context.Context) ([]domain.MenuItem, erro
 		v.UpdatedAt = parseTime(updated)
 		out = append(out, v)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		if err := r.hydrateMenuItemModifiers(ctx, &out[i]); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 func (r *Repository) GetMenuItem(ctx context.Context, id string) (*domain.MenuItem, error) {
@@ -50,5 +62,50 @@ func (r *Repository) GetMenuItem(ctx context.Context, id string) (*domain.MenuIt
 	v.TaxProfileID = stringPtr(taxProfileID)
 	v.CreatedAt = parseTime(created)
 	v.UpdatedAt = parseTime(updated)
+	if err := r.hydrateMenuItemModifiers(ctx, &v); err != nil {
+		return nil, err
+	}
 	return &v, nil
+}
+
+func (r *Repository) hydrateMenuItemModifiers(ctx context.Context, item *domain.MenuItem) error {
+	groups, err := r.ListModifierGroupsForMenuItem(ctx, item.ID)
+	if err != nil {
+		return err
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+	groupIDs := make([]string, 0, len(groups))
+	for _, group := range groups {
+		groupIDs = append(groupIDs, group.ID)
+	}
+	optionsByGroup, err := r.ListModifierOptionsByGroupIDs(ctx, groupIDs)
+	if err != nil {
+		return err
+	}
+	item.ModifierGroups = make([]menudomain.MenuItemModifierGroup, 0, len(groups))
+	for _, group := range groups {
+		view := menudomain.MenuItemModifierGroup{
+			ID:           group.ID,
+			RestaurantID: group.RestaurantID,
+			Name:         group.Name,
+			Required:     group.Required,
+			MinCount:     group.MinCount,
+			MaxCount:     group.MaxCount,
+			Active:       group.Active,
+		}
+		for _, option := range optionsByGroup[group.ID] {
+			view.Options = append(view.Options, menudomain.MenuItemModifierOption{
+				ID:              option.ID,
+				RestaurantID:    option.RestaurantID,
+				ModifierGroupID: option.ModifierGroupID,
+				Name:            option.Name,
+				PriceMinor:      option.PriceMinor,
+				Active:          option.Active,
+			})
+		}
+		item.ModifierGroups = append(item.ModifierGroups, view)
+	}
+	return nil
 }

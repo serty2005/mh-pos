@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ApiError, listMenuItems } from './api';
+import { addOrderLine, ApiError, listMenuItems } from './api';
 
 const authState = {
   clientDeviceId: 'client-1',
@@ -76,6 +76,47 @@ describe('api request helpers', () => {
       messageKey: 'errors.network.unavailable',
       category: 'network',
       retryable: true,
+    });
+  });
+
+  it('sends selected modifiers when adding an order line', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({
+        id: 'line-1',
+        order_id: 'order-1',
+        menu_item_id: 'menu-1',
+        catalog_item_id: 'catalog-1',
+        name: 'Soup',
+        quantity: 1,
+        unit_price: 1000,
+        total_price: 1250,
+        currency_code: 'RUB',
+        tax_profile_id: null,
+        modifiers: [{
+          id: 'line-modifier-1',
+          order_line_id: 'line-1',
+          modifier_group_id: 'group-1',
+          modifier_option_id: 'option-1',
+          name: 'Hot',
+          quantity: 1,
+          unit_price: 250,
+          total_price: 250,
+        }],
+        status: 'active',
+        created_at: '2026-05-09T10:00:00Z',
+        updated_at: '2026-05-09T10:00:00Z',
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await addOrderLine('order-1', 'menu-1', 1, [{ modifier_group_id: 'group-1', modifier_option_id: 'option-1', quantity: 1 }]);
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      menu_item_id: 'menu-1',
+      quantity: 1,
+      selected_modifiers: [{ modifier_group_id: 'group-1', modifier_option_id: 'option-1', quantity: 1 }],
     });
   });
 });

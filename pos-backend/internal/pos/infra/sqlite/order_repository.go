@@ -205,7 +205,6 @@ func (r *Repository) ListOrderLines(ctx context.Context, orderID string) ([]doma
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var out []domain.OrderLine
 	for rows.Next() {
 		var v domain.OrderLine
@@ -218,14 +217,23 @@ func (r *Repository) ListOrderLines(ctx context.Context, orderID string) ([]doma
 		v.TaxProfileID = stringPtr(taxProfileID)
 		v.CreatedAt = parseTime(created)
 		v.UpdatedAt = parseTime(updated)
-		modifiers, err := r.listOrderLineModifiers(ctx, v.ID)
+		out = append(out, v)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		modifiers, err := r.listOrderLineModifiers(ctx, out[i].ID)
 		if err != nil {
 			return nil, err
 		}
-		v.Modifiers = modifiers
-		out = append(out, v)
+		out[i].Modifiers = modifiers
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (r *Repository) listOrderLineModifiers(ctx context.Context, lineID string) ([]domain.LineModifier, error) {

@@ -12,8 +12,9 @@
 | Hall/Table | Cloud | No | Cloud -> Edge | реализовано сейчас for ingest stream `floor` |
 | Catalog item | Cloud | No | Cloud -> Edge | реализовано сейчас for ingest stream `catalog` |
 | Menu item | Cloud | No | Cloud -> Edge | реализовано сейчас for ingest stream `menu` |
-| Modifier group/option | Cloud | No | Cloud -> Edge planned | foundation only in Cloud schema |
-| Recipe/reference inventory | Cloud | No | Cloud -> Edge planned | foundation only in schema/constants; POS Edge apply path not implemented |
+| Catalog folder/tag | Cloud | No | Cloud -> Edge via `catalog` | реализовано сейчас |
+| Modifier group/option | Cloud | No | Cloud -> Edge via `menu` | реализовано сейчас |
+| Recipe/reference inventory | Cloud | No | Cloud -> Edge planned | реализована только основа in schema/constants; POS Edge apply path not implemented |
 | Employee shift | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Cash session/drawer event | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Order/order line | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
@@ -21,9 +22,9 @@
 | Payment | Edge | Yes | Edge -> Cloud operational events for capture and refund | реализовано сейчас |
 | Payment refund | Edge | Yes | `PaymentRefunded` is confirmed Edge -> Cloud operational event | реализовано сейчас |
 | Check | Edge | Generated after full payment/refund status | `CheckCreated` and `CheckRefunded` are confirmed Edge -> Cloud operational events | реализовано сейчас |
-| Tax/pricing policy reference | Cloud | Edge read model only | `pricing_policy` Cloud -> Edge stream for `tax_profiles`, `tax_rules`, `service_charge_rules` | реализовано сейчас |
+| Tax/pricing policy reference | Cloud | Edge read model only | `pricing_policy` Cloud -> Edge stream for `tax_profiles`, `tax_rules`, `service_charge_rules`, `pricing_policies` | реализовано сейчас |
 | Operational order adjustments | Edge | Yes while order is open | runtime-команды; будущие policy ids могут ограничивать допустимые варианты | реализовано сейчас |
-| Stock document/move | Inventory context | Not from cashier runtime | planned | foundation only |
+| Stock document/move | Inventory context | Not from cashier runtime | planned | реализована только основа |
 
 ## Current Cloud -> Edge Ingest
 
@@ -38,7 +39,8 @@
 - `pricing_policy`
 
 `recipes` и `inventory_reference` нельзя документировать как поддерживаемые POS Edge ingest streams, пока `mastersync.Service` не применяет их payloads.
-`pricing_policy` намеренно ограничен tax/service-charge reference tables; он не включает modifiers runtime или Cloud-authored advanced pricing.
+`catalog` и `menu` payloads включают catalog folders/tags/services и modifier groups/options/links; menu categories остаются отдельным понятием и не заменяют catalog folders.
+`pricing_policy` включает tax/service-charge reference tables и automatic discount/surcharge policies; manual override runtime остается backend RBAC-controlled action.
 
 ## Current Edge -> Cloud Runtime
 
@@ -55,7 +57,8 @@
 
 Запланировано далее:
 
-- modifiers/pricing/inventory event contracts только после реализации runtime.
+- inventory event contracts только после реализации runtime.
+- richer modifier/pricing reporting projections после pilot acceptance.
 
 ## Master Data Rule
 
@@ -66,7 +69,7 @@ Cloud владеет authoring master data. POS Edge использует local 
 Реализовано сейчас:
 
 - Edge operational adjustments являются cashier runtime commands для line/order discounts и surcharges на открытом order.
-- Cloud-authored tax/pricing policy reference data применяется через `pricing_policy` и хранится с `cloud_version`, `cloud_updated_at`, `cloud_deleted_at` и `last_synced_at`.
+- Cloud-authored tax/pricing policy reference data, including automatic discount/surcharge policies, применяется через `pricing_policy` и хранится с `cloud_version`, `cloud_updated_at`, `cloud_deleted_at` и `last_synced_at`.
 - Manual surcharge/discount commands остаются runtime actions и требуют существующих pricing permissions.
 
 Запланировано далее:
