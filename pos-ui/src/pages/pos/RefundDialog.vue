@@ -5,6 +5,7 @@
         <h2>{{ terminal.t('pos.refund') }}</h2>
       </q-card-section>
       <q-card-section class="form-stack">
+        <p class="dialog-copy">{{ terminal.t('pos.refundCopy') }}</p>
         <q-input v-model="terminal.refundReason.value" outlined :label="terminal.t('pos.refundReason')" type="textarea" autogrow />
       </q-card-section>
       <q-card-actions align="right">

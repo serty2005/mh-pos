@@ -224,6 +224,9 @@ func TestCatalogMenuValidationAndPublicationPackageShape(t *testing.T) {
 	if !ok || !strings.Contains(string(restaurantPackage.PayloadJSON), restaurant.ID) {
 		t.Fatalf("expected restaurants stream package, ok=%v payload=%s", ok, restaurantPackage.PayloadJSON)
 	}
+	if !strings.Contains(string(restaurantPackage.PayloadJSON), `"active":true`) {
+		t.Fatalf("expected active restaurant projection, payload=%s", restaurantPackage.PayloadJSON)
+	}
 	staffPackage, ok := repo.Package("staff", "node-1")
 	if !ok {
 		t.Fatal("expected staff stream package to be generated")

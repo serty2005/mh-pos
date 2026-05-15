@@ -4,8 +4,8 @@
       <section class="terminal-actions">
         <div class="section-head slim">
           <div>
-            <p class="eyebrow">{{ terminal.t('common.status') }}</p>
-            <h2>{{ terminal.t('pos.terminalActions') }}</h2>
+            <p class="eyebrow">{{ terminal.t('pos.primaryFlow.steps.readiness.title') }}</p>
+            <h2>{{ terminal.t('pos.serviceReadiness') }}</h2>
           </div>
           <q-btn flat round icon="refresh" class="icon-touch" :aria-label="terminal.t('actions.retry')" @click="terminal.refreshOps" />
         </div>
@@ -60,15 +60,6 @@
           </div>
 
           <template v-if="terminal.currentCashSession.data.value">
-            <q-btn
-              outline
-              color="secondary"
-              class="touch-button"
-              icon="inventory_2"
-              :label="terminal.t('pos.cashDrawer')"
-              :disable="!terminal.canRecordCashDrawerEvent.value"
-              @click="terminal.cashDrawerDialog.value = true"
-            />
             <div class="cash-open-row">
               <q-input
                 v-model.number="terminal.closingCashAmount.value"
@@ -92,7 +83,27 @@
               />
             </div>
           </template>
+        </div>
+      </section>
 
+      <section class="terminal-actions utility-actions">
+        <div class="section-head slim">
+          <div>
+            <p class="eyebrow">{{ terminal.t('pos.secondaryOperations') }}</p>
+            <h2>{{ terminal.t('pos.terminalActions') }}</h2>
+          </div>
+        </div>
+        <div class="ops-grid compact-ops">
+          <q-btn
+            v-if="terminal.currentCashSession.data.value"
+            outline
+            color="secondary"
+            class="touch-button"
+            icon="inventory_2"
+            :label="terminal.t('pos.cashDrawer')"
+            :disable="!terminal.canRecordCashDrawerEvent.value"
+            @click="terminal.cashDrawerDialog.value = true"
+          />
           <q-btn
             v-if="terminal.canViewClosedOrders.value"
             outline
@@ -137,6 +148,14 @@
 
         <q-skeleton v-if="terminal.menu.isPending.value" class="skeleton-row" />
         <q-banner v-else-if="terminal.menu.isError.value" class="error-banner dense-banner" rounded>{{ terminal.t('common.error') }}</q-banner>
+        <blocking-notice
+          v-else-if="terminal.actionBlocker('pos.order.add_line', terminal.canAddOrderLine.value) && terminal.activeOrder.value"
+          :terminal="terminal"
+          :title="terminal.t(terminal.actionBlocker('pos.order.add_line', terminal.canAddOrderLine.value)?.titleKey ?? '')"
+          :reason="terminal.t(terminal.actionBlocker('pos.order.add_line', terminal.canAddOrderLine.value)?.reasonKey ?? '')"
+          :permission="terminal.actionBlocker('pos.order.add_line', terminal.canAddOrderLine.value)?.permission"
+          icon="lock"
+        />
         <div v-else-if="terminal.visibleMenuItems.value.length" class="menu-list">
           <button
             v-for="item in terminal.visibleMenuItems.value"
@@ -218,6 +237,14 @@
           :loading="terminal.issuePrecheckMutation.isPending.value"
           @click="terminal.issuePrecheckMutation.mutate(terminal.activeOrder.value?.id ?? '')"
         />
+        <blocking-notice
+          v-if="!terminal.activePrecheck.value && terminal.actionBlocker('pos.precheck.issue', terminal.canIssuePrecheck.value) && terminal.activeOrder.value"
+          :terminal="terminal"
+          :title="terminal.t(terminal.actionBlocker('pos.precheck.issue', terminal.canIssuePrecheck.value)?.titleKey ?? '')"
+          :reason="terminal.t(terminal.actionBlocker('pos.precheck.issue', terminal.canIssuePrecheck.value)?.reasonKey ?? '')"
+          :permission="terminal.actionBlocker('pos.precheck.issue', terminal.canIssuePrecheck.value)?.permission"
+          icon="lock"
+        />
         <q-btn
           v-if="!terminal.activePrecheck.value && terminal.latestPrecheck.value"
           outline
@@ -264,6 +291,14 @@
               @click="terminal.pay('card')"
             />
           </div>
+          <blocking-notice
+            v-if="terminal.activePrecheck.value && terminal.actionBlocker('pos.payment.cash', terminal.canPayCash.value)"
+            :terminal="terminal"
+            :title="terminal.t(terminal.actionBlocker('pos.payment.cash', terminal.canPayCash.value)?.titleKey ?? '')"
+            :reason="terminal.t(terminal.actionBlocker('pos.payment.cash', terminal.canPayCash.value)?.reasonKey ?? '')"
+            :permission="terminal.actionBlocker('pos.payment.cash', terminal.canPayCash.value)?.permission"
+            icon="payments"
+          />
         </div>
       </section>
     </div>
@@ -271,6 +306,7 @@
 </template>
 
 <script setup lang="ts">
+import BlockingNotice from './BlockingNotice.vue';
 import type { CashierTerminal } from './useCashierTerminal';
 
 defineProps<{

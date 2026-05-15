@@ -370,6 +370,13 @@ p {
   padding-left: 18px;
 }
 
+.error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 .success-banner {
   color: #195544;
   background: #e6f2ec;
@@ -554,6 +561,19 @@ button:focus-visible,
   border-radius: 8px;
 }
 
+.launch-primary-panel {
+  grid-row: span 2;
+}
+
+.readiness-panel {
+  gap: 10px;
+}
+
+.onboarding-check.blocked {
+  background: #fff9ef;
+  border-color: #e6c795;
+}
+
 .onboarding-check .q-icon {
   color: #9aa59e;
   font-size: 21px;
@@ -669,6 +689,40 @@ button:focus-visible,
   gap: 4px 8px;
 }
 
+.resource-card-list {
+  display: none;
+  gap: 10px;
+}
+
+.resource-card {
+  display: grid;
+  justify-items: start;
+  gap: 5px;
+  padding: 12px;
+  color: #344039;
+  background: #fbfcfa;
+  border: 1px solid #e4e8e5;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.resource-card.selected {
+  background: #e6f0eb;
+  border-color: #8aa898;
+}
+
+.resource-card strong {
+  color: #202124;
+}
+
+.resource-card span {
+  color: #66706b;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1120px) {
   .cloud-page {
     grid-template-columns: 1fr;
@@ -718,5 +772,25 @@ button:focus-visible,
 
   .cloud-main-head {
     display: grid;
+  }
+
+  .cloud-table-wrap {
+    display: none;
+  }
+
+  .resource-card-list {
+    display: grid;
+  }
+
+  .publication-card-grid,
+  .publication-count-cards {
+    border: 0;
+    gap: 8px;
+  }
+
+  .publication-card-grid > div,
+  .publication-count-cards .cloud-count-row {
+    border: 1px solid #e4e8e5;
+    border-radius: 8px;
   }
 }

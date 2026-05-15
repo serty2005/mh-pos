@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/pos-edge ./cmd/pos-edge
 FROM alpine:3.22
 
 WORKDIR /app
-RUN adduser -D -H pos
+RUN apk add --no-cache tzdata && adduser -D -H pos
 COPY --from=build /out/pos-edge /app/pos-edge
 COPY --from=build /src/pos-backend/migrations /app/migrations
 COPY --from=build /src/pos-backend/config /app/config

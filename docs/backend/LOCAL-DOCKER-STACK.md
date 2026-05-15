@@ -9,7 +9,7 @@
 - `cloud-postgres` - PostgreSQL 16 для Cloud Backend;
 - `cloud-api` - Cloud Sync Receiver и Cloud master-data authority;
 - `license-api` - локальный License Server stub для Option B pairing code flow;
-- `pos-edge` - POS Edge backend с SQLite и включенным sync sender.
+- `pos-edge` - POS Edge backend с SQLite, IANA timezone data (`tzdata`) для `business_date_local` и включенным sync sender.
 
 Именованные volumes:
 
