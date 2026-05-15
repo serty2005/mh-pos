@@ -1,5 +1,135 @@
 # Full-flow smoke audit на 2026-05-15
 
+## Повторный ручной прогон после очистки volumes и контейнеров
+
+Статус: ручная проверка через Playwright по запущенному local stack. Bootstrap-скрипты не использовались. Runtime backend code не изменялся. Продажа и возврат заказа заблокированы на этапе открытия личной смены.
+
+Проверялся путь:
+
+1. Cloud UI: создание ресторана, роли, сотрудника, блюда, зала, стола и menu item через формы UI.
+2. Cloud UI: генерация pairing-code, публикация master data package.
+3. POS UI: регистрация Edge через pairing-code.
+4. POS UI: PIN login сотрудника.
+5. POS UI: открытие личной смены, далее планировались cash session, стол, заказ, пречек, оплата, закрытый заказ и возврат.
+
+Фактически выполнено:
+
+- Cloud UI создан ресторан `Manual Flow 1778857981075`;
+- создана роль `Flow Manager` с POS permissions;
+- создан сотрудник `Flow Operator`, PIN в отчете не сохраняется;
+- создано блюдо `Manual Dish`, зал `Main Hall`, стол `T1`, menu item с ценой `1234 RUB`;
+- pairing-code сгенерирован через Cloud UI, значение в отчете не сохраняется;
+- master data опубликованы, publication version `2`, статус `published`;
+- POS Edge зарегистрирован через pairing-code и получил `paired` state;
+- POS Edge применил snapshot: `restaurants`, `staff`, `catalog`, `floor`, `menu` имеют `status = applied`;
+- POS UI выполнил PIN login и открыл cashier terminal для `Flow Operator`.
+
+### Critical blocker: открытие смены
+
+`POST /api/v1/employee-shifts/open` возвращает `400 VALIDATION_FAILED`.
+
+UI показал безопасный i18n-диалог с correlation id и не показал raw backend/internal error. В логах POS Edge причина:
+
+```text
+internal_error="invalid domain operation: invalid restaurant timezone"
+```
+
+Root cause подтвержден:
+
+- Cloud UI по умолчанию создает ресторан с timezone `Europe/Moscow`;
+- POS Edge read model содержит `timezone = Europe/Moscow`;
+- `pos-backend/internal/pos/app/shared/business_date.go` вычисляет `business_date_local` через `time.LoadLocation(strings.TrimSpace(restaurant.Timezone))`;
+- контейнер `mh-pos-local-pos-edge-1` не содержит zoneinfo:
+
+```text
+/usr/share/zoneinfo/Europe/Moscow: No such file or directory
+/usr/share/zoneinfo/UTC: No such file or directory
+```
+
+Dockerfile использует `alpine:3.22`, но не устанавливает `tzdata`:
+
+```text
+pos-backend/docker/Dockerfile:8 FROM alpine:3.22
+```
+
+Это блокирует canonical sale flow до открытия кассовой смены, поэтому продажа и возврат в этом чистом прогоне не выполнялись. Live SQLite не правилась, чтобы не маскировать production-way blocker.
+
+### Request/log avalanche после pairing
+
+После успешной регистрации через pairing-code лавина воспроизводится на чистых volumes.
+
+За последние 10 минут на POS Edge:
+
+- `EdgeNodePaired`: `185`;
+- `SYNC_DIRECTION_BLOCKED`: `92`;
+- `employee-shifts/open` log lines: `3`.
+
+Характер логов:
+
+```text
+domain action committed action="EdgeNodePaired"
+POS sync sender suspended outbox message error_code="SYNC_DIRECTION_BLOCKED" event_type="EdgeNodePaired" reason="outbox row direction is \"local_only\""
+```
+
+Вероятная причина остается прежней: polling/provisioning повторно проходит already paired state, снова пишет `EdgeNodePaired` и создает local-only outbox rows, которые затем обрабатываются sender-ом как blocked.
+
+### Snapshot/read-model observations
+
+POS Edge read model после snapshot:
+
+```json
+{
+  "edge_node_identity": {
+    "node_device_id": "bb749310-bc0a-465e-b1d2-87cf10a4426c",
+    "restaurant_id": "29f9856e-67c0-4a33-b2ca-bf1aa0a0b5fa",
+    "status": "paired"
+  },
+  "restaurant": {
+    "name": "Manual Flow 1778857981075",
+    "timezone": "Europe/Moscow",
+    "currency": "RUB",
+    "business_day_mode": "standard",
+    "business_day_boundary_local_time": "04:00",
+    "active": 0,
+    "cloud_version": 2
+  },
+  "device": {
+    "restaurant_id": "29f9856e-67c0-4a33-b2ca-bf1aa0a0b5fa",
+    "active": 1
+  }
+}
+```
+
+Для этого чистого прогона device/identity mismatch не воспроизвелся: `devices.restaurant_id` совпадает с `edge_node_identity.restaurant_id`, PIN login прошел. Но ресторан по-прежнему приходит на Edge как `active = 0`, что остается отдельным contract/read-model risk.
+
+### Browser diagnostics
+
+Machine-readable отчет по ручному прогону:
+
+- `docs/temp/full-flow-manual-browser-diagnostics-2026-05-15.json`.
+
+Скриншоты сохранены вне репозитория:
+
+- `%TEMP%\mh-pos-manual-flow-2026-05-15\01-cloud-launch.png`;
+- `%TEMP%\mh-pos-manual-flow-2026-05-15\02-cloud-pairing-code.png`;
+- `%TEMP%\mh-pos-manual-flow-2026-05-15\03-cloud-published.png`;
+- `%TEMP%\mh-pos-manual-flow-2026-05-15\06-pos-after-login.png`.
+
+Зафиксированные browser/API noise:
+
+- Cloud UI до первой публикации получает ожидаемый, но шумный `404` на `GET /restaurants/{id}/master-data/publication-state`; UI обрабатывает безопасно, браузер пишет `Failed to load resource`;
+- POS UI после логина получает ожидаемый, но шумный `404` на `GET /employee-shifts/current`; UI обрабатывает безопасно, браузер пишет `Failed to load resource`.
+
+### Что нужно исправить перед повтором sale/refund
+
+1. Добавить timezone data в POS Edge runtime image либо встроить Go tzdata так, чтобы `time.LoadLocation("Europe/Moscow")` работал в контейнере.
+2. Сделать provisioning/pairing idempotent после paired state и прекратить повторную запись `EdgeNodePaired` без изменения assignment/snapshot checkpoint.
+3. Исправить Cloud -> Edge restaurant projection: активный опубликованный ресторан не должен попадать в Edge read model как `active = 0`, либо контракт должен явно описывать другое поведение.
+4. Решить, должны ли expected empty states (`publication-state`, `current shift`) возвращать 404 с browser noise или отдельный безопасный empty-state контракт.
+5. После исправления повторить ручной path: pairing-code -> PIN login -> open shift -> open cash session -> table -> order -> precheck -> payment -> closed order -> refund.
+
+## Предыдущий bootstrap-прогон
+
 Статус: диагностический отчет по запущенному local stack. Runtime backend code не изменялся. Продажа на POS Edge заблокирована до входа кассира.
 
 ## Объем проверки
