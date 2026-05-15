@@ -13,32 +13,48 @@ import (
 
 // Repository хранит Cloud master-data state в памяти для app/api tests.
 type Repository struct {
-	mu           sync.Mutex
-	restaurants  map[string]domain.Restaurant
-	roles        map[string]domain.Role
-	employees    map[string]domain.Employee
-	catalogItems map[string]domain.CatalogItem
-	categories   map[string]domain.Category
-	halls        map[string]domain.Hall
-	tables       map[string]domain.Table
-	menuItems    map[string]domain.MenuItem
-	publications map[string][]domain.Publication
-	packages     map[string]app.StreamPackage
+	mu               sync.Mutex
+	restaurants      map[string]domain.Restaurant
+	roles            map[string]domain.Role
+	employees        map[string]domain.Employee
+	catalogItems     map[string]domain.CatalogItem
+	folders          map[string]domain.CatalogFolder
+	parameters       map[string]domain.FolderParameter
+	tags             map[string]domain.CatalogTag
+	itemTags         map[string]domain.CatalogItemTag
+	modifierGroups   map[string]domain.ModifierGroup
+	modifierOptions  map[string]domain.ModifierOption
+	modifierBindings map[string]domain.ModifierGroupBinding
+	pricingPolicies  map[string]domain.PricingPolicy
+	categories       map[string]domain.Category
+	halls            map[string]domain.Hall
+	tables           map[string]domain.Table
+	menuItems        map[string]domain.MenuItem
+	publications     map[string][]domain.Publication
+	packages         map[string]app.StreamPackage
 }
 
 // NewRepository создает пустой in-memory repository.
 func NewRepository() *Repository {
 	return &Repository{
-		roles:        map[string]domain.Role{},
-		employees:    map[string]domain.Employee{},
-		catalogItems: map[string]domain.CatalogItem{},
-		categories:   map[string]domain.Category{},
-		halls:        map[string]domain.Hall{},
-		tables:       map[string]domain.Table{},
-		menuItems:    map[string]domain.MenuItem{},
-		publications: map[string][]domain.Publication{},
-		packages:     map[string]app.StreamPackage{},
-		restaurants:  map[string]domain.Restaurant{},
+		roles:            map[string]domain.Role{},
+		employees:        map[string]domain.Employee{},
+		catalogItems:     map[string]domain.CatalogItem{},
+		folders:          map[string]domain.CatalogFolder{},
+		parameters:       map[string]domain.FolderParameter{},
+		tags:             map[string]domain.CatalogTag{},
+		itemTags:         map[string]domain.CatalogItemTag{},
+		modifierGroups:   map[string]domain.ModifierGroup{},
+		modifierOptions:  map[string]domain.ModifierOption{},
+		modifierBindings: map[string]domain.ModifierGroupBinding{},
+		pricingPolicies:  map[string]domain.PricingPolicy{},
+		categories:       map[string]domain.Category{},
+		halls:            map[string]domain.Hall{},
+		tables:           map[string]domain.Table{},
+		menuItems:        map[string]domain.MenuItem{},
+		publications:     map[string][]domain.Publication{},
+		packages:         map[string]app.StreamPackage{},
+		restaurants:      map[string]domain.Restaurant{},
 	}
 }
 
@@ -199,6 +215,298 @@ func (r *Repository) ListCatalogItems(_ context.Context, restaurantID string) ([
 	defer r.mu.Unlock()
 	var out []domain.CatalogItem
 	for _, item := range r.catalogItems {
+		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) CreateCatalogFolder(_ context.Context, v domain.CatalogFolder) (domain.CatalogFolder, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.folders[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) UpdateCatalogFolder(_ context.Context, v domain.CatalogFolder) (domain.CatalogFolder, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.folders[v.ID]; !ok {
+		return domain.CatalogFolder{}, domain.ErrNotFound
+	}
+	r.folders[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) GetCatalogFolder(_ context.Context, id string) (domain.CatalogFolder, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.folders[strings.TrimSpace(id)]
+	if !ok {
+		return domain.CatalogFolder{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) ListCatalogFolders(_ context.Context, restaurantID string) ([]domain.CatalogFolder, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.CatalogFolder
+	for _, item := range r.folders {
+		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) CreateFolderParameter(_ context.Context, v domain.FolderParameter) (domain.FolderParameter, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.parameters[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) UpdateFolderParameter(_ context.Context, v domain.FolderParameter) (domain.FolderParameter, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.parameters[v.ID]; !ok {
+		return domain.FolderParameter{}, domain.ErrNotFound
+	}
+	r.parameters[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) GetFolderParameter(_ context.Context, id string) (domain.FolderParameter, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.parameters[strings.TrimSpace(id)]
+	if !ok {
+		return domain.FolderParameter{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) ListFolderParameters(_ context.Context, restaurantID string) ([]domain.FolderParameter, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.FolderParameter
+	for _, item := range r.parameters {
+		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) CreateCatalogTag(_ context.Context, v domain.CatalogTag) (domain.CatalogTag, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.tags[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) UpdateCatalogTag(_ context.Context, v domain.CatalogTag) (domain.CatalogTag, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.tags[v.ID]; !ok {
+		return domain.CatalogTag{}, domain.ErrNotFound
+	}
+	r.tags[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) GetCatalogTag(_ context.Context, id string) (domain.CatalogTag, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.tags[strings.TrimSpace(id)]
+	if !ok {
+		return domain.CatalogTag{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) ListCatalogTags(_ context.Context, restaurantID string) ([]domain.CatalogTag, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.CatalogTag
+	for _, item := range r.tags {
+		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) AssignCatalogItemTag(_ context.Context, v domain.CatalogItemTag) (domain.CatalogItemTag, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.itemTags[v.CatalogItemID+"|"+v.TagID] = v
+	return v, nil
+}
+
+func (r *Repository) ListCatalogItemTags(_ context.Context, restaurantID string) ([]domain.CatalogItemTag, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.CatalogItemTag
+	for _, item := range r.itemTags {
+		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) CreateModifierGroup(_ context.Context, v domain.ModifierGroup) (domain.ModifierGroup, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.modifierGroups[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) UpdateModifierGroup(_ context.Context, v domain.ModifierGroup) (domain.ModifierGroup, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.modifierGroups[v.ID]; !ok {
+		return domain.ModifierGroup{}, domain.ErrNotFound
+	}
+	r.modifierGroups[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) GetModifierGroup(_ context.Context, id string) (domain.ModifierGroup, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.modifierGroups[strings.TrimSpace(id)]
+	if !ok {
+		return domain.ModifierGroup{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) ListModifierGroups(_ context.Context, restaurantID string) ([]domain.ModifierGroup, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.ModifierGroup
+	for _, item := range r.modifierGroups {
+		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) CreateModifierOption(_ context.Context, v domain.ModifierOption) (domain.ModifierOption, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.modifierOptions[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) UpdateModifierOption(_ context.Context, v domain.ModifierOption) (domain.ModifierOption, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.modifierOptions[v.ID]; !ok {
+		return domain.ModifierOption{}, domain.ErrNotFound
+	}
+	r.modifierOptions[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) GetModifierOption(_ context.Context, id string) (domain.ModifierOption, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.modifierOptions[strings.TrimSpace(id)]
+	if !ok {
+		return domain.ModifierOption{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) ListModifierOptions(_ context.Context, restaurantID string) ([]domain.ModifierOption, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.ModifierOption
+	for _, item := range r.modifierOptions {
+		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) CreateModifierGroupBinding(_ context.Context, v domain.ModifierGroupBinding) (domain.ModifierGroupBinding, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.modifierBindings[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) UpdateModifierGroupBinding(_ context.Context, v domain.ModifierGroupBinding) (domain.ModifierGroupBinding, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.modifierBindings[v.ID]; !ok {
+		return domain.ModifierGroupBinding{}, domain.ErrNotFound
+	}
+	r.modifierBindings[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) GetModifierGroupBinding(_ context.Context, id string) (domain.ModifierGroupBinding, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.modifierBindings[strings.TrimSpace(id)]
+	if !ok {
+		return domain.ModifierGroupBinding{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) ListModifierGroupBindings(_ context.Context, restaurantID string) ([]domain.ModifierGroupBinding, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.ModifierGroupBinding
+	for _, item := range r.modifierBindings {
+		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) CreatePricingPolicy(_ context.Context, v domain.PricingPolicy) (domain.PricingPolicy, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pricingPolicies[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) UpdatePricingPolicy(_ context.Context, v domain.PricingPolicy) (domain.PricingPolicy, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.pricingPolicies[v.ID]; !ok {
+		return domain.PricingPolicy{}, domain.ErrNotFound
+	}
+	r.pricingPolicies[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) GetPricingPolicy(_ context.Context, id string) (domain.PricingPolicy, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.pricingPolicies[strings.TrimSpace(id)]
+	if !ok {
+		return domain.PricingPolicy{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) ListPricingPolicies(_ context.Context, restaurantID string) ([]domain.PricingPolicy, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.PricingPolicy
+	for _, item := range r.pricingPolicies {
 		if item.RestaurantID == strings.TrimSpace(restaurantID) {
 			out = append(out, item)
 		}

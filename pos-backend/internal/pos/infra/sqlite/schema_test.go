@@ -32,7 +32,7 @@ func seedCatalogForSchemaTests(t *testing.T, ctx context.Context, db *sql.DB) {
 	execSchema(t, ctx, db, `INSERT INTO restaurants(id,name,timezone,currency,active,created_at,updated_at) VALUES ('restaurant-1','Demo','UTC','RUB',1,?,?)`, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO devices(id,restaurant_id,device_code,name,type,active,registered_at,created_at,updated_at) VALUES ('device-1','restaurant-1','POS-1','Main','windows',1,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO catalog_items(id,type,name,sku,base_unit,active,created_at,updated_at) VALUES ('dish-1','dish','Soup','DISH-1','portion',1,?,?)`, schemaTestTime, schemaTestTime)
-	execSchema(t, ctx, db, `INSERT INTO catalog_items(id,type,name,sku,base_unit,active,created_at,updated_at) VALUES ('ingredient-1','ingredient','Potato','ING-1','g',1,?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO catalog_items(id,type,name,sku,base_unit,active,created_at,updated_at) VALUES ('semi-finished-1','semi_finished','Potato prep','SEMI-1','g',1,?,?)`, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO catalog_items(id,type,name,sku,base_unit,active,created_at,updated_at) VALUES ('good-1','good','Bottle','GOOD-1','pcs',1,?,?)`, schemaTestTime, schemaTestTime)
 }
 
@@ -298,7 +298,7 @@ func TestActiveSQLiteMigrationPathUsesSingleManagedCanonicalFile(t *testing.T) {
 			migrations = append(migrations, entry.Name())
 		}
 	}
-	if len(migrations) != 3 || migrations[0] != "001_init.sql" || migrations[1] != "002_runtime_schema_repair.sql" || migrations[2] != "003_pricing_policy_sync_foundation.sql" {
+	if len(migrations) != 4 || migrations[0] != "001_init.sql" || migrations[1] != "002_runtime_schema_repair.sql" || migrations[2] != "003_pricing_policy_sync_foundation.sql" || migrations[3] != "004_catalog_v2_modifiers_runtime.sql" {
 		t.Fatalf("expected ordered managed sqlite migration files, got %+v", migrations)
 	}
 }
@@ -320,8 +320,8 @@ func TestCleanInstallRecordsCanonicalInitMigration(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 3 {
-		t.Fatalf("expected three managed migration rows, got %d", n)
+	if n != 4 {
+		t.Fatalf("expected four managed migration rows, got %d", n)
 	}
 	rows, err := db.QueryContext(ctx, `SELECT version, checksum_sha256, status FROM schema_migrations ORDER BY version`)
 	if err != nil {
@@ -345,7 +345,7 @@ func TestCleanInstallRecordsCanonicalInitMigration(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if len(versions) != 3 || versions[0] != "001_init.sql" || versions[1] != "002_runtime_schema_repair.sql" || versions[2] != "003_pricing_policy_sync_foundation.sql" {
+	if len(versions) != 4 || versions[0] != "001_init.sql" || versions[1] != "002_runtime_schema_repair.sql" || versions[2] != "003_pricing_policy_sync_foundation.sql" || versions[3] != "004_catalog_v2_modifiers_runtime.sql" {
 		t.Fatalf("expected ordered migration history, got %+v", versions)
 	}
 }
@@ -489,8 +489,8 @@ CREATE TABLE cash_sessions (
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations WHERE status = 'applied'`).Scan(&appliedCount); err != nil {
 		t.Fatal(err)
 	}
-	if appliedCount != 3 {
-		t.Fatalf("expected second startup to keep three applied migrations, got %d", appliedCount)
+	if appliedCount != 4 {
+		t.Fatalf("expected second startup to keep four applied migrations, got %d", appliedCount)
 	}
 }
 
@@ -623,7 +623,7 @@ func TestStockMovesCannotHaveZeroQuantity(t *testing.T) {
 	seedCatalogForSchemaTests(t, ctx, db)
 	execSchema(t, ctx, db, `INSERT INTO stock_documents(id,restaurant_id,device_id,document_type,status,occurred_at,created_at,updated_at) VALUES ('stock-doc-1','restaurant-1','device-1','adjustment','posted',?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
 
-	_, err := db.ExecContext(ctx, `INSERT INTO stock_moves(id,stock_document_id,catalog_item_id,movement_type,quantity,unit,occurred_at,created_at) VALUES ('stock-move-1','stock-doc-1','ingredient-1','adjustment',0,'g',?,?)`, schemaTestTime, schemaTestTime)
+	_, err := db.ExecContext(ctx, `INSERT INTO stock_moves(id,stock_document_id,catalog_item_id,movement_type,quantity,unit,occurred_at,created_at) VALUES ('stock-move-1','stock-doc-1','semi-finished-1','adjustment',0,'g',?,?)`, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected zero quantity stock move to fail")
 	}
@@ -632,9 +632,9 @@ func TestStockMovesCannotHaveZeroQuantity(t *testing.T) {
 func TestStockBalancesUniqueByCatalogItemLocationWhenLocationExists(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedCatalogForSchemaTests(t, ctx, db)
-	execSchema(t, ctx, db, `INSERT INTO stock_balances(id,catalog_item_id,location_id,quantity,unit,updated_at) VALUES ('balance-1','ingredient-1','kitchen',10,'g',?)`, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO stock_balances(id,catalog_item_id,location_id,quantity,unit,updated_at) VALUES ('balance-1','semi-finished-1','kitchen',10,'g',?)`, schemaTestTime)
 
-	_, err := db.ExecContext(ctx, `INSERT INTO stock_balances(id,catalog_item_id,location_id,quantity,unit,updated_at) VALUES ('balance-2','ingredient-1','kitchen',20,'g',?)`, schemaTestTime)
+	_, err := db.ExecContext(ctx, `INSERT INTO stock_balances(id,catalog_item_id,location_id,quantity,unit,updated_at) VALUES ('balance-2','semi-finished-1','kitchen',20,'g',?)`, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected duplicate catalog/location stock balance to fail")
 	}
@@ -644,18 +644,18 @@ func TestRecipeVersionReferencesDishCatalogItem(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedCatalogForSchemaTests(t, ctx, db)
 
-	_, err := db.ExecContext(ctx, `INSERT INTO recipe_versions(id,dish_catalog_item_id,version,name,status,yield_quantity,yield_unit,active,created_at,updated_at) VALUES ('recipe-bad','ingredient-1',1,'Bad','draft',1,'portion',1,?,?)`, schemaTestTime, schemaTestTime)
+	_, err := db.ExecContext(ctx, `INSERT INTO recipe_versions(id,dish_catalog_item_id,version,name,status,yield_quantity,yield_unit,active,created_at,updated_at) VALUES ('recipe-bad','good-1',1,'Bad','draft',1,'portion',1,?,?)`, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected recipe version for non-dish catalog item to fail")
 	}
 	execSchema(t, ctx, db, `INSERT INTO recipe_versions(id,dish_catalog_item_id,version,name,status,yield_quantity,yield_unit,active,created_at,updated_at) VALUES ('recipe-1','dish-1',1,'Soup v1','draft',1,'portion',1,?,?)`, schemaTestTime, schemaTestTime)
 }
 
-func TestRecipeLinesReferenceIngredientOrGoodCatalogItems(t *testing.T) {
+func TestRecipeLinesReferenceGoodOrSemiFinishedCatalogItems(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedCatalogForSchemaTests(t, ctx, db)
 	execSchema(t, ctx, db, `INSERT INTO recipe_versions(id,dish_catalog_item_id,version,name,status,yield_quantity,yield_unit,active,created_at,updated_at) VALUES ('recipe-1','dish-1',1,'Soup v1','draft',1,'portion',1,?,?)`, schemaTestTime, schemaTestTime)
-	execSchema(t, ctx, db, `INSERT INTO recipe_lines(id,recipe_version_id,catalog_item_id,quantity,unit,loss_percent,created_at,updated_at) VALUES ('recipe-line-1','recipe-1','ingredient-1',100,'g',0,?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO recipe_lines(id,recipe_version_id,catalog_item_id,quantity,unit,loss_percent,created_at,updated_at) VALUES ('recipe-line-1','recipe-1','semi-finished-1',100,'g',0,?,?)`, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO recipe_lines(id,recipe_version_id,catalog_item_id,quantity,unit,loss_percent,created_at,updated_at) VALUES ('recipe-line-2','recipe-1','good-1',1,'pcs',0,?,?)`, schemaTestTime, schemaTestTime)
 
 	_, err := db.ExecContext(ctx, `INSERT INTO recipe_lines(id,recipe_version_id,catalog_item_id,quantity,unit,loss_percent,created_at,updated_at) VALUES ('recipe-line-bad','recipe-1','dish-1',1,'portion',0,?,?)`, schemaTestTime, schemaTestTime)

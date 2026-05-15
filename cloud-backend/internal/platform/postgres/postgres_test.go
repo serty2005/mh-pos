@@ -130,7 +130,7 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 7 || files[0].Name != "001_sync_receiver.sql" || files[1].Name != "002_projection_event_type_stats.sql" || files[2].Name != "003_runtime_schema_repair.sql" || files[3].Name != "004_master_data_authority.sql" || files[4].Name != "005_master_data_restaurants_api.sql" || files[5].Name != "006_zero_to_cashier_provisioning.sql" || files[6].Name != "007_refund_and_pricing_policy_hardening.sql" {
+	if len(files) != 8 || files[0].Name != "001_sync_receiver.sql" || files[1].Name != "002_projection_event_type_stats.sql" || files[2].Name != "003_runtime_schema_repair.sql" || files[3].Name != "004_master_data_authority.sql" || files[4].Name != "005_master_data_restaurants_api.sql" || files[5].Name != "006_zero_to_cashier_provisioning.sql" || files[6].Name != "007_refund_and_pricing_policy_hardening.sql" || files[7].Name != "008_catalog_v2_modifiers_pricing_policy.sql" {
 		t.Fatalf("expected ordered managed migrations, got %+v", files)
 	}
 	baseBody := string(files[0].Body)
@@ -168,8 +168,8 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 			t.Fatalf("expected master-data authority migration to manage %s", required)
 		}
 	}
-	if !strings.Contains(masterDataBody, "kind IN ('dish','good','ingredient','semi_finished')") || strings.Contains(masterDataBody, "raw_material") {
-		t.Fatalf("expected first-launch catalog item kind check to use canonical ingredient enum only")
+	if !strings.Contains(masterDataBody, "kind IN ('dish','good','semi_finished','service')") || strings.Contains(masterDataBody, "raw_material") {
+		t.Fatalf("expected first-launch catalog item kind check to use canonical catalog v2 enum")
 	}
 	restaurantsBody := string(files[4].Body)
 	for _, required := range []string{
@@ -181,8 +181,8 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 			t.Fatalf("expected restaurants/API migration to manage %s", required)
 		}
 	}
-	if !strings.Contains(restaurantsBody, "WHERE kind = 'raw_material'") || !strings.Contains(restaurantsBody, "kind IN ('dish','good','ingredient','semi_finished')") {
-		t.Fatalf("expected API migration to normalize legacy raw_material rows before enforcing canonical ingredient enum")
+	if !strings.Contains(restaurantsBody, "WHERE kind = 'raw_material'") || !strings.Contains(restaurantsBody, "kind IN ('dish','good','semi_finished','service')") {
+		t.Fatalf("expected API migration to normalize legacy raw_material rows before enforcing canonical catalog v2 enum")
 	}
 	zeroToCashierBody := string(files[5].Body)
 	for _, required := range []string{
@@ -200,6 +200,12 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 	for _, required := range []string{"PaymentRefunded", "CheckRefunded", "pricing_policy", "payments_refunded_count"} {
 		if !strings.Contains(hardeningBody, required) {
 			t.Fatalf("expected hardening migration to manage %s", required)
+		}
+	}
+	catalogV2Body := string(files[7].Body)
+	for _, required := range []string{"cloud_catalog_folders", "cloud_catalog_tags", "cloud_services", "cloud_modifier_group_bindings", "cloud_pricing_policies", "price_minor"} {
+		if !strings.Contains(catalogV2Body, required) {
+			t.Fatalf("expected catalog v2 migration to manage %s", required)
 		}
 	}
 }

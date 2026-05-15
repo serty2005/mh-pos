@@ -114,20 +114,87 @@ ON CONFLICT(id) DO UPDATE SET
 }
 
 func (r *Repository) UpsertMasterCatalogItem(ctx context.Context, v *domain.CatalogItem, meta domain.MasterRecordSyncMeta) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO catalog_items(id,type,name,sku,base_unit,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO catalog_items(id,type,folder_id,name,sku,base_unit,kitchen_type,accounting_category,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(id) DO UPDATE SET
   type = excluded.type,
+  folder_id = excluded.folder_id,
   name = excluded.name,
   sku = excluded.sku,
   base_unit = excluded.base_unit,
+  kitchen_type = excluded.kitchen_type,
+  accounting_category = excluded.accounting_category,
   active = excluded.active,
   updated_at = excluded.updated_at,
   cloud_version = excluded.cloud_version,
   cloud_updated_at = excluded.cloud_updated_at,
   cloud_deleted_at = excluded.cloud_deleted_at,
   last_synced_at = excluded.last_synced_at`,
-		v.ID, string(v.Type), v.Name, v.SKU, v.BaseUnit, boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+		v.ID, string(v.Type), nullableString(v.FolderID), v.Name, v.SKU, v.BaseUnit, v.KitchenType, v.AccountingCategory, boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+	return normalizeErr(err)
+}
+
+func (r *Repository) UpsertMasterCatalogFolder(ctx context.Context, v *domain.CatalogFolder, meta domain.MasterRecordSyncMeta) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO catalog_folders(id,restaurant_id,parent_id,name,sort_order,active,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET restaurant_id=excluded.restaurant_id,parent_id=excluded.parent_id,name=excluded.name,sort_order=excluded.sort_order,active=excluded.active,cloud_version=excluded.cloud_version,cloud_updated_at=excluded.cloud_updated_at,cloud_deleted_at=excluded.cloud_deleted_at,last_synced_at=excluded.last_synced_at`,
+		v.ID, v.RestaurantID, nullableString(v.ParentID), v.Name, v.SortOrder, boolInt(v.Active), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+	return normalizeErr(err)
+}
+
+func (r *Repository) UpsertMasterFolderParameter(ctx context.Context, v *domain.FolderParameter, meta domain.MasterRecordSyncMeta) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO catalog_folder_parameters(id,restaurant_id,folder_id,parameter_key,value_type,value_json,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET restaurant_id=excluded.restaurant_id,folder_id=excluded.folder_id,parameter_key=excluded.parameter_key,value_type=excluded.value_type,value_json=excluded.value_json,cloud_version=excluded.cloud_version,cloud_updated_at=excluded.cloud_updated_at,cloud_deleted_at=excluded.cloud_deleted_at,last_synced_at=excluded.last_synced_at`,
+		v.ID, v.RestaurantID, v.FolderID, v.ParameterKey, v.ValueType, v.ValueJSON, meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+	return normalizeErr(err)
+}
+
+func (r *Repository) UpsertMasterCatalogTag(ctx context.Context, v *domain.CatalogTag, meta domain.MasterRecordSyncMeta) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO catalog_tags(id,restaurant_id,name,code,active,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET restaurant_id=excluded.restaurant_id,name=excluded.name,code=excluded.code,active=excluded.active,cloud_version=excluded.cloud_version,cloud_updated_at=excluded.cloud_updated_at,cloud_deleted_at=excluded.cloud_deleted_at,last_synced_at=excluded.last_synced_at`,
+		v.ID, v.RestaurantID, v.Name, v.Code, boolInt(v.Active), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+	return normalizeErr(err)
+}
+
+func (r *Repository) UpsertMasterCatalogItemTag(ctx context.Context, v *domain.CatalogItemTag, meta domain.MasterRecordSyncMeta) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO catalog_item_tags(catalog_item_id,tag_id,restaurant_id,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?)
+ON CONFLICT(catalog_item_id,tag_id) DO UPDATE SET restaurant_id=excluded.restaurant_id,cloud_version=excluded.cloud_version,cloud_updated_at=excluded.cloud_updated_at,cloud_deleted_at=excluded.cloud_deleted_at,last_synced_at=excluded.last_synced_at`,
+		v.CatalogItemID, v.TagID, v.RestaurantID, meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+	return normalizeErr(err)
+}
+
+func (r *Repository) UpsertMasterModifierGroup(ctx context.Context, v *domain.ModifierGroup, meta domain.MasterRecordSyncMeta) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO modifier_groups(id,restaurant_id,name,required,min_count,max_count,active,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET restaurant_id=excluded.restaurant_id,name=excluded.name,required=excluded.required,min_count=excluded.min_count,max_count=excluded.max_count,active=excluded.active,cloud_version=excluded.cloud_version,cloud_updated_at=excluded.cloud_updated_at,cloud_deleted_at=excluded.cloud_deleted_at,last_synced_at=excluded.last_synced_at`,
+		v.ID, v.RestaurantID, v.Name, boolInt(v.Required), v.MinCount, v.MaxCount, boolInt(v.Active), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+	return normalizeErr(err)
+}
+
+func (r *Repository) UpsertMasterModifierOption(ctx context.Context, v *domain.ModifierOption, meta domain.MasterRecordSyncMeta) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO modifier_options(id,restaurant_id,modifier_group_id,name,price_minor,active,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET restaurant_id=excluded.restaurant_id,modifier_group_id=excluded.modifier_group_id,name=excluded.name,price_minor=excluded.price_minor,active=excluded.active,cloud_version=excluded.cloud_version,cloud_updated_at=excluded.cloud_updated_at,cloud_deleted_at=excluded.cloud_deleted_at,last_synced_at=excluded.last_synced_at`,
+		v.ID, v.RestaurantID, v.ModifierGroupID, v.Name, v.PriceMinor, boolInt(v.Active), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+	return normalizeErr(err)
+}
+
+func (r *Repository) UpsertMasterModifierGroupBinding(ctx context.Context, v *domain.ModifierGroupBinding, meta domain.MasterRecordSyncMeta) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO modifier_group_bindings(id,restaurant_id,modifier_group_id,target_type,target_id,sort_order,active,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET restaurant_id=excluded.restaurant_id,modifier_group_id=excluded.modifier_group_id,target_type=excluded.target_type,target_id=excluded.target_id,sort_order=excluded.sort_order,active=excluded.active,cloud_version=excluded.cloud_version,cloud_updated_at=excluded.cloud_updated_at,cloud_deleted_at=excluded.cloud_deleted_at,last_synced_at=excluded.last_synced_at`,
+		v.ID, v.RestaurantID, v.ModifierGroupID, string(v.TargetType), v.TargetID, v.SortOrder, boolInt(v.Active), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+	return normalizeErr(err)
+}
+
+func (r *Repository) UpsertMasterMenuItemModifierGroup(ctx context.Context, v *domain.MenuItemModifierGroup, meta domain.MasterRecordSyncMeta) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO menu_item_modifier_groups(menu_item_id,modifier_group_id,sort_order,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?)
+ON CONFLICT(menu_item_id,modifier_group_id) DO UPDATE SET sort_order=excluded.sort_order,cloud_version=excluded.cloud_version,cloud_updated_at=excluded.cloud_updated_at,cloud_deleted_at=excluded.cloud_deleted_at,last_synced_at=excluded.last_synced_at`,
+		v.MenuItemID, v.ModifierGroupID, v.SortOrder, meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
 	return normalizeErr(err)
 }
 
@@ -205,6 +272,29 @@ ON CONFLICT(id) DO UPDATE SET
   cloud_deleted_at = excluded.cloud_deleted_at,
   last_synced_at = excluded.last_synced_at`,
 		v.ID, v.RestaurantID, v.Name, string(v.Kind), string(v.AmountKind), v.AmountMinor, v.ValueBasisPoints, boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+	return normalizeErr(err)
+}
+
+func (r *Repository) UpsertMasterPricingPolicy(ctx context.Context, v *domain.PricingPolicy, meta domain.MasterRecordSyncMeta) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO pricing_policies(id,restaurant_id,kind,name,scope,amount_kind,amount_minor,value_basis_points,application_index,requires_permission,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET
+  restaurant_id = excluded.restaurant_id,
+  kind = excluded.kind,
+  name = excluded.name,
+  scope = excluded.scope,
+  amount_kind = excluded.amount_kind,
+  amount_minor = excluded.amount_minor,
+  value_basis_points = excluded.value_basis_points,
+  application_index = excluded.application_index,
+  requires_permission = excluded.requires_permission,
+  active = excluded.active,
+  updated_at = excluded.updated_at,
+  cloud_version = excluded.cloud_version,
+  cloud_updated_at = excluded.cloud_updated_at,
+  cloud_deleted_at = excluded.cloud_deleted_at,
+  last_synced_at = excluded.last_synced_at`,
+		v.ID, v.RestaurantID, string(v.Kind), v.Name, string(v.Scope), string(v.AmountKind), v.AmountMinor, v.ValueBasisPoints, v.ApplicationIndex, v.RequiresPermission, boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
 	return normalizeErr(err)
 }
 

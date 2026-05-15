@@ -787,6 +787,29 @@ button:focus-visible,
   font-size: 12px;
 }
 
+.line-modifiers {
+  display: grid;
+  gap: 2px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.line-modifiers li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #607068;
+  font-size: 12px;
+}
+
+.line-modifiers strong {
+  color: #4f5f57;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .quantity-stepper {
   display: grid;
   grid-template-columns: 48px 48px 48px;
@@ -823,7 +846,27 @@ button:focus-visible,
 }
 
 .menu-button span {
+  display: grid;
+  gap: 4px;
   font-weight: 700;
+}
+
+.menu-button small {
+  color: #6b746e;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.service-section {
+  padding-top: 4px;
+  border-top: 1px solid #e4ded3;
+}
+
+.service-button {
+  min-height: 82px;
+  border-color: #d8dedb;
+  background: #ffffff;
+  box-shadow: inset 0 -3px 0 rgba(31, 111, 91, 0.08);
 }
 
 .menu-search {
@@ -832,6 +875,106 @@ button:focus-visible,
   z-index: 1;
   background: #f7f4ef;
   padding-bottom: 2px;
+}
+
+.modifier-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-width: 680px;
+  border-radius: 8px;
+}
+
+.dialog-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+  border-bottom: 1px solid #e4e8e5;
+}
+
+.dialog-head h2 {
+  margin: 0;
+  color: #24332d;
+  font-size: 24px;
+}
+
+.modifier-total {
+  color: #24332d;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  font-size: 18px;
+  white-space: nowrap;
+}
+
+.modifier-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.modifier-group {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #e1e6e1;
+  border-radius: 8px;
+  background: #fffdfa;
+}
+
+.modifier-group-head,
+.modifier-option {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.modifier-group-head h3 {
+  margin: 0;
+  color: #24332d;
+  font-size: 16px;
+}
+
+.modifier-group-head span,
+.modifier-option span {
+  color: #66706b;
+  font-size: 12px;
+}
+
+.modifier-group-head strong {
+  color: #24332d;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+}
+
+.modifier-options {
+  display: grid;
+  gap: 8px;
+}
+
+.modifier-option {
+  min-height: 58px;
+  padding: 8px 0;
+  border-top: 1px solid #ecefea;
+}
+
+.modifier-option:first-child {
+  border-top: 0;
+}
+
+.modifier-option > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.compact-stepper {
+  grid-template-columns: 40px 40px 40px;
+  min-height: 40px;
+}
+
+.compact-stepper .stepper-button {
+  min-width: 40px;
+  min-height: 40px;
+}
+
+.dialog-actions {
+  padding: 8px 16px 16px;
 }
 
 .checkout-dock {

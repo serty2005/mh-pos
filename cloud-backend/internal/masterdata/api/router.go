@@ -45,6 +45,29 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 		r.Get("/catalog/items/{id}", h.getCatalogItem)
 		r.Patch("/catalog/items/{id}", h.updateCatalogItem)
 		r.Post("/catalog/items/{id}/archive", h.archiveCatalogItem)
+		r.Post("/catalog/folders", h.createCatalogFolder)
+		r.Get("/catalog/folders", h.listCatalogFolders)
+		r.Patch("/catalog/folders/{id}", h.updateCatalogFolder)
+		r.Post("/catalog/folders/{id}/archive", h.archiveCatalogFolder)
+		r.Post("/catalog/folder-parameters", h.createFolderParameter)
+		r.Get("/catalog/folder-parameters", h.listFolderParameters)
+		r.Patch("/catalog/folder-parameters/{id}", h.updateFolderParameter)
+		r.Post("/catalog/tags", h.createCatalogTag)
+		r.Get("/catalog/tags", h.listCatalogTags)
+		r.Patch("/catalog/tags/{id}", h.updateCatalogTag)
+		r.Post("/catalog/item-tags", h.assignCatalogItemTag)
+		r.Post("/modifiers/groups", h.createModifierGroup)
+		r.Get("/modifiers/groups", h.listModifierGroups)
+		r.Patch("/modifiers/groups/{id}", h.updateModifierGroup)
+		r.Post("/modifiers/options", h.createModifierOption)
+		r.Get("/modifiers/options", h.listModifierOptions)
+		r.Patch("/modifiers/options/{id}", h.updateModifierOption)
+		r.Post("/modifiers/bindings", h.createModifierGroupBinding)
+		r.Get("/modifiers/bindings", h.listModifierGroupBindings)
+		r.Patch("/modifiers/bindings/{id}", h.updateModifierGroupBinding)
+		r.Post("/pricing/policies", h.createPricingPolicy)
+		r.Get("/pricing/policies", h.listPricingPolicies)
+		r.Patch("/pricing/policies/{id}", h.updatePricingPolicy)
 		r.Post("/menu/categories", h.createCategory)
 		r.Post("/floor/halls", h.createHall)
 		r.Get("/floor/halls", h.listHalls)
@@ -265,6 +288,181 @@ func (h *Handler) updateCatalogItem(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) archiveCatalogItem(w http.ResponseWriter, r *http.Request) {
 	v, err := h.service.ArchiveCatalogItem(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) createCatalogFolder(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateCatalogFolderCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.CreateCatalogFolder(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) listCatalogFolders(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListCatalogFolders(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) updateCatalogFolder(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdateCatalogFolderCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpdateCatalogFolder(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) archiveCatalogFolder(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ArchiveCatalogFolder(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) createFolderParameter(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateFolderParameterCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.CreateFolderParameter(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) listFolderParameters(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListFolderParameters(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) updateFolderParameter(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdateFolderParameterCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpdateFolderParameter(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) createCatalogTag(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateCatalogTagCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.CreateCatalogTag(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) listCatalogTags(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListCatalogTags(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) updateCatalogTag(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdateCatalogTagCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpdateCatalogTag(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) assignCatalogItemTag(w http.ResponseWriter, r *http.Request) {
+	var cmd app.AssignCatalogItemTagCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.AssignCatalogItemTag(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) createModifierGroup(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateModifierGroupCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.CreateModifierGroup(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) listModifierGroups(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListModifierGroups(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) updateModifierGroup(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdateModifierGroupCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpdateModifierGroup(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) createModifierOption(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateModifierOptionCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.CreateModifierOption(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) listModifierOptions(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListModifierOptions(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) updateModifierOption(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdateModifierOptionCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpdateModifierOption(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) createModifierGroupBinding(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateModifierGroupBindingCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.CreateModifierGroupBinding(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) listModifierGroupBindings(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListModifierGroupBindings(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) updateModifierGroupBinding(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdateModifierGroupBindingCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpdateModifierGroupBinding(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) createPricingPolicy(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreatePricingPolicyCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.CreatePricingPolicy(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) listPricingPolicies(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListPricingPolicies(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) updatePricingPolicy(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdatePricingPolicyCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpdatePricingPolicy(r.Context(), chi.URLParam(r, "id"), cmd)
 	write(w, http.StatusOK, v, err)
 }
 

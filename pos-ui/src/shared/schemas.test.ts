@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { checkSchema, orderSchema, precheckSchema } from './schemas';
+import { checkSchema, menuItemSchema, orderSchema, precheckSchema } from './schemas';
 
 const createdAt = '2026-05-09T10:00:00Z';
 
@@ -115,6 +115,16 @@ describe('runtime contract schemas', () => {
         total_price: 1000,
         currency_code: 'RUB',
         tax_profile_id: null,
+        modifiers: [{
+          id: 'line-modifier-1',
+          order_line_id: 'line-1',
+          modifier_group_id: 'group-1',
+          modifier_option_id: 'option-1',
+          name: 'Milk',
+          quantity: 1,
+          unit_price: 100,
+          total_price: 100,
+        }],
         status: 'active',
         created_at: createdAt,
         updated_at: createdAt,
@@ -123,5 +133,40 @@ describe('runtime contract schemas', () => {
 
     expect(parsed.lines[0]?.currency_code).toBe('RUB');
     expect(parsed.lines[0]?.tax_profile_id).toBeNull();
+    expect(parsed.lines[0]?.modifiers[0]?.total_price).toBe(100);
+  });
+
+  it('parses menu item payload with service type and modifier groups', () => {
+    const parsed = menuItemSchema.parse({
+      id: 'menu-service-1',
+      catalog_item_id: 'catalog-service-1',
+      item_type: 'service',
+      name: 'Delivery',
+      price: 300,
+      currency: 'RUB',
+      modifier_groups: [{
+        id: 'group-1',
+        restaurant_id: 'restaurant-1',
+        name: 'Sauce',
+        required: false,
+        min_count: 0,
+        max_count: 2,
+        active: true,
+        options: [{
+          id: 'option-1',
+          restaurant_id: 'restaurant-1',
+          modifier_group_id: 'group-1',
+          name: 'Hot',
+          price_minor: 0,
+          active: true,
+        }],
+      }],
+      active: true,
+      created_at: createdAt,
+      updated_at: createdAt,
+    });
+
+    expect(parsed.item_type).toBe('service');
+    expect(parsed.modifier_groups[0]?.options[0]?.price_minor).toBe(0);
   });
 });

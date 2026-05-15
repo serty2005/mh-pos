@@ -210,6 +210,17 @@ func (s *Service) CalculateOrderPricing(ctx context.Context, orderID string) (do
 		if line.TaxProfileID != nil && strings.TrimSpace(*line.TaxProfileID) != "" {
 			profileSeen[strings.TrimSpace(*line.TaxProfileID)] = struct{}{}
 		}
+		modifiers := make([]domainpricing.LineModifierInput, 0, len(line.Modifiers))
+		for _, modifier := range line.Modifiers {
+			modifiers = append(modifiers, domainpricing.LineModifierInput{
+				ModifierGroupID:  modifier.ModifierGroupID,
+				ModifierOptionID: modifier.ModifierOptionID,
+				Name:             modifier.Name,
+				Quantity:         modifier.Quantity,
+				UnitPriceMinor:   modifier.UnitPrice,
+				TotalMinor:       modifier.TotalPrice,
+			})
+		}
 		inputLines = append(inputLines, domainpricing.OrderLineInput{
 			ID:            line.ID,
 			MenuItemID:    line.MenuItemID,
@@ -217,11 +228,19 @@ func (s *Service) CalculateOrderPricing(ctx context.Context, orderID string) (do
 			Name:          line.Name,
 			Quantity:      line.Quantity,
 			UnitPrice:     line.UnitPrice,
+			Modifiers:     modifiers,
 			Subtotal:      line.TotalPrice,
 			CurrencyCode:  currency,
 			TaxProfileID:  line.TaxProfileID,
 		})
 	}
+	policies, err := s.repo.ListActivePricingPolicies(ctx, order.RestaurantID)
+	if err != nil {
+		return domain.CalculationResult{}, err
+	}
+	policyDiscounts, policySurcharges := pricingPoliciesToRuntime(order.ID, policies)
+	discounts = append(discounts, policyDiscounts...)
+	surcharges = append(surcharges, policySurcharges...)
 	profileIDs := make([]string, 0, len(profileSeen))
 	for id := range profileSeen {
 		profileIDs = append(profileIDs, id)
@@ -242,6 +261,42 @@ func (s *Service) CalculateOrderPricing(ctx context.Context, orderID string) (do
 		TaxProfiles:  profiles,
 		TaxRules:     rules,
 	})
+}
+
+func pricingPoliciesToRuntime(orderID string, policies []domainpricing.PricingPolicy) ([]domain.OrderDiscount, []domain.OrderSurcharge) {
+	var discounts []domain.OrderDiscount
+	var surcharges []domain.OrderSurcharge
+	for _, policy := range policies {
+		if !policy.Active {
+			continue
+		}
+		reason := policy.Name
+		switch policy.Kind {
+		case domainpricing.PricingPolicyDiscount:
+			discounts = append(discounts, domain.OrderDiscount{
+				ID:               "policy:" + policy.ID,
+				OrderID:          orderID,
+				Scope:            policy.Scope,
+				ApplicationIndex: policy.ApplicationIndex,
+				AmountKind:       policy.AmountKind,
+				AmountMinor:      policy.AmountMinor,
+				ValueBasisPoints: policy.ValueBasisPoints,
+				Reason:           &reason,
+			})
+		case domainpricing.PricingPolicySurcharge:
+			surcharges = append(surcharges, domain.OrderSurcharge{
+				ID:               "policy:" + policy.ID,
+				OrderID:          orderID,
+				Kind:             domain.SurchargeServiceCharge,
+				ApplicationIndex: policy.ApplicationIndex,
+				AmountKind:       policy.AmountKind,
+				AmountMinor:      policy.AmountMinor,
+				ValueBasisPoints: policy.ValueBasisPoints,
+				Reason:           &reason,
+			})
+		}
+	}
+	return discounts, surcharges
 }
 
 func ensurePricingEditableOrder(ctx context.Context, repo ports.Repository, orderID, deviceID string) (*domain.Order, error) {

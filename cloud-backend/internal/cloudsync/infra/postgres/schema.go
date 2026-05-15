@@ -126,7 +126,7 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Table:         "cloud_catalog_items",
 			RequiredBy:    "cloud master-data authority catalog item storage",
 			MigrationFile: "004_master_data_authority.sql, 005_master_data_restaurants_api.sql",
-			Columns:       []string{"id", "restaurant_id", "kind", "name", "sku", "base_unit", "status", "cloud_version", "archived_at", "created_at", "updated_at"},
+			Columns:       []string{"id", "restaurant_id", "kind", "folder_id", "name", "sku", "base_unit", "kitchen_type", "accounting_category", "status", "cloud_version", "archived_at", "created_at", "updated_at"},
 			Indexes:       []string{"cloud_catalog_items_restaurant_kind_status", "cloud_catalog_items_active_sku"},
 		},
 		{
@@ -137,9 +137,39 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 		},
 		{
 			Table:         "cloud_goods",
-			RequiredBy:    "cloud catalog goods/ingredient foundation",
+			RequiredBy:    "cloud catalog goods foundation",
 			MigrationFile: "004_master_data_authority.sql",
 			Columns:       []string{"catalog_item_id", "restaurant_id", "stock_tracking_mode", "updated_at"},
+		},
+		{
+			Table:         "cloud_services",
+			RequiredBy:    "cloud catalog service foundation",
+			MigrationFile: "004_master_data_authority.sql, 008_catalog_v2_modifiers_pricing_policy.sql",
+			Columns:       []string{"catalog_item_id", "restaurant_id", "pricing_mode", "updated_at"},
+		},
+		{
+			Table:         "cloud_catalog_folders",
+			RequiredBy:    "cloud catalog folder hierarchy",
+			MigrationFile: "004_master_data_authority.sql, 008_catalog_v2_modifiers_pricing_policy.sql",
+			Columns:       []string{"id", "restaurant_id", "parent_id", "name", "sort_order", "status", "created_at", "updated_at"},
+		},
+		{
+			Table:         "cloud_catalog_folder_parameters",
+			RequiredBy:    "cloud catalog folder inherited parameters",
+			MigrationFile: "004_master_data_authority.sql, 008_catalog_v2_modifiers_pricing_policy.sql",
+			Columns:       []string{"id", "restaurant_id", "folder_id", "parameter_key", "value_type", "value_json", "created_at", "updated_at"},
+		},
+		{
+			Table:         "cloud_catalog_tags",
+			RequiredBy:    "cloud catalog analytic tags",
+			MigrationFile: "004_master_data_authority.sql, 008_catalog_v2_modifiers_pricing_policy.sql",
+			Columns:       []string{"id", "restaurant_id", "name", "code", "status", "created_at", "updated_at"},
+		},
+		{
+			Table:         "cloud_catalog_item_tags",
+			RequiredBy:    "cloud catalog item tag assignments",
+			MigrationFile: "004_master_data_authority.sql, 008_catalog_v2_modifiers_pricing_policy.sql",
+			Columns:       []string{"catalog_item_id", "tag_id", "restaurant_id", "created_at"},
 		},
 		{
 			Table:         "cloud_semi_finished_products",
@@ -163,7 +193,13 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Table:         "cloud_modifier_options",
 			RequiredBy:    "cloud menu modifier option foundation",
 			MigrationFile: "004_master_data_authority.sql",
-			Columns:       []string{"id", "restaurant_id", "modifier_group_id", "name", "price_delta", "status", "created_at", "updated_at"},
+			Columns:       []string{"id", "restaurant_id", "modifier_group_id", "name", "price_minor", "status", "created_at", "updated_at"},
+		},
+		{
+			Table:         "cloud_modifier_group_bindings",
+			RequiredBy:    "cloud modifier binding foundation",
+			MigrationFile: "004_master_data_authority.sql, 008_catalog_v2_modifiers_pricing_policy.sql",
+			Columns:       []string{"id", "restaurant_id", "modifier_group_id", "target_type", "target_id", "sort_order", "status", "created_at", "updated_at"},
 		},
 		{
 			Table:         "cloud_menu_items",
@@ -197,6 +233,13 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			RequiredBy:    "future multi-location menu assignment foundation",
 			MigrationFile: "004_master_data_authority.sql",
 			Columns:       []string{"menu_item_id", "location_id", "active"},
+		},
+		{
+			Table:         "cloud_pricing_policies",
+			RequiredBy:    "cloud-owned discount/surcharge pricing policy reference",
+			MigrationFile: "008_catalog_v2_modifiers_pricing_policy.sql",
+			Columns:       []string{"id", "restaurant_id", "kind", "name", "scope", "calculation_type", "value", "application_index", "requires_permission", "active", "created_at", "updated_at"},
+			Indexes:       []string{"cloud_pricing_policies_restaurant_active"},
 		},
 		{
 			Table:         "cloud_master_data_publications",

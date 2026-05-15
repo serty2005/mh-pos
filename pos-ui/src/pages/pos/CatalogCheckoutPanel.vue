@@ -144,13 +144,36 @@
             class="menu-button"
             type="button"
             :disabled="!terminal.canAddOrderLine.value"
-            @click="terminal.addLineMutation.mutate(item.id)"
+            @click="terminal.openMenuItem(item)"
+          >
+            <span>
+              {{ item.name }}
+              <small v-if="item.modifier_groups.length">{{ terminal.t('pos.modifiersAvailable') }}</small>
+            </span>
+            <strong>{{ terminal.money(item.price, item.currency) }}</strong>
+          </button>
+        </div>
+        <div v-else class="empty-state">{{ terminal.regularMenuItems.value.length ? terminal.t('pos.noMenuMatches') : terminal.t('pos.emptyMenu') }}</div>
+      </section>
+
+      <section class="catalog-section service-section">
+        <div class="section-head slim">
+          <h2>{{ terminal.t('pos.services') }}</h2>
+        </div>
+        <div v-if="terminal.visibleServiceItems.value.length" class="menu-list service-list">
+          <button
+            v-for="item in terminal.visibleServiceItems.value"
+            :key="item.id"
+            class="menu-button service-button"
+            type="button"
+            :disabled="!terminal.canAddOrderLine.value"
+            @click="terminal.openMenuItem(item)"
           >
             <span>{{ item.name }}</span>
             <strong>{{ terminal.money(item.price, item.currency) }}</strong>
           </button>
         </div>
-        <div v-else class="empty-state">{{ terminal.activeMenuItems.value.length ? terminal.t('pos.noMenuMatches') : terminal.t('pos.emptyMenu') }}</div>
+        <div v-else class="empty-state small">{{ terminal.serviceMenuItems.value.length ? terminal.t('pos.noMenuMatches') : terminal.t('pos.emptyServices') }}</div>
       </section>
 
       <section class="checkout-dock">

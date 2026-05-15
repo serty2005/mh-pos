@@ -1,6 +1,6 @@
 # ROADMAP
 
-Статус документа: актуализировано под фактический код на 2026-05-13.
+Статус документа: актуализировано под фактический код на 2026-05-15.
 
 Roadmap фиксирует статусы, блокеры и следующий план. Архитектурный контракт находится в `SPECv1.3.md`, backend contract — в `docs/backend/POS-BACKEND-SPEC.md`.
 
@@ -17,6 +17,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Menu/catalog read model.
 - Order create/read/current/closed.
 - Add/change/void order lines.
+- Selected modifiers in order lines, modifier price impact in backend pricing, modifier snapshots in precheck/check and cashier modifier selection UI.
+- Service catalog items in Cloud -> Edge sync, POS menu read model, separate cashier UI section and order/pricing/precheck/check flow.
 - `IssuePrecheck`.
 - List/get prechecks.
 - Manager override cancel precheck.
@@ -28,6 +30,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Payment refund route and cashier UI flow.
 - `business_date_local` for shifts, cash sessions, payments and checks.
 - Pricing/Discounts boundary: backend `Pricing` domain/application layer, line/order discounts, separate surcharge foundation, unified ordered modifier pipeline по `application_index`, tax-last invariant, tax profile/rule foundation, deterministic integer rounding и immutable precheck breakdown persistence.
+- Cloud-authored automatic discount/surcharge policies synced through `pricing_policy`; manual discount/surcharge commands remain backend RBAC-controlled operational actions.
 
 ### Cloud And Sync Foundation
 
@@ -35,9 +38,9 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 - Cloud PostgreSQL sync receiver and operational projections foundation.
 - Cloud master-data authority foundation in `004_master_data_authority.sql`.
-- Cloud schema foundation for roles, employees, catalog items, dishes, goods/ingredients, semi-finished products, recipe items, categories, modifier groups/options, menu items, menu assignments and versioned publications.
-- POS Edge Cloud -> Edge ingest for streams `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`.
-- POS Edge Cloud -> Edge ingest for `pricing_policy` tax/service-charge reference rows.
+- Cloud schema foundation for roles, employees, catalog items, dishes, goods, semi-finished products, services, recipe items, menu categories, catalog folders, folder parameters, catalog tags, item tags, modifier groups/options/bindings, menu items, menu assignments and versioned publications.
+- POS Edge Cloud -> Edge ingest for streams `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
+- POS Edge Cloud -> Edge ingest for catalog folders/tags/item tags, services, modifier groups/options/menu item links and `pricing_policy` tax/service-charge/automatic discount-surcharge reference rows.
 - POS Edge outbox/local event foundation for cashier operational events.
 - Refund events `PaymentRefunded` and `CheckRefunded` are confirmed Edge -> Cloud operational events and Cloud receiver/projection inputs.
 - DDD context map exists in `docs/architecture/DDD-CONTEXT-MAP.md`.
@@ -56,26 +59,27 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - `sqlc` rollout как текущий persistence implementation.
 - ClickHouse runtime/projection pipeline.
 
-## Foundation Only
+## Только Основа
 
 Эти зоны имеют schema/domain foundation, но не являются готовым pilot runtime:
 
-- Modifiers: Cloud tables `cloud_modifier_groups`, `cloud_modifier_options`, `cloud_menu_item_modifier_groups`.
 - Recipes: SQLite `recipe_versions`, `recipe_lines`; Cloud `cloud_recipe_items`.
 - Inventory: SQLite `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, purchase receipt foundation.
-- Master-data publications: Cloud package/publication foundation шире текущего POS Edge ingest.
+- Master-data publications: Cloud package/publication foundation пока шире текущего POS Edge runtime для recipes/inventory.
 
 ## В Работе / До Пилота
 
 Блокеры пилота:
 
 - Pricing/Discounts publication:
-  - довести Cloud-authored UI/publication workflow и policy-id-backed runtime adjustments для pricing/tax rules, если pilot acceptance требует централизованного управления правилами;
+  - synced automatic discount/surcharge policies реализованы как backend calculation input;
+  - довести Cloud-authored UI workflow и policy-id-backed manual runtime adjustments, если pilot acceptance требует централизованного управления всеми ручными сценариями;
   - уточнить operator policy для manual discount/surcharge permissions в pilot script.
 - Modifiers:
-  - решить, входят ли modifiers в первый pilot;
-  - если входят, добавить Cloud publication payload, POS Edge ingest, order line snapshot, precheck/check snapshot и cashier UI flow.
+  - runtime, pricing, snapshots and cashier UI flow реализованы сейчас;
+  - остается pilot acceptance по UX деталям, печатным формам и audit/sync требованиям.
 - Recipes/inventory:
+  - старая recipe validation была частичной; новая policy запрещает `dish` как компонент и разрешает `good`/`semi_finished`;
   - решить, входит ли automatic consumption в первый pilot;
   - если входит, реализовать consumption trigger, stock document/move service и snapshot requirements.
 - Refund/reprint hardening:

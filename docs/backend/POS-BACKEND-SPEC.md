@@ -12,12 +12,13 @@
 - SQLite repository/migration/runtime verification.
 - Application services для auth, staff shifts, cash sessions, floor/menu/catalog reads, order, pricing, precheck, payment/check, master-data ingest, outbox.
 - Manual persistence implementation в infrastructure repositories.
+- Selected modifiers runtime для order lines, pricing, precheck/check snapshots.
+- Service catalog items as sellable POS items.
 
 Не реализовано сейчас:
 
 - `sqlc` как текущий persistence implementation;
 - ClickHouse runtime;
-- POS order modifiers runtime;
 - inventory consumption engine;
 - payment processor module;
 - fiscal adapter.
@@ -81,7 +82,7 @@
 1. Cashier opens employee shift.
 2. Cashier opens cash session for device.
 3. Cashier creates order for table.
-4. Cashier adds/changes/voids active order lines.
+4. Cashier adds/changes/voids active order lines, including selected modifiers for menu items with modifier groups.
 5. Cashier can apply backend-authoritative discount/surcharge commands and read pricing preview.
 6. Cashier issues precheck.
 7. Backend locks order and creates immutable financial precheck snapshot.
@@ -98,7 +99,7 @@
 - Precheck can be issued only for `open` order.
 - Order device must match command device.
 - Only one active issued precheck per order is allowed.
-- Snapshot contains active lines, currency, discounts, surcharges, taxes, totals and calculation breakdown at issue time.
+- Snapshot contains active lines with selected modifiers, currency, discounts, surcharges, taxes, totals and calculation breakdown at issue time.
 - Order becomes `locked`.
 - `CancelPrecheckCommand` requires `precheck_id`, `manager_employee_id`, `manager_pin`, `cancellation_reason`.
 - Cancel requires operator permission `pos.precheck.cancel.request` and manager permission `pos.precheck.cancel`.
@@ -118,6 +119,8 @@ Pricing contract:
 - Tax foundation supports `tax_profiles`, `tax_rules`, percentage/fixed components, inclusive/exclusive mode, compound foundation and tax exempt profile foundation; inclusive tax is included in `tax_total`, but does not increase grand total.
 - Precheck issue persists immutable breakdown in `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`.
 - Menu price/tax rule changes after precheck issue do not mutate old precheck/check snapshots.
+- Selected modifiers are priced by backend calculation and persisted in order/precheck/check snapshots.
+- Service items use the same order/pricing/precheck/check flow as other sellable menu items and do not imply recipe semantics.
 
 ## Payment, Check And Refund Contract
 
@@ -132,6 +135,7 @@ Pricing contract:
 - Partial payments are allowed; overpayment is rejected.
 - Full payment creates one final check and closes order.
 - Check snapshot includes immutable precheck snapshot and payment snapshot.
+- Check reprint/refund use immutable snapshots and do not re-read current menu modifier data.
 - Reprint check requires `pos.check.reprint`.
 - Refund endpoint is `POST /api/v1/payments/{id}/refund`.
 - Refund requires `pos.payment.refund`, open cash session and same device/shift/restaurant.
@@ -161,32 +165,37 @@ Pricing contract:
   - `catalog`
   - `menu`
   - `pricing_policy`
-- `pricing_policy` применяет `tax_profiles`, `tax_rules` и `service_charge_rules` с sync metadata.
+- `catalog` применяет catalog folders, folder parameters, catalog tags, item tags and item kinds `dish`, `good`, `semi_finished`, `service`.
+- `menu` применяет menu items, menu item `item_type`, modifier groups/options and menu item modifier group links.
+- `pricing_policy` применяет `tax_profiles`, `tax_rules`, `service_charge_rules` и automatic discount/surcharge `pricing_policies` с sync metadata.
 - Strict JSON decode отклоняет неизвестные request fields; unsupported stream names отклоняются до partial apply.
 
-Только foundation:
+Только основа:
 
 - Domain constants и SQLite state знают о `recipes` и `inventory_reference`, но `mastersync.Service` пока не применяет эти streams.
-- Cloud schema foundation для modifiers/recipes/inventory-adjacent data не делает их поддерживаемыми POS Edge ingest payloads.
+- Cloud schema foundation для recipes/inventory-adjacent data не делает их поддерживаемыми POS Edge ingest payloads.
 
 ## Pricing, Modifiers And Inventory Boundaries
 
 Discounts/taxes:
 
 - Реализовано сейчас: separate `Pricing` policy area, backend authoritative calculation, unified ordered discount/surcharge pipeline, tax-last invariant, immutable precheck breakdown and no UI authoritative totals.
-- Реализовано сейчас: Cloud-authored tax/service-charge reference rows применяются через `pricing_policy`.
-- Запланировано далее: полный Cloud-authored pricing UI/publication workflow и policy-id-backed runtime adjustments.
+- Реализовано сейчас: Cloud-authored tax/service-charge/automatic discount-surcharge reference rows применяются через `pricing_policy`.
+- Реализовано сейчас: selected modifiers participate in line/order totals and immutable snapshots.
+- Реализовано сейчас: service items are priced as normal sellable order lines.
+- Запланировано далее: полный Cloud-authored pricing UI workflow и policy-id-backed manual runtime adjustments.
 - Ручные order discounts/surcharges остаются Edge operational commands и требуют pricing permissions; manual policy exceptions требуют отдельный permission/audit boundary до поддержки.
 
 Modifiers:
 
-- Foundation only: Cloud modifier group/option tables and menu item assignments.
-- Не реализовано сейчас: selected modifiers in order lines, precheck/check snapshots and cashier UI.
-- Запланировано до пилота only if accepted: order line snapshot support and backend price impact calculation.
+- Реализовано сейчас: Cloud modifier group/option/binding data is published and ingested into Edge read model.
+- Реализовано сейчас: selected modifiers are accepted in add-line commands, stored on order lines, priced by backend and copied into precheck/check snapshots.
+- Реализовано сейчас: cashier UI exposes modifier selection for menu items with modifier groups.
+- Запланировано далее: modifier print/reporting/audit polish if pilot acceptance requires it.
 
 Recipes/inventory:
 
-- Foundation only: SQLite recipe and stock tables.
+- Реализована только основа: SQLite recipe and stock tables.
 - Не реализовано сейчас: recipe expansion, modifier-to-recipe expansion, automatic stock consumption.
 - Запланировано далее: stock documents/moves app services and consumption policy.
 

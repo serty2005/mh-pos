@@ -50,10 +50,18 @@ Request body shape currently supported by POS Edge:
   "halls": [],
   "tables": [],
   "catalog_items": [],
+  "folders": [],
+  "folder_parameters": [],
+  "tags": [],
+  "item_tags": [],
   "menu_items": [],
+  "modifier_groups": [],
+  "modifier_options": [],
+  "menu_item_modifier_groups": [],
   "tax_profiles": [],
   "tax_rules": [],
-  "service_charge_rules": []
+  "service_charge_rules": [],
+  "pricing_policies": []
 }
 ```
 
@@ -63,13 +71,15 @@ Request body shape currently supported by POS Edge:
 - Поддерживаемые значения: `incremental` и `full_snapshot`.
 - `full_snapshot` требует `full_snapshot_reason` со значением `terminal_restaurant_changed` или `node_role_changed`.
 - Unsupported streams отклоняются.
-- `pricing_policy` применяет Cloud-authored `tax_profiles`, `tax_rules` и `service_charge_rules` в Edge read-model tables с sync metadata.
+- `catalog` применяет `catalog_items` с canonical `item_type`/`type` values `dish`, `good`, `semi_finished`, `service`, а также `folders`, `folder_parameters`, `tags`, `item_tags`.
+- `menu` применяет `menu_items`, `modifier_groups`, `modifier_options`, `menu_item_modifier_groups`.
+- `pricing_policy` применяет Cloud-authored `tax_profiles`, `tax_rules`, `service_charge_rules` и automatic discount/surcharge `pricing_policies` в Edge read-model tables с sync metadata.
 - Unsupported JSON fields отклоняются strict decode; неизвестные stream names не применяются.
-- `recipes`, `inventory_reference` и modifiers пока не являются поддерживаемыми POS Edge apply payloads.
+- `recipes` и `inventory_reference` пока не являются поддерживаемыми POS Edge apply payloads.
 
-Только foundation:
+Только основа:
 
-- Cloud schema содержит modifier/recipe/menu publication foundation.
+- Cloud schema содержит recipe/inventory-adjacent publication foundation.
 - SQLite schema содержит recipe/inventory foundation.
 - Эти foundation нельзя документировать как поддерживаемый POS Edge runtime ingest, пока `mastersync.Service` не применяет их payloads.
 
@@ -122,16 +132,15 @@ Refund sync behavior:
 
 Не реализовано сейчас:
 
-- modifier selections в operational snapshots;
 - inventory consumption events;
 - PSP/fiscal event streams.
 
-## Planned Boundaries
+## Запланированные Границы
 
 Запланировано до пилота только при отдельном принятии:
 
 - Cloud-authored pricing/tax UI и полный publication workflow поверх generic `pricing_policy` package storage/apply;
-- modifier publication и order snapshot support;
+- modifier print/reporting projections if pilot acceptance requires them;
 
 После пилота:
 

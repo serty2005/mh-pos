@@ -59,24 +59,33 @@ func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idge
 
 type ApplyMasterDataCommand struct {
 	shared.CommandMeta
-	RestaurantID       string                     `json:"restaurant_id,omitempty"`
-	StreamName         domain.MasterDataStream    `json:"stream,omitempty"`
-	SyncMode           domain.SyncMode            `json:"sync_mode,omitempty"`
-	FullSnapshotReason string                     `json:"full_snapshot_reason,omitempty"`
-	CheckpointToken    string                     `json:"checkpoint_token,omitempty"`
-	CloudVersion       int64                      `json:"cloud_version,omitempty"`
-	CloudUpdatedAt     string                     `json:"cloud_updated_at,omitempty"`
-	Restaurants        []domain.Restaurant        `json:"restaurants,omitempty"`
-	Devices            []domain.Device            `json:"devices,omitempty"`
-	Roles              []domain.Role              `json:"roles,omitempty"`
-	Employees          []domain.Employee          `json:"employees,omitempty"`
-	Halls              []domain.Hall              `json:"halls,omitempty"`
-	Tables             []domain.Table             `json:"tables,omitempty"`
-	CatalogItems       []domain.CatalogItem       `json:"catalog_items,omitempty"`
-	MenuItems          []domain.MenuItem          `json:"menu_items,omitempty"`
-	TaxProfiles        []domain.TaxProfile        `json:"tax_profiles,omitempty"`
-	TaxRules           []domain.TaxRule           `json:"tax_rules,omitempty"`
-	ServiceChargeRules []domain.ServiceChargeRule `json:"service_charge_rules,omitempty"`
+	RestaurantID           string                         `json:"restaurant_id,omitempty"`
+	StreamName             domain.MasterDataStream        `json:"stream,omitempty"`
+	SyncMode               domain.SyncMode                `json:"sync_mode,omitempty"`
+	FullSnapshotReason     string                         `json:"full_snapshot_reason,omitempty"`
+	CheckpointToken        string                         `json:"checkpoint_token,omitempty"`
+	CloudVersion           int64                          `json:"cloud_version,omitempty"`
+	CloudUpdatedAt         string                         `json:"cloud_updated_at,omitempty"`
+	Restaurants            []domain.Restaurant            `json:"restaurants,omitempty"`
+	Devices                []domain.Device                `json:"devices,omitempty"`
+	Roles                  []domain.Role                  `json:"roles,omitempty"`
+	Employees              []domain.Employee              `json:"employees,omitempty"`
+	Halls                  []domain.Hall                  `json:"halls,omitempty"`
+	Tables                 []domain.Table                 `json:"tables,omitempty"`
+	CatalogItems           []domain.CatalogItem           `json:"catalog_items,omitempty"`
+	Folders                []domain.CatalogFolder         `json:"folders,omitempty"`
+	FolderParameters       []domain.FolderParameter       `json:"folder_parameters,omitempty"`
+	Tags                   []domain.CatalogTag            `json:"tags,omitempty"`
+	ItemTags               []domain.CatalogItemTag        `json:"item_tags,omitempty"`
+	ModifierGroups         []domain.ModifierGroup         `json:"modifier_groups,omitempty"`
+	ModifierOptions        []domain.ModifierOption        `json:"modifier_options,omitempty"`
+	ModifierBindings       []domain.ModifierGroupBinding  `json:"modifier_bindings,omitempty"`
+	MenuItemModifierGroups []domain.MenuItemModifierGroup `json:"menu_item_modifier_groups,omitempty"`
+	MenuItems              []domain.MenuItem              `json:"menu_items,omitempty"`
+	TaxProfiles            []domain.TaxProfile            `json:"tax_profiles,omitempty"`
+	TaxRules               []domain.TaxRule               `json:"tax_rules,omitempty"`
+	ServiceChargeRules     []domain.ServiceChargeRule     `json:"service_charge_rules,omitempty"`
+	PricingPolicies        []domain.PricingPolicy         `json:"pricing_policies,omitempty"`
 }
 
 type ApplyMasterDataResult struct {
@@ -254,6 +263,33 @@ func (s *Service) applyStream(ctx context.Context, stream domain.MasterDataStrea
 		}
 		counts[string(stream)] = len(cmd.Halls) + len(cmd.Tables)
 	case domain.MasterDataStreamCatalog:
+		for i := range cmd.Folders {
+			v := normalizeCatalogFolder(cmd.Folders[i])
+			if err := validateCatalogFolder(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterCatalogFolder(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
+		for i := range cmd.FolderParameters {
+			v := normalizeFolderParameter(cmd.FolderParameters[i])
+			if err := validateFolderParameter(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterFolderParameter(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
+		for i := range cmd.Tags {
+			v := normalizeCatalogTag(cmd.Tags[i])
+			if err := validateCatalogTag(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterCatalogTag(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
 		for i := range cmd.CatalogItems {
 			v := normalizeCatalogItem(cmd.CatalogItems[i], now)
 			if err := validateCatalogItem(v); err != nil {
@@ -263,7 +299,52 @@ func (s *Service) applyStream(ctx context.Context, stream domain.MasterDataStrea
 				return err
 			}
 		}
-		counts[string(stream)] = len(cmd.CatalogItems)
+		for i := range cmd.ItemTags {
+			v := normalizeCatalogItemTag(cmd.ItemTags[i])
+			if err := validateCatalogItemTag(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterCatalogItemTag(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
+		for i := range cmd.ModifierGroups {
+			v := normalizeModifierGroup(cmd.ModifierGroups[i])
+			if err := validateModifierGroup(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterModifierGroup(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
+		for i := range cmd.ModifierOptions {
+			v := normalizeModifierOption(cmd.ModifierOptions[i])
+			if err := validateModifierOption(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterModifierOption(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
+		for i := range cmd.ModifierBindings {
+			v := normalizeModifierGroupBinding(cmd.ModifierBindings[i])
+			if err := validateModifierGroupBinding(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterModifierGroupBinding(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
+		for i := range cmd.MenuItemModifierGroups {
+			v := normalizeMenuItemModifierGroup(cmd.MenuItemModifierGroups[i])
+			if err := validateMenuItemModifierGroup(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterMenuItemModifierGroup(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
+		counts[string(stream)] = len(cmd.Folders) + len(cmd.FolderParameters) + len(cmd.Tags) + len(cmd.CatalogItems) + len(cmd.ItemTags) + len(cmd.ModifierGroups) + len(cmd.ModifierOptions) + len(cmd.ModifierBindings) + len(cmd.MenuItemModifierGroups)
 	case domain.MasterDataStreamMenu:
 		for i := range cmd.MenuItems {
 			v := normalizeMenuItem(cmd.MenuItems[i], now)
@@ -303,7 +384,16 @@ func (s *Service) applyStream(ctx context.Context, stream domain.MasterDataStrea
 				return err
 			}
 		}
-		counts[string(stream)] = len(cmd.TaxProfiles) + len(cmd.TaxRules) + len(cmd.ServiceChargeRules)
+		for i := range cmd.PricingPolicies {
+			v := normalizePricingPolicy(cmd.PricingPolicies[i], now)
+			if err := validatePricingPolicy(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterPricingPolicy(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
+		counts[string(stream)] = len(cmd.TaxProfiles) + len(cmd.TaxRules) + len(cmd.ServiceChargeRules) + len(cmd.PricingPolicies)
 	default:
 		return fmt.Errorf("%w: unsupported master data stream %q", domain.ErrInvalid, stream)
 	}
@@ -348,8 +438,48 @@ func validatePayload(cmd ApplyMasterDataCommand, streams []domain.MasterDataStre
 				}
 			}
 		case domain.MasterDataStreamCatalog:
+			for i := range cmd.Folders {
+				if err := validateCatalogFolder(normalizeCatalogFolder(cmd.Folders[i])); err != nil {
+					return err
+				}
+			}
+			for i := range cmd.FolderParameters {
+				if err := validateFolderParameter(normalizeFolderParameter(cmd.FolderParameters[i])); err != nil {
+					return err
+				}
+			}
+			for i := range cmd.Tags {
+				if err := validateCatalogTag(normalizeCatalogTag(cmd.Tags[i])); err != nil {
+					return err
+				}
+			}
 			for i := range cmd.CatalogItems {
 				if err := validateCatalogItem(normalizeCatalogItem(cmd.CatalogItems[i], now)); err != nil {
+					return err
+				}
+			}
+			for i := range cmd.ItemTags {
+				if err := validateCatalogItemTag(normalizeCatalogItemTag(cmd.ItemTags[i])); err != nil {
+					return err
+				}
+			}
+			for i := range cmd.ModifierGroups {
+				if err := validateModifierGroup(normalizeModifierGroup(cmd.ModifierGroups[i])); err != nil {
+					return err
+				}
+			}
+			for i := range cmd.ModifierOptions {
+				if err := validateModifierOption(normalizeModifierOption(cmd.ModifierOptions[i])); err != nil {
+					return err
+				}
+			}
+			for i := range cmd.ModifierBindings {
+				if err := validateModifierGroupBinding(normalizeModifierGroupBinding(cmd.ModifierBindings[i])); err != nil {
+					return err
+				}
+			}
+			for i := range cmd.MenuItemModifierGroups {
+				if err := validateMenuItemModifierGroup(normalizeMenuItemModifierGroup(cmd.MenuItemModifierGroups[i])); err != nil {
 					return err
 				}
 			}
@@ -375,6 +505,11 @@ func validatePayload(cmd ApplyMasterDataCommand, streams []domain.MasterDataStre
 					return err
 				}
 			}
+			for i := range cmd.PricingPolicies {
+				if err := validatePricingPolicy(normalizePricingPolicy(cmd.PricingPolicies[i], now)); err != nil {
+					return err
+				}
+			}
 		default:
 			return fmt.Errorf("%w: unsupported master data stream %q", domain.ErrInvalid, stream)
 		}
@@ -395,11 +530,11 @@ func payloadRowCount(cmd ApplyMasterDataCommand, streams []domain.MasterDataStre
 		case domain.MasterDataStreamFloor:
 			total += len(cmd.Halls) + len(cmd.Tables)
 		case domain.MasterDataStreamCatalog:
-			total += len(cmd.CatalogItems)
+			total += len(cmd.Folders) + len(cmd.FolderParameters) + len(cmd.Tags) + len(cmd.CatalogItems) + len(cmd.ItemTags) + len(cmd.ModifierGroups) + len(cmd.ModifierOptions) + len(cmd.ModifierBindings) + len(cmd.MenuItemModifierGroups)
 		case domain.MasterDataStreamMenu:
 			total += len(cmd.MenuItems)
 		case domain.MasterDataStreamPricing:
-			total += len(cmd.TaxProfiles) + len(cmd.TaxRules) + len(cmd.ServiceChargeRules)
+			total += len(cmd.TaxProfiles) + len(cmd.TaxRules) + len(cmd.ServiceChargeRules) + len(cmd.PricingPolicies)
 		}
 	}
 	return total
@@ -451,13 +586,13 @@ func streamsToApply(cmd ApplyMasterDataCommand) ([]domain.MasterDataStream, erro
 	if len(cmd.Halls) > 0 || len(cmd.Tables) > 0 {
 		streams = append(streams, domain.MasterDataStreamFloor)
 	}
-	if len(cmd.CatalogItems) > 0 {
+	if len(cmd.Folders) > 0 || len(cmd.FolderParameters) > 0 || len(cmd.Tags) > 0 || len(cmd.CatalogItems) > 0 || len(cmd.ItemTags) > 0 || len(cmd.ModifierGroups) > 0 || len(cmd.ModifierOptions) > 0 || len(cmd.ModifierBindings) > 0 || len(cmd.MenuItemModifierGroups) > 0 {
 		streams = append(streams, domain.MasterDataStreamCatalog)
 	}
 	if len(cmd.MenuItems) > 0 {
 		streams = append(streams, domain.MasterDataStreamMenu)
 	}
-	if len(cmd.TaxProfiles) > 0 || len(cmd.TaxRules) > 0 || len(cmd.ServiceChargeRules) > 0 {
+	if len(cmd.TaxProfiles) > 0 || len(cmd.TaxRules) > 0 || len(cmd.ServiceChargeRules) > 0 || len(cmd.PricingPolicies) > 0 {
 		streams = append(streams, domain.MasterDataStreamPricing)
 	}
 	if len(streams) == 0 {
@@ -566,11 +701,91 @@ func normalizeTable(v domain.Table, now time.Time) domain.Table {
 
 func normalizeCatalogItem(v domain.CatalogItem, now time.Time) domain.CatalogItem {
 	v.ID = strings.TrimSpace(v.ID)
+	if v.FolderID != nil {
+		folderID := strings.TrimSpace(*v.FolderID)
+		if folderID == "" {
+			v.FolderID = nil
+		} else {
+			v.FolderID = &folderID
+		}
+	}
 	v.Name = strings.TrimSpace(v.Name)
 	v.SKU = strings.TrimSpace(v.SKU)
 	v.BaseUnit = strings.TrimSpace(v.BaseUnit)
+	v.KitchenType = strings.TrimSpace(v.KitchenType)
+	v.AccountingCategory = strings.TrimSpace(v.AccountingCategory)
 	v.CreatedAt = defaultTime(v.CreatedAt, now)
 	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
+	return v
+}
+
+func normalizeCatalogFolder(v domain.CatalogFolder) domain.CatalogFolder {
+	v.ID = strings.TrimSpace(v.ID)
+	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
+	if v.ParentID != nil {
+		parentID := strings.TrimSpace(*v.ParentID)
+		if parentID == "" {
+			v.ParentID = nil
+		} else {
+			v.ParentID = &parentID
+		}
+	}
+	v.Name = strings.TrimSpace(v.Name)
+	return v
+}
+
+func normalizeFolderParameter(v domain.FolderParameter) domain.FolderParameter {
+	v.ID = strings.TrimSpace(v.ID)
+	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
+	v.FolderID = strings.TrimSpace(v.FolderID)
+	v.ParameterKey = strings.TrimSpace(v.ParameterKey)
+	v.ValueType = strings.TrimSpace(v.ValueType)
+	v.ValueJSON = strings.TrimSpace(v.ValueJSON)
+	return v
+}
+
+func normalizeCatalogTag(v domain.CatalogTag) domain.CatalogTag {
+	v.ID = strings.TrimSpace(v.ID)
+	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
+	v.Name = strings.TrimSpace(v.Name)
+	v.Code = strings.TrimSpace(v.Code)
+	return v
+}
+
+func normalizeCatalogItemTag(v domain.CatalogItemTag) domain.CatalogItemTag {
+	v.CatalogItemID = strings.TrimSpace(v.CatalogItemID)
+	v.TagID = strings.TrimSpace(v.TagID)
+	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
+	return v
+}
+
+func normalizeModifierGroup(v domain.ModifierGroup) domain.ModifierGroup {
+	v.ID = strings.TrimSpace(v.ID)
+	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
+	v.Name = strings.TrimSpace(v.Name)
+	return v
+}
+
+func normalizeModifierOption(v domain.ModifierOption) domain.ModifierOption {
+	v.ID = strings.TrimSpace(v.ID)
+	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
+	v.ModifierGroupID = strings.TrimSpace(v.ModifierGroupID)
+	v.Name = strings.TrimSpace(v.Name)
+	return v
+}
+
+func normalizeModifierGroupBinding(v domain.ModifierGroupBinding) domain.ModifierGroupBinding {
+	v.ID = strings.TrimSpace(v.ID)
+	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
+	v.ModifierGroupID = strings.TrimSpace(v.ModifierGroupID)
+	v.TargetType = domain.ModifierTargetType(strings.TrimSpace(string(v.TargetType)))
+	v.TargetID = strings.TrimSpace(v.TargetID)
+	return v
+}
+
+func normalizeMenuItemModifierGroup(v domain.MenuItemModifierGroup) domain.MenuItemModifierGroup {
+	v.MenuItemID = strings.TrimSpace(v.MenuItemID)
+	v.ModifierGroupID = strings.TrimSpace(v.ModifierGroupID)
 	return v
 }
 
@@ -605,6 +820,16 @@ func normalizeServiceChargeRule(v domain.ServiceChargeRule, now time.Time) domai
 	v.ID = strings.TrimSpace(v.ID)
 	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
 	v.Name = strings.TrimSpace(v.Name)
+	v.CreatedAt = defaultTime(v.CreatedAt, now)
+	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
+	return v
+}
+
+func normalizePricingPolicy(v domain.PricingPolicy, now time.Time) domain.PricingPolicy {
+	v.ID = strings.TrimSpace(v.ID)
+	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
+	v.Name = strings.TrimSpace(v.Name)
+	v.RequiresPermission = strings.TrimSpace(v.RequiresPermission)
 	v.CreatedAt = defaultTime(v.CreatedAt, now)
 	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
 	return v
@@ -673,11 +898,72 @@ func validateCatalogItem(v domain.CatalogItem) error {
 		return fmt.Errorf("%w: catalog item id, name, sku and base_unit are required", domain.ErrInvalid)
 	}
 	switch v.Type {
-	case domain.CatalogItemIngredient, domain.CatalogItemDish, domain.CatalogItemGood:
+	case domain.CatalogItemDish, domain.CatalogItemGood, domain.CatalogItemSemiFinished, domain.CatalogItemService:
 		return nil
 	default:
 		return fmt.Errorf("%w: unsupported catalog item type", domain.ErrInvalid)
 	}
+}
+
+func validateCatalogFolder(v domain.CatalogFolder) error {
+	if v.ID == "" || v.RestaurantID == "" || v.Name == "" {
+		return fmt.Errorf("%w: catalog folder id, restaurant_id and name are required", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func validateFolderParameter(v domain.FolderParameter) error {
+	if v.ID == "" || v.RestaurantID == "" || v.FolderID == "" || v.ParameterKey == "" || v.ValueType == "" || !json.Valid([]byte(v.ValueJSON)) {
+		return fmt.Errorf("%w: folder parameter identity and valid value_json are required", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func validateCatalogTag(v domain.CatalogTag) error {
+	if v.ID == "" || v.RestaurantID == "" || v.Name == "" || v.Code == "" {
+		return fmt.Errorf("%w: catalog tag id, restaurant_id, name and code are required", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func validateCatalogItemTag(v domain.CatalogItemTag) error {
+	if v.CatalogItemID == "" || v.TagID == "" || v.RestaurantID == "" {
+		return fmt.Errorf("%w: catalog item tag ids are required", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func validateModifierGroup(v domain.ModifierGroup) error {
+	if v.ID == "" || v.RestaurantID == "" || v.Name == "" || v.MinCount < 0 || v.MaxCount < 0 || (v.MaxCount > 0 && v.MaxCount < v.MinCount) {
+		return fmt.Errorf("%w: modifier group identity and counts are required", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func validateModifierOption(v domain.ModifierOption) error {
+	if v.ID == "" || v.RestaurantID == "" || v.ModifierGroupID == "" || v.Name == "" || v.PriceMinor < 0 {
+		return fmt.Errorf("%w: modifier option identity and non-negative price are required", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func validateModifierGroupBinding(v domain.ModifierGroupBinding) error {
+	if v.ID == "" || v.RestaurantID == "" || v.ModifierGroupID == "" || v.TargetID == "" {
+		return fmt.Errorf("%w: modifier binding identity is required", domain.ErrInvalid)
+	}
+	switch v.TargetType {
+	case domain.ModifierTargetMenuItem, domain.ModifierTargetCatalogItem, domain.ModifierTargetFolder, domain.ModifierTargetTag:
+		return nil
+	default:
+		return fmt.Errorf("%w: unsupported modifier binding target_type", domain.ErrInvalid)
+	}
+}
+
+func validateMenuItemModifierGroup(v domain.MenuItemModifierGroup) error {
+	if v.MenuItemID == "" || v.ModifierGroupID == "" {
+		return fmt.Errorf("%w: menu item modifier group ids are required", domain.ErrInvalid)
+	}
+	return nil
 }
 
 func validateMenuItem(v domain.MenuItem) error {
@@ -747,6 +1033,35 @@ func validateServiceChargeRule(v domain.ServiceChargeRule) error {
 	}
 	if v.AmountMinor < 0 || v.ValueBasisPoints < 0 {
 		return fmt.Errorf("%w: service charge amounts must be non-negative", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func validatePricingPolicy(v domain.PricingPolicy) error {
+	if v.ID == "" || v.RestaurantID == "" || v.Name == "" || v.ApplicationIndex <= 0 {
+		return fmt.Errorf("%w: pricing policy identity and application_index are required", domain.ErrInvalid)
+	}
+	switch v.Kind {
+	case domain.PricingPolicyDiscount, domain.PricingPolicySurcharge:
+	default:
+		return fmt.Errorf("%w: unsupported pricing policy kind", domain.ErrInvalid)
+	}
+	switch v.Scope {
+	case domain.DiscountScopeLine, domain.DiscountScopeOrder:
+	default:
+		return fmt.Errorf("%w: unsupported pricing policy scope", domain.ErrInvalid)
+	}
+	switch v.AmountKind {
+	case domain.AmountPercentage:
+		if v.ValueBasisPoints <= 0 {
+			return fmt.Errorf("%w: percentage pricing policy requires positive value_basis_points", domain.ErrInvalid)
+		}
+	case domain.AmountFixed:
+		if v.AmountMinor <= 0 {
+			return fmt.Errorf("%w: fixed pricing policy requires positive amount_minor", domain.ErrInvalid)
+		}
+	default:
+		return fmt.Errorf("%w: unsupported pricing policy amount_kind", domain.ErrInvalid)
 	}
 	return nil
 }

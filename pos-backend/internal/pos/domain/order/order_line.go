@@ -21,7 +21,19 @@ type OrderLine struct {
 	TotalPrice    int64           `json:"total_price"`
 	CurrencyCode  string          `json:"currency_code"`
 	TaxProfileID  *string         `json:"tax_profile_id,omitempty"`
+	Modifiers     []LineModifier  `json:"modifiers,omitempty"`
 	Status        OrderLineStatus `json:"status"`
 	CreatedAt     time.Time       `json:"created_at"`
 	UpdatedAt     time.Time       `json:"updated_at"`
+}
+
+type LineModifier struct {
+	ID               string `json:"id"`
+	OrderLineID      string `json:"order_line_id"`
+	ModifierGroupID  string `json:"modifier_group_id"`
+	ModifierOptionID string `json:"modifier_option_id"`
+	Name             string `json:"name"`
+	Quantity         int64  `json:"quantity"`
+	UnitPrice        int64  `json:"unit_price"`
+	TotalPrice       int64  `json:"total_price"`
 }

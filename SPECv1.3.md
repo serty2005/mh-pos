@@ -28,8 +28,10 @@
 - cash sessions and cash drawer events;
 - halls/tables read model;
 - menu/catalog read model;
-- order create/read, active lines, quantity change, void line;
+- order create/read, active lines with selected modifiers, quantity change, void line;
 - `Order -> Precheck -> Payment -> Check`;
+- service catalog items as sellable POS items;
+- cashier modifier selection flow for menu items with modifier groups;
 - controlled precheck/check reprint from immutable snapshots;
 - payment refund route and UI flow;
 - Edge -> Cloud operational outbox foundation;
@@ -60,7 +62,7 @@
 - `POST /api/v1/orders/{id}/lines/{line_id}/void`
 - `POST /api/v1/orders/{id}/close`
 
-Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, quantity, unit price и total price. Modifier selections в order line runtime сейчас не подтверждены.
+Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, quantity, unit price, total price и selected modifiers. `SelectedModifierCommand.Quantity` означает количество выбранной modifier option на всю строку заказа; line total считается как `unit_price * line.quantity + sum(selected_modifier.total_price)`.
 
 ### Precheck
 
@@ -102,6 +104,7 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
 - Refund переводит captured payment в `refunded`, уменьшает `paid_total` precheck и, если check уже есть, уменьшает `paid_total` check.
 - Refund пишет подтвержденные Edge -> Cloud operational events `PaymentRefunded` и, если затронут final check, `CheckRefunded`.
 - Check snapshot включает precheck snapshot и payments snapshot.
+- Check snapshot сохраняет selected modifiers через immutable precheck snapshot; reprint/refund не обращаются к текущему каталогу для восстановления старых modifiers.
 
 ## Master Data And Sync
 
@@ -118,14 +121,16 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
   - `catalog`
   - `menu`
   - `pricing_policy`
-- `pricing_policy` применяет Cloud-authored `tax_profiles`, `tax_rules`, `service_charge_rules` как reference/read-model data с sync metadata.
+- `pricing_policy` применяет Cloud-authored `tax_profiles`, `tax_rules`, `service_charge_rules` и automatic discount/surcharge `pricing_policies` как reference/read-model data с sync metadata.
+- `catalog` применяет catalog folders, folder parameters, catalog tags, item tags и catalog item kinds `dish`, `good`, `semi_finished`, `service`.
+- `menu` применяет menu items, menu-visible `item_type`, modifier groups/options and menu item modifier group links.
 - Unknown JSON fields и unsupported stream names отклоняются до partial apply.
 
-Foundation only:
+Остается только основа:
 
 - SQLite schema содержит `recipe_versions`, `recipe_lines`, `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`.
-- Cloud schema содержит master-data authority foundation для catalog/menu, modifier groups/options, recipe items, semi-finished products и publications.
-- Наличие таблиц и типов не означает готовый POS runtime для modifiers, recipe expansion или stock consumption.
+- Cloud schema содержит recipe/inventory-adjacent foundation для recipe items, semi-finished products и publications.
+- Наличие recipe/inventory таблиц и типов не означает готовый POS runtime для recipe expansion или stock consumption.
 
 ## Pricing, Discounts And Tax
 
@@ -150,7 +155,10 @@ Foundation only:
 - `GET /api/v1/orders/{id}/pricing` возвращает calculated preview.
 - `POST /api/v1/orders/{id}/discounts` и `POST /api/v1/orders/{id}/surcharges` сохраняют order pricing adjustments для open order; оба payload требуют `application_index`.
 - `IssuePrecheck` сохраняет immutable financial snapshot и persistence breakdown в `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`.
-- Edge operational adjustments пока остаются runtime-командами; Cloud-authored tax/service-charge reference data приходит через `pricing_policy`.
+- Selected modifiers участвуют в line subtotal и сохраняются в order/precheck/check snapshots.
+- Service items продаются как обычные catalog/menu items с ручной ценой и без recipe semantics.
+- Cloud-authored tax/service-charge/automatic discount-surcharge reference data приходит через `pricing_policy`.
+- Edge manual adjustments остаются runtime-командами с backend permission checks.
 
 Запланировано до пилота:
 
@@ -164,33 +172,29 @@ Foundation only:
 
 ## Modifiers
 
-Foundation only:
+Реализовано сейчас:
 
-- Cloud schema содержит `cloud_modifier_groups`, `cloud_modifier_options`, `cloud_menu_item_modifier_groups`.
-- Это подтверждает master-data foundation, но не POS order runtime.
-
-Не реализовано сейчас:
-
-- POS Edge order line model не подтверждает selected modifiers.
-- Precheck/check snapshots не содержат выбранные modifiers.
-- Cashier UI modifiers flow не подтвержден.
-
-Запланировано до пилота, если modifiers входят в pilot acceptance:
-
-- Modifiers являются частью `Catalog/Menu` master data на Cloud.
-- Menu item может ссылаться на один или несколько modifier groups.
-- Modifier group должна иметь минимум `required`, `min_count`, `max_count`, ordered options.
-- Modifier option должна иметь минимум name, price delta, active/status.
-- Выбранные modifiers должны попадать в order line snapshot, precheck snapshot и check snapshot.
+- Modifiers являются частью `Catalog/Menu` master data на Cloud и синхронизируются на Edge через supported payload sections.
+- Menu item может ссылаться на один или несколько modifier groups; groups/options также могут иметь binding foundation через menu item, catalog item, folder или tag.
+- Modifier group хранит `required`, `min_count`, `max_count`, sort order и lifecycle status.
+- Modifier option хранит name, real modifier price, currency, active/status и sort order; modifier без техкарты и с нулевой ценой допустим.
+- POS Edge order line model хранит selected modifiers.
 - Modifier price impact входит в authoritative backend calculation.
-- UI modifier selection является командой к backend, а не локальным финансовым расчетом.
+- Precheck/check snapshots содержат выбранные modifiers и их финансовый эффект.
+- Cashier UI открывает modifier selection dialog для menu item с groups, отправляет selected modifiers в backend и отображает выбранные modifiers в активном заказе.
+
+Запланировано далее:
+
+- Печатные формы, reporting projections и audit details для modifiers должны быть уточнены отдельно под pilot acceptance.
+- Modifier-to-recipe expansion относится к recipes/inventory, а не к текущему modifier runtime.
 
 ## Recipes And Inventory
 
-Foundation only:
+Реализована только основа:
 
 - SQLite содержит `recipe_versions`, `recipe_lines`, `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`.
 - Cloud schema содержит `cloud_recipe_items`, `cloud_semi_finished_products` и catalog kind foundation.
+- Recipe validation запрещает `dish` как компонент; approved components: `good` и `semi_finished`.
 - `stock_moves` защищены append-only triggers.
 
 Не реализовано сейчас:

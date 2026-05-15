@@ -8,17 +8,19 @@
 
 - POS Edge backend поддерживает cashier runtime `Order -> Precheck -> Payment -> Check`.
 - `IssuePrecheck` блокирует заказ, создает immutable financial snapshot precheck и фиксирует `currency_code`, subtotal, discounts, surcharges, taxes, grand total, paid/remaining totals и breakdown строк/налогов/скидок/надбавок.
-- POS Edge backend содержит MVP `Pricing` boundary: line/order discounts, manual/service/PB1 surcharge foundation, единый ordered discount/surcharge pipeline по `application_index`, percentage/fixed amounts, percentage/fixed tax rules, inclusive/exclusive tax foundation и deterministic integer rounding.
+- POS Edge backend содержит MVP `Pricing` boundary: line/order discounts, synced automatic discount/surcharge policies, manual/service/PB1 surcharge foundation, единый ordered discount/surcharge pipeline по `application_index`, percentage/fixed amounts, percentage/fixed tax rules, inclusive/exclusive tax foundation и deterministic integer rounding.
+- POS Edge order runtime хранит selected modifiers в строках заказа, учитывает цену modifiers в backend authoritative totals и сохраняет modifiers в precheck/check snapshots.
+- POS cashier UI показывает отдельную секцию услуг, открывает выбор modifiers для позиций с modifier groups и отображает выбранные modifiers в активном заказе.
 - `CancelPrecheck` требует manager override, проверяет PIN/permission и возвращает unpaid active precheck order в `open`.
 - Оплата выполняется через `precheck_id`; partial payments разрешены; final check создается только после полной оплаты.
 - `POST /api/v1/payments/{id}/refund` переводит captured payment в `refunded` и уменьшает `paid_total` у precheck/check.
 - Reprint precheck/check строится из immutable snapshot.
-- Cloud -> Edge master-data ingest в POS Edge runtime поддерживает только потоки `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`.
-- Cloud schema содержит foundation для modifier/recipe/master-data authority; SQLite schema содержит foundation для recipes/inventory. Это не означает готовый cashier runtime для modifiers или inventory consumption.
+- Cloud -> Edge master-data ingest в POS Edge runtime поддерживает потоки `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
+- Cloud/Edge master data разделяет menu categories, catalog folders и tags; catalog/menu publication передает folders, folder parameters, tags, item tags, services и modifier groups/options/links.
+- SQLite schema содержит foundation для recipes/inventory. Это не означает готовый cashier runtime для recipe expansion или inventory consumption.
 
 Вне текущего runtime:
 
-- POS order modifiers runtime и cashier UI modifiers;
 - automatic recipe expansion / stock consumption engine;
 - real payment processor module, PSP webhooks и fiscal adapter;
 - ClickHouse runtime pipeline;
