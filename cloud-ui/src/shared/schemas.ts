@@ -221,6 +221,44 @@ export const categorySchema = z.object({
   updated_at: z.string(),
 });
 
+
+export const unassignedEdgeNodeSchema = z.object({
+  id: z.string(),
+  node_device_id: z.string(),
+  claimed_cloud_url: z.string(),
+  display_name: z.string(),
+  app_version: z.string(),
+  status: z.enum(['pending', 'assigned', 'rejected', 'expired']),
+  first_seen_at: z.string(),
+  last_seen_at: z.string(),
+  assigned_restaurant_id: z.string().optional().default(''),
+  assigned_at: z.string().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const assignDeviceResultSchema = z.object({
+  node_device_id: z.string(),
+  restaurant_id: z.string(),
+  status: z.string(),
+  snapshot_url: z.string(),
+});
+
+export const assignmentStatusSchema = z.object({
+  node_device_id: z.string(),
+  status: z.string(),
+  restaurant_id: z.string().optional().default(''),
+  cloud_url: z.string().optional().default(''),
+  snapshot_url: z.string().optional().default(''),
+});
+
+export const pairingCodeResultSchema = z.object({
+  pairing_code: z.string(),
+  restaurant_id: z.string(),
+  node_device_id: z.string(),
+  expires_at: z.string(),
+});
+
 export const publicationSummarySchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
@@ -250,3 +288,7 @@ export type RestaurantTable = z.infer<typeof tableSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;
 export type Category = z.infer<typeof categorySchema>;
 export type PublicationSummary = z.infer<typeof publicationSummarySchema>;
+export type UnassignedEdgeNode = z.infer<typeof unassignedEdgeNodeSchema>;
+export type AssignDeviceResult = z.infer<typeof assignDeviceResultSchema>;
+export type AssignmentStatus = z.infer<typeof assignmentStatusSchema>;
+export type PairingCodeResult = z.infer<typeof pairingCodeResultSchema>;

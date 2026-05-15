@@ -42,11 +42,12 @@ export const i18n = createI18n({
       },
       cloud: {
         scope: 'Cloud-owned master data',
-        title: 'Управление справочниками',
+        title: 'Операционный центр',
         restaurantFilter: 'Ресторан',
         search: 'Поиск',
         rows: 'Строк',
         groups: {
+          scenarios: 'Сценарии запуска',
           organization: 'Организация',
           staff: 'Персонал',
           catalog: 'Каталог',
@@ -57,6 +58,8 @@ export const i18n = createI18n({
           publication: 'Публикация',
         },
         resources: {
+          launchPlan: 'План запуска',
+          edgeDevices: 'Edge-устройства',
           restaurants: 'Рестораны',
           roles: 'Роли',
           employees: 'Сотрудники',
@@ -76,6 +79,8 @@ export const i18n = createI18n({
           publications: 'Publication state',
         },
         descriptions: {
+          launchPlan: 'Реализационный план Cloud UI от подключения Edge до продажи на POS Edge.',
+          edgeDevices: 'Первичный рабочий сценарий: принять заявленное устройство, назначить ресторану или выпустить pairing code.',
           restaurants: 'Список ресторанов и Cloud-owned настройки учетного дня.',
           roles: 'Создание, изменение и архивирование ролей с JSON snapshot прав.',
           employees: 'Карточки сотрудников, lifecycle, назначение роли и ротация PIN без раскрытия PIN material.',
@@ -96,6 +101,13 @@ export const i18n = createI18n({
         },
         fields: {
           active: 'Активно',
+          app_version: 'Версия приложения',
+          cloud_url: 'Cloud URL',
+          display_name: 'Отображаемое имя',
+          expires_at: 'Истекает',
+          expires_in_minutes: 'Срок действия, минут',
+          last_seen_at: 'Последний контакт',
+          snapshot_url: 'Snapshot URL',
           amount_kind: 'Тип суммы',
           amount_minor: 'Сумма minor',
           application_index: 'Индекс применения',
@@ -147,6 +159,13 @@ export const i18n = createI18n({
           value_type: 'Value type',
           version: 'Version',
         },
+        edgeStatuses: {
+          pending: 'ожидает',
+          assigned: 'назначено',
+          rejected: 'отклонено',
+          expired: 'истекло',
+          revoked: 'отозвано',
+        },
         statuses: {
           active: 'активен',
           archived: 'архив',
@@ -191,6 +210,65 @@ export const i18n = createI18n({
           rotatePin: 'Сменить PIN',
           suspend: 'Приостановить',
         },
+        scenarios: {
+          operatorJourney: 'Путь оператора',
+          firstSlice: 'Первый вертикальный срез',
+        },
+        edgeDevices: {
+          assignAction: 'Назначить ресторану',
+          assignTitle: 'Назначение заявленного Edge',
+          checkStatus: 'Проверить assignment status',
+          claimedFlow: 'Claimed-cloud flow',
+          generatePairing: 'Сгенерировать pairing code',
+          licenseFlow: 'License-server flow',
+          pairingCode: 'Pairing code',
+          pairingTitle: 'Код для подключения POS Edge',
+        },
+        launchPlan: {
+          title: 'Полноценный Cloud UI без создания справочников как самоцели',
+          firstSliceTitle: 'Начинаем с подключения Edge',
+          badges: {
+            now: 'реализовано сейчас',
+            next: 'запланировано далее',
+            later: 'после пилота',
+          },
+          steps: {
+            edge: {
+              title: 'Подключить Edge-device к Cloud',
+              description: 'Оператор видит незакрепленные терминалы, назначает ресторан и получает безопасную точку входа к snapshot master data.',
+            },
+            organization: {
+              title: 'Проверить ресторан, зал, роли и сотрудников',
+              description: 'Cloud UI ведет по минимальным данным запуска, не заставляя пользователя работать с техническими таблицами.',
+            },
+            menu: {
+              title: 'Собрать продаваемое меню',
+              description: 'Каталог, модификаторы, цены и меню должны стать сценариями подготовки продажи на Edge-стороне.',
+            },
+            publish: {
+              title: 'Опубликовать пакет и убедиться в готовности Edge',
+              description: 'Публикация связывает изменения Cloud-owned данных с получением snapshot на POS Edge.',
+            },
+            sale: {
+              title: 'Передать в POS Edge сценарий заказа и продажи',
+              description: 'Cashier runtime остается на Edge, а Cloud UI показывает readiness, версии и операционные риски.',
+            },
+          },
+          playbook: {
+            claimed: {
+              title: 'Устройство само заявилось в Cloud',
+              description: 'Список unassigned устройств берется из cloud-backend, назначение выполняется подтвержденным route.',
+            },
+            pairing: {
+              title: 'Оператор выпускает код подключения',
+              description: 'Pairing code создается для ресторана и device id; секреты не логируются и не сохраняются в UI.',
+            },
+            publish: {
+              title: 'После назначения нужна публикация',
+              description: 'Edge должен получить опубликованный пакет master data до формирования заказа и продажи.',
+            },
+          },
+        },
         publications: {
           currentState: 'Текущее состояние публикации',
           publish: 'Новая публикация',
@@ -201,10 +279,13 @@ export const i18n = createI18n({
           created: 'Запись создана.',
           published: 'Master data опубликованы.',
           saved: 'Изменения сохранены.',
+          deviceAssigned: 'Edge-устройство назначено ресторану.',
+          pairingGenerated: 'Pairing code создан.',
         },
         empty: {
           commandOnly: 'Для этой операции подтвержден command endpoint, но не подтвержден list endpoint.',
           noPublication: 'Текущая публикация не найдена.',
+          noEdgeDevices: 'Незакрепленные Edge-устройства не найдены.',
           selectRestaurant: 'Выберите ресторан для работы со справочниками.',
         },
       },

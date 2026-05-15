@@ -422,6 +422,164 @@ button:focus-visible,
   outline-offset: 2px;
 }
 
+
+
+.cloud-scenario-grid,
+.cloud-edge-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.15fr) minmax(320px, 0.85fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.cloud-plan-panel {
+  padding: 18px;
+}
+
+.cloud-plan-panel.accent {
+  background: #24332d;
+  color: #f6f8f4;
+  border-color: #24332d;
+}
+
+.cloud-plan-panel.accent .eyebrow,
+.cloud-plan-panel.accent p,
+.cloud-plan-panel.accent span {
+  color: #b7c4bc;
+}
+
+.section-head.stacked {
+  min-height: 0;
+  display: grid;
+  justify-content: stretch;
+  gap: 5px;
+}
+
+.cloud-roadmap {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cloud-roadmap li {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid #e4e8e5;
+}
+
+.cloud-roadmap li:first-child {
+  border-top: 0;
+}
+
+.cloud-roadmap li > span,
+.cloud-playbook span {
+  color: #66706b;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.cloud-roadmap li.current > span {
+  color: #b8563f;
+  font-weight: 800;
+}
+
+.cloud-roadmap strong,
+.cloud-playbook strong,
+.edge-device-card strong {
+  color: #202124;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.cloud-roadmap p,
+.cloud-playbook p {
+  max-width: 65ch;
+  margin-top: 5px;
+  color: #66706b;
+  line-height: 1.48;
+}
+
+.cloud-playbook {
+  display: grid;
+  gap: 12px;
+}
+
+.cloud-playbook > div {
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+}
+
+.cloud-playbook strong {
+  color: #ffffff;
+}
+
+.edge-device-list {
+  display: grid;
+  gap: 10px;
+}
+
+.edge-device-card {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  padding: 14px;
+  color: #344039;
+  background: #fbfcfa;
+  border: 1px solid #e4e8e5;
+  border-radius: 10px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.edge-device-card:hover,
+.edge-device-card.selected {
+  border-color: #8aa898;
+  background: #f2f6f1;
+}
+
+.edge-device-card small,
+.edge-device-card span:not(.cloud-status) {
+  color: #66706b;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.cloud-result-box,
+.pairing-code-box {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  color: #195544;
+  background: #e6f2ec;
+  border: 1px solid #afd5c4;
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+
+.cloud-result-box.muted {
+  color: #344039;
+  background: #f7f8f5;
+  border-color: #d7ddd7;
+}
+
+.pairing-code-box strong {
+  color: #202124;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  font-size: 28px;
+  letter-spacing: 0.08em;
+}
+
 @media (max-width: 1120px) {
   .cloud-page {
     grid-template-columns: 1fr;
@@ -434,7 +592,9 @@ button:focus-visible,
   }
 
   .cloud-workspace,
-  .cloud-publication-grid {
+  .cloud-publication-grid,
+  .cloud-scenario-grid,
+  .cloud-edge-grid {
     grid-template-columns: 1fr;
   }
 
@@ -459,6 +619,7 @@ button:focus-visible,
 
   .cloud-main-head,
   .cloud-list-tools,
+  .cloud-roadmap li,
   .inline-action.horizontal,
   .cloud-state-grid {
     grid-template-columns: 1fr;
