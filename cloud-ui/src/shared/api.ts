@@ -14,10 +14,16 @@ import {
   modifierGroupSchema,
   modifierOptionSchema,
   pricingPolicySchema,
+  assignDeviceResultSchema,
+  assignmentStatusSchema,
+  pairingCodeResultSchema,
   publicationSummarySchema,
   restaurantSchema,
   roleSchema,
   tableSchema,
+  unassignedEdgeNodeSchema,
+  type AssignDeviceResult,
+  type AssignmentStatus,
   type CatalogFolder,
   type CatalogItem,
   type CatalogItemTag,
@@ -30,11 +36,13 @@ import {
   type ModifierBinding,
   type ModifierGroup,
   type ModifierOption,
+  type PairingCodeResult,
   type PricingPolicy,
   type PublicationSummary,
   type Restaurant,
   type RestaurantTable,
   type Role,
+  type UnassignedEdgeNode,
 } from './schemas';
 
 type Payload = Record<string, unknown>;
@@ -445,4 +453,21 @@ export function publishMasterData(restaurantId: string, payload: Payload): Promi
 
 export function getPublicationState(restaurantId: string): Promise<PublicationSummary | null> {
   return requestOptional(`/restaurants/${encodeURIComponent(restaurantId)}/master-data/publication-state`, publicationSummarySchema);
+}
+
+
+export function listUnassignedDevices(): Promise<UnassignedEdgeNode[]> {
+  return request('/devices/unassigned', z.array(unassignedEdgeNodeSchema));
+}
+
+export function assignDeviceToRestaurant(restaurantId: string, nodeDeviceId: string): Promise<AssignDeviceResult> {
+  return post(`/restaurants/${encodeURIComponent(restaurantId)}/devices/${encodeURIComponent(nodeDeviceId)}/assign`, assignDeviceResultSchema, {});
+}
+
+export function getAssignmentStatus(nodeDeviceId: string): Promise<AssignmentStatus> {
+  return request(`/devices/${encodeURIComponent(nodeDeviceId)}/assignment-status`, assignmentStatusSchema);
+}
+
+export function generatePairingCode(restaurantId: string, payload: Payload): Promise<PairingCodeResult> {
+  return post(`/restaurants/${encodeURIComponent(restaurantId)}/devices/generate-pairing-code`, pairingCodeResultSchema, payload);
 }

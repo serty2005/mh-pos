@@ -65,7 +65,99 @@
           </q-banner>
           <q-banner v-if="successKey" class="success-banner dense-banner">{{ t(successKey) }}</q-banner>
 
-          <section v-if="activeKey !== 'restaurants' && !selectedRestaurantId" class="empty-state wide">
+          <section v-if="activeKey === 'launchPlan'" class="cloud-scenario-grid">
+            <article class="cloud-panel cloud-plan-panel">
+              <div class="section-head stacked">
+                <p class="eyebrow">{{ t('cloud.scenarios.operatorJourney') }}</p>
+                <h2>{{ t('cloud.launchPlan.title') }}</h2>
+              </div>
+              <ol class="cloud-roadmap">
+                <li v-for="step in launchSteps" :key="step.key" :class="step.status">
+                  <span>{{ t(step.badgeKey) }}</span>
+                  <div>
+                    <strong>{{ t(step.titleKey) }}</strong>
+                    <p>{{ t(step.descriptionKey) }}</p>
+                  </div>
+                </li>
+              </ol>
+            </article>
+            <article class="cloud-panel cloud-plan-panel accent">
+              <div class="section-head stacked">
+                <p class="eyebrow">{{ t('cloud.scenarios.firstSlice') }}</p>
+                <h2>{{ t('cloud.launchPlan.firstSliceTitle') }}</h2>
+              </div>
+              <div class="cloud-playbook">
+                <div v-for="item in playbookItems" :key="item.titleKey">
+                  <span>{{ t(item.kickerKey) }}</span>
+                  <strong>{{ t(item.titleKey) }}</strong>
+                  <p>{{ t(item.descriptionKey) }}</p>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section v-else-if="activeKey === 'edgeDevices'" class="cloud-edge-grid">
+            <div class="cloud-panel cloud-list-panel">
+              <div class="cloud-list-tools">
+                <q-input v-model="search" dense outlined clearable debounce="120" :label="t('cloud.search')" />
+                <span>{{ t('cloud.rows') }}: {{ filteredEdgeDevices.length }}</span>
+              </div>
+              <div v-if="isLoading('edge-devices')" class="cloud-skeleton-list">
+                <q-skeleton v-for="index in 4" :key="index" class="skeleton-row" />
+              </div>
+              <div v-else-if="filteredEdgeDevices.length === 0" class="empty-state wide">{{ t('cloud.empty.noEdgeDevices') }}</div>
+              <div v-else class="edge-device-list">
+                <button
+                  v-for="node in filteredEdgeDevices"
+                  :key="node.node_device_id"
+                  type="button"
+                  class="edge-device-card"
+                  :class="{ selected: selectedEdgeNodeId === node.node_device_id }"
+                  @click="selectEdgeNode(node)"
+                >
+                  <span class="cloud-status" :class="node.status">{{ edgeStatusText(node.status) }}</span>
+                  <strong>{{ node.display_name }}</strong>
+                  <small>{{ node.node_device_id }}</small>
+                  <span>{{ t('cloud.fields.app_version') }}: {{ node.app_version || '-' }}</span>
+                  <span>{{ t('cloud.fields.last_seen_at') }}: {{ formatDate(node.last_seen_at) }}</span>
+                </button>
+              </div>
+            </div>
+
+            <form class="cloud-panel cloud-form-panel" @submit.prevent="assignSelectedEdgeDevice">
+              <div class="section-head stacked">
+                <p class="eyebrow">{{ t('cloud.edgeDevices.claimedFlow') }}</p>
+                <h2>{{ t('cloud.edgeDevices.assignTitle') }}</h2>
+              </div>
+              <q-input v-model="selectedEdgeNodeId" dense outlined :label="t('cloud.fields.node_device_id')" />
+              <q-btn color="primary" unelevated icon="link" type="submit" :disable="!selectedRestaurantId || !selectedEdgeNodeId" :loading="isLoading('edge-assign')" :label="t('cloud.edgeDevices.assignAction')" />
+              <q-btn flat icon="manage_search" :disable="!selectedEdgeNodeId" :loading="isLoading('edge-status')" :label="t('cloud.edgeDevices.checkStatus')" @click="loadSelectedAssignmentStatus" />
+              <div v-if="assignmentResult" class="cloud-result-box">
+                <span>{{ t('cloud.fields.status') }}: {{ assignmentResult.status }}</span>
+                <span>{{ t('cloud.fields.snapshot_url') }}: {{ assignmentResult.snapshot_url }}</span>
+              </div>
+              <div v-if="assignmentStatus" class="cloud-result-box muted">
+                <span>{{ t('cloud.fields.status') }}: {{ assignmentStatus.status }}</span>
+                <span>{{ t('cloud.fields.cloud_url') }}: {{ assignmentStatus.cloud_url || '-' }}</span>
+              </div>
+              <q-separator />
+              <div class="section-head stacked">
+                <p class="eyebrow">{{ t('cloud.edgeDevices.licenseFlow') }}</p>
+                <h2>{{ t('cloud.edgeDevices.pairingTitle') }}</h2>
+              </div>
+              <q-input v-model="pairingForm.display_name" dense outlined :label="t('cloud.fields.display_name')" />
+              <q-input v-model="pairingForm.node_device_id" dense outlined :label="t('cloud.fields.node_device_id')" />
+              <q-input v-model.number="pairingForm.expires_in_minutes" dense outlined type="number" :label="t('cloud.fields.expires_in_minutes')" />
+              <q-btn flat icon="password" :disable="!selectedRestaurantId" :loading="isLoading('pairing-code')" :label="t('cloud.edgeDevices.generatePairing')" @click="generateSelectedPairingCode" />
+              <div v-if="pairingResult" class="pairing-code-box">
+                <span>{{ t('cloud.edgeDevices.pairingCode') }}</span>
+                <strong>{{ pairingResult.pairing_code }}</strong>
+                <small>{{ t('cloud.fields.expires_at') }}: {{ formatDate(pairingResult.expires_at) }}</small>
+              </div>
+            </form>
+          </section>
+
+          <section v-else-if="activeKey !== 'restaurants' && !selectedRestaurantId" class="empty-state wide">
             {{ t('cloud.empty.selectRestaurant') }}
           </section>
 
@@ -235,6 +327,7 @@ import {
   archiveRole,
   archiveTable,
   assignCatalogItemTag,
+  assignDeviceToRestaurant,
   assignEmployeeRole,
   createCatalogFolder,
   createCatalogItem,
@@ -251,6 +344,8 @@ import {
   createRestaurant,
   createRole,
   createTable,
+  generatePairingCode,
+  getAssignmentStatus,
   getPublicationState,
   listCatalogFolders,
   listCatalogItems,
@@ -266,6 +361,7 @@ import {
   listRestaurants,
   listRoles,
   listTables,
+  listUnassignedDevices,
   publishMasterData,
   rotateEmployeePIN,
   suspendEmployee,
@@ -285,9 +381,11 @@ import {
   updateTable,
   ApiError,
 } from './shared/api';
-import type { PublicationSummary, Restaurant } from './shared/schemas';
+import type { AssignmentStatus, PairingCodeResult, PublicationSummary, Restaurant, UnassignedEdgeNode } from './shared/schemas';
 
+type ScenarioKey = 'launchPlan' | 'edgeDevices';
 type ResourceKey =
+  | ScenarioKey
   | 'restaurants'
   | 'roles'
   | 'employees'
@@ -306,7 +404,8 @@ type ResourceKey =
   | 'categories'
   | 'publications';
 
-type ScopedResourceKey = Exclude<ResourceKey, 'restaurants' | 'itemTags' | 'categories' | 'publications'>;
+type MasterResourceKey = Exclude<ResourceKey, ScenarioKey | 'publications'>;
+type ScopedResourceKey = Exclude<MasterResourceKey, 'restaurants' | 'itemTags' | 'categories'>;
 type FormMode = 'create' | 'edit';
 type RowValue = string | number | boolean | null | undefined;
 type Row = Record<string, RowValue>;
@@ -324,7 +423,7 @@ type FieldConfig = {
 };
 
 type ResourceConfig = {
-  key: Exclude<ResourceKey, 'publications'>;
+  key: MasterResourceKey;
   groupKey: string;
   titleKey: string;
   descriptionKey: string;
@@ -340,7 +439,7 @@ const { t } = useI18n();
 
 const apiBaseLabel = (import.meta.env.VITE_CLOUD_API_BASE ?? 'http://localhost:8090/api/v1').replace(/\/$/, '');
 const selectedRestaurantId = ref('');
-const activeKey = ref<ResourceKey>('restaurants');
+const activeKey = ref<ResourceKey>('launchPlan');
 const selectedRowId = ref('');
 const search = ref('');
 const mode = ref<FormMode>('create');
@@ -351,7 +450,13 @@ const successKey = ref('');
 const loading = ref<string[]>([]);
 const restaurants = ref<Restaurant[]>([]);
 const publication = ref<PublicationSummary | null>(null);
+const edgeDevices = ref<UnassignedEdgeNode[]>([]);
+const selectedEdgeNodeId = ref('');
+const assignmentResult = ref<{ status: string; snapshot_url: string } | null>(null);
+const assignmentStatus = ref<AssignmentStatus | null>(null);
+const pairingResult = ref<PairingCodeResult | null>(null);
 const publishForm = reactive({ published_by: '', node_device_id: '' });
+const pairingForm = reactive({ display_name: '', node_device_id: '', expires_in_minutes: 30 });
 const form = reactive<Row>({});
 
 const scopedRows = reactive<Record<ScopedResourceKey, Row[]>>({
@@ -565,12 +670,18 @@ const publicationNav = {
   descriptionKey: 'cloud.descriptions.publications',
 };
 
+const scenarioNav = [
+  { key: 'launchPlan' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.launchPlan', descriptionKey: 'cloud.descriptions.launchPlan' },
+  { key: 'edgeDevices' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.edgeDevices', descriptionKey: 'cloud.descriptions.edgeDevices' },
+];
+
 const navGroups = computed(() => {
-  const groupKeys = ['cloud.groups.organization', 'cloud.groups.staff', 'cloud.groups.catalog', 'cloud.groups.modifiers', 'cloud.groups.pricing', 'cloud.groups.floor', 'cloud.groups.menu', 'cloud.groups.publication'];
+  const groupKeys = ['cloud.groups.scenarios', 'cloud.groups.organization', 'cloud.groups.staff', 'cloud.groups.catalog', 'cloud.groups.modifiers', 'cloud.groups.pricing', 'cloud.groups.floor', 'cloud.groups.menu', 'cloud.groups.publication'];
   return groupKeys.map((labelKey) => ({
     key: labelKey,
     labelKey,
     items: [
+      ...(labelKey === 'cloud.groups.scenarios' ? scenarioNav : []),
       ...resourceConfigs.filter((item) => item.groupKey === labelKey),
       ...(labelKey === publicationNav.groupKey ? [publicationNav] : []),
     ],
@@ -578,14 +689,15 @@ const navGroups = computed(() => {
 });
 
 const activeConfig = computed(() => resourceConfigs.find((item) => item.key === activeKey.value));
-const activeTitleKey = computed(() => activeConfig.value?.titleKey ?? publicationNav.titleKey);
-const activeGroupLabelKey = computed(() => activeConfig.value?.groupKey ?? publicationNav.groupKey);
-const activeDescriptionKey = computed(() => activeConfig.value?.descriptionKey ?? publicationNav.descriptionKey);
+const activeScenario = computed(() => scenarioNav.find((item) => item.key === activeKey.value));
+const activeTitleKey = computed(() => activeConfig.value?.titleKey ?? activeScenario.value?.titleKey ?? publicationNav.titleKey);
+const activeGroupLabelKey = computed(() => activeConfig.value?.groupKey ?? activeScenario.value?.groupKey ?? publicationNav.groupKey);
+const activeDescriptionKey = computed(() => activeConfig.value?.descriptionKey ?? activeScenario.value?.descriptionKey ?? publicationNav.descriptionKey);
 const activeColumns = computed(() => activeConfig.value?.columns ?? []);
 const visibleFields = computed(() => (activeConfig.value?.fields ?? []).filter((item) => !(mode.value === 'create' && item.updateOnly) && !(mode.value === 'edit' && item.createOnly)));
 const currentRows = computed<Row[]>(() => {
   if (activeKey.value === 'restaurants') return restaurants.value as unknown as Row[];
-  if (activeKey.value === 'publications' || activeKey.value === 'itemTags' || activeKey.value === 'categories') return [];
+  if (activeKey.value === 'launchPlan' || activeKey.value === 'edgeDevices' || activeKey.value === 'publications' || activeKey.value === 'itemTags' || activeKey.value === 'categories') return [];
   return scopedRows[activeKey.value as ScopedResourceKey];
 });
 const filteredRows = computed(() => {
@@ -599,6 +711,26 @@ const activeLoading = computed(() => isLoading(activeKey.value));
 const canCreateActive = computed(() => Boolean(activeConfig.value?.create && (activeKey.value === 'restaurants' || selectedRestaurantId.value)));
 const canSubmitActive = computed(() => Boolean(activeConfig.value?.create && mode.value === 'create') || Boolean(activeConfig.value?.update && mode.value === 'edit'));
 const publicationCounts = computed(() => Object.entries(publication.value?.counts ?? {}).sort(([a], [b]) => a.localeCompare(b)));
+const filteredEdgeDevices = computed(() => {
+  const needle = search.value.trim().toLowerCase();
+  if (!needle) return edgeDevices.value;
+  return edgeDevices.value.filter((node) => JSON.stringify(node).toLowerCase().includes(needle));
+});
+
+const launchSteps = [
+  { key: 'edge', status: 'current', badgeKey: 'cloud.launchPlan.badges.now', titleKey: 'cloud.launchPlan.steps.edge.title', descriptionKey: 'cloud.launchPlan.steps.edge.description' },
+  { key: 'organization', status: 'next', badgeKey: 'cloud.launchPlan.badges.next', titleKey: 'cloud.launchPlan.steps.organization.title', descriptionKey: 'cloud.launchPlan.steps.organization.description' },
+  { key: 'menu', status: 'next', badgeKey: 'cloud.launchPlan.badges.next', titleKey: 'cloud.launchPlan.steps.menu.title', descriptionKey: 'cloud.launchPlan.steps.menu.description' },
+  { key: 'publish', status: 'next', badgeKey: 'cloud.launchPlan.badges.next', titleKey: 'cloud.launchPlan.steps.publish.title', descriptionKey: 'cloud.launchPlan.steps.publish.description' },
+  { key: 'sale', status: 'later', badgeKey: 'cloud.launchPlan.badges.later', titleKey: 'cloud.launchPlan.steps.sale.title', descriptionKey: 'cloud.launchPlan.steps.sale.description' },
+];
+
+const playbookItems = [
+  { kickerKey: 'cloud.edgeDevices.claimedFlow', titleKey: 'cloud.launchPlan.playbook.claimed.title', descriptionKey: 'cloud.launchPlan.playbook.claimed.description' },
+  { kickerKey: 'cloud.edgeDevices.licenseFlow', titleKey: 'cloud.launchPlan.playbook.pairing.title', descriptionKey: 'cloud.launchPlan.playbook.pairing.description' },
+  { kickerKey: 'cloud.groups.publication', titleKey: 'cloud.launchPlan.playbook.publish.title', descriptionKey: 'cloud.launchPlan.playbook.publish.description' },
+];
+
 const publicationFields = computed(() => {
   if (!publication.value) return [];
   return [
@@ -616,6 +748,7 @@ watch(selectedRestaurantId, async () => {
   if (!selectedRestaurantId.value) return;
   await loadScopedData();
   if (activeKey.value === 'publications') await loadPublication();
+  if (activeKey.value === 'edgeDevices') await loadEdgeDevices();
   resetSelection();
 });
 
@@ -624,6 +757,7 @@ watch(activeKey, async () => {
   search.value = '';
   resetSelection();
   if (activeKey.value === 'publications') await loadPublication();
+  if (activeKey.value === 'edgeDevices') await loadEdgeDevices();
 });
 
 onMounted(async () => {
@@ -643,6 +777,8 @@ function setActive(key: ResourceKey) {
 }
 
 function navCount(key: ResourceKey) {
+  if (key === 'launchPlan') return launchSteps.length;
+  if (key === 'edgeDevices') return edgeDevices.value.length;
   if (key === 'restaurants') return restaurants.value.length;
   if (key === 'publications') return publication.value ? publication.value.version : '-';
   if (key === 'itemTags' || key === 'categories') return '+';
@@ -796,6 +932,8 @@ async function loadPublication() {
 }
 
 async function reloadActive() {
+  if (activeKey.value === 'launchPlan') return;
+  if (activeKey.value === 'edgeDevices') return loadEdgeDevices();
   if (activeKey.value === 'restaurants') return loadRestaurants();
   if (activeKey.value === 'publications') return loadPublication();
   if (activeKey.value === 'itemTags' || activeKey.value === 'categories') return;
@@ -881,6 +1019,49 @@ async function rotateSelectedEmployeePIN() {
   });
 }
 
+
+async function loadEdgeDevices() {
+  await withLoading('edge-devices', async () => {
+    edgeDevices.value = await listUnassignedDevices();
+  });
+}
+
+function selectEdgeNode(node: UnassignedEdgeNode) {
+  selectedEdgeNodeId.value = node.node_device_id;
+  assignmentResult.value = null;
+  assignmentStatus.value = null;
+}
+
+async function assignSelectedEdgeDevice() {
+  if (!selectedRestaurantId.value || !selectedEdgeNodeId.value.trim()) return;
+  await withLoading('edge-assign', async () => {
+    assignmentResult.value = await assignDeviceToRestaurant(selectedRestaurantId.value, selectedEdgeNodeId.value.trim());
+    assignmentStatus.value = null;
+    successKey.value = 'cloud.messages.deviceAssigned';
+    await loadEdgeDevices();
+  });
+}
+
+async function loadSelectedAssignmentStatus() {
+  if (!selectedEdgeNodeId.value.trim()) return;
+  await withLoading('edge-status', async () => {
+    assignmentStatus.value = await getAssignmentStatus(selectedEdgeNodeId.value.trim());
+  });
+}
+
+async function generateSelectedPairingCode() {
+  if (!selectedRestaurantId.value) return;
+  await withLoading('pairing-code', async () => {
+    pairingResult.value = await generatePairingCode(selectedRestaurantId.value, {
+      node_device_id: pairingForm.node_device_id.trim(),
+      display_name: pairingForm.display_name.trim(),
+      expires_in_minutes: Number(pairingForm.expires_in_minutes) || 30,
+    });
+    selectedEdgeNodeId.value = pairingResult.value.node_device_id;
+    successKey.value = 'cloud.messages.pairingGenerated';
+  });
+}
+
 async function publishSelectedRestaurant() {
   if (!selectedRestaurantId.value || !publishForm.published_by.trim()) return;
   await withLoading('publication-submit', async () => {
@@ -940,6 +1121,10 @@ function formatCell(key: string, value: unknown) {
 
 function statusText(value: unknown) {
   return t(`cloud.statuses.${String(value)}`);
+}
+
+function edgeStatusText(value: unknown) {
+  return t(`cloud.edgeStatuses.${String(value)}`);
 }
 
 function formatDate(value: string) {
