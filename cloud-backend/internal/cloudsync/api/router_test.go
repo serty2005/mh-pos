@@ -180,6 +180,25 @@ func TestProvisioningCurrenciesPutAndGet(t *testing.T) {
 	}
 }
 
+func TestCloudUICORSPreflight(t *testing.T) {
+	router := api.NewRouter(app.NewService(memory.NewRepository(), fixedClock{}))
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/restaurants", nil)
+	req.Header.Set("Origin", "http://localhost:5174")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	req.Header.Set("Access-Control-Request-Headers", "content-type")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:5174" {
+		t.Fatalf("expected cloud-ui origin, got %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); got == "" {
+		t.Fatal("expected CORS methods header")
+	}
+}
+
 func postEnvelope(t *testing.T, h http.Handler, raw []byte) contracts.EventAck {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/edge-events", bytes.NewReader(raw))

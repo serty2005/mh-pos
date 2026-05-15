@@ -1,0 +1,470 @@
+:root {
+  color: #202124;
+  background: #ecefe9;
+  font-family:
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  background: #ecefe9;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+.cloud-layout {
+  min-height: 100dvh;
+  background: #ecefe9;
+}
+
+.cloud-header {
+  color: #202124;
+  background: #f7f8f5;
+  border-bottom: 1px solid #d8dedb;
+}
+
+.cloud-toolbar {
+  min-height: 56px;
+  padding: 0 22px;
+}
+
+.cloud-brand {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.cloud-api {
+  margin-right: 14px;
+  color: #66706b;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  font-size: 12px;
+}
+
+.cloud-page {
+  min-height: calc(100dvh - 56px);
+  display: grid;
+  grid-template-columns: 292px minmax(0, 1fr);
+  background:
+    linear-gradient(90deg, rgba(31, 111, 91, 0.05) 0 1px, transparent 1px 100%),
+    linear-gradient(0deg, rgba(31, 111, 91, 0.04) 0 1px, transparent 1px 100%),
+    #ecefe9;
+  background-size: 28px 28px;
+}
+
+.cloud-sidebar {
+  min-height: calc(100dvh - 56px);
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  padding: 18px;
+  background: #f7f8f5;
+  border-right: 1px solid #d8dedb;
+}
+
+.cloud-sidebar-head {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 6px;
+}
+
+.eyebrow {
+  color: #66706b;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  font-size: 12px;
+}
+
+.cloud-sidebar h1 {
+  color: #202124;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.cloud-nav-group {
+  display: grid;
+  gap: 6px;
+}
+
+.cloud-nav-label {
+  color: #66706b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cloud-nav-item {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 10px;
+  color: #344039;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.cloud-nav-item:hover {
+  background: #eef3ef;
+}
+
+.cloud-nav-item.selected {
+  color: #ffffff;
+  background: #24332d;
+  border-color: #24332d;
+}
+
+.cloud-nav-item strong {
+  min-width: 26px;
+  color: inherit;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  font-size: 12px;
+  text-align: right;
+}
+
+.cloud-main {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 16px;
+}
+
+.cloud-main-head {
+  min-height: 92px;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  padding: 18px;
+  color: #f6f8f4;
+  background: #24332d;
+  border: 1px solid #24332d;
+  border-radius: 8px;
+}
+
+.cloud-main-head h2 {
+  color: #ffffff;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.cloud-main-head .eyebrow,
+.cloud-copy {
+  color: #b7c4bc;
+}
+
+.cloud-copy {
+  max-width: 860px;
+  margin-top: 8px;
+  line-height: 1.45;
+}
+
+.cloud-workspace {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(460px, 1fr) minmax(320px, 400px);
+  gap: 12px;
+  align-items: start;
+}
+
+.cloud-publication-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, 1fr) minmax(320px, 390px);
+  gap: 12px;
+  align-items: start;
+}
+
+.cloud-panel {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: #ffffff;
+  border: 1px solid #d7ddd7;
+  border-radius: 8px;
+  box-shadow: 0 14px 40px -34px rgba(36, 51, 45, 0.42);
+}
+
+.cloud-list-panel {
+  min-height: 560px;
+}
+
+.cloud-form-panel {
+  position: sticky;
+  top: 72px;
+  align-content: start;
+}
+
+.section-head {
+  min-height: 34px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-head h2 {
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.cloud-list-tools {
+  display: grid;
+  grid-template-columns: minmax(180px, 320px) auto;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  color: #66706b;
+  font-size: 12px;
+}
+
+.cloud-table-wrap {
+  max-height: calc(100dvh - 244px);
+  overflow: auto;
+  border: 1px solid #e4e8e5;
+  border-radius: 8px;
+}
+
+.cloud-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.cloud-table th,
+.cloud-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e4e8e5;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.cloud-table th {
+  position: sticky;
+  top: 0;
+  color: #66706b;
+  background: #f7f8f5;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.cloud-table tr {
+  cursor: pointer;
+}
+
+.cloud-table tr:hover td {
+  background: #f5f8f4;
+}
+
+.cloud-table tr.selected td {
+  background: #e6f0eb;
+}
+
+.cloud-table td {
+  max-width: 240px;
+  overflow-wrap: anywhere;
+}
+
+.cloud-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: #40534b;
+  background: #edf1ee;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cloud-status.active,
+.cloud-status.published {
+  color: #195544;
+  background: #e6f2ec;
+}
+
+.cloud-status.archived,
+.cloud-status.suspended {
+  color: #7a2e20;
+  background: #f9e7df;
+}
+
+.cloud-form-actions,
+.cloud-extra-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.inline-action {
+  display: grid;
+  gap: 8px;
+}
+
+.inline-action.horizontal {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cloud-skeleton-list {
+  display: grid;
+  gap: 8px;
+}
+
+.skeleton-row {
+  min-height: 44px;
+  border-radius: 6px;
+}
+
+.empty-state {
+  min-height: 108px;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  color: #66706b;
+  border: 1px dashed #c4ccc7;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.empty-state.wide {
+  min-height: 220px;
+}
+
+.dense-banner {
+  min-height: 0;
+  padding: 8px 10px;
+}
+
+.error-banner {
+  color: #7a2e20;
+  background: #f9e7df;
+  border: 1px solid #e7b9a9;
+}
+
+.success-banner {
+  color: #195544;
+  background: #e6f2ec;
+  border: 1px solid #afd5c4;
+}
+
+.cloud-state-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid #e4e8e5;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cloud-state-grid > div {
+  display: grid;
+  gap: 4px;
+  min-height: 76px;
+  padding: 10px;
+  border-right: 1px solid #e4e8e5;
+  border-bottom: 1px solid #e4e8e5;
+}
+
+.cloud-state-grid span,
+.cloud-count-row span {
+  color: #66706b;
+  font-size: 12px;
+}
+
+.cloud-state-grid strong,
+.cloud-count-row strong {
+  color: #202124;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  overflow-wrap: anywhere;
+}
+
+.cloud-counts {
+  display: grid;
+  border: 1px solid #e4e8e5;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cloud-count-row {
+  min-height: 36px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e4e8e5;
+}
+
+.cloud-count-row:last-child {
+  border-bottom: 0;
+}
+
+button:focus-visible,
+.q-btn:focus-visible,
+.q-btn:focus,
+.q-focusable:focus-visible,
+.q-focusable:focus,
+.q-field:focus-within {
+  outline: 3px solid rgba(184, 86, 63, 0.42) !important;
+  outline-offset: 2px;
+}
+
+@media (max-width: 1120px) {
+  .cloud-page {
+    grid-template-columns: 1fr;
+  }
+
+  .cloud-sidebar {
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid #d8dedb;
+  }
+
+  .cloud-workspace,
+  .cloud-publication-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cloud-form-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 720px) {
+  .cloud-toolbar {
+    padding: 0 12px;
+  }
+
+  .cloud-api {
+    display: none;
+  }
+
+  .cloud-main,
+  .cloud-sidebar {
+    padding: 12px;
+  }
+
+  .cloud-main-head,
+  .cloud-list-tools,
+  .inline-action.horizontal,
+  .cloud-state-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cloud-main-head {
+    display: grid;
+  }
+}
