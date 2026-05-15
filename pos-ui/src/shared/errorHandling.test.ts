@@ -8,14 +8,14 @@ describe('error handling helpers', () => {
     const normalized = normalizeApiError(new ApiError({
       status: 403,
       code: 'PERMISSION_DENIED',
-      messageKey: 'errors.permission.denied',
+      messageKey: 'errors.permission',
       category: 'permission',
       correlationId: 'req-403',
     }));
 
     expect(normalized).toMatchObject({
       titleKey: 'errors.dialog.permissionTitle',
-      messageKey: 'errors.permission.denied',
+      messageKey: 'errors.permission',
       recommendationKey: 'errors.recommendation.permission',
       severity: 'permission_error',
       correlationId: 'req-403',

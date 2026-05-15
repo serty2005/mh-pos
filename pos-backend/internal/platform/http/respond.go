@@ -133,9 +133,9 @@ func messageKeyForStatus(status int) string {
 	case http.StatusUnauthorized:
 		return "errors.session.required"
 	case http.StatusForbidden:
-		return "errors.permission.denied"
+		return "errors.permission"
 	case http.StatusNotFound:
-		return "errors.notFound"
+		return "errors.not_found"
 	case http.StatusConflict:
 		return "errors.conflict"
 	case http.StatusTooManyRequests:
@@ -156,19 +156,19 @@ func messageKeyForCode(code, fallback string) string {
 	case "SESSION_CONTEXT_MISMATCH":
 		return "errors.session.contextMismatch"
 	case "PERMISSION_DENIED", "FORBIDDEN":
-		return "errors.permission.denied"
+		return "errors.permission"
 	case "RATE_LIMITED":
 		return "errors.rateLimit"
 	case "DUPLICATE_PIN":
-		return "errors.conflict.duplicatePin"
+		return "errors.conflict_duplicate_pin"
 	case "ACTIVE_PRECHECK_CONFLICT":
-		return "errors.conflict.activePrecheck"
+		return "errors.conflict_active_precheck"
 	case "DUPLICATE_COMMAND":
-		return "errors.conflict.duplicateCommand"
+		return "errors.conflict_duplicate_command"
 	case "VALIDATION_FAILED":
 		return "errors.validation"
 	case "NOT_FOUND":
-		return "errors.notFound"
+		return "errors.not_found"
 	case "INTERNAL_ERROR":
 		return "errors.server"
 	default:

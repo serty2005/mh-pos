@@ -77,6 +77,16 @@
 - `POST /api/v1/sync/master-data/snapshots`
 - `POST /api/v1/sync/master-data/{stream}`
 
+## Current/Optional Reads
+
+Реализовано сейчас:
+
+- `GET /api/v1/employee-shifts/current`, `GET /api/v1/cash-shifts/current` и `GET /api/v1/orders/current?table_id=...` используют `404 NOT_FOUND` как empty state, когда текущая сущность отсутствует.
+- Это не retryable error и не означает инфраструктурный сбой. Cashier UI превращает такой `404` в `null` через optional read helper и показывает состояние "нет открытой смены/кассовой смены/активного заказа".
+- `GET /api/v1/employee-shifts/current` ищет текущую личную смену по authenticated employee в restaurant context, а не по устройству.
+- `GET /api/v1/cash-shifts/current` ищет открытую кассовую смену по устройству из authenticated request context.
+- Переход на `200 null` для этих optional current endpoints не реализован сейчас и требует согласованного изменения backend, UI, tests и документации.
+
 ## Cashier Flow
 
 Реализовано сейчас:

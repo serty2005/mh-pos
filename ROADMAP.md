@@ -32,6 +32,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - `business_date_local` for shifts, cash sessions, payments, checks and financial operations.
 - Pricing/Discounts boundary: backend `Pricing` domain/application layer, line/order discounts, separate surcharge foundation, unified ordered modifier pipeline по `application_index`, tax-last invariant, tax profile/rule foundation, deterministic integer rounding и immutable precheck breakdown persistence.
 - Cloud-authored automatic discount/surcharge policies synced through `pricing_policy`; manual discount/surcharge commands remain backend RBAC-controlled operational actions.
+- UI error handling hardening для cashier pilot: optional current `404` reads отображаются как empty state, payment `409` показывает localized business error и обновляет order/precheck/check/cash-session состояние без auto-retry оплаты, ru locale содержит backend/API error keys.
 
 ### Cloud And Sync Foundation
 
