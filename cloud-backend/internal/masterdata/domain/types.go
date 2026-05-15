@@ -424,6 +424,7 @@ type EdgeRestaurant struct {
 	Currency                     string    `json:"currency"`
 	BusinessDayMode              string    `json:"business_day_mode"`
 	BusinessDayBoundaryLocalTime string    `json:"business_day_boundary_local_time"`
+	Active                       bool      `json:"active"`
 	CreatedAt                    time.Time `json:"created_at"`
 	UpdatedAt                    time.Time `json:"updated_at"`
 }

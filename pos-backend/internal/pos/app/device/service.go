@@ -77,6 +77,13 @@ func (s *Service) PairEdgeNode(ctx context.Context, cmd PairEdgeNodeCommand) (*d
 	if !knownRestaurant {
 		return nil, fmt.Errorf("%w: pairing_code references unknown restaurant_id", domain.ErrInvalid)
 	}
+	if existing, err := s.repo.GetEdgeNodeIdentity(ctx); err == nil {
+		if existing.Status == domain.EdgeNodePaired && existing.RestaurantID == restaurantID && existing.NodeDeviceID == nodeDeviceID {
+			return existing, nil
+		}
+	} else if !errors.Is(err, domain.ErrNotFound) {
+		return nil, err
+	}
 	now := s.clock.Now()
 	identity := &domain.EdgeNodeIdentity{
 		ID:              "local",

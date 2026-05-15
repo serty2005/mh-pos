@@ -1797,6 +1797,7 @@ func edgeRestaurants(items []domain.Restaurant) []domain.EdgeRestaurant {
 			Currency:                     item.Currency,
 			BusinessDayMode:              item.BusinessDayMode,
 			BusinessDayBoundaryLocalTime: item.BusinessDayBoundaryLocalTime,
+			Active:                       item.Status == domain.RestaurantActive,
 			CreatedAt:                    item.CreatedAt,
 			UpdatedAt:                    item.UpdatedAt,
 		})
