@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -30,6 +31,11 @@ func JSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if v != nil {
+		value := reflect.ValueOf(v)
+		if value.Kind() == reflect.Slice && value.IsNil() {
+			_, _ = w.Write([]byte("[]\n"))
+			return
+		}
 		_ = json.NewEncoder(w).Encode(v)
 	}
 }

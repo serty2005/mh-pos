@@ -181,12 +181,15 @@ func (s *Service) PairViaLicense(ctx context.Context, cmd PairViaLicenseCommand)
 	if s.license == nil || s.licenseURL == "" {
 		return domain.ProvisioningStatusView{}, fmt.Errorf("%w: license server url is required", domain.ErrInvalid)
 	}
-	resp, err := s.license.Resolve(ctx, s.licenseURL, LicenseResolveRequest{PairingCode: strings.TrimSpace(cmd.PairingCode), NodeDeviceID: state.NodeDeviceID})
+	resp, err := s.license.Resolve(ctx, s.licenseURL, LicenseResolveRequest{PairingCode: strings.TrimSpace(cmd.PairingCode)})
 	if err != nil {
 		return domain.ProvisioningStatusView{}, err
 	}
 	if resp.NodeDeviceID != "" && resp.NodeDeviceID != state.NodeDeviceID {
-		return domain.ProvisioningStatusView{}, fmt.Errorf("%w: license node_device_id conflicts with local identity", domain.ErrConflict)
+		if state.Status == domain.ProvisioningPaired {
+			return domain.ProvisioningStatusView{}, fmt.Errorf("%w: license node_device_id conflicts with paired local identity", domain.ErrConflict)
+		}
+		state.NodeDeviceID = resp.NodeDeviceID
 	}
 	if err := s.finishAssigned(ctx, state, resp.CloudURL, resp.RestaurantID, "/api/v1/restaurants/"+resp.RestaurantID+"/edge-nodes/"+state.NodeDeviceID+"/master-data/snapshot", &resp.Credentials); err != nil {
 		return domain.ProvisioningStatusView{}, err

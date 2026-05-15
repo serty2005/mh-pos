@@ -61,7 +61,14 @@
           </header>
 
           <q-banner v-if="errorKey" class="error-banner dense-banner">
-            {{ t(errorKey) }} <span v-if="errorCode">{{ errorCode }}</span>
+            <div class="error-content">
+              <strong>{{ t(errorKey) }}</strong>
+              <span v-if="errorCode">{{ t('errors.supportCode') }}: {{ errorCode }}</span>
+              <span v-if="errorCorrelationId">{{ t('errors.correlationId') }}: {{ errorCorrelationId }}</span>
+              <ul v-if="errorDetailsList.length > 0">
+                <li v-for="item in errorDetailsList" :key="item.key">{{ item.label }}: {{ item.value }}</li>
+              </ul>
+            </div>
           </q-banner>
           <q-banner v-if="successKey" class="success-banner dense-banner">{{ t(successKey) }}</q-banner>
 
@@ -80,6 +87,22 @@
                   </div>
                 </li>
               </ol>
+            </article>
+            <article class="cloud-panel cloud-plan-panel">
+              <div class="section-head stacked">
+                <p class="eyebrow">{{ t('cloud.onboarding.kicker') }}</p>
+                <h2>{{ t('cloud.onboarding.title') }}</h2>
+              </div>
+              <div class="onboarding-checks">
+                <div v-for="check in onboardingChecks" :key="check.key" class="onboarding-check">
+                  <q-icon :name="check.ready ? 'check_circle' : 'radio_button_unchecked'" :class="{ ready: check.ready }" />
+                  <div>
+                    <strong>{{ t(check.titleKey) }}</strong>
+                    <span>{{ t(check.descriptionKey, check.params) }}</span>
+                  </div>
+                  <q-btn flat dense :icon="check.icon" :label="t(check.actionKey)" @click="setActive(check.target)" />
+                </div>
+              </div>
             </article>
             <article class="cloud-panel cloud-plan-panel accent">
               <div class="section-head stacked">
@@ -129,7 +152,16 @@
                 <p class="eyebrow">{{ t('cloud.edgeDevices.claimedFlow') }}</p>
                 <h2>{{ t('cloud.edgeDevices.assignTitle') }}</h2>
               </div>
-              <q-input v-model="selectedEdgeNodeId" dense outlined :label="t('cloud.fields.node_device_id')" />
+              <q-select
+                v-model="selectedEdgeNodeId"
+                dense
+                outlined
+                emit-value
+                map-options
+                :label="t('cloud.fields.edge_node')"
+                :options="unassignedEdgeOptions"
+                :disable="unassignedEdgeOptions.length === 0"
+              />
               <q-btn color="primary" unelevated icon="link" type="submit" :disable="!selectedRestaurantId || !selectedEdgeNodeId" :loading="isLoading('edge-assign')" :label="t('cloud.edgeDevices.assignAction')" />
               <q-btn flat icon="manage_search" :disable="!selectedEdgeNodeId" :loading="isLoading('edge-status')" :label="t('cloud.edgeDevices.checkStatus')" @click="loadSelectedAssignmentStatus" />
               <div v-if="assignmentResult" class="cloud-result-box">
@@ -146,12 +178,12 @@
                 <h2>{{ t('cloud.edgeDevices.pairingTitle') }}</h2>
               </div>
               <q-input v-model="pairingForm.display_name" dense outlined :label="t('cloud.fields.display_name')" />
-              <q-input v-model="pairingForm.node_device_id" dense outlined :label="t('cloud.fields.node_device_id')" />
               <q-input v-model.number="pairingForm.expires_in_minutes" dense outlined type="number" :label="t('cloud.fields.expires_in_minutes')" />
               <q-btn flat icon="password" :disable="!selectedRestaurantId" :loading="isLoading('pairing-code')" :label="t('cloud.edgeDevices.generatePairing')" @click="generateSelectedPairingCode" />
               <div v-if="pairingResult" class="pairing-code-box">
                 <span>{{ t('cloud.edgeDevices.pairingCode') }}</span>
                 <strong>{{ pairingResult.pairing_code }}</strong>
+                <small>{{ t('cloud.fields.edge_node') }}: {{ nodeDisplayName(pairingResult.node_device_id) }}</small>
                 <small>{{ t('cloud.fields.expires_at') }}: {{ formatDate(pairingResult.expires_at) }}</small>
               </div>
             </form>
@@ -187,7 +219,16 @@
                 <h2>{{ t('cloud.publications.publish') }}</h2>
               </div>
               <q-input v-model="publishForm.published_by" dense outlined :label="t('cloud.fields.published_by')" />
-              <q-input v-model="publishForm.node_device_id" dense outlined :label="t('cloud.fields.node_device_id')" />
+              <q-select
+                v-model="publishForm.node_device_id"
+                dense
+                outlined
+                clearable
+                emit-value
+                map-options
+                :label="t('cloud.fields.edge_node')"
+                :options="knownNodeOptions"
+              />
               <q-btn
                 color="primary"
                 unelevated
@@ -248,13 +289,18 @@
 
               <template v-for="field in visibleFields" :key="field.key">
                 <q-checkbox v-if="field.type === 'checkbox'" v-model="form[field.key]" :label="t(field.labelKey)" />
+                <template v-else-if="field.type === 'permissionMatrix'" />
                 <q-select
-                  v-else-if="selectOptions(field).length > 0"
-                  v-model="form[field.key]"
+                  v-else-if="field.options"
+                  :key="`${field.key}-${selectOptions(field).length}`"
+                  :model-value="form[field.key]"
+                  @update:model-value="(value) => setFormValue(field.key, value)"
                   dense
                   outlined
+                  clearable
                   emit-value
                   map-options
+                  :disable="isSelectDisabled(field)"
                   :label="t(field.labelKey)"
                   :options="selectOptions(field)"
                 />
@@ -268,6 +314,27 @@
                   :rows="field.type === 'textarea' ? field.rows ?? 4 : undefined"
                   :label="t(field.labelKey)"
                 />
+              </template>
+              <template v-for="field in permissionFields" :key="field.key">
+                <section class="permission-matrix">
+                  <div class="section-head stacked">
+                    <p class="eyebrow">{{ t(field.labelKey) }}</p>
+                    <h2>{{ t('cloud.permissions.matrixTitle') }}</h2>
+                  </div>
+                  <div class="permission-group" v-for="group in permissionGroups" :key="group.key">
+                    <strong>{{ t(group.labelKey) }}</strong>
+                    <div class="permission-grid">
+                      <q-checkbox
+                        v-for="permission in group.permissions"
+                        :key="permission"
+                        :model-value="selectedPermissions.includes(permission)"
+                        dense
+                        :label="permissionLabel(permission)"
+                        @update:model-value="(checked) => togglePermission(permission, Boolean(checked))"
+                      />
+                    </div>
+                  </div>
+                </section>
               </template>
 
               <div class="cloud-form-actions">
@@ -407,19 +474,31 @@ type ResourceKey =
 type MasterResourceKey = Exclude<ResourceKey, ScenarioKey | 'publications'>;
 type ScopedResourceKey = Exclude<MasterResourceKey, 'restaurants' | 'itemTags' | 'categories'>;
 type FormMode = 'create' | 'edit';
-type RowValue = string | number | boolean | null | undefined;
+type RowValue = string | number | boolean | string[] | null | undefined;
 type Row = Record<string, RowValue>;
 type SelectOption = { label: string; value: string | number | boolean };
 
 type FieldConfig = {
   key: string;
   labelKey: string;
-  type?: 'text' | 'number' | 'textarea' | 'checkbox';
+  type?: 'text' | 'number' | 'textarea' | 'checkbox' | 'permissionMatrix';
   rows?: number;
   options?: string;
   createOnly?: boolean;
   updateOnly?: boolean;
   defaultValue?: RowValue;
+};
+
+type PermissionGroup = {
+  key: string;
+  labelKey: string;
+  permissions: string[];
+};
+
+type RolePreset = {
+  key: string;
+  labelKey: string;
+  permissions: string[];
 };
 
 type ResourceConfig = {
@@ -435,7 +514,7 @@ type ResourceConfig = {
   archive?: (id: string) => Promise<unknown>;
 };
 
-const { t } = useI18n();
+const { t, tm } = useI18n();
 
 const apiBaseLabel = (import.meta.env.VITE_CLOUD_API_BASE ?? 'http://localhost:8090/api/v1').replace(/\/$/, '');
 const selectedRestaurantId = ref('');
@@ -446,6 +525,8 @@ const mode = ref<FormMode>('create');
 const actionPin = ref('');
 const errorKey = ref('');
 const errorCode = ref('');
+const errorCorrelationId = ref('');
+const errorDetails = ref<Record<string, string>>({});
 const successKey = ref('');
 const loading = ref<string[]>([]);
 const restaurants = ref<Restaurant[]>([]);
@@ -456,8 +537,152 @@ const assignmentResult = ref<{ status: string; snapshot_url: string } | null>(nu
 const assignmentStatus = ref<AssignmentStatus | null>(null);
 const pairingResult = ref<PairingCodeResult | null>(null);
 const publishForm = reactive({ published_by: '', node_device_id: '' });
-const pairingForm = reactive({ display_name: '', node_device_id: '', expires_in_minutes: 30 });
+const pairingForm = reactive({ display_name: '', expires_in_minutes: 30 });
 const form = reactive<Row>({});
+
+const permissionGroups: PermissionGroup[] = [
+  {
+    key: 'shift',
+    labelKey: 'cloud.permissions.groups.shift',
+    permissions: ['pos.employee_shift.open', 'pos.employee_shift.close', 'pos.employee_shift.view_current', 'pos.employee_shift.recent'],
+  },
+  {
+    key: 'cash',
+    labelKey: 'cloud.permissions.groups.cash',
+    permissions: ['pos.cash_session.open', 'pos.cash_session.close', 'pos.cash_session.view_current', 'pos.cash_drawer.record_event'],
+  },
+  {
+    key: 'order',
+    labelKey: 'cloud.permissions.groups.order',
+    permissions: ['pos.catalog.view', 'pos.floor.view', 'pos.menu.view', 'pos.order.create', 'pos.order.view', 'pos.order.add_line', 'pos.order.change_quantity', 'pos.order.void_line', 'pos.order.close'],
+  },
+  {
+    key: 'pricing',
+    labelKey: 'cloud.permissions.groups.pricing',
+    permissions: ['pos.pricing.view', 'pos.pricing.discount.apply', 'pos.pricing.surcharge.apply'],
+  },
+  {
+    key: 'precheck',
+    labelKey: 'cloud.permissions.groups.precheck',
+    permissions: ['pos.precheck.issue', 'pos.precheck.view', 'pos.precheck.reprint', 'pos.precheck.cancel.request', 'pos.precheck.cancel'],
+  },
+  {
+    key: 'payment',
+    labelKey: 'cloud.permissions.groups.payment',
+    permissions: ['pos.payment.cash', 'pos.payment.card.manual', 'pos.payment.other', 'pos.payment.refund', 'pos.check.view', 'pos.check.reprint'],
+  },
+  {
+    key: 'sync',
+    labelKey: 'cloud.permissions.groups.sync',
+    permissions: ['pos.sync.view', 'pos.sync.retry_failed'],
+  },
+];
+
+const rolePresets: RolePreset[] = [
+  {
+    key: 'cashier',
+    labelKey: 'cloud.rolePresets.cashier',
+    permissions: [
+      'pos.employee_shift.open',
+      'pos.employee_shift.close',
+      'pos.employee_shift.view_current',
+      'pos.employee_shift.recent',
+      'pos.cash_session.open',
+      'pos.cash_session.view_current',
+      'pos.catalog.view',
+      'pos.floor.view',
+      'pos.menu.view',
+      'pos.order.create',
+      'pos.order.view',
+      'pos.order.add_line',
+      'pos.order.change_quantity',
+      'pos.order.void_line',
+      'pos.order.close',
+      'pos.pricing.view',
+      'pos.pricing.discount.apply',
+      'pos.pricing.surcharge.apply',
+      'pos.precheck.issue',
+      'pos.precheck.view',
+      'pos.precheck.reprint',
+      'pos.payment.cash',
+      'pos.payment.card.manual',
+      'pos.check.view',
+    ],
+  },
+  {
+    key: 'senior_cashier',
+    labelKey: 'cloud.rolePresets.senior_cashier',
+    permissions: [
+      'pos.employee_shift.open',
+      'pos.employee_shift.close',
+      'pos.employee_shift.view_current',
+      'pos.employee_shift.recent',
+      'pos.cash_session.open',
+      'pos.cash_session.close',
+      'pos.cash_session.view_current',
+      'pos.catalog.view',
+      'pos.floor.view',
+      'pos.menu.view',
+      'pos.order.create',
+      'pos.order.view',
+      'pos.order.add_line',
+      'pos.order.change_quantity',
+      'pos.order.void_line',
+      'pos.order.close',
+      'pos.pricing.view',
+      'pos.pricing.discount.apply',
+      'pos.pricing.surcharge.apply',
+      'pos.precheck.issue',
+      'pos.precheck.view',
+      'pos.precheck.reprint',
+      'pos.precheck.cancel.request',
+      'pos.payment.cash',
+      'pos.payment.card.manual',
+      'pos.payment.refund',
+      'pos.check.view',
+      'pos.sync.view',
+    ],
+  },
+  {
+    key: 'waiter',
+    labelKey: 'cloud.rolePresets.waiter',
+    permissions: [
+      'pos.employee_shift.open',
+      'pos.employee_shift.close',
+      'pos.employee_shift.view_current',
+      'pos.employee_shift.recent',
+      'pos.catalog.view',
+      'pos.floor.view',
+      'pos.menu.view',
+      'pos.order.create',
+      'pos.order.view',
+      'pos.order.add_line',
+      'pos.order.change_quantity',
+      'pos.order.void_line',
+      'pos.order.close',
+      'pos.pricing.view',
+      'pos.precheck.issue',
+      'pos.precheck.view',
+      'pos.precheck.reprint',
+      'pos.check.view',
+    ],
+  },
+  {
+    key: 'manager',
+    labelKey: 'cloud.rolePresets.manager',
+    permissions: allPermissions(),
+  },
+  {
+    key: 'kitchen',
+    labelKey: 'cloud.rolePresets.kitchen',
+    permissions: [],
+  },
+  {
+    key: 'support_admin',
+    labelKey: 'cloud.rolePresets.support_admin',
+    permissions: ['pos.sync.view', 'pos.sync.retry_failed'],
+  },
+];
 
 const scopedRows = reactive<Record<ScopedResourceKey, Row[]>>({
   roles: [],
@@ -502,7 +727,12 @@ const resourceConfigs: ResourceConfig[] = [
     titleKey: 'cloud.resources.roles',
     descriptionKey: 'cloud.descriptions.roles',
     columns: columns(['name', 'active', 'cloud_version', 'updated_at']),
-    fields: [field('name'), field('permissions_json', { type: 'textarea', rows: 5, defaultValue: '{}' }), field('active', { type: 'checkbox', updateOnly: true })],
+    fields: [
+      field('name'),
+      field('role_profile', { options: 'rolePresets', defaultValue: 'cashier' }),
+      field('permission_ids', { type: 'permissionMatrix', defaultValue: [] }),
+      field('active', { type: 'checkbox', updateOnly: true }),
+    ],
     create: createRole,
     update: updateRole,
     archive: archiveRole,
@@ -614,7 +844,7 @@ const resourceConfigs: ResourceConfig[] = [
     titleKey: 'cloud.resources.pricingPolicies',
     descriptionKey: 'cloud.descriptions.pricingPolicies',
     columns: columns(['name', 'kind', 'amount_kind', 'amount_minor', 'value_basis_points', 'status']),
-    fields: [field('name'), field('kind', { options: 'pricingKinds', defaultValue: 'discount' }), field('scope'), field('amount_kind', { options: 'amountKinds', defaultValue: 'fixed' }), field('amount_minor', { type: 'number', defaultValue: 0 }), field('value_basis_points', { type: 'number', defaultValue: 0 }), field('application_index', { type: 'number', defaultValue: 1 }), field('manual', { type: 'checkbox' }), field('requires_permission'), lifecycleField],
+    fields: [field('name'), field('kind', { options: 'pricingKinds', defaultValue: 'discount' }), field('scope'), field('amount_kind', { options: 'amountKinds', defaultValue: 'fixed' }), field('amount_minor', { type: 'number', defaultValue: 0 }), field('value_basis_points', { type: 'number', defaultValue: 0 }), field('application_index', { type: 'number', defaultValue: 1 }), field('manual', { type: 'checkbox' }), field('requires_permission', { options: 'permissions' }), lifecycleField],
     create: createPricingPolicy,
     update: updatePricingPolicy,
   },
@@ -646,7 +876,7 @@ const resourceConfigs: ResourceConfig[] = [
     titleKey: 'cloud.resources.menuItems',
     descriptionKey: 'cloud.descriptions.menuItems',
     columns: columns(['name', 'catalog_item_id', 'price', 'currency', 'status']),
-    fields: [field('catalog_item_id', { options: 'catalogItems' }), field('category_id'), field('name'), field('price', { type: 'number', defaultValue: 0 }), field('currency'), field('availability_json', { type: 'textarea', rows: 4, defaultValue: '{}' }), field('station_routing_key'), lifecycleField],
+    fields: [field('catalog_item_id', { options: 'catalogItems' }), field('name'), field('price', { type: 'number', defaultValue: 0 }), field('currency'), field('availability_json', { type: 'textarea', rows: 4, defaultValue: '{}' }), field('station_routing_key'), lifecycleField],
     create: createMenuItem,
     update: updateMenuItem,
     archive: archiveMenuItem,
@@ -695,6 +925,7 @@ const activeGroupLabelKey = computed(() => activeConfig.value?.groupKey ?? activ
 const activeDescriptionKey = computed(() => activeConfig.value?.descriptionKey ?? activeScenario.value?.descriptionKey ?? publicationNav.descriptionKey);
 const activeColumns = computed(() => activeConfig.value?.columns ?? []);
 const visibleFields = computed(() => (activeConfig.value?.fields ?? []).filter((item) => !(mode.value === 'create' && item.updateOnly) && !(mode.value === 'edit' && item.createOnly)));
+const permissionFields = computed(() => visibleFields.value.filter((item) => item.type === 'permissionMatrix'));
 const currentRows = computed<Row[]>(() => {
   if (activeKey.value === 'restaurants') return restaurants.value as unknown as Row[];
   if (activeKey.value === 'launchPlan' || activeKey.value === 'edgeDevices' || activeKey.value === 'publications' || activeKey.value === 'itemTags' || activeKey.value === 'categories') return [];
@@ -715,6 +946,38 @@ const filteredEdgeDevices = computed(() => {
   const needle = search.value.trim().toLowerCase();
   if (!needle) return edgeDevices.value;
   return edgeDevices.value.filter((node) => JSON.stringify(node).toLowerCase().includes(needle));
+});
+const unassignedEdgeOptions = computed(() => edgeDevices.value.map((node) => ({ label: nodeDisplayName(node.node_device_id), value: node.node_device_id })));
+const knownNodeOptions = computed(() => {
+  const ids = new Set<string>();
+  for (const node of edgeDevices.value) ids.add(node.node_device_id);
+  if (selectedEdgeNodeId.value) ids.add(selectedEdgeNodeId.value);
+  if (assignmentResult.value?.status) ids.add(selectedEdgeNodeId.value);
+  if (assignmentStatus.value?.node_device_id) ids.add(assignmentStatus.value.node_device_id);
+  if (pairingResult.value?.node_device_id) ids.add(pairingResult.value.node_device_id);
+  if (publishForm.node_device_id) ids.add(publishForm.node_device_id);
+  return [...ids].filter(Boolean).map((id) => ({ label: nodeDisplayName(id), value: id }));
+});
+const selectedPermissions = computed(() => {
+  const value = form.permission_ids;
+  return Array.isArray(value) ? value : [];
+});
+const errorDetailsList = computed(() => Object.entries(errorDetails.value).map(([key, value]) => ({ key, label: readableDetailLabel(key), value })));
+const onboardingChecks = computed(() => {
+  const roles = scopedRows.roles.length;
+  const employees = scopedRows.employees.length;
+  const halls = scopedRows.halls.length;
+  const tables = scopedRows.tables.length;
+  const menuItems = scopedRows.menuItems.length;
+  const nodeReady = Boolean(pairingResult.value || assignmentResult.value || assignmentStatus.value?.status === 'assigned');
+  return [
+    { key: 'restaurant', ready: Boolean(selectedRestaurant.value), titleKey: 'cloud.onboarding.restaurant.title', descriptionKey: 'cloud.onboarding.restaurant.description', params: { count: restaurants.value.length }, target: 'restaurants' as ResourceKey, actionKey: 'cloud.onboarding.actions.open', icon: 'storefront' },
+    { key: 'staff', ready: roles > 0 && employees > 0, titleKey: 'cloud.onboarding.staff.title', descriptionKey: 'cloud.onboarding.staff.description', params: { roles, employees }, target: 'roles' as ResourceKey, actionKey: 'cloud.onboarding.actions.configure', icon: 'badge' },
+    { key: 'floor', ready: halls > 0 && tables > 0, titleKey: 'cloud.onboarding.floor.title', descriptionKey: 'cloud.onboarding.floor.description', params: { halls, tables }, target: 'halls' as ResourceKey, actionKey: 'cloud.onboarding.actions.configure', icon: 'table_restaurant' },
+    { key: 'menu', ready: menuItems > 0, titleKey: 'cloud.onboarding.menu.title', descriptionKey: 'cloud.onboarding.menu.description', params: { menuItems }, target: 'menuItems' as ResourceKey, actionKey: 'cloud.onboarding.actions.configure', icon: 'restaurant_menu' },
+    { key: 'edge', ready: nodeReady, titleKey: 'cloud.onboarding.edge.title', descriptionKey: 'cloud.onboarding.edge.description', params: { count: knownNodeOptions.value.length }, target: 'edgeDevices' as ResourceKey, actionKey: 'cloud.onboarding.actions.connect', icon: 'devices' },
+    { key: 'publication', ready: Boolean(publication.value), titleKey: 'cloud.onboarding.publication.title', descriptionKey: 'cloud.onboarding.publication.description', params: { version: publication.value?.version ?? '-' }, target: 'publications' as ResourceKey, actionKey: 'cloud.onboarding.actions.publish', icon: 'publish' },
+  ];
 });
 
 const launchSteps = [
@@ -747,8 +1010,8 @@ watch(selectedRestaurantId, async () => {
   clearMessages();
   if (!selectedRestaurantId.value) return;
   await loadScopedData();
-  if (activeKey.value === 'publications') await loadPublication();
-  if (activeKey.value === 'edgeDevices') await loadEdgeDevices();
+  if (activeKey.value === 'publications' || activeKey.value === 'launchPlan') await loadPublication();
+  if (activeKey.value === 'edgeDevices' || activeKey.value === 'launchPlan') await loadEdgeDevices();
   resetSelection();
 });
 
@@ -758,6 +1021,12 @@ watch(activeKey, async () => {
   resetSelection();
   if (activeKey.value === 'publications') await loadPublication();
   if (activeKey.value === 'edgeDevices') await loadEdgeDevices();
+  if (activeKey.value === 'launchPlan') {
+    await Promise.all([loadPublication(), loadEdgeDevices()]);
+  }
+  if (selectedRestaurantId.value && isScopedResourceKey(activeKey.value)) {
+    await loadScopedData();
+  }
 });
 
 onMounted(async () => {
@@ -774,6 +1043,10 @@ function columns(keys: string[]) {
 
 function setActive(key: ResourceKey) {
   activeKey.value = key;
+}
+
+function isScopedResourceKey(key: ResourceKey): key is ScopedResourceKey {
+  return !['launchPlan', 'edgeDevices', 'restaurants', 'publications', 'itemTags', 'categories'].includes(key);
 }
 
 function navCount(key: ResourceKey) {
@@ -814,6 +1087,11 @@ function resetForm(source?: Row) {
     if (mode.value === 'edit' && item.createOnly) continue;
     form[item.key] = source?.[item.key] ?? defaultFieldValue(item);
   }
+  if (activeKey.value === 'roles') {
+    const permissions = permissionsFromJSON(typeof source?.permissions_json === 'string' ? source.permissions_json : rolePresetByKey(String(form.role_profile ?? 'cashier'))?.permissions ?? []);
+    form.permission_ids = permissions;
+    form.role_profile = rolePresetForPermissions(permissions)?.key ?? 'custom';
+  }
   if (activeKey.value === 'menuItems' && mode.value === 'create') {
     form.currency = selectedRestaurant.value?.currency ?? 'RUB';
   }
@@ -829,11 +1107,16 @@ function defaultFieldValue(item: FieldConfig): RowValue {
 function inputModelValue(key: string): string | number | null | undefined {
   const value = form[key];
   if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (Array.isArray(value)) return value.join(', ');
   return value;
 }
 
-function setFormValue(key: string, value: string | number | null) {
+function setFormValue(key: string, value: RowValue) {
   form[key] = value;
+  if (key === 'role_profile') {
+    const preset = rolePresetByKey(String(value ?? ''));
+    if (preset) form.permission_ids = [...preset.permissions].sort();
+  }
 }
 
 function selectOptions(item: FieldConfig): SelectOption[] {
@@ -854,6 +1137,10 @@ function selectOptions(item: FieldConfig): SelectOption[] {
       return enumOptions(['discount', 'surcharge'], 'cloud.pricingKinds');
     case 'amountKinds':
       return enumOptions(['fixed', 'percentage'], 'cloud.amountKinds');
+    case 'rolePresets':
+      return [...rolePresets.map((preset) => ({ label: t(preset.labelKey), value: preset.key })), { label: t('cloud.rolePresets.custom'), value: 'custom' }];
+    case 'permissions':
+      return allPermissions().map((permission) => ({ label: permissionLabel(permission), value: permission }));
     case 'roles':
       return rowOptions(scopedRows.roles);
     case 'folders':
@@ -943,10 +1230,18 @@ async function reloadActive() {
 async function submitForm() {
   const config = activeConfig.value;
   if (!config?.create) return;
+  const validationErrorKey = validateForm(config);
+  if (validationErrorKey) {
+    showLocalError(validationErrorKey, 'CLIENT_VALIDATION_FAILED');
+    return;
+  }
   await withLoading('submit', async () => {
     const payload = formPayload(config);
     if (mode.value === 'create') {
-      await config.create?.(payload);
+      const created = await config.create?.(payload);
+      if (config.key === 'restaurants' && created && typeof (created as Row).id === 'string') {
+        selectedRestaurantId.value = String((created as Row).id);
+      }
       successKey.value = 'cloud.messages.created';
     } else if (selectedRowId.value && config.update) {
       await config.update(selectedRowId.value, payload);
@@ -957,6 +1252,34 @@ async function submitForm() {
   });
 }
 
+function validateForm(config: ResourceConfig) {
+  for (const item of config.fields) {
+    if (item.key === 'value_json' || item.key === 'availability_json') {
+      const value = String(form[item.key] ?? '').trim();
+      if (value && !isValidJSON(value)) return 'errors.form.invalidJson';
+    }
+  }
+  if (config.key === 'roles' && !Array.isArray(form.permission_ids)) {
+    return 'errors.form.permissionsRequired';
+  }
+  return '';
+}
+
+function isValidJSON(value: string) {
+  try {
+    JSON.parse(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isSelectDisabled(item: FieldConfig) {
+  const options = selectOptions(item);
+  if (options.length > 0) return false;
+  return ['roles', 'catalogItems', 'tags', 'modifierGroups', 'halls', 'targetIds'].includes(item.options ?? '');
+}
+
 function formPayload(config: ResourceConfig) {
   const payload: Row = {};
   if (config.key !== 'restaurants') payload.restaurant_id = selectedRestaurantId.value;
@@ -964,7 +1287,11 @@ function formPayload(config: ResourceConfig) {
     if (mode.value === 'create' && item.updateOnly) continue;
     if (mode.value === 'edit' && item.createOnly) continue;
     if (!(item.key in form)) continue;
+    if (config.key === 'roles' && (item.key === 'role_profile' || item.key === 'permission_ids')) continue;
     payload[item.key] = normalizedValue(item, form[item.key]);
+  }
+  if (config.key === 'roles') {
+    payload.permissions_json = permissionsJSON(selectedPermissions.value);
   }
   return payload;
 }
@@ -975,6 +1302,7 @@ function normalizedValue(item: FieldConfig, value: RowValue): RowValue {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   if (item.type === 'checkbox') return Boolean(value);
+  if (Array.isArray(value)) return value;
   return typeof value === 'string' ? value.trim() : value;
 }
 
@@ -1037,6 +1365,7 @@ async function assignSelectedEdgeDevice() {
   await withLoading('edge-assign', async () => {
     assignmentResult.value = await assignDeviceToRestaurant(selectedRestaurantId.value, selectedEdgeNodeId.value.trim());
     assignmentStatus.value = null;
+    publishForm.node_device_id = selectedEdgeNodeId.value.trim();
     successKey.value = 'cloud.messages.deviceAssigned';
     await loadEdgeDevices();
   });
@@ -1053,11 +1382,11 @@ async function generateSelectedPairingCode() {
   if (!selectedRestaurantId.value) return;
   await withLoading('pairing-code', async () => {
     pairingResult.value = await generatePairingCode(selectedRestaurantId.value, {
-      node_device_id: pairingForm.node_device_id.trim(),
       display_name: pairingForm.display_name.trim(),
       expires_in_minutes: Number(pairingForm.expires_in_minutes) || 30,
     });
     selectedEdgeNodeId.value = pairingResult.value.node_device_id;
+    publishForm.node_device_id = pairingResult.value.node_device_id;
     successKey.value = 'cloud.messages.pairingGenerated';
   });
 }
@@ -1099,15 +1428,29 @@ function handleError(error: unknown) {
   if (error instanceof ApiError) {
     errorKey.value = error.messageKey;
     errorCode.value = error.code;
+    errorCorrelationId.value = error.correlationId;
+    errorDetails.value = error.details;
     return;
   }
   errorKey.value = 'errors.unexpected';
   errorCode.value = '';
+  errorCorrelationId.value = '';
+  errorDetails.value = {};
+}
+
+function showLocalError(messageKey: string, code: string) {
+  clearMessages();
+  errorKey.value = messageKey;
+  errorCode.value = code;
+  errorCorrelationId.value = '';
+  errorDetails.value = {};
 }
 
 function clearMessages() {
   errorKey.value = '';
   errorCode.value = '';
+  errorCorrelationId.value = '';
+  errorDetails.value = {};
   successKey.value = '';
 }
 
@@ -1115,6 +1458,10 @@ function formatCell(key: string, value: unknown) {
   if (value === null || value === undefined || value === '') return '-';
   if (typeof value === 'boolean') return t(value ? 'common.yes' : 'common.no');
   if (key.endsWith('_at') && typeof value === 'string') return formatDate(value);
+  if (typeof value === 'string') {
+    const reference = referenceLabel(key, value);
+    if (reference) return reference;
+  }
   if ((key.endsWith('_id') || key === 'id') && typeof value === 'string') return shortId(value);
   return String(value);
 }
@@ -1136,5 +1483,94 @@ function formatDate(value: string) {
 
 function shortId(value: string) {
   return value.length > 12 ? `${value.slice(0, 8)}...` : value;
+}
+
+function allPermissions() {
+  return [...new Set(permissionGroups.flatMap((group) => group.permissions))].sort();
+}
+
+function rolePresetByKey(key: string) {
+  return rolePresets.find((preset) => preset.key === key);
+}
+
+function rolePresetForPermissions(permissions: string[]) {
+  const body = permissionsJSON(permissions);
+  return rolePresets.find((preset) => permissionsJSON(preset.permissions) === body);
+}
+
+function permissionsFromJSON(value: string | string[]) {
+  if (Array.isArray(value)) return [...value].sort();
+  try {
+    const raw = JSON.parse(value) as Record<string, unknown>;
+    const out = new Set<string>();
+    for (const [key, allowed] of Object.entries(raw)) {
+      if (allowed === true && allPermissions().includes(key)) out.add(key);
+    }
+    if (Array.isArray(raw.permissions)) {
+      for (const permission of raw.permissions) {
+        if (typeof permission === 'string' && allPermissions().includes(permission)) out.add(permission);
+      }
+    }
+    return [...out].sort();
+  } catch {
+    return [];
+  }
+}
+
+function permissionsJSON(permissions: string[]) {
+  const allowed = new Set(allPermissions());
+  const keys = [...new Set(permissions.filter((permission) => allowed.has(permission)))].sort();
+  const body: Record<string, boolean> = {};
+  for (const permission of keys) body[permission] = true;
+  return JSON.stringify(body);
+}
+
+function permissionLabel(permission: string) {
+  const labels = tm('cloud.permissions.items') as Record<string, string>;
+  return labels[permission] ?? permission;
+}
+
+function togglePermission(permission: string, checked: boolean) {
+  const values = new Set(selectedPermissions.value);
+  if (checked) values.add(permission);
+  else values.delete(permission);
+  form.permission_ids = [...values].sort();
+  form.role_profile = rolePresetForPermissions(form.permission_ids)?.key ?? 'custom';
+}
+
+function referenceLabel(key: string, value: string) {
+  if (key === 'role_id') return rowLabel(scopedRows.roles, value);
+  if (key === 'folder_id' || key === 'parent_id') return rowLabel(scopedRows.catalogFolders, value);
+  if (key === 'catalog_item_id') return rowLabel(scopedRows.catalogItems, value);
+  if (key === 'tag_id') return rowLabel(scopedRows.catalogTags, value);
+  if (key === 'modifier_group_id') return rowLabel(scopedRows.modifierGroups, value);
+  if (key === 'hall_id') return rowLabel(scopedRows.halls, value);
+  if (key === 'target_id') return targetLabel(value);
+  return '';
+}
+
+function rowLabel(rows: Row[], id: string) {
+  const row = rows.find((item) => item.id === id);
+  if (!row) return '';
+  return `${String(row.name ?? row.code ?? id)} (${shortId(id)})`;
+}
+
+function targetLabel(id: string) {
+  return rowLabel(scopedRows.menuItems, id)
+    || rowLabel(scopedRows.catalogItems, id)
+    || rowLabel(scopedRows.catalogFolders, id)
+    || rowLabel(scopedRows.catalogTags, id);
+}
+
+function nodeDisplayName(nodeDeviceId: string) {
+  const node = edgeDevices.value.find((item) => item.node_device_id === nodeDeviceId);
+  const name = node?.display_name || t('cloud.edgeDevices.generatedNode');
+  return `${name} (${shortId(nodeDeviceId)})`;
+}
+
+function readableDetailLabel(key: string) {
+  const translationKey = `errors.details.${key}`;
+  const translated = t(translationKey);
+  return translated === translationKey ? key : translated;
 }
 </script>

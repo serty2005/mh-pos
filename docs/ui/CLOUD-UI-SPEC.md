@@ -34,12 +34,13 @@
 реализовано сейчас:
 
 - план запуска Cloud UI от подключения Edge-device до продажи на Edge-стороне;
+- панель готовности онбординга по выбранному ресторану: ресторан, роли/сотрудники, зал/столы, меню, Edge-device и публикация;
 - список незакрепленных Edge-device из `/api/v1/devices/unassigned`;
 - назначение Edge-device ресторану через `/api/v1/restaurants/{restaurant_id}/devices/{node_device_id}/assign`;
 - проверка assignment status через `/api/v1/devices/{node_device_id}/assignment-status`;
 - генерация pairing code через `/api/v1/restaurants/{restaurant_id}/devices/generate-pairing-code`;
 - управление ресторанами;
-- роли и сотрудники;
+- роли и сотрудники; роли создаются через предустановленные профили и матрицу POS-прав, а не через ручной ввод `permissions_json`;
 - catalog items;
 - catalog folders;
 - folder parameters;
@@ -74,8 +75,13 @@
 
 - первое действие оператора — открыть план запуска или подключить Edge-device;
 - выбор ресторана остается обязательным для restaurant-scoped операций;
+- технические связи между сущностями выбираются из загруженных справочников; пользователь не вводит ID вручную в подтвержденных связях;
+- pairing code flow не требует ввода `node_device_id`: Cloud генерирует device id на backend-стороне;
+- publication flow позволяет выбрать известное Edge-устройство из UI-состояния или опубликовать общий пакет без ручного ввода ID;
+- роли выбираются из профилей `cashier`, `senior_cashier`, `waiter`, `manager`, `kitchen`, `support_admin`, после чего оператор может изменить права в матрице;
 - Edge-device flow не показывает секреты кроме одноразового pairing code, который возвращает backend;
 - command-only разделы не показывают неподтвержденную таблицу;
+- Cloud UI показывает безопасные локализованные ошибки: message key, support code, correlation id и безопасные details, если backend их вернул;
 - пользовательские тексты идут через `vue-i18n`.
 
 ## API
