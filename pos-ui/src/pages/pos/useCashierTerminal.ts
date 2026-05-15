@@ -11,7 +11,6 @@ import {
   capturePrecheckPayment,
   changeOrderLineQuantity,
   closeCashSession,
-  closeOrder,
   closeShift,
   createOrder,
   getAuthSession,
@@ -31,6 +30,7 @@ import {
   listRecentShifts,
   listSyncOutbox,
   listTables,
+  logout,
   openCashSession,
   openShift,
   recordCashDrawerEvent,
@@ -294,7 +294,6 @@ export function useCashierTerminal() {
   const canReprintCheck = computed(() => Boolean(finalCheckData.value && hasPermission(grantedPermissions.value, permissionCatalog.checkReprint)));
   const canPayCash = computed(() => Boolean(currentCashSession.data.value && activePrecheck.value && paymentAmount.value > 0 && paymentAmount.value <= remainingPayment.value && hasPermission(grantedPermissions.value, permissionCatalog.paymentCash)));
   const canPayCard = computed(() => Boolean(currentCashSession.data.value && activePrecheck.value && paymentAmount.value > 0 && paymentAmount.value <= remainingPayment.value && hasPermission(grantedPermissions.value, permissionCatalog.paymentCardManual)));
-  const canCloseOrder = computed(() => Boolean(activeOrder.value?.status === 'open' && finalCheckData.value?.paid_total === finalCheckData.value?.total && hasPermission(grantedPermissions.value, permissionCatalog.orderClose)));
   const paymentBlockedReasonKey = computed(() => {
     if (!activePrecheck.value) return '';
     if (!currentCashSession.data.value) return 'pos.openCashSessionToPay';
@@ -422,12 +421,6 @@ export function useCashierTerminal() {
     onError: showBusinessError,
   });
 
-  const closeOrderMutation = useMutation({
-    mutationFn: closeOrder,
-    onSuccess: refreshOrder,
-    onError: showBusinessError,
-  });
-
   const issuePrecheckMutation = useMutation({
     mutationFn: issuePrecheck,
     onSuccess: refreshOrder,
@@ -490,6 +483,24 @@ export function useCashierTerminal() {
     mutationFn: retryFailedOutbox,
     onSuccess: refreshSync,
     onError: showBusinessError,
+  });
+
+  const logoutMutation = useMutation({
+    mutationFn: logout,
+    onSuccess() {
+      auth.clearSession();
+      void router.replace('/login');
+    },
+    onSettled() {
+      queryClient.removeQueries({ queryKey: ['auth-session'] });
+    },
+    onError(error) {
+      showBusinessError(error);
+      if (!(error instanceof ApiError && (error.category === 'network' || error.category === 'timeout'))) {
+        auth.clearSession();
+        void router.replace('/login');
+      }
+    },
   });
 
   watch(pairing.error, (error) => {
@@ -791,7 +802,6 @@ export function useCashierTerminal() {
     canReprintCheck,
     canPayCash,
     canPayCard,
-    canCloseOrder,
     canSubmitCashDrawerEvent,
     paymentBlockedReasonKey,
     cashDrawerTypeOptions,
@@ -839,7 +849,6 @@ export function useCashierTerminal() {
     cashDrawerMutation,
     createOrderMutation,
     addLineMutation,
-    closeOrderMutation,
     issuePrecheckMutation,
     reprintPrecheckMutation,
     reprintCheckMutation,
@@ -847,6 +856,7 @@ export function useCashierTerminal() {
     paymentMutation,
     refundMutation,
     retrySyncMutation,
+    logoutMutation,
     selectHall,
     selectTable,
     openMenuItem,

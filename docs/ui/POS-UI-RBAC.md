@@ -4,25 +4,30 @@
 
 UI visibility is UX only. Backend app-layer permissions remain authoritative.
 
-Интерфейс кассира теперь разделен на переиспользуемые компоненты в `pos-ui/src/pages/pos/*`, но все visibility guards по-прежнему используют backend permission ids из `pos-ui/src/shared/rbac.ts`.
+Интерфейс кассира теперь разделен на переиспользуемые компоненты POS shell в `pos-ui/src/pages/pos/*`, но все visibility guards по-прежнему используют backend permission ids из `pos-ui/src/shared/rbac.ts`.
+
+Нижняя quick access bar, скрываемое меню разделов, redesigned `Заказы`, разделы `Залы и столы`, `Активность`, `Отчеты` и `Касса` являются UX-навигацией. Они не добавляют новых backend permission ids и не заменяют backend application-layer checks.
 
 ## Реализовано Сейчас
 
 Permission ids used by cashier UI:
 
-- `pos.shift.open`
-- `pos.shift.close`
+- `pos.employee_shift.open`
+- `pos.employee_shift.close`
+- `pos.employee_shift.view_current`
+- `pos.employee_shift.recent`
 - `pos.cash_session.open`
 - `pos.cash_session.close`
-- `pos.cash_drawer.record`
+- `pos.cash_session.view_current`
+- `pos.cash_drawer.record_event`
 - `pos.floor.view`
 - `pos.menu.view`
 - `pos.catalog.view`
 - `pos.order.create`
 - `pos.order.view`
-- `pos.order.line.add`
-- `pos.order.line.update`
-- `pos.order.line.void`
+- `pos.order.add_line`
+- `pos.order.change_quantity`
+- `pos.order.void_line`
 - `pos.order.close`
 - `pos.precheck.issue`
 - `pos.precheck.view`
@@ -36,23 +41,23 @@ Permission ids used by cashier UI:
 - `pos.check.view`
 - `pos.check.reprint`
 - `pos.sync.view`
-- `pos.sync.retry`
+- `pos.sync.retry_failed`
 
 ## Cashier UI Actions
 
 | UI action | Permission | Статус |
 | --- | --- | --- |
-| Open employee shift | `pos.shift.open` | реализовано сейчас |
-| Close employee shift | `pos.shift.close` | реализовано сейчас |
+| Open employee shift | `pos.employee_shift.open` | реализовано сейчас |
+| Close employee shift | `pos.employee_shift.close` | реализовано сейчас |
 | Open cash session | `pos.cash_session.open` | реализовано сейчас |
 | Close cash session | `pos.cash_session.close` | реализовано сейчас |
 | View floor/tables | `pos.floor.view` | реализовано сейчас |
 | View menu/catalog | `pos.menu.view`, `pos.catalog.view` | реализовано сейчас |
 | Create order | `pos.order.create` | реализовано сейчас |
-| Add order line | `pos.order.line.add` | реализовано сейчас |
-| Select modifiers while adding order line | `pos.order.line.add` | реализовано сейчас |
-| Change line quantity | `pos.order.line.update` | реализовано сейчас |
-| Void line | `pos.order.line.void` | реализовано сейчас |
+| Add order line | `pos.order.add_line` | реализовано сейчас |
+| Select modifiers while adding order line | `pos.order.add_line` | реализовано сейчас |
+| Change line quantity | `pos.order.change_quantity` | реализовано сейчас |
+| Void line | `pos.order.void_line` | реализовано сейчас |
 | Issue precheck | `pos.precheck.issue` | реализовано сейчас |
 | Cancel precheck request | `pos.precheck.cancel.request` | реализовано сейчас |
 | Manager approve precheck cancel | `pos.precheck.cancel` | реализовано сейчас |
