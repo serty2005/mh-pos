@@ -45,6 +45,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - POS Edge Cloud -> Edge ingest for catalog folders/tags/item tags, services, modifier groups/options/menu item links and `pricing_policy` tax/service-charge/automatic discount-surcharge reference rows.
 - POS Edge outbox/local event foundation for cashier operational events.
 - `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud financial operation events. `PaymentRefunded` and `CheckRefunded` remain accepted legacy operational event types for older payloads.
+- Cloud receiver stores `RefundRecorded` raw/journal rows idempotently and updates event-type stats plus coarse shift finance refund counters; detailed financial operation projection remains separate from cashier runtime.
 - DDD context map exists in `docs/architecture/DDD-CONTEXT-MAP.md`.
 
 ### Persistence Policy
@@ -85,7 +86,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - решить, входит ли automatic consumption в первый pilot;
   - если входит, реализовать consumption trigger, stock document/move service и snapshot requirements.
 - Cancellation/refund/reprint hardening:
-  - backend ledger, immutable snapshots, no-over-cancel/no-over-refund tests and sync event contracts реализованы;
+  - backend ledger, immutable snapshots, no-over-cancel/no-over-refund tests, current `RefundRecorded` sync contract and coarse Cloud refund projection реализованы;
   - UI пока поддерживает только compatibility refund по captured payment из closed orders;
   - требуется финальная проверка operator policy, fiscal wording и cashier acceptance script.
 - Documentation freeze:

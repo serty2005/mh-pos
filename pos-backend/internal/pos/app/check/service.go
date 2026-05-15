@@ -314,6 +314,9 @@ func (s *Service) RefundPayment(ctx context.Context, cmd RefundPaymentCommand) (
 	}
 	check, err := s.repo.GetCheckByOrder(ctx, precheck.OrderID)
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("%w: refund requires finalized check", domain.ErrConflict)
+		}
 		return nil, err
 	}
 	kind := domain.FinancialOperationPartial

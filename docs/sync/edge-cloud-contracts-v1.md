@@ -90,7 +90,7 @@ Request body shape currently supported by POS Edge:
 - POS Edge пишет local operational events и outbox rows для cashier runtime commands.
 - Детали sender/cloud receiver являются implementation-specific; документация не должна обещать Cloud reporting semantics для events, которых нет в подтвержденном Edge -> Cloud catalog.
 
-Подтвержденный Edge -> Cloud catalog в domain boundary включает текущие события и legacy accepted refund events:
+Текущий POS Edge emitted catalog в domain boundary включает:
 
 ```text
 ShiftOpened
@@ -106,11 +106,9 @@ PrecheckIssued
 PrecheckReprinted
 PrecheckCancelled
 PaymentCaptured
-PaymentRefunded
 CancellationRecorded
 RefundRecorded
 CheckCreated
-CheckRefunded
 CheckReprinted
 OrderClosed
 AuthSessionStarted
@@ -118,12 +116,20 @@ AuthSessionRevoked
 DeviceRegistered
 ```
 
+Legacy inbound-only event types, которые Cloud receiver продолжает валидировать для старых Edge payloads:
+
+```text
+PaymentRefunded
+CheckRefunded
+```
+
 Cancellation/refund sync behavior:
 
 - `CancellationRecorded` и `RefundRecorded` являются текущими Edge -> Cloud operational events для append-only financial operation ledger.
 - `PaymentRefunded` и `CheckRefunded` остаются валидируемыми legacy event types, но новый POS Edge refund flow пишет `RefundRecorded`.
 - Cloud receiver валидирует эти event types, сохраняет raw envelope/journal rows и обновляет event-type stats.
-- Shift finance projection не является полной ledger projection для cancellation/refund; подробное отображение должно читать stored raw/journal payloads, пока не добавлена отдельная financial operation projection.
+- Cloud shift finance foundation обновляет coarse refund counters from `RefundRecorded` (`checks_refunded_count`, `checks_refunded_total`) and legacy `PaymentRefunded`/`CheckRefunded` counters where such envelopes are received.
+- Shift finance projection не является полной ledger projection для cancellation/refund; detailed reporting by operation item scope, inventory disposition, approval and original shift must read stored raw/journal payloads until a dedicated financial operation projection exists.
 
 ## Financial Payload Boundaries
 

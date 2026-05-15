@@ -54,6 +54,7 @@ Refund:
 - Cashier UI capability is implemented only through the compatibility route `POST /api/v1/payments/{id}/refund` for closed orders with captured payments.
 - The compatibility route records a refund ledger operation and does not make UI authoritative for payment/check mutation.
 - UI shows refund action only when `pos.payment.refund` is granted and current cash session exists.
+- UI does not expose refund for active issued prechecks with partial captured payments; refund runtime requires a finalized check.
 - Backend remains final enforcement layer.
 
 Reprint:

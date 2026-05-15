@@ -54,7 +54,8 @@
 
 - `CancellationRecorded` и `RefundRecorded` принимаются Cloud receiver и сохраняются как operational events;
 - `PaymentRefunded` и `CheckRefunded` остаются legacy accepted event types для старых payloads;
-- Cloud shift finance foundation не является полной projection для financial operation ledger.
+- Cloud event-type stats обновляются для всех accepted operational events;
+- Cloud shift finance foundation считает coarse refund totals from current `RefundRecorded` and legacy `PaymentRefunded`/`CheckRefunded`, but it is not a full projection for financial operation ledger item scopes, inventory disposition, approval policy or original-shift reconciliation.
 
 Запланировано далее:
 

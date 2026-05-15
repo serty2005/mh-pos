@@ -107,7 +107,7 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
 - Check snapshot включает precheck snapshot и payments snapshot.
 - Check snapshot сохраняет selected modifiers через immutable precheck snapshot; reprint/refund не обращаются к текущему каталогу для восстановления старых modifiers.
 - Finalized check/payment/precheck после создания final check не переписываются cancellation/refund flow.
-- `/payments/{id}/refund` является compatibility wrapper поверх `/checks/{id}/refunds`: он требует captured payment и записывает refund operation scope `payment`; статус payment остается `captured`.
+- `/payments/{id}/refund` является compatibility wrapper поверх `/checks/{id}/refunds`: он требует captured payment, finalized check and open current cash session, then records refund operation scope `payment`; статус payment остается `captured`.
 
 ### Cancellation / Refund Boundary
 
@@ -128,7 +128,8 @@ Boundary rules:
 - Cancellation применяется в пределах открытой исходной personal shift/current cash session и той же `business_date_local`.
 - Refund применяется после закрытия исходной personal shift или на более поздней `business_date_local`; для записи refund все равно нужна текущая open cash session.
 - Refund денег не означает возврат товара на склад; stock effect задается только `inventory_disposition` и требует отдельного inventory service, которого в cashier runtime сейчас нет.
-- Legacy events `PaymentRefunded` и `CheckRefunded` остаются распознаваемыми sync event types для старых payloads, но новый runtime пишет `RefundRecorded`.
+- Legacy events `PaymentRefunded` и `CheckRefunded` остаются распознаваемыми Cloud sync event types для старых payloads, но новый POS Edge runtime пишет `RefundRecorded`.
+- Cloud receiver stores raw/journal envelopes for `RefundRecorded`, updates event-type stats and updates coarse shift finance refund counters. It is not a full financial operation reporting projection by item scope, inventory disposition or approval policy.
 
 Не реализовано сейчас:
 

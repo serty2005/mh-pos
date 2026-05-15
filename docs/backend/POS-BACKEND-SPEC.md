@@ -152,6 +152,7 @@ Pricing contract:
 - Cancellation endpoint is `POST /api/v1/checks/{id}/cancellations`.
 - Refund endpoint is `POST /api/v1/checks/{id}/refunds`.
 - Compatibility refund endpoint is `POST /api/v1/payments/{id}/refund`; it records a refund operation with payment allocation and does not mutate finalized payment/check/precheck totals.
+- Compatibility refund requires the captured payment to belong to an order that already has a finalized check. Captured partial payment on a still-issued precheck is not refundable through this endpoint.
 - Cancellation uses permission `pos.precheck.cancel`; refund uses permission `pos.payment.refund`.
 - Cancellation requires the original personal shift to be open, the current cash session to belong to that shift and the same `business_date_local`.
 - Refund requires the original personal shift to be closed or the current `business_date_local` to differ from the check business date; a current open cash session is still required.
@@ -161,7 +162,7 @@ Pricing contract:
 - Backend rejects over-cancel, over-refund, over-line-quantity and over-payment-allocation scenarios.
 - Operation snapshot embeds immutable check snapshot and operation items.
 - Inventory disposition is explicit: `no_stock_effect`, `return_to_stock`, `write_off_waste`, `manual_review`; financial operation does not mutate stock tables.
-- Current events are `CancellationRecorded` and `RefundRecorded`. `PaymentRefunded` and `CheckRefunded` remain accepted legacy sync event types.
+- Current POS Edge events are `CancellationRecorded` and `RefundRecorded`. New refund runtime does not emit legacy `PaymentRefunded`/`CheckRefunded`; those names remain Cloud-accepted legacy sync event types only.
 
 Не реализовано сейчас:
 
