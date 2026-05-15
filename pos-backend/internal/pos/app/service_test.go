@@ -261,6 +261,26 @@ func TestPairEdgeNodeStoresKeyedPairingVerifier(t *testing.T) {
 	}
 }
 
+func TestPairEdgeNodeIsIdempotentForCurrentIdentity(t *testing.T) {
+	f := newFixture(t)
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+
+	identity, err := f.service.PairEdgeNode(f.ctx, app.PairEdgeNodeCommand{PairingCode: "MHPOS:" + f.restaurant.ID + ":" + f.device.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.NodeDeviceID != f.device.ID || identity.RestaurantID != f.restaurant.ID {
+		t.Fatalf("unexpected idempotent identity: %+v", identity)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected repeated pairing not to create outbox rows, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected repeated pairing not to create local events, before=%d after=%d", eventsBefore, events)
+	}
+}
+
 func TestPinLoginRejectsDuplicateActivePIN(t *testing.T) {
 	f := newFixture(t)
 	if _, err := f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{

@@ -1,6 +1,7 @@
 <template>
   <q-page class="pos-page">
     <cashier-status-bar :terminal="terminal" />
+    <primary-flow-strip :terminal="terminal" />
 
     <section class="terminal-grid">
       <floor-table-selector :terminal="terminal" />
@@ -26,6 +27,7 @@ import FloorTableSelector from './pos/FloorTableSelector.vue';
 import ModifierSelectionDialog from './pos/ModifierSelectionDialog.vue';
 import OrderWorkspace from './pos/OrderWorkspace.vue';
 import PrecheckCancelDialog from './pos/PrecheckCancelDialog.vue';
+import PrimaryFlowStrip from './pos/PrimaryFlowStrip.vue';
 import RefundDialog from './pos/RefundDialog.vue';
 import SyncDrawer from './pos/SyncDrawer.vue';
 import { useCashierTerminal } from './pos/useCashierTerminal';

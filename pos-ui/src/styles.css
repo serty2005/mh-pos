@@ -196,7 +196,7 @@ h2 {
   min-height: calc(100dvh - 56px);
   padding: 12px;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 12px;
   color: #1f2521;
   background:
@@ -208,6 +208,7 @@ h2 {
 
 .cashier-status-bar,
 .operator-strip,
+.primary-flow-strip,
 .control-pane,
 .order-pane,
 .action-pane {
@@ -228,6 +229,138 @@ h2 {
   background: #24332d;
   border-color: #24332d;
   box-shadow: 0 18px 36px -30px rgba(20, 31, 27, 0.6);
+}
+
+.primary-flow-strip {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(260px, 360px);
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  background: #fbfcfa;
+}
+
+.primary-flow-head {
+  min-width: 0;
+}
+
+.flow-steps {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flow-steps li {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  color: #66706b;
+  background: #f4f6f2;
+  border: 1px solid #dce2dd;
+  border-radius: 8px;
+}
+
+.flow-steps li > span {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  color: #66706b;
+  background: #ffffff;
+  border: 1px solid #dce2dd;
+  border-radius: 999px;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  font-weight: 700;
+}
+
+.flow-steps strong,
+.flow-steps small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.flow-steps strong {
+  color: #24332d;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.flow-steps small {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.flow-steps li.ready {
+  color: #2f6a55;
+  background: #e7f3ec;
+  border-color: #b8d8c7;
+}
+
+.flow-steps li.ready > span {
+  color: #ffffff;
+  background: #2f7d5f;
+  border-color: #2f7d5f;
+}
+
+.flow-steps li.active {
+  background: #fff8ed;
+  border-color: #e6c795;
+}
+
+.flow-steps li.active > span {
+  color: #ffffff;
+  background: #b8563f;
+  border-color: #b8563f;
+}
+
+.flow-steps li.blocked {
+  opacity: 0.68;
+}
+
+.blocking-notice {
+  min-height: 0;
+  padding: 8px 10px;
+  color: #6f3b22;
+  background: #fff5ea;
+  border: 1px solid #e6c795;
+}
+
+.blocking-notice-content {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.blocking-notice .q-icon {
+  color: #b8563f;
+  font-size: 22px;
+}
+
+.blocking-notice strong,
+.blocking-notice span,
+.blocking-notice small {
+  display: block;
+}
+
+.blocking-notice strong {
+  color: #5f321e;
+  font-size: 13px;
+}
+
+.blocking-notice span,
+.blocking-notice small {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .operator-block {
@@ -433,9 +566,18 @@ button:focus-visible,
   border-radius: 8px;
 }
 
+.utility-actions {
+  background: #f4f6f2;
+  border-style: dashed;
+}
+
 .ops-grid {
   display: grid;
   gap: 8px;
+}
+
+.compact-ops {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .cash-open-row {
@@ -1024,6 +1166,11 @@ button:focus-visible,
   border-radius: 8px;
 }
 
+.dialog-copy {
+  color: #66706b;
+  line-height: 1.45;
+}
+
 .utility-drawer {
   background: #f8faf6;
 }
@@ -1067,14 +1214,26 @@ button:focus-visible,
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1180px) {
   .terminal-grid {
-    grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
+    grid-template-columns: minmax(220px, 260px) minmax(360px, 1fr) minmax(300px, 340px);
+  }
+}
+
+@media (max-width: 960px) {
+  .terminal-grid,
+  .primary-flow-strip {
+    grid-template-columns: 1fr;
   }
 
   .action-pane {
     grid-column: 1 / -1;
     min-height: 220px;
+  }
+
+  .flow-steps,
+  .compact-ops {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1100,6 +1259,7 @@ button:focus-visible,
 
   .cashier-status-bar,
   .operator-strip,
+  .primary-flow-strip,
   .terminal-grid {
     grid-template-columns: 1fr;
     display: grid;

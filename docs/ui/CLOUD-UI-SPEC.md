@@ -18,8 +18,6 @@
 
 запланировано далее:
 
-- заменить текущие справочные таблицы сценарными мастерами запуска ресторана;
-- добавить readiness-панель по ресторану: устройство назначено, публикация создана, меню имеет продаваемые позиции, сотрудники и роли готовы;
 - вывести связи `catalog item -> menu item -> modifier bindings -> pricing policies` как единый сценарий подготовки продажи;
 - показывать версии опубликованного пакета и состояние доставки на Edge, когда backend подтвердит такой контракт.
 
@@ -33,8 +31,9 @@
 
 реализовано сейчас:
 
-- план запуска Cloud UI от подключения Edge-device до продажи на Edge-стороне;
-- панель готовности онбординга по выбранному ресторану: ресторан, роли/сотрудники, зал/столы, меню, Edge-device и публикация;
+- план запуска Cloud UI от подключения Edge-device до продажи на Edge-стороне является primary journey первого экрана;
+- панель готовности онбординга по выбранному ресторану: ресторан выбран, роли/сотрудники готовы, зал/столы готовы, меню продаваемо, Edge назначен, публикация создана и snapshot доступен;
+- для каждого blocked readiness item показывается next best action button к профильному разделу;
 - список незакрепленных Edge-device из `/api/v1/devices/unassigned`;
 - назначение Edge-device ресторану через `/api/v1/restaurants/{restaurant_id}/devices/{node_device_id}/assign`;
 - проверка assignment status через `/api/v1/devices/{node_device_id}/assignment-status`;
@@ -75,13 +74,15 @@
 
 - первое действие оператора — открыть план запуска или подключить Edge-device;
 - выбор ресторана остается обязательным для restaurant-scoped операций;
+- UX разбит на presentation components: shell/navigation, launch readiness, Edge-device flow, publication panel, resource list/table, resource form и role permission matrix;
+- для narrow screens ключевые launch/Edge/publication/resource states имеют card/list fallback, а таблицы остаются desktop/admin представлением;
 - технические связи между сущностями выбираются из загруженных справочников; пользователь не вводит ID вручную в подтвержденных связях;
 - pairing code flow не требует ввода `node_device_id`: Cloud генерирует device id на backend-стороне;
 - publication flow позволяет выбрать известное Edge-устройство из UI-состояния или опубликовать общий пакет без ручного ввода ID;
 - роли выбираются из профилей `cashier`, `senior_cashier`, `waiter`, `manager`, `kitchen`, `support_admin`, после чего оператор может изменить права в матрице;
 - Edge-device flow не показывает секреты кроме одноразового pairing code, который возвращает backend;
 - command-only разделы не показывают неподтвержденную таблицу;
-- Cloud UI показывает безопасные локализованные ошибки: message key, support code, correlation id и безопасные details, если backend их вернул;
+- Cloud UI показывает безопасные локализованные ошибки возле активного failed step с recovery action: retry, select restaurant или open related section; message key, support code, correlation id и безопасные details выводятся без raw payload;
 - пользовательские тексты идут через `vue-i18n`.
 
 ## API
@@ -96,5 +97,7 @@
 ## Runtime Code
 
 реализовано сейчас: runtime backend code не изменялся.
+
+реализовано сейчас: `cloud-ui/src/App.vue` оставляет orchestration/state/config, а presentation layer вынесен в `cloud-ui/src/components/cloud/*`.
 
 реализовано сейчас: для запуска Cloud UI из браузера `cloud-backend` разрешает local CORS origin `http://localhost:5174`, `http://127.0.0.1:5174` и `http://host.docker.internal:5174`.

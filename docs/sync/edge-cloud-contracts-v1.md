@@ -72,6 +72,7 @@ Request body shape currently supported by POS Edge:
 - `full_snapshot` требует `full_snapshot_reason` со значением `terminal_restaurant_changed` или `node_role_changed`.
 - Unsupported streams отклоняются.
 - `catalog` применяет `catalog_items` с canonical `item_type`/`type` values `dish`, `good`, `semi_finished`, `service`, а также `folders`, `folder_parameters`, `tags`, `item_tags`.
+- `restaurants` применяет Cloud-authored настройки ресторана и `active`; опубликованный active restaurant должен попадать в Edge read model как `active = true`.
 - `menu` применяет `menu_items`, `modifier_groups`, `modifier_options`, `menu_item_modifier_groups`.
 - `pricing_policy` применяет Cloud-authored `tax_profiles`, `tax_rules`, `service_charge_rules` и automatic discount/surcharge `pricing_policies` в Edge read-model tables с sync metadata.
 - Unsupported JSON fields отклоняются strict decode; неизвестные stream names не применяются.

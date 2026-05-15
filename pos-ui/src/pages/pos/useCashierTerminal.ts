@@ -64,6 +64,13 @@ export function invalidatePaymentConflictQueries(queryClient: Pick<QueryClient, 
   }
 }
 
+type FlowStepState = 'ready' | 'active' | 'blocked' | 'pending';
+type BlockingNotice = {
+  titleKey: string;
+  reasonKey: string;
+  permission?: string;
+};
+
 export function useCashierTerminal() {
   const { t } = useI18n();
   const auth = useAuthStore();
@@ -304,6 +311,44 @@ export function useCashierTerminal() {
   const orderError = computed(() => firstError([tableOrder.error.value, order.error.value, prechecks.error.value]));
   const actorName = computed(() => auth.actor?.name || auth.actor?.employee_id || '');
   const syncProblems = computed(() => (syncStatus.data.value?.failed ?? 0) + (syncStatus.data.value?.suspended ?? 0));
+  const primaryFlowSteps = computed(() => {
+    const shiftReady = Boolean(currentShift.data.value && currentCashSession.data.value);
+    const tableReady = Boolean(selectedTableId.value);
+    const orderReady = Boolean(activeOrder.value);
+    const precheckReady = Boolean(activePrecheck.value || latestPrecheck.value || finalCheckData.value);
+    const paymentReady = Boolean(finalCheckData.value);
+    return [
+      flowStep('readiness', 1, shiftReady, !shiftReady),
+      flowStep('table', 2, tableReady, shiftReady && !tableReady),
+      flowStep('order', 3, orderReady, shiftReady && tableReady && !orderReady),
+      flowStep('precheck', 4, precheckReady, orderReady && !precheckReady),
+      flowStep('payment', 5, paymentReady, precheckReady && !paymentReady),
+    ];
+  });
+  const currentBlockingNotice = computed<BlockingNotice | null>(() => {
+    if (!currentShift.data.value) {
+      return {
+        titleKey: 'pos.blocking.noShift.title',
+        reasonKey: canOpenShift.value ? 'pos.blocking.noShift.reason' : 'pos.blocking.noShift.permissionReason',
+        permission: canOpenShift.value ? '' : permissionCatalog.employeeShiftOpen,
+      };
+    }
+    if (!currentCashSession.data.value) {
+      return {
+        titleKey: 'pos.blocking.noCashSession.title',
+        reasonKey: canOpenCashSession.value ? 'pos.blocking.noCashSession.reason' : 'pos.blocking.noCashSession.permissionReason',
+        permission: canOpenCashSession.value ? '' : permissionCatalog.cashSessionOpen,
+      };
+    }
+    if (activeOrder.value?.status === 'locked' || activePrecheck.value) {
+      return {
+        titleKey: 'pos.blocking.lockedOrder.title',
+        reasonKey: 'pos.blocking.lockedOrder.reason',
+        permission: canCancelPrecheck.value ? '' : permissionCatalog.precheckCancelRequest,
+      };
+    }
+    return null;
+  });
 
   const openShiftMutation = useMutation({
     mutationFn: openShift,
@@ -654,6 +699,47 @@ export function useCashierTerminal() {
     return t(`status.${status}`);
   }
 
+  function flowStep(key: string, index: number, ready: boolean, active: boolean) {
+    let state: FlowStepState = 'pending';
+    if (ready) state = 'ready';
+    else if (active) state = 'active';
+    else if (currentBlockingNotice.value) state = 'blocked';
+    return {
+      key,
+      index,
+      state,
+      titleKey: `pos.primaryFlow.steps.${key}.title`,
+      descriptionKey: `pos.primaryFlow.steps.${key}.description`,
+    };
+  }
+
+  function actionBlocker(permission: string, allowed: boolean) {
+    if (allowed) return null;
+    if (!currentShift.data.value) {
+      return currentBlockingNotice.value ?? {
+        titleKey: 'pos.blocking.noShift.title',
+        reasonKey: 'pos.blocking.noShift.permissionReason',
+        permission: permissionCatalog.employeeShiftOpen,
+      };
+    }
+    const cashSessionPermissions: string[] = [permissionCatalog.paymentCash, permissionCatalog.paymentCardManual, permissionCatalog.cashDrawerRecordEvent, permissionCatalog.paymentRefund];
+    if (!currentCashSession.data.value && cashSessionPermissions.includes(permission)) {
+      return currentBlockingNotice.value ?? {
+        titleKey: 'pos.blocking.noCashSession.title',
+        reasonKey: 'pos.blocking.noCashSession.permissionReason',
+        permission: permissionCatalog.cashSessionOpen,
+      };
+    }
+    if (activeOrder.value?.status === 'locked' || activePrecheck.value) {
+      return { titleKey: 'pos.blocking.lockedOrder.title', reasonKey: 'pos.blocking.lockedOrder.reason', permission };
+    }
+    return {
+      titleKey: 'pos.blocking.permissionDenied.title',
+      reasonKey: 'pos.blocking.permissionDenied.reason',
+      permission,
+    };
+  }
+
   function firstError(errors: unknown[]) {
     const found = errors.find(Boolean);
     return found ? t(displayErrorMessageKey(found)) : '';
@@ -744,6 +830,8 @@ export function useCashierTerminal() {
     orderError,
     actorName,
     syncProblems,
+    primaryFlowSteps,
+    currentBlockingNotice,
     openShiftMutation,
     closeShiftMutation,
     openCashMutation,
@@ -780,6 +868,7 @@ export function useCashierTerminal() {
     formatDate,
     shortId,
     statusLabel,
+    actionBlocker,
     currencyInputStep,
     displayErrorMessageKey,
   };

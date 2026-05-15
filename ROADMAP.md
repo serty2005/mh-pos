@@ -70,6 +70,23 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Inventory: SQLite `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, purchase receipt foundation.
 - Master-data publications: Cloud package/publication foundation пока шире текущего POS Edge runtime для recipes/inventory.
 
+## Аудит 2026-05-15
+
+Реализовано сейчас:
+
+- Документация сверена с фактическими POS Edge routes, Cloud routes, миграционными baseline, sync contracts и текущими Vue UI entry points. Критичных обещаний отсутствующего runtime в профильных документах не найдено.
+- Отдельный audit report зафиксирован в `docs/temp/DOCUMENTATION-AUDIT-2026-05-15.md`.
+- Отдельный промпт для UI/UX hardening зафиксирован в `docs/temp/UI-UX-FIX-PROMPT-2026-05-15.md`.
+
+Запланировано далее:
+
+- Повторить browser-based UI/UX smoke в окружении с установленным Chromium/Playwright browsers; текущая среда блокирует загрузку браузера proxy/403.
+
+Выполнено:
+
+- POS UI: добавлен primary flow strip `готовность смены -> стол -> заказ -> пречек -> оплата`, secondary operations визуально отделены, blocking states унифицированы, tablet breakpoint пересмотрен так, чтобы checkout/precheck/payment не уходили под active order около 1100px.
+- Cloud UI: presentation layer вынесен из монолитного `App.vue` в flow components, launch/readiness checklist стал primary journey, master-data CRUD оставлен secondary/admin layer, добавлен card/list fallback для narrow screens.
+
 ## В Работе / До Пилота
 
 Блокеры пилота:
