@@ -35,6 +35,17 @@ Cashier UI in `pos-ui/src/pages/PosPage.vue` разделен на переис�
 
 UI calls backend APIs for authoritative state and does not compute authoritative totals.
 
+## Runtime Error And Empty-State Handling
+
+Реализовано сейчас:
+
+- `requestOptional` converts `404 NOT_FOUND` from optional current reads to `null`.
+- `GET /api/v1/employee-shifts/current`, `GET /api/v1/cash-shifts/current` and `GET /api/v1/orders/current?table_id=...` may still appear as `404` in browser network console; this is expected backend empty-state behavior, not a visible UI error.
+- Cashier terminal shows "нет открытой личной смены", "нет открытой кассовой смены" or "нет активного заказа" instead of setting blocking `statusError`/`orderError` for these optional empty states.
+- Optional current reads are not retried on expected `404`.
+- Payment mutation has no automatic retry. On `409 CONFLICT` from `POST /api/v1/prechecks/{id}/payments`, UI shows the localized backend `message_key` when present, otherwise `errors.conflict`, and invalidates current cash session, current order, order, prechecks, check and closed orders.
+- Payment buttons require an active precheck, positive amount, sufficient remaining total, payment permission and an open cash session. If a precheck exists but cash session is absent, UI blocks payment and shows the operator to open a cash session.
+
 ## Backend Capability Vs UI Capability
 
 Refund:

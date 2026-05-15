@@ -226,11 +226,11 @@ function messageKeyForStatus(status: number) {
     case 401:
       return 'errors.session.required';
     case 403:
-      return 'errors.permission.denied';
+      return 'errors.permission';
     case 404:
-      return 'errors.notFound';
+      return 'errors.not_found';
     case 409:
-      return 'errors.conflict.default';
+      return 'errors.conflict';
     case 429:
       return 'errors.rateLimit';
     default:

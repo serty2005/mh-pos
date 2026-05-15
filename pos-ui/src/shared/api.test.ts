@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { addOrderLine, ApiError, listMenuItems } from './api';
+import { addOrderLine, ApiError, getCurrentOrderByTable, getCurrentShift, listMenuItems } from './api';
 
 const authState = {
   clientDeviceId: 'client-1',
@@ -16,6 +16,7 @@ vi.mock('../stores/auth', () => ({
 describe('api request helpers', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('sends required auth/device headers for runtime reads', async () => {
@@ -66,6 +67,67 @@ describe('api request helpers', () => {
       category: 'rate_limit',
       correlationId: 'req-1',
     });
+  });
+
+  it('keeps backend message_key ahead of generic conflict fallback', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      headers: new Headers({ 'X-Request-ID': 'req-409' }),
+      text: async () => JSON.stringify({
+        error: {
+          code: 'ACTIVE_PRECHECK_CONFLICT',
+          message_key: 'errors.conflict_active_precheck',
+          correlation_id: 'req-409',
+        },
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(listMenuItems()).rejects.toMatchObject({
+      status: 409,
+      code: 'ACTIVE_PRECHECK_CONFLICT',
+      messageKey: 'errors.conflict_active_precheck',
+      category: 'conflict',
+      correlationId: 'req-409',
+    });
+  });
+
+  it('maps generic 409 fallback to the localized conflict category key', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      headers: new Headers(),
+      text: async () => JSON.stringify({ error: 'domain invariant violation' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(listMenuItems()).rejects.toMatchObject({
+      status: 409,
+      code: 'CONFLICT',
+      messageKey: 'errors.conflict',
+      category: 'conflict',
+      retryable: false,
+    });
+  });
+
+  it('treats current shift and current order 404 as optional empty state', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      headers: new Headers(),
+      text: async () => JSON.stringify({
+        error: {
+          code: 'NOT_FOUND',
+          message_key: 'errors.not_found',
+        },
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getCurrentShift()).resolves.toBeNull();
+    await expect(getCurrentOrderByTable('table-1')).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('maps network failure without clearing client identity in api layer', async () => {

@@ -15,7 +15,7 @@ func TestClassifyErrorReturnsSafeStableContract(t *testing.T) {
 	if status != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", status)
 	}
-	if body.Code != "PERMISSION_DENIED" || body.MessageKey != "errors.permission.denied" {
+	if body.Code != "PERMISSION_DENIED" || body.MessageKey != "errors.permission" {
 		t.Fatalf("unexpected error body: %+v", body)
 	}
 	if strings.Contains(fmt.Sprint(body), "pos.sync.retry_failed") {
@@ -50,7 +50,7 @@ func TestClassifyErrorMapsSessionAndRateLimit(t *testing.T) {
 			err:        fmt.Errorf("%w: pin must uniquely identify one active employee", domain.ErrConflict),
 			wantStatus: http.StatusConflict,
 			wantCode:   "DUPLICATE_PIN",
-			wantKey:    "errors.conflict.duplicatePin",
+			wantKey:    "errors.conflict_duplicate_pin",
 		},
 	}
 	for _, tc := range cases {

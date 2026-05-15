@@ -14,7 +14,7 @@
 {
   "error": {
     "code": "PERMISSION_DENIED",
-    "message_key": "errors.permission.denied",
+    "message_key": "errors.permission",
     "details": {},
     "correlation_id": "request-id"
   }
@@ -37,19 +37,20 @@ Internal cause пишется только в structured backend log.
 | `SESSION_REQUIRED` | 401 | `errors.session.required` | Для operator/business flow нет active session context | Очистить session state и перейти на `/login` | no | WARN | Не раскрывать session internals |
 | `SESSION_REVOKED` | 401 | `errors.session.revoked` | Session найдена, но уже `revoked` | Очистить session state, показать controlled redirect/login dialog | no | WARN | Не раскрывать причину revoke сверх safe key |
 | `SESSION_CONTEXT_MISMATCH` | 403 | `errors.session.contextMismatch` | `node_device_id`/`client_device_id` не совпадает с session context | Modal с безопасным объяснением, без destructive logout | no | WARN | Mask device/session ids в логах |
-| `PERMISSION_DENIED` | 403 | `errors.permission.denied` | Actor session активна, но permission отсутствует | Modal "Недостаточно прав", не делать logout | no | WARN | Не возвращать required permission id, если это раскрывает внутреннюю политику |
-| `FORBIDDEN` | 403 | `errors.permission.denied` | Общий ожидаемый отказ доступа | Modal "Недостаточно прав" | no | WARN | Без секретов |
-| `NOT_FOUND` | 404 | `errors.notFound` | Сущность не найдена | Compact notice или modal для blocking flow | no | WARN | Не раскрывать SQL/query details |
-| `CONFLICT` | 409 | `errors.conflict.default` | Нарушен текущий state/business invariant | Modal с предложением обновить состояние | no | WARN | Без internal state dump |
-| `DUPLICATE_PIN` | 409 | `errors.conflict.duplicatePin` | PIN совпал с несколькими active employees | Modal с бизнес-сообщением, не показывать PIN | no | WARN | PIN не возвращается и не логируется |
-| `ACTIVE_PRECHECK_CONFLICT` | 409 | `errors.conflict.activePrecheck` | Для заказа уже есть активный precheck | Modal с предложением обновить заказ/precheck | no | WARN | Без raw domain error |
-| `DUPLICATE_COMMAND` | 409 | `errors.conflict.duplicateCommand` | Повтор command id/idempotency conflict | Modal/notice, не auto-retry write command | no | WARN | Без raw payload |
+| `PERMISSION_DENIED` | 403 | `errors.permission` | Actor session активна, но permission отсутствует | Modal "Недостаточно прав", не делать logout | no | WARN | Не возвращать required permission id, если это раскрывает внутреннюю политику |
+| `FORBIDDEN` | 403 | `errors.permission` | Общий ожидаемый отказ доступа | Modal "Недостаточно прав" | no | WARN | Без секретов |
+| `NOT_FOUND` | 404 | `errors.not_found` | Сущность не найдена | Compact notice или modal для blocking flow; для optional current reads UI может трактовать как empty state | no | WARN | Не раскрывать SQL/query details |
+| `CONFLICT` | 409 | `errors.conflict` | Нарушен текущий state/business invariant | Modal с предложением обновить состояние; payment 409 требует refetch order/precheck/check/cash session без auto-retry оплаты | no | WARN | Без internal state dump |
+| `DUPLICATE_PIN` | 409 | `errors.conflict_duplicate_pin` | PIN совпал с несколькими active employees | Modal с бизнес-сообщением, не показывать PIN | no | WARN | PIN не возвращается и не логируется |
+| `ACTIVE_PRECHECK_CONFLICT` | 409 | `errors.conflict_active_precheck` | Для заказа уже есть активный precheck | Modal с предложением обновить заказ/precheck | no | WARN | Без raw domain error |
+| `DUPLICATE_COMMAND` | 409 | `errors.conflict_duplicate_command` | Повтор command id/idempotency conflict | Modal/notice, не auto-retry write command | no | WARN | Без raw payload |
 | `RATE_LIMITED` | 429 | `errors.rateLimit` | Превышен лимит PIN login attempts | Notice/modal с рекомендацией подождать | yes, вручную | WARN | PIN не возвращается и не логируется |
 | `INTERNAL_ERROR` | 500 | `errors.server` | Неожиданная или инфраструктурная ошибка | Modal с generic текстом и support code | no для write, осторожно для read/status | ERROR | Stack trace и SQL details только в backend log |
 
 Примечания:
 
 - реализовано сейчас: `POST /api/v1/system/provisioning/pair-via-license` мапит ожидаемые `PAIRING_CODE_INVALID` и `PAIRING_CODE_EXPIRED` от License Server в `400 VALIDATION_FAILED`, а не в `500 INTERNAL_ERROR`; внутренняя причина остается только в structured log и `edge_provisioning_state.last_error`.
+- реализовано сейчас: `POST /api/v1/prechecks/{id}/payments` возвращает `409 CONFLICT` / `errors.conflict` для state conflicts, включая отсутствие открытой кассовой смены, несовпадение кассовой смены с личной сменой заказа, stale/inactive precheck, overpayment и уже созданный final check. Backend не возвращает raw internal reason в response; UI обязан показать безопасное бизнес-сообщение, обновить состояние заказа/precheck/check/current cash session и не повторять оплату автоматически.
 
 ## Поведение логирования
 

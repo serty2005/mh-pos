@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/vue-query';
 import { useQuasar } from 'quasar';
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router';
 
 import {
   addOrderLine,
+  ApiError,
   cancelPrecheck,
   capturePrecheckPayment,
   changeOrderLineQuantity,
@@ -47,6 +48,21 @@ import { hasPermission, permissionCatalog } from '../../shared/rbac';
 import { resolveProtectedPosFallback } from '../../shared/sessionGuards';
 import type { ClosedOrder, MenuItem, Order } from '../../shared/schemas';
 import { useAuthStore } from '../../stores/auth';
+
+export const paymentConflictInvalidationQueryKeys = [
+  ['current-cash-session'],
+  ['current-order'],
+  ['order'],
+  ['prechecks'],
+  ['check'],
+  ['closed-orders'],
+] as const;
+
+export function invalidatePaymentConflictQueries(queryClient: Pick<QueryClient, 'invalidateQueries'>) {
+  for (const queryKey of paymentConflictInvalidationQueryKeys) {
+    void queryClient.invalidateQueries({ queryKey });
+  }
+}
 
 export function useCashierTerminal() {
   const { t } = useI18n();
@@ -272,6 +288,11 @@ export function useCashierTerminal() {
   const canPayCash = computed(() => Boolean(currentCashSession.data.value && activePrecheck.value && paymentAmount.value > 0 && paymentAmount.value <= remainingPayment.value && hasPermission(grantedPermissions.value, permissionCatalog.paymentCash)));
   const canPayCard = computed(() => Boolean(currentCashSession.data.value && activePrecheck.value && paymentAmount.value > 0 && paymentAmount.value <= remainingPayment.value && hasPermission(grantedPermissions.value, permissionCatalog.paymentCardManual)));
   const canCloseOrder = computed(() => Boolean(activeOrder.value?.status === 'open' && finalCheckData.value?.paid_total === finalCheckData.value?.total && hasPermission(grantedPermissions.value, permissionCatalog.orderClose)));
+  const paymentBlockedReasonKey = computed(() => {
+    if (!activePrecheck.value) return '';
+    if (!currentCashSession.data.value) return 'pos.openCashSessionToPay';
+    return '';
+  });
   const canSubmitCashDrawerEvent = computed(() => {
     if (!canRecordCashDrawerEvent.value) return false;
     if (cashDrawerType.value === 'no_sale') return true;
@@ -394,11 +415,12 @@ export function useCashierTerminal() {
 
   const paymentMutation = useMutation({
     mutationFn: (method: 'cash' | 'card') => capturePrecheckPayment(activePrecheck.value?.id ?? '', method, moneyToMinor(paymentAmount.value, orderCurrency.value), orderCurrency.value),
+    retry: false,
     onSuccess() {
       paymentAmount.value = 0;
       void refreshOrder();
     },
-    onError: showBusinessError,
+    onError: handlePaymentError,
   });
 
   const refundMutation = useMutation({
@@ -552,6 +574,13 @@ export function useCashierTerminal() {
     paymentMutation.mutate(method);
   }
 
+  function handlePaymentError(error: unknown) {
+    if (error instanceof ApiError && error.status === 409) {
+      invalidatePaymentConflictQueries(queryClient);
+    }
+    showBusinessError(error);
+  }
+
   function showReprintReady() {
     $q.notify({
       type: 'positive',
@@ -678,6 +707,7 @@ export function useCashierTerminal() {
     canPayCard,
     canCloseOrder,
     canSubmitCashDrawerEvent,
+    paymentBlockedReasonKey,
     cashDrawerTypeOptions,
     pairing,
     currentShift,

@@ -532,6 +532,17 @@ button:focus-visible,
   gap: 8px;
 }
 
+.payment-hint {
+  margin: 0;
+  padding: 8px 10px;
+  color: #6f3c21;
+  background: #fff3df;
+  border: 1px solid #ecd2a9;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .hall-tabs {
   display: flex;
   gap: 8px;

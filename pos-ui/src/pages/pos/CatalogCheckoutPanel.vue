@@ -264,6 +264,9 @@
               @click="terminal.pay('card')"
             />
           </div>
+          <p v-if="terminal.paymentBlockedReasonKey.value" class="payment-hint">
+            {{ terminal.t(terminal.paymentBlockedReasonKey.value) }}
+          </p>
         </div>
       </section>
     </div>
