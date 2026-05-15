@@ -201,6 +201,7 @@ export const i18n = createI18n({
         kitchenDisplay: 'Кухонный экран',
         precheck: 'Пречек',
         precheckActions: 'Пречек и оплата',
+        precheckCancelCopy: 'Отмена пречека требует управленческого подтверждения. PIN не сохраняется и не отображается после отправки.',
         precheckCancelReason: 'Причина отмены',
         precheckIssued: 'Пречек выпущен',
         searchMenu: 'Поиск по меню',
@@ -208,6 +209,8 @@ export const i18n = createI18n({
         emptyServices: 'Услуги пока не опубликованы',
         serviceReadiness: 'Готовность смены',
         terminalActions: 'Операции терминала',
+        secondaryOperations: 'Второстепенные операции',
+        refundCopy: 'Возврат записывается как финансовая операция по захваченной оплате. Проверьте основание до подтверждения.',
         reprintCopy: 'КОПИЯ',
         reprintReady: 'Копия документа подготовлена',
         selectedTable: 'Стол',
@@ -223,6 +226,53 @@ export const i18n = createI18n({
         tables: 'Столы',
         waiterMobile: 'Мобильный интерфейс официанта',
         total: 'Итого',
+        primaryFlow: {
+          kicker: 'Основной путь',
+          title: 'Смена -> стол -> заказ -> пречек -> оплата',
+          steps: {
+            readiness: {
+              title: 'Готовность смены',
+              description: 'Личная и кассовая смены открыты.',
+            },
+            table: {
+              title: 'Стол',
+              description: 'Выбран рабочий стол зала.',
+            },
+            order: {
+              title: 'Заказ',
+              description: 'Создан заказ и добавлены позиции.',
+            },
+            precheck: {
+              title: 'Пречек',
+              description: 'Итоги зафиксированы backend.',
+            },
+            payment: {
+              title: 'Оплата',
+              description: 'Оплата и чек идут через backend.',
+            },
+          },
+        },
+        blocking: {
+          permission: 'Нужно право: {permission}',
+          noShift: {
+            title: 'Открытие смены блокирует продажу',
+            reason: 'Откройте личную смену, затем выберите стол.',
+            permissionReason: 'Нужен сотрудник с правом открыть личную смену.',
+          },
+          noCashSession: {
+            title: 'Кассовая смена не открыта',
+            reason: 'Откройте кассовую смену перед оплатой и кассовыми операциями.',
+            permissionReason: 'Нужен сотрудник с правом открыть кассовую смену.',
+          },
+          lockedOrder: {
+            title: 'Заказ заблокирован пречеком',
+            reason: 'Позиции заказа нельзя менять. Продолжите оплату или запросите отмену пречека у менеджера.',
+          },
+          permissionDenied: {
+            title: 'Действие недоступно',
+            reason: 'Текущая роль не дает права выполнить это действие. Backend также проверит право при запросе.',
+          },
+        },
       },
       status: {
         cancelled: 'отменен',

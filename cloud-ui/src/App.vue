@@ -1,388 +1,41 @@
 <template>
-  <q-layout view="hHh LpR fFf" class="cloud-layout">
-    <q-header class="cloud-header">
-      <q-toolbar class="cloud-toolbar">
-        <q-toolbar-title class="cloud-brand">{{ t('app.title') }}</q-toolbar-title>
-        <span class="cloud-api">{{ apiBaseLabel }}</span>
-        <q-btn flat dense icon="refresh" :label="t('actions.refresh')" :loading="activeLoading" @click="reloadActive" />
-      </q-toolbar>
-    </q-header>
+  <cloud-shell :ctx="cloudCtx">
+    <header class="cloud-main-head">
+      <div>
+        <p class="eyebrow">{{ t(activeGroupLabelKey) }}</p>
+        <h2>{{ t(activeTitleKey) }}</h2>
+        <p class="cloud-copy">{{ t(activeDescriptionKey) }}</p>
+      </div>
+      <q-btn
+        v-if="canCreateActive"
+        color="primary"
+        unelevated
+        icon="add"
+        :label="t('actions.add')"
+        @click="startCreate"
+      />
+    </header>
 
-    <q-page-container>
-      <q-page class="cloud-page">
-        <aside class="cloud-sidebar">
-          <div class="cloud-sidebar-head">
-            <p class="eyebrow">{{ t('cloud.scope') }}</p>
-            <h1>{{ t('cloud.title') }}</h1>
-          </div>
-
-          <q-select
-            v-model="selectedRestaurantId"
-            dense
-            outlined
-            emit-value
-            map-options
-            :loading="isLoading('restaurants')"
-            :label="t('cloud.restaurantFilter')"
-            :options="restaurantOptions"
-          />
-
-          <section v-for="group in navGroups" :key="group.key" class="cloud-nav-group">
-            <p class="cloud-nav-label">{{ t(group.labelKey) }}</p>
-            <button
-              v-for="item in group.items"
-              :key="item.key"
-              type="button"
-              class="cloud-nav-item"
-              :class="{ selected: activeKey === item.key }"
-              @click="setActive(item.key)"
-            >
-              <span>{{ t(item.titleKey) }}</span>
-              <strong>{{ navCount(item.key) }}</strong>
-            </button>
-          </section>
-        </aside>
-
-        <main class="cloud-main">
-          <header class="cloud-main-head">
-            <div>
-              <p class="eyebrow">{{ t(activeGroupLabelKey) }}</p>
-              <h2>{{ t(activeTitleKey) }}</h2>
-              <p class="cloud-copy">{{ t(activeDescriptionKey) }}</p>
-            </div>
-            <q-btn
-              v-if="canCreateActive"
-              color="primary"
-              unelevated
-              icon="add"
-              :label="t('actions.add')"
-              @click="startCreate"
-            />
-          </header>
-
-          <q-banner v-if="errorKey" class="error-banner dense-banner">
-            <div class="error-content">
-              <strong>{{ t(errorKey) }}</strong>
-              <span v-if="errorCode">{{ t('errors.supportCode') }}: {{ errorCode }}</span>
-              <span v-if="errorCorrelationId">{{ t('errors.correlationId') }}: {{ errorCorrelationId }}</span>
-              <ul v-if="errorDetailsList.length > 0">
-                <li v-for="item in errorDetailsList" :key="item.key">{{ item.label }}: {{ item.value }}</li>
-              </ul>
-            </div>
-          </q-banner>
-          <q-banner v-if="successKey" class="success-banner dense-banner">{{ t(successKey) }}</q-banner>
-
-          <section v-if="activeKey === 'launchPlan'" class="cloud-scenario-grid">
-            <article class="cloud-panel cloud-plan-panel">
-              <div class="section-head stacked">
-                <p class="eyebrow">{{ t('cloud.scenarios.operatorJourney') }}</p>
-                <h2>{{ t('cloud.launchPlan.title') }}</h2>
-              </div>
-              <ol class="cloud-roadmap">
-                <li v-for="step in launchSteps" :key="step.key" :class="step.status">
-                  <span>{{ t(step.badgeKey) }}</span>
-                  <div>
-                    <strong>{{ t(step.titleKey) }}</strong>
-                    <p>{{ t(step.descriptionKey) }}</p>
-                  </div>
-                </li>
-              </ol>
-            </article>
-            <article class="cloud-panel cloud-plan-panel">
-              <div class="section-head stacked">
-                <p class="eyebrow">{{ t('cloud.onboarding.kicker') }}</p>
-                <h2>{{ t('cloud.onboarding.title') }}</h2>
-              </div>
-              <div class="onboarding-checks">
-                <div v-for="check in onboardingChecks" :key="check.key" class="onboarding-check">
-                  <q-icon :name="check.ready ? 'check_circle' : 'radio_button_unchecked'" :class="{ ready: check.ready }" />
-                  <div>
-                    <strong>{{ t(check.titleKey) }}</strong>
-                    <span>{{ t(check.descriptionKey, check.params) }}</span>
-                  </div>
-                  <q-btn flat dense :icon="check.icon" :label="t(check.actionKey)" @click="setActive(check.target)" />
-                </div>
-              </div>
-            </article>
-            <article class="cloud-panel cloud-plan-panel accent">
-              <div class="section-head stacked">
-                <p class="eyebrow">{{ t('cloud.scenarios.firstSlice') }}</p>
-                <h2>{{ t('cloud.launchPlan.firstSliceTitle') }}</h2>
-              </div>
-              <div class="cloud-playbook">
-                <div v-for="item in playbookItems" :key="item.titleKey">
-                  <span>{{ t(item.kickerKey) }}</span>
-                  <strong>{{ t(item.titleKey) }}</strong>
-                  <p>{{ t(item.descriptionKey) }}</p>
-                </div>
-              </div>
-            </article>
-          </section>
-
-          <section v-else-if="activeKey === 'edgeDevices'" class="cloud-edge-grid">
-            <div class="cloud-panel cloud-list-panel">
-              <div class="cloud-list-tools">
-                <q-input v-model="search" dense outlined clearable debounce="120" :label="t('cloud.search')" />
-                <span>{{ t('cloud.rows') }}: {{ filteredEdgeDevices.length }}</span>
-              </div>
-              <div v-if="isLoading('edge-devices')" class="cloud-skeleton-list">
-                <q-skeleton v-for="index in 4" :key="index" class="skeleton-row" />
-              </div>
-              <div v-else-if="filteredEdgeDevices.length === 0" class="empty-state wide">{{ t('cloud.empty.noEdgeDevices') }}</div>
-              <div v-else class="edge-device-list">
-                <button
-                  v-for="node in filteredEdgeDevices"
-                  :key="node.node_device_id"
-                  type="button"
-                  class="edge-device-card"
-                  :class="{ selected: selectedEdgeNodeId === node.node_device_id }"
-                  @click="selectEdgeNode(node)"
-                >
-                  <span class="cloud-status" :class="node.status">{{ edgeStatusText(node.status) }}</span>
-                  <strong>{{ node.display_name }}</strong>
-                  <small>{{ node.node_device_id }}</small>
-                  <span>{{ t('cloud.fields.app_version') }}: {{ node.app_version || '-' }}</span>
-                  <span>{{ t('cloud.fields.last_seen_at') }}: {{ formatDate(node.last_seen_at) }}</span>
-                </button>
-              </div>
-            </div>
-
-            <form class="cloud-panel cloud-form-panel" @submit.prevent="assignSelectedEdgeDevice">
-              <div class="section-head stacked">
-                <p class="eyebrow">{{ t('cloud.edgeDevices.claimedFlow') }}</p>
-                <h2>{{ t('cloud.edgeDevices.assignTitle') }}</h2>
-              </div>
-              <q-select
-                v-model="selectedEdgeNodeId"
-                dense
-                outlined
-                emit-value
-                map-options
-                :label="t('cloud.fields.edge_node')"
-                :options="unassignedEdgeOptions"
-                :disable="unassignedEdgeOptions.length === 0"
-              />
-              <q-btn color="primary" unelevated icon="link" type="submit" :disable="!selectedRestaurantId || !selectedEdgeNodeId" :loading="isLoading('edge-assign')" :label="t('cloud.edgeDevices.assignAction')" />
-              <q-btn flat icon="manage_search" :disable="!selectedEdgeNodeId" :loading="isLoading('edge-status')" :label="t('cloud.edgeDevices.checkStatus')" @click="loadSelectedAssignmentStatus" />
-              <div v-if="assignmentResult" class="cloud-result-box">
-                <span>{{ t('cloud.fields.status') }}: {{ assignmentResult.status }}</span>
-                <span>{{ t('cloud.fields.snapshot_url') }}: {{ assignmentResult.snapshot_url }}</span>
-              </div>
-              <div v-if="assignmentStatus" class="cloud-result-box muted">
-                <span>{{ t('cloud.fields.status') }}: {{ assignmentStatus.status }}</span>
-                <span>{{ t('cloud.fields.cloud_url') }}: {{ assignmentStatus.cloud_url || '-' }}</span>
-              </div>
-              <q-separator />
-              <div class="section-head stacked">
-                <p class="eyebrow">{{ t('cloud.edgeDevices.licenseFlow') }}</p>
-                <h2>{{ t('cloud.edgeDevices.pairingTitle') }}</h2>
-              </div>
-              <q-input v-model="pairingForm.display_name" dense outlined :label="t('cloud.fields.display_name')" />
-              <q-input v-model.number="pairingForm.expires_in_minutes" dense outlined type="number" :label="t('cloud.fields.expires_in_minutes')" />
-              <q-btn flat icon="password" :disable="!selectedRestaurantId" :loading="isLoading('pairing-code')" :label="t('cloud.edgeDevices.generatePairing')" @click="generateSelectedPairingCode" />
-              <div v-if="pairingResult" class="pairing-code-box">
-                <span>{{ t('cloud.edgeDevices.pairingCode') }}</span>
-                <strong>{{ pairingResult.pairing_code }}</strong>
-                <small>{{ t('cloud.fields.edge_node') }}: {{ nodeDisplayName(pairingResult.node_device_id) }}</small>
-                <small>{{ t('cloud.fields.expires_at') }}: {{ formatDate(pairingResult.expires_at) }}</small>
-              </div>
-            </form>
-          </section>
-
-          <section v-else-if="activeKey !== 'restaurants' && !selectedRestaurantId" class="empty-state wide">
-            {{ t('cloud.empty.selectRestaurant') }}
-          </section>
-
-          <section v-else-if="activeKey === 'publications'" class="cloud-publication-grid">
-            <div class="cloud-panel">
-              <div class="section-head">
-                <h2>{{ t('cloud.publications.currentState') }}</h2>
-                <q-btn flat dense icon="refresh" :label="t('actions.refresh')" :loading="isLoading('publication')" @click="loadPublication" />
-              </div>
-              <div v-if="publication" class="cloud-state-grid">
-                <div v-for="field in publicationFields" :key="field.key">
-                  <span>{{ t(field.labelKey) }}</span>
-                  <strong>{{ field.value }}</strong>
-                </div>
-              </div>
-              <div v-else class="empty-state">{{ t('cloud.empty.noPublication') }}</div>
-              <div v-if="publication" class="cloud-counts">
-                <div v-for="[key, value] in publicationCounts" :key="key" class="cloud-count-row">
-                  <span>{{ key }}</span>
-                  <strong>{{ value }}</strong>
-                </div>
-              </div>
-            </div>
-
-            <form class="cloud-panel cloud-form-panel" @submit.prevent="publishSelectedRestaurant">
-              <div class="section-head">
-                <h2>{{ t('cloud.publications.publish') }}</h2>
-              </div>
-              <q-input v-model="publishForm.published_by" dense outlined :label="t('cloud.fields.published_by')" />
-              <q-select
-                v-model="publishForm.node_device_id"
-                dense
-                outlined
-                clearable
-                emit-value
-                map-options
-                :label="t('cloud.fields.edge_node')"
-                :options="knownNodeOptions"
-              />
-              <q-btn
-                color="primary"
-                unelevated
-                icon="publish"
-                type="submit"
-                :loading="isLoading('publication-submit')"
-                :label="t('cloud.publications.publishAction')"
-              />
-            </form>
-          </section>
-
-          <section v-else class="cloud-workspace">
-            <div class="cloud-panel cloud-list-panel">
-              <div class="cloud-list-tools">
-                <q-input v-model="search" dense outlined clearable debounce="120" :label="t('cloud.search')" />
-                <span>{{ t('cloud.rows') }}: {{ filteredRows.length }}</span>
-              </div>
-              <div v-if="activeConfig?.commandOnly" class="empty-state wide">
-                {{ t('cloud.empty.commandOnly') }}
-              </div>
-              <div v-else-if="activeLoading" class="cloud-skeleton-list">
-                <q-skeleton v-for="index in 6" :key="index" class="skeleton-row" />
-              </div>
-              <div v-else-if="filteredRows.length === 0" class="empty-state wide">
-                {{ t('common.empty') }}
-              </div>
-              <div v-else class="cloud-table-wrap">
-                <table class="cloud-table">
-                  <thead>
-                    <tr>
-                      <th v-for="column in activeColumns" :key="column.key">{{ t(column.labelKey) }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr
-                      v-for="row in filteredRows"
-                      :key="rowKey(row)"
-                      :class="{ selected: selectedRowId === rowKey(row) }"
-                      @click="selectRow(row)"
-                    >
-                      <td v-for="column in activeColumns" :key="column.key">
-                        <span v-if="column.key === 'status'" class="cloud-status" :class="String(row[column.key])">
-                          {{ statusText(row[column.key]) }}
-                        </span>
-                        <span v-else>{{ formatCell(column.key, row[column.key]) }}</span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <form class="cloud-panel cloud-form-panel" @submit.prevent="submitForm">
-              <div class="section-head">
-                <h2>{{ t(mode === 'create' ? 'cloud.form.create' : 'cloud.form.edit') }}</h2>
-                <q-btn v-if="mode === 'edit'" flat dense icon="add" :label="t('cloud.form.new')" @click="startCreate" />
-              </div>
-
-              <template v-for="field in visibleFields" :key="field.key">
-                <q-checkbox v-if="field.type === 'checkbox'" v-model="form[field.key]" :label="t(field.labelKey)" />
-                <template v-else-if="field.type === 'permissionMatrix'" />
-                <q-select
-                  v-else-if="field.options"
-                  :key="`${field.key}-${selectOptions(field).length}`"
-                  :model-value="form[field.key]"
-                  @update:model-value="(value) => setFormValue(field.key, value)"
-                  dense
-                  outlined
-                  clearable
-                  emit-value
-                  map-options
-                  :disable="isSelectDisabled(field)"
-                  :label="t(field.labelKey)"
-                  :options="selectOptions(field)"
-                />
-                <q-input
-                  v-else
-                  :model-value="inputModelValue(field.key)"
-                  @update:model-value="(value) => setFormValue(field.key, value)"
-                  dense
-                  outlined
-                  :type="field.type === 'textarea' ? 'textarea' : field.type === 'number' ? 'number' : 'text'"
-                  :rows="field.type === 'textarea' ? field.rows ?? 4 : undefined"
-                  :label="t(field.labelKey)"
-                />
-              </template>
-              <template v-for="field in permissionFields" :key="field.key">
-                <section class="permission-matrix">
-                  <div class="section-head stacked">
-                    <p class="eyebrow">{{ t(field.labelKey) }}</p>
-                    <h2>{{ t('cloud.permissions.matrixTitle') }}</h2>
-                  </div>
-                  <div class="permission-group" v-for="group in permissionGroups" :key="group.key">
-                    <strong>{{ t(group.labelKey) }}</strong>
-                    <div class="permission-grid">
-                      <q-checkbox
-                        v-for="permission in group.permissions"
-                        :key="permission"
-                        :model-value="selectedPermissions.includes(permission)"
-                        dense
-                        :label="permissionLabel(permission)"
-                        @update:model-value="(checked) => togglePermission(permission, Boolean(checked))"
-                      />
-                    </div>
-                  </div>
-                </section>
-              </template>
-
-              <div class="cloud-form-actions">
-                <q-btn
-                  color="primary"
-                  unelevated
-                  icon="save"
-                  type="submit"
-                  :loading="isLoading('submit')"
-                  :disable="!canSubmitActive"
-                  :label="t(mode === 'create' ? 'cloud.form.createAction' : 'actions.save')"
-                />
-                <q-btn
-                  v-if="mode === 'edit' && activeConfig?.archive"
-                  flat
-                  color="negative"
-                  icon="archive"
-                  :loading="isLoading('archive')"
-                  :label="t('cloud.actions.archive')"
-                  @click="archiveSelected"
-                />
-              </div>
-
-              <div v-if="activeKey === 'employees' && mode === 'edit'" class="cloud-extra-actions">
-                <q-separator />
-                <div class="inline-action horizontal">
-                  <q-btn flat icon="pause" :label="t('cloud.actions.suspend')" @click="employeeAction('suspend')" />
-                  <q-btn flat icon="play_arrow" :label="t('cloud.actions.activate')" @click="employeeAction('activate')" />
-                </div>
-                <q-btn flat color="negative" icon="archive" :label="t('cloud.actions.archive')" @click="employeeAction('archive')" />
-                <q-btn flat icon="assignment_ind" :label="t('cloud.actions.assignRole')" @click="assignSelectedEmployeeRole" />
-                <div class="inline-action horizontal">
-                  <q-input v-model="actionPin" dense outlined type="password" :label="t('cloud.fields.pin')" />
-                  <q-btn flat icon="vpn_key" :label="t('cloud.actions.rotatePin')" @click="rotateSelectedEmployeePIN" />
-                </div>
-              </div>
-            </form>
-          </section>
-        </main>
-      </q-page>
-    </q-page-container>
-  </q-layout>
+    <q-banner v-if="successKey" class="success-banner dense-banner">{{ t(successKey) }}</q-banner>
+    <launch-readiness-panel v-if="activeKey === 'launchPlan'" :ctx="cloudCtx" />
+    <edge-device-panel v-else-if="activeKey === 'edgeDevices'" :ctx="cloudCtx" />
+    <section v-else-if="activeKey !== 'restaurants' && !selectedRestaurantId" class="empty-state wide">
+      {{ t('cloud.empty.selectRestaurant') }}
+    </section>
+    <publication-panel v-else-if="activeKey === 'publications'" :ctx="cloudCtx" />
+    <resource-workspace v-else :ctx="cloudCtx" />
+  </cloud-shell>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
+import CloudShell from './components/cloud/CloudShell.vue';
+import EdgeDevicePanel from './components/cloud/EdgeDevicePanel.vue';
+import LaunchReadinessPanel from './components/cloud/LaunchReadinessPanel.vue';
+import PublicationPanel from './components/cloud/PublicationPanel.vue';
+import ResourceWorkspace from './components/cloud/ResourceWorkspace.vue';
 import {
   activateEmployee,
   archiveCatalogFolder,
@@ -969,7 +622,8 @@ const onboardingChecks = computed(() => {
   const halls = scopedRows.halls.length;
   const tables = scopedRows.tables.length;
   const menuItems = scopedRows.menuItems.length;
-  const nodeReady = Boolean(pairingResult.value || assignmentResult.value || assignmentStatus.value?.status === 'assigned');
+  const nodeReady = Boolean(assignmentResult.value || assignmentStatus.value?.status === 'assigned');
+  const snapshotReady = Boolean(assignmentResult.value?.snapshot_url || assignmentStatus.value?.snapshot_url || publication.value?.package_sha256);
   return [
     { key: 'restaurant', ready: Boolean(selectedRestaurant.value), titleKey: 'cloud.onboarding.restaurant.title', descriptionKey: 'cloud.onboarding.restaurant.description', params: { count: restaurants.value.length }, target: 'restaurants' as ResourceKey, actionKey: 'cloud.onboarding.actions.open', icon: 'storefront' },
     { key: 'staff', ready: roles > 0 && employees > 0, titleKey: 'cloud.onboarding.staff.title', descriptionKey: 'cloud.onboarding.staff.description', params: { roles, employees }, target: 'roles' as ResourceKey, actionKey: 'cloud.onboarding.actions.configure', icon: 'badge' },
@@ -977,6 +631,7 @@ const onboardingChecks = computed(() => {
     { key: 'menu', ready: menuItems > 0, titleKey: 'cloud.onboarding.menu.title', descriptionKey: 'cloud.onboarding.menu.description', params: { menuItems }, target: 'menuItems' as ResourceKey, actionKey: 'cloud.onboarding.actions.configure', icon: 'restaurant_menu' },
     { key: 'edge', ready: nodeReady, titleKey: 'cloud.onboarding.edge.title', descriptionKey: 'cloud.onboarding.edge.description', params: { count: knownNodeOptions.value.length }, target: 'edgeDevices' as ResourceKey, actionKey: 'cloud.onboarding.actions.connect', icon: 'devices' },
     { key: 'publication', ready: Boolean(publication.value), titleKey: 'cloud.onboarding.publication.title', descriptionKey: 'cloud.onboarding.publication.description', params: { version: publication.value?.version ?? '-' }, target: 'publications' as ResourceKey, actionKey: 'cloud.onboarding.actions.publish', icon: 'publish' },
+    { key: 'snapshot', ready: snapshotReady, titleKey: 'cloud.onboarding.snapshot.title', descriptionKey: 'cloud.onboarding.snapshot.description', params: { code: publication.value?.package_sha256 ? shortId(publication.value.package_sha256) : '-' }, target: 'publications' as ResourceKey, actionKey: 'cloud.onboarding.actions.open', icon: 'inventory' },
   ];
 });
 
@@ -1005,6 +660,77 @@ const publicationFields = computed(() => {
     { key: 'package_sha256', labelKey: 'cloud.fields.package_sha256', value: shortId(publication.value.package_sha256) },
   ];
 });
+
+const cloudCtx = {
+  apiBaseLabel,
+  selectedRestaurantId,
+  activeKey,
+  selectedRowId,
+  search,
+  mode,
+  actionPin,
+  errorKey,
+  errorCode,
+  errorCorrelationId,
+  successKey,
+  publication,
+  selectedEdgeNodeId,
+  assignmentResult,
+  assignmentStatus,
+  pairingResult,
+  publishForm,
+  pairingForm,
+  form,
+  permissionGroups,
+  navGroups,
+  restaurantOptions,
+  activeConfig,
+  activeColumns,
+  visibleFields,
+  permissionFields,
+  filteredRows,
+  activeLoading,
+  canSubmitActive,
+  publicationCounts,
+  filteredEdgeDevices,
+  unassignedEdgeOptions,
+  knownNodeOptions,
+  selectedPermissions,
+  errorDetailsList,
+  onboardingChecks,
+  launchSteps,
+  playbookItems,
+  publicationFields,
+  setActive,
+  navCount,
+  rowKey,
+  selectRow,
+  startCreate,
+  inputModelValue,
+  setFormValue,
+  selectOptions,
+  isSelectDisabled,
+  loadPublication,
+  reloadActive,
+  submitForm,
+  archiveSelected,
+  employeeAction,
+  assignSelectedEmployeeRole,
+  rotateSelectedEmployeePIN,
+  selectEdgeNode,
+  assignSelectedEdgeDevice,
+  loadSelectedAssignmentStatus,
+  generateSelectedPairingCode,
+  publishSelectedRestaurant,
+  isLoading,
+  formatCell,
+  statusText,
+  edgeStatusText,
+  formatDate,
+  permissionLabel,
+  togglePermission,
+  nodeDisplayName,
+};
 
 watch(selectedRestaurantId, async () => {
   clearMessages();

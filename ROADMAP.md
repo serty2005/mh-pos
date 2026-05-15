@@ -79,8 +79,11 @@ Roadmap фиксирует статусы, блокеры и следующий 
 Запланировано далее:
 
 - Повторить browser-based UI/UX smoke в окружении с установленным Chromium/Playwright browsers; текущая среда блокирует загрузку браузера proxy/403.
-- POS UI: снизить когнитивную плотность cashier terminal и удержать checkout/precheck/payment рядом с active order на tablet widths.
-- Cloud UI: разбить монолитный `App.vue` на flow components и сделать launch/readiness checklist primary journey, оставив master-data CRUD secondary/admin layer.
+
+Выполнено:
+
+- POS UI: добавлен primary flow strip `готовность смены -> стол -> заказ -> пречек -> оплата`, secondary operations визуально отделены, blocking states унифицированы, tablet breakpoint пересмотрен так, чтобы checkout/precheck/payment не уходили под active order около 1100px.
+- Cloud UI: presentation layer вынесен из монолитного `App.vue` в flow components, launch/readiness checklist стал primary journey, master-data CRUD оставлен secondary/admin layer, добавлен card/list fallback для narrow screens.
 
 ## В Работе / До Пилота
 

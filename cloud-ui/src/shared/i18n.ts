@@ -70,6 +70,10 @@ export const i18n = createI18n({
         restaurantFilter: 'Ресторан',
         search: 'Поиск',
         rows: 'Строк',
+        recovery: {
+          openSection: 'Открыть раздел',
+          selectRestaurant: 'Выбрать ресторан',
+        },
         groups: {
           scenarios: 'Сценарии запуска',
           organization: 'Организация',
@@ -330,6 +334,10 @@ export const i18n = createI18n({
           publication: {
             title: 'Пакет опубликован',
             description: 'Текущая версия: {version}.',
+          },
+          snapshot: {
+            title: 'Snapshot доступен',
+            description: 'Идентификатор пакета: {code}.',
           },
         },
         rolePresets: {

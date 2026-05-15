@@ -1,0 +1,213 @@
+{
+  "generated_at": "2026-05-15T14:08:00.267Z",
+  "cloud": {
+    "requests": [
+      {
+        "method": "GET",
+        "url": "http://localhost:8090/api/v1/restaurants"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8090/api/v1/roles?restaurant_id=0f6d6421-e3d5-460d-9f26-f8f4f08dd372"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8090/api/v1/employees?restaurant_id=0f6d6421-e3d5-460d-9f26-f8f4f08dd372"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8090/api/v1/catalog/items?restaurant_id=0f6d6421-e3d5-460d-9f26-f8f4f08dd372"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8090/api/v1/master-data/catalog/folders?restaurant_id=0f6d6421-e3d5-460d-9f26-f8f4f08dd372"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8090/api/v1/master-data/catalog/folder-parameters?restaurant_id=0f6d6421-e3d5-460d-9f26-f8f4f08dd372"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8090/api/v1/master-data/catalog/tags?restaurant_id=0f6d6421-e3d5-460d-9f26-f8f4f08dd372"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8090/api/v1/master-data/modifiers/groups?restaurant_id=0f6d6421-e3d5-460d-9f26-f8f4f08dd372"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8090/api/v1/master-data/modifiers/options?restaurant_id=0f6d6421-e3d5-460d-9f26-f8f4f08dd372"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8090/api/v1/master-data/modifiers/bindings?restaurant_id=0f6d6421-e3d5-460d-9f26-f8f4f08dd372"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8090/api/v1/master-data/pricing/policies?restaurant_id=0f6d6421-e3d5-460d-9f26-f8f4f08dd372"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8090/api/v1/halls?restaurant_id=0f6d6421-e3d5-460d-9f26-f8f4f08dd372"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8090/api/v1/tables?restaurant_id=0f6d6421-e3d5-460d-9f26-f8f4f08dd372"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8090/api/v1/menu/items?restaurant_id=0f6d6421-e3d5-460d-9f26-f8f4f08dd372"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8090/api/v1/restaurants/0f6d6421-e3d5-460d-9f26-f8f4f08dd372/master-data/publication-state"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8090/api/v1/devices/unassigned"
+      }
+    ],
+    "responses": [],
+    "failedRequests": [],
+    "console": [],
+    "requestCounts": [
+      {
+        "key": "GET http://localhost:8090/api/v1/restaurants",
+        "count": 1
+      },
+      {
+        "key": "GET http://localhost:8090/api/v1/roles",
+        "count": 1
+      },
+      {
+        "key": "GET http://localhost:8090/api/v1/employees",
+        "count": 1
+      },
+      {
+        "key": "GET http://localhost:8090/api/v1/catalog/items",
+        "count": 1
+      },
+      {
+        "key": "GET http://localhost:8090/api/v1/master-data/catalog/folders",
+        "count": 1
+      },
+      {
+        "key": "GET http://localhost:8090/api/v1/master-data/catalog/folder-parameters",
+        "count": 1
+      },
+      {
+        "key": "GET http://localhost:8090/api/v1/master-data/catalog/tags",
+        "count": 1
+      },
+      {
+        "key": "GET http://localhost:8090/api/v1/master-data/modifiers/groups",
+        "count": 1
+      },
+      {
+        "key": "GET http://localhost:8090/api/v1/master-data/modifiers/options",
+        "count": 1
+      },
+      {
+        "key": "GET http://localhost:8090/api/v1/master-data/modifiers/bindings",
+        "count": 1
+      },
+      {
+        "key": "GET http://localhost:8090/api/v1/master-data/pricing/policies",
+        "count": 1
+      },
+      {
+        "key": "GET http://localhost:8090/api/v1/halls",
+        "count": 1
+      },
+      {
+        "key": "GET http://localhost:8090/api/v1/tables",
+        "count": 1
+      },
+      {
+        "key": "GET http://localhost:8090/api/v1/menu/items",
+        "count": 1
+      },
+      {
+        "key": "GET http://localhost:8090/api/v1/restaurants/0f6d6421-e3d5-460d-9f26-f8f4f08dd372/master-data/publication-state",
+        "count": 1
+      },
+      {
+        "key": "GET http://localhost:8090/api/v1/devices/unassigned",
+        "count": 1
+      }
+    ],
+    "requestTotal": 16,
+    "screenshot": "C:\\Users\\SERTY\\AppData\\Local\\Temp\\mh-pos-full-flow\\cloud-launch-1440.png"
+  },
+  "posLogin": {
+    "requests": [
+      {
+        "method": "GET",
+        "url": "http://localhost:8080/api/v1/system/pairing-status"
+      },
+      {
+        "method": "POST",
+        "url": "http://localhost:8080/api/v1/auth/pin-login"
+      }
+    ],
+    "responses": [
+      {
+        "method": "POST",
+        "url": "http://localhost:8080/api/v1/auth/pin-login",
+        "status": 403,
+        "body": "{\"error\":{\"code\":\"FORBIDDEN\",\"message_key\":\"errors.permission.denied\",\"correlation_id\":\"e4633fe738fe/quZZOlOphl-000040\"}}\n"
+      }
+    ],
+    "failedRequests": [],
+    "console": [
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 403 (Forbidden)"
+      }
+    ],
+    "requestCounts": [
+      {
+        "key": "GET http://localhost:8080/api/v1/system/pairing-status",
+        "count": 1
+      },
+      {
+        "key": "POST http://localhost:8080/api/v1/auth/pin-login",
+        "count": 1
+      }
+    ],
+    "requestTotal": 2,
+    "screenshot": "C:\\Users\\SERTY\\AppData\\Local\\Temp\\mh-pos-full-flow\\pos-login-1440.png"
+  },
+  "posPair": {
+    "requests": [
+      {
+        "method": "GET",
+        "url": "http://localhost:8080/api/v1/system/provisioning-status"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8080/api/v1/system/pairing-status"
+      }
+    ],
+    "responses": [],
+    "failedRequests": [],
+    "console": [],
+    "requestCounts": [
+      {
+        "key": "GET http://localhost:8080/api/v1/system/provisioning-status",
+        "count": 1
+      },
+      {
+        "key": "GET http://localhost:8080/api/v1/system/pairing-status",
+        "count": 1
+      }
+    ],
+    "requestTotal": 2,
+    "screenshot": "C:\\Users\\SERTY\\AppData\\Local\\Temp\\mh-pos-full-flow\\pos-pair-1440.png"
+  },
+  "cloudBodySnippet": "MyHoReCa Cloud\nhttp://localhost:8090/api/v1\nrefresh\nОБНОВИТЬ\n\nCloud-owned master data\n\nОперационный центр\nРесторан\ntestrest\narrow_drop_down\n\nСценарии запуска\n\nПлан запуска\n5\nEdge-устройства\n0\n\nОрганизация\n\nРестораны\n2\n\nПерсонал\n\nРоли\n1\nСотрудники\n1\n\nКаталог\n\nПозиции каталога\n1\nПапки\n1\nПараметры папок\n0\nТеги\n0\nТеги позиций\n+\n\nМодификаторы\n\nГруппы\n0\nОпции\n0\nПривязки\n0\n\nЦены\n\nPricing policies\n0\n\nЗал\n\nЗалы\n1\nСтолы\n1\n\nМеню\n\nMenu items\n0\nКатегории меню\n+\n\nПубликация\n\nPublication state\n2\n\nСценарии запуска\n\nПлан запуска\n\nРеализационный план Cloud UI от подключения Edge до продажи на POS Edge.\n\nГотовность\n\nСледующий шаг онбординга\ncheck_circle\nРесторан выбран\nВсего ресторанов: 2.\nstorefront\nОТКРЫТЬ\ncheck_circle\nРоли и сотрудники\nРолей: 1, сотрудников: 1.\nbadge\nНАСТРОИТЬ\ncheck_circle\nЗал и столы\nЗалов: 1, столов: 1.\ntable_restaurant\nНАСТРОИТЬ\nradio_button_unchecked\nПродаваемое меню\nПозиций меню: 0.\nrestaurant_menu\nНАСТРОИТЬ\nradio_button_unchecked\nEdge подключен\nИзвестных устройств в UI: 0.\ndevices\nПОДКЛЮЧИТЬ\ncheck_circle\nПакет опубликован\nТекущая версия: 2.\npublish\nОПУБЛИКОВАТЬ\ncheck_circle\nSnapshot доступен\nИдентификатор пакета: 8f8b845f....\ninventory\nОТКРЫТЬ\n\nПуть оператора\n\nПолноценный Cloud UI без создания справочников как самоцели\nреализовано сейчас\nПодключить Edge-device к Cloud\n\nОператор видит незакрепленные терминалы, назначает ресторан и получает безопасную точку входа к snapshot master data.\n\nзапланировано далее\nПроверить ресторан, зал, роли и сотрудников\n\nCloud UI ведет по минимальным данным запуска, не заставляя пользователя работать с техническими таблицами.\n\nзапланировано далее\nСобрать продаваемое меню\n\nКаталог, модификаторы, цены и меню должны стать сценариями подготовки продажи на Edge-стороне.\n\nзапланировано далее\nОпубликовать пакет и убедиться в готовности Edge\n\nПубликация связывает изменения Cloud-owned данных с получением snapshot на POS Edge.\n\nпосле пилота\nПередать в POS Edge сценарий заказа и продажи\n\nCashier runtime остается на Edge, а Cloud UI показывает readiness, версии и операционные риски.\n\nПервый вертикальный срез\n\nНачинаем с подключения Edge\nClaimed-cloud flow\nУстройство само заявилось в Cloud\n\nСписок unassigned устройств берется из cloud-backend, назначение выполняется подтвержденным route.\n\nLicense-server flow\nОператор выпускает код подключения\n\nPairing code создается для ресторана и device id; секреты не логируются и не сохраняются в UI.\n\nПубликация\nПосле назначения нужна публикация\n\nEdge должен получить опубликованный пакет master d",
+  "cloudHasCodexRestaurant": false,
+  "posLoginBodySnippet": "Узел f147ae4f-a149-497e-8e38-89c207b958ad\n\nВход по PIN[REDACTED]\nPIN[REDACTED]\nВведите PIN[REDACTED]\nlogin\nВОЙТИ\n\nДоступ\n\nНедостаточно прав\n\nНедостаточно прав для выполнения этой операции.\n\nОбратитесь к менеджеру или администратору для выдачи нужного права.\n\nКод для поддержки: e4633fe738fe/quZZOlOphl-000040\n\nЗАКРЫТЬ",
+  "posLoginShowsRawForbidden": false,
+  "posPairBodySnippet": "Узел f147ae4f-a149-497e-8e38-89c207b958ad\n\nВход по PIN[REDACTED]\nPIN[REDACTED]\nВведите PIN[REDACTED]\nlogin\nВОЙТИ"
+}

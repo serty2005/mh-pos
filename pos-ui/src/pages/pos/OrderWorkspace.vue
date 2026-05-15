@@ -40,9 +40,14 @@
         </div>
       </div>
 
-      <q-banner v-if="terminal.activeOrder.value.status === 'locked'" class="info-banner" rounded>
-        {{ terminal.t('pos.lockedOrder') }}
-      </q-banner>
+      <blocking-notice
+        v-if="terminal.activeOrder.value.status === 'locked'"
+        :terminal="terminal"
+        :title="terminal.t('pos.blocking.lockedOrder.title')"
+        :reason="terminal.t('pos.blocking.lockedOrder.reason')"
+        :permission="terminal.canCancelPrecheck.value ? '' : 'pos.precheck.cancel.request'"
+        icon="lock"
+      />
       <q-banner v-if="terminal.finalCheckData.value" class="success-banner" rounded>
         {{ terminal.t('pos.checkCreated') }}: {{ terminal.shortId(terminal.finalCheckData.value.id) }} · {{ terminal.money(terminal.finalCheckData.value.total, terminal.orderCurrency.value) }}
       </q-banner>
@@ -107,10 +112,20 @@
     </section>
 
     <div v-else class="empty-state wide workspace-empty">{{ terminal.selectedTableId.value ? terminal.t('pos.noActiveOrder') : terminal.t('pos.chooseTable') }}</div>
+    <blocking-notice
+      v-if="terminal.selectedTableId.value && !terminal.activeOrder.value && terminal.actionBlocker('pos.order.create', terminal.canCreateOrder.value)"
+      class="workspace-banner"
+      :terminal="terminal"
+      :title="terminal.t(terminal.actionBlocker('pos.order.create', terminal.canCreateOrder.value)?.titleKey ?? '')"
+      :reason="terminal.t(terminal.actionBlocker('pos.order.create', terminal.canCreateOrder.value)?.reasonKey ?? '')"
+      :permission="terminal.actionBlocker('pos.order.create', terminal.canCreateOrder.value)?.permission"
+      icon="lock"
+    />
   </main>
 </template>
 
 <script setup lang="ts">
+import BlockingNotice from './BlockingNotice.vue';
 import type { CashierTerminal } from './useCashierTerminal';
 
 defineProps<{
