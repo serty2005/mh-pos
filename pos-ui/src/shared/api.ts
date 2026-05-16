@@ -418,6 +418,11 @@ export function getCurrentOrderByTable(tableId: string) {
   return requestOptional(`/orders/current?${query}`, orderSchema);
 }
 
+export function listActiveOrdersByHall(hallId: string) {
+  const query = new URLSearchParams({ hall_id: hallId });
+  return request(`/orders/active?${query}`, z.array(orderSchema));
+}
+
 export function getOrder(orderId: string) {
   return request(`/orders/${encodeURIComponent(orderId)}`, orderSchema);
 }
@@ -450,6 +455,13 @@ export function changeOrderLineQuantity(orderId: string, lineId: string, quantit
   return request(`/orders/${encodeURIComponent(orderId)}/lines/${encodeURIComponent(lineId)}`, orderLineSchema, {
     method: 'PATCH',
     body: JSON.stringify({ quantity }),
+  });
+}
+
+export function updateOrderLineDetails(orderId: string, lineId: string, course: string, comment: string) {
+  return request(`/orders/${encodeURIComponent(orderId)}/lines/${encodeURIComponent(lineId)}/details`, orderLineSchema, {
+    method: 'PATCH',
+    body: JSON.stringify({ course, comment }),
   });
 }
 

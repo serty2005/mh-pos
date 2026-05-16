@@ -22,6 +22,7 @@ import {
   getPairingStatus,
   getSyncStatus,
   issuePrecheck,
+  listActiveOrdersByHall,
   listClosedOrders,
   listHalls,
   listLocalEvents,
@@ -38,6 +39,7 @@ import {
   reprintCheck,
   reprintPrecheck,
   retryFailedOutbox,
+  updateOrderLineDetails,
   voidOrderLine,
   type CashDrawerEventType,
   type SelectedModifierPayload,
@@ -106,6 +108,8 @@ export function useCashierTerminal() {
   const modifierMenuItem = ref<MenuItem | null>(null);
   const modifierQuantities = ref<Record<string, number>>({});
   const modifierValidationKey = ref('');
+  const lineCourseDraft = ref('');
+  const lineCommentDraft = ref('');
 
   const grantedPermissions = computed(() => auth.actor?.permissions ?? []);
   const canViewFloor = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.floorView));
@@ -173,6 +177,12 @@ export function useCashierTerminal() {
     enabled: () => Boolean(auth.restaurantId && activeHallId.value && auth.sessionId && currentShift.data.value && canViewFloor.value),
   });
 
+  const activeOrdersQuery = useQuery({
+    queryKey: ['active-orders', activeHallId],
+    queryFn: () => listActiveOrdersByHall(activeHallId.value),
+    enabled: () => Boolean(activeHallId.value && auth.nodeDeviceId && auth.sessionId && currentShift.data.value && hasPermission(grantedPermissions.value, permissionCatalog.orderView)),
+  });
+
   const tableOrder = useQuery({
     queryKey: ['current-order', selectedTableId],
     queryFn: () => getCurrentOrderByTable(selectedTableId.value),
@@ -200,7 +210,8 @@ export function useCashierTerminal() {
   const activeHalls = computed(() => halls.data.value?.filter((hall) => hall.active) ?? []);
   const activeTables = computed(() => tables.data.value?.filter((table) => table.active) ?? []);
   const selectedTable = computed(() => activeTables.value.find((table) => table.id === selectedTableId.value));
-  const activeOrder = computed<Order | null>(() => order.data.value ?? tableOrder.data.value ?? null);
+  const activeOrders = computed(() => activeOrdersQuery.data.value ?? []);
+  const activeOrder = computed<Order | null>(() => order.data.value ?? tableOrder.data.value ?? activeOrders.value.find((item) => item.table_id === selectedTableId.value) ?? null);
   const finalCheckId = computed(() => activeOrder.value?.check?.id ?? '');
   const finalCheck = useQuery({
     queryKey: ['check', finalCheckId],
@@ -308,9 +319,9 @@ export function useCashierTerminal() {
     return cashDrawerAmount.value >= 0;
   });
   const remainingPayment = computed(() => activePrecheck.value?.remaining_total ?? 0);
-  const orderLoading = computed(() => tableOrder.isFetching.value || order.isFetching.value);
+  const orderLoading = computed(() => activeOrdersQuery.isFetching.value || tableOrder.isFetching.value || order.isFetching.value);
   const statusError = computed(() => firstError([currentShift.error.value, currentCashSession.error.value]));
-  const orderError = computed(() => firstError([tableOrder.error.value, order.error.value, prechecks.error.value]));
+  const orderError = computed(() => firstError([activeOrdersQuery.error.value, tableOrder.error.value, order.error.value, prechecks.error.value]));
   const actorName = computed(() => auth.actor?.name || auth.actor?.employee_id || '');
   const syncProblems = computed(() => (syncStatus.data.value?.failed ?? 0) + (syncStatus.data.value?.suspended ?? 0));
   const primaryFlowSteps = computed(() => {
@@ -415,6 +426,12 @@ export function useCashierTerminal() {
 
   const quantityMutation = useMutation({
     mutationFn: (payload: { lineId: string; quantity: number }) => changeOrderLineQuantity(activeOrder.value?.id ?? '', payload.lineId, payload.quantity),
+    onSuccess: refreshOrder,
+    onError: showBusinessError,
+  });
+
+  const lineDetailsMutation = useMutation({
+    mutationFn: () => updateOrderLineDetails(activeOrder.value?.id ?? '', selectedOrderLine.value?.id ?? '', lineCourseDraft.value, lineCommentDraft.value),
     onSuccess: refreshOrder,
     onError: showBusinessError,
   });
@@ -577,6 +594,17 @@ export function useCashierTerminal() {
 
   function selectOrderLine(id: string) {
     selectedOrderLineId.value = id;
+    primeLineDetailsDraft();
+  }
+
+  function primeLineDetailsDraft() {
+    lineCourseDraft.value = selectedOrderLine.value?.course ?? '';
+    lineCommentDraft.value = selectedOrderLine.value?.comment ?? '';
+  }
+
+  function saveSelectedLineDetails() {
+    if (!selectedOrderLine.value || !activeOrder.value) return;
+    lineDetailsMutation.mutate();
   }
 
   function changeQuantity(lineId: string, quantity: number) {
@@ -689,6 +717,7 @@ export function useCashierTerminal() {
   }
 
   function refreshOrder() {
+    void queryClient.invalidateQueries({ queryKey: ['active-orders'] });
     void queryClient.invalidateQueries({ queryKey: ['current-order'] });
     void queryClient.invalidateQueries({ queryKey: ['order'] });
     void queryClient.invalidateQueries({ queryKey: ['prechecks'] });
@@ -799,6 +828,8 @@ export function useCashierTerminal() {
     modifierMenuItem,
     modifierQuantities,
     modifierValidationKey,
+    lineCourseDraft,
+    lineCommentDraft,
     canOpenShift,
     canCloseShift,
     canOpenCashSession,
@@ -828,6 +859,7 @@ export function useCashierTerminal() {
     currentCashSession,
     halls,
     tables,
+    activeOrdersQuery,
     menu,
     syncStatus,
     syncOutbox,
@@ -836,6 +868,7 @@ export function useCashierTerminal() {
     activeHalls,
     activeTables,
     selectedTable,
+    activeOrders,
     activeOrder,
     activeLines,
     selectedOrderLine,
@@ -873,11 +906,14 @@ export function useCashierTerminal() {
     cancelPrecheckMutation,
     paymentMutation,
     refundMutation,
+    lineDetailsMutation,
     retrySyncMutation,
     logoutMutation,
     selectHall,
     selectTable,
     selectOrderLine,
+    primeLineDetailsDraft,
+    saveSelectedLineDetails,
     openMenuItem,
     modifierGroupCount,
     changeModifierQuantity,

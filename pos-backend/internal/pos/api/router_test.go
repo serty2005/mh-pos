@@ -663,6 +663,50 @@ func TestFloorReadAndOrderLineEditingAPI(t *testing.T) {
 	if changed.Quantity != 3 || changed.TotalPrice != 3000 {
 		t.Fatalf("unexpected changed line: %+v", changed)
 	}
+	details := f.patchJSON(t, "/api/v1/orders/"+order.ID+"/lines/"+line.ID+"/details", `{"node_device_id":"`+f.device.ID+`","course":"2","comment":"no onion"}`)
+	if details.Code != http.StatusOK {
+		t.Fatalf("expected 200 for line details, got %d: %s", details.Code, details.Body.String())
+	}
+	detailed := decodeAPIResponse[domain.OrderLine](t, details)
+	if detailed.Course == nil || *detailed.Course != "2" || detailed.Comment == nil || *detailed.Comment != "no onion" {
+		t.Fatalf("unexpected line details: %+v", detailed)
+	}
+	otherDeviceID := "api-floor-device-2"
+	otherShiftID := "api-floor-shift-2"
+	otherOrderID := "api-floor-order-2"
+	otherLineID := "api-floor-line-2"
+	otherOpenedAt := appshared.DBTime(f.clock.Now().Add(time.Minute))
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO devices(id,restaurant_id,device_code,name,type,active,registered_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+		otherDeviceID, f.restaurant.ID, "POS-2", "Second node", "windows", 1, otherOpenedAt, otherOpenedAt, otherOpenedAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO shifts(id,restaurant_id,device_id,opened_by_employee_id,status,business_date_local,opened_at,opening_cash_amount,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		otherShiftID, f.restaurant.ID, otherDeviceID, f.manager.ID, "open", "2026-05-04", otherOpenedAt, 0, otherOpenedAt, otherOpenedAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO orders(id,edge_order_id,restaurant_id,device_id,shift_id,status,table_id,table_name,guest_count,opened_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		otherOrderID, "edge-"+otherOrderID, f.restaurant.ID, otherDeviceID, otherShiftID, "open", f.table.ID, f.table.Name, 1, otherOpenedAt, otherOpenedAt, otherOpenedAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO order_lines(id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,currency_code,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		otherLineID, otherOrderID, f.menuItem.ID, f.menuItem.CatalogItemID, "Soup", 1, 1000, 1000, "RUB", "active", otherOpenedAt, otherOpenedAt); err != nil {
+		t.Fatal(err)
+	}
+	activeResp := f.get(t, "/api/v1/orders/active?hall_id="+f.hall.ID)
+	if activeResp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for active hall orders, got %d: %s", activeResp.Code, activeResp.Body.String())
+	}
+	activeOrders := decodeAPIResponse[[]domain.Order](t, activeResp)
+	activeIDs := make(map[string]int)
+	for _, activeOrder := range activeOrders {
+		activeIDs[activeOrder.ID] = len(activeOrder.Lines)
+	}
+	if activeIDs[order.ID] != 1 || activeIDs[otherOrderID] != 1 || len(activeOrders) != 2 {
+		t.Fatalf("unexpected active orders response: %+v", activeOrders)
+	}
+	if activeOrders[0].Lines[0].Comment == nil || *activeOrders[0].Lines[0].Comment != "no onion" {
+		t.Fatalf("expected active orders to include line details, got %+v", activeOrders[0].Lines[0])
+	}
 	voidedResp := f.postJSON(t, "/api/v1/orders/"+order.ID+"/lines/"+line.ID+"/void", `{"node_device_id":"`+f.device.ID+`","reason":"mistake"}`)
 	if voidedResp.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", voidedResp.Code, voidedResp.Body.String())
