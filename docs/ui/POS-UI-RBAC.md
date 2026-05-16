@@ -8,7 +8,7 @@ UI visibility is UX only. Backend app-layer permissions remain authoritative.
 
 Нижняя quick access bar, скрываемое меню разделов, redesigned `Залы и столы`, `Заказы`, `Активность`, `Отчеты` и `Касса` являются UX-навигацией. Они не добавляют новых backend permission ids и не заменяют backend application-layer checks.
 
-`Активность` показывает closed orders, детали оплат, reprint и compatibility refund только по существующим правам `pos.check.view`, `pos.check.reprint`, `pos.payment.refund` и состоянию открытой кассовой смены. `Отчеты` показывает только ограниченные операционные сводки на основе уже доступных reads и не вводит отдельные report permissions до backend-контракта.
+`Активность` показывает closed orders, детали оплат, reprint, full check cancellation/refund и compatibility refund только по существующим правам `pos.check.view`, `pos.check.reprint`, `pos.precheck.cancel`, `pos.payment.refund` и состоянию открытой кассовой смены. `Отчеты` показывает только ограниченные операционные сводки на основе уже доступных reads и не вводит отдельные report permissions до backend-контракта.
 
 ## Реализовано Сейчас
 
@@ -66,6 +66,8 @@ Permission ids used by cashier UI:
 | Reprint precheck | `pos.precheck.reprint` | реализовано сейчас |
 | Capture cash payment | `pos.payment.cash` | реализовано сейчас |
 | Capture manual card payment | `pos.payment.card.manual` | реализовано сейчас |
+| Full check cancellation through ledger route | `pos.precheck.cancel` | реализовано сейчас |
+| Full check refund through ledger route | `pos.payment.refund` | реализовано сейчас |
 | Refund captured payment through compatibility route | `pos.payment.refund` | реализовано сейчас |
 | Check cancellation/refund ledger UI by line/quantity/scope | `pos.precheck.cancel`, `pos.payment.refund` | запланировано далее |
 | View final check / closed orders | `pos.check.view` | реализовано сейчас |
@@ -76,7 +78,7 @@ Permission ids used by cashier UI:
 - waiter payment without cashier permissions;
 - waiter mobile runtime;
 - order transfer/split/merge;
-- check-level cancellation/refund ledger screens beyond payment-level refund;
+- partial line/quantity/modifier/service/tip cancellation/refund ledger screens beyond full-check pilot actions;
 - discount/surcharge/tax override controls;
 - inventory/procurement operations;
 - KDS screens;
@@ -85,7 +87,7 @@ Permission ids used by cashier UI:
 
 ## Notes
 
-- Refund is not completely absent: backend ledger exists, while cashier UI currently exposes only payment-level compatibility refund for closed orders.
-- The compatibility refund button is visible only for closed orders with captured payments and is disabled without `pos.payment.refund` or current open cash session.
+- Refund/cancellation is no longer compatibility-only in cashier UI: closed-order activity exposes full check cancellation and full check refund against backend ledger endpoints.
+- The compatibility payment refund button remains visible only for closed orders with captured payments and is disabled without `pos.payment.refund` or current open cash session.
 - Cancellation/refund policy still needs pilot acceptance for operator workflow and fiscal wording.
 - UI must not show raw backend/internal errors or calculate authoritative financial totals.

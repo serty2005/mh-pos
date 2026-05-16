@@ -6,6 +6,7 @@ import {
   cashDrawerEventSchema,
   checkSchema,
   closedOrderSchema,
+  financialOperationSchema,
   hallSchema,
   localEventSchema,
   menuItemSchema,
@@ -30,6 +31,8 @@ export type SelectedModifierPayload = {
   modifier_option_id: string;
   quantity: number;
 };
+
+export type InventoryDisposition = 'no_stock_effect' | 'return_to_stock' | 'write_off_waste' | 'manual_review';
 
 function defaultApiBase() {
   const hostname = globalThis.location?.hostname;
@@ -560,5 +563,27 @@ export function refundPayment(paymentId: string, reason = '') {
   return request(`/payments/${encodeURIComponent(paymentId)}/refund`, paymentSchema, {
     method: 'POST',
     body: JSON.stringify({ reason }),
+  });
+}
+
+export function recordCheckCancellation(checkId: string, reason = '', inventoryDisposition: InventoryDisposition = 'no_stock_effect') {
+  return request(`/checks/${encodeURIComponent(checkId)}/cancellations`, financialOperationSchema, {
+    method: 'POST',
+    body: JSON.stringify({
+      operation_kind: 'full',
+      inventory_disposition: inventoryDisposition,
+      reason,
+    }),
+  });
+}
+
+export function recordCheckRefund(checkId: string, reason = '', inventoryDisposition: InventoryDisposition = 'no_stock_effect') {
+  return request(`/checks/${encodeURIComponent(checkId)}/refunds`, financialOperationSchema, {
+    method: 'POST',
+    body: JSON.stringify({
+      operation_kind: 'full',
+      inventory_disposition: inventoryDisposition,
+      reason,
+    }),
   });
 }

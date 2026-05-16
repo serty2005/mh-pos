@@ -43,16 +43,39 @@
               <strong>{{ terminal.statusLabel(order.status) }}</strong>
             </div>
           </div>
-          <q-btn
-            v-if="order.check?.payments?.some((payment) => payment.status === 'captured')"
-            color="negative"
-            unelevated
-            class="touch-button"
-            icon="undo"
-            :label="terminal.t('pos.refund')"
-            :disable="!terminal.canRefundPayment.value || !terminal.currentCashSession.data.value"
-            @click="terminal.openRefundDialogForOrder(order)"
-          />
+          <div class="closed-order-actions">
+            <q-btn
+              color="negative"
+              unelevated
+              class="touch-button"
+              icon="cancel"
+              :label="terminal.t('pos.checkCancellation')"
+              :disable="!terminal.canCancelClosedOrder(order)"
+              :loading="terminal.refundMutation.isPending.value && terminal.refundMode.value === 'check_cancellation'"
+              @click="terminal.openCheckCancellationDialogForOrder(order)"
+            />
+            <q-btn
+              color="negative"
+              outline
+              class="touch-button"
+              icon="undo"
+              :label="terminal.t('pos.checkRefund')"
+              :disable="!terminal.canRefundClosedOrder(order)"
+              :loading="terminal.refundMutation.isPending.value && terminal.refundMode.value === 'check_refund'"
+              @click="terminal.openCheckRefundDialogForOrder(order)"
+            />
+            <q-btn
+              v-if="order.check?.payments?.some((payment) => payment.status === 'captured')"
+              color="negative"
+              flat
+              class="touch-button"
+              icon="payments"
+              :label="terminal.t('pos.paymentRefund')"
+              :disable="!terminal.canRefundPaymentForOrder(order)"
+              :loading="terminal.refundMutation.isPending.value && terminal.refundMode.value === 'payment_refund'"
+              @click="terminal.openRefundDialogForOrder(order)"
+            />
+          </div>
         </article>
       </div>
       <div v-else class="empty-state wide">{{ terminal.t('common.empty') }}</div>

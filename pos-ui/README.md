@@ -172,16 +172,21 @@ Server state хранится только через `@tanstack/vue-query`. Fro
 - `POST /api/v1/orders/{id}/precheck`
 - `GET /api/v1/orders/{id}/prechecks`
 - `POST /api/v1/prechecks/{id}/cancel`
+- `POST /api/v1/prechecks/{id}/reprint`
 - `POST /api/v1/prechecks/{id}/payments`
 - `GET /api/v1/checks/{id}`
+- `POST /api/v1/checks/{id}/reprint`
+- `POST /api/v1/checks/{id}/cancellations`
+- `POST /api/v1/checks/{id}/refunds`
+- `POST /api/v1/payments/{id}/refund` (compatibility-only)
 
 ## Ограничения
 
 - Нет waiter mode.
 - Нет KDS runtime.
-- Refund flow реализован для закрытых заказов с captured payment при наличии `pos.payment.refund` и открытой кассовой смены.
+- Refund/cancellation pilot flow реализован для закрытых заказов: full check cancellation через `/checks/{id}/cancellations`, full check refund через `/checks/{id}/refunds`, compatibility refund по captured payment через `/payments/{id}/refund`.
 - Нет tax engine rewrite.
-- Нет print/reprint UI.
+- Precheck/check reprint UI использует backend immutable snapshot endpoints.
 - Нет backoffice.
 - Trusted card payment - ручная trusted capture запись без PSP integration.
 - Денежный ввод в UI показывается в основных единицах валюты, а backend получает integer minor units.

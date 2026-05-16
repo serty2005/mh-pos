@@ -108,7 +108,7 @@
 10. Кассир проводит одну или несколько оплат через `precheck_id`.
 11. Backend создает final check только после полной оплаты.
 12. Кассир или менеджер может повторно напечатать копию precheck/check из immutable snapshot.
-13. Авторизованный оператор может записать cancellation/refund operation; текущий cashier UI использует compatibility payment refund route для закрытых заказов.
+13. Авторизованный оператор может записать cancellation/refund operation; текущий cashier UI использует full check ledger routes для pilot-minimum cancellation/refund и оставляет compatibility payment refund route как fallback для закрытых заказов.
 
 ## Precheck Contract
 

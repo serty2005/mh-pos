@@ -122,12 +122,32 @@
           />
           <q-btn
             color="negative"
+            unelevated
+            class="touch-button"
+            icon="cancel"
+            :label="terminal.t('pos.checkCancellation')"
+            :disable="!canCancelSelected"
+            :loading="terminal.refundMutation.isPending.value && terminal.refundMode.value === 'check_cancellation'"
+            @click="terminal.openCheckCancellationDialogForOrder(selectedOrder)"
+          />
+          <q-btn
+            color="negative"
             outline
             class="touch-button"
             icon="undo"
-            :label="terminal.t('pos.refund')"
+            :label="terminal.t('pos.checkRefund')"
             :disable="!canRefundSelected"
-            :loading="terminal.refundMutation.isPending.value"
+            :loading="terminal.refundMutation.isPending.value && terminal.refundMode.value === 'check_refund'"
+            @click="terminal.openCheckRefundDialogForOrder(selectedOrder)"
+          />
+          <q-btn
+            color="negative"
+            flat
+            class="touch-button"
+            icon="payments"
+            :label="terminal.t('pos.paymentRefund')"
+            :disable="!canRefundPaymentSelected"
+            :loading="terminal.refundMutation.isPending.value && terminal.refundMode.value === 'payment_refund'"
             @click="terminal.openRefundDialogForOrder(selectedOrder)"
           />
         </div>
@@ -178,9 +198,17 @@ const selectedOrder = computed(() => visibleOrders.value.find((order) => order.i
 
 const canRefundSelected = computed(() => Boolean(
   selectedOrder.value
-  && hasCapturedPayment(selectedOrder.value)
-  && props.terminal.canRefundPayment.value
-  && props.terminal.currentCashSession.data.value,
+  && props.terminal.canRefundClosedOrder(selectedOrder.value),
+));
+
+const canCancelSelected = computed(() => Boolean(
+  selectedOrder.value
+  && props.terminal.canCancelClosedOrder(selectedOrder.value),
+));
+
+const canRefundPaymentSelected = computed(() => Boolean(
+  selectedOrder.value
+  && props.terminal.canRefundPaymentForOrder(selectedOrder.value),
 ));
 
 watch(visibleOrders, (items) => {

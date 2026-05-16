@@ -104,7 +104,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - если входит, реализовать consumption trigger, stock document/move service и snapshot requirements.
 - Cancellation/refund/reprint hardening:
   - backend ledger, immutable snapshots, no-over-cancel/no-over-refund tests, current `RefundRecorded` sync contract and coarse Cloud refund projection реализованы;
-  - UI пока поддерживает только compatibility refund по captured payment из closed orders;
+  - cashier UI pilot-minimum full check cancellation/refund через ledger endpoints реализован; compatibility refund по captured payment оставлен отдельным fallback;
   - требуется финальная проверка operator policy, fiscal wording и cashier acceptance script.
 - Documentation freeze:
   - поддерживать `SPECv1.3.md` как frozen pilot contract;

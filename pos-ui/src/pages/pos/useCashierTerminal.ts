@@ -35,6 +35,8 @@ import {
   openCashSession,
   openShift,
   recordCashDrawerEvent,
+  recordCheckCancellation,
+  recordCheckRefund,
   refundPayment,
   reprintCheck,
   reprintPrecheck,
@@ -67,6 +69,7 @@ export function invalidatePaymentConflictQueries(queryClient: Pick<QueryClient, 
 }
 
 type FlowStepState = 'ready' | 'active' | 'blocked' | 'pending';
+type CompensationMode = 'payment_refund' | 'check_refund' | 'check_cancellation';
 type BlockingNotice = {
   titleKey: string;
   reasonKey: string;
@@ -102,7 +105,9 @@ export function useCashierTerminal() {
   const cashDrawerDialog = ref(false);
   const syncDrawer = ref(false);
   const refundDialog = ref(false);
+  const refundMode = ref<CompensationMode>('payment_refund');
   const refundPaymentId = ref('');
+  const refundCheckId = ref('');
   const refundReason = ref('');
   const modifierDialog = ref(false);
   const modifierMenuItem = ref<MenuItem | null>(null);
@@ -125,6 +130,7 @@ export function useCashierTerminal() {
   const canRetrySync = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.syncRetryFailed));
   const canViewClosedOrders = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.checkView));
   const canRefundPayment = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.paymentRefund));
+  const canRecordCheckCancellation = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.precheckCancel));
 
   const cashDrawerTypeOptions = computed(() => [
     { label: t('pos.cashDrawerTypes.no_sale'), value: 'no_sale' },
@@ -482,15 +488,19 @@ export function useCashierTerminal() {
     onError: handlePaymentError,
   });
 
-  const refundMutation = useMutation({
-    mutationFn: () => refundPayment(refundPaymentId.value, refundReason.value),
+  const refundMutation = useMutation<unknown, unknown, void>({
+    mutationFn: () => {
+      if (refundMode.value === 'check_refund') {
+        return recordCheckRefund(refundCheckId.value, refundReason.value);
+      }
+      if (refundMode.value === 'check_cancellation') {
+        return recordCheckCancellation(refundCheckId.value, refundReason.value);
+      }
+      return refundPayment(refundPaymentId.value, refundReason.value);
+    },
     onSuccess() {
-      refundDialog.value = false;
-      refundPaymentId.value = '';
-      refundReason.value = '';
-      void queryClient.invalidateQueries({ queryKey: ['closed-orders'] });
-      void queryClient.invalidateQueries({ queryKey: ['sync-outbox'] });
-      void queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+      closeRefundDialog();
+      refreshCompensationState();
       $q.notify({
         message: t('pos.refundSuccess'),
         type: 'positive',
@@ -700,7 +710,9 @@ export function useCashierTerminal() {
   }
 
   function openRefundDialog(paymentId: string) {
+    refundMode.value = 'payment_refund';
     refundPaymentId.value = paymentId;
+    refundCheckId.value = '';
     refundReason.value = '';
     refundDialog.value = true;
   }
@@ -708,6 +720,82 @@ export function useCashierTerminal() {
   function openRefundDialogForOrder(orderItem: ClosedOrder) {
     const payment = orderItem.check?.payments?.find((item) => item.status === 'captured');
     if (payment) openRefundDialog(payment.id);
+  }
+
+  function openCheckRefundDialogForOrder(orderItem: ClosedOrder) {
+    if (!orderItem.check) return;
+    refundMode.value = 'check_refund';
+    refundPaymentId.value = '';
+    refundCheckId.value = orderItem.check.id;
+    refundReason.value = '';
+    refundDialog.value = true;
+  }
+
+  function openCheckCancellationDialogForOrder(orderItem: ClosedOrder) {
+    if (!orderItem.check) return;
+    refundMode.value = 'check_cancellation';
+    refundPaymentId.value = '';
+    refundCheckId.value = orderItem.check.id;
+    refundReason.value = '';
+    refundDialog.value = true;
+  }
+
+  function closeRefundDialog() {
+    refundDialog.value = false;
+    refundMode.value = 'payment_refund';
+    refundPaymentId.value = '';
+    refundCheckId.value = '';
+    refundReason.value = '';
+  }
+
+  function hasCapturedPayment(orderItem: ClosedOrder) {
+    return Boolean(orderItem.check?.payments?.some((payment) => payment.status === 'captured'));
+  }
+
+  function originalPaymentShiftID(orderItem: ClosedOrder) {
+    return orderItem.check?.payments?.find((payment) => payment.status === 'captured')?.shift_id ?? orderItem.check?.payments?.[0]?.shift_id ?? '';
+  }
+
+  function canCancelClosedOrder(orderItem: ClosedOrder) {
+    return Boolean(orderItem.check && canRecordCheckCancellation.value && currentCashSession.data.value && originalPaymentShiftID(orderItem) === currentCashSession.data.value.shift_id);
+  }
+
+  function canRefundClosedOrder(orderItem: ClosedOrder) {
+    const originalShiftID = originalPaymentShiftID(orderItem);
+    return Boolean(orderItem.check && hasCapturedPayment(orderItem) && canRefundPayment.value && currentCashSession.data.value && (!originalShiftID || originalShiftID !== currentCashSession.data.value.shift_id));
+  }
+
+  function canRefundPaymentForOrder(orderItem: ClosedOrder) {
+    return Boolean(hasCapturedPayment(orderItem) && canRefundPayment.value && currentCashSession.data.value);
+  }
+
+  function refundDialogTitleKey() {
+    if (refundMode.value === 'check_cancellation') return 'pos.checkCancellation';
+    if (refundMode.value === 'check_refund') return 'pos.checkRefund';
+    return 'pos.paymentRefund';
+  }
+
+  function refundDialogCopyKey() {
+    if (refundMode.value === 'check_cancellation') return 'pos.checkCancellationCopy';
+    if (refundMode.value === 'check_refund') return 'pos.checkRefundCopy';
+    return 'pos.paymentRefundCopy';
+  }
+
+  function refundDialogSubmitKey() {
+    if (refundMode.value === 'check_cancellation') return 'pos.recordCheckCancellation';
+    if (refundMode.value === 'check_refund') return 'pos.recordCheckRefund';
+    return 'pos.recordPaymentRefund';
+  }
+
+  function refundDialogIcon() {
+    return refundMode.value === 'check_cancellation' ? 'cancel' : 'undo';
+  }
+
+  function refreshCompensationState() {
+    void queryClient.invalidateQueries({ queryKey: ['closed-orders'] });
+    void queryClient.invalidateQueries({ queryKey: ['sync-outbox'] });
+    void queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+    void queryClient.invalidateQueries({ queryKey: ['local-events'] });
   }
 
   function refreshOps() {
@@ -823,6 +911,7 @@ export function useCashierTerminal() {
     cashDrawerDialog,
     syncDrawer,
     refundDialog,
+    refundMode,
     refundReason,
     modifierDialog,
     modifierMenuItem,
@@ -839,6 +928,7 @@ export function useCashierTerminal() {
     canRetrySync,
     canViewClosedOrders,
     canRefundPayment,
+    canRecordCheckCancellation,
     canCreateOrder,
     canAddOrderLine,
     canChangeOrderLine,
@@ -925,6 +1015,16 @@ export function useCashierTerminal() {
     submitCancelPrecheck,
     closeCancelDialog,
     openRefundDialogForOrder,
+    openCheckRefundDialogForOrder,
+    openCheckCancellationDialogForOrder,
+    closeRefundDialog,
+    canCancelClosedOrder,
+    canRefundClosedOrder,
+    canRefundPaymentForOrder,
+    refundDialogTitleKey,
+    refundDialogCopyKey,
+    refundDialogSubmitKey,
+    refundDialogIcon,
     refreshOps,
     refreshSync,
     refetchMenu,

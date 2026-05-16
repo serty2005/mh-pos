@@ -279,6 +279,44 @@ export const reprintDocumentSchema = z.object({
   snapshot: z.unknown(),
 });
 
+export const financialOperationItemSchema = z.object({
+  id: z.string(),
+  operation_id: z.string(),
+  scope: z.enum(['whole_check', 'order_line', 'modifier_line', 'service_charge', 'tip', 'payment']),
+  order_line_id: optionalNullableString,
+  payment_id: optionalNullableString,
+  quantity: z.number().nullable().optional(),
+  amount: z.number(),
+  currency: z.string(),
+  tax_amount: z.number(),
+  snapshot: z.unknown().optional(),
+  created_at: z.string(),
+});
+
+export const financialOperationSchema = z.object({
+  id: z.string(),
+  edge_operation_id: z.string(),
+  restaurant_id: z.string(),
+  device_id: z.string(),
+  shift_id: z.string(),
+  original_shift_id: z.string(),
+  check_id: z.string(),
+  precheck_id: z.string(),
+  operation_type: z.enum(['cancellation', 'refund']),
+  operation_kind: z.enum(['full', 'partial']),
+  status: z.literal('recorded'),
+  amount: z.number(),
+  currency: z.string(),
+  business_date_local: z.string(),
+  inventory_disposition: z.enum(['no_stock_effect', 'return_to_stock', 'write_off_waste', 'manual_review']),
+  reason: z.string(),
+  created_by_employee_id: z.string(),
+  approved_by_employee_id: optionalNullableString,
+  snapshot: z.unknown().optional(),
+  items: z.array(financialOperationItemSchema).optional().default([]),
+  created_at: z.string(),
+});
+
 export const syncStatusSchema = z.object({
   total: z.number(),
   pending: z.number(),
@@ -340,6 +378,8 @@ export type Precheck = z.infer<typeof precheckSchema>;
 export type Payment = z.infer<typeof paymentSchema>;
 export type Check = z.infer<typeof checkSchema>;
 export type ReprintDocument = z.infer<typeof reprintDocumentSchema>;
+export type FinancialOperation = z.infer<typeof financialOperationSchema>;
+export type FinancialOperationItem = z.infer<typeof financialOperationItemSchema>;
 export type SyncStatus = z.infer<typeof syncStatusSchema>;
 export type OutboxMessage = z.infer<typeof outboxMessageSchema>;
 export type LocalEvent = z.infer<typeof localEventSchema>;

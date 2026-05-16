@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { addOrderLine, ApiError, getCurrentOrderByTable, getCurrentShift, listMenuItems } from './api';
+import {
+  addOrderLine,
+  ApiError,
+  getCurrentOrderByTable,
+  getCurrentShift,
+  listMenuItems,
+  recordCheckCancellation,
+  recordCheckRefund,
+} from './api';
 
 const authState = {
   clientDeviceId: 'client-1',
@@ -194,4 +202,82 @@ describe('api request helpers', () => {
       selected_modifiers: [{ modifier_group_id: 'group-1', modifier_option_id: 'option-1', quantity: 1 }],
     });
   });
+
+  it('records full check cancellation through ledger endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify(financialOperationResponse('cancellation')),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await recordCheckCancellation('check-1', 'guest left');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/checks/check-1/cancellations');
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({
+      operation_kind: 'full',
+      inventory_disposition: 'no_stock_effect',
+      reason: 'guest left',
+    });
+  });
+
+  it('records full check refund through ledger endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify(financialOperationResponse('refund')),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await recordCheckRefund('check-1', 'guest refund');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/checks/check-1/refunds');
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({
+      operation_kind: 'full',
+      inventory_disposition: 'no_stock_effect',
+      reason: 'guest refund',
+    });
+  });
 });
+
+function financialOperationResponse(operationType: 'cancellation' | 'refund') {
+  return {
+    id: `operation-${operationType}`,
+    edge_operation_id: `edge-operation-${operationType}`,
+    restaurant_id: 'restaurant-1',
+    device_id: 'node-1',
+    shift_id: 'shift-current',
+    original_shift_id: 'shift-original',
+    check_id: 'check-1',
+    precheck_id: 'precheck-1',
+    operation_type: operationType,
+    operation_kind: 'full',
+    status: 'recorded',
+    amount: 1000,
+    currency: 'RUB',
+    business_date_local: '2026-05-16',
+    inventory_disposition: 'no_stock_effect',
+    reason: 'guest request',
+    created_by_employee_id: 'employee-1',
+    approved_by_employee_id: null,
+    snapshot: {},
+    items: [{
+      id: `item-${operationType}`,
+      operation_id: `operation-${operationType}`,
+      scope: 'whole_check',
+      order_line_id: null,
+      payment_id: null,
+      quantity: null,
+      amount: 1000,
+      currency: 'RUB',
+      tax_amount: 0,
+      snapshot: {},
+      created_at: '2026-05-16T10:00:00Z',
+    }],
+    created_at: '2026-05-16T10:00:00Z',
+  };
+}

@@ -34,7 +34,7 @@
 - service catalog items as sellable POS items;
 - cashier modifier selection flow for menu items with modifier groups;
 - controlled precheck/check reprint from immutable snapshots;
-- append-only cancellation/refund ledger и compatibility payment refund UI flow;
+- append-only cancellation/refund ledger, pilot-minimum full check cancellation/refund UI и compatibility payment refund fallback;
 - Edge -> Cloud operational outbox foundation;
 - Cloud -> Edge master-data ingest for supported streams.
 
@@ -137,6 +137,7 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
 - Operation item scopes: `whole_check`, `order_line`, `modifier_line`, `service_charge`, `tip`, `payment`.
 - Whole check, specific order line, quantity of order line и split payment allocation проверяются backend service.
 - Modifier/service/tip scopes поддержаны как ledger scopes с explicit snapshot; cashier UI уже поддерживает выбор modifiers в заказе, но отдельного UI для partial modifier/service/tip cancellation/refund сейчас нет.
+- Cashier UI реализует только full check cancellation/refund поверх ledger endpoints; partial line/quantity/modifier/service/tip UI остается вне текущего runtime.
 - Inventory disposition фиксируется явно: `no_stock_effect`, `return_to_stock`, `write_off_waste`, `manual_review`.
 - Financial operation не создает `stock_moves` автоматически.
 - No-over-refund/no-over-cancel проверяется по сумме check; для order line quantity проверяется сумма уже записанных quantities по operation type.

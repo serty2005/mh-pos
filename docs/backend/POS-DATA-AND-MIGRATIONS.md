@@ -144,6 +144,7 @@ Managed SQL files, реализовано сейчас:
 - SQLite triggers reject update/delete for both financial operation tables.
 - Backend records `CancellationRecorded` and `RefundRecorded` outbox/local events.
 - Legacy payment refund route writes the same ledger through payment scope instead of updating payment/check/precheck statuses.
+- Cashier UI full-check cancellation/refund uses the same ledger endpoints and does not require schema changes or mutable status columns on finalized payments/checks.
 
 Не реализовано сейчас:
 

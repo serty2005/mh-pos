@@ -1227,6 +1227,11 @@ button:focus-visible,
   border-radius: 8px;
 }
 
+.closed-order-actions {
+  display: grid;
+  gap: 8px;
+}
+
 .compact-summary {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
