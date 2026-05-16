@@ -50,7 +50,8 @@
 - halls и tables;
 - menu items;
 - menu category create как command-only операция, потому что list/update routes не подтверждены;
-- publication summary и явная публикация master data.
+- publication summary и явная публикация master data;
+- отдельный раздел `События от Edge`, который читает `GET /api/v1/sync/edge-events` и показывает только безопасные receipt metadata без raw payload.
 
 вне текущего объема:
 
@@ -83,6 +84,7 @@
 - Edge-device flow не показывает секреты кроме одноразового pairing code, который возвращает backend;
 - command-only разделы не показывают неподтвержденную таблицу;
 - Cloud UI показывает безопасные локализованные ошибки возле активного failed step с recovery action: retry, select restaurant или open related section; message key, support code, correlation id и безопасные details выводятся без raw payload;
+- раздел входящих Edge events выводит event metadata и checksum, но не показывает raw payload, sensitive request dumps или payload-derived финансовые details;
 - пользовательские тексты идут через `vue-i18n`.
 
 ## API
@@ -90,13 +92,14 @@
 реализовано сейчас: API client `cloud-ui/src/shared/api.ts` использует подтвержденные routes из:
 
 - `cloud-backend/internal/provisioning/api/router.go` для Edge-device provisioning;
-- `cloud-backend/internal/masterdata/api/router.go` для master data и публикации.
+- `cloud-backend/internal/masterdata/api/router.go` для master data и публикации;
+- `cloud-backend/internal/cloudsync/api/router.go` для безопасного списка входящих Edge events.
 
 Для entities без подтвержденного `GET list` route UI показывает форму команды и поясняет, что list route не подтвержден.
 
 ## Runtime Code
 
-реализовано сейчас: runtime backend code не изменялся.
+реализовано сейчас: runtime backend code изменялся для безопасного `GET /api/v1/sync/edge-events` и выравнивания accepted Edge event types со schema baseline.
 
 реализовано сейчас: `cloud-ui/src/App.vue` оставляет orchestration/state/config, а presentation layer вынесен в `cloud-ui/src/components/cloud/*`.
 

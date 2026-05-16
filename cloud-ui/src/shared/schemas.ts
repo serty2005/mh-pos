@@ -259,6 +259,23 @@ export const pairingCodeResultSchema = z.object({
   expires_at: z.string(),
 });
 
+export const edgeEventSchema = z.object({
+  cloud_receipt_id: z.string(),
+  idempotency_key: z.string(),
+  restaurant_id: z.string(),
+  device_id: z.string(),
+  command_id: z.string(),
+  event_id: z.string(),
+  edge_event_id: z.string(),
+  event_type: z.string(),
+  aggregate_type: z.string(),
+  aggregate_id: z.string(),
+  envelope_version: z.string(),
+  occurred_at: z.string(),
+  cloud_received_at: z.string(),
+  raw_payload_sha256_hex: z.string(),
+});
+
 export const publicationSummarySchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
@@ -287,6 +304,7 @@ export type Hall = z.infer<typeof hallSchema>;
 export type RestaurantTable = z.infer<typeof tableSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;
 export type Category = z.infer<typeof categorySchema>;
+export type EdgeEvent = z.infer<typeof edgeEventSchema>;
 export type PublicationSummary = z.infer<typeof publicationSummarySchema>;
 export type UnassignedEdgeNode = z.infer<typeof unassignedEdgeNodeSchema>;
 export type AssignDeviceResult = z.infer<typeof assignDeviceResultSchema>;

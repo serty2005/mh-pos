@@ -17,6 +17,7 @@ import (
 
 type Repository interface {
 	ReceiveEdgeEvent(context.Context, EdgeEventReceipt) (contracts.EventAck, error)
+	ListEdgeEvents(context.Context, EdgeEventListFilter) ([]contracts.EdgeEventView, error)
 	UpsertMasterDataPackage(context.Context, contracts.MasterDataPackage) (contracts.MasterDataPackage, error)
 	GetMasterDataPackage(context.Context, string, string) (contracts.MasterDataPackage, error)
 }
@@ -27,6 +28,14 @@ type EdgeEventReceipt struct {
 	RawPayload       []byte
 	RawPayloadSHA256 string
 	CloudReceivedAt  time.Time
+}
+
+// EdgeEventListFilter ограничивает журнал incoming Edge events безопасным page-size и restaurant scope.
+type EdgeEventListFilter struct {
+	RestaurantID string
+	DeviceID     string
+	EventType    string
+	Limit        int
 }
 
 type Service struct {
@@ -62,6 +71,17 @@ func (s *Service) Receive(ctx context.Context, raw []byte) (contracts.EventAck, 
 		RawPayloadSHA256: hex.EncodeToString(sum[:]),
 		CloudReceivedAt:  receivedAt,
 	})
+}
+
+// ListEdgeEvents возвращает последние принятые Edge events без raw payload.
+func (s *Service) ListEdgeEvents(ctx context.Context, filter EdgeEventListFilter) ([]contracts.EdgeEventView, error) {
+	filter.RestaurantID = strings.TrimSpace(filter.RestaurantID)
+	filter.DeviceID = strings.TrimSpace(filter.DeviceID)
+	filter.EventType = strings.TrimSpace(filter.EventType)
+	if filter.Limit <= 0 || filter.Limit > 200 {
+		filter.Limit = 50
+	}
+	return s.repo.ListEdgeEvents(ctx, filter)
 }
 
 // ReceiveBatch принимает batch SyncEnvelope и возвращает item-level ACK decisions.

@@ -7,6 +7,7 @@ import {
   catalogTagSchema,
   categorySchema,
   employeeSchema,
+  edgeEventSchema,
   folderParameterSchema,
   hallSchema,
   menuItemSchema,
@@ -30,6 +31,7 @@ import {
   type CatalogTag,
   type Category,
   type Employee,
+  type EdgeEvent,
   type FolderParameter,
   type Hall,
   type MenuItem,
@@ -240,43 +242,43 @@ export function archiveRestaurant(id: string) {
 }
 
 export function listRoles(restaurantId: string): Promise<Role[]> {
-  return request(`/roles?${query(restaurantId)}`, z.array(roleSchema));
+  return request(`/master-data/roles?${query(restaurantId)}`, z.array(roleSchema));
 }
 
 export function createRole(payload: Payload) {
-  return post('/roles', roleSchema, payload);
+  return post('/master-data/roles', roleSchema, payload);
 }
 
 export function updateRole(id: string, payload: Payload) {
-  return patch(`/roles/${encodeURIComponent(id)}`, roleSchema, payload);
+  return patch(`/master-data/roles/${encodeURIComponent(id)}`, roleSchema, payload);
 }
 
 export function archiveRole(id: string) {
-  return post(`/roles/${encodeURIComponent(id)}/archive`, roleSchema, {});
+  return post(`/master-data/roles/${encodeURIComponent(id)}/archive`, roleSchema, {});
 }
 
 export function listEmployees(restaurantId: string): Promise<Employee[]> {
-  return request(`/employees?${query(restaurantId)}`, z.array(employeeSchema));
+  return request(`/master-data/employees?${query(restaurantId)}`, z.array(employeeSchema));
 }
 
 export function createEmployee(payload: Payload) {
-  return post('/employees', employeeSchema, payload);
+  return post('/master-data/employees', employeeSchema, payload);
 }
 
 export function updateEmployee(id: string, payload: Payload) {
-  return patch(`/employees/${encodeURIComponent(id)}`, employeeSchema, payload);
+  return patch(`/master-data/employees/${encodeURIComponent(id)}`, employeeSchema, payload);
 }
 
 export function suspendEmployee(id: string) {
-  return post(`/employees/${encodeURIComponent(id)}/suspend`, employeeSchema, {});
+  return post(`/master-data/employees/${encodeURIComponent(id)}/suspend`, employeeSchema, {});
 }
 
 export function activateEmployee(id: string) {
-  return post(`/employees/${encodeURIComponent(id)}/activate`, employeeSchema, {});
+  return post(`/master-data/employees/${encodeURIComponent(id)}/activate`, employeeSchema, {});
 }
 
 export function archiveEmployee(id: string) {
-  return post(`/employees/${encodeURIComponent(id)}/archive`, employeeSchema, {});
+  return post(`/master-data/employees/${encodeURIComponent(id)}/archive`, employeeSchema, {});
 }
 
 export function assignEmployeeRole(id: string, roleId: string) {
@@ -284,23 +286,23 @@ export function assignEmployeeRole(id: string, roleId: string) {
 }
 
 export function rotateEmployeePIN(id: string, pin: string) {
-  return post(`/employees/${encodeURIComponent(id)}/pin`, employeeSchema, { pin });
+  return post(`/master-data/employees/${encodeURIComponent(id)}/pin`, employeeSchema, { pin });
 }
 
 export function listCatalogItems(restaurantId: string): Promise<CatalogItem[]> {
-  return request(`/catalog/items?${query(restaurantId)}`, z.array(catalogItemSchema));
+  return request(`/master-data/catalog/items?${query(restaurantId)}`, z.array(catalogItemSchema));
 }
 
 export function createCatalogItem(payload: Payload) {
-  return post('/catalog/items', catalogItemSchema, payload);
+  return post('/master-data/catalog/items', catalogItemSchema, payload);
 }
 
 export function updateCatalogItem(id: string, payload: Payload) {
-  return patch(`/catalog/items/${encodeURIComponent(id)}`, catalogItemSchema, payload);
+  return patch(`/master-data/catalog/items/${encodeURIComponent(id)}`, catalogItemSchema, payload);
 }
 
 export function archiveCatalogItem(id: string) {
-  return post(`/catalog/items/${encodeURIComponent(id)}/archive`, catalogItemSchema, {});
+  return post(`/master-data/catalog/items/${encodeURIComponent(id)}/archive`, catalogItemSchema, {});
 }
 
 export function listCatalogFolders(restaurantId: string): Promise<CatalogFolder[]> {
@@ -400,51 +402,51 @@ export function createCategory(payload: Payload): Promise<Category> {
 }
 
 export function listHalls(restaurantId: string): Promise<Hall[]> {
-  return request(`/halls?${query(restaurantId)}`, z.array(hallSchema));
+  return request(`/master-data/floor/halls?${query(restaurantId)}`, z.array(hallSchema));
 }
 
 export function createHall(payload: Payload) {
-  return post('/halls', hallSchema, payload);
+  return post('/master-data/floor/halls', hallSchema, payload);
 }
 
 export function updateHall(id: string, payload: Payload) {
-  return patch(`/halls/${encodeURIComponent(id)}`, hallSchema, payload);
+  return patch(`/master-data/floor/halls/${encodeURIComponent(id)}`, hallSchema, payload);
 }
 
 export function archiveHall(id: string) {
-  return post(`/halls/${encodeURIComponent(id)}/archive`, hallSchema, {});
+  return post(`/master-data/floor/halls/${encodeURIComponent(id)}/archive`, hallSchema, {});
 }
 
 export function listTables(restaurantId: string): Promise<RestaurantTable[]> {
-  return request(`/tables?${query(restaurantId)}`, z.array(tableSchema));
+  return request(`/master-data/floor/tables?${query(restaurantId)}`, z.array(tableSchema));
 }
 
 export function createTable(payload: Payload) {
-  return post('/tables', tableSchema, payload);
+  return post('/master-data/floor/tables', tableSchema, payload);
 }
 
 export function updateTable(id: string, payload: Payload) {
-  return patch(`/tables/${encodeURIComponent(id)}`, tableSchema, payload);
+  return patch(`/master-data/floor/tables/${encodeURIComponent(id)}`, tableSchema, payload);
 }
 
 export function archiveTable(id: string) {
-  return post(`/tables/${encodeURIComponent(id)}/archive`, tableSchema, {});
+  return post(`/master-data/floor/tables/${encodeURIComponent(id)}/archive`, tableSchema, {});
 }
 
 export function listMenuItems(restaurantId: string): Promise<MenuItem[]> {
-  return request(`/menu/items?${query(restaurantId)}`, z.array(menuItemSchema));
+  return request(`/master-data/menu/items?${query(restaurantId)}`, z.array(menuItemSchema));
 }
 
 export function createMenuItem(payload: Payload) {
-  return post('/menu/items', menuItemSchema, payload);
+  return post('/master-data/menu/items', menuItemSchema, payload);
 }
 
 export function updateMenuItem(id: string, payload: Payload) {
-  return patch(`/menu/items/${encodeURIComponent(id)}`, menuItemSchema, payload);
+  return patch(`/master-data/menu/items/${encodeURIComponent(id)}`, menuItemSchema, payload);
 }
 
 export function archiveMenuItem(id: string) {
-  return post(`/menu/items/${encodeURIComponent(id)}/archive`, menuItemSchema, {});
+  return post(`/master-data/menu/items/${encodeURIComponent(id)}/archive`, menuItemSchema, {});
 }
 
 export function publishMasterData(restaurantId: string, payload: Payload): Promise<PublicationSummary> {
@@ -470,4 +472,11 @@ export function getAssignmentStatus(nodeDeviceId: string): Promise<AssignmentSta
 
 export function generatePairingCode(restaurantId: string, payload: Payload): Promise<PairingCodeResult> {
   return post(`/restaurants/${encodeURIComponent(restaurantId)}/devices/generate-pairing-code`, pairingCodeResultSchema, payload);
+}
+
+export function listEdgeEvents(restaurantId: string, limit = 50): Promise<EdgeEvent[]> {
+  const params = new URLSearchParams();
+  if (restaurantId) params.set('restaurant_id', restaurantId);
+  params.set('limit', String(limit));
+  return request(`/sync/edge-events?${params.toString()}`, z.array(edgeEventSchema));
 }

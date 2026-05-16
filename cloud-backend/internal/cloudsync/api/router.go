@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -44,6 +45,7 @@ func NewRouterWithProvisioning(service *app.Service, provisioningService *provis
 
 	r.Get("/health", h.health)
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Get("/sync/edge-events", h.listEdgeEvents)
 		r.Post("/sync/edge-events", h.receiveEdgeEvent)
 		r.Post("/sync/edge-events/batch", h.receiveEdgeEventBatch)
 		r.Put("/provisioning/master-data/{stream}", h.upsertMasterDataPackage)
@@ -135,6 +137,29 @@ func localCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (h *Handler) listEdgeEvents(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("%w: limit must be a number", contracts.ErrInvalidEnvelope))
+			return
+		}
+		limit = parsed
+	}
+	items, err := h.service.ListEdgeEvents(r.Context(), app.EdgeEventListFilter{
+		RestaurantID: r.URL.Query().Get("restaurant_id"),
+		DeviceID:     r.URL.Query().Get("device_id"),
+		EventType:    r.URL.Query().Get("event_type"),
+		Limit:        limit,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (h *Handler) receiveEdgeEvent(w http.ResponseWriter, r *http.Request) {

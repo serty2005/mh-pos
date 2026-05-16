@@ -244,6 +244,24 @@ type ReprintDocument struct {
 	Snapshot        json.RawMessage `json:"snapshot"`
 }
 
+// EdgeEventView описывает безопасную строку журнала входящих Edge events для Cloud UI.
+type EdgeEventView struct {
+	CloudReceiptID      string    `json:"cloud_receipt_id"`
+	IdempotencyKey      string    `json:"idempotency_key"`
+	RestaurantID        string    `json:"restaurant_id"`
+	DeviceID            string    `json:"device_id"`
+	CommandID           string    `json:"command_id"`
+	EventID             string    `json:"event_id"`
+	EdgeEventID         string    `json:"edge_event_id"`
+	EventType           string    `json:"event_type"`
+	AggregateType       string    `json:"aggregate_type"`
+	AggregateID         string    `json:"aggregate_id"`
+	EnvelopeVersion     string    `json:"envelope_version"`
+	OccurredAt          time.Time `json:"occurred_at"`
+	CloudReceivedAt     time.Time `json:"cloud_received_at"`
+	RawPayloadSHA256Hex string    `json:"raw_payload_sha256_hex"`
+}
+
 type EventAck struct {
 	Status              string    `json:"status"`
 	IdempotencyKey      string    `json:"idempotency_key"`
