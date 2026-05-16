@@ -115,7 +115,9 @@ function Invoke-RuntimeSmoke {
     [string]$CashierEmployeeId,
     [string]$ManagerEmployeeId,
     [string]$TableId,
-    [string[]]$MenuItemIds
+    [string[]]$MenuItemIds,
+    [string]$ModifierGroupId,
+    [string]$ModifierOptionId
   )
 
   Write-Step "Checking cashier PIN login"
@@ -152,7 +154,7 @@ function Invoke-RuntimeSmoke {
     opening_cash_amount = 0
   } -Headers $headers -ExpectedStatus @(201)
 
-  Write-Step "Creating order with two dishes"
+  Write-Step "Creating order with dish, modifier and service lines"
   $order = Invoke-JsonPost "$edgeApi/orders" @{
     command_id = New-CommandId "create-order"
     restaurant_id = $RestaurantId
@@ -160,13 +162,28 @@ function Invoke-RuntimeSmoke {
     table_name = "Smoke T1"
     guest_count = 1
   } -Headers $headers -ExpectedStatus @(201)
-  foreach ($menuItemId in $MenuItemIds[0..1]) {
-    Invoke-JsonPost "$edgeApi/orders/$($order.id)/lines" @{
-      command_id = New-CommandId "add-line"
-      menu_item_id = $menuItemId
-      quantity = 1
-    } -Headers $headers -ExpectedStatus @(201) | Out-Null
-  }
+  Invoke-JsonPost "$edgeApi/orders/$($order.id)/lines" @{
+    command_id = New-CommandId "add-dish-with-modifier"
+    menu_item_id = $MenuItemIds[0]
+    quantity = 1
+    selected_modifiers = @(
+      @{
+        modifier_group_id = $ModifierGroupId
+        modifier_option_id = $ModifierOptionId
+        quantity = 1
+      }
+    )
+  } -Headers $headers -ExpectedStatus @(201) | Out-Null
+  Invoke-JsonPost "$edgeApi/orders/$($order.id)/lines" @{
+    command_id = New-CommandId "add-second-dish"
+    menu_item_id = $MenuItemIds[1]
+    quantity = 1
+  } -Headers $headers -ExpectedStatus @(201) | Out-Null
+  Invoke-JsonPost "$edgeApi/orders/$($order.id)/lines" @{
+    command_id = New-CommandId "add-service-line"
+    menu_item_id = $MenuItemIds[2]
+    quantity = 1
+  } -Headers $headers -ExpectedStatus @(201) | Out-Null
 
   Write-Step "Issuing precheck and capturing full payment"
   $precheck = Invoke-JsonPost "$edgeApi/orders/$($order.id)/precheck" @{
@@ -204,6 +221,49 @@ function Invoke-RuntimeSmoke {
     throw "Expected check reprint snapshot."
   }
 
+  Write-Step "Recording same-shift full check cancellation"
+  $cancelOrder = Invoke-JsonPost "$edgeApi/orders" @{
+    command_id = New-CommandId "create-cancellation-order"
+    restaurant_id = $RestaurantId
+    table_id = $TableId
+    table_name = "Smoke T1"
+    guest_count = 1
+  } -Headers $headers -ExpectedStatus @(201)
+  Invoke-JsonPost "$edgeApi/orders/$($cancelOrder.id)/lines" @{
+    command_id = New-CommandId "add-cancellation-line"
+    menu_item_id = $MenuItemIds[1]
+    quantity = 1
+  } -Headers $headers -ExpectedStatus @(201) | Out-Null
+  $cancelPrecheck = Invoke-JsonPost "$edgeApi/orders/$($cancelOrder.id)/precheck" @{
+    command_id = New-CommandId "issue-cancellation-precheck"
+  } -Headers $headers -ExpectedStatus @(201)
+  $cancelPayment = Invoke-JsonPost "$edgeApi/prechecks/$($cancelPrecheck.id)/payments" @{
+    command_id = New-CommandId "capture-cancellation-payment"
+    method = "cash"
+    amount = $cancelPrecheck.total
+    currency = "RUB"
+  } -Headers $headers -ExpectedStatus @(201)
+  if ($cancelPayment.status -ne "captured") {
+    throw "Expected captured payment for cancellation check, got $($cancelPayment.status)"
+  }
+  $cancelClosedOrder = Invoke-JsonGet "$edgeApi/orders/$($cancelOrder.id)" -Headers $headers
+  if ($cancelClosedOrder.status -ne "closed" -or -not $cancelClosedOrder.check -or $cancelClosedOrder.check.status -ne "paid") {
+    throw "Expected closed paid cancellation order before ledger operation."
+  }
+  $cancellation = Invoke-JsonPost "$edgeApi/checks/$($cancelClosedOrder.check.id)/cancellations" @{
+    command_id = New-CommandId "record-cancellation"
+    operation_kind = "full"
+    inventory_disposition = "manual_review"
+    reason = "production-way smoke same-shift cancellation"
+  } -Headers $headers -ExpectedStatus @(201)
+  if ($cancellation.operation_type -ne "cancellation" -or $cancellation.operation_kind -ne "full" -or $cancellation.status -ne "recorded") {
+    throw "Expected recorded full cancellation operation, got operation_type=$($cancellation.operation_type), kind=$($cancellation.operation_kind), status=$($cancellation.status)"
+  }
+  $cancelOrderAfter = Invoke-JsonGet "$edgeApi/orders/$($cancelOrder.id)" -Headers $headers
+  if ($cancelOrderAfter.status -ne "closed" -or $cancelOrderAfter.check.status -ne "paid") {
+    throw "Cancellation ledger operation must not mutate closed order/check status."
+  }
+
   Write-Step "Closing original shift before refund boundary"
   Invoke-JsonPost "$edgeApi/cash-shifts/$($cashShift.id)/close" @{
     command_id = New-CommandId "close-cash-shift-before-refund"
@@ -234,28 +294,30 @@ function Invoke-RuntimeSmoke {
     operation_kind = "full"
     inventory_disposition = "no_stock_effect"
     reason = "production-way smoke refund"
-    items = @(
-      @{
-        scope = "payment"
-        payment_id = $payment.id
-        amount = $payment.amount
-        currency = $payment.currency
-        snapshot = @{
-          payment_id = $payment.id
-          method = $payment.method
-          amount = $payment.amount
-          currency = $payment.currency
-        }
-      }
-    )
   } -Headers $headers -ExpectedStatus @(201)
-  if ($refund.operation_type -ne "refund" -or $refund.status -ne "recorded") {
-    throw "Expected recorded refund operation, got operation_type=$($refund.operation_type), status=$($refund.status)"
+  if ($refund.operation_type -ne "refund" -or $refund.operation_kind -ne "full" -or $refund.status -ne "recorded") {
+    throw "Expected recorded full refund operation, got operation_type=$($refund.operation_type), kind=$($refund.operation_kind), status=$($refund.status)"
+  }
+  $orderAfterRefund = Invoke-JsonGet "$edgeApi/orders/$($order.id)" -Headers $headers
+  if ($orderAfterRefund.status -ne "closed" -or $orderAfterRefund.check.status -ne "paid") {
+    throw "Refund ledger operation must not mutate closed order/check status."
   }
   $outbox = Invoke-JsonGet "$edgeApi/sync/outbox?limit=50" -Headers $headers
   $localEvents = Invoke-JsonGet "$edgeApi/sync/local-events?limit=50" -Headers $headers
   Assert-JsonContains $outbox $refund.id "Expected refund operation event in Edge outbox."
+  Assert-JsonContains $outbox $cancellation.id "Expected cancellation operation event in Edge outbox."
   Assert-JsonContains $localEvents $order.id "Expected order events in Edge local event log."
+
+  Write-Step "Closing refund shift and cash shift"
+  Invoke-JsonPost "$edgeApi/cash-shifts/$($refundCashShift.id)/close" @{
+    command_id = New-CommandId "close-refund-cash-shift"
+    closed_by_employee_id = $ManagerEmployeeId
+    closing_cash_amount = 0
+  } -Headers $headers -ExpectedStatus @(200) | Out-Null
+  Invoke-JsonPost "$edgeApi/employee-shifts/$($refundShift.id)/close" @{
+    command_id = New-CommandId "close-refund-employee-shift"
+    closed_by_employee_id = $ManagerEmployeeId
+  } -Headers $headers -ExpectedStatus @(200) | Out-Null
 
   return [pscustomobject]@{
     shift_id = $refundShift.id
@@ -268,6 +330,10 @@ function Invoke-RuntimeSmoke {
     payment_id = $payment.id
     check_id = $closedOrder.check.id
     check_reprint_source_id = $checkReprint.source_id
+    cancellation_order_id = $cancelOrder.id
+    cancellation_check_id = $cancelClosedOrder.check.id
+    cancellation_operation_id = $cancellation.id
+    cancellation_status = $cancellation.status
     refund_operation_id = $refund.id
     refund_status = $refund.status
   }
@@ -403,6 +469,13 @@ $catalogSoup = Invoke-JsonPost "$cloudApi/catalog/items" @{
   sku = "PROD-WAY-SOUP-$suffix"
   base_unit = "portion"
 } -ExpectedStatus @(201)
+$catalogService = Invoke-JsonPost "$cloudApi/catalog/items" @{
+  restaurant_id = $restaurant.id
+  type = "service"
+  name = "Production Service"
+  sku = "PROD-WAY-SERVICE-$suffix"
+  base_unit = "service"
+} -ExpectedStatus @(201)
 $menuTea = Invoke-JsonPost "$cloudApi/menu/items" @{
   restaurant_id = $restaurant.id
   catalog_item_id = $catalogTea.id
@@ -418,6 +491,34 @@ $menuSoup = Invoke-JsonPost "$cloudApi/menu/items" @{
   price = 25000
   currency = "RUB"
   availability_json = "{}"
+} -ExpectedStatus @(201)
+$menuService = Invoke-JsonPost "$cloudApi/menu/items" @{
+  restaurant_id = $restaurant.id
+  catalog_item_id = $catalogService.id
+  name = "Production Service"
+  price = 5000
+  currency = "RUB"
+  availability_json = "{}"
+} -ExpectedStatus @(201)
+$modifierGroup = Invoke-JsonPost "$cloudApi/modifiers/groups" @{
+  restaurant_id = $restaurant.id
+  name = "Production Add-ons"
+  required = $false
+  min_count = 0
+  max_count = 2
+} -ExpectedStatus @(201)
+$modifierOption = Invoke-JsonPost "$cloudApi/modifiers/options" @{
+  restaurant_id = $restaurant.id
+  modifier_group_id = $modifierGroup.id
+  name = "Lemon"
+  price_minor = 3000
+} -ExpectedStatus @(201)
+$modifierBinding = Invoke-JsonPost "$cloudApi/modifiers/bindings" @{
+  restaurant_id = $restaurant.id
+  modifier_group_id = $modifierGroup.id
+  target_type = "menu_item"
+  target_id = $menuTea.id
+  sort_order = 1
 } -ExpectedStatus @(201)
 
 Write-Step "Publishing master-data package and applying Edge-ready snapshot"
@@ -480,6 +581,8 @@ Assert-JsonContains $halls $hall.id "Cloud-created hall is not visible on POS Ed
 Assert-JsonContains $tables $table.id "Cloud-created table is not visible on POS Edge."
 Assert-JsonContains $menuItems $menuTea.id "First Cloud-created menu item is not visible on POS Edge."
 Assert-JsonContains $menuItems $menuSoup.id "Second Cloud-created menu item is not visible on POS Edge."
+Assert-JsonContains $menuItems $menuService.id "Cloud-created service menu item is not visible on POS Edge."
+Assert-JsonContains $menuItems $modifierOption.id "Cloud-created modifier option is not visible on POS Edge menu item."
 
 $runtimeSmoke = $null
 if ($RunRuntimeSmoke) {
@@ -489,7 +592,9 @@ if ($RunRuntimeSmoke) {
     -CashierEmployeeId $cashier.id `
     -ManagerEmployeeId $manager.id `
     -TableId $table.id `
-    -MenuItemIds @($menuTea.id, $menuSoup.id)
+    -MenuItemIds @($menuTea.id, $menuSoup.id, $menuService.id) `
+    -ModifierGroupId $modifierGroup.id `
+    -ModifierOptionId $modifierOption.id
 }
 
 $summary = [pscustomobject]@{
@@ -502,8 +607,11 @@ $summary = [pscustomobject]@{
   manager_employee_id = $manager.id
   hall_id = $hall.id
   table_ids = @($table.id)
-  catalog_item_ids = @($catalogTea.id, $catalogSoup.id)
-  menu_item_ids = @($menuTea.id, $menuSoup.id)
+  catalog_item_ids = @($catalogTea.id, $catalogSoup.id, $catalogService.id)
+  menu_item_ids = @($menuTea.id, $menuSoup.id, $menuService.id)
+  modifier_group_id = $modifierGroup.id
+  modifier_option_id = $modifierOption.id
+  modifier_binding_id = $modifierBinding.id
   publication_id = $publication.id
   cloud_base_url = $CloudBaseUrl.TrimEnd("/")
   edge_base_url = $EdgeBaseUrl.TrimEnd("/")

@@ -51,7 +51,7 @@
 
 - Edge cashier operations write local events/outbox for core runtime.
 - Cloud -> Edge `mastersync.Service` applies `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
-- Catalog/menu sync includes folders, tags, services and modifier groups/options/links; menu categories remain separate from catalog folders.
+- `catalog` sync includes folders, tags, services and modifier groups/options/links; `menu` sync includes menu items. Menu categories remain separate from catalog folders.
 - Reprint events use immutable snapshots.
 - Cancellation/refund backend flow writes local event/outbox records; `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud operational events.
 - `PaymentRefunded` and `CheckRefunded` remain accepted legacy inbound event types for older payloads; new POS Edge refund runtime emits `RefundRecorded`.

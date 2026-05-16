@@ -178,8 +178,8 @@ Boundary rules:
   - `pricing_policy`
 - `pricing_policy` применяет Cloud-authored `tax_profiles`, `tax_rules`, `service_charge_rules` и automatic discount/surcharge `pricing_policies` как reference/read-model data с sync metadata.
 - `restaurants` применяет Cloud-authored настройки ресторана и `active`; опубликованный active restaurant сохраняется в Edge read model как active row.
-- `catalog` применяет catalog folders, folder parameters, catalog tags, item tags и catalog item kinds `dish`, `good`, `semi_finished`, `service`.
-- `menu` применяет menu items, menu-visible `item_type`, modifier groups/options and menu item modifier group links.
+- `catalog` применяет catalog folders, folder parameters, catalog tags, item tags, catalog item kinds `dish`, `good`, `semi_finished`, `service`, modifier groups/options/bindings и effective menu item modifier group links.
+- `menu` применяет menu items и menu-visible `item_type`.
 - Unknown JSON fields и unsupported stream names отклоняются до partial apply.
 
 Реализована только основа:

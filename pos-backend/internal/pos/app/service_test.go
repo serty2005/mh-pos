@@ -2992,6 +2992,8 @@ func TestRecordCancellationDuringOpenShiftSupportsFullAndRejectsOverCancel(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
 	operation, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
 		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-cancel-full"),
 		CheckID:              check.ID,
@@ -3006,6 +3008,33 @@ func TestRecordCancellationDuringOpenShiftSupportsFullAndRejectsOverCancel(t *te
 	}
 	if operation.Status != domain.FinancialOperationRecorded || len(operation.Items) != 1 || operation.Items[0].Scope != domain.FinancialItemWholeCheck {
 		t.Fatalf("unexpected cancellation ledger shape: status=%s items=%+v", operation.Status, operation.Items)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+1 {
+		t.Fatalf("expected one cancellation outbox envelope, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore+1 {
+		t.Fatalf("expected one cancellation local event, before=%d after=%d", eventsBefore, events)
+	}
+	var cancellationEvents int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM local_event_log WHERE event_type = 'CancellationRecorded' AND aggregate_type = 'FinancialOperation' AND aggregate_id = ?`, operation.ID).Scan(&cancellationEvents); err != nil {
+		t.Fatal(err)
+	}
+	if cancellationEvents != 1 {
+		t.Fatalf("expected one CancellationRecorded local event, got %d", cancellationEvents)
+	}
+	var cancellationOutbox int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM pos_sync_outbox WHERE command_id = 'cmd-cancel-full' AND command_type = 'CancellationRecorded' AND aggregate_type = 'FinancialOperation' AND aggregate_id = ? AND sync_direction = 'edge_to_cloud'`, operation.ID).Scan(&cancellationOutbox); err != nil {
+		t.Fatal(err)
+	}
+	if cancellationOutbox != 1 {
+		t.Fatalf("expected one edge_to_cloud CancellationRecorded outbox row, got %d", cancellationOutbox)
+	}
+	var legacyEvents int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM local_event_log WHERE command_id = 'cmd-cancel-full' AND event_type IN ('PaymentRefunded','CheckRefunded')`).Scan(&legacyEvents); err != nil {
+		t.Fatal(err)
+	}
+	if legacyEvents != 0 {
+		t.Fatalf("expected cancellation to emit CancellationRecorded only, got %d legacy events", legacyEvents)
 	}
 	if _, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
 		CommandMeta: f.managerEdgeMetaCommand(t, "cmd-cancel-full"),

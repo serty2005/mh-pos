@@ -101,6 +101,7 @@ Managed SQL files, реализовано сейчас:
 
 - Cloud recipe/inventory-adjacent foundation is not equal to POS Edge recipe/inventory runtime support.
 - POS Edge `ApplyMasterData` сейчас принимает `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
+- `catalog` stream applies catalog folders/tags/items, service catalog items and modifier groups/options/bindings/effective menu-item links; `menu` stream applies menu items.
 - Cloud хранит menu categories отдельно от catalog folders; catalog publication не использует menu categories как замену folder hierarchy.
 - `recipes` и `inventory_reference` могут существовать в constants/schema state, но пока не поддерживаются `mastersync.Service` apply path.
 

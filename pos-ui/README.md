@@ -47,7 +47,7 @@ npm run dev
 Ручной UI flow:
 
 ```text
-pair -> login -> open personal shift -> open cash shift -> select hall/table -> create order -> add lines -> change quantity -> void line -> issue precheck -> cancel precheck -> issue precheck again -> pay -> final check -> close cash shift -> close personal shift -> lock/logout
+pair -> login -> open personal shift -> open cash shift -> select hall/table -> create order -> add lines/services/modifiers -> change quantity -> void line -> issue precheck -> cancel precheck -> issue precheck again -> pay -> final check -> reprint -> full check cancellation or refund from closed-order activity -> close cash shift -> close personal shift -> lock/logout
 ```
 
 ## Локальный E2E Prototype: получить pairing code и войти в POS UI
@@ -98,7 +98,7 @@ Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=10 -Heade
 Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10 -Headers $headers
 ```
 
-Вне текущего объема: waiter UI, KDS, modifiers, inventory consumption и fiscalization.
+Вне текущего объема: waiter UI, KDS, rich partial cancellation/refund scopes, inventory consumption и fiscalization.
 
 ## Что реализовано
 
@@ -115,11 +115,16 @@ Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10 -Headers $he
   - создает заказ на выбранном столе;
   - показывает позиции заказа и backend totals;
   - добавляет позиции из меню;
+  - показывает services отдельной секцией и добавляет service menu items;
+  - открывает выбор modifiers для menu items с modifier groups и отправляет selected modifiers в backend;
   - меняет количество и void-ит позиции;
   - выпускает пречек;
   - отменяет unpaid issued пречек через manager override;
   - принимает оплату наличными и trusted manual card;
-  - показывает финальный чек после полной оплаты.
+  - показывает финальный чек после полной оплаты;
+  - перепечатывает precheck/check по backend immutable snapshot;
+  - записывает full check cancellation/refund через ledger endpoints из closed-order activity;
+  - оставляет payment-level refund как explicit compatibility fallback.
 
 Server state хранится только через `@tanstack/vue-query`. Frontend не является source of truth и не принимает бизнес-решения по заказу, пречеку, оплате или чеку.
 

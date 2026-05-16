@@ -179,5 +179,5 @@ Requirements:
 - real PSP terminal integration UI;
 - fiscal device operation UI;
 - full inventory/procurement UI;
-- rich cancellation/refund ledger UI beyond captured-payment compatibility action;
+- rich partial cancellation/refund ledger UI beyond current full-check pilot actions;
 - discount/surcharge cashier editor and tax policy UI on top of existing backend pricing foundation.

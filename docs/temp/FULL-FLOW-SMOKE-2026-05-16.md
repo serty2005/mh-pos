@@ -4,6 +4,8 @@
 
 реализовано сейчас: production-way local flow повторен на локальном Docker stack `mh-pos-local`.
 
+Примечание по текущему коду после pre-pilot hardening: `scripts/bootstrap-production-way.ps1 -RunRuntimeSmoke` дополнительно покрывает service menu item, selected modifier, same-shift full check cancellation, post-shift full check refund без `items` и закрытие refund смены. Ниже сохранен результат конкретного исторического запуска до этого расширения smoke script.
+
 ## Найдено
 
 - POS Edge Docker image собирается на Alpine в `docker/pos-edge.Dockerfile` и `pos-backend/docker/Dockerfile`; runtime image уже устанавливает `tzdata`, сборочный лог подтвердил `tzdata (2026b-r0)`.
@@ -16,7 +18,7 @@
 - POS regression tests: добавлены проверки IANA timezone при открытии личной смены, идемпотентного paired provisioning и сохранения `restaurants.active = 1` при Cloud -> Edge ingest.
 - Cloud publication-state: `GET /api/v1/restaurants/{id}/master-data/publication-state` до первой публикации возвращает `200 null`; Cloud UI optional request parsing принимает `null` как empty state.
 - Cloud publication regression: snapshot опубликованного active restaurant проверяется на `active: true`.
-- Smoke script `scripts/bootstrap-production-way.ps1`: runtime smoke теперь вызывает reprint precheck и reprint final check до refund.
+- Smoke script `scripts/bootstrap-production-way.ps1`: runtime smoke вызывает reprint precheck и reprint final check до refund; текущий код скрипта также покрывает service item, selected modifier, same-shift cancellation и post-shift full refund.
 - Local compose: host binding PostgreSQL вынесен в `CLOUD_POSTGRES_HOST_PORT`, чтобы не останавливать чужой локальный PostgreSQL.
 
 ## Smoke
@@ -81,7 +83,7 @@ ShiftOpened 2
 
 вне текущего объема:
 
-- Modifiers runtime beyond current selected modifiers, automatic inventory consumption, real PSP, fiscal adapter, ClickHouse runtime и sqlc rollout.
+- Rich partial cancellation/refund UI by modifier/service/tip, automatic inventory consumption, real PSP, fiscal adapter, ClickHouse runtime и sqlc rollout.
 - Детальный Cloud financial operation projection по refund item scopes.
 
 ## Runtime Code

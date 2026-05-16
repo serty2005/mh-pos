@@ -17,10 +17,10 @@
 - `POST /api/v1/checks/{id}/cancellations` и `POST /api/v1/checks/{id}/refunds` пишут append-only ledger `financial_operations`/`financial_operation_items` для full/partial cancellation и refund без мутации finalized payment/precheck/check.
 - POS cashier UI теперь вызывает full check cancellation/refund ledger endpoints для pilot-minimum acceptance, отправляет `command_id`, `operation_kind`, `inventory_disposition` и reason из rich cashier dialog; compatibility payment refund остается отдельным fallback.
 - `POST /api/v1/payments/{id}/refund` оставлен как compatibility wrapper: он требует finalized check, записывает `RefundRecorded` operation по payment allocation и не переводит payment/check обратно в mutable состояние.
-- Cloud receiver принимает current `RefundRecorded` и legacy inbound-only `PaymentRefunded`/`CheckRefunded`; richer financial operation reporting остается отдельной задачей.
+- Cloud receiver принимает current `CancellationRecorded`/`RefundRecorded` и legacy inbound-only `PaymentRefunded`/`CheckRefunded`; richer financial operation reporting остается отдельной задачей.
 - Reprint precheck/check строится из immutable snapshot.
 - Cloud -> Edge master-data ingest в POS Edge runtime поддерживает потоки `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
-- Cloud/Edge master data разделяет menu categories, catalog folders и tags; catalog/menu publication передает folders, folder parameters, tags, item tags, services и modifier groups/options/links.
+- Cloud/Edge master data разделяет menu categories, catalog folders и tags; `catalog` stream передает folders, folder parameters, tags, item tags, services и modifier groups/options/links, а `menu` stream передает menu items.
 - SQLite schema содержит foundation для recipes/inventory. Это не означает готовый cashier runtime для recipe expansion или inventory consumption.
 
 Вне текущего runtime:

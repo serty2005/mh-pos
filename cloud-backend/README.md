@@ -117,7 +117,7 @@ GET   /api/v1/restaurants/{id}/edge-nodes/{node_device_id}/master-data/snapshot
 
 Реализовано сейчас: employee lifecycle поддерживает `active`, `suspended`, `archived`; role assignment обновляет permission snapshot для sync-safe POS usage; PIN rotation увеличивает credential version. API responses не возвращают PIN или `pin_hash`.
 
-Реализовано сейчас: catalog foundation разделяет `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_recipe_items`, `cloud_modifier_groups`, `cloud_modifier_options`; canonical catalog item kinds: `dish`, `good`, `ingredient`, `semi_finished`. Menu foundation хранит draft/published/archived lifecycle, price, category placement, availability, основу будущего station routing и будущих multi-location assignments. Cloud catalog type `semi_finished` публикуется в текущий POS Edge-compatible catalog stream как `ingredient`; categories пока хранятся в Cloud foundation, но не публикуются в Edge package до появления поддержанного Edge ingest contract.
+Реализовано сейчас: catalog foundation разделяет `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_services`, `cloud_recipe_items`, `cloud_modifier_groups`, `cloud_modifier_options`; canonical catalog item kinds: `dish`, `good`, `semi_finished`, `service`. Menu foundation хранит draft/published/archived lifecycle, price, category placement, availability, основу будущего station routing и будущих multi-location assignments. Cloud catalog kinds публикуются в POS Edge catalog stream без legacy `ingredient` mapping; categories пока хранятся в Cloud foundation, но не публикуются в Edge package до появления поддержанного Edge ingest contract.
 
 Реализовано сейчас: raw PIN и `pin_hash` не возвращаются Cloud UI-facing API responses. API responses используют безопасное `pin_configured`; `pin_hash` присутствует только в device/system snapshot package для offline PIN auth на POS Edge. PIN должен быть уникален в рамках ресторана среди всех сотрудников не в статусе `archived`; `active` и `suspended` сотрудники удерживают PIN, archived сотрудник не блокирует повторное использование. При нарушении API возвращает `409` с `X-Error-Code: PIN_ALREADY_EXISTS`.
 
@@ -254,7 +254,8 @@ go test ./...
 - `cloud_projection_shift_finance`
 - `cloud_master_data_packages`
 
-Реализовано сейчас refund behavior:
-- `PaymentRefunded` and `CheckRefunded` are accepted Edge -> Cloud operational events.
-- Cloud stores raw payloads and operational journal rows for detailed refund display.
-- `cloud_projection_shift_finance` tracks refund counters/totals as reporting foundation.
+Реализовано сейчас financial operation sync behavior:
+- `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud financial operation events.
+- `PaymentRefunded` and `CheckRefunded` remain legacy inbound-only event types for older Edge payloads.
+- Cloud stores raw payloads and operational journal rows idempotently for current and legacy events.
+- `cloud_projection_shift_finance` tracks coarse refund counters/totals from `RefundRecorded` and legacy refund events; cancellation is kept in raw/journal/event-type stats until a dedicated ledger projection exists.

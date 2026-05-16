@@ -178,6 +178,34 @@ func TestReceiveRefundRecordedReplaysIdempotentlyAndUpdatesShiftFinance(t *testi
 	}
 }
 
+func TestReceiveCancellationRecordedReplaysIdempotentlyAndKeepsCurrentEventStats(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+	raw := sampleFinancialOperationEnvelope(t, contracts.EventCancellationRecorded, "event-cancel-1", "command-cancel-1", "financial-operation-cancel-1", "cancellation", 1000, "shift-sale-1", "2026-05-05")
+
+	first, err := service.Receive(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.Receive(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatalf("expected stable ack on CancellationRecorded replay\nfirst=%+v\nsecond=%+v", first, second)
+	}
+	if repo.Count() != 1 {
+		t.Fatalf("expected one cancellation receipt after replay, got %d", repo.Count())
+	}
+	stats := repo.EventTypeStats()
+	if len(stats) != 1 || stats[0].EventType != string(contracts.EventCancellationRecorded) || stats[0].EventCount != 1 {
+		t.Fatalf("unexpected cancellation event stats: %+v", stats)
+	}
+	if finance := repo.ShiftFinance(); len(finance) != 0 {
+		t.Fatalf("cancellation should not update coarse refund shift finance projection, got %+v", finance)
+	}
+}
+
 func TestUpsertAndGetMasterDataPackage(t *testing.T) {
 	repo := memory.NewRepository()
 	service := app.NewService(repo, fixedClock{})
@@ -329,41 +357,46 @@ func sampleEnvelope(t *testing.T) []byte {
 
 func sampleRefundRecordedEnvelope(t *testing.T) []byte {
 	t.Helper()
+	return sampleFinancialOperationEnvelope(t, contracts.EventRefundRecorded, "event-refund-1", "command-refund-1", "financial-operation-1", "refund", 1000, "shift-refund-1", "2026-05-06")
+}
+
+func sampleFinancialOperationEnvelope(t *testing.T, eventType contracts.EventType, eventID, commandID, operationID, operationType string, amount int64, shiftID, businessDate string) []byte {
+	t.Helper()
 	body := map[string]any{
 		"version":           "1",
-		"event_id":          "event-refund-1",
-		"command_id":        "command-refund-1",
-		"event_type":        string(contracts.EventRefundRecorded),
+		"event_id":          eventID,
+		"command_id":        commandID,
+		"event_type":        string(eventType),
 		"aggregate_type":    "FinancialOperation",
-		"aggregate_id":      "financial-operation-1",
+		"aggregate_id":      operationID,
 		"restaurant_id":     "restaurant-1",
 		"device_id":         "device-1",
 		"node_device_id":    "device-1",
 		"client_device_id":  "client-1",
 		"actor_employee_id": "manager-1",
 		"session_id":        "session-1",
-		"shift_id":          "shift-refund-1",
-		"occurred_at":       "2026-05-06T09:00:00Z",
+		"shift_id":          shiftID,
+		"occurred_at":       businessDate + "T09:00:00Z",
 		"payload": map[string]any{
 			"origin": "edge_device",
 			"data": map[string]any{
-				"id":                    "financial-operation-1",
-				"edge_operation_id":     "edge-financial-operation-1",
+				"id":                    operationID,
+				"edge_operation_id":     "edge-" + operationID,
 				"restaurant_id":         "restaurant-1",
 				"device_id":             "device-1",
-				"shift_id":              "shift-refund-1",
+				"shift_id":              shiftID,
 				"original_shift_id":     "shift-sale-1",
 				"check_id":              "check-1",
 				"precheck_id":           "precheck-1",
-				"operation_type":        "refund",
+				"operation_type":        operationType,
 				"operation_kind":        "full",
 				"status":                "recorded",
-				"amount":                1000,
+				"amount":                amount,
 				"currency":              "RUB",
-				"business_date_local":   "2026-05-06",
+				"business_date_local":   businessDate,
 				"inventory_disposition": "no_stock_effect",
 				"reason":                "guest return",
-				"created_at":            "2026-05-06T09:00:00Z",
+				"created_at":            businessDate + "T09:00:00Z",
 			},
 		},
 	}

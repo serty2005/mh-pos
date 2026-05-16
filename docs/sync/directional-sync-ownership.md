@@ -13,7 +13,7 @@
 | Catalog item | Cloud | No | Cloud -> Edge | реализовано сейчас for ingest stream `catalog` |
 | Menu item | Cloud | No | Cloud -> Edge | реализовано сейчас for ingest stream `menu` |
 | Catalog folder/tag | Cloud | No | Cloud -> Edge via `catalog` | реализовано сейчас |
-| Modifier group/option | Cloud | No | Cloud -> Edge via `menu` | реализовано сейчас |
+| Modifier group/option | Cloud | No | Cloud -> Edge via `catalog` | реализовано сейчас |
 | Recipe/reference inventory | Cloud | No | Cloud -> Edge planned | реализована только основа in schema/constants; POS Edge apply path not implemented |
 | Employee shift | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Cash session/drawer event | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
@@ -39,7 +39,7 @@
 - `pricing_policy`
 
 `recipes` и `inventory_reference` нельзя документировать как поддерживаемые POS Edge ingest streams, пока `mastersync.Service` не применяет их payloads.
-`catalog` и `menu` payloads включают catalog folders/tags/services и modifier groups/options/links; menu categories остаются отдельным понятием и не заменяют catalog folders.
+`catalog` payload включает catalog folders/tags/services и modifier groups/options/bindings/effective links; `menu` payload включает menu items. Menu categories остаются отдельным понятием и не заменяют catalog folders.
 `pricing_policy` включает tax/service-charge reference tables и automatic discount/surcharge policies; manual override runtime остается backend RBAC-controlled action.
 
 Реализовано сейчас:

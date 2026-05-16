@@ -104,9 +104,9 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - решить, входит ли automatic consumption в первый pilot;
   - если входит, реализовать consumption trigger, stock document/move service и snapshot requirements.
 - Cancellation/refund/reprint hardening:
-  - backend ledger, immutable snapshots, no-over-cancel/no-over-refund tests, current `RefundRecorded` sync contract and coarse Cloud refund projection реализованы;
+  - backend ledger, immutable snapshots, no-over-cancel/no-over-refund tests, current `CancellationRecorded`/`RefundRecorded` sync contracts, idempotent Cloud raw/journal receipt checks and coarse Cloud refund projection реализованы;
   - cashier UI pilot-minimum full check cancellation/refund через ledger endpoints реализован с выбором inventory disposition; compatibility refund по captured payment оставлен отдельным fallback;
-  - требуется финальная проверка operator policy, fiscal wording и cashier acceptance script.
+  - production-way smoke script покрывает Cloud master data для dishes/services/modifiers, Edge ingest, login, shift/cash session, order, modifiers/services, precheck, payment, check reprint, same-shift cancellation, post-shift full refund and shift close.
 - Documentation freeze:
   - поддерживать `SPECv1.3.md` как frozen pilot contract;
   - дальние контуры переносить в roadmap/ADR, а не в pilot spec.
@@ -115,7 +115,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 После закрытия pilot blockers:
 
-- Полный pre-pilot smoke path: Cloud master data -> Edge ingest -> login -> shift/cash session -> order -> precheck -> payment -> check -> refund/reprint.
+- Полный pre-pilot smoke path: поддерживать `scripts/bootstrap-production-way.ps1 -RunRuntimeSmoke` и `scripts/start-and-test-all.ps1` как acceptance smoke для Cloud master data -> Edge ingest -> login -> shift/cash session -> order -> precheck -> payment -> check -> reprint -> cancellation/refund -> close shifts.
 - Сверка RBAC matrix с фактическим UI и backend permissions.
 - Проверка migration/backup behavior на старой SQLite DB.
 - Богатая financial operation ledger projection для отчетности, если raw/journal payload и текущих event counters недостаточно.

@@ -215,9 +215,9 @@ Pricing contract:
   - `catalog`
   - `menu`
   - `pricing_policy`
-- `catalog` применяет catalog folders, folder parameters, catalog tags, item tags and item kinds `dish`, `good`, `semi_finished`, `service`.
+- `catalog` применяет catalog folders, folder parameters, catalog tags, item tags, item kinds `dish`, `good`, `semi_finished`, `service`, modifier groups/options/bindings and effective menu item modifier group links.
 - `restaurants` применяет Cloud-authored settings и `active`; опубликованный active restaurant сохраняется в Edge read model как active row.
-- `menu` применяет menu items, menu item `item_type`, modifier groups/options and menu item modifier group links.
+- `menu` применяет menu items and menu item `item_type`.
 - `pricing_policy` применяет `tax_profiles`, `tax_rules`, `service_charge_rules` и automatic discount/surcharge `pricing_policies` с sync metadata.
 - Strict JSON decode отклоняет неизвестные request fields; unsupported stream names отклоняются до partial apply.
 
