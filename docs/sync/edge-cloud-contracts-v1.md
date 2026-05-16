@@ -129,6 +129,8 @@ Cancellation/refund sync behavior:
 - `CancellationRecorded` и `RefundRecorded` являются текущими Edge -> Cloud operational events для append-only financial operation ledger.
 - `PaymentRefunded` и `CheckRefunded` остаются валидируемыми legacy event types, но новый POS Edge refund flow пишет `RefundRecorded`.
 - Cloud receiver валидирует эти event types, сохраняет raw envelope/journal rows и обновляет event-type stats.
+- `GET /api/v1/sync/edge-events` реализовано сейчас как безопасный Cloud UI/API журнал receipt metadata: `restaurant_id`, `device_id`, `event_type`, aggregate metadata, timestamps и SHA-256 raw payload; raw payload в ответ не включается.
+- `cloud_edge_event_receipts.event_type` принимает весь текущий catalog и legacy inbound-only types, чтобы runtime schema не расходилась с Go validation contract.
 - Cloud shift finance foundation обновляет coarse refund counters from `RefundRecorded` (`checks_refunded_count`, `checks_refunded_total`) and legacy `PaymentRefunded`/`CheckRefunded` counters where such envelopes are received.
 - Shift finance projection не является полной ledger projection для cancellation/refund; detailed reporting by operation item scope, inventory disposition, approval and original shift must read stored raw/journal payloads until a dedicated financial operation projection exists.
 

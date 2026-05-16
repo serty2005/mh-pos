@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,8 +24,9 @@ type Repository struct {
 }
 
 type storedEvent struct {
-	ack contracts.EventAck
-	raw []byte
+	ack  contracts.EventAck
+	view contracts.EdgeEventView
+	raw  []byte
 }
 
 type EventTypeProjection struct {
@@ -90,11 +92,65 @@ func (r *Repository) ReceiveEdgeEvent(_ context.Context, receipt app.EdgeEventRe
 		CloudReceivedAt:     receipt.CloudReceivedAt,
 		RawPayloadSHA256Hex: receipt.RawPayloadSHA256,
 	}
-	r.events[receipt.IdempotencyKey] = storedEvent{ack: ack, raw: append([]byte(nil), receipt.RawPayload...)}
+	r.events[receipt.IdempotencyKey] = storedEvent{
+		ack: ack,
+		view: contracts.EdgeEventView{
+			CloudReceiptID:      ack.CloudReceiptID,
+			IdempotencyKey:      ack.IdempotencyKey,
+			RestaurantID:        *receipt.Envelope.RestaurantID,
+			DeviceID:            receipt.Envelope.DeviceID,
+			CommandID:           receipt.Envelope.CommandID,
+			EventID:             receipt.Envelope.EventID,
+			EdgeEventID:         ack.EdgeEventID,
+			EventType:           string(receipt.Envelope.EventType),
+			AggregateType:       receipt.Envelope.AggregateType,
+			AggregateID:         receipt.Envelope.AggregateID,
+			EnvelopeVersion:     receipt.Envelope.Version,
+			OccurredAt:          receipt.Envelope.OccurredAt,
+			CloudReceivedAt:     receipt.CloudReceivedAt,
+			RawPayloadSHA256Hex: receipt.RawPayloadSHA256,
+		},
+		raw: append([]byte(nil), receipt.RawPayload...),
+	}
 	r.rawByID[ack.CloudReceiptID] = append([]byte(nil), receipt.RawPayload...)
 	r.applyEventTypeProjection(receipt)
 	r.applyShiftFinanceProjection(receipt)
 	return ack, nil
+}
+
+// ListEdgeEvents возвращает последние принятые events из memory storage без raw payload.
+func (r *Repository) ListEdgeEvents(_ context.Context, filter app.EdgeEventListFilter) ([]contracts.EdgeEventView, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	limit := filter.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	out := make([]contracts.EdgeEventView, 0, min(limit, len(r.events)))
+	for _, stored := range r.events {
+		view := stored.view
+		if filter.RestaurantID != "" && view.RestaurantID != filter.RestaurantID {
+			continue
+		}
+		if filter.DeviceID != "" && view.DeviceID != filter.DeviceID {
+			continue
+		}
+		if filter.EventType != "" && view.EventType != filter.EventType {
+			continue
+		}
+		out = append(out, view)
+	}
+	slices.SortFunc(out, func(a, b contracts.EdgeEventView) int {
+		if cmp := b.CloudReceivedAt.Compare(a.CloudReceivedAt); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(b.CloudReceiptID, a.CloudReceiptID)
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 func (r *Repository) UpsertMasterDataPackage(_ context.Context, v contracts.MasterDataPackage) (contracts.MasterDataPackage, error) {

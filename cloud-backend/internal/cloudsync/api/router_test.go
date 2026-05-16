@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -212,4 +213,43 @@ func postEnvelope(t *testing.T, h http.Handler, raw []byte) contracts.EventAck {
 		t.Fatal(err)
 	}
 	return ack
+}
+
+func TestListEdgeEventsReturnsSafeIncomingEventLog(t *testing.T) {
+	repo := memory.NewRepository()
+	router := api.NewRouter(app.NewService(repo, fixedClock{}))
+	raw := []byte(`{
+	  "version":"1",
+	  "event_id":"event-log-1",
+	  "command_id":"command-log-1",
+	  "event_type":"OrderCreated",
+	  "aggregate_type":"Order",
+	  "aggregate_id":"order-log-1",
+	  "restaurant_id":"restaurant-log-1",
+	  "device_id":"device-log-1",
+	  "shift_id":"shift-log-1",
+	  "occurred_at":"2026-05-05T09:00:00Z",
+	  "payload":{"origin":"edge_device","data":{"id":"order-log-1","edge_order_id":"edge-order-log-1","restaurant_id":"restaurant-log-1","device_id":"device-log-1","shift_id":"shift-log-1","status":"open","table_name":"A1","guest_count":2,"opened_at":"2026-05-05T09:00:00Z","created_at":"2026-05-05T09:00:00Z","updated_at":"2026-05-05T09:00:00Z"}}
+	}`)
+	ack := postEnvelope(t, router, raw)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/edge-events?restaurant_id=restaurant-log-1&limit=10", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var items []contracts.EdgeEventView
+	if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected one event, got %+v", items)
+	}
+	if items[0].CloudReceiptID != ack.CloudReceiptID || items[0].EventType != string(contracts.EventOrderCreated) || items[0].RestaurantID != "restaurant-log-1" {
+		t.Fatalf("unexpected event view: %+v", items[0])
+	}
+	if strings.Contains(rec.Body.String(), "edge_order_log") || strings.Contains(rec.Body.String(), "edge-order-log-1") {
+		t.Fatalf("event log response must not expose raw payload: %s", rec.Body.String())
+	}
 }

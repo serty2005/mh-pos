@@ -19,6 +19,7 @@
     <q-banner v-if="successKey" class="success-banner dense-banner">{{ t(successKey) }}</q-banner>
     <launch-readiness-panel v-if="activeKey === 'launchPlan'" :ctx="cloudCtx" />
     <edge-device-panel v-else-if="activeKey === 'edgeDevices'" :ctx="cloudCtx" />
+    <edge-events-panel v-else-if="activeKey === 'edgeEvents'" :ctx="cloudCtx" />
     <section v-else-if="activeKey !== 'restaurants' && !selectedRestaurantId" class="empty-state wide">
       {{ t('cloud.empty.selectRestaurant') }}
     </section>
@@ -33,6 +34,7 @@ import { useI18n } from 'vue-i18n';
 
 import CloudShell from './components/cloud/CloudShell.vue';
 import EdgeDevicePanel from './components/cloud/EdgeDevicePanel.vue';
+import EdgeEventsPanel from './components/cloud/EdgeEventsPanel.vue';
 import LaunchReadinessPanel from './components/cloud/LaunchReadinessPanel.vue';
 import PublicationPanel from './components/cloud/PublicationPanel.vue';
 import ResourceWorkspace from './components/cloud/ResourceWorkspace.vue';
@@ -71,6 +73,7 @@ import {
   listCatalogItems,
   listCatalogTags,
   listEmployees,
+  listEdgeEvents,
   listFolderParameters,
   listHalls,
   listMenuItems,
@@ -101,9 +104,9 @@ import {
   updateTable,
   ApiError,
 } from './shared/api';
-import type { AssignmentStatus, PairingCodeResult, PublicationSummary, Restaurant, UnassignedEdgeNode } from './shared/schemas';
+import type { AssignmentStatus, EdgeEvent, PairingCodeResult, PublicationSummary, Restaurant, UnassignedEdgeNode } from './shared/schemas';
 
-type ScenarioKey = 'launchPlan' | 'edgeDevices';
+type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents';
 type ResourceKey =
   | ScenarioKey
   | 'restaurants'
@@ -185,6 +188,7 @@ const loading = ref<string[]>([]);
 const restaurants = ref<Restaurant[]>([]);
 const publication = ref<PublicationSummary | null>(null);
 const edgeDevices = ref<UnassignedEdgeNode[]>([]);
+const edgeEvents = ref<EdgeEvent[]>([]);
 const selectedEdgeNodeId = ref('');
 const assignmentResult = ref<{ status: string; snapshot_url: string } | null>(null);
 const assignmentStatus = ref<AssignmentStatus | null>(null);
@@ -556,6 +560,7 @@ const publicationNav = {
 const scenarioNav = [
   { key: 'launchPlan' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.launchPlan', descriptionKey: 'cloud.descriptions.launchPlan' },
   { key: 'edgeDevices' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.edgeDevices', descriptionKey: 'cloud.descriptions.edgeDevices' },
+  { key: 'edgeEvents' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.edgeEvents', descriptionKey: 'cloud.descriptions.edgeEvents' },
 ];
 
 const navGroups = computed(() => {
@@ -581,7 +586,7 @@ const visibleFields = computed(() => (activeConfig.value?.fields ?? []).filter((
 const permissionFields = computed(() => visibleFields.value.filter((item) => item.type === 'permissionMatrix'));
 const currentRows = computed<Row[]>(() => {
   if (activeKey.value === 'restaurants') return restaurants.value as unknown as Row[];
-  if (activeKey.value === 'launchPlan' || activeKey.value === 'edgeDevices' || activeKey.value === 'publications' || activeKey.value === 'itemTags' || activeKey.value === 'categories') return [];
+  if (activeKey.value === 'launchPlan' || activeKey.value === 'edgeDevices' || activeKey.value === 'edgeEvents' || activeKey.value === 'publications' || activeKey.value === 'itemTags' || activeKey.value === 'categories') return [];
   return scopedRows[activeKey.value as ScopedResourceKey];
 });
 const filteredRows = computed(() => {
@@ -674,6 +679,7 @@ const cloudCtx = {
   errorCorrelationId,
   successKey,
   publication,
+  edgeEvents,
   selectedEdgeNodeId,
   assignmentResult,
   assignmentStatus,
@@ -721,6 +727,7 @@ const cloudCtx = {
   assignSelectedEdgeDevice,
   loadSelectedAssignmentStatus,
   generateSelectedPairingCode,
+  loadEdgeEvents,
   publishSelectedRestaurant,
   isLoading,
   formatCell,
@@ -738,6 +745,7 @@ watch(selectedRestaurantId, async () => {
   await loadScopedData();
   if (activeKey.value === 'publications' || activeKey.value === 'launchPlan') await loadPublication();
   if (activeKey.value === 'edgeDevices' || activeKey.value === 'launchPlan') await loadEdgeDevices();
+  if (activeKey.value === 'edgeEvents') await loadEdgeEvents();
   resetSelection();
 });
 
@@ -747,6 +755,7 @@ watch(activeKey, async () => {
   resetSelection();
   if (activeKey.value === 'publications') await loadPublication();
   if (activeKey.value === 'edgeDevices') await loadEdgeDevices();
+  if (activeKey.value === 'edgeEvents') await loadEdgeEvents();
   if (activeKey.value === 'launchPlan') {
     await Promise.all([loadPublication(), loadEdgeDevices()]);
   }
@@ -772,12 +781,13 @@ function setActive(key: ResourceKey) {
 }
 
 function isScopedResourceKey(key: ResourceKey): key is ScopedResourceKey {
-  return !['launchPlan', 'edgeDevices', 'restaurants', 'publications', 'itemTags', 'categories'].includes(key);
+  return !['launchPlan', 'edgeDevices', 'edgeEvents', 'restaurants', 'publications', 'itemTags', 'categories'].includes(key);
 }
 
 function navCount(key: ResourceKey) {
   if (key === 'launchPlan') return launchSteps.length;
   if (key === 'edgeDevices') return edgeDevices.value.length;
+  if (key === 'edgeEvents') return edgeEvents.value.length;
   if (key === 'restaurants') return restaurants.value.length;
   if (key === 'publications') return publication.value ? publication.value.version : '-';
   if (key === 'itemTags' || key === 'categories') return '+';
@@ -947,6 +957,7 @@ async function loadPublication() {
 async function reloadActive() {
   if (activeKey.value === 'launchPlan') return;
   if (activeKey.value === 'edgeDevices') return loadEdgeDevices();
+  if (activeKey.value === 'edgeEvents') return loadEdgeEvents();
   if (activeKey.value === 'restaurants') return loadRestaurants();
   if (activeKey.value === 'publications') return loadPublication();
   if (activeKey.value === 'itemTags' || activeKey.value === 'categories') return;
@@ -1073,6 +1084,12 @@ async function rotateSelectedEmployeePIN() {
   });
 }
 
+
+async function loadEdgeEvents() {
+  await withLoading('edge-events', async () => {
+    edgeEvents.value = await listEdgeEvents(selectedRestaurantId.value, 50);
+  });
+}
 
 async function loadEdgeDevices() {
   await withLoading('edge-devices', async () => {

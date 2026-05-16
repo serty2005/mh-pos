@@ -19,6 +19,7 @@ import (
 	"cloud-backend/internal/platform/clock"
 	"cloud-backend/internal/platform/logging"
 	platformpg "cloud-backend/internal/platform/postgres"
+	"cloud-backend/internal/platform/version"
 	provisioningapp "cloud-backend/internal/provisioning/app"
 	"cloud-backend/internal/provisioning/infra/licensehttp"
 	provisioningpg "cloud-backend/internal/provisioning/infra/postgres"
@@ -48,7 +49,7 @@ func run() error {
 	dsn := cfg.Get("CLOUD_POSTGRES_DSN", "")
 	migrationsDir := cfg.Get("CLOUD_POSTGRES_MIGRATIONS_DIR", "migrations/postgres")
 	backupDir := cfg.Get("CLOUD_POSTGRES_BACKUP_DIR", "data/cloud-backups")
-	moduleVersion := cfg.Get("MH_POS_VERSION", "0.1.2")
+	moduleVersion := cfg.Get("MH_POS_VERSION", version.Resolve("MH_POS_VERSION"))
 	if dsn == "" {
 		return errors.New("CLOUD_POSTGRES_DSN is required")
 	}

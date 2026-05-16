@@ -129,6 +129,52 @@ INSERT INTO cloud_operational_events(
 	return ack, nil
 }
 
+// ListEdgeEvents возвращает безопасный журнал входящих Edge events без raw payload.
+func (r *Repository) ListEdgeEvents(ctx context.Context, filter app.EdgeEventListFilter) ([]contracts.EdgeEventView, error) {
+	limit := filter.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT id,idempotency_key,restaurant_id,device_id,command_id,event_id,edge_event_id,
+       event_type,aggregate_type,aggregate_id,envelope_version,occurred_at,cloud_received_at,raw_payload_sha256_hex
+FROM cloud_edge_event_receipts
+WHERE ($1 = '' OR restaurant_id = $1)
+  AND ($2 = '' OR device_id = $2)
+  AND ($3 = '' OR event_type = $3)
+ORDER BY cloud_received_at DESC, id DESC
+LIMIT $4`, filter.RestaurantID, filter.DeviceID, filter.EventType, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]contracts.EdgeEventView, 0, limit)
+	for rows.Next() {
+		var view contracts.EdgeEventView
+		if err := rows.Scan(
+			&view.CloudReceiptID,
+			&view.IdempotencyKey,
+			&view.RestaurantID,
+			&view.DeviceID,
+			&view.CommandID,
+			&view.EventID,
+			&view.EdgeEventID,
+			&view.EventType,
+			&view.AggregateType,
+			&view.AggregateID,
+			&view.EnvelopeVersion,
+			&view.OccurredAt,
+			&view.CloudReceivedAt,
+			&view.RawPayloadSHA256Hex,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, view)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) UpsertMasterDataPackage(ctx context.Context, v contracts.MasterDataPackage) (contracts.MasterDataPackage, error) {
 	nodeDeviceID := strings.TrimSpace(v.NodeDeviceID)
 	payload := bytesTrimSpace(v.PayloadJSON)

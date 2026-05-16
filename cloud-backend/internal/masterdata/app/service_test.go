@@ -361,3 +361,53 @@ func newService() (*app.Service, *memory.Repository) {
 	repo := memory.NewRepository()
 	return app.NewService(repo, fixedClock{}, &fixedIDs{}), repo
 }
+
+func TestExistingReferenceUpdatesKeepLifecycleStatusesExact(t *testing.T) {
+	service, _ := newService()
+	ctx := context.Background()
+	restaurant, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "Demo Bistro", Timezone: "Europe/Moscow", Currency: "RUB", BusinessDayMode: "standard", BusinessDayBoundaryLocalTime: "04:00"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: restaurant.ID, Kind: domain.CatalogItemDish, Name: "Tea", SKU: "TEA", BaseUnit: "portion"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived := domain.StatusArchived
+	catalog, err = service.UpdateCatalogItem(ctx, catalog.ID, app.UpdateCatalogItemCommand{Status: &archived})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog.Status != domain.StatusArchived || catalog.ArchivedAt == nil || catalog.CloudVersion != 2 {
+		t.Fatalf("expected archived catalog item with version bump, got %+v", catalog)
+	}
+	published := domain.StatusPublished
+	catalog, err = service.UpdateCatalogItem(ctx, catalog.ID, app.UpdateCatalogItemCommand{Name: "Black tea", Status: &published})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog.Status != domain.StatusPublished || catalog.ArchivedAt != nil || catalog.Name != "Black tea" || catalog.CloudVersion != 3 {
+		t.Fatalf("expected exact published status after edit, got %+v", catalog)
+	}
+
+	hall, err := service.CreateHall(ctx, app.CreateHallCommand{RestaurantID: restaurant.ID, Name: "Main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	table, err := service.CreateTable(ctx, app.CreateTableCommand{RestaurantID: restaurant.ID, HallID: hall.ID, Name: "A1", Seats: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft := domain.StatusDraft
+	table, err = service.UpdateTable(ctx, table.ID, app.UpdateTableCommand{Name: "A2", Seats: ptrInt64(4), Status: &draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if table.Status != domain.StatusDraft || table.Name != "A2" || table.Seats != 4 || table.ArchivedAt != nil {
+		t.Fatalf("expected table edit to keep draft status exactly, got %+v", table)
+	}
+}
+
+func ptrInt64(v int64) *int64 {
+	return &v
+}

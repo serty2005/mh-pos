@@ -506,6 +506,9 @@ func (s *Service) UpdateRestaurant(ctx context.Context, id string, cmd UpdateRes
 		archivedAt := restaurant.UpdatedAt
 		restaurant.ArchivedAt = &archivedAt
 	}
+	if restaurant.Status != domain.RestaurantArchived {
+		restaurant.ArchivedAt = nil
+	}
 	return s.repo.UpdateRestaurant(ctx, restaurant)
 }
 
@@ -680,9 +683,15 @@ func (s *Service) UpdateEmployee(ctx context.Context, id string, cmd UpdateEmplo
 		suspendedAt := employee.UpdatedAt
 		employee.SuspendedAt = &suspendedAt
 	}
+	if employee.Status != domain.EmployeeSuspended {
+		employee.SuspendedAt = nil
+	}
 	if employee.Status == domain.EmployeeArchived && employee.ArchivedAt == nil {
 		archivedAt := employee.UpdatedAt
 		employee.ArchivedAt = &archivedAt
+	}
+	if employee.Status != domain.EmployeeArchived {
+		employee.ArchivedAt = nil
 	}
 	return s.repo.UpdateEmployee(ctx, employee)
 }
@@ -816,6 +825,9 @@ func (s *Service) UpdateCatalogItem(ctx context.Context, id string, cmd UpdateCa
 		archivedAt := item.UpdatedAt
 		item.ArchivedAt = &archivedAt
 	}
+	if item.Status != domain.StatusArchived {
+		item.ArchivedAt = nil
+	}
 	return s.repo.UpdateCatalogItem(ctx, item)
 }
 
@@ -864,6 +876,9 @@ func (s *Service) UpdateCatalogFolder(ctx context.Context, id string, cmd Update
 	if folder.Status == domain.StatusArchived && folder.ArchivedAt == nil {
 		archivedAt := folder.UpdatedAt
 		folder.ArchivedAt = &archivedAt
+	}
+	if folder.Status != domain.StatusArchived {
+		folder.ArchivedAt = nil
 	}
 	return s.repo.UpdateCatalogFolder(ctx, folder)
 }
@@ -914,6 +929,9 @@ func (s *Service) UpdateFolderParameter(ctx context.Context, id string, cmd Upda
 		archivedAt := parameter.UpdatedAt
 		parameter.ArchivedAt = &archivedAt
 	}
+	if parameter.Status != domain.StatusArchived {
+		parameter.ArchivedAt = nil
+	}
 	return s.repo.UpdateFolderParameter(ctx, parameter)
 }
 
@@ -953,6 +971,9 @@ func (s *Service) UpdateCatalogTag(ctx context.Context, id string, cmd UpdateCat
 	if tag.Status == domain.StatusArchived && tag.ArchivedAt == nil {
 		archivedAt := tag.UpdatedAt
 		tag.ArchivedAt = &archivedAt
+	}
+	if tag.Status != domain.StatusArchived {
+		tag.ArchivedAt = nil
 	}
 	return s.repo.UpdateCatalogTag(ctx, tag)
 }
@@ -1012,6 +1033,9 @@ func (s *Service) UpdateModifierGroup(ctx context.Context, id string, cmd Update
 		archivedAt := group.UpdatedAt
 		group.ArchivedAt = &archivedAt
 	}
+	if group.Status != domain.StatusArchived {
+		group.ArchivedAt = nil
+	}
 	return s.repo.UpdateModifierGroup(ctx, group)
 }
 
@@ -1059,6 +1083,9 @@ func (s *Service) UpdateModifierOption(ctx context.Context, id string, cmd Updat
 		archivedAt := option.UpdatedAt
 		option.ArchivedAt = &archivedAt
 	}
+	if option.Status != domain.StatusArchived {
+		option.ArchivedAt = nil
+	}
 	return s.repo.UpdateModifierOption(ctx, option)
 }
 
@@ -1098,6 +1125,9 @@ func (s *Service) UpdateModifierGroupBinding(ctx context.Context, id string, cmd
 	if binding.Status == domain.StatusArchived && binding.ArchivedAt == nil {
 		archivedAt := binding.UpdatedAt
 		binding.ArchivedAt = &archivedAt
+	}
+	if binding.Status != domain.StatusArchived {
+		binding.ArchivedAt = nil
 	}
 	return s.repo.UpdateModifierGroupBinding(ctx, binding)
 }
@@ -1169,6 +1199,9 @@ func (s *Service) UpdatePricingPolicy(ctx context.Context, id string, cmd Update
 		archivedAt := policy.UpdatedAt
 		policy.ArchivedAt = &archivedAt
 	}
+	if policy.Status != domain.StatusArchived {
+		policy.ArchivedAt = nil
+	}
 	return s.repo.UpdatePricingPolicy(ctx, policy)
 }
 
@@ -1238,6 +1271,9 @@ func (s *Service) UpdateHall(ctx context.Context, id string, cmd UpdateHallComma
 	if hall.Status == domain.StatusArchived && hall.ArchivedAt == nil {
 		archivedAt := hall.UpdatedAt
 		hall.ArchivedAt = &archivedAt
+	}
+	if hall.Status != domain.StatusArchived {
+		hall.ArchivedAt = nil
 	}
 	return s.repo.UpdateHall(ctx, hall)
 }
@@ -1322,6 +1358,9 @@ func (s *Service) UpdateTable(ctx context.Context, id string, cmd UpdateTableCom
 	if table.Status == domain.StatusArchived && table.ArchivedAt == nil {
 		archivedAt := table.UpdatedAt
 		table.ArchivedAt = &archivedAt
+	}
+	if table.Status != domain.StatusArchived {
+		table.ArchivedAt = nil
 	}
 	return s.repo.UpdateTable(ctx, table)
 }
@@ -1469,6 +1508,9 @@ func (s *Service) UpdateMenuItem(ctx context.Context, id string, cmd UpdateMenuI
 	if item.Status == domain.StatusArchived && item.ArchivedAt == nil {
 		archivedAt := item.UpdatedAt
 		item.ArchivedAt = &archivedAt
+	}
+	if item.Status != domain.StatusArchived {
+		item.ArchivedAt = nil
 	}
 	return s.repo.UpdateMenuItem(ctx, item)
 }

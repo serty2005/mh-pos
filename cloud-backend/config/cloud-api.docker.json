@@ -1,5 +1,5 @@
 {
-  "MH_POS_VERSION": "0.1.2",
+  "MH_POS_VERSION": "0.1.3",
   "CLOUD_LOG_LEVEL": "INFO",
   "CLOUD_HTTP_ADDR": ":8090",
   "CLOUD_PUBLIC_URL": "http://cloud-api:8090",
