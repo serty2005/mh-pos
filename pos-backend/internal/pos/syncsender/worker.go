@@ -2,9 +2,11 @@ package syncsender
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -20,6 +22,9 @@ type OutboxService interface {
 	MarkOutboxSent(context.Context, string) error
 	MarkOutboxRetryableFailure(context.Context, string, string) error
 	SuspendOutboxMessage(context.Context, string, string) error
+	RefreshSyncExchangeState(context.Context) error
+	GetSyncExchangeState(context.Context) (SyncExchangeState, error)
+	ApplySyncExchangeCloudPackages(context.Context, []CloudPackage) error
 }
 
 type Sender interface {
@@ -28,6 +33,10 @@ type Sender interface {
 
 type BatchSender interface {
 	SendBatch(context.Context, []domain.OutboxMessage) ([]BatchSendResult, error)
+}
+
+type ExchangeSender interface {
+	Exchange(context.Context, SyncExchangeRequest) (SyncExchangeResponse, error)
 }
 
 type BatchSendResult struct {
@@ -56,6 +65,7 @@ type Config struct {
 	WorkerID     string
 	BatchSize    int
 	PollInterval time.Duration
+	PollJitter   time.Duration
 	ReclaimAfter time.Duration
 	SendTimeout  time.Duration
 }
@@ -76,6 +86,9 @@ func NewWorker(service OutboxService, sender Sender, config Config, logger *slog
 	}
 	if config.PollInterval <= 0 {
 		config.PollInterval = 2 * time.Second
+	}
+	if config.PollJitter < 0 {
+		config.PollJitter = 0
 	}
 	if config.ReclaimAfter <= 0 {
 		config.ReclaimAfter = 5 * time.Minute
@@ -119,8 +132,6 @@ func (w *Worker) Run(ctx context.Context) {
 		}, "worker_id", w.config.WorkerID)
 	}()
 
-	ticker := time.NewTicker(w.config.PollInterval)
-	defer ticker.Stop()
 	for {
 		if err := w.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			platformlog.Log(ctx, w.logger, slog.LevelWarn, "POS sync sender iteration failed", platformlog.Event{
@@ -130,10 +141,11 @@ func (w *Worker) Run(ctx context.Context) {
 				ErrorCode: "ITERATION_FAILED",
 			}, "worker_id", w.config.WorkerID, "error", err)
 		}
+		waitFor := w.nextPollDelay()
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-time.After(waitFor):
 		}
 	}
 }
@@ -198,6 +210,23 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 			continue
 		}
 		sendable = append(sendable, msg)
+	}
+	if exchangeSender, ok := w.sender.(ExchangeSender); ok {
+		if err := w.service.RefreshSyncExchangeState(ctx); err != nil {
+			platformlog.Log(ctx, w.logger, slog.LevelWarn, "POS sync sender provisioning refresh failed", platformlog.Event{
+				Operation: "sync.sender",
+				Action:    "exchange.refresh_state",
+				Result:    "rejected",
+				ErrorCode: "SYNC_EXCHANGE_STATE_REFRESH_FAILED",
+			}, "worker_id", w.config.WorkerID, "error", err)
+		}
+		state, err := w.service.GetSyncExchangeState(ctx)
+		if err != nil {
+			return fmt.Errorf("get sync exchange state: %w", err)
+		}
+		if state.NodeDeviceID != "" && state.AuthToken != "" {
+			return w.sendExchange(ctx, exchangeSender, sendable, state)
+		}
 	}
 	if len(sendable) == 0 {
 		return nil
@@ -289,6 +318,55 @@ func (w *Worker) sendBatch(ctx context.Context, sender BatchSender, messages []d
 		}
 		return fmt.Errorf("batch send failure: %w", err)
 	}
+	return w.processBatchResults(ctx, messages, results)
+}
+
+func (w *Worker) sendExchange(ctx context.Context, sender ExchangeSender, messages []domain.OutboxMessage, state SyncExchangeState) error {
+	events := make([]SyncExchangeEdgeEvent, 0, len(messages))
+	for _, msg := range messages {
+		events = append(events, SyncExchangeEdgeEvent{
+			ClientItemID: msg.ID,
+			Payload:      json.RawMessage(msg.PayloadJSON),
+		})
+	}
+	req := SyncExchangeRequest{
+		ProtocolVersion: SyncExchangeProtocolVersion,
+		NodeDeviceID:    state.NodeDeviceID,
+		RestaurantID:    state.RestaurantID,
+		AuthToken:       state.AuthToken,
+		EdgeEvents:      events,
+		Streams:         append([]SyncExchangeStreamRequest(nil), state.Streams...),
+	}
+	platformlog.Log(ctx, w.logger, platformlog.LevelTrace, "POS sync sender exchange attempt", platformlog.Event{
+		Operation: "sync.sender",
+		Action:    "exchange.send",
+		Result:    "attempt",
+	}, "worker_id", w.config.WorkerID, "batch_count", len(messages), "stream_count", len(state.Streams))
+	sendCtx, cancel := context.WithTimeout(ctx, w.config.SendTimeout)
+	resp, err := sender.Exchange(sendCtx, req)
+	cancel()
+	if err != nil {
+		for _, msg := range messages {
+			if markErr := w.service.MarkOutboxRetryableFailure(ctx, msg.ID, err.Error()); markErr != nil {
+				return fmt.Errorf("mark exchange retryable outbox failure %s: %w", msg.ID, markErr)
+			}
+		}
+		return fmt.Errorf("exchange send failure: %w", err)
+	}
+	if len(resp.CloudPackages) > 0 {
+		if err := w.service.ApplySyncExchangeCloudPackages(ctx, resp.CloudPackages); err != nil {
+			for _, msg := range messages {
+				if markErr := w.service.MarkOutboxRetryableFailure(ctx, msg.ID, err.Error()); markErr != nil {
+					return fmt.Errorf("mark exchange apply retryable outbox failure %s: %w", msg.ID, markErr)
+				}
+			}
+			return fmt.Errorf("apply exchange cloud packages: %w", err)
+		}
+	}
+	return w.processBatchResults(ctx, messages, resp.EdgeAcks)
+}
+
+func (w *Worker) processBatchResults(ctx context.Context, messages []domain.OutboxMessage, results []BatchSendResult) error {
 	resultByID := make(map[string]BatchSendResult, len(results))
 	for _, item := range results {
 		if strings.TrimSpace(item.OutboxID) == "" {
@@ -388,4 +466,11 @@ func derefOptional(v *string) string {
 		return ""
 	}
 	return *v
+}
+
+func (w *Worker) nextPollDelay() time.Duration {
+	if w.config.PollJitter <= 0 {
+		return w.config.PollInterval
+	}
+	return w.config.PollInterval + time.Duration(rand.Int63n(w.config.PollJitter.Nanoseconds()+1))
 }

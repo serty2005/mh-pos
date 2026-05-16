@@ -3,6 +3,7 @@ package syncsender
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"strings"
@@ -19,6 +20,9 @@ type fakeOutboxService struct {
 	retryable     []string
 	suspended     map[string]string
 	releasedLocks []string
+	exchangeState SyncExchangeState
+	applied       []CloudPackage
+	applyErr      error
 }
 
 func (f *fakeOutboxService) ClaimPendingOutbox(context.Context, app.ClaimPendingOutboxCommand) ([]domain.OutboxMessage, error) {
@@ -52,6 +56,27 @@ func (f *fakeOutboxService) SuspendOutboxMessage(_ context.Context, id, reason s
 	return nil
 }
 
+func (f *fakeOutboxService) RefreshSyncExchangeState(context.Context) error {
+	return nil
+}
+
+func (f *fakeOutboxService) GetSyncExchangeState(context.Context) (SyncExchangeState, error) {
+	if f.exchangeState.NodeDeviceID == "" {
+		f.exchangeState = SyncExchangeState{
+			NodeDeviceID: "node-1",
+			RestaurantID: "restaurant-1",
+			AuthToken:    "node-token",
+			Streams:      []SyncExchangeStreamRequest{{StreamName: "catalog", LastCloudVersion: 1, CheckpointToken: "catalog:1"}},
+		}
+	}
+	return f.exchangeState, nil
+}
+
+func (f *fakeOutboxService) ApplySyncExchangeCloudPackages(_ context.Context, packages []CloudPackage) error {
+	f.applied = append(f.applied, packages...)
+	return f.applyErr
+}
+
 type fakeSender struct {
 	err error
 }
@@ -63,6 +88,26 @@ func (s fakeSender) Send(context.Context, domain.OutboxMessage) error {
 type fakeBatchSender struct {
 	results []BatchSendResult
 	err     error
+}
+
+type fakeExchangeSender struct {
+	requests  []SyncExchangeRequest
+	response  SyncExchangeResponse
+	err       error
+	sendCalls int
+}
+
+func (s *fakeExchangeSender) Send(context.Context, domain.OutboxMessage) error {
+	s.sendCalls++
+	return nil
+}
+
+func (s *fakeExchangeSender) Exchange(_ context.Context, req SyncExchangeRequest) (SyncExchangeResponse, error) {
+	s.requests = append(s.requests, req)
+	if s.err != nil {
+		return SyncExchangeResponse{}, s.err
+	}
+	return s.response, nil
 }
 
 func (s fakeBatchSender) Send(context.Context, domain.OutboxMessage) error {
@@ -217,5 +262,82 @@ func TestRunOnceProcessesBatchItemLevelAck(t *testing.T) {
 	}
 	if len(service.retryable) != 1 || service.retryable[0] != "outbox-3" {
 		t.Fatalf("expected outbox-3 retryable, got retryable=%v", service.retryable)
+	}
+}
+
+func TestRunOnceUsesExchangeAppliesPackageThenMarksAck(t *testing.T) {
+	service := &fakeOutboxService{claimed: []domain.OutboxMessage{
+		{ID: "outbox-1", SequenceNo: 1, Origin: domain.OriginEdgeDevice, SyncDirection: domain.SyncDirectionEdgeToCloud, CommandType: "OrderCreated", PayloadJSON: `{"event_id":"event-1"}`},
+	}}
+	sender := &fakeExchangeSender{response: SyncExchangeResponse{
+		Status:   SyncExchangeStatusAccepted,
+		EdgeAcks: []BatchSendResult{{OutboxID: "outbox-1", Status: BatchSendAccepted}},
+		CloudPackages: []CloudPackage{{
+			StreamName:      "catalog",
+			SyncMode:        "incremental",
+			CloudVersion:    2,
+			CheckpointToken: "catalog:2",
+			PayloadJSON:     json.RawMessage(`{"catalog_items":[{"id":"cat-1","name":"Tea"}]}`),
+		}},
+	}}
+	worker := NewWorker(service, sender, Config{WorkerID: "worker-test", PollInterval: time.Hour}, nil)
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(sender.requests) != 1 || len(sender.requests[0].EdgeEvents) != 1 || sender.requests[0].EdgeEvents[0].ClientItemID != "outbox-1" {
+		t.Fatalf("expected one exchange request with outbox payload, got %+v", sender.requests)
+	}
+	if len(sender.requests[0].Streams) != 1 || sender.requests[0].Streams[0].LastCloudVersion != 1 {
+		t.Fatalf("expected local stream checkpoint in request, got %+v", sender.requests[0].Streams)
+	}
+	if len(service.applied) != 1 || service.applied[0].CloudVersion != 2 {
+		t.Fatalf("expected cloud package applied before ack, got %+v", service.applied)
+	}
+	if len(service.sent) != 1 || service.sent[0] != "outbox-1" {
+		t.Fatalf("expected outbox marked sent after apply, got %+v", service.sent)
+	}
+	if sender.sendCalls != 0 {
+		t.Fatalf("legacy Send must not be used when exchange is available")
+	}
+}
+
+func TestRunOnceDoesNotMarkAckWhenExchangePackageApplyFails(t *testing.T) {
+	service := &fakeOutboxService{
+		claimed:  []domain.OutboxMessage{{ID: "outbox-1", SequenceNo: 1, Origin: domain.OriginEdgeDevice, SyncDirection: domain.SyncDirectionEdgeToCloud, CommandType: "OrderCreated", PayloadJSON: `{"event_id":"event-1"}`}},
+		applyErr: errors.New("apply failed"),
+	}
+	sender := &fakeExchangeSender{response: SyncExchangeResponse{
+		Status:        SyncExchangeStatusAccepted,
+		EdgeAcks:      []BatchSendResult{{OutboxID: "outbox-1", Status: BatchSendAccepted}},
+		CloudPackages: []CloudPackage{{StreamName: "catalog", SyncMode: "incremental", CloudVersion: 2, PayloadJSON: json.RawMessage(`{"catalog_items":[{"id":"cat-1"}]}`)}},
+	}}
+	worker := NewWorker(service, sender, Config{WorkerID: "worker-test", PollInterval: time.Hour}, nil)
+
+	if err := worker.RunOnce(context.Background()); err == nil {
+		t.Fatal("expected apply failure")
+	}
+	if len(service.sent) != 0 {
+		t.Fatalf("outbox must not be marked sent when package apply fails, got %+v", service.sent)
+	}
+	if len(service.retryable) != 1 || service.retryable[0] != "outbox-1" {
+		t.Fatalf("expected claimed item marked retryable for safe idempotent replay, got %+v", service.retryable)
+	}
+}
+
+func TestNextPollDelayWithoutJitterUsesBaseInterval(t *testing.T) {
+	worker := NewWorker(&fakeOutboxService{}, fakeSender{}, Config{PollInterval: 30 * time.Second, PollJitter: 0}, nil)
+	if got := worker.nextPollDelay(); got != 30*time.Second {
+		t.Fatalf("expected exact interval, got %s", got)
+	}
+}
+
+func TestNextPollDelayWithJitterStaysWithinBounds(t *testing.T) {
+	worker := NewWorker(&fakeOutboxService{}, fakeSender{}, Config{PollInterval: 30 * time.Second, PollJitter: 3 * time.Second}, nil)
+	for i := 0; i < 100; i++ {
+		got := worker.nextPollDelay()
+		if got < 30*time.Second || got > 33*time.Second {
+			t.Fatalf("expected delay in [30s,33s], got %s", got)
+		}
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -48,6 +49,7 @@ func NewRouterWithProvisioning(service *app.Service, provisioningService *provis
 		r.Get("/sync/edge-events", h.listEdgeEvents)
 		r.Post("/sync/edge-events", h.receiveEdgeEvent)
 		r.Post("/sync/edge-events/batch", h.receiveEdgeEventBatch)
+		r.Post("/sync/exchange", h.exchange)
 		r.Put("/provisioning/master-data/{stream}", h.upsertMasterDataPackage)
 		r.Get("/provisioning/master-data/{stream}", h.getMasterDataPackage)
 		if len(masterServices) > 0 {
@@ -204,6 +206,85 @@ func (h *Handler) receiveEdgeEventBatch(w http.ResponseWriter, r *http.Request) 
 	}
 	ack := h.service.ReceiveBatch(r.Context(), raws)
 	writeJSON(w, http.StatusAccepted, ack)
+}
+
+func (h *Handler) exchange(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+	if err != nil {
+		httpx.Error(w, fmt.Errorf("%w: exchange body read failed", contracts.ErrInvalidEnvelope), r)
+		return
+	}
+	req, err := contracts.DecodeSyncExchangeRequest(bytes.TrimSpace(body))
+	if err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	token := bearerToken(r.Header.Get("Authorization"))
+	if err := h.service.AuthenticateNodeToken(r.Context(), req.NodeDeviceID, req.RestaurantID, token); err != nil {
+		platformExchangeLog(r, "auth", "rejected", errorCodeForExchange(err), req.NodeDeviceID)
+		httpx.Error(w, err, r)
+		return
+	}
+	platformExchangeLog(r, "exchange", "attempt", "", req.NodeDeviceID)
+	resp, err := h.service.Exchange(r.Context(), req)
+	if err != nil {
+		platformExchangeLog(r, "exchange", "rejected", errorCodeForExchange(err), req.NodeDeviceID)
+		httpx.Error(w, err, r)
+		return
+	}
+	platformExchangeLog(r, "exchange", "success", "", req.NodeDeviceID)
+	writeJSON(w, http.StatusAccepted, resp)
+}
+
+func bearerToken(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	const prefix = "Bearer "
+	if !strings.HasPrefix(raw, prefix) {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimPrefix(raw, prefix))
+}
+
+func platformExchangeLog(r *http.Request, action, result, errorCode, nodeDeviceID string) {
+	slog.Log(r.Context(), slog.LevelInfo, "cloud sync exchange",
+		"request_id", middleware.GetReqID(r.Context()),
+		"operation", "sync.exchange",
+		"action", action,
+		"result", result,
+		"error_code", errorCode,
+		"node_device_id", maskID(nodeDeviceID),
+	)
+}
+
+func errorCodeForExchange(err error) string {
+	switch {
+	case errors.Is(err, contracts.ErrSyncUnauthorized):
+		return "SYNC_UNAUTHORIZED"
+	case errors.Is(err, contracts.ErrSyncForbidden):
+		return "SYNC_FORBIDDEN"
+	case errors.Is(err, contracts.ErrSyncRevisionAhead):
+		return "SYNC_REVISION_AHEAD"
+	case errors.Is(err, contracts.ErrSyncCheckpointConflict):
+		return "SYNC_CHECKPOINT_CONFLICT"
+	case errors.Is(err, contracts.ErrInvalidEnvelope):
+		return "VALIDATION_FAILED"
+	default:
+		return "INTERNAL_ERROR"
+	}
+}
+
+func maskID(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	if len(v) <= 8 {
+		return v
+	}
+	return v[:8] + "..."
 }
 
 func (h *Handler) upsertMasterDataPackage(w http.ResponseWriter, r *http.Request) {

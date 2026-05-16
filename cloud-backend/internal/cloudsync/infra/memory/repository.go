@@ -2,6 +2,9 @@ package memory
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"slices"
 	"strconv"
@@ -21,6 +24,13 @@ type Repository struct {
 	masterDataByKey   map[string]contracts.MasterDataPackage
 	eventStatsByKey   map[string]EventTypeProjection
 	shiftFinanceByKey map[string]ShiftFinanceProjection
+	authorizedNodes   map[string]authorizedNode
+}
+
+type authorizedNode struct {
+	RestaurantID    string
+	CredentialsHash string
+	Status          string
 }
 
 type storedEvent struct {
@@ -68,6 +78,7 @@ func NewRepository() *Repository {
 		masterDataByKey:   map[string]contracts.MasterDataPackage{},
 		eventStatsByKey:   map[string]EventTypeProjection{},
 		shiftFinanceByKey: map[string]ShiftFinanceProjection{},
+		authorizedNodes:   map[string]authorizedNode{},
 	}
 }
 
@@ -181,6 +192,33 @@ func (r *Repository) GetMasterDataPackage(_ context.Context, streamName, nodeDev
 		return copyMasterDataPackage(v), nil
 	}
 	return contracts.MasterDataPackage{}, contracts.ErrNotFound
+}
+
+func (r *Repository) AuthenticateNodeToken(_ context.Context, nodeDeviceID, restaurantID, token string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	node, ok := r.authorizedNodes[strings.TrimSpace(nodeDeviceID)]
+	if !ok || node.Status != "assigned" {
+		return contracts.ErrSyncUnauthorized
+	}
+	if strings.TrimSpace(node.RestaurantID) != strings.TrimSpace(restaurantID) {
+		return contracts.ErrSyncForbidden
+	}
+	if subtle.ConstantTimeCompare([]byte(node.CredentialsHash), []byte(secretHash(token))) != 1 {
+		return contracts.ErrSyncUnauthorized
+	}
+	return nil
+}
+
+func (r *Repository) AuthorizeNodeForTest(nodeDeviceID, restaurantID, token string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.authorizedNodes[strings.TrimSpace(nodeDeviceID)] = authorizedNode{
+		RestaurantID:    strings.TrimSpace(restaurantID),
+		CredentialsHash: secretHash(token),
+		Status:          "assigned",
+	}
+	return nil
 }
 
 func (r *Repository) Count() int {
@@ -310,4 +348,9 @@ func copyMasterDataPackage(v contracts.MasterDataPackage) contracts.MasterDataPa
 		copyValue.CloudUpdatedAt = &t
 	}
 	return copyValue
+}
+
+func secretHash(v string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(v)))
+	return "sha256:" + hex.EncodeToString(sum[:])
 }

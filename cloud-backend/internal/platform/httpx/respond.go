@@ -65,6 +65,12 @@ func ClassifyError(err error) (int, ErrorBody) {
 
 func statusForError(err error) int {
 	switch {
+	case errors.Is(err, contracts.ErrSyncUnauthorized):
+		return http.StatusUnauthorized
+	case errors.Is(err, contracts.ErrSyncForbidden):
+		return http.StatusForbidden
+	case errors.Is(err, contracts.ErrSyncRevisionAhead), errors.Is(err, contracts.ErrSyncCheckpointConflict):
+		return http.StatusConflict
 	case errors.Is(err, domain.ErrPINAlreadyExists):
 		return http.StatusConflict
 	case errors.Is(err, provisioningdomain.ErrLicenseServerUnavailable):
@@ -100,6 +106,14 @@ func statusForError(err error) int {
 
 func codeForError(err error, status int) string {
 	switch {
+	case errors.Is(err, contracts.ErrSyncUnauthorized):
+		return "SYNC_UNAUTHORIZED"
+	case errors.Is(err, contracts.ErrSyncForbidden):
+		return "SYNC_FORBIDDEN"
+	case errors.Is(err, contracts.ErrSyncRevisionAhead):
+		return "SYNC_REVISION_AHEAD"
+	case errors.Is(err, contracts.ErrSyncCheckpointConflict):
+		return "SYNC_CHECKPOINT_CONFLICT"
 	case errors.Is(err, domain.ErrPINAlreadyExists):
 		return "PIN_ALREADY_EXISTS"
 	case errors.Is(err, provisioningdomain.ErrLicenseServerUnavailable):
@@ -152,6 +166,10 @@ func messageKeyForStatus(status int) string {
 		return "errors.notFound"
 	case http.StatusConflict:
 		return "errors.conflict"
+	case http.StatusUnauthorized:
+		return "errors.auth.unauthorized"
+	case http.StatusForbidden:
+		return "errors.auth.forbidden"
 	case http.StatusServiceUnavailable:
 		return "errors.infrastructure.unavailable"
 	default:
@@ -161,6 +179,14 @@ func messageKeyForStatus(status int) string {
 
 func messageKeyForCode(code, fallback string) string {
 	switch code {
+	case "SYNC_UNAUTHORIZED":
+		return "errors.sync.unauthorized"
+	case "SYNC_FORBIDDEN":
+		return "errors.sync.forbidden"
+	case "SYNC_REVISION_AHEAD":
+		return "errors.sync.revisionAhead"
+	case "SYNC_CHECKPOINT_CONFLICT":
+		return "errors.sync.checkpointConflict"
 	case "PIN_ALREADY_EXISTS":
 		return "errors.employee.pinAlreadyExists"
 	case "DEVICE_ALREADY_REGISTERED":

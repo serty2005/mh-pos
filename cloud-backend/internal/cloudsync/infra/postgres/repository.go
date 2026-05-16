@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -258,6 +260,30 @@ LIMIT 1`, streamName, nodeDeviceID).Scan(
 	return out, nil
 }
 
+func (r *Repository) AuthenticateNodeToken(ctx context.Context, nodeDeviceID, restaurantID, token string) error {
+	var storedRestaurantID, status, credentialsHash string
+	err := r.pool.QueryRow(ctx, `
+SELECT COALESCE(restaurant_id,''), status, COALESCE(credentials_hash,'')
+FROM cloud_edge_nodes
+WHERE node_device_id = $1`, strings.TrimSpace(nodeDeviceID)).Scan(&storedRestaurantID, &status, &credentialsHash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return contracts.ErrSyncUnauthorized
+	}
+	if err != nil {
+		return err
+	}
+	if status != "assigned" || strings.TrimSpace(credentialsHash) == "" {
+		return contracts.ErrSyncUnauthorized
+	}
+	if strings.TrimSpace(storedRestaurantID) != strings.TrimSpace(restaurantID) {
+		return contracts.ErrSyncForbidden
+	}
+	if subtle.ConstantTimeCompare([]byte(credentialsHash), []byte(secretHash(token))) != 1 {
+		return contracts.ErrSyncUnauthorized
+	}
+	return nil
+}
+
 func (r *Repository) applyEventProjections(ctx context.Context, tx pgx.Tx, receipt app.EdgeEventReceipt) error {
 	if _, err := tx.Exec(ctx, `
 INSERT INTO cloud_projection_event_type_stats(
@@ -442,4 +468,9 @@ func newID() (string, error) {
 		hex.EncodeToString(b[8:10]),
 		hex.EncodeToString(b[10:16]),
 	), nil
+}
+
+func secretHash(v string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(v)))
+	return "sha256:" + hex.EncodeToString(sum[:])
 }

@@ -11,6 +11,104 @@
 - POS Edge can continue cashier runtime while Cloud is unavailable.
 - Directional ownership matrix is maintained in `docs/sync/directional-sync-ownership.md`.
 
+## SyncExchange v1
+
+Реализовано сейчас:
+
+- `POST /api/v1/sync/exchange` является приоритетным Cloud-Edge циклом для POS Edge worker.
+- Endpoint требует `Authorization: Bearer <node_token>`; Cloud проверяет token hash из `cloud_edge_nodes`, `node_device_id`, assigned restaurant и status `assigned`.
+- Legacy `POST /api/v1/sync/edge-events` и `POST /api/v1/sync/edge-events/batch` остаются совместимыми путями приема Edge events.
+
+Request:
+
+```json
+{
+  "protocol_version": "sync_exchange.v1",
+  "node_device_id": "edge-node-id",
+  "restaurant_id": "restaurant-id",
+  "edge_events": [
+    {
+      "client_item_id": "pos_sync_outbox.id",
+      "payload": {
+        "version": "1",
+        "event_id": "event-id",
+        "command_id": "command-id",
+        "event_type": "OrderCreated",
+        "aggregate_type": "Order",
+        "aggregate_id": "order-id",
+        "restaurant_id": "restaurant-id",
+        "device_id": "edge-node-id",
+        "node_device_id": "edge-node-id",
+        "occurred_at": "2026-05-07T10:00:00Z",
+        "payload": {
+          "origin": "edge_device",
+          "data": {}
+        }
+      }
+    }
+  ],
+  "streams": [
+    {
+      "stream_name": "catalog",
+      "last_cloud_version": 42,
+      "checkpoint_token": "catalog:42"
+    }
+  ]
+}
+```
+
+Response:
+
+```json
+{
+  "protocol_version": "sync_exchange.v1",
+  "status": "partial",
+  "edge_acks": [
+    {
+      "client_item_id": "pos_sync_outbox.id",
+      "status": "accepted",
+      "ack": {
+        "status": "accepted",
+        "event_id": "event-id"
+      }
+    }
+  ],
+  "stream_results": [
+    {
+      "stream_name": "catalog",
+      "status": "changed",
+      "cloud_version": 43,
+      "checkpoint_token": "catalog:43"
+    }
+  ],
+  "cloud_packages": [
+    {
+      "stream_name": "catalog",
+      "node_device_id": "edge-node-id",
+      "restaurant_id": "restaurant-id",
+      "sync_mode": "incremental",
+      "cloud_version": 43,
+      "checkpoint_token": "catalog:43",
+      "payload_json": {
+        "catalog_items": []
+      }
+    }
+  ]
+}
+```
+
+Правила:
+
+- `edge_events` ограничен 100 items; один envelope ограничен 2 MiB; body endpoint ограничен 8 MiB.
+- Поддерживаемые exchange streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
+- ACK statuses: `accepted`, `rejected`, `retryable`; rejected/retryable items возвращают стабильный `error_code` и `message_key`.
+- Если stream package отсутствует, `stream_results.status = "not_found"` и HTTP остается успешным.
+- Unknown stream отклоняет весь request как `400 VALIDATION_FAILED` до приема Edge events.
+- Edge revision больше Cloud revision отклоняет весь request как `409 SYNC_REVISION_AHEAD` до приема Edge events.
+- Равная revision с другим checkpoint отклоняет весь request как `409 SYNC_CHECKPOINT_CONFLICT` до приема Edge events.
+- POS Edge применяет `cloud_packages` через существующий `mastersync.Service`; stream data и `cloud_master_sync_state` фиксируются одной SQLite transaction boundary.
+- Если Edge не смог применить Cloud package, outbox ACK не коммитится как `sent`; следующий exchange безопасно повторяет Edge events через Cloud idempotency.
+
 ## Cloud -> Edge Master Data Ingest
 
 POS Edge endpoints:

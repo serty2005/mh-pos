@@ -118,6 +118,36 @@ func (c *Client) SendBatch(ctx context.Context, messages []domain.OutboxMessage)
 	return out, nil
 }
 
+func (c *Client) Exchange(ctx context.Context, reqBody syncsender.SyncExchangeRequest) (syncsender.SyncExchangeResponse, error) {
+	if c.endpoint == "" {
+		return syncsender.SyncExchangeResponse{}, fmt.Errorf("cloud sync endpoint is not configured")
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return syncsender.SyncExchangeResponse{}, syncsender.NonRetryableError{Reason: fmt.Sprintf("cloud exchange request is not valid JSON: %v", err)}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, exchangeEndpoint(c.endpoint), bytes.NewReader(body))
+	if err != nil {
+		return syncsender.SyncExchangeResponse{}, syncsender.NonRetryableError{Reason: err.Error()}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(reqBody.AuthToken))
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return syncsender.SyncExchangeResponse{}, err
+	}
+	defer resp.Body.Close()
+	rawBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return parseExchangeResponse(rawBody)
+	}
+	reason := fmt.Sprintf("cloud exchange returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(rawBody)))
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+		return syncsender.SyncExchangeResponse{}, fmt.Errorf("%s", reason)
+	}
+	return syncsender.SyncExchangeResponse{}, syncsender.NonRetryableError{Reason: reason}
+}
+
 func validateAck(body []byte, msg domain.OutboxMessage) error {
 	var envelope struct {
 		EventID string `json:"event_id"`
@@ -199,6 +229,69 @@ func parseBatchAck(body []byte, messages []domain.OutboxMessage) ([]syncsender.B
 	return out, nil
 }
 
+func parseExchangeResponse(body []byte) (syncsender.SyncExchangeResponse, error) {
+	var raw struct {
+		ProtocolVersion string `json:"protocol_version"`
+		Status          string `json:"status"`
+		EdgeAcks        []struct {
+			ClientItemID string `json:"client_item_id"`
+			Status       string `json:"status"`
+			ErrorCode    string `json:"error_code"`
+			MessageKey   string `json:"message_key"`
+			Ack          *struct {
+				Status  string `json:"status"`
+				EventID string `json:"event_id"`
+			} `json:"ack"`
+		} `json:"edge_acks"`
+		CloudPackages []syncsender.CloudPackage `json:"cloud_packages"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return syncsender.SyncExchangeResponse{}, fmt.Errorf("cloud exchange response is not valid JSON: %w", err)
+	}
+	if raw.ProtocolVersion != syncsender.SyncExchangeProtocolVersion {
+		return syncsender.SyncExchangeResponse{}, syncsender.NonRetryableError{Reason: "cloud exchange protocol_version is unsupported"}
+	}
+	out := syncsender.SyncExchangeResponse{
+		Status:        strings.TrimSpace(raw.Status),
+		CloudPackages: append([]syncsender.CloudPackage(nil), raw.CloudPackages...),
+	}
+	for _, item := range raw.EdgeAcks {
+		result := syncsender.BatchSendResult{OutboxID: strings.TrimSpace(item.ClientItemID)}
+		switch strings.ToLower(strings.TrimSpace(item.Status)) {
+		case "accepted":
+			if item.Ack == nil || item.Ack.Status != "accepted" {
+				result.Status = syncsender.BatchSendRetryable
+				result.Reason = "cloud exchange ack item has invalid accepted payload"
+			} else {
+				result.Status = syncsender.BatchSendAccepted
+			}
+		case "rejected":
+			result.Status = syncsender.BatchSendRejected
+			result.Reason = strings.TrimSpace(item.ErrorCode)
+			if result.Reason == "" {
+				result.Reason = strings.TrimSpace(item.MessageKey)
+			}
+			if result.Reason == "" {
+				result.Reason = "cloud exchange item rejected"
+			}
+		case "retryable":
+			result.Status = syncsender.BatchSendRetryable
+			result.Reason = strings.TrimSpace(item.ErrorCode)
+			if result.Reason == "" {
+				result.Reason = strings.TrimSpace(item.MessageKey)
+			}
+			if result.Reason == "" {
+				result.Reason = "cloud exchange item retryable"
+			}
+		default:
+			result.Status = syncsender.BatchSendRetryable
+			result.Reason = "cloud exchange item status is unknown"
+		}
+		out.EdgeAcks = append(out.EdgeAcks, result)
+	}
+	return out, nil
+}
+
 func validateAckEventID(eventID string, msg domain.OutboxMessage) error {
 	var envelope struct {
 		EventID string `json:"event_id"`
@@ -218,4 +311,18 @@ func batchEndpoint(singleEndpoint string) string {
 		return trimmed
 	}
 	return trimmed + "/batch"
+}
+
+func exchangeEndpoint(singleEndpoint string) string {
+	trimmed := strings.TrimRight(strings.TrimSpace(singleEndpoint), "/")
+	if strings.HasSuffix(trimmed, "/api/v1/sync/exchange") {
+		return trimmed
+	}
+	if strings.HasSuffix(trimmed, "/api/v1/sync/edge-events") {
+		return strings.TrimSuffix(trimmed, "/api/v1/sync/edge-events") + "/api/v1/sync/exchange"
+	}
+	if strings.HasSuffix(trimmed, "/api/v1/sync/edge-events/batch") {
+		return strings.TrimSuffix(trimmed, "/api/v1/sync/edge-events/batch") + "/api/v1/sync/exchange"
+	}
+	return trimmed + "/api/v1/sync/exchange"
 }

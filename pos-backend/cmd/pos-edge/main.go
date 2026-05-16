@@ -102,7 +102,8 @@ func run() error {
 		worker := syncsender.NewWorker(service, poscloudsync.NewClient(cloudEndpoint), syncsender.Config{
 			WorkerID:     cfg.Get("POS_SYNC_SENDER_ID", "pos-sync-sender-main"),
 			BatchSize:    cfg.Int("POS_SYNC_SENDER_BATCH_SIZE", 25),
-			PollInterval: envDuration(cfg.Get("POS_SYNC_SENDER_POLL_INTERVAL", ""), 2*time.Second),
+			PollInterval: envDuration(cfg.Get("POS_SYNC_SENDER_POLL_INTERVAL", ""), 30*time.Second),
+			PollJitter:   envDuration(cfg.Get("POS_SYNC_SENDER_POLL_JITTER", ""), 3*time.Second),
 			ReclaimAfter: envDuration(cfg.Get("POS_SYNC_SENDER_RECLAIM_AFTER", ""), 5*time.Minute),
 			SendTimeout:  envDuration(cfg.Get("POS_SYNC_SENDER_SEND_TIMEOUT", ""), 10*time.Second),
 		}, slog.Default())

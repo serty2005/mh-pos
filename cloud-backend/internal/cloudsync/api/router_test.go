@@ -104,6 +104,55 @@ func TestPostBatchEdgeEventsReturnsItemLevelAck(t *testing.T) {
 	}
 }
 
+func TestPostExchangeRequiresNodeTokenAndReturnsPackage(t *testing.T) {
+	repo := memory.NewRepository()
+	if err := repo.AuthorizeNodeForTest("node-1", "restaurant-1", "node-token"); err != nil {
+		t.Fatal(err)
+	}
+	service := app.NewService(repo, fixedClock{})
+	if _, err := service.UpsertMasterDataPackage(t.Context(), contracts.MasterDataPackage{
+		StreamName:      contracts.MasterDataStreamCatalog,
+		NodeDeviceID:    "node-1",
+		RestaurantID:    "restaurant-1",
+		SyncMode:        contracts.SyncModeIncremental,
+		CloudVersion:    8,
+		CheckpointToken: "catalog:8",
+		PayloadJSON:     json.RawMessage(`{"catalog_items":[{"id":"cat-1","name":"Tea"}]}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router := api.NewRouter(service)
+
+	body := []byte(`{
+		"protocol_version":"sync_exchange.v1",
+		"node_device_id":"node-1",
+		"restaurant_id":"restaurant-1",
+		"edge_events":[],
+		"streams":[{"stream_name":"catalog","last_cloud_version":7,"checkpoint_token":"catalog:7"}]
+	}`)
+	unauthorizedReq := httptest.NewRequest(http.MethodPost, "/api/v1/sync/exchange", bytes.NewReader(body))
+	unauthorizedRec := httptest.NewRecorder()
+	router.ServeHTTP(unauthorizedRec, unauthorizedReq)
+	if unauthorizedRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without node token, got %d: %s", unauthorizedRec.Code, unauthorizedRec.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/exchange", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer node-token")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 exchange, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp contracts.SyncExchangeResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.CloudPackages) != 1 || resp.CloudPackages[0].CloudVersion != 8 {
+		t.Fatalf("expected catalog package in exchange response, got %+v", resp)
+	}
+}
+
 func TestProvisioningMasterDataPutAndGet(t *testing.T) {
 	repo := memory.NewRepository()
 	router := api.NewRouter(app.NewService(repo, fixedClock{}))
