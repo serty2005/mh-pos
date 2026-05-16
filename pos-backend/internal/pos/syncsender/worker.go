@@ -62,19 +62,21 @@ func (e NonRetryableError) Error() string {
 }
 
 type Config struct {
-	WorkerID     string
-	BatchSize    int
-	PollInterval time.Duration
-	PollJitter   time.Duration
-	ReclaimAfter time.Duration
-	SendTimeout  time.Duration
+	WorkerID          string
+	BatchSize         int
+	PollInterval      time.Duration
+	PollJitter        time.Duration
+	CloudPullInterval time.Duration
+	ReclaimAfter      time.Duration
+	SendTimeout       time.Duration
 }
 
 type Worker struct {
-	service OutboxService
-	sender  Sender
-	config  Config
-	logger  *slog.Logger
+	service         OutboxService
+	sender          Sender
+	config          Config
+	logger          *slog.Logger
+	lastCloudPullAt time.Time
 }
 
 func NewWorker(service OutboxService, sender Sender, config Config, logger *slog.Logger) *Worker {
@@ -89,6 +91,9 @@ func NewWorker(service OutboxService, sender Sender, config Config, logger *slog
 	}
 	if config.PollJitter < 0 {
 		config.PollJitter = 0
+	}
+	if config.CloudPullInterval <= 0 {
+		config.CloudPullInterval = 30 * time.Second
 	}
 	if config.ReclaimAfter <= 0 {
 		config.ReclaimAfter = 5 * time.Minute
@@ -225,6 +230,9 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 			return fmt.Errorf("get sync exchange state: %w", err)
 		}
 		if state.NodeDeviceID != "" && state.AuthToken != "" {
+			if len(sendable) == 0 && !w.allowEmptyExchangePull(time.Now()) {
+				return nil
+			}
 			return w.sendExchange(ctx, exchangeSender, sendable, state)
 		}
 	}
@@ -298,6 +306,16 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 		return fmt.Errorf("retryable send failure for outbox %s: %w", msg.ID, sendErr)
 	}
 	return nil
+}
+
+func (w *Worker) allowEmptyExchangePull(now time.Time) bool {
+	// Пустой exchange нужен для Cloud->Edge pull, но не должен превращаться
+	// в шумный heartbeat на каждом poll tick, когда локального outbox нет.
+	if w.lastCloudPullAt.IsZero() || now.Sub(w.lastCloudPullAt) >= w.config.CloudPullInterval {
+		w.lastCloudPullAt = now
+		return true
+	}
+	return false
 }
 
 func (w *Worker) sendBatch(ctx context.Context, sender BatchSender, messages []domain.OutboxMessage) error {

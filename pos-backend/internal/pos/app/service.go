@@ -209,6 +209,26 @@ func (s *Service) PollCloudAssignment(ctx context.Context) (domain.ProvisioningS
 	return s.provisioning.PollAssignment(ctx)
 }
 
+// MaintainCloudProvisioning выполняет один безопасный фоновой шаг provisioning.
+// После pairing/assignment метод не ходит в Cloud, чтобы не сбрасывать node_token
+// и не создавать повторный register/assignment/snapshot цикл.
+func (s *Service) MaintainCloudProvisioning(ctx context.Context, cmd RegisterCloudProvisioningCommand) (domain.ProvisioningStatusView, error) {
+	status, err := s.GetProvisioningStatus(ctx)
+	if err != nil {
+		return domain.ProvisioningStatusView{}, err
+	}
+	switch status.Status {
+	case domain.ProvisioningPaired, domain.ProvisioningAssignedDownloadingSnapshot:
+		return status, nil
+	case domain.ProvisioningUnpairedRegistered:
+		return s.PollCloudAssignment(ctx)
+	case domain.ProvisioningNotConfigured, domain.ProvisioningError:
+		return s.RegisterCloudProvisioning(ctx, cmd)
+	default:
+		return status, nil
+	}
+}
+
 func (s *Service) PairViaLicense(ctx context.Context, cmd PairViaLicenseCommand) (domain.ProvisioningStatusView, error) {
 	return s.provisioning.PairViaLicense(ctx, cmd)
 }

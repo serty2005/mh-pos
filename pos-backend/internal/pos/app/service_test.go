@@ -14,6 +14,8 @@ import (
 	"pos-backend/internal/platform/clock"
 	platformsqlite "pos-backend/internal/platform/sqlite"
 	"pos-backend/internal/pos/app"
+	appmastersync "pos-backend/internal/pos/app/mastersync"
+	appprovisioning "pos-backend/internal/pos/app/provisioning"
 	appshared "pos-backend/internal/pos/app/shared"
 	"pos-backend/internal/pos/domain"
 	possqlite "pos-backend/internal/pos/infra/sqlite"
@@ -65,6 +67,27 @@ func (r checkCreatedOutboxFailingRepo) CreateOutboxMessage(ctx context.Context, 
 		return errInjectedOutbox
 	}
 	return r.Repository.CreateOutboxMessage(ctx, msg)
+}
+
+type countingProvisioningCloud struct {
+	registerCalls int
+	statusCalls   int
+	snapshotCalls int
+}
+
+func (c *countingProvisioningCloud) RegisterDevice(context.Context, string, appprovisioning.CloudRegisterRequest) (appprovisioning.CloudRegisterResponse, error) {
+	c.registerCalls++
+	return appprovisioning.CloudRegisterResponse{NodeDeviceID: "node-1", Status: "pending_admin_approval"}, nil
+}
+
+func (c *countingProvisioningCloud) AssignmentStatus(context.Context, string, string) (appprovisioning.CloudAssignmentStatus, error) {
+	c.statusCalls++
+	return appprovisioning.CloudAssignmentStatus{NodeDeviceID: "node-1", Status: "pending_admin_approval"}, nil
+}
+
+func (c *countingProvisioningCloud) DownloadSnapshot(context.Context, string) (appmastersync.ApplyMasterDataCommand, error) {
+	c.snapshotCalls++
+	return appmastersync.ApplyMasterDataCommand{}, nil
 }
 
 type fixture struct {
@@ -258,6 +281,30 @@ func TestPairEdgeNodeStoresKeyedPairingVerifier(t *testing.T) {
 	}
 	if strings.Contains(verifier, "MHPOS:") || strings.Contains(verifier, f.restaurant.ID) || strings.Contains(verifier, f.device.ID) {
 		t.Fatalf("expected pairing verifier not to expose raw pairing payload, got %q", verifier)
+	}
+}
+
+func TestMaintainCloudProvisioningSkipsCloudRegistrationWhenAlreadyPaired(t *testing.T) {
+	f := newFixture(t)
+	cloud := &countingProvisioningCloud{}
+	service := app.NewServiceWithOptions(f.repo, platformsqlite.NewTxManager(f.db), &testIDs{n: 9000}, fixedClock{}, app.ServiceOptions{
+		CloudProvisioningURL:    "http://cloud.example",
+		CloudProvisioningClient: cloud,
+	})
+
+	status, err := service.MaintainCloudProvisioning(f.ctx, app.RegisterCloudProvisioningCommand{
+		CloudURL:    "http://cloud.example",
+		DisplayName: "POS Terminal",
+		AppVersion:  "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Status != domain.ProvisioningPaired || !status.Paired {
+		t.Fatalf("expected paired provisioning status, got %+v", status)
+	}
+	if cloud.registerCalls != 0 || cloud.statusCalls != 0 || cloud.snapshotCalls != 0 {
+		t.Fatalf("expected paired maintenance not to call Cloud, got register=%d status=%d snapshot=%d", cloud.registerCalls, cloud.statusCalls, cloud.snapshotCalls)
 	}
 }
 

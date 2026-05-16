@@ -1,9 +1,15 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type APIRequestContext } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const cloudBase = (process.env.POS_E2E_CLOUD_BASE ?? 'http://localhost:8090/api/v1').replace(/\/$/, '');
 const edgeBase = (process.env.POS_E2E_API_BASE ?? 'http://localhost:8080/api/v1').replace(/\/$/, '');
 const bootstrapJson = process.env.POS_E2E_BOOTSTRAP_JSON;
-const nodeToken = process.env.POS_E2E_NODE_TOKEN;
+const nodeToken = process.env.POS_E2E_NODE_TOKEN?.trim();
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 type Bootstrap = {
   restaurant_id: string;
@@ -17,6 +23,7 @@ test.describe.configure({ mode: 'serial' });
 
 let demo: Bootstrap;
 let headers: Record<string, string>;
+let actorEmployeeId: string;
 
 test.beforeAll(async ({ playwright }) => {
   test.skip(!bootstrapJson, 'Run scripts/bootstrap-production-way.ps1 and pass POS_E2E_BOOTSTRAP_JSON');
@@ -31,17 +38,75 @@ test.beforeAll(async ({ playwright }) => {
   });
   expect(login.status(), await login.text()).toBe(201);
   const body = await login.json();
+  actorEmployeeId = body.actor.employee_id;
   headers = {
     'X-Node-Device-ID': demo.node_device_id,
     'X-Client-Device-ID': 'sync-exchange-e2e-client',
-    'X-Actor-Employee-ID': body.actor.employee_id,
+    'X-Actor-Employee-ID': actorEmployeeId,
     'X-Session-ID': body.session.id,
   };
   await request.dispose();
 });
 
-test('online worker exchange drains Edge outbox into Cloud receipt log', async ({ request }) => {
-  let commandId = `cmd-sync-exchange-e2e-${Date.now()}`;
+async function ensureOperationalState(request: APIRequestContext) {
+  const currentShift = await request.get(`${edgeBase}/employee-shifts/current`, { headers });
+  if (currentShift.status() === 200 && (await currentShift.text()).trim() !== 'null') {
+    return;
+  }
+  const openShift = await request.post(`${edgeBase}/employee-shifts/open`, {
+    headers,
+    data: {
+      command_id: `cmd-sync-exchange-open-shift-${Date.now()}`,
+      restaurant_id: demo.restaurant_id,
+      opened_by_employee_id: actorEmployeeId,
+    },
+  });
+  expect([201, 409]).toContain(openShift.status());
+
+  const currentCash = await request.get(`${edgeBase}/cash-shifts/current`, { headers });
+  if (currentCash.status() === 200) {
+    return;
+  }
+  const openCash = await request.post(`${edgeBase}/cash-shifts/open`, {
+    headers,
+    data: {
+      command_id: `cmd-sync-exchange-open-cash-${Date.now()}`,
+      restaurant_id: demo.restaurant_id,
+      opened_by_employee_id: actorEmployeeId,
+      opening_cash_amount: 0,
+    },
+  });
+  expect([201, 409]).toContain(openCash.status());
+}
+
+function loadCurrentNodeToken(): string {
+  const tokenDir = path.join(os.tmpdir(), 'mh-pos-sync-exchange-e2e');
+  try {
+    fs.mkdirSync(tokenDir, { recursive: true });
+    for (const suffix of ['', '-wal', '-shm']) {
+      execFileSync('docker', [
+        'cp',
+        `mh-pos-local-pos-edge-1:/app/data/pos-edge.db${suffix}`,
+        path.join(tokenDir, `pos-edge.db${suffix}`),
+      ], { stdio: 'ignore' });
+    }
+    const dbPath = path.join(tokenDir, 'pos-edge.db');
+    const script = [
+      'import sqlite3',
+      `con = sqlite3.connect(${JSON.stringify(dbPath)})`,
+      'row = con.execute("select credentials_token from edge_provisioning_state where id = \'local\'").fetchone()',
+      'print(row[0] if row else "")',
+    ].join('\n');
+    return execFileSync('python', ['-c', script], { encoding: 'utf-8' }).trim();
+  } catch {
+    return nodeToken ?? '';
+  }
+}
+
+async function createOutboxMutation(request: APIRequestContext, prefix: string): Promise<{ commandId: string; eventType: string }> {
+  await ensureOperationalState(request);
+
+  let commandId = `cmd-sync-exchange-${prefix}-${Date.now()}`;
   let eventType = 'OrderCreated';
   const order = await request.post(`${edgeBase}/orders`, {
     headers,
@@ -72,18 +137,31 @@ test('online worker exchange drains Edge outbox into Cloud receipt log', async (
     expect(order.status(), await order.text()).toBe(201);
   }
 
-  await expect.poll(async () => {
+  return { commandId, eventType };
+}
+
+async function cloudReceiptExists(request: APIRequestContext, commandId: string, eventType: string): Promise<boolean> {
+  try {
     const events = await request.get(`${cloudBase}/sync/edge-events?restaurant_id=${demo.restaurant_id}&event_type=${eventType}&limit=50`);
     if (events.status() !== 200) {
       return false;
     }
     const items = await events.json();
     return Array.isArray(items) && items.some((item) => item.command_id === commandId);
+  } catch {
+    return false;
+  }
+}
+
+test('online worker exchange drains Edge outbox into Cloud receipt log', async ({ request }) => {
+  const { commandId, eventType } = await createOutboxMutation(request, 'online');
+
+  await expect.poll(async () => {
+    return cloudReceiptExists(request, commandId, eventType);
   }, { timeout: 45_000 }).toBe(true);
 });
 
 test('direct exchange returns partial ACK and idempotent replay for the same event', async ({ request }) => {
-  test.skip(!nodeToken, 'Set POS_E2E_NODE_TOKEN to run direct authenticated exchange checks');
   const eventId = `event-sync-exchange-${Date.now()}`;
   const payload = {
     version: '1',
@@ -113,19 +191,23 @@ test('direct exchange returns partial ACK and idempotent replay for the same eve
       },
     },
   };
-  const exchange = async () => request.post(`${cloudBase}/sync/exchange`, {
-    headers: { Authorization: `Bearer ${nodeToken}` },
-    data: {
-      protocol_version: 'sync_exchange.v1',
-      node_device_id: demo.node_device_id,
-      restaurant_id: demo.restaurant_id,
-      edge_events: [
-        { client_item_id: 'e2e-valid', payload },
-        { client_item_id: 'e2e-invalid', payload: { version: '1' } },
-      ],
-      streams: [{ stream_name: 'catalog', last_cloud_version: 0 }],
-    },
-  });
+  const exchange = async () => {
+    const currentToken = loadCurrentNodeToken();
+    test.skip(!currentToken, 'Set POS_E2E_NODE_TOKEN or run docker compose stack to load node token');
+    return request.post(`${cloudBase}/sync/exchange`, {
+      headers: { Authorization: `Bearer ${currentToken}` },
+      data: {
+        protocol_version: 'sync_exchange.v1',
+        node_device_id: demo.node_device_id,
+        restaurant_id: demo.restaurant_id,
+        edge_events: [
+          { client_item_id: 'e2e-valid', payload },
+          { client_item_id: 'e2e-invalid', payload: { version: '1' } },
+        ],
+        streams: [{ stream_name: 'catalog', last_cloud_version: 0 }],
+      },
+    });
+  };
 
   const first = await exchange();
   expect(first.status(), await first.text()).toBe(202);
@@ -139,4 +221,27 @@ test('direct exchange returns partial ACK and idempotent replay for the same eve
   const replayBody = await replay.json();
   expect(replayBody.edge_acks.find((item) => item.client_item_id === 'e2e-valid')?.ack.cloud_receipt_id)
     .toBe(firstBody.edge_acks.find((item) => item.client_item_id === 'e2e-valid')?.ack.cloud_receipt_id);
+});
+
+test('worker exchange recovers and catches up after Cloud outage', async ({ request }) => {
+  const composeFile = path.join(repoRoot, 'docker-compose.local.yml');
+  execFileSync('docker', ['compose', '-f', composeFile, 'stop', 'cloud-api'], { cwd: repoRoot, stdio: 'ignore' });
+
+  let commandId = '';
+  let eventType = '';
+  try {
+    const mutation = await createOutboxMutation(request, 'recovery');
+    commandId = mutation.commandId;
+    eventType = mutation.eventType;
+
+    await expect.poll(async () => {
+      return cloudReceiptExists(request, commandId, eventType);
+    }, { timeout: 5_000 }).toBe(false);
+  } finally {
+    execFileSync('docker', ['compose', '-f', composeFile, 'start', 'cloud-api'], { cwd: repoRoot, stdio: 'ignore' });
+  }
+
+  await expect.poll(async () => {
+    return cloudReceiptExists(request, commandId, eventType);
+  }, { timeout: 90_000 }).toBe(true);
 });

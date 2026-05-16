@@ -127,7 +127,7 @@ export const i18n = createI18n({
           tables: 'Cloud-owned столы с привязкой к залу.',
           menuItems: 'Продаваемые позиции меню поверх catalog items.',
           categories: 'Только создание категории меню: list/update routes не подтверждены.',
-          publications: 'Явная публикация master data и просмотр текущего безопасного summary.',
+          publications: 'Автоматическая и ручная публикация master data с просмотром текущего безопасного summary.',
         },
         fields: {
           active: 'Активно',

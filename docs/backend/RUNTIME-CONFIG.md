@@ -48,7 +48,8 @@
 Реализовано сейчас:
 
 - `POS_CLOUD_SYNC_URL` может указывать на legacy `/api/v1/sync/edge-events`; POS Edge client автоматически использует `/api/v1/sync/exchange` для authenticated exchange, когда provisioning state содержит `node_token`.
-- `POS_SYNC_SENDER_ENABLED`, `POS_SYNC_SENDER_BATCH_SIZE`, `POS_SYNC_SENDER_POLL_INTERVAL`, `POS_SYNC_SENDER_POLL_JITTER`, `POS_SYNC_SENDER_RECLAIM_AFTER` и `POS_SYNC_SENDER_SEND_TIMEOUT` управляют worker cycle.
+- `POS_SYNC_SENDER_ENABLED`, `POS_SYNC_SENDER_BATCH_SIZE`, `POS_SYNC_SENDER_POLL_INTERVAL`, `POS_SYNC_SENDER_POLL_JITTER`, `POS_SYNC_SENDER_CLOUD_PULL_INTERVAL`, `POS_SYNC_SENDER_RECLAIM_AFTER` и `POS_SYNC_SENDER_SEND_TIMEOUT` управляют worker cycle.
+- `POS_SYNC_SENDER_CLOUD_PULL_INTERVAL` ограничивает пустой authenticated exchange без Edge outbox; если local outbox содержит sendable rows, exchange выполняется на ближайшем worker tick и не ждет этот interval.
 - `node_token` хранится в local Edge provisioning state после Cloud/License provisioning и не выводится в HTTP responses или structured logs.
 
 Вне текущего объема:

@@ -139,4 +139,11 @@ docker compose -f docker-compose.local.yml exec cloud-postgres `
 
 POS sync sender доставляет Edge -> Cloud operational rows автоматически, когда `POS_SYNC_SENDER_ENABLED=true`. Недоступность Cloud не блокирует POS runtime writes.
 
-Вне текущего объема: запуск `pos-ui` внутри этого compose и production auth perimeter для Cloud/License API.
+реализовано сейчас:
+
+- после pairing через license code или Cloud assignment `pos-edge` прекращает повторный device registration/snapshot provisioning poll;
+- локальные Edge outbox rows отправляются через authenticated `sync/exchange` на ближайшем worker tick;
+- пустой `sync/exchange` для Cloud -> Edge pull ограничен отдельным interval, чтобы локальный Docker stack не создавал шумный Cloud access log при отсутствии локальных событий.
+- Cloud UI после successful master-data CRUD автоматически вызывает publication API от имени `cloud-ui`; ручная публикация в разделе Publication state остается доступна для явного operator checkpoint.
+
+вне текущего объема: запуск `pos-ui` внутри этого compose и production auth perimeter для Cloud/License API.

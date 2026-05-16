@@ -325,6 +325,25 @@ func TestRunOnceDoesNotMarkAckWhenExchangePackageApplyFails(t *testing.T) {
 	}
 }
 
+func TestRunOnceThrottlesEmptyExchangePulls(t *testing.T) {
+	service := &fakeOutboxService{}
+	sender := &fakeExchangeSender{response: SyncExchangeResponse{Status: SyncExchangeStatusAccepted}}
+	worker := NewWorker(service, sender, Config{WorkerID: "worker-test", PollInterval: time.Hour, CloudPullInterval: time.Hour}, nil)
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(sender.requests) != 1 {
+		t.Fatalf("expected one empty exchange pull inside throttle window, got %d", len(sender.requests))
+	}
+	if len(sender.requests[0].EdgeEvents) != 0 {
+		t.Fatalf("expected throttled request to be cloud pull only, got %+v", sender.requests[0].EdgeEvents)
+	}
+}
+
 func TestNextPollDelayWithoutJitterUsesBaseInterval(t *testing.T) {
 	worker := NewWorker(&fakeOutboxService{}, fakeSender{}, Config{PollInterval: 30 * time.Second, PollJitter: 0}, nil)
 	if got := worker.nextPollDelay(); got != 30*time.Second {
