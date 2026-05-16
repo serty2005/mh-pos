@@ -33,6 +33,26 @@ export type SelectedModifierPayload = {
 };
 
 export type InventoryDisposition = 'no_stock_effect' | 'return_to_stock' | 'write_off_waste' | 'manual_review';
+export type FinancialOperationKind = 'full' | 'partial';
+
+export type CheckLedgerOperationPayload = {
+  commandId?: string;
+  reason: string;
+  inventoryDisposition?: InventoryDisposition;
+  operationKind?: FinancialOperationKind;
+};
+
+export type PaymentRefundPayload = {
+  commandId?: string;
+  reason?: string;
+};
+
+let commandSequence = 0;
+
+function nextCommandId(prefix: string) {
+  commandSequence += 1;
+  return `cmd-pos-ui-${Date.now()}-${commandSequence}-${prefix}`;
+}
 
 function defaultApiBase() {
   const hostname = globalThis.location?.hostname;
@@ -559,31 +579,52 @@ export function listClosedOrders(limit = 50) {
   return request(`/orders/closed?limit=${limit}`, z.array(closedOrderSchema));
 }
 
-export function refundPayment(paymentId: string, reason = '') {
+export function refundPayment(paymentId: string, payload: string | PaymentRefundPayload = '') {
+  const body = typeof payload === 'string'
+    ? { command_id: nextCommandId('payment-refund'), reason: payload }
+    : { command_id: payload.commandId ?? nextCommandId('payment-refund'), reason: payload.reason ?? '' };
   return request(`/payments/${encodeURIComponent(paymentId)}/refund`, paymentSchema, {
     method: 'POST',
-    body: JSON.stringify({ reason }),
+    body: JSON.stringify(body),
   });
 }
 
-export function recordCheckCancellation(checkId: string, reason = '', inventoryDisposition: InventoryDisposition = 'no_stock_effect') {
+export function recordCheckCancellation(checkId: string, payload: string | CheckLedgerOperationPayload, inventoryDisposition: InventoryDisposition = 'no_stock_effect') {
+  const body = typeof payload === 'string'
+    ? {
+      command_id: nextCommandId('check-cancellation'),
+      operation_kind: 'full' satisfies FinancialOperationKind,
+      inventory_disposition: inventoryDisposition,
+      reason: payload,
+    }
+    : {
+      command_id: payload.commandId ?? nextCommandId('check-cancellation'),
+      operation_kind: payload.operationKind ?? 'full',
+      inventory_disposition: payload.inventoryDisposition ?? 'no_stock_effect',
+      reason: payload.reason,
+    };
   return request(`/checks/${encodeURIComponent(checkId)}/cancellations`, financialOperationSchema, {
     method: 'POST',
-    body: JSON.stringify({
-      operation_kind: 'full',
-      inventory_disposition: inventoryDisposition,
-      reason,
-    }),
+    body: JSON.stringify(body),
   });
 }
 
-export function recordCheckRefund(checkId: string, reason = '', inventoryDisposition: InventoryDisposition = 'no_stock_effect') {
+export function recordCheckRefund(checkId: string, payload: string | CheckLedgerOperationPayload, inventoryDisposition: InventoryDisposition = 'no_stock_effect') {
+  const body = typeof payload === 'string'
+    ? {
+      command_id: nextCommandId('check-refund'),
+      operation_kind: 'full' satisfies FinancialOperationKind,
+      inventory_disposition: inventoryDisposition,
+      reason: payload,
+    }
+    : {
+      command_id: payload.commandId ?? nextCommandId('check-refund'),
+      operation_kind: payload.operationKind ?? 'full',
+      inventory_disposition: payload.inventoryDisposition ?? 'no_stock_effect',
+      reason: payload.reason,
+    };
   return request(`/checks/${encodeURIComponent(checkId)}/refunds`, financialOperationSchema, {
     method: 'POST',
-    body: JSON.stringify({
-      operation_kind: 'full',
-      inventory_disposition: inventoryDisposition,
-      reason,
-    }),
+    body: JSON.stringify(body),
   });
 }

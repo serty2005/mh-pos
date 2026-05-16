@@ -60,6 +60,16 @@ type CashSession = {
   id: string;
 };
 
+type FinancialOperation = {
+  id: string;
+  operation_type: 'cancellation' | 'refund';
+  operation_kind: 'full' | 'partial';
+  status: 'recorded';
+  check_id: string;
+  amount: number;
+  inventory_disposition: 'no_stock_effect' | 'return_to_stock' | 'write_off_waste' | 'manual_review';
+};
+
 test.describe.configure({ mode: 'serial' });
 
 let demo: DemoBootstrap;
@@ -146,6 +156,55 @@ test('compatibility refund records ledger operation without mutating finalized p
   const closed = closedOrders.find((item) => item.id === order.id);
   expect(closed?.check?.status).toBe('paid');
   expect(closed?.check?.payments?.some((item) => item.id === payment.id && item.status === 'captured')).toBe(true);
+});
+
+test('full check cancellation records ledger operation without UI status mutation expectations', async ({ request }) => {
+  const { order, precheck } = await createOrderWithPrecheck(request, 0, 1);
+  const payment = await capturePayment(request, precheck.id, 'cash', precheck.total);
+  const paidOrder = await get<Order>(request, `/orders/${order.id}`);
+  expect(paidOrder.check?.id).toBeTruthy();
+
+  const operation = await post<FinancialOperation>(request, `/checks/${paidOrder.check?.id}/cancellations`, {
+    command_id: nextCommandID('cancel-check'),
+    operation_kind: 'full',
+    inventory_disposition: 'manual_review',
+    reason: 'e2e full check cancellation',
+  }, headers);
+  expect(operation.operation_type).toBe('cancellation');
+  expect(operation.operation_kind).toBe('full');
+  expect(operation.status).toBe('recorded');
+  expect(operation.inventory_disposition).toBe('manual_review');
+  expect(operation.amount).toBe(precheck.total);
+
+  const afterCancellation = await get<Order>(request, `/orders/${order.id}`);
+  expect(afterCancellation.check?.status).toBe('paid');
+  expect(afterCancellation.check?.payments?.some((item) => item.id === payment.id && item.status === 'captured')).toBe(true);
+});
+
+test('full check refund records ledger operation without mutating finalized payment/check', async ({ request }) => {
+  const { order, precheck } = await createOrderWithPrecheck(request, 1, 1);
+  const payment = await capturePayment(request, precheck.id, 'card', precheck.total);
+  const paidOrder = await get<Order>(request, `/orders/${order.id}`);
+  expect(paidOrder.check?.id).toBeTruthy();
+
+  await closeCurrentShiftAndCashSession(request);
+  await ensureShiftAndCashSession(request);
+
+  const operation = await post<FinancialOperation>(request, `/checks/${paidOrder.check?.id}/refunds`, {
+    command_id: nextCommandID('refund-check'),
+    operation_kind: 'full',
+    inventory_disposition: 'return_to_stock',
+    reason: 'e2e full check refund',
+  }, headers);
+  expect(operation.operation_type).toBe('refund');
+  expect(operation.operation_kind).toBe('full');
+  expect(operation.status).toBe('recorded');
+  expect(operation.inventory_disposition).toBe('return_to_stock');
+  expect(operation.amount).toBe(precheck.total);
+
+  const afterRefund = await get<Order>(request, `/orders/${order.id}`);
+  expect(afterRefund.check?.status).toBe('paid');
+  expect(afterRefund.check?.payments?.some((item) => item.id === payment.id && item.status === 'captured')).toBe(true);
 });
 
 async function ensureShiftAndCashSession(request: APIRequestContext) {

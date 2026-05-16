@@ -8,6 +8,7 @@ import {
   listMenuItems,
   recordCheckCancellation,
   recordCheckRefund,
+  refundPayment,
 } from './api';
 
 const authState = {
@@ -210,15 +211,21 @@ describe('api request helpers', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await recordCheckCancellation('check-1', 'guest left');
+    await recordCheckCancellation('check-1', {
+      commandId: 'cmd-ui-cancel-check',
+      operationKind: 'full',
+      inventoryDisposition: 'return_to_stock',
+      reason: 'guest left',
+    });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]?.[0]).toContain('/checks/check-1/cancellations');
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(init.method).toBe('POST');
     expect(JSON.parse(String(init.body))).toEqual({
+      command_id: 'cmd-ui-cancel-check',
       operation_kind: 'full',
-      inventory_disposition: 'no_stock_effect',
+      inventory_disposition: 'return_to_stock',
       reason: 'guest left',
     });
   });
@@ -230,16 +237,62 @@ describe('api request helpers', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await recordCheckRefund('check-1', 'guest refund');
+    await recordCheckRefund('check-1', {
+      commandId: 'cmd-ui-refund-check',
+      operationKind: 'full',
+      inventoryDisposition: 'write_off_waste',
+      reason: 'guest refund',
+    });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]?.[0]).toContain('/checks/check-1/refunds');
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(init.method).toBe('POST');
     expect(JSON.parse(String(init.body))).toEqual({
+      command_id: 'cmd-ui-refund-check',
       operation_kind: 'full',
-      inventory_disposition: 'no_stock_effect',
+      inventory_disposition: 'write_off_waste',
       reason: 'guest refund',
+    });
+  });
+
+  it('keeps compatibility payment refund available as fallback', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({
+        id: 'payment-1',
+        edge_payment_id: 'edge-payment-1',
+        restaurant_id: 'restaurant-1',
+        device_id: 'node-1',
+        shift_id: 'shift-1',
+        precheck_id: 'precheck-1',
+        method: 'cash',
+        amount: 1000,
+        currency: 'RUB',
+        status: 'captured',
+        business_date_local: '2026-05-16',
+        provider_name: null,
+        provider_transaction_id: null,
+        provider_reference: null,
+        fingerprint_hash: null,
+        created_at: '2026-05-16T10:00:00Z',
+        updated_at: '2026-05-16T10:00:00Z',
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await refundPayment('payment-1', {
+      commandId: 'cmd-ui-refund-payment',
+      reason: 'legacy payment fallback',
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/payments/payment-1/refund');
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({
+      command_id: 'cmd-ui-refund-payment',
+      reason: 'legacy payment fallback',
     });
   });
 });

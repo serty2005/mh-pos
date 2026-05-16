@@ -87,7 +87,7 @@ Permission ids used by cashier UI:
 
 ## Notes
 
-- Refund/cancellation is no longer compatibility-only in cashier UI: closed-order activity exposes full check cancellation and full check refund against backend ledger endpoints.
+- Refund/cancellation больше не является compatibility-only сценарием в cashier UI: closed-order activity показывает full check cancellation и full check refund через backend ledger endpoints с явным выбором inventory disposition.
 - The compatibility payment refund button remains visible only for closed orders with captured payments and is disabled without `pos.payment.refund` or current open cash session.
 - Cancellation/refund policy still needs pilot acceptance for operator workflow and fiscal wording.
 - UI must not show raw backend/internal errors or calculate authoritative financial totals.

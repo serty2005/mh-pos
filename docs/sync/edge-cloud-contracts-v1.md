@@ -225,7 +225,7 @@ CheckRefunded
 Cancellation/refund sync behavior:
 
 - `CancellationRecorded` и `RefundRecorded` являются текущими Edge -> Cloud operational events для append-only financial operation ledger.
-- Full check cancellation/refund UI and compatibility payment refund all write the same current ledger events: `CancellationRecorded` for cancellation and `RefundRecorded` for refund.
+- Full check cancellation/refund UI и compatibility payment refund пишут те же текущие ledger events: `CancellationRecorded` для cancellation и `RefundRecorded` для refund. Переданный UI `command_id` остается idempotency key; `inventory_disposition` остается payload data и не является stock movement event.
 - `PaymentRefunded` и `CheckRefunded` остаются валидируемыми legacy event types, но новый POS Edge refund flow пишет `RefundRecorded`.
 - Cloud receiver валидирует эти event types, сохраняет raw envelope/journal rows и обновляет event-type stats.
 - `GET /api/v1/sync/edge-events` реализовано сейчас как безопасный Cloud UI/API журнал receipt metadata: `restaurant_id`, `device_id`, `event_type`, aggregate metadata, timestamps и SHA-256 raw payload; raw payload в ответ не включается.

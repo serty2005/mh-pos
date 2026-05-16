@@ -1,6 +1,6 @@
 # ROADMAP
 
-Статус документа: актуализировано под фактический код на 2026-05-15.
+Статус документа: актуализировано под фактический код на 2026-05-16.
 
 Roadmap фиксирует статусы, блокеры и следующий план. Архитектурный контракт находится в `SPECv1.3.md`, backend contract — в `docs/backend/POS-BACKEND-SPEC.md`.
 
@@ -29,6 +29,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Reprint final check from immutable snapshot.
 - Append-only financial operation ledger для full/partial cancellation и full/partial refund: `financial_operations`, `financial_operation_items`, `CancellationRecorded`, `RefundRecorded`.
 - Compatibility payment refund route and cashier UI flow: UI вызывает `/payments/{id}/refund`, backend записывает refund operation по captured payment allocation.
+- Cashier rich cancellation/refund dialog для закрытого чека: full check cancellation/refund отправляют `command_id`, `operation_kind`, явный `inventory_disposition` и reason; partial scopes показаны как запланированная область без runtime выбора.
 - `business_date_local` for shifts, cash sessions, payments, checks and financial operations.
 - Pricing/Discounts boundary: backend `Pricing` domain/application layer, line/order discounts, separate surcharge foundation, unified ordered modifier pipeline по `application_index`, tax-last invariant, tax profile/rule foundation, deterministic integer rounding и immutable precheck breakdown persistence.
 - Cloud-authored automatic discount/surcharge policies synced through `pricing_policy`; manual discount/surcharge commands remain backend RBAC-controlled operational actions.
@@ -104,7 +105,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - если входит, реализовать consumption trigger, stock document/move service и snapshot requirements.
 - Cancellation/refund/reprint hardening:
   - backend ledger, immutable snapshots, no-over-cancel/no-over-refund tests, current `RefundRecorded` sync contract and coarse Cloud refund projection реализованы;
-  - cashier UI pilot-minimum full check cancellation/refund через ledger endpoints реализован; compatibility refund по captured payment оставлен отдельным fallback;
+  - cashier UI pilot-minimum full check cancellation/refund через ledger endpoints реализован с выбором inventory disposition; compatibility refund по captured payment оставлен отдельным fallback;
   - требуется финальная проверка operator policy, fiscal wording и cashier acceptance script.
 - Documentation freeze:
   - поддерживать `SPECv1.3.md` как frozen pilot contract;

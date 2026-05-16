@@ -155,7 +155,7 @@ Invoke-RestMethod http://localhost:8080/api/v1/sync/status
 Invoke-RestMethod -Method Post http://localhost:8080/api/v1/sync/retry-failed
 ```
 
-Для выпуска precheck используй `POST /api/v1/orders/{id}/precheck`, для payment capture - `POST /api/v1/prechecks/{id}/payments`, для cancellation/refund ledger - `POST /api/v1/checks/{id}/cancellations` или `POST /api/v1/checks/{id}/refunds`; UI compatibility refund использует `POST /api/v1/payments/{id}/refund`.
+Для выпуска precheck используй `POST /api/v1/orders/{id}/precheck`, для payment capture - `POST /api/v1/prechecks/{id}/payments`, для cancellation/refund ledger - `POST /api/v1/checks/{id}/cancellations` или `POST /api/v1/checks/{id}/refunds`; full-check UI payload отправляет `command_id`, `operation_kind`, `inventory_disposition` и reason, а UI compatibility refund использует `POST /api/v1/payments/{id}/refund`.
 
 Pricing foundation endpoints:
 

@@ -158,6 +158,7 @@ Pricing contract:
 - Reprint check requires `pos.check.reprint`.
 - Cancellation endpoint is `POST /api/v1/checks/{id}/cancellations`.
 - Refund endpoint is `POST /api/v1/checks/{id}/refunds`.
+- Ledger endpoints принимают `command_id`, `operation_kind`, `inventory_disposition`, reason и optional item scopes. Текущий cashier UI отправляет full-check commands без item list, поэтому backend записывает `whole_check` из immutable check snapshot.
 - Compatibility refund endpoint is `POST /api/v1/payments/{id}/refund`; it records a refund operation with payment allocation and does not mutate finalized payment/check/precheck totals.
 - Compatibility refund requires the captured payment to belong to an order that already has a finalized check. Captured partial payment on a still-issued precheck is not refundable through this endpoint.
 - Cancellation uses permission `pos.precheck.cancel`; refund uses permission `pos.payment.refund`.

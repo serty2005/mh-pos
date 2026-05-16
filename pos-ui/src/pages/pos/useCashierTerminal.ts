@@ -44,6 +44,8 @@ import {
   updateOrderLineDetails,
   voidOrderLine,
   type CashDrawerEventType,
+  type FinancialOperationKind,
+  type InventoryDisposition,
   type SelectedModifierPayload,
 } from '../../shared/api';
 import { currencyInputStep, formatMinorCurrency, minorToMoney, moneyToMinor } from '../../shared/currency';
@@ -109,6 +111,8 @@ export function useCashierTerminal() {
   const refundPaymentId = ref('');
   const refundCheckId = ref('');
   const refundReason = ref('');
+  const refundInventoryDisposition = ref<InventoryDisposition>('no_stock_effect');
+  const refundOperationKind = ref<FinancialOperationKind>('full');
   const modifierDialog = ref(false);
   const modifierMenuItem = ref<MenuItem | null>(null);
   const modifierQuantities = ref<Record<string, number>>({});
@@ -137,6 +141,21 @@ export function useCashierTerminal() {
     { label: t('pos.cashDrawerTypes.cash_in'), value: 'cash_in' },
     { label: t('pos.cashDrawerTypes.cash_out'), value: 'cash_out' },
     { label: t('pos.cashDrawerTypes.cash_count'), value: 'cash_count' },
+  ]);
+
+  const inventoryDispositionOptions = computed<Array<{ label: string; value: InventoryDisposition }>>(() => [
+    { label: t('pos.inventoryDispositions.no_stock_effect'), value: 'no_stock_effect' },
+    { label: t('pos.inventoryDispositions.return_to_stock'), value: 'return_to_stock' },
+    { label: t('pos.inventoryDispositions.write_off_waste'), value: 'write_off_waste' },
+    { label: t('pos.inventoryDispositions.manual_review'), value: 'manual_review' },
+  ]);
+
+  const plannedLedgerScopeOptions = computed(() => [
+    t('pos.ledgerScopes.order_line'),
+    t('pos.ledgerScopes.modifier_line'),
+    t('pos.ledgerScopes.service_charge'),
+    t('pos.ledgerScopes.tip'),
+    t('pos.ledgerScopes.payment'),
   ]);
 
   const pairing = useQuery({
@@ -491,18 +510,27 @@ export function useCashierTerminal() {
   const refundMutation = useMutation<unknown, unknown, void>({
     mutationFn: () => {
       if (refundMode.value === 'check_refund') {
-        return recordCheckRefund(refundCheckId.value, refundReason.value);
+        return recordCheckRefund(refundCheckId.value, {
+          operationKind: refundOperationKind.value,
+          inventoryDisposition: refundInventoryDisposition.value,
+          reason: refundReason.value,
+        });
       }
       if (refundMode.value === 'check_cancellation') {
-        return recordCheckCancellation(refundCheckId.value, refundReason.value);
+        return recordCheckCancellation(refundCheckId.value, {
+          operationKind: refundOperationKind.value,
+          inventoryDisposition: refundInventoryDisposition.value,
+          reason: refundReason.value,
+        });
       }
-      return refundPayment(refundPaymentId.value, refundReason.value);
+      return refundPayment(refundPaymentId.value, { reason: refundReason.value });
     },
     onSuccess() {
+      const messageKey = refundMode.value === 'check_cancellation' ? 'pos.cancellationSuccess' : 'pos.refundSuccess';
       closeRefundDialog();
       refreshCompensationState();
       $q.notify({
-        message: t('pos.refundSuccess'),
+        message: t(messageKey),
         type: 'positive',
         position: 'top',
       });
@@ -714,6 +742,8 @@ export function useCashierTerminal() {
     refundPaymentId.value = paymentId;
     refundCheckId.value = '';
     refundReason.value = '';
+    refundInventoryDisposition.value = 'no_stock_effect';
+    refundOperationKind.value = 'partial';
     refundDialog.value = true;
   }
 
@@ -728,6 +758,8 @@ export function useCashierTerminal() {
     refundPaymentId.value = '';
     refundCheckId.value = orderItem.check.id;
     refundReason.value = '';
+    refundInventoryDisposition.value = 'no_stock_effect';
+    refundOperationKind.value = 'full';
     refundDialog.value = true;
   }
 
@@ -737,6 +769,8 @@ export function useCashierTerminal() {
     refundPaymentId.value = '';
     refundCheckId.value = orderItem.check.id;
     refundReason.value = '';
+    refundInventoryDisposition.value = 'no_stock_effect';
+    refundOperationKind.value = 'full';
     refundDialog.value = true;
   }
 
@@ -746,6 +780,8 @@ export function useCashierTerminal() {
     refundPaymentId.value = '';
     refundCheckId.value = '';
     refundReason.value = '';
+    refundInventoryDisposition.value = 'no_stock_effect';
+    refundOperationKind.value = 'full';
   }
 
   function hasCapturedPayment(orderItem: ClosedOrder) {
@@ -789,6 +825,10 @@ export function useCashierTerminal() {
 
   function refundDialogIcon() {
     return refundMode.value === 'check_cancellation' ? 'cancel' : 'undo';
+  }
+
+  function refundDialogShowsLedgerControls() {
+    return refundMode.value === 'check_cancellation' || refundMode.value === 'check_refund';
   }
 
   function refreshCompensationState() {
@@ -913,6 +953,8 @@ export function useCashierTerminal() {
     refundDialog,
     refundMode,
     refundReason,
+    refundInventoryDisposition,
+    refundOperationKind,
     modifierDialog,
     modifierMenuItem,
     modifierQuantities,
@@ -943,6 +985,8 @@ export function useCashierTerminal() {
     canSubmitCashDrawerEvent,
     paymentBlockedReasonKey,
     cashDrawerTypeOptions,
+    inventoryDispositionOptions,
+    plannedLedgerScopeOptions,
     pairing,
     currentShift,
     recentShifts,
@@ -1025,6 +1069,7 @@ export function useCashierTerminal() {
     refundDialogCopyKey,
     refundDialogSubmitKey,
     refundDialogIcon,
+    refundDialogShowsLedgerControls,
     refreshOps,
     refreshSync,
     refetchMenu,
