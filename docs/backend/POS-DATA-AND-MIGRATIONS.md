@@ -45,6 +45,7 @@ Cashier runtime invariants:
 - `precheck_*` breakdown tables persist lines, discounts, surcharges and tax components for audit/reprint/sync replay.
 - `payments` references `precheck_id`, not legacy `check_id`.
 - `checks` references `order_id` and stores immutable `snapshot`.
+- `order_lines.course` и `order_lines.comment` хранят введенные оператором metadata комментария и курса подачи для cashier UI и не участвуют в расчете цены.
 - `order_line_modifiers` stores selected modifiers for active order lines; precheck/check snapshots preserve selected modifiers for reprint/refund.
 - `catalog_items.type` supports canonical `dish`, `good`, `semi_finished`, `service`; legacy `ingredient` is not accepted by current active catalog v2 path.
 - `financial_operations` and `financial_operation_items` are append-only ledger tables for cancellation/refund; they do not mutate finalized payment/check/precheck rows.
@@ -115,6 +116,7 @@ Managed SQL files, реализовано сейчас:
 - `tax_profiles` и `tax_rules` хранят tax profile/rule foundation.
 - `tax_profiles`, `tax_rules` и `service_charge_rules` включают Cloud -> Edge sync metadata: `cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at`.
 - `menu_items.tax_profile_id` и `order_lines.tax_profile_id` позволяют snapshot tax policy без смешивания tax behavior с Catalog.
+- `order_lines.course` и `order_lines.comment` являются POS runtime metadata для уже добавленной строки и не меняют pricing pipeline.
 - `prechecks` и `checks` содержат `currency_code`, `discount_total`, `surcharge_total`, `tax_total`, `total`, `paid_total`, `remaining_total`.
 - Precheck breakdown persistence использует `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`; discount/surcharge breakdown rows сохраняют `application_index`.
 - Canonical calculation pipeline: `order lines subtotal -> unified ordered modifiers by application_index -> taxable base -> taxes -> grand total`.

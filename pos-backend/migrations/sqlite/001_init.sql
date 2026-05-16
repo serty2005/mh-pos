@@ -364,6 +364,8 @@ CREATE TABLE IF NOT EXISTS order_lines (
   total_price INTEGER NOT NULL CHECK (total_price >= 0),
   currency_code TEXT NOT NULL DEFAULT 'RUB' CHECK (currency_code GLOB '[A-Z][A-Z][A-Z]'),
   tax_profile_id TEXT REFERENCES tax_profiles(id),
+  course TEXT,
+  comment TEXT,
   status TEXT NOT NULL CHECK (status IN ('active', 'cancelled', 'voided')),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -1226,6 +1228,12 @@ ALTER TABLE order_lines ADD COLUMN currency_code TEXT NOT NULL DEFAULT 'RUB';
 
 -- sqlite:repair-column order_lines tax_profile_id
 ALTER TABLE order_lines ADD COLUMN tax_profile_id TEXT;
+
+-- sqlite:repair-column order_lines course
+ALTER TABLE order_lines ADD COLUMN course TEXT;
+
+-- sqlite:repair-column order_lines comment
+ALTER TABLE order_lines ADD COLUMN comment TEXT;
 
 -- sqlite:repair-column prechecks currency_code
 ALTER TABLE prechecks ADD COLUMN currency_code TEXT NOT NULL DEFAULT 'RUB';

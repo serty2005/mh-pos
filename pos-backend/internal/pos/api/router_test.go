@@ -663,6 +663,25 @@ func TestFloorReadAndOrderLineEditingAPI(t *testing.T) {
 	if changed.Quantity != 3 || changed.TotalPrice != 3000 {
 		t.Fatalf("unexpected changed line: %+v", changed)
 	}
+	details := f.patchJSON(t, "/api/v1/orders/"+order.ID+"/lines/"+line.ID+"/details", `{"node_device_id":"`+f.device.ID+`","course":"2","comment":"no onion"}`)
+	if details.Code != http.StatusOK {
+		t.Fatalf("expected 200 for line details, got %d: %s", details.Code, details.Body.String())
+	}
+	detailed := decodeAPIResponse[domain.OrderLine](t, details)
+	if detailed.Course == nil || *detailed.Course != "2" || detailed.Comment == nil || *detailed.Comment != "no onion" {
+		t.Fatalf("unexpected line details: %+v", detailed)
+	}
+	activeResp := f.get(t, "/api/v1/orders/active?hall_id="+f.hall.ID)
+	if activeResp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for active hall orders, got %d: %s", activeResp.Code, activeResp.Body.String())
+	}
+	activeOrders := decodeAPIResponse[[]domain.Order](t, activeResp)
+	if len(activeOrders) != 1 || activeOrders[0].ID != order.ID || len(activeOrders[0].Lines) != 1 {
+		t.Fatalf("unexpected active orders response: %+v", activeOrders)
+	}
+	if activeOrders[0].Lines[0].Comment == nil || *activeOrders[0].Lines[0].Comment != "no onion" {
+		t.Fatalf("expected active orders to include line details, got %+v", activeOrders[0].Lines[0])
+	}
 	voidedResp := f.postJSON(t, "/api/v1/orders/"+order.ID+"/lines/"+line.ID+"/void", `{"node_device_id":"`+f.device.ID+`","reason":"mistake"}`)
 	if voidedResp.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", voidedResp.Code, voidedResp.Body.String())

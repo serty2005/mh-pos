@@ -168,6 +168,8 @@ export const orderLineSchema = z.object({
   total_price: z.number(),
   currency_code: z.string(),
   tax_profile_id: optionalNullableString,
+  course: optionalNullableString,
+  comment: optionalNullableString,
   modifiers: z.array(orderLineModifierSchema).optional().default([]),
   status: z.enum(['active', 'cancelled', 'voided']),
   created_at: z.string(),

@@ -22,7 +22,7 @@
           :disable="!terminal.selectedOrderLine.value"
         >
           <q-list dense>
-            <q-item v-for="course in courseOptions" :key="course" v-close-popup clickable @click="selectedCourse = course">
+            <q-item v-for="course in courseOptions" :key="course" v-close-popup clickable @click="saveCourse(course)">
               <q-item-section>{{ course }}</q-item-section>
             </q-item>
           </q-list>
@@ -156,11 +156,11 @@
           <h2>{{ terminal.t('pos.lineComment') }}</h2>
         </q-card-section>
         <q-card-section>
-          <q-input v-model="lineCommentDraft" type="textarea" outlined square autogrow :label="terminal.t('pos.lineCommentInput')" />
+          <q-input v-model="terminal.lineCommentDraft.value" type="textarea" outlined square autogrow :label="terminal.t('pos.lineCommentInput')" />
         </q-card-section>
         <q-card-actions align="right">
           <q-btn flat :label="terminal.t('actions.cancel')" @click="lineCommentDialog = false" />
-          <q-btn color="primary" unelevated square :label="terminal.t('actions.save')" @click="lineCommentDialog = false" />
+          <q-btn color="primary" unelevated square :label="terminal.t('actions.save')" :loading="terminal.lineDetailsMutation.isPending.value" @click="saveLineComment" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -283,8 +283,6 @@ const waiterFilterDialog = ref(false);
 const banquetDialog = ref(false);
 const discountDialog = ref(false);
 const sectionWasInitialized = ref(false);
-const selectedCourse = ref('2');
-const lineCommentDraft = ref('');
 
 const fallbackComponent = shallowRef(PosCashSection);
 
@@ -333,6 +331,21 @@ function openSection(section: PosSectionId) {
   if (section === 'shift') fallbackComponent.value = PosCashSection;
   if (section === 'analytics') fallbackComponent.value = PosReportsSection;
   if (section === 'settings' || section === 'delivery') fallbackComponent.value = PosActivitySection;
+}
+
+watch(lineCommentDialog, (open) => {
+  if (open) terminal.primeLineDetailsDraft();
+});
+
+function saveCourse(course: string) {
+  terminal.lineCourseDraft.value = course;
+  terminal.lineCommentDraft.value = terminal.selectedOrderLine.value?.comment ?? '';
+  terminal.saveSelectedLineDetails();
+}
+
+function saveLineComment() {
+  terminal.saveSelectedLineDetails();
+  lineCommentDialog.value = false;
 }
 
 function runOrderMainAction() {

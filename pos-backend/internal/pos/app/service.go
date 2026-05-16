@@ -59,6 +59,7 @@ type AddOrderLineCommand = apporder.AddOrderLineCommand
 type SelectedModifierCommand = apporder.SelectedModifierCommand
 type ChangeOrderLineQuantityCommand = apporder.ChangeOrderLineQuantityCommand
 type VoidOrderLineCommand = apporder.VoidOrderLineCommand
+type UpdateOrderLineDetailsCommand = apporder.UpdateOrderLineDetailsCommand
 type IssuePrecheckCommand = appprecheck.IssuePrecheckCommand
 type CancelPrecheckCommand = appprecheck.CancelPrecheckCommand
 type ReprintPrecheckCommand = appprecheck.ReprintPrecheckCommand
@@ -332,6 +333,10 @@ func (s *Service) GetCurrentOrderByTableAsOperator(ctx context.Context, tableID 
 	return s.orders.GetCurrentOrderByTableAsOperator(ctx, tableID, meta)
 }
 
+func (s *Service) ListActiveOrdersByHallAsOperator(ctx context.Context, hallID string, meta CommandMeta) ([]domain.Order, error) {
+	return s.orders.ListActiveOrdersByHallAsOperator(ctx, hallID, meta)
+}
+
 func (s *Service) CreateOrder(ctx context.Context, cmd CreateOrderCommand) (*domain.Order, error) {
 	return s.orders.CreateOrder(ctx, cmd)
 }
@@ -346,6 +351,10 @@ func (s *Service) ChangeOrderLineQuantity(ctx context.Context, cmd ChangeOrderLi
 
 func (s *Service) VoidOrderLine(ctx context.Context, cmd VoidOrderLineCommand) (*domain.OrderLine, error) {
 	return s.orders.VoidOrderLine(ctx, cmd)
+}
+
+func (s *Service) UpdateOrderLineDetails(ctx context.Context, cmd UpdateOrderLineDetailsCommand) (*domain.OrderLine, error) {
+	return s.orders.UpdateOrderLineDetails(ctx, cmd)
 }
 
 func (s *Service) CloseOrder(ctx context.Context, cmd CloseOrderCommand) (*domain.Order, error) {

@@ -13,6 +13,8 @@
 - Application services для auth, staff shifts, cash sessions, floor/menu/catalog reads, order, pricing, precheck, payment/check, master-data ingest, outbox.
 - Manual persistence implementation в infrastructure repositories.
 - Selected modifiers runtime для order lines, pricing, precheck/check snapshots.
+- API чтения активных заказов зала для статусов столов и панели активных заказов POS.
+- Runtime-поля курса подачи и комментария строки заказа, которые не влияют на финансовые итоги.
 - Service catalog items as sellable POS items.
 
 Не реализовано сейчас:
@@ -46,10 +48,12 @@
 - `GET /api/v1/employee-shifts/recent`
 - `POST /api/v1/orders`
 - `GET /api/v1/orders/current`
-- `GET /api/v1/orders/{id}`
+- `GET /api/v1/orders/active`
 - `GET /api/v1/orders/closed`
+- `GET /api/v1/orders/{id}`
 - `POST /api/v1/orders/{id}/lines`
 - `PATCH /api/v1/orders/{id}/lines/{line_id}`
+- `PATCH /api/v1/orders/{id}/lines/{line_id}/details`
 - `POST /api/v1/orders/{id}/lines/{line_id}/void`
 - `GET /api/v1/orders/{id}/pricing`
 - `POST /api/v1/orders/{id}/discounts`
@@ -92,17 +96,19 @@
 
 Реализовано сейчас:
 
-1. Cashier opens employee shift.
-2. Cashier opens cash session for device.
-3. Cashier creates order for table.
-4. Cashier adds/changes/voids active order lines, including selected modifiers for menu items with modifier groups.
-5. Cashier can apply backend-authoritative discount/surcharge commands and read pricing preview.
-6. Cashier issues precheck.
-7. Backend locks order and creates immutable financial precheck snapshot.
-8. Cashier captures one or more payments through `precheck_id`.
-9. Backend creates final check only after full payment.
-10. Cashier/manager can reprint precheck/check copy from immutable snapshot.
-11. Authorized operator can record cancellation/refund operation; current cashier UI uses the compatibility payment refund route for closed orders.
+1. Кассир открывает личную смену сотрудника.
+2. Кассир открывает кассовую смену устройства.
+3. Кассир создает заказ на стол.
+4. Кассир добавляет, меняет количество и списывает активные строки заказа, включая selected modifiers для menu items с modifier groups.
+5. Кассир может сохранять metadata курса подачи и комментария строки через backend; эти поля возвращаются вместе со строкой и не меняют итоги.
+6. Кассир может читать все активные заказы зала через `GET /api/v1/orders/active?hall_id=...`, поэтому статусы столов и панель активных заказов используют backend-данные, а не UI mock-данные.
+7. Кассир может применять backend-authoritative discount/surcharge commands и читать pricing preview.
+8. Кассир выпускает пречек.
+9. Backend блокирует заказ и создает immutable financial precheck snapshot.
+10. Кассир проводит одну или несколько оплат через `precheck_id`.
+11. Backend создает final check только после полной оплаты.
+12. Кассир или менеджер может повторно напечатать копию precheck/check из immutable snapshot.
+13. Авторизованный оператор может записать cancellation/refund operation; текущий cashier UI использует compatibility payment refund route для закрытых заказов.
 
 ## Precheck Contract
 

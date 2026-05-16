@@ -66,6 +66,15 @@ type VoidOrderLineCommand struct {
 	Reason  string `json:"reason,omitempty"`
 }
 
+// UpdateOrderLineDetailsCommand меняет только UX-атрибуты строки, не влияющие на цену и финансовые итоги.
+type UpdateOrderLineDetailsCommand struct {
+	shared.CommandMeta
+	OrderID string `json:"order_id"`
+	LineID  string `json:"line_id"`
+	Course  string `json:"course,omitempty"`
+	Comment string `json:"comment,omitempty"`
+}
+
 func (s *Service) GetOrder(ctx context.Context, id string) (*domain.Order, error) {
 	return s.hydrateOrder(ctx, id)
 }
@@ -98,6 +107,30 @@ func (s *Service) GetCurrentOrderByTableAsOperator(ctx context.Context, tableID 
 		return nil, err
 	}
 	return s.GetCurrentOrderByTable(ctx, meta.DeviceID, tableID)
+}
+
+// ListActiveOrdersByHallAsOperator возвращает все активные заказы зала для POS-экрана столов без UI mock-данных.
+func (s *Service) ListActiveOrdersByHallAsOperator(ctx context.Context, hallID string, meta shared.CommandMeta) ([]domain.Order, error) {
+	shared.NormalizeDeviceMeta(&meta)
+	if strings.TrimSpace(hallID) == "" {
+		return nil, fmt.Errorf("%w: hall_id is required", domain.ErrInvalid)
+	}
+	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionOrderView)); err != nil {
+		return nil, err
+	}
+	orders, err := s.repo.ListActiveOrdersByDeviceAndHall(ctx, meta.DeviceID, hallID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.Order, 0, len(orders))
+	for _, order := range orders {
+		hydrated, err := s.hydrateOrder(ctx, order.ID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *hydrated)
+	}
+	return out, nil
 }
 
 func (s *Service) hydrateOrder(ctx context.Context, id string) (*domain.Order, error) {
@@ -329,6 +362,48 @@ func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*d
 	return line, err
 }
 
+func (s *Service) UpdateOrderLineDetails(ctx context.Context, cmd UpdateOrderLineDetailsCommand) (*domain.OrderLine, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
+	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(cmd.OrderID) == "" || strings.TrimSpace(cmd.LineID) == "" {
+		return nil, fmt.Errorf("%w: order_id and line_id are required", domain.ErrInvalid)
+	}
+	now := s.clock.Now()
+	var line *domain.OrderLine
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
+			return err
+		}
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionOrderChangeQuantity)); err != nil {
+			return err
+		}
+		order, err := s.ensureEditableOrder(ctx, cmd.OrderID, cmd.DeviceID)
+		if err != nil {
+			return err
+		}
+		line, err = s.repo.GetOrderLine(ctx, cmd.LineID)
+		if err != nil {
+			return err
+		}
+		if line.OrderID != order.ID {
+			return fmt.Errorf("%w: order line does not belong to order", domain.ErrConflict)
+		}
+		if line.Status != domain.OrderLineActive {
+			return fmt.Errorf("%w: cannot update non-active order line", domain.ErrConflict)
+		}
+		line.Course = optionalString(cmd.Course)
+		line.Comment = optionalString(cmd.Comment)
+		line.UpdatedAt = now
+		if err := s.repo.UpdateOrderLineDetails(ctx, line); err != nil {
+			return err
+		}
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Order", order.ID, "OrderLineDetailsUpdated", line)
+	})
+	return line, err
+}
+
 func (s *Service) buildSelectedModifiers(ctx context.Context, selected []SelectedModifierCommand) ([]domain.LineModifier, int64, error) {
 	if len(selected) == 0 {
 		return nil, 0, nil
@@ -474,4 +549,12 @@ func (s *Service) ensureEditableOrder(ctx context.Context, orderID, deviceID str
 		return nil, err
 	}
 	return order, nil
+}
+
+func optionalString(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
 }

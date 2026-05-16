@@ -81,28 +81,21 @@ const emit = defineEmits<{
   (event: 'open-orders'): void;
 }>();
 
-const tableCards = computed<TableCard[]>(() => props.terminal.activeTables.value.map((table, index) => {
-  if (table.id === props.terminal.selectedTableId.value && props.terminal.activeOrder.value) {
-    return {
-      id: table.id,
-      name: table.name,
-      status: props.terminal.activePrecheck.value ? 'precheck' : props.terminal.finalCheckData.value ? 'paid' : 'open',
-      orderNo: props.terminal.shortId(props.terminal.activeOrder.value.id),
-      guests: props.terminal.activeOrder.value.guest_count,
-      total: props.terminal.activeOrder.value.total,
-      duration: durationFrom(props.terminal.activeOrder.value.opened_at),
-    };
+const tableCards = computed<TableCard[]>(() => props.terminal.activeTables.value.map((table) => {
+  const order = props.terminal.activeOrders.value.find((item) => item.table_id === table.id);
+  if (!order) {
+    return { id: table.id, name: table.name, status: table.active ? 'free' : 'unavailable' };
   }
 
-  const status = mockStatus(index);
+  const hasCheck = Boolean(order.check);
   return {
     id: table.id,
     name: table.name,
-    status,
-    orderNo: status === 'free' || status === 'unavailable' ? undefined : String(102 + index),
-    guests: status === 'free' || status === 'unavailable' ? undefined : 2 + (index % 3),
-    total: status === 'free' || status === 'unavailable' ? undefined : 125000 + index * 39000,
-    duration: status === 'free' || status === 'unavailable' ? undefined : `${14 + index * 7} ${props.terminal.t('pos.minutesShort')}`,
+    status: hasCheck ? 'paid' : order.status === 'locked' ? 'precheck' : 'open',
+    orderNo: props.terminal.shortId(order.id),
+    guests: order.guest_count,
+    total: order.total,
+    duration: durationFrom(order.opened_at),
   };
 }));
 
@@ -110,40 +103,22 @@ const activeOrderGroups = computed(() => {
   const hallName = props.terminal.activeHalls.value.find((hall) => hall.id === props.terminal.selectedHallId.value)?.name ?? props.terminal.t('pos.currentHall');
   const orders: ActiveOrderCard[] = [];
 
-  if (props.terminal.activeOrder.value && props.terminal.selectedTable.value) {
+  for (const order of props.terminal.activeOrders.value) {
     orders.push({
-      id: props.terminal.activeOrder.value.id,
-      number: props.terminal.shortId(props.terminal.activeOrder.value.id),
-      tableId: props.terminal.selectedTable.value.id,
-      table: props.terminal.selectedTable.value.name,
-      total: props.terminal.activeOrder.value.total,
-      positions: props.terminal.activeLines.value.length,
-      duration: durationFrom(props.terminal.activeOrder.value.opened_at),
-      status: props.terminal.activePrecheck.value ? 'precheck' : 'open',
-    });
-  }
-
-  for (const card of tableCards.value.filter((item) => item.status === 'open' || item.status === 'precheck').slice(0, 5)) {
-    if (orders.some((order) => order.tableId === card.id)) continue;
-    orders.push({
-      id: `mock-${card.id}`,
-      number: card.orderNo ?? props.terminal.shortId(card.id),
-      tableId: card.id,
-      table: card.name,
-      total: card.total ?? 0,
-      positions: 2 + (orders.length % 4),
-      duration: card.duration ?? '',
-      status: card.status === 'precheck' ? 'precheck' : 'open',
+      id: order.id,
+      number: props.terminal.shortId(order.id),
+      tableId: order.table_id,
+      table: order.table_name,
+      total: order.total,
+      positions: order.lines.filter((line) => line.status === 'active').length,
+      duration: durationFrom(order.opened_at),
+      status: order.status === 'locked' ? 'precheck' : 'open',
     });
   }
 
   return orders.length ? [{ hall: hallName, orders }] : [];
 });
 
-function mockStatus(index: number): TableStatus {
-  const statuses: TableStatus[] = ['free', 'open', 'precheck', 'free', 'open', 'free', 'open', 'precheck', 'open', 'free', 'free', 'precheck', 'free', 'paid', 'precheck'];
-  return statuses[index % statuses.length];
-}
 
 function openTable(card: TableCard) {
   props.terminal.selectTable(card.id);
