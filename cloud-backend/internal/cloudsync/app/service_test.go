@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -65,6 +66,83 @@ func TestReceiveBatchReturnsItemLevelAck(t *testing.T) {
 	}
 	if ack.Items[1].Status != contracts.BatchItemRejected || ack.Items[1].ErrorCode != "INVALID_ENVELOPE" {
 		t.Fatalf("expected second item rejected by validation, got %+v", ack.Items[1])
+	}
+}
+
+func TestExchangeReturnsItemAckAndNewerCloudPackage(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+	if err := repo.AuthorizeNodeForTest("device-1", "restaurant-1", "node-token"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpsertMasterDataPackage(context.Background(), contracts.MasterDataPackage{
+		StreamName:      contracts.MasterDataStreamCatalog,
+		NodeDeviceID:    "device-1",
+		RestaurantID:    "restaurant-1",
+		SyncMode:        contracts.SyncModeIncremental,
+		CloudVersion:    7,
+		CheckpointToken: "catalog:7",
+		PayloadJSON:     json.RawMessage(`{"catalog_items":[{"id":"c-1","name":"Tea"}]}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := service.Exchange(context.Background(), contracts.SyncExchangeRequest{
+		ProtocolVersion: contracts.SyncExchangeProtocolVersion,
+		NodeDeviceID:    "device-1",
+		RestaurantID:    "restaurant-1",
+		EdgeEvents: []contracts.SyncExchangeEdgeEvent{
+			{ClientItemID: "outbox-1", Payload: json.RawMessage(sampleEnvelope(t))},
+			{ClientItemID: "outbox-bad", Payload: json.RawMessage(`{"version":"1"}`)},
+		},
+		Streams: []contracts.SyncExchangeStreamRequest{
+			{StreamName: contracts.MasterDataStreamCatalog, LastCloudVersion: 6, CheckpointToken: "catalog:6"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Status != contracts.SyncExchangeStatusPartial {
+		t.Fatalf("expected partial exchange status, got %+v", resp)
+	}
+	if len(resp.EdgeAcks) != 2 || resp.EdgeAcks[0].Status != contracts.BatchItemAccepted || resp.EdgeAcks[1].Status != contracts.BatchItemRejected {
+		t.Fatalf("unexpected edge acks: %+v", resp.EdgeAcks)
+	}
+	if len(resp.CloudPackages) != 1 || resp.CloudPackages[0].StreamName != contracts.MasterDataStreamCatalog || resp.CloudPackages[0].CloudVersion != 7 {
+		t.Fatalf("expected one newer catalog package, got %+v", resp.CloudPackages)
+	}
+	if len(resp.StreamResults) != 1 || resp.StreamResults[0].Status != contracts.SyncExchangeStreamChanged {
+		t.Fatalf("expected changed stream result, got %+v", resp.StreamResults)
+	}
+}
+
+func TestExchangeRejectsRevisionAheadBeforeReceivingEdgeEvents(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+	if _, err := service.UpsertMasterDataPackage(context.Background(), contracts.MasterDataPackage{
+		StreamName:      contracts.MasterDataStreamMenu,
+		NodeDeviceID:    "node-1",
+		RestaurantID:    "restaurant-1",
+		SyncMode:        contracts.SyncModeIncremental,
+		CloudVersion:    3,
+		CheckpointToken: "menu:3",
+		PayloadJSON:     json.RawMessage(`{"menu_items":[{"id":"m-1"}]}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := service.Exchange(context.Background(), contracts.SyncExchangeRequest{
+		ProtocolVersion: contracts.SyncExchangeProtocolVersion,
+		NodeDeviceID:    "node-1",
+		RestaurantID:    "restaurant-1",
+		EdgeEvents:      []contracts.SyncExchangeEdgeEvent{{ClientItemID: "outbox-1", Payload: json.RawMessage(sampleEnvelope(t))}},
+		Streams:         []contracts.SyncExchangeStreamRequest{{StreamName: contracts.MasterDataStreamMenu, LastCloudVersion: 4, CheckpointToken: "menu:4"}},
+	})
+	if !errors.Is(err, contracts.ErrSyncRevisionAhead) {
+		t.Fatalf("expected revision-ahead error, got %v", err)
+	}
+	if repo.Count() != 0 {
+		t.Fatalf("edge events must not be received when stream preflight fails, got %d", repo.Count())
 	}
 }
 

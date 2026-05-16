@@ -266,6 +266,11 @@ type SyncMode = shared.SyncMode
 type MasterDataStream = shared.MasterDataStream
 type MasterDataSyncState = shared.MasterDataSyncState
 type MasterRecordSyncMeta = shared.MasterRecordSyncMeta
+type SyncExchangeState = shared.SyncExchangeState
+type SyncExchangeRequest = shared.SyncExchangeRequest
+type SyncExchangeEdgeEvent = shared.SyncExchangeEdgeEvent
+type SyncExchangeStreamRequest = shared.SyncExchangeStreamRequest
+type CloudPackage = shared.CloudPackage
 type OutboxMessage = shared.OutboxMessage
 type SyncStatus = shared.SyncStatus
 type LocalEvent = shared.LocalEvent
@@ -292,6 +297,10 @@ const (
 
 	SyncModeFullSnapshot = shared.SyncModeFullSnapshot
 	SyncModeIncremental  = shared.SyncModeIncremental
+
+	SyncExchangeProtocolVersion = shared.SyncExchangeProtocolVersion
+	SyncExchangeStatusAccepted  = shared.SyncExchangeStatusAccepted
+	SyncExchangeStatusPartial   = shared.SyncExchangeStatusPartial
 
 	MasterDataStreamRestaurants = shared.MasterDataStreamRestaurants
 	MasterDataStreamDevices     = shared.MasterDataStreamDevices

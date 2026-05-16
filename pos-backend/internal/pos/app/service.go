@@ -2,6 +2,10 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"pos-backend/internal/platform/clock"
@@ -203,6 +207,26 @@ func (s *Service) RegisterCloudProvisioning(ctx context.Context, cmd RegisterClo
 
 func (s *Service) PollCloudAssignment(ctx context.Context) (domain.ProvisioningStatusView, error) {
 	return s.provisioning.PollAssignment(ctx)
+}
+
+// MaintainCloudProvisioning выполняет один безопасный фоновой шаг provisioning.
+// После pairing/assignment метод не ходит в Cloud, чтобы не сбрасывать node_token
+// и не создавать повторный register/assignment/snapshot цикл.
+func (s *Service) MaintainCloudProvisioning(ctx context.Context, cmd RegisterCloudProvisioningCommand) (domain.ProvisioningStatusView, error) {
+	status, err := s.GetProvisioningStatus(ctx)
+	if err != nil {
+		return domain.ProvisioningStatusView{}, err
+	}
+	switch status.Status {
+	case domain.ProvisioningPaired, domain.ProvisioningAssignedDownloadingSnapshot:
+		return status, nil
+	case domain.ProvisioningUnpairedRegistered:
+		return s.PollCloudAssignment(ctx)
+	case domain.ProvisioningNotConfigured, domain.ProvisioningError:
+		return s.RegisterCloudProvisioning(ctx, cmd)
+	default:
+		return status, nil
+	}
 }
 
 func (s *Service) PairViaLicense(ctx context.Context, cmd PairViaLicenseCommand) (domain.ProvisioningStatusView, error) {
@@ -465,8 +489,129 @@ func (s *Service) ApplyMasterData(ctx context.Context, cmd ApplyMasterDataComman
 	return s.masterSync.ApplyMasterData(ctx, cmd)
 }
 
+func (s *Service) GetSyncExchangeState(ctx context.Context) (domain.SyncExchangeState, error) {
+	state, err := s.repo.GetEdgeProvisioningState(ctx)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.SyncExchangeState{}, nil
+		}
+		return domain.SyncExchangeState{}, err
+	}
+	if strings.TrimSpace(state.NodeDeviceID) == "" || strings.TrimSpace(state.CredentialsToken) == "" {
+		return domain.SyncExchangeState{}, nil
+	}
+	streamStates, err := s.repo.ListMasterDataSyncStates(ctx, state.NodeDeviceID)
+	if err != nil {
+		return domain.SyncExchangeState{}, err
+	}
+	byStream := map[domain.MasterDataStream]domain.MasterDataSyncState{}
+	for _, item := range streamStates {
+		byStream[item.StreamName] = item
+	}
+	streams := make([]domain.SyncExchangeStreamRequest, 0, len(syncExchangeStreams()))
+	for _, streamName := range syncExchangeStreams() {
+		local := byStream[streamName]
+		checkpoint := ""
+		if local.CheckpointToken != nil {
+			checkpoint = *local.CheckpointToken
+		}
+		streams = append(streams, domain.SyncExchangeStreamRequest{
+			StreamName:       string(streamName),
+			LastCloudVersion: local.LastCloudVersion,
+			CheckpointToken:  checkpoint,
+		})
+	}
+	return domain.SyncExchangeState{
+		NodeDeviceID: strings.TrimSpace(state.NodeDeviceID),
+		RestaurantID: strings.TrimSpace(state.RestaurantID),
+		AuthToken:    strings.TrimSpace(state.CredentialsToken),
+		Streams:      streams,
+	}, nil
+}
+
+func (s *Service) RefreshSyncExchangeState(ctx context.Context) error {
+	status, err := s.GetProvisioningStatus(ctx)
+	if err != nil {
+		return err
+	}
+	if status.Status == domain.ProvisioningUnpairedRegistered {
+		_, err = s.PollCloudAssignment(ctx)
+		return err
+	}
+	return nil
+}
+
+func (s *Service) ApplySyncExchangeCloudPackages(ctx context.Context, packages []domain.CloudPackage) error {
+	for _, pkg := range packages {
+		stream := domain.MasterDataStream(strings.TrimSpace(pkg.StreamName))
+		if !isSyncExchangeStream(stream) {
+			return fmt.Errorf("%w: unsupported exchange stream %q", domain.ErrInvalid, pkg.StreamName)
+		}
+		state, err := s.repo.GetMasterDataSyncState(ctx, strings.TrimSpace(pkgNodeDeviceID(pkg)), stream)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return err
+		}
+		if state != nil {
+			localCheckpoint := ""
+			if state.CheckpointToken != nil {
+				localCheckpoint = *state.CheckpointToken
+			}
+			if state.LastCloudVersion > pkg.CloudVersion {
+				return fmt.Errorf("%w: local stream %s version is ahead of cloud package", domain.ErrConflict, stream)
+			}
+			if state.LastCloudVersion == pkg.CloudVersion && localCheckpoint != "" && pkg.CheckpointToken != "" && localCheckpoint != pkg.CheckpointToken {
+				return fmt.Errorf("%w: local stream %s checkpoint conflicts with cloud package", domain.ErrConflict, stream)
+			}
+			if state.LastCloudVersion == pkg.CloudVersion && (localCheckpoint == pkg.CheckpointToken || pkg.CheckpointToken == "") {
+				continue
+			}
+		}
+		var cmd ApplyMasterDataCommand
+		if err := json.Unmarshal(pkg.PayloadJSON, &cmd); err != nil {
+			return fmt.Errorf("%w: exchange package payload is invalid JSON", domain.ErrInvalid)
+		}
+		cmd.StreamName = stream
+		cmd.RestaurantID = strings.TrimSpace(pkg.RestaurantID)
+		cmd.SyncMode = domain.SyncMode(strings.TrimSpace(pkg.SyncMode))
+		cmd.FullSnapshotReason = strings.TrimSpace(pkg.FullSnapshotReason)
+		cmd.CloudVersion = pkg.CloudVersion
+		cmd.CheckpointToken = strings.TrimSpace(pkg.CheckpointToken)
+		cmd.CloudUpdatedAt = strings.TrimSpace(pkg.CloudUpdatedAt)
+		cmd.CommandMeta = CommandMeta{NodeDeviceID: pkgNodeDeviceID(pkg), DeviceID: pkgNodeDeviceID(pkg), Origin: domain.OriginCloudSync}
+		if _, err := s.ApplyMasterData(ctx, cmd); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Service) ListOutbox(ctx context.Context, limit int) ([]domain.OutboxMessage, error) {
 	return s.outbox.ListOutbox(ctx, limit)
+}
+
+func syncExchangeStreams() []domain.MasterDataStream {
+	return []domain.MasterDataStream{
+		domain.MasterDataStreamRestaurants,
+		domain.MasterDataStreamDevices,
+		domain.MasterDataStreamStaff,
+		domain.MasterDataStreamFloor,
+		domain.MasterDataStreamCatalog,
+		domain.MasterDataStreamMenu,
+		domain.MasterDataStreamPricing,
+	}
+}
+
+func isSyncExchangeStream(stream domain.MasterDataStream) bool {
+	for _, supported := range syncExchangeStreams() {
+		if stream == supported {
+			return true
+		}
+	}
+	return false
+}
+
+func pkgNodeDeviceID(pkg domain.CloudPackage) string {
+	return strings.TrimSpace(pkg.NodeDeviceID)
 }
 
 func (s *Service) ListOutboxAsOperator(ctx context.Context, meta CommandMeta, limit int) ([]domain.OutboxMessage, error) {

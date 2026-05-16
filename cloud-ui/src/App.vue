@@ -134,6 +134,23 @@ type RowValue = string | number | boolean | string[] | null | undefined;
 type Row = Record<string, RowValue>;
 type SelectOption = { label: string; value: string | number | boolean };
 
+const autoPublishResourceKeys = new Set<ResourceKey>([
+  'restaurants',
+  'roles',
+  'employees',
+  'catalogItems',
+  'catalogFolders',
+  'folderParameters',
+  'catalogTags',
+  'modifierGroups',
+  'modifierOptions',
+  'modifierBindings',
+  'pricingPolicies',
+  'halls',
+  'tables',
+  'menuItems',
+]);
+
 type FieldConfig = {
   key: string;
   labelKey: string;
@@ -974,17 +991,19 @@ async function submitForm() {
   }
   await withLoading('submit', async () => {
     const payload = formPayload(config);
+    let nextSuccessKey = 'cloud.messages.saved';
     if (mode.value === 'create') {
       const created = await config.create?.(payload);
       if (config.key === 'restaurants' && created && typeof (created as Row).id === 'string') {
         selectedRestaurantId.value = String((created as Row).id);
       }
-      successKey.value = 'cloud.messages.created';
+      nextSuccessKey = 'cloud.messages.created';
     } else if (selectedRowId.value && config.update) {
       await config.update(selectedRowId.value, payload);
-      successKey.value = 'cloud.messages.saved';
     }
     await reloadAfterMutation(config.key);
+    await autoPublishAfterMutation(config.key);
+    successKey.value = nextSuccessKey;
     startCreate();
   });
 }
@@ -1048,8 +1067,9 @@ async function archiveSelected() {
   if (!config?.archive || !selectedRowId.value) return;
   await withLoading('archive', async () => {
     await config.archive?.(selectedRowId.value);
-    successKey.value = 'cloud.messages.archived';
     await reloadAfterMutation(config.key);
+    await autoPublishAfterMutation(config.key);
+    successKey.value = 'cloud.messages.archived';
     startCreate();
   });
 }
@@ -1060,8 +1080,9 @@ async function employeeAction(action: 'suspend' | 'activate' | 'archive') {
     if (action === 'suspend') await suspendEmployee(selectedRowId.value);
     if (action === 'activate') await activateEmployee(selectedRowId.value);
     if (action === 'archive') await archiveEmployee(selectedRowId.value);
-    successKey.value = 'cloud.messages.saved';
     await loadScopedResource('employees');
+    await autoPublishAfterMutation('employees');
+    successKey.value = 'cloud.messages.saved';
   });
 }
 
@@ -1069,8 +1090,9 @@ async function assignSelectedEmployeeRole() {
   if (!selectedRowId.value || !form.role_id) return;
   await withLoading('employee-action', async () => {
     await assignEmployeeRole(selectedRowId.value, String(form.role_id));
-    successKey.value = 'cloud.messages.saved';
     await loadScopedResource('employees');
+    await autoPublishAfterMutation('employees');
+    successKey.value = 'cloud.messages.saved';
   });
 }
 
@@ -1079,8 +1101,9 @@ async function rotateSelectedEmployeePIN() {
   await withLoading('employee-action', async () => {
     await rotateEmployeePIN(selectedRowId.value, actionPin.value.trim());
     actionPin.value = '';
-    successKey.value = 'cloud.messages.saved';
     await loadScopedResource('employees');
+    await autoPublishAfterMutation('employees');
+    successKey.value = 'cloud.messages.saved';
   });
 }
 
@@ -1142,6 +1165,16 @@ async function publishSelectedRestaurant() {
       node_device_id: publishForm.node_device_id.trim(),
     });
     successKey.value = 'cloud.messages.published';
+  });
+}
+
+async function autoPublishAfterMutation(key: ResourceKey) {
+  if (!selectedRestaurantId.value || !autoPublishResourceKeys.has(key)) return;
+  // Cloud UI является операторским контуром пилота: после CRUD сразу создаем новый package,
+  // чтобы Edge получил свежий checkpoint в ближайшем exchange без отдельного шага публикации.
+  publication.value = await publishMasterData(selectedRestaurantId.value, {
+    published_by: 'cloud-ui',
+    node_device_id: publishForm.node_device_id.trim(),
   });
 }
 

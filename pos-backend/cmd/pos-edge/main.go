@@ -100,11 +100,13 @@ func run() error {
 	if cfg.Bool("POS_SYNC_SENDER_ENABLED", true) {
 		cloudEndpoint := syncEndpoint(rawCloudURL)
 		worker := syncsender.NewWorker(service, poscloudsync.NewClient(cloudEndpoint), syncsender.Config{
-			WorkerID:     cfg.Get("POS_SYNC_SENDER_ID", "pos-sync-sender-main"),
-			BatchSize:    cfg.Int("POS_SYNC_SENDER_BATCH_SIZE", 25),
-			PollInterval: envDuration(cfg.Get("POS_SYNC_SENDER_POLL_INTERVAL", ""), 2*time.Second),
-			ReclaimAfter: envDuration(cfg.Get("POS_SYNC_SENDER_RECLAIM_AFTER", ""), 5*time.Minute),
-			SendTimeout:  envDuration(cfg.Get("POS_SYNC_SENDER_SEND_TIMEOUT", ""), 10*time.Second),
+			WorkerID:          cfg.Get("POS_SYNC_SENDER_ID", "pos-sync-sender-main"),
+			BatchSize:         cfg.Int("POS_SYNC_SENDER_BATCH_SIZE", 25),
+			PollInterval:      envDuration(cfg.Get("POS_SYNC_SENDER_POLL_INTERVAL", ""), 30*time.Second),
+			PollJitter:        envDuration(cfg.Get("POS_SYNC_SENDER_POLL_JITTER", ""), 3*time.Second),
+			CloudPullInterval: envDuration(cfg.Get("POS_SYNC_SENDER_CLOUD_PULL_INTERVAL", ""), 30*time.Second),
+			ReclaimAfter:      envDuration(cfg.Get("POS_SYNC_SENDER_RECLAIM_AFTER", ""), 5*time.Minute),
+			SendTimeout:       envDuration(cfg.Get("POS_SYNC_SENDER_SEND_TIMEOUT", ""), 10*time.Second),
 		}, slog.Default())
 		go worker.Run(rootCtx)
 	} else {
@@ -120,7 +122,7 @@ func run() error {
 				case <-rootCtx.Done():
 					return
 				case <-ticker.C:
-					_, _ = service.RegisterCloudProvisioning(rootCtx, app.RegisterCloudProvisioningCommand{CloudURL: cloudProvisioningURL, DisplayName: cfg.Get("POS_EDGE_DISPLAY_NAME", "POS Terminal"), AppVersion: moduleVersion})
+					_, _ = service.MaintainCloudProvisioning(rootCtx, app.RegisterCloudProvisioningCommand{CloudURL: cloudProvisioningURL, DisplayName: cfg.Get("POS_EDGE_DISPLAY_NAME", "POS Terminal"), AppVersion: moduleVersion})
 				}
 			}
 		}()

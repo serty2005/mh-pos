@@ -42,6 +42,16 @@
 `catalog` и `menu` payloads включают catalog folders/tags/services и modifier groups/options/links; menu categories остаются отдельным понятием и не заменяют catalog folders.
 `pricing_policy` включает tax/service-charge reference tables и automatic discount/surcharge policies; manual override runtime остается backend RBAC-controlled action.
 
+Реализовано сейчас:
+
+- POS Edge sync sender использует authenticated `POST /api/v1/sync/exchange` как приоритетный Cloud-Edge цикл, когда локальное provisioning state содержит `node_token`.
+- Edge отправляет текущие `cloud_master_sync_state` revisions/checkpoints по поддерживаемым streams и получает только более новые Cloud packages.
+- Cloud package apply и commit соответствующего stream checkpoint выполняются существующей transaction boundary `mastersync.Service`.
+- Если локальный apply не проходит, Edge не помечает accepted outbox rows как `sent`; retry повторяет exchange, а Cloud idempotency возвращает стабильный ACK для уже принятого event.
+- После successful pairing/assignment POS Edge не выполняет повторный Cloud device registration/snapshot provisioning loop; фоновая maintenance только регистрирует not configured node или poll-ит `pending_admin_approval`.
+- Пустой exchange без Edge outbox throttled отдельным Cloud pull interval, а появившиеся Edge outbox events отправляются в ближайший worker tick без ожидания этого throttling interval.
+- Cloud UI после успешного CRUD Cloud-owned master data автоматически создает новый published package через canonical publication API. Поэтому роль, сотрудник или PIN, созданные оператором в Cloud UI после pairing, попадают на Edge в ближайший Cloud -> Edge exchange. Ручная публикация остается реализована сейчас как явный operator checkpoint.
+
 ## Current Edge -> Cloud Runtime
 
 Реализовано сейчас:
@@ -49,6 +59,8 @@
 - cashier commands пишут local event/outbox foundation;
 - POS runtime продолжает работу, если Cloud недоступен;
 - Cloud receiver/projection foundation существует.
+- authenticated `sync/exchange` принимает Edge events с item-level ACK и сохраняет существующую idempotency model;
+- legacy `/sync/edge-events` и `/sync/edge-events/batch` остаются совместимыми inbound routes.
 
 Реализовано сейчас:
 
