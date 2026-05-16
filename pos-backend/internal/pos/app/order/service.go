@@ -115,10 +115,11 @@ func (s *Service) ListActiveOrdersByHallAsOperator(ctx context.Context, hallID s
 	if strings.TrimSpace(hallID) == "" {
 		return nil, fmt.Errorf("%w: hall_id is required", domain.ErrInvalid)
 	}
-	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionOrderView)); err != nil {
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionOrderView))
+	if err != nil {
 		return nil, err
 	}
-	orders, err := s.repo.ListActiveOrdersByDeviceAndHall(ctx, meta.DeviceID, hallID)
+	orders, err := s.repo.ListActiveOrdersByRestaurantAndHall(ctx, operator.Employee.RestaurantID, hallID)
 	if err != nil {
 		return nil, err
 	}

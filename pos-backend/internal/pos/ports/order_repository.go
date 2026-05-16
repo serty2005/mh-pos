@@ -10,7 +10,7 @@ type OrderRepository interface {
 	CreateOrder(context.Context, *order.Order) error
 	GetOrder(context.Context, string) (*order.Order, error)
 	GetActiveOrderByDeviceAndTable(context.Context, string, string) (*order.Order, error)
-	ListActiveOrdersByDeviceAndHall(context.Context, string, string) ([]order.Order, error)
+	ListActiveOrdersByRestaurantAndHall(context.Context, string, string) ([]order.Order, error)
 	ListClosedOrders(context.Context, int) ([]order.OrderSummary, error)
 	UpdateOrderOpen(context.Context, *order.Order) error
 	UpdateOrderLocked(context.Context, *order.Order) error

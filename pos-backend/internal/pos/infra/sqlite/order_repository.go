@@ -25,8 +25,8 @@ func (r *Repository) GetActiveOrderByDeviceAndTable(ctx context.Context, deviceI
 	return r.scanOrder(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,edge_order_id,restaurant_id,device_id,shift_id,status,table_id,table_name,guest_count,opened_at,closed_at,created_at,updated_at FROM orders WHERE device_id = ? AND table_id = ? AND status IN ('open','locked') ORDER BY opened_at DESC LIMIT 1`, deviceID, tableID))
 }
 
-func (r *Repository) ListActiveOrdersByDeviceAndHall(ctx context.Context, deviceID, hallID string) ([]domain.Order, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT o.id,o.edge_order_id,o.restaurant_id,o.device_id,o.shift_id,o.status,o.table_id,o.table_name,o.guest_count,o.opened_at,o.closed_at,o.created_at,o.updated_at FROM orders o JOIN tables t ON t.id = o.table_id WHERE o.device_id = ? AND t.hall_id = ? AND o.status IN ('open','locked') ORDER BY o.opened_at`, deviceID, hallID)
+func (r *Repository) ListActiveOrdersByRestaurantAndHall(ctx context.Context, restaurantID, hallID string) ([]domain.Order, error) {
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT o.id,o.edge_order_id,o.restaurant_id,o.device_id,o.shift_id,o.status,o.table_id,o.table_name,o.guest_count,o.opened_at,o.closed_at,o.created_at,o.updated_at FROM orders o JOIN tables t ON t.id = o.table_id WHERE o.restaurant_id = ? AND t.restaurant_id = ? AND t.hall_id = ? AND o.status IN ('open','locked') ORDER BY o.opened_at`, restaurantID, restaurantID, hallID)
 	if err != nil {
 		return nil, err
 	}
