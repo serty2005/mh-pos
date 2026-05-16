@@ -272,7 +272,7 @@ export function useCashierTerminal() {
   const closedOrders = useQuery({
     queryKey: ['closed-orders'],
     queryFn: () => listClosedOrders(50),
-    enabled: () => Boolean(auth.nodeDeviceId && auth.sessionId && canViewClosedOrders.value && closedOrdersDrawer.value),
+    enabled: () => Boolean(auth.nodeDeviceId && auth.sessionId && canViewClosedOrders.value),
   });
 
   const activePrecheck = computed(() => prechecks.data.value?.find((item) => item.status === 'issued') ?? null);
@@ -292,6 +292,7 @@ export function useCashierTerminal() {
   const canCancelPrecheck = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.precheckCancelRequest));
   const canReprintPrecheck = computed(() => Boolean(latestPrecheck.value && hasPermission(grantedPermissions.value, permissionCatalog.precheckReprint)));
   const canReprintCheck = computed(() => Boolean(finalCheckData.value && hasPermission(grantedPermissions.value, permissionCatalog.checkReprint)));
+  const canReprintClosedCheck = computed(() => hasPermission(grantedPermissions.value, permissionCatalog.checkReprint));
   const canPayCash = computed(() => Boolean(currentCashSession.data.value && activePrecheck.value && paymentAmount.value > 0 && paymentAmount.value <= remainingPayment.value && hasPermission(grantedPermissions.value, permissionCatalog.paymentCash)));
   const canPayCard = computed(() => Boolean(currentCashSession.data.value && activePrecheck.value && paymentAmount.value > 0 && paymentAmount.value <= remainingPayment.value && hasPermission(grantedPermissions.value, permissionCatalog.paymentCardManual)));
   const paymentBlockedReasonKey = computed(() => {
@@ -800,6 +801,7 @@ export function useCashierTerminal() {
     canCancelPrecheck,
     canReprintPrecheck,
     canReprintCheck,
+    canReprintClosedCheck,
     canPayCash,
     canPayCard,
     canSubmitCashDrawerEvent,

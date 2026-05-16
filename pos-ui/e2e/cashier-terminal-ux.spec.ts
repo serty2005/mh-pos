@@ -73,9 +73,8 @@ test('redesigned POS shell supports section navigation and cashier flow', async 
 
   const table = page.locator('.floor-table-tile').first();
   await table.click();
-  await expect(page.locator('.pos-menu-area')).toBeVisible();
-  await expect(page.locator('.pos-order-rail')).toBeVisible();
-  await expect(page.locator('.pos-order-rail')).toContainText(/На выбранном столе нет активного заказа|В заказе нет активных позиций|Активный заказ/i);
+  await expect(page.locator('.floor-order-rail')).toBeVisible();
+  await expect(page.locator('.floor-order-rail')).toContainText(/На выбранном столе нет активного заказа|Активные заказы/i);
   await saveViewportScreenshot(page, testInfo, 'redesign-order-empty-desktop.png');
 
   const createOrder = page.getByRole('button', { name: /Создать заказ/i }).last();
@@ -83,6 +82,8 @@ test('redesigned POS shell supports section navigation and cashier flow', async 
     await expect(createOrder).toBeEnabled();
     await createOrder.click();
   }
+  await expect(page.locator('.pos-menu-area')).toBeVisible();
+  await expect(page.locator('.pos-order-rail')).toBeVisible();
   await expect(page.locator('.rail-summary')).toBeVisible();
 
   await cancelIssuedPrecheckIfPresent(page);
@@ -125,14 +126,22 @@ test('redesigned POS shell supports section navigation and cashier flow', async 
   await expect(paymentDialog).toBeHidden();
 
   await openSection(page, 'Активность');
-  await page.getByRole('button', { name: /Закрытые заказы/i }).click();
-  const closedOrdersDrawer = page.locator('.q-drawer').filter({ hasText: 'Закрытые заказы' });
-  await expect(closedOrdersDrawer).toBeVisible();
-  const refundButton = closedOrdersDrawer.getByRole('button', { name: /Вернуть оплату/i }).first();
+  await expect(page.locator('.activity-workspace')).toBeVisible();
+  const closedOrder = page.locator('.activity-order-item').first();
+  await expect(closedOrder).toBeVisible();
+  await closedOrder.click();
+  await expect(page.locator('.activity-detail-rail')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Копия чека/i })).toBeVisible();
+  const refundButton = page.getByRole('button', { name: /Вернуть оплату/i }).first();
   await expect(refundButton).toBeVisible();
   await refundButton.click();
   await expect(page.locator('.q-dialog').filter({ hasText: 'Вернуть оплату' })).toBeVisible();
   await saveViewportScreenshot(page, testInfo, 'refund-dialog-supported-flow.png');
+
+  await openSection(page, 'Касса');
+  await expect(page.locator('.cash-workspace')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Кассовый ящик/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Заблокировать/i })).toBeVisible();
 });
 
 test('redesigned POS shell remains usable on tablet and mobile viewports', async ({ page }, testInfo) => {
@@ -150,11 +159,11 @@ test('redesigned POS shell remains usable on tablet and mobile viewports', async
     await saveViewportScreenshot(page, testInfo, `${viewport.name}-redesign-shell.png`);
 
     await openSection(page, 'Активность');
-    await expect(page.locator('.simple-pos-section')).toBeVisible();
+    await expect(page.locator('.activity-workspace')).toBeVisible();
     await saveViewportScreenshot(page, testInfo, `${viewport.name}-activity-section.png`);
 
     await openSection(page, 'Касса');
-    await expect(page.locator('.simple-pos-section')).toBeVisible();
+    await expect(page.locator('.cash-workspace')).toBeVisible();
     await expect(page.locator('.pos-bottom-bar')).toBeInViewport();
     await saveViewportScreenshot(page, testInfo, `${viewport.name}-cash-section.png`);
   }
@@ -188,7 +197,7 @@ test('loading and error states are readable without raw backend details', async 
 async function loginAsManager(page: Page) {
   await page.goto('/login');
   await expect(page.getByRole('heading', { name: /Вход по PIN/i })).toBeVisible();
-  await page.getByLabel(/^PIN$/i).fill(demo.manager_pin);
+  await page.getByLabel(/^PIN$/i).fill('2222');
   await page.getByRole('button', { name: /Войти/i }).click();
   await expect(page.locator('.pos-bottom-bar')).toBeVisible();
 }

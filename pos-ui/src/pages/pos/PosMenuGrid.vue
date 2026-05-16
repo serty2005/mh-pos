@@ -8,27 +8,6 @@
       <q-btn flat round icon="refresh" class="icon-touch" :aria-label="terminal.t('actions.retry')" @click="terminal.refetchMenu" />
     </div>
 
-    <div class="menu-tool-row">
-      <q-input
-        v-model="terminal.menuSearch.value"
-        dense
-        outlined
-        clearable
-        debounce="120"
-        class="menu-search square-search"
-        :label="terminal.t('pos.searchMenu')"
-      >
-        <template #prepend>
-          <q-icon name="search" />
-        </template>
-      </q-input>
-      <div class="menu-filter-row" :aria-label="terminal.t('pos.menuGroups')">
-        <button v-for="option in groupOptions" :key="option.value" class="menu-filter-chip" :class="{ active: group === option.value }" type="button" @click="group = option.value">
-          {{ terminal.t(option.labelKey) }}
-        </button>
-      </div>
-    </div>
-
     <q-banner v-if="terminal.statusError.value" class="error-banner dense-banner" rounded>{{ terminal.statusError.value }}</q-banner>
     <q-banner v-if="terminal.menu.isError.value" class="error-banner dense-banner" rounded>{{ terminal.t('common.error') }}</q-banner>
     <blocking-notice
@@ -40,28 +19,52 @@
       icon="lock"
     />
 
-    <div v-if="terminal.menu.isPending.value" class="pos-menu-grid">
-      <q-skeleton v-for="n in 12" :key="n" class="menu-tile menu-tile-skeleton" />
-    </div>
+    <div class="menu-work-surface">
+      <aside class="menu-category-rail" :aria-label="terminal.t('pos.menuGroups')">
+        <button v-for="option in groupOptions" :key="option.value" class="menu-filter-chip" :class="{ active: group === option.value }" type="button" @click="group = option.value">
+          {{ terminal.t(option.labelKey) }}
+        </button>
+      </aside>
 
-    <div v-else-if="visibleItems.length" class="pos-menu-grid">
-      <button
-        v-for="item in visibleItems"
-        :key="item.id"
-        class="menu-tile"
-        type="button"
-        :disabled="!terminal.canAddOrderLine.value"
-        @click="terminal.openMenuItem(item)"
-      >
-        <span class="menu-tile-media">{{ initials(item.name) }}</span>
-        <span class="menu-tile-title">{{ item.name }}</span>
-        <span v-if="item.modifier_groups.length" class="menu-tile-hint">{{ terminal.t('pos.modifiersAvailable') }}</span>
-        <strong>{{ terminal.money(item.price, item.currency) }}</strong>
-        <small v-if="!terminal.canAddOrderLine.value">{{ terminal.t(disabledHintKey) }}</small>
-      </button>
-    </div>
+      <div class="menu-product-surface">
+        <q-input
+          v-model="terminal.menuSearch.value"
+          dense
+          outlined
+          clearable
+          debounce="120"
+          class="menu-search square-search"
+          :label="terminal.t('pos.searchMenu')"
+        >
+          <template #prepend>
+            <q-icon name="search" />
+          </template>
+        </q-input>
 
-    <div v-else class="empty-state wide">{{ terminal.regularMenuItems.value.length || terminal.serviceMenuItems.value.length ? terminal.t('pos.noMenuMatches') : terminal.t('pos.emptyMenu') }}</div>
+        <div v-if="terminal.menu.isPending.value" class="pos-menu-grid">
+          <q-skeleton v-for="n in 12" :key="n" class="menu-tile menu-tile-skeleton" />
+        </div>
+
+        <div v-else-if="visibleItems.length" class="pos-menu-grid">
+          <button
+            v-for="item in visibleItems"
+            :key="item.id"
+            class="menu-tile"
+            type="button"
+            :disabled="!terminal.canAddOrderLine.value"
+            @click="terminal.openMenuItem(item)"
+          >
+            <span class="menu-tile-media">{{ initials(item.name) }}</span>
+            <span class="menu-tile-title">{{ item.name }}</span>
+            <span v-if="item.modifier_groups.length" class="menu-tile-hint">{{ terminal.t('pos.modifiersAvailable') }}</span>
+            <strong>{{ terminal.money(item.price, item.currency) }}</strong>
+            <small v-if="!terminal.canAddOrderLine.value">{{ terminal.t(disabledHintKey) }}</small>
+          </button>
+        </div>
+
+        <div v-else class="empty-state wide">{{ terminal.regularMenuItems.value.length || terminal.serviceMenuItems.value.length ? terminal.t('pos.noMenuMatches') : terminal.t('pos.emptyMenu') }}</div>
+      </div>
+    </div>
   </section>
 </template>
 

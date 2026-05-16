@@ -89,7 +89,6 @@ const emit = defineEmits<{
 
 function selectTable(id: string) {
   props.terminal.selectTable(id);
-  emit('open-orders');
 }
 
 function openOrCreateOrder() {
