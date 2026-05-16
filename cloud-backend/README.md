@@ -43,7 +43,7 @@ CLOUD_POSTGRES_MIGRATIONS_DIR=migrations/postgres
 CLOUD_POSTGRES_BACKUP_DIR=data/cloud-backups
 CLOUD_PUBLIC_URL=http://localhost:8090
 LICENSE_SERVER_URL=http://localhost:8095
-MH_POS_VERSION=0.1.2
+MH_POS_VERSION=0.1.3
 ```
 
 `CLOUD_POSTGRES_DSN` обязателен.
@@ -52,7 +52,7 @@ MH_POS_VERSION=0.1.2
 
 Реализовано сейчас: PostgreSQL использует managed migrations из `migrations/postgres`; в pre-pilot режиме активен один схлопнутый baseline `001_init.sql`, который содержит receiver storage, projection tables, Cloud-owned master-data authority schema, restaurants API tables, provisioning tables, refund event catalog, refund finance projection columns и `pricing_policy` package stream.
 Реализовано сейчас: `schema_migrations` хранит имя SQL file, checksum и status; уже примененный baseline не выполняется повторно.
-Реализовано сейчас: до первого клиента существующие dev/test БД не поддерживаются как data-preserving upgrade path и пересоздаются из baseline. Startup migration framework сохраняет version/checksum policy для будущих post-client migrations.
+Реализовано сейчас: до первого клиента существующие dev/test БД не поддерживаются как data-preserving upgrade path и пересоздаются из baseline. Если active baseline меняется, `MH_POS_VERSION` повышается, чтобы startup policy не принимала checksum drift как ту же runtime-версию; для local/dev recovery предпочтительно пересоздать Cloud PostgreSQL volume из актуального baseline.
 Реализовано сейчас: startup policy использует `db_runtime_versions`; checksum drift при той же версии останавливает startup, а `DB version > MH_POS_VERSION` завершает startup fail-fast.
 Реализовано сейчас: schema verification проверяет required runtime storage, включая receiver journal/raw payload tables, projection tables, provisioning packages, currency reference catalog и Cloud master-data authority tables.
 Запланировано далее: projection query endpoints для dashboards не блокируют startup verification.

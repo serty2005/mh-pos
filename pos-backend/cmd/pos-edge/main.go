@@ -17,6 +17,7 @@ import (
 	"pos-backend/internal/platform/idgen"
 	"pos-backend/internal/platform/logging"
 	platformsqlite "pos-backend/internal/platform/sqlite"
+	"pos-backend/internal/platform/version"
 	"pos-backend/internal/pos/api"
 	"pos-backend/internal/pos/app"
 	poscloudsync "pos-backend/internal/pos/infra/cloudsync"
@@ -46,7 +47,7 @@ func run() error {
 	dbPath := cfg.Get("POS_SQLITE_PATH", "data/pos-edge.db")
 	migrationsDir := cfg.Get("POS_SQLITE_MIGRATIONS_DIR", "migrations/sqlite")
 	backupDir := cfg.Get("POS_SQLITE_BACKUP_DIR", "data/backups")
-	moduleVersion := cfg.Get("MH_POS_VERSION", "0.1.2")
+	moduleVersion := cfg.Get("MH_POS_VERSION", version.Resolve("MH_POS_VERSION"))
 	rawCloudURL := cfg.Get("POS_CLOUD_SYNC_URL", "")
 	cloudProvisioningURL := rawCloudURL
 	if strings.HasSuffix(cloudProvisioningURL, "/api/v1/sync/edge-events") {
