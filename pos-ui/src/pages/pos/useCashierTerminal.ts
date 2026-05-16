@@ -81,6 +81,7 @@ export function useCashierTerminal() {
 
   const selectedHallId = ref('');
   const selectedTableId = ref('');
+  const selectedOrderLineId = ref('');
   const currentOrderId = ref('');
   const openingCashAmount = ref(0);
   const closingCashAmount = ref(0);
@@ -207,6 +208,7 @@ export function useCashierTerminal() {
     enabled: () => Boolean(finalCheckId.value && auth.sessionId && currentShift.data.value && hasPermission(grantedPermissions.value, permissionCatalog.checkView)),
   });
   const activeLines = computed(() => activeOrder.value?.lines.filter((line) => line.status === 'active') ?? []);
+  const selectedOrderLine = computed(() => activeLines.value.find((line) => line.id === selectedOrderLineId.value) ?? activeLines.value[0] ?? null);
   const activeMenuItems = computed(() => menu.data.value?.filter((item) => item.active) ?? []);
   const regularMenuItems = computed(() => activeMenuItems.value.filter((item) => item.item_type !== 'service'));
   const serviceMenuItems = computed(() => activeMenuItems.value.filter((item) => item.item_type === 'service'));
@@ -403,7 +405,8 @@ export function useCashierTerminal() {
 
   const addLineMutation = useMutation({
     mutationFn: (payload: { menuItemId: string; selectedModifiers?: SelectedModifierPayload[] }) => addOrderLine(activeOrder.value?.id ?? '', payload.menuItemId, 1, payload.selectedModifiers ?? []),
-    onSuccess() {
+    onSuccess(result) {
+      selectedOrderLineId.value = result.id;
       closeModifierDialog();
       void refreshOrder();
     },
@@ -550,6 +553,11 @@ export function useCashierTerminal() {
     }
   });
 
+  watch(activeLines, (lines) => {
+    if (lines.some((line) => line.id === selectedOrderLineId.value)) return;
+    selectedOrderLineId.value = lines[0]?.id ?? '';
+  });
+
   watch(remainingPayment, (value) => {
     paymentAmount.value = minorToMoney(value, orderCurrency.value);
   });
@@ -557,12 +565,18 @@ export function useCashierTerminal() {
   function selectHall(id: string) {
     selectedHallId.value = id;
     selectedTableId.value = '';
+    selectedOrderLineId.value = '';
     currentOrderId.value = '';
   }
 
   function selectTable(id: string) {
     selectedTableId.value = id;
+    selectedOrderLineId.value = '';
     currentOrderId.value = '';
+  }
+
+  function selectOrderLine(id: string) {
+    selectedOrderLineId.value = id;
   }
 
   function changeQuantity(lineId: string, quantity: number) {
@@ -762,6 +776,7 @@ export function useCashierTerminal() {
     auth,
     selectedHallId,
     selectedTableId,
+    selectedOrderLineId,
     openingCashAmount,
     closingCashAmount,
     paymentAmount,
@@ -823,6 +838,7 @@ export function useCashierTerminal() {
     selectedTable,
     activeOrder,
     activeLines,
+    selectedOrderLine,
     activeMenuItems,
     regularMenuItems,
     serviceMenuItems,
@@ -861,6 +877,7 @@ export function useCashierTerminal() {
     logoutMutation,
     selectHall,
     selectTable,
+    selectOrderLine,
     openMenuItem,
     modifierGroupCount,
     changeModifierQuantity,

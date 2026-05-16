@@ -5,33 +5,52 @@
       <span>{{ terminal.t(activeSectionLabelKey) }}</span>
     </button>
 
-    <div class="context-chip-row">
-      <span v-if="terminal.selectedTable.value" class="context-chip">{{ terminal.t('pos.table') }} {{ terminal.selectedTable.value.name }}</span>
-      <span v-if="terminal.activeOrder.value" class="context-chip">{{ terminal.t('pos.order') }} {{ terminal.shortId(terminal.activeOrder.value.id) }}</span>
-      <span v-if="terminal.activePrecheck.value" class="context-chip warning">{{ terminal.t('pos.precheckIssued') }}</span>
-      <span v-if="terminal.finalCheckData.value" class="context-chip good">{{ terminal.t('pos.checkCreated') }}</span>
-      <span v-if="terminal.activeOrder.value" class="context-chip total">{{ terminal.money(terminal.activeOrder.value.total, terminal.orderCurrency.value) }}</span>
+    <div v-if="activeSection === 'order'" class="bottom-status-grid order-status-grid">
+      <span class="bottom-status-cell">
+        <small>{{ terminal.t('pos.orderNumberLabel') }}</small>
+        <strong>{{ terminal.activeOrder.value ? terminal.shortId(terminal.activeOrder.value.id) : '-' }}</strong>
+      </span>
+      <span class="bottom-status-cell">
+        <small>{{ terminal.t('pos.hallTable') }}</small>
+        <strong>{{ hallTableLabel }}</strong>
+      </span>
+      <span class="bottom-status-cell">
+        <small>{{ terminal.t('pos.waiter') }}</small>
+        <strong>{{ terminal.actorName.value || '-' }}</strong>
+      </span>
+      <button class="bottom-status-cell two-line-cell" type="button" @click="$emit('open-discounts')">
+        <small>{{ openedLabel }}</small>
+        <strong>{{ discountLabel }}</strong>
+      </button>
     </div>
 
-    <div class="bottom-status-cluster">
-      <button v-if="terminal.canViewSync.value" class="bottom-status" type="button" @click="terminal.syncDrawer.value = true">
-        <q-icon name="sync" size="20px" />
-        <span>{{ terminal.syncProblems.value > 0 ? terminal.syncProblems.value : terminal.t('status.sent') }}</span>
-      </button>
-      <span class="bottom-status">{{ terminal.currentShift.data.value ? terminal.t('status.open') : terminal.t('pos.noShift') }}</span>
-      <span class="bottom-status">{{ terminal.currentCashSession.data.value ? terminal.t('status.open') : terminal.t('pos.noCashSession') }}</span>
-      <span class="bottom-actor">{{ terminal.actorName.value }}</span>
-      <q-btn flat round icon="lock" class="icon-touch bottom-icon" :aria-label="terminal.t('actions.lock')" @click="terminal.lockTerminal" />
-      <q-btn
-        flat
-        round
-        icon="logout"
-        class="icon-touch bottom-icon"
-        :aria-label="terminal.t('actions.logout')"
-        :loading="terminal.logoutMutation.isPending.value"
-        @click="terminal.logoutMutation.mutate()"
-      />
+    <div v-else-if="activeSection === 'floor'" class="bottom-status-grid floor-status-grid">
+      <span class="bottom-status-cell">
+        <small>{{ terminal.t('pos.shiftTotal') }}</small>
+        <strong>{{ terminal.money(shiftTotal, terminal.orderCurrency.value) }}</strong>
+      </span>
+      <span class="bottom-status-cell">
+        <small>{{ terminal.t('pos.averageCheck') }}</small>
+        <strong>{{ terminal.money(averageCheck, terminal.orderCurrency.value) }}</strong>
+      </span>
+      <span class="bottom-status-cell">
+        <small>{{ terminal.t('pos.ordersCount') }}</small>
+        <strong>{{ ordersCount }}</strong>
+      </span>
+      <span class="bottom-status-cell">
+        <small>{{ terminal.t('pos.completedCount') }}</small>
+        <strong>{{ completedCount }}</strong>
+      </span>
     </div>
+
+    <div v-else class="bottom-status-grid">
+      <span class="bottom-status-cell">
+        <small>{{ terminal.t('pos.sectionStatus') }}</small>
+        <strong>{{ terminal.t('pos.operationalNow') }}</strong>
+      </span>
+    </div>
+
+    <q-btn flat square icon="lock" class="bottom-lock-button" :aria-label="terminal.t('actions.lock')" @click="terminal.lockTerminal" />
   </footer>
 </template>
 
@@ -48,7 +67,30 @@ const props = defineProps<{
 
 defineEmits<{
   (event: 'toggle-menu'): void;
+  (event: 'open-discounts'): void;
 }>();
 
 const activeSectionLabelKey = computed(() => `pos.sections.${props.activeSection}`);
+const hallTableLabel = computed(() => {
+  const hall = props.terminal.activeHalls.value.find((item) => item.id === props.terminal.selectedHallId.value)?.name ?? props.terminal.t('pos.currentHall');
+  const table = props.terminal.selectedTable.value?.name ?? '-';
+  return `${hall} / ${table}`;
+});
+const openedLabel = computed(() => {
+  const openedAt = props.terminal.activeOrder.value?.opened_at;
+  if (!openedAt) return props.terminal.t('pos.openedEmpty');
+  return props.terminal.t('pos.openedAt', { value: formatOpenedAt(openedAt) });
+});
+const discountLabel = computed(() => props.terminal.t('pos.discountPercent', { value: 0 }));
+const shiftTotal = computed(() => (props.terminal.closedOrders.data.value ?? []).reduce((sum, order) => sum + order.total, 0) + (props.terminal.activeOrder.value?.total ?? 0));
+const ordersCount = computed(() => (props.terminal.closedOrders.data.value ?? []).length + (props.terminal.activeOrder.value ? 1 : 0));
+const averageCheck = computed(() => ordersCount.value > 0 ? Math.round(shiftTotal.value / ordersCount.value) : 0);
+const completedCount = computed(() => (props.terminal.closedOrders.data.value ?? []).length);
+
+function formatOpenedAt(value: string) {
+  const date = new Date(value);
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  return new Intl.DateTimeFormat('ru-RU', sameDay ? { hour: '2-digit', minute: '2-digit' } : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date);
+}
 </script>

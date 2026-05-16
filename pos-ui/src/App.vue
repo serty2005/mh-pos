@@ -62,7 +62,7 @@ const errorDialog = useErrorDialogStore();
 const route = useRoute();
 const router = useRouter();
 
-const showHeader = computed(() => route.path !== '/pair' && route.path !== '/login');
+const showHeader = computed(() => route.path !== '/pair' && route.path !== '/login' && !route.path.startsWith('/pos'));
 
 function shortId(value: string) {
   return value.length > 10 ? `${value.slice(0, 8)}...` : value;

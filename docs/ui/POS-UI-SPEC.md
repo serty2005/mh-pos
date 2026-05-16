@@ -9,13 +9,15 @@ UI не является security boundary. Backend RBAC и application-layer ch
 Cashier UI in `pos-ui/src/pages/PosPage.vue` разделен на переиспользуемые компоненты терминала кассира в `pos-ui/src/pages/pos/*` и поддерживает:
 
 - PIN login/session-based operator context;
-- Square-like POS shell: постоянная нижняя quick access bar, скрываемое side menu разделов и рабочие разделы `Залы и столы`, `Заказы`, `Активность`, `Отчеты`, `Касса`;
-- waiter-first layout выбранного заказа: слева menu grid примерно 3/4 ширины, справа current order/action rail примерно 1/4 ширины;
+- POSAppShell с фиксированной верхней action-панелью, центральной рабочей областью, стабильной правой панелью, нижней status/navigation bar и скрываемым side menu поверх контента;
+- строгие разделы shell: `ЗАКАЗ`, `Залы / столы`, `Доставка`, `Смена`, `Аналитика`, `Настройки`;
+- selected-order layout: слева категории и сетка блюд, справа current order panel фиксированной ширины, верхняя кнопка `Сохранить`/`Пречек`/`Чек` выровнена по ширине правой панели;
+- hall-orders layout: слева сетка столов, справа только список активных заказов, верхняя кнопка `Быстрый чек` выровнена по ширине правой панели;
 - modal-процессы для оплаты, действий заказа, manager override отмены пречека, cash drawer и refund;
 - secondary operations (`cash drawer`, `closed orders`, `sync`) визуально отделены от основного пути продажи в отдельных разделах, dialog/drawer;
 - employee shift open/close;
 - cash session open/close;
-- halls/tables selection;
+- halls/tables selection в dense material-подобной сетке без скруглений;
 - current order lookup by table;
 - create order;
 - add order line from menu;
@@ -133,11 +135,29 @@ Requirements:
 - `/pos` and `/pos/cashier` load the current cashier pilot terminal.
 - Код cashier terminal разделен на composable для runtime/API state и presentation components для POS shell, floor, menu grid, order rail, payment/actions modals и utility panels.
 - Bottom quick access bar и скрываемое side menu являются основным navigation shell для POS runtime.
-- Раздел `Заказы` является первым redesigned рабочим экраном: menu grid + active order rail + payment/actions modal поверх текущего заказа.
-- Раздел `Активность` является полноценной секцией со списком и детальной панелью: закрытые заказы, компактные фильтры, детали оплат, reprint check и compatibility refund через уже реализованные backend-возможности.
-- Раздел `Отчеты` является ограниченной операционной сводкой: личная смена, кассовая смена, сводки закрытых заказов и оплат, sync health. Расширенные отчеты отмечены как `запланировано далее`, без активных неподдержанных кнопок.
-- Раздел `Касса` является полноценной операционной секцией: личная смена, кассовая смена, cash drawer actions, sync diagnostics, lock/logout.
+- Раздел `ЗАКАЗ` является основным redesigned рабочим экраном: category tabs + dish grid + current order panel + payment/actions modal поверх текущего заказа.
+- Раздел `Залы / столы` является redesigned рабочим экраном выбора зала/стола: table grid + active orders panel + modal создания заказа.
+- Раздел `Аналитика` использует текущую ограниченную операционную сводку: личная смена, кассовая смена, сводки закрытых заказов и оплат, sync health. Расширенные отчеты отмечены как `запланировано далее`, без активных неподдержанных кнопок.
+- Раздел `Смена` использует текущую операционную секцию кассы: личная смена, кассовая смена, cash drawer actions, sync diagnostics, lock/logout.
+- Разделы `Доставка` и `Настройки` пока используют существующие безопасные placeholder/utility surfaces до появления отдельных backend/API contracts.
 - Основные route components загружаются через lazy imports/code splitting, чтобы снизить нагрузку на initial bundle.
+
+## POS Shell Visual Contract
+
+Реализовано сейчас:
+
+- Основной POS экран рассчитан на 1366x768 без горизонтального скролла.
+- Основные панели, кнопки, карточки блюд, карточки столов и строки заказа используют прямые углы.
+- Side menu открывается по левой кнопке нижней панели, накладывается поверх интерфейса, не сдвигает layout и закрывается после выбора раздела.
+- Замок блокировки POS находится в правом нижнем углу нижней панели.
+- Правая панель заказа не показывает заголовки `Заказ #...` и `Стол ...`; контекст заказа вынесен в нижнюю панель.
+- Правая панель `Залы / столы` показывает только активные заказы, сгруппированные по залу.
+
+Запланировано далее:
+
+- Подключить отдельный backend/API для всех активных заказов по залам и статусов всех столов.
+- Подключить backend/API редактирования комментария, курса подачи и модификаторов уже добавленной строки.
+- Подключить backend/API быстрого чека со столом по умолчанию и проверкой отдельного permission.
 
 Вне текущего объема:
 
