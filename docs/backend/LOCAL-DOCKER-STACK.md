@@ -29,6 +29,7 @@ Docker-oriented JSON-конфиги лежат рядом с сервисами:
 Важные значения:
 
 ```text
+CLOUD_POSTGRES_HOST_PORT=5432
 CLOUD_POSTGRES_DSN=postgres://postgres:postgres@cloud-postgres:5432/mh_pos_cloud?sslmode=disable
 CLOUD_PUBLIC_URL=http://cloud-api:8090
 LICENSE_SERVER_URL=http://license-api:8095
@@ -44,6 +45,13 @@ POS_SQLITE_PATH=/app/data/pos-edge.db
 
 ```powershell
 $env:PYTHONIOENCODING='utf-8'
+docker compose -f docker-compose.local.yml up --build -d
+```
+
+Если локальный `5432` уже занят другой PostgreSQL-инстанцией, можно поменять только host binding, не меняя внутренний DSN между контейнерами:
+
+```powershell
+$env:CLOUD_POSTGRES_HOST_PORT='55432'
 docker compose -f docker-compose.local.yml up --build -d
 ```
 

@@ -141,7 +141,7 @@ async function request<T>(path: string, schema: z.ZodType<T>, init: RequestInit 
 
 async function requestOptional<T>(path: string, schema: z.ZodType<T>) {
   try {
-    return await request(path, schema);
+    return await request(path, schema.nullable());
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;

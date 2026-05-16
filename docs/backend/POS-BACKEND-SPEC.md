@@ -280,7 +280,7 @@ Recipes/inventory:
 
 - `POST /api/v1/system/provisioning/pair-via-license` принимает одноразовый license pairing code, получает Cloud URL, restaurant id, node token и node device id из License Server.
 - Если локальный Edge еще не находится в статусе `paired`, а license response содержит другой `node_device_id`, локальная provisioning identity переключается на `node_device_id` из license response. Это поддерживает Cloud UI flow без ручного ввода пользователем device ID.
-- Если локальный Edge уже находится в статусе `paired`, конфликтующий `node_device_id` из license response отклоняется как конфликт состояния.
+- Если локальный Edge уже находится в статусе `paired`, повторный `pair-via-license` и повторный assignment polling являются идемпотентными empty work: backend возвращает текущий paired status без повторного resolve/download/apply/pair и без нового `EdgeNodePaired` local event/outbox row.
 - После успешного resolve Edge скачивает Cloud snapshot, применяет master data и переводит provisioning status в `paired`.
 
 ## Error And Logging Contract

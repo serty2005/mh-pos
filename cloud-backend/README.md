@@ -113,6 +113,8 @@ GET   /api/v1/restaurants/{id}/edge-nodes/{node_device_id}/master-data/snapshot
 
 Реализовано сейчас: publication endpoint не делает каждое сохранение live. Он создает versioned publication (`version`, `cloud_version`, `published_at`, `published_by`, `package_sha256`) и deterministic packages для `restaurants`, `staff`, `floor`, `catalog`, `menu`. Generated packages сохраняются в `cloud_master_data_packages`, после чего Edge может получить их через provisioning/import path или через Edge-ready snapshot endpoint.
 
+Реализовано сейчас: `GET /api/v1/restaurants/{id}/master-data/publication-state` до первой публикации возвращает `200` с JSON `null`, чтобы Cloud UI показывал ожидаемый empty state без browser-console 404 noise.
+
 Реализовано сейчас: employee lifecycle поддерживает `active`, `suspended`, `archived`; role assignment обновляет permission snapshot для sync-safe POS usage; PIN rotation увеличивает credential version. API responses не возвращают PIN или `pin_hash`.
 
 Реализовано сейчас: catalog foundation разделяет `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_recipe_items`, `cloud_modifier_groups`, `cloud_modifier_options`; canonical catalog item kinds: `dish`, `good`, `ingredient`, `semi_finished`. Menu foundation хранит draft/published/archived lifecycle, price, category placement, availability, основу будущего station routing и будущих multi-location assignments. Cloud catalog type `semi_finished` публикуется в текущий POS Edge-compatible catalog stream как `ingredient`; categories пока хранятся в Cloud foundation, но не публикуются в Edge package до появления поддержанного Edge ingest contract.

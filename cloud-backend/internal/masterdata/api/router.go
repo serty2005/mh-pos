@@ -590,7 +590,7 @@ func (h *Handler) getPublished(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) getRestaurantPublished(w http.ResponseWriter, r *http.Request) {
 	v, err := h.service.GetCurrentPublishedState(r.Context(), chi.URLParam(r, "id"))
-	write(w, http.StatusOK, v, err)
+	writeOptional(w, http.StatusOK, v, err)
 }
 
 func (h *Handler) getLatestRestaurantPackage(w http.ResponseWriter, r *http.Request) {
@@ -633,6 +633,16 @@ func write[T any](w http.ResponseWriter, status int, v T, err error) {
 		return
 	}
 	writeJSON(w, status, v)
+}
+
+func writeOptional[T any](w http.ResponseWriter, status int, v T, err error) {
+	if errors.Is(err, domain.ErrNotFound) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte("null\n"))
+		return
+	}
+	write(w, status, v, err)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

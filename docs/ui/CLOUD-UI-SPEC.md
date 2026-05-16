@@ -51,6 +51,7 @@
 - menu items;
 - menu category create как command-only операция, потому что list/update routes не подтверждены;
 - publication summary и явная публикация master data;
+- `GET /api/v1/restaurants/{id}/master-data/publication-state` возвращает `200 null` до первой публикации выбранного ресторана; Cloud UI трактует это как empty state панели публикации, а не как ошибку browser console;
 - отдельный раздел `События от Edge`, который читает `GET /api/v1/sync/edge-events` и показывает только безопасные receipt metadata без raw payload.
 
 вне текущего объема:

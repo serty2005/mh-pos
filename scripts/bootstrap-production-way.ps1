@@ -175,6 +175,13 @@ function Invoke-RuntimeSmoke {
   if ($precheck.total -le 0) {
     throw "Precheck total must be positive, got $($precheck.total)"
   }
+  $precheckReprint = Invoke-JsonPost "$edgeApi/prechecks/$($precheck.id)/reprint" @{
+    command_id = New-CommandId "reprint-precheck"
+    reason = "production-way smoke precheck reprint"
+  } -Headers $headers -ExpectedStatus @(201)
+  if (-not $precheckReprint.snapshot) {
+    throw "Expected precheck reprint snapshot."
+  }
   $payment = Invoke-JsonPost "$edgeApi/prechecks/$($precheck.id)/payments" @{
     command_id = New-CommandId "capture-payment"
     method = "cash"
@@ -188,6 +195,13 @@ function Invoke-RuntimeSmoke {
   $closedOrder = Invoke-JsonGet "$edgeApi/orders/$($order.id)" -Headers $headers
   if ($closedOrder.status -ne "closed" -or -not $closedOrder.check -or $closedOrder.check.status -ne "paid") {
     throw "Expected closed paid order after full payment."
+  }
+  $checkReprint = Invoke-JsonPost "$edgeApi/checks/$($closedOrder.check.id)/reprint" @{
+    command_id = New-CommandId "reprint-check"
+    reason = "production-way smoke check reprint"
+  } -Headers $headers -ExpectedStatus @(201)
+  if (-not $checkReprint.snapshot) {
+    throw "Expected check reprint snapshot."
   }
 
   Write-Step "Closing original shift before refund boundary"
@@ -250,8 +264,10 @@ function Invoke-RuntimeSmoke {
     original_cash_shift_id = $cashShift.id
     order_id = $order.id
     precheck_id = $precheck.id
+    precheck_reprint_source_id = $precheckReprint.source_id
     payment_id = $payment.id
     check_id = $closedOrder.check.id
+    check_reprint_source_id = $checkReprint.source_id
     refund_operation_id = $refund.id
     refund_status = $refund.status
   }

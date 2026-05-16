@@ -90,6 +90,15 @@ func (c *countingProvisioningCloud) DownloadSnapshot(context.Context, string) (a
 	return appmastersync.ApplyMasterDataCommand{}, nil
 }
 
+type countingProvisioningLicense struct {
+	resolveCalls int
+}
+
+func (c *countingProvisioningLicense) Resolve(context.Context, string, appprovisioning.LicenseResolveRequest) (appprovisioning.LicenseResolveResponse, error) {
+	c.resolveCalls++
+	return appprovisioning.LicenseResolveResponse{}, nil
+}
+
 type fixture struct {
 	ctx            context.Context
 	db             *sql.DB
@@ -305,6 +314,41 @@ func TestMaintainCloudProvisioningSkipsCloudRegistrationWhenAlreadyPaired(t *tes
 	}
 	if cloud.registerCalls != 0 || cloud.statusCalls != 0 || cloud.snapshotCalls != 0 {
 		t.Fatalf("expected paired maintenance not to call Cloud, got register=%d status=%d snapshot=%d", cloud.registerCalls, cloud.statusCalls, cloud.snapshotCalls)
+	}
+}
+
+func TestProvisioningPollAndLicensePairAreIdempotentWhenAlreadyPaired(t *testing.T) {
+	f := newFixture(t)
+	cloud := &countingProvisioningCloud{}
+	license := &countingProvisioningLicense{}
+	service := app.NewServiceWithOptions(f.repo, platformsqlite.NewTxManager(f.db), &testIDs{n: 9100}, fixedClock{}, app.ServiceOptions{
+		CloudProvisioningURL:      "http://cloud.example",
+		CloudProvisioningClient:   cloud,
+		LicenseServerURL:          "http://license.example",
+		LicenseProvisioningClient: license,
+	})
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+
+	polled, err := service.PollCloudAssignment(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paired, err := service.PairViaLicense(f.ctx, app.PairViaLicenseCommand{PairingCode: "MHPOS:" + f.restaurant.ID + ":" + f.device.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !polled.Paired || polled.Status != domain.ProvisioningPaired || !paired.Paired || paired.Status != domain.ProvisioningPaired {
+		t.Fatalf("expected paired idempotent status, poll=%+v pair=%+v", polled, paired)
+	}
+	if cloud.registerCalls != 0 || cloud.statusCalls != 0 || cloud.snapshotCalls != 0 || license.resolveCalls != 0 {
+		t.Fatalf("expected paired provisioning not to call external services, cloud=%+v license=%+v", cloud, license)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected paired provisioning not to create outbox rows, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected paired provisioning not to create local events, before=%d after=%d", eventsBefore, events)
 	}
 }
 
@@ -3616,6 +3660,21 @@ func TestOutboxEntryCreatedForEachWriteAction(t *testing.T) {
 	}
 }
 
+func TestOpenShiftUsesRestaurantIANATimezone(t *testing.T) {
+	f := newFixture(t)
+	shift, err := f.service.OpenShift(f.ctx, app.OpenShiftCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shift.BusinessDateLocal != "2026-05-04" {
+		t.Fatalf("expected business date from Europe/Moscow timezone, got %s", shift.BusinessDateLocal)
+	}
+}
+
 func TestApplyMasterDataSnapshotUpsertsRowsStateAndDoesNotCreateOutbox(t *testing.T) {
 	f := newFixture(t)
 	outboxBefore := countRows(t, f, "pos_sync_outbox")
@@ -3698,15 +3757,16 @@ func TestApplyMasterDataSnapshotUpsertsRowsStateAndDoesNotCreateOutbox(t *testin
 		t.Fatalf("expected master ingest not to create local events, before=%d after=%d", eventsBefore, events)
 	}
 	var restaurantName, menuCurrency string
+	var restaurantActive int
 	var restaurantCloudVersion, menuCloudVersion int64
-	if err := f.db.QueryRowContext(f.ctx, `SELECT name,cloud_version FROM restaurants WHERE id = 'cloud-restaurant-1'`).Scan(&restaurantName, &restaurantCloudVersion); err != nil {
+	if err := f.db.QueryRowContext(f.ctx, `SELECT name,active,cloud_version FROM restaurants WHERE id = 'cloud-restaurant-1'`).Scan(&restaurantName, &restaurantActive, &restaurantCloudVersion); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.db.QueryRowContext(f.ctx, `SELECT currency,cloud_version FROM menu_items WHERE id = 'cloud-menu-1'`).Scan(&menuCurrency, &menuCloudVersion); err != nil {
 		t.Fatal(err)
 	}
-	if restaurantName != "Cloud Bistro" || restaurantCloudVersion != 42 || menuCurrency != "RUB" || menuCloudVersion != 42 {
-		t.Fatalf("unexpected applied rows: restaurant=%q/%d menu_currency=%q/%d", restaurantName, restaurantCloudVersion, menuCurrency, menuCloudVersion)
+	if restaurantName != "Cloud Bistro" || restaurantActive != 1 || restaurantCloudVersion != 42 || menuCurrency != "RUB" || menuCloudVersion != 42 {
+		t.Fatalf("unexpected applied rows: restaurant=%q active=%d version=%d menu_currency=%q menu_version=%d", restaurantName, restaurantActive, restaurantCloudVersion, menuCurrency, menuCloudVersion)
 	}
 	if states := countRows(t, f, "cloud_master_sync_state"); states != 6 {
 		t.Fatalf("expected six master sync states, got %d", states)

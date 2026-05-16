@@ -101,6 +101,19 @@ func TestPublicationEndpointsReturnSummary(t *testing.T) {
 	}
 }
 
+func TestRestaurantPublicationStateReturnsNullBeforeFirstPublish(t *testing.T) {
+	router := newRouter()
+	current := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/restaurants/restaurant-1/master-data/publication-state", nil)
+	router.ServeHTTP(current, req)
+	if current.Code != http.StatusOK {
+		t.Fatalf("expected optional publication state empty response, got %d: %s", current.Code, current.Body.String())
+	}
+	if strings.TrimSpace(current.Body.String()) != "null" {
+		t.Fatalf("expected JSON null publication state, got %q", current.Body.String())
+	}
+}
+
 func TestProductionRestaurantPublishAndSnapshotEndpoints(t *testing.T) {
 	router := newRouter()
 	restaurant := post(t, router, "/api/v1/restaurants", `{"name":"Demo Bistro","timezone":"Europe/Moscow","currency":"RUB","business_day_mode":"standard","business_day_boundary_local_time":"04:00"}`)
@@ -139,6 +152,18 @@ func TestProductionRestaurantPublishAndSnapshotEndpoints(t *testing.T) {
 		if !strings.Contains(body, required) {
 			t.Fatalf("expected snapshot to contain %s: %s", required, body)
 		}
+	}
+	var packet struct {
+		Restaurants []struct {
+			ID     string `json:"id"`
+			Active bool   `json:"active"`
+		} `json:"restaurants"`
+	}
+	if err := json.Unmarshal(snapshot.Body.Bytes(), &packet); err != nil {
+		t.Fatal(err)
+	}
+	if len(packet.Restaurants) != 1 || packet.Restaurants[0].ID != restaurantBody.ID || !packet.Restaurants[0].Active {
+		t.Fatalf("expected active restaurant in snapshot, got %+v", packet.Restaurants)
 	}
 	if strings.Contains(body, "1111") {
 		t.Fatalf("snapshot leaked raw PIN: %s", body)

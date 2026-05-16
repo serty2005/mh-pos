@@ -153,6 +153,11 @@ func (s *Service) PollAssignment(ctx context.Context) (domain.ProvisioningStatus
 	if err != nil {
 		return domain.ProvisioningStatusView{}, err
 	}
+	if paired, err := s.pairedView(ctx, state); err != nil {
+		return domain.ProvisioningStatusView{}, err
+	} else if paired.Paired {
+		return paired, nil
+	}
 	if state.CloudURL == "" || s.cloud == nil {
 		return view(state, false), nil
 	}
@@ -177,6 +182,11 @@ func (s *Service) PairViaLicense(ctx context.Context, cmd PairViaLicenseCommand)
 	state, err := s.ensureState(ctx)
 	if err != nil {
 		return domain.ProvisioningStatusView{}, err
+	}
+	if paired, err := s.pairedView(ctx, state); err != nil {
+		return domain.ProvisioningStatusView{}, err
+	} else if paired.Paired {
+		return paired, nil
 	}
 	if s.license == nil || s.licenseURL == "" {
 		return domain.ProvisioningStatusView{}, fmt.Errorf("%w: license server url is required", domain.ErrInvalid)
@@ -234,6 +244,30 @@ func (s *Service) finishAssigned(ctx context.Context, state *domain.EdgeProvisio
 	state.LastError = ""
 	state.UpdatedAt = s.clock.Now()
 	return s.repo.UpsertEdgeProvisioningState(ctx, state)
+}
+
+func (s *Service) pairedView(ctx context.Context, state *domain.EdgeProvisioningState) (domain.ProvisioningStatusView, error) {
+	identity, err := s.repo.GetEdgeNodeIdentity(ctx)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.ProvisioningStatusView{}, nil
+		}
+		return domain.ProvisioningStatusView{}, err
+	}
+	if identity.Status != domain.EdgeNodePaired {
+		return domain.ProvisioningStatusView{}, nil
+	}
+	changed := state.Status != domain.ProvisioningPaired || state.NodeDeviceID != identity.NodeDeviceID || state.RestaurantID != identity.RestaurantID
+	state.Status = domain.ProvisioningPaired
+	state.NodeDeviceID = identity.NodeDeviceID
+	state.RestaurantID = identity.RestaurantID
+	if changed {
+		state.UpdatedAt = s.clock.Now()
+		if err := s.repo.UpsertEdgeProvisioningState(ctx, state); err != nil {
+			return domain.ProvisioningStatusView{}, err
+		}
+	}
+	return view(state, true), nil
 }
 
 func (s *Service) ensureState(ctx context.Context) (*domain.EdgeProvisioningState, error) {
