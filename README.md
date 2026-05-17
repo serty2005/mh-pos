@@ -21,11 +21,13 @@
 - Reprint precheck/check строится из immutable snapshot.
 - Cloud -> Edge master-data ingest в POS Edge runtime поддерживает потоки `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
 - Cloud/Edge master data разделяет menu categories, catalog folders и tags; `catalog` stream передает folders, folder parameters, tags, item tags, services и modifier groups/options/links, а `menu` stream передает menu items.
-- SQLite schema содержит foundation для recipes/inventory. Это не означает готовый cashier runtime для recipe expansion или inventory consumption.
+- Inventory runtime имеет минимальный backend boundary для ручного posted stock document: `stock_documents` и `stock_moves` immutable, optional balance update выполняется только через service transaction.
+- SQLite schema содержит foundation для recipes/inventory. Это не означает готовый cashier runtime для recipe expansion, automatic consumption или automatic return/write-off из cancellation/refund.
 
 Вне текущего runtime:
 
 - automatic recipe expansion / stock consumption engine;
+- automatic stock return/write-off from financial operations;
 - fiscal shift/business day сущности как отдельные runtime aggregates;
 - real payment processor module, PSP webhooks и fiscal adapter;
 - ClickHouse runtime pipeline;

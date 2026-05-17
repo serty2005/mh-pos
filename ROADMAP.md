@@ -68,7 +68,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 Эти зоны имеют schema/domain foundation, но не являются готовым pilot runtime:
 
 - Recipes: SQLite `recipe_versions`, `recipe_lines`; Cloud `cloud_recipe_items`.
-- Inventory: SQLite `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, purchase receipt foundation.
+- Inventory: SQLite `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, purchase receipt foundation; ручной backend service для posted stock document/moves реализован сейчас, но не подключен к cashier UI или автоматике продаж.
 - Master-data publications: Cloud package/publication foundation пока шире текущего POS Edge runtime для recipes/inventory.
 
 ## Аудит 2026-05-15
@@ -101,8 +101,9 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - остается pilot acceptance по UX деталям, печатным формам и audit/sync требованиям.
 - Recipes/inventory:
   - старая recipe validation была частичной; новая policy запрещает `dish` как компонент и разрешает `good`/`semi_finished`;
+  - ручной stock document/move service реализован как отдельный Inventory boundary, записи остаются local-only и не запускаются из refund/cancellation endpoints;
   - решить, входит ли automatic consumption в первый pilot;
-  - если входит, реализовать consumption trigger, stock document/move service и snapshot requirements.
+  - если входит, реализовать consumption trigger, recipe expansion policy и snapshot requirements.
 - Cancellation/refund/reprint hardening:
   - backend ledger, immutable snapshots, no-over-cancel/no-over-refund tests, current `CancellationRecorded`/`RefundRecorded` sync contracts, idempotent Cloud raw/journal receipt checks and coarse Cloud refund projection реализованы;
   - cashier UI pilot-minimum full check cancellation/refund через ledger endpoints реализован с выбором inventory disposition; compatibility refund по captured payment оставлен отдельным fallback;

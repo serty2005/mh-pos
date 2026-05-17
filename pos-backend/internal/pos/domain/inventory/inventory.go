@@ -85,16 +85,23 @@ const (
 )
 
 type StockDocument struct {
-	ID           string              `json:"id"`
-	RestaurantID string              `json:"restaurant_id"`
-	DeviceID     string              `json:"device_id"`
-	Type         StockDocumentType   `json:"document_type"`
-	SourceType   *string             `json:"source_type,omitempty"`
-	SourceID     *string             `json:"source_id,omitempty"`
-	Status       StockDocumentStatus `json:"status"`
-	OccurredAt   time.Time           `json:"occurred_at"`
-	CreatedAt    time.Time           `json:"created_at"`
-	UpdatedAt    time.Time           `json:"updated_at"`
+	ID                   string              `json:"id"`
+	RestaurantID         string              `json:"restaurant_id"`
+	DeviceID             string              `json:"device_id"`
+	Type                 StockDocumentType   `json:"document_type"`
+	SourceType           *string             `json:"source_type,omitempty"`
+	SourceID             *string             `json:"source_id,omitempty"`
+	CheckID              *string             `json:"check_id,omitempty"`
+	PrecheckID           *string             `json:"precheck_id,omitempty"`
+	FinancialOperationID *string             `json:"financial_operation_id,omitempty"`
+	BusinessDateLocal    string              `json:"business_date_local,omitempty"`
+	ShiftID              *string             `json:"shift_id,omitempty"`
+	CashSessionID        *string             `json:"cash_session_id,omitempty"`
+	CreatedByEmployeeID  *string             `json:"created_by_employee_id,omitempty"`
+	Status               StockDocumentStatus `json:"status"`
+	OccurredAt           time.Time           `json:"occurred_at"`
+	CreatedAt            time.Time           `json:"created_at"`
+	UpdatedAt            time.Time           `json:"updated_at"`
 }
 
 type StockMoveType string
@@ -109,6 +116,7 @@ type StockMove struct {
 	ID              string        `json:"id"`
 	StockDocumentID string        `json:"stock_document_id"`
 	CatalogItemID   string        `json:"catalog_item_id"`
+	OrderLineID     *string       `json:"order_line_id,omitempty"`
 	LocationID      *string       `json:"location_id,omitempty"`
 	Type            StockMoveType `json:"movement_type"`
 	Quantity        int64         `json:"quantity"`

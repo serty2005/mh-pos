@@ -860,16 +860,36 @@ CREATE TABLE IF NOT EXISTS stock_documents (
   document_type TEXT NOT NULL CHECK (document_type IN ('purchase_receipt', 'adjustment', 'transfer', 'write_off', 'production')),
   source_type TEXT,
   source_id TEXT,
+  check_id TEXT REFERENCES checks(id),
+  precheck_id TEXT REFERENCES prechecks(id),
+  financial_operation_id TEXT REFERENCES financial_operations(id),
+  business_date_local TEXT,
+  shift_id TEXT REFERENCES shifts(id),
+  cash_session_id TEXT REFERENCES cash_sessions(id),
+  created_by_employee_id TEXT REFERENCES employees(id),
   status TEXT NOT NULL CHECK (status IN ('draft', 'posted', 'cancelled')),
   occurred_at TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 
+CREATE TRIGGER IF NOT EXISTS stock_documents_no_update
+BEFORE UPDATE ON stock_documents
+BEGIN
+  SELECT RAISE(ABORT, 'stock_documents are append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS stock_documents_no_delete
+BEFORE DELETE ON stock_documents
+BEGIN
+  SELECT RAISE(ABORT, 'stock_documents are append-only');
+END;
+
 CREATE TABLE IF NOT EXISTS stock_moves (
   id TEXT PRIMARY KEY,
   stock_document_id TEXT NOT NULL REFERENCES stock_documents(id),
   catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
+  order_line_id TEXT REFERENCES order_lines(id),
   location_id TEXT,
   movement_type TEXT NOT NULL CHECK (movement_type IN ('in', 'out', 'adjustment')),
   quantity INTEGER NOT NULL CHECK (quantity <> 0),

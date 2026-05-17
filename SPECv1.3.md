@@ -182,11 +182,12 @@ Boundary rules:
 - `menu` применяет menu items и menu-visible `item_type`.
 - Unknown JSON fields и unsupported stream names отклоняются до partial apply.
 
-Реализована только основа:
+Реализовано сейчас / основа:
 
 - SQLite schema содержит `recipe_versions`, `recipe_lines`, `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`.
 - Cloud schema содержит recipe/inventory-adjacent foundation для recipe items, semi-finished products и publications.
-- Наличие recipe/inventory таблиц и типов не означает готовый POS runtime для recipe expansion или stock consumption.
+- POS Edge backend имеет отдельный Inventory application service для ручного posted stock document: он создает immutable `stock_documents`/`stock_moves`, может явно обновить `stock_balances` в той же transaction boundary и пишет local-only outbox/local event `StockDocumentPosted`.
+- Наличие recipe/inventory таблиц и ручного document service не означает готовый POS runtime для recipe expansion, automatic stock consumption или return/write-off from financial operations.
 
 ## Pricing, Discounts And Tax
 
@@ -246,12 +247,15 @@ Boundary rules:
 
 ## Recipes And Inventory
 
-Реализована только основа:
+Реализовано сейчас / основа:
 
 - SQLite содержит `recipe_versions`, `recipe_lines`, `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`.
 - Cloud schema содержит `cloud_recipe_items`, `cloud_semi_finished_products` и catalog kind foundation.
 - Recipe validation запрещает `dish` как компонент; approved components: `good` и `semi_finished`.
-- `stock_moves` защищены append-only triggers.
+- `stock_documents` и `stock_moves` защищены append-only triggers.
+- Реализовано сейчас: отдельный backend Inventory service создает ручные posted stock documents/moves и optional balance deltas в одной transaction. Эти события остаются local-only и не являются Edge -> Cloud operational contract.
+- UOM audit: текущий код хранит `base_unit`, recipe line `unit`, stock move `unit` и service `fixed_unit` как строки. Отдельная reference entity с `code`, `name`, `short_name` и переводами не реализована сейчас; новые сценарии не должны смешивать machine `code` и display label.
+- Catalog availability audit: текущий Edge runtime использует `active`/Cloud `status` для lifecycle/read model. Temporary unavailability не реализована как глобальный catalog item status; если она потребуется, это должен быть overlay на menu/restaurant/terminal-group publication boundary, а не замена master lifecycle.
 
 Не реализовано сейчас:
 
@@ -260,7 +264,7 @@ Boundary rules:
 - modifier-to-recipe expansion;
 - inventory consumption trigger from check/KDS;
 - automatic stock return on cancellation/refund;
-- stock movement app services for cashier runtime.
+- stock movement services in cashier UI/runtime flow.
 
 Запланировано до пилота как boundary decision, если inventory входит в pilot acceptance:
 

@@ -116,13 +116,13 @@ func (r *Repository) ListPurchaseReceiptLines(ctx context.Context, purchaseRecei
 }
 
 func (r *Repository) CreateStockDocument(ctx context.Context, v *domain.StockDocument) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO stock_documents(id,restaurant_id,device_id,document_type,source_type,source_id,status,occurred_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.RestaurantID, v.DeviceID, string(v.Type), nullableString(v.SourceType), nullableString(v.SourceID), string(v.Status), dbTime(v.OccurredAt), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO stock_documents(id,restaurant_id,device_id,document_type,source_type,source_id,check_id,precheck_id,financial_operation_id,business_date_local,shift_id,cash_session_id,created_by_employee_id,status,occurred_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.RestaurantID, v.DeviceID, string(v.Type), nullableString(v.SourceType), nullableString(v.SourceID), nullableString(v.CheckID), nullableString(v.PrecheckID), nullableString(v.FinancialOperationID), v.BusinessDateLocal, nullableString(v.ShiftID), nullableString(v.CashSessionID), nullableString(v.CreatedByEmployeeID), string(v.Status), dbTime(v.OccurredAt), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }
 
 func (r *Repository) ListStockDocuments(ctx context.Context) ([]domain.StockDocument, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,restaurant_id,device_id,document_type,source_type,source_id,status,occurred_at,created_at,updated_at FROM stock_documents ORDER BY created_at`)
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,restaurant_id,device_id,document_type,source_type,source_id,check_id,precheck_id,financial_operation_id,business_date_local,shift_id,cash_session_id,created_by_employee_id,status,occurred_at,created_at,updated_at FROM stock_documents ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -131,13 +131,22 @@ func (r *Repository) ListStockDocuments(ctx context.Context) ([]domain.StockDocu
 	for rows.Next() {
 		var v domain.StockDocument
 		var typ, status, occurred, created, updated string
-		var sourceType, sourceID sql.NullString
-		if err := rows.Scan(&v.ID, &v.RestaurantID, &v.DeviceID, &typ, &sourceType, &sourceID, &status, &occurred, &created, &updated); err != nil {
+		var sourceType, sourceID, checkID, precheckID, operationID, businessDate, shiftID, cashSessionID, createdBy sql.NullString
+		if err := rows.Scan(&v.ID, &v.RestaurantID, &v.DeviceID, &typ, &sourceType, &sourceID, &checkID, &precheckID, &operationID, &businessDate, &shiftID, &cashSessionID, &createdBy, &status, &occurred, &created, &updated); err != nil {
 			return nil, err
 		}
 		v.Type = domain.StockDocumentType(typ)
 		v.SourceType = stringPtr(sourceType)
 		v.SourceID = stringPtr(sourceID)
+		v.CheckID = stringPtr(checkID)
+		v.PrecheckID = stringPtr(precheckID)
+		v.FinancialOperationID = stringPtr(operationID)
+		if businessDate.Valid {
+			v.BusinessDateLocal = businessDate.String
+		}
+		v.ShiftID = stringPtr(shiftID)
+		v.CashSessionID = stringPtr(cashSessionID)
+		v.CreatedByEmployeeID = stringPtr(createdBy)
 		v.Status = domain.StockDocumentStatus(status)
 		v.OccurredAt = parseTime(occurred)
 		v.CreatedAt = parseTime(created)
@@ -148,13 +157,13 @@ func (r *Repository) ListStockDocuments(ctx context.Context) ([]domain.StockDocu
 }
 
 func (r *Repository) CreateStockMove(ctx context.Context, v *domain.StockMove) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO stock_moves(id,stock_document_id,catalog_item_id,location_id,movement_type,quantity,unit,unit_cost,total_cost,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.StockDocumentID, v.CatalogItemID, nullableString(v.LocationID), string(v.Type), v.Quantity, v.Unit, nullableInt64(v.UnitCost), nullableInt64(v.TotalCost), dbTime(v.OccurredAt), dbTime(v.CreatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO stock_moves(id,stock_document_id,catalog_item_id,order_line_id,location_id,movement_type,quantity,unit,unit_cost,total_cost,occurred_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.StockDocumentID, v.CatalogItemID, nullableString(v.OrderLineID), nullableString(v.LocationID), string(v.Type), v.Quantity, v.Unit, nullableInt64(v.UnitCost), nullableInt64(v.TotalCost), dbTime(v.OccurredAt), dbTime(v.CreatedAt))
 	return normalizeErr(err)
 }
 
 func (r *Repository) ListStockMoves(ctx context.Context, stockDocumentID string) ([]domain.StockMove, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,stock_document_id,catalog_item_id,location_id,movement_type,quantity,unit,unit_cost,total_cost,occurred_at,created_at FROM stock_moves WHERE stock_document_id = ? ORDER BY created_at`, stockDocumentID)
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,stock_document_id,catalog_item_id,order_line_id,location_id,movement_type,quantity,unit,unit_cost,total_cost,occurred_at,created_at FROM stock_moves WHERE stock_document_id = ? ORDER BY created_at`, stockDocumentID)
 	if err != nil {
 		return nil, err
 	}
@@ -162,12 +171,13 @@ func (r *Repository) ListStockMoves(ctx context.Context, stockDocumentID string)
 	var out []domain.StockMove
 	for rows.Next() {
 		var v domain.StockMove
-		var location sql.NullString
+		var orderLineID, location sql.NullString
 		var unitCost, totalCost sql.NullInt64
 		var typ, occurred, created string
-		if err := rows.Scan(&v.ID, &v.StockDocumentID, &v.CatalogItemID, &location, &typ, &v.Quantity, &v.Unit, &unitCost, &totalCost, &occurred, &created); err != nil {
+		if err := rows.Scan(&v.ID, &v.StockDocumentID, &v.CatalogItemID, &orderLineID, &location, &typ, &v.Quantity, &v.Unit, &unitCost, &totalCost, &occurred, &created); err != nil {
 			return nil, err
 		}
+		v.OrderLineID = stringPtr(orderLineID)
 		v.LocationID = stringPtr(location)
 		v.Type = domain.StockMoveType(typ)
 		v.UnitCost = int64Ptr(unitCost)

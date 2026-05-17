@@ -24,7 +24,7 @@
 | Check | Edge | Generated after full payment; finalized checks are not rewritten by cancellation/refund | `CheckCreated` is current Edge -> Cloud operational event; `CheckRefunded` is legacy accepted | реализовано сейчас |
 | Tax/pricing policy reference | Cloud | Edge read model only | `pricing_policy` Cloud -> Edge stream for `tax_profiles`, `tax_rules`, `service_charge_rules`, `pricing_policies` | реализовано сейчас |
 | Operational order adjustments | Edge | Yes while order is open | runtime-команды; будущие policy ids могут ограничивать допустимые варианты | реализовано сейчас |
-| Stock document/move | Inventory context | Not from cashier runtime | planned | реализована только основа |
+| Stock document/move | Inventory context | Только ручной backend service; не cashier runtime | local-only сейчас | реализовано сейчас / основа: immutable documents/moves, no Cloud event contract |
 
 ## Current Cloud -> Edge Ingest
 
@@ -69,6 +69,7 @@
 - `PaymentRefunded` и `CheckRefunded` остаются legacy accepted event types для старых payloads;
 - Cloud event-type stats обновляются для всех accepted operational events;
 - Cloud shift finance foundation считает coarse refund totals from current `RefundRecorded` and legacy `PaymentRefunded`/`CheckRefunded`, but it is not a full projection for financial operation ledger item scopes, inventory disposition, approval policy or original-shift reconciliation.
+- manual Inventory service реализовано сейчас пишет `StockDocumentPosted` как local-only outbox/local event; это не часть Edge -> Cloud operational catalog.
 
 Запланировано далее:
 

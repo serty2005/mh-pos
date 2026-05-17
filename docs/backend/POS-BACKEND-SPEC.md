@@ -140,6 +140,8 @@ Pricing contract:
 - Menu price/tax rule changes after precheck issue do not mutate old precheck/check snapshots.
 - Selected modifiers are priced by backend calculation and persisted in order/precheck/check snapshots.
 - Service items use the same order/pricing/precheck/check flow as other sellable menu items and do not imply recipe semantics.
+- Catalog item lifecycle/availability audit: Edge runtime хранит active catalog/menu read models из Cloud lifecycle status. Temporary unavailability не реализована как глобальный catalog item status; запланировано далее моделировать ее как overlay menu/restaurant/terminal-group, если это будет принято.
+- UOM audit: текущий runtime хранит string units (`base_unit`, recipe `unit`, stock move `unit`). Separate UOM reference model with machine `code`, `name`, `short_name` and translations не реализована сейчас, поэтому новый runtime code не должен считать display labels canonical UOM codes.
 
 ## Payment, Check, Cancellation And Refund Contract
 
@@ -246,11 +248,12 @@ Modifiers:
 
 Recipes/inventory:
 
-- Реализована только основа: SQLite recipe and stock tables.
+- Реализовано сейчас / основа: SQLite recipe and stock tables plus separate backend Inventory service for manual posted stock documents/moves.
+- Реализовано сейчас: `stock_documents` и `stock_moves` append-only; optional stock balance update выполняется только внутри Inventory service transaction, которая создает document/moves.
 - Не реализовано сейчас: recipe expansion, modifier-to-recipe expansion, automatic stock consumption.
-- Реализовано сейчас: cancellation/refund ledger stores explicit `inventory_disposition`, but does not mutate stock tables.
+- Реализовано сейчас: cancellation/refund ledger хранит явный `inventory_disposition`, но не мутирует stock tables.
 - Не реализовано сейчас: automatic stock return on refund/cancellation.
-- Запланировано далее: stock documents/moves app services and consumption policy.
+- Запланировано далее: consumption policy, UOM reference model and inventory UI/API if pilot scope accepts them.
 
 ## RBAC
 

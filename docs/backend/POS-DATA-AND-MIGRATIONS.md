@@ -52,11 +52,13 @@ Cashier runtime invariants:
 - `financial_operation_items.scope` supports `whole_check`, `order_line`, `modifier_line`, `service_charge`, `tip`, `payment`.
 - `financial_operations.inventory_disposition` stores `no_stock_effect`, `return_to_stock`, `write_off_waste` or `manual_review`; it is not an automatic stock movement.
 - `business_date_local` is stored for shifts, cash sessions, payments, checks and financial operations.
-- `stock_moves` are append-only by trigger.
+- `stock_documents` and `stock_moves` are append-only by trigger.
+- `stock_documents` can store optional source references: check, precheck, financial operation, business date, shift, cash session and creating employee/operator context.
+- `stock_moves` can store optional `order_line_id`; catalog item identity remains mandatory.
 
-## Таблицы Только Основы
+## Recipe/Inventory Runtime Boundary
 
-SQLite: реализована только основа:
+SQLite: реализовано сейчас / основа:
 
 - `recipe_versions`
 - `recipe_lines`
@@ -67,13 +69,26 @@ SQLite: реализована только основа:
 - `stock_balances`
 - `item_costs`
 
-Эти таблицы не означают готовый inventory runtime. Текущий код не подтверждает:
+Реализовано сейчас:
+
+- backend Inventory service может создавать manual posted stock documents and stock moves;
+- optional `stock_balances` delta пишется только внутри той же service transaction, что и document/moves;
+- текущий код не открывает cashier UI или HTTP inventory endpoint;
+- local event/outbox row `StockDocumentPosted` остается local-only, это не Edge -> Cloud operational sync contract.
+
+Эти таблицы и service boundary не означают готовый automatic inventory runtime. Текущий код не подтверждает:
 
 - automatic stock consumption;
 - recipe expansion;
 - modifier-to-recipe expansion;
 - cashier-facing inventory mutation flow;
 - app services that post stock documents from final checks.
+
+UOM/status audit:
+
+- unit fields остаются строками; UOM reference table with separate `code`, `name`, `short_name` and translations не реализована сейчас;
+- catalog item `active` / Cloud lifecycle `status` не являются temporary availability overlays;
+- temporary unavailability запланировано далее моделировать как menu/restaurant/terminal-group overlay, а не как global catalog item lifecycle value.
 
 ## Cloud PostgreSQL
 
@@ -170,17 +185,19 @@ Managed SQL files, реализовано сейчас:
 
 ## Recipe And Inventory Data
 
-Реализована только основа:
+Реализовано сейчас / основа:
 
 - Recipes are versioned in SQLite via `recipe_versions` and `recipe_lines`.
 - Cloud has recipe item foundation.
-- Stock movement foundation exists through stock documents/moves/balances/costs.
-- Cancellation/refund ledger can record intended inventory disposition, but stock tables stay unchanged until an explicit Inventory service posts stock documents/moves.
+- Stock movement foundation exists through immutable stock documents/moves/balances/costs.
+- Manual stock document posting реализован сейчас как отдельный POS Edge Inventory service with optional balance updates in one transaction.
+- Cancellation/refund ledger может записать intended inventory disposition, но stock tables остаются неизменными, пока отдельная Inventory service command не создаст stock documents/moves.
 
 Запланировано далее:
 
 - consumption trigger policy;
-- stock document posting services;
+- HTTP/API or UI surface for inventory documents if accepted into pilot scope;
+- UOM reference model with separate code/display fields;
 - snapshot data sufficient for inventory/fiscal/reporting replay.
 
 Вне текущего runtime:

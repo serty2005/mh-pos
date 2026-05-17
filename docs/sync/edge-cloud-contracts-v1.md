@@ -179,7 +179,7 @@ Request body shape currently supported by POS Edge:
 Только основа:
 
 - Cloud schema содержит recipe/inventory-adjacent publication foundation.
-- SQLite schema содержит recipe/inventory foundation.
+- SQLite schema содержит recipe/inventory foundation и local manual stock document service state.
 - Эти foundation нельзя документировать как поддерживаемый POS Edge runtime ingest, пока `mastersync.Service` не применяет их payloads.
 
 ## Edge -> Cloud Operational Events
@@ -215,6 +215,12 @@ AuthSessionRevoked
 DeviceRegistered
 ```
 
+Local-only POS Edge events that are not Edge -> Cloud operational contracts:
+
+```text
+StockDocumentPosted
+```
+
 Legacy inbound-only event types, которые Cloud receiver продолжает валидировать для старых Edge payloads:
 
 ```text
@@ -232,6 +238,7 @@ Cancellation/refund sync behavior:
 - `cloud_edge_event_receipts.event_type` принимает весь текущий catalog и legacy inbound-only types, чтобы runtime schema не расходилась с Go validation contract.
 - Cloud shift finance foundation обновляет coarse refund counters from `RefundRecorded` (`checks_refunded_count`, `checks_refunded_total`) and legacy `PaymentRefunded`/`CheckRefunded` counters where such envelopes are received.
 - Shift finance projection не является полной ledger projection для cancellation/refund; detailed reporting by operation item scope, inventory disposition, approval and original shift must read stored raw/journal payloads until a dedicated financial operation projection exists.
+- Manual `StockDocumentPosted` остается local-only в POS Edge и не принимается/не проецируется Cloud receiver в текущем contract.
 
 ## Financial Payload Boundaries
 
@@ -246,6 +253,7 @@ Cancellation/refund sync behavior:
 
 - inventory consumption events;
 - stock movement events for refund/cancellation disposition;
+- Cloud receipt/projection contract for manual stock document events;
 - PSP/fiscal event streams.
 
 ## Запланированные Границы

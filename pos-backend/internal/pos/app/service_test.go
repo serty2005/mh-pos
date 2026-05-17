@@ -474,7 +474,7 @@ func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
-	case "restaurants", "devices", "orders", "order_lines", "order_line_modifiers", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "roles", "employees", "catalog_items", "catalog_folders", "catalog_tags", "catalog_item_tags", "modifier_groups", "modifier_options", "modifier_group_bindings", "menu_item_modifier_groups", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "pricing_policies", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_line_modifiers", "precheck_discounts", "precheck_surcharges", "precheck_taxes", "financial_operations", "financial_operation_items", "stock_moves":
+	case "restaurants", "devices", "orders", "order_lines", "order_line_modifiers", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "roles", "employees", "catalog_items", "catalog_folders", "catalog_tags", "catalog_item_tags", "modifier_groups", "modifier_options", "modifier_group_bindings", "menu_item_modifier_groups", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "pricing_policies", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_line_modifiers", "precheck_discounts", "precheck_surcharges", "precheck_taxes", "financial_operations", "financial_operation_items", "stock_documents", "stock_moves", "stock_balances":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -534,6 +534,127 @@ func outboxStatusAttempts(t *testing.T, f *fixture, id string) (domain.OutboxSta
 		t.Fatal(err)
 	}
 	return domain.OutboxStatus(status), attempts
+}
+
+func TestCreateManualStockDocumentWritesMovesAndBalancesInSingleBoundary(t *testing.T) {
+	f := newFixture(t)
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+
+	document, err := f.service.CreateManualStockDocument(f.ctx, app.CreateManualStockDocumentCommand{
+		CommandMeta:       f.edgeMetaCommand("cmd-inventory-adjustment"),
+		RestaurantID:      f.restaurant.ID,
+		DocumentType:      domain.StockDocumentAdjustment,
+		SourceType:        "manual_adjustment",
+		SourceID:          "manual-1",
+		BusinessDateLocal: "2026-05-04",
+		ApplyToBalance:    true,
+		Moves: []app.CreateStockMoveCommand{{
+			CatalogItemID: f.menuItem.CatalogItemID,
+			LocationID:    "kitchen",
+			MovementType:  domain.StockMoveAdjustment,
+			Quantity:      5,
+			Unit:          "portion",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.Status != domain.StockDocumentPosted || document.BusinessDateLocal != "2026-05-04" || document.CreatedByEmployeeID == nil || *document.CreatedByEmployeeID != f.employee.ID {
+		t.Fatalf("unexpected stock document metadata: %+v", document)
+	}
+	moves, err := f.repo.ListStockMoves(f.ctx, document.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(moves) != 1 || moves[0].CatalogItemID != f.menuItem.CatalogItemID || moves[0].Quantity != 5 {
+		t.Fatalf("expected one persisted stock move, got %+v", moves)
+	}
+	balances, err := f.repo.ListStockBalances(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(balances) != 1 || balances[0].CatalogItemID != f.menuItem.CatalogItemID || balances[0].Quantity != 5 || balances[0].Unit != "portion" {
+		t.Fatalf("expected balance updated from document move, got %+v", balances)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+1 {
+		t.Fatalf("expected one local-only stock document outbox row, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore+1 {
+		t.Fatalf("expected one stock document local event, before=%d after=%d", eventsBefore, events)
+	}
+	var localOnly int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM pos_sync_outbox WHERE command_id = 'cmd-inventory-adjustment' AND command_type = 'StockDocumentPosted' AND aggregate_type = 'StockDocument' AND aggregate_id = ? AND sync_direction = 'local_only'`, document.ID).Scan(&localOnly); err != nil {
+		t.Fatal(err)
+	}
+	if localOnly != 1 {
+		t.Fatalf("expected stock document event to stay local_only, got %d", localOnly)
+	}
+
+	_, err = f.service.CreateManualStockDocument(f.ctx, app.CreateManualStockDocumentCommand{
+		CommandMeta:    f.edgeMetaCommand("cmd-inventory-adjustment"),
+		RestaurantID:   f.restaurant.ID,
+		DocumentType:   domain.StockDocumentAdjustment,
+		ApplyToBalance: true,
+		Moves: []app.CreateStockMoveCommand{{
+			CatalogItemID: f.menuItem.CatalogItemID,
+			LocationID:    "kitchen",
+			MovementType:  domain.StockMoveAdjustment,
+			Quantity:      1,
+			Unit:          "portion",
+		}},
+	})
+	if !errors.Is(err, domain.ErrDuplicateCommand) {
+		t.Fatalf("expected duplicate inventory command to be rejected, got %v", err)
+	}
+	if documents := countRows(t, f, "stock_documents"); documents != 1 {
+		t.Fatalf("expected duplicate command not to create stock documents, got %d", documents)
+	}
+}
+
+func TestCreateManualStockDocumentRejectsServiceItemsAndInvalidUnits(t *testing.T) {
+	f := newFixture(t)
+	serviceCatalog, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{
+		CommandMeta: seedMeta(f.device.ID),
+		Type:        domain.CatalogItemService,
+		Name:        "Delivery",
+		SKU:         "DELIVERY-STOCK-TEST",
+		BaseUnit:    "service",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = f.service.CreateManualStockDocument(f.ctx, app.CreateManualStockDocumentCommand{
+		CommandMeta:  f.edgeMetaCommand("cmd-service-stock"),
+		RestaurantID: f.restaurant.ID,
+		DocumentType: domain.StockDocumentAdjustment,
+		Moves: []app.CreateStockMoveCommand{{
+			CatalogItemID: serviceCatalog.ID,
+			MovementType:  domain.StockMoveAdjustment,
+			Quantity:      1,
+			Unit:          "service",
+		}},
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected service stock move to be invalid, got %v", err)
+	}
+	_, err = f.service.CreateManualStockDocument(f.ctx, app.CreateManualStockDocumentCommand{
+		CommandMeta:  f.edgeMetaCommand("cmd-empty-unit-stock"),
+		RestaurantID: f.restaurant.ID,
+		DocumentType: domain.StockDocumentAdjustment,
+		Moves: []app.CreateStockMoveCommand{{
+			CatalogItemID: f.menuItem.CatalogItemID,
+			MovementType:  domain.StockMoveAdjustment,
+			Quantity:      1,
+		}},
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected empty UOM to be invalid, got %v", err)
+	}
+	if moves := countRows(t, f, "stock_moves"); moves != 0 {
+		t.Fatalf("expected invalid stock commands not to create moves, got %d", moves)
+	}
 }
 
 func TestRetryFailedOutboxResetsFailedAndSuspendedButNotSent(t *testing.T) {
@@ -2849,6 +2970,7 @@ func TestRefundPaymentAfterFullPaymentWithCheck(t *testing.T) {
 	f.openCashSession(t)
 	outboxBefore := countRows(t, f, "pos_sync_outbox")
 	eventsBefore := countRows(t, f, "local_event_log")
+	stockMovesBefore := countRows(t, f, "stock_moves")
 	refundedPayment, err := f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{
 		CommandMeta: f.managerEdgeMetaCommand(t, "refund-cmd"),
 		PaymentID:   payment.ID,
@@ -2898,6 +3020,9 @@ func TestRefundPaymentAfterFullPaymentWithCheck(t *testing.T) {
 	operation := operations[0]
 	if operation.Type != domain.FinancialOperationRefund || operation.Kind != domain.FinancialOperationFull || operation.Amount != payment.Amount || operation.InventoryDisposition != domain.InventoryNoStockEffect {
 		t.Fatalf("unexpected refund operation: type=%s kind=%s amount=%d disposition=%s", operation.Type, operation.Kind, operation.Amount, operation.InventoryDisposition)
+	}
+	if stockMoves := countRows(t, f, "stock_moves"); stockMoves != stockMovesBefore {
+		t.Fatalf("expected refund ledger not to create stock moves, before=%d after=%d", stockMovesBefore, stockMoves)
 	}
 	if operation.ShiftID != refundShift.ID || operation.OriginalShiftID != shift.ID {
 		t.Fatalf("unexpected operation shift boundary: shift_id=%s original_shift_id=%s", operation.ShiftID, operation.OriginalShiftID)
@@ -2994,6 +3119,7 @@ func TestRecordCancellationDuringOpenShiftSupportsFullAndRejectsOverCancel(t *te
 	}
 	outboxBefore := countRows(t, f, "pos_sync_outbox")
 	eventsBefore := countRows(t, f, "local_event_log")
+	stockMovesBefore := countRows(t, f, "stock_moves")
 	operation, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
 		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-cancel-full"),
 		CheckID:              check.ID,
@@ -3008,6 +3134,9 @@ func TestRecordCancellationDuringOpenShiftSupportsFullAndRejectsOverCancel(t *te
 	}
 	if operation.Status != domain.FinancialOperationRecorded || len(operation.Items) != 1 || operation.Items[0].Scope != domain.FinancialItemWholeCheck {
 		t.Fatalf("unexpected cancellation ledger shape: status=%s items=%+v", operation.Status, operation.Items)
+	}
+	if stockMoves := countRows(t, f, "stock_moves"); stockMoves != stockMovesBefore {
+		t.Fatalf("expected cancellation ledger not to create stock moves, before=%d after=%d", stockMovesBefore, stockMoves)
 	}
 	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+1 {
 		t.Fatalf("expected one cancellation outbox envelope, before=%d after=%d", outboxBefore, outbox)

@@ -26,7 +26,7 @@
 | `Payment` | captured payments, payment attempts, payment methods, provider metadata | реализовано сейчас for manual/trusted `cash/card/other` | PSP boundary decision only if pilot needs it | real PSP integration | fiscalization, order line pricing, inventory, cancellation/refund ledger |
 | `Check` | final paid document after full precheck payment, immutable check snapshot | реализовано сейчас | fiscal/tax fields only if policy exists | legal fiscal receipt adapter | PSP authorization and stock consumption |
 | `Financial Operations` | append-only cancellation/refund ledger, operation item scopes, inventory disposition, no-over-compensation rules | реализовано сейчас: full/partial cancellation and refund records, full-check cashier UI actions с явным inventory disposition, `CancellationRecorded`, `RefundRecorded` | rich partial UI for line/quantity/modifier/service/tip only if pilot acceptance requires it | richer accounting projections | inventory mutation, PSP refund execution, fiscal correction documents |
-| `Inventory` | stock documents, stock moves, stock balances, item costs, consumption policy | реализована только основа | consumption trigger only if accepted as pilot blocker | full recipe expansion, KDS/DishServed trigger, AVCO/FIFO/batches | order/payment/check direct mutation |
+| `Inventory` | stock documents, stock moves, stock balances, item costs, consumption policy | реализовано сейчас / основа: manual posted stock document service, immutable stock documents/moves, optional balance update in one transaction | consumption trigger only if accepted as pilot blocker | full recipe expansion, KDS/DishServed trigger, AVCO/FIFO/batches, UOM reference model | order/payment/check direct mutation |
 | `Production` | KDS tickets, stations, cooking/dish served lifecycle | вне текущего объема | none unless pilot changes | KDS runtime | financial close and inventory direct writes |
 | `CRM` | customer identity/preferences/history | вне текущего объема except `guest_count` | none | full CRM | order/payment lifecycle |
 | `Loyalty` | bonuses/coupons/customer promos | вне текущего объема | none | full loyalty engine | backend authoritative totals unless integrated through Pricing |
@@ -40,6 +40,7 @@
 - `Payment` and fiscalization are separate boundaries.
 - `Order` does not write inventory directly.
 - `Inventory` changes only through stock documents / stock moves.
+- Balance updates допустимы только как explicit Inventory service/repository transaction, связанная со stock document.
 - Cancellation/refund records financial compensation and explicit inventory disposition; it does not move stock by itself.
 - Finalized checks/payments are not rewritten by compensation flows.
 - UI never owns authoritative discount/tax/totals.
@@ -81,7 +82,8 @@ Modifiers:
 
 Recipes/Inventory:
 
-- реализована только основа;
+- реализовано сейчас / основа: manual posted stock document service пишет immutable documents/moves and optional balances;
+- UOM остается string-based; separate UOM reference with `code`, `name`, `short_name` and translations запланирована далее только при расширении inventory runtime;
 - consumption after final check is recommended pilot policy if no KDS/DishServed trigger is introduced;
 - semi-finished fallback expansion requires explicit approved policy.
 

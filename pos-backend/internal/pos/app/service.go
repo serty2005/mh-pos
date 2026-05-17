@@ -18,6 +18,7 @@ import (
 	appdevice "pos-backend/internal/pos/app/device"
 	appemployee "pos-backend/internal/pos/app/employee"
 	appfloor "pos-backend/internal/pos/app/floor"
+	appinventory "pos-backend/internal/pos/app/inventory"
 	appmastersync "pos-backend/internal/pos/app/mastersync"
 	appmenu "pos-backend/internal/pos/app/menu"
 	apporder "pos-backend/internal/pos/app/order"
@@ -75,6 +76,8 @@ type ReprintCheckCommand = appcheck.ReprintCheckCommand
 type FinancialOperationItemCommand = appcheck.FinancialOperationItemCommand
 type RecordCheckCancellationCommand = appcheck.RecordCheckCancellationCommand
 type RecordCheckRefundCommand = appcheck.RecordCheckRefundCommand
+type CreateManualStockDocumentCommand = appinventory.CreateManualStockDocumentCommand
+type CreateStockMoveCommand = appinventory.CreateStockMoveCommand
 type CloseOrderCommand = apporder.CloseOrderCommand
 type OpenCashSessionCommand = appcash.OpenCashSessionCommand
 type CloseCashSessionCommand = appcash.CloseCashSessionCommand
@@ -119,6 +122,7 @@ type Service struct {
 	pricing      *apppricing.Service
 	checks       *appcheck.Service
 	cash         *appcash.Service
+	inventory    *appinventory.Service
 	masterSync   *appmastersync.Service
 	provisioning *appprovisioning.Service
 	localEvents  ports.LocalEventRepository
@@ -156,6 +160,7 @@ func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idge
 		prechecks:   appprecheck.NewService(repo, tx, ids, clock, pricingSvc),
 		checks:      appcheck.NewService(repo, tx, ids, clock),
 		cash:        appcash.NewService(repo, tx, ids, clock),
+		inventory:   appinventory.NewService(repo, tx, ids, clock),
 		masterSync: appmastersync.NewServiceWithOptions(repo, tx, ids, clock, appmastersync.Options{
 			BackupBeforeFullSnapshot: options.MasterDataBackupBeforeFullSnapshot,
 		}),
@@ -483,6 +488,10 @@ func (s *Service) CloseCashSession(ctx context.Context, cmd CloseCashSessionComm
 
 func (s *Service) RecordCashDrawerEvent(ctx context.Context, cmd RecordCashDrawerEventCommand) (*domain.CashDrawerEvent, error) {
 	return s.cash.RecordCashDrawerEvent(ctx, cmd)
+}
+
+func (s *Service) CreateManualStockDocument(ctx context.Context, cmd CreateManualStockDocumentCommand) (*domain.StockDocument, error) {
+	return s.inventory.CreateManualStockDocument(ctx, cmd)
 }
 
 func (s *Service) ApplyMasterData(ctx context.Context, cmd ApplyMasterDataCommand) (*ApplyMasterDataResult, error) {

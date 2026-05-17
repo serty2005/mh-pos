@@ -629,6 +629,26 @@ func TestStockMovesCannotHaveZeroQuantity(t *testing.T) {
 	}
 }
 
+func TestStockDocumentsAndMovesAreAppendOnly(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	seedCatalogForSchemaTests(t, ctx, db)
+	execSchema(t, ctx, db, `INSERT INTO stock_documents(id,restaurant_id,device_id,document_type,status,occurred_at,created_at,updated_at) VALUES ('stock-doc-1','restaurant-1','device-1','adjustment','posted',?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO stock_moves(id,stock_document_id,catalog_item_id,movement_type,quantity,unit,occurred_at,created_at) VALUES ('stock-move-1','stock-doc-1','semi-finished-1','adjustment',1,'g',?,?)`, schemaTestTime, schemaTestTime)
+
+	if _, err := db.ExecContext(ctx, `UPDATE stock_documents SET status = 'cancelled' WHERE id = 'stock-doc-1'`); err == nil {
+		t.Fatal("expected stock document update to fail")
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM stock_documents WHERE id = 'stock-doc-1'`); err == nil {
+		t.Fatal("expected stock document delete to fail")
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE stock_moves SET quantity = 2 WHERE id = 'stock-move-1'`); err == nil {
+		t.Fatal("expected stock move update to fail")
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM stock_moves WHERE id = 'stock-move-1'`); err == nil {
+		t.Fatal("expected stock move delete to fail")
+	}
+}
+
 func TestStockBalancesUniqueByCatalogItemLocationWhenLocationExists(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedCatalogForSchemaTests(t, ctx, db)
