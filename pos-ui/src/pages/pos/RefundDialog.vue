@@ -8,6 +8,36 @@
         <p class="dialog-copy">{{ terminal.t(terminal.refundDialogCopyKey()) }}</p>
         <q-input v-model="terminal.refundReason.value" outlined :label="terminal.t('pos.refundReason')" type="textarea" autogrow />
         <template v-if="terminal.refundDialogShowsLedgerControls()">
+          <q-option-group
+            v-model="terminal.refundScope.value"
+            class="scope-toggle"
+            color="primary"
+            inline
+            :options="terminal.ledgerScopeOptions.value"
+          />
+          <template v-if="terminal.refundScope.value === 'order_line'">
+            <q-select
+              v-model="terminal.refundOrderLineId.value"
+              outlined
+              emit-value
+              map-options
+              :options="terminal.refundLineOptions.value"
+              :label="terminal.t('pos.ledgerLine')"
+            />
+            <q-input
+              v-model.number="terminal.refundLineQuantity.value"
+              outlined
+              type="number"
+              min="1"
+              :max="terminal.maxRefundLineQuantity.value"
+              :label="terminal.t('pos.quantity')"
+              @blur="terminal.normalizeRefundLineQuantity"
+            />
+            <div class="ledger-line-summary">
+              <span>{{ terminal.t('common.amount') }}</span>
+              <strong>{{ terminal.money(terminal.refundLineAmount.value, terminal.selectedRefundLine.value?.currency_code ?? 'RUB') }}</strong>
+            </div>
+          </template>
           <q-select
             v-model="terminal.refundInventoryDisposition.value"
             outlined
@@ -21,14 +51,14 @@
             outlined
             emit-value
             map-options
-            :options="[{ label: terminal.t('pos.operationKinds.full'), value: 'full' }]"
+            :options="[{ label: terminal.t(`pos.operationKinds.${terminal.currentLedgerOperationKind.value}`), value: terminal.currentLedgerOperationKind.value }]"
             :label="terminal.t('pos.operationKind')"
             disable
           />
           <div class="planned-scope-panel">
-            <p class="eyebrow">{{ terminal.t('pos.partialLedgerScope') }}</p>
+            <p class="eyebrow">{{ terminal.t('pos.unsupportedLedgerScopes') }}</p>
             <div class="planned-scope-list">
-              <q-chip v-for="scope in terminal.plannedLedgerScopeOptions.value" :key="scope" dense outline color="grey-7">
+              <q-chip v-for="scope in terminal.unsupportedLedgerScopeOptions.value" :key="scope" dense outline color="grey-7">
                 {{ scope }}
               </q-chip>
             </div>
@@ -43,7 +73,7 @@
           :icon="terminal.refundDialogIcon()"
           :label="terminal.t(terminal.refundDialogSubmitKey())"
           :loading="terminal.refundMutation.isPending.value"
-          :disable="!terminal.refundReason.value.trim()"
+          :disable="!terminal.refundReason.value.trim() || (terminal.refundScope.value === 'order_line' && !terminal.selectedRefundLine.value)"
           @click="terminal.refundMutation.mutate()"
         />
       </q-card-actions>
@@ -60,6 +90,25 @@ defineProps<{
 </script>
 
 <style scoped>
+.scope-toggle {
+  padding: 2px 0;
+}
+
+.ledger-line-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid rgba(36, 42, 54, 0.14);
+  border-radius: 8px;
+}
+
+.ledger-line-summary span {
+  color: #6d7280;
+}
+
 .planned-scope-panel {
   display: grid;
   gap: 8px;

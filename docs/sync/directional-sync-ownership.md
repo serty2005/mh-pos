@@ -65,7 +65,7 @@
 Реализовано сейчас:
 
 - `CancellationRecorded` и `RefundRecorded` принимаются Cloud receiver и сохраняются как operational events;
-- full check cancellation/refund UI не добавляет новые sync event names; он использует текущие Edge-owned ledger events и отправляет command id вместе с inventory disposition как operation payload fields;
+- cashier UI for whole-check and partial `order_line`/quantity cancellation/refund не добавляет новые sync event names; он использует текущие Edge-owned ledger events и отправляет command id, inventory disposition и operation items как payload fields;
 - `PaymentRefunded` и `CheckRefunded` остаются legacy accepted event types для старых payloads;
 - Cloud event-type stats обновляются для всех accepted operational events;
 - Cloud shift finance foundation считает coarse refund totals from current `RefundRecorded` and legacy `PaymentRefunded`/`CheckRefunded`, but it is not a full projection for financial operation ledger item scopes, inventory disposition, approval policy or original-shift reconciliation.

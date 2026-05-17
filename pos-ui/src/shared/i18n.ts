@@ -186,6 +186,7 @@ export const i18n = createI18n({
         operationKind: 'Объем операции',
         operationKinds: {
           full: 'Весь чек',
+          partial: 'Частично',
         },
         inventoryDispositions: {
           no_stock_effect: 'Без движения склада',
@@ -193,8 +194,11 @@ export const i18n = createI18n({
           write_off_waste: 'Списать как потери',
           manual_review: 'Требует ручной проверки',
         },
-        partialLedgerScope: 'Частичные операции запланированы',
+        partialLedgerScope: 'Частичные операции',
+        unsupportedLedgerScopes: 'Вне текущего UI flow',
+        ledgerLine: 'Позиция для операции',
         ledgerScopes: {
+          whole_check: 'Весь чек',
           order_line: 'Позиция заказа',
           modifier_line: 'Модификатор',
           service_charge: 'Сервисный сбор',

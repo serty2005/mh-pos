@@ -317,6 +317,31 @@ export const financialOperationSchema = z.object({
   created_at: z.string(),
 });
 
+export const checkSnapshotLineSchema = z.object({
+  order_line_id: z.string(),
+  menu_item_id: z.string().optional(),
+  catalog_item_id: z.string().optional(),
+  name: z.string(),
+  quantity: z.number(),
+  unit_price_minor: z.number(),
+  subtotal_minor: z.number(),
+  discount_total_minor: z.number().optional().default(0),
+  surcharge_total_minor: z.number().optional().default(0),
+  tax_total_minor: z.number().optional().default(0),
+  total_minor: z.number(),
+  currency_code: z.string(),
+}).passthrough();
+
+export const checkSnapshotSchema = z.object({
+  document_type: z.literal('check').optional(),
+  check_id: z.string().optional(),
+  total: z.number().optional(),
+  currency_code: z.string().optional(),
+  precheck_snapshot: z.object({
+    lines: z.array(checkSnapshotLineSchema).optional().default([]),
+  }).passthrough().optional(),
+}).passthrough();
+
 export const syncStatusSchema = z.object({
   total: z.number(),
   pending: z.number(),
@@ -380,6 +405,7 @@ export type Check = z.infer<typeof checkSchema>;
 export type ReprintDocument = z.infer<typeof reprintDocumentSchema>;
 export type FinancialOperation = z.infer<typeof financialOperationSchema>;
 export type FinancialOperationItem = z.infer<typeof financialOperationItemSchema>;
+export type CheckSnapshotLine = z.infer<typeof checkSnapshotLineSchema>;
 export type SyncStatus = z.infer<typeof syncStatusSchema>;
 export type OutboxMessage = z.infer<typeof outboxMessageSchema>;
 export type LocalEvent = z.infer<typeof localEventSchema>;

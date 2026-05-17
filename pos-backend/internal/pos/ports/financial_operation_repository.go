@@ -12,5 +12,6 @@ type FinancialOperationRepository interface {
 	ListFinancialOperationsByCheck(context.Context, string) ([]financial.Operation, error)
 	SumFinancialOperationAmountByCheck(context.Context, string, financial.OperationType) (int64, error)
 	SumFinancialOperationAmountByPayment(context.Context, string, financial.OperationType) (int64, error)
+	SumFinancialOperationAmountByOrderLine(context.Context, string, financial.OperationType) (int64, error)
 	SumFinancialOperationQuantityByOrderLine(context.Context, string, financial.OperationType) (int64, error)
 }

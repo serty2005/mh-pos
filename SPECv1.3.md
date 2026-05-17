@@ -34,7 +34,7 @@
 - service catalog items as sellable POS items;
 - cashier modifier selection flow for menu items with modifier groups;
 - controlled precheck/check reprint from immutable snapshots;
-- append-only cancellation/refund ledger, pilot-minimum full check cancellation/refund UI с явным `inventory_disposition` и compatibility payment refund fallback;
+- append-only cancellation/refund ledger, cashier UI для full whole-check и partial `order_line`/quantity cancellation/refund с явным `inventory_disposition` и compatibility payment refund fallback;
 - Edge -> Cloud operational outbox foundation;
 - Cloud -> Edge master-data ingest for supported streams.
 
@@ -137,11 +137,11 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
 - Operation item scopes: `whole_check`, `order_line`, `modifier_line`, `service_charge`, `tip`, `payment`.
 - Whole check, specific order line, quantity of order line и split payment allocation проверяются backend service.
 - Modifier/service/tip scopes поддержаны как ledger scopes с explicit snapshot; cashier UI уже поддерживает выбор modifiers в заказе, но отдельного UI для partial modifier/service/tip cancellation/refund сейчас нет.
-- Cashier UI реализует только full check cancellation/refund поверх ledger endpoints; partial line/quantity/modifier/service/tip UI остается вне текущего runtime.
-- Cashier UI для full check операций отправляет `command_id`, `operation_kind`, `inventory_disposition` и reason; UI не рассчитывает authoritative amount/items и не передает full operation items.
+- Cashier UI реализует full whole-check cancellation/refund и partial `order_line`/quantity cancellation/refund поверх ledger endpoints. Line/quantity варианты строятся из immutable `check.snapshot.precheck_snapshot.lines`, но backend остается финальным enforcement layer для суммы, количества, смены и business date.
+- Cashier UI для whole-check операций отправляет `command_id`, `operation_kind`, `inventory_disposition` и reason без `items[]`; backend записывает `whole_check` item из immutable check snapshot. Для `order_line`/quantity UI отправляет `items[]` со scope `order_line`, `order_line_id`, `quantity`, `amount`, `currency` и `tax_amount`.
 - Inventory disposition фиксируется явно: `no_stock_effect`, `return_to_stock`, `write_off_waste`, `manual_review`.
 - Financial operation не создает `stock_moves` автоматически.
-- No-over-refund/no-over-cancel проверяется по сумме check; для order line quantity проверяется сумма уже записанных quantities по operation type.
+- No-over-refund/no-over-cancel проверяется по сумме check; для `order_line` backend также проверяет selected line amount, уже записанную сумму по line и сумму уже записанных quantities по operation type.
 - `CancellationRecorded` и `RefundRecorded` являются текущими Edge -> Cloud operational events для этих операций.
 
 Boundary rules:
@@ -158,7 +158,7 @@ Boundary rules:
 - отдельный aggregate `cashier_shift`; текущий cashier shift представлен personal employee shift/table `shifts`;
 - fiscal receipt/correction document generation;
 - PSP refund integration;
-- cashier UI для line/quantity/modifier/service/tip partial cancellation/refund;
+- cashier UI для modifier/service/tip partial cancellation/refund;
 - automatic refund-to-original-tender policy beyond captured payment allocation cap.
 
 ## Master Data And Sync

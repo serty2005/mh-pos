@@ -160,7 +160,7 @@ Managed SQL files, реализовано сейчас:
 - SQLite triggers reject update/delete for both financial operation tables.
 - Backend records `CancellationRecorded` and `RefundRecorded` outbox/local events.
 - Legacy payment refund route writes the same ledger through payment scope instead of updating payment/check/precheck statuses.
-- Cashier UI full-check cancellation/refund использует те же ledger endpoints, отправляет явный `inventory_disposition` и не требует schema changes или mutable status columns у finalized payments/checks.
+- Cashier UI whole-check и partial `order_line`/quantity cancellation/refund использует те же ledger endpoints, отправляет явный `inventory_disposition` и не требует schema changes или mutable status columns у finalized payments/checks. Line/quantity UI опирается на immutable check/precheck snapshot и пишет `financial_operation_items` со scope `order_line`; modifier/service/tip UI не реализован сейчас.
 
 Не реализовано сейчас:
 

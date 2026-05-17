@@ -256,6 +256,127 @@ describe('api request helpers', () => {
     });
   });
 
+  it('records partial order-line cancellation payload through ledger endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify(financialOperationResponse('cancellation', 'partial', 'order_line')),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await recordCheckCancellation('check-1', {
+      commandId: 'cmd-ui-cancel-line',
+      operationKind: 'partial',
+      inventoryDisposition: 'manual_review',
+      reason: 'line issue',
+      items: [{
+        scope: 'order_line',
+        orderLineId: 'line-1',
+        quantity: 1,
+        amount: 500,
+        currency: 'RUB',
+        taxAmount: 45,
+      }],
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/checks/check-1/cancellations');
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual({
+      command_id: 'cmd-ui-cancel-line',
+      operation_kind: 'partial',
+      inventory_disposition: 'manual_review',
+      reason: 'line issue',
+      items: [{
+        scope: 'order_line',
+        order_line_id: 'line-1',
+        quantity: 1,
+        amount: 500,
+        currency: 'RUB',
+        tax_amount: 45,
+      }],
+    });
+  });
+
+  it('records partial order-line refund payload through ledger endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify(financialOperationResponse('refund', 'partial', 'order_line')),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await recordCheckRefund('check-1', {
+      commandId: 'cmd-ui-refund-line',
+      operationKind: 'partial',
+      inventoryDisposition: 'return_to_stock',
+      reason: 'line refund',
+      items: [{
+        scope: 'order_line',
+        orderLineId: 'line-1',
+        quantity: 2,
+        amount: 1000,
+        currency: 'RUB',
+        taxAmount: 90,
+      }],
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/checks/check-1/refunds');
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual({
+      command_id: 'cmd-ui-refund-line',
+      operation_kind: 'partial',
+      inventory_disposition: 'return_to_stock',
+      reason: 'line refund',
+      items: [{
+        scope: 'order_line',
+        order_line_id: 'line-1',
+        quantity: 2,
+        amount: 1000,
+        currency: 'RUB',
+        tax_amount: 90,
+      }],
+    });
+  });
+
+  it('requires reason for check ledger cancellation/refund clients', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    let cancellationError: unknown;
+    try {
+      recordCheckCancellation('check-1', {
+        commandId: 'cmd-empty-cancel',
+        operationKind: 'full',
+        inventoryDisposition: 'no_stock_effect',
+        reason: '   ',
+      });
+    } catch (error) {
+      cancellationError = error;
+    }
+    let refundError: unknown;
+    try {
+      recordCheckRefund('check-1', {
+        commandId: 'cmd-empty-refund',
+        operationKind: 'full',
+        inventoryDisposition: 'no_stock_effect',
+        reason: '',
+      });
+    } catch (error) {
+      refundError = error;
+    }
+    expect(cancellationError).toBeInstanceOf(ApiError);
+    expect(cancellationError).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      messageKey: 'errors.validation',
+      category: 'validation',
+    });
+    expect(refundError).toBeInstanceOf(ApiError);
+    expect(refundError).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      messageKey: 'errors.validation',
+      category: 'validation',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('keeps compatibility payment refund available as fallback', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -297,7 +418,7 @@ describe('api request helpers', () => {
   });
 });
 
-function financialOperationResponse(operationType: 'cancellation' | 'refund') {
+function financialOperationResponse(operationType: 'cancellation' | 'refund', operationKind: 'full' | 'partial' = 'full', scope: 'whole_check' | 'order_line' = 'whole_check') {
   return {
     id: `operation-${operationType}`,
     edge_operation_id: `edge-operation-${operationType}`,
@@ -308,7 +429,7 @@ function financialOperationResponse(operationType: 'cancellation' | 'refund') {
     check_id: 'check-1',
     precheck_id: 'precheck-1',
     operation_type: operationType,
-    operation_kind: 'full',
+    operation_kind: operationKind,
     status: 'recorded',
     amount: 1000,
     currency: 'RUB',
@@ -321,11 +442,11 @@ function financialOperationResponse(operationType: 'cancellation' | 'refund') {
     items: [{
       id: `item-${operationType}`,
       operation_id: `operation-${operationType}`,
-      scope: 'whole_check',
-      order_line_id: null,
+      scope,
+      order_line_id: scope === 'order_line' ? 'line-1' : null,
       payment_id: null,
-      quantity: null,
-      amount: 1000,
+      quantity: scope === 'order_line' ? 1 : null,
+      amount: operationKind === 'partial' ? 500 : 1000,
       currency: 'RUB',
       tax_amount: 0,
       snapshot: {},

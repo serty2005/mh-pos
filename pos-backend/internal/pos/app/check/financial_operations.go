@@ -302,6 +302,17 @@ func (s *Service) operationItemSnapshot(ctx context.Context, typ domain.Financia
 		if line.OrderID != order.ID {
 			return nil, fmt.Errorf("%w: operation line does not belong to check order", domain.ErrConflict)
 		}
+		maxAmount := maxLineItemAmount(line, item.Quantity)
+		if item.Amount > maxAmount {
+			return nil, fmt.Errorf("%w: operation line amount exceeds selected line amount", domain.ErrConflict)
+		}
+		alreadyAmount, err := s.repo.SumFinancialOperationAmountByOrderLine(ctx, line.ID, typ)
+		if err != nil {
+			return nil, err
+		}
+		if alreadyAmount+item.Amount > line.TotalPrice {
+			return nil, fmt.Errorf("%w: operation line amount exceeds remaining line amount", domain.ErrConflict)
+		}
 		if item.Quantity != nil && *item.Quantity > line.Quantity {
 			return nil, fmt.Errorf("%w: operation line quantity exceeds original line quantity", domain.ErrConflict)
 		}
@@ -336,6 +347,13 @@ func (s *Service) operationItemSnapshot(ctx context.Context, typ domain.Financia
 	default:
 		return nil, fmt.Errorf("%w: unsupported operation item scope", domain.ErrInvalid)
 	}
+}
+
+func maxLineItemAmount(line *domain.OrderLine, quantity *int64) int64 {
+	if quantity == nil || line.Quantity <= 0 || *quantity >= line.Quantity {
+		return line.TotalPrice
+	}
+	return (line.TotalPrice*(*quantity) + line.Quantity/2) / line.Quantity
 }
 
 func ensureFinancialBoundary(typ domain.FinancialOperationType, originalShift *domain.Shift, cashSession *domain.CashSession, checkBusinessDate, currentBusinessDate string) error {

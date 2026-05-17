@@ -29,7 +29,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Reprint final check from immutable snapshot.
 - Append-only financial operation ledger для full/partial cancellation и full/partial refund: `financial_operations`, `financial_operation_items`, `CancellationRecorded`, `RefundRecorded`.
 - Compatibility payment refund route and cashier UI flow: UI вызывает `/payments/{id}/refund`, backend записывает refund operation по captured payment allocation.
-- Cashier rich cancellation/refund dialog для закрытого чека: full check cancellation/refund отправляют `command_id`, `operation_kind`, явный `inventory_disposition` и reason; partial scopes показаны как запланированная область без runtime выбора.
+- Cashier rich cancellation/refund dialog для закрытого чека: full whole-check cancellation/refund отправляют `command_id`, `operation_kind`, явный `inventory_disposition` и reason; partial `order_line`/quantity выбирается из immutable check/precheck snapshot и отправляет `items[]`. Modifier/service/tip scopes остаются вне текущего UI flow.
 - `business_date_local` for shifts, cash sessions, payments, checks and financial operations.
 - Pricing/Discounts boundary: backend `Pricing` domain/application layer, line/order discounts, separate surcharge foundation, unified ordered modifier pipeline по `application_index`, tax-last invariant, tax profile/rule foundation, deterministic integer rounding и immutable precheck breakdown persistence.
 - Cloud-authored automatic discount/surcharge policies synced through `pricing_policy`; manual discount/surcharge commands remain backend RBAC-controlled operational actions.
@@ -105,8 +105,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - решить, входит ли automatic consumption в первый pilot;
   - если входит, реализовать consumption trigger, recipe expansion policy и snapshot requirements.
 - Cancellation/refund/reprint hardening:
-  - backend ledger, immutable snapshots, no-over-cancel/no-over-refund tests, current `CancellationRecorded`/`RefundRecorded` sync contracts, idempotent Cloud raw/journal receipt checks and coarse Cloud refund projection реализованы;
-  - cashier UI pilot-minimum full check cancellation/refund через ledger endpoints реализован с выбором inventory disposition; compatibility refund по captured payment оставлен отдельным fallback;
+  - backend ledger, immutable snapshots, no-over-cancel/no-over-refund/no-over-line-amount tests, current `CancellationRecorded`/`RefundRecorded` sync contracts, idempotent Cloud raw/journal receipt checks and coarse Cloud refund projection реализованы;
+  - cashier UI full whole-check и partial `order_line`/quantity cancellation/refund через ledger endpoints реализован с выбором inventory disposition; compatibility refund по captured payment оставлен отдельным fallback;
   - production-way smoke script покрывает Cloud master data для dishes/services/modifiers, Edge ingest, login, shift/cash session, order, modifiers/services, precheck, payment, check reprint, same-shift cancellation, post-shift full refund and shift close.
 - Documentation freeze:
   - поддерживать `SPECv1.3.md` как frozen pilot contract;

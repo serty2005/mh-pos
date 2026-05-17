@@ -3228,6 +3228,23 @@ func TestRecordCancellationSupportsPartialLineQuantityAndInventoryDisposition(t 
 		t.Fatal(err)
 	}
 	quantity := int64(1)
+	_, err = f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-cancel-line-over-amount"),
+		CheckID:              check.ID,
+		OperationKind:        domain.FinancialOperationPartial,
+		InventoryDisposition: domain.InventoryManualReview,
+		Reason:               "line amount exceeds selected quantity",
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:       domain.FinancialItemOrderLine,
+			OrderLineID: line.ID,
+			Quantity:    quantity,
+			Amount:      1001,
+			Currency:    "RUB",
+		}},
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected line amount over-cancel to conflict, got %v", err)
+	}
 	operation, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
 		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-cancel-partial-line"),
 		CheckID:              check.ID,

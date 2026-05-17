@@ -108,7 +108,7 @@
 10. Кассир проводит одну или несколько оплат через `precheck_id`.
 11. Backend создает final check только после полной оплаты.
 12. Кассир или менеджер может повторно напечатать копию precheck/check из immutable snapshot.
-13. Авторизованный оператор может записать cancellation/refund operation; текущий cashier UI использует full check ledger routes для pilot-minimum cancellation/refund и оставляет compatibility payment refund route как fallback для закрытых заказов.
+13. Авторизованный оператор может записать cancellation/refund operation; текущий cashier UI использует check-level ledger routes для full whole-check и partial `order_line`/quantity cancellation/refund и оставляет compatibility payment refund route как fallback для закрытых заказов.
 
 ## Precheck Contract
 
@@ -160,7 +160,7 @@ Pricing contract:
 - Reprint check requires `pos.check.reprint`.
 - Cancellation endpoint is `POST /api/v1/checks/{id}/cancellations`.
 - Refund endpoint is `POST /api/v1/checks/{id}/refunds`.
-- Ledger endpoints принимают `command_id`, `operation_kind`, `inventory_disposition`, reason и optional item scopes. Текущий cashier UI отправляет full-check commands без item list, поэтому backend записывает `whole_check` из immutable check snapshot.
+- Ledger endpoints принимают `command_id`, `operation_kind`, `inventory_disposition`, reason и optional item scopes. Текущий cashier UI отправляет whole-check commands без item list, поэтому backend записывает `whole_check` из immutable check snapshot; для partial line/quantity UI отправляет `items[]` со scope `order_line`, `order_line_id`, `quantity`, `amount`, `currency` и `tax_amount`.
 - Compatibility refund endpoint is `POST /api/v1/payments/{id}/refund`; it records a refund operation with payment allocation and does not mutate finalized payment/check/precheck totals.
 - Compatibility refund requires the captured payment to belong to an order that already has a finalized check. Captured partial payment on a still-issued precheck is not refundable through this endpoint.
 - Cancellation uses permission `pos.precheck.cancel`; refund uses permission `pos.payment.refund`.
@@ -169,7 +169,7 @@ Pricing contract:
 - Financial operations are append-only rows in `financial_operations` and `financial_operation_items`.
 - Operation type is `cancellation` or `refund`; operation kind is `full` or `partial`.
 - Item scopes are `whole_check`, `order_line`, `modifier_line`, `service_charge`, `tip`, `payment`.
-- Backend rejects over-cancel, over-refund, over-line-quantity and over-payment-allocation scenarios.
+- Backend rejects over-cancel, over-refund, over-line-amount, over-line-quantity and over-payment-allocation scenarios.
 - Operation snapshot embeds immutable check snapshot and operation items.
 - Inventory disposition is explicit: `no_stock_effect`, `return_to_stock`, `write_off_waste`, `manual_review`; financial operation does not mutate stock tables.
 - Current POS Edge events are `CancellationRecorded` and `RefundRecorded`. New refund runtime does not emit legacy `PaymentRefunded`/`CheckRefunded`; those names remain Cloud-accepted legacy sync event types only.
@@ -179,7 +179,7 @@ Pricing contract:
 - automatic PSP authorization/capture/refund;
 - fiscal receipt creation;
 - refund manager PIN policy beyond current RBAC permission check;
-- cashier UI for line/quantity/modifier/service/tip partial cancellation/refund;
+- cashier UI for modifier/service/tip partial cancellation/refund;
 - automatic stock return/write-off;
 - separate `business_day` and `fiscal_shift` runtime aggregates.
 

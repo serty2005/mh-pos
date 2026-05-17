@@ -83,6 +83,18 @@ func (r *Repository) SumFinancialOperationAmountByPayment(ctx context.Context, p
 	return amount.Int64, nil
 }
 
+func (r *Repository) SumFinancialOperationAmountByOrderLine(ctx context.Context, orderLineID string, typ domain.FinancialOperationType) (int64, error) {
+	var amount sql.NullInt64
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT COALESCE(SUM(i.amount),0) FROM financial_operation_items i JOIN financial_operations o ON o.id = i.operation_id WHERE i.order_line_id = ? AND o.operation_type = ?`, orderLineID, string(typ)).Scan(&amount)
+	if err != nil {
+		return 0, normalizeErr(err)
+	}
+	if !amount.Valid {
+		return 0, nil
+	}
+	return amount.Int64, nil
+}
+
 func (r *Repository) SumFinancialOperationQuantityByOrderLine(ctx context.Context, orderLineID string, typ domain.FinancialOperationType) (int64, error) {
 	var quantity sql.NullInt64
 	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT COALESCE(SUM(i.quantity),0) FROM financial_operation_items i JOIN financial_operations o ON o.id = i.operation_id WHERE i.order_line_id = ? AND o.operation_type = ?`, orderLineID, string(typ)).Scan(&quantity)

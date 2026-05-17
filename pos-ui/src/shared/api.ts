@@ -34,12 +34,25 @@ export type SelectedModifierPayload = {
 
 export type InventoryDisposition = 'no_stock_effect' | 'return_to_stock' | 'write_off_waste' | 'manual_review';
 export type FinancialOperationKind = 'full' | 'partial';
+export type FinancialOperationItemScope = 'whole_check' | 'order_line' | 'modifier_line' | 'service_charge' | 'tip' | 'payment';
+
+export type FinancialOperationItemPayload = {
+  scope: FinancialOperationItemScope;
+  orderLineId?: string;
+  paymentId?: string;
+  quantity?: number;
+  amount: number;
+  currency?: string;
+  taxAmount?: number;
+  snapshot?: unknown;
+};
 
 export type CheckLedgerOperationPayload = {
   commandId?: string;
   reason: string;
   inventoryDisposition?: InventoryDisposition;
   operationKind?: FinancialOperationKind;
+  items?: FinancialOperationItemPayload[];
 };
 
 export type PaymentRefundPayload = {
@@ -279,6 +292,34 @@ function isRetryable(status: number) {
 function actorId() {
   const auth = useAuthStore();
   return auth.actor?.employee_id ?? '';
+}
+
+function requireLedgerReason(reason: string) {
+  const trimmed = reason.trim();
+  if (!trimmed) {
+    throw new ApiError({
+      status: 0,
+      code: 'VALIDATION_FAILED',
+      messageKey: 'errors.validation',
+      category: 'validation',
+      retryable: false,
+    });
+  }
+  return trimmed;
+}
+
+function mapFinancialOperationItems(items?: FinancialOperationItemPayload[]) {
+  if (!items?.length) return undefined;
+  return items.map((item) => ({
+    scope: item.scope,
+    order_line_id: item.orderLineId,
+    payment_id: item.paymentId,
+    quantity: item.quantity,
+    amount: item.amount,
+    currency: item.currency,
+    tax_amount: item.taxAmount,
+    snapshot: item.snapshot,
+  }));
 }
 
 export function getPairingStatus() {
@@ -595,13 +636,14 @@ export function recordCheckCancellation(checkId: string, payload: string | Check
       command_id: nextCommandId('check-cancellation'),
       operation_kind: 'full' satisfies FinancialOperationKind,
       inventory_disposition: inventoryDisposition,
-      reason: payload,
+      reason: requireLedgerReason(payload),
     }
     : {
       command_id: payload.commandId ?? nextCommandId('check-cancellation'),
       operation_kind: payload.operationKind ?? 'full',
       inventory_disposition: payload.inventoryDisposition ?? 'no_stock_effect',
-      reason: payload.reason,
+      reason: requireLedgerReason(payload.reason),
+      items: mapFinancialOperationItems(payload.items),
     };
   return request(`/checks/${encodeURIComponent(checkId)}/cancellations`, financialOperationSchema, {
     method: 'POST',
@@ -615,13 +657,14 @@ export function recordCheckRefund(checkId: string, payload: string | CheckLedger
       command_id: nextCommandId('check-refund'),
       operation_kind: 'full' satisfies FinancialOperationKind,
       inventory_disposition: inventoryDisposition,
-      reason: payload,
+      reason: requireLedgerReason(payload),
     }
     : {
       command_id: payload.commandId ?? nextCommandId('check-refund'),
       operation_kind: payload.operationKind ?? 'full',
       inventory_disposition: payload.inventoryDisposition ?? 'no_stock_effect',
-      reason: payload.reason,
+      reason: requireLedgerReason(payload.reason),
+      items: mapFinancialOperationItems(payload.items),
     };
   return request(`/checks/${encodeURIComponent(checkId)}/refunds`, financialOperationSchema, {
     method: 'POST',

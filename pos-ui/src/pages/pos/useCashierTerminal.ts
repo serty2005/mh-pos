@@ -44,6 +44,7 @@ import {
   updateOrderLineDetails,
   voidOrderLine,
   type CashDrawerEventType,
+  type FinancialOperationItemPayload,
   type FinancialOperationKind,
   type InventoryDisposition,
   type SelectedModifierPayload,
@@ -52,7 +53,7 @@ import { currencyInputStep, formatMinorCurrency, minorToMoney, moneyToMinor } fr
 import { displayErrorMessageKey, useErrorHandling } from '../../shared/errorHandling';
 import { hasPermission, permissionCatalog } from '../../shared/rbac';
 import { resolveProtectedPosFallback } from '../../shared/sessionGuards';
-import type { ClosedOrder, MenuItem, Order } from '../../shared/schemas';
+import { checkSnapshotSchema, type CheckSnapshotLine, type ClosedOrder, type MenuItem, type Order } from '../../shared/schemas';
 import { useAuthStore } from '../../stores/auth';
 
 export const paymentConflictInvalidationQueryKeys = [
@@ -72,6 +73,7 @@ export function invalidatePaymentConflictQueries(queryClient: Pick<QueryClient, 
 
 type FlowStepState = 'ready' | 'active' | 'blocked' | 'pending';
 type CompensationMode = 'payment_refund' | 'check_refund' | 'check_cancellation';
+type LedgerScope = 'whole_check' | 'order_line';
 type BlockingNotice = {
   titleKey: string;
   reasonKey: string;
@@ -110,9 +112,14 @@ export function useCashierTerminal() {
   const refundMode = ref<CompensationMode>('payment_refund');
   const refundPaymentId = ref('');
   const refundCheckId = ref('');
+  const refundOrder = ref<ClosedOrder | null>(null);
   const refundReason = ref('');
   const refundInventoryDisposition = ref<InventoryDisposition>('no_stock_effect');
   const refundOperationKind = ref<FinancialOperationKind>('full');
+  const refundScope = ref<LedgerScope>('whole_check');
+  const refundOrderLines = ref<CheckSnapshotLine[]>([]);
+  const refundOrderLineId = ref('');
+  const refundLineQuantity = ref(1);
   const modifierDialog = ref(false);
   const modifierMenuItem = ref<MenuItem | null>(null);
   const modifierQuantities = ref<Record<string, number>>({});
@@ -150,12 +157,47 @@ export function useCashierTerminal() {
     { label: t('pos.inventoryDispositions.manual_review'), value: 'manual_review' },
   ]);
 
-  const plannedLedgerScopeOptions = computed(() => [
-    t('pos.ledgerScopes.order_line'),
+  const ledgerScopeOptions = computed<Array<{ label: string; value: LedgerScope }>>(() => {
+    const options: Array<{ label: string; value: LedgerScope }> = [
+      { label: t('pos.ledgerScopes.whole_check'), value: 'whole_check' },
+    ];
+    if (refundOrderLines.value.length > 0) {
+      options.push({ label: t('pos.ledgerScopes.order_line'), value: 'order_line' });
+    }
+    return options;
+  });
+
+  const refundLineOptions = computed(() => refundOrderLines.value.map((line) => ({
+    label: `${line.name} · ${line.quantity} × ${money(line.unit_price_minor, line.currency_code)}`,
+    value: line.order_line_id,
+  })));
+
+  const selectedRefundLine = computed(() => refundOrderLines.value.find((line) => line.order_line_id === refundOrderLineId.value) ?? refundOrderLines.value[0] ?? null);
+
+  const maxRefundLineQuantity = computed(() => Math.max(1, selectedRefundLine.value?.quantity ?? 1));
+
+  const refundLineAmount = computed(() => {
+    const line = selectedRefundLine.value;
+    if (!line) return 0;
+    return proportionalMinor(line.total_minor, line.quantity, refundLineQuantity.value);
+  });
+
+  const refundLineTaxAmount = computed(() => {
+    const line = selectedRefundLine.value;
+    if (!line) return 0;
+    return proportionalMinor(line.tax_total_minor, line.quantity, refundLineQuantity.value);
+  });
+
+  const currentLedgerOperationKind = computed<FinancialOperationKind>(() => {
+    if (refundScope.value === 'whole_check') return 'full';
+    const checkTotal = refundOrder.value?.check?.total ?? 0;
+    return checkTotal > 0 && refundLineAmount.value >= checkTotal ? 'full' : 'partial';
+  });
+
+  const unsupportedLedgerScopeOptions = computed(() => [
     t('pos.ledgerScopes.modifier_line'),
     t('pos.ledgerScopes.service_charge'),
     t('pos.ledgerScopes.tip'),
-    t('pos.ledgerScopes.payment'),
   ]);
 
   const pairing = useQuery({
@@ -509,19 +551,12 @@ export function useCashierTerminal() {
 
   const refundMutation = useMutation<unknown, unknown, void>({
     mutationFn: () => {
+      const operationPayload = buildCheckLedgerPayload();
       if (refundMode.value === 'check_refund') {
-        return recordCheckRefund(refundCheckId.value, {
-          operationKind: refundOperationKind.value,
-          inventoryDisposition: refundInventoryDisposition.value,
-          reason: refundReason.value,
-        });
+        return recordCheckRefund(refundCheckId.value, operationPayload);
       }
       if (refundMode.value === 'check_cancellation') {
-        return recordCheckCancellation(refundCheckId.value, {
-          operationKind: refundOperationKind.value,
-          inventoryDisposition: refundInventoryDisposition.value,
-          reason: refundReason.value,
-        });
+        return recordCheckCancellation(refundCheckId.value, operationPayload);
       }
       return refundPayment(refundPaymentId.value, { reason: refundReason.value });
     },
@@ -616,6 +651,14 @@ export function useCashierTerminal() {
   watch(remainingPayment, (value) => {
     paymentAmount.value = minorToMoney(value, orderCurrency.value);
   });
+
+  watch(selectedRefundLine, () => {
+    normalizeRefundLineQuantity();
+  });
+
+  watch(currentLedgerOperationKind, (kind) => {
+    refundOperationKind.value = kind;
+  }, { immediate: true });
 
   function selectHall(id: string) {
     selectedHallId.value = id;
@@ -741,9 +784,14 @@ export function useCashierTerminal() {
     refundMode.value = 'payment_refund';
     refundPaymentId.value = paymentId;
     refundCheckId.value = '';
+    refundOrder.value = null;
     refundReason.value = '';
     refundInventoryDisposition.value = 'no_stock_effect';
     refundOperationKind.value = 'partial';
+    refundScope.value = 'whole_check';
+    refundOrderLines.value = [];
+    refundOrderLineId.value = '';
+    refundLineQuantity.value = 1;
     refundDialog.value = true;
   }
 
@@ -757,9 +805,11 @@ export function useCashierTerminal() {
     refundMode.value = 'check_refund';
     refundPaymentId.value = '';
     refundCheckId.value = orderItem.check.id;
+    refundOrder.value = orderItem;
     refundReason.value = '';
     refundInventoryDisposition.value = 'no_stock_effect';
     refundOperationKind.value = 'full';
+    primeLedgerScope(orderItem);
     refundDialog.value = true;
   }
 
@@ -768,9 +818,11 @@ export function useCashierTerminal() {
     refundMode.value = 'check_cancellation';
     refundPaymentId.value = '';
     refundCheckId.value = orderItem.check.id;
+    refundOrder.value = orderItem;
     refundReason.value = '';
     refundInventoryDisposition.value = 'no_stock_effect';
     refundOperationKind.value = 'full';
+    primeLedgerScope(orderItem);
     refundDialog.value = true;
   }
 
@@ -779,9 +831,14 @@ export function useCashierTerminal() {
     refundMode.value = 'payment_refund';
     refundPaymentId.value = '';
     refundCheckId.value = '';
+    refundOrder.value = null;
     refundReason.value = '';
     refundInventoryDisposition.value = 'no_stock_effect';
     refundOperationKind.value = 'full';
+    refundScope.value = 'whole_check';
+    refundOrderLines.value = [];
+    refundOrderLineId.value = '';
+    refundLineQuantity.value = 1;
   }
 
   function hasCapturedPayment(orderItem: ClosedOrder) {
@@ -831,8 +888,62 @@ export function useCashierTerminal() {
     return refundMode.value === 'check_cancellation' || refundMode.value === 'check_refund';
   }
 
+  function buildCheckLedgerPayload() {
+    const items = refundScope.value === 'order_line' ? buildOrderLineLedgerItems() : undefined;
+    refundOperationKind.value = currentLedgerOperationKind.value;
+    return {
+      operationKind: currentLedgerOperationKind.value,
+      inventoryDisposition: refundInventoryDisposition.value,
+      reason: refundReason.value,
+      items,
+    };
+  }
+
+  function buildOrderLineLedgerItems(): FinancialOperationItemPayload[] | undefined {
+    const line = selectedRefundLine.value;
+    if (!line) return undefined;
+    const quantity = clampQuantity(refundLineQuantity.value, line.quantity);
+    return [{
+      scope: 'order_line',
+      orderLineId: line.order_line_id,
+      quantity,
+      amount: proportionalMinor(line.total_minor, line.quantity, quantity),
+      currency: line.currency_code,
+      taxAmount: proportionalMinor(line.tax_total_minor, line.quantity, quantity),
+    }];
+  }
+
+  function primeLedgerScope(orderItem: ClosedOrder) {
+    refundScope.value = 'whole_check';
+    refundOrderLines.value = extractCheckSnapshotLines(orderItem);
+    refundOrderLineId.value = refundOrderLines.value[0]?.order_line_id ?? '';
+    refundLineQuantity.value = 1;
+  }
+
+  function extractCheckSnapshotLines(orderItem: ClosedOrder) {
+    const parsed = checkSnapshotSchema.safeParse(orderItem.check?.snapshot);
+    if (!parsed.success) return [];
+    return parsed.data.precheck_snapshot?.lines.filter((line) => line.quantity > 0 && line.total_minor > 0 && line.order_line_id.trim()) ?? [];
+  }
+
+  function clampQuantity(value: number, max: number) {
+    if (!Number.isFinite(value)) return 1;
+    return Math.min(Math.max(1, Math.trunc(value)), Math.max(1, max));
+  }
+
+  function proportionalMinor(total: number, quantity: number, selectedQuantity: number) {
+    if (quantity <= 0 || selectedQuantity >= quantity) return total;
+    return Math.round((total * clampQuantity(selectedQuantity, quantity)) / quantity);
+  }
+
+  function normalizeRefundLineQuantity() {
+    refundLineQuantity.value = clampQuantity(refundLineQuantity.value, maxRefundLineQuantity.value);
+  }
+
   function refreshCompensationState() {
     void queryClient.invalidateQueries({ queryKey: ['closed-orders'] });
+    void queryClient.invalidateQueries({ queryKey: ['order'] });
+    void queryClient.invalidateQueries({ queryKey: ['check'] });
     void queryClient.invalidateQueries({ queryKey: ['sync-outbox'] });
     void queryClient.invalidateQueries({ queryKey: ['sync-status'] });
     void queryClient.invalidateQueries({ queryKey: ['local-events'] });
@@ -955,6 +1066,9 @@ export function useCashierTerminal() {
     refundReason,
     refundInventoryDisposition,
     refundOperationKind,
+    refundScope,
+    refundOrderLineId,
+    refundLineQuantity,
     modifierDialog,
     modifierMenuItem,
     modifierQuantities,
@@ -986,7 +1100,13 @@ export function useCashierTerminal() {
     paymentBlockedReasonKey,
     cashDrawerTypeOptions,
     inventoryDispositionOptions,
-    plannedLedgerScopeOptions,
+    ledgerScopeOptions,
+    refundLineOptions,
+    selectedRefundLine,
+    maxRefundLineQuantity,
+    refundLineAmount,
+    currentLedgerOperationKind,
+    unsupportedLedgerScopeOptions,
     pairing,
     currentShift,
     recentShifts,
@@ -1070,6 +1190,7 @@ export function useCashierTerminal() {
     refundDialogSubmitKey,
     refundDialogIcon,
     refundDialogShowsLedgerControls,
+    normalizeRefundLineQuantity,
     refreshOps,
     refreshSync,
     refetchMenu,
