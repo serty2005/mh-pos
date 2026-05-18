@@ -93,7 +93,7 @@ docker compose -f docker-compose.local.yml down -v
   -PosApiBase "http://localhost:8080/api/v1"
 ```
 
-Скрипт создает ресторан, роль, сотрудника с PIN `1357`, catalog/menu item, публикует snapshot, применяет его на POS Edge, выполняет local pairing и проверяет, что POS видит Cloud-created данные.
+Скрипт создает ресторан, роль, сотрудника с PIN `1357`, catalog/menu item, modifier group/option/binding, публикует typed Cloud -> POS Edge snapshot, применяет его на POS Edge без PowerShell field stripping, выполняет local pairing и проверяет, что POS видит Cloud-created данные.
 
 Для production-like Zero-to-Cashier через Cloud Approve:
 

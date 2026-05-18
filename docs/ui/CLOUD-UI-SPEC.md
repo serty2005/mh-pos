@@ -51,6 +51,7 @@
 - menu items;
 - menu category create как command-only операция, потому что list/update routes не подтверждены;
 - publication summary и явная публикация master data;
+- опубликованный snapshot для Edge использует backend Cloud -> POS Edge ingest DTO: top-level modifier groups/options/bindings передаются отдельно от link-only `menu_item_modifier_groups`, без rich/UI projection fields внутри `menu_items`;
 - `GET /api/v1/restaurants/{id}/master-data/publication-state` возвращает `200 null` до первой публикации выбранного ресторана; Cloud UI трактует это как empty state панели публикации, а не как ошибку browser console;
 - отдельный раздел `События от Edge`, который читает `GET /api/v1/sync/edge-events` и показывает только безопасные receipt metadata без raw payload.
 

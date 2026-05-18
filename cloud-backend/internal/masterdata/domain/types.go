@@ -540,28 +540,31 @@ type EdgeTable struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// EdgeModifierGroup является foundation projection modifier group для будущего Edge menu layout.
+// EdgeModifierGroup является Cloud -> POS Edge ingest projection группы модификаторов.
 type EdgeModifierGroup struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Required bool   `json:"required"`
-	MinCount int64  `json:"min_count"`
-	MaxCount int64  `json:"max_count"`
-	Active   bool   `json:"active"`
+	ID           string `json:"id"`
+	RestaurantID string `json:"restaurant_id"`
+	Name         string `json:"name"`
+	Required     bool   `json:"required"`
+	MinCount     int64  `json:"min_count"`
+	MaxCount     int64  `json:"max_count"`
+	Active       bool   `json:"active"`
 }
 
-// EdgeModifierOption является foundation projection modifier option для будущего Edge menu layout.
+// EdgeModifierOption является Cloud -> POS Edge ingest projection варианта модификатора.
 type EdgeModifierOption struct {
 	ID              string `json:"id"`
+	RestaurantID    string `json:"restaurant_id"`
 	ModifierGroupID string `json:"modifier_group_id"`
 	Name            string `json:"name"`
 	PriceMinor      int64  `json:"price_minor"`
 	Active          bool   `json:"active"`
 }
 
-// EdgeModifierGroupBinding является projection явной привязки группы модификаторов.
+// EdgeModifierGroupBinding является Cloud -> POS Edge ingest projection явной привязки группы модификаторов.
 type EdgeModifierGroupBinding struct {
 	ID              string `json:"id"`
+	RestaurantID    string `json:"restaurant_id"`
 	ModifierGroupID string `json:"modifier_group_id"`
 	TargetType      string `json:"target_type"`
 	TargetID        string `json:"target_id"`
@@ -569,15 +572,11 @@ type EdgeModifierGroupBinding struct {
 	Active          bool   `json:"active"`
 }
 
-// EdgeMenuItemModifierGroup является precomputed привязкой модификаторов к menu item для Edge runtime.
+// EdgeMenuItemModifierGroup является link-only projection модификаторов к menu item для POS Edge strict ingest.
 type EdgeMenuItemModifierGroup struct {
 	MenuItemID      string `json:"menu_item_id"`
 	ModifierGroupID string `json:"modifier_group_id"`
 	SortOrder       int64  `json:"sort_order"`
-	Required        bool   `json:"required"`
-	MinCount        int64  `json:"min_count"`
-	MaxCount        int64  `json:"max_count"`
-	Active          bool   `json:"active"`
 }
 
 // EdgePricingPolicy является projection Cloud-authored discount/surcharge policy.

@@ -1742,21 +1742,20 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 		Employees       []domain.EdgeEmployee `json:"employees"`
 	}
 	type catalogPayload struct {
-		NodeDeviceID           string                             `json:"node_device_id,omitempty"`
-		RestaurantID           string                             `json:"restaurant_id"`
-		SyncMode               string                             `json:"sync_mode"`
-		CheckpointToken        string                             `json:"checkpoint_token,omitempty"`
-		CloudVersion           int64                              `json:"cloud_version"`
-		CloudUpdatedAt         time.Time                          `json:"cloud_updated_at"`
-		CatalogItems           []domain.EdgeCatalogItem           `json:"catalog_items"`
-		Folders                []domain.EdgeCatalogFolder         `json:"folders,omitempty"`
-		FolderParameters       []domain.EdgeFolderParameter       `json:"folder_parameters,omitempty"`
-		Tags                   []domain.EdgeCatalogTag            `json:"tags,omitempty"`
-		ItemTags               []domain.EdgeCatalogItemTag        `json:"item_tags,omitempty"`
-		ModifierGroups         []domain.EdgeModifierGroup         `json:"modifier_groups,omitempty"`
-		ModifierOptions        []domain.EdgeModifierOption        `json:"modifier_options,omitempty"`
-		ModifierBindings       []domain.EdgeModifierGroupBinding  `json:"modifier_bindings,omitempty"`
-		MenuItemModifierGroups []domain.EdgeMenuItemModifierGroup `json:"menu_item_modifier_groups,omitempty"`
+		NodeDeviceID     string                            `json:"node_device_id,omitempty"`
+		RestaurantID     string                            `json:"restaurant_id"`
+		SyncMode         string                            `json:"sync_mode"`
+		CheckpointToken  string                            `json:"checkpoint_token,omitempty"`
+		CloudVersion     int64                             `json:"cloud_version"`
+		CloudUpdatedAt   time.Time                         `json:"cloud_updated_at"`
+		CatalogItems     []domain.EdgeCatalogItem          `json:"catalog_items"`
+		Folders          []domain.EdgeCatalogFolder        `json:"folders,omitempty"`
+		FolderParameters []domain.EdgeFolderParameter      `json:"folder_parameters,omitempty"`
+		Tags             []domain.EdgeCatalogTag           `json:"tags,omitempty"`
+		ItemTags         []domain.EdgeCatalogItemTag       `json:"item_tags,omitempty"`
+		ModifierGroups   []domain.EdgeModifierGroup        `json:"modifier_groups,omitempty"`
+		ModifierOptions  []domain.EdgeModifierOption       `json:"modifier_options,omitempty"`
+		ModifierBindings []domain.EdgeModifierGroupBinding `json:"modifier_bindings,omitempty"`
 	}
 	type floorPayload struct {
 		NodeDeviceID    string             `json:"node_device_id,omitempty"`
@@ -1769,13 +1768,14 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 		Tables          []domain.EdgeTable `json:"tables"`
 	}
 	type menuPayload struct {
-		NodeDeviceID    string                `json:"node_device_id,omitempty"`
-		RestaurantID    string                `json:"restaurant_id"`
-		SyncMode        string                `json:"sync_mode"`
-		CheckpointToken string                `json:"checkpoint_token,omitempty"`
-		CloudVersion    int64                 `json:"cloud_version"`
-		CloudUpdatedAt  time.Time             `json:"cloud_updated_at"`
-		MenuItems       []domain.EdgeMenuItem `json:"menu_items"`
+		NodeDeviceID           string                             `json:"node_device_id,omitempty"`
+		RestaurantID           string                             `json:"restaurant_id"`
+		SyncMode               string                             `json:"sync_mode"`
+		CheckpointToken        string                             `json:"checkpoint_token,omitempty"`
+		CloudVersion           int64                              `json:"cloud_version"`
+		CloudUpdatedAt         time.Time                          `json:"cloud_updated_at"`
+		MenuItems              []domain.EdgeMenuItem              `json:"menu_items"`
+		MenuItemModifierGroups []domain.EdgeMenuItemModifierGroup `json:"menu_item_modifier_groups,omitempty"`
 	}
 	type pricingPayload struct {
 		NodeDeviceID    string                     `json:"node_device_id,omitempty"`
@@ -1810,7 +1810,7 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	catalog, err := build("catalog", catalogPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, CatalogItems: packet.CatalogItems, Folders: packet.Folders, FolderParameters: packet.FolderParameters, Tags: packet.Tags, ItemTags: packet.ItemTags, ModifierGroups: packet.ModifierGroups, ModifierOptions: packet.ModifierOptions, ModifierBindings: packet.ModifierBindings, MenuItemModifierGroups: packet.MenuItemModifierGroups})
+	catalog, err := build("catalog", catalogPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, CatalogItems: packet.CatalogItems, Folders: packet.Folders, FolderParameters: packet.FolderParameters, Tags: packet.Tags, ItemTags: packet.ItemTags, ModifierGroups: packet.ModifierGroups, ModifierOptions: packet.ModifierOptions, ModifierBindings: packet.ModifierBindings})
 	if err != nil {
 		return nil, err
 	}
@@ -1818,7 +1818,7 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	menu, err := build("menu", menuPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, MenuItems: packet.MenuItems})
+	menu, err := build("menu", menuPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, MenuItems: packet.MenuItems, MenuItemModifierGroups: packet.MenuItemModifierGroups})
 	if err != nil {
 		return nil, err
 	}
@@ -1906,7 +1906,7 @@ func edgeItemTags(items []domain.CatalogItemTag) []domain.EdgeCatalogItemTag {
 func edgeModifierGroups(items []domain.ModifierGroup) []domain.EdgeModifierGroup {
 	out := make([]domain.EdgeModifierGroup, 0, len(items))
 	for _, item := range items {
-		out = append(out, domain.EdgeModifierGroup{ID: item.ID, Name: item.Name, Required: item.Required, MinCount: item.MinCount, MaxCount: item.MaxCount, Active: item.ActiveForPOS()})
+		out = append(out, domain.EdgeModifierGroup{ID: item.ID, RestaurantID: item.RestaurantID, Name: item.Name, Required: item.Required, MinCount: item.MinCount, MaxCount: item.MaxCount, Active: item.ActiveForPOS()})
 	}
 	return out
 }
@@ -1914,7 +1914,7 @@ func edgeModifierGroups(items []domain.ModifierGroup) []domain.EdgeModifierGroup
 func edgeModifierOptions(items []domain.ModifierOption) []domain.EdgeModifierOption {
 	out := make([]domain.EdgeModifierOption, 0, len(items))
 	for _, item := range items {
-		out = append(out, domain.EdgeModifierOption{ID: item.ID, ModifierGroupID: item.ModifierGroupID, Name: item.Name, PriceMinor: item.PriceMinor, Active: item.ActiveForPOS()})
+		out = append(out, domain.EdgeModifierOption{ID: item.ID, RestaurantID: item.RestaurantID, ModifierGroupID: item.ModifierGroupID, Name: item.Name, PriceMinor: item.PriceMinor, Active: item.ActiveForPOS()})
 	}
 	return out
 }
@@ -1922,7 +1922,7 @@ func edgeModifierOptions(items []domain.ModifierOption) []domain.EdgeModifierOpt
 func edgeModifierBindings(items []domain.ModifierGroupBinding) []domain.EdgeModifierGroupBinding {
 	out := make([]domain.EdgeModifierGroupBinding, 0, len(items))
 	for _, item := range items {
-		out = append(out, domain.EdgeModifierGroupBinding{ID: item.ID, ModifierGroupID: item.ModifierGroupID, TargetType: string(item.TargetType), TargetID: item.TargetID, SortOrder: item.SortOrder, Active: item.ActiveForPOS()})
+		out = append(out, domain.EdgeModifierGroupBinding{ID: item.ID, RestaurantID: item.RestaurantID, ModifierGroupID: item.ModifierGroupID, TargetType: string(item.TargetType), TargetID: item.TargetID, SortOrder: item.SortOrder, Active: item.ActiveForPOS()})
 	}
 	return out
 }
@@ -1972,7 +1972,7 @@ func edgeMenuItemModifierGroups(menuItems []domain.MenuItem, catalogItems []doma
 					continue
 				}
 				seen[key] = struct{}{}
-				out = append(out, domain.EdgeMenuItemModifierGroup{MenuItemID: menuItem.ID, ModifierGroupID: binding.ModifierGroupID, SortOrder: binding.SortOrder, Required: group.Required, MinCount: group.MinCount, MaxCount: group.MaxCount, Active: true})
+				out = append(out, domain.EdgeMenuItemModifierGroup{MenuItemID: menuItem.ID, ModifierGroupID: binding.ModifierGroupID, SortOrder: binding.SortOrder})
 			}
 		}
 	}

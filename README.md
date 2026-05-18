@@ -23,7 +23,8 @@
 - Cloud receiver принимает current `CancellationRecorded`/`RefundRecorded` и legacy inbound-only `PaymentRefunded`/`CheckRefunded`; richer financial operation reporting остается отдельной задачей.
 - Reprint precheck/check строится из immutable snapshot.
 - Cloud -> Edge master-data ingest в POS Edge runtime поддерживает потоки `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
-- Cloud/Edge master data разделяет menu categories, catalog folders и tags; `catalog` stream передает folders, folder parameters, tags, item tags, services и modifier groups/options/links, а `menu` stream передает menu items.
+- Cloud/Edge master data разделяет menu categories, catalog folders и tags; `catalog` stream передает folders, folder parameters, tags, item tags, services и modifier groups/options/bindings, а `menu` stream передает menu items и effective modifier links.
+- Cloud publication snapshot для POS Edge публикуется как typed ingest DTO: `modifier_groups[]` сохраняет `required`, `min_count`, `max_count`, `active`, а `menu_item_modifier_groups[]` остается link-only без rich/UI fields. Production-way bootstrap отправляет опубликованный Cloud snapshot на POS Edge без PowerShell field stripping.
 - Inventory runtime имеет минимальный backend boundary для ручного posted stock document: `stock_documents` и `stock_moves` immutable, optional balance update выполняется только через service transaction.
 - SQLite schema содержит foundation для recipes/inventory. Это не означает готовый cashier runtime для recipe expansion, automatic consumption или automatic return/write-off из cancellation/refund.
 

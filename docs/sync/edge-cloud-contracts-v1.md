@@ -155,6 +155,7 @@ Request body shape currently supported by POS Edge:
   "menu_items": [],
   "modifier_groups": [],
   "modifier_options": [],
+  "modifier_bindings": [],
   "menu_item_modifier_groups": [],
   "tax_profiles": [],
   "tax_rules": [],
@@ -169,9 +170,14 @@ Request body shape currently supported by POS Edge:
 - Поддерживаемые значения: `incremental` и `full_snapshot`.
 - `full_snapshot` требует `full_snapshot_reason` со значением `terminal_restaurant_changed` или `node_role_changed`.
 - Unsupported streams отклоняются.
-- `catalog` применяет `catalog_items` с canonical `item_type`/`type` values `dish`, `good`, `semi_finished`, `service`, а также `folders`, `folder_parameters`, `tags`, `item_tags`, `modifier_groups`, `modifier_options`, `modifier_bindings` и `menu_item_modifier_groups`.
+- `catalog` применяет `catalog_items` с canonical `item_type`/`type` values `dish`, `good`, `semi_finished`, `service`, а также `folders`, `folder_parameters`, `tags`, `item_tags`, `modifier_groups`, `modifier_options` и `modifier_bindings`.
+- `menu` применяет `menu_items` и effective `menu_item_modifier_groups` links после применения menu items; для старого explicit `stream: "catalog"` link-only payload остается accepted, если referenced menu item уже существует.
+- Cloud publication package для POS Edge является typed ingest DTO, а не Cloud rich projection. `modifier_groups[]` содержит только поля, которые принимает POS Edge: `id`, `restaurant_id`, `name`, `required`, `min_count`, `max_count`, `active`.
+- `modifier_options[]` содержит `id`, `restaurant_id`, `modifier_group_id`, `name`, `price_minor`, `active`.
+- `modifier_bindings[]` содержит `id`, `restaurant_id`, `modifier_group_id`, `target_type`, `target_id`, `sort_order`, `active`.
+- `menu_item_modifier_groups[]` является link-only массивом и содержит только `menu_item_id`, `modifier_group_id`, `sort_order`. Правила обязательности и count limits остаются в top-level `modifier_groups[]`.
+- `menu_items[]` в ingest payload не содержит embedded rich `modifier_groups[]`; POS runtime read model собирает modifiers из top-level groups/options/links после применения snapshot.
 - `restaurants` применяет Cloud-authored настройки ресторана и `active`; опубликованный active restaurant должен попадать в Edge read model как `active = true`.
-- `menu` применяет `menu_items`.
 - `pricing_policy` применяет Cloud-authored `tax_profiles`, `tax_rules`, `service_charge_rules` и automatic discount/surcharge `pricing_policies` в Edge read-model tables с sync metadata.
 - Unsupported JSON fields отклоняются strict decode; неизвестные stream names не применяются.
 - `recipes` и `inventory_reference` пока не являются поддерживаемыми POS Edge apply payloads.

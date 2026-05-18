@@ -181,68 +181,6 @@ function Assert-JsonContains([object]$Value, [string]$Needle, [string]$Message) 
   }
 }
 
-function Set-JsonProperty([object]$Object, [string]$Name, [object]$Value) {
-  if ($Object.PSObject.Properties[$Name]) {
-    $Object.$Name = $Value
-  } else {
-    $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value
-  }
-}
-
-function Remove-JsonProperty([object]$Object, [string]$Name) {
-  if ($null -ne $Object -and $Object.PSObject.Properties[$Name]) {
-    $Object.PSObject.Properties.Remove($Name)
-  }
-}
-
-function Convert-CloudSnapshotForEdge([object]$Snapshot, [string]$RestaurantId, [string]$NodeId) {
-  $payload = $Snapshot
-
-  foreach ($candidate in @("payload", "snapshot", "master_data", "data")) {
-    if ($payload.PSObject.Properties[$candidate]) {
-      $payload = $payload.$candidate
-      break
-    }
-  }
-
-  # Cloud publication may include rich read-model fields that current POS Edge DTOs
-  # do not accept under strict JSON decode. Keep canonical modifier links through
-  # top-level arrays, but strip presentation/Cloud-only fields known to break ingest.
-  if ($payload.PSObject.Properties["menu_items"] -and $null -ne $payload.menu_items) {
-    foreach ($item in $payload.menu_items) {
-      Remove-JsonProperty $item "modifier_groups"
-    }
-  }
-
-  if ($payload.PSObject.Properties["modifier_groups"] -and $null -ne $payload.modifier_groups) {
-    foreach ($group in $payload.modifier_groups) {
-      # Current Edge runtime rejects Cloud modifier group field "required".
-      # The bootstrap creates optional groups only, so omitting it is safe for smoke.
-      Remove-JsonProperty $group "required"
-    }
-  }
-
-  Set-JsonProperty $payload "node_device_id" $NodeId
-
-  if ([string]::IsNullOrWhiteSpace($payload.restaurant_id)) {
-    Set-JsonProperty $payload "restaurant_id" $RestaurantId
-  }
-
-  if ([string]::IsNullOrWhiteSpace($payload.sync_mode)) {
-    Set-JsonProperty $payload "sync_mode" "incremental"
-  }
-
-  if ($payload.sync_mode -eq "full_snapshot" -and [string]::IsNullOrWhiteSpace($payload.full_snapshot_reason)) {
-    Set-JsonProperty $payload "full_snapshot_reason" "terminal_restaurant_changed"
-  }
-
-  if ($null -eq $payload.cloud_version) {
-    Set-JsonProperty $payload "cloud_version" 1
-  }
-
-  return $payload
-}
-
 function Invoke-RuntimeSmoke {
   param(
     [string]$RestaurantId,
@@ -718,8 +656,7 @@ $publication = Invoke-JsonPost "$cloudApi/restaurants/$($restaurant.id)/master-d
 } -ExpectedStatus @(201)
 
 $cloudSnapshot = Invoke-JsonGet "$cloudApi/restaurants/$($restaurant.id)/edge-nodes/$NodeDeviceId/master-data/snapshot"
-$edgeSnapshot = Convert-CloudSnapshotForEdge $cloudSnapshot $restaurant.id $NodeDeviceId
-Invoke-JsonPost "$edgeApi/sync/master-data/snapshots" $edgeSnapshot -ExpectedStatus @(200) | Out-Null
+Invoke-JsonPost "$edgeApi/sync/master-data/snapshots" $cloudSnapshot -ExpectedStatus @(200) | Out-Null
 
 Write-Step "Creating production provisioning/license code when available"
 

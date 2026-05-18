@@ -1,6 +1,7 @@
 package app_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -209,6 +210,18 @@ func TestCatalogMenuValidationAndPublicationPackageShape(t *testing.T) {
 	if _, err := service.UpdateMenuItem(ctx, menu.ID, app.UpdateMenuItemCommand{Status: &published}); err != nil {
 		t.Fatal(err)
 	}
+	modifierGroup, err := service.CreateModifierGroup(ctx, app.CreateModifierGroupCommand{RestaurantID: restaurant.ID, Name: "Milk", Required: true, MinCount: 1, MaxCount: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	modifierOption, err := service.CreateModifierOption(ctx, app.CreateModifierOptionCommand{RestaurantID: restaurant.ID, ModifierGroupID: modifierGroup.ID, Name: "Oat milk", PriceMinor: 300})
+	if err != nil {
+		t.Fatal(err)
+	}
+	modifierBinding, err := service.CreateModifierGroupBinding(ctx, app.CreateModifierGroupBindingCommand{RestaurantID: restaurant.ID, ModifierGroupID: modifierGroup.ID, TargetType: domain.ModifierTargetMenuItem, TargetID: menu.ID, SortOrder: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	pub, err := service.Publish(ctx, app.PublishCommand{RestaurantID: restaurant.ID, PublishedBy: "operator-1", NodeDeviceID: "node-1"})
 	if err != nil {
@@ -262,6 +275,7 @@ func TestCatalogMenuValidationAndPublicationPackageShape(t *testing.T) {
 	if strings.Contains(string(fullBody), `"categories"`) {
 		t.Fatalf("full package must not publish unsupported categories payload: %s", fullBody)
 	}
+	assertPOSEdgeModifierIngestPackage(t, fullBody, restaurant.ID, menu.ID, modifierGroup.ID, modifierOption.ID, modifierBinding.ID)
 }
 
 func TestCatalogItemKindServiceAndSemiFinishedRoundTripAndPublication(t *testing.T) {
@@ -360,6 +374,114 @@ func TestPublicationVersioningIsMonotonic(t *testing.T) {
 func newService() (*app.Service, *memory.Repository) {
 	repo := memory.NewRepository()
 	return app.NewService(repo, fixedClock{}, &fixedIDs{}), repo
+}
+
+type posEdgeMasterDataCommand struct {
+	NodeDeviceID           string                         `json:"node_device_id,omitempty"`
+	RestaurantID           string                         `json:"restaurant_id,omitempty"`
+	SyncMode               string                         `json:"sync_mode,omitempty"`
+	CheckpointToken        string                         `json:"checkpoint_token,omitempty"`
+	CloudVersion           int64                          `json:"cloud_version,omitempty"`
+	CloudUpdatedAt         string                         `json:"cloud_updated_at,omitempty"`
+	Restaurants            []json.RawMessage              `json:"restaurants,omitempty"`
+	Roles                  []json.RawMessage              `json:"roles,omitempty"`
+	Employees              []json.RawMessage              `json:"employees,omitempty"`
+	Halls                  []json.RawMessage              `json:"halls,omitempty"`
+	Tables                 []json.RawMessage              `json:"tables,omitempty"`
+	CatalogItems           []json.RawMessage              `json:"catalog_items,omitempty"`
+	Folders                []json.RawMessage              `json:"folders,omitempty"`
+	FolderParameters       []json.RawMessage              `json:"folder_parameters,omitempty"`
+	Tags                   []json.RawMessage              `json:"tags,omitempty"`
+	ItemTags               []json.RawMessage              `json:"item_tags,omitempty"`
+	ModifierGroups         []posEdgeModifierGroup         `json:"modifier_groups,omitempty"`
+	ModifierOptions        []posEdgeModifierOption        `json:"modifier_options,omitempty"`
+	ModifierBindings       []posEdgeModifierGroupBinding  `json:"modifier_bindings,omitempty"`
+	MenuItemModifierGroups []posEdgeMenuItemModifierGroup `json:"menu_item_modifier_groups,omitempty"`
+	MenuItems              []posEdgeMenuItem              `json:"menu_items,omitempty"`
+	TaxProfiles            []json.RawMessage              `json:"tax_profiles,omitempty"`
+	TaxRules               []json.RawMessage              `json:"tax_rules,omitempty"`
+	ServiceChargeRules     []json.RawMessage              `json:"service_charge_rules,omitempty"`
+	PricingPolicies        []json.RawMessage              `json:"pricing_policies,omitempty"`
+}
+
+type posEdgeModifierGroup struct {
+	ID           string `json:"id"`
+	RestaurantID string `json:"restaurant_id"`
+	Name         string `json:"name"`
+	Required     bool   `json:"required"`
+	MinCount     int    `json:"min_count"`
+	MaxCount     int    `json:"max_count"`
+	Active       bool   `json:"active"`
+}
+
+type posEdgeModifierOption struct {
+	ID              string `json:"id"`
+	RestaurantID    string `json:"restaurant_id"`
+	ModifierGroupID string `json:"modifier_group_id"`
+	Name            string `json:"name"`
+	PriceMinor      int64  `json:"price_minor"`
+	Active          bool   `json:"active"`
+}
+
+type posEdgeModifierGroupBinding struct {
+	ID              string `json:"id"`
+	RestaurantID    string `json:"restaurant_id"`
+	ModifierGroupID string `json:"modifier_group_id"`
+	TargetType      string `json:"target_type"`
+	TargetID        string `json:"target_id"`
+	SortOrder       int    `json:"sort_order"`
+	Active          bool   `json:"active"`
+}
+
+type posEdgeMenuItemModifierGroup struct {
+	MenuItemID      string `json:"menu_item_id"`
+	ModifierGroupID string `json:"modifier_group_id"`
+	SortOrder       int    `json:"sort_order"`
+}
+
+type posEdgeMenuItem struct {
+	ID            string `json:"id"`
+	CatalogItemID string `json:"catalog_item_id"`
+	Name          string `json:"name"`
+	Price         int64  `json:"price"`
+	Currency      string `json:"currency"`
+	Active        bool   `json:"active"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+}
+
+func assertPOSEdgeModifierIngestPackage(t *testing.T, body []byte, restaurantID, menuItemID, groupID, optionID, bindingID string) {
+	t.Helper()
+
+	var cmd posEdgeMasterDataCommand
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cmd); err != nil {
+		t.Fatalf("published package must match POS Edge strict master-data ingest shape: %v\npayload=%s", err, body)
+	}
+	if len(cmd.ModifierGroups) != 1 {
+		t.Fatalf("expected one top-level modifier group, got %+v", cmd.ModifierGroups)
+	}
+	group := cmd.ModifierGroups[0]
+	if group.ID != groupID || group.RestaurantID != restaurantID || !group.Required || group.MinCount != 1 || group.MaxCount != 2 || !group.Active {
+		t.Fatalf("top-level modifier group lost POS Edge semantics: %+v", group)
+	}
+	if len(cmd.ModifierOptions) != 1 || cmd.ModifierOptions[0].ID != optionID || cmd.ModifierOptions[0].RestaurantID != restaurantID || cmd.ModifierOptions[0].ModifierGroupID != groupID {
+		t.Fatalf("unexpected modifier options projection: %+v", cmd.ModifierOptions)
+	}
+	if len(cmd.ModifierBindings) != 1 || cmd.ModifierBindings[0].ID != bindingID || cmd.ModifierBindings[0].RestaurantID != restaurantID || cmd.ModifierBindings[0].ModifierGroupID != groupID {
+		t.Fatalf("unexpected modifier binding projection: %+v", cmd.ModifierBindings)
+	}
+	if len(cmd.MenuItemModifierGroups) != 1 {
+		t.Fatalf("expected one menu item modifier link, got %+v", cmd.MenuItemModifierGroups)
+	}
+	link := cmd.MenuItemModifierGroups[0]
+	if link.MenuItemID != menuItemID || link.ModifierGroupID != groupID || link.SortOrder != 7 {
+		t.Fatalf("unexpected menu item modifier link projection: %+v", link)
+	}
+	if len(cmd.MenuItems) != 1 || cmd.MenuItems[0].ID != menuItemID {
+		t.Fatalf("unexpected menu item projection: %+v", cmd.MenuItems)
+	}
 }
 
 func TestExistingReferenceUpdatesKeepLifecycleStatusesExact(t *testing.T) {

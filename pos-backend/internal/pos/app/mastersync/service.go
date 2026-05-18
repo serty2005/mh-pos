@@ -335,16 +335,17 @@ func (s *Service) applyStream(ctx context.Context, stream domain.MasterDataStrea
 				return err
 			}
 		}
-		for i := range cmd.MenuItemModifierGroups {
-			v := normalizeMenuItemModifierGroup(cmd.MenuItemModifierGroups[i])
-			if err := validateMenuItemModifierGroup(v); err != nil {
+		appliedMenuItemModifierGroups := false
+		if shouldApplyMenuItemModifierGroupsInCatalog(*cmd) {
+			if err := s.applyMenuItemModifierGroups(ctx, cmd, meta); err != nil {
 				return err
 			}
-			if err := s.repo.UpsertMasterMenuItemModifierGroup(ctx, &v, meta); err != nil {
-				return err
-			}
+			appliedMenuItemModifierGroups = true
 		}
-		counts[string(stream)] = len(cmd.Folders) + len(cmd.FolderParameters) + len(cmd.Tags) + len(cmd.CatalogItems) + len(cmd.ItemTags) + len(cmd.ModifierGroups) + len(cmd.ModifierOptions) + len(cmd.ModifierBindings) + len(cmd.MenuItemModifierGroups)
+		counts[string(stream)] = len(cmd.Folders) + len(cmd.FolderParameters) + len(cmd.Tags) + len(cmd.CatalogItems) + len(cmd.ItemTags) + len(cmd.ModifierGroups) + len(cmd.ModifierOptions) + len(cmd.ModifierBindings)
+		if appliedMenuItemModifierGroups {
+			counts[string(stream)] += len(cmd.MenuItemModifierGroups)
+		}
 	case domain.MasterDataStreamMenu:
 		for i := range cmd.MenuItems {
 			v := normalizeMenuItem(cmd.MenuItems[i], now)
@@ -356,6 +357,12 @@ func (s *Service) applyStream(ctx context.Context, stream domain.MasterDataStrea
 			}
 		}
 		counts[string(stream)] = len(cmd.MenuItems)
+		if shouldApplyMenuItemModifierGroupsInMenu(*cmd) {
+			if err := s.applyMenuItemModifierGroups(ctx, cmd, meta); err != nil {
+				return err
+			}
+			counts[string(stream)] += len(cmd.MenuItemModifierGroups)
+		}
 	case domain.MasterDataStreamPricing:
 		for i := range cmd.TaxProfiles {
 			v := normalizeTaxProfile(cmd.TaxProfiles[i], now)
@@ -564,6 +571,33 @@ func (s *Service) buildAppliedState(cmd ApplyMasterDataCommand, stream domain.Ma
 		CreatedAt:          appliedAt,
 		UpdatedAt:          appliedAt,
 	}
+}
+
+func (s *Service) applyMenuItemModifierGroups(ctx context.Context, cmd *ApplyMasterDataCommand, meta domain.MasterRecordSyncMeta) error {
+	for i := range cmd.MenuItemModifierGroups {
+		v := normalizeMenuItemModifierGroup(cmd.MenuItemModifierGroups[i])
+		if err := validateMenuItemModifierGroup(v); err != nil {
+			return err
+		}
+		if err := s.repo.UpsertMasterMenuItemModifierGroup(ctx, &v, meta); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func shouldApplyMenuItemModifierGroupsInCatalog(cmd ApplyMasterDataCommand) bool {
+	if len(cmd.MenuItemModifierGroups) == 0 {
+		return false
+	}
+	return cmd.StreamName == domain.MasterDataStreamCatalog || (cmd.StreamName == "" && len(cmd.MenuItems) == 0)
+}
+
+func shouldApplyMenuItemModifierGroupsInMenu(cmd ApplyMasterDataCommand) bool {
+	if len(cmd.MenuItemModifierGroups) == 0 {
+		return false
+	}
+	return cmd.StreamName == domain.MasterDataStreamMenu || (cmd.StreamName == "" && len(cmd.MenuItems) > 0)
 }
 
 func streamsToApply(cmd ApplyMasterDataCommand) ([]domain.MasterDataStream, error) {

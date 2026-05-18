@@ -4400,6 +4400,61 @@ func TestApplyMasterDataAcceptsCloudCatalogStreamPackageShape(t *testing.T) {
 	}
 }
 
+func TestApplyMasterDataFullPackageAppliesMenuItemsBeforeModifierLinks(t *testing.T) {
+	f := newFixture(t)
+	payload := []byte(`{
+		"node_device_id":"` + f.device.ID + `",
+		"restaurant_id":"` + f.restaurant.ID + `",
+		"sync_mode":"incremental",
+		"checkpoint_token":"master-data:` + f.restaurant.ID + `:44",
+		"cloud_version":44,
+		"cloud_updated_at":"2026-05-09T10:00:00Z",
+		"catalog_items":[{
+			"id":"cloud-tea-catalog",
+			"type":"dish",
+			"name":"Cloud Tea",
+			"sku":"CLOUD-TEA",
+			"base_unit":"portion",
+			"active":true,
+			"created_at":"2026-05-09T10:00:00Z",
+			"updated_at":"2026-05-09T10:00:00Z"
+		}],
+		"modifier_groups":[{"id":"cloud-modifier-group","restaurant_id":"` + f.restaurant.ID + `","name":"Add-ons","required":true,"min_count":1,"max_count":2,"active":true}],
+		"modifier_options":[{"id":"cloud-modifier-option","restaurant_id":"` + f.restaurant.ID + `","modifier_group_id":"cloud-modifier-group","name":"Lemon","price_minor":3000,"active":true}],
+		"modifier_bindings":[{"id":"cloud-modifier-binding","restaurant_id":"` + f.restaurant.ID + `","modifier_group_id":"cloud-modifier-group","target_type":"menu_item","target_id":"cloud-menu-item","sort_order":1,"active":true}],
+		"menu_item_modifier_groups":[{"menu_item_id":"cloud-menu-item","modifier_group_id":"cloud-modifier-group","sort_order":1}],
+		"menu_items":[{
+			"id":"cloud-menu-item",
+			"catalog_item_id":"cloud-tea-catalog",
+			"name":"Cloud Tea",
+			"price":15000,
+			"currency":"RUB",
+			"active":true,
+			"created_at":"2026-05-09T10:00:00Z",
+			"updated_at":"2026-05-09T10:00:00Z"
+		}]
+	}`)
+	var cmd app.ApplyMasterDataCommand
+	if err := json.Unmarshal(payload, &cmd); err != nil {
+		t.Fatal(err)
+	}
+	cmd.CommandMeta = app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync}
+	applied, err := f.service.ApplyMasterData(f.ctx, cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(applied.AppliedStreams) != 2 || applied.AppliedStreams[0] != domain.MasterDataStreamCatalog || applied.AppliedStreams[1] != domain.MasterDataStreamMenu {
+		t.Fatalf("expected catalog then menu streams, got %+v", applied.AppliedStreams)
+	}
+	var linkCount int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM menu_item_modifier_groups WHERE menu_item_id = 'cloud-menu-item' AND modifier_group_id = 'cloud-modifier-group'`).Scan(&linkCount); err != nil {
+		t.Fatal(err)
+	}
+	if linkCount != 1 {
+		t.Fatalf("expected menu item modifier link to be applied after menu item, got %d rows", linkCount)
+	}
+}
+
 func TestApplyMasterDataFullSnapshotCreatesBackupBeforeApply(t *testing.T) {
 	f := newFixture(t)
 	backupCalls := 0

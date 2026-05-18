@@ -241,9 +241,11 @@ Pricing contract:
   - `catalog`
   - `menu`
   - `pricing_policy`
-- `catalog` применяет catalog folders, folder parameters, catalog tags, item tags, item kinds `dish`, `good`, `semi_finished`, `service`, modifier groups/options/bindings and effective menu item modifier group links.
+- `catalog` применяет catalog folders, folder parameters, catalog tags, item tags, item kinds `dish`, `good`, `semi_finished`, `service` и modifier groups/options/bindings.
+- `menu` применяет menu items, menu item `item_type` и effective menu item modifier group links после применения menu items.
+- Cloud publication package для POS Edge должен соответствовать typed ingest DTO `ApplyMasterDataCommand`: modifier groups/options/bindings публикуются top-level массивами с `restaurant_id` и без Cloud lifecycle fields, а `menu_item_modifier_groups` остается link-only (`menu_item_id`, `modifier_group_id`, `sort_order`).
+- `required`, `min_count`, `max_count`, `active` принадлежат top-level `modifier_groups[]`; эти поля не публикуются внутри `menu_item_modifier_groups[]` и не встраиваются как rich `menu_items[].modifier_groups[]` в ingest payload.
 - `restaurants` применяет Cloud-authored settings и `active`; опубликованный active restaurant сохраняется в Edge read model как active row.
-- `menu` применяет menu items and menu item `item_type`.
 - `pricing_policy` применяет `tax_profiles`, `tax_rules`, `service_charge_rules` и automatic discount/surcharge `pricing_policies` с sync metadata.
 - Strict JSON decode отклоняет неизвестные request fields; unsupported stream names отклоняются до partial apply.
 
