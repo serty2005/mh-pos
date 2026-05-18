@@ -501,6 +501,15 @@ func execTestSQL(t *testing.T, f *fixture, query string, args ...any) {
 	}
 }
 
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
+}
+
 func outboxHasDeviceAndOrigin(t *testing.T, f *fixture, commandID, deviceID string, origin domain.CommandOrigin) bool {
 	t.Helper()
 	var n int
@@ -768,6 +777,118 @@ func TestListLocalEventsAsOperatorRequiresPermission(t *testing.T) {
 	}
 	if len(items) == 0 {
 		t.Fatal("expected non-empty local events list for manager")
+	}
+}
+
+func TestStorageLifecycleStatusRequiresPermissionAndSummarizesRuntimeState(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.service.GetStorageLifecycleStatus(f.ctx, app.StorageStatusCommand{CommandMeta: f.edgeMetaCommand("cmd-storage-status-cashier-denied")}); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden for cashier storage status, got %v", err)
+	}
+
+	shift := f.openShift(t)
+	closedAt := fixedClock{}.Now().Add(-48 * time.Hour)
+	insertClosedOrderFixture(t, f, shift.ID, f.device.ID, "order-old-storage", "check-old-storage", "2026-05-02", closedAt)
+	insertClosedOrderFixture(t, f, shift.ID, f.device.ID, "order-new-storage", "check-new-storage", "2026-05-04", fixedClock{}.Now())
+
+	status, err := f.service.GetStorageLifecycleStatus(f.ctx, app.StorageStatusCommand{CommandMeta: f.managerEdgeMetaCommand(t, "cmd-storage-status-manager-allow")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.SQLite.PageCount <= 0 || status.SQLite.PageSizeBytes <= 0 || status.SQLite.EstimatedSizeBytes <= 0 {
+		t.Fatalf("expected sqlite page stats, got %+v", status.SQLite)
+	}
+	if status.Tables.ClosedOrders < 2 || status.Tables.Checks < 2 {
+		t.Fatalf("expected closed order/check counts, got %+v", status.Tables)
+	}
+	if status.ClosedOrderBusinessDateRange.Oldest != "2026-05-02" || status.ClosedOrderBusinessDateRange.Newest != "2026-05-04" {
+		t.Fatalf("unexpected closed date range: %+v", status.ClosedOrderBusinessDateRange)
+	}
+	if len(status.ClosedOrdersByBusinessDate) < 2 {
+		t.Fatalf("expected closed orders grouped by business date, got %+v", status.ClosedOrdersByBusinessDate)
+	}
+	if status.Retention.Mode != "dry_run_only" || status.Retention.DestructiveApplySupported {
+		t.Fatalf("expected dry-run-only retention capability, got %+v", status.Retention)
+	}
+}
+
+func TestStorageRetentionDryRunCountsEligibleRowsWithoutMutatingProtectedTables(t *testing.T) {
+	f := newFixture(t)
+	order, check := f.createPaidOrder(t)
+	if _, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-storage-cancel-for-dry-run"),
+		CheckID:              check.ID,
+		Reason:               "guest returned immediately",
+		InventoryDisposition: domain.InventoryNoStockEffect,
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:    domain.FinancialItemWholeCheck,
+			Amount:   check.Total,
+			Currency: check.CurrencyCode,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	activeOrder, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMetaCommand("cmd-storage-active-order"), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	beforeOrders := countRows(t, f, "orders")
+	beforeChecks := countRows(t, f, "checks")
+	beforeFinancialOperations := countRows(t, f, "financial_operations")
+	beforeFinancialItems := countRows(t, f, "financial_operation_items")
+	beforeOutbox := countRows(t, f, "pos_sync_outbox")
+
+	result, err := f.service.DryRunStorageRetention(f.ctx, app.RetentionDryRunCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-retention-dry-run"),
+		CutoffBusinessDateLocal: "2026-05-05",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Blocked || result.Mode != "dry_run_only" || result.DestructiveApplySupported {
+		t.Fatalf("expected blocked dry-run-only result, got %+v", result)
+	}
+	if !containsString(result.BlockReasons, "dry_run_only_no_archive_policy") || !containsString(result.BlockReasons, "pending_edge_to_cloud_outbox") {
+		t.Fatalf("expected archive-policy and pending-outbox block reasons, got %+v", result.BlockReasons)
+	}
+	if result.Eligible.ClosedOrders < 1 || result.Eligible.Checks < 1 || result.Eligible.Prechecks < 1 || result.Eligible.Payments < 1 {
+		t.Fatalf("expected eligible financial documents for order %s, got %+v", order.ID, result.Eligible)
+	}
+	if result.Eligible.FinancialOperations < 1 || result.Eligible.FinancialOperationItems < 1 {
+		t.Fatalf("expected eligible financial operation rows, got %+v", result.Eligible)
+	}
+	if result.ActiveOrders < 1 || activeOrder.ID == "" {
+		t.Fatalf("expected active orders to be reported, result=%+v active=%+v", result, activeOrder)
+	}
+	if !result.FinancialLedgerProtected || !result.ImmutableSnapshotsProtected {
+		t.Fatalf("expected protected ledger/snapshot flags, got %+v", result)
+	}
+	if got := countRows(t, f, "orders"); got != beforeOrders {
+		t.Fatalf("dry-run mutated orders, before=%d after=%d", beforeOrders, got)
+	}
+	if got := countRows(t, f, "checks"); got != beforeChecks {
+		t.Fatalf("dry-run mutated checks, before=%d after=%d", beforeChecks, got)
+	}
+	if got := countRows(t, f, "financial_operations"); got != beforeFinancialOperations {
+		t.Fatalf("dry-run mutated financial_operations, before=%d after=%d", beforeFinancialOperations, got)
+	}
+	if got := countRows(t, f, "financial_operation_items"); got != beforeFinancialItems {
+		t.Fatalf("dry-run mutated financial_operation_items, before=%d after=%d", beforeFinancialItems, got)
+	}
+	if got := countRows(t, f, "pos_sync_outbox"); got != beforeOutbox {
+		t.Fatalf("dry-run mutated outbox, before=%d after=%d", beforeOutbox, got)
+	}
+}
+
+func TestStorageRetentionDryRunRejectsInvalidCutoff(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.service.DryRunStorageRetention(f.ctx, app.RetentionDryRunCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-retention-invalid"),
+		CutoffBusinessDateLocal: "2026/05/05",
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected invalid cutoff error, got %v", err)
 	}
 }
 

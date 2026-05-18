@@ -16,6 +16,7 @@ type Repository interface {
 	CashRepository
 	InventoryRepository
 	MasterSyncRepository
+	StorageLifecycleRepository
 	LocalEventRepository
 	OutboxRepository
 }

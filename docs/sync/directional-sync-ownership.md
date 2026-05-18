@@ -70,6 +70,7 @@
 - Cloud event-type stats обновляются для всех accepted operational events;
 - Cloud shift finance foundation считает coarse refund totals from current `RefundRecorded` and legacy `PaymentRefunded`/`CheckRefunded`, but it is not a full projection for financial operation ledger item scopes, inventory disposition, approval policy or original-shift reconciliation.
 - Pagination/filtering закрытых заказов является local POS read-model behavior и не добавляет sync ownership или event names.
+- POS Edge storage lifecycle status/dry-run является local operational read model и не добавляет sync event names. Любая будущая destructive retention/archive policy должна блокироваться при наличии non-sent `edge_to_cloud` outbox messages; текущий runtime только сообщает это blocking state.
 - manual Inventory service реализовано сейчас пишет `StockDocumentPosted` как local-only outbox/local event; это не часть Edge -> Cloud operational catalog.
 
 Запланировано далее:

@@ -20,6 +20,7 @@ import (
 	"pos-backend/internal/pos/domain/restaurant"
 	"pos-backend/internal/pos/domain/shared"
 	"pos-backend/internal/pos/domain/shift"
+	"pos-backend/internal/pos/domain/storage"
 )
 
 var (
@@ -277,6 +278,15 @@ type SyncStatus = shared.SyncStatus
 type LocalEvent = shared.LocalEvent
 type SyncEnvelope = shared.SyncEnvelope
 type ReprintDocument = shared.ReprintDocument
+type SQLiteDatabaseStats = storage.SQLiteDatabaseStats
+type StorageTableCounts = storage.TableCounts
+type StorageBusinessDateRange = storage.BusinessDateRange
+type ClosedOrdersBusinessDateCount = storage.ClosedOrdersBusinessDateCount
+type StorageOutboxStatusCount = storage.OutboxStatusCount
+type StorageRetentionCapability = storage.RetentionCapability
+type StorageLifecycleStatus = storage.LifecycleStatus
+type StorageRetentionEligibleCounts = storage.RetentionEligibleCounts
+type StorageRetentionDryRunResult = storage.RetentionDryRunResult
 
 const (
 	OutboxPending    = shared.OutboxPending

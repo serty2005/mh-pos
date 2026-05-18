@@ -168,7 +168,26 @@ Managed SQL files, реализовано сейчас:
 - separate refund projection tables in Cloud;
 - fiscal/correction document storage;
 - automatic inventory stock moves from `inventory_disposition`.
-- local archive/retention/compaction policy для закрытых заказов.
+- physical local archive/delete/compaction policy для закрытых заказов.
+
+## POS Edge Local Storage Lifecycle
+
+Реализовано сейчас:
+
+- Backend предоставляет read-only основу lifecycle через `GET /api/v1/storage/status` и `POST /api/v1/storage/retention/dry-run`.
+- Status использует SQLite PRAGMA `page_count`, `page_size`, `freelist_count`, `journal_mode` для безопасной оценки размера без чтения файловой системы.
+- Status считает high-level объемы runtime tables: orders/order lines/modifiers, prechecks and breakdown tables, payments/attempts, checks, financial operation ledger, shifts, cash sessions, local events, outbox and stock foundation tables.
+- Status агрегирует closed orders по `checks.business_date_local` и возвращает oldest/newest closed check business date.
+- Dry-run считает candidate rows только для closed orders с `checks.business_date_local < cutoff_business_date_local`; cutoff должен использовать формат `YYYY-MM-DD`.
+- Dry-run не пишет и не удаляет строки. `financial_operations`, `financial_operation_items`, immutable precheck/check snapshots, local events и outbox остаются protected.
+- Non-sent `edge_to_cloud` outbox rows возвращаются как blocking state для любой будущей destructive retention policy.
+
+Не реализовано сейчас:
+
+- archive tables или external archive export file;
+- restore/read path для archived closed checks;
+- physical delete of closed orders/checks/prechecks/payments/financial ledger rows;
+- automatic VACUUM/compaction from HTTP API.
 
 ## Modifier Data
 

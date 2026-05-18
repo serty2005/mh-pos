@@ -28,6 +28,7 @@ import (
 	apprestaurant "pos-backend/internal/pos/app/restaurant"
 	"pos-backend/internal/pos/app/shared"
 	appshift "pos-backend/internal/pos/app/shift"
+	appstorage "pos-backend/internal/pos/app/storage"
 	"pos-backend/internal/pos/domain"
 	"pos-backend/internal/pos/ports"
 )
@@ -87,6 +88,8 @@ type ApplyMasterDataCommand = appmastersync.ApplyMasterDataCommand
 type ApplyMasterDataResult = appmastersync.ApplyMasterDataResult
 type RegisterCloudProvisioningCommand = appprovisioning.RegisterCloudCommand
 type PairViaLicenseCommand = appprovisioning.PairViaLicenseCommand
+type StorageStatusCommand = appstorage.StorageStatusCommand
+type RetentionDryRunCommand = appstorage.RetentionDryRunCommand
 
 // MasterDataBackupRequest содержит безопасные metadata для backup-before-data-load.
 type MasterDataBackupRequest = appmastersync.BackupRequest
@@ -126,6 +129,7 @@ type Service struct {
 	inventory    *appinventory.Service
 	masterSync   *appmastersync.Service
 	provisioning *appprovisioning.Service
+	storage      *appstorage.Service
 	localEvents  ports.LocalEventRepository
 	outbox       *shared.OutboxService
 }
@@ -165,6 +169,7 @@ func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idge
 		masterSync: appmastersync.NewServiceWithOptions(repo, tx, ids, clock, appmastersync.Options{
 			BackupBeforeFullSnapshot: options.MasterDataBackupBeforeFullSnapshot,
 		}),
+		storage:     appstorage.NewService(repo, clock),
 		localEvents: repo,
 		outbox:      shared.NewOutboxService(repo, tx, clock),
 	}
@@ -597,6 +602,14 @@ func (s *Service) ApplySyncExchangeCloudPackages(ctx context.Context, packages [
 
 func (s *Service) ListOutbox(ctx context.Context, limit int) ([]domain.OutboxMessage, error) {
 	return s.outbox.ListOutbox(ctx, limit)
+}
+
+func (s *Service) GetStorageLifecycleStatus(ctx context.Context, cmd StorageStatusCommand) (domain.StorageLifecycleStatus, error) {
+	return s.storage.GetStatus(ctx, cmd)
+}
+
+func (s *Service) DryRunStorageRetention(ctx context.Context, cmd RetentionDryRunCommand) (domain.StorageRetentionDryRunResult, error) {
+	return s.storage.DryRunRetention(ctx, cmd)
 }
 
 func syncExchangeStreams() []domain.MasterDataStream {

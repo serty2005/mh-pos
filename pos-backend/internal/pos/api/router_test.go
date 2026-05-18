@@ -803,6 +803,42 @@ func TestListLocalEventsAPIRequiresSyncViewPermission(t *testing.T) {
 	}
 }
 
+func TestStorageStatusAPIRequiresSyncViewPermission(t *testing.T) {
+	f := newAPIFixture(t)
+	rr := f.get(t, "/api/v1/storage/status")
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cashier storage status access, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	f.useManagerOperator(t)
+	rr = f.get(t, "/api/v1/storage/status")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for manager storage status access, got %d: %s", rr.Code, rr.Body.String())
+	}
+	status := decodeAPIResponse[domain.StorageLifecycleStatus](t, rr)
+	if status.SQLite.PageCount <= 0 || status.Retention.Mode != "dry_run_only" || status.Retention.DestructiveApplySupported {
+		t.Fatalf("unexpected storage status: %+v", status)
+	}
+}
+
+func TestStorageRetentionDryRunAPI(t *testing.T) {
+	f := newAPIFixture(t)
+	rr := f.postJSON(t, "/api/v1/storage/retention/dry-run", `{"cutoff_business_date_local":"2026-05-05"}`)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cashier retention dry-run, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	f.useManagerOperator(t)
+	rr = f.postJSON(t, "/api/v1/storage/retention/dry-run", `{"cutoff_business_date_local":"2026-05-05"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for manager retention dry-run, got %d: %s", rr.Code, rr.Body.String())
+	}
+	result := decodeAPIResponse[domain.StorageRetentionDryRunResult](t, rr)
+	if !result.Blocked || result.Mode != "dry_run_only" || result.DestructiveApplySupported {
+		t.Fatalf("unexpected retention dry-run result: %+v", result)
+	}
+}
+
 func TestRetryFailedAPIResetsFailedAndSuspendedButNotSent(t *testing.T) {
 	f := newAPIFixture(t)
 	ids := apiOutboxIDs(t, f, 3)

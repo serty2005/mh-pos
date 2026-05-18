@@ -80,6 +80,8 @@
 - `POST /api/v1/sync/retry-failed`
 - `POST /api/v1/sync/master-data/snapshots`
 - `POST /api/v1/sync/master-data/{stream}`
+- `GET /api/v1/storage/status`
+- `POST /api/v1/storage/retention/dry-run`
 
 ## Current/Optional Reads
 
@@ -115,7 +117,15 @@ Read contract закрытых заказов:
 - Реализовано сейчас: `GET /api/v1/orders/closed` принимает `limit`, `offset`, `business_date_local`, `from_business_date_local`, `to_business_date_local`, `shift_id`, `device_id`, `check_id`.
 - Default `limit` = `50`, max `limit` = `100`; отрицательный `offset` и невалидные business date фильтры отклоняются.
 - Сортировка stable newest-first: close timestamp, затем `id`.
-- API без фильтра возвращает только bounded latest page, а не всю историю; retention/archive/compaction больших локальных БД вне текущего runtime.
+- API без фильтра возвращает только bounded latest page, а не всю историю.
+
+Контракт lifecycle локального storage:
+
+- Реализовано сейчас: `GET /api/v1/storage/status` возвращает read-only operational snapshot локальной SQLite БД: page stats (`page_count`, `page_size_bytes`, `freelist_count`, estimated size), high-level table counts, диапазон business date закрытых чеков, закрытые заказы по business date, outbox counts by status/direction и число blocking Edge -> Cloud outbox messages.
+- Реализовано сейчас: `POST /api/v1/storage/retention/dry-run` принимает `cutoff_business_date_local` в формате `YYYY-MM-DD` и считает документы с `checks.business_date_local < cutoff`, которые могли бы войти в будущую archive/retention policy.
+- Оба endpoint требуют operator session с `pos.sync.view`; UI visibility не является security boundary.
+- Текущий retention mode равен `dry_run_only`: response всегда помечает destructive apply как unsupported, ledger/snapshots как protected и возвращает block reason `dry_run_only_no_archive_policy`. Если есть non-sent `edge_to_cloud` outbox messages, добавляется `pending_edge_to_cloud_outbox`.
+- Не реализовано сейчас: физическое удаление, перенос в archive tables/files, restore/read path из архива, VACUUM как часть HTTP lifecycle flow.
 
 ## Precheck Contract
 

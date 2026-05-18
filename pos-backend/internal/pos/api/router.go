@@ -97,6 +97,9 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/sync/retry-failed", h.retryFailedOutbox)
 		r.Post("/sync/master-data/snapshots", h.applyMasterDataSnapshot)
 		r.Post("/sync/master-data/{stream}", h.applyMasterDataStream)
+
+		r.Get("/storage/status", h.storageStatus)
+		r.Post("/storage/retention/dry-run", h.dryRunStorageRetention)
 	})
 
 	return r
@@ -920,6 +923,24 @@ func (h *Handler) retryFailedOutbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]int{"retried": n})
+}
+
+func (h *Handler) storageStatus(w http.ResponseWriter, r *http.Request) {
+	var cmd app.StorageStatusCommand
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.GetStorageLifecycleStatus(r.Context(), cmd)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) dryRunStorageRetention(w http.ResponseWriter, r *http.Request) {
+	var cmd app.RetentionDryRunCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.DryRunStorageRetention(r.Context(), cmd)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) applyMasterDataSnapshot(w http.ResponseWriter, r *http.Request) {
