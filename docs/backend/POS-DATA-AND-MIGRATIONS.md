@@ -42,6 +42,7 @@ Cashier runtime invariants:
 
 - `orders.status` includes `open`, `locked`, `closed`, `cancelled`.
 - Список закрытых заказов поддержан индексами bounded query: `orders_closed_restaurant_closed_at`, `orders_closed_shift_closed_at`, `orders_closed_device_closed_at`, `checks_business_date_closed_at`, `checks_order_id_closed_at`.
+- Activity/sync reads поддержаны bounded queries and indexes: `local_event_log_created_at`, `local_event_log_event_type_created_at`, `local_event_log_command_id_created_at`, `pos_sync_outbox_status_sequence_no`, `pos_sync_outbox_pending_retry_sequence`, `pos_sync_outbox_processing_locked_at`, `pos_sync_outbox_command_id_created_at`.
 - `prechecks` has immutable `snapshot`, `version`, `currency_code`, `paid_total`, `remaining_total`, `discount_total`, `surcharge_total`, `tax_total`, `total`.
 - `precheck_*` breakdown tables persist lines, discounts, surcharges and tax components for audit/reprint/sync replay.
 - `payments` references `precheck_id`, not legacy `check_id`.
@@ -181,6 +182,7 @@ Managed SQL files, реализовано сейчас:
 - Dry-run считает candidate rows только для closed orders с `checks.business_date_local < cutoff_business_date_local`; cutoff должен использовать формат `YYYY-MM-DD`.
 - Dry-run не пишет и не удаляет строки. `financial_operations`, `financial_operation_items`, immutable precheck/check snapshots, local events и outbox остаются protected.
 - Non-sent `edge_to_cloud` outbox rows возвращаются как blocking state для любой будущей destructive retention policy.
+- Local event/outbox UI reads are bounded operational windows only; they are not cleanup/archive mechanisms and do not remove sync data.
 
 Не реализовано сейчас:
 

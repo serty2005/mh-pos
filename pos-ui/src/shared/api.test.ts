@@ -6,7 +6,9 @@ import {
   getCurrentOrderByTable,
   getCurrentShift,
   listClosedOrders,
+  listLocalEvents,
   listMenuItems,
+  listSyncOutbox,
   recordCheckCancellation,
   recordCheckRefund,
   refundPayment,
@@ -254,6 +256,24 @@ describe('api request helpers', () => {
     expect(url).toContain('check_id=check-1');
     expect(url).toContain('limit=50');
     expect(url).toContain('offset=100');
+  });
+
+  it('requests activity and sync lists with explicit bounded limits', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => '[]',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await listSyncOutbox(5);
+    await listLocalEvents(5, 'RefundRecorded');
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/sync/outbox?limit=5');
+    const localEventsUrl = String(fetchMock.mock.calls[1]?.[0]);
+    expect(localEventsUrl).toContain('/sync/local-events?');
+    expect(localEventsUrl).toContain('limit=5');
+    expect(localEventsUrl).toContain('event_type=RefundRecorded');
   });
 
   it('records full check refund through ledger endpoint', async () => {

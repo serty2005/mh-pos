@@ -240,6 +240,7 @@ Cancellation/refund sync behavior:
 - Shift finance projection не является полной ledger projection для cancellation/refund; detailed reporting by operation item scope, inventory disposition, approval and original shift must read stored raw/journal payloads until a dedicated financial operation projection exists.
 - `GET /api/v1/orders/closed` pagination/filtering является POS local read API behavior; оно не меняет Edge -> Cloud event payloads или Cloud receiver contracts.
 - `GET /api/v1/storage/status` и `POST /api/v1/storage/retention/dry-run` являются локальными POS operational read/dry-run API. Они не создают sync envelopes; dry-run только сообщает non-sent `edge_to_cloud` outbox rows как blocking state для будущей destructive retention/archive policy.
+- `GET /api/v1/sync/outbox`, `GET /api/v1/sync/local-events` и POS UI activity/sync drawer читают только bounded local windows; они не являются sync cleanup или archive contract.
 - Manual `StockDocumentPosted` остается local-only в POS Edge и не принимается/не проецируется Cloud receiver в текущем contract.
 
 ## Financial Payload Boundaries

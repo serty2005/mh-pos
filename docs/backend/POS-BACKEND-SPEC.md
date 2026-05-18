@@ -119,6 +119,13 @@ Read contract закрытых заказов:
 - Сортировка stable newest-first: close timestamp, затем `id`.
 - API без фильтра возвращает только bounded latest page, а не всю историю.
 
+Operational activity/sync read contract:
+
+- Реализовано сейчас: `GET /api/v1/sync/outbox` принимает optional `limit`; backend repository возвращает bounded default page `100`, если limit пустой, отрицательный, нулевой или больше `500`.
+- Реализовано сейчас: `GET /api/v1/sync/local-events` принимает optional `limit` и `event_type`; backend repository возвращает bounded default page `100`, если limit пустой, отрицательный, нулевой или больше `500`, и сортирует по `created_at DESC, id DESC`.
+- POS UI sync/activity drawer использует `limit=5` для outbox и local events; эти reads не являются бесконечным журналом отчетности.
+- `GET /api/v1/sync/status` агрегирует counts by outbox status and does not return payload history.
+
 Контракт lifecycle локального storage:
 
 - Реализовано сейчас: `GET /api/v1/storage/status` возвращает read-only operational snapshot локальной SQLite БД: page stats (`page_count`, `page_size_bytes`, `freelist_count`, estimated size), high-level table counts, диапазон business date закрытых чеков, закрытые заказы по business date, outbox counts by status/direction и число blocking Edge -> Cloud outbox messages.

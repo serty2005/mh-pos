@@ -1,6 +1,7 @@
-param(
+﻿param(
     [switch]$SkipDocker,
     [switch]$SkipUI,
+    [switch]$SkipCloudUI,
     [switch]$SkipLicense,
     [switch]$SkipBootstrap,
     [switch]$PreserveLocalData,
@@ -13,6 +14,7 @@ $env:PYTHONIOENCODING = "utf-8"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $cloudDir = Join-Path $repoRoot "cloud-backend"
+$cloudUiDir = Join-Path $repoRoot "cloud-ui"
 $posDir = Join-Path $repoRoot "pos-backend"
 $uiDir = Join-Path $repoRoot "pos-ui"
 $licenseDir = Join-Path $repoRoot "license-server"
@@ -49,6 +51,12 @@ function Assert-PortFree([int]$Port, [string]$Name) {
     }
 }
 
+function Assert-DirectoryExists([string]$Path, [string]$Name) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+        throw "${Name}: directory was not found: $Path"
+    }
+}
+
 function Remove-LocalSqlite([string]$BasePath, [string]$Name) {
     $resolvedParent = Resolve-Path -LiteralPath (Split-Path -Parent $BasePath) -ErrorAction SilentlyContinue
     if (-not $resolvedParent) {
@@ -68,11 +76,26 @@ function Remove-LocalSqlite([string]$BasePath, [string]$Name) {
 }
 
 function Show-LogTail([string]$Name, [string]$LogPath) {
+    Write-Host ""
     Write-Host "Last log lines for ${Name}: $LogPath" -ForegroundColor Yellow
     if (Test-Path -LiteralPath $LogPath) {
         Get-Content -LiteralPath $LogPath -Tail 80 -Encoding UTF8 | ForEach-Object { Write-Host $_ }
     } else {
         Write-Host "Log file was not found."
+    }
+}
+
+function Show-AllLogTails() {
+    if (-not $SkipLicense) {
+        Show-LogTail -Name "license-server" -LogPath $licenseLog
+    }
+    Show-LogTail -Name "cloud-backend" -LogPath $cloudLog
+    Show-LogTail -Name "pos-backend" -LogPath $posLog
+    if (-not $SkipUI) {
+        Show-LogTail -Name "pos-ui" -LogPath $uiLog
+    }
+    if (-not $SkipCloudUI) {
+        Show-LogTail -Name "cloud-ui" -LogPath $cloudUiLog
     }
 }
 
@@ -158,6 +181,18 @@ if (Test-Path -LiteralPath $pidFile) {
     throw "PID file already exists: $pidFile. Run scripts\stop-and-test-all.ps1 before starting a new stack."
 }
 
+Assert-DirectoryExists -Path $cloudDir -Name "cloud-backend"
+Assert-DirectoryExists -Path $posDir -Name "pos-backend"
+if (-not $SkipLicense) {
+    Assert-DirectoryExists -Path $licenseDir -Name "license-server"
+}
+if (-not $SkipUI) {
+    Assert-DirectoryExists -Path $uiDir -Name "pos-ui"
+}
+if (-not $SkipCloudUI) {
+    Assert-DirectoryExists -Path $cloudUiDir -Name "cloud-ui"
+}
+
 New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $posDir "data") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $licenseDir "data") | Out-Null
@@ -170,17 +205,22 @@ if (-not $SkipLicense) {
 if (-not $SkipUI) {
     Assert-PortFree -Port 5173 -Name "pos-ui"
 }
+if (-not $SkipCloudUI) {
+    Assert-PortFree -Port 5174 -Name "cloud-ui"
+}
 
 $cloudLog = Join-Path $logsDir "cloud-backend.log"
 $posLog = Join-Path $logsDir "pos-backend.log"
 $uiLog = Join-Path $logsDir "pos-ui.log"
+$cloudUiLog = Join-Path $logsDir "cloud-ui.log"
 $licenseLog = Join-Path $logsDir "license-server.log"
 
 $started = [ordered]@{
-    cloud_backend = $null
+    cloud_backend  = $null
     license_server = $null
-    pos_backend   = $null
-    pos_ui        = $null
+    pos_backend    = $null
+    pos_ui         = $null
+    cloud_ui       = $null
 }
 
 if (-not $SkipDocker) {
@@ -195,121 +235,150 @@ if (-not $PreserveLocalData) {
 }
 
 try {
-if (-not $SkipLicense) {
-    Write-Step "Starting license-server"
-    $started.license_server = Start-ServiceWindow `
-        -Name "license-server" `
-        -WorkDir $licenseDir `
-        -Command "go run ./cmd/license-api" `
-        -EnvVars @{} `
-        -LogPath $licenseLog
+    if (-not $SkipLicense) {
+        Write-Step "Starting license-server"
+        $started.license_server = Start-ServiceWindow `
+            -Name "license-server" `
+            -WorkDir $licenseDir `
+            -Command "go run ./cmd/license-api" `
+            -EnvVars @{} `
+            -LogPath $licenseLog
 
-    Write-Step "Waiting for license-server health endpoint"
-    if (-not (Wait-HttpOk -Url "http://localhost:8095/health" -TimeoutSec $StartupTimeoutSec -Name "license-server" -LogPath $licenseLog)) {
-        throw "license-server did not become healthy within ${StartupTimeoutSec}s"
+        Write-Step "Waiting for license-server health endpoint"
+        if (-not (Wait-HttpOk -Url "http://localhost:8095/health" -TimeoutSec $StartupTimeoutSec -Name "license-server" -LogPath $licenseLog)) {
+            throw "license-server did not become healthy within ${StartupTimeoutSec}s"
+        }
     }
-}
 
-Write-Step "Starting cloud-backend"
-$started.cloud_backend = Start-ServiceWindow `
-    -Name "cloud-backend" `
-    -WorkDir $cloudDir `
-    -Command "go run ./cmd/cloud-api" `
-    -EnvVars @{
-        CLOUD_POSTGRES_DSN = $cloudDsn
-        CLOUD_PUBLIC_URL   = "http://localhost:8090"
-        LICENSE_SERVER_URL = if ($SkipLicense) { "" } else { "http://localhost:8095" }
-    } `
-    -LogPath $cloudLog
+    Write-Step "Starting cloud-backend"
+    $started.cloud_backend = Start-ServiceWindow `
+        -Name "cloud-backend" `
+        -WorkDir $cloudDir `
+        -Command "go run ./cmd/cloud-api" `
+        -EnvVars @{
+            CLOUD_POSTGRES_DSN = $cloudDsn
+            CLOUD_PUBLIC_URL   = "http://localhost:8090"
+            LICENSE_SERVER_URL = if ($SkipLicense) { "" } else { "http://localhost:8095" }
+        } `
+        -LogPath $cloudLog
 
-Write-Step "Waiting for cloud-backend health endpoint"
-if (-not (Wait-HttpOk -Url "http://localhost:8090/health" -TimeoutSec $StartupTimeoutSec -Name "cloud-backend" -LogPath $cloudLog)) {
-    throw "cloud-backend did not become healthy within ${StartupTimeoutSec}s"
-}
-
-Write-Step "Starting pos-backend"
-$started.pos_backend = Start-ServiceWindow `
-    -Name "pos-backend" `
-    -WorkDir $posDir `
-    -Command "go run ./cmd/pos-edge" `
-    -EnvVars @{
-        POS_CLOUD_SYNC_URL = "http://localhost:8090"
-        LICENSE_SERVER_URL = if ($SkipLicense) { "" } else { "http://localhost:8095" }
-    } `
-    -LogPath $posLog
-
-Write-Step "Waiting for POS health endpoint"
-if (-not (Wait-HttpOk -Url "http://localhost:8080/health" -TimeoutSec $StartupTimeoutSec -Name "pos-backend" -LogPath $posLog)) {
-    throw "pos-backend did not become healthy within ${StartupTimeoutSec}s"
-}
-
-if (-not $SkipUI) {
-    Write-Step "Starting pos-ui"
-    $started.pos_ui = Start-ServiceWindow `
-        -Name "pos-ui" `
-        -WorkDir $uiDir `
-        -Command "npm.cmd run dev" `
-        -EnvVars @{} `
-        -LogPath $uiLog
-
-    Write-Step "Waiting for UI endpoint"
-    if (-not (Wait-HttpOk -Url "http://localhost:5173" -TimeoutSec $StartupTimeoutSec -Name "pos-ui" -LogPath $uiLog)) {
-        throw "pos-ui did not become healthy within ${StartupTimeoutSec}s"
+    Write-Step "Waiting for cloud-backend health endpoint"
+    if (-not (Wait-HttpOk -Url "http://localhost:8090/health" -TimeoutSec $StartupTimeoutSec -Name "cloud-backend" -LogPath $cloudLog)) {
+        throw "cloud-backend did not become healthy within ${StartupTimeoutSec}s"
     }
-}
 
-$bootstrap = $null
-if (-not $SkipBootstrap) {
-    Write-Step "Running production-way Cloud -> Edge bootstrap"
-    $bootstrap = & $bootstrapScript -RunRuntimeSmoke
-    $bootstrap | Out-Host
-}
+    Write-Step "Starting pos-backend"
+    $started.pos_backend = Start-ServiceWindow `
+        -Name "pos-backend" `
+        -WorkDir $posDir `
+        -Command "go run ./cmd/pos-edge" `
+        -EnvVars @{
+            POS_CLOUD_SYNC_URL = "http://localhost:8090"
+            LICENSE_SERVER_URL = if ($SkipLicense) { "" } else { "http://localhost:8095" }
+        } `
+        -LogPath $posLog
 
-if ($bootstrap) {
-    Write-Step "Running authenticated POS sync smoke checks"
-    $clientDeviceId = "dev-smoke-client"
-    $loginBody = @{
-        node_device_id   = $bootstrap.node_device_id
-        client_device_id = $clientDeviceId
-        pin              = $bootstrap.manager_pin
-    } | ConvertTo-Json
-    $login = Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/v1/auth/pin-login" -ContentType "application/json" -Body $loginBody
-    $headers = @{
-        "X-Node-Device-ID"     = $bootstrap.node_device_id
-        "X-Client-Device-ID"   = $clientDeviceId
-        "X-Session-ID"         = $login.session.id
-        "X-Actor-Employee-ID"  = $login.actor.employee_id
+    Write-Step "Waiting for POS health endpoint"
+    if (-not (Wait-HttpOk -Url "http://localhost:8080/health" -TimeoutSec $StartupTimeoutSec -Name "pos-backend" -LogPath $posLog)) {
+        throw "pos-backend did not become healthy within ${StartupTimeoutSec}s"
     }
-    Invoke-RestMethod -Uri "http://localhost:8080/api/v1/sync/status" -Headers $headers | Out-Null
-    Invoke-RestMethod -Uri "http://localhost:8080/api/v1/sync/local-events?limit=5" -Headers $headers | Out-Null
-    Invoke-RestMethod -Uri "http://localhost:8080/api/v1/sync/outbox?limit=5" -Headers $headers | Out-Null
-}
 
-$pidPayload = @{
-    cloud_backend_pid = if ($started.cloud_backend) { $started.cloud_backend.Id } else { $null }
-    license_server_pid = if ($started.license_server) { $started.license_server.Id } else { $null }
-    pos_backend_pid   = if ($started.pos_backend) { $started.pos_backend.Id } else { $null }
-    pos_ui_pid        = if ($started.pos_ui) { $started.pos_ui.Id } else { $null }
-    logs_dir          = $logsDir
-    created_at        = (Get-Date).ToString("s")
-} | ConvertTo-Json -Depth 3
-$pidPayload | Set-Content -Path $pidFile -Encoding UTF8
+    if (-not $SkipUI) {
+        Write-Step "Starting pos-ui"
+        $started.pos_ui = Start-ServiceWindow `
+            -Name "pos-ui" `
+            -WorkDir $uiDir `
+            -Command "npm.cmd run dev -- --host 0.0.0.0 --port 5173" `
+            -EnvVars @{} `
+            -LogPath $uiLog
 
-Write-Host ""
-Write-Host "Done. Services are running and smoke checks passed." -ForegroundColor Green
-Write-Host "Cloud health: http://localhost:8090/health"
-if (-not $SkipLicense) {
-    Write-Host "License health: http://localhost:8095/health"
-}
-Write-Host "POS health:   http://localhost:8080/health"
-if (-not $SkipUI) {
-    Write-Host "POS UI:       http://localhost:5173"
-}
-Write-Host "Logs:         $logsDir"
-Write-Host "PID file:     $pidFile"
-Write-Host "Stop command:"
-Write-Host '  powershell -ExecutionPolicy Bypass -File .\scripts\stop-and-test-all.ps1'
+        Write-Step "Waiting for POS UI endpoint"
+        if (-not (Wait-HttpOk -Url "http://localhost:5173" -TimeoutSec $StartupTimeoutSec -Name "pos-ui" -LogPath $uiLog)) {
+            throw "pos-ui did not become healthy within ${StartupTimeoutSec}s"
+        }
+    }
+
+    if (-not $SkipCloudUI) {
+        Write-Step "Starting cloud-ui"
+        $started.cloud_ui = Start-ServiceWindow `
+            -Name "cloud-ui" `
+            -WorkDir $cloudUiDir `
+            -Command "npm.cmd run dev -- --host 0.0.0.0 --port 5174" `
+            -EnvVars @{} `
+            -LogPath $cloudUiLog
+
+        Write-Step "Waiting for Cloud UI endpoint"
+        if (-not (Wait-HttpOk -Url "http://localhost:5174" -TimeoutSec $StartupTimeoutSec -Name "cloud-ui" -LogPath $cloudUiLog)) {
+            throw "cloud-ui did not become healthy within ${StartupTimeoutSec}s"
+        }
+    }
+
+    $bootstrap = $null
+    if (-not $SkipBootstrap) {
+        Write-Step "Running production-way Cloud -> Edge bootstrap"
+        try {
+            $bootstrap = & $bootstrapScript -RunRuntimeSmoke
+            $bootstrap | Out-Host
+        } catch {
+            Write-Host ""
+            Write-Host "Bootstrap failed. This usually means scripts\bootstrap-production-way.ps1 is out of sync with Cloud/POS API routes." -ForegroundColor Red
+            Write-Host "Original error:" -ForegroundColor Red
+            Write-Host $_.Exception.Message -ForegroundColor Red
+            Show-AllLogTails
+            throw
+        }
+    }
+
+    if ($bootstrap) {
+        Write-Step "Running authenticated POS sync smoke checks"
+        $clientDeviceId = "dev-smoke-client"
+        $loginBody = @{
+            node_device_id   = $bootstrap.node_device_id
+            client_device_id = $clientDeviceId
+            pin              = $bootstrap.manager_pin
+        } | ConvertTo-Json
+        $login = Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/v1/auth/pin-login" -ContentType "application/json" -Body $loginBody
+        $headers = @{
+            "X-Node-Device-ID"    = $bootstrap.node_device_id
+            "X-Client-Device-ID"  = $clientDeviceId
+            "X-Session-ID"        = $login.session.id
+            "X-Actor-Employee-ID" = $login.actor.employee_id
+        }
+        Invoke-RestMethod -Uri "http://localhost:8080/api/v1/sync/status" -Headers $headers | Out-Null
+        Invoke-RestMethod -Uri "http://localhost:8080/api/v1/sync/local-events?limit=5" -Headers $headers | Out-Null
+        Invoke-RestMethod -Uri "http://localhost:8080/api/v1/sync/outbox?limit=5" -Headers $headers | Out-Null
+    }
+
+    $pidPayload = @{
+        cloud_backend_pid  = if ($started.cloud_backend) { $started.cloud_backend.Id } else { $null }
+        license_server_pid = if ($started.license_server) { $started.license_server.Id } else { $null }
+        pos_backend_pid    = if ($started.pos_backend) { $started.pos_backend.Id } else { $null }
+        pos_ui_pid         = if ($started.pos_ui) { $started.pos_ui.Id } else { $null }
+        cloud_ui_pid       = if ($started.cloud_ui) { $started.cloud_ui.Id } else { $null }
+        logs_dir           = $logsDir
+        created_at         = (Get-Date).ToString("s")
+    } | ConvertTo-Json -Depth 3
+    $pidPayload | Set-Content -Path $pidFile -Encoding UTF8
+
+    Write-Host ""
+    Write-Host "Done. Services are running and smoke checks passed." -ForegroundColor Green
+    Write-Host "Cloud health: http://localhost:8090/health"
+    if (-not $SkipLicense) {
+        Write-Host "License health: http://localhost:8095/health"
+    }
+    Write-Host "POS health:   http://localhost:8080/health"
+    if (-not $SkipUI) {
+        Write-Host "POS UI:       http://localhost:5173"
+    }
+    if (-not $SkipCloudUI) {
+        Write-Host "Cloud UI:     http://localhost:5174"
+    }
+    Write-Host "Logs:         $logsDir"
+    Write-Host "PID file:     $pidFile"
+    Write-Host "Stop command:"
+    Write-Host '  powershell -ExecutionPolicy Bypass -File .\scripts\stop-and-test-all.ps1'
 } catch {
+    Stop-StartedProcess -Process $started.cloud_ui -Name "cloud-ui"
     Stop-StartedProcess -Process $started.pos_ui -Name "pos-ui"
     Stop-StartedProcess -Process $started.pos_backend -Name "pos-backend"
     Stop-StartedProcess -Process $started.cloud_backend -Name "cloud-backend"

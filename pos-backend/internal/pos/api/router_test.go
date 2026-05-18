@@ -786,6 +786,40 @@ func TestListOutboxAPIRequiresSyncViewPermission(t *testing.T) {
 	}
 }
 
+func TestListOutboxAPIRemainsBoundedWithoutClientLimit(t *testing.T) {
+	f := newAPIFixture(t)
+	for i := 0; i < 120; i++ {
+		if _, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{
+			CommandMeta: apiSeedMeta(f.device.ID),
+			Type:        domain.CatalogItemDish,
+			Name:        fmt.Sprintf("Outbox Dish %03d", i),
+			SKU:         fmt.Sprintf("OUTBOX-DISH-%03d", i),
+			BaseUnit:    "portion",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	f.useManagerOperator(t)
+	rr := f.get(t, "/api/v1/sync/outbox")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	items := decodeAPIResponse[[]domain.OutboxMessage](t, rr)
+	if len(items) != 100 {
+		t.Fatalf("expected default bounded outbox page of 100, got %d", len(items))
+	}
+
+	rr = f.get(t, "/api/v1/sync/outbox?limit=9999")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for capped outbox read, got %d: %s", rr.Code, rr.Body.String())
+	}
+	items = decodeAPIResponse[[]domain.OutboxMessage](t, rr)
+	if len(items) != 100 {
+		t.Fatalf("expected oversized outbox limit to fall back to bounded default 100, got %d", len(items))
+	}
+}
+
 func TestListLocalEventsAPIRequiresSyncViewPermission(t *testing.T) {
 	f := newAPIFixture(t)
 	rr := f.get(t, "/api/v1/sync/local-events?limit=5")
@@ -800,6 +834,40 @@ func TestListLocalEventsAPIRequiresSyncViewPermission(t *testing.T) {
 	items := decodeAPIResponse[[]domain.LocalEvent](t, rr)
 	if len(items) == 0 {
 		t.Fatal("expected non-empty local events list")
+	}
+}
+
+func TestListLocalEventsAPIRemainsBoundedWithoutClientLimit(t *testing.T) {
+	f := newAPIFixture(t)
+	for i := 0; i < 120; i++ {
+		if _, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{
+			CommandMeta: apiSeedMeta(f.device.ID),
+			Type:        domain.CatalogItemDish,
+			Name:        fmt.Sprintf("Event Dish %03d", i),
+			SKU:         fmt.Sprintf("EVENT-DISH-%03d", i),
+			BaseUnit:    "portion",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	f.useManagerOperator(t)
+	rr := f.get(t, "/api/v1/sync/local-events")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	events := decodeAPIResponse[[]domain.LocalEvent](t, rr)
+	if len(events) != 100 {
+		t.Fatalf("expected default bounded local event page of 100, got %d", len(events))
+	}
+
+	rr = f.get(t, "/api/v1/sync/local-events?limit=9999")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for capped local event read, got %d: %s", rr.Code, rr.Body.String())
+	}
+	events = decodeAPIResponse[[]domain.LocalEvent](t, rr)
+	if len(events) != 100 {
+		t.Fatalf("expected oversized local event limit to fall back to bounded default 100, got %d", len(events))
 	}
 }
 
