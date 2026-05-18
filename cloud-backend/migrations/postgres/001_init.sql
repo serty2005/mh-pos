@@ -537,7 +537,7 @@ CREATE TABLE IF NOT EXISTS cloud_pricing_policies (
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
   CHECK (
-    (amount_kind = 'fixed' AND amount_minor > 0 AND value_basis_points = 0)
+    (amount_kind = 'fixed' AND amount_minor >= 0 AND value_basis_points = 0)
     OR (amount_kind = 'percentage' AND value_basis_points > 0 AND amount_minor = 0)
   )
 );
@@ -909,7 +909,7 @@ CREATE TABLE IF NOT EXISTS cloud_pricing_policies (
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
   CHECK (
-    (amount_kind = 'fixed' AND amount_minor > 0 AND value_basis_points = 0)
+    (amount_kind = 'fixed' AND amount_minor >= 0 AND value_basis_points = 0)
     OR (amount_kind = 'percentage' AND value_basis_points > 0 AND amount_minor = 0)
   )
 );

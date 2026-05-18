@@ -864,6 +864,9 @@ func normalizePricingPolicy(v domain.PricingPolicy, now time.Time) domain.Pricin
 	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
 	v.Name = strings.TrimSpace(v.Name)
 	v.RequiresPermission = strings.TrimSpace(v.RequiresPermission)
+	if v.Kind == domain.PricingPolicySurcharge {
+		v.Scope = domain.DiscountScopeOrder
+	}
 	v.CreatedAt = defaultTime(v.CreatedAt, now)
 	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
 	return v
@@ -1085,14 +1088,17 @@ func validatePricingPolicy(v domain.PricingPolicy) error {
 	default:
 		return fmt.Errorf("%w: unsupported pricing policy scope", domain.ErrInvalid)
 	}
+	if v.Kind == domain.PricingPolicySurcharge && v.Scope != domain.DiscountScopeOrder {
+		return fmt.Errorf("%w: surcharge pricing policy must be order-scoped", domain.ErrInvalid)
+	}
 	switch v.AmountKind {
 	case domain.AmountPercentage:
 		if v.ValueBasisPoints <= 0 {
 			return fmt.Errorf("%w: percentage pricing policy requires positive value_basis_points", domain.ErrInvalid)
 		}
 	case domain.AmountFixed:
-		if v.AmountMinor <= 0 {
-			return fmt.Errorf("%w: fixed pricing policy requires positive amount_minor", domain.ErrInvalid)
+		if v.AmountMinor < 0 {
+			return fmt.Errorf("%w: fixed pricing policy requires non-negative amount_minor", domain.ErrInvalid)
 		}
 	default:
 		return fmt.Errorf("%w: unsupported pricing policy amount_kind", domain.ErrInvalid)

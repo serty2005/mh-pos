@@ -183,3 +183,9 @@ Requirements:
 - full inventory/procurement UI;
 - rich partial cancellation/refund ledger UI beyond current order-line/quantity actions;
 - discount/surcharge cashier editor and tax policy UI on top of existing backend pricing foundation.
+
+## Выбор скидок и надбавок по policy
+
+Статус: реализовано сейчас.
+
+Cashier UI использует backend API для получения активных pricing policies и должен отправлять применение скидки/надбавки только через `pricing_policy_id`. UI показывает название, kind, fixed/percentage value, scope, `application_index` и permission metadata, но не дает менять amount, percentage, scope, kind, tax logic или `application_index`.

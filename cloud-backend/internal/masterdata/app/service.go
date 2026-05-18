@@ -1140,11 +1140,18 @@ func (s *Service) CreatePricingPolicy(ctx context.Context, cmd CreatePricingPoli
 	if err := domain.ValidatePricingPolicyKind(cmd.Kind); err != nil {
 		return domain.PricingPolicy{}, err
 	}
+	scope := strings.TrimSpace(cmd.Scope)
+	if cmd.Kind == domain.PricingPolicySurcharge {
+		scope = "order"
+	}
+	if err := validatePolicyScope(cmd.Kind, scope); err != nil {
+		return domain.PricingPolicy{}, err
+	}
 	if err := validatePolicyAmount(cmd.AmountKind, cmd.AmountMinor, cmd.ValueBasisPoints); err != nil {
 		return domain.PricingPolicy{}, err
 	}
 	now := s.clock.Now().UTC()
-	policy := domain.PricingPolicy{ID: s.ids.NewID(), RestaurantID: restaurantID, Name: name, Kind: cmd.Kind, Scope: strings.TrimSpace(cmd.Scope), AmountKind: strings.TrimSpace(cmd.AmountKind), AmountMinor: cmd.AmountMinor, ValueBasisPoints: cmd.ValueBasisPoints, ApplicationIndex: cmd.ApplicationIndex, Manual: cmd.Manual, RequiresPermission: strings.TrimSpace(cmd.RequiresPermission), Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
+	policy := domain.PricingPolicy{ID: s.ids.NewID(), RestaurantID: restaurantID, Name: name, Kind: cmd.Kind, Scope: scope, AmountKind: strings.TrimSpace(cmd.AmountKind), AmountMinor: cmd.AmountMinor, ValueBasisPoints: cmd.ValueBasisPoints, ApplicationIndex: cmd.ApplicationIndex, Manual: cmd.Manual, RequiresPermission: strings.TrimSpace(cmd.RequiresPermission), Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
 	return s.repo.CreatePricingPolicy(ctx, policy)
 }
 
@@ -1163,6 +1170,9 @@ func (s *Service) UpdatePricingPolicy(ctx context.Context, id string, cmd Update
 	if strings.TrimSpace(cmd.Scope) != "" {
 		policy.Scope = strings.TrimSpace(cmd.Scope)
 	}
+	if policy.Kind == domain.PricingPolicySurcharge {
+		policy.Scope = "order"
+	}
 	if strings.TrimSpace(cmd.AmountKind) != "" {
 		policy.AmountKind = strings.TrimSpace(cmd.AmountKind)
 	}
@@ -1180,6 +1190,9 @@ func (s *Service) UpdatePricingPolicy(ctx context.Context, id string, cmd Update
 	}
 	if cmd.RequiresPermission != nil {
 		policy.RequiresPermission = strings.TrimSpace(*cmd.RequiresPermission)
+	}
+	if err := validatePolicyScope(policy.Kind, policy.Scope); err != nil {
+		return domain.PricingPolicy{}, err
 	}
 	if err := validatePolicyAmount(policy.AmountKind, policy.AmountMinor, policy.ValueBasisPoints); err != nil {
 		return domain.PricingPolicy{}, err
@@ -1778,13 +1791,16 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 		MenuItemModifierGroups []domain.EdgeMenuItemModifierGroup `json:"menu_item_modifier_groups,omitempty"`
 	}
 	type pricingPayload struct {
-		NodeDeviceID    string                     `json:"node_device_id,omitempty"`
-		RestaurantID    string                     `json:"restaurant_id"`
-		SyncMode        string                     `json:"sync_mode"`
-		CheckpointToken string                     `json:"checkpoint_token,omitempty"`
-		CloudVersion    int64                      `json:"cloud_version"`
-		CloudUpdatedAt  time.Time                  `json:"cloud_updated_at"`
-		PricingPolicies []domain.EdgePricingPolicy `json:"pricing_policies,omitempty"`
+		NodeDeviceID       string                     `json:"node_device_id,omitempty"`
+		RestaurantID       string                     `json:"restaurant_id"`
+		SyncMode           string                     `json:"sync_mode"`
+		CheckpointToken    string                     `json:"checkpoint_token,omitempty"`
+		CloudVersion       int64                      `json:"cloud_version"`
+		CloudUpdatedAt     time.Time                  `json:"cloud_updated_at"`
+		TaxProfiles        []json.RawMessage          `json:"tax_profiles"`
+		TaxRules           []json.RawMessage          `json:"tax_rules"`
+		ServiceChargeRules []json.RawMessage          `json:"service_charge_rules"`
+		PricingPolicies    []domain.EdgePricingPolicy `json:"pricing_policies"`
 	}
 	build := func(stream string, payload any) (StreamPackage, error) {
 		body, err := json.Marshal(payload)
@@ -1822,7 +1838,7 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	pricing, err := build("pricing_policy", pricingPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, PricingPolicies: packet.PricingPolicies})
+	pricing, err := build("pricing_policy", pricingPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, TaxProfiles: []json.RawMessage{}, TaxRules: []json.RawMessage{}, ServiceChargeRules: []json.RawMessage{}, PricingPolicies: packet.PricingPolicies})
 	if err != nil {
 		return nil, err
 	}
@@ -2025,11 +2041,23 @@ func validateCatalogFields(restaurantID string, kind domain.CatalogItemKind, nam
 	return domain.ValidateCatalogItemKind(kind)
 }
 
+func validatePolicyScope(kind domain.PricingPolicyKind, scope string) error {
+	switch strings.TrimSpace(scope) {
+	case "line", "order":
+	default:
+		return fmt.Errorf("%w: unsupported pricing policy scope", domain.ErrInvalid)
+	}
+	if kind == domain.PricingPolicySurcharge && strings.TrimSpace(scope) != "order" {
+		return fmt.Errorf("%w: surcharge pricing policy must be order-scoped", domain.ErrInvalid)
+	}
+	return nil
+}
+
 func validatePolicyAmount(amountKind string, amountMinor, valueBasisPoints int64) error {
 	switch strings.TrimSpace(amountKind) {
 	case "fixed":
-		if amountMinor <= 0 || valueBasisPoints != 0 {
-			return fmt.Errorf("%w: fixed pricing policy requires positive amount_minor only", domain.ErrInvalid)
+		if amountMinor < 0 || valueBasisPoints != 0 {
+			return fmt.Errorf("%w: fixed pricing policy requires non-negative amount_minor only", domain.ErrInvalid)
 		}
 	case "percentage":
 		if valueBasisPoints <= 0 || amountMinor != 0 {
