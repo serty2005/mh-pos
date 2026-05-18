@@ -61,6 +61,7 @@
           {{ selectedLine ? terminal.t('pos.quantityPieces', { count: selectedLine.quantity }) : terminal.t('pos.noSelectedLine') }}
         </button>
         <q-btn flat square icon="add" class="quantity-button" :aria-label="terminal.t('actions.add')" :disable="!selectedLine || !terminal.canChangeOrderLine.value" @click="changeSelectedQuantity(1)" />
+        <q-btn flat square icon="tune" class="quantity-button" :aria-label="terminal.t('actions.editModifiers')" :disable="!selectedLine || !terminal.canChangeOrderLine.value || !terminal.canEditLineModifiers(selectedLine.id)" @click="selectedLine && terminal.editLineModifiers(selectedLine.id)" />
       </div>
     </template>
 

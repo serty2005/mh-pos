@@ -3,7 +3,7 @@
     <q-card class="modifier-dialog">
       <q-card-section class="dialog-head">
         <div>
-          <p class="eyebrow">{{ terminal.t('pos.modifiers') }}</p>
+          <p class="eyebrow">{{ terminal.t(terminal.modifierDialogMode.value === 'edit' ? 'pos.editModifiers' : 'pos.modifiers') }}</p>
           <h2>{{ terminal.modifierMenuItem.value?.name }}</h2>
         </div>
         <strong v-if="terminal.selectedModifierTotal.value > 0" class="modifier-total">

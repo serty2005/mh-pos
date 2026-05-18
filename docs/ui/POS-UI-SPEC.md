@@ -23,6 +23,7 @@ Cashier UI in `pos-ui/src/pages/PosPage.vue` разделен на переис�
 - create order;
 - add order line from menu;
 - select modifiers for menu items with modifier groups;
+- edit modifiers on active open order lines through the same modifier dialog;
 - show selected modifiers under active order lines;
 - сохранение курса подачи и комментария выбранной строки заказа через POS backend;
 - sell service items from a separate services section;
@@ -91,13 +92,14 @@ Reprint:
 - UI sends payment amount and method to backend.
 - UI does not calculate authoritative discount/tax/check totals.
 - UI does not apply tax rules, discount rules or modifier prices as authoritative financial logic.
-- UI validates modifier required/min/max constraints only as UX feedback before sending the backend command.
+- UI validates modifier required/min/max constraints only as UX feedback before add/edit backend command; POS backend remains authoritative for modifier constraints, prices and totals.
 
 Не реализовано сейчас:
 
 - discount/surcharge editor in cashier UI;
 - tax profile editor in cashier UI;
 - modifier/service-charge/tip cancellation/refund UI;
+- recipe expansion, automatic stock consumption and return-to-stock inventory moves for modifiers;
 - inventory consumption UI.
 
 Запланировано далее:
@@ -165,7 +167,6 @@ Requirements:
 
 Запланировано далее:
 
-- Подключить backend/API редактирования модификаторов уже добавленной строки; добавление строки с модификаторами и сохранение course/comment уже реализованы сейчас.
 - Подключить backend/API быстрого чека со столом по умолчанию и проверкой отдельного permission.
 
 Вне текущего объема:

@@ -64,6 +64,7 @@ type CreateOrderCommand = apporder.CreateOrderCommand
 type AddOrderLineCommand = apporder.AddOrderLineCommand
 type SelectedModifierCommand = apporder.SelectedModifierCommand
 type ChangeOrderLineQuantityCommand = apporder.ChangeOrderLineQuantityCommand
+type UpdateOrderLineModifiersCommand = apporder.UpdateOrderLineModifiersCommand
 type VoidOrderLineCommand = apporder.VoidOrderLineCommand
 type UpdateOrderLineDetailsCommand = apporder.UpdateOrderLineDetailsCommand
 type IssuePrecheckCommand = appprecheck.IssuePrecheckCommand
@@ -382,6 +383,10 @@ func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*d
 
 func (s *Service) ChangeOrderLineQuantity(ctx context.Context, cmd ChangeOrderLineQuantityCommand) (*domain.OrderLine, error) {
 	return s.orders.ChangeOrderLineQuantity(ctx, cmd)
+}
+
+func (s *Service) UpdateOrderLineModifiers(ctx context.Context, cmd UpdateOrderLineModifiersCommand) (*domain.OrderLine, error) {
+	return s.orders.UpdateOrderLineModifiers(ctx, cmd)
 }
 
 func (s *Service) VoidOrderLine(ctx context.Context, cmd VoidOrderLineCommand) (*domain.OrderLine, error) {

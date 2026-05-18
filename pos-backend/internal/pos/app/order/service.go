@@ -59,6 +59,14 @@ type ChangeOrderLineQuantityCommand struct {
 	Quantity int64  `json:"quantity"`
 }
 
+// UpdateOrderLineModifiersCommand заменяет selected modifiers одной активной строки заказа.
+type UpdateOrderLineModifiersCommand struct {
+	shared.CommandMeta
+	OrderID           string                    `json:"order_id"`
+	LineID            string                    `json:"line_id"`
+	SelectedModifiers []SelectedModifierCommand `json:"selected_modifiers,omitempty"`
+}
+
 type VoidOrderLineCommand struct {
 	shared.CommandMeta
 	OrderID string `json:"order_id"`
@@ -256,6 +264,62 @@ func (s *Service) ChangeOrderLineQuantity(ctx context.Context, cmd ChangeOrderLi
 	return line, err
 }
 
+func (s *Service) UpdateOrderLineModifiers(ctx context.Context, cmd UpdateOrderLineModifiersCommand) (*domain.OrderLine, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
+	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(cmd.OrderID) == "" || strings.TrimSpace(cmd.LineID) == "" {
+		return nil, fmt.Errorf("%w: order_id and line_id are required", domain.ErrInvalid)
+	}
+	now := s.clock.Now()
+	var line *domain.OrderLine
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
+			return err
+		}
+		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionOrderChangeQuantity)); err != nil {
+			return err
+		}
+		order, err := s.ensureEditableOrder(ctx, cmd.OrderID, cmd.DeviceID)
+		if err != nil {
+			return err
+		}
+		line, err = s.repo.GetOrderLine(ctx, cmd.LineID)
+		if err != nil {
+			return err
+		}
+		if line.OrderID != order.ID {
+			return fmt.Errorf("%w: order line does not belong to order", domain.ErrConflict)
+		}
+		if line.Status != domain.OrderLineActive {
+			return fmt.Errorf("%w: cannot update modifiers for non-active order line", domain.ErrConflict)
+		}
+		selectedModifiers, modifierTotal, err := s.buildSelectedModifiers(ctx, cmd.SelectedModifiers)
+		if err != nil {
+			return err
+		}
+		if err := s.validateSelectedModifiers(ctx, line.MenuItemID, selectedModifiers); err != nil {
+			return err
+		}
+		for i := range selectedModifiers {
+			selectedModifiers[i].ID = s.ids.NewID()
+			selectedModifiers[i].OrderLineID = line.ID
+		}
+		line.Modifiers = selectedModifiers
+		line.TotalPrice = line.UnitPrice*line.Quantity + modifierTotal
+		line.UpdatedAt = now
+		if err := s.repo.UpdateOrderLine(ctx, line); err != nil {
+			return err
+		}
+		if err := s.repo.ReplaceOrderLineModifiers(ctx, line.ID, selectedModifiers); err != nil {
+			return err
+		}
+		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Order", order.ID, "OrderLineModifiersUpdated", line)
+	})
+	return line, err
+}
+
 func (s *Service) VoidOrderLine(ctx context.Context, cmd VoidOrderLineCommand) (*domain.OrderLine, error) {
 	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
 	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
@@ -436,6 +500,9 @@ func (s *Service) buildSelectedModifiers(ctx context.Context, selected []Selecte
 		}
 		if option == nil {
 			return nil, 0, fmt.Errorf("%w: selected modifier option is not active in group", domain.ErrInvalid)
+		}
+		if option.PriceMinor < 0 {
+			return nil, 0, fmt.Errorf("%w: selected modifier price must be non-negative", domain.ErrInvalid)
 		}
 		lineTotal := option.PriceMinor * selectedModifier.Quantity
 		total += lineTotal

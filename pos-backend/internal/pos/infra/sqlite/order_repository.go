@@ -97,6 +97,19 @@ func (r *Repository) CreateOrderLineModifier(ctx context.Context, v *domain.Line
 	return normalizeErr(err)
 }
 
+// ReplaceOrderLineModifiers заменяет selected modifiers редактируемой строки внутри transaction boundary вызывающего сервиса.
+func (r *Repository) ReplaceOrderLineModifiers(ctx context.Context, lineID string, modifiers []domain.LineModifier) error {
+	if _, err := r.execer(ctx).ExecContext(ctx, `DELETE FROM order_line_modifiers WHERE order_line_id = ?`, lineID); err != nil {
+		return normalizeErr(err)
+	}
+	for i := range modifiers {
+		if err := r.CreateOrderLineModifier(ctx, &modifiers[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *Repository) GetOrderLine(ctx context.Context, id string) (*domain.OrderLine, error) {
 	var v domain.OrderLine
 	var status, created, updated string

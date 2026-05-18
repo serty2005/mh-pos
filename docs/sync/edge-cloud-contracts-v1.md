@@ -254,9 +254,9 @@ Cancellation/refund sync behavior:
 Реализовано сейчас:
 
 - Payloads `PaymentCaptured`, `CheckCreated`, `CancellationRecorded` и `RefundRecorded` включают backend-owned `business_date_local`, если он есть у source aggregate.
-- Precheck/check reprint использует immutable snapshot payload.
+- Precheck/check reprint использует immutable snapshot payload, включая selected modifiers с name, quantity, unit price и total price.
 - Payment ссылается на `precheck_id`, а не на legacy `check_id`.
-- `RefundRecorded`/`CancellationRecorded` payload содержит immutable operation snapshot with embedded check snapshot and item scopes.
+- `RefundRecorded`/`CancellationRecorded` payload содержит immutable operation snapshot with embedded check snapshot, selected modifiers and item scopes; Cloud raw/journal receipt не должен отбрасывать modifier data из snapshot payload.
 
 Не реализовано сейчас:
 

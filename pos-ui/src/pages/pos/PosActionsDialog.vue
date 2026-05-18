@@ -26,6 +26,7 @@
               <q-btn flat round class="stepper-button" icon="remove" :aria-label="terminal.t('actions.remove')" :disable="!terminal.canChangeOrderLine.value || line.quantity <= 1" @click="terminal.changeQuantity(line.id, line.quantity - 1)" />
               <span>{{ line.quantity }}</span>
               <q-btn flat round class="stepper-button" icon="add" :aria-label="terminal.t('actions.add')" :disable="!terminal.canChangeOrderLine.value" @click="terminal.changeQuantity(line.id, line.quantity + 1)" />
+            <q-btn flat round class="stepper-button" icon="tune" :aria-label="terminal.t('actions.editModifiers')" :disable="!terminal.canChangeOrderLine.value || !terminal.canEditLineModifiers(line.id)" @click="terminal.editLineModifiers(line.id)" />
             </div>
             <q-btn flat round color="negative" icon="delete" class="stepper-button" :aria-label="terminal.t('actions.voidLine')" :disable="!terminal.canVoidOrderLine.value" @click="terminal.voidLine(line.id)" />
           </article>
