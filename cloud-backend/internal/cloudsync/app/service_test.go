@@ -197,6 +197,9 @@ func TestReceiveCancellationRecordedReplaysIdempotentlyAndKeepsCurrentEventStats
 	if repo.Count() != 1 {
 		t.Fatalf("expected one cancellation receipt after replay, got %d", repo.Count())
 	}
+	if got := string(repo.RawPayload(first.CloudReceiptID)); got != string(raw) {
+		t.Fatalf("raw cancellation payload was not preserved\nwant=%s\ngot=%s", raw, got)
+	}
 	stats := repo.EventTypeStats()
 	if len(stats) != 1 || stats[0].EventType != string(contracts.EventCancellationRecorded) || stats[0].EventCount != 1 {
 		t.Fatalf("unexpected cancellation event stats: %+v", stats)

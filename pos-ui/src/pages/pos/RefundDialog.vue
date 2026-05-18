@@ -6,6 +6,9 @@
       </q-card-section>
       <q-card-section class="form-stack">
         <p class="dialog-copy">{{ terminal.t(terminal.refundDialogCopyKey()) }}</p>
+        <q-banner v-if="terminal.refundMode.value === 'payment_refund'" class="compatibility-banner" rounded>
+          {{ terminal.t('pos.paymentRefundFallbackCopy') }}
+        </q-banner>
         <q-input v-model="terminal.refundReason.value" outlined :label="terminal.t('pos.refundReason')" type="textarea" autogrow />
         <template v-if="terminal.refundDialogShowsLedgerControls()">
           <q-option-group
@@ -36,6 +39,10 @@
             <div class="ledger-line-summary">
               <span>{{ terminal.t('common.amount') }}</span>
               <strong>{{ terminal.money(terminal.refundLineAmount.value, terminal.selectedRefundLine.value?.currency_code ?? 'RUB') }}</strong>
+            </div>
+            <div v-if="terminal.refundLineTaxAmount.value > 0" class="ledger-line-summary">
+              <span>{{ terminal.t('common.taxAmount') }}</span>
+              <strong>{{ terminal.money(terminal.refundLineTaxAmount.value, terminal.selectedRefundLine.value?.currency_code ?? 'RUB') }}</strong>
             </div>
           </template>
           <q-select
@@ -107,6 +114,11 @@ defineProps<{
 
 .ledger-line-summary span {
   color: #6d7280;
+}
+
+.compatibility-banner {
+  background: rgba(143, 99, 0, 0.08);
+  color: #5f4300;
 }
 
 .planned-scope-panel {

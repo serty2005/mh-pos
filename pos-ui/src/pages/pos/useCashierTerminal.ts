@@ -74,11 +74,41 @@ export function invalidatePaymentConflictQueries(queryClient: Pick<QueryClient, 
 type FlowStepState = 'ready' | 'active' | 'blocked' | 'pending';
 type CompensationMode = 'payment_refund' | 'check_refund' | 'check_cancellation';
 type LedgerScope = 'whole_check' | 'order_line';
+export type ClosedOrderCompensationAction = 'check_cancellation' | 'check_refund' | 'payment_refund';
 type BlockingNotice = {
   titleKey: string;
   reasonKey: string;
   permission?: string;
 };
+
+export type ClosedOrderCompensationContext = {
+  canRefundPayment: boolean;
+  canRecordCheckCancellation: boolean;
+  currentCashSessionShiftId: string;
+};
+
+export function closedOrderOriginalPaymentShiftID(orderItem: ClosedOrder) {
+  return orderItem.check?.payments?.find((payment) => payment.status === 'captured')?.shift_id ?? orderItem.check?.payments?.[0]?.shift_id ?? '';
+}
+
+export function closedOrderHasCapturedPayment(orderItem: ClosedOrder) {
+  return Boolean(orderItem.check?.payments?.some((payment) => payment.status === 'captured'));
+}
+
+export function closedOrderCompensationUnavailableKey(orderItem: ClosedOrder, action: ClosedOrderCompensationAction, context: ClosedOrderCompensationContext) {
+  if (!orderItem.check) return 'pos.compensationUnavailable.noFinalCheck';
+  if (!context.currentCashSessionShiftId) return 'pos.compensationUnavailable.noCashSession';
+  if (action === 'check_cancellation') {
+    if (!context.canRecordCheckCancellation) return 'pos.compensationUnavailable.noCancellationPermission';
+    if (closedOrderOriginalPaymentShiftID(orderItem) !== context.currentCashSessionShiftId) return 'pos.compensationUnavailable.cancellationBoundary';
+    return '';
+  }
+  if (!closedOrderHasCapturedPayment(orderItem)) return 'pos.compensationUnavailable.noCapturedPayment';
+  if (!context.canRefundPayment) return 'pos.compensationUnavailable.noRefundPermission';
+  const originalShiftID = closedOrderOriginalPaymentShiftID(orderItem);
+  if (originalShiftID && originalShiftID === context.currentCashSessionShiftId) return 'pos.compensationUnavailable.refundBoundary';
+  return '';
+}
 
 export function useCashierTerminal() {
   const { t } = useI18n();
@@ -854,25 +884,36 @@ export function useCashierTerminal() {
     refundLineQuantity.value = 1;
   }
 
-  function hasCapturedPayment(orderItem: ClosedOrder) {
-    return Boolean(orderItem.check?.payments?.some((payment) => payment.status === 'captured'));
+  function closedOrderCompensationContext(): ClosedOrderCompensationContext {
+    return {
+      canRefundPayment: canRefundPayment.value,
+      canRecordCheckCancellation: canRecordCheckCancellation.value,
+      currentCashSessionShiftId: currentCashSession.data.value?.shift_id ?? '',
+    };
   }
 
-  function originalPaymentShiftID(orderItem: ClosedOrder) {
-    return orderItem.check?.payments?.find((payment) => payment.status === 'captured')?.shift_id ?? orderItem.check?.payments?.[0]?.shift_id ?? '';
+  function closedOrderCancellationUnavailableKey(orderItem: ClosedOrder) {
+    return closedOrderCompensationUnavailableKey(orderItem, 'check_cancellation', closedOrderCompensationContext());
+  }
+
+  function closedOrderRefundUnavailableKey(orderItem: ClosedOrder) {
+    return closedOrderCompensationUnavailableKey(orderItem, 'check_refund', closedOrderCompensationContext());
+  }
+
+  function closedOrderPaymentRefundUnavailableKey(orderItem: ClosedOrder) {
+    return closedOrderCompensationUnavailableKey(orderItem, 'payment_refund', closedOrderCompensationContext());
   }
 
   function canCancelClosedOrder(orderItem: ClosedOrder) {
-    return Boolean(orderItem.check && canRecordCheckCancellation.value && currentCashSession.data.value && originalPaymentShiftID(orderItem) === currentCashSession.data.value.shift_id);
+    return closedOrderCancellationUnavailableKey(orderItem) === '';
   }
 
   function canRefundClosedOrder(orderItem: ClosedOrder) {
-    const originalShiftID = originalPaymentShiftID(orderItem);
-    return Boolean(orderItem.check && hasCapturedPayment(orderItem) && canRefundPayment.value && currentCashSession.data.value && (!originalShiftID || originalShiftID !== currentCashSession.data.value.shift_id));
+    return closedOrderRefundUnavailableKey(orderItem) === '';
   }
 
   function canRefundPaymentForOrder(orderItem: ClosedOrder) {
-    return Boolean(hasCapturedPayment(orderItem) && canRefundPayment.value && currentCashSession.data.value);
+    return closedOrderPaymentRefundUnavailableKey(orderItem) === '';
   }
 
   function refundDialogTitleKey() {
@@ -1130,6 +1171,7 @@ export function useCashierTerminal() {
     selectedRefundLine,
     maxRefundLineQuantity,
     refundLineAmount,
+    refundLineTaxAmount,
     currentLedgerOperationKind,
     unsupportedLedgerScopeOptions,
     pairing,
@@ -1212,6 +1254,9 @@ export function useCashierTerminal() {
     canCancelClosedOrder,
     canRefundClosedOrder,
     canRefundPaymentForOrder,
+    closedOrderCancellationUnavailableKey,
+    closedOrderRefundUnavailableKey,
+    closedOrderPaymentRefundUnavailableKey,
     refundDialogTitleKey,
     refundDialogCopyKey,
     refundDialogSubmitKey,
