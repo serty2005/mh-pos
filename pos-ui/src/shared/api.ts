@@ -10,6 +10,9 @@ import {
   hallSchema,
   localEventSchema,
   menuItemSchema,
+  pricingPolicySchema,
+  orderDiscountSchema,
+  orderSurchargeSchema,
   orderLineSchema,
   orderSchema,
   outboxMessageSchema,
@@ -24,6 +27,9 @@ import {
   syncStatusSchema,
   tableSchema,
   type PinLoginResult,
+  type PricingPolicy,
+  type OrderDiscount,
+  type OrderSurcharge,
 } from './schemas';
 
 export type SelectedModifierPayload = {
@@ -551,6 +557,25 @@ export function closeOrder(orderId: string) {
   return request(`/orders/${encodeURIComponent(orderId)}/close`, orderSchema, {
     method: 'POST',
     body: JSON.stringify({}),
+  });
+}
+
+
+export function listActivePricingPolicies(): Promise<PricingPolicy[]> {
+  return request('/pricing/policies', z.array(pricingPolicySchema));
+}
+
+export function applyDiscountPolicy(orderId: string, pricingPolicyId: string, orderLineId = '', reason = ''): Promise<OrderDiscount> {
+  return request(`/orders/${encodeURIComponent(orderId)}/discounts`, orderDiscountSchema, {
+    method: 'POST',
+    body: JSON.stringify({ pricing_policy_id: pricingPolicyId, order_line_id: orderLineId, reason }),
+  });
+}
+
+export function applySurchargePolicy(orderId: string, pricingPolicyId: string, reason = ''): Promise<OrderSurcharge> {
+  return request(`/orders/${encodeURIComponent(orderId)}/surcharges`, orderSurchargeSchema, {
+    method: 'POST',
+    body: JSON.stringify({ pricing_policy_id: pricingPolicyId, reason }),
   });
 }
 

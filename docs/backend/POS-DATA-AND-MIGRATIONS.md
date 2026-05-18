@@ -239,3 +239,13 @@ Required behavior:
 - schema verification must check critical tables/columns/indexes before HTTP runtime;
 - after the first client deployment, existing DB upgrade must have backup path and explicit data-preserving migration files;
 - destructive SQLite cleanup/reset must be explicit, audited and documented before being exposed in UI/admin flows.
+
+## Pricing policy audit columns
+
+Статус: реализовано сейчас.
+
+Managed SQLite baseline `001_init.sql` хранит `pricing_policy_id` в `order_line_discounts`, `order_surcharges`, `precheck_discounts` и `precheck_surcharges`. Это связывает runtime adjustment и immutable precheck snapshot с Cloud-authored policy для audit, replay и проверки, что размер/тип/scope/application order были скопированы из опубликованного справочника.
+
+Статус: реализовано сейчас.
+
+Edge table `pricing_policies` хранит `manual` из Cloud payload, чтобы POS runtime мог явно отклонять manual override policies в обычном pilot selection flow.

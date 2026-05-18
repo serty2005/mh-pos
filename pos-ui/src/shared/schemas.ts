@@ -176,6 +176,51 @@ export const orderLineSchema = z.object({
   updated_at: z.string(),
 });
 
+
+export const pricingPolicySchema = z.object({
+  id: z.string(),
+  restaurant_id: z.string(),
+  kind: z.enum(['discount', 'surcharge']),
+  name: z.string(),
+  scope: z.enum(['line', 'order']),
+  amount_kind: z.enum(['fixed', 'percentage']),
+  amount_minor: z.number().optional().default(0),
+  value_basis_points: z.number().optional().default(0),
+  application_index: z.number(),
+  requires_permission: z.string().optional().default(''),
+  manual: z.boolean().optional().default(false),
+  active: z.boolean(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const orderDiscountSchema = z.object({
+  id: z.string(),
+  order_id: z.string(),
+  order_line_id: optionalNullableString,
+  pricing_policy_id: optionalNullableString,
+  scope: z.enum(['line', 'order']),
+  application_index: z.number(),
+  amount_kind: z.enum(['fixed', 'percentage']),
+  amount_minor: z.number().optional().default(0),
+  value_basis_points: z.number().optional().default(0),
+  reason: optionalNullableString,
+  created_at: z.string(),
+});
+
+export const orderSurchargeSchema = z.object({
+  id: z.string(),
+  order_id: z.string(),
+  pricing_policy_id: optionalNullableString,
+  kind: z.enum(['service_charge', 'pb1_service_fee', 'manual']),
+  application_index: z.number(),
+  amount_kind: z.enum(['fixed', 'percentage']),
+  amount_minor: z.number().optional().default(0),
+  value_basis_points: z.number().optional().default(0),
+  reason: optionalNullableString,
+  created_at: z.string(),
+});
+
 export const paymentSchema = z.object({
   id: z.string(),
   edge_payment_id: z.string(),
@@ -396,6 +441,9 @@ export type CashSession = z.infer<typeof cashSessionSchema>;
 export type CashDrawerEvent = z.infer<typeof cashDrawerEventSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;
 export type OrderLineModifier = z.infer<typeof orderLineModifierSchema>;
+export type PricingPolicy = z.infer<typeof pricingPolicySchema>;
+export type OrderDiscount = z.infer<typeof orderDiscountSchema>;
+export type OrderSurcharge = z.infer<typeof orderSurchargeSchema>;
 export type Order = z.infer<typeof orderSchema>;
 export type ClosedOrder = z.infer<typeof closedOrderSchema>;
 export type OrderLine = z.infer<typeof orderLineSchema>;

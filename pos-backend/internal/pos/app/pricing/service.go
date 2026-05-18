@@ -30,9 +30,10 @@ type AddDiscountCommand struct {
 	shared.CommandMeta
 	OrderID          string                      `json:"order_id"`
 	OrderLineID      string                      `json:"order_line_id,omitempty"`
-	Scope            domainpricing.DiscountScope `json:"scope"`
-	ApplicationIndex int                         `json:"application_index"`
-	AmountKind       domainpricing.AmountKind    `json:"amount_kind"`
+	PricingPolicyID  string                      `json:"pricing_policy_id"`
+	Scope            domainpricing.DiscountScope `json:"scope,omitempty"`
+	ApplicationIndex int                         `json:"application_index,omitempty"`
+	AmountKind       domainpricing.AmountKind    `json:"amount_kind,omitempty"`
 	AmountMinor      int64                       `json:"amount_minor,omitempty"`
 	ValueBasisPoints int64                       `json:"value_basis_points,omitempty"`
 	Reason           string                      `json:"reason,omitempty"`
@@ -41,9 +42,10 @@ type AddDiscountCommand struct {
 type AddSurchargeCommand struct {
 	shared.CommandMeta
 	OrderID          string                      `json:"order_id"`
-	Kind             domainpricing.SurchargeKind `json:"kind"`
-	ApplicationIndex int                         `json:"application_index"`
-	AmountKind       domainpricing.AmountKind    `json:"amount_kind"`
+	PricingPolicyID  string                      `json:"pricing_policy_id"`
+	Kind             domainpricing.SurchargeKind `json:"kind,omitempty"`
+	ApplicationIndex int                         `json:"application_index,omitempty"`
+	AmountKind       domainpricing.AmountKind    `json:"amount_kind,omitempty"`
 	AmountMinor      int64                       `json:"amount_minor,omitempty"`
 	ValueBasisPoints int64                       `json:"value_basis_points,omitempty"`
 	Reason           string                      `json:"reason,omitempty"`
@@ -57,8 +59,9 @@ func (s *Service) AddDiscount(ctx context.Context, cmd AddDiscountCommand) (*dom
 	if strings.TrimSpace(cmd.OrderID) == "" {
 		return nil, fmt.Errorf("%w: order_id is required", domain.ErrInvalid)
 	}
-	if cmd.ApplicationIndex <= 0 {
-		return nil, fmt.Errorf("%w: application_index must be positive", domain.ErrInvalid)
+	policyID := strings.TrimSpace(cmd.PricingPolicyID)
+	if policyID != "" && hasManualDiscountFields(cmd) {
+		return nil, fmt.Errorf("%w: cashier discount fields must come from pricing policy", domain.ErrInvalid)
 	}
 	if strings.TrimSpace(cmd.CommandID) == "" {
 		cmd.CommandID = s.ids.NewID()
@@ -69,18 +72,23 @@ func (s *Service) AddDiscount(ctx context.Context, cmd AddDiscountCommand) (*dom
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionPricingDiscountApply)); err != nil {
+		operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionPricingDiscountApply))
+		if err != nil {
 			return err
 		}
 		order, err := ensurePricingEditableOrder(ctx, s.repo, cmd.OrderID, cmd.DeviceID)
 		if err != nil {
 			return err
 		}
-		if err := ensureApplicationIndexAvailable(ctx, s.repo, order.ID, cmd.ApplicationIndex); err != nil {
+		policy, err := discountPolicyFromCommand(ctx, s.repo, policyID, cmd, order.RestaurantID, operator)
+		if err != nil {
+			return err
+		}
+		if err := ensureApplicationIndexAvailable(ctx, s.repo, order.ID, policy.ApplicationIndex); err != nil {
 			return err
 		}
 		var lineID *string
-		if cmd.Scope == domainpricing.DiscountScopeLine {
+		if policy.Scope == domainpricing.DiscountScopeLine {
 			line, err := s.repo.GetOrderLine(ctx, cmd.OrderLineID)
 			if err != nil {
 				return err
@@ -89,17 +97,24 @@ func (s *Service) AddDiscount(ctx context.Context, cmd AddDiscountCommand) (*dom
 				return fmt.Errorf("%w: discount line target is not active in order", domain.ErrConflict)
 			}
 			lineID = optionalString(cmd.OrderLineID)
+		} else if strings.TrimSpace(cmd.OrderLineID) != "" {
+			return fmt.Errorf("%w: order-scoped discount policy must not receive order_line_id", domain.ErrInvalid)
+		}
+		reason := optionalString(cmd.Reason)
+		if reason == nil {
+			reason = optionalString(policy.Name)
 		}
 		discount = &domain.OrderDiscount{
 			ID:               s.ids.NewID(),
 			OrderID:          order.ID,
 			OrderLineID:      lineID,
-			Scope:            cmd.Scope,
-			ApplicationIndex: cmd.ApplicationIndex,
-			AmountKind:       cmd.AmountKind,
-			AmountMinor:      cmd.AmountMinor,
-			ValueBasisPoints: cmd.ValueBasisPoints,
-			Reason:           optionalString(cmd.Reason),
+			PricingPolicyID:  optionalString(policyID),
+			Scope:            policy.Scope,
+			ApplicationIndex: policy.ApplicationIndex,
+			AmountKind:       policy.AmountKind,
+			AmountMinor:      policy.AmountMinor,
+			ValueBasisPoints: policy.ValueBasisPoints,
+			Reason:           reason,
 			CreatedAt:        now,
 		}
 		if err := s.repo.CreateOrderDiscount(ctx, discount); err != nil {
@@ -121,8 +136,9 @@ func (s *Service) AddSurcharge(ctx context.Context, cmd AddSurchargeCommand) (*d
 	if strings.TrimSpace(cmd.OrderID) == "" {
 		return nil, fmt.Errorf("%w: order_id is required", domain.ErrInvalid)
 	}
-	if cmd.ApplicationIndex <= 0 {
-		return nil, fmt.Errorf("%w: application_index must be positive", domain.ErrInvalid)
+	policyID := strings.TrimSpace(cmd.PricingPolicyID)
+	if policyID != "" && hasManualSurchargeFields(cmd) {
+		return nil, fmt.Errorf("%w: cashier surcharge fields must come from pricing policy", domain.ErrInvalid)
 	}
 	if strings.TrimSpace(cmd.CommandID) == "" {
 		cmd.CommandID = s.ids.NewID()
@@ -133,25 +149,38 @@ func (s *Service) AddSurcharge(ctx context.Context, cmd AddSurchargeCommand) (*d
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		if _, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionPricingSurchargeApply)); err != nil {
+		operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionPricingSurchargeApply))
+		if err != nil {
 			return err
 		}
 		order, err := ensurePricingEditableOrder(ctx, s.repo, cmd.OrderID, cmd.DeviceID)
 		if err != nil {
 			return err
 		}
-		if err := ensureApplicationIndexAvailable(ctx, s.repo, order.ID, cmd.ApplicationIndex); err != nil {
+		policy, err := surchargePolicyFromCommand(ctx, s.repo, policyID, cmd, order.RestaurantID, operator)
+		if err != nil {
 			return err
+		}
+		if policy.Scope != domainpricing.DiscountScopeOrder {
+			return fmt.Errorf("%w: surcharge policy must be order-scoped", domain.ErrInvalid)
+		}
+		if err := ensureApplicationIndexAvailable(ctx, s.repo, order.ID, policy.ApplicationIndex); err != nil {
+			return err
+		}
+		reason := optionalString(cmd.Reason)
+		if reason == nil {
+			reason = optionalString(policy.Name)
 		}
 		surcharge = &domain.OrderSurcharge{
 			ID:               s.ids.NewID(),
 			OrderID:          order.ID,
-			Kind:             cmd.Kind,
-			ApplicationIndex: cmd.ApplicationIndex,
-			AmountKind:       cmd.AmountKind,
-			AmountMinor:      cmd.AmountMinor,
-			ValueBasisPoints: cmd.ValueBasisPoints,
-			Reason:           optionalString(cmd.Reason),
+			PricingPolicyID:  optionalString(policyID),
+			Kind:             domain.SurchargeServiceCharge,
+			ApplicationIndex: policy.ApplicationIndex,
+			AmountKind:       policy.AmountKind,
+			AmountMinor:      policy.AmountMinor,
+			ValueBasisPoints: policy.ValueBasisPoints,
+			Reason:           reason,
 			CreatedAt:        now,
 		}
 		if err := s.repo.CreateOrderSurcharge(ctx, surcharge); err != nil {
@@ -163,6 +192,17 @@ func (s *Service) AddSurcharge(ctx context.Context, cmd AddSurchargeCommand) (*d
 		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Order", order.ID, "OrderSurchargeApplied", surcharge)
 	})
 	return surcharge, err
+}
+
+func (s *Service) ListActivePricingPoliciesAsOperator(ctx context.Context, meta shared.CommandMeta) ([]domainpricing.PricingPolicy, error) {
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionPricingView))
+	if err != nil {
+		return nil, err
+	}
+	if operator == nil || operator.Session == nil {
+		return nil, fmt.Errorf("%w: operator session is required", domain.ErrInvalid)
+	}
+	return s.repo.ListActivePricingPolicies(ctx, operator.Session.RestaurantID)
 }
 
 func (s *Service) GetOrderPricingAsOperator(ctx context.Context, orderID string, meta shared.CommandMeta) (*domain.CalculationResult, error) {
@@ -234,13 +274,6 @@ func (s *Service) CalculateOrderPricing(ctx context.Context, orderID string) (do
 			TaxProfileID:  line.TaxProfileID,
 		})
 	}
-	policies, err := s.repo.ListActivePricingPolicies(ctx, order.RestaurantID)
-	if err != nil {
-		return domain.CalculationResult{}, err
-	}
-	policyDiscounts, policySurcharges := pricingPoliciesToRuntime(order.ID, policies)
-	discounts = append(discounts, policyDiscounts...)
-	surcharges = append(surcharges, policySurcharges...)
 	profileIDs := make([]string, 0, len(profileSeen))
 	for id := range profileSeen {
 		profileIDs = append(profileIDs, id)
@@ -263,40 +296,72 @@ func (s *Service) CalculateOrderPricing(ctx context.Context, orderID string) (do
 	})
 }
 
-func pricingPoliciesToRuntime(orderID string, policies []domainpricing.PricingPolicy) ([]domain.OrderDiscount, []domain.OrderSurcharge) {
-	var discounts []domain.OrderDiscount
-	var surcharges []domain.OrderSurcharge
-	for _, policy := range policies {
-		if !policy.Active {
-			continue
-		}
-		reason := policy.Name
-		switch policy.Kind {
-		case domainpricing.PricingPolicyDiscount:
-			discounts = append(discounts, domain.OrderDiscount{
-				ID:               "policy:" + policy.ID,
-				OrderID:          orderID,
-				Scope:            policy.Scope,
-				ApplicationIndex: policy.ApplicationIndex,
-				AmountKind:       policy.AmountKind,
-				AmountMinor:      policy.AmountMinor,
-				ValueBasisPoints: policy.ValueBasisPoints,
-				Reason:           &reason,
-			})
-		case domainpricing.PricingPolicySurcharge:
-			surcharges = append(surcharges, domain.OrderSurcharge{
-				ID:               "policy:" + policy.ID,
-				OrderID:          orderID,
-				Kind:             domain.SurchargeServiceCharge,
-				ApplicationIndex: policy.ApplicationIndex,
-				AmountKind:       policy.AmountKind,
-				AmountMinor:      policy.AmountMinor,
-				ValueBasisPoints: policy.ValueBasisPoints,
-				Reason:           &reason,
-			})
+func discountPolicyFromCommand(ctx context.Context, repo ports.Repository, policyID string, cmd AddDiscountCommand, restaurantID string, operator *shared.OperatorContext) (*domainpricing.PricingPolicy, error) {
+	if policyID == "" {
+		return &domainpricing.PricingPolicy{ID: "", RestaurantID: restaurantID, Kind: domainpricing.PricingPolicyDiscount, Scope: cmd.Scope, AmountKind: cmd.AmountKind, AmountMinor: cmd.AmountMinor, ValueBasisPoints: cmd.ValueBasisPoints, ApplicationIndex: cmd.ApplicationIndex, Active: true}, nil
+	}
+	policy, err := repo.GetPricingPolicy(ctx, policyID)
+	if err != nil {
+		return nil, err
+	}
+	return policy, validatePolicyForOrder(policy, restaurantID, domainpricing.PricingPolicyDiscount, operator)
+}
+
+func surchargePolicyFromCommand(ctx context.Context, repo ports.Repository, policyID string, cmd AddSurchargeCommand, restaurantID string, operator *shared.OperatorContext) (*domainpricing.PricingPolicy, error) {
+	if policyID == "" {
+		return &domainpricing.PricingPolicy{ID: "", RestaurantID: restaurantID, Kind: domainpricing.PricingPolicySurcharge, Scope: domainpricing.DiscountScopeOrder, AmountKind: cmd.AmountKind, AmountMinor: cmd.AmountMinor, ValueBasisPoints: cmd.ValueBasisPoints, ApplicationIndex: cmd.ApplicationIndex, Active: true}, nil
+	}
+	policy, err := repo.GetPricingPolicy(ctx, policyID)
+	if err != nil {
+		return nil, err
+	}
+	return policy, validatePolicyForOrder(policy, restaurantID, domainpricing.PricingPolicySurcharge, operator)
+}
+
+func hasManualDiscountFields(cmd AddDiscountCommand) bool {
+	return strings.TrimSpace(string(cmd.Scope)) != "" || cmd.ApplicationIndex != 0 || strings.TrimSpace(string(cmd.AmountKind)) != "" || cmd.AmountMinor != 0 || cmd.ValueBasisPoints != 0
+}
+
+func hasManualSurchargeFields(cmd AddSurchargeCommand) bool {
+	return strings.TrimSpace(string(cmd.Kind)) != "" || cmd.ApplicationIndex != 0 || strings.TrimSpace(string(cmd.AmountKind)) != "" || cmd.AmountMinor != 0 || cmd.ValueBasisPoints != 0
+}
+
+func validatePolicyForOrder(policy *domainpricing.PricingPolicy, restaurantID string, expected domainpricing.PricingPolicyKind, operator *shared.OperatorContext) error {
+	if policy == nil {
+		return fmt.Errorf("%w: pricing policy is required", domain.ErrInvalid)
+	}
+	if policy.RestaurantID != restaurantID {
+		return fmt.Errorf("%w: pricing policy belongs to another restaurant", domain.ErrForbidden)
+	}
+	if !policy.Active {
+		return fmt.Errorf("%w: pricing policy is inactive", domain.ErrConflict)
+	}
+	if policy.Manual {
+		return fmt.Errorf("%w: manual override pricing policy is outside pilot runtime flow", domain.ErrForbidden)
+	}
+	if policy.Kind != expected {
+		return fmt.Errorf("%w: pricing policy kind mismatch", domain.ErrInvalid)
+	}
+	if policy.ApplicationIndex <= 0 {
+		return fmt.Errorf("%w: pricing policy application_index must be positive", domain.ErrInvalid)
+	}
+	if strings.TrimSpace(policy.RequiresPermission) != "" && !operatorHasPermission(operator, policy.RequiresPermission) {
+		return fmt.Errorf("%w: permission %s is required", domain.ErrForbidden, policy.RequiresPermission)
+	}
+	return nil
+}
+
+func operatorHasPermission(operator *shared.OperatorContext, permission string) bool {
+	permission = strings.TrimSpace(permission)
+	if permission == "" || operator == nil {
+		return true
+	}
+	for _, item := range operator.Permissions {
+		if item == permission {
+			return true
 		}
 	}
-	return discounts, surcharges
+	return false
 }
 
 func ensurePricingEditableOrder(ctx context.Context, repo ports.Repository, orderID, deviceID string) (*domain.Order, error) {

@@ -94,3 +94,9 @@ Payment/Fiscal:
 - cancellation/refund ledger is current runtime, PSP refund execution is not;
 - payment processor boundary запланирован далее, не реализован;
 - fiscal adapter boundary запланирован далее, не реализован.
+
+## Pricing/Fiscal boundary clarification
+
+Статус: реализовано сейчас.
+
+Pricing остается отдельным backend boundary: Catalog и Order не владеют pricing policy. Fiscal/Tax остается отдельным boundary: tax profile/rule reference data приходит из Cloud-owned pricing stream и применяется calculator после всех discounts/surcharges по правилу Tax Always Last.

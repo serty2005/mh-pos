@@ -10,19 +10,19 @@ import (
 )
 
 func (r *Repository) CreateOrderDiscount(ctx context.Context, v *pricing.OrderDiscount) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO order_line_discounts(id,order_id,order_line_id,scope,application_index,amount_kind,amount_minor,value_basis_points,reason,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.OrderID, nullableString(v.OrderLineID), string(v.Scope), v.ApplicationIndex, string(v.AmountKind), v.AmountMinor, v.ValueBasisPoints, nullableString(v.Reason), dbTime(v.CreatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO order_line_discounts(id,order_id,order_line_id,pricing_policy_id,scope,application_index,amount_kind,amount_minor,value_basis_points,reason,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.OrderID, nullableString(v.OrderLineID), nullableString(v.PricingPolicyID), string(v.Scope), v.ApplicationIndex, string(v.AmountKind), v.AmountMinor, v.ValueBasisPoints, nullableString(v.Reason), dbTime(v.CreatedAt))
 	return normalizeErr(err)
 }
 
 func (r *Repository) CreateOrderSurcharge(ctx context.Context, v *pricing.OrderSurcharge) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO order_surcharges(id,order_id,kind,application_index,amount_kind,amount_minor,value_basis_points,reason,created_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.OrderID, string(v.Kind), v.ApplicationIndex, string(v.AmountKind), v.AmountMinor, v.ValueBasisPoints, nullableString(v.Reason), dbTime(v.CreatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO order_surcharges(id,order_id,pricing_policy_id,kind,application_index,amount_kind,amount_minor,value_basis_points,reason,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.OrderID, nullableString(v.PricingPolicyID), string(v.Kind), v.ApplicationIndex, string(v.AmountKind), v.AmountMinor, v.ValueBasisPoints, nullableString(v.Reason), dbTime(v.CreatedAt))
 	return normalizeErr(err)
 }
 
 func (r *Repository) ListOrderDiscounts(ctx context.Context, orderID string) ([]pricing.OrderDiscount, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,order_id,order_line_id,scope,application_index,amount_kind,amount_minor,value_basis_points,reason,created_at FROM order_line_discounts WHERE order_id = ? ORDER BY application_index, id`, orderID)
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,order_id,order_line_id,pricing_policy_id,scope,application_index,amount_kind,amount_minor,value_basis_points,reason,created_at FROM order_line_discounts WHERE order_id = ? ORDER BY application_index, id`, orderID)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
@@ -39,7 +39,7 @@ func (r *Repository) ListOrderDiscounts(ctx context.Context, orderID string) ([]
 }
 
 func (r *Repository) ListOrderSurcharges(ctx context.Context, orderID string) ([]pricing.OrderSurcharge, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,order_id,kind,application_index,amount_kind,amount_minor,value_basis_points,reason,created_at FROM order_surcharges WHERE order_id = ? ORDER BY application_index, id`, orderID)
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,order_id,pricing_policy_id,kind,application_index,amount_kind,amount_minor,value_basis_points,reason,created_at FROM order_surcharges WHERE order_id = ? ORDER BY application_index, id`, orderID)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
@@ -56,7 +56,7 @@ func (r *Repository) ListOrderSurcharges(ctx context.Context, orderID string) ([
 }
 
 func (r *Repository) ListActivePricingPolicies(ctx context.Context, restaurantID string) ([]pricing.PricingPolicy, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,restaurant_id,kind,name,scope,amount_kind,amount_minor,value_basis_points,application_index,requires_permission,active,created_at,updated_at FROM pricing_policies WHERE restaurant_id = ? AND active = 1 ORDER BY application_index, id`, restaurantID)
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,restaurant_id,kind,name,scope,amount_kind,amount_minor,value_basis_points,application_index,requires_permission,manual,active,created_at,updated_at FROM pricing_policies WHERE restaurant_id = ? AND active = 1 ORDER BY application_index, id`, restaurantID)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
@@ -65,19 +65,38 @@ func (r *Repository) ListActivePricingPolicies(ctx context.Context, restaurantID
 	for rows.Next() {
 		var v pricing.PricingPolicy
 		var kind, scope, amountKind, created, updated string
-		var active int
-		if err := rows.Scan(&v.ID, &v.RestaurantID, &kind, &v.Name, &scope, &amountKind, &v.AmountMinor, &v.ValueBasisPoints, &v.ApplicationIndex, &v.RequiresPermission, &active, &created, &updated); err != nil {
+		var active, manual int
+		if err := rows.Scan(&v.ID, &v.RestaurantID, &kind, &v.Name, &scope, &amountKind, &v.AmountMinor, &v.ValueBasisPoints, &v.ApplicationIndex, &v.RequiresPermission, &manual, &active, &created, &updated); err != nil {
 			return nil, normalizeErr(err)
 		}
 		v.Kind = pricing.PricingPolicyKind(kind)
 		v.Scope = pricing.DiscountScope(scope)
 		v.AmountKind = pricing.AmountKind(amountKind)
+		v.Manual = manual == 1
 		v.Active = active == 1
 		v.CreatedAt = parseTime(created)
 		v.UpdatedAt = parseTime(updated)
 		out = append(out, v)
 	}
 	return out, normalizeErr(rows.Err())
+}
+
+func (r *Repository) GetPricingPolicy(ctx context.Context, id string) (*pricing.PricingPolicy, error) {
+	row := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,kind,name,scope,amount_kind,amount_minor,value_basis_points,application_index,requires_permission,manual,active,created_at,updated_at FROM pricing_policies WHERE id = ?`, id)
+	var v pricing.PricingPolicy
+	var kind, scope, amountKind, created, updated string
+	var active, manual int
+	if err := row.Scan(&v.ID, &v.RestaurantID, &kind, &v.Name, &scope, &amountKind, &v.AmountMinor, &v.ValueBasisPoints, &v.ApplicationIndex, &v.RequiresPermission, &manual, &active, &created, &updated); err != nil {
+		return nil, normalizeErr(err)
+	}
+	v.Kind = pricing.PricingPolicyKind(kind)
+	v.Scope = pricing.DiscountScope(scope)
+	v.AmountKind = pricing.AmountKind(amountKind)
+	v.Manual = manual == 1
+	v.Active = active == 1
+	v.CreatedAt = parseTime(created)
+	v.UpdatedAt = parseTime(updated)
+	return &v, nil
 }
 
 func (r *Repository) ListTaxProfilesByIDs(ctx context.Context, ids []string) (map[string]pricing.TaxProfile, error) {
@@ -154,15 +173,15 @@ func (r *Repository) CreatePrecheckBreakdown(ctx context.Context, precheckID str
 		}
 	}
 	for _, discount := range result.Discounts {
-		_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO precheck_discounts(precheck_id,discount_id,scope,application_index,order_line_id,amount_kind,amount_minor,reason) VALUES (?,?,?,?,?,?,?,?)`,
-			precheckID, discount.DiscountID, string(discount.Scope), discount.ApplicationIndex, nullableString(discount.OrderLineID), string(discount.AmountKind), discount.AmountMinor, nullableString(discount.Reason))
+		_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO precheck_discounts(precheck_id,discount_id,pricing_policy_id,scope,application_index,order_line_id,amount_kind,amount_minor,reason) VALUES (?,?,?,?,?,?,?,?,?)`,
+			precheckID, discount.DiscountID, nullableString(discount.PricingPolicyID), string(discount.Scope), discount.ApplicationIndex, nullableString(discount.OrderLineID), string(discount.AmountKind), discount.AmountMinor, nullableString(discount.Reason))
 		if err != nil {
 			return normalizeErr(err)
 		}
 	}
 	for _, surcharge := range result.Surcharges {
-		_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO precheck_surcharges(precheck_id,surcharge_id,kind,application_index,amount_kind,amount_minor,reason) VALUES (?,?,?,?,?,?,?)`,
-			precheckID, surcharge.SurchargeID, string(surcharge.Kind), surcharge.ApplicationIndex, string(surcharge.AmountKind), surcharge.AmountMinor, nullableString(surcharge.Reason))
+		_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO precheck_surcharges(precheck_id,surcharge_id,pricing_policy_id,kind,application_index,amount_kind,amount_minor,reason) VALUES (?,?,?,?,?,?,?,?)`,
+			precheckID, surcharge.SurchargeID, nullableString(surcharge.PricingPolicyID), string(surcharge.Kind), surcharge.ApplicationIndex, string(surcharge.AmountKind), surcharge.AmountMinor, nullableString(surcharge.Reason))
 		if err != nil {
 			return normalizeErr(err)
 		}
@@ -183,12 +202,13 @@ type orderDiscountScanner interface {
 
 func scanOrderDiscount(row orderDiscountScanner) (*pricing.OrderDiscount, error) {
 	var v pricing.OrderDiscount
-	var lineID, reason sql.NullString
+	var lineID, policyID, reason sql.NullString
 	var scope, amountKind, created string
-	if err := row.Scan(&v.ID, &v.OrderID, &lineID, &scope, &v.ApplicationIndex, &amountKind, &v.AmountMinor, &v.ValueBasisPoints, &reason, &created); err != nil {
+	if err := row.Scan(&v.ID, &v.OrderID, &lineID, &policyID, &scope, &v.ApplicationIndex, &amountKind, &v.AmountMinor, &v.ValueBasisPoints, &reason, &created); err != nil {
 		return nil, normalizeErr(err)
 	}
 	v.OrderLineID = stringPtr(lineID)
+	v.PricingPolicyID = stringPtr(policyID)
 	v.Scope = pricing.DiscountScope(scope)
 	v.AmountKind = pricing.AmountKind(amountKind)
 	v.Reason = stringPtr(reason)
@@ -199,10 +219,11 @@ func scanOrderDiscount(row orderDiscountScanner) (*pricing.OrderDiscount, error)
 func scanOrderSurcharge(row orderDiscountScanner) (*pricing.OrderSurcharge, error) {
 	var v pricing.OrderSurcharge
 	var kind, amountKind, created string
-	var reason sql.NullString
-	if err := row.Scan(&v.ID, &v.OrderID, &kind, &v.ApplicationIndex, &amountKind, &v.AmountMinor, &v.ValueBasisPoints, &reason, &created); err != nil {
+	var policyID, reason sql.NullString
+	if err := row.Scan(&v.ID, &v.OrderID, &policyID, &kind, &v.ApplicationIndex, &amountKind, &v.AmountMinor, &v.ValueBasisPoints, &reason, &created); err != nil {
 		return nil, normalizeErr(err)
 	}
+	v.PricingPolicyID = stringPtr(policyID)
 	v.Kind = pricing.SurchargeKind(kind)
 	v.AmountKind = pricing.AmountKind(amountKind)
 	v.Reason = stringPtr(reason)

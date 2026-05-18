@@ -533,3 +533,49 @@ func TestExistingReferenceUpdatesKeepLifecycleStatusesExact(t *testing.T) {
 func ptrInt64(v int64) *int64 {
 	return &v
 }
+
+func TestPricingPolicyValidationAndPublicationPayload(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	restaurant, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "Demo", Timezone: "Europe/Moscow", Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreatePricingPolicy(ctx, app.CreatePricingPolicyCommand{RestaurantID: restaurant.ID, Name: "Bad surcharge", Kind: domain.PricingPolicySurcharge, Scope: "line", AmountKind: "percentage", ValueBasisPoints: 500, ApplicationIndex: 10}); err != nil {
+		t.Fatalf("surcharge scope is normalized to order for pilot authoring, got %v", err)
+	}
+	if _, err := service.CreatePricingPolicy(ctx, app.CreatePricingPolicyCommand{RestaurantID: restaurant.ID, Name: "Bad percent", Kind: domain.PricingPolicyDiscount, Scope: "order", AmountKind: "percentage", ValueBasisPoints: 0, ApplicationIndex: 20}); !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected invalid percentage policy, got %v", err)
+	}
+	policy, err := service.CreatePricingPolicy(ctx, app.CreatePricingPolicyCommand{RestaurantID: restaurant.ID, Name: "Manager 5%", Kind: domain.PricingPolicyDiscount, Scope: "order", AmountKind: "percentage", ValueBasisPoints: 500, ApplicationIndex: 30, Manual: true, RequiresPermission: "pos.pricing.discount.apply"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Publish(ctx, app.PublishCommand{RestaurantID: restaurant.ID, PublishedBy: "manager"}); err != nil {
+		t.Fatal(err)
+	}
+	pub, err := repo.GetCurrentPublication(ctx, restaurant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var packet posEdgeMasterDataCommand
+	if err := json.Unmarshal(pub.PackageJSON, &packet); err != nil {
+		t.Fatal(err)
+	}
+	if len(packet.PricingPolicies) != 2 {
+		t.Fatalf("expected pricing policies in full package, got %d", len(packet.PricingPolicies))
+	}
+	var published struct {
+		ID                 string `json:"id"`
+		ApplicationIndex   int    `json:"application_index"`
+		Manual             bool   `json:"manual"`
+		RequiresPermission string `json:"requires_permission"`
+		Active             bool   `json:"active"`
+	}
+	if err := json.Unmarshal(packet.PricingPolicies[1], &published); err != nil {
+		t.Fatal(err)
+	}
+	if published.ID != policy.ID || published.ApplicationIndex != 30 || !published.Manual || published.RequiresPermission != "pos.pricing.discount.apply" || !published.Active {
+		t.Fatalf("unexpected pricing policy payload: %+v", published)
+	}
+}
