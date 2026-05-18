@@ -471,6 +471,15 @@ func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 	return order, check
 }
 
+func insertClosedOrderFixture(t *testing.T, f *fixture, shiftID, deviceID, orderID, checkID, businessDate string, closedAt time.Time) {
+	t.Helper()
+	openedAt := closedAt.Add(-30 * time.Minute)
+	execTestSQL(t, f, `INSERT INTO orders(id,edge_order_id,restaurant_id,device_id,shift_id,status,table_id,table_name,guest_count,opened_at,closed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		orderID, "edge-"+orderID, f.restaurant.ID, deviceID, shiftID, string(domain.OrderClosed), f.table.ID, f.table.Name, 1, appshared.DBTime(openedAt), appshared.DBTime(closedAt), appshared.DBTime(openedAt), appshared.DBTime(closedAt))
+	execTestSQL(t, f, `INSERT INTO checks(id,order_id,status,currency_code,subtotal,discount_total,surcharge_total,tax_total,total,paid_total,remaining_total,business_date_local,closed_at,snapshot,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		checkID, orderID, string(domain.CheckPaid), "RUB", int64(1000), int64(0), int64(0), int64(0), int64(1000), int64(1000), int64(0), businessDate, appshared.DBTime(closedAt), `{"document_type":"check","precheck_snapshot":{"lines":[]}}`, appshared.DBTime(closedAt), appshared.DBTime(closedAt))
+}
+
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
@@ -3198,6 +3207,91 @@ func TestRecordCancellationDuringOpenShiftSupportsFullAndRejectsOverCancel(t *te
 	}
 }
 
+func TestFinancialOperationBoundarySeparatesCancellationAndRefund(t *testing.T) {
+	f := newFixture(t)
+	shift := f.openShift(t)
+	cashSession := f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = f.service.RecordRefund(f.ctx, app.RecordCheckRefundCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-refund-same-open-shift"),
+		CheckID:              check.ID,
+		InventoryDisposition: domain.InventoryNoStockEffect,
+		Reason:               "same shift refund should be cancellation",
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected same business-day refund in original open shift to conflict, got %v", err)
+	}
+
+	f.closeCashSessionAndShift(t, shift, cashSession, "before-cancel-boundary")
+	f.openShift(t)
+	f.openCashSession(t)
+	_, err = f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-cancel-after-shift-close"),
+		CheckID:              check.ID,
+		InventoryDisposition: domain.InventoryNoStockEffect,
+		Reason:               "cancellation after original shift close",
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected cancellation after original shift close to conflict, got %v", err)
+	}
+}
+
+func TestRecordRefundAllowsLaterBusinessDateWithOpenCashSession(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	execTestSQL(t, f, `UPDATE checks SET business_date_local = '2026-05-03' WHERE id = ?`, check.ID)
+
+	operation, err := f.service.RecordRefund(f.ctx, app.RecordCheckRefundCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-refund-later-business-date"),
+		CheckID:              check.ID,
+		InventoryDisposition: domain.InventoryNoStockEffect,
+		Reason:               "later business date refund",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if operation.Type != domain.FinancialOperationRefund || operation.BusinessDateLocal != "2026-05-04" {
+		t.Fatalf("unexpected later business date refund operation: %+v", operation)
+	}
+}
+
 func TestRecordCancellationSupportsPartialLineQuantityAndInventoryDisposition(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
@@ -3355,6 +3449,85 @@ func TestRecordRefundAfterShiftCloseSupportsRepeatedPartialRefunds(t *testing.T)
 	}
 	if total != 1000 {
 		t.Fatalf("expected recorded partial refunds to sum to 1000, got %d", total)
+	}
+}
+
+func TestMixedCancellationAndRefundShareCheckAndLineQuantityCaps(t *testing.T) {
+	f := newFixture(t)
+	shift := f.openShift(t)
+	cashSession := f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-cancel-mixed-line"),
+		CheckID:              check.ID,
+		OperationKind:        domain.FinancialOperationPartial,
+		InventoryDisposition: domain.InventoryManualReview,
+		Reason:               "prepared item cancellation",
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:       domain.FinancialItemOrderLine,
+			OrderLineID: line.ID,
+			Quantity:    1,
+			Amount:      1000,
+			Currency:    "RUB",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f.closeCashSessionAndShift(t, shift, cashSession, "mixed-line-refund")
+	f.openShift(t)
+	f.openCashSession(t)
+	_, err = f.service.RecordRefund(f.ctx, app.RecordCheckRefundCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-refund-mixed-line-over-quantity"),
+		CheckID:              check.ID,
+		OperationKind:        domain.FinancialOperationPartial,
+		InventoryDisposition: domain.InventoryManualReview,
+		Reason:               "over mixed line quantity",
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:       domain.FinancialItemOrderLine,
+			OrderLineID: line.ID,
+			Quantity:    2,
+			Amount:      1000,
+			Currency:    "RUB",
+		}},
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected mixed line quantity cap conflict, got %v", err)
+	}
+
+	_, err = f.service.RecordRefund(f.ctx, app.RecordCheckRefundCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-refund-mixed-check-over"),
+		CheckID:              check.ID,
+		OperationKind:        domain.FinancialOperationPartial,
+		InventoryDisposition: domain.InventoryManualReview,
+		Reason:               "over mixed check amount",
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:    domain.FinancialItemWholeCheck,
+			Amount:   1001,
+			Currency: "RUB",
+		}},
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected mixed check amount cap conflict, got %v", err)
 	}
 }
 
@@ -3698,6 +3871,95 @@ func TestFullPaymentCreatesFinalCheckAndClosesOrder(t *testing.T) {
 	}
 	if gotOrder.Status != domain.OrderClosed || gotOrder.ClosedAt == nil {
 		t.Fatalf("expected closed order, got %+v", gotOrder)
+	}
+}
+
+func TestListClosedOrdersUsesBoundedPaginationAndStableNewestFirstSort(t *testing.T) {
+	f := newFixture(t)
+	shift := f.openShift(t)
+	base := time.Date(2026, 5, 4, 10, 0, 0, 0, time.UTC)
+	for i := 0; i < 105; i++ {
+		insertClosedOrderFixture(t, f, shift.ID, f.device.ID, fmt.Sprintf("bulk-order-%03d", i), fmt.Sprintf("bulk-check-%03d", i), "2026-05-04", base.Add(time.Duration(i)*time.Minute))
+	}
+
+	defaultPage, err := f.service.ListClosedOrders(f.ctx, app.ListClosedOrdersCommand{CommandMeta: f.edgeMeta()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(defaultPage) != 50 {
+		t.Fatalf("expected default page to be capped at 50, got %d", len(defaultPage))
+	}
+	if defaultPage[0].ID != "bulk-order-104" || defaultPage[49].ID != "bulk-order-055" {
+		t.Fatalf("expected newest-first stable default page, first=%s last=%s", defaultPage[0].ID, defaultPage[49].ID)
+	}
+
+	maxPage, err := f.service.ListClosedOrders(f.ctx, app.ListClosedOrdersCommand{CommandMeta: f.edgeMeta(), Limit: 500})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(maxPage) != 100 {
+		t.Fatalf("expected max page to be capped at 100, got %d", len(maxPage))
+	}
+
+	offsetPage, err := f.service.ListClosedOrders(f.ctx, app.ListClosedOrdersCommand{CommandMeta: f.edgeMeta(), Limit: 10, Offset: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(offsetPage) != 5 || offsetPage[0].ID != "bulk-order-004" || offsetPage[4].ID != "bulk-order-000" {
+		t.Fatalf("unexpected offset page: %+v", offsetPage)
+	}
+}
+
+func TestListClosedOrdersSupportsDateShiftDeviceAndCheckFilters(t *testing.T) {
+	f := newFixture(t)
+	shift := f.openShift(t)
+	insertClosedOrderFixture(t, f, shift.ID, f.device.ID, "closed-1", "check-1", "2026-05-04", time.Date(2026, 5, 4, 10, 0, 0, 0, time.UTC))
+	insertClosedOrderFixture(t, f, shift.ID, f.device.ID, "closed-2", "check-2", "2026-05-05", time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC))
+	insertClosedOrderFixture(t, f, shift.ID, f.device.ID, "closed-3", "check-3", "2026-05-06", time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC))
+
+	sameDate, err := f.service.ListClosedOrders(f.ctx, app.ListClosedOrdersCommand{CommandMeta: f.edgeMeta(), BusinessDateLocal: "2026-05-05", Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sameDate) != 1 || sameDate[0].Check == nil || sameDate[0].Check.ID != "check-2" {
+		t.Fatalf("unexpected business date filter result: %+v", sameDate)
+	}
+
+	dateRange, err := f.service.ListClosedOrders(f.ctx, app.ListClosedOrdersCommand{CommandMeta: f.edgeMeta(), FromBusinessDateLocal: "2026-05-04", ToBusinessDateLocal: "2026-05-05", Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dateRange) != 2 || dateRange[0].ID != "closed-2" || dateRange[1].ID != "closed-1" {
+		t.Fatalf("unexpected date range result: %+v", dateRange)
+	}
+
+	byShift, err := f.service.ListClosedOrders(f.ctx, app.ListClosedOrdersCommand{CommandMeta: f.edgeMeta(), ShiftID: shift.ID, Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byShift) != 3 {
+		t.Fatalf("expected three rows for shift filter, got %d", len(byShift))
+	}
+
+	byDevice, err := f.service.ListClosedOrders(f.ctx, app.ListClosedOrdersCommand{CommandMeta: f.edgeMeta(), DeviceID: f.device.ID, Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byDevice) != 3 {
+		t.Fatalf("expected three rows for device filter, got %d", len(byDevice))
+	}
+
+	byCheck, err := f.service.ListClosedOrders(f.ctx, app.ListClosedOrdersCommand{CommandMeta: f.edgeMeta(), CheckID: "check-1", Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byCheck) != 1 || byCheck[0].ID != "closed-1" {
+		t.Fatalf("unexpected check filter result: %+v", byCheck)
+	}
+
+	_, err = f.service.ListClosedOrders(f.ctx, app.ListClosedOrdersCommand{CommandMeta: f.edgeMeta(), BusinessDateLocal: "05-05-2026"})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected invalid business date to be rejected, got %v", err)
 	}
 }
 

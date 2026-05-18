@@ -23,7 +23,39 @@
       <q-banner v-if="terminal.closedOrders.error.value" class="error-banner dense-banner" rounded>{{ terminal.t(terminal.displayErrorMessageKey(terminal.closedOrders.error.value)) }}</q-banner>
       <q-skeleton v-if="terminal.closedOrders.isFetching.value" class="order-skeleton drawer-skeleton" />
 
-      <div v-else-if="terminal.closedOrders.data.value?.length" class="closed-orders-list">
+      <div class="drawer-filter-row">
+        <q-input
+          v-model="terminal.closedOrdersBusinessDate.value"
+          dense
+          outlined
+          clearable
+          type="date"
+          :label="terminal.t('pos.businessDate')"
+        />
+        <div class="pagination-controls">
+          <q-btn
+            flat
+            round
+            icon="chevron_left"
+            class="icon-touch"
+            :aria-label="terminal.t('actions.previousPage')"
+            :disable="!terminal.closedOrdersHasPreviousPage.value"
+            @click="terminal.previousClosedOrdersPage"
+          />
+          <span>{{ terminal.closedOrdersOffset.value + 1 }}</span>
+          <q-btn
+            flat
+            round
+            icon="chevron_right"
+            class="icon-touch"
+            :aria-label="terminal.t('actions.nextPage')"
+            :disable="!terminal.closedOrdersHasNextPage.value"
+            @click="terminal.nextClosedOrdersPage"
+          />
+        </div>
+      </div>
+
+      <div v-if="!terminal.closedOrders.isFetching.value && terminal.closedOrders.data.value?.length" class="closed-orders-list">
         <article v-for="order in terminal.closedOrders.data.value" :key="order.id" class="closed-order-item">
           <div class="order-summary compact-summary">
             <div>
@@ -78,7 +110,7 @@
           </div>
         </article>
       </div>
-      <div v-else class="empty-state wide">{{ terminal.t('common.empty') }}</div>
+      <div v-else-if="!terminal.closedOrders.isFetching.value" class="empty-state wide">{{ terminal.t('common.empty') }}</div>
     </section>
   </q-drawer>
 </template>

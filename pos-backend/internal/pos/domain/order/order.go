@@ -25,6 +25,19 @@ type OrderSummary struct {
 	Check     *check.Check `json:"check,omitempty"`
 }
 
+// ClosedOrderListQuery задает bounded read model для просмотра закрытых заказов без полной выгрузки истории.
+type ClosedOrderListQuery struct {
+	RestaurantID          string
+	BusinessDateLocal     string
+	FromBusinessDateLocal string
+	ToBusinessDateLocal   string
+	ShiftID               string
+	DeviceID              string
+	CheckID               string
+	Limit                 int
+	Offset                int
+}
+
 type Order struct {
 	ID            string       `json:"id"`
 	EdgeOrderID   string       `json:"edge_order_id"`

@@ -306,7 +306,7 @@ func (s *Service) operationItemSnapshot(ctx context.Context, typ domain.Financia
 		if item.Amount > maxAmount {
 			return nil, fmt.Errorf("%w: operation line amount exceeds selected line amount", domain.ErrConflict)
 		}
-		alreadyAmount, err := s.repo.SumFinancialOperationAmountByOrderLine(ctx, line.ID, typ)
+		alreadyAmount, err := s.sumFinancialOperationAmountByOrderLine(ctx, line.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -317,7 +317,7 @@ func (s *Service) operationItemSnapshot(ctx context.Context, typ domain.Financia
 			return nil, fmt.Errorf("%w: operation line quantity exceeds original line quantity", domain.ErrConflict)
 		}
 		if item.Quantity != nil {
-			already, err := s.repo.SumFinancialOperationQuantityByOrderLine(ctx, line.ID, typ)
+			already, err := s.sumFinancialOperationQuantityByOrderLine(ctx, line.ID)
 			if err != nil {
 				return nil, err
 			}
@@ -334,7 +334,7 @@ func (s *Service) operationItemSnapshot(ctx context.Context, typ domain.Financia
 		if payment.PrecheckID != precheckID || payment.Status != domain.PaymentCaptured || payment.Currency != check.CurrencyCode {
 			return nil, fmt.Errorf("%w: operation payment allocation is not captured for check", domain.ErrConflict)
 		}
-		already, err := s.repo.SumFinancialOperationAmountByPayment(ctx, payment.ID, typ)
+		already, err := s.sumFinancialOperationAmountByPayment(ctx, payment.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -347,6 +347,42 @@ func (s *Service) operationItemSnapshot(ctx context.Context, typ domain.Financia
 	default:
 		return nil, fmt.Errorf("%w: unsupported operation item scope", domain.ErrInvalid)
 	}
+}
+
+func (s *Service) sumFinancialOperationAmountByPayment(ctx context.Context, paymentID string) (int64, error) {
+	refunded, err := s.repo.SumFinancialOperationAmountByPayment(ctx, paymentID, domain.FinancialOperationRefund)
+	if err != nil {
+		return 0, err
+	}
+	cancelled, err := s.repo.SumFinancialOperationAmountByPayment(ctx, paymentID, domain.FinancialOperationCancellation)
+	if err != nil {
+		return 0, err
+	}
+	return refunded + cancelled, nil
+}
+
+func (s *Service) sumFinancialOperationAmountByOrderLine(ctx context.Context, orderLineID string) (int64, error) {
+	refunded, err := s.repo.SumFinancialOperationAmountByOrderLine(ctx, orderLineID, domain.FinancialOperationRefund)
+	if err != nil {
+		return 0, err
+	}
+	cancelled, err := s.repo.SumFinancialOperationAmountByOrderLine(ctx, orderLineID, domain.FinancialOperationCancellation)
+	if err != nil {
+		return 0, err
+	}
+	return refunded + cancelled, nil
+}
+
+func (s *Service) sumFinancialOperationQuantityByOrderLine(ctx context.Context, orderLineID string) (int64, error) {
+	refunded, err := s.repo.SumFinancialOperationQuantityByOrderLine(ctx, orderLineID, domain.FinancialOperationRefund)
+	if err != nil {
+		return 0, err
+	}
+	cancelled, err := s.repo.SumFinancialOperationQuantityByOrderLine(ctx, orderLineID, domain.FinancialOperationCancellation)
+	if err != nil {
+		return 0, err
+	}
+	return refunded + cancelled, nil
 }
 
 func maxLineItemAmount(line *domain.OrderLine, quantity *int64) int64 {

@@ -120,6 +120,9 @@ export function useCashierTerminal() {
   const refundOrderLines = ref<CheckSnapshotLine[]>([]);
   const refundOrderLineId = ref('');
   const refundLineQuantity = ref(1);
+  const closedOrdersLimit = ref(50);
+  const closedOrdersOffset = ref(0);
+  const closedOrdersBusinessDate = ref('');
   const modifierDialog = ref(false);
   const modifierMenuItem = ref<MenuItem | null>(null);
   const modifierQuantities = ref<Record<string, number>>({});
@@ -350,8 +353,12 @@ export function useCashierTerminal() {
   });
 
   const closedOrders = useQuery({
-    queryKey: ['closed-orders'],
-    queryFn: () => listClosedOrders(50),
+    queryKey: ['closed-orders', closedOrdersLimit, closedOrdersOffset, closedOrdersBusinessDate],
+    queryFn: () => listClosedOrders({
+      businessDateLocal: closedOrdersBusinessDate.value,
+      limit: closedOrdersLimit.value,
+      offset: closedOrdersOffset.value,
+    }),
     enabled: () => Boolean(auth.nodeDeviceId && auth.sessionId && canViewClosedOrders.value),
   });
 
@@ -391,6 +398,8 @@ export function useCashierTerminal() {
   const orderError = computed(() => firstError([activeOrdersQuery.error.value, tableOrder.error.value, order.error.value, prechecks.error.value]));
   const actorName = computed(() => auth.actor?.name || auth.actor?.employee_id || '');
   const syncProblems = computed(() => (syncStatus.data.value?.failed ?? 0) + (syncStatus.data.value?.suspended ?? 0));
+  const closedOrdersHasPreviousPage = computed(() => closedOrdersOffset.value > 0);
+  const closedOrdersHasNextPage = computed(() => (closedOrders.data.value?.length ?? 0) >= closedOrdersLimit.value);
   const primaryFlowSteps = computed(() => {
     const shiftReady = Boolean(currentShift.data.value && currentCashSession.data.value);
     const tableReady = Boolean(selectedTableId.value);
@@ -659,6 +668,10 @@ export function useCashierTerminal() {
   watch(currentLedgerOperationKind, (kind) => {
     refundOperationKind.value = kind;
   }, { immediate: true });
+
+  watch(closedOrdersBusinessDate, () => {
+    closedOrdersOffset.value = 0;
+  });
 
   function selectHall(id: string) {
     selectedHallId.value = id;
@@ -940,6 +953,15 @@ export function useCashierTerminal() {
     refundLineQuantity.value = clampQuantity(refundLineQuantity.value, maxRefundLineQuantity.value);
   }
 
+  function previousClosedOrdersPage() {
+    closedOrdersOffset.value = Math.max(0, closedOrdersOffset.value - closedOrdersLimit.value);
+  }
+
+  function nextClosedOrdersPage() {
+    if (!closedOrdersHasNextPage.value) return;
+    closedOrdersOffset.value += closedOrdersLimit.value;
+  }
+
   function refreshCompensationState() {
     void queryClient.invalidateQueries({ queryKey: ['closed-orders'] });
     void queryClient.invalidateQueries({ queryKey: ['order'] });
@@ -1069,6 +1091,9 @@ export function useCashierTerminal() {
     refundScope,
     refundOrderLineId,
     refundLineQuantity,
+    closedOrdersLimit,
+    closedOrdersOffset,
+    closedOrdersBusinessDate,
     modifierDialog,
     modifierMenuItem,
     modifierQuantities,
@@ -1145,6 +1170,8 @@ export function useCashierTerminal() {
     orderError,
     actorName,
     syncProblems,
+    closedOrdersHasPreviousPage,
+    closedOrdersHasNextPage,
     primaryFlowSteps,
     currentBlockingNotice,
     openShiftMutation,
@@ -1191,6 +1218,8 @@ export function useCashierTerminal() {
     refundDialogIcon,
     refundDialogShowsLedgerControls,
     normalizeRefundLineQuantity,
+    previousClosedOrdersPage,
+    nextClosedOrdersPage,
     refreshOps,
     refreshSync,
     refetchMenu,

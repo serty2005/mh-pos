@@ -116,6 +116,7 @@ const (
 type OrderStatus = order.OrderStatus
 type Order = order.Order
 type OrderSummary = order.OrderSummary
+type ClosedOrderListQuery = order.ClosedOrderListQuery
 
 const (
 	OrderOpen      = order.OrderOpen

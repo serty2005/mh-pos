@@ -72,6 +72,7 @@ type AddDiscountCommand = apppricing.AddDiscountCommand
 type AddSurchargeCommand = apppricing.AddSurchargeCommand
 type CapturePaymentCommand = appcheck.CapturePaymentCommand
 type RefundPaymentCommand = appcheck.RefundPaymentCommand
+type ListClosedOrdersCommand = appcheck.ListClosedOrdersCommand
 type ReprintCheckCommand = appcheck.ReprintCheckCommand
 type FinancialOperationItemCommand = appcheck.FinancialOperationItemCommand
 type RecordCheckCancellationCommand = appcheck.RecordCheckCancellationCommand
@@ -446,8 +447,8 @@ func (s *Service) GetCheckAsOperator(ctx context.Context, id string, meta Comman
 	return s.checks.GetCheckAsOperator(ctx, id, meta)
 }
 
-func (s *Service) ListClosedOrders(ctx context.Context, limit int, meta CommandMeta) ([]domain.OrderSummary, error) {
-	return s.checks.ListClosedOrders(ctx, limit, meta)
+func (s *Service) ListClosedOrders(ctx context.Context, cmd ListClosedOrdersCommand) ([]domain.OrderSummary, error) {
+	return s.checks.ListClosedOrders(ctx, cmd)
 }
 
 func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand) (*domain.Payment, error) {

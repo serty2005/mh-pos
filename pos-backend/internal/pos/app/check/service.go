@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
+
 	"pos-backend/internal/platform/clock"
 	"pos-backend/internal/platform/idgen"
 	txmanager "pos-backend/internal/platform/tx"
@@ -12,8 +15,11 @@ import (
 	"pos-backend/internal/pos/domain"
 	"pos-backend/internal/pos/domain/order"
 	"pos-backend/internal/pos/ports"
-	"strings"
-	"time"
+)
+
+const (
+	defaultClosedOrdersLimit = 50
+	maxClosedOrdersLimit     = 100
 )
 
 type Service struct {
@@ -50,6 +56,18 @@ type RefundPaymentCommand struct {
 	Reason    string `json:"reason,omitempty"`
 }
 
+type ListClosedOrdersCommand struct {
+	shared.CommandMeta
+	BusinessDateLocal     string
+	FromBusinessDateLocal string
+	ToBusinessDateLocal   string
+	ShiftID               string
+	DeviceID              string
+	CheckID               string
+	Limit                 int
+	Offset                int
+}
+
 func (s *Service) GetCheck(ctx context.Context, id string) (*domain.Check, error) {
 	return s.repo.GetCheck(ctx, id)
 }
@@ -62,11 +80,71 @@ func (s *Service) GetCheckAsOperator(ctx context.Context, id string, meta shared
 	return s.GetCheck(ctx, id)
 }
 
-func (s *Service) ListClosedOrders(ctx context.Context, limit int, meta shared.CommandMeta) ([]order.OrderSummary, error) {
-	if _, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionCheckView)); err != nil {
+func (s *Service) ListClosedOrders(ctx context.Context, cmd ListClosedOrdersCommand) ([]order.OrderSummary, error) {
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionCheckView))
+	if err != nil {
 		return nil, err
 	}
-	return s.repo.ListClosedOrders(ctx, limit)
+	query, err := normalizeClosedOrderListQuery(cmd, operator.Employee.RestaurantID)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.ListClosedOrders(ctx, query)
+}
+
+func normalizeClosedOrderListQuery(cmd ListClosedOrdersCommand, restaurantID string) (order.ClosedOrderListQuery, error) {
+	limit := cmd.Limit
+	if limit <= 0 {
+		limit = defaultClosedOrdersLimit
+	}
+	if limit > maxClosedOrdersLimit {
+		limit = maxClosedOrdersLimit
+	}
+	if cmd.Offset < 0 {
+		return order.ClosedOrderListQuery{}, fmt.Errorf("%w: closed orders offset must be non-negative", domain.ErrInvalid)
+	}
+	businessDate := strings.TrimSpace(cmd.BusinessDateLocal)
+	fromDate := strings.TrimSpace(cmd.FromBusinessDateLocal)
+	toDate := strings.TrimSpace(cmd.ToBusinessDateLocal)
+	if businessDate != "" {
+		if fromDate != "" || toDate != "" {
+			return order.ClosedOrderListQuery{}, fmt.Errorf("%w: business_date_local cannot be combined with range filters", domain.ErrInvalid)
+		}
+		if err := validateBusinessDateFilter(businessDate); err != nil {
+			return order.ClosedOrderListQuery{}, err
+		}
+	}
+	if fromDate != "" {
+		if err := validateBusinessDateFilter(fromDate); err != nil {
+			return order.ClosedOrderListQuery{}, err
+		}
+	}
+	if toDate != "" {
+		if err := validateBusinessDateFilter(toDate); err != nil {
+			return order.ClosedOrderListQuery{}, err
+		}
+	}
+	if fromDate != "" && toDate != "" && fromDate > toDate {
+		return order.ClosedOrderListQuery{}, fmt.Errorf("%w: from_business_date_local must be before to_business_date_local", domain.ErrInvalid)
+	}
+	return order.ClosedOrderListQuery{
+		RestaurantID:          strings.TrimSpace(restaurantID),
+		BusinessDateLocal:     businessDate,
+		FromBusinessDateLocal: fromDate,
+		ToBusinessDateLocal:   toDate,
+		ShiftID:               strings.TrimSpace(cmd.ShiftID),
+		DeviceID:              strings.TrimSpace(cmd.DeviceID),
+		CheckID:               strings.TrimSpace(cmd.CheckID),
+		Limit:                 limit,
+		Offset:                cmd.Offset,
+	}, nil
+}
+
+func validateBusinessDateFilter(value string) error {
+	if _, err := time.Parse("2006-01-02", value); err != nil {
+		return fmt.Errorf("%w: business date filters must use YYYY-MM-DD", domain.ErrInvalid)
+	}
+	return nil
 }
 
 func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand) (*domain.Payment, error) {

@@ -3,6 +3,8 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"strings"
+
 	"pos-backend/internal/pos/domain"
 	"pos-backend/internal/pos/domain/order"
 )
@@ -145,8 +147,49 @@ func (r *Repository) UpdateOrderLineDetails(ctx context.Context, v *domain.Order
 	return nil
 }
 
-func (r *Repository) ListClosedOrders(ctx context.Context, limit int) ([]order.OrderSummary, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT o.id, o.table_name, o.opened_at, o.closed_at, c.id, c.status, c.currency_code, c.subtotal, c.discount_total, c.surcharge_total, c.tax_total, c.total, c.paid_total, c.remaining_total, c.business_date_local, c.closed_at, c.created_at, c.updated_at, (SELECT pr.id FROM prechecks pr WHERE pr.order_id = o.id ORDER BY pr.version DESC, pr.created_at DESC LIMIT 1), o.status FROM orders o LEFT JOIN checks c ON o.id = c.order_id WHERE o.status = 'closed' ORDER BY o.closed_at DESC LIMIT ?`, limit)
+func (r *Repository) ListClosedOrders(ctx context.Context, query order.ClosedOrderListQuery) ([]order.OrderSummary, error) {
+	where := []string{"o.status = 'closed'"}
+	args := make([]any, 0, 10)
+	if strings.TrimSpace(query.RestaurantID) != "" {
+		where = append(where, "o.restaurant_id = ?")
+		args = append(args, strings.TrimSpace(query.RestaurantID))
+	}
+	if strings.TrimSpace(query.BusinessDateLocal) != "" {
+		where = append(where, "c.business_date_local = ?")
+		args = append(args, strings.TrimSpace(query.BusinessDateLocal))
+	}
+	if strings.TrimSpace(query.FromBusinessDateLocal) != "" {
+		where = append(where, "c.business_date_local >= ?")
+		args = append(args, strings.TrimSpace(query.FromBusinessDateLocal))
+	}
+	if strings.TrimSpace(query.ToBusinessDateLocal) != "" {
+		where = append(where, "c.business_date_local <= ?")
+		args = append(args, strings.TrimSpace(query.ToBusinessDateLocal))
+	}
+	if strings.TrimSpace(query.ShiftID) != "" {
+		where = append(where, "o.shift_id = ?")
+		args = append(args, strings.TrimSpace(query.ShiftID))
+	}
+	if strings.TrimSpace(query.DeviceID) != "" {
+		where = append(where, "o.device_id = ?")
+		args = append(args, strings.TrimSpace(query.DeviceID))
+	}
+	if strings.TrimSpace(query.CheckID) != "" {
+		where = append(where, "c.id = ?")
+		args = append(args, strings.TrimSpace(query.CheckID))
+	}
+	limit := query.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	offset := query.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	args = append(args, limit, offset)
+
+	sqlText := `SELECT o.id, o.table_name, o.opened_at, o.closed_at, c.id, c.status, c.currency_code, c.subtotal, c.discount_total, c.surcharge_total, c.tax_total, c.total, c.paid_total, c.remaining_total, c.business_date_local, c.closed_at, c.created_at, c.updated_at, (SELECT pr.id FROM prechecks pr WHERE pr.order_id = o.id ORDER BY pr.version DESC, pr.created_at DESC LIMIT 1), o.status FROM orders o LEFT JOIN checks c ON o.id = c.order_id WHERE ` + strings.Join(where, " AND ") + ` ORDER BY COALESCE(c.closed_at, o.closed_at) DESC, o.id DESC LIMIT ? OFFSET ?`
+	rows, err := r.queryer(ctx).QueryContext(ctx, sqlText, args...)
 	if err != nil {
 		return nil, err
 	}

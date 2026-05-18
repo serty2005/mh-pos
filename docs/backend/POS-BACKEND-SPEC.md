@@ -110,6 +110,13 @@
 12. Кассир или менеджер может повторно напечатать копию precheck/check из immutable snapshot.
 13. Авторизованный оператор может записать cancellation/refund operation; текущий cashier UI использует check-level ledger routes для full whole-check и partial `order_line`/quantity cancellation/refund и оставляет compatibility payment refund route как fallback для закрытых заказов.
 
+Read contract закрытых заказов:
+
+- Реализовано сейчас: `GET /api/v1/orders/closed` принимает `limit`, `offset`, `business_date_local`, `from_business_date_local`, `to_business_date_local`, `shift_id`, `device_id`, `check_id`.
+- Default `limit` = `50`, max `limit` = `100`; отрицательный `offset` и невалидные business date фильтры отклоняются.
+- Сортировка stable newest-first: close timestamp, затем `id`.
+- API без фильтра возвращает только bounded latest page, а не всю историю; retention/archive/compaction больших локальных БД вне текущего runtime.
+
 ## Precheck Contract
 
 Реализовано сейчас:

@@ -1698,13 +1698,39 @@ button:focus-visible,
 
 .compact-filter-bar {
   display: grid;
-  grid-template-columns: minmax(220px, 360px) repeat(2, auto) minmax(0, 1fr);
+  grid-template-columns: minmax(220px, 320px) minmax(150px, 180px) repeat(2, auto) minmax(112px, auto) minmax(0, 1fr);
   gap: 8px;
   align-items: center;
 }
 
 .integrated-search {
   min-width: 0;
+}
+
+.date-filter {
+  min-width: 0;
+}
+
+.pagination-controls {
+  display: inline-grid;
+  grid-template-columns: 40px minmax(32px, auto) 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: var(--pos-muted);
+}
+
+.pagination-controls span {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.drawer-filter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(112px, auto);
+  gap: 8px;
+  align-items: center;
 }
 
 .activity-list {

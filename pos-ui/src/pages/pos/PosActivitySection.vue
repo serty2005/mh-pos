@@ -23,6 +23,15 @@
             <q-icon name="search" />
           </template>
         </q-input>
+        <q-input
+          v-model="terminal.closedOrdersBusinessDate.value"
+          dense
+          outlined
+          clearable
+          type="date"
+          class="date-filter"
+          :label="terminal.t('pos.businessDate')"
+        />
         <button
           v-for="option in filterOptions"
           :key="option.value"
@@ -33,6 +42,27 @@
         >
           {{ terminal.t(option.labelKey) }}
         </button>
+        <div class="pagination-controls">
+          <q-btn
+            flat
+            round
+            icon="chevron_left"
+            class="icon-touch"
+            :aria-label="terminal.t('actions.previousPage')"
+            :disable="!terminal.closedOrdersHasPreviousPage.value"
+            @click="terminal.previousClosedOrdersPage"
+          />
+          <span>{{ terminal.closedOrdersOffset.value + 1 }}</span>
+          <q-btn
+            flat
+            round
+            icon="chevron_right"
+            class="icon-touch"
+            :aria-label="terminal.t('actions.nextPage')"
+            :disable="!terminal.closedOrdersHasNextPage.value"
+            @click="terminal.nextClosedOrdersPage"
+          />
+        </div>
       </div>
 
       <q-banner v-if="terminal.closedOrders.error.value" class="error-banner dense-banner" rounded>

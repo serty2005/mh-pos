@@ -84,6 +84,8 @@
 
 Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, quantity, unit price, total price и selected modifiers. `SelectedModifierCommand.Quantity` означает количество выбранной modifier option на всю строку заказа; line total считается как `unit_price * line.quantity + sum(selected_modifier.total_price)`.
 
+`GET /api/v1/orders/closed` реализовано сейчас как bounded read для activity UI: default `limit=50`, max `limit=100`, `offset`, stable newest-first sort по закрытию и `id`, фильтры `business_date_local`, `from_business_date_local`, `to_business_date_local`, `shift_id`, `device_id`, `check_id`. Без фильтра API все равно возвращает только bounded latest page; archive/retention/compaction закрытых заказов запланированы далее и не являются текущим runtime.
+
 ### Precheck
 
 Реализовано сейчас:

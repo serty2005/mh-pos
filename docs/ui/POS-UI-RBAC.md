@@ -8,7 +8,7 @@ UI visibility is UX only. Backend app-layer permissions remain authoritative.
 
 Нижняя quick access bar, скрываемое меню разделов, redesigned `Залы и столы`, `Заказы`, `Активность`, `Отчеты` и `Касса` являются UX-навигацией. Они не добавляют новых backend permission ids и не заменяют backend application-layer checks.
 
-`Активность` показывает closed orders, детали оплат, reprint, whole-check и partial `order_line`/quantity cancellation/refund и compatibility refund только по существующим правам `pos.check.view`, `pos.check.reprint`, `pos.precheck.cancel`, `pos.payment.refund` и состоянию открытой кассовой смены. `Отчеты` показывает только ограниченные операционные сводки на основе уже доступных reads и не вводит отдельные report permissions до backend-контракта.
+`Активность` показывает paginated/filtered closed orders, детали оплат, reprint, whole-check и partial `order_line`/quantity cancellation/refund и compatibility refund только по существующим правам `pos.check.view`, `pos.check.reprint`, `pos.precheck.cancel`, `pos.payment.refund` и состоянию открытой кассовой смены. `Отчеты` показывает только ограниченные операционные сводки на основе уже доступных reads и не вводит отдельные report permissions до backend-контракта.
 
 ## Реализовано Сейчас
 
@@ -72,6 +72,8 @@ Permission ids used by cashier UI:
 | Check cancellation/refund ledger UI by `order_line`/quantity scope | `pos.precheck.cancel`, `pos.payment.refund` | реализовано сейчас |
 | View final check / closed orders | `pos.check.view` | реализовано сейчас |
 | Reprint final check | `pos.check.reprint` | реализовано сейчас |
+
+Pagination/filter controls закрытых заказов не вводят новые permission ids; backend `pos.check.view` остается authoritative для read.
 
 ## Вне Текущего UI Объема
 

@@ -28,7 +28,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Final check creation after full payment.
 - Reprint final check from immutable snapshot.
 - Append-only financial operation ledger для full/partial cancellation и full/partial refund: `financial_operations`, `financial_operation_items`, `CancellationRecorded`, `RefundRecorded`.
-- Compatibility payment refund route and cashier UI flow: UI вызывает `/payments/{id}/refund`, backend записывает refund operation по captured payment allocation.
+- Bounded read закрытых заказов: `GET /api/v1/orders/closed` поддерживает безопасный default/max limit, `offset`, фильтры по business date/range, shift, device и check, стабильную сортировку newest-first и SQLite indexes.
+- Compatibility payment refund route сохранен как fallback: `/payments/{id}/refund` записывает refund operation по captured payment allocation, но не является primary cashier model.
 - Cashier rich cancellation/refund dialog для закрытого чека: full whole-check cancellation/refund отправляют `command_id`, `operation_kind`, явный `inventory_disposition` и reason; partial `order_line`/quantity выбирается из immutable check/precheck snapshot и отправляет `items[]`. Modifier/service/tip scopes остаются вне текущего UI flow.
 - `business_date_local` for shifts, cash sessions, payments, checks and financial operations.
 - Pricing/Discounts boundary: backend `Pricing` domain/application layer, line/order discounts, separate surcharge foundation, unified ordered modifier pipeline по `application_index`, tax-last invariant, tax profile/rule foundation, deterministic integer rounding и immutable precheck breakdown persistence.
@@ -120,6 +121,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Сверка RBAC matrix с фактическим UI и backend permissions.
 - Проверка migration/backup behavior на старой SQLite DB.
 - Богатая financial operation ledger projection для отчетности, если raw/journal payload и текущих event counters недостаточно.
+- Retention/archive/compaction больших локальных SQLite БД закрытых заказов.
 
 ## После Пилота
 

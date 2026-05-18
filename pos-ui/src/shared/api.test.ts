@@ -5,6 +5,7 @@ import {
   ApiError,
   getCurrentOrderByTable,
   getCurrentShift,
+  listClosedOrders,
   listMenuItems,
   recordCheckCancellation,
   recordCheckRefund,
@@ -228,6 +229,31 @@ describe('api request helpers', () => {
       inventory_disposition: 'return_to_stock',
       reason: 'guest left',
     });
+  });
+
+  it('requests closed orders with bounded pagination and filters', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => '[]',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await listClosedOrders({
+      businessDateLocal: '2026-05-16',
+      shiftId: 'shift-1',
+      checkId: 'check-1',
+      limit: 50,
+      offset: 100,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const url = String(fetchMock.mock.calls[0]?.[0]);
+    expect(url).toContain('/orders/closed?');
+    expect(url).toContain('business_date_local=2026-05-16');
+    expect(url).toContain('shift_id=shift-1');
+    expect(url).toContain('check_id=check-1');
+    expect(url).toContain('limit=50');
+    expect(url).toContain('offset=100');
   });
 
   it('records full check refund through ledger endpoint', async () => {

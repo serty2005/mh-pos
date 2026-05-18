@@ -600,17 +600,41 @@ func (h *Handler) listActiveOrders(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listClosedOrders(w http.ResponseWriter, r *http.Request) {
-	var meta app.CommandMeta
-	setRequestMeta(&meta, r)
-	limitStr := r.URL.Query().Get("limit")
-	limit := 50
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
-			limit = l
-		}
+	query := r.URL.Query()
+	limit, err := optionalNonNegativeInt(query.Get("limit"), "limit")
+	if err != nil {
+		httpx.Error(w, err, r)
+		return
 	}
-	v, err := h.service.ListClosedOrders(r.Context(), limit, meta)
+	offset, err := optionalNonNegativeInt(query.Get("offset"), "offset")
+	if err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	cmd := app.ListClosedOrdersCommand{
+		BusinessDateLocal:     query.Get("business_date_local"),
+		FromBusinessDateLocal: query.Get("from_business_date_local"),
+		ToBusinessDateLocal:   query.Get("to_business_date_local"),
+		ShiftID:               query.Get("shift_id"),
+		DeviceID:              query.Get("device_id"),
+		CheckID:               query.Get("check_id"),
+		Limit:                 limit,
+		Offset:                offset,
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.ListClosedOrders(r.Context(), cmd)
 	writeOK(w, r, v, err)
+}
+
+func optionalNonNegativeInt(raw, name string) (int, error) {
+	if strings.TrimSpace(raw) == "" {
+		return 0, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return 0, fmt.Errorf("%w: %s must be a non-negative integer", domain.ErrInvalid, name)
+	}
+	return value, nil
 }
 
 func (h *Handler) addOrderLine(w http.ResponseWriter, r *http.Request) {

@@ -60,6 +60,17 @@ export type PaymentRefundPayload = {
   reason?: string;
 };
 
+export type ClosedOrdersQuery = {
+  businessDateLocal?: string;
+  fromBusinessDateLocal?: string;
+  toBusinessDateLocal?: string;
+  shiftId?: string;
+  deviceId?: string;
+  checkId?: string;
+  limit?: number;
+  offset?: number;
+};
+
 let commandSequence = 0;
 
 function nextCommandId(prefix: string) {
@@ -616,8 +627,27 @@ export function retryFailedOutbox() {
   });
 }
 
-export function listClosedOrders(limit = 50) {
-  return request(`/orders/closed?limit=${limit}`, z.array(closedOrderSchema));
+export function listClosedOrders(query: number | ClosedOrdersQuery = 50) {
+  const params = new URLSearchParams();
+  if (typeof query === 'number') {
+    params.set('limit', String(query));
+  } else {
+    appendQueryParam(params, 'business_date_local', query.businessDateLocal);
+    appendQueryParam(params, 'from_business_date_local', query.fromBusinessDateLocal);
+    appendQueryParam(params, 'to_business_date_local', query.toBusinessDateLocal);
+    appendQueryParam(params, 'shift_id', query.shiftId);
+    appendQueryParam(params, 'device_id', query.deviceId);
+    appendQueryParam(params, 'check_id', query.checkId);
+    if (query.limit !== undefined) params.set('limit', String(query.limit));
+    if (query.offset !== undefined) params.set('offset', String(query.offset));
+  }
+  const suffix = params.toString();
+  return request(`/orders/closed${suffix ? `?${suffix}` : ''}`, z.array(closedOrderSchema));
+}
+
+function appendQueryParam(params: URLSearchParams, key: string, value: string | undefined) {
+  const normalized = value?.trim();
+  if (normalized) params.set(key, normalized);
 }
 
 export function refundPayment(paymentId: string, payload: string | PaymentRefundPayload = '') {

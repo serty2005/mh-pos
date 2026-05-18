@@ -41,6 +41,7 @@ Managed SQL files, реализовано сейчас:
 Cashier runtime invariants:
 
 - `orders.status` includes `open`, `locked`, `closed`, `cancelled`.
+- Список закрытых заказов поддержан индексами bounded query: `orders_closed_restaurant_closed_at`, `orders_closed_shift_closed_at`, `orders_closed_device_closed_at`, `checks_business_date_closed_at`, `checks_order_id_closed_at`.
 - `prechecks` has immutable `snapshot`, `version`, `currency_code`, `paid_total`, `remaining_total`, `discount_total`, `surcharge_total`, `tax_total`, `total`.
 - `precheck_*` breakdown tables persist lines, discounts, surcharges and tax components for audit/reprint/sync replay.
 - `payments` references `precheck_id`, not legacy `check_id`.
@@ -167,6 +168,7 @@ Managed SQL files, реализовано сейчас:
 - separate refund projection tables in Cloud;
 - fiscal/correction document storage;
 - automatic inventory stock moves from `inventory_disposition`.
+- local archive/retention/compaction policy для закрытых заказов.
 
 ## Modifier Data
 

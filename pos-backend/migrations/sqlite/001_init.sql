@@ -353,6 +353,10 @@ CREATE TABLE IF NOT EXISTS orders (
   updated_at TEXT NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS orders_closed_restaurant_closed_at ON orders(restaurant_id, status, closed_at, id);
+CREATE INDEX IF NOT EXISTS orders_closed_shift_closed_at ON orders(shift_id, status, closed_at, id);
+CREATE INDEX IF NOT EXISTS orders_closed_device_closed_at ON orders(device_id, status, closed_at, id);
+
 CREATE TABLE IF NOT EXISTS order_lines (
   id TEXT PRIMARY KEY,
   order_id TEXT NOT NULL REFERENCES orders(id),
@@ -1579,6 +1583,12 @@ WHERE remaining_total = 0 AND total >= paid_total;
 UPDATE checks
 SET remaining_total = total - paid_total
 WHERE remaining_total = 0 AND total >= paid_total;
+
+-- sqlite:repair-sql
+CREATE INDEX IF NOT EXISTS checks_business_date_closed_at ON checks(business_date_local, closed_at, id);
+
+-- sqlite:repair-sql
+CREATE INDEX IF NOT EXISTS checks_order_id_closed_at ON checks(order_id, closed_at);
 
 -- === 003_pricing_policy_sync_foundation.sql ===
 -- sqlite:repair-column tax_profiles cloud_version
