@@ -86,6 +86,8 @@ SQLite: реализовано сейчас / основа:
 - cashier-facing inventory mutation flow;
 - app services that post stock documents from final checks.
 
+Modifier acceptance реализовано сейчас только в order/pricing/precheck/check storage path: `order_line_modifiers` и `precheck_line_modifiers` сохраняют selected modifiers для replay/audit/reprint, но эти rows не создают `stock_moves` и не раскрываются в recipe lines.
+
 UOM/status audit:
 
 - unit fields остаются строками; UOM reference table with separate `code`, `name`, `short_name` and translations не реализована сейчас;

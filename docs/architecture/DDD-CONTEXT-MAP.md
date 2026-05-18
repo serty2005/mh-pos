@@ -21,7 +21,7 @@
 | `Catalog` | catalog item identity, menu-visible item identity, services, folders, tags, units, SKU, menu publication identity, modifier master data | реализовано сейчас for catalog/menu read model, folders/tags/services and modifier publication/ingest | print/reporting polish for modifiers if accepted | allergens/nutrition/media-heavy catalog | pricing, tax policy, order facts |
 | `Pricing` | price policy, discounts, surcharges, manual override policy, rounding inputs for totals | реализовано сейчас: calculation engine, line/order discounts, synced automatic discount/surcharge policies, selected modifier pricing, separate surcharge foundation, unified ordered modifier pipeline by `application_index`, tax-last invariant, integer rounding, pricing preview, `pricing_policy` reference ingest for service-charge rules | policy-id-backed manual runtime adjustments if pilot acceptance requires central policy | advanced promos, dynamic pricing, loyalty coupling | catalog identity, tax/fiscal law mapping, UI authoritative totals |
 | `Fiscal / Tax` | tax profiles/policy, fiscal/legal receipt mapping, fiscal adapter boundary | реализовано сейчас: tax profile/rule foundation, inclusive/exclusive percentage/fixed components, precheck tax breakdown, Cloud -> Edge `pricing_policy` ingest for tax profiles/rules | regional/legal policy hardening if pilot needs tax | real fiscalization adapter | PSP/payment processor, order lifecycle |
-| `Order` | orders, order lines, selected modifiers, order status, precheck issue intent | реализовано сейчас for `Order -> Precheck` runtime with selected modifiers | service/modifier pilot UX hardening if accepted | split/merge/transfer/courses | inventory mutation, payment facts, pricing policy ownership |
+| `Order` | orders, order lines, selected modifiers, order status, precheck issue intent | реализовано сейчас for `Order -> Precheck` runtime with backend-authoritative selected modifier add/edit validation | service pilot UX hardening if accepted | split/merge/transfer/courses | inventory mutation, payment facts, pricing policy ownership |
 | `Precheck` | immutable precheck snapshot, selected modifier snapshot, order lock/cancel lifecycle | реализовано сейчас | print/reporting snapshot polish if accepted | print device orchestration | payment processor and stock movement |
 | `Payment` | captured payments, payment attempts, payment methods, provider metadata | реализовано сейчас for manual/trusted `cash/card/other` | PSP boundary decision only if pilot needs it | real PSP integration | fiscalization, order line pricing, inventory, cancellation/refund ledger |
 | `Check` | final paid document after full precheck payment, immutable check snapshot | реализовано сейчас | fiscal/tax fields only if policy exists | legal fiscal receipt adapter | PSP authorization and stock consumption |
@@ -77,9 +77,9 @@ Pricing/Discounts:
 Modifiers:
 
 - реализовано сейчас: Cloud owns modifier master data and publishes modifier groups/options/links;
-- реализовано сейчас: POS Edge stores selected modifiers on order lines and immutable precheck/check snapshots;
-- реализовано сейчас: backend pricing includes modifier price and cashier UI sends selected modifiers as a backend command;
-- запланировано далее: print/reporting/audit polish after pilot acceptance.
+- реализовано сейчас: POS Edge stores selected modifiers on order lines and immutable precheck/check/reprint snapshots;
+- реализовано сейчас: backend pricing includes modifier price, validates group/option/link/count constraints, and cashier UI sends selected modifiers as add/edit backend commands;
+- вне текущего объема: modifier-to-recipe expansion, automatic stock consumption and return-to-stock moves.
 
 Recipes/Inventory:
 

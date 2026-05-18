@@ -58,6 +58,7 @@ Permission ids used by cashier UI:
 | Create order | `pos.order.create` | реализовано сейчас |
 | Add order line | `pos.order.add_line` | реализовано сейчас |
 | Select modifiers while adding order line | `pos.order.add_line` | реализовано сейчас |
+| Edit modifiers on active open order line | `pos.order.change_quantity` | реализовано сейчас |
 | Change line quantity | `pos.order.change_quantity` | реализовано сейчас |
 | Void line | `pos.order.void_line` | реализовано сейчас |
 | Issue precheck | `pos.precheck.issue` | реализовано сейчас |

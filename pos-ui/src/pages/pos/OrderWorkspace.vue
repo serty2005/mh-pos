@@ -94,6 +94,7 @@
             <q-btn flat round class="stepper-button" icon="add" :aria-label="terminal.t('actions.add')" :disable="!terminal.canChangeOrderLine.value" @click="terminal.changeQuantity(line.id, line.quantity + 1)" />
           </div>
           <strong class="line-total">{{ terminal.money(line.total_price, terminal.orderCurrency.value) }}</strong>
+          <q-btn flat round class="stepper-button" icon="tune" :disable="!terminal.canChangeOrderLine.value || !terminal.canEditLineModifiers(line.id)" :aria-label="terminal.t('actions.editModifiers')" @click="terminal.editLineModifiers(line.id)" />
           <q-btn flat round class="stepper-button" icon="delete" color="negative" :disable="!terminal.canVoidOrderLine.value" :aria-label="terminal.t('actions.voidLine')" @click="terminal.voidLine(line.id)" />
         </div>
       </div>

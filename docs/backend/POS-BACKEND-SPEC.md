@@ -53,6 +53,7 @@
 - `GET /api/v1/orders/{id}`
 - `POST /api/v1/orders/{id}/lines`
 - `PATCH /api/v1/orders/{id}/lines/{line_id}`
+- `PATCH /api/v1/orders/{id}/lines/{line_id}/modifiers`
 - `PATCH /api/v1/orders/{id}/lines/{line_id}/details`
 - `POST /api/v1/orders/{id}/lines/{line_id}/void`
 - `GET /api/v1/orders/{id}/pricing`
@@ -162,7 +163,7 @@ Pricing contract:
 - Tax foundation supports `tax_profiles`, `tax_rules`, percentage/fixed components, inclusive/exclusive mode, compound foundation and tax exempt profile foundation; inclusive tax is included in `tax_total`, but does not increase grand total.
 - Precheck issue persists immutable breakdown in `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`.
 - Menu price/tax rule changes after precheck issue do not mutate old precheck/check snapshots.
-- Selected modifiers are priced by backend calculation and persisted in order/precheck/check snapshots.
+- Selected modifiers are priced by backend calculation and persisted in `order_line_modifiers`, precheck/check snapshots and reprint payloads. `POST /orders/{id}/lines` and `PATCH /orders/{id}/lines/{line_id}/modifiers` validate required/min/max, active group/option, option-group membership, menu item link and non-negative option price. Modifier update is allowed only for active lines of open editable orders without active precheck/finalized check and writes `OrderLineModifiersUpdated` to outbox/local events.
 - Service items use the same order/pricing/precheck/check flow as other sellable menu items and do not imply recipe semantics.
 - Catalog item lifecycle/availability audit: Edge runtime хранит active catalog/menu read models из Cloud lifecycle status. Temporary unavailability не реализована как глобальный catalog item status; запланировано далее моделировать ее как overlay menu/restaurant/terminal-group, если это будет принято.
 - UOM audit: текущий runtime хранит string units (`base_unit`, recipe `unit`, stock move `unit`). Separate UOM reference model with machine `code`, `name`, `short_name` and translations не реализована сейчас, поэтому новый runtime code не должен считать display labels canonical UOM codes.
@@ -244,7 +245,7 @@ Pricing contract:
 - `catalog` применяет catalog folders, folder parameters, catalog tags, item tags, item kinds `dish`, `good`, `semi_finished`, `service` и modifier groups/options/bindings.
 - `menu` применяет menu items, menu item `item_type` и effective menu item modifier group links после применения menu items.
 - Cloud publication package для POS Edge должен соответствовать typed ingest DTO `ApplyMasterDataCommand`: modifier groups/options/bindings публикуются top-level массивами с `restaurant_id` и без Cloud lifecycle fields, а `menu_item_modifier_groups` остается link-only (`menu_item_id`, `modifier_group_id`, `sort_order`).
-- `required`, `min_count`, `max_count`, `active` принадлежат top-level `modifier_groups[]`; эти поля не публикуются внутри `menu_item_modifier_groups[]` и не встраиваются как rich `menu_items[].modifier_groups[]` в ingest payload.
+- `required`, `min_count`, `max_count`, `active` принадлежат top-level `modifier_groups[]`; эти поля не публикуются внутри `menu_item_modifier_groups[]` и не встраиваются как rich `menu_items[].modifier_groups[]` в ingest payload. Inventory/recipe expansion для modifiers не выполняется в POS order/pricing/precheck/check runtime.
 - `restaurants` применяет Cloud-authored settings и `active`; опубликованный active restaurant сохраняется в Edge read model как active row.
 - `pricing_policy` применяет `tax_profiles`, `tax_rules`, `service_charge_rules` и automatic discount/surcharge `pricing_policies` с sync metadata.
 - Strict JSON decode отклоняет неизвестные request fields; unsupported stream names отклоняются до partial apply.

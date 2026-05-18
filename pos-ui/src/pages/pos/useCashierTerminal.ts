@@ -42,6 +42,7 @@ import {
   reprintPrecheck,
   retryFailedOutbox,
   updateOrderLineDetails,
+  updateOrderLineModifiers,
   voidOrderLine,
   type CashDrawerEventType,
   type FinancialOperationItemPayload,
@@ -74,6 +75,7 @@ export function invalidatePaymentConflictQueries(queryClient: Pick<QueryClient, 
 type FlowStepState = 'ready' | 'active' | 'blocked' | 'pending';
 type CompensationMode = 'payment_refund' | 'check_refund' | 'check_cancellation';
 type LedgerScope = 'whole_check' | 'order_line';
+type ModifierDialogMode = 'add' | 'edit';
 export type ClosedOrderCompensationAction = 'check_cancellation' | 'check_refund' | 'payment_refund';
 type BlockingNotice = {
   titleKey: string;
@@ -154,6 +156,8 @@ export function useCashierTerminal() {
   const closedOrdersOffset = ref(0);
   const closedOrdersBusinessDate = ref('');
   const modifierDialog = ref(false);
+  const modifierDialogMode = ref<ModifierDialogMode>('add');
+  const modifierLineId = ref('');
   const modifierMenuItem = ref<MenuItem | null>(null);
   const modifierQuantities = ref<Record<string, number>>({});
   const modifierValidationKey = ref('');
@@ -530,6 +534,16 @@ export function useCashierTerminal() {
     onError: showBusinessError,
   });
 
+  const modifierUpdateMutation = useMutation({
+    mutationFn: (payload: { lineId: string; selectedModifiers: SelectedModifierPayload[] }) => updateOrderLineModifiers(activeOrder.value?.id ?? '', payload.lineId, payload.selectedModifiers),
+    onSuccess(result) {
+      selectedOrderLineId.value = result.id;
+      closeModifierDialog();
+      void refreshOrder();
+    },
+    onError: showBusinessError,
+  });
+
   const quantityMutation = useMutation({
     mutationFn: (payload: { lineId: string; quantity: number }) => changeOrderLineQuantity(activeOrder.value?.id ?? '', payload.lineId, payload.quantity),
     onSuccess: refreshOrder,
@@ -746,8 +760,36 @@ export function useCashierTerminal() {
       addLineMutation.mutate({ menuItemId: item.id });
       return;
     }
+    modifierDialogMode.value = 'add';
+    modifierLineId.value = '';
     modifierMenuItem.value = item;
     modifierQuantities.value = {};
+    modifierValidationKey.value = '';
+    modifierDialog.value = true;
+  }
+
+  function canEditLineModifiers(lineId: string) {
+    const line = activeLines.value.find((item) => item.id === lineId);
+    const item = line ? menu.data.value?.find((menuItem) => menuItem.id === line.menu_item_id) : null;
+    return Boolean(item?.modifier_groups.some((group) => group.active && group.options.some((option) => option.active)));
+  }
+
+  function editLineModifiers(lineId: string) {
+    const line = activeLines.value.find((item) => item.id === lineId);
+    if (!line) return;
+    const item = menu.data.value?.find((menuItem) => menuItem.id === line.menu_item_id);
+    if (!item || item.modifier_groups.filter((group) => group.active && group.options.some((option) => option.active)).length === 0) {
+      $q.notify({ type: 'warning', message: t('pos.modifierEditUnavailable') });
+      return;
+    }
+    const quantities: Record<string, number> = {};
+    for (const modifier of line.modifiers) {
+      quantities[modifier.modifier_option_id] = modifier.quantity;
+    }
+    modifierDialogMode.value = 'edit';
+    modifierLineId.value = line.id;
+    modifierMenuItem.value = item;
+    modifierQuantities.value = quantities;
     modifierValidationKey.value = '';
     modifierDialog.value = true;
   }
@@ -783,11 +825,18 @@ export function useCashierTerminal() {
       return;
     }
     if (!modifierMenuItem.value) return;
+    if (modifierDialogMode.value === 'edit') {
+      if (!modifierLineId.value) return;
+      modifierUpdateMutation.mutate({ lineId: modifierLineId.value, selectedModifiers: selectedModifierPayload.value });
+      return;
+    }
     addLineMutation.mutate({ menuItemId: modifierMenuItem.value.id, selectedModifiers: selectedModifierPayload.value });
   }
 
   function closeModifierDialog() {
     modifierDialog.value = false;
+    modifierDialogMode.value = 'add';
+    modifierLineId.value = '';
     modifierMenuItem.value = null;
     modifierQuantities.value = {};
     modifierValidationKey.value = '';
@@ -1136,6 +1185,8 @@ export function useCashierTerminal() {
     closedOrdersOffset,
     closedOrdersBusinessDate,
     modifierDialog,
+    modifierDialogMode,
+    modifierLineId,
     modifierMenuItem,
     modifierQuantities,
     modifierValidationKey,
@@ -1223,6 +1274,7 @@ export function useCashierTerminal() {
     cashDrawerMutation,
     createOrderMutation,
     addLineMutation,
+    modifierUpdateMutation,
     issuePrecheckMutation,
     reprintPrecheckMutation,
     reprintCheckMutation,
@@ -1238,6 +1290,8 @@ export function useCashierTerminal() {
     primeLineDetailsDraft,
     saveSelectedLineDetails,
     openMenuItem,
+    canEditLineModifiers,
+    editLineModifiers,
     modifierGroupCount,
     changeModifierQuantity,
     submitModifierSelection,

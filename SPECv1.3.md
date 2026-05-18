@@ -29,10 +29,10 @@
 - cash sessions and cash drawer events;
 - halls/tables read model;
 - menu/catalog read model;
-- order create/read, active lines with selected modifiers, quantity change, void line;
+- order create/read, active lines with selected modifiers, backend-authoritative modifier validation, modifier edit for active open lines, quantity change, void line;
 - `Order -> Precheck -> Payment -> Check`;
 - service catalog items as sellable POS items;
-- cashier modifier selection flow for menu items with modifier groups;
+- cashier modifier selection/edit flow for menu items with modifier groups;
 - controlled precheck/check reprint from immutable snapshots;
 - append-only cancellation/refund ledger, cashier UI для full whole-check и partial `order_line`/quantity cancellation/refund с явным `inventory_disposition` и compatibility payment refund fallback;
 - Edge -> Cloud operational outbox foundation;
@@ -79,10 +79,11 @@
 - `GET /api/v1/orders/closed`
 - `POST /api/v1/orders/{id}/lines`
 - `PATCH /api/v1/orders/{id}/lines/{line_id}`
+- `PATCH /api/v1/orders/{id}/lines/{line_id}/modifiers`
 - `POST /api/v1/orders/{id}/lines/{line_id}/void`
 - `POST /api/v1/orders/{id}/close`
 
-Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, quantity, unit price, total price и selected modifiers. `SelectedModifierCommand.Quantity` означает количество выбранной modifier option на всю строку заказа; line total считается как `unit_price * line.quantity + sum(selected_modifier.total_price)`.
+Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, quantity, unit price, total price и selected modifiers. `SelectedModifierCommand.Quantity` означает количество выбранной modifier option на всю строку заказа; line total считается как `unit_price * line.quantity + sum(selected_modifier.total_price)`. Add/update modifiers выполняются только для активной строки открытого заказа без active precheck/final check; backend проверяет required/min/max, active group/option, принадлежность option к group, link menu item -> modifier group и неотрицательную цену option.
 
 `GET /api/v1/orders/closed` реализовано сейчас как bounded read для activity UI: default `limit=50`, max `limit=100`, `offset`, stable newest-first sort по закрытию и `id`, фильтры `business_date_local`, `from_business_date_local`, `to_business_date_local`, `shift_id`, `device_id`, `check_id`. Без фильтра API все равно возвращает только bounded latest page. `GET /api/v1/sync/outbox` и `GET /api/v1/sync/local-events` также bounded: backend default `limit=100`, oversized/empty limit returns bounded default, POS UI запрашивает `limit=5`. Archive/retention/compaction закрытых заказов запланированы далее и не являются текущим runtime.
 
@@ -237,15 +238,18 @@ Boundary rules:
 - Menu item может ссылаться на один или несколько modifier groups; groups/options также могут иметь binding foundation через menu item, catalog item, folder или tag.
 - Modifier group хранит `required`, `min_count`, `max_count`, sort order и lifecycle status.
 - Modifier option хранит name, real modifier price, currency, active/status и sort order; modifier без техкарты и с нулевой ценой допустим.
-- POS Edge order line model хранит selected modifiers.
-- Modifier price impact входит в authoritative backend calculation.
-- Precheck/check snapshots содержат выбранные modifiers и их финансовый эффект.
-- Cashier UI открывает modifier selection dialog для menu item с groups, отправляет selected modifiers в backend и отображает выбранные modifiers в активном заказе.
+- POS Edge order line model хранит selected modifiers в `order_line_modifiers`; открытая активная строка поддерживает полную замену набора modifiers через backend API.
+- Modifier price impact входит в authoritative backend calculation; UI не является источником истины для цен, налогов или итогов.
+- Precheck/check snapshots и reprint responses содержат выбранные modifiers с name, quantity, unit price и total price; reprint не читает текущий каталог для восстановления старых modifiers.
+- Cashier UI открывает modifier selection dialog для menu item с groups при добавлении и редактировании активной строки, инициализирует текущие selected modifiers, показывает required/min/max UX validation и отправляет selected modifiers в backend.
 
 Запланировано далее:
 
-- Печатные формы, reporting projections и audit details для modifiers должны быть уточнены отдельно под pilot acceptance.
-- Modifier-to-recipe expansion относится к recipes/inventory, а не к текущему modifier runtime.
+- Rich partial cancellation/refund UI для scope `modifier_line`, если pilot acceptance потребует отдельные операции по конкретным modifier строкам.
+
+Вне текущего объема:
+
+- Modifier-to-recipe expansion, automatic stock consumption и return-to-stock stock moves относятся к recipes/inventory, а не к текущему modifier runtime.
 
 ## Recipes And Inventory
 
