@@ -533,6 +533,13 @@ export function changeOrderLineQuantity(orderId: string, lineId: string, quantit
   });
 }
 
+export function updateOrderLineModifiers(orderId: string, lineId: string, selectedModifiers: SelectedModifierPayload[]) {
+  return request(`/orders/${encodeURIComponent(orderId)}/lines/${encodeURIComponent(lineId)}/modifiers`, orderLineSchema, {
+    method: 'PATCH',
+    body: JSON.stringify({ selected_modifiers: selectedModifiers }),
+  });
+}
+
 export function updateOrderLineDetails(orderId: string, lineId: string, course: string, comment: string) {
   return request(`/orders/${encodeURIComponent(orderId)}/lines/${encodeURIComponent(lineId)}/details`, orderLineSchema, {
     method: 'PATCH',

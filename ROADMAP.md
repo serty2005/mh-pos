@@ -17,7 +17,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Menu/catalog read model.
 - Order create/read/current/closed.
 - Add/change/void order lines.
-- Selected modifiers in order lines, modifier price impact in backend pricing, modifier snapshots in precheck/check and cashier modifier selection UI.
+- Selected modifiers in order lines, backend-authoritative required/min/max/active/link validation, modifier edit for active open lines, modifier price impact in backend pricing, modifier snapshots/reprint payloads in precheck/check and cashier modifier selection/edit UI.
 - Service catalog items in Cloud -> Edge sync, POS menu read model, separate cashier UI section and order/pricing/precheck/check flow.
 - `IssuePrecheck`.
 - List/get prechecks.
@@ -100,8 +100,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - довести Cloud-authored UI workflow и policy-id-backed manual runtime adjustments, если pilot acceptance требует централизованного управления всеми ручными сценариями;
   - уточнить operator policy для manual discount/surcharge permissions в pilot script.
 - Modifiers:
-  - runtime, pricing, snapshots and cashier UI flow реализованы сейчас;
-  - остается pilot acceptance по UX деталям, печатным формам и audit/sync требованиям.
+  - runtime, backend validation, active-line edit API/UI, pricing, snapshots, reprint payloads and cashier UI flow реализованы сейчас;
+  - modifier-to-recipe expansion, automatic stock consumption and return-to-stock moves вне текущего объема pilot modifier acceptance.
 - Recipes/inventory:
   - старая recipe validation была частичной; новая policy запрещает `dish` как компонент и разрешает `good`/`semi_finished`;
   - ручной stock document/move service реализован как отдельный Inventory boundary, записи остаются local-only и не запускаются из refund/cancellation endpoints;

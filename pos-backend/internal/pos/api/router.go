@@ -66,6 +66,7 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Get("/orders/{id}", h.getOrder)
 		r.Post("/orders/{id}/lines", h.addOrderLine)
 		r.Patch("/orders/{id}/lines/{line_id}", h.changeOrderLineQuantity)
+		r.Patch("/orders/{id}/lines/{line_id}/modifiers", h.updateOrderLineModifiers)
 		r.Patch("/orders/{id}/lines/{line_id}/details", h.updateOrderLineDetails)
 		r.Post("/orders/{id}/lines/{line_id}/void", h.voidOrderLine)
 		r.Post("/orders/{id}/discounts", h.addOrderDiscount)
@@ -662,6 +663,19 @@ func (h *Handler) changeOrderLineQuantity(w http.ResponseWriter, r *http.Request
 	cmd.OrderID = chi.URLParam(r, "id")
 	cmd.LineID = chi.URLParam(r, "line_id")
 	v, err := h.service.ChangeOrderLineQuantity(r.Context(), cmd)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) updateOrderLineModifiers(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdateOrderLineModifiersCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	cmd.OrderID = chi.URLParam(r, "id")
+	cmd.LineID = chi.URLParam(r, "line_id")
+	v, err := h.service.UpdateOrderLineModifiers(r.Context(), cmd)
 	writeOK(w, r, v, err)
 }
 

@@ -3,7 +3,7 @@
     <q-card class="modifier-dialog">
       <q-card-section class="dialog-head">
         <div>
-          <p class="eyebrow">{{ terminal.t('pos.modifiers') }}</p>
+          <p class="eyebrow">{{ terminal.t(terminal.modifierDialogMode.value === 'edit' ? 'pos.editModifiers' : 'pos.modifiers') }}</p>
           <h2>{{ terminal.modifierMenuItem.value?.name }}</h2>
         </div>
         <strong v-if="terminal.selectedModifierTotal.value > 0" class="modifier-total">
@@ -61,9 +61,10 @@
         <q-btn
           color="primary"
           unelevated
-          icon="add_shopping_cart"
-          :label="terminal.t('actions.add')"
-          :loading="terminal.addLineMutation.isPending.value"
+          :icon="terminal.modifierDialogMode.value === 'edit' ? 'save' : 'add_shopping_cart'"
+          :label="terminal.t(terminal.modifierDialogMode.value === 'edit' ? 'actions.save' : 'actions.add')"
+          :loading="terminal.modifierDialogMode.value === 'edit' ? terminal.modifierUpdateMutation.isPending.value : terminal.addLineMutation.isPending.value"
+          :disable="!terminal.canSubmitModifierSelection.value"
           @click="terminal.submitModifierSelection"
         />
       </q-card-actions>

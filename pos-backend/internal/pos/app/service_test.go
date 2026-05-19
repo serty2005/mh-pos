@@ -5196,3 +5196,153 @@ func outboxEventCommandIDsByType(t *testing.T, f *fixture, wanted []string) map[
 }
 
 var _ clock.Clock = fixedClock{}
+
+func seedSpiceModifierFixture(t *testing.T, f *fixture, required bool, minCount, maxCount int, optionActive bool, priceMinor int64) {
+	t.Helper()
+	requiredValue := 0
+	if required {
+		requiredValue = 1
+	}
+	activeValue := 0
+	if optionActive {
+		activeValue = 1
+	}
+	execTestSQL(t, f, `INSERT INTO modifier_groups(id,restaurant_id,name,required,min_count,max_count,active,cloud_version) VALUES ('group-spice',?,'Spice',?,?,?,?,1)`, f.restaurant.ID, requiredValue, minCount, maxCount, 1)
+	execTestSQL(t, f, `INSERT INTO modifier_options(id,restaurant_id,modifier_group_id,name,price_minor,active,cloud_version) VALUES ('option-hot',?,'group-spice','Hot',?,?,1)`, f.restaurant.ID, priceMinor, activeValue)
+	execTestSQL(t, f, `INSERT INTO menu_item_modifier_groups(menu_item_id,modifier_group_id,sort_order,cloud_version) VALUES (?, 'group-spice', 10, 1)`, f.menuItem.ID)
+}
+
+func TestAddOrderLineModifierAuthoritativeValidation(t *testing.T) {
+	tests := []struct {
+		name      string
+		seed      func(t *testing.T, f *fixture)
+		selected  []app.SelectedModifierCommand
+		wantError string
+	}{
+		{
+			name: "required group missing",
+			seed: func(t *testing.T, f *fixture) {
+				seedSpiceModifierFixture(t, f, true, 1, 2, true, 250)
+			},
+			wantError: "required modifier group is missing",
+		},
+		{
+			name: "max count exceeded",
+			seed: func(t *testing.T, f *fixture) {
+				seedSpiceModifierFixture(t, f, false, 0, 1, true, 250)
+			},
+			selected:  []app.SelectedModifierCommand{{ModifierGroupID: "group-spice", ModifierOptionID: "option-hot", Quantity: 2}},
+			wantError: "max_count",
+		},
+		{
+			name: "inactive option rejected",
+			seed: func(t *testing.T, f *fixture) {
+				seedSpiceModifierFixture(t, f, false, 0, 2, false, 250)
+			},
+			selected:  []app.SelectedModifierCommand{{ModifierGroupID: "group-spice", ModifierOptionID: "option-hot", Quantity: 1}},
+			wantError: "option is not active",
+		},
+		{
+			name: "option must belong to linked group",
+			seed: func(t *testing.T, f *fixture) {
+				seedSpiceModifierFixture(t, f, false, 0, 2, true, 250)
+				execTestSQL(t, f, `INSERT INTO modifier_groups(id,restaurant_id,name,required,min_count,max_count,active,cloud_version) VALUES ('group-sauce',?,'Sauce',0,0,2,1,1)`, f.restaurant.ID)
+				execTestSQL(t, f, `INSERT INTO modifier_options(id,restaurant_id,modifier_group_id,name,price_minor,active,cloud_version) VALUES ('option-bbq',?,'group-sauce','BBQ',100,1,1)`, f.restaurant.ID)
+			},
+			selected:  []app.SelectedModifierCommand{{ModifierGroupID: "group-spice", ModifierOptionID: "option-bbq", Quantity: 1}},
+			wantError: "option is not active in group",
+		},
+		{
+			name: "group must be linked to menu item",
+			seed: func(t *testing.T, f *fixture) {
+				execTestSQL(t, f, `INSERT INTO modifier_groups(id,restaurant_id,name,required,min_count,max_count,active,cloud_version) VALUES ('group-spice',?,'Spice',0,0,2,1,1)`, f.restaurant.ID)
+				execTestSQL(t, f, `INSERT INTO modifier_options(id,restaurant_id,modifier_group_id,name,price_minor,active,cloud_version) VALUES ('option-hot',?,'group-spice','Hot',250,1,1)`, f.restaurant.ID)
+			},
+			selected:  []app.SelectedModifierCommand{{ModifierGroupID: "group-spice", ModifierOptionID: "option-hot", Quantity: 1}},
+			wantError: "menu item has no modifiers",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.openShift(t)
+			tt.seed(t, f)
+			order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMetaCommand("cmd-create-" + strings.ReplaceAll(tt.name, " ", "-")), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMetaCommand("cmd-add-" + strings.ReplaceAll(tt.name, " ", "-")), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1, SelectedModifiers: tt.selected})
+			if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantError, err)
+			}
+		})
+	}
+}
+
+func TestUpdateOrderLineModifiersRepricesPersistsAndWritesOutbox(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	seedSpiceModifierFixture(t, f, false, 0, 3, true, 250)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMetaCommand("cmd-create-update-modifiers"), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMetaCommand("cmd-add-update-modifiers"), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := f.service.UpdateOrderLineModifiers(f.ctx, app.UpdateOrderLineModifiersCommand{
+		CommandMeta: f.edgeMetaCommand("cmd-update-modifiers"),
+		OrderID:     order.ID,
+		LineID:      line.ID,
+		SelectedModifiers: []app.SelectedModifierCommand{{
+			ModifierGroupID:  "group-spice",
+			ModifierOptionID: "option-hot",
+			Quantity:         2,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.TotalPrice != 2500 || len(updated.Modifiers) != 1 || updated.Modifiers[0].TotalPrice != 500 {
+		t.Fatalf("expected repriced selected modifiers, got %+v", updated)
+	}
+	var modifierRows, outboxRows int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM order_line_modifiers WHERE order_line_id = ? AND modifier_option_id = 'option-hot' AND total_price = 500`, line.ID).Scan(&modifierRows); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM pos_sync_outbox WHERE command_type = 'OrderLineModifiersUpdated' AND aggregate_id = ?`, order.ID).Scan(&outboxRows); err != nil {
+		t.Fatal(err)
+	}
+	if modifierRows != 1 || outboxRows != 1 {
+		t.Fatalf("expected persisted modifier and outbox event, modifierRows=%d outboxRows=%d", modifierRows, outboxRows)
+	}
+	calculation, err := f.service.CalculateOrderPricing(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calculation.SubtotalMinor != 2500 || len(calculation.Lines[0].Modifiers) != 1 {
+		t.Fatalf("expected pricing with updated modifiers, got %+v", calculation)
+	}
+}
+
+func TestUpdateOrderLineModifiersBlockedByActivePrecheck(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	seedSpiceModifierFixture(t, f, false, 0, 3, true, 250)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMetaCommand("cmd-create-locked-modifiers"), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMetaCommand("cmd-add-locked-modifiers"), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMetaCommand("cmd-precheck-locked-modifiers"), OrderID: order.ID}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.UpdateOrderLineModifiers(f.ctx, app.UpdateOrderLineModifiersCommand{CommandMeta: f.edgeMetaCommand("cmd-update-locked-modifiers"), OrderID: order.ID, LineID: line.ID})
+	if err == nil || !strings.Contains(err.Error(), "cannot change non-open order") {
+		t.Fatalf("expected locked order conflict, got %v", err)
+	}
+}
