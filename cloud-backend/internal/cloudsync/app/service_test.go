@@ -40,10 +40,10 @@ func TestReceiveDuplicateEnvelopeReturnsStableAckAndKeepsOneReceipt(t *testing.T
 	if got := string(repo.RawPayload(first.CloudReceiptID)); got != string(raw) {
 		t.Fatalf("raw payload was not preserved\nwant=%s\ngot=%s", raw, got)
 	}
-	if first.IdempotencyKey != "restaurant-1:device-1:event-1" {
+	if first.IdempotencyKey != "restaurant-1:device-1:018f0000-0000-7000-8000-000000000001" {
 		t.Fatalf("unexpected idempotency key %q", first.IdempotencyKey)
 	}
-	if first.EdgeEventID != first.EventID || first.EventID != "event-1" {
+	if first.EdgeEventID != first.EventID || first.EventID != "018f0000-0000-7000-8000-000000000001" {
 		t.Fatalf("expected edge_event_id to equal event_id, got %+v", first)
 	}
 }
@@ -181,7 +181,7 @@ func TestReceiveRefundRecordedReplaysIdempotentlyAndUpdatesShiftFinance(t *testi
 func TestReceiveCancellationRecordedReplaysIdempotentlyAndKeepsCurrentEventStats(t *testing.T) {
 	repo := memory.NewRepository()
 	service := app.NewService(repo, fixedClock{})
-	raw := sampleFinancialOperationEnvelope(t, contracts.EventCancellationRecorded, "event-cancel-1", "command-cancel-1", "financial-operation-cancel-1", "cancellation", 1000, "shift-sale-1", "2026-05-05")
+	raw := sampleFinancialOperationEnvelope(t, contracts.EventCancellationRecorded, "018f0000-0000-7000-8000-0000000000c1", "command-cancel-1", "financial-operation-cancel-1", "cancellation", 1000, "shift-sale-1", "2026-05-05")
 
 	first, err := service.Receive(context.Background(), raw)
 	if err != nil {
@@ -321,7 +321,7 @@ func sampleEnvelope(t *testing.T) []byte {
 	t.Helper()
 	body := map[string]any{
 		"version":           "1",
-		"event_id":          "event-1",
+		"event_id":          "018f0000-0000-7000-8000-000000000001",
 		"command_id":        "command-1",
 		"event_type":        "OrderCreated",
 		"aggregate_type":    "Order",
@@ -360,7 +360,7 @@ func sampleEnvelope(t *testing.T) []byte {
 
 func sampleRefundRecordedEnvelope(t *testing.T) []byte {
 	t.Helper()
-	return sampleFinancialOperationEnvelope(t, contracts.EventRefundRecorded, "event-refund-1", "command-refund-1", "financial-operation-1", "refund", 1000, "shift-refund-1", "2026-05-06")
+	return sampleFinancialOperationEnvelope(t, contracts.EventRefundRecorded, "018f0000-0000-7000-8000-0000000000f1", "command-refund-1", "financial-operation-1", "refund", 1000, "shift-refund-1", "2026-05-06")
 }
 
 func sampleFinancialOperationEnvelope(t *testing.T, eventType contracts.EventType, eventID, commandID, operationID, operationType string, amount int64, shiftID, businessDate string) []byte {

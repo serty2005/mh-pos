@@ -14,7 +14,7 @@ func TestIdempotencyKeyUsesRestaurantDeviceAndEdgeEventID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if key != "restaurant-1:device-1:event-1" {
+	if key != "restaurant-1:device-1:018f0000-0000-7000-8000-000000000001" {
 		t.Fatalf("unexpected key %q", key)
 	}
 	if contracts.EdgeEventID(envelope) != envelope.EventID {
@@ -65,7 +65,7 @@ func validEnvelope(t *testing.T, eventType contracts.EventType) contracts.SyncEn
 	t.Helper()
 	raw := []byte(`{
 	  "version":"1",
-	  "event_id":"event-1",
+	  "event_id":"018f0000-0000-7000-8000-000000000001",
 	  "command_id":"command-1",
 	  "event_type":"PaymentCaptured",
 	  "aggregate_type":"Payment",

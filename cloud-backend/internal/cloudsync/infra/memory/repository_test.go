@@ -16,13 +16,13 @@ func TestRepositoryDedupesByIdempotencyKey(t *testing.T) {
 	receipt := app.EdgeEventReceipt{
 		Envelope: contracts.SyncEnvelope{
 			Version:      "1",
-			EventID:      "event-1",
+			EventID:      "018f0000-0000-7000-8000-000000000001",
 			CommandID:    "command-1",
 			RestaurantID: ptr("restaurant-1"),
 			DeviceID:     "device-1",
 		},
-		IdempotencyKey:   "restaurant-1:device-1:event-1",
-		RawPayload:       []byte(`{"event_id":"event-1"}`),
+		IdempotencyKey:   "restaurant-1:device-1:018f0000-0000-7000-8000-000000000001",
+		RawPayload:       []byte(`{"event_id":"018f0000-0000-7000-8000-000000000001"}`),
 		RawPayloadSHA256: "hash-1",
 		CloudReceivedAt:  time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC),
 	}
@@ -48,7 +48,7 @@ func TestRepositoryTracksProjections(t *testing.T) {
 	receipt := app.EdgeEventReceipt{
 		Envelope: contracts.SyncEnvelope{
 			Version:      "1",
-			EventID:      "event-payment-1",
+			EventID:      "018f0000-0000-7000-8000-0000000000a1",
 			CommandID:    "command-payment-1",
 			EventType:    contracts.EventPaymentCaptured,
 			RestaurantID: ptr("restaurant-1"),
@@ -57,8 +57,8 @@ func TestRepositoryTracksProjections(t *testing.T) {
 			OccurredAt:   time.Date(2026, 5, 5, 9, 0, 0, 0, time.UTC),
 			Payload:      mustPayloadJSON(t, map[string]any{"id": "payment-1", "amount": 1500}),
 		},
-		IdempotencyKey:   "restaurant-1:device-1:event-payment-1",
-		RawPayload:       []byte(`{"event_id":"event-payment-1"}`),
+		IdempotencyKey:   "restaurant-1:device-1:018f0000-0000-7000-8000-0000000000a1",
+		RawPayload:       []byte(`{"event_id":"018f0000-0000-7000-8000-0000000000a1"}`),
 		RawPayloadSHA256: "hash-1",
 		CloudReceivedAt:  time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC),
 	}
@@ -66,12 +66,12 @@ func TestRepositoryTracksProjections(t *testing.T) {
 		t.Fatal(err)
 	}
 	refund := receipt
-	refund.Envelope.EventID = "event-payment-refund-1"
+	refund.Envelope.EventID = "018f0000-0000-7000-8000-0000000000b1"
 	refund.Envelope.CommandID = "command-payment-refund-1"
 	refund.Envelope.EventType = contracts.EventPaymentRefunded
 	refund.Envelope.Payload = mustPayloadJSON(t, map[string]any{"id": "payment-1", "amount": 1500, "status": "refunded"})
-	refund.IdempotencyKey = "restaurant-1:device-1:event-payment-refund-1"
-	refund.RawPayload = []byte(`{"event_id":"event-payment-refund-1"}`)
+	refund.IdempotencyKey = "restaurant-1:device-1:018f0000-0000-7000-8000-0000000000b1"
+	refund.RawPayload = []byte(`{"event_id":"018f0000-0000-7000-8000-0000000000b1"}`)
 	refund.RawPayloadSHA256 = "hash-2"
 	if _, err := repo.ReceiveEdgeEvent(context.Background(), refund); err != nil {
 		t.Fatal(err)

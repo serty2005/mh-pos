@@ -26,7 +26,7 @@ func TestPostDuplicateEnvelopeDoesNotCreateDuplicateReceipt(t *testing.T) {
 	router := api.NewRouter(app.NewService(repo, fixedClock{}))
 	raw := []byte(`{
 	  "version":"1",
-	  "event_id":"event-1",
+	  "event_id":"018f0000-0000-7000-8000-000000000001",
 	  "command_id":"command-1",
 	  "event_type":"OrderCreated",
 	  "aggregate_type":"Order",
@@ -71,7 +71,7 @@ func TestPostBatchEdgeEventsReturnsItemLevelAck(t *testing.T) {
 	router := api.NewRouter(app.NewService(repo, fixedClock{}))
 	valid := []byte(`{
 	  "version":"1",
-	  "event_id":"event-1",
+	  "event_id":"018f0000-0000-7000-8000-000000000001",
 	  "command_id":"command-1",
 	  "event_type":"OrderCreated",
 	  "aggregate_type":"Order",
@@ -269,7 +269,7 @@ func TestListEdgeEventsReturnsSafeIncomingEventLog(t *testing.T) {
 	router := api.NewRouter(app.NewService(repo, fixedClock{}))
 	raw := []byte(`{
 	  "version":"1",
-	  "event_id":"event-log-1",
+	  "event_id":"018f0000-0000-7000-8000-0000000000d1",
 	  "command_id":"command-log-1",
 	  "event_type":"OrderCreated",
 	  "aggregate_type":"Order",
