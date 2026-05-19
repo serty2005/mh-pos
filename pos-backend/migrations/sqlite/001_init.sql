@@ -438,6 +438,7 @@ CREATE TABLE IF NOT EXISTS order_line_discounts (
   id TEXT PRIMARY KEY,
   order_id TEXT NOT NULL REFERENCES orders(id),
   order_line_id TEXT REFERENCES order_lines(id),
+  pricing_policy_id TEXT,
   scope TEXT NOT NULL CHECK (scope IN ('line','order')),
   application_index INTEGER NOT NULL CHECK (application_index > 0),
   amount_kind TEXT NOT NULL CHECK (amount_kind IN ('percentage','fixed')),
@@ -461,6 +462,7 @@ CREATE TABLE IF NOT EXISTS order_level_discounts (
 CREATE TABLE IF NOT EXISTS order_surcharges (
   id TEXT PRIMARY KEY,
   order_id TEXT NOT NULL REFERENCES orders(id),
+  pricing_policy_id TEXT,
   kind TEXT NOT NULL CHECK (kind IN ('service_charge','pb1_service_fee','manual')),
   application_index INTEGER NOT NULL CHECK (application_index > 0),
   amount_kind TEXT NOT NULL CHECK (amount_kind IN ('percentage','fixed')),
@@ -537,6 +539,7 @@ CREATE TABLE IF NOT EXISTS pricing_policies (
   value_basis_points INTEGER NOT NULL DEFAULT 0 CHECK (value_basis_points >= 0),
   application_index INTEGER NOT NULL CHECK (application_index > 0),
   requires_permission TEXT NOT NULL DEFAULT '',
+  manual INTEGER NOT NULL DEFAULT 0 CHECK (manual IN (0,1)),
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -545,6 +548,7 @@ CREATE TABLE IF NOT EXISTS pricing_policies (
   cloud_deleted_at TEXT,
   last_synced_at TEXT
 );
+
 
 CREATE INDEX IF NOT EXISTS pricing_policies_restaurant_active ON pricing_policies(restaurant_id, active, application_index);
 
@@ -584,6 +588,7 @@ CREATE TABLE IF NOT EXISTS precheck_discounts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   precheck_id TEXT NOT NULL REFERENCES prechecks(id),
   discount_id TEXT NOT NULL,
+  pricing_policy_id TEXT,
   scope TEXT NOT NULL CHECK (scope IN ('line','order')),
   application_index INTEGER NOT NULL CHECK (application_index > 0),
   order_line_id TEXT,
@@ -596,6 +601,7 @@ CREATE TABLE IF NOT EXISTS precheck_surcharges (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   precheck_id TEXT NOT NULL REFERENCES prechecks(id),
   surcharge_id TEXT NOT NULL,
+  pricing_policy_id TEXT,
   kind TEXT NOT NULL CHECK (kind IN ('service_charge','pb1_service_fee','manual')),
   application_index INTEGER NOT NULL CHECK (application_index > 0),
   amount_kind TEXT NOT NULL CHECK (amount_kind IN ('percentage','fixed')),
@@ -1308,6 +1314,7 @@ CREATE TABLE IF NOT EXISTS order_line_discounts (
   id TEXT PRIMARY KEY,
   order_id TEXT NOT NULL REFERENCES orders(id),
   order_line_id TEXT REFERENCES order_lines(id),
+  pricing_policy_id TEXT,
   scope TEXT NOT NULL CHECK (scope IN ('line','order')),
   application_index INTEGER NOT NULL CHECK (application_index > 0),
   amount_kind TEXT NOT NULL CHECK (amount_kind IN ('percentage','fixed')),
@@ -1320,6 +1327,9 @@ CREATE TABLE IF NOT EXISTS order_line_discounts (
 
 -- sqlite:repair-column order_line_discounts application_index
 ALTER TABLE order_line_discounts ADD COLUMN application_index INTEGER NOT NULL DEFAULT 0;
+
+-- sqlite:repair-column order_line_discounts pricing_policy_id
+ALTER TABLE order_line_discounts ADD COLUMN pricing_policy_id TEXT;
 
 -- sqlite:repair-sql
 CREATE INDEX IF NOT EXISTS order_line_discounts_order_created_at ON order_line_discounts(order_id, created_at);
@@ -1334,6 +1344,7 @@ CREATE TABLE IF NOT EXISTS order_level_discounts (
 CREATE TABLE IF NOT EXISTS order_surcharges (
   id TEXT PRIMARY KEY,
   order_id TEXT NOT NULL REFERENCES orders(id),
+  pricing_policy_id TEXT,
   kind TEXT NOT NULL CHECK (kind IN ('service_charge','pb1_service_fee','manual')),
   application_index INTEGER NOT NULL CHECK (application_index > 0),
   amount_kind TEXT NOT NULL CHECK (amount_kind IN ('percentage','fixed')),
@@ -1345,6 +1356,9 @@ CREATE TABLE IF NOT EXISTS order_surcharges (
 
 -- sqlite:repair-column order_surcharges application_index
 ALTER TABLE order_surcharges ADD COLUMN application_index INTEGER NOT NULL DEFAULT 0;
+
+-- sqlite:repair-column order_surcharges pricing_policy_id
+ALTER TABLE order_surcharges ADD COLUMN pricing_policy_id TEXT;
 
 -- sqlite:repair-sql
 CREATE INDEX IF NOT EXISTS order_surcharges_order_created_at ON order_surcharges(order_id, created_at);
@@ -1386,6 +1400,7 @@ CREATE TABLE IF NOT EXISTS precheck_discounts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   precheck_id TEXT NOT NULL REFERENCES prechecks(id),
   discount_id TEXT NOT NULL,
+  pricing_policy_id TEXT,
   scope TEXT NOT NULL CHECK (scope IN ('line','order')),
   application_index INTEGER NOT NULL CHECK (application_index > 0),
   order_line_id TEXT,
@@ -1397,11 +1412,15 @@ CREATE TABLE IF NOT EXISTS precheck_discounts (
 -- sqlite:repair-column precheck_discounts application_index
 ALTER TABLE precheck_discounts ADD COLUMN application_index INTEGER NOT NULL DEFAULT 0;
 
+-- sqlite:repair-column precheck_discounts pricing_policy_id
+ALTER TABLE precheck_discounts ADD COLUMN pricing_policy_id TEXT;
+
 -- sqlite:repair-sql
 CREATE TABLE IF NOT EXISTS precheck_surcharges (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   precheck_id TEXT NOT NULL REFERENCES prechecks(id),
   surcharge_id TEXT NOT NULL,
+  pricing_policy_id TEXT,
   kind TEXT NOT NULL CHECK (kind IN ('service_charge','pb1_service_fee','manual')),
   application_index INTEGER NOT NULL CHECK (application_index > 0),
   amount_kind TEXT NOT NULL CHECK (amount_kind IN ('percentage','fixed')),
@@ -1411,6 +1430,9 @@ CREATE TABLE IF NOT EXISTS precheck_surcharges (
 
 -- sqlite:repair-column precheck_surcharges application_index
 ALTER TABLE precheck_surcharges ADD COLUMN application_index INTEGER NOT NULL DEFAULT 0;
+
+-- sqlite:repair-column precheck_surcharges pricing_policy_id
+ALTER TABLE precheck_surcharges ADD COLUMN pricing_policy_id TEXT;
 
 -- sqlite:repair-sql
 WITH ordered_modifiers AS (
@@ -1853,6 +1875,7 @@ CREATE TABLE IF NOT EXISTS pricing_policies (
   value_basis_points INTEGER NOT NULL DEFAULT 0 CHECK (value_basis_points >= 0),
   application_index INTEGER NOT NULL CHECK (application_index > 0),
   requires_permission TEXT NOT NULL DEFAULT '',
+  manual INTEGER NOT NULL DEFAULT 0 CHECK (manual IN (0,1)),
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -1861,6 +1884,7 @@ CREATE TABLE IF NOT EXISTS pricing_policies (
   cloud_deleted_at TEXT,
   last_synced_at TEXT
 );
+
 
 CREATE INDEX IF NOT EXISTS pricing_policies_restaurant_active ON pricing_policies(restaurant_id, active, application_index);
 

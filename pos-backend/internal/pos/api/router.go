@@ -71,6 +71,7 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/orders/{id}/lines/{line_id}/void", h.voidOrderLine)
 		r.Post("/orders/{id}/discounts", h.addOrderDiscount)
 		r.Post("/orders/{id}/surcharges", h.addOrderSurcharge)
+		r.Get("/pricing/policies", h.listActivePricingPolicies)
 		r.Get("/orders/{id}/pricing", h.getOrderPricing)
 		r.Post("/orders/{id}/precheck", h.issuePrecheck)
 		r.Get("/orders/{id}/prechecks", h.listPrechecksByOrder)
@@ -738,6 +739,13 @@ func (h *Handler) addOrderSurcharge(w http.ResponseWriter, r *http.Request) {
 	cmd.OrderID = chi.URLParam(r, "id")
 	v, err := h.service.AddSurcharge(r.Context(), cmd)
 	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) listActivePricingPolicies(w http.ResponseWriter, r *http.Request) {
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.ListActivePricingPoliciesAsOperator(r.Context(), meta)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) getOrderPricing(w http.ResponseWriter, r *http.Request) {

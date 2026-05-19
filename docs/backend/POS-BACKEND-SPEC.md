@@ -322,3 +322,17 @@ Recipes/inventory:
 - Request audit log records method/path/status/duration and masked IDs.
 - Sensitive data such as PINs, tokens and raw payment-sensitive payloads must not be logged.
 - Stable permission/error behavior is enforced in backend services; UI must not expose raw Go/SQL errors.
+
+## Cloud-authored pricing policy runtime adjustments
+
+Статус: реализовано сейчас.
+
+POS Edge поддерживает pilot-ready путь применения скидок и надбавок по `pricing_policy_id`: `POST /api/v1/orders/{id}/discounts` и `POST /api/v1/orders/{id}/surcharges` загружают активную Cloud-authored policy из Edge read model, проверяют restaurant boundary, lifecycle, kind, scope, `application_index`, состояние заказа и permission boundary, затем копируют `amount_kind`, `amount_minor`, `value_basis_points`, `scope`, `kind` и `application_index` из policy в runtime adjustment. Пользовательский `reason` допустим только как audit/comment field и не влияет на расчет.
+
+Статус: реализовано сейчас.
+
+`GET /api/v1/pricing/policies` возвращает активные синхронизированные policies для выбора кассиром. POS UI не должен считать authoritative totals и после применения policy обязан перечитать order/pricing/precheck state у backend.
+
+Статус: реализовано сейчас.
+
+Legacy ручные amount fields остаются только как explicit manual override compatibility path под существующими backend permissions `pos.pricing.discount.apply` и `pos.pricing.surcharge.apply`. Pilot UI не должен использовать этот путь для обычного кассира.

@@ -56,6 +56,7 @@ type OrderDiscount struct {
 	ID               string        `json:"id"`
 	OrderID          string        `json:"order_id"`
 	OrderLineID      *string       `json:"order_line_id,omitempty"`
+	PricingPolicyID  *string       `json:"pricing_policy_id,omitempty"`
 	Scope            DiscountScope `json:"scope"`
 	ApplicationIndex int           `json:"application_index"`
 	AmountKind       AmountKind    `json:"amount_kind"`
@@ -68,6 +69,7 @@ type OrderDiscount struct {
 type OrderSurcharge struct {
 	ID               string        `json:"id"`
 	OrderID          string        `json:"order_id"`
+	PricingPolicyID  *string       `json:"pricing_policy_id,omitempty"`
 	Kind             SurchargeKind `json:"kind"`
 	ApplicationIndex int           `json:"application_index"`
 	AmountKind       AmountKind    `json:"amount_kind"`
@@ -133,6 +135,7 @@ type PricingPolicy struct {
 	ValueBasisPoints   int64             `json:"value_basis_points,omitempty"`
 	ApplicationIndex   int               `json:"application_index"`
 	RequiresPermission string            `json:"requires_permission,omitempty"`
+	Manual             bool              `json:"manual"`
 	Active             bool              `json:"active"`
 	CreatedAt          time.Time         `json:"created_at"`
 	UpdatedAt          time.Time         `json:"updated_at"`
@@ -197,6 +200,7 @@ type LineBreakdown struct {
 
 type DiscountBreakdown struct {
 	DiscountID       string        `json:"discount_id"`
+	PricingPolicyID  *string       `json:"pricing_policy_id,omitempty"`
 	Scope            DiscountScope `json:"scope"`
 	ApplicationIndex int           `json:"application_index"`
 	OrderLineID      *string       `json:"order_line_id,omitempty"`
@@ -207,6 +211,7 @@ type DiscountBreakdown struct {
 
 type SurchargeBreakdown struct {
 	SurchargeID      string        `json:"surcharge_id"`
+	PricingPolicyID  *string       `json:"pricing_policy_id,omitempty"`
 	Kind             SurchargeKind `json:"kind"`
 	ApplicationIndex int           `json:"application_index"`
 	AmountKind       AmountKind    `json:"amount_kind"`

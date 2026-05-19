@@ -259,3 +259,9 @@ go test ./...
 - `PaymentRefunded` and `CheckRefunded` remain legacy inbound-only event types for older Edge payloads.
 - Cloud stores raw payloads and operational journal rows idempotently for current and legacy events.
 - `cloud_projection_shift_finance` tracks coarse refund counters/totals from `RefundRecorded` and legacy refund events; cancellation is kept in raw/journal/event-type stats until a dedicated ledger projection exists.
+
+## Pricing policy publication
+
+Статус: реализовано сейчас.
+
+Cloud master-data publication включает `pricing_policy` stream для Cloud-authored discounts/surcharges. Published policy payload содержит `manual`, `requires_permission`, `application_index` и amount fields, которые POS Edge использует как authoritative runtime source.

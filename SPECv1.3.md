@@ -336,3 +336,19 @@ Boundary rules:
 - `docs/backend/*` — backend/data contracts.
 - `docs/ui/*` — UI contracts.
 - `docs/architecture/*` — bounded contexts и dependency direction.
+
+## Pilot pricing/tax policy flow
+
+Реализовано сейчас:
+
+- Cloud-authored `pricing_policy` доставляется на Edge с `manual`, `requires_permission`, `application_index`, amount fields и lifecycle-derived `active`.
+- POS runtime применяет скидки/надбавки по `pricing_policy_id`, копирует расчетные поля из policy и сохраняет `pricing_policy_id` в runtime adjustment и precheck breakdown.
+- Canonical calculation pipeline остается `order lines subtotal -> ordered discounts/surcharges by application_index -> taxable base -> taxes -> grand total`.
+- Tax Always Last: налоги считаются только после всех discounts/surcharges.
+
+Вне текущего объема:
+
+- loyalty/promocodes;
+- dynamic pricing;
+- fiscal adapter;
+- UI-side authoritative financial calculation.

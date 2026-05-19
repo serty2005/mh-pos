@@ -161,3 +161,15 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - backend and UI docs согласованы по refund/reprint/current routes;
 - cancellation/refund boundaries явно разделены: cancellation внутри открытой исходной смены/дня, refund после закрытия исходной смены или на следующую business date;
 - `sqlc` и ClickHouse описаны только как запланировано далее/после пилота, не как текущий runtime.
+
+## Pricing/tax pilot readiness
+
+Выполнено:
+
+- Cloud-authored pricing policies доставляются в Edge `pricing_policy` stream с manual/permission/application order metadata.
+- POS Edge применяет runtime discounts/surcharges by `pricing_policy_id` и сохраняет policy id в adjustment/precheck breakdown.
+- Backend calculation сохраняет ordered discounts/surcharges before tax и Tax Always Last.
+
+Далее:
+
+- Расширить Cloud authoring surface для tax profiles/rules и service charge rules отдельными полноценными CRUD, если pilot restaurant требует редактировать их через Cloud UI до первого запуска.

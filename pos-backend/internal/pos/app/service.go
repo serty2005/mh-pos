@@ -413,6 +413,10 @@ func (s *Service) AddSurcharge(ctx context.Context, cmd AddSurchargeCommand) (*d
 	return s.pricing.AddSurcharge(ctx, cmd)
 }
 
+func (s *Service) ListActivePricingPoliciesAsOperator(ctx context.Context, meta CommandMeta) ([]domain.PricingPolicy, error) {
+	return s.pricing.ListActivePricingPoliciesAsOperator(ctx, meta)
+}
+
 func (s *Service) GetOrderPricingAsOperator(ctx context.Context, orderID string, meta CommandMeta) (*domain.CalculationResult, error) {
 	return s.pricing.GetOrderPricingAsOperator(ctx, orderID, meta)
 }

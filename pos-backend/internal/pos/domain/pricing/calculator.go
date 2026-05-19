@@ -241,7 +241,7 @@ func applyDiscount(result *CalculationResult, lineIndex map[string]int, discount
 		if err != nil {
 			return err
 		}
-		result.Discounts = append(result.Discounts, DiscountBreakdown{DiscountID: discount.ID, Scope: discount.Scope, ApplicationIndex: discount.ApplicationIndex, OrderLineID: discount.OrderLineID, AmountKind: discount.AmountKind, AmountMinor: amount, Reason: discount.Reason})
+		result.Discounts = append(result.Discounts, DiscountBreakdown{DiscountID: discount.ID, PricingPolicyID: discount.PricingPolicyID, Scope: discount.Scope, ApplicationIndex: discount.ApplicationIndex, OrderLineID: discount.OrderLineID, AmountKind: discount.AmountKind, AmountMinor: amount, Reason: discount.Reason})
 	case DiscountScopeOrder:
 		bases, target, err := currentLineAmounts(result.Lines)
 		if err != nil {
@@ -265,7 +265,7 @@ func applyDiscount(result *CalculationResult, lineIndex map[string]int, discount
 		if err != nil {
 			return err
 		}
-		result.Discounts = append(result.Discounts, DiscountBreakdown{DiscountID: discount.ID, Scope: discount.Scope, ApplicationIndex: discount.ApplicationIndex, AmountKind: discount.AmountKind, AmountMinor: amount, Reason: discount.Reason})
+		result.Discounts = append(result.Discounts, DiscountBreakdown{DiscountID: discount.ID, PricingPolicyID: discount.PricingPolicyID, Scope: discount.Scope, ApplicationIndex: discount.ApplicationIndex, AmountKind: discount.AmountKind, AmountMinor: amount, Reason: discount.Reason})
 	default:
 		return fmt.Errorf("%w: unsupported discount scope", shared.ErrInvalid)
 	}
@@ -292,7 +292,7 @@ func applySurcharge(result *CalculationResult, surcharge OrderSurcharge) error {
 	if err != nil {
 		return err
 	}
-	result.Surcharges = append(result.Surcharges, SurchargeBreakdown{SurchargeID: surcharge.ID, Kind: surcharge.Kind, ApplicationIndex: surcharge.ApplicationIndex, AmountKind: surcharge.AmountKind, AmountMinor: amount, Reason: surcharge.Reason})
+	result.Surcharges = append(result.Surcharges, SurchargeBreakdown{SurchargeID: surcharge.ID, PricingPolicyID: surcharge.PricingPolicyID, Kind: surcharge.Kind, ApplicationIndex: surcharge.ApplicationIndex, AmountKind: surcharge.AmountKind, AmountMinor: amount, Reason: surcharge.Reason})
 	return nil
 }
 
