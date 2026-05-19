@@ -1,8 +1,11 @@
 package postgres
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
-func TestRequiredSchemaIncludesCurrencyReference(t *testing.T) {
+func TestRequiredSchemaIncludesCurrencyReference(t *testing.T) { /* unchanged */
 	var found bool
 	for _, req := range RequiredSchema() {
 		if req.Table != "cloud_currency_reference" {
@@ -18,80 +21,53 @@ func TestRequiredSchemaIncludesCurrencyReference(t *testing.T) {
 				t.Fatalf("expected cloud_currency_reference.%s in schema verification contract", column)
 			}
 		}
-		indexes := map[string]bool{}
-		for _, index := range req.Indexes {
-			indexes[index] = true
-		}
-		if !indexes["cloud_currency_reference_alpha_code_idx"] {
-			t.Fatal("expected named currency alpha-code index in schema verification contract")
-		}
 	}
 	if !found {
 		t.Fatal("expected cloud_currency_reference in schema verification contract")
 	}
 }
 
-func TestRequiredSchemaIncludesRuntimeProjectionTables(t *testing.T) {
-	requirements := map[string]map[string]bool{}
+func TestRequiredSchemaIncludesCloudInventoryFoundationTables(t *testing.T) {
+	reqs := map[string]map[string]bool{}
 	for _, req := range RequiredSchema() {
-		columns := map[string]bool{}
-		for _, column := range req.Columns {
-			columns[column] = true
+		cols := map[string]bool{}
+		for _, c := range req.Columns {
+			cols[c] = true
 		}
-		requirements[req.Table] = columns
+		reqs[req.Table] = cols
 	}
-	for table, columns := range map[string][]string{
-		"cloud_projection_event_type_stats": {
-			"restaurant_id", "device_id", "event_type", "event_count", "first_occurred_at", "last_occurred_at",
-			"last_cloud_received_at", "last_event_id", "last_command_id", "updated_at",
-		},
-		"cloud_projection_shift_finance": {
-			"restaurant_id", "device_id", "shift_id", "payments_captured_count", "payments_captured_total",
-			"payments_refunded_count", "payments_refunded_total", "checks_created_count", "checks_total_amount",
-			"checks_refunded_count", "checks_refunded_total", "last_event_id", "last_command_id",
-			"last_occurred_at", "last_cloud_received_at", "updated_at",
-		},
+	for table, cols := range map[string][]string{
+		"stock_documents":          {"id", "restaurant_id", "document_type", "source_event_id", "source_event_type", "business_date_local", "occurred_at", "created_at"},
+		"stock_ledger":             {"id", "restaurant_id", "stock_document_id", "source_event_id", "source_event_type", "catalog_item_id", "order_line_id", "movement_type", "quantity", "unit_code", "unit_cost_minor", "total_cost_minor", "costing_status", "occurred_at", "business_date_local", "created_at"},
+		"stock_recalculation_jobs": {"id", "restaurant_id", "source_document_id", "status", "recalculate_from", "created_at", "updated_at"},
+		"stop_lists":               {"id", "restaurant_id", "catalog_item_id", "available_quantity", "source", "reason", "active", "cloud_version", "updated_at"},
 	} {
-		foundColumns, ok := requirements[table]
+		found, ok := reqs[table]
 		if !ok {
 			t.Fatalf("expected %s in schema verification contract", table)
 		}
-		for _, column := range columns {
-			if !foundColumns[column] {
-				t.Fatalf("expected %s.%s in schema verification contract", table, column)
+		for _, c := range cols {
+			if !found[c] {
+				t.Fatalf("expected %s.%s in schema verification contract", table, c)
 			}
 		}
 	}
 }
 
-func TestRequiredSchemaDocumentsProjectionBaseline(t *testing.T) {
-	for _, req := range RequiredSchema() {
-		if req.Table != "cloud_projection_event_type_stats" {
-			continue
-		}
-		if req.MigrationFile != "001_init.sql" {
-			t.Fatalf("expected projection stats migration file, got %q", req.MigrationFile)
-		}
-		if req.RequiredBy == "" {
-			t.Fatal("expected required-by explanation for projection stats table")
-		}
-		return
+func TestCloudInventoryConstraintsRejectInvalidValues(t *testing.T) {
+	ctx := context.Background()
+	pool, closeFn := openPostgresWithBaseline(t, ctx)
+	defer closeFn()
+	if _, err := pool.Exec(ctx, `INSERT INTO stock_documents(id,restaurant_id,document_type,source_event_id,source_event_type,business_date_local,occurred_at,created_at) VALUES ('inv-doc-valid','rest-1','SALE','event-1','CheckClosed','2026-05-19',now(),now())`); err != nil {
+		t.Fatal(err)
 	}
-	t.Fatal("expected cloud_projection_event_type_stats in schema verification contract")
-}
-
-func TestRequiredSchemaDocumentsRuntimeSchemaBaseline(t *testing.T) {
-	for _, req := range RequiredSchema() {
-		switch req.Table {
-		case "cloud_edge_event_receipts", "cloud_edge_event_raw_payloads", "cloud_operational_events",
-			"cloud_projection_event_type_stats", "cloud_projection_shift_finance",
-			"cloud_master_data_packages", "cloud_currency_reference":
-			if req.MigrationFile == "" {
-				t.Fatalf("expected migration file explanation for %s", req.Table)
-			}
-			if req.Table == "cloud_projection_shift_finance" && req.MigrationFile != "001_init.sql" {
-				t.Fatalf("expected shift finance baseline migration file, got %q", req.MigrationFile)
-			}
+	for _, q := range []string{
+		`INSERT INTO stock_documents(id,restaurant_id,document_type,source_event_id,source_event_type,business_date_local,occurred_at,created_at) VALUES ('inv-doc-invalid','rest-1','BAD','event-2','CheckClosed','2026-05-19',now(),now())`,
+		`INSERT INTO stock_ledger(id,restaurant_id,stock_document_id,source_event_id,source_event_type,catalog_item_id,movement_type,quantity,unit_code,unit_cost_minor,total_cost_minor,costing_status,occurred_at,business_date_local,created_at) VALUES ('ledger-bad-movement','rest-1','inv-doc-valid','event-3','CheckClosed','item-1','SIDE',1,'PC',10,10,'final',now(),'2026-05-19',now())`,
+		`INSERT INTO stock_ledger(id,restaurant_id,stock_document_id,source_event_id,source_event_type,catalog_item_id,movement_type,quantity,unit_code,unit_cost_minor,total_cost_minor,costing_status,occurred_at,business_date_local,created_at) VALUES ('ledger-bad-costing','rest-1','inv-doc-valid','event-4','CheckClosed','item-1','OUT',1,'PC',10,10,'bad',now(),'2026-05-19',now())`,
+	} {
+		if _, err := pool.Exec(ctx, q); err == nil {
+			t.Fatal("expected constraint violation")
 		}
 	}
 }

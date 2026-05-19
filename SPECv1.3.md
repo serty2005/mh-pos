@@ -190,7 +190,7 @@ Boundary rules:
 
 - Целевая Edge inventory схема содержит только `recipe_versions`, `recipe_lines` в read-only режиме и двусторонний overlay `stop_lists`.
 - Целевая Edge schema не должна содержать `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`.
-- Целевой Cloud runtime владеет `stock_documents`, `stock_ledger`, costing state, stop-list authority и очередью Inventory Worker.
+- Целевой Cloud runtime владеет `stock_documents`, `stock_ledger`, costing state, stop-list authority и очередью Inventory Worker. Реализовано сейчас: Cloud PostgreSQL baseline содержит foundation tables `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`; full Inventory Worker остается вне текущего runtime.
 - Legacy Edge-side manual stock document foundation должен быть удален при переходе на Cloud-centric Event-Driven Inventory.
 
 ## Pricing, Discounts And Tax

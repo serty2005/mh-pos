@@ -61,12 +61,7 @@ func TestPhase2FoundationTablesExist(t *testing.T) {
 	tables := []string{
 		"recipe_versions",
 		"recipe_lines",
-		"purchase_receipts",
-		"purchase_receipt_lines",
-		"stock_documents",
-		"stock_moves",
-		"stock_balances",
-		"item_costs",
+		"stop_lists",
 	}
 	for _, table := range tables {
 		t.Run(table, func(t *testing.T) {
@@ -569,7 +564,7 @@ func TestRetrySafeOutboxSchemaColumnsAndConstraints(t *testing.T) {
 
 func TestCloudMasterDataSyncFoundationSchema(t *testing.T) {
 	db, ctx := newSchemaDB(t)
-	for _, table := range []string{"restaurants", "devices", "roles", "employees", "halls", "tables", "catalog_items", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "recipe_versions", "recipe_lines", "item_costs"} {
+	for _, table := range []string{"restaurants", "devices", "roles", "employees", "halls", "tables", "catalog_items", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "recipe_versions", "recipe_lines", "stop_lists"} {
 		columns := tableColumns(t, ctx, db, table)
 		for _, column := range []string{"cloud_version", "cloud_updated_at", "cloud_deleted_at", "last_synced_at"} {
 			if !columns[column] {
@@ -681,5 +676,19 @@ func TestRecipeLinesReferenceGoodOrSemiFinishedCatalogItems(t *testing.T) {
 	_, err := db.ExecContext(ctx, `INSERT INTO recipe_lines(id,recipe_version_id,catalog_item_id,quantity,unit,loss_percent,created_at,updated_at) VALUES ('recipe-line-bad','recipe-1','dish-1',1,'portion',0,?,?)`, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected recipe line for dish catalog item to fail")
+	}
+}
+
+func TestStopListsFoundation(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	seedCatalogForSchemaTests(t, ctx, db)
+	execSchema(t, ctx, db, `INSERT INTO stop_lists(id,restaurant_id,catalog_item_id,available_quantity,source,reason,active,cloud_version,updated_at) VALUES ('stop-1','restaurant-1','dish-1',NULL,'cloud','maintenance',1,10,?)`, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO stop_lists(id,restaurant_id,catalog_item_id,available_quantity,source,reason,active,cloud_version,updated_at) VALUES ('stop-2','restaurant-1','good-1',0,'edge',NULL,1,NULL,?)`, schemaTestTime)
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM stop_lists WHERE active = 1`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("expected 2 active stop-list rows, got %d", n)
 	}
 }
