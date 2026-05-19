@@ -106,7 +106,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - целевой contract зафиксирован в `docs/backend/INVENTORY-COSTING-SPEC.md`;
   - Edge должен стать только генератором events и UI ввода, без stock documents/moves/balances/costing;
   - целевая Edge SQLite schema: read-only `recipe_versions`, `recipe_lines`, двусторонний `stop_lists`;
-  - Cloud Inventory Worker должен обрабатывать `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
+  - Cloud Inventory Worker должен обрабатывать `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated` (запланировано далее);
+  - выполнено: Cloud PostgreSQL baseline уже содержит foundation tables `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`;
   - реализовать `stock_ledger` with `unit_cost_minor`, `total_cost_minor`, `costing_status` and retro recalculation jobs;
   - реализовать stop-list как единственный механизм блокировки продаж; stock balance остается аналитическим и может быть отрицательным.
 - Cancellation/refund/reprint hardening:

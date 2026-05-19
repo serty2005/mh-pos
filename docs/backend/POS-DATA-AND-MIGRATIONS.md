@@ -78,6 +78,7 @@ Cashier runtime invariants:
 Не реализовано сейчас:
 
 - целевой `stop_lists` sync Edge <-> Cloud;
+- удаление legacy Edge-side stock foundation tables из managed SQLite baseline (они оставлены как transitional internal foundation до следующей фазы).
 - Cloud Inventory Worker;
 - удаление legacy Edge-side stock foundation из текущего managed SQLite baseline.
 
@@ -129,7 +130,7 @@ Managed SQL files, реализовано сейчас:
 
 Запланировано далее для Cloud-centric inventory:
 
-- PostgreSQL должен содержать Cloud-owned `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`.
+- Реализовано сейчас: PostgreSQL baseline уже содержит Cloud-owned `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`.
 - `stock_ledger` хранит `unit_cost_minor`, `total_cost_minor`, `costing_status`, `source_event_id`, `source_event_type`, `occurred_at` и `business_date_local`.
 - `modifier_options` получает optional `linked_catalog_item_id`; POS Edge не применяет это поле в order/pricing runtime.
 - ClickHouse `raw_business_events` наполняется только Async Batch Forwarder из PostgreSQL `inbox_events` и является бессрочным архивом business events.
