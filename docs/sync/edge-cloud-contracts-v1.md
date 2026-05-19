@@ -180,13 +180,13 @@ Request body shape currently supported by POS Edge:
 - `restaurants` применяет Cloud-authored настройки ресторана и `active`; опубликованный active restaurant должен попадать в Edge read model как `active = true`.
 - `pricing_policy` применяет Cloud-authored `tax_profiles`, `tax_rules`, `service_charge_rules` и automatic discount/surcharge `pricing_policies` в Edge read-model tables с sync metadata.
 - Unsupported JSON fields отклоняются strict decode; неизвестные stream names не применяются.
-- `recipes` и `inventory_reference` пока не являются поддерживаемыми POS Edge apply payloads.
+- `recipes`, `inventory_reference` и `stop_lists` пока не являются поддерживаемыми POS Edge apply payloads.
 
 Только основа:
 
 - Cloud schema содержит recipe/inventory-adjacent publication foundation.
-- SQLite schema содержит recipe/inventory foundation и local manual stock document service state.
-- Эти foundation нельзя документировать как поддерживаемый POS Edge runtime ingest, пока `mastersync.Service` не применяет их payloads.
+- Целевая inventory architecture требует Cloud -> Edge packages для read-only `recipe_versions`/`recipe_lines` и `stop_lists`.
+- Эти streams нельзя документировать как реализованный POS Edge runtime ingest, пока `mastersync.Service` не применяет их payloads.
 
 ## Edge -> Cloud Operational Events
 
@@ -227,6 +227,21 @@ Local-only POS Edge events that are not Edge -> Cloud operational contracts:
 StockDocumentPosted
 ```
 
+Целевой Cloud-centric inventory Edge -> Cloud catalog, запланировано далее:
+
+```text
+CheckClosed
+ItemServed
+StockReceiptCaptured
+InventoryCountCaptured
+ProductionCompleted
+RefundRecorded
+CancellationRecorded
+StopListUpdated
+```
+
+`StockDocumentPosted` не входит в целевой catalog: POS Edge не должен формировать stock documents/moves.
+
 Legacy inbound-only event types, которые Cloud receiver продолжает валидировать для старых Edge payloads:
 
 ```text
@@ -247,7 +262,92 @@ Cancellation/refund sync behavior:
 - `GET /api/v1/orders/closed` pagination/filtering является POS local read API behavior; оно не меняет Edge -> Cloud event payloads или Cloud receiver contracts.
 - `GET /api/v1/storage/status` и `POST /api/v1/storage/retention/dry-run` являются локальными POS operational read/dry-run API. Они не создают sync envelopes; dry-run только сообщает non-sent `edge_to_cloud` outbox rows как blocking state для будущей destructive retention/archive policy.
 - `GET /api/v1/sync/outbox`, `GET /api/v1/sync/local-events` и POS UI activity/sync drawer читают только bounded local windows; они не являются sync cleanup или archive contract.
-- Manual `StockDocumentPosted` остается local-only в POS Edge и не принимается/не проецируется Cloud receiver в текущем contract.
+- Manual `StockDocumentPosted` остается local-only в текущем POS Edge и не принимается/не проецируется Cloud receiver. В целевой inventory architecture этот event должен быть retired.
+
+### Inventory Event Payloads Target
+
+Запланировано далее. Все payloads передаются внутри стандартного sync envelope в `payload.data`.
+
+`CheckClosed` является финальным batch-delta trigger:
+
+```json
+{
+  "check_id": "018f0000-0000-7000-8000-000000000001",
+  "order_id": "018f0000-0000-7000-8000-000000000002",
+  "business_date_local": "2026-05-19",
+  "closed_at": "2026-05-19T12:40:00Z",
+  "items": [
+    {
+      "order_line_id": "018f0000-0000-7000-8000-000000000010",
+      "catalog_item_id": "018f0000-0000-7000-8000-000000000020",
+      "quantity": "2.000",
+      "unit_code": "PC",
+      "modifiers": [
+        {
+          "order_line_modifier_id": "018f0000-0000-7000-8000-000000000030",
+          "modifier_option_id": "018f0000-0000-7000-8000-000000000031",
+          "quantity": "1.000"
+        }
+      ]
+    }
+  ]
+}
+```
+
+`ItemServed` фиксирует KDS-подачу и дедуплицируется с `CheckClosed`:
+
+```json
+{
+  "served_event_id": "018f0000-0000-7000-8000-000000000101",
+  "order_id": "018f0000-0000-7000-8000-000000000002",
+  "order_line_id": "018f0000-0000-7000-8000-000000000010",
+  "catalog_item_id": "018f0000-0000-7000-8000-000000000020",
+  "quantity": "1.000",
+  "unit_code": "PC",
+  "served_at": "2026-05-19T12:25:00Z"
+}
+```
+
+`RefundRecorded` и `CancellationRecorded` должны передавать disposition по каждой строке:
+
+```json
+{
+  "operation_id": "018f0000-0000-7000-8000-000000000501",
+  "operation_type": "refund",
+  "check_id": "018f0000-0000-7000-8000-000000000001",
+  "business_date_local": "2026-05-19",
+  "recorded_at": "2026-05-19T14:00:00Z",
+  "items": [
+    {
+      "order_line_id": "018f0000-0000-7000-8000-000000000010",
+      "catalog_item_id": "018f0000-0000-7000-8000-000000000020",
+      "quantity": "1.000",
+      "inventory_disposition": "return_to_stock"
+    },
+    {
+      "order_line_id": "018f0000-0000-7000-8000-000000000011",
+      "catalog_item_id": "018f0000-0000-7000-8000-000000000021",
+      "quantity": "1.000",
+      "inventory_disposition": "write_off_waste"
+    }
+  ]
+}
+```
+
+`StopListUpdated` синхронизируется в обе стороны:
+
+```json
+{
+  "stop_list_id": "018f0000-0000-7000-8000-000000000601",
+  "restaurant_id": "018f0000-0000-7000-8000-000000000004",
+  "catalog_item_id": "018f0000-0000-7000-8000-000000000020",
+  "available_quantity": "0.000",
+  "active": true,
+  "source": "edge",
+  "reason": "ingredient_unavailable",
+  "updated_at": "2026-05-19T12:05:00Z"
+}
+```
 
 ## Financial Payload Boundaries
 
@@ -261,6 +361,9 @@ Cancellation/refund sync behavior:
 Не реализовано сейчас:
 
 - inventory consumption events;
+- KDS/stock input events;
+- stop-list sync;
+- Cloud Inventory Worker projection from these events;
 - stock movement events for refund/cancellation disposition;
 - Cloud receipt/projection contract for manual stock document events;
 - PSP/fiscal event streams.
@@ -274,7 +377,7 @@ Cancellation/refund sync behavior:
 
 После пилота:
 
-- KDS/Production events;
-- inventory stock movement events;
+- KDS/Production events as Edge business facts, not Edge stock moves;
+- Cloud-generated inventory stock documents/moves;
 - PSP/fiscal integration events;
 - richer financial operation reporting projections and optional ClickHouse acceleration.

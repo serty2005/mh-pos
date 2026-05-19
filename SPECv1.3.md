@@ -1,8 +1,8 @@
-# SPECv1.3 — frozen cashier pilot contract
+# SPECv1.3 — frozen cashier pilot contract and inventory target
 
 Статус: заморожено до первого cashier pilot.
 
-Этот документ фиксирует только проверенный pilot surface, инварианты и явно принятые pre-pilot boundary decisions. Дальняя архитектура не считается частью текущего контракта, пока не переведена в код, тесты и профильную документацию.
+Этот документ фиксирует проверенный pilot surface, инварианты и явно принятые pre-pilot boundary decisions. Раздел склада/себестоимости фиксирует замороженную целевую архитектуру для будущей реализации; она не считается текущим runtime, пока не переведена в код, тесты и профильную документацию.
 
 ## Источники фактов
 
@@ -37,6 +37,7 @@
 - append-only cancellation/refund ledger, cashier UI для full whole-check и partial `order_line`/quantity cancellation/refund с явным `inventory_disposition` и compatibility payment refund fallback;
 - Edge -> Cloud operational outbox foundation;
 - Cloud -> Edge master-data ingest for supported streams.
+- Целевая Cloud-centric inventory architecture зафиксирована в `docs/backend/INVENTORY-COSTING-SPEC.md`, но runtime engine не реализован сейчас.
 
 Вне текущего объема:
 
@@ -44,7 +45,7 @@
 - delivery/channel integrations;
 - real PSP/payment processor module;
 - fiscal device integration;
-- full inventory engine;
+- full inventory engine runtime;
 - ClickHouse runtime pipeline;
 - `sqlc` as confirmed persistence implementation.
 
@@ -187,10 +188,10 @@ Boundary rules:
 
 Реализовано сейчас / основа:
 
-- SQLite schema содержит `recipe_versions`, `recipe_lines`, `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`.
-- Cloud schema содержит recipe/inventory-adjacent foundation для recipe items, semi-finished products и publications.
-- POS Edge backend имеет отдельный Inventory application service для ручного posted stock document: он создает immutable `stock_documents`/`stock_moves`, может явно обновить `stock_balances` в той же transaction boundary и пишет local-only outbox/local event `StockDocumentPosted`.
-- Наличие recipe/inventory таблиц и ручного document service не означает готовый POS runtime для recipe expansion, automatic stock consumption или return/write-off from financial operations.
+- Целевая Edge inventory схема содержит только `recipe_versions`, `recipe_lines` в read-only режиме и двусторонний overlay `stop_lists`.
+- Целевая Edge schema не должна содержать `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`.
+- Целевой Cloud runtime владеет `stock_documents`, `stock_ledger`, costing state, stop-list authority и очередью Inventory Worker.
+- Legacy Edge-side manual stock document foundation должен быть удален при переходе на Cloud-centric Event-Driven Inventory.
 
 ## Pricing, Discounts And Tax
 
@@ -253,40 +254,43 @@ Boundary rules:
 
 ## Recipes And Inventory
 
-Реализовано сейчас / основа:
+Архитектурное решение заморожено:
 
-- SQLite содержит `recipe_versions`, `recipe_lines`, `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`.
-- Cloud schema содержит `cloud_recipe_items`, `cloud_semi_finished_products` и catalog kind foundation.
-- Recipe validation запрещает `dish` как компонент; approved components: `good` и `semi_finished`.
-- `stock_documents` и `stock_moves` защищены append-only triggers.
-- Реализовано сейчас: отдельный backend Inventory service создает ручные posted stock documents/moves и optional balance deltas в одной transaction. Эти события остаются local-only и не являются Edge -> Cloud operational contract.
-- UOM audit: текущий код хранит `base_unit`, recipe line `unit`, stock move `unit` и service `fixed_unit` как строки. Отдельная reference entity с `code`, `name`, `short_name` и переводами не реализована сейчас; новые сценарии не должны смешивать machine `code` и display label.
-- Catalog availability audit: текущий Edge runtime использует `active`/Cloud `status` для lifecycle/read model. Temporary unavailability не реализована как глобальный catalog item status; если она потребуется, это должен быть overlay на menu/restaurant/terminal-group publication boundary, а не замена master lifecycle.
+- POS Edge и KDS являются генераторами immutable business events и не формируют складские документы, складские проводки или себестоимость.
+- Cloud является единственным source of truth для склада: Cloud receiver принимает Edge outbox, durable queue передает события Inventory Worker, Worker пишет `stock_documents` и `stock_ledger` в PostgreSQL.
+- ClickHouse используется только как Cloud OLAP/reporting accelerator через batch projection `olap_stock_moves`; он не является source of truth и не входит в POS transaction path.
+- Остаток склада является аналитическим показателем, допускает отрицательные значения и не блокирует продажу.
+- Продажу блокирует только `StopList`.
+- Edge SQLite целевая схема содержит `recipe_versions`, `recipe_lines` read-only и `stop_lists`; Edge-side `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines` должны быть удалены из целевого baseline.
+- `StopList` содержит `catalog_item_id` и `available_quantity`; запись может относиться к блюду, ингредиенту или заготовке и синхронизируется Edge <-> Cloud.
+- При добавлении позиции Edge локально разворачивает read-only рецептуру и блокирует продажу, если само блюдо или обязательный компонент находится в stop-list с `available_quantity = 0`.
+- Modifier на Edge остается ценовой опцией `modifier_option_id`; Cloud-only `ModifierOption.linked_catalog_item_id` приводит к отдельному списанию только в Inventory Worker.
+- `CheckClosed` является финальным batch trigger для заказа; Worker делает delta consumption после сверки с уже обработанными KDS событиями `ItemServed`.
+- `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted` и `ItemServed` являются Edge/KDS input events, а не Edge stock documents.
+- `RefundRecorded` и `CancellationRecorded` должны передавать `items[]` с индивидуальным `inventory_disposition`: `return_to_stock`, `write_off_waste`, `no_stock_effect`.
+
+Inventory and costing logic:
+
+- `ProductionCompleted` создает Cloud `PRODUCTION`: приходует заготовку и списывает сырье.
+- Auto-production при продаже сначала списывает доступную заготовку, а недостающую часть split-списанием разворачивает по рецепту до сырья.
+- `stock_ledger.unit_cost_minor` фиксирует себестоимость на момент события.
+- Если списание уходит в минус без истории приходов, `unit_cost_minor = 0`.
+- Если есть последняя известная цена, списание в минус использует ее для всего расхода, уводящего остаток ниже нуля.
+- Приход задним числом влияет только на события начиная с даты приходного документа.
+- Документы в прошлом запускают asynchronous recalculation job; worker строит DAG зависимостей `raw goods -> semi_finished -> dishes` и пересчитывает журнал хронологически.
+
+Профильный контракт:
+
+- `docs/backend/INVENTORY-COSTING-SPEC.md` содержит schema target, ER target, event payloads и алгоритмы дедупликации, auto-production и costing.
 
 Не реализовано сейчас:
 
-- automatic stock consumption engine;
-- recipe expansion runtime;
-- modifier-to-recipe expansion;
-- inventory consumption trigger from check/KDS;
-- automatic stock return on cancellation/refund;
-- stock movement services in cashier UI/runtime flow.
-
-Запланировано до пилота как boundary decision, если inventory входит в pilot acceptance:
-
-- Recipe должна быть versioned сущностью.
-- Dish, modifier option и semi-finished/preparation могут ссылаться на recipe/preparation semantics.
-- Recommended pilot policy: consumption after final check creation, если `KDS/DishServed` не введен как обязательный runtime trigger.
-- Для semi-finished/preparation сначала списывается баланс заготовки; разворачивание в компоненты при нехватке разрешается только если эта policy отдельно утверждена.
-- Order/precheck/check snapshots должны хранить достаточно данных, чтобы inventory/fiscal/reporting logic не зависела от текущего menu state.
-- Inventory changes должны происходить только через immutable stock documents / stock moves, а не прямым mutation counters.
-- Cancellation/refund flow может фиксировать только `inventory_disposition`; фактическое движение склада должно выполняться отдельным Inventory service.
-
-После пилота:
-
-- KDS-driven `DishServed` trigger;
-- batch/FIFO/AVCO costing;
-- procurement workflow beyond foundation.
+- Cloud Inventory Worker;
+- `stock_ledger` и `stock_recalculation_jobs`;
+- `stop_lists` sync Edge <-> Cloud;
+- KDS `ItemServed` / `ProductionCompleted` runtime;
+- ClickHouse `olap_stock_moves` projection;
+- удаление legacy Edge-side stock tables из текущего runtime baseline.
 
 ## Payment Processor And Fiscal Boundary
 

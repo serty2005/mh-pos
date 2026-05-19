@@ -1,6 +1,6 @@
 # ROADMAP
 
-Статус документа: актуализировано под фактический код на 2026-05-16.
+Статус документа: актуализировано под фактический код и целевую inventory architecture на 2026-05-19.
 
 Roadmap фиксирует статусы, блокеры и следующий план. Архитектурный контракт находится в `SPECv1.3.md`, backend contract — в `docs/backend/POS-BACKEND-SPEC.md`.
 
@@ -70,8 +70,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 Эти зоны имеют schema/domain foundation, но не являются готовым pilot runtime:
 
-- Recipes: SQLite `recipe_versions`, `recipe_lines`; Cloud `cloud_recipe_items`.
-- Inventory: SQLite `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, purchase receipt foundation; ручной backend service для posted stock document/moves реализован сейчас, но не подключен к cashier UI или автоматике продаж.
+- Recipes: целевая Edge SQLite схема хранит read-only `recipe_versions`, `recipe_lines`; Cloud остается authoring/source.
+- Inventory: целевая architecture is Cloud-centric Event-Driven Inventory. Edge-side `stock_documents`, `stock_moves`, `stock_balances`, `item_costs` and purchase receipt foundation являются legacy для roadmap и должны быть удалены из целевого baseline.
 - Master-data publications: Cloud package/publication foundation пока шире текущего POS Edge runtime для recipes/inventory.
 
 ## Аудит 2026-05-15
@@ -103,10 +103,12 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - runtime, backend validation, active-line edit API/UI, pricing, snapshots, reprint payloads and cashier UI flow реализованы сейчас;
   - modifier-to-recipe expansion, automatic stock consumption and return-to-stock moves вне текущего объема pilot modifier acceptance.
 - Recipes/inventory:
-  - старая recipe validation была частичной; новая policy запрещает `dish` как компонент и разрешает `good`/`semi_finished`;
-  - ручной stock document/move service реализован как отдельный Inventory boundary, записи остаются local-only и не запускаются из refund/cancellation endpoints;
-  - решить, входит ли automatic consumption в первый pilot;
-  - если входит, реализовать consumption trigger, recipe expansion policy и snapshot requirements.
+  - целевой contract зафиксирован в `docs/backend/INVENTORY-COSTING-SPEC.md`;
+  - Edge должен стать только генератором events и UI ввода, без stock documents/moves/balances/costing;
+  - целевая Edge SQLite schema: read-only `recipe_versions`, `recipe_lines`, двусторонний `stop_lists`;
+  - Cloud Inventory Worker должен обрабатывать `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
+  - реализовать `stock_ledger` with `unit_cost_minor`, `total_cost_minor`, `costing_status` and retro recalculation jobs;
+  - реализовать stop-list как единственный механизм блокировки продаж; stock balance остается аналитическим и может быть отрицательным.
 - Cancellation/refund/reprint hardening:
   - backend ledger, immutable snapshots, no-over-cancel/no-over-refund/no-over-line-amount tests, current `CancellationRecorded`/`RefundRecorded` sync contracts, idempotent Cloud raw/journal receipt checks and coarse Cloud refund projection реализованы;
   - cashier UI full whole-check и partial `order_line`/quantity cancellation/refund через ledger endpoints реализован с выбором inventory disposition; compatibility refund по captured payment оставлен отдельным fallback;
@@ -130,12 +132,14 @@ Roadmap фиксирует статусы, блокеры и следующий 
 После пилота:
 
 - KDS runtime and kitchen ticket lifecycle.
-- DishServed / production triggers.
-- Full inventory engine, recipe expansion, semi-finished consumption policies.
+- `ItemServed` / `ProductionCompleted` triggers.
+- Cloud Inventory Worker, recipe expansion, semi-finished auto-production split policies.
+- Stop-list bi-directional sync and Edge local recipe-based stop-list checks.
+- Costing Engine with negative balance rules and retro recalculation DAG.
 - Real PSP/payment processor integrations.
 - Fiscal adapter/fiscalization integrations.
 - Delivery/channel integrations.
-- ClickHouse OLAP/reporting accelerator and PostgreSQL projection pipeline.
+- ClickHouse `olap_stock_moves` OLAP/reporting accelerator and PostgreSQL projection pipeline.
 - `sqlc` adoption, если после стабилизации схемы это уменьшит риск persistence layer.
 - Full accounting/ERP integrations.
 

@@ -14,7 +14,8 @@
 | Menu item | Cloud | No | Cloud -> Edge | реализовано сейчас for ingest stream `menu` |
 | Catalog folder/tag | Cloud | No | Cloud -> Edge via `catalog` | реализовано сейчас |
 | Modifier group/option | Cloud | No | Cloud -> Edge via `catalog` | реализовано сейчас |
-| Recipe/reference inventory | Cloud | No | Cloud -> Edge planned | реализована только основа in schema/constants; POS Edge apply path not implemented |
+| Recipe reference | Cloud | Edge read-only | Cloud -> Edge planned | запланировано далее: `recipe_versions`/`recipe_lines` для KDS UI и stop-list checks |
+| Stop-list | Cloud + Edge manager input | Yes, only stop-list overlay | Bi-directional planned via `StopListUpdated` | запланировано далее |
 | Employee shift | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Cash session/drawer event | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Order/order line | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
@@ -24,7 +25,7 @@
 | Check | Edge | Generated after full payment; finalized checks are not rewritten by cancellation/refund | `CheckCreated` is current Edge -> Cloud operational event; `CheckRefunded` is legacy accepted | реализовано сейчас |
 | Tax/pricing policy reference | Cloud | Edge read model only | `pricing_policy` Cloud -> Edge stream for `tax_profiles`, `tax_rules`, `service_charge_rules`, `pricing_policies` | реализовано сейчас |
 | Operational order adjustments | Edge | Yes while order is open | runtime-команды; будущие policy ids могут ограничивать допустимые варианты | реализовано сейчас |
-| Stock document/move | Inventory context | Только ручной backend service; не cashier runtime | local-only сейчас | реализовано сейчас / основа: immutable documents/moves, no Cloud event contract |
+| Stock document/move/ledger | Cloud Inventory Worker | No | Edge business events -> Cloud worker | запланировано далее; Edge-side stock document service должен быть выведен из целевой архитектуры |
 
 ## Current Cloud -> Edge Ingest
 
@@ -38,7 +39,7 @@
 - `menu`
 - `pricing_policy`
 
-`recipes` и `inventory_reference` нельзя документировать как поддерживаемые POS Edge ingest streams, пока `mastersync.Service` не применяет их payloads.
+`recipes`, `inventory_reference` и `stop_lists` нельзя документировать как реализованные POS Edge ingest streams, пока `mastersync.Service` не применяет их payloads.
 `catalog` payload включает catalog folders/tags/services и modifier groups/options/bindings/effective links; `menu` payload включает menu items. Menu categories остаются отдельным понятием и не заменяют catalog folders.
 `pricing_policy` включает tax/service-charge reference tables и automatic discount/surcharge policies; manual override runtime остается backend RBAC-controlled action.
 
@@ -72,11 +73,14 @@
 - Pagination/filtering закрытых заказов является local POS read-model behavior и не добавляет sync ownership или event names.
 - Bounded outbox/local-event visibility в POS API/UI является local operational window and does not acknowledge, remove or archive sync rows.
 - POS Edge storage lifecycle status/dry-run является local operational read model и не добавляет sync event names. Любая будущая destructive retention/archive policy должна блокироваться при наличии non-sent `edge_to_cloud` outbox messages; текущий runtime только сообщает это blocking state.
-- manual Inventory service реализовано сейчас пишет `StockDocumentPosted` как local-only outbox/local event; это не часть Edge -> Cloud operational catalog.
+- manual Inventory service реализовано сейчас пишет `StockDocumentPosted` как local-only outbox/local event; это не часть Edge -> Cloud operational catalog и должно быть выведено из целевой архитектуры при переходе на Cloud-centric inventory.
 
 Запланировано далее:
 
-- inventory event contracts только после реализации runtime.
+- Edge/KDS events `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
+- Cloud Inventory Worker создает `stock_documents` и `stock_ledger` из accepted events;
+- `stock_balances` остаются аналитической проекцией и не блокируют продажи;
+- ClickHouse получает только OLAP projection из Cloud PostgreSQL.
 - richer modifier/pricing reporting projections после pilot acceptance.
 
 ## Master Data Rule

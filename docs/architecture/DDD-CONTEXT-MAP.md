@@ -26,8 +26,8 @@
 | `Payment` | captured payments, payment attempts, payment methods, provider metadata | реализовано сейчас for manual/trusted `cash/card/other` | PSP boundary decision only if pilot needs it | real PSP integration | fiscalization, order line pricing, inventory, cancellation/refund ledger |
 | `Check` | final paid document after full precheck payment, immutable check snapshot | реализовано сейчас | fiscal/tax fields only if policy exists | legal fiscal receipt adapter | PSP authorization and stock consumption |
 | `Financial Operations` | append-only cancellation/refund ledger, operation item scopes, inventory disposition, no-over-compensation rules | реализовано сейчас: full/partial cancellation and refund records, cashier UI for whole-check and partial `order_line`/quantity actions с явным inventory disposition, `CancellationRecorded`, `RefundRecorded` | rich partial UI for modifier/service/tip only if pilot acceptance requires it | richer accounting projections | inventory mutation, PSP refund execution, fiscal correction documents |
-| `Inventory` | stock documents, stock moves, stock balances, item costs, consumption policy | реализовано сейчас / основа: manual posted stock document service, immutable stock documents/moves, optional balance update in one transaction | consumption trigger only if accepted as pilot blocker | full recipe expansion, KDS/DishServed trigger, AVCO/FIFO/batches, UOM reference model | order/payment/check direct mutation |
-| `Production` | KDS tickets, stations, cooking/dish served lifecycle | вне текущего объема | none unless pilot changes | KDS runtime | financial close and inventory direct writes |
+| `Inventory` | Cloud-owned stock documents, stock ledger, costing, stop-list authority, inventory worker policy | запланировано далее: Cloud-centric Event-Driven Inventory; текущая Edge-side manual stock foundation является legacy и должна быть выведена из целевой архитектуры | целевая schema и event contracts | full worker implementation, retro costing, ClickHouse OLAP projection | Edge-side stock documents/moves, order/payment/check direct mutation |
+| `Production` | KDS tickets, stations, cooking/dish served lifecycle, `ItemServed`, `ProductionCompleted` input events | вне текущего объема | none unless pilot changes | KDS runtime feeding Cloud Inventory Worker | financial close and Cloud ledger writes |
 | `CRM` | customer identity/preferences/history | вне текущего объема except `guest_count` | none | full CRM | order/payment lifecycle |
 | `Loyalty` | bonuses/coupons/customer promos | вне текущего объема | none | full loyalty engine | backend authoritative totals unless integrated through Pricing |
 | `Accounting / Finance` | reporting/reconciliation/profit views | реализована только основа in Cloud projections: event-type stats and coarse shift finance counters including current `RefundRecorded` totals | detailed financial operation projection if pilot reports need it | ERP/accounting integration, ClickHouse acceleration | runtime capture/check mutation |
@@ -39,8 +39,10 @@
 - `Fiscal / Tax` does not own PSP/payment processor state.
 - `Payment` and fiscalization are separate boundaries.
 - `Order` does not write inventory directly.
-- `Inventory` changes only through stock documents / stock moves.
-- Balance updates допустимы только как explicit Inventory service/repository transaction, связанная со stock document.
+- `Inventory` changes only through Cloud Inventory Worker generated stock documents / stock ledger.
+- В целевой architecture POS Edge never writes stock documents, stock moves, stock balances or costing rows.
+- Balance is an analytic projection and may be negative; it never blocks POS sale.
+- `StopList` is the only sale-blocking inventory availability mechanism and syncs Edge <-> Cloud.
 - Cancellation/refund records financial compensation and explicit inventory disposition; it does not move stock by itself.
 - Finalized checks/payments are not rewritten by compensation flows.
 - UI never owns authoritative discount/tax/totals.
@@ -61,8 +63,8 @@
 Реализована только основа:
 
 - Domain constants mention `recipes` and `inventory_reference`.
-- SQLite state can store sync state for those streams.
-- Apply path for those streams is not implemented in `mastersync.Service`.
+- Целевая Edge schema keeps only read-only `recipe_versions`/`recipe_lines` и bidirectional `stop_lists` for inventory availability checks.
+- Apply path for `recipes`, `inventory_reference` and `stop_lists` is not implemented in `mastersync.Service`.
 
 ## Pre-Pilot Boundary Decisions
 
@@ -83,10 +85,11 @@ Modifiers:
 
 Recipes/Inventory:
 
-- реализовано сейчас / основа: manual posted stock document service пишет immutable documents/moves and optional balances;
-- UOM остается string-based; separate UOM reference with `code`, `name`, `short_name` and translations запланирована далее только при расширении inventory runtime;
-- consumption after final check is recommended pilot policy if no KDS/DishServed trigger is introduced;
-- semi-finished fallback expansion requires explicit approved policy.
+- запланировано далее: Edge emits immutable business events, Cloud Inventory Worker computes stock documents, ledger and costing;
+- запланировано далее: `CheckClosed` является финальным batch-delta trigger and is reconciled with KDS `ItemServed`;
+- запланировано далее: `ProductionCompleted` creates `PRODUCTION`, and auto-production split expands unavailable semi-finished quantity to raw ingredients;
+- запланировано далее: `stock_ledger.unit_cost_minor` uses last known cost or zero-cost rules for negative balances, with DAG-based retro recalculation;
+- UOM остается string-based; separate UOM reference with `code`, `name`, `short_name` and translations запланирована далее только при расширении inventory runtime.
 
 Payment/Fiscal:
 

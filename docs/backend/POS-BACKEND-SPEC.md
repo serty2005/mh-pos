@@ -22,6 +22,7 @@
 - `sqlc` как текущий persistence implementation;
 - ClickHouse runtime;
 - inventory consumption engine;
+- Cloud Inventory Worker и costing engine;
 - payment processor module;
 - fiscal adapter.
 
@@ -275,12 +276,13 @@ Modifiers:
 
 Recipes/inventory:
 
-- Реализовано сейчас / основа: SQLite recipe and stock tables plus separate backend Inventory service for manual posted stock documents/moves.
-- Реализовано сейчас: `stock_documents` и `stock_moves` append-only; optional stock balance update выполняется только внутри Inventory service transaction, которая создает document/moves.
-- Не реализовано сейчас: recipe expansion, modifier-to-recipe expansion, automatic stock consumption.
-- Реализовано сейчас: cancellation/refund ledger хранит явный `inventory_disposition`, но не мутирует stock tables.
-- Не реализовано сейчас: automatic stock return on refund/cancellation.
-- Запланировано далее: consumption policy, UOM reference model and inventory UI/API if pilot scope accepts them.
+- Запланировано далее: POS Edge работает как генератор events и UI ввода; он не создает `StockDocument`, `StockMove`, stock balance или costing rows.
+- Запланировано далее: Edge SQLite содержит only read-only `recipe_versions`, `recipe_lines` and bidirectional `stop_lists`; legacy Edge-side stock tables должны быть удалены из целевого baseline.
+- Запланировано далее: Cloud Inventory Worker обрабатывает `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`.
+- Запланировано далее: Cloud PostgreSQL хранит `stock_ledger` with `unit_cost_minor`, `total_cost_minor` and `costing_status`; ClickHouse получает batch projection `olap_stock_moves`.
+- Реализовано сейчас: cancellation/refund ledger хранит явный `inventory_disposition`, но текущий POS runtime не мутирует stock tables.
+- Не реализовано сейчас: Cloud Inventory Worker, stop-list sync, recipe expansion, modifier linked catalog item stock consumption, automatic stock return/write-off.
+- Профильный целевой contract: `docs/backend/INVENTORY-COSTING-SPEC.md`.
 
 ## RBAC
 
