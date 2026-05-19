@@ -836,6 +836,23 @@ CREATE TABLE IF NOT EXISTS recipe_lines (
   UNIQUE(recipe_version_id, catalog_item_id)
 );
 
+CREATE TABLE IF NOT EXISTS stop_lists (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL,
+  catalog_item_id TEXT NOT NULL,
+  available_quantity REAL,
+  source TEXT NOT NULL,
+  reason TEXT,
+  active INTEGER NOT NULL CHECK (active IN (0,1)),
+  cloud_version INTEGER,
+  cloud_updated_at TEXT,
+  cloud_deleted_at TEXT,
+  last_synced_at TEXT,
+  updated_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS stop_lists_restaurant_item ON stop_lists(restaurant_id, catalog_item_id);
+
 CREATE TABLE IF NOT EXISTS purchase_receipts (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id),

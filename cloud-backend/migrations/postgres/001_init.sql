@@ -919,3 +919,72 @@ ALTER TABLE cloud_master_data_packages
 
 ALTER TABLE cloud_master_data_packages
   ADD CONSTRAINT cloud_master_data_packages_stream_name_check CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','currencies'));
+
+
+-- === 004_cloud_inventory_foundation.sql ===
+CREATE TABLE IF NOT EXISTS stock_documents (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  document_type TEXT NOT NULL CHECK (document_type IN ('SALE','RETURN','WASTE','PRODUCTION','PURCHASE','ADJUSTMENT','TRANSFER','INVENTORY_COUNT')),
+  source_event_id TEXT NOT NULL CHECK (source_event_id <> ''),
+  source_event_type TEXT NOT NULL CHECK (source_event_type <> ''),
+  business_date_local DATE NOT NULL,
+  occurred_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS stock_documents_restaurant_occurred_at
+  ON stock_documents(restaurant_id, occurred_at, id);
+
+CREATE TABLE IF NOT EXISTS stock_ledger (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  stock_document_id TEXT NOT NULL REFERENCES stock_documents(id) ON DELETE RESTRICT,
+  source_event_id TEXT NOT NULL CHECK (source_event_id <> ''),
+  source_event_type TEXT NOT NULL CHECK (source_event_type <> ''),
+  catalog_item_id TEXT NOT NULL CHECK (catalog_item_id <> ''),
+  order_line_id TEXT,
+  movement_type TEXT NOT NULL CHECK (movement_type IN ('IN','OUT')),
+  quantity NUMERIC(14,3) NOT NULL CHECK (quantity > 0),
+  unit_code TEXT NOT NULL CHECK (unit_code <> ''),
+  unit_cost_minor BIGINT NOT NULL CHECK (unit_cost_minor >= 0),
+  total_cost_minor BIGINT NOT NULL,
+  costing_status TEXT NOT NULL CHECK (costing_status IN ('final','estimated','needs_recalculation','recalculated','failed')),
+  occurred_at TIMESTAMPTZ NOT NULL,
+  business_date_local DATE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS stock_ledger_restaurant_occurred_at
+  ON stock_ledger(restaurant_id, occurred_at, id);
+
+CREATE INDEX IF NOT EXISTS stock_ledger_source_event
+  ON stock_ledger(source_event_id, source_event_type);
+
+CREATE TABLE IF NOT EXISTS stock_recalculation_jobs (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  source_document_id TEXT NOT NULL REFERENCES stock_documents(id) ON DELETE RESTRICT,
+  status TEXT NOT NULL CHECK (status <> ''),
+  recalculate_from TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS stock_recalculation_jobs_restaurant_status
+  ON stock_recalculation_jobs(restaurant_id, status, recalculate_from);
+
+CREATE TABLE IF NOT EXISTS stop_lists (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  catalog_item_id TEXT NOT NULL CHECK (catalog_item_id <> ''),
+  available_quantity NUMERIC(14,3),
+  source TEXT NOT NULL CHECK (source <> ''),
+  reason TEXT,
+  active BOOLEAN NOT NULL,
+  cloud_version BIGINT,
+  updated_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS stop_lists_restaurant_item
+  ON stop_lists(restaurant_id, catalog_item_id);

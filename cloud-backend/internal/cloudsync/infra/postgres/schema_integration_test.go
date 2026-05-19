@@ -61,6 +61,23 @@ func openPostgresIntegrationPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
+func openPostgresWithBaseline(t *testing.T, ctx context.Context) (*pgxpool.Pool, func()) {
+	t.Helper()
+	pool := openPostgresIntegrationPool(t)
+	resetPublicSchema(t, ctx, pool)
+	if err := platformpg.MigrateDirWithPolicy(ctx, pool, actualMigrationsDir(), platformpg.MigrationOptions{
+		ModuleName:         "cloud-backend",
+		ModuleVersion:      "0.1.0",
+		BackupDir:          t.TempDir(),
+		SchemaRequirements: RequiredSchema(),
+	}); err != nil {
+		t.Fatalf("postgres baseline migration failed: %v", err)
+	}
+	return pool, func() {
+		resetPublicSchema(t, context.Background(), pool)
+	}
+}
+
 func resetPublicSchema(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	t.Helper()
 	if _, err := pool.Exec(ctx, `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`); err != nil {

@@ -234,6 +234,35 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			MigrationFile: "001_init.sql",
 			Columns:       []string{"menu_item_id", "location_id", "active"},
 		},
+
+		{
+			Table:         "stock_documents",
+			RequiredBy:    "cloud inventory foundation immutable stock document header",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"id", "restaurant_id", "document_type", "source_event_id", "source_event_type", "business_date_local", "occurred_at", "created_at"},
+			Indexes:       []string{"stock_documents_restaurant_occurred_at"},
+		},
+		{
+			Table:         "stock_ledger",
+			RequiredBy:    "cloud inventory foundation immutable stock movement and costing ledger",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"id", "restaurant_id", "stock_document_id", "source_event_id", "source_event_type", "catalog_item_id", "order_line_id", "movement_type", "quantity", "unit_code", "unit_cost_minor", "total_cost_minor", "costing_status", "occurred_at", "business_date_local", "created_at"},
+			Indexes:       []string{"stock_ledger_restaurant_occurred_at", "stock_ledger_source_event"},
+		},
+		{
+			Table:         "stock_recalculation_jobs",
+			RequiredBy:    "cloud inventory foundation retrospective recalculation queue",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"id", "restaurant_id", "source_document_id", "status", "recalculate_from", "created_at", "updated_at"},
+			Indexes:       []string{"stock_recalculation_jobs_restaurant_status"},
+		},
+		{
+			Table:         "stop_lists",
+			RequiredBy:    "cloud authoritative stop-list state for sale blocking",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"id", "restaurant_id", "catalog_item_id", "available_quantity", "source", "reason", "active", "cloud_version", "updated_at"},
+			Indexes:       []string{"stop_lists_restaurant_item"},
+		},
 		{
 			Table:         "cloud_pricing_policies",
 			RequiredBy:    "cloud-owned discount/surcharge pricing policy reference",
