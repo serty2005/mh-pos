@@ -1,22 +1,24 @@
 package idgen
 
 import (
-	"crypto/rand"
 	"fmt"
+
+	"github.com/google/uuid"
 )
 
+// Generator задает общий контракт генерации идентификаторов runtime-модулей.
 type Generator interface {
 	NewID() string
 }
 
+// UUIDGenerator генерирует UUID v7 для новых runtime-сущностей и sync events.
 type UUIDGenerator struct{}
 
+// NewID возвращает UUID v7 или останавливает выполнение, чтобы не создать событие с неподдерживаемым ID.
 func (UUIDGenerator) NewID() string {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		panic(err)
+	id, err := uuid.NewV7()
+	if err != nil {
+		panic(fmt.Errorf("generate uuidv7: %w", err))
 	}
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+	return id.String()
 }

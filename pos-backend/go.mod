@@ -5,6 +5,7 @@ go 1.26.2
 require (
 	github.com/JohannesJHN/iso4217 v0.0.0-20250910211824-d9ba0fe363a8
 	github.com/go-chi/chi/v5 v5.2.5
+	github.com/google/uuid v1.6.0
 	mh-pos-platform v0.0.0
 	modernc.org/sqlite v1.50.0
 )
@@ -13,7 +14,6 @@ replace mh-pos-platform => ../shared/platform
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect

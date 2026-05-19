@@ -281,6 +281,9 @@ func ValidateEnvelope(v SyncEnvelope) error {
 	if strings.TrimSpace(v.EventID) == "" || strings.TrimSpace(v.CommandID) == "" {
 		return fmt.Errorf("%w: event_id and command_id are required", ErrInvalidEnvelope)
 	}
+	if !isUUIDv7(strings.TrimSpace(v.EventID)) {
+		return fmt.Errorf("%w: event_id must be uuidv7", ErrInvalidEnvelope)
+	}
 	if !IsKnownEventType(v.EventType) {
 		return fmt.Errorf("%w: unsupported event_type %q", ErrInvalidEnvelope, v.EventType)
 	}
@@ -303,6 +306,29 @@ func ValidateEnvelope(v SyncEnvelope) error {
 		return err
 	}
 	return nil
+}
+
+func isUUIDv7(v string) bool {
+	if len(v) != 36 {
+		return false
+	}
+	for i, r := range v {
+		switch i {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return false
+			}
+		default:
+			if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
+				return false
+			}
+		}
+	}
+	if v[14] != '7' {
+		return false
+	}
+	variant := v[19]
+	return variant == '8' || variant == '9' || variant == 'a' || variant == 'A' || variant == 'b' || variant == 'B'
 }
 
 func ValidateEventPayload(v SyncEnvelope) error {
