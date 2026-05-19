@@ -43,7 +43,7 @@ CLOUD_POSTGRES_MIGRATIONS_DIR=migrations/postgres
 CLOUD_POSTGRES_BACKUP_DIR=data/cloud-backups
 CLOUD_PUBLIC_URL=http://localhost:8090
 LICENSE_SERVER_URL=http://localhost:8095
-MH_POS_VERSION=0.1.3
+MH_POS_VERSION=0.1.4
 ```
 
 `CLOUD_POSTGRES_DSN` обязателен.
