@@ -461,6 +461,10 @@ func (s *Service) GetCheckAsOperator(ctx context.Context, id string, meta Comman
 	return s.checks.GetCheckAsOperator(ctx, id, meta)
 }
 
+func (s *Service) ListFinancialOperationsByCheckAsOperator(ctx context.Context, checkID string, meta CommandMeta) ([]domain.FinancialOperation, error) {
+	return s.checks.ListFinancialOperationsByCheckAsOperator(ctx, checkID, meta)
+}
+
 func (s *Service) ListClosedOrders(ctx context.Context, cmd ListClosedOrdersCommand) ([]domain.OrderSummary, error) {
 	return s.checks.ListClosedOrders(ctx, cmd)
 }

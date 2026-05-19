@@ -271,7 +271,7 @@ Cancellation/refund sync behavior:
 - `CancellationRecorded` и `RefundRecorded` являются текущими Edge -> Cloud operational events для append-only financial operation ledger.
 - Whole-check и partial `order_line`/quantity cancellation/refund UI, а также compatibility payment refund пишут те же текущие ledger events: `CancellationRecorded` для cancellation и `RefundRecorded` для refund. Переданный UI `command_id` остается idempotency key; `inventory_disposition` и operation `items[]` остаются payload data и не являются stock movement event.
 - `PaymentRefunded` и `CheckRefunded` остаются валидируемыми legacy event types, но новый POS Edge refund flow пишет `RefundRecorded`.
-- Cloud receiver валидирует эти event types, сохраняет raw envelope/journal rows и обновляет event-type stats.
+- Cloud receiver валидирует для текущих `CancellationRecorded`/`RefundRecorded` operation id, check id, original/current shift ids, amount, currency, business date, operation-level inventory disposition и immutable snapshot; затем сохраняет raw envelope/journal rows и обновляет event-type stats.
 - `GET /api/v1/sync/edge-events` реализовано сейчас как безопасный Cloud UI/API журнал receipt metadata: `restaurant_id`, `device_id`, `event_type`, aggregate metadata, timestamps и SHA-256 raw payload; raw payload в ответ не включается.
 - `cloud_edge_event_receipts.event_type` принимает весь текущий catalog и legacy inbound-only types, чтобы runtime schema не расходилась с Go validation contract.
 - Cloud shift finance foundation обновляет coarse refund counters from `RefundRecorded` (`checks_refunded_count`, `checks_refunded_total`) and legacy `PaymentRefunded`/`CheckRefunded` counters where such envelopes are received.
@@ -325,27 +325,26 @@ Cancellation/refund sync behavior:
 }
 ```
 
-`RefundRecorded` и `CancellationRecorded` должны передавать disposition по каждой строке:
+`RefundRecorded` и `CancellationRecorded` сейчас передают operation-level disposition, а не disposition по каждой строке:
 
 ```json
 {
   "operation_id": "018f0000-0000-7000-8000-000000000501",
   "operation_type": "refund",
   "check_id": "018f0000-0000-7000-8000-000000000001",
+  "inventory_disposition": "return_to_stock",
   "business_date_local": "2026-05-19",
   "recorded_at": "2026-05-19T14:00:00Z",
   "items": [
     {
       "order_line_id": "018f0000-0000-7000-8000-000000000010",
       "catalog_item_id": "018f0000-0000-7000-8000-000000000020",
-      "quantity": "1.000",
-      "inventory_disposition": "return_to_stock"
+      "quantity": "1.000"
     },
     {
       "order_line_id": "018f0000-0000-7000-8000-000000000011",
       "catalog_item_id": "018f0000-0000-7000-8000-000000000021",
-      "quantity": "1.000",
-      "inventory_disposition": "write_off_waste"
+      "quantity": "1.000"
     }
   ]
 }
@@ -373,7 +372,7 @@ Cancellation/refund sync behavior:
 - Payloads `PaymentCaptured`, `CheckCreated`, `CancellationRecorded` и `RefundRecorded` включают backend-owned `business_date_local`, если он есть у source aggregate.
 - Precheck/check reprint использует immutable snapshot payload, включая selected modifiers с name, quantity, unit price и total price.
 - Payment ссылается на `precheck_id`, а не на legacy `check_id`.
-- `RefundRecorded`/`CancellationRecorded` payload содержит immutable operation snapshot with embedded check snapshot, selected modifiers and item scopes; Cloud raw/journal receipt не должен отбрасывать modifier data из snapshot payload.
+- `RefundRecorded`/`CancellationRecorded` payload содержит immutable operation snapshot with embedded check snapshot, selected modifiers and item scopes; Cloud raw/journal receipt не должен отбрасывать modifier data из snapshot payload. Текущий validation contract требует operation-level `inventory_disposition`; `items[].inventory_disposition` не является реализованным полем.
 
 Не реализовано сейчас:
 

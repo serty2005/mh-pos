@@ -354,7 +354,7 @@ func ValidateEventPayload(v SyncEnvelope) error {
 	case EventPaymentRefunded:
 		return validatePayload[PaymentRefunded](v)
 	case EventCancellationRecorded, EventRefundRecorded:
-		return validatePayload[FinancialOperationRecorded](v)
+		return validateFinancialOperationRecordedPayload(v)
 	case EventOrderClosed:
 		return validatePayload[OrderClosed](v)
 	case EventCashSessionOpened:
@@ -398,6 +398,70 @@ func validateOperationalPayload(v SyncEnvelope) error {
 		return fmt.Errorf("%w: payload.data is required", ErrInvalidEnvelope)
 	}
 	return nil
+}
+
+func validateFinancialOperationRecordedPayload(v SyncEnvelope) error {
+	var payload Payload[FinancialOperationRecorded]
+	if err := json.Unmarshal(v.Payload, &payload); err != nil {
+		return fmt.Errorf("%w: invalid %s payload: %v", ErrInvalidEnvelope, v.EventType, err)
+	}
+	if strings.TrimSpace(payload.Origin) == "" {
+		return fmt.Errorf("%w: payload.origin is required", ErrInvalidEnvelope)
+	}
+	data := payload.Data
+	if strings.TrimSpace(data.ID) == "" || strings.TrimSpace(data.CheckID) == "" || strings.TrimSpace(data.OriginalShiftID) == "" || strings.TrimSpace(data.ShiftID) == "" {
+		return fmt.Errorf("%w: financial operation id, check_id, original_shift_id and shift_id are required", ErrInvalidEnvelope)
+	}
+	if strings.TrimSpace(v.AggregateType) != "FinancialOperation" || strings.TrimSpace(v.AggregateID) != strings.TrimSpace(data.ID) {
+		return fmt.Errorf("%w: financial operation aggregate must match payload id", ErrInvalidEnvelope)
+	}
+	if v.ShiftID == nil || strings.TrimSpace(*v.ShiftID) != strings.TrimSpace(data.ShiftID) {
+		return fmt.Errorf("%w: financial operation shift_id must match envelope shift_id", ErrInvalidEnvelope)
+	}
+	expectedType := "refund"
+	if v.EventType == EventCancellationRecorded {
+		expectedType = "cancellation"
+	}
+	if strings.TrimSpace(data.OperationType) != expectedType {
+		return fmt.Errorf("%w: financial operation type does not match event_type", ErrInvalidEnvelope)
+	}
+	if data.OperationKind != "full" && data.OperationKind != "partial" {
+		return fmt.Errorf("%w: financial operation kind is invalid", ErrInvalidEnvelope)
+	}
+	if strings.TrimSpace(data.Status) != "recorded" {
+		return fmt.Errorf("%w: financial operation status must be recorded", ErrInvalidEnvelope)
+	}
+	if data.Amount <= 0 || !validCurrency(data.Currency) {
+		return fmt.Errorf("%w: financial operation amount and currency are required", ErrInvalidEnvelope)
+	}
+	if _, err := time.Parse("2006-01-02", strings.TrimSpace(data.BusinessDateLocal)); err != nil {
+		return fmt.Errorf("%w: financial operation business_date_local must use YYYY-MM-DD", ErrInvalidEnvelope)
+	}
+	switch data.InventoryDisposition {
+	case "no_stock_effect", "return_to_stock", "write_off_waste", "manual_review":
+	default:
+		return fmt.Errorf("%w: financial operation inventory_disposition is invalid", ErrInvalidEnvelope)
+	}
+	if len(data.Snapshot) == 0 || string(data.Snapshot) == "null" || !json.Valid(data.Snapshot) {
+		return fmt.Errorf("%w: financial operation snapshot is required", ErrInvalidEnvelope)
+	}
+	if data.CreatedAt.IsZero() {
+		return fmt.Errorf("%w: financial operation created_at is required", ErrInvalidEnvelope)
+	}
+	return nil
+}
+
+func validCurrency(v string) bool {
+	v = strings.TrimSpace(v)
+	if len(v) != 3 {
+		return false
+	}
+	for _, r := range v {
+		if r < 'A' || r > 'Z' {
+			return false
+		}
+	}
+	return true
 }
 
 func IsKnownEventType(v EventType) bool {

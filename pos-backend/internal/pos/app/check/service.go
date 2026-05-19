@@ -80,6 +80,27 @@ func (s *Service) GetCheckAsOperator(ctx context.Context, id string, meta shared
 	return s.GetCheck(ctx, id)
 }
 
+// ListFinancialOperationsByCheckAsOperator возвращает append-only ledger операций по final check
+// только внутри restaurant scope текущего оператора.
+func (s *Service) ListFinancialOperationsByCheckAsOperator(ctx context.Context, checkID string, meta shared.CommandMeta) ([]domain.FinancialOperation, error) {
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionCheckView))
+	if err != nil {
+		return nil, err
+	}
+	check, err := s.repo.GetCheck(ctx, strings.TrimSpace(checkID))
+	if err != nil {
+		return nil, err
+	}
+	order, err := s.repo.GetOrder(ctx, check.OrderID)
+	if err != nil {
+		return nil, err
+	}
+	if order.RestaurantID != operator.Employee.RestaurantID {
+		return nil, fmt.Errorf("%w: check is outside operator restaurant", domain.ErrForbidden)
+	}
+	return s.repo.ListFinancialOperationsByCheck(ctx, check.ID)
+}
+
 func (s *Service) ListClosedOrders(ctx context.Context, cmd ListClosedOrdersCommand) ([]order.OrderSummary, error) {
 	operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionCheckView))
 	if err != nil {

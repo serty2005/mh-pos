@@ -399,6 +399,7 @@ func sampleFinancialOperationEnvelope(t *testing.T, eventType contracts.EventTyp
 				"business_date_local":   businessDate,
 				"inventory_disposition": "no_stock_effect",
 				"reason":                "guest return",
+				"snapshot":              map[string]any{"document_type": "financial_operation", "check_id": "check-1"},
 				"created_at":            businessDate + "T09:00:00Z",
 			},
 		},

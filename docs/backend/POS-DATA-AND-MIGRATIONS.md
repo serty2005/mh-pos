@@ -54,6 +54,7 @@ Cashier runtime invariants:
 - `financial_operations` and `financial_operation_items` are append-only ledger tables for cancellation/refund; they do not mutate finalized payment/check/precheck rows.
 - `financial_operation_items.scope` supports `whole_check`, `order_line`, `modifier_line`, `service_charge`, `tip`, `payment`.
 - `financial_operations.inventory_disposition` stores `no_stock_effect`, `return_to_stock`, `write_off_waste` or `manual_review`; it is not an automatic stock movement.
+- `financial_operations_check_type_created_at` supports per-check ledger reads used by `GET /api/v1/checks/{id}/financial-operations`.
 - `business_date_local` is stored for shifts, cash sessions, payments, checks and financial operations.
 - Целевой Cloud-centric inventory contract запрещает POS Edge создавать складские документы и проводки.
 - Следующий inventory baseline должен удалить Edge-side `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`.
@@ -235,6 +236,7 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 - `financial_operation_items` stores item allocations for whole check, order line, modifier line, service charge, tip and payment scope.
 - SQLite triggers reject update/delete for both financial operation tables.
 - Backend records `CancellationRecorded` and `RefundRecorded` outbox/local events.
+- Backend exposes `GET /api/v1/checks/{id}/financial-operations` as a read-only per-check ledger surface for activity detail.
 - Legacy payment refund route writes the same ledger through payment scope instead of updating payment/check/precheck statuses.
 - Cashier UI whole-check и partial `order_line`/quantity cancellation/refund использует те же ledger endpoints, отправляет явный `inventory_disposition` и не требует schema changes или mutable status columns у finalized payments/checks. Line/quantity UI опирается на immutable check/precheck snapshot и пишет `financial_operation_items` со scope `order_line`; modifier/service/tip UI не реализован сейчас.
 
@@ -290,7 +292,7 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 - Cloud Inventory Worker создает Cloud-owned stock documents and `stock_ledger` from Edge/KDS business events.
 - `CheckClosed` запускает batch delta consumption после сверки с `ItemServed`.
 - `ProductionCompleted` создает `PRODUCTION`: приход заготовки и расход сырья.
-- `RefundRecorded` и `CancellationRecorded` должны содержать `items[].inventory_disposition` для каждой возвращаемой строки.
+- `RefundRecorded` и `CancellationRecorded` должны содержать operation-level `inventory_disposition`; отдельный `items[].inventory_disposition` в текущем payload не реализован.
 - `StopListUpdated` синхронизируется Edge <-> Cloud.
 - UOM reference model with separate code/display fields remains запланировано далее.
 

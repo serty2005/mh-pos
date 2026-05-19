@@ -115,6 +115,7 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
 - `POST /api/v1/prechecks/{id}/payments`
 - `POST /api/v1/payments/{id}/refund`
 - `GET /api/v1/checks/{id}`
+- `GET /api/v1/checks/{id}/financial-operations`
 - `POST /api/v1/checks/{id}/reprint`
 - `POST /api/v1/checks/{id}/cancellations`
 - `POST /api/v1/checks/{id}/refunds`
@@ -143,6 +144,7 @@ Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, qu
 - Modifier/service/tip scopes поддержаны как ledger scopes с explicit snapshot; cashier UI уже поддерживает выбор modifiers в заказе, но отдельного UI для partial modifier/service/tip cancellation/refund сейчас нет.
 - Cashier UI реализует full whole-check cancellation/refund и partial `order_line`/quantity cancellation/refund поверх ledger endpoints. Line/quantity варианты строятся из immutable `check.snapshot.precheck_snapshot.lines`, но backend остается финальным enforcement layer для суммы, количества, смены и business date.
 - Cashier UI для whole-check операций отправляет `command_id`, `operation_kind`, `inventory_disposition` и reason без `items[]`; backend записывает `whole_check` item из immutable check snapshot. Для `order_line`/quantity UI отправляет `items[]` со scope `order_line`, `order_line_id`, `quantity`, `amount`, `currency` и `tax_amount`.
+- `GET /api/v1/checks/{id}/financial-operations` реализовано сейчас как read-only ledger view по конкретному final check под `pos.check.view`; activity UI показывает type, kind, amount, reason, employee/approver, business date, inventory disposition и created time.
 - Inventory disposition фиксируется явно: `no_stock_effect`, `return_to_stock`, `write_off_waste`, `manual_review`.
 - Financial operation не создает `stock_moves` автоматически.
 - No-over-refund/no-over-cancel проверяется по сумме check; для `order_line` backend также проверяет selected line amount, уже записанную сумму по line и сумму уже записанных quantities по operation type.
@@ -154,7 +156,7 @@ Boundary rules:
 - Refund применяется после закрытия исходной personal shift или на более поздней `business_date_local`; для записи refund все равно нужна текущая open cash session.
 - Refund денег не означает возврат товара на склад; stock effect задается только `inventory_disposition` и требует отдельного inventory service, которого в cashier runtime сейчас нет.
 - Legacy events `PaymentRefunded` и `CheckRefunded` остаются распознаваемыми Cloud sync event types для старых payloads, но новый POS Edge runtime пишет `RefundRecorded`.
-- Cloud receiver stores raw/journal envelopes for `RefundRecorded`, updates event-type stats and updates coarse shift finance refund counters. It is not a full financial operation reporting projection by item scope, inventory disposition or approval policy.
+- Cloud receiver validates current `RefundRecorded`/`CancellationRecorded` payload shape for operation id, check id, current/original shift id, amount, currency, business date, inventory disposition and snapshot, stores raw/journal envelopes, updates event-type stats and updates coarse shift finance refund counters for refunds. It is not a full financial operation reporting projection by item scope, inventory disposition or approval policy.
 
 Не реализовано сейчас:
 
@@ -267,7 +269,7 @@ Boundary rules:
 - Modifier на Edge остается ценовой опцией `modifier_option_id`; Cloud-only `ModifierOption.linked_catalog_item_id` приводит к отдельному списанию только в Inventory Worker.
 - `CheckClosed` является финальным batch trigger для заказа; Worker делает delta consumption после сверки с уже обработанными KDS событиями `ItemServed`.
 - `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted` и `ItemServed` являются Edge/KDS input events, а не Edge stock documents.
-- `RefundRecorded` и `CancellationRecorded` должны передавать `items[]` с индивидуальным `inventory_disposition`: `return_to_stock`, `write_off_waste`, `no_stock_effect`.
+- `RefundRecorded` и `CancellationRecorded` должны передавать operation-level `inventory_disposition`: `return_to_stock`, `write_off_waste`, `manual_review` или `no_stock_effect`. Текущий payload не содержит отдельного `items[].inventory_disposition`.
 
 Inventory and costing logic:
 

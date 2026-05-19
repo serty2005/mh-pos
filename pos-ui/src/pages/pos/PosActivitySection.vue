@@ -139,6 +139,29 @@
           <div v-if="!(selectedOrder.check?.payments?.length)" class="empty-state small">{{ terminal.t('common.empty') }}</div>
         </div>
 
+        <div class="payment-list">
+          <p class="eyebrow">{{ terminal.t('pos.financialOperations') }}</p>
+          <q-banner v-if="financialOperations.error.value" class="error-banner dense-banner" rounded>
+            {{ terminal.t(terminal.displayErrorMessageKey(financialOperations.error.value)) }}
+          </q-banner>
+          <q-skeleton v-if="financialOperations.isFetching.value" class="order-skeleton" />
+          <article v-for="operation in financialOperations.data.value ?? []" :key="operation.id" class="payment-row ledger-row">
+            <span>
+              <strong>{{ operationTitle(operation) }}</strong>
+              <small>{{ operation.reason }}</small>
+              <small>{{ terminal.t('pos.businessDate') }}: {{ operation.business_date_local }}</small>
+              <small>{{ terminal.t('pos.inventoryDisposition') }}: {{ terminal.t(`pos.inventoryDispositions.${operation.inventory_disposition}`) }}</small>
+              <small>{{ terminal.t('pos.createdByEmployee') }}: {{ terminal.shortId(operation.created_by_employee_id) }}</small>
+              <small v-if="operation.approved_by_employee_id">{{ terminal.t('pos.approvedByEmployee') }}: {{ terminal.shortId(operation.approved_by_employee_id) }}</small>
+            </span>
+            <span class="ledger-row-side">
+              <strong>{{ terminal.money(operation.amount, operation.currency) }}</strong>
+              <small>{{ terminal.formatDate(operation.created_at) }}</small>
+            </span>
+          </article>
+          <div v-if="!financialOperations.isFetching.value && !(financialOperations.data.value?.length)" class="empty-state small">{{ terminal.t('common.empty') }}</div>
+        </div>
+
         <div class="rail-actions integrated-action-bar">
           <q-btn
             color="primary"
@@ -191,9 +214,11 @@
 </template>
 
 <script setup lang="ts">
+import { useQuery } from '@tanstack/vue-query';
 import { computed, ref, watch } from 'vue';
 
-import type { ClosedOrder } from '../../shared/schemas';
+import { listFinancialOperationsByCheck } from '../../shared/api';
+import type { ClosedOrder, FinancialOperation } from '../../shared/schemas';
 import type { CashierTerminal } from './useCashierTerminal';
 
 type ActivityFilter = 'all' | 'refundable';
@@ -225,6 +250,13 @@ const visibleOrders = computed(() => {
 });
 
 const selectedOrder = computed(() => visibleOrders.value.find((order) => order.id === selectedOrderId.value) ?? visibleOrders.value[0] ?? null);
+const selectedCheckId = computed(() => selectedOrder.value?.check?.id ?? '');
+
+const financialOperations = useQuery({
+  queryKey: ['financial-operations', selectedCheckId],
+  queryFn: () => listFinancialOperationsByCheck(selectedCheckId.value),
+  enabled: () => Boolean(selectedCheckId.value && props.terminal.canViewClosedOrders.value),
+});
 
 const canRefundSelected = computed(() => Boolean(
   selectedOrder.value
@@ -259,5 +291,9 @@ function paymentStateLabel(order: ClosedOrder) {
   if (hasRefundedPayment(order)) return props.terminal.t('status.refunded');
   if (hasCapturedPayment(order)) return props.terminal.t('status.paid');
   return props.terminal.statusLabel(order.check?.status ?? order.status);
+}
+
+function operationTitle(operation: FinancialOperation) {
+  return `${props.terminal.t(`pos.operationTypes.${operation.operation_type}`)} · ${props.terminal.t(`pos.operationKinds.${operation.operation_kind}`)}`;
 }
 </script>

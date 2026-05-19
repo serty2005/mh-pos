@@ -83,6 +83,7 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/prechecks/{id}/payments", h.capturePrecheckPayment)
 
 		r.Get("/checks/{id}", h.getCheck)
+		r.Get("/checks/{id}/financial-operations", h.listCheckFinancialOperations)
 		r.Post("/checks/{id}/reprint", h.reprintCheck)
 		r.Post("/checks/{id}/cancellations", h.recordCheckCancellation)
 		r.Post("/checks/{id}/refunds", h.recordCheckRefund)
@@ -807,6 +808,13 @@ func (h *Handler) getCheck(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.GetCheckAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) listCheckFinancialOperations(w http.ResponseWriter, r *http.Request) {
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.ListFinancialOperationsByCheckAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
 	writeOK(w, r, v, err)
 }
 

@@ -1861,6 +1861,15 @@ button:focus-visible,
   padding: 10px 12px;
 }
 
+.ledger-row {
+  align-items: flex-start;
+}
+
+.ledger-row-side {
+  text-align: right;
+  white-space: nowrap;
+}
+
 .dashboard-metric-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }

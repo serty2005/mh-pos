@@ -1156,3 +1156,41 @@ func TestCapturePaymentThroughPrecheckAPICreatesFinalCheck(t *testing.T) {
 		t.Fatalf("expected order closed, got %s", gotOrder.Status)
 	}
 }
+
+func TestListCheckFinancialOperationsThroughPublicAPI(t *testing.T) {
+	f := newAPIFixture(t)
+	order := f.createOrderWithLine(t)
+	f.openCashSession(t)
+	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-ledger-issue","node_device_id":"`+f.device.ID+`"}`)
+	if issued.Code != http.StatusCreated {
+		t.Fatalf("expected precheck 201, got %d: %s", issued.Code, issued.Body.String())
+	}
+	precheck := decodeAPIResponse[domain.Precheck](t, issued)
+	paid := f.postJSON(t, "/api/v1/prechecks/"+precheck.ID+"/payments", `{"command_id":"cmd-api-ledger-payment","node_device_id":"`+f.device.ID+`","method":"cash","amount":`+fmt.Sprint(precheck.Total)+`,"currency":"RUB"}`)
+	if paid.Code != http.StatusCreated {
+		t.Fatalf("expected payment 201, got %d: %s", paid.Code, paid.Body.String())
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f.useManagerOperator(t)
+	cancelled := f.postJSON(t, "/api/v1/checks/"+check.ID+"/cancellations", `{"command_id":"cmd-api-ledger-cancel","node_device_id":"`+f.device.ID+`","operation_kind":"full","inventory_disposition":"manual_review","reason":"pilot read endpoint"}`)
+	if cancelled.Code != http.StatusCreated {
+		t.Fatalf("expected cancellation 201, got %d: %s", cancelled.Code, cancelled.Body.String())
+	}
+	operation := decodeAPIResponse[domain.FinancialOperation](t, cancelled)
+
+	rr := f.get(t, "/api/v1/checks/"+check.ID+"/financial-operations")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	operations := decodeAPIResponse[[]domain.FinancialOperation](t, rr)
+	if len(operations) != 1 || operations[0].ID != operation.ID || operations[0].Type != domain.FinancialOperationCancellation {
+		t.Fatalf("unexpected operations response: %+v", operations)
+	}
+	if len(operations[0].Items) != 1 || operations[0].Items[0].Scope != domain.FinancialItemWholeCheck {
+		t.Fatalf("expected whole-check operation item, got %+v", operations[0].Items)
+	}
+}

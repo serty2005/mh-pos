@@ -188,7 +188,15 @@ export const i18n = createI18n({
         paymentRefundFallbackCopy: 'Fallback по оплате ограничен выбранной захваченной оплатой. Backend все равно проверит финальный чек, открытую кассовую смену и границы возврата.',
         refundReason: 'Основание операции',
         refundSuccess: 'Возврат записан',
+        financialOperations: 'Финансовые операции',
+        operationType: 'Тип операции',
+        operationTypes: {
+          cancellation: 'Отмена',
+          refund: 'Возврат',
+        },
         inventoryDisposition: 'Складское решение',
+        createdByEmployee: 'Сотрудник',
+        approvedByEmployee: 'Подтвердил',
         operationKind: 'Объем операции',
         operationKinds: {
           full: 'Весь чек',

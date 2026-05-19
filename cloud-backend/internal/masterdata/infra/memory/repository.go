@@ -511,6 +511,12 @@ func (r *Repository) ListPricingPolicies(_ context.Context, restaurantID string)
 			out = append(out, item)
 		}
 	}
+	slices.SortFunc(out, func(a, b domain.PricingPolicy) int {
+		if a.ApplicationIndex != b.ApplicationIndex {
+			return a.ApplicationIndex - b.ApplicationIndex
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
 	return out, nil
 }
 

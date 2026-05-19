@@ -120,6 +120,7 @@ Read contract закрытых заказов:
 - Default `limit` = `50`, max `limit` = `100`; отрицательный `offset` и невалидные business date фильтры отклоняются.
 - Сортировка stable newest-first: close timestamp, затем `id`.
 - API без фильтра возвращает только bounded latest page, а не всю историю.
+- Реализовано сейчас: `GET /api/v1/checks/{id}/financial-operations` возвращает append-only ledger operations/items по конкретному final check под `pos.check.view`; это read surface для closed-order detail, а не агрегированная отчетность.
 
 Operational activity/sync read contract:
 
@@ -199,6 +200,7 @@ Pricing contract:
 - Operation snapshot embeds immutable check snapshot and operation items.
 - Inventory disposition is explicit: `no_stock_effect`, `return_to_stock`, `write_off_waste`, `manual_review`; financial operation does not mutate stock tables.
 - Current POS Edge events are `CancellationRecorded` and `RefundRecorded`. New refund runtime does not emit legacy `PaymentRefunded`/`CheckRefunded`; those names remain Cloud-accepted legacy sync event types only.
+- Cloud receiver validates current financial operation payload fields, stores raw/journal envelopes and event-type stats, but Cloud does not implement a full financial ledger projection.
 
 Не реализовано сейчас:
 

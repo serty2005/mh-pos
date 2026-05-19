@@ -6,6 +6,7 @@ import {
   ApiError,
   getCurrentOrderByTable,
   getCurrentShift,
+  listFinancialOperationsByCheck,
   listClosedOrders,
   listLocalEvents,
   listMenuItems,
@@ -342,6 +343,22 @@ describe('api request helpers', () => {
       inventory_disposition: 'write_off_waste',
       reason: 'guest refund',
     });
+  });
+
+  it('lists check financial operations through read endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify([financialOperationResponse('refund')]),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await listFinancialOperationsByCheck('check-1');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const url = String(fetchMock.mock.calls[0]?.[0]);
+    expect(url).toContain('/checks/check-1/financial-operations');
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBeUndefined();
   });
 
   it('records partial order-line cancellation payload through ledger endpoint', async () => {

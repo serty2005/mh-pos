@@ -1056,6 +1056,7 @@ export function useCashierTerminal() {
     void queryClient.invalidateQueries({ queryKey: ['closed-orders'] });
     void queryClient.invalidateQueries({ queryKey: ['order'] });
     void queryClient.invalidateQueries({ queryKey: ['check'] });
+    void queryClient.invalidateQueries({ queryKey: ['financial-operations'] });
     void queryClient.invalidateQueries({ queryKey: ['sync-outbox'] });
     void queryClient.invalidateQueries({ queryKey: ['sync-status'] });
     void queryClient.invalidateQueries({ queryKey: ['local-events'] });
