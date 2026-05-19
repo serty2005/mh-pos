@@ -1,6 +1,7 @@
 package idgen
 
 import (
+	"errors"
 	"sort"
 	"testing"
 	"time"
@@ -30,4 +31,36 @@ func TestUUIDGeneratorNewIDSortsChronologically(t *testing.T) {
 	if ids[0] != first || ids[1] != second {
 		t.Fatalf("expected lexicographic sort to follow time order: %v", ids)
 	}
+}
+
+func TestUUIDGeneratorNewIDPanicsWhenUUIDv7GenerationFails(t *testing.T) {
+	uuid.DisableRandPool()
+	uuid.SetRand(&failingThenZeroReader{})
+	t.Cleanup(func() {
+		uuid.SetRand(nil)
+		uuid.DisableRandPool()
+	})
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic when uuidv7 generation fails")
+		}
+	}()
+
+	_ = UUIDGenerator{}.NewID()
+}
+
+type failingThenZeroReader struct {
+	failed bool
+}
+
+func (r *failingThenZeroReader) Read(p []byte) (int, error) {
+	if !r.failed {
+		r.failed = true
+		return 0, errors.New("entropy unavailable")
+	}
+	for i := range p {
+		p[i] = 0
+	}
+	return len(p), nil
 }
