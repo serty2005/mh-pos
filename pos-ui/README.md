@@ -195,3 +195,9 @@ Server state хранится только через `@tanstack/vue-query`. Fro
 - Нет backoffice.
 - Trusted card payment - ручная trusted capture запись без PSP integration.
 - Денежный ввод в UI показывается в основных единицах валюты, а backend получает integer minor units.
+
+## Pricing policy selection
+
+Статус: реализовано сейчас.
+
+POS UI API layer содержит typed helpers для списка активных pricing policies и применения discount/surcharge policy по `pricing_policy_id`. UI не должен отправлять произвольные amount fields для обычного pilot cashier flow.

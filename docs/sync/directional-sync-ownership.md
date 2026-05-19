@@ -99,3 +99,9 @@ Cloud владеет authoring master data. POS Edge использует local 
 
 - Runtime adjustments должны ссылаться на synced policy ids там, где существует central policy.
 - Manual override flows для policy exceptions должны иметь отдельный permission boundary и audit trail до того, как они станут supported pilot behavior.
+
+## Pricing and tax ownership
+
+Статус: реализовано сейчас.
+
+Pricing/tax policy ownership остается Cloud -> Edge. POS Edge runtime выбирает опубликованную policy по id и не становится владельцем размера скидки, надбавки, порядка применения или налоговой логики. Runtime order/precheck/check владеют только фактом применения и immutable snapshot результата расчета.

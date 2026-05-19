@@ -302,3 +302,9 @@ docker exec -it mh-pos-cloud-postgres psql -U postgres -d mh_pos_cloud -c "selec
 ```powershell
 go test ./...
 ```
+
+## Policy-id-backed pricing adjustments
+
+Статус: реализовано сейчас.
+
+POS backend поддерживает применение скидок и надбавок по `pricing_policy_id` через существующие order pricing endpoints. Runtime копирует amount/scope/kind/application order из активной синхронизированной policy и сохраняет `pricing_policy_id` для audit/precheck snapshot.

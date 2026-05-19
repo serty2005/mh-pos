@@ -381,3 +381,9 @@ Cancellation/refund sync behavior:
 - Cloud-generated inventory stock documents/moves;
 - PSP/fiscal integration events;
 - richer financial operation reporting projections and optional ClickHouse acceleration.
+
+## Pricing policy stream completeness
+
+Статус: реализовано сейчас.
+
+Cloud -> Edge stream `pricing_policy` публикует JSON package с ключами `tax_profiles`, `tax_rules`, `service_charge_rules` и `pricing_policies`. Для текущего Cloud authoring surface `pricing_policies` содержит опубликованные скидки/надбавки, включая `id`, `restaurant_id`, `kind`, `scope`, `amount_kind`, `amount_minor`, `value_basis_points`, `application_index`, `manual`, `requires_permission` и `active`. Edge strict ingest сохраняет эти поля и отклоняет неизвестные поля по существующему strict decode contract.

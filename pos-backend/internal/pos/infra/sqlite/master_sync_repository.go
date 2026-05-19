@@ -276,8 +276,8 @@ ON CONFLICT(id) DO UPDATE SET
 }
 
 func (r *Repository) UpsertMasterPricingPolicy(ctx context.Context, v *domain.PricingPolicy, meta domain.MasterRecordSyncMeta) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO pricing_policies(id,restaurant_id,kind,name,scope,amount_kind,amount_minor,value_basis_points,application_index,requires_permission,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO pricing_policies(id,restaurant_id,kind,name,scope,amount_kind,amount_minor,value_basis_points,application_index,requires_permission,manual,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(id) DO UPDATE SET
   restaurant_id = excluded.restaurant_id,
   kind = excluded.kind,
@@ -288,13 +288,14 @@ ON CONFLICT(id) DO UPDATE SET
   value_basis_points = excluded.value_basis_points,
   application_index = excluded.application_index,
   requires_permission = excluded.requires_permission,
+  manual = excluded.manual,
   active = excluded.active,
   updated_at = excluded.updated_at,
   cloud_version = excluded.cloud_version,
   cloud_updated_at = excluded.cloud_updated_at,
   cloud_deleted_at = excluded.cloud_deleted_at,
   last_synced_at = excluded.last_synced_at`,
-		v.ID, v.RestaurantID, string(v.Kind), v.Name, string(v.Scope), string(v.AmountKind), v.AmountMinor, v.ValueBasisPoints, v.ApplicationIndex, v.RequiresPermission, boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+		v.ID, v.RestaurantID, string(v.Kind), v.Name, string(v.Scope), string(v.AmountKind), v.AmountMinor, v.ValueBasisPoints, v.ApplicationIndex, v.RequiresPermission, boolInt(v.Manual), boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
 	return normalizeErr(err)
 }
 
