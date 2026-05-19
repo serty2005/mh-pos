@@ -845,6 +845,9 @@ CREATE TABLE IF NOT EXISTS stop_lists (
   reason TEXT,
   active INTEGER NOT NULL CHECK (active IN (0,1)),
   cloud_version INTEGER,
+  cloud_updated_at TEXT,
+  cloud_deleted_at TEXT,
+  last_synced_at TEXT,
   updated_at TEXT NOT NULL
 );
 
