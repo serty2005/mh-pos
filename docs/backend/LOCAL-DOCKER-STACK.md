@@ -43,29 +43,28 @@ POS_SQLITE_PATH=/app/data/pos-edge.db
 
 Из корня репозитория:
 
-```powershell
-$env:PYTHONIOENCODING='utf-8'
+```bash
 docker compose -f docker-compose.local.yml up --build -d
 ```
 
 Если локальный `5432` уже занят другой PostgreSQL-инстанцией, можно поменять только host binding, не меняя внутренний DSN между контейнерами:
 
-```powershell
-$env:CLOUD_POSTGRES_HOST_PORT='55432'
+```bash
+CLOUD_POSTGRES_HOST_PORT=55432 \
 docker compose -f docker-compose.local.yml up --build -d
 ```
 
 Проверка health endpoints:
 
-```powershell
-Invoke-RestMethod http://localhost:8090/health
-Invoke-RestMethod http://localhost:8095/health
-Invoke-RestMethod http://localhost:8080/health
+```bash
+curl -fsS http://localhost:8090/health
+curl -fsS http://localhost:8095/health
+curl -fsS http://localhost:8080/health
 ```
 
 Логи:
 
-```powershell
+```bash
 docker compose -f docker-compose.local.yml logs -f cloud-api
 docker compose -f docker-compose.local.yml logs -f pos-edge
 docker compose -f docker-compose.local.yml logs -f license-api
@@ -73,27 +72,66 @@ docker compose -f docker-compose.local.yml logs -f license-api
 
 Остановка без удаления данных:
 
-```powershell
+```bash
 docker compose -f docker-compose.local.yml down
 ```
 
 Полный reset локальных Docker БД и файлов является destructive-by-design операцией:
 
-```powershell
+```bash
 docker compose -f docker-compose.local.yml down -v
 ```
 
-## Заполнение Cloud и проверка POS
+## Заполнение Cloud и проверка POS на Linux/Fedora
 
-Для быстрого smoke/e2e пути через Cloud CRUD, publication, Cloud -> Edge snapshot и POS login:
+Реализовано сейчас: канонический локальный путь использует Python 3 scripts без внешних Python dependencies. Скрипты создают demo справочники через Cloud HTTP API, выполняют POS Edge provisioning через License/Cloud API, затем проверяют POS read model через POS HTTP API. Прямые записи в PostgreSQL/SQLite не используются.
 
-```powershell
-.\scripts\cloud-masterdata-e2e.ps1 `
-  -CloudApiBase "http://localhost:8090/api/v1" `
-  -PosApiBase "http://localhost:8080/api/v1"
+Полный semi-automatic smoke для поднятого Docker stack:
+
+```bash
+python3 scripts/run-local-masterdata-smoke.py \
+  --cloud-base http://localhost:8090 \
+  --pos-base http://localhost:8080 \
+  --license-base http://localhost:8095 \
+  --output scripts/.local-masterdata-summary.json
 ```
 
-Скрипт создает ресторан, роль, сотрудника с PIN `1357`, catalog/menu item, modifier group/option/binding, публикует typed Cloud -> POS Edge snapshot, применяет его на POS Edge без PowerShell field stripping, выполняет local pairing и проверяет, что POS видит Cloud-created данные.
+То же через thin Bash wrapper:
+
+```bash
+./scripts/run-local-masterdata-smoke.sh \
+  --output scripts/.local-masterdata-summary.json
+```
+
+Сценарий создает ресторан, роли, сотрудников с PIN `1111`/`2222`, зал/стол, catalog/menu items, service item, modifier group/option/binding, публикует typed Cloud -> POS Edge package, выполняет pairing/provisioning и проверяет, что POS видит Cloud-created данные. После pairing скрипт добавляет дополнительную Cloud menu позицию, повторно публикует master data и ждет, пока POS Edge sync sender получит ее через authenticated `sync/exchange`.
+
+Раздельные шаги для отладки:
+
+```bash
+python3 scripts/seed-cloud-masterdata.py \
+  --cloud-base http://localhost:8090 \
+  --pos-base http://localhost:8080 \
+  --output scripts/.local-masterdata-summary.json
+
+python3 scripts/provision-pos-edge.py \
+  --cloud-base http://localhost:8090 \
+  --pos-base http://localhost:8080 \
+  --summary scripts/.local-masterdata-summary.json
+
+python3 scripts/verify-sync.py \
+  --pos-base http://localhost:8080 \
+  --summary scripts/.local-masterdata-summary.json
+```
+
+Windows-compatible wrappers остаются тонкими оболочками над тем же Python ядром:
+
+```powershell
+.\scripts\run-local-masterdata-smoke.ps1 --output scripts/.local-masterdata-summary.json
+```
+
+`scripts/.local-masterdata-summary.json` содержит локальные demo PIN для последующих автоматических шагов и добавлен в `.gitignore`; не коммить этот файл.
+
+Важно для ручного наглядного теста: demo seed dataset должен расширяться вместе с развитием проекта. Когда появляются новые Cloud-owned справочники, publication streams или POS read flows, их нужно добавлять в Python seed/sync сценарии и в эту документацию в том же PR.
 
 Для production-like Zero-to-Cashier через Cloud Approve:
 
@@ -111,13 +149,13 @@ docker compose -f docker-compose.local.yml down -v
   -PosApiBase "http://localhost:8080/api/v1"
 ```
 
-Оба Zero-to-Cashier скрипта создают Cloud master data, привязывают POS Edge и проверяют PIN login. По умолчанию cashier PIN: `1111`.
+Оба legacy Zero-to-Cashier PowerShell скрипта создают Cloud master data, привязывают POS Edge и проверяют PIN login. По умолчанию cashier PIN: `1111`. Для Fedora/Linux и нового semi-automatic master-data smoke использовать Python scripts выше.
 
 ## Ручная проверка через POS UI
 
 После запуска Docker stack запусти UI локально:
 
-```powershell
+```bash
 cd pos-ui
 npm install
 npm run dev
@@ -125,23 +163,23 @@ npm run dev
 
 Открой `http://localhost:5173`. POS UI ходит в POS Edge на `http://localhost:8080/api/v1`.
 
-Если перед этим был выполнен `zero-to-cashier-option-a.ps1` или `zero-to-cashier-option-b.ps1`, Edge уже paired, а войти можно PIN `1111`. Если был выполнен `cloud-masterdata-e2e.ps1`, PIN по умолчанию `1357`.
+Если перед этим был выполнен новый Python master-data smoke или legacy Zero-to-Cashier скрипт, Edge уже paired, а войти можно PIN `1111`. Для manager сценариев в Python smoke используется PIN `2222`.
 
 ## Проверка PostgreSQL и sync
 
 Cloud operational events:
 
-```powershell
-docker compose -f docker-compose.local.yml exec cloud-postgres `
-  psql -U postgres -d mh_pos_cloud `
+```bash
+docker compose -f docker-compose.local.yml exec cloud-postgres \
+  psql -U postgres -d mh_pos_cloud \
   -c "select event_type, count(*) from cloud_operational_events group by event_type order by event_type;"
 ```
 
 Последние Cloud receipts:
 
-```powershell
-docker compose -f docker-compose.local.yml exec cloud-postgres `
-  psql -U postgres -d mh_pos_cloud `
+```bash
+docker compose -f docker-compose.local.yml exec cloud-postgres \
+  psql -U postgres -d mh_pos_cloud \
   -c "select idempotency_key, event_type, cloud_received_at from cloud_edge_event_receipts order by cloud_received_at desc limit 10;"
 ```
 

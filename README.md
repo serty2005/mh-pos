@@ -62,9 +62,23 @@
 
 Docker stack:
 
-```powershell
-docker compose -f docker-compose.local.yml up --build
+```bash
+docker compose -f docker-compose.local.yml up --build -d
 ```
+
+Полуавтоматическое заполнение Cloud справочников и проверка POS Edge sync на Linux/Fedora:
+
+```bash
+python3 scripts/run-local-masterdata-smoke.py \
+  --cloud-base http://localhost:8090 \
+  --pos-base http://localhost:8080 \
+  --license-base http://localhost:8095 \
+  --output scripts/.local-masterdata-summary.json
+```
+
+Те же Python scripts имеют thin wrappers: `scripts/*.sh` для Linux/macOS и ASCII `scripts/*.ps1` для Windows. Demo seed dataset является частью ручного наглядного теста и должен расширяться вместе с новыми Cloud-owned справочниками, publication streams и POS read flows.
+
+`scripts/.local-masterdata-summary.json` содержит локальные demo PIN для последующих автоматических шагов и игнорируется git.
 
 POS UI:
 

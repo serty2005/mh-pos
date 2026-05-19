@@ -1,6 +1,6 @@
 # ROADMAP
 
-Статус документа: актуализировано под фактический код и целевую inventory architecture на 2026-05-19.
+Статус документа: актуализировано под фактический код и целевую inventory architecture на 2026-05-20.
 
 Roadmap фиксирует статусы, блокеры и следующий план. Архитектурный контракт находится в `SPECv1.3.md`, backend contract — в `docs/backend/POS-BACKEND-SPEC.md`.
 
@@ -50,6 +50,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - POS Edge outbox/local event foundation for cashier operational events.
 - `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud financial operation events. `PaymentRefunded` and `CheckRefunded` remain accepted legacy operational event types for older payloads.
 - Cloud receiver stores `RefundRecorded` raw/journal rows idempotently and updates event-type stats plus coarse shift finance refund counters; detailed financial operation projection remains separate from cashier runtime.
+- Python 3 local master-data scripts for Fedora/Linux and Windows wrappers: Cloud seed через API, POS provisioning, POS read-model verification и post-pairing Cloud -> Edge `sync/exchange` smoke.
 - DDD context map exists in `docs/architecture/DDD-CONTEXT-MAP.md`.
 
 ### Persistence Policy
@@ -122,7 +123,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 После закрытия pilot blockers:
 
-- Полный pre-pilot smoke path: поддерживать `scripts/bootstrap-production-way.ps1 -RunRuntimeSmoke` и `scripts/start-and-test-all.ps1` как acceptance smoke для Cloud master data -> Edge ingest -> login -> shift/cash session -> order -> precheck -> payment -> check -> reprint -> cancellation/refund -> close shifts.
+- Полный pre-pilot smoke path: поддерживать Python master-data smoke scripts как основной Fedora/Linux путь и постепенно переносить production-way runtime smoke (`login -> shift/cash session -> order -> precheck -> payment -> check -> reprint -> cancellation/refund -> close shifts`) из legacy PowerShell в переносимый Python.
+- Расширять demo seed dataset вместе с новыми Cloud-owned справочниками, publication streams и POS read flows, чтобы ручной наглядный тест не отставал от runtime.
 - Сверка RBAC matrix с фактическим UI и backend permissions.
 - Проверка migration/backup behavior на старой SQLite DB.
 - Богатая financial operation ledger projection для отчетности, если raw/journal payload и текущих event counters недостаточно.

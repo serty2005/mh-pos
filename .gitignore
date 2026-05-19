@@ -1,10 +1,16 @@
 *.py
+!scripts/*.py
+!scripts/lib/*.py
+!scripts/tests/*.py
+__pycache__/
+*.pyc
 node_modules
 dist
 *.log
 data
 *.exe
 .dev-stack-pids.json
+scripts/.local-masterdata-summary.json
 .lazyweb/
 .kilo
 *.png
