@@ -287,6 +287,12 @@ type StorageRetentionCapability = storage.RetentionCapability
 type StorageLifecycleStatus = storage.LifecycleStatus
 type StorageRetentionEligibleCounts = storage.RetentionEligibleCounts
 type StorageRetentionDryRunResult = storage.RetentionDryRunResult
+type StorageArchiveExportCounts = storage.ArchiveExportCounts
+type StorageArchiveSourceMetadata = storage.ArchiveSourceMetadata
+type StorageArchiveMetadataRow = storage.ArchiveMetadataRow
+type StorageArchiveTableManifest = storage.ArchiveTableManifest
+type StorageArchiveManifest = storage.ArchiveManifest
+type StorageArchiveExportResult = storage.ArchiveExportResult
 
 const (
 	OutboxPending    = shared.OutboxPending

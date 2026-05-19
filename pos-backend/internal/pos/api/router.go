@@ -103,6 +103,7 @@ func NewRouter(service *app.Service) http.Handler {
 
 		r.Get("/storage/status", h.storageStatus)
 		r.Post("/storage/retention/dry-run", h.dryRunStorageRetention)
+		r.Post("/storage/archive/export", h.exportStorageArchive)
 	})
 
 	return r
@@ -971,6 +972,17 @@ func (h *Handler) dryRunStorageRetention(w http.ResponseWriter, r *http.Request)
 	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.DryRunStorageRetention(r.Context(), cmd)
 	writeOK(w, r, v, err)
+}
+
+func (h *Handler) exportStorageArchive(w http.ResponseWriter, r *http.Request) {
+	var cmd app.ArchiveExportCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.ExportStorageArchive(r.Context(), cmd)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) applyMasterDataSnapshot(w http.ResponseWriter, r *http.Request) {

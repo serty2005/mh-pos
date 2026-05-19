@@ -239,32 +239,42 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 - Backend exposes `GET /api/v1/checks/{id}/financial-operations` as a read-only per-check ledger surface for activity detail.
 - Legacy payment refund route writes the same ledger through payment scope instead of updating payment/check/precheck statuses.
 - Cashier UI whole-check и partial `order_line`/quantity cancellation/refund использует те же ledger endpoints, отправляет явный `inventory_disposition` и не требует schema changes или mutable status columns у finalized payments/checks. Line/quantity UI опирается на immutable check/precheck snapshot и пишет `financial_operation_items` со scope `order_line`; modifier/service/tip UI не реализован сейчас.
+- Storage archive export сохраняет `financial_operations`, `financial_operation_items` и immutable snapshots как protected data в JSONL artifact без пересчета или мутации source rows.
 
 Не реализовано сейчас:
 
 - separate refund projection tables in Cloud;
 - fiscal/correction document storage;
 - automatic inventory stock moves from `inventory_disposition`.
-- physical local archive/delete/compaction policy для закрытых заказов.
+- physical local delete/compaction policy для закрытых заказов.
 
 ## POS Edge Local Storage Lifecycle
 
 Реализовано сейчас:
 
 - Backend предоставляет read-only основу lifecycle через `GET /api/v1/storage/status` и `POST /api/v1/storage/retention/dry-run`.
+- Backend предоставляет export-only archive readiness через `POST /api/v1/storage/archive/export`.
 - Status использует SQLite PRAGMA `page_count`, `page_size`, `freelist_count`, `journal_mode` для безопасной оценки размера без чтения файловой системы.
 - Status считает high-level объемы runtime tables: orders/order lines/modifiers, prechecks and breakdown tables, payments/attempts, checks, financial operation ledger, shifts, cash sessions, local events, outbox and legacy stock foundation tables until they are removed from the Edge target baseline.
 - Status агрегирует closed orders по `checks.business_date_local` и возвращает oldest/newest closed check business date.
 - Dry-run считает candidate rows только для closed orders с `checks.business_date_local < cutoff_business_date_local`; cutoff должен использовать формат `YYYY-MM-DD`.
 - Dry-run не пишет и не удаляет строки. `financial_operations`, `financial_operation_items`, immutable precheck/check snapshots, local events и outbox остаются protected.
 - Non-sent `edge_to_cloud` outbox rows возвращаются как blocking state для любой будущей destructive retention policy.
+- Archive export отбирает только closed orders с `checks.business_date_local <= cutoff_business_date_local`; невалидный или будущий cutoff отклоняется safe `INVALID` error.
+- Archive export создает отдельную директорию export с `archive.jsonl` и `manifest.json`. Default runtime path задается `POS_SQLITE_ARCHIVE_DIR`; если он не задан в POS entrypoint, используется `archives` рядом с active SQLite data directory, а не внутри `.db` file.
+- `archive.jsonl` является typed JSONL: каждая строка содержит `table` и `row`. Включаются closed orders, order lines/modifiers/discounts/surcharges, prechecks and breakdown tables, payments/payment attempts, checks, financial operations/items.
+- `manifest.json` содержит version, `mode = export_only`, generated_at, cutoff, reason, archive_id, archive/manifest paths, SHA-256 archive hash, counts, table list, business-date range, SQLite/source metadata, protected flags and destructive block reasons.
+- `local_event_log` и `pos_sync_outbox` включаются только как summary/reference rows без `payload_json`; manifest/counts явно показывают reference counts. Это сохраняет связь с outbox/local events без выноса потенциально sensitive payload history в архивный файл.
+- Export-only archive не удаляет и не мутирует `orders`, `prechecks`, `payments`, `checks`, `financial_operations`, `financial_operation_items`, `local_event_log`, `pos_sync_outbox` или другие runtime tables.
+- Export-only archive может создать файл даже при destructive block. `destructive_apply_supported = false`, `blocked = true`; non-sent `edge_to_cloud` outbox rows по candidate aggregates добавляют `pending_edge_to_cloud_outbox_for_archive_scope`.
 - Local event/outbox UI reads are bounded operational windows only; they are not cleanup/archive mechanisms and do not remove sync data.
 
 Не реализовано сейчас:
 
-- archive tables или external archive export file;
+- archive tables;
 - restore/read path для archived closed checks;
 - physical delete of closed orders/checks/prechecks/payments/financial ledger rows;
+- destructive apply policy;
 - automatic VACUUM/compaction from HTTP API.
 
 ## Modifier Data

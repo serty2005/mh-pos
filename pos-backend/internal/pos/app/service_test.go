@@ -2,10 +2,13 @@ package app_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -114,6 +117,7 @@ type fixture struct {
 	table          *domain.Table
 	menuItem       *domain.MenuItem
 	clientID       string
+	archiveDir     string
 }
 
 const bootstrapDeviceID = "bootstrap-device"
@@ -193,7 +197,9 @@ func testPINHash(t *testing.T, pin, salt string) string {
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "pos.db")
+	rootDir := t.TempDir()
+	dbPath := filepath.Join(rootDir, "pos.db")
+	archiveDir := filepath.Join(rootDir, "archives")
 	db, err := platformsqlite.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
@@ -203,8 +209,8 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	repo := possqlite.NewRepository(db)
-	service := app.NewService(repo, platformsqlite.NewTxManager(db), &testIDs{}, fixedClock{})
-	f := &fixture{ctx: ctx, db: db, repo: repo, service: service}
+	service := app.NewServiceWithOptions(repo, platformsqlite.NewTxManager(db), &testIDs{}, fixedClock{}, app.ServiceOptions{StorageArchiveDir: archiveDir})
+	f := &fixture{ctx: ctx, db: db, repo: repo, service: service, archiveDir: archiveDir}
 	f.clientID = testClientDeviceID
 	f.seed(t)
 	return f
@@ -890,6 +896,183 @@ func TestStorageRetentionDryRunRejectsInvalidCutoff(t *testing.T) {
 	if !errors.Is(err, domain.ErrInvalid) {
 		t.Fatalf("expected invalid cutoff error, got %v", err)
 	}
+}
+
+func TestStorageArchiveExportRejectsInvalidAndFutureCutoff(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-archive-invalid"),
+		CutoffBusinessDateLocal: "2026/05/04",
+		Reason:                  "invalid format",
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected invalid cutoff error, got %v", err)
+	}
+	_, err = f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-archive-future"),
+		CutoffBusinessDateLocal: "2026-05-05",
+		Reason:                  "future cutoff",
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected future cutoff error, got %v", err)
+	}
+}
+
+func TestStorageArchiveExportCreatesEmptyNoopArtifact(t *testing.T) {
+	f := newFixture(t)
+	result, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-archive-empty"),
+		CutoffBusinessDateLocal: "2026-05-03",
+		Reason:                  "operator empty export check",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Mode != "export_only" || !result.ExportCreated || !result.Blocked || result.DestructiveApplySupported {
+		t.Fatalf("unexpected empty archive result: %+v", result)
+	}
+	if result.Counts.ArchivedRows != 0 || result.Counts.ClosedOrders != 0 || result.BusinessDateRange.Oldest != "" || result.BusinessDateRange.Newest != "" {
+		t.Fatalf("expected empty export scope, got counts=%+v range=%+v", result.Counts, result.BusinessDateRange)
+	}
+	rawArchive, err := os.ReadFile(result.ArchivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rawArchive) != 0 {
+		t.Fatalf("expected empty JSONL archive, got %q", string(rawArchive))
+	}
+	if result.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		t.Fatalf("unexpected empty archive sha: %s", result.SHA256)
+	}
+}
+
+func TestStorageArchiveExportIncludesClosedOrderGraphLedgerAndManifestWithoutMutatingSource(t *testing.T) {
+	f := newFixture(t)
+	order, check := f.createPaidOrder(t)
+	var checkSnapshotBefore string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT snapshot FROM checks WHERE id = ?`, check.ID).Scan(&checkSnapshotBefore); err != nil {
+		t.Fatal(err)
+	}
+	operation, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-storage-archive-cancel"),
+		CheckID:              check.ID,
+		Reason:               "guest returned immediately",
+		InventoryDisposition: domain.InventoryNoStockEffect,
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:    domain.FinancialItemWholeCheck,
+			Amount:   check.Total,
+			Currency: check.CurrencyCode,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before := map[string]int{
+		"orders":                    countRows(t, f, "orders"),
+		"order_lines":               countRows(t, f, "order_lines"),
+		"prechecks":                 countRows(t, f, "prechecks"),
+		"checks":                    countRows(t, f, "checks"),
+		"payments":                  countRows(t, f, "payments"),
+		"financial_operations":      countRows(t, f, "financial_operations"),
+		"financial_operation_items": countRows(t, f, "financial_operation_items"),
+		"pos_sync_outbox":           countRows(t, f, "pos_sync_outbox"),
+		"local_event_log":           countRows(t, f, "local_event_log"),
+	}
+
+	result, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-archive-export"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "operator requested export before pilot cleanup policy",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Mode != "export_only" || result.DestructiveApplySupported || !result.ExportCreated {
+		t.Fatalf("unexpected archive mode flags: %+v", result)
+	}
+	if !result.FinancialLedgerProtected || !result.ImmutableSnapshotsProtected {
+		t.Fatalf("expected protected flags, got %+v", result)
+	}
+	if !containsString(result.BlockReasons, "destructive_apply_not_supported") ||
+		!containsString(result.BlockReasons, "financial_ledger_protected") ||
+		!containsString(result.BlockReasons, "immutable_snapshots_protected") ||
+		!containsString(result.BlockReasons, "pending_edge_to_cloud_outbox_for_archive_scope") {
+		t.Fatalf("unexpected block reasons: %+v", result.BlockReasons)
+	}
+	if result.Counts.ClosedOrders != 1 || result.Counts.Checks != 1 || result.Counts.Prechecks != 1 || result.Counts.Payments != 1 || result.Counts.OrderLines != 1 {
+		t.Fatalf("expected closed order/precheck/check/payment graph counts, got %+v", result.Counts)
+	}
+	if result.Counts.FinancialOperations != 1 || result.Counts.FinancialOperationItems != 1 || result.Counts.OutboxMessageReferences == 0 || result.Counts.LocalEventReferences == 0 || result.Counts.BlockingOutboxMessages == 0 {
+		t.Fatalf("expected ledger and sync references, got %+v", result.Counts)
+	}
+	if result.BusinessDateRange.Oldest != "2026-05-04" || result.BusinessDateRange.Newest != "2026-05-04" {
+		t.Fatalf("unexpected archive business date range: %+v", result.BusinessDateRange)
+	}
+
+	archiveRaw, err := os.ReadFile(result.ArchivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(archiveRaw)
+	if result.SHA256 != hex.EncodeToString(hash[:]) {
+		t.Fatalf("archive sha mismatch: response=%s computed=%s", result.SHA256, hex.EncodeToString(hash[:]))
+	}
+	var manifest domain.StorageArchiveManifest
+	manifestRaw, err := os.ReadFile(result.ManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(manifestRaw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.SHA256 != result.SHA256 || manifest.Counts.ArchivedRows != result.Counts.ArchivedRows || manifest.CutoffBusinessDateLocal != "2026-05-04" {
+		t.Fatalf("manifest mismatch: manifest=%+v result=%+v", manifest, result)
+	}
+	byTable := decodeArchiveJSONLByTable(t, archiveRaw)
+	if byTable["orders"] != result.Counts.ClosedOrders || byTable["checks"] != result.Counts.Checks || byTable["financial_operations"] != result.Counts.FinancialOperations || byTable["financial_operation_items"] != result.Counts.FinancialOperationItems {
+		t.Fatalf("archive JSONL counts do not match manifest counts: byTable=%+v result=%+v", byTable, result.Counts)
+	}
+	if byTable["local_event_log_summary"] != result.Counts.LocalEventReferences || byTable["pos_sync_outbox_summary"] != result.Counts.OutboxMessageReferences {
+		t.Fatalf("expected summary reference counts to match archive lines: byTable=%+v result=%+v", byTable, result.Counts)
+	}
+	if strings.Contains(string(archiveRaw), "payload_json") {
+		t.Fatalf("expected local event/outbox payload_json to be omitted from archive summaries")
+	}
+	if !strings.Contains(string(archiveRaw), operation.ID) || !strings.Contains(string(archiveRaw), order.ID) {
+		t.Fatalf("expected archive to include order %s and financial operation %s", order.ID, operation.ID)
+	}
+
+	for table, want := range before {
+		if got := countRows(t, f, table); got != want {
+			t.Fatalf("archive export mutated %s, before=%d after=%d", table, want, got)
+		}
+	}
+	var checkSnapshotAfter string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT snapshot FROM checks WHERE id = ?`, check.ID).Scan(&checkSnapshotAfter); err != nil {
+		t.Fatal(err)
+	}
+	if checkSnapshotAfter != checkSnapshotBefore {
+		t.Fatalf("archive export mutated check snapshot")
+	}
+}
+
+func decodeArchiveJSONLByTable(t *testing.T, raw []byte) map[string]int {
+	t.Helper()
+	out := map[string]int{}
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var row struct {
+			Table string `json:"table"`
+		}
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			t.Fatalf("decode archive line: %v; line=%s", err, line)
+		}
+		out[row.Table]++
+	}
+	return out
 }
 
 func TestFloorAndMenuReadAsOperatorRequiresPermissions(t *testing.T) {

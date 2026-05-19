@@ -91,6 +91,7 @@ type RegisterCloudProvisioningCommand = appprovisioning.RegisterCloudCommand
 type PairViaLicenseCommand = appprovisioning.PairViaLicenseCommand
 type StorageStatusCommand = appstorage.StorageStatusCommand
 type RetentionDryRunCommand = appstorage.RetentionDryRunCommand
+type ArchiveExportCommand = appstorage.ArchiveExportCommand
 
 // MasterDataBackupRequest содержит безопасные metadata для backup-before-data-load.
 type MasterDataBackupRequest = appmastersync.BackupRequest
@@ -142,6 +143,7 @@ type ServiceOptions struct {
 	LicenseServerURL                   string
 	CloudProvisioningClient            appprovisioning.CloudClient
 	LicenseProvisioningClient          appprovisioning.LicenseClient
+	StorageArchiveDir                  string
 }
 
 func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock) *Service {
@@ -170,7 +172,7 @@ func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idge
 		masterSync: appmastersync.NewServiceWithOptions(repo, tx, ids, clock, appmastersync.Options{
 			BackupBeforeFullSnapshot: options.MasterDataBackupBeforeFullSnapshot,
 		}),
-		storage:     appstorage.NewService(repo, clock),
+		storage:     appstorage.NewService(repo, ids, clock, appstorage.Options{ArchiveDir: options.StorageArchiveDir}),
 		localEvents: repo,
 		outbox:      shared.NewOutboxService(repo, tx, clock),
 	}
@@ -623,6 +625,10 @@ func (s *Service) GetStorageLifecycleStatus(ctx context.Context, cmd StorageStat
 
 func (s *Service) DryRunStorageRetention(ctx context.Context, cmd RetentionDryRunCommand) (domain.StorageRetentionDryRunResult, error) {
 	return s.storage.DryRunRetention(ctx, cmd)
+}
+
+func (s *Service) ExportStorageArchive(ctx context.Context, cmd ArchiveExportCommand) (domain.StorageArchiveExportResult, error) {
+	return s.storage.ExportArchive(ctx, cmd)
 }
 
 func syncExchangeStreams() []domain.MasterDataStream {

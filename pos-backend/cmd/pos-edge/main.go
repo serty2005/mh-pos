@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -47,6 +48,7 @@ func run() error {
 	dbPath := cfg.Get("POS_SQLITE_PATH", "data/pos-edge.db")
 	migrationsDir := cfg.Get("POS_SQLITE_MIGRATIONS_DIR", "migrations/sqlite")
 	backupDir := cfg.Get("POS_SQLITE_BACKUP_DIR", "data/backups")
+	archiveDir := cfg.Get("POS_SQLITE_ARCHIVE_DIR", filepath.Join(filepath.Dir(dbPath), "archives"))
 	moduleVersion := cfg.Get("MH_POS_VERSION", version.Resolve("MH_POS_VERSION"))
 	rawCloudURL := cfg.Get("POS_CLOUD_SYNC_URL", "")
 	cloudProvisioningURL := rawCloudURL
@@ -77,6 +79,7 @@ func run() error {
 		LicenseServerURL:          licenseURL,
 		CloudProvisioningClient:   posprovisioninghttp.NewCloudClient(10 * time.Second),
 		LicenseProvisioningClient: posprovisioninghttp.NewLicenseClient(10 * time.Second),
+		StorageArchiveDir:         archiveDir,
 		MasterDataBackupBeforeFullSnapshot: func(ctx context.Context, req app.MasterDataBackupRequest) error {
 			_, err := platformsqlite.BackupDatabase(ctx, db, dbPath, backupDir, platformsqlite.BackupOptions{
 				Action:         "backup_before_data_load",

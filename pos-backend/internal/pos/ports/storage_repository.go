@@ -10,4 +10,5 @@ import (
 type StorageLifecycleRepository interface {
 	GetStorageLifecycleStatus(context.Context) (storage.LifecycleStatus, error)
 	DryRunStorageRetention(context.Context, string) (storage.RetentionDryRunResult, error)
+	BuildStorageArchiveExportScope(context.Context, string) (storage.ArchiveExportScope, error)
 }

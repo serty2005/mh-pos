@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -63,13 +64,15 @@ type apiFixture struct {
 	table      *domain.Table
 	menuItem   *domain.MenuItem
 	clientID   string
+	archiveDir string
 	clock      *apiFixedClock
 }
 
 func newAPIFixture(t *testing.T) *apiFixture {
 	t.Helper()
 	ctx := context.Background()
-	db, err := platformsqlite.Open(filepath.Join(t.TempDir(), "pos.db"))
+	rootDir := t.TempDir()
+	db, err := platformsqlite.Open(filepath.Join(rootDir, "pos.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,8 +82,9 @@ func newAPIFixture(t *testing.T) *apiFixture {
 	}
 	repo := possqlite.NewRepository(db)
 	testClock := newAPIFixedClock()
-	service := app.NewService(repo, platformsqlite.NewTxManager(db), &apiTestIDs{}, testClock)
-	f := &apiFixture{ctx: ctx, db: db, repo: repo, service: service, router: api.NewRouter(service), clientID: "api-client-1", clock: testClock}
+	archiveDir := filepath.Join(rootDir, "archives")
+	service := app.NewServiceWithOptions(repo, platformsqlite.NewTxManager(db), &apiTestIDs{}, testClock, app.ServiceOptions{StorageArchiveDir: archiveDir})
+	f := &apiFixture{ctx: ctx, db: db, repo: repo, service: service, router: api.NewRouter(service), clientID: "api-client-1", archiveDir: archiveDir, clock: testClock}
 	f.seed(t)
 	return f
 }
@@ -904,6 +908,54 @@ func TestStorageRetentionDryRunAPI(t *testing.T) {
 	result := decodeAPIResponse[domain.StorageRetentionDryRunResult](t, rr)
 	if !result.Blocked || result.Mode != "dry_run_only" || result.DestructiveApplySupported {
 		t.Fatalf("unexpected retention dry-run result: %+v", result)
+	}
+}
+
+func TestStorageArchiveExportAPIRequiresSyncViewAndCreatesArchive(t *testing.T) {
+	f := newAPIFixture(t)
+	order := f.createOrderWithLine(t)
+	f.openCashSession(t)
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"cutoff_business_date_local":"2026-05-04","reason":"operator export from API"}`
+	rr := f.postJSON(t, "/api/v1/storage/archive/export", body)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cashier archive export, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	f.useManagerOperator(t)
+	rr = f.postJSON(t, "/api/v1/storage/archive/export", body)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for manager archive export, got %d: %s", rr.Code, rr.Body.String())
+	}
+	result := decodeAPIResponse[domain.StorageArchiveExportResult](t, rr)
+	if result.Mode != "export_only" || result.DestructiveApplySupported || !result.ExportCreated || result.Counts.ClosedOrders != 1 {
+		t.Fatalf("unexpected archive export response: %+v", result)
+	}
+	if _, err := os.Stat(result.ArchivePath); err != nil {
+		t.Fatalf("expected archive file to exist: %v", err)
+	}
+	if _, err := os.Stat(result.ManifestPath); err != nil {
+		t.Fatalf("expected manifest file to exist: %v", err)
+	}
+}
+
+func TestStorageArchiveExportAPIRejectsFutureCutoff(t *testing.T) {
+	f := newAPIFixture(t)
+	f.useManagerOperator(t)
+	rr := f.postJSON(t, "/api/v1/storage/archive/export", `{"cutoff_business_date_local":"2026-05-05","reason":"future cutoff"}`)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for future cutoff, got %d: %s", rr.Code, rr.Body.String())
+	}
+	body := decodeAPIResponse[httpx.ErrorResponse](t, rr)
+	if body.Error.Code != "VALIDATION_FAILED" || body.Error.MessageKey != "errors.validation" {
+		t.Fatalf("expected validation error contract, got: %+v", body.Error)
 	}
 }
 

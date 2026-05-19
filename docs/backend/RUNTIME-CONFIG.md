@@ -16,6 +16,7 @@
 {
   "POS_HTTP_ADDR": ":8080",
   "POS_SQLITE_PATH": "data/pos-edge.db",
+  "POS_SQLITE_ARCHIVE_DIR": "data/archives",
   "POS_SYNC_SENDER_ENABLED": true,
   "POS_SYNC_SENDER_BATCH_SIZE": 25
 }
@@ -40,6 +41,8 @@
 - `license-server/config/license-api.example.json`.
 
 Реализовано сейчас: loader находится в общем локальном Go module `shared/platform` (`module mh-pos-platform`) и подключается сервисами через `replace`.
+
+Реализовано сейчас: POS Edge storage archive export использует `POS_SQLITE_ARCHIVE_DIR`. Если значение не задано, entrypoint выбирает `archives` рядом с active SQLite data directory из `POS_SQLITE_PATH`; export не пишет файлы внутрь `.db` file и не запускает destructive cleanup.
 
 Вне текущего объема: горячая перезагрузка runtime-конфига без рестарта процесса и хранение secrets в зашифрованном vault.
 

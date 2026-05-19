@@ -5,6 +5,7 @@
   "POS_SQLITE_PATH": "data/pos-edge.db",
   "POS_SQLITE_MIGRATIONS_DIR": "migrations/sqlite",
   "POS_SQLITE_BACKUP_DIR": "data/backups",
+  "POS_SQLITE_ARCHIVE_DIR": "data/archives",
   "POS_CLOUD_SYNC_URL": "http://localhost:8090/api/v1/sync/edge-events",
   "POS_SYNC_SENDER_ENABLED": true,
   "POS_SYNC_SENDER_ID": "pos-sync-sender-main",

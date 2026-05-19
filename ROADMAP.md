@@ -31,7 +31,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Bounded read закрытых заказов: `GET /api/v1/orders/closed` поддерживает безопасный default/max limit, `offset`, фильтры по business date/range, shift, device и check, стабильную сортировку newest-first и SQLite indexes.
 - Read surface ledger по чеку: `GET /api/v1/checks/{id}/financial-operations` возвращает append-only operations/items для closed-order detail под `pos.check.view`.
 - Bounded activity/sync reads: `GET /api/v1/sync/outbox` и `GET /api/v1/sync/local-events` имеют backend default bounded limit, cap oversized requests and are used by POS UI with `limit=5`.
-- Основа POS Edge local storage lifecycle: `GET /api/v1/storage/status` и `POST /api/v1/storage/retention/dry-run` дают read-only оценку размера SQLite, объемов closed orders/checks/prechecks/payments/financial operations, business-date окна и outbox blocking state. Retention mode сейчас `dry_run_only`; физическое удаление/архивирование не выполняется.
+- Основа POS Edge local storage lifecycle: `GET /api/v1/storage/status` и `POST /api/v1/storage/retention/dry-run` дают read-only оценку размера SQLite, объемов closed orders/checks/prechecks/payments/financial operations, business-date окна и outbox blocking state. Retention mode сейчас `dry_run_only`; физическое удаление не выполняется.
+- Export-only archive readiness для closed orders: `POST /api/v1/storage/archive/export` создает typed JSONL archive и JSON manifest с cutoff, counts, business-date range, SHA-256, protected flags и block reasons для будущего destructive apply, не удаляя и не мутируя source SQLite rows.
 - Compatibility payment refund route сохранен как fallback: `/payments/{id}/refund` записывает refund operation по captured payment allocation, но не является primary cashier model.
 - Cashier rich cancellation/refund dialog для закрытого чека: full whole-check cancellation/refund отправляют `command_id`, `operation_kind`, явный `inventory_disposition` и reason; partial `order_line`/quantity выбирается из immutable check/precheck snapshot и отправляет `items[]`. Modifier/service/tip scopes остаются вне текущего UI flow.
 - `business_date_local` for shifts, cash sessions, payments, checks and financial operations.
@@ -127,7 +128,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Сверка RBAC matrix с фактическим UI и backend permissions.
 - Проверка migration/backup behavior на старой SQLite DB.
 - Богатая financial operation ledger projection для отчетности, если raw/journal payload и текущих event counters недостаточно.
-- Safe archive/export/apply policy для больших локальных SQLite БД закрытых заказов поверх текущего status/dry-run foundation.
+- Destructive apply/delete/compaction policy для больших локальных SQLite БД закрытых заказов поверх текущего status/dry-run/export-only foundation.
 
 ## После Пилота
 

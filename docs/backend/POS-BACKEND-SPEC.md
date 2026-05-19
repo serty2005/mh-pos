@@ -84,6 +84,7 @@
 - `POST /api/v1/sync/master-data/{stream}`
 - `GET /api/v1/storage/status`
 - `POST /api/v1/storage/retention/dry-run`
+- `POST /api/v1/storage/archive/export`
 
 ## Current/Optional Reads
 
@@ -133,9 +134,13 @@ Operational activity/sync read contract:
 
 - Реализовано сейчас: `GET /api/v1/storage/status` возвращает read-only operational snapshot локальной SQLite БД: page stats (`page_count`, `page_size_bytes`, `freelist_count`, estimated size), high-level table counts, диапазон business date закрытых чеков, закрытые заказы по business date, outbox counts by status/direction и число blocking Edge -> Cloud outbox messages.
 - Реализовано сейчас: `POST /api/v1/storage/retention/dry-run` принимает `cutoff_business_date_local` в формате `YYYY-MM-DD` и считает документы с `checks.business_date_local < cutoff`, которые могли бы войти в будущую archive/retention policy.
-- Оба endpoint требуют operator session с `pos.sync.view`; UI visibility не является security boundary.
+- Реализовано сейчас: `POST /api/v1/storage/archive/export` принимает `cutoff_business_date_local` в формате `YYYY-MM-DD` и `reason`, отбирает только closed orders с `checks.business_date_local <= cutoff`, создает typed JSONL archive и JSON manifest в `POS_SQLITE_ARCHIVE_DIR` или default archive directory рядом с SQLite data directory.
+- Archive export response возвращает `mode = export_only`, `destructive_apply_supported = false`, `archive_id`, `archive_path`, `manifest_path`, archive `sha256`, counts, business-date min/max, `blocked`, `block_reasons`, `financial_ledger_protected`, `immutable_snapshots_protected` и `export_created`.
+- `local_event_log` и `pos_sync_outbox` в archive export включаются только как summary/reference rows без `payload_json`; payload остается в active DB, чтобы не выносить потенциально sensitive sync/event data в архивный файл.
+- Все storage lifecycle endpoints требуют operator session с `pos.sync.view`; UI visibility не является security boundary.
 - Текущий retention mode равен `dry_run_only`: response всегда помечает destructive apply как unsupported, ledger/snapshots как protected и возвращает block reason `dry_run_only_no_archive_policy`. Если есть non-sent `edge_to_cloud` outbox messages, добавляется `pending_edge_to_cloud_outbox`.
-- Не реализовано сейчас: физическое удаление, перенос в archive tables/files, restore/read path из архива, VACUUM как часть HTTP lifecycle flow.
+- Export-only archive не выполняет `DELETE`, `UPDATE`, destructive apply, restore/read из архива, `VACUUM`, `wal_checkpoint`, startup/background auto-archive или compaction. Non-sent `edge_to_cloud` outbox rows по candidate aggregates возвращаются как block reason для будущей destructive policy, но сам export file может быть создан.
+- Не реализовано сейчас: физическое удаление, archive tables, restore/read path из архива, destructive apply и VACUUM/compaction как часть HTTP lifecycle flow.
 
 ## Precheck Contract
 

@@ -104,6 +104,90 @@ type RetentionEligibleCounts struct {
 	FinancialOperationItems int `json:"financial_operation_items"`
 }
 
+// ArchiveExportCounts считает строки, включенные в export-only архив закрытых заказов.
+type ArchiveExportCounts struct {
+	ClosedOrders            int `json:"closed_orders"`
+	OrderLines              int `json:"order_lines"`
+	OrderLineModifiers      int `json:"order_line_modifiers"`
+	OrderLineDiscounts      int `json:"order_line_discounts"`
+	OrderSurcharges         int `json:"order_surcharges"`
+	Prechecks               int `json:"prechecks"`
+	PrecheckLines           int `json:"precheck_lines"`
+	PrecheckLineModifiers   int `json:"precheck_line_modifiers"`
+	PrecheckDiscounts       int `json:"precheck_discounts"`
+	PrecheckSurcharges      int `json:"precheck_surcharges"`
+	PrecheckTaxes           int `json:"precheck_taxes"`
+	Payments                int `json:"payments"`
+	PaymentAttempts         int `json:"payment_attempts"`
+	Checks                  int `json:"checks"`
+	FinancialOperations     int `json:"financial_operations"`
+	FinancialOperationItems int `json:"financial_operation_items"`
+	LocalEventReferences    int `json:"local_event_references"`
+	OutboxMessageReferences int `json:"outbox_message_references"`
+	BlockingOutboxMessages  int `json:"blocking_outbox_messages"`
+	ArchivedRows            int `json:"archived_rows"`
+}
+
+// ArchiveSourceMetadata описывает доступные runtime metadata активной SQLite БД.
+type ArchiveSourceMetadata struct {
+	SQLite           SQLiteDatabaseStats  `json:"sqlite"`
+	RuntimeVersions  []ArchiveMetadataRow `json:"runtime_versions,omitempty"`
+	SchemaMigrations []ArchiveMetadataRow `json:"schema_migrations,omitempty"`
+}
+
+// ArchiveMetadataRow хранит безопасный metadata row без business payload.
+type ArchiveMetadataRow map[string]any
+
+// ArchiveExportRow является одной строкой typed JSONL archive.
+type ArchiveExportRow struct {
+	Table string         `json:"table"`
+	Row   map[string]any `json:"row"`
+}
+
+// ArchiveTableManifest описывает состав typed JSONL archive по таблицам.
+type ArchiveTableManifest struct {
+	Name            string `json:"name"`
+	Rows            int    `json:"rows"`
+	PayloadIncluded bool   `json:"payload_included"`
+	Content         string `json:"content"`
+}
+
+// ArchiveManifest является проверяемым JSON manifest для export-only archive.
+type ArchiveManifest struct {
+	Version                     string                 `json:"version"`
+	Mode                        string                 `json:"mode"`
+	DestructiveApplySupported   bool                   `json:"destructive_apply_supported"`
+	GeneratedAt                 time.Time              `json:"generated_at"`
+	ArchiveID                   string                 `json:"archive_id"`
+	CutoffBusinessDateLocal     string                 `json:"cutoff_business_date_local"`
+	Reason                      string                 `json:"reason,omitempty"`
+	ArchivePath                 string                 `json:"archive_path"`
+	ManifestPath                string                 `json:"manifest_path"`
+	SHA256                      string                 `json:"sha256"`
+	Counts                      ArchiveExportCounts    `json:"counts"`
+	BusinessDateRange           BusinessDateRange      `json:"business_date_range"`
+	Tables                      []ArchiveTableManifest `json:"tables"`
+	Source                      ArchiveSourceMetadata  `json:"source"`
+	Blocked                     bool                   `json:"blocked"`
+	BlockReasons                []string               `json:"block_reasons"`
+	FinancialLedgerProtected    bool                   `json:"financial_ledger_protected"`
+	ImmutableSnapshotsProtected bool                   `json:"immutable_snapshots_protected"`
+	ExportCreated               bool                   `json:"export_created"`
+}
+
+// ArchiveExportResult возвращается HTTP API после создания export-only archive.
+type ArchiveExportResult = ArchiveManifest
+
+// ArchiveExportScope содержит read-only выборку и metadata для записи archive файлов.
+type ArchiveExportScope struct {
+	Counts            ArchiveExportCounts
+	BusinessDateRange BusinessDateRange
+	Source            ArchiveSourceMetadata
+	BlockReasons      []string
+	Blocked           bool
+	Rows              []ArchiveExportRow
+}
+
 // RetentionDryRunResult описывает read-only оценку cutoff без каких-либо удалений или архивных записей.
 type RetentionDryRunResult struct {
 	GeneratedAt                 time.Time               `json:"generated_at"`

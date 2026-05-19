@@ -88,7 +88,7 @@ Edge Outbox
 - Cloud shift finance foundation считает coarse refund totals from current `RefundRecorded` and legacy `PaymentRefunded`/`CheckRefunded`, but it is not a full projection for financial operation ledger item scopes, inventory disposition, approval policy or original-shift reconciliation.
 - Pagination/filtering закрытых заказов является local POS read-model behavior и не добавляет sync ownership или event names.
 - Bounded outbox/local-event visibility в POS API/UI является local operational window and does not acknowledge, remove or archive sync rows.
-- POS Edge storage lifecycle status/dry-run является local operational read model и не добавляет sync event names. Любая будущая destructive retention/archive policy должна блокироваться при наличии non-sent `edge_to_cloud` outbox messages; текущий runtime только сообщает это blocking state.
+- POS Edge storage lifecycle status/dry-run/export-only archive является local operational read/export model и не добавляет sync event names. Любая будущая destructive retention/archive policy должна блокироваться при наличии non-sent `edge_to_cloud` outbox messages; текущий runtime только сообщает это blocking state и создает локальный archive artifact без sync envelope.
 - manual Inventory service реализовано сейчас пишет `StockDocumentPosted` как local-only outbox/local event; это не часть Edge -> Cloud operational catalog и должно быть выведено из целевой архитектуры при переходе на Cloud-centric inventory.
 
 Запланировано далее:
