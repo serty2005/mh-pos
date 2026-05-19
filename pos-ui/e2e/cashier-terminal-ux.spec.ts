@@ -169,6 +169,57 @@ test('redesigned POS shell remains usable on tablet and mobile viewports', async
   }
 });
 
+test('cashier can add and edit selected modifiers on an open order line', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await loginAsManager(page);
+  await page.goto('/pos');
+  await ensureOperationsReady(page);
+  await openSection(page, 'Залы и столы');
+  await page.locator('.floor-table-tile').first().click();
+
+  await openSection(page, 'ЗАКАЗ');
+  await cancelIssuedPrecheckIfPresent(page);
+
+  const createOrder = page.getByRole('button', { name: /Создать заказ/i }).last();
+  if (await createOrder.isVisible().catch(() => false)) {
+    await createOrder.click();
+  }
+  await expect(page.getByRole('region', { name: /Меню/i })).toBeVisible();
+
+  const lineCountBeforeAdd = await page.locator('.order-item-row').count();
+  const menuTile = page.getByRole('region', { name: /Меню/i }).getByRole('button', { name: /Production Tea/i }).first();
+  await expect(menuTile).toBeVisible();
+  await menuTile.click();
+
+  const addDialog = page.locator('.q-dialog').filter({ hasText: 'Модификаторы' });
+  await expect(addDialog).toBeVisible();
+  const lemonOption = addDialog.locator('.modifier-option').filter({ hasText: 'Lemon' });
+  await lemonOption.getByRole('button', { name: /Добавить/i }).click();
+  await addDialog.locator('.dialog-actions').getByRole('button', { name: /^Добавить$/i }).click();
+
+  await expect.poll(() => page.locator('.order-item-row').count()).toBeGreaterThan(lineCountBeforeAdd);
+  const editedLine = page.locator('.order-item-row').last();
+  await expect(editedLine).toContainText('Lemon');
+  await expect(editedLine).toContainText('180,00');
+  const editedQuantity = page.locator('.quantity-control').last();
+  await expect(editedQuantity).toContainText('1 шт');
+
+  const editButton = editedQuantity.getByRole('button', { name: /Изменить модификаторы/i });
+  await expect(editButton).toBeEnabled();
+  await editButton.click();
+
+  const editDialog = page.locator('.q-dialog').filter({ hasText: 'Изменение модификаторов' });
+  await expect(editDialog).toBeVisible();
+  await expect(editDialog.locator('.modifier-option').filter({ hasText: 'Lemon' })).toContainText('1');
+  await expect(editDialog.locator('.dialog-actions').getByRole('button', { name: /^Сохранить$/i })).toBeVisible();
+  await editDialog.locator('.modifier-option').filter({ hasText: 'Lemon' }).getByRole('button', { name: /Добавить/i }).click();
+  await editDialog.locator('.dialog-actions').getByRole('button', { name: /^Сохранить$/i }).click();
+
+  await expect(editDialog).toBeHidden();
+  await expect(editedLine).toContainText('210,00');
+  await saveViewportScreenshot(page, testInfo, 'modifier-edit-supported-flow.png');
+});
+
 test('loading and error states are readable without raw backend details', async ({ page }, testInfo) => {
   await loginAsManager(page);
   await ensureOperationsReady(page);
@@ -209,7 +260,7 @@ async function expectRedesignedShell(page: Page) {
 }
 
 async function assertSectionMenuNavigation(page: Page, testInfo: TestInfo) {
-  for (const section of ['Залы и столы', 'Заказы', 'Активность', 'Отчеты', 'Касса']) {
+  for (const section of ['Залы / столы', 'ЗАКАЗ', 'Аналитика', 'Смена']) {
     await openSection(page, section);
     await expect(page.locator('.bottom-section-button')).toContainText(section);
     await expect(page.locator('.pos-section-menu')).toBeHidden();
@@ -223,9 +274,17 @@ async function assertSectionMenuNavigation(page: Page, testInfo: TestInfo) {
 }
 
 async function openSection(page: Page, section: string) {
+  const sectionAliases: Record<string, string> = {
+    'Залы и столы': 'Залы / столы',
+    Заказы: 'ЗАКАЗ',
+    Активность: 'Аналитика',
+    Отчеты: 'Аналитика',
+    Касса: 'Смена',
+  };
+  const label = sectionAliases[section] ?? section;
   await page.locator('.bottom-section-button').click();
   await expect(page.locator('.pos-section-menu')).toBeVisible();
-  await page.locator('.section-menu-item').filter({ hasText: section }).click();
+  await page.locator('.section-menu-item').filter({ hasText: label }).click();
 }
 
 async function ensureOperationsReady(page: Page) {
@@ -244,7 +303,9 @@ async function ensureOperationsReady(page: Page) {
     await expect(openCash).toBeHidden();
   }
 
-  await expect(page.locator('.pos-bottom-bar')).toContainText('открыт');
+  await expect(page.locator('.cash-workspace')).toBeVisible();
+  await expect(openShift).toBeHidden();
+  await expect(openCash).toBeHidden();
 }
 
 async function cancelIssuedPrecheckIfPresent(page: Page) {
@@ -260,7 +321,8 @@ async function cancelIssuedPrecheckIfPresent(page: Page) {
   await cancelDialog.getByLabel(/Причина отмены/i).fill('playwright prepare editable order');
   await cancelDialog.getByRole('button', { name: /Отмена пречека/i }).click();
   await expect(cancelDialog).toBeHidden();
-  await expect(page.getByRole('button', { name: /Выпустить пречек/i })).toBeEnabled();
+  await expect(page.getByRole('region', { name: /Меню/i })).toBeVisible();
+  await expect(page.getByRole('region', { name: /Меню/i }).getByRole('button').first()).toBeVisible();
 }
 
 async function saveViewportScreenshot(page: Page, testInfo: TestInfo, name: string) {

@@ -61,9 +61,10 @@
         <q-btn
           color="primary"
           unelevated
-          icon="add_shopping_cart"
-          :label="terminal.t('actions.add')"
-          :loading="terminal.addLineMutation.isPending.value"
+          :icon="terminal.modifierDialogMode.value === 'edit' ? 'save' : 'add_shopping_cart'"
+          :label="terminal.t(terminal.modifierDialogMode.value === 'edit' ? 'actions.save' : 'actions.add')"
+          :loading="terminal.modifierDialogMode.value === 'edit' ? terminal.modifierUpdateMutation.isPending.value : terminal.addLineMutation.isPending.value"
+          :disable="!terminal.canSubmitModifierSelection.value"
           @click="terminal.submitModifierSelection"
         />
       </q-card-actions>
