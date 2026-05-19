@@ -1,6 +1,6 @@
 # ADR-015: Стратегия хранения данных и аналитики
 
-Статус: принято для текущего pre-pilot runtime.
+Статус: принято для текущего pre-pilot runtime; дополнено ADR-016 для ClickHouse immutable event archive.
 
 ## Контекст
 
@@ -22,7 +22,7 @@
 Запланировано далее:
 
 - `sqlc` может быть использован как основной persistence-подход после стабилизации схемы и package boundaries.
-- ClickHouse может быть добавлен в Cloud как OLAP/reporting accelerator, наполняемый асинхронно из PostgreSQL/projection pipeline.
+- ClickHouse должен быть добавлен в Cloud как immutable archive для всех business events и OLAP/reporting accelerator; детали UUIDv7, `raw_business_events`, no dual-write и retention зафиксированы в `docs/adr/ADR-016-clickhouse-immutable-event-store.md`.
 - Backup-before-data-load должен оставаться обязательной границей для Cloud -> Edge full snapshot/master-data import.
 - UI/admin SQLite cleanup/reset flow должен быть реализован как destructive-by-design операция с backup, явным подтверждением, RBAC/audit и rebootstrap/restart path.
 
@@ -30,7 +30,7 @@
 
 - `sqlc` как уже внедренный persistence implementation.
 - GORM/Ent для POS Core financial/offline/sync-critical flows.
-- ClickHouse как source of truth.
+- ClickHouse как transactional source of truth для command validation или текущего operational state.
 - ClickHouse как POS transaction path dependency.
 - Ручной ad-hoc SQL как canonical upgrade/repair path.
 - Online zero-downtime production migration orchestration.
@@ -40,3 +40,4 @@
 - Runtime не должен обращаться к business tables до startup upgrade и schema verification.
 - Проблемы уровня missing table должны обнаруживаться на старте как управляемая диагностика, а не как случайная runtime SQL error.
 - Любая загрузка данных, которая может заменить локальную read model или привести к коллизиям, должна иметь recoverable backup path.
+- PostgreSQL остается Cloud transactional source of truth; ClickHouse становится source of truth для immutable historical business event trail.

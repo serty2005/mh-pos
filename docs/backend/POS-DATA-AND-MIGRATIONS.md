@@ -1,6 +1,6 @@
 # POS Data And Migrations
 
-Статус: актуальный data/migration contract для frozen cashier pilot.
+Статус: актуальный data/migration contract для frozen cashier pilot и Freezed Principles по ClickHouse event archive.
 
 ## Canonical Policy
 
@@ -16,7 +16,8 @@
 Запланировано далее:
 
 - `sqlc` may be evaluated after schema and package boundaries stabilize.
-- ClickHouse may be added only as Cloud OLAP/reporting accelerator, not source of truth.
+- ClickHouse должен быть добавлен как immutable archive для всех business events и OLAP/reporting accelerator. Он не является transactional source of truth и не входит в POS transaction path.
+- Все `event_id` для Edge POS, KDS и Cloud domain events должны быть UUIDv7.
 
 ## POS Edge SQLite
 
@@ -94,6 +95,14 @@ Managed SQL files, реализовано сейчас:
 
 - `cloud-backend/migrations/postgres/001_init.sql`
 
+Запланировано далее для Cloud event ingestion:
+
+- PostgreSQL хранит `inbox_events` как transactional приемную очередь Cloud API.
+- Cloud API после приема Edge outbox batch сохраняет events в `inbox_events` и отвечает `200 OK` без синхронной записи в ClickHouse.
+- `inbox_events` должен иметь processing flag `processed_for_olap`.
+- Async Batch Forwarder читает `inbox_events`, собирает batch от 1 000 до 100 000 rows и экспортирует их в ClickHouse.
+- После successful export worker помечает события как `processed_for_olap = true`.
+
 `001_init.sql` provides foundation for:
 
 - roles and employees;
@@ -123,7 +132,68 @@ Managed SQL files, реализовано сейчас:
 - PostgreSQL должен содержать Cloud-owned `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`.
 - `stock_ledger` хранит `unit_cost_minor`, `total_cost_minor`, `costing_status`, `source_event_id`, `source_event_type`, `occurred_at` и `business_date_local`.
 - `modifier_options` получает optional `linked_catalog_item_id`; POS Edge не применяет это поле в order/pricing runtime.
-- ClickHouse `olap_stock_moves` наполняется только batch projection из PostgreSQL и не является source of truth.
+- ClickHouse `raw_business_events` наполняется только Async Batch Forwarder из PostgreSQL `inbox_events` и является бессрочным архивом business events.
+- ClickHouse `olap_stock_moves` наполняется только batch projection из PostgreSQL/ClickHouse event data и не является transactional source of truth.
+
+## ClickHouse Immutable Event Store
+
+Запланировано далее как Freezed Principle:
+
+```text
+Edge Outbox
+  -> Cloud API (PostgreSQL inbox_events)
+  -> Async Batch Forwarder
+  -> ClickHouse raw_business_events
+```
+
+Запрещено выполнять synchronous dual-write в PostgreSQL и ClickHouse при обработке HTTP/sync request от кассы.
+
+Целевая таблица ClickHouse: `raw_business_events`.
+
+Engine:
+
+```sql
+MergeTree
+```
+
+Обязательные колонки:
+
+| Column | Type | Правило |
+| --- | --- | --- |
+| `event_id` | UUID | UUIDv7 |
+| `tenant_id` | UUID | tenant boundary |
+| `restaurant_id` | UUID | restaurant boundary |
+| `device_id` | UUID | source Edge/KDS device |
+| `employee_id` | UUID | actor employee |
+| `event_type` | String | domain event type |
+| `occurred_at` | DateTime64 | extracted from UUIDv7 |
+| `payload` | String | full original event body as JSON string |
+
+Sorting key:
+
+```sql
+ORDER BY (tenant_id, event_type, event_id)
+```
+
+Partitioning:
+
+```sql
+PARTITION BY toYYYYMM(occurred_at)
+```
+
+Схема использует толстые metadata и JSON payload. Новые колонки под отдельные event types не добавляются.
+
+## Retention And Archiving
+
+PostgreSQL `inbox_events` является delivery queue и short-term operational buffer. ClickHouse `raw_business_events` является бессрочным archive для business events.
+
+Правила:
+
+- `processed_for_olap = false` events нельзя удалять из PostgreSQL.
+- `processed_for_olap = true` events можно удалять из PostgreSQL после retention window.
+- Базовый retention window для PostgreSQL `inbox_events`: 3 месяца.
+- ClickHouse `raw_business_events` хранит events бессрочно.
+- Удаление processed events из PostgreSQL не является loss of history, потому что historical event trail сохраняется в ClickHouse.
 
 ## Discount, Tax And Pricing Data
 

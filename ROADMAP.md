@@ -136,6 +136,10 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Cloud Inventory Worker, recipe expansion, semi-finished auto-production split policies.
 - Stop-list bi-directional sync and Edge local recipe-based stop-list checks.
 - Costing Engine with negative balance rules and retro recalculation DAG.
+- ClickHouse immutable event store `raw_business_events` на UUIDv7:
+  - anti-fraud audit: сохранить trail `ItemAdded`/`ItemRemoved` до финального `CheckClosed`;
+  - Speed of Service: считать median/percentiles между `CheckClosed` и `ItemServed`;
+  - Data Lake: ABC analysis, cohort analysis и BI без нагрузки на PostgreSQL.
 - Real PSP/payment processor integrations.
 - Fiscal adapter/fiscalization integrations.
 - Delivery/channel integrations.
@@ -154,6 +158,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - ClickHouse runtime dependency.
 - UI-side authoritative financial calculation.
 - Edge-side creation of Cloud-owned master data.
+- Synchronous dual-write в PostgreSQL и ClickHouse в request path.
 
 ## Definition Of Ready For Cashier Pilot
 

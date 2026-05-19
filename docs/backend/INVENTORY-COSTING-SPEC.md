@@ -11,7 +11,7 @@
 - Cloud является единственным источником истины для склада, себестоимости, пересчета и аналитического журнала движений.
 - Остаток склада является аналитическим показателем, допускает отрицательные значения и не блокирует продажу.
 - Продажу блокирует только `StopList`, синхронизируемый в обе стороны.
-- ClickHouse используется только как OLAP слой для аналитики, не как transactional source of truth.
+- ClickHouse используется как immutable event archive и OLAP слой для аналитики, не как transactional source of truth.
 
 ## Architecture And Data Flow
 
@@ -20,17 +20,15 @@
 ```text
 POS Edge / KDS
   -> Edge outbox business events
-  -> Cloud sync receiver
-  -> durable event queue
-  -> Inventory Worker
-  -> PostgreSQL stock_ledger / stock_documents / costing state
-  -> batch export
-  -> ClickHouse olap_stock_moves
+  -> Cloud API (PostgreSQL inbox_events)
+     -> Async Batch Forwarder -> ClickHouse raw_business_events
+     -> Inventory Worker -> PostgreSQL stock_ledger / stock_documents / costing state
+     -> ClickHouse olap_stock_moves
 ```
 
-POS Edge сохраняет cashier/KDS факты локально и отправляет события через outbox. Cloud принимает события идемпотентно, пишет raw/journal receipt и передает их Inventory Worker. Worker разворачивает рецепты, применяет stop-list side effects, создает Cloud-owned складские документы и пишет хронологический `stock_ledger`.
+POS Edge сохраняет cashier/KDS факты локально и отправляет события через outbox. Cloud API принимает события идемпотентно, пишет их в PostgreSQL `inbox_events` и не выполняет synchronous dual-write в ClickHouse. Async Batch Forwarder экспортирует события в ClickHouse `raw_business_events`. Inventory Worker асинхронно обрабатывает accepted events, разворачивает рецепты, применяет stop-list side effects, создает Cloud-owned складские документы и пишет хронологический `stock_ledger`.
 
-PostgreSQL хранит транзакционный журнал и состояния пересчета. ClickHouse получает батчевую проекцию `olap_stock_moves` из PostgreSQL и используется только для отчетов по COGS, расходу, маржинальности, списаниям, остаткам и кухонной аналитике.
+PostgreSQL хранит транзакционный журнал и состояния пересчета. ClickHouse хранит immutable `raw_business_events` бессрочно, а также получает батчевую проекцию `olap_stock_moves` для отчетов по COGS, расходу, маржинальности, списаниям, остаткам и кухонной аналитике.
 
 ## POS Edge SQLite Target Schema
 

@@ -63,6 +63,21 @@
 - authenticated `sync/exchange` принимает Edge events с item-level ACK и сохраняет существующую idempotency model;
 - legacy `/sync/edge-events` и `/sync/edge-events/batch` остаются совместимыми inbound routes.
 
+Freezed Principle для event archive:
+
+```text
+Edge Outbox
+  -> Cloud API (PostgreSQL inbox_events)
+  -> Async Batch Forwarder
+  -> ClickHouse raw_business_events
+```
+
+- Все Edge POS/KDS `event_id` должны быть UUIDv7.
+- Cloud API подтверждает прием после записи в PostgreSQL `inbox_events`.
+- ClickHouse write выполняет только async batch forwarder, не request handler.
+- После successful export в ClickHouse row получает `processed_for_olap = true`.
+- Processed rows старше 3 месяцев можно удалить из PostgreSQL; ClickHouse хранит historical business event trail бессрочно.
+
 Реализовано сейчас:
 
 - `CancellationRecorded` и `RefundRecorded` принимаются Cloud receiver и сохраняются как operational events;

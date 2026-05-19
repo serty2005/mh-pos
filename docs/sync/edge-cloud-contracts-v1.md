@@ -31,7 +31,7 @@ Request:
       "client_item_id": "pos_sync_outbox.id",
       "payload": {
         "version": "1",
-        "event_id": "event-id",
+        "event_id": "018f0000-0000-7000-8000-000000000001",
         "command_id": "command-id",
         "event_type": "OrderCreated",
         "aggregate_type": "Order",
@@ -100,6 +100,7 @@ Response:
 Правила:
 
 - `edge_events` ограничен 100 items; один envelope ограничен 2 MiB; body endpoint ограничен 8 MiB.
+- `event_id` для всех Edge POS/KDS business events должен быть UUIDv7.
 - Поддерживаемые exchange streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
 - ACK statuses: `accepted`, `rejected`, `retryable`; rejected/retryable items возвращают стабильный `error_code` и `message_key`.
 - Если stream package отсутствует, `stream_results.status = "not_found"` и HTTP остается успешным.
@@ -194,6 +195,22 @@ Request body shape currently supported by POS Edge:
 
 - POS Edge пишет local operational events и outbox rows для cashier runtime commands.
 - Детали sender/cloud receiver являются implementation-specific; документация не должна обещать Cloud reporting semantics для events, которых нет в подтвержденном Edge -> Cloud catalog.
+
+Freezed Principle для дальнейшей реализации:
+
+```text
+Edge Outbox
+  -> Cloud API (PostgreSQL inbox_events)
+  -> Async Batch Forwarder
+  -> ClickHouse raw_business_events
+```
+
+- Cloud API принимает Edge outbox batch, сохраняет events в PostgreSQL `inbox_events` и отвечает `200 OK` без synchronous ClickHouse write.
+- Async Batch Forwarder экспортирует `inbox_events` в ClickHouse batch size от 1 000 до 100 000 rows.
+- После successful export event в PostgreSQL помечается `processed_for_olap = true`.
+- `processed_for_olap = true` events старше 3 месяцев можно удалить из PostgreSQL.
+- ClickHouse `raw_business_events` хранит все business events бессрочно.
+- Synchronous dual-write в PostgreSQL и ClickHouse запрещен.
 
 Текущий POS Edge emitted catalog в domain boundary включает:
 

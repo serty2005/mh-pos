@@ -258,7 +258,7 @@ Boundary rules:
 
 - POS Edge и KDS являются генераторами immutable business events и не формируют складские документы, складские проводки или себестоимость.
 - Cloud является единственным source of truth для склада: Cloud receiver принимает Edge outbox, durable queue передает события Inventory Worker, Worker пишет `stock_documents` и `stock_ledger` в PostgreSQL.
-- ClickHouse используется только как Cloud OLAP/reporting accelerator через batch projection `olap_stock_moves`; он не является source of truth и не входит в POS transaction path.
+- ClickHouse используется как immutable business event archive и Cloud OLAP/reporting accelerator через batch projection `olap_stock_moves`; он не является transactional source of truth и не входит в POS transaction path.
 - Остаток склада является аналитическим показателем, допускает отрицательные значения и не блокирует продажу.
 - Продажу блокирует только `StopList`.
 - Edge SQLite целевая схема содержит `recipe_versions`, `recipe_lines` read-only и `stop_lists`; Edge-side `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines` должны быть удалены из целевого baseline.
@@ -320,10 +320,20 @@ Inventory and costing logic:
 - Persistence code написан вручную в infrastructure repositories.
 - Managed SQL files и startup migration/verification являются текущим canonical path.
 
+Freezed Principle:
+
+- Все Edge POS/KDS business events используют UUIDv7 `event_id`.
+- Cloud API принимает Edge outbox batch в PostgreSQL `inbox_events` и отвечает без synchronous ClickHouse write.
+- Async Batch Forwarder экспортирует `inbox_events` batch от 1 000 до 100 000 rows в ClickHouse `raw_business_events`.
+- ClickHouse `raw_business_events` хранит all business events бессрочно и является source of truth для historical business event trail.
+- PostgreSQL остается transactional source of truth для текущего operational state.
+- `processed_for_olap = true` rows старше 3 месяцев можно удалять из PostgreSQL `inbox_events`.
+- Synchronous dual-write в PostgreSQL и ClickHouse запрещен.
+
 Запланировано далее:
 
 - `sqlc` можно рассматривать после стабилизации схемы и package boundaries.
-- ClickHouse может быть добавлен только как Cloud OLAP/reporting accelerator, не source of truth и не часть POS transaction path.
+- ClickHouse добавляется как immutable business event archive and OLAP/reporting accelerator, но не как transactional source of truth и не часть POS transaction path.
 
 Вне текущего объема:
 

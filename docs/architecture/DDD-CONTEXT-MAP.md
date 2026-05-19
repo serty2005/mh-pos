@@ -30,7 +30,7 @@
 | `Production` | KDS tickets, stations, cooking/dish served lifecycle, `ItemServed`, `ProductionCompleted` input events | вне текущего объема | none unless pilot changes | KDS runtime feeding Cloud Inventory Worker | financial close and Cloud ledger writes |
 | `CRM` | customer identity/preferences/history | вне текущего объема except `guest_count` | none | full CRM | order/payment lifecycle |
 | `Loyalty` | bonuses/coupons/customer promos | вне текущего объема | none | full loyalty engine | backend authoritative totals unless integrated through Pricing |
-| `Accounting / Finance` | reporting/reconciliation/profit views | реализована только основа in Cloud projections: event-type stats and coarse shift finance counters including current `RefundRecorded` totals | detailed financial operation projection if pilot reports need it | ERP/accounting integration, ClickHouse acceleration | runtime capture/check mutation |
+| `Accounting / Finance / Analytics` | reporting, reconciliation, profit views, immutable business event archive | реализована только основа in Cloud projections: event-type stats and coarse shift finance counters including current `RefundRecorded` totals | ClickHouse `raw_business_events` target contract | ERP/accounting integration, ClickHouse analytics and data lake | runtime capture/check mutation |
 
 ## Mandatory Boundaries
 
@@ -65,6 +65,24 @@
 - Domain constants mention `recipes` and `inventory_reference`.
 - Целевая Edge schema keeps only read-only `recipe_versions`/`recipe_lines` и bidirectional `stop_lists` for inventory availability checks.
 - Apply path for `recipes`, `inventory_reference` and `stop_lists` is not implemented in `mastersync.Service`.
+
+## Data Flow
+
+Freezed Principle для immutable event archive:
+
+```text
+Edge Outbox
+  -> Cloud API (PostgreSQL inbox_events)
+  -> Async Batch Forwarder
+  -> ClickHouse raw_business_events
+```
+
+- Все business events от Edge POS и KDS используют UUIDv7 `event_id`.
+- PostgreSQL принимает события в `inbox_events` и остается transactional source of truth для текущего operational state.
+- ClickHouse `raw_business_events` является бессрочным archive/source of truth для historical business event trail.
+- Request path не делает synchronous dual-write в PostgreSQL и ClickHouse.
+- Async Batch Forwarder экспортирует batch от 1 000 до 100 000 rows и после successful export выставляет `processed_for_olap = true`.
+- Processed rows старше 3 месяцев можно удалять из PostgreSQL `inbox_events`.
 
 ## Pre-Pilot Boundary Decisions
 
