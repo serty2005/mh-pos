@@ -386,3 +386,157 @@ def stamp_summary(summary, cloud_base_url, pos_base_url):
     out["edge_base_url"] = pos_base_url
     out["generated_at_unix"] = int(time.time())
     return out
+
+
+DEFAULT_REFERENCE_SEED = {
+    "catalog": [
+        {"kind": "dish", "name": "Espresso", "sku": "SEED-ESPRESSO", "base_unit": "cup", "price_minor": 12900},
+        {"kind": "dish", "name": "Cappuccino", "sku": "SEED-CAPPUCCINO", "base_unit": "cup", "price_minor": 15900},
+        {"kind": "dish", "name": "Tom Yum", "sku": "SEED-TOM-YUM", "base_unit": "portion", "price_minor": 34900},
+        {"kind": "service", "name": "Service fee", "sku": "SEED-SERVICE", "base_unit": "service", "price_minor": 5000},
+    ],
+    "halls": [
+        {"name": "Main Hall", "tables": [{"name": "T1", "seats": 2}, {"name": "T2", "seats": 4}]},
+        {"name": "Patio", "tables": [{"name": "P1", "seats": 2}]},
+    ],
+    "modifier_groups": [
+        {
+            "name": "Milk options",
+            "required": False,
+            "min_count": 0,
+            "max_count": 1,
+            "options": [
+                {"name": "Oat milk", "price_minor": 2500},
+                {"name": "Lactose free", "price_minor": 2000},
+            ],
+            "bind_to_sku": ["SEED-ESPRESSO", "SEED-CAPPUCCINO"],
+        }
+    ],
+}
+
+
+def seed_reference_data(client, restaurant_id, seed_plan, publication_node_device_id="", published_by="python-seed-live"):
+    """Создает master-data справочники из плана и публикует их одним событием."""
+    catalog_ids_by_sku = {}
+    menu_item_ids = []
+    hall_ids = []
+    table_ids = []
+    modifier_group_ids = []
+    modifier_option_ids = []
+    modifier_binding_ids = []
+
+    for hall in seed_plan.get("halls", []):
+        hall_created = call(client, "createHall", {"restaurant_id": restaurant_id, "name": hall["name"]})
+        hall_ids.append(hall_created["id"])
+        for table in hall.get("tables", []):
+            table_created = call(
+                client,
+                "createTable",
+                {
+                    "restaurant_id": restaurant_id,
+                    "hall_id": hall_created["id"],
+                    "name": table["name"],
+                    "seats": int(table.get("seats", 2)),
+                },
+            )
+            table_ids.append(table_created["id"])
+
+    for item in seed_plan.get("catalog", []):
+        catalog_item = create_catalog_item(
+            client,
+            restaurant_id,
+            item.get("kind", "dish"),
+            item["name"],
+            item["sku"],
+            item.get("base_unit", "portion"),
+        )
+        catalog_ids_by_sku[item["sku"]] = catalog_item["id"]
+        menu_item = create_menu_item(
+            client,
+            restaurant_id,
+            catalog_item["id"],
+            item.get("menu_name", item["name"]),
+            int(item.get("price_minor", 10000)),
+        )
+        menu_item_ids.append(menu_item["id"])
+
+    for group in seed_plan.get("modifier_groups", []):
+        group_created = call(
+            client,
+            "createModifierGroup",
+            {
+                "restaurant_id": restaurant_id,
+                "name": group["name"],
+                "required": bool(group.get("required", False)),
+                "min_count": int(group.get("min_count", 0)),
+                "max_count": int(group.get("max_count", 1)),
+            },
+        )
+        modifier_group_ids.append(group_created["id"])
+        for option in group.get("options", []):
+            option_created = call(
+                client,
+                "createModifierOption",
+                {
+                    "restaurant_id": restaurant_id,
+                    "modifier_group_id": group_created["id"],
+                    "name": option["name"],
+                    "price_minor": int(option.get("price_minor", 0)),
+                },
+            )
+            modifier_option_ids.append(option_created["id"])
+        for idx, sku in enumerate(group.get("bind_to_sku", []), start=1):
+            if sku not in catalog_ids_by_sku:
+                continue
+            # По контракту binding создается к menu_item, поэтому используем индекс создания catalog/menu пары.
+            menu_target_id = menu_item_ids[list(catalog_ids_by_sku.keys()).index(sku)]
+            binding = call(
+                client,
+                "createModifierBinding",
+                {
+                    "restaurant_id": restaurant_id,
+                    "modifier_group_id": group_created["id"],
+                    "target_type": "menu_item",
+                    "target_id": menu_target_id,
+                    "sort_order": idx,
+                },
+            )
+            modifier_binding_ids.append(binding["id"])
+
+    publication = publish_master_data(
+        client,
+        restaurant_id,
+        publication_node_device_id,
+        published_by=published_by,
+    )
+    return {
+        "catalog_item_ids": list(catalog_ids_by_sku.values()),
+        "menu_item_ids": menu_item_ids,
+        "hall_ids": hall_ids,
+        "table_ids": table_ids,
+        "modifier_group_ids": modifier_group_ids,
+        "modifier_option_ids": modifier_option_ids,
+        "modifier_binding_ids": modifier_binding_ids,
+        "publication_id": publication["id"],
+    }
+
+
+def generate_edge_sync_events(cloud_client, summary, seed_plan=None, batches=1, published_by_prefix="python-edge-event-generator"):
+    """Генерирует публикации master-data, чтобы в Edge появились outbox/local events для sync тестов."""
+    plan = seed_plan or DEFAULT_REFERENCE_SEED
+    events = []
+    for batch in range(1, max(1, int(batches)) + 1):
+        batch_plan = json.loads(json.dumps(plan))
+        suffix = command_suffix()
+        for item in batch_plan.get("catalog", []):
+            item["sku"] = f"{item['sku']}-{batch}-{suffix}"
+            item["name"] = f"{item['name']} {batch}-{suffix}"
+        generated = seed_reference_data(
+            cloud_client,
+            summary["restaurant_id"],
+            batch_plan,
+            publication_node_device_id=summary.get("node_device_id", ""),
+            published_by=f"{published_by_prefix}-{batch}",
+        )
+        events.append(generated)
+    return events

@@ -154,5 +154,30 @@ class SeedWorkflowTest(unittest.TestCase):
         self.assertEqual(safe["pairing_code"], "<redacted>")
 
 
+
+
+    def test_seed_reference_data_creates_catalog_halls_modifiers_and_publication(self):
+        from mhpos_seed import DEFAULT_REFERENCE_SEED, seed_reference_data
+
+        client = FakeClient()
+        result = seed_reference_data(client, "restaurant-1", DEFAULT_REFERENCE_SEED, publication_node_device_id="node-1")
+
+        self.assertTrue(result["catalog_item_ids"])
+        self.assertTrue(result["menu_item_ids"])
+        self.assertTrue(result["hall_ids"])
+        self.assertTrue(result["table_ids"])
+        self.assertTrue(result["modifier_group_ids"])
+        self.assertTrue(result["modifier_option_ids"])
+        self.assertEqual(result["publication_id"].startswith("publication-"), True)
+
+    def test_generate_edge_sync_events_produces_requested_batches(self):
+        from mhpos_seed import generate_edge_sync_events
+
+        client = FakeClient()
+        events = generate_edge_sync_events(client, {"restaurant_id": "restaurant-1", "node_device_id": "node-1"}, batches=2)
+
+        self.assertEqual(len(events), 2)
+        self.assertTrue(all(event["publication_id"].startswith("publication-") for event in events))
+
 if __name__ == "__main__":
     unittest.main()
