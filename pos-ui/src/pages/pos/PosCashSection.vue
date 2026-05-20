@@ -105,10 +105,6 @@
         <q-btn v-if="terminal.canViewSync.value" outline color="secondary" class="touch-button" icon="sync" :label="terminal.t('pos.syncStatus')" @click="terminal.syncDrawer.value = true" />
         <q-btn v-if="terminal.canRetrySync.value" outline color="secondary" class="touch-button" icon="published_with_changes" :label="terminal.t('actions.retrySync')" :disable="!terminal.syncProblems.value" :loading="terminal.retrySyncMutation.isPending.value" @click="terminal.retrySyncMutation.mutate()" />
       </div>
-      <div class="planned-block">
-        <p class="eyebrow">{{ terminal.t('pos.supportOperations') }}</p>
-        <p>{{ terminal.t('pos.cashPlannedBody') }}</p>
-      </div>
       <div class="rail-actions integrated-action-bar">
         <q-btn outline color="secondary" class="touch-button" icon="lock" :label="terminal.t('actions.lock')" @click="terminal.lockTerminal" />
         <q-btn outline color="secondary" class="touch-button" icon="logout" :label="terminal.t('actions.logout')" :loading="terminal.logoutMutation.isPending.value" @click="terminal.logoutMutation.mutate()" />

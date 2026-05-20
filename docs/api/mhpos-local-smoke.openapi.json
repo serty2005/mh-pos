@@ -1,0 +1,595 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "MyHoReCa POS Local Smoke API",
+    "version": "0.1.0",
+    "description": "Контракт endpoints, используемых переносимым Python seed/smoke flow."
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "x-mhpos-api-prefix": false,
+        "responses": {
+          "200": {
+            "description": "Service is healthy"
+          }
+        }
+      }
+    },
+    "/pairing-codes": {
+      "post": {
+        "operationId": "registerLicensePairingCode",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterLicensePairingCode"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Pairing code registered"
+          },
+          "200": {
+            "description": "Pairing code registered"
+          }
+        }
+      }
+    },
+    "/pairing-codes/resolve": {
+      "post": {
+        "operationId": "resolveLicensePairingCode",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveLicensePairingCode"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pairing code resolved"
+          }
+        }
+      }
+    },
+    "/restaurants": {
+      "post": {
+        "operationId": "createRestaurant",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRestaurant"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Restaurant created"
+          }
+        }
+      }
+    },
+    "/master-data/roles": {
+      "post": {
+        "operationId": "createRole",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRole"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Role created"
+          }
+        }
+      }
+    },
+    "/master-data/employees": {
+      "post": {
+        "operationId": "createEmployee",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEmployee"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Employee created"
+          }
+        }
+      }
+    },
+    "/master-data/catalog/items": {
+      "post": {
+        "operationId": "createCatalogItem",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCatalogItem"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Catalog item created"
+          }
+        }
+      }
+    },
+    "/master-data/floor/halls": {
+      "post": {
+        "operationId": "createHall",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateHall"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Hall created"
+          }
+        }
+      }
+    },
+    "/master-data/floor/tables": {
+      "post": {
+        "operationId": "createTable",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTable"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Table created"
+          }
+        }
+      }
+    },
+    "/master-data/menu/items": {
+      "post": {
+        "operationId": "createMenuItem",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMenuItem"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Menu item created"
+          }
+        }
+      }
+    },
+    "/master-data/modifiers/groups": {
+      "post": {
+        "operationId": "createModifierGroup",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateModifierGroup"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Modifier group created"
+          }
+        }
+      }
+    },
+    "/master-data/modifiers/options": {
+      "post": {
+        "operationId": "createModifierOption",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateModifierOption"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Modifier option created"
+          }
+        }
+      }
+    },
+    "/master-data/modifiers/bindings": {
+      "post": {
+        "operationId": "createModifierBinding",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateModifierBinding"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Modifier binding created"
+          }
+        }
+      }
+    },
+    "/master-data/publications": {
+      "post": {
+        "operationId": "publishMasterData",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishMasterData"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Master data published"
+          }
+        }
+      }
+    },
+    "/restaurants/{restaurant_id}/devices/generate-pairing-code": {
+      "post": {
+        "operationId": "generatePairingCode",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RestaurantID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneratePairingCode"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Pairing code generated"
+          }
+        }
+      }
+    },
+    "/restaurants/{restaurant_id}/devices/{node_device_id}/assign": {
+      "post": {
+        "operationId": "assignDevice",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RestaurantID"
+          },
+          {
+            "$ref": "#/components/parameters/NodeDeviceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Device assigned"
+          }
+        }
+      }
+    },
+    "/system/provisioning-status": {
+      "get": {
+        "operationId": "getProvisioningStatus",
+        "responses": {
+          "200": {
+            "description": "Provisioning status"
+          }
+        }
+      }
+    },
+    "/system/provisioning/register-cloud": {
+      "post": {
+        "operationId": "registerCloudProvisioning",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterCloudProvisioning"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cloud registration started"
+          }
+        }
+      }
+    },
+    "/system/provisioning/pair-via-license": {
+      "post": {
+        "operationId": "pairViaLicense",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairViaLicense"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "POS Edge paired"
+          }
+        }
+      }
+    },
+    "/auth/pin-login": {
+      "post": {
+        "operationId": "pinLogin",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PinLogin"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "PIN login created a session"
+          }
+        }
+      }
+    },
+    "/halls": {
+      "get": {
+        "operationId": "listPOSHalls",
+        "parameters": [
+          {
+            "name": "restaurant_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "POS halls"
+          }
+        }
+      }
+    },
+    "/tables": {
+      "get": {
+        "operationId": "listPOSTables",
+        "parameters": [
+          {
+            "name": "restaurant_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hall_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "POS tables"
+          }
+        }
+      }
+    },
+    "/menu/items": {
+      "get": {
+        "operationId": "listPOSMenuItems",
+        "responses": {
+          "200": {
+            "description": "POS menu items"
+          }
+        }
+      }
+    },
+    "/sync/status": {
+      "get": {
+        "operationId": "getSyncStatus",
+        "responses": {
+          "200": {
+            "description": "POS sync status"
+          }
+        }
+      }
+    },
+    "/sync/outbox": {
+      "get": {
+        "operationId": "listSyncOutbox",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "POS sync outbox"
+          }
+        }
+      }
+    },
+    "/sync/local-events": {
+      "get": {
+        "operationId": "listSyncLocalEvents",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "POS local events"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "RestaurantID": {
+        "name": "restaurant_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "NodeDeviceID": {
+        "name": "node_device_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "schemas": {
+      "CreateRestaurant": {
+        "type": "object",
+        "required": ["name", "timezone", "currency", "business_day_mode", "business_day_boundary_local_time"]
+      },
+      "CreateRole": {
+        "type": "object",
+        "required": ["restaurant_id", "name", "permissions_json"]
+      },
+      "CreateEmployee": {
+        "type": "object",
+        "required": ["restaurant_id", "role_id", "name", "pin"]
+      },
+      "CreateCatalogItem": {
+        "type": "object",
+        "required": ["restaurant_id", "kind", "name", "sku", "base_unit"]
+      },
+      "CreateHall": {
+        "type": "object",
+        "required": ["restaurant_id", "name"]
+      },
+      "CreateTable": {
+        "type": "object",
+        "required": ["restaurant_id", "hall_id", "name", "seats"]
+      },
+      "CreateMenuItem": {
+        "type": "object",
+        "required": ["restaurant_id", "catalog_item_id", "name", "price", "currency", "availability_json"]
+      },
+      "CreateModifierGroup": {
+        "type": "object",
+        "required": ["restaurant_id", "name", "required", "min_count", "max_count"]
+      },
+      "CreateModifierOption": {
+        "type": "object",
+        "required": ["restaurant_id", "modifier_group_id", "name", "price_minor"]
+      },
+      "CreateModifierBinding": {
+        "type": "object",
+        "required": ["restaurant_id", "modifier_group_id", "target_type", "target_id", "sort_order"]
+      },
+      "PublishMasterData": {
+        "type": "object",
+        "required": ["restaurant_id", "published_by"]
+      },
+      "GeneratePairingCode": {
+        "type": "object",
+        "required": ["node_device_id", "display_name", "expires_in_minutes"]
+      },
+      "RegisterCloudProvisioning": {
+        "type": "object",
+        "required": ["cloud_url", "display_name", "app_version"]
+      },
+      "PairViaLicense": {
+        "type": "object",
+        "required": ["pairing_code"]
+      },
+      "PinLogin": {
+        "type": "object",
+        "required": ["node_device_id", "client_device_id", "pin"]
+      },
+      "RegisterLicensePairingCode": {
+        "type": "object",
+        "required": ["pairing_code", "cloud_url", "restaurant_id", "node_device_id", "credentials", "expires_at"]
+      },
+      "ResolveLicensePairingCode": {
+        "type": "object",
+        "required": ["pairing_code", "node_device_id"]
+      }
+    }
+  }
+}

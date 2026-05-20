@@ -63,9 +63,39 @@
 
 Docker stack:
 
-```powershell
-docker compose -f docker-compose.local.yml up --build
+```bash
+docker compose -f docker-compose.local.yml up --build -d
 ```
+
+Полуавтоматическое заполнение Cloud справочников и проверка POS Edge sync на Linux/Fedora:
+
+```bash
+python3 scripts/run-local-masterdata-smoke.py \
+  --cloud-base http://localhost:8090 \
+  --pos-base http://localhost:8080 \
+  --license-base http://localhost:8095 \
+  --output scripts/.local-masterdata-summary.json
+```
+
+Полный stack smoke для Cloud, POS Edge и License Server:
+
+```bash
+python3 scripts/run-stack-smoke.py \
+  --suite all \
+  --cloud-base http://localhost:8090 \
+  --pos-base http://localhost:8080 \
+  --license-base http://localhost:8095 \
+  --output scripts/.local-masterdata-summary.json \
+  --json-output scripts/.stack-smoke-result.json
+```
+
+`run-stack-smoke.py` выполняет отдельные suites: `health`, `license_pairing`, `cloud_to_edge_masterdata`. Новая функциональность основных сервисов, которая должна входить в локальную приемку, добавляется как новая suite с OpenAPI `operationId`.
+
+Те же Python scripts имеют thin wrappers: `scripts/*.sh` для Linux/macOS и ASCII `scripts/*.ps1` для Windows. Python seed/smoke слой строит HTTP calls из OpenAPI contract `docs/api/mhpos-local-smoke.openapi.json`, поэтому новые endpoints для локального теста нужно сначала добавить в этот contract, затем использовать через `operationId` в `scripts/lib`. Demo seed dataset является частью ручного наглядного теста и должен расширяться вместе с новыми Cloud-owned справочниками, publication streams и POS read flows.
+
+Для повторного запуска на уже provisioned Edge `run-stack-smoke.py --suite all` переиспользует `scripts/.local-masterdata-summary.json`, если он соответствует текущим `restaurant_id` и `node_device_id`. HTTP layer обходится без системного proxy для `localhost`/loopback адресов, поэтому Docker published ports проверяются напрямую даже при заданных `HTTP_PROXY`/`HTTPS_PROXY`.
+
+`scripts/.local-masterdata-summary.json` содержит локальные demo PIN для последующих автоматических шагов и игнорируется git. `scripts/.stack-smoke-result.json` содержит безопасный отчет stack smoke и тоже игнорируется git.
 
 POS UI:
 

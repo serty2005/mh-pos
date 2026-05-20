@@ -1,7 +1,7 @@
 <template>
   <q-page class="pos-page pos-app-shell" :class="`section-${activeSection}`">
     <header class="pos-context-bar" :aria-label="terminal.t('pos.topContext')">
-      <div v-if="activeSection === 'order'" class="context-actions order-context-actions">
+      <div v-if="activeSection === 'order' && terminal.activeOrder.value" class="context-actions order-context-actions">
         <button class="context-button selected-item-button" type="button" :disabled="!terminal.selectedOrderLine.value" @click="selectedItemDialog = true">
           {{ selectedLineName }}
         </button>
@@ -80,9 +80,9 @@
           :title="quickCheckAvailable ? '' : terminal.t('pos.quickCheckNeedsDefaultTable')"
           @click="createQuickCheck"
         />
-        <button v-else class="main-wide-action placeholder-action" type="button">
-          {{ terminal.t('pos.operationalNow') }}
-        </button>
+        <div v-else class="main-wide-action section-state-action">
+          {{ terminal.t(currentSectionActionKey) }}
+        </div>
       </div>
     </header>
 
@@ -254,7 +254,6 @@ import CashDrawerDialog from './pos/CashDrawerDialog.vue';
 import ClosedOrdersDrawer from './pos/ClosedOrdersDrawer.vue';
 import ModifierSelectionDialog from './pos/ModifierSelectionDialog.vue';
 import PosActionsDialog from './pos/PosActionsDialog.vue';
-import PosActivitySection from './pos/PosActivitySection.vue';
 import PosBottomBar from './pos/PosBottomBar.vue';
 import PosCashSection from './pos/PosCashSection.vue';
 import PosFloorSection from './pos/PosFloorSection.vue';
@@ -267,7 +266,7 @@ import RefundDialog from './pos/RefundDialog.vue';
 import SyncDrawer from './pos/SyncDrawer.vue';
 import { useCashierTerminal } from './pos/useCashierTerminal';
 
-type PosSectionId = 'order' | 'floor' | 'delivery' | 'shift' | 'analytics' | 'settings';
+type PosSectionId = 'order' | 'floor' | 'shift' | 'analytics';
 
 const terminal = useCashierTerminal();
 const activeSection = ref<PosSectionId>('floor');
@@ -289,10 +288,8 @@ const fallbackComponent = shallowRef(PosCashSection);
 const sections: Array<{ id: PosSectionId; icon: string; labelKey: string }> = [
   { id: 'order', icon: 'apps', labelKey: 'pos.sections.order' },
   { id: 'floor', icon: 'grid_view', labelKey: 'pos.sections.floor' },
-  { id: 'delivery', icon: 'local_shipping', labelKey: 'pos.sections.delivery' },
   { id: 'shift', icon: 'schedule', labelKey: 'pos.sections.shift' },
   { id: 'analytics', icon: 'bar_chart', labelKey: 'pos.sections.analytics' },
-  { id: 'settings', icon: 'settings', labelKey: 'pos.sections.settings' },
 ];
 
 const courseOptions = ['1', '2', '3', '4', '5', 'VIP'];
@@ -312,9 +309,10 @@ const waiterFilters = reactive([
 const selectedLineName = computed(() => terminal.selectedOrderLine.value?.name ?? terminal.t('pos.noSelectedLine'));
 const selectedHallName = computed(() => terminal.activeHalls.value.find((hall) => hall.id === terminal.selectedHallId.value)?.name ?? terminal.t('pos.halls'));
 const currentSectionTitleKey = computed(() => sections.find((section) => section.id === activeSection.value)?.labelKey ?? 'pos.sections.order');
+const currentSectionActionKey = computed(() => (activeSection.value === 'shift' ? 'pos.cashierReadiness' : 'pos.reportScope'));
 const quickCheckAvailable = computed(() => Boolean(terminal.activeTables.value[0] && terminal.currentShift.data.value));
 const orderMainActionLabel = computed(() => {
-  if (!terminal.activeOrder.value) return terminal.t('actions.save');
+  if (!terminal.activeOrder.value) return terminal.t('pos.chooseTable');
   if (terminal.finalCheckData.value) return terminal.t('pos.check');
   return terminal.t('pos.precheck');
 });
@@ -330,7 +328,6 @@ function openSection(section: PosSectionId) {
   sectionMenuOpen.value = false;
   if (section === 'shift') fallbackComponent.value = PosCashSection;
   if (section === 'analytics') fallbackComponent.value = PosReportsSection;
-  if (section === 'settings' || section === 'delivery') fallbackComponent.value = PosActivitySection;
 }
 
 watch(lineCommentDialog, (open) => {

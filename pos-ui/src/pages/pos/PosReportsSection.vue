@@ -63,7 +63,7 @@
     <aside class="section-action-rail" :aria-label="terminal.t('pos.reportScope')">
       <div class="rail-head">
         <div>
-          <p class="eyebrow">{{ terminal.t('pos.operationalNow') }}</p>
+          <p class="eyebrow">{{ terminal.t('pos.currentData') }}</p>
           <h2>{{ terminal.t('pos.reportScope') }}</h2>
         </div>
       </div>
@@ -76,10 +76,6 @@
           <span>{{ terminal.t('pos.lastOutbox') }}</span>
           <strong>{{ terminal.syncStatus.data.value?.total ?? 0 }}</strong>
         </div>
-      </div>
-      <div class="planned-block">
-        <p class="eyebrow">{{ terminal.t('pos.plannedNext') }}</p>
-        <p>{{ terminal.t('pos.reportsPlannedBody') }}</p>
       </div>
       <div class="rail-actions integrated-action-bar">
         <q-btn outline color="secondary" class="touch-button" icon="inventory_2" :label="terminal.t('pos.cashDrawer')" :disable="!terminal.canRecordCashDrawerEvent.value" @click="terminal.cashDrawerDialog.value = true" />

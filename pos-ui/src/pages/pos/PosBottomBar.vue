@@ -45,8 +45,8 @@
 
     <div v-else class="bottom-status-grid">
       <span class="bottom-status-cell">
-        <small>{{ terminal.t('pos.sectionStatus') }}</small>
-        <strong>{{ terminal.t('pos.operationalNow') }}</strong>
+        <small>{{ terminal.t(activeSectionLabelKey) }}</small>
+        <strong>{{ sectionStatusLabel }}</strong>
       </span>
     </div>
 
@@ -86,6 +86,15 @@ const shiftTotal = computed(() => (props.terminal.closedOrders.data.value ?? [])
 const ordersCount = computed(() => (props.terminal.closedOrders.data.value ?? []).length + (props.terminal.activeOrder.value ? 1 : 0));
 const averageCheck = computed(() => ordersCount.value > 0 ? Math.round(shiftTotal.value / ordersCount.value) : 0);
 const completedCount = computed(() => (props.terminal.closedOrders.data.value ?? []).length);
+const sectionStatusLabel = computed(() => {
+  if (props.activeSection === 'shift') {
+    return props.terminal.currentCashSession.data.value ? props.terminal.t('pos.cashSessionOpen') : props.terminal.t('pos.noCashSession');
+  }
+  if (props.activeSection === 'analytics') {
+    return props.terminal.t('pos.closedOrdersCount', { count: completedCount.value });
+  }
+  return props.terminal.t(activeSectionLabelKey.value);
+});
 
 function formatOpenedAt(value: string) {
   const date = new Date(value);
