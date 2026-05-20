@@ -1,6 +1,6 @@
 # ROADMAP
 
-Статус документа: актуализировано под фактический код и целевую inventory architecture на 2026-05-19.
+Статус документа: актуализировано под фактический код и целевую inventory architecture на 2026-05-20.
 
 Roadmap фиксирует статусы, блокеры и следующий план. Архитектурный контракт находится в `SPECv1.3.md`, backend contract — в `docs/backend/POS-BACKEND-SPEC.md`.
 
@@ -50,6 +50,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - POS Edge outbox/local event foundation for cashier operational events.
 - `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud financial operation events. `PaymentRefunded` and `CheckRefunded` remain accepted legacy operational event types for older payloads.
 - Cloud receiver stores `RefundRecorded` raw/journal rows idempotently and updates event-type stats plus coarse shift finance refund counters; detailed financial operation projection remains separate from cashier runtime.
+- Python 3 local stack smoke runner: отдельные suites для Cloud/POS/License health, License Server pairing semantics и Cloud seed -> POS Edge provisioning/read-model/sync проверки через OpenAPI-defined API operations.
 - DDD context map exists in `docs/architecture/DDD-CONTEXT-MAP.md`.
 
 ### Persistence Policy
@@ -122,7 +123,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 После закрытия pilot blockers:
 
-- Полный pre-pilot smoke path: поддерживать `scripts/bootstrap-production-way.ps1 -RunRuntimeSmoke` и `scripts/start-and-test-all.ps1` как acceptance smoke для Cloud master data -> Edge ingest -> login -> shift/cash session -> order -> precheck -> payment -> check -> reprint -> cancellation/refund -> close shifts.
+- Полный pre-pilot smoke path: поддерживать `scripts/run-stack-smoke.py` как основной Fedora/Linux/Windows-compatible путь и постепенно переносить production-way runtime smoke (`login -> shift/cash session -> order -> precheck -> payment -> check -> reprint -> cancellation/refund -> close shifts`) из legacy PowerShell в переносимые Python suites.
+- Расширять OpenAPI smoke contract, stack smoke suites и demo seed dataset вместе с новыми Cloud-owned справочниками, publication streams и POS read flows, чтобы ручной наглядный тест не отставал от runtime.
 - Сверка RBAC matrix с фактическим UI и backend permissions.
 - Проверка migration/backup behavior на старой SQLite DB.
 - Богатая financial operation ledger projection для отчетности, если raw/journal payload и текущих event counters недостаточно.
