@@ -25,10 +25,11 @@ Runner выполняет независимые suites и возвращает 
 - `license_pairing`: напрямую регистрирует одноразовый pairing code в License Server, resolve-ит его и проверяет, что code consumed.
 - `cloud_to_edge_masterdata`: создает Cloud-owned demo справочники, выполняет POS Edge provisioning через License Code с Cloud assignment fallback, проверяет POS read model и post-pairing Cloud -> Edge sync.
 - `pos_cashier_runtime`: переиспользует summary из `cloud_to_edge_masterdata` или `scripts/.local-masterdata-summary.json` и проверяет backend path `login -> personal shift -> cash shift -> hall/table/menu reads -> order -> regular/modifier/service lines -> precheck -> payment by precheck_id -> final check -> closed orders -> check get/reprint -> cancellation ledger в той же смене -> financial operations -> storage status`.
+- `pos_refund_after_shift_close`: переиспользует тот же summary, создает отдельную sale, закрывает исходные personal/cash shifts, открывает новую employee/cash shift для refund под менеджером при необходимости, записывает full refund через `/checks/{id}/refunds` и проверяет ledger/closed-order reads.
 
 Запланировано далее:
 
-- Отдельная refund-after-shift-close suite, close shifts и negative/permission cases.
+- Negative/permission cases для runtime boundaries.
 - service-specific suites для новых Cloud, Edge и License endpoints, когда они становятся частью smoke acceptance.
 
 ## Error Handling
@@ -46,7 +47,7 @@ python3 scripts/run-stack-smoke.py --suite all --json-output scripts/.stack-smok
 Аргументы:
 
 - `--cloud-base`, `--pos-base`, `--license-base`;
-- `--suite` с повторением или comma-separated list: `all`, `health`, `license_pairing`, `cloud_to_edge_masterdata`, `pos_cashier_runtime`;
+- `--suite` с повторением или comma-separated list: `all`, `health`, `license_pairing`, `cloud_to_edge_masterdata`, `pos_cashier_runtime`, `pos_refund_after_shift_close`;
 - `--output` для существующего seed summary;
 - `--json-output` для полного stack smoke result;
 - `--skip-post-pairing-sync-check`, `--wait-seconds`, `--interval-seconds`.

@@ -24,6 +24,7 @@
 - Cloud receiver принимает current `CancellationRecorded`/`RefundRecorded` и legacy inbound-only `PaymentRefunded`/`CheckRefunded`; richer financial operation reporting остается отдельной задачей.
 - Reprint precheck/check строится из immutable snapshot.
 - Python stack smoke содержит suite `pos_cashier_runtime`, которая проверяет backend путь после Cloud -> Edge master-data sync: PIN login, личную смену, cash shift, hall/table/menu read models, заказ, обычную строку, modifiers при наличии, service item при наличии, precheck, оплату по `precheck_id`, final check, bounded closed orders, check get/reprint, same-shift cancellation ledger, financial operations read и `GET /api/v1/storage/status`.
+- Python stack smoke содержит suite `pos_refund_after_shift_close`, которая создает отдельную POS sale, закрывает исходные cash shift и personal employee shift, открывает новую сменную границу для refund под менеджером, записывает full refund через `/checks/{id}/refunds`, проверяет ledger через `/checks/{id}/financial-operations` и bounded closed-order/check reads без PSP, fiscal или destructive storage действий.
 - Cloud -> Edge master-data ingest в POS Edge runtime поддерживает потоки `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
 - Cloud/Edge master data разделяет menu categories, catalog folders и tags; `catalog` stream передает folders, folder parameters, tags, item tags, services и modifier groups/options/bindings, а `menu` stream передает menu items и effective modifier links.
 - Cloud publication snapshot для POS Edge публикуется как typed ingest DTO: `modifier_groups[]` сохраняет `required`, `min_count`, `max_count`, `active`, а `menu_item_modifier_groups[]` остается link-only без rich/UI fields. Production-way bootstrap отправляет опубликованный Cloud snapshot на POS Edge без PowerShell field stripping.
@@ -34,7 +35,7 @@
 
 - automatic recipe expansion / stock consumption engine;
 - automatic stock return/write-off from financial operations;
-- refund-after-shift-close smoke suite, PSP refund smoke и fiscal integration;
+- PSP refund smoke и fiscal integration;
 - destructive retention apply, archive restore/read path, `VACUUM` и compaction;
 - fiscal shift/business day сущности как отдельные runtime aggregates;
 - real payment processor module, PSP webhooks и fiscal adapter;
@@ -93,7 +94,7 @@ python3 scripts/run-stack-smoke.py \
   --json-output scripts/.stack-smoke-result.json
 ```
 
-`run-stack-smoke.py` выполняет отдельные suites: `health`, `license_pairing`, `cloud_to_edge_masterdata`, `pos_cashier_runtime`. Suite `pos_cashier_runtime` использует summary из `cloud_to_edge_masterdata` или `scripts/.local-masterdata-summary.json` для уже provisioned Edge и вызывает runtime endpoints только через OpenAPI `operationId`. Она не выполняет destructive storage actions и не является заменой полноценным e2e/UI тестам.
+`run-stack-smoke.py` выполняет отдельные suites: `health`, `license_pairing`, `cloud_to_edge_masterdata`, `pos_cashier_runtime`, `pos_refund_after_shift_close`. POS runtime suites используют summary из `cloud_to_edge_masterdata` или `scripts/.local-masterdata-summary.json` для уже provisioned Edge и вызывают runtime endpoints только через OpenAPI `operationId`. Они не выполняют destructive storage actions, PSP/fiscal calls и не являются заменой полноценным e2e/UI тестам.
 
 Те же Python scripts имеют thin wrappers: `scripts/*.sh` для Linux/macOS и ASCII `scripts/*.ps1` для Windows. Python seed/smoke слой строит HTTP calls из OpenAPI contract `docs/api/mhpos-local-smoke.openapi.json`, поэтому новые endpoints для локального теста нужно сначала добавить в этот contract, затем использовать через `operationId` в `scripts/lib`. Demo seed dataset является частью ручного наглядного теста и должен расширяться вместе с новыми Cloud-owned справочниками, publication streams и POS read flows.
 

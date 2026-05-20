@@ -76,7 +76,9 @@ class OpenAPIContractTest(unittest.TestCase):
         checks = {
             "openEmployeeShift": ("POST", "/employee-shifts/open", {"command_id": "cmd-1", "restaurant_id": "r1", "opened_by_employee_id": "e1"}),
             "getCurrentEmployeeShift": ("GET", "/employee-shifts/current", None),
+            "closeEmployeeShift": ("POST", "/employee-shifts/shift-1/close", {"command_id": "cmd-close-shift", "closed_by_employee_id": "e1"}),
             "openCashShift": ("POST", "/cash-shifts/open", {"command_id": "cmd-2", "restaurant_id": "r1", "opened_by_employee_id": "e1", "opening_cash_amount": 0}),
+            "closeCashShift": ("POST", "/cash-shifts/cash-1/close", {"command_id": "cmd-close-cash", "closed_by_employee_id": "e1", "closing_cash_amount": 0}),
             "createOrder": ("POST", "/orders", {"command_id": "cmd-3", "restaurant_id": "r1", "shift_id": "s1", "table_id": "t1", "guest_count": 1}),
             "addOrderLine": ("POST", "/orders/order-1/lines", {"command_id": "cmd-4", "menu_item_id": "m1", "quantity": 1}),
             "issuePrecheck": ("POST", "/orders/order-1/precheck", {"command_id": "cmd-5"}),
@@ -84,6 +86,7 @@ class OpenAPIContractTest(unittest.TestCase):
             "getCheck": ("GET", "/checks/check-1", None),
             "reprintCheck": ("POST", "/checks/check-1/reprint", {"command_id": "cmd-7"}),
             "recordCheckCancellation": ("POST", "/checks/check-1/cancellations", {"command_id": "cmd-8", "operation_kind": "full", "inventory_disposition": "no_stock_effect", "reason": "smoke"}),
+            "recordCheckRefund": ("POST", "/checks/check-1/refunds", {"command_id": "cmd-9", "operation_kind": "full", "inventory_disposition": "no_stock_effect", "reason": "smoke"}),
             "listCheckFinancialOperations": ("GET", "/checks/check-1/financial-operations", None),
             "getStorageStatus": ("GET", "/storage/status", None),
         }
@@ -92,7 +95,11 @@ class OpenAPIContractTest(unittest.TestCase):
             params = {"id": "order-1"}
             if operation_id == "capturePrecheckPayment":
                 params = {"id": "precheck-1"}
-            if operation_id in ("getCheck", "reprintCheck", "recordCheckCancellation", "listCheckFinancialOperations"):
+            if operation_id in ("closeEmployeeShift",):
+                params = {"id": "shift-1"}
+            if operation_id in ("closeCashShift",):
+                params = {"id": "cash-1"}
+            if operation_id in ("getCheck", "reprintCheck", "recordCheckCancellation", "recordCheckRefund", "listCheckFinancialOperations"):
                 params = {"id": "check-1"}
             request = contract.build_request(operation_id, path_params=params, body=body)
             self.assertEqual(request["method"], method)

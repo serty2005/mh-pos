@@ -24,7 +24,13 @@ from mhpos_http import HttpError
 STATUS_PASSED = "passed"
 STATUS_FAILED = "failed"
 STATUS_SKIPPED = "skipped"
-ALL_SUITES = ["health", "license_pairing", "cloud_to_edge_masterdata", "pos_cashier_runtime"]
+ALL_SUITES = [
+    "health",
+    "license_pairing",
+    "cloud_to_edge_masterdata",
+    "pos_cashier_runtime",
+    "pos_refund_after_shift_close",
+]
 
 
 @dataclass
@@ -346,6 +352,220 @@ def run_pos_cashier_runtime_suite(
         interval_seconds=interval_seconds,
         existing_summary=existing_summary,
     )
+    session = prepare_pos_runtime_session(ctx, summary, client_device_id)
+    sale = create_pos_runtime_sale(ctx, summary, session)
+    employee_shift = session["employee_shift"]
+    runtime_headers = session["runtime_headers"]
+    manager_headers = session["manager_headers"]
+    manager_employee_id = session["manager_employee_id"]
+    order_id = sale["order_id"]
+    check_id = sale["check_id"]
+    closed_orders = call(
+        ctx.pos,
+        "listClosedOrders",
+        query={"shift_id": employee_shift["id"], "device_id": summary["node_device_id"], "limit": 10},
+        headers=runtime_headers,
+    )
+    if not find_by_id(closed_orders, order_id):
+        raise AssertionError("bounded closed orders read did not include the paid order")
+    check = call(ctx.pos, "getCheck", path_params={"id": check_id}, headers=runtime_headers)
+    reprint = call(
+        ctx.pos,
+        "reprintCheck",
+        {"command_id": new_command_id("reprint-check")},
+        path_params={"id": check_id},
+        headers=manager_headers,
+    )
+    cancellation = call(
+        ctx.pos,
+        "recordCheckCancellation",
+        {
+            "command_id": new_command_id("record-cancellation"),
+            "operation_kind": "full",
+            "inventory_disposition": "no_stock_effect",
+            "reason": "stack smoke same-shift cancellation",
+            "approved_by_employee_id": manager_employee_id,
+        },
+        path_params={"id": check_id},
+        headers=manager_headers,
+    )
+    operations = call(ctx.pos, "listCheckFinancialOperations", path_params={"id": check_id}, headers=manager_headers)
+    if not any(item.get("id") == cancellation.get("id") and item.get("operation_type") == "cancellation" for item in operations):
+        raise AssertionError("check financial operations did not include the recorded cancellation")
+    storage_status = call(ctx.pos, "getStorageStatus", headers=manager_headers)
+    result = passed_result(
+        "pos_cashier_runtime",
+        {
+            "reused_existing_pairing": bool(existing_summary),
+            "runtime_actor_role": session["runtime_role"],
+            "runtime_actor_employee_id": session["runtime_employee_id"],
+            "manager_employee_id": manager_employee_id,
+            "shift_id": employee_shift.get("id"),
+            "cash_shift_id": session["cash_shift"].get("id"),
+            "order_id": order_id,
+            "line_count": sale["line_count"],
+            "normal_line_id": sale["normal_line_id"],
+            "modifier_line_added": sale["modifier_line_added"],
+            "service_line_added": sale["service_line_added"],
+            "precheck_id": sale["precheck_id"],
+            "payment_id": sale["payment_id"],
+            "payment_status": sale["payment_status"],
+            "check_id": check_id,
+            "check_status": check.get("status"),
+            "reprint_document_type": reprint.get("document_type"),
+            "cancellation_operation_id": cancellation.get("id"),
+            "financial_operations_count": len(operations),
+            "closed_orders_count": len(closed_orders),
+            "storage": storage_status_details(storage_status),
+        },
+        started=started,
+    )
+    result["_artifacts"] = {"masterdata_summary": dict(summary)}
+    return result
+
+
+def run_pos_refund_after_shift_close_suite(
+    ctx,
+    restaurant_name="",
+    cashier_pin="1111",
+    manager_pin="2222",
+    node_device_id="",
+    suffix="",
+    client_device_id="python-stack-smoke-client",
+    skip_post_pairing_sync_check=False,
+    wait_seconds=90,
+    interval_seconds=2,
+    existing_summary=None,
+):
+    started = time.monotonic()
+    summary = ensure_pos_runtime_summary(
+        ctx,
+        restaurant_name=restaurant_name,
+        cashier_pin=cashier_pin,
+        manager_pin=manager_pin,
+        node_device_id=node_device_id,
+        suffix=suffix,
+        client_device_id=client_device_id,
+        skip_post_pairing_sync_check=skip_post_pairing_sync_check,
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+        existing_summary=existing_summary,
+    )
+    session = prepare_pos_runtime_session(ctx, summary, client_device_id)
+    sale = create_pos_runtime_sale(ctx, summary, session)
+    original_employee_shift = session["employee_shift"]
+    original_cash_shift = session["cash_shift"]
+    manager_headers = session["manager_headers"]
+    manager_employee_id = session["manager_employee_id"]
+    runtime_headers = session["runtime_headers"]
+    runtime_employee_id = session["runtime_employee_id"]
+
+    closed_cash_shift = call(
+        ctx.pos,
+        "closeCashShift",
+        {
+            "command_id": new_command_id("close-original-cash-shift"),
+            "closed_by_employee_id": manager_employee_id,
+            "closing_cash_amount": 0,
+        },
+        path_params={"id": original_cash_shift["id"]},
+        headers=manager_headers,
+    )
+    closed_employee_shift = call(
+        ctx.pos,
+        "closeEmployeeShift",
+        {
+            "command_id": new_command_id("close-original-employee-shift"),
+            "closed_by_employee_id": runtime_employee_id,
+        },
+        path_params={"id": original_employee_shift["id"]},
+        headers=runtime_headers,
+    )
+
+    refund_employee_shift = ensure_employee_shift(ctx.pos, summary, manager_employee_id, manager_headers)
+    current_cash_shift = optional_call(ctx.pos, "getCurrentCashShift", headers=manager_headers)
+    if current_cash_shift:
+        if current_cash_shift.get("shift_id") != refund_employee_shift.get("id"):
+            raise RuntimeError("open cash shift does not match the refund employee shift for smoke actor")
+        refund_cash_shift = current_cash_shift
+    else:
+        refund_cash_shift = call(
+            ctx.pos,
+            "openCashShift",
+            {
+                "command_id": new_command_id("open-refund-cash-shift"),
+                "restaurant_id": summary["restaurant_id"],
+                "opened_by_employee_id": manager_employee_id,
+                "opening_cash_amount": 0,
+            },
+            headers=manager_headers,
+        )
+
+    refund = call(
+        ctx.pos,
+        "recordCheckRefund",
+        {
+            "command_id": new_command_id("record-refund-after-shift-close"),
+            "operation_kind": "full",
+            "inventory_disposition": "no_stock_effect",
+            "reason": "stack smoke refund after shift close",
+            "approved_by_employee_id": manager_employee_id,
+        },
+        path_params={"id": sale["check_id"]},
+        headers=manager_headers,
+    )
+    operations = call(ctx.pos, "listCheckFinancialOperations", path_params={"id": sale["check_id"]}, headers=manager_headers)
+    if not any(item.get("id") == refund.get("id") and item.get("operation_type") == "refund" for item in operations):
+        raise AssertionError("check financial operations did not include the recorded refund")
+
+    check_after = call(ctx.pos, "getCheck", path_params={"id": sale["check_id"]}, headers=manager_headers)
+    order_after = call(ctx.pos, "getOrder", path_params={"id": sale["order_id"]}, headers=manager_headers)
+    if check_after.get("status") not in ("paid", "refunded", "voided"):
+        raise AssertionError("refund mutated final check into unexpected status " + str(check_after.get("status")))
+    if order_after.get("status") != "closed":
+        raise AssertionError("refund mutated closed order into status " + str(order_after.get("status")))
+
+    closed_orders = call(
+        ctx.pos,
+        "listClosedOrders",
+        query={"shift_id": original_employee_shift["id"], "check_id": sale["check_id"], "limit": 10},
+        headers=manager_headers,
+    )
+    if not find_by_id(closed_orders, sale["order_id"]):
+        raise AssertionError("bounded closed orders read did not include the refunded order")
+
+    result = passed_result(
+        "pos_refund_after_shift_close",
+        {
+            "reused_existing_pairing": bool(existing_summary),
+            "runtime_actor_role": session["runtime_role"],
+            "runtime_actor_employee_id": runtime_employee_id,
+            "manager_employee_id": manager_employee_id,
+            "original_employee_shift_id": original_employee_shift.get("id"),
+            "original_employee_shift_status": closed_employee_shift.get("status"),
+            "original_cash_shift_id": original_cash_shift.get("id"),
+            "original_cash_shift_status": closed_cash_shift.get("status"),
+            "refund_employee_shift_id": refund_employee_shift.get("id"),
+            "refund_cash_shift_id": refund_cash_shift.get("id"),
+            "order_id": sale["order_id"],
+            "precheck_id": sale["precheck_id"],
+            "payment_id": sale["payment_id"],
+            "check_id": sale["check_id"],
+            "check_status_after_refund": check_after.get("status"),
+            "order_status_after_refund": order_after.get("status"),
+            "refund_operation_id": refund.get("id"),
+            "refund_operation_kind": refund.get("operation_kind"),
+            "refund_operation_amount": refund.get("amount"),
+            "financial_operations_count": len(operations),
+            "closed_orders_count": len(closed_orders),
+        },
+        started=started,
+    )
+    result["_artifacts"] = {"masterdata_summary": dict(summary)}
+    return result
+
+
+def prepare_pos_runtime_session(ctx, summary, client_device_id):
     manager_login = login_with_pin(ctx.pos, summary["node_device_id"], client_device_id, summary["manager_pin"])
     manager_headers = auth_headers(manager_login, summary["node_device_id"], client_device_id)
     manager_employee_id = manager_login["actor"]["employee_id"]
@@ -353,15 +573,14 @@ def run_pos_cashier_runtime_suite(
         raise AssertionError("manager PIN resolved unexpected employee_id")
     current_cash_shift = optional_call(ctx.pos, "getCurrentCashShift", headers=manager_headers)
 
-    runtime_login = manager_login
     runtime_headers = manager_headers
     runtime_employee_id = manager_employee_id
     runtime_role = "manager"
     cashier_employee_id = summary.get("cashier_employee_id", "")
     if current_cash_shift and current_cash_shift.get("opened_by_employee_id") == cashier_employee_id and summary.get("cashier_pin"):
-        runtime_login = login_with_pin(ctx.pos, summary["node_device_id"], client_device_id, summary["cashier_pin"])
-        runtime_headers = auth_headers(runtime_login, summary["node_device_id"], client_device_id)
-        runtime_employee_id = runtime_login["actor"]["employee_id"]
+        cashier_login = login_with_pin(ctx.pos, summary["node_device_id"], client_device_id, summary["cashier_pin"])
+        runtime_headers = auth_headers(cashier_login, summary["node_device_id"], client_device_id)
+        runtime_employee_id = cashier_login["actor"]["employee_id"]
         if runtime_employee_id != cashier_employee_id:
             raise AssertionError("cashier PIN resolved unexpected employee_id")
         runtime_role = "cashier"
@@ -388,7 +607,20 @@ def run_pos_cashier_runtime_suite(
             },
             headers=runtime_headers,
         )
+    return {
+        "manager_headers": manager_headers,
+        "manager_employee_id": manager_employee_id,
+        "runtime_headers": runtime_headers,
+        "runtime_employee_id": runtime_employee_id,
+        "runtime_role": runtime_role,
+        "employee_shift": employee_shift,
+        "cash_shift": cash_shift,
+    }
 
+
+def create_pos_runtime_sale(ctx, summary, session):
+    runtime_headers = session["runtime_headers"]
+    employee_shift = session["employee_shift"]
     halls = call(ctx.pos, "listPOSHalls", query={"restaurant_id": summary["restaurant_id"]}, headers=runtime_headers)
     tables = call(
         ctx.pos,
@@ -499,69 +731,18 @@ def run_pos_cashier_runtime_suite(
     check = closed_order.get("check") or find_check_in_closed_orders(ctx.pos, order_id, employee_shift, runtime_headers)
     if not check or not check.get("id"):
         raise AssertionError("final check was not created after full precheck payment")
-    check_id = check["id"]
-    closed_orders = call(
-        ctx.pos,
-        "listClosedOrders",
-        query={"shift_id": employee_shift["id"], "device_id": summary["node_device_id"], "limit": 10},
-        headers=runtime_headers,
-    )
-    if not find_by_id(closed_orders, order_id):
-        raise AssertionError("bounded closed orders read did not include the paid order")
-    check = call(ctx.pos, "getCheck", path_params={"id": check_id}, headers=runtime_headers)
-    reprint = call(
-        ctx.pos,
-        "reprintCheck",
-        {"command_id": new_command_id("reprint-check")},
-        path_params={"id": check_id},
-        headers=manager_headers,
-    )
-    cancellation = call(
-        ctx.pos,
-        "recordCheckCancellation",
-        {
-            "command_id": new_command_id("record-cancellation"),
-            "operation_kind": "full",
-            "inventory_disposition": "no_stock_effect",
-            "reason": "stack smoke same-shift cancellation",
-            "approved_by_employee_id": manager_employee_id,
-        },
-        path_params={"id": check_id},
-        headers=manager_headers,
-    )
-    operations = call(ctx.pos, "listCheckFinancialOperations", path_params={"id": check_id}, headers=manager_headers)
-    if not any(item.get("id") == cancellation.get("id") and item.get("operation_type") == "cancellation" for item in operations):
-        raise AssertionError("check financial operations did not include the recorded cancellation")
-    storage_status = call(ctx.pos, "getStorageStatus", headers=manager_headers)
-    result = passed_result(
-        "pos_cashier_runtime",
-        {
-            "reused_existing_pairing": bool(existing_summary),
-            "runtime_actor_role": runtime_role,
-            "runtime_actor_employee_id": runtime_employee_id,
-            "manager_employee_id": manager_employee_id,
-            "shift_id": employee_shift.get("id"),
-            "cash_shift_id": cash_shift.get("id"),
-            "order_id": order_id,
-            "line_count": line_count,
-            "normal_line_id": normal_line.get("id"),
-            "modifier_line_added": modifier_line_added,
-            "service_line_added": service_line_added,
-            "precheck_id": precheck_id,
-            "payment_id": payment.get("id"),
-            "payment_status": payment.get("status"),
-            "check_id": check_id,
-            "check_status": check.get("status"),
-            "reprint_document_type": reprint.get("document_type"),
-            "cancellation_operation_id": cancellation.get("id"),
-            "financial_operations_count": len(operations),
-            "closed_orders_count": len(closed_orders),
-            "storage": storage_status_details(storage_status),
-        },
-        started=started,
-    )
-    result["_artifacts"] = {"masterdata_summary": dict(summary)}
-    return result
+    return {
+        "order_id": order_id,
+        "line_count": line_count,
+        "normal_line_id": normal_line.get("id"),
+        "modifier_line_added": modifier_line_added,
+        "service_line_added": service_line_added,
+        "precheck_id": precheck_id,
+        "payment_id": payment.get("id"),
+        "payment_status": payment.get("status"),
+        "check_id": check["id"],
+        "closed_order": closed_order,
+    }
 
 
 def ensure_pos_runtime_summary(ctx, **options):
@@ -775,6 +956,11 @@ def run_selected_suites(ctx, suites, **options):
                 if artifacts.get("masterdata_summary"):
                     suite_options["existing_summary"] = artifacts["masterdata_summary"]
                 result = run_pos_cashier_runtime_suite(ctx, **suite_options)
+            elif suite == "pos_refund_after_shift_close":
+                suite_options = dict(options)
+                if artifacts.get("masterdata_summary"):
+                    suite_options["existing_summary"] = artifacts["masterdata_summary"]
+                result = run_pos_refund_after_shift_close_suite(ctx, **suite_options)
             else:
                 result = skipped_result(suite, "unknown suite", started=started)
         except Exception as exc:

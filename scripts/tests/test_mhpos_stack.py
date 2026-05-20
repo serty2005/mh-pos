@@ -54,7 +54,13 @@ class StackSmokeTest(unittest.TestCase):
         )
         self.assertEqual(
             parse_suites(["all"]),
-            ["health", "license_pairing", "cloud_to_edge_masterdata", "pos_cashier_runtime"],
+            [
+                "health",
+                "license_pairing",
+                "cloud_to_edge_masterdata",
+                "pos_cashier_runtime",
+                "pos_refund_after_shift_close",
+            ],
         )
 
     def test_health_suite_checks_cloud_pos_and_license(self):
@@ -333,6 +339,112 @@ class StackSmokeTest(unittest.TestCase):
         self.assertTrue(payment_posts[0]["command_id"].startswith("capture-payment-"))
         self.assertTrue(cancellation_posts[0]["command_id"].startswith("record-cancellation-"))
         self.assertNotIn("session-manager", str(result))
+
+    def test_pos_refund_after_shift_close_suite_closes_original_shifts_and_records_refund(self):
+        from mhpos_http import HttpError
+        from mhpos_stack import StackContext, run_pos_refund_after_shift_close_suite
+
+        class RefundPOS(FakeClient):
+            def __init__(self):
+                super().__init__("pos")
+                self.manager_shift_open = False
+                self.shift_sequence = 0
+                self.current_cash_shift = None
+
+            def post(self, path, body=None, headers=None, expected_status=(200, 201)):
+                self.posts.append((path, body or {}, headers or {}, tuple(expected_status)))
+                if path == "/auth/pin-login":
+                    employee_id = "manager-1" if body["pin"] == "2222" else "cashier-1"
+                    return {"session": {"id": "session-" + employee_id}, "actor": {"employee_id": employee_id}}
+                if path == "/employee-shifts/open":
+                    self.shift_sequence += 1
+                    shift_id = "shift-sale" if self.shift_sequence == 1 else "shift-refund"
+                    self.manager_shift_open = True
+                    return {"id": shift_id, "status": "open", "opened_by_employee_id": body["opened_by_employee_id"]}
+                if path == "/cash-shifts/open":
+                    shift_id = "shift-sale" if self.shift_sequence == 1 else "shift-refund"
+                    cash_id = "cash-sale" if self.shift_sequence == 1 else "cash-refund"
+                    self.current_cash_shift = {
+                        "id": cash_id,
+                        "status": "open",
+                        "shift_id": shift_id,
+                        "opened_by_employee_id": body["opened_by_employee_id"],
+                    }
+                    return dict(self.current_cash_shift)
+                if path == "/orders":
+                    return {"id": "order-1", "status": "open"}
+                if path == "/orders/order-1/lines":
+                    return {"id": "line-normal", "menu_item_id": body["menu_item_id"]}
+                if path == "/orders/order-1/precheck":
+                    return {"id": "precheck-1", "total": 15000, "remaining_total": 15000, "currency_code": "RUB"}
+                if path == "/prechecks/precheck-1/payments":
+                    return {"id": "payment-1", "status": "captured"}
+                if path == "/cash-shifts/cash-sale/close":
+                    self.current_cash_shift = None
+                    return {"id": "cash-sale", "status": "closed"}
+                if path == "/employee-shifts/shift-sale/close":
+                    self.manager_shift_open = False
+                    return {"id": "shift-sale", "status": "closed"}
+                if path == "/checks/check-1/refunds":
+                    return {
+                        "id": "operation-refund-1",
+                        "operation_type": "refund",
+                        "operation_kind": body["operation_kind"],
+                        "amount": 15000,
+                    }
+                return super().post(path, body=body, headers=headers, expected_status=expected_status)
+
+            def get(self, path, headers=None, expected_status=(200,)):
+                self.gets.append((path, headers or {}, tuple(expected_status)))
+                if path == "/system/provisioning-status":
+                    return {"node_device_id": "node-1", "paired": True, "restaurant_id": "restaurant-1"}
+                if path == "/employee-shifts/current":
+                    if self.manager_shift_open:
+                        shift_id = "shift-sale" if self.shift_sequence == 1 else "shift-refund"
+                        return {"id": shift_id, "status": "open", "opened_by_employee_id": "manager-1"}
+                    return None
+                if path == "/cash-shifts/current":
+                    if self.current_cash_shift:
+                        return dict(self.current_cash_shift)
+                    raise HttpError("GET", path, 404, "{}")
+                if path.startswith("/halls"):
+                    return [{"id": "hall-1", "name": "Main"}]
+                if path.startswith("/tables"):
+                    return [{"id": "table-1", "name": "T1"}]
+                if path == "/menu/items":
+                    return [{"id": "menu-normal", "item_type": "dish", "active": True}]
+                if path == "/orders/order-1":
+                    return {"id": "order-1", "status": "closed", "check": {"id": "check-1", "status": "paid"}}
+                if path == "/checks/check-1":
+                    return {"id": "check-1", "status": "paid", "total": 15000}
+                if path == "/checks/check-1/financial-operations":
+                    return [{"id": "operation-refund-1", "operation_type": "refund"}]
+                if path.startswith("/orders/closed"):
+                    return [{"id": "order-1", "status": "closed", "check": {"id": "check-1"}}]
+                raise AssertionError(f"unexpected GET {path}")
+
+        summary = {
+            "restaurant_id": "restaurant-1",
+            "node_device_id": "node-1",
+            "manager_pin": "2222",
+            "manager_employee_id": "manager-1",
+            "hall_id": "hall-1",
+            "table_ids": ["table-1"],
+            "menu_item_ids": ["menu-normal"],
+        }
+        pos = RefundPOS()
+        ctx = StackContext(FakeClient("cloud"), pos, FakeClient("license"))
+
+        result = run_pos_refund_after_shift_close_suite(ctx, existing_summary=summary, client_device_id="client-1")
+
+        self.assertEqual(result["name"], "pos_refund_after_shift_close")
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["details"]["original_employee_shift_status"], "closed")
+        self.assertEqual(result["details"]["original_cash_shift_status"], "closed")
+        refund_posts = [body for path, body, *_ in pos.posts if path == "/checks/check-1/refunds"]
+        self.assertTrue(refund_posts[0]["command_id"].startswith("record-refund-after-shift-close-"))
+        self.assertEqual(refund_posts[0]["approved_by_employee_id"], "manager-1")
+        self.assertNotIn("session-manager-1", str(result))
 
     def test_stack_cli_returns_non_zero_when_suite_failed(self):
         script_path = ROOT / "run-stack-smoke.py"

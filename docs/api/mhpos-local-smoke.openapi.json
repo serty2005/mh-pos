@@ -834,6 +834,31 @@
         }
       }
     },
+    "/checks/{id}/refunds": {
+      "post": {
+        "operationId": "recordCheckRefund",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordCheckRefund"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Check refund ledger operation recorded"
+          }
+        }
+      }
+    },
     "/checks/{id}/financial-operations": {
       "get": {
         "operationId": "listCheckFinancialOperations",
@@ -1049,6 +1074,10 @@
         "required": ["command_id", "method", "amount", "currency"]
       },
       "RecordCheckCancellation": {
+        "type": "object",
+        "required": ["command_id", "operation_kind", "inventory_disposition", "reason"]
+      },
+      "RecordCheckRefund": {
         "type": "object",
         "required": ["command_id", "operation_kind", "inventory_disposition", "reason"]
       }

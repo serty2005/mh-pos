@@ -52,7 +52,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - POS Edge outbox/local event foundation for cashier operational events.
 - `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud financial operation events. `PaymentRefunded` and `CheckRefunded` remain accepted legacy operational event types for older payloads.
 - Cloud receiver validates current `RefundRecorded`/`CancellationRecorded` payload fields, stores raw/journal rows idempotently and updates event-type stats plus coarse shift finance refund counters for refunds; detailed financial operation projection remains separate from cashier runtime.
-- Python 3 local stack smoke runner: отдельные suites `health`, `license_pairing`, `cloud_to_edge_masterdata`, `pos_cashier_runtime`. Runtime suite проверяет Cloud seed -> POS Edge sync -> PIN login -> personal shift -> cash shift -> hall/table/menu reads -> order -> regular line -> modifier line при наличии seed data -> service line при наличии seed data -> precheck -> payment by `precheck_id` -> final check -> bounded closed orders -> get/reprint check -> cancellation ledger в той же смене -> financial operations read -> storage status.
+- Python 3 local stack smoke runner: отдельные suites `health`, `license_pairing`, `cloud_to_edge_masterdata`, `pos_cashier_runtime`, `pos_refund_after_shift_close`. Runtime suites проверяют Cloud seed -> POS Edge sync -> PIN login -> personal shift -> cash shift -> hall/table/menu reads -> order -> regular line -> modifier line при наличии seed data -> service line при наличии seed data -> precheck -> payment by `precheck_id` -> final check -> bounded closed orders -> get/reprint check -> cancellation ledger в той же смене -> financial operations read -> storage status, а также отдельный refund после закрытия исходных cash/personal shifts с проверкой ledger и closed-order reads.
 - DDD context map exists in `docs/architecture/DDD-CONTEXT-MAP.md`.
 
 ### Persistence Policy
@@ -116,7 +116,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - backend ledger, immutable snapshots, no-over-cancel/no-over-refund/no-over-line-amount tests, current `CancellationRecorded`/`RefundRecorded` sync contracts, idempotent Cloud raw/journal receipt checks and coarse Cloud refund projection реализованы;
   - cashier UI full whole-check и partial `order_line`/quantity cancellation/refund через ledger endpoints реализован с выбором inventory disposition; compatibility refund по captured payment оставлен отдельным fallback;
   - выполнено: `scripts/run-stack-smoke.py --suite all` включает `pos_cashier_runtime` для cancellation ledger в той же смене, check reprint, bounded closed orders и storage status sanity check;
-  - запланировано далее: отдельная refund-after-shift-close smoke suite, закрытие личной/кассовой смены в production-way smoke, PSP refund и fiscal integration.
+  - выполнено: отдельная suite `pos_refund_after_shift_close` закрывает исходные personal/cash shifts, открывает новую cash-session boundary для refund, пишет full refund через `/checks/{id}/refunds` и проверяет ledger/closed-order reads;
+  - запланировано далее: PSP refund и fiscal integration.
 - Documentation freeze:
   - поддерживать `SPECv1.3.md` как frozen pilot contract;
   - дальние контуры переносить в roadmap/ADR, а не в pilot spec.
@@ -125,7 +126,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 После закрытия pilot blockers:
 
-- Полный pre-pilot smoke path: поддерживать `scripts/run-stack-smoke.py` как основной Fedora/Linux/Windows-compatible путь; следующий перенос в Python suites — refund-after-shift-close, close shifts и более богатые negative/permission cases.
+- Полный pre-pilot smoke path: поддерживать `scripts/run-stack-smoke.py` как основной Fedora/Linux/Windows-compatible путь; следующий перенос в Python suites — более богатые negative/permission cases.
 - Расширять OpenAPI smoke contract, stack smoke suites и demo seed dataset вместе с новыми Cloud-owned справочниками, publication streams и POS read flows, чтобы ручной наглядный тест не отставал от runtime.
 - Сверка RBAC matrix с фактическим UI и backend permissions.
 - Проверка migration/backup behavior на старой SQLite DB.
