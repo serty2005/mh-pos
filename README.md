@@ -42,6 +42,7 @@
 - `pos-backend/` — POS Edge Go backend, SQLite runtime, cashier API.
 - `pos-ui/` — Vue/Quasar cashier UI.
 - `cloud-backend/` — Cloud API, PostgreSQL sync receiver и master-data authority foundation.
+- `cloud-ui/` — Cloud web UI (admin/операционные экраны, см. `docs/ui/CLOUD-UI-SPEC.md`).
 - `license-server/` — license/pairing support service.
 - `shared/` — общие platform helpers.
 - `scripts/` — локальные bootstrap/smoke scripts.
@@ -119,6 +120,16 @@ cd cloud-backend
 go mod tidy
 go test ./...
 ```
+
+Cloud UI:
+
+```powershell
+cd cloud-ui
+npm install
+npm run dev
+```
+
+Скрипты `dev`/`build` для `cloud-ui` определены в `cloud-ui/package.json`; отдельные smoke-скрипты для cloud-ui в `scripts/` сейчас не заявлены.
 
 UI build:
 
