@@ -294,6 +294,10 @@ type StorageArchiveMetadataRow = storage.ArchiveMetadataRow
 type StorageArchiveTableManifest = storage.ArchiveTableManifest
 type StorageArchiveManifest = storage.ArchiveManifest
 type StorageArchiveExportResult = storage.ArchiveExportResult
+type StorageArchivePlanProtectedFlags = storage.ArchivePlanProtectedFlags
+type StorageArchivePlanTableManifest = storage.ArchivePlanTableManifest
+type StorageArchivePlanManifest = storage.ArchivePlanManifest
+type StorageArchiveExportPlan = storage.ArchiveExportPlan
 
 const (
 	OutboxPending    = shared.OutboxPending

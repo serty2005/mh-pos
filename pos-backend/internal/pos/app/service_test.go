@@ -898,6 +898,120 @@ func TestStorageRetentionDryRunRejectsInvalidCutoff(t *testing.T) {
 	}
 }
 
+func TestStorageArchiveExportPlanRequiresPermissionAndRejectsInvalidInput(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.service.BuildStorageArchiveExportPlan(f.ctx, app.ArchiveExportPlanCommand{
+		CommandMeta:             f.edgeMetaCommand("cmd-storage-archive-plan-cashier-denied"),
+		CutoffBusinessDateLocal: "2026-05-05",
+		Mode:                    "manifest_only",
+	})
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden for cashier archive plan, got %v", err)
+	}
+
+	_, err = f.service.BuildStorageArchiveExportPlan(f.ctx, app.ArchiveExportPlanCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-archive-plan-invalid-cutoff"),
+		CutoffBusinessDateLocal: "2026/05/05",
+		Mode:                    "manifest_only",
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected invalid cutoff error, got %v", err)
+	}
+
+	_, err = f.service.BuildStorageArchiveExportPlan(f.ctx, app.ArchiveExportPlanCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-archive-plan-invalid-mode"),
+		CutoffBusinessDateLocal: "2026-05-05",
+		Mode:                    "delete",
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected invalid mode error, got %v", err)
+	}
+}
+
+func TestStorageArchiveExportPlanCountsProtectedRowsBlocksOutboxAndDoesNotMutate(t *testing.T) {
+	f := newFixture(t)
+	order, check := f.createPaidOrder(t)
+	if _, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-storage-archive-plan-cancel"),
+		CheckID:              check.ID,
+		Reason:               "guest returned immediately",
+		InventoryDisposition: domain.InventoryNoStockEffect,
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:    domain.FinancialItemWholeCheck,
+			Amount:   check.Total,
+			Currency: check.CurrencyCode,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	activeOrder, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{
+		CommandMeta: f.edgeMetaCommand("cmd-storage-archive-plan-active-order"),
+		TableID:     f.table.ID,
+		TableName:   "A1",
+		GuestCount:  1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := map[string]int{
+		"orders":                    countRows(t, f, "orders"),
+		"checks":                    countRows(t, f, "checks"),
+		"prechecks":                 countRows(t, f, "prechecks"),
+		"payments":                  countRows(t, f, "payments"),
+		"financial_operations":      countRows(t, f, "financial_operations"),
+		"financial_operation_items": countRows(t, f, "financial_operation_items"),
+		"local_event_log":           countRows(t, f, "local_event_log"),
+		"pos_sync_outbox":           countRows(t, f, "pos_sync_outbox"),
+	}
+
+	result, err := f.service.BuildStorageArchiveExportPlan(f.ctx, app.ArchiveExportPlanCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-archive-plan"),
+		CutoffBusinessDateLocal: "2026-05-05",
+		Mode:                    "manifest_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Mode != "manifest_only" || !result.Blocked || result.DestructiveApplySupported {
+		t.Fatalf("unexpected archive plan flags: %+v", result)
+	}
+	if !containsString(result.BlockReasons, "dry_run_only_no_archive_policy") ||
+		!containsString(result.BlockReasons, "pending_edge_to_cloud_outbox") {
+		t.Fatalf("expected dry-run and outbox block reasons, got %+v", result.BlockReasons)
+	}
+	if result.ArchiveSet.ClosedOrders != 1 || result.ArchiveSet.Checks != 1 || result.ArchiveSet.Prechecks != 1 ||
+		result.ArchiveSet.Payments != 1 || result.ArchiveSet.OrderLines != 1 {
+		t.Fatalf("expected one eligible closed order graph for %s, got %+v", order.ID, result.ArchiveSet)
+	}
+	if result.ArchiveSet.FinancialOperations != 1 || result.ArchiveSet.FinancialOperationItems != 1 {
+		t.Fatalf("expected eligible financial operation rows, got %+v", result.ArchiveSet)
+	}
+	if !result.Protected.FinancialLedgerProtected || !result.Protected.ImmutableSnapshotsProtected ||
+		!result.Protected.LocalEventsProtected || !result.Protected.OutboxProtected {
+		t.Fatalf("expected protected flags, got %+v", result.Protected)
+	}
+	if result.Manifest.FormatVersion != "storage-archive-manifest-v1" ||
+		result.Manifest.CutoffBusinessDateLocal != "2026-05-05" || result.Manifest.RestaurantID != f.restaurant.ID {
+		t.Fatalf("unexpected manifest metadata: %+v", result.Manifest)
+	}
+	if result.Manifest.BusinessDateRange.Oldest != "2026-05-04" || result.Manifest.BusinessDateRange.Newest != "2026-05-04" {
+		t.Fatalf("unexpected manifest business date range: %+v", result.Manifest.BusinessDateRange)
+	}
+	if len(result.Manifest.Tables) != 14 || result.Manifest.Tables[0].Name != "orders" ||
+		result.Manifest.Tables[0].Rows != 1 ||
+		result.Manifest.Tables[len(result.Manifest.Tables)-1].Name != "financial_operation_items" {
+		t.Fatalf("unexpected deterministic table manifest: %+v", result.Manifest.Tables)
+	}
+	if activeOrder.ID == "" {
+		t.Fatal("expected active order fixture")
+	}
+	for table, want := range before {
+		if got := countRows(t, f, table); got != want {
+			t.Fatalf("archive export-plan mutated %s, before=%d after=%d", table, want, got)
+		}
+	}
+}
+
 func TestStorageArchiveExportRejectsInvalidAndFutureCutoff(t *testing.T) {
 	f := newFixture(t)
 	_, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{

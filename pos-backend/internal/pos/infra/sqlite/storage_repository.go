@@ -73,6 +73,52 @@ func (r *Repository) DryRunStorageRetention(ctx context.Context, cutoffBusinessD
 	}, nil
 }
 
+// BuildStorageArchiveExportPlan строит deterministic manifest-only scope без записи archive files.
+func (r *Repository) BuildStorageArchiveExportPlan(ctx context.Context, cutoffBusinessDateLocal string) (storage.ArchiveExportPlan, error) {
+	eligible, err := r.retentionEligibleCounts(ctx, cutoffBusinessDateLocal)
+	if err != nil {
+		return storage.ArchiveExportPlan{}, err
+	}
+	dateRange, err := r.archivePlanBusinessDateRange(ctx, cutoffBusinessDateLocal)
+	if err != nil {
+		return storage.ArchiveExportPlan{}, err
+	}
+	restaurantID, err := r.archivePlanRestaurantID(ctx, cutoffBusinessDateLocal)
+	if err != nil {
+		return storage.ArchiveExportPlan{}, err
+	}
+	blocking, err := r.blockingOutboxMessages(ctx)
+	if err != nil {
+		return storage.ArchiveExportPlan{}, err
+	}
+	blockReasons := []string{"dry_run_only_no_archive_policy"}
+	if blocking > 0 {
+		blockReasons = append(blockReasons, "pending_edge_to_cloud_outbox")
+	}
+	return storage.ArchiveExportPlan{
+		CutoffBusinessDateLocal:   cutoffBusinessDateLocal,
+		Mode:                      "manifest_only",
+		DestructiveApplySupported: false,
+		Blocked:                   true,
+		BlockReasons:              blockReasons,
+		ArchiveSet:                eligible,
+		Protected: storage.ArchivePlanProtectedFlags{
+			FinancialLedgerProtected:    true,
+			ImmutableSnapshotsProtected: true,
+			LocalEventsProtected:        true,
+			OutboxProtected:             true,
+		},
+		BlockingOutboxMessages: blocking,
+		Manifest: storage.ArchivePlanManifest{
+			FormatVersion:             "storage-archive-manifest-v1",
+			RestaurantID:              restaurantID,
+			BusinessDateRange:         dateRange,
+			CutoffBusinessDateLocal:   cutoffBusinessDateLocal,
+			Tables:                    archivePlanTableManifest(eligible),
+		},
+	}, nil
+}
+
 // BuildStorageArchiveExportScope собирает export-only граф закрытых заказов без мутации runtime tables.
 func (r *Repository) BuildStorageArchiveExportScope(ctx context.Context, cutoffBusinessDateLocal string) (storage.ArchiveExportScope, error) {
 	source, err := r.storageArchiveSourceMetadata(ctx)
@@ -405,6 +451,36 @@ WHERE o.status = 'closed' AND c.business_date_local <= ?`, cutoffBusinessDateLoc
 	return storage.BusinessDateRange{Oldest: oldest.String, Newest: newest.String}, nil
 }
 
+func (r *Repository) archivePlanBusinessDateRange(ctx context.Context, cutoffBusinessDateLocal string) (storage.BusinessDateRange, error) {
+	var oldest, newest sql.NullString
+	if err := r.queryer(ctx).QueryRowContext(ctx, `
+SELECT MIN(c.business_date_local), MAX(c.business_date_local)
+FROM orders o
+JOIN checks c ON c.order_id = o.id
+WHERE o.status = 'closed' AND c.business_date_local < ?`, cutoffBusinessDateLocal).Scan(&oldest, &newest); err != nil {
+		return storage.BusinessDateRange{}, normalizeErr(err)
+	}
+	return storage.BusinessDateRange{Oldest: oldest.String, Newest: newest.String}, nil
+}
+
+func (r *Repository) archivePlanRestaurantID(ctx context.Context, cutoffBusinessDateLocal string) (string, error) {
+	var restaurantID sql.NullString
+	if err := r.queryer(ctx).QueryRowContext(ctx, `
+SELECT MIN(o.restaurant_id)
+FROM orders o
+JOIN checks c ON c.order_id = o.id
+WHERE o.status = 'closed' AND c.business_date_local < ?`, cutoffBusinessDateLocal).Scan(&restaurantID); err != nil {
+		return "", normalizeErr(err)
+	}
+	if restaurantID.Valid && restaurantID.String != "" {
+		return restaurantID.String, nil
+	}
+	if err := r.queryer(ctx).QueryRowContext(ctx, `SELECT MIN(id) FROM restaurants WHERE active = 1`).Scan(&restaurantID); err != nil {
+		return "", normalizeErr(err)
+	}
+	return restaurantID.String, nil
+}
+
 func (r *Repository) blockingOutboxMessagesForArchiveScope(ctx context.Context, cutoffBusinessDateLocal string) (int, error) {
 	var n int
 	err := r.queryer(ctx).QueryRowContext(ctx, `WITH `+eligibleArchiveRefsSQL+`
@@ -486,4 +562,31 @@ func addArchiveCount(counts *storage.ArchiveExportCounts, table string, n int) {
 	case "pos_sync_outbox_summary":
 		counts.OutboxMessageReferences += n
 	}
+}
+
+func archivePlanTableManifest(counts storage.RetentionEligibleCounts) []storage.ArchivePlanTableManifest {
+	tables := []struct {
+		name string
+		rows int
+	}{
+		{name: "orders", rows: counts.ClosedOrders},
+		{name: "order_lines", rows: counts.OrderLines},
+		{name: "order_line_modifiers", rows: counts.OrderLineModifiers},
+		{name: "prechecks", rows: counts.Prechecks},
+		{name: "precheck_lines", rows: counts.PrecheckLines},
+		{name: "precheck_line_modifiers", rows: counts.PrecheckLineModifiers},
+		{name: "precheck_discounts", rows: counts.PrecheckDiscounts},
+		{name: "precheck_surcharges", rows: counts.PrecheckSurcharges},
+		{name: "precheck_taxes", rows: counts.PrecheckTaxes},
+		{name: "payments", rows: counts.Payments},
+		{name: "payment_attempts", rows: counts.PaymentAttempts},
+		{name: "checks", rows: counts.Checks},
+		{name: "financial_operations", rows: counts.FinancialOperations},
+		{name: "financial_operation_items", rows: counts.FinancialOperationItems},
+	}
+	out := make([]storage.ArchivePlanTableManifest, 0, len(tables))
+	for _, table := range tables {
+		out = append(out, storage.ArchivePlanTableManifest{Name: table.name, Rows: table.rows, KeyField: "id"})
+	}
+	return out
 }

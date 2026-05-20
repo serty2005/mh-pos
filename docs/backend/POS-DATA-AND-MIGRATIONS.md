@@ -256,6 +256,7 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 Реализовано сейчас:
 
 - Backend предоставляет read-only основу lifecycle через `GET /api/v1/storage/status` и `POST /api/v1/storage/retention/dry-run`.
+- Backend предоставляет manifest-only archive/export plan через `POST /api/v1/storage/archive/export-plan`.
 - Backend предоставляет export-only archive readiness через `POST /api/v1/storage/archive/export`.
 - Status использует SQLite PRAGMA `page_count`, `page_size`, `freelist_count`, `journal_mode` для безопасной оценки размера без чтения файловой системы.
 - Status считает high-level объемы runtime tables: orders/order lines/modifiers, prechecks and breakdown tables, payments/attempts, checks, financial operation ledger, shifts, cash sessions, local events, outbox and legacy stock foundation tables until they are removed from the Edge target baseline.
@@ -263,6 +264,8 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 - Dry-run считает candidate rows только для closed orders с `checks.business_date_local < cutoff_business_date_local`; cutoff должен использовать формат `YYYY-MM-DD`.
 - Dry-run не пишет и не удаляет строки. `financial_operations`, `financial_operation_items`, immutable precheck/check snapshots, local events и outbox остаются protected.
 - Non-sent `edge_to_cloud` outbox rows возвращаются как blocking state для любой будущей destructive retention policy.
+- Archive export-plan использует тот же cutoff rule `< cutoff_business_date_local`, возвращает `mode = manifest_only`, `destructive_apply_supported = false`, `blocked = true`, `archive_set`, protected flags для financial ledger, immutable snapshots, local events и outbox, blocking outbox count и deterministic manifest `storage-archive-manifest-v1`.
+- Archive export-plan не создает files/directories и не мутирует `orders`, `prechecks`, `payments`, `checks`, `financial_operations`, `financial_operation_items`, `local_event_log` или `pos_sync_outbox`.
 - Archive export отбирает только closed orders с `checks.business_date_local <= cutoff_business_date_local`; невалидный или будущий cutoff отклоняется safe `INVALID` error.
 - Archive export создает отдельную директорию export с `archive.jsonl` и `manifest.json`. Default runtime path задается `POS_SQLITE_ARCHIVE_DIR`; если он не задан в POS entrypoint, используется `archives` рядом с active SQLite data directory, а не внутри `.db` file.
 - `archive.jsonl` является typed JSONL: каждая строка содержит `table` и `row`. Включаются closed orders, order lines/modifiers/discounts/surcharges, prechecks and breakdown tables, payments/payment attempts, checks, financial operations/items.

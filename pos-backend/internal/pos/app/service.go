@@ -92,6 +92,7 @@ type RegisterCloudProvisioningCommand = appprovisioning.RegisterCloudCommand
 type PairViaLicenseCommand = appprovisioning.PairViaLicenseCommand
 type StorageStatusCommand = appstorage.StorageStatusCommand
 type RetentionDryRunCommand = appstorage.RetentionDryRunCommand
+type ArchiveExportPlanCommand = appstorage.ArchiveExportPlanCommand
 type ArchiveExportCommand = appstorage.ArchiveExportCommand
 
 // MasterDataBackupRequest содержит безопасные metadata для backup-before-data-load.
@@ -630,6 +631,10 @@ func (s *Service) GetStorageLifecycleStatus(ctx context.Context, cmd StorageStat
 
 func (s *Service) DryRunStorageRetention(ctx context.Context, cmd RetentionDryRunCommand) (domain.StorageRetentionDryRunResult, error) {
 	return s.storage.DryRunRetention(ctx, cmd)
+}
+
+func (s *Service) BuildStorageArchiveExportPlan(ctx context.Context, cmd ArchiveExportPlanCommand) (domain.StorageArchiveExportPlan, error) {
+	return s.storage.BuildArchiveExportPlan(ctx, cmd)
 }
 
 func (s *Service) ExportStorageArchive(ctx context.Context, cmd ArchiveExportCommand) (domain.StorageArchiveExportResult, error) {

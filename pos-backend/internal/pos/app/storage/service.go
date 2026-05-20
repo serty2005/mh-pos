@@ -22,6 +22,7 @@ import (
 
 const retentionDryRunOnlyReason = "physical archive/delete is not implemented; financial ledger, immutable snapshots and audit/sync rows remain protected"
 const archiveExportVersion = "pos_storage_archive_export_v1"
+const archivePlanModeManifestOnly = "manifest_only"
 
 // Service предоставляет read-only lifecycle surface для локальной POS Edge БД.
 type Service struct {
@@ -41,6 +42,13 @@ type StorageStatusCommand struct {
 type RetentionDryRunCommand struct {
 	shared.CommandMeta
 	CutoffBusinessDateLocal string `json:"cutoff_business_date_local"`
+}
+
+// ArchiveExportPlanCommand строит manifest-only план будущего archive/export без записи файлов.
+type ArchiveExportPlanCommand struct {
+	shared.CommandMeta
+	CutoffBusinessDateLocal string `json:"cutoff_business_date_local"`
+	Mode                    string `json:"mode"`
 }
 
 // ArchiveExportCommand описывает export-only создание архивного артефакта без удаления данных.
@@ -98,6 +106,34 @@ func (s *Service) DryRunRetention(ctx context.Context, cmd RetentionDryRunComman
 	result.FinancialLedgerProtected = true
 	result.ImmutableSnapshotsProtected = true
 	result.BlockReasons = appendUnique(result.BlockReasons, "dry_run_only_no_archive_policy")
+	result.Blocked = true
+	return result, nil
+}
+
+// BuildArchiveExportPlan возвращает deterministic manifest-only archive scope без мутации runtime rows.
+func (s *Service) BuildArchiveExportPlan(ctx context.Context, cmd ArchiveExportPlanCommand) (domainstorage.ArchiveExportPlan, error) {
+	if _, err := shared.EnsureOperatorSession(ctx, s.auth, cmd.CommandMeta, string(shared.PermissionSyncView)); err != nil {
+		return domainstorage.ArchiveExportPlan{}, err
+	}
+	cutoff := strings.TrimSpace(cmd.CutoffBusinessDateLocal)
+	if _, err := time.Parse("2006-01-02", cutoff); err != nil {
+		return domainstorage.ArchiveExportPlan{}, fmt.Errorf("%w: cutoff_business_date_local must use YYYY-MM-DD", domain.ErrInvalid)
+	}
+	mode := strings.TrimSpace(cmd.Mode)
+	if mode == "" {
+		mode = archivePlanModeManifestOnly
+	}
+	if mode != archivePlanModeManifestOnly {
+		return domainstorage.ArchiveExportPlan{}, fmt.Errorf("%w: storage archive export-plan supports manifest_only mode only", domain.ErrInvalid)
+	}
+	result, err := s.repo.BuildStorageArchiveExportPlan(ctx, cutoff)
+	if err != nil {
+		return domainstorage.ArchiveExportPlan{}, err
+	}
+	result.GeneratedAt = s.clock.Now()
+	result.CutoffBusinessDateLocal = cutoff
+	result.Mode = archivePlanModeManifestOnly
+	result.DestructiveApplySupported = false
 	result.Blocked = true
 	return result, nil
 }

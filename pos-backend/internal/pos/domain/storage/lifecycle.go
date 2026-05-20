@@ -188,6 +188,44 @@ type ArchiveExportScope struct {
 	Rows              []ArchiveExportRow
 }
 
+// ArchivePlanProtectedFlags фиксирует таблицы, которые future archive apply не может менять без отдельной политики.
+type ArchivePlanProtectedFlags struct {
+	FinancialLedgerProtected    bool `json:"financial_ledger_protected"`
+	ImmutableSnapshotsProtected bool `json:"immutable_snapshots_protected"`
+	LocalEventsProtected        bool `json:"local_events_protected"`
+	OutboxProtected             bool `json:"outbox_protected"`
+}
+
+// ArchivePlanTableManifest описывает deterministic manifest entry без чтения business payload.
+type ArchivePlanTableManifest struct {
+	Name     string `json:"name"`
+	Rows     int    `json:"rows"`
+	KeyField string `json:"key_field"`
+}
+
+// ArchivePlanManifest является manifest-only описанием future archive/export scope.
+type ArchivePlanManifest struct {
+	FormatVersion             string                     `json:"format_version"`
+	RestaurantID              string                     `json:"restaurant_id,omitempty"`
+	BusinessDateRange         BusinessDateRange          `json:"business_date_range"`
+	CutoffBusinessDateLocal   string                     `json:"cutoff_business_date_local"`
+	Tables                    []ArchivePlanTableManifest `json:"tables"`
+}
+
+// ArchiveExportPlan описывает безопасный export-plan без записи archive files и без мутации runtime rows.
+type ArchiveExportPlan struct {
+	GeneratedAt                 time.Time               `json:"generated_at"`
+	CutoffBusinessDateLocal     string                  `json:"cutoff_business_date_local"`
+	Mode                        string                  `json:"mode"`
+	DestructiveApplySupported   bool                    `json:"destructive_apply_supported"`
+	Blocked                     bool                    `json:"blocked"`
+	BlockReasons                []string                `json:"block_reasons"`
+	ArchiveSet                  RetentionEligibleCounts   `json:"archive_set"`
+	Protected                   ArchivePlanProtectedFlags `json:"protected"`
+	BlockingOutboxMessages      int                       `json:"blocking_outbox_messages"`
+	Manifest                    ArchivePlanManifest       `json:"manifest"`
+}
+
 // RetentionDryRunResult описывает read-only оценку cutoff без каких-либо удалений или архивных записей.
 type RetentionDryRunResult struct {
 	GeneratedAt                 time.Time               `json:"generated_at"`

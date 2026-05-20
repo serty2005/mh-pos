@@ -911,6 +911,47 @@ func TestStorageRetentionDryRunAPI(t *testing.T) {
 	}
 }
 
+func TestStorageArchiveExportPlanAPIRequiresSyncViewAndReturnsManifestOnly(t *testing.T) {
+	f := newAPIFixture(t)
+	order := f.createOrderWithLine(t)
+	f.openCashSession(t)
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{
+		CommandMeta: f.edgeMeta(),
+		OrderID:     order.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+		CommandMeta: f.edgeMeta(),
+		PrecheckID:  precheck.ID,
+		Method:      domain.PaymentCash,
+		Amount:      precheck.Total,
+		Currency:    "RUB",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"cutoff_business_date_local":"2026-05-05","mode":"manifest_only"}`
+	rr := f.postJSON(t, "/api/v1/storage/archive/export-plan", body)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cashier archive export-plan, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	f.useManagerOperator(t)
+	rr = f.postJSON(t, "/api/v1/storage/archive/export-plan", body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for manager archive export-plan, got %d: %s", rr.Code, rr.Body.String())
+	}
+	result := decodeAPIResponse[domain.StorageArchiveExportPlan](t, rr)
+	if result.Mode != "manifest_only" || result.DestructiveApplySupported || !result.Blocked || result.ArchiveSet.ClosedOrders != 1 {
+		t.Fatalf("unexpected archive export-plan response: %+v", result)
+	}
+	if result.Manifest.FormatVersion != "storage-archive-manifest-v1" || len(result.Manifest.Tables) == 0 {
+		t.Fatalf("unexpected archive export-plan manifest: %+v", result.Manifest)
+	}
+}
+
 func TestStorageArchiveExportAPIRequiresSyncViewAndCreatesArchive(t *testing.T) {
 	f := newAPIFixture(t)
 	order := f.createOrderWithLine(t)

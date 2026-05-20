@@ -74,7 +74,7 @@ Refund:
 - Ledger scopes `modifier_line`, `service_charge` и `tip` показаны только как unsupported текущего UI flow, потому что backend требует explicit snapshot для этих item scopes.
 - Cashier UI держит compatibility route `POST /api/v1/payments/{id}/refund` как явный payment-level fallback для закрытых заказов с захваченными оплатами, визуально отделенный от основных check-level cancellation/refund actions.
 - The compatibility route records a refund ledger operation and does not make UI authoritative for payment/check mutation.
-- UI не реализует archive/retention/compaction и не предполагает загрузку всех закрытых заказов одной выдачей.
+- UI не реализует operator-facing archive/retention/export-plan/compaction controls и не предполагает загрузку всех закрытых заказов одной выдачей.
 - UI shows refund/cancellation actions only when the required permission and cash session state are present; backend remains final authority for business-date/original-shift checks and no-over-compensation rules.
 - UI does not expose refund for active issued prechecks with partial captured payments; refund runtime requires a finalized check.
 - Backend remains final enforcement layer.
