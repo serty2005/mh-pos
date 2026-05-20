@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"pos-backend/internal/pos/domain/storage"
@@ -59,13 +60,23 @@ func (r *Repository) DryRunStorageRetention(ctx context.Context, cutoffBusinessD
 		return storage.RetentionDryRunResult{}, err
 	}
 	blockReasons := []string{}
+	activeOrders := counts.OpenOrders + counts.LockedOrders
+	if activeOrders > 0 {
+		blockReasons = append(blockReasons, "active_orders")
+	}
+	if counts.OpenShifts > 0 {
+		blockReasons = append(blockReasons, "open_shifts")
+	}
+	if counts.OpenCashSessions > 0 {
+		blockReasons = append(blockReasons, "open_cash_sessions")
+	}
 	if blocking > 0 {
 		blockReasons = append(blockReasons, "pending_edge_to_cloud_outbox")
 	}
 	return storage.RetentionDryRunResult{
 		CutoffBusinessDateLocal: cutoffBusinessDateLocal,
 		Eligible:                eligible,
-		ActiveOrders:            counts.OpenOrders + counts.LockedOrders,
+		ActiveOrders:            activeOrders,
 		OpenShifts:              counts.OpenShifts,
 		OpenCashSessions:        counts.OpenCashSessions,
 		BlockingOutboxMessages:  blocking,
@@ -87,11 +98,25 @@ func (r *Repository) BuildStorageArchiveExportPlan(ctx context.Context, cutoffBu
 	if err != nil {
 		return storage.ArchiveExportPlan{}, err
 	}
+	counts, err := r.storageTableCounts(ctx)
+	if err != nil {
+		return storage.ArchiveExportPlan{}, err
+	}
 	blocking, err := r.blockingOutboxMessages(ctx)
 	if err != nil {
 		return storage.ArchiveExportPlan{}, err
 	}
+	activeOrders := counts.OpenOrders + counts.LockedOrders
 	blockReasons := []string{"dry_run_only_no_archive_policy"}
+	if activeOrders > 0 {
+		blockReasons = append(blockReasons, "active_orders")
+	}
+	if counts.OpenShifts > 0 {
+		blockReasons = append(blockReasons, "open_shifts")
+	}
+	if counts.OpenCashSessions > 0 {
+		blockReasons = append(blockReasons, "open_cash_sessions")
+	}
 	if blocking > 0 {
 		blockReasons = append(blockReasons, "pending_edge_to_cloud_outbox")
 	}
@@ -108,6 +133,9 @@ func (r *Repository) BuildStorageArchiveExportPlan(ctx context.Context, cutoffBu
 			LocalEventsProtected:        true,
 			OutboxProtected:             true,
 		},
+		ActiveOrders:           activeOrders,
+		OpenShifts:             counts.OpenShifts,
+		OpenCashSessions:       counts.OpenCashSessions,
 		BlockingOutboxMessages: blocking,
 		Manifest: storage.ArchivePlanManifest{
 			FormatVersion:             "storage-archive-manifest-v1",
@@ -496,6 +524,15 @@ func (r *Repository) storageArchiveSourceMetadata(ctx context.Context) (storage.
 	if err != nil {
 		return storage.ArchiveSourceMetadata{}, err
 	}
+	var sourceNodeDeviceID, sourceDeviceCode, sourceDeviceName, sourceDeviceType, sourcePairedAt sql.NullString
+	err = r.queryer(ctx).QueryRowContext(ctx, `
+SELECT e.node_device_id, d.device_code, d.name, d.type, e.paired_at
+FROM edge_node_identity e
+LEFT JOIN devices d ON d.id = e.node_device_id
+WHERE e.id = 'local'`).Scan(&sourceNodeDeviceID, &sourceDeviceCode, &sourceDeviceName, &sourceDeviceType, &sourcePairedAt)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return storage.ArchiveSourceMetadata{}, normalizeErr(err)
+	}
 	runtimeRows, err := r.queryMetadataRows(ctx, `SELECT module_name, module_version, schema_version, checksum_sha256, status, applied_at, updated_at FROM db_runtime_versions ORDER BY module_name`)
 	if err != nil {
 		return storage.ArchiveSourceMetadata{}, err
@@ -505,9 +542,14 @@ func (r *Repository) storageArchiveSourceMetadata(ctx context.Context) (storage.
 		return storage.ArchiveSourceMetadata{}, err
 	}
 	return storage.ArchiveSourceMetadata{
-		SQLite:           sqliteStats,
-		RuntimeVersions:  runtimeRows,
-		SchemaMigrations: schemaRows,
+		SQLite:             sqliteStats,
+		SourceNodeDeviceID: sourceNodeDeviceID.String,
+		SourceDeviceCode:   sourceDeviceCode.String,
+		SourceDeviceName:   sourceDeviceName.String,
+		SourceDeviceType:   sourceDeviceType.String,
+		SourcePairedAt:     sourcePairedAt.String,
+		RuntimeVersions:    runtimeRows,
+		SchemaMigrations:   schemaRows,
 	}, nil
 }
 

@@ -33,6 +33,15 @@ func (g *apiTestIDs) NewID() string {
 	return fmt.Sprintf("api-id-%03d", g.n)
 }
 
+func apiContainsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
+}
+
 type apiFixedClock struct {
 	now time.Time
 }
@@ -906,7 +915,7 @@ func TestStorageRetentionDryRunAPI(t *testing.T) {
 		t.Fatalf("expected 200 for manager retention dry-run, got %d: %s", rr.Code, rr.Body.String())
 	}
 	result := decodeAPIResponse[domain.StorageRetentionDryRunResult](t, rr)
-	if !result.Blocked || result.Mode != "dry_run_only" || result.DestructiveApplySupported {
+	if !result.Blocked || result.Mode != "dry_run_only" || result.ResultMode != "dry_run_only" || result.DestructiveApplySupported {
 		t.Fatalf("unexpected retention dry-run result: %+v", result)
 	}
 }
@@ -944,8 +953,13 @@ func TestStorageArchiveExportPlanAPIRequiresSyncViewAndReturnsManifestOnly(t *te
 		t.Fatalf("expected 200 for manager archive export-plan, got %d: %s", rr.Code, rr.Body.String())
 	}
 	result := decodeAPIResponse[domain.StorageArchiveExportPlan](t, rr)
-	if result.Mode != "manifest_only" || result.DestructiveApplySupported || !result.Blocked || result.ArchiveSet.ClosedOrders != 1 {
+	if result.Mode != "manifest_only" || result.ResultMode != "plan_only" || result.DestructiveApplySupported || !result.Blocked || result.ArchiveSet.ClosedOrders != 1 {
 		t.Fatalf("unexpected archive export-plan response: %+v", result)
+	}
+	if result.OpenShifts < 1 || result.OpenCashSessions < 1 ||
+		!apiContainsString(result.BlockReasons, "open_shifts") ||
+		!apiContainsString(result.BlockReasons, "open_cash_sessions") {
+		t.Fatalf("expected operational blockers in archive export-plan response: %+v", result)
 	}
 	if result.Manifest.FormatVersion != "storage-archive-manifest-v1" || len(result.Manifest.Tables) == 0 {
 		t.Fatalf("unexpected archive export-plan manifest: %+v", result.Manifest)
@@ -976,7 +990,7 @@ func TestStorageArchiveExportAPIRequiresSyncViewAndCreatesArchive(t *testing.T) 
 		t.Fatalf("expected 201 for manager archive export, got %d: %s", rr.Code, rr.Body.String())
 	}
 	result := decodeAPIResponse[domain.StorageArchiveExportResult](t, rr)
-	if result.Mode != "export_only" || result.DestructiveApplySupported || !result.ExportCreated || result.Counts.ClosedOrders != 1 {
+	if result.Mode != "export_only" || result.ResultMode != "export_only" || result.DestructiveApplySupported || result.RuntimeRowsDeleted || !result.ExportCreated || result.Counts.ClosedOrders != 1 {
 		t.Fatalf("unexpected archive export response: %+v", result)
 	}
 	if _, err := os.Stat(result.ArchivePath); err != nil {

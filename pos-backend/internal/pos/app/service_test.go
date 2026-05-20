@@ -852,11 +852,15 @@ func TestStorageRetentionDryRunCountsEligibleRowsWithoutMutatingProtectedTables(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Blocked || result.Mode != "dry_run_only" || result.DestructiveApplySupported {
+	if !result.Blocked || result.Mode != "dry_run_only" || result.ResultMode != "dry_run_only" || result.DestructiveApplySupported {
 		t.Fatalf("expected blocked dry-run-only result, got %+v", result)
 	}
-	if !containsString(result.BlockReasons, "dry_run_only_no_archive_policy") || !containsString(result.BlockReasons, "pending_edge_to_cloud_outbox") {
-		t.Fatalf("expected archive-policy and pending-outbox block reasons, got %+v", result.BlockReasons)
+	if !containsString(result.BlockReasons, "dry_run_only_no_archive_policy") ||
+		!containsString(result.BlockReasons, "pending_edge_to_cloud_outbox") ||
+		!containsString(result.BlockReasons, "active_orders") ||
+		!containsString(result.BlockReasons, "open_shifts") ||
+		!containsString(result.BlockReasons, "open_cash_sessions") {
+		t.Fatalf("expected archive-policy, operational and pending-outbox block reasons, got %+v", result.BlockReasons)
 	}
 	if result.Eligible.ClosedOrders < 1 || result.Eligible.Checks < 1 || result.Eligible.Prechecks < 1 || result.Eligible.Payments < 1 {
 		t.Fatalf("expected eligible financial documents for order %s, got %+v", order.ID, result.Eligible)
@@ -972,12 +976,15 @@ func TestStorageArchiveExportPlanCountsProtectedRowsBlocksOutboxAndDoesNotMutate
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Mode != "manifest_only" || !result.Blocked || result.DestructiveApplySupported {
+	if result.Mode != "manifest_only" || result.ResultMode != "plan_only" || !result.Blocked || result.DestructiveApplySupported {
 		t.Fatalf("unexpected archive plan flags: %+v", result)
 	}
 	if !containsString(result.BlockReasons, "dry_run_only_no_archive_policy") ||
-		!containsString(result.BlockReasons, "pending_edge_to_cloud_outbox") {
-		t.Fatalf("expected dry-run and outbox block reasons, got %+v", result.BlockReasons)
+		!containsString(result.BlockReasons, "pending_edge_to_cloud_outbox") ||
+		!containsString(result.BlockReasons, "active_orders") ||
+		!containsString(result.BlockReasons, "open_shifts") ||
+		!containsString(result.BlockReasons, "open_cash_sessions") {
+		t.Fatalf("expected dry-run, operational and outbox block reasons, got %+v", result.BlockReasons)
 	}
 	if result.ArchiveSet.ClosedOrders != 1 || result.ArchiveSet.Checks != 1 || result.ArchiveSet.Prechecks != 1 ||
 		result.ArchiveSet.Payments != 1 || result.ArchiveSet.OrderLines != 1 {
@@ -989,6 +996,9 @@ func TestStorageArchiveExportPlanCountsProtectedRowsBlocksOutboxAndDoesNotMutate
 	if !result.Protected.FinancialLedgerProtected || !result.Protected.ImmutableSnapshotsProtected ||
 		!result.Protected.LocalEventsProtected || !result.Protected.OutboxProtected {
 		t.Fatalf("expected protected flags, got %+v", result.Protected)
+	}
+	if result.ActiveOrders < 1 || result.OpenShifts < 1 || result.OpenCashSessions < 1 {
+		t.Fatalf("expected operational blockers in archive plan, got active=%d shifts=%d cash=%d", result.ActiveOrders, result.OpenShifts, result.OpenCashSessions)
 	}
 	if result.Manifest.FormatVersion != "storage-archive-manifest-v1" ||
 		result.Manifest.CutoffBusinessDateLocal != "2026-05-05" || result.Manifest.RestaurantID != f.restaurant.ID {
@@ -1102,7 +1112,7 @@ func TestStorageArchiveExportIncludesClosedOrderGraphLedgerAndManifestWithoutMut
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Mode != "export_only" || result.DestructiveApplySupported || !result.ExportCreated {
+	if result.Mode != "export_only" || result.ResultMode != "export_only" || result.DestructiveApplySupported || result.RuntimeRowsDeleted || !result.ExportCreated {
 		t.Fatalf("unexpected archive mode flags: %+v", result)
 	}
 	if !result.FinancialLedgerProtected || !result.ImmutableSnapshotsProtected {
@@ -1123,6 +1133,9 @@ func TestStorageArchiveExportIncludesClosedOrderGraphLedgerAndManifestWithoutMut
 	if result.BusinessDateRange.Oldest != "2026-05-04" || result.BusinessDateRange.Newest != "2026-05-04" {
 		t.Fatalf("unexpected archive business date range: %+v", result.BusinessDateRange)
 	}
+	if result.Source.SourceNodeDeviceID != f.device.ID || result.Source.SourceDeviceCode != f.device.DeviceCode {
+		t.Fatalf("expected source node metadata in archive manifest, got %+v", result.Source)
+	}
 
 	archiveRaw, err := os.ReadFile(result.ArchivePath)
 	if err != nil {
@@ -1140,7 +1153,8 @@ func TestStorageArchiveExportIncludesClosedOrderGraphLedgerAndManifestWithoutMut
 	if err := json.Unmarshal(manifestRaw, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.SHA256 != result.SHA256 || manifest.Counts.ArchivedRows != result.Counts.ArchivedRows || manifest.CutoffBusinessDateLocal != "2026-05-04" {
+	if manifest.SHA256 != result.SHA256 || manifest.Counts.ArchivedRows != result.Counts.ArchivedRows ||
+		manifest.CutoffBusinessDateLocal != "2026-05-04" || manifest.RuntimeRowsDeleted {
 		t.Fatalf("manifest mismatch: manifest=%+v result=%+v", manifest, result)
 	}
 	byTable := decodeArchiveJSONLByTable(t, archiveRaw)

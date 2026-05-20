@@ -130,9 +130,14 @@ type ArchiveExportCounts struct {
 
 // ArchiveSourceMetadata описывает доступные runtime metadata активной SQLite БД.
 type ArchiveSourceMetadata struct {
-	SQLite           SQLiteDatabaseStats  `json:"sqlite"`
-	RuntimeVersions  []ArchiveMetadataRow `json:"runtime_versions,omitempty"`
-	SchemaMigrations []ArchiveMetadataRow `json:"schema_migrations,omitempty"`
+	SQLite             SQLiteDatabaseStats  `json:"sqlite"`
+	SourceNodeDeviceID string               `json:"source_node_device_id,omitempty"`
+	SourceDeviceCode   string               `json:"source_device_code,omitempty"`
+	SourceDeviceName   string               `json:"source_device_name,omitempty"`
+	SourceDeviceType   string               `json:"source_device_type,omitempty"`
+	SourcePairedAt     string               `json:"source_paired_at,omitempty"`
+	RuntimeVersions    []ArchiveMetadataRow `json:"runtime_versions,omitempty"`
+	SchemaMigrations   []ArchiveMetadataRow `json:"schema_migrations,omitempty"`
 }
 
 // ArchiveMetadataRow хранит безопасный metadata row без business payload.
@@ -156,7 +161,9 @@ type ArchiveTableManifest struct {
 type ArchiveManifest struct {
 	Version                     string                 `json:"version"`
 	Mode                        string                 `json:"mode"`
+	ResultMode                  string                 `json:"result_mode"`
 	DestructiveApplySupported   bool                   `json:"destructive_apply_supported"`
+	RuntimeRowsDeleted          bool                   `json:"runtime_rows_deleted"`
 	GeneratedAt                 time.Time              `json:"generated_at"`
 	ArchiveID                   string                 `json:"archive_id"`
 	CutoffBusinessDateLocal     string                 `json:"cutoff_business_date_local"`
@@ -217,11 +224,15 @@ type ArchiveExportPlan struct {
 	GeneratedAt                 time.Time               `json:"generated_at"`
 	CutoffBusinessDateLocal     string                  `json:"cutoff_business_date_local"`
 	Mode                        string                  `json:"mode"`
+	ResultMode                  string                  `json:"result_mode"`
 	DestructiveApplySupported   bool                    `json:"destructive_apply_supported"`
 	Blocked                     bool                    `json:"blocked"`
 	BlockReasons                []string                `json:"block_reasons"`
 	ArchiveSet                  RetentionEligibleCounts   `json:"archive_set"`
 	Protected                   ArchivePlanProtectedFlags `json:"protected"`
+	ActiveOrders                int                       `json:"active_orders"`
+	OpenShifts                  int                       `json:"open_shifts"`
+	OpenCashSessions            int                       `json:"open_cash_sessions"`
 	BlockingOutboxMessages      int                       `json:"blocking_outbox_messages"`
 	Manifest                    ArchivePlanManifest       `json:"manifest"`
 }
@@ -231,6 +242,7 @@ type RetentionDryRunResult struct {
 	GeneratedAt                 time.Time               `json:"generated_at"`
 	CutoffBusinessDateLocal     string                  `json:"cutoff_business_date_local"`
 	Mode                        string                  `json:"mode"`
+	ResultMode                  string                  `json:"result_mode"`
 	DestructiveApplySupported   bool                    `json:"destructive_apply_supported"`
 	Blocked                     bool                    `json:"blocked"`
 	BlockReasons                []string                `json:"block_reasons"`

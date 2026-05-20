@@ -102,6 +102,7 @@ func (s *Service) DryRunRetention(ctx context.Context, cmd RetentionDryRunComman
 	result.GeneratedAt = s.clock.Now()
 	result.CutoffBusinessDateLocal = cutoff
 	result.Mode = "dry_run_only"
+	result.ResultMode = "dry_run_only"
 	result.DestructiveApplySupported = false
 	result.FinancialLedgerProtected = true
 	result.ImmutableSnapshotsProtected = true
@@ -133,6 +134,7 @@ func (s *Service) BuildArchiveExportPlan(ctx context.Context, cmd ArchiveExportP
 	result.GeneratedAt = s.clock.Now()
 	result.CutoffBusinessDateLocal = cutoff
 	result.Mode = archivePlanModeManifestOnly
+	result.ResultMode = "plan_only"
 	result.DestructiveApplySupported = false
 	result.Blocked = true
 	return result, nil
@@ -173,7 +175,9 @@ func (s *Service) ExportArchive(ctx context.Context, cmd ArchiveExportCommand) (
 	manifest := domainstorage.ArchiveManifest{
 		Version:                     archiveExportVersion,
 		Mode:                        "export_only",
+		ResultMode:                  "export_only",
 		DestructiveApplySupported:   false,
+		RuntimeRowsDeleted:          false,
 		GeneratedAt:                 generatedAt,
 		ArchiveID:                   archiveID,
 		CutoffBusinessDateLocal:     cutoff,
