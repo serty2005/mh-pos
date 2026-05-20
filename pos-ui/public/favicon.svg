@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="MyHoReCa POS">
+  <rect width="64" height="64" rx="12" fill="#17231e"/>
+  <path d="M16 18h32v28H16z" fill="#1f6f5b"/>
+  <path d="M22 24h20v5H22zm0 10h8v6h-8zm12 0h8v6h-8z" fill="#f7faf6"/>
+</svg>
