@@ -209,6 +209,29 @@ func (r *Repository) BuildStorageArchiveExportScope(ctx context.Context, cutoffB
 	return scope, nil
 }
 
+// BuildStorageArchiveApplyRuntimeScope считает текущий eligible scope для apply-plan без чтения payload.
+func (r *Repository) BuildStorageArchiveApplyRuntimeScope(ctx context.Context, cutoffBusinessDateLocal string) (storage.ArchiveApplyRuntimeScope, error) {
+	counts, err := r.archiveEligibleCounts(ctx, cutoffBusinessDateLocal)
+	if err != nil {
+		return storage.ArchiveApplyRuntimeScope{}, err
+	}
+	tableCounts, err := r.storageTableCounts(ctx)
+	if err != nil {
+		return storage.ArchiveApplyRuntimeScope{}, err
+	}
+	blocking, err := r.blockingOutboxMessages(ctx)
+	if err != nil {
+		return storage.ArchiveApplyRuntimeScope{}, err
+	}
+	return storage.ArchiveApplyRuntimeScope{
+		Counts:                 counts,
+		ActiveOrders:           tableCounts.OpenOrders + tableCounts.LockedOrders,
+		OpenShifts:             tableCounts.OpenShifts,
+		OpenCashSessions:       tableCounts.OpenCashSessions,
+		BlockingOutboxMessages: blocking,
+	}, nil
+}
+
 func (r *Repository) sqliteDatabaseStats(ctx context.Context) (storage.SQLiteDatabaseStats, error) {
 	var stats storage.SQLiteDatabaseStats
 	if err := r.queryer(ctx).QueryRowContext(ctx, `PRAGMA page_count`).Scan(&stats.PageCount); err != nil {
@@ -375,6 +398,66 @@ func (r *Repository) retentionEligibleCounts(ctx context.Context, cutoffBusiness
 		}
 	}
 	return counts, nil
+}
+
+func (r *Repository) archiveEligibleCounts(ctx context.Context, cutoffBusinessDateLocal string) (storage.ArchiveExportCounts, error) {
+	var counts storage.ArchiveExportCounts
+	scans := []struct {
+		target *int
+		query  string
+	}{
+		{&counts.ClosedOrders, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM eligible_orders`},
+		{&counts.OrderLines, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM order_lines ol JOIN eligible_orders eo ON eo.id = ol.order_id`},
+		{&counts.OrderLineModifiers, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM order_line_modifiers olm JOIN order_lines ol ON ol.id = olm.order_line_id JOIN eligible_orders eo ON eo.id = ol.order_id`},
+		{&counts.OrderLineDiscounts, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM order_line_discounts old JOIN eligible_orders eo ON eo.id = old.order_id`},
+		{&counts.OrderSurcharges, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM order_surcharges os JOIN eligible_orders eo ON eo.id = os.order_id`},
+		{&counts.Prechecks, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM prechecks p JOIN eligible_orders eo ON eo.id = p.order_id`},
+		{&counts.PrecheckLines, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM precheck_lines pl JOIN prechecks p ON p.id = pl.precheck_id JOIN eligible_orders eo ON eo.id = p.order_id`},
+		{&counts.PrecheckLineModifiers, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM precheck_line_modifiers plm JOIN prechecks p ON p.id = plm.precheck_id JOIN eligible_orders eo ON eo.id = p.order_id`},
+		{&counts.PrecheckDiscounts, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM precheck_discounts pd JOIN prechecks p ON p.id = pd.precheck_id JOIN eligible_orders eo ON eo.id = p.order_id`},
+		{&counts.PrecheckSurcharges, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM precheck_surcharges ps JOIN prechecks p ON p.id = ps.precheck_id JOIN eligible_orders eo ON eo.id = p.order_id`},
+		{&counts.PrecheckTaxes, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM precheck_taxes pt JOIN prechecks p ON p.id = pt.precheck_id JOIN eligible_orders eo ON eo.id = p.order_id`},
+		{&counts.Payments, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM payments pay JOIN prechecks p ON p.id = pay.precheck_id JOIN eligible_orders eo ON eo.id = p.order_id`},
+		{&counts.PaymentAttempts, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM payment_attempts pa JOIN payments pay ON pay.id = pa.payment_id JOIN prechecks p ON p.id = pay.precheck_id JOIN eligible_orders eo ON eo.id = p.order_id`},
+		{&counts.Checks, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM checks c JOIN eligible_orders eo ON eo.id = c.order_id`},
+		{&counts.FinancialOperations, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM financial_operations fo JOIN checks c ON c.id = fo.check_id JOIN eligible_orders eo ON eo.id = c.order_id`},
+		{&counts.FinancialOperationItems, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM financial_operation_items foi JOIN financial_operations fo ON fo.id = foi.operation_id JOIN checks c ON c.id = fo.check_id JOIN eligible_orders eo ON eo.id = c.order_id`},
+		{&counts.LocalEventReferences, `SELECT COUNT(1) FROM (` + archiveLocalEventsSQL + `)`},
+		{&counts.OutboxMessageReferences, `SELECT COUNT(1) FROM (` + archiveOutboxSQL + `)`},
+	}
+	for _, scan := range scans {
+		if err := r.queryer(ctx).QueryRowContext(ctx, scan.query, cutoffBusinessDateLocal).Scan(scan.target); err != nil {
+			return counts, normalizeErr(err)
+		}
+	}
+	blocking, err := r.blockingOutboxMessagesForArchiveScope(ctx, cutoffBusinessDateLocal)
+	if err != nil {
+		return counts, err
+	}
+	counts.BlockingOutboxMessages = blocking
+	counts.ArchivedRows = archiveCountsTotalRows(counts)
+	return counts, nil
+}
+
+func archiveCountsTotalRows(counts storage.ArchiveExportCounts) int {
+	return counts.ClosedOrders +
+		counts.OrderLines +
+		counts.OrderLineModifiers +
+		counts.OrderLineDiscounts +
+		counts.OrderSurcharges +
+		counts.Prechecks +
+		counts.PrecheckLines +
+		counts.PrecheckLineModifiers +
+		counts.PrecheckDiscounts +
+		counts.PrecheckSurcharges +
+		counts.PrecheckTaxes +
+		counts.Payments +
+		counts.PaymentAttempts +
+		counts.Checks +
+		counts.FinancialOperations +
+		counts.FinancialOperationItems +
+		counts.LocalEventReferences +
+		counts.OutboxMessageReferences
 }
 
 const eligibleOrdersSQL = `SELECT o.id FROM orders o JOIN checks c ON c.order_id = o.id WHERE o.status = 'closed' AND c.business_date_local < ?`

@@ -12,4 +12,5 @@ type StorageLifecycleRepository interface {
 	DryRunStorageRetention(context.Context, string) (storage.RetentionDryRunResult, error)
 	BuildStorageArchiveExportPlan(context.Context, string) (storage.ArchiveExportPlan, error)
 	BuildStorageArchiveExportScope(context.Context, string) (storage.ArchiveExportScope, error)
+	BuildStorageArchiveApplyRuntimeScope(context.Context, string) (storage.ArchiveApplyRuntimeScope, error)
 }

@@ -1014,6 +1014,70 @@ func TestStorageArchiveExportAPIRejectsFutureCutoff(t *testing.T) {
 	}
 }
 
+func TestStorageArchiveApplyPlanAPIRequiresSyncViewAndReturnsBlockedPlan(t *testing.T) {
+	f := newAPIFixture(t)
+	order := f.createOrderWithLine(t)
+	f.openCashSession(t)
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	cashier := f.employee
+	cashierSession := f.session
+	f.useManagerOperator(t)
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.edgeMeta(),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "api apply plan fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := f.employee
+	managerSession := f.session
+	body := struct {
+		CutoffBusinessDateLocal string `json:"cutoff_business_date_local"`
+		ArchivePath             string `json:"archive_path"`
+		ManifestPath            string `json:"manifest_path"`
+		Mode                    string `json:"mode"`
+	}{
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             exported.ArchivePath,
+		ManifestPath:            exported.ManifestPath,
+		Mode:                    "plan_only",
+	}
+	rawBody, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f.employee = cashier
+	f.session = cashierSession
+	rr := f.postJSON(t, "/api/v1/storage/archive/apply-plan", string(rawBody))
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cashier archive apply-plan, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	f.employee = manager
+	f.session = managerSession
+	rr = f.postJSON(t, "/api/v1/storage/archive/apply-plan", string(rawBody))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for manager archive apply-plan, got %d: %s", rr.Code, rr.Body.String())
+	}
+	result := decodeAPIResponse[domain.StorageArchiveApplyPlan](t, rr)
+	if !result.Blocked || result.ResultMode != "apply_blocked" || result.DestructiveApplySupported || result.RuntimeRowsDeleted {
+		t.Fatalf("unexpected archive apply-plan response: %+v", result)
+	}
+	if !apiContainsString(result.BlockReasons, "destructive_apply_not_enabled") ||
+		!apiContainsString(result.BlockReasons, "restore_read_path_missing") ||
+		!apiContainsString(result.BlockReasons, "pending_edge_to_cloud_outbox") {
+		t.Fatalf("expected blocked-by-default apply-plan reasons, got %+v", result.BlockReasons)
+	}
+}
+
 func TestRetryFailedAPIResetsFailedAndSuspendedButNotSent(t *testing.T) {
 	f := newAPIFixture(t)
 	ids := apiOutboxIDs(t, f, 3)

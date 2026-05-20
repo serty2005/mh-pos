@@ -33,6 +33,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Bounded activity/sync reads: `GET /api/v1/sync/outbox` и `GET /api/v1/sync/local-events` имеют backend default bounded limit, cap oversized requests and are used by POS UI with `limit=5`.
 - Основа POS Edge local storage lifecycle: `GET /api/v1/storage/status` и `POST /api/v1/storage/retention/dry-run` дают read-only оценку размера SQLite, объемов closed orders/checks/prechecks/payments/financial operations, business-date окна, active/open blockers и outbox blocking state. `POST /api/v1/storage/archive/export-plan` возвращает manifest-only plan по `checks.business_date_local < cutoff` с `result_mode = plan_only`, deterministic table manifest, protected flags, active/open blockers и blocking outbox state. Retention mode сейчас `dry_run_only`; физическое удаление не выполняется.
 - Export-only archive readiness для closed orders: `POST /api/v1/storage/archive/export` создает typed JSONL archive и JSON manifest с cutoff, counts, business-date range, source node/device metadata если она есть в runtime, SHA-256, `runtime_rows_deleted = false`, protected flags и block reasons для будущего destructive apply, не удаляя и не мутируя source SQLite rows.
+- Apply-plan verification для будущего archive apply: `POST /api/v1/storage/archive/apply-plan` read-only проверяет cutoff, manifest version, archive SHA-256, JSONL counts, snapshot payload presence, current eligible runtime counts, pending Edge -> Cloud outbox и open operational boundaries. Response всегда `result_mode = apply_blocked`, `destructive_apply_supported = false`, `runtime_rows_deleted = false`.
 - Compatibility payment refund route сохранен как fallback: `/payments/{id}/refund` записывает refund operation по captured payment allocation, но не является primary cashier model.
 - Cashier rich cancellation/refund dialog для закрытого чека: full whole-check cancellation/refund отправляют `command_id`, `operation_kind`, явный `inventory_disposition` и reason; partial `order_line`/quantity выбирается из immutable check/precheck snapshot и отправляет `items[]`. Modifier/service/tip scopes остаются вне текущего UI flow.
 - `business_date_local` for shifts, cash sessions, payments, checks and financial operations.
@@ -131,7 +132,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Сверка RBAC matrix с фактическим UI и backend permissions.
 - Проверка migration/backup behavior на старой SQLite DB.
 - Публичный Cloud reporting API/UI поверх `cloud_projection_financial_operations`, если пилоту потребуется Cloud-side финансовая отчетность beyond service/repository layer.
-- Destructive apply/delete/compaction policy для больших локальных SQLite БД закрытых заказов поверх текущего status/dry-run/manifest-only export-plan/export-only foundation.
+- Destructive apply/delete/compaction policy для больших локальных SQLite БД закрытых заказов поверх текущего status/dry-run/manifest-only export-plan/export-only/apply-plan foundation.
 
 ## После Пилота
 

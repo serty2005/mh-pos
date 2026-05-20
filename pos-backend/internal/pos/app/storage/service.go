@@ -1,10 +1,12 @@
 package storage
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -23,6 +25,7 @@ import (
 const retentionDryRunOnlyReason = "physical archive/delete is not implemented; financial ledger, immutable snapshots and audit/sync rows remain protected"
 const archiveExportVersion = "pos_storage_archive_export_v1"
 const archivePlanModeManifestOnly = "manifest_only"
+const archiveApplyPlanModeOnly = "plan_only"
 
 // Service предоставляет read-only lifecycle surface для локальной POS Edge БД.
 type Service struct {
@@ -56,6 +59,15 @@ type ArchiveExportCommand struct {
 	shared.CommandMeta
 	CutoffBusinessDateLocal string `json:"cutoff_business_date_local"`
 	Reason                  string `json:"reason"`
+}
+
+// ArchiveApplyPlanCommand проверяет готовность archive artifact к будущему apply без удаления строк.
+type ArchiveApplyPlanCommand struct {
+	shared.CommandMeta
+	CutoffBusinessDateLocal string `json:"cutoff_business_date_local"`
+	ArchivePath             string `json:"archive_path"`
+	ManifestPath            string `json:"manifest_path"`
+	Mode                    string `json:"mode"`
 }
 
 // Options задает runtime настройки storage lifecycle service.
@@ -201,6 +213,76 @@ func (s *Service) ExportArchive(ctx context.Context, cmd ArchiveExportCommand) (
 	return manifest, nil
 }
 
+// BuildArchiveApplyPlan проверяет archive artifact и всегда блокирует destructive apply в текущем runtime.
+func (s *Service) BuildArchiveApplyPlan(ctx context.Context, cmd ArchiveApplyPlanCommand) (domainstorage.ArchiveApplyPlan, error) {
+	if _, err := shared.EnsureOperatorSession(ctx, s.auth, cmd.CommandMeta, string(shared.PermissionSyncView)); err != nil {
+		return domainstorage.ArchiveApplyPlan{}, err
+	}
+	result := domainstorage.ArchiveApplyPlan{
+		GeneratedAt:               s.clock.Now(),
+		CutoffBusinessDateLocal:   strings.TrimSpace(cmd.CutoffBusinessDateLocal),
+		Mode:                      archiveApplyPlanModeOnly,
+		ResultMode:                "apply_blocked",
+		DestructiveApplySupported: false,
+		RuntimeRowsDeleted:        false,
+		Blocked:                   true,
+		BlockReasons: []string{
+			"destructive_apply_not_enabled",
+			"restore_read_path_missing",
+		},
+		Protected: domainstorage.ArchivePlanProtectedFlags{
+			FinancialLedgerProtected:    true,
+			ImmutableSnapshotsProtected: true,
+			LocalEventsProtected:        true,
+			OutboxProtected:             true,
+		},
+	}
+	mode := strings.TrimSpace(cmd.Mode)
+	if mode == "" {
+		mode = archiveApplyPlanModeOnly
+	}
+	if mode != archiveApplyPlanModeOnly {
+		result.BlockReasons = appendUnique(result.BlockReasons, "invalid_apply_plan_mode")
+		return result, nil
+	}
+	cutoff, cutoffOK := s.planCutoff(result.CutoffBusinessDateLocal, &result)
+	if cutoffOK {
+		runtimeScope, err := s.repo.BuildStorageArchiveApplyRuntimeScope(ctx, cutoff)
+		if err != nil {
+			return domainstorage.ArchiveApplyPlan{}, err
+		}
+		result.EligibleCounts = runtimeScope.Counts
+		result.ActiveOrders = runtimeScope.ActiveOrders
+		result.OpenShifts = runtimeScope.OpenShifts
+		result.OpenCashSessions = runtimeScope.OpenCashSessions
+		result.BlockingOutboxMessages = runtimeScope.BlockingOutboxMessages
+		if runtimeScope.BlockingOutboxMessages > 0 {
+			result.BlockReasons = appendUnique(result.BlockReasons, "pending_edge_to_cloud_outbox")
+		}
+		if runtimeScope.ActiveOrders > 0 || runtimeScope.OpenShifts > 0 || runtimeScope.OpenCashSessions > 0 {
+			result.BlockReasons = appendUnique(result.BlockReasons, "open_operational_boundary")
+		}
+	}
+	verification, manifest, reasons := s.verifyArchive(cmd.ArchivePath, cmd.ManifestPath)
+	result.Verification = verification
+	result.ArchiveCounts = verification.Counts
+	result.ArchiveSHA256 = verification.ArchiveSHA256
+	if manifest != nil {
+		result.ArchiveID = manifest.ArchiveID
+		result.ArchiveSHA256 = manifest.SHA256
+		if cutoffOK && manifest.CutoffBusinessDateLocal != "" && manifest.CutoffBusinessDateLocal != cutoff {
+			reasons = appendUnique(reasons, "archive_cutoff_mismatch")
+		}
+	}
+	for _, reason := range reasons {
+		result.BlockReasons = appendUnique(result.BlockReasons, reason)
+	}
+	if cutoffOK && verification.ArchiveExists && !archiveCountsEqual(result.EligibleCounts, verification.Counts) {
+		result.BlockReasons = appendUnique(result.BlockReasons, "archive_counts_mismatch")
+	}
+	return result, nil
+}
+
 func retentionCapability() domainstorage.RetentionCapability {
 	return domainstorage.RetentionCapability{
 		Mode:                        "dry_run_only",
@@ -209,6 +291,25 @@ func retentionCapability() domainstorage.RetentionCapability {
 		ImmutableSnapshotsProtected: true,
 		Reason:                      retentionDryRunOnlyReason,
 	}
+}
+
+func (s *Service) planCutoff(raw string, result *domainstorage.ArchiveApplyPlan) (string, bool) {
+	cutoff := strings.TrimSpace(raw)
+	parsed, err := time.Parse("2006-01-02", cutoff)
+	if err != nil {
+		result.BlockReasons = appendUnique(result.BlockReasons, "invalid_cutoff")
+		return cutoff, false
+	}
+	today, err := time.Parse("2006-01-02", s.clock.Now().Format("2006-01-02"))
+	if err != nil {
+		result.BlockReasons = appendUnique(result.BlockReasons, "invalid_runtime_clock")
+		return cutoff, false
+	}
+	if parsed.After(today) {
+		result.BlockReasons = appendUnique(result.BlockReasons, "future_cutoff")
+		return cutoff, false
+	}
+	return cutoff, true
 }
 
 func (s *Service) validateCutoff(raw string) (string, error) {
@@ -225,6 +326,100 @@ func (s *Service) validateCutoff(raw string) (string, error) {
 		return "", fmt.Errorf("%w: cutoff_business_date_local must not be in the future", domain.ErrInvalid)
 	}
 	return cutoff, nil
+}
+
+func (s *Service) verifyArchive(archivePath, manifestPath string) (domainstorage.ArchiveVerificationSummary, *domainstorage.ArchiveManifest, []string) {
+	verification := domainstorage.ArchiveVerificationSummary{
+		ArchivePath:            strings.TrimSpace(archivePath),
+		ManifestPath:           strings.TrimSpace(manifestPath),
+		SnapshotPayloadPresent: true,
+	}
+	reasons := []string{}
+	if verification.ManifestPath == "" {
+		reasons = appendUnique(reasons, "archive_manifest_missing")
+		return verification, nil, reasons
+	}
+	if !s.archivePathAllowed(verification.ManifestPath) {
+		reasons = appendUnique(reasons, "archive_manifest_outside_archive_dir")
+		return verification, nil, reasons
+	}
+	manifestFile, err := os.Open(verification.ManifestPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			reasons = appendUnique(reasons, "archive_manifest_missing")
+			return verification, nil, reasons
+		}
+		reasons = appendUnique(reasons, "archive_manifest_unreadable")
+		return verification, nil, reasons
+	}
+	verification.ManifestExists = true
+	var manifest domainstorage.ArchiveManifest
+	if err := json.NewDecoder(manifestFile).Decode(&manifest); err != nil {
+		_ = manifestFile.Close()
+		reasons = appendUnique(reasons, "archive_manifest_invalid")
+		return verification, nil, reasons
+	}
+	if err := manifestFile.Close(); err != nil {
+		reasons = appendUnique(reasons, "archive_manifest_unreadable")
+		return verification, &manifest, reasons
+	}
+	verification.ArchiveSHA256 = manifest.SHA256
+	verification.ManifestVersionMatched = manifest.Version == archiveExportVersion
+	if !verification.ManifestVersionMatched {
+		reasons = appendUnique(reasons, "archive_manifest_version_mismatch")
+	}
+	if verification.ArchivePath == "" {
+		verification.ArchivePath = manifest.ArchivePath
+	}
+	if verification.ArchivePath == "" {
+		reasons = appendUnique(reasons, "archive_missing")
+		return verification, &manifest, reasons
+	}
+	if !s.archivePathAllowed(verification.ArchivePath) {
+		reasons = appendUnique(reasons, "archive_path_outside_archive_dir")
+		return verification, &manifest, reasons
+	}
+	counts, sha, snapshotPresent, err := verifyArchiveJSONL(verification.ArchivePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			reasons = appendUnique(reasons, "archive_missing")
+			return verification, &manifest, reasons
+		}
+		reasons = appendUnique(reasons, "archive_unreadable")
+		return verification, &manifest, reasons
+	}
+	verification.ArchiveExists = true
+	verification.Counts = counts
+	verification.ComputedSHA256 = sha
+	verification.SHA256Matched = sha == manifest.SHA256
+	verification.CountsMatchedManifest = archiveCountsEqual(counts, manifest.Counts)
+	verification.SnapshotPayloadPresent = snapshotPresent
+	if !verification.SHA256Matched {
+		reasons = appendUnique(reasons, "archive_sha_mismatch")
+	}
+	if !verification.CountsMatchedManifest {
+		reasons = appendUnique(reasons, "archive_manifest_counts_mismatch")
+	}
+	if !verification.SnapshotPayloadPresent {
+		reasons = appendUnique(reasons, "archive_snapshot_payload_missing")
+	}
+	return verification, &manifest, reasons
+}
+
+func (s *Service) archivePathAllowed(path string) bool {
+	archiveRoot, err := filepath.Abs(s.archiveDir)
+	if err != nil {
+		return false
+	}
+	candidate, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(archiveRoot, candidate)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != "" && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && rel != "..")
 }
 
 func writeArchiveJSONL(path string, rows []domainstorage.ArchiveExportRow) (string, map[string]int, error) {
@@ -244,6 +439,50 @@ func writeArchiveJSONL(path string, rows []domainstorage.ArchiveExportRow) (stri
 		tableCounts[row.Table]++
 	}
 	return hex.EncodeToString(hash.Sum(nil)), tableCounts, nil
+}
+
+func verifyArchiveJSONL(path string) (domainstorage.ArchiveExportCounts, string, bool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return domainstorage.ArchiveExportCounts{}, "", false, err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	scanner := bufio.NewScanner(io.TeeReader(file, hash))
+	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	tableCounts := map[string]int{}
+	snapshotPayloadPresent := true
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(strings.TrimSpace(string(line))) == 0 {
+			continue
+		}
+		var row domainstorage.ArchiveExportRow
+		if err := json.Unmarshal(line, &row); err != nil {
+			return domainstorage.ArchiveExportCounts{}, "", false, err
+		}
+		tableCounts[row.Table]++
+		if (row.Table == "checks" || row.Table == "prechecks") && !archiveRowHasSnapshotPayload(row.Row) {
+			snapshotPayloadPresent = false
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return domainstorage.ArchiveExportCounts{}, "", false, err
+	}
+	return archiveCountsFromTableCounts(tableCounts), hex.EncodeToString(hash.Sum(nil)), snapshotPayloadPresent, nil
+}
+
+func archiveRowHasSnapshotPayload(row map[string]any) bool {
+	raw, ok := row["snapshot"]
+	if !ok || raw == nil {
+		return false
+	}
+	switch v := raw.(type) {
+	case string:
+		return strings.TrimSpace(v) != ""
+	default:
+		return true
+	}
 }
 
 func writeManifest(path string, manifest domainstorage.ArchiveManifest) error {
@@ -293,6 +532,95 @@ func archiveTableManifest(counts map[string]int) []domainstorage.ArchiveTableMan
 		out = append(out, domainstorage.ArchiveTableManifest{Name: name, Rows: rows, PayloadIncluded: payloadIncluded, Content: content})
 	}
 	return out
+}
+
+func archiveCountsFromTableCounts(tableCounts map[string]int) domainstorage.ArchiveExportCounts {
+	var counts domainstorage.ArchiveExportCounts
+	for table, n := range tableCounts {
+		counts.ArchivedRows += n
+		switch table {
+		case "orders":
+			counts.ClosedOrders += n
+		case "order_lines":
+			counts.OrderLines += n
+		case "order_line_modifiers":
+			counts.OrderLineModifiers += n
+		case "order_line_discounts":
+			counts.OrderLineDiscounts += n
+		case "order_surcharges":
+			counts.OrderSurcharges += n
+		case "prechecks":
+			counts.Prechecks += n
+		case "precheck_lines":
+			counts.PrecheckLines += n
+		case "precheck_line_modifiers":
+			counts.PrecheckLineModifiers += n
+		case "precheck_discounts":
+			counts.PrecheckDiscounts += n
+		case "precheck_surcharges":
+			counts.PrecheckSurcharges += n
+		case "precheck_taxes":
+			counts.PrecheckTaxes += n
+		case "payments":
+			counts.Payments += n
+		case "payment_attempts":
+			counts.PaymentAttempts += n
+		case "checks":
+			counts.Checks += n
+		case "financial_operations":
+			counts.FinancialOperations += n
+		case "financial_operation_items":
+			counts.FinancialOperationItems += n
+		case "local_event_log_summary":
+			counts.LocalEventReferences += n
+		case "pos_sync_outbox_summary":
+			counts.OutboxMessageReferences += n
+		}
+	}
+	return counts
+}
+
+func archiveCountsEqual(left, right domainstorage.ArchiveExportCounts) bool {
+	return left.ClosedOrders == right.ClosedOrders &&
+		left.OrderLines == right.OrderLines &&
+		left.OrderLineModifiers == right.OrderLineModifiers &&
+		left.OrderLineDiscounts == right.OrderLineDiscounts &&
+		left.OrderSurcharges == right.OrderSurcharges &&
+		left.Prechecks == right.Prechecks &&
+		left.PrecheckLines == right.PrecheckLines &&
+		left.PrecheckLineModifiers == right.PrecheckLineModifiers &&
+		left.PrecheckDiscounts == right.PrecheckDiscounts &&
+		left.PrecheckSurcharges == right.PrecheckSurcharges &&
+		left.PrecheckTaxes == right.PrecheckTaxes &&
+		left.Payments == right.Payments &&
+		left.PaymentAttempts == right.PaymentAttempts &&
+		left.Checks == right.Checks &&
+		left.FinancialOperations == right.FinancialOperations &&
+		left.FinancialOperationItems == right.FinancialOperationItems &&
+		left.LocalEventReferences == right.LocalEventReferences &&
+		left.OutboxMessageReferences == right.OutboxMessageReferences &&
+		left.ArchivedRows == right.ArchivedRows
+}
+
+func archiveCountsTotalRows(counts domainstorage.ArchiveExportCounts) int {
+	return counts.ClosedOrders +
+		counts.OrderLines +
+		counts.OrderLineModifiers +
+		counts.OrderLineDiscounts +
+		counts.OrderSurcharges +
+		counts.Prechecks +
+		counts.PrecheckLines +
+		counts.PrecheckLineModifiers +
+		counts.PrecheckDiscounts +
+		counts.PrecheckSurcharges +
+		counts.PrecheckTaxes +
+		counts.Payments +
+		counts.PaymentAttempts +
+		counts.Checks +
+		counts.FinancialOperations +
+		counts.FinancialOperationItems +
+		counts.LocalEventReferences +
+		counts.OutboxMessageReferences
 }
 
 func appendUnique(values []string, next string) []string {

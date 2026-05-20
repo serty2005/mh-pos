@@ -195,6 +195,30 @@ type ArchiveExportScope struct {
 	Rows              []ArchiveExportRow
 }
 
+// ArchiveApplyRuntimeScope содержит только read-only runtime blockers и counts для будущего apply.
+type ArchiveApplyRuntimeScope struct {
+	Counts                 ArchiveExportCounts
+	ActiveOrders           int
+	OpenShifts             int
+	OpenCashSessions       int
+	BlockingOutboxMessages int
+}
+
+// ArchiveVerificationSummary описывает результат streaming-проверки archive JSONL.
+type ArchiveVerificationSummary struct {
+	ArchivePath            string              `json:"archive_path,omitempty"`
+	ManifestPath           string              `json:"manifest_path,omitempty"`
+	ArchiveSHA256          string              `json:"archive_sha256,omitempty"`
+	ComputedSHA256         string              `json:"computed_sha256,omitempty"`
+	Counts                 ArchiveExportCounts `json:"counts"`
+	ArchiveExists          bool                `json:"archive_exists"`
+	ManifestExists         bool                `json:"manifest_exists"`
+	ManifestVersionMatched bool                `json:"manifest_version_matched"`
+	SHA256Matched          bool                `json:"sha256_matched"`
+	CountsMatchedManifest  bool                `json:"counts_matched_manifest"`
+	SnapshotPayloadPresent bool                `json:"snapshot_payload_present"`
+}
+
 // ArchivePlanProtectedFlags фиксирует таблицы, которые future archive apply не может менять без отдельной политики.
 type ArchivePlanProtectedFlags struct {
 	FinancialLedgerProtected    bool `json:"financial_ledger_protected"`
@@ -253,4 +277,26 @@ type RetentionDryRunResult struct {
 	BlockingOutboxMessages      int                     `json:"blocking_outbox_messages"`
 	FinancialLedgerProtected    bool                    `json:"financial_ledger_protected"`
 	ImmutableSnapshotsProtected bool                    `json:"immutable_snapshots_protected"`
+}
+
+// ArchiveApplyPlan описывает blocked-by-default planning/verification для будущего destructive apply.
+type ArchiveApplyPlan struct {
+	GeneratedAt                  time.Time                 `json:"generated_at"`
+	CutoffBusinessDateLocal      string                    `json:"cutoff_business_date_local"`
+	ArchiveID                    string                    `json:"archive_id,omitempty"`
+	ArchiveSHA256                string                    `json:"archive_sha256,omitempty"`
+	ResultMode                   string                    `json:"result_mode"`
+	Mode                         string                    `json:"mode"`
+	DestructiveApplySupported    bool                      `json:"destructive_apply_supported"`
+	RuntimeRowsDeleted           bool                      `json:"runtime_rows_deleted"`
+	Blocked                      bool                      `json:"blocked"`
+	BlockReasons                 []string                  `json:"block_reasons"`
+	EligibleCounts              ArchiveExportCounts       `json:"eligible_counts"`
+	ArchiveCounts               ArchiveExportCounts       `json:"archive_counts"`
+	Protected                    ArchivePlanProtectedFlags `json:"protected"`
+	ActiveOrders                 int                       `json:"active_orders"`
+	OpenShifts                   int                       `json:"open_shifts"`
+	OpenCashSessions             int                       `json:"open_cash_sessions"`
+	BlockingOutboxMessages       int                       `json:"blocking_outbox_messages"`
+	Verification                 ArchiveVerificationSummary `json:"verification"`
 }

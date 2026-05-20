@@ -1185,6 +1185,220 @@ func TestStorageArchiveExportIncludesClosedOrderGraphLedgerAndManifestWithoutMut
 	}
 }
 
+func TestStorageArchiveApplyPlanWithoutManifestBlocksAndDoesNotMutate(t *testing.T) {
+	f := newFixture(t)
+	before := protectedStorageCounts(t, f)
+	result, err := f.service.BuildStorageArchiveApplyPlan(f.ctx, app.ArchiveApplyPlanCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-missing-manifest"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             filepath.Join(f.archiveDir, "missing", "archive.jsonl"),
+		ManifestPath:            filepath.Join(f.archiveDir, "missing", "manifest.json"),
+		Mode:                    "plan_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Blocked || result.ResultMode != "apply_blocked" || result.DestructiveApplySupported || result.RuntimeRowsDeleted {
+		t.Fatalf("expected blocked read-only apply plan, got %+v", result)
+	}
+	if !containsString(result.BlockReasons, "archive_manifest_missing") ||
+		!containsString(result.BlockReasons, "destructive_apply_not_enabled") ||
+		!containsString(result.BlockReasons, "restore_read_path_missing") {
+		t.Fatalf("expected missing manifest/default block reasons, got %+v", result.BlockReasons)
+	}
+	assertProtectedStorageCounts(t, f, before, "apply-plan without manifest")
+}
+
+func TestStorageArchiveApplyPlanBlocksInvalidAndFutureCutoff(t *testing.T) {
+	f := newFixture(t)
+	for _, tc := range []struct {
+		name   string
+		cutoff string
+		reason string
+	}{
+		{name: "invalid", cutoff: "2026/05/04", reason: "invalid_cutoff"},
+		{name: "future", cutoff: "2026-05-05", reason: "future_cutoff"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := f.service.BuildStorageArchiveApplyPlan(f.ctx, app.ArchiveApplyPlanCommand{
+				CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-"+tc.name),
+				CutoffBusinessDateLocal: tc.cutoff,
+				ArchivePath:             filepath.Join(f.archiveDir, "missing", "archive.jsonl"),
+				ManifestPath:            filepath.Join(f.archiveDir, "missing", "manifest.json"),
+				Mode:                    "plan_only",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !result.Blocked || !containsString(result.BlockReasons, tc.reason) {
+				t.Fatalf("expected %s block reason, got %+v", tc.reason, result)
+			}
+		})
+	}
+}
+
+func TestStorageArchiveApplyPlanVerifiesArchiveSHAAndCounts(t *testing.T) {
+	f := newFixture(t)
+	f.createPaidOrder(t)
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-export"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "apply plan fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := appendArchiveLine(exported.ArchivePath, `{"table":"unknown","row":{}}`); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := f.service.BuildStorageArchiveApplyPlan(f.ctx, app.ArchiveApplyPlanCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-sha"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             exported.ArchivePath,
+		ManifestPath:            exported.ManifestPath,
+		Mode:                    "plan_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(result.BlockReasons, "archive_sha_mismatch") {
+		t.Fatalf("expected archive_sha_mismatch, got %+v", result.BlockReasons)
+	}
+	if !result.Verification.ManifestVersionMatched || result.Verification.SHA256Matched {
+		t.Fatalf("unexpected verification summary after sha mismatch: %+v", result.Verification)
+	}
+
+	manifest := readArchiveManifest(t, exported.ManifestPath)
+	manifest.Counts.ClosedOrders++
+	writeArchiveManifest(t, exported.ManifestPath, manifest)
+	result, err = f.service.BuildStorageArchiveApplyPlan(f.ctx, app.ArchiveApplyPlanCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-manifest-counts"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             exported.ArchivePath,
+		ManifestPath:            exported.ManifestPath,
+		Mode:                    "plan_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(result.BlockReasons, "archive_manifest_counts_mismatch") {
+		t.Fatalf("expected archive_manifest_counts_mismatch, got %+v", result.BlockReasons)
+	}
+}
+
+func TestStorageArchiveApplyPlanBlocksManifestVersionMismatch(t *testing.T) {
+	f := newFixture(t)
+	f.createPaidOrder(t)
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-version-export"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "manifest version fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := readArchiveManifest(t, exported.ManifestPath)
+	manifest.Version = "unsupported_archive_version"
+	writeArchiveManifest(t, exported.ManifestPath, manifest)
+
+	result, err := f.service.BuildStorageArchiveApplyPlan(f.ctx, app.ArchiveApplyPlanCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-version"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             exported.ArchivePath,
+		ManifestPath:            exported.ManifestPath,
+		Mode:                    "plan_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(result.BlockReasons, "archive_manifest_version_mismatch") || result.Verification.ManifestVersionMatched {
+		t.Fatalf("expected archive_manifest_version_mismatch, got result=%+v verification=%+v", result, result.Verification)
+	}
+}
+
+func TestStorageArchiveApplyPlanBlocksRuntimeMismatchOutboxAndOpenBoundary(t *testing.T) {
+	f := newFixture(t)
+	f.createPaidOrder(t)
+	activeOrder, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{
+		CommandMeta: f.edgeMetaCommand("cmd-storage-apply-active-order"),
+		TableID:     f.table.ID,
+		TableName:   f.table.Name,
+		GuestCount:  1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-empty-export"),
+		CutoffBusinessDateLocal: "2026-05-03",
+		Reason:                  "runtime mismatch fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := protectedStorageCounts(t, f)
+	result, err := f.service.BuildStorageArchiveApplyPlan(f.ctx, app.ArchiveApplyPlanCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-runtime-mismatch"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             exported.ArchivePath,
+		ManifestPath:            exported.ManifestPath,
+		Mode:                    "plan_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activeOrder.ID == "" || result.ActiveOrders < 1 || result.OpenShifts < 1 || result.OpenCashSessions < 1 {
+		t.Fatalf("expected open operational boundary in apply plan, got %+v", result)
+	}
+	if !containsString(result.BlockReasons, "archive_counts_mismatch") ||
+		!containsString(result.BlockReasons, "pending_edge_to_cloud_outbox") ||
+		!containsString(result.BlockReasons, "open_operational_boundary") ||
+		!containsString(result.BlockReasons, "restore_read_path_missing") {
+		t.Fatalf("expected runtime mismatch/outbox/open boundary block reasons, got %+v", result.BlockReasons)
+	}
+	assertProtectedStorageCounts(t, f, before, "apply-plan runtime mismatch")
+}
+
+func TestStorageArchiveApplyPlanDetectsMissingSnapshotPayload(t *testing.T) {
+	f := newFixture(t)
+	f.createPaidOrder(t)
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-snapshot-export"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "snapshot fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(exported.ArchivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewritten := strings.Replace(string(raw), `"snapshot":`, `"snapshot_removed":`, 1)
+	if err := os.WriteFile(exported.ArchivePath, []byte(rewritten), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	sha := sha256.Sum256([]byte(rewritten))
+	manifest := readArchiveManifest(t, exported.ManifestPath)
+	manifest.SHA256 = hex.EncodeToString(sha[:])
+	writeArchiveManifest(t, exported.ManifestPath, manifest)
+
+	result, err := f.service.BuildStorageArchiveApplyPlan(f.ctx, app.ArchiveApplyPlanCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-snapshot"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             exported.ArchivePath,
+		ManifestPath:            exported.ManifestPath,
+		Mode:                    "plan_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(result.BlockReasons, "archive_snapshot_payload_missing") || result.Verification.SnapshotPayloadPresent {
+		t.Fatalf("expected archive_snapshot_payload_missing, got result=%+v verification=%+v", result, result.Verification)
+	}
+}
+
 func decodeArchiveJSONLByTable(t *testing.T, raw []byte) map[string]int {
 	t.Helper()
 	out := map[string]int{}
@@ -1201,6 +1415,71 @@ func decodeArchiveJSONLByTable(t *testing.T, raw []byte) map[string]int {
 		out[row.Table]++
 	}
 	return out
+}
+
+func appendArchiveLine(path, line string) error {
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o640)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if _, err := file.WriteString(line + "\n"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func readArchiveManifest(t *testing.T, path string) domain.StorageArchiveManifest {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest domain.StorageArchiveManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	return manifest
+}
+
+func writeArchiveManifest(t *testing.T, path string, manifest domain.StorageArchiveManifest) {
+	t.Helper()
+	raw, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(raw, '\n'), 0o640); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func protectedStorageCounts(t *testing.T, f *fixture) map[string]int {
+	t.Helper()
+	tables := []string{
+		"orders",
+		"order_lines",
+		"prechecks",
+		"payments",
+		"checks",
+		"financial_operations",
+		"financial_operation_items",
+		"local_event_log",
+		"pos_sync_outbox",
+	}
+	out := map[string]int{}
+	for _, table := range tables {
+		out[table] = countRows(t, f, table)
+	}
+	return out
+}
+
+func assertProtectedStorageCounts(t *testing.T, f *fixture, before map[string]int, operation string) {
+	t.Helper()
+	for table, want := range before {
+		if got := countRows(t, f, table); got != want {
+			t.Fatalf("%s mutated %s, before=%d after=%d", operation, table, want, got)
+		}
+	}
 }
 
 func TestFloorAndMenuReadAsOperatorRequiresPermissions(t *testing.T) {
