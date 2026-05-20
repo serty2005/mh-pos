@@ -1203,7 +1203,7 @@ func TestStorageArchiveApplyPlanWithoutManifestBlocksAndDoesNotMutate(t *testing
 	}
 	if !containsString(result.BlockReasons, "archive_manifest_missing") ||
 		!containsString(result.BlockReasons, "destructive_apply_not_enabled") ||
-		!containsString(result.BlockReasons, "restore_read_path_missing") {
+		!containsString(result.BlockReasons, "runtime_restore_apply_path_missing") {
 		t.Fatalf("expected missing manifest/default block reasons, got %+v", result.BlockReasons)
 	}
 	assertProtectedStorageCounts(t, f, before, "apply-plan without manifest")
@@ -1354,7 +1354,7 @@ func TestStorageArchiveApplyPlanBlocksRuntimeMismatchOutboxAndOpenBoundary(t *te
 	if !containsString(result.BlockReasons, "archive_counts_mismatch") ||
 		!containsString(result.BlockReasons, "pending_edge_to_cloud_outbox") ||
 		!containsString(result.BlockReasons, "open_operational_boundary") ||
-		!containsString(result.BlockReasons, "restore_read_path_missing") {
+		!containsString(result.BlockReasons, "runtime_restore_apply_path_missing") {
 		t.Fatalf("expected runtime mismatch/outbox/open boundary block reasons, got %+v", result.BlockReasons)
 	}
 	assertProtectedStorageCounts(t, f, before, "apply-plan runtime mismatch")
@@ -1397,6 +1397,268 @@ func TestStorageArchiveApplyPlanDetectsMissingSnapshotPayload(t *testing.T) {
 	if !containsString(result.BlockReasons, "archive_snapshot_payload_missing") || result.Verification.SnapshotPayloadPresent {
 		t.Fatalf("expected archive_snapshot_payload_missing, got result=%+v verification=%+v", result, result.Verification)
 	}
+}
+
+func TestStorageArchiveReadPlanHappyPathAfterExport(t *testing.T) {
+	f := newFixture(t)
+	f.createPaidOrder(t)
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-read-export"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "read plan fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := protectedStorageCounts(t, f)
+
+	result, err := f.service.BuildStorageArchiveReadPlan(f.ctx, app.ArchiveReadPlanCommand{
+		CommandMeta:  f.managerEdgeMetaCommand(t, "cmd-storage-read-plan"),
+		ArchivePath:  exported.ArchivePath,
+		ManifestPath: exported.ManifestPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Blocked || result.ResultMode != "read_plan_only" || result.ArchiveID != exported.ArchiveID ||
+		result.CutoffBusinessDateLocal != "2026-05-04" || result.Counts.ClosedOrders != 1 {
+		t.Fatalf("unexpected archive read-plan result: %+v", result)
+	}
+	if result.ArchiveSHA256 != exported.SHA256 || result.ComputedSHA256 != exported.SHA256 ||
+		!result.Verification.ManifestVersionMatched || !result.Verification.SHA256Matched ||
+		!result.Verification.CountsMatchedManifest || !result.Verification.SnapshotPayloadPresent {
+		t.Fatalf("unexpected archive read-plan verification: %+v", result.Verification)
+	}
+	if len(result.Tables) == 0 || result.Tables[0].Name != "orders" {
+		t.Fatalf("expected archive table summary, got %+v", result.Tables)
+	}
+	assertProtectedStorageCounts(t, f, before, "read-plan happy path")
+}
+
+func TestStorageArchiveReadPlanRejectsPathOutsideArchiveDir(t *testing.T) {
+	f := newFixture(t)
+	f.createPaidOrder(t)
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-read-outside-export"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "outside path fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outsideArchive := filepath.Join(t.TempDir(), "archive.jsonl")
+	result, err := f.service.BuildStorageArchiveReadPlan(f.ctx, app.ArchiveReadPlanCommand{
+		CommandMeta:  f.managerEdgeMetaCommand(t, "cmd-storage-read-outside"),
+		ArchivePath:  outsideArchive,
+		ManifestPath: exported.ManifestPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Blocked || !containsString(result.BlockReasons, "archive_path_outside_archive_dir") {
+		t.Fatalf("expected outside archive dir block reason, got %+v", result)
+	}
+}
+
+func TestStorageArchiveReadPlanDetectsSHAMismatch(t *testing.T) {
+	f := newFixture(t)
+	f.createPaidOrder(t)
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-read-sha-export"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "sha mismatch fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := appendArchiveLine(exported.ArchivePath, `{"table":"unknown","row":{}}`); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := f.service.BuildStorageArchiveReadPlan(f.ctx, app.ArchiveReadPlanCommand{
+		CommandMeta:  f.managerEdgeMetaCommand(t, "cmd-storage-read-sha"),
+		ArchivePath:  exported.ArchivePath,
+		ManifestPath: exported.ManifestPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Blocked || !containsString(result.BlockReasons, "archive_sha_mismatch") || result.Verification.SHA256Matched {
+		t.Fatalf("expected archive_sha_mismatch, got %+v", result)
+	}
+}
+
+func TestStorageArchiveReadPlanDetectsManifestCountsMismatch(t *testing.T) {
+	f := newFixture(t)
+	f.createPaidOrder(t)
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-read-counts-export"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "counts mismatch fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := readArchiveManifest(t, exported.ManifestPath)
+	manifest.Counts.ClosedOrders++
+	writeArchiveManifest(t, exported.ManifestPath, manifest)
+
+	result, err := f.service.BuildStorageArchiveReadPlan(f.ctx, app.ArchiveReadPlanCommand{
+		CommandMeta:  f.managerEdgeMetaCommand(t, "cmd-storage-read-counts"),
+		ArchivePath:  exported.ArchivePath,
+		ManifestPath: exported.ManifestPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Blocked || !containsString(result.BlockReasons, "archive_manifest_counts_mismatch") ||
+		result.Verification.CountsMatchedManifest {
+		t.Fatalf("expected archive_manifest_counts_mismatch, got %+v", result)
+	}
+}
+
+func TestStorageArchiveLookupByCheckIDReturnsImmutableSnapshots(t *testing.T) {
+	f := newFixture(t)
+	order, check := f.createPaidOrder(t)
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-lookup-check-export"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "lookup by check fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := protectedStorageCounts(t, f)
+
+	result, err := f.service.LookupStorageArchivePreview(f.ctx, app.ArchiveLookupCommand{
+		CommandMeta:  f.managerEdgeMetaCommand(t, "cmd-storage-lookup-check"),
+		ArchivePath:  exported.ArchivePath,
+		ManifestPath: exported.ManifestPath,
+		CheckID:      check.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Blocked || result.ResultMode != "archive_lookup_preview" || !result.Lookup.Found ||
+		result.Lookup.CheckID != check.ID || result.Lookup.OrderID != order.ID {
+		t.Fatalf("unexpected lookup result: %+v", result)
+	}
+	if result.Check == nil || result.Check.ID != check.ID || len(result.Check.Snapshot) == 0 {
+		t.Fatalf("expected check snapshot preview, got %+v", result.Check)
+	}
+	if result.Precheck == nil || len(result.Precheck.Snapshot) == 0 {
+		t.Fatalf("expected precheck snapshot preview, got %+v", result.Precheck)
+	}
+	if result.RelatedCounts.OrderLines != 1 || result.RelatedCounts.Payments != 1 {
+		t.Fatalf("unexpected related counts: %+v", result.RelatedCounts)
+	}
+	assertProtectedStorageCounts(t, f, before, "lookup by check_id")
+}
+
+func TestStorageArchiveLookupByOrderIDReturnsMatchingArchivedPreview(t *testing.T) {
+	f := newFixture(t)
+	order, check := f.createPaidOrder(t)
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-lookup-order-export"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "lookup by order fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := f.service.LookupStorageArchivePreview(f.ctx, app.ArchiveLookupCommand{
+		CommandMeta:  f.managerEdgeMetaCommand(t, "cmd-storage-lookup-order"),
+		ArchivePath:  exported.ArchivePath,
+		ManifestPath: exported.ManifestPath,
+		OrderID:      order.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Blocked || !result.Lookup.Found || result.Lookup.OrderID != order.ID || result.Lookup.CheckID != check.ID {
+		t.Fatalf("unexpected lookup by order result: %+v", result)
+	}
+	if result.Check == nil || result.Check.ID != check.ID || result.Precheck == nil {
+		t.Fatalf("expected matching check/precheck preview, got check=%+v precheck=%+v", result.Check, result.Precheck)
+	}
+}
+
+func TestStorageArchiveLookupRejectsEmptyAndAmbiguousKeys(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.service.LookupStorageArchivePreview(f.ctx, app.ArchiveLookupCommand{
+		CommandMeta: f.managerEdgeMetaCommand(t, "cmd-storage-lookup-empty-key"),
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected invalid empty lookup key, got %v", err)
+	}
+	_, err = f.service.LookupStorageArchivePreview(f.ctx, app.ArchiveLookupCommand{
+		CommandMeta: f.managerEdgeMetaCommand(t, "cmd-storage-lookup-both-keys"),
+		CheckID:     "check-1",
+		OrderID:     "order-1",
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected invalid ambiguous lookup key, got %v", err)
+	}
+}
+
+func TestStorageArchiveLookupReturnsStructuredNotFound(t *testing.T) {
+	f := newFixture(t)
+	f.createPaidOrder(t)
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-lookup-not-found-export"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "lookup not found fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := f.service.LookupStorageArchivePreview(f.ctx, app.ArchiveLookupCommand{
+		CommandMeta:  f.managerEdgeMetaCommand(t, "cmd-storage-lookup-not-found"),
+		ArchivePath:  exported.ArchivePath,
+		ManifestPath: exported.ManifestPath,
+		CheckID:      "missing-check",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Blocked || result.Lookup.Found || !containsString(result.BlockReasons, "archive_record_not_found") {
+		t.Fatalf("expected structured not-found result, got %+v", result)
+	}
+}
+
+func TestStorageArchiveReadPlanAndLookupKeepRuntimeCountsUnchanged(t *testing.T) {
+	f := newFixture(t)
+	order, check := f.createPaidOrder(t)
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-zero-delete-export"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "zero deletion fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := protectedStorageCounts(t, f)
+	if _, err := f.service.BuildStorageArchiveReadPlan(f.ctx, app.ArchiveReadPlanCommand{
+		CommandMeta:  f.managerEdgeMetaCommand(t, "cmd-storage-zero-delete-read"),
+		ArchivePath:  exported.ArchivePath,
+		ManifestPath: exported.ManifestPath,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.LookupStorageArchivePreview(f.ctx, app.ArchiveLookupCommand{
+		CommandMeta:  f.managerEdgeMetaCommand(t, "cmd-storage-zero-delete-lookup"),
+		ArchivePath:  exported.ArchivePath,
+		ManifestPath: exported.ManifestPath,
+		CheckID:      check.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if order.ID == "" {
+		t.Fatal("expected archived order fixture")
+	}
+	assertProtectedStorageCounts(t, f, before, "read-plan and lookup")
 }
 
 func decodeArchiveJSONLByTable(t *testing.T, raw []byte) map[string]int {

@@ -884,6 +884,74 @@
         }
       }
     },
+    "/storage/archive/read-plan": {
+      "post": {
+        "operationId": "buildStorageArchiveReadPlan",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "manifest_path"
+                ],
+                "properties": {
+                  "manifest_path": {
+                    "type": "string"
+                  },
+                  "archive_path": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Non-destructive storage archive read plan"
+          }
+        }
+      }
+    },
+    "/storage/archive/lookup": {
+      "post": {
+        "operationId": "lookupStorageArchivePreview",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "manifest_path"
+                ],
+                "properties": {
+                  "manifest_path": {
+                    "type": "string"
+                  },
+                  "archive_path": {
+                    "type": "string"
+                  },
+                  "check_id": {
+                    "type": "string"
+                  },
+                  "order_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Non-destructive storage archive lookup preview"
+          }
+        }
+      }
+    },
     "/sync/status": {
       "get": {
         "operationId": "getSyncStatus",

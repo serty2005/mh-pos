@@ -219,6 +219,58 @@ type ArchiveVerificationSummary struct {
 	SnapshotPayloadPresent bool                `json:"snapshot_payload_present"`
 }
 
+// ArchiveReadPlan описывает non-destructive проверку archive artifact без чтения business payload наружу.
+type ArchiveReadPlan struct {
+	GeneratedAt             time.Time                  `json:"generated_at"`
+	ResultMode              string                     `json:"result_mode"`
+	Blocked                 bool                       `json:"blocked"`
+	BlockReasons            []string                   `json:"block_reasons,omitempty"`
+	ArchiveID               string                     `json:"archive_id,omitempty"`
+	CutoffBusinessDateLocal string                     `json:"cutoff_business_date_local,omitempty"`
+	ArchiveSHA256           string                     `json:"archive_sha256,omitempty"`
+	ComputedSHA256          string                     `json:"computed_sha256,omitempty"`
+	Counts                  ArchiveExportCounts        `json:"counts"`
+	BusinessDateRange       BusinessDateRange          `json:"business_date_range"`
+	Tables                  []ArchiveTableManifest     `json:"tables"`
+	Verification            ArchiveVerificationSummary `json:"verification"`
+}
+
+// ArchiveLookupKey фиксирует разрешенный способ поиска archived preview без произвольных table names.
+type ArchiveLookupKey struct {
+	CheckID string `json:"check_id,omitempty"`
+	OrderID string `json:"order_id,omitempty"`
+	Found   bool   `json:"found"`
+}
+
+// ArchiveLookupDocument содержит immutable snapshot одного archived документа.
+type ArchiveLookupDocument struct {
+	ID                string         `json:"id"`
+	BusinessDateLocal string         `json:"business_date_local,omitempty"`
+	Snapshot          map[string]any `json:"snapshot"`
+}
+
+// ArchiveLookupRelatedCounts содержит безопасные связанные счетчики archived graph.
+type ArchiveLookupRelatedCounts struct {
+	OrderLines              int `json:"order_lines"`
+	Payments                int `json:"payments"`
+	FinancialOperations     int `json:"financial_operations"`
+	FinancialOperationItems int `json:"financial_operation_items"`
+}
+
+// ArchiveLookupPreview возвращает audit preview archived check/order без восстановления в runtime SQLite.
+type ArchiveLookupPreview struct {
+	GeneratedAt   time.Time                  `json:"generated_at"`
+	ResultMode    string                     `json:"result_mode"`
+	Blocked       bool                       `json:"blocked,omitempty"`
+	BlockReasons  []string                   `json:"block_reasons,omitempty"`
+	ArchiveID     string                     `json:"archive_id,omitempty"`
+	Lookup        ArchiveLookupKey           `json:"lookup"`
+	Check         *ArchiveLookupDocument     `json:"check,omitempty"`
+	Precheck      *ArchiveLookupDocument     `json:"precheck,omitempty"`
+	RelatedCounts ArchiveLookupRelatedCounts `json:"related_counts"`
+	Verification  ArchiveVerificationSummary `json:"verification,omitempty"`
+}
+
 // ArchivePlanProtectedFlags фиксирует таблицы, которые future archive apply не может менять без отдельной политики.
 type ArchivePlanProtectedFlags struct {
 	FinancialLedgerProtected    bool `json:"financial_ledger_protected"`
@@ -236,29 +288,29 @@ type ArchivePlanTableManifest struct {
 
 // ArchivePlanManifest является manifest-only описанием future archive/export scope.
 type ArchivePlanManifest struct {
-	FormatVersion             string                     `json:"format_version"`
-	RestaurantID              string                     `json:"restaurant_id,omitempty"`
-	BusinessDateRange         BusinessDateRange          `json:"business_date_range"`
-	CutoffBusinessDateLocal   string                     `json:"cutoff_business_date_local"`
-	Tables                    []ArchivePlanTableManifest `json:"tables"`
+	FormatVersion           string                     `json:"format_version"`
+	RestaurantID            string                     `json:"restaurant_id,omitempty"`
+	BusinessDateRange       BusinessDateRange          `json:"business_date_range"`
+	CutoffBusinessDateLocal string                     `json:"cutoff_business_date_local"`
+	Tables                  []ArchivePlanTableManifest `json:"tables"`
 }
 
 // ArchiveExportPlan описывает безопасный export-plan без записи archive files и без мутации runtime rows.
 type ArchiveExportPlan struct {
-	GeneratedAt                 time.Time               `json:"generated_at"`
-	CutoffBusinessDateLocal     string                  `json:"cutoff_business_date_local"`
-	Mode                        string                  `json:"mode"`
-	ResultMode                  string                  `json:"result_mode"`
-	DestructiveApplySupported   bool                    `json:"destructive_apply_supported"`
-	Blocked                     bool                    `json:"blocked"`
-	BlockReasons                []string                `json:"block_reasons"`
-	ArchiveSet                  RetentionEligibleCounts   `json:"archive_set"`
-	Protected                   ArchivePlanProtectedFlags `json:"protected"`
-	ActiveOrders                int                       `json:"active_orders"`
-	OpenShifts                  int                       `json:"open_shifts"`
-	OpenCashSessions            int                       `json:"open_cash_sessions"`
-	BlockingOutboxMessages      int                       `json:"blocking_outbox_messages"`
-	Manifest                    ArchivePlanManifest       `json:"manifest"`
+	GeneratedAt               time.Time                 `json:"generated_at"`
+	CutoffBusinessDateLocal   string                    `json:"cutoff_business_date_local"`
+	Mode                      string                    `json:"mode"`
+	ResultMode                string                    `json:"result_mode"`
+	DestructiveApplySupported bool                      `json:"destructive_apply_supported"`
+	Blocked                   bool                      `json:"blocked"`
+	BlockReasons              []string                  `json:"block_reasons"`
+	ArchiveSet                RetentionEligibleCounts   `json:"archive_set"`
+	Protected                 ArchivePlanProtectedFlags `json:"protected"`
+	ActiveOrders              int                       `json:"active_orders"`
+	OpenShifts                int                       `json:"open_shifts"`
+	OpenCashSessions          int                       `json:"open_cash_sessions"`
+	BlockingOutboxMessages    int                       `json:"blocking_outbox_messages"`
+	Manifest                  ArchivePlanManifest       `json:"manifest"`
 }
 
 // RetentionDryRunResult описывает read-only оценку cutoff без каких-либо удалений или архивных записей.
@@ -281,22 +333,22 @@ type RetentionDryRunResult struct {
 
 // ArchiveApplyPlan описывает blocked-by-default planning/verification для будущего destructive apply.
 type ArchiveApplyPlan struct {
-	GeneratedAt                  time.Time                 `json:"generated_at"`
-	CutoffBusinessDateLocal      string                    `json:"cutoff_business_date_local"`
-	ArchiveID                    string                    `json:"archive_id,omitempty"`
-	ArchiveSHA256                string                    `json:"archive_sha256,omitempty"`
-	ResultMode                   string                    `json:"result_mode"`
-	Mode                         string                    `json:"mode"`
-	DestructiveApplySupported    bool                      `json:"destructive_apply_supported"`
-	RuntimeRowsDeleted           bool                      `json:"runtime_rows_deleted"`
-	Blocked                      bool                      `json:"blocked"`
-	BlockReasons                 []string                  `json:"block_reasons"`
-	EligibleCounts              ArchiveExportCounts       `json:"eligible_counts"`
-	ArchiveCounts               ArchiveExportCounts       `json:"archive_counts"`
-	Protected                    ArchivePlanProtectedFlags `json:"protected"`
-	ActiveOrders                 int                       `json:"active_orders"`
-	OpenShifts                   int                       `json:"open_shifts"`
-	OpenCashSessions             int                       `json:"open_cash_sessions"`
-	BlockingOutboxMessages       int                       `json:"blocking_outbox_messages"`
-	Verification                 ArchiveVerificationSummary `json:"verification"`
+	GeneratedAt               time.Time                  `json:"generated_at"`
+	CutoffBusinessDateLocal   string                     `json:"cutoff_business_date_local"`
+	ArchiveID                 string                     `json:"archive_id,omitempty"`
+	ArchiveSHA256             string                     `json:"archive_sha256,omitempty"`
+	ResultMode                string                     `json:"result_mode"`
+	Mode                      string                     `json:"mode"`
+	DestructiveApplySupported bool                       `json:"destructive_apply_supported"`
+	RuntimeRowsDeleted        bool                       `json:"runtime_rows_deleted"`
+	Blocked                   bool                       `json:"blocked"`
+	BlockReasons              []string                   `json:"block_reasons"`
+	EligibleCounts            ArchiveExportCounts        `json:"eligible_counts"`
+	ArchiveCounts             ArchiveExportCounts        `json:"archive_counts"`
+	Protected                 ArchivePlanProtectedFlags  `json:"protected"`
+	ActiveOrders              int                        `json:"active_orders"`
+	OpenShifts                int                        `json:"open_shifts"`
+	OpenCashSessions          int                        `json:"open_cash_sessions"`
+	BlockingOutboxMessages    int                        `json:"blocking_outbox_messages"`
+	Verification              ArchiveVerificationSummary `json:"verification"`
 }

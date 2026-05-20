@@ -258,6 +258,7 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 - Backend предоставляет read-only основу lifecycle через `GET /api/v1/storage/status` и `POST /api/v1/storage/retention/dry-run`.
 - Backend предоставляет manifest-only archive/export plan через `POST /api/v1/storage/archive/export-plan`.
 - Backend предоставляет export-only archive readiness через `POST /api/v1/storage/archive/export`.
+- Backend предоставляет non-destructive archive read/lookup preview через `POST /api/v1/storage/archive/read-plan` и `POST /api/v1/storage/archive/lookup`.
 - Backend предоставляет read-only apply-plan verification через `POST /api/v1/storage/archive/apply-plan`; destructive apply/delete остается disabled.
 - Status использует SQLite PRAGMA `page_count`, `page_size`, `freelist_count`, `journal_mode` для безопасной оценки размера без чтения файловой системы.
 - Status считает high-level объемы runtime tables: orders/order lines/modifiers, prechecks and breakdown tables, payments/attempts, checks, financial operation ledger, shifts, cash sessions, local events, outbox and legacy stock foundation tables until they are removed from the Edge target baseline.
@@ -274,15 +275,17 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 - `local_event_log` и `pos_sync_outbox` включаются только как summary/reference rows без `payload_json`; manifest/counts явно показывают reference counts. Это сохраняет связь с outbox/local events без выноса потенциально sensitive payload history в архивный файл.
 - Export-only archive не удаляет и не мутирует `orders`, `prechecks`, `payments`, `checks`, `financial_operations`, `financial_operation_items`, `local_event_log`, `pos_sync_outbox` или другие runtime tables.
 - Export-only archive может создать файл даже при destructive block. `destructive_apply_supported = false`, `blocked = true`; non-sent `edge_to_cloud` outbox rows по candidate aggregates добавляют `pending_edge_to_cloud_outbox_for_archive_scope`.
+- Archive read-plan принимает `manifest_path` и optional `archive_path`, разрешает только пути внутри configured archive dir, проверяет manifest version, SHA-256 archive file, counts manifest vs JSONL и наличие snapshot payload в `prechecks`/`checks`, затем возвращает summary/verification без business payload и без мутации runtime SQLite.
+- Archive lookup принимает `manifest_path`, `archive_path` и ровно один ключ `check_id` или `order_id`, перед lookup выполняет ту же verification и streaming-способом возвращает immutable check/precheck snapshot preview и related counts. Lookup не пишет archive tables, runtime tables, `local_event_log` или `pos_sync_outbox` и не раскрывает summary payloads outbox/local events.
 - Archive apply-plan читает manifest и archive JSONL, проверяет `version = pos_storage_archive_export_v1`, streaming-считает SHA-256 и rows по table, сверяет counts с manifest и текущим eligible runtime scope по `checks.business_date_local <= cutoff_business_date_local`, проверяет наличие snapshot payload в `prechecks` и `checks`.
-- Archive apply-plan всегда возвращает `result_mode = apply_blocked`, `destructive_apply_supported = false`, `runtime_rows_deleted = false`; blockers включают missing/invalid manifest, version mismatch, SHA mismatch, manifest/runtime counts mismatch, pending Edge -> Cloud outbox, open operational boundary, missing restore/read path и disabled destructive apply policy.
+- Archive apply-plan всегда возвращает `result_mode = apply_blocked`, `destructive_apply_supported = false`, `runtime_rows_deleted = false`; blockers включают missing/invalid manifest, version mismatch, SHA mismatch, manifest/runtime counts mismatch, pending Edge -> Cloud outbox, open operational boundary, missing runtime restore/apply path и disabled destructive apply policy.
 - Apply-plan не отключает FK/triggers, не пишет archive tables, не удаляет runtime rows и не запускает `VACUUM`/compaction.
 - Local event/outbox UI reads are bounded operational windows only; they are not cleanup/archive mechanisms and do not remove sync data.
 
 Не реализовано сейчас:
 
 - archive tables;
-- restore/read path для archived closed checks;
+- restore в active SQLite для archived closed checks;
 - physical delete of closed orders/checks/prechecks/payments/financial ledger rows;
 - destructive apply policy;
 - automatic VACUUM/compaction from HTTP API.

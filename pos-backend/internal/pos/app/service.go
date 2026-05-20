@@ -95,6 +95,8 @@ type RetentionDryRunCommand = appstorage.RetentionDryRunCommand
 type ArchiveExportPlanCommand = appstorage.ArchiveExportPlanCommand
 type ArchiveExportCommand = appstorage.ArchiveExportCommand
 type ArchiveApplyPlanCommand = appstorage.ArchiveApplyPlanCommand
+type ArchiveReadPlanCommand = appstorage.ArchiveReadPlanCommand
+type ArchiveLookupCommand = appstorage.ArchiveLookupCommand
 
 // MasterDataBackupRequest содержит безопасные metadata для backup-before-data-load.
 type MasterDataBackupRequest = appmastersync.BackupRequest
@@ -644,6 +646,14 @@ func (s *Service) ExportStorageArchive(ctx context.Context, cmd ArchiveExportCom
 
 func (s *Service) BuildStorageArchiveApplyPlan(ctx context.Context, cmd ArchiveApplyPlanCommand) (domain.StorageArchiveApplyPlan, error) {
 	return s.storage.BuildArchiveApplyPlan(ctx, cmd)
+}
+
+func (s *Service) BuildStorageArchiveReadPlan(ctx context.Context, cmd ArchiveReadPlanCommand) (domain.StorageArchiveReadPlan, error) {
+	return s.storage.BuildArchiveReadPlan(ctx, cmd)
+}
+
+func (s *Service) LookupStorageArchivePreview(ctx context.Context, cmd ArchiveLookupCommand) (domain.StorageArchiveLookupPreview, error) {
+	return s.storage.LookupArchivePreview(ctx, cmd)
 }
 
 func syncExchangeStreams() []domain.MasterDataStream {

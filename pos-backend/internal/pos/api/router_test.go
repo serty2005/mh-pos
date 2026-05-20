@@ -1072,9 +1072,87 @@ func TestStorageArchiveApplyPlanAPIRequiresSyncViewAndReturnsBlockedPlan(t *test
 		t.Fatalf("unexpected archive apply-plan response: %+v", result)
 	}
 	if !apiContainsString(result.BlockReasons, "destructive_apply_not_enabled") ||
-		!apiContainsString(result.BlockReasons, "restore_read_path_missing") ||
+		!apiContainsString(result.BlockReasons, "runtime_restore_apply_path_missing") ||
 		!apiContainsString(result.BlockReasons, "pending_edge_to_cloud_outbox") {
 		t.Fatalf("expected blocked-by-default apply-plan reasons, got %+v", result.BlockReasons)
+	}
+}
+
+func TestStorageArchiveReadPlanAndLookupAPIRequireSyncView(t *testing.T) {
+	f := newAPIFixture(t)
+	order := f.createOrderWithLine(t)
+	f.openCashSession(t)
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cashier := f.employee
+	cashierSession := f.session
+	f.useManagerOperator(t)
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.edgeMeta(),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "api archive read fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := f.employee
+	managerSession := f.session
+
+	readBody := struct {
+		ArchivePath  string `json:"archive_path"`
+		ManifestPath string `json:"manifest_path"`
+	}{ArchivePath: exported.ArchivePath, ManifestPath: exported.ManifestPath}
+	rawReadBody, err := json.Marshal(readBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookupBody := struct {
+		ArchivePath  string `json:"archive_path"`
+		ManifestPath string `json:"manifest_path"`
+		CheckID      string `json:"check_id"`
+	}{ArchivePath: exported.ArchivePath, ManifestPath: exported.ManifestPath, CheckID: check.ID}
+	rawLookupBody, err := json.Marshal(lookupBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f.employee = cashier
+	f.session = cashierSession
+	rr := f.postJSON(t, "/api/v1/storage/archive/read-plan", string(rawReadBody))
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cashier archive read-plan, got %d: %s", rr.Code, rr.Body.String())
+	}
+	rr = f.postJSON(t, "/api/v1/storage/archive/lookup", string(rawLookupBody))
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cashier archive lookup, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	f.employee = manager
+	f.session = managerSession
+	rr = f.postJSON(t, "/api/v1/storage/archive/read-plan", string(rawReadBody))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for manager archive read-plan, got %d: %s", rr.Code, rr.Body.String())
+	}
+	readPlan := decodeAPIResponse[domain.StorageArchiveReadPlan](t, rr)
+	if readPlan.Blocked || readPlan.ResultMode != "read_plan_only" || readPlan.ArchiveID != exported.ArchiveID {
+		t.Fatalf("unexpected archive read-plan API response: %+v", readPlan)
+	}
+	rr = f.postJSON(t, "/api/v1/storage/archive/lookup", string(rawLookupBody))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for manager archive lookup, got %d: %s", rr.Code, rr.Body.String())
+	}
+	lookup := decodeAPIResponse[domain.StorageArchiveLookupPreview](t, rr)
+	if lookup.Blocked || !lookup.Lookup.Found || lookup.Check == nil || lookup.Precheck == nil {
+		t.Fatalf("unexpected archive lookup API response: %+v", lookup)
 	}
 }
 

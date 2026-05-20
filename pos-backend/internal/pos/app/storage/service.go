@@ -70,6 +70,22 @@ type ArchiveApplyPlanCommand struct {
 	Mode                    string `json:"mode"`
 }
 
+// ArchiveReadPlanCommand проверяет archive artifact без восстановления или изменения runtime rows.
+type ArchiveReadPlanCommand struct {
+	shared.CommandMeta
+	ManifestPath string `json:"manifest_path"`
+	ArchivePath  string `json:"archive_path"`
+}
+
+// ArchiveLookupCommand ищет один archived check/order и возвращает только immutable preview.
+type ArchiveLookupCommand struct {
+	shared.CommandMeta
+	ManifestPath string `json:"manifest_path"`
+	ArchivePath  string `json:"archive_path"`
+	CheckID      string `json:"check_id"`
+	OrderID      string `json:"order_id"`
+}
+
 // Options задает runtime настройки storage lifecycle service.
 type Options struct {
 	ArchiveDir string
@@ -228,7 +244,7 @@ func (s *Service) BuildArchiveApplyPlan(ctx context.Context, cmd ArchiveApplyPla
 		Blocked:                   true,
 		BlockReasons: []string{
 			"destructive_apply_not_enabled",
-			"restore_read_path_missing",
+			"runtime_restore_apply_path_missing",
 		},
 		Protected: domainstorage.ArchivePlanProtectedFlags{
 			FinancialLedgerProtected:    true,
@@ -280,6 +296,90 @@ func (s *Service) BuildArchiveApplyPlan(ctx context.Context, cmd ArchiveApplyPla
 	if cutoffOK && verification.ArchiveExists && !archiveCountsEqual(result.EligibleCounts, verification.Counts) {
 		result.BlockReasons = appendUnique(result.BlockReasons, "archive_counts_mismatch")
 	}
+	return result, nil
+}
+
+// BuildArchiveReadPlan проверяет archive manifest/JSONL как non-destructive read preview foundation.
+func (s *Service) BuildArchiveReadPlan(ctx context.Context, cmd ArchiveReadPlanCommand) (domainstorage.ArchiveReadPlan, error) {
+	if _, err := shared.EnsureOperatorSession(ctx, s.auth, cmd.CommandMeta, string(shared.PermissionSyncView)); err != nil {
+		return domainstorage.ArchiveReadPlan{}, err
+	}
+	verification, manifest, reasons := s.verifyArchive(cmd.ArchivePath, cmd.ManifestPath)
+	result := domainstorage.ArchiveReadPlan{
+		GeneratedAt:    s.clock.Now(),
+		ResultMode:     "read_plan_only",
+		Blocked:        len(reasons) > 0,
+		BlockReasons:   reasons,
+		ArchiveSHA256:  verification.ArchiveSHA256,
+		ComputedSHA256: verification.ComputedSHA256,
+		Counts:         verification.Counts,
+		Verification:   verification,
+	}
+	if manifest != nil {
+		result.ArchiveID = manifest.ArchiveID
+		result.CutoffBusinessDateLocal = manifest.CutoffBusinessDateLocal
+		result.ArchiveSHA256 = manifest.SHA256
+		result.BusinessDateRange = manifest.BusinessDateRange
+		result.Tables = manifest.Tables
+	}
+	return result, nil
+}
+
+// LookupArchivePreview ищет archived check/order streaming-способом и не мутирует runtime SQLite.
+func (s *Service) LookupArchivePreview(ctx context.Context, cmd ArchiveLookupCommand) (domainstorage.ArchiveLookupPreview, error) {
+	if _, err := shared.EnsureOperatorSession(ctx, s.auth, cmd.CommandMeta, string(shared.PermissionSyncView)); err != nil {
+		return domainstorage.ArchiveLookupPreview{}, err
+	}
+	checkID := strings.TrimSpace(cmd.CheckID)
+	orderID := strings.TrimSpace(cmd.OrderID)
+	if (checkID == "" && orderID == "") || (checkID != "" && orderID != "") {
+		return domainstorage.ArchiveLookupPreview{}, fmt.Errorf("%w: exactly one of check_id or order_id is required", domain.ErrInvalid)
+	}
+
+	verification, manifest, reasons := s.verifyArchive(cmd.ArchivePath, cmd.ManifestPath)
+	result := domainstorage.ArchiveLookupPreview{
+		GeneratedAt:  s.clock.Now(),
+		ResultMode:   "archive_lookup_preview",
+		Blocked:      len(reasons) > 0,
+		BlockReasons: reasons,
+		Lookup: domainstorage.ArchiveLookupKey{
+			CheckID: checkID,
+			OrderID: orderID,
+		},
+		Verification: verification,
+	}
+	if manifest != nil {
+		result.ArchiveID = manifest.ArchiveID
+	}
+	if len(reasons) > 0 {
+		return result, nil
+	}
+
+	identity, err := findArchiveLookupIdentity(verification.ArchivePath, checkID, orderID)
+	if err != nil {
+		result.Blocked = true
+		result.BlockReasons = appendUnique(result.BlockReasons, "archive_unreadable")
+		return result, nil
+	}
+	if !identity.found {
+		result.Blocked = true
+		result.BlockReasons = appendUnique(result.BlockReasons, "archive_record_not_found")
+		result.Lookup.Found = false
+		return result, nil
+	}
+
+	preview, err := collectArchiveLookupPreview(verification.ArchivePath, identity)
+	if err != nil {
+		result.Blocked = true
+		result.BlockReasons = appendUnique(result.BlockReasons, "archive_unreadable")
+		return result, nil
+	}
+	result.Lookup.CheckID = identity.checkID
+	result.Lookup.OrderID = identity.orderID
+	result.Lookup.Found = true
+	result.Check = preview.Check
+	result.Precheck = preview.Precheck
+	result.RelatedCounts = preview.RelatedCounts
 	return result, nil
 }
 
@@ -341,6 +441,7 @@ func (s *Service) verifyArchive(archivePath, manifestPath string) (domainstorage
 	}
 	if !s.archivePathAllowed(verification.ManifestPath) {
 		reasons = appendUnique(reasons, "archive_manifest_outside_archive_dir")
+		reasons = appendUnique(reasons, "archive_path_outside_archive_dir")
 		return verification, nil, reasons
 	}
 	manifestFile, err := os.Open(verification.ManifestPath)
@@ -621,6 +722,142 @@ func archiveCountsTotalRows(counts domainstorage.ArchiveExportCounts) int {
 		counts.FinancialOperationItems +
 		counts.LocalEventReferences +
 		counts.OutboxMessageReferences
+}
+
+type archiveLookupIdentity struct {
+	found   bool
+	checkID string
+	orderID string
+}
+
+type archiveLookupCollected struct {
+	Check         *domainstorage.ArchiveLookupDocument
+	Precheck      *domainstorage.ArchiveLookupDocument
+	RelatedCounts domainstorage.ArchiveLookupRelatedCounts
+}
+
+func findArchiveLookupIdentity(path, checkID, orderID string) (archiveLookupIdentity, error) {
+	var identity archiveLookupIdentity
+	err := scanArchiveJSONL(path, func(row domainstorage.ArchiveExportRow) (bool, error) {
+		if row.Table != "checks" {
+			return false, nil
+		}
+		rowCheckID := archiveStringValue(row.Row, "id")
+		rowOrderID := archiveStringValue(row.Row, "order_id")
+		if checkID != "" && rowCheckID == checkID {
+			identity = archiveLookupIdentity{found: true, checkID: rowCheckID, orderID: rowOrderID}
+			return true, nil
+		}
+		if orderID != "" && rowOrderID == orderID {
+			identity = archiveLookupIdentity{found: true, checkID: rowCheckID, orderID: rowOrderID}
+			return true, nil
+		}
+		return false, nil
+	})
+	return identity, err
+}
+
+func collectArchiveLookupPreview(path string, identity archiveLookupIdentity) (archiveLookupCollected, error) {
+	var out archiveLookupCollected
+	precheckIDs := map[string]struct{}{}
+	operationIDs := map[string]struct{}{}
+	err := scanArchiveJSONL(path, func(row domainstorage.ArchiveExportRow) (bool, error) {
+		switch row.Table {
+		case "order_lines":
+			if archiveStringValue(row.Row, "order_id") == identity.orderID {
+				out.RelatedCounts.OrderLines++
+			}
+		case "prechecks":
+			if archiveStringValue(row.Row, "order_id") == identity.orderID {
+				precheckID := archiveStringValue(row.Row, "id")
+				precheckIDs[precheckID] = struct{}{}
+				out.Precheck = &domainstorage.ArchiveLookupDocument{
+					ID:       precheckID,
+					Snapshot: archiveSnapshotValue(row.Row),
+				}
+			}
+		case "payments":
+			if _, ok := precheckIDs[archiveStringValue(row.Row, "precheck_id")]; ok {
+				out.RelatedCounts.Payments++
+			}
+		case "checks":
+			if archiveStringValue(row.Row, "id") == identity.checkID {
+				out.Check = &domainstorage.ArchiveLookupDocument{
+					ID:                identity.checkID,
+					BusinessDateLocal: archiveStringValue(row.Row, "business_date_local"),
+					Snapshot:          archiveSnapshotValue(row.Row),
+				}
+			}
+		case "financial_operations":
+			if archiveStringValue(row.Row, "check_id") == identity.checkID {
+				out.RelatedCounts.FinancialOperations++
+				operationIDs[archiveStringValue(row.Row, "id")] = struct{}{}
+			}
+		case "financial_operation_items":
+			if _, ok := operationIDs[archiveStringValue(row.Row, "operation_id")]; ok {
+				out.RelatedCounts.FinancialOperationItems++
+			}
+		}
+		return false, nil
+	})
+	return out, err
+}
+
+func scanArchiveJSONL(path string, visit func(domainstorage.ArchiveExportRow) (bool, error)) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(strings.TrimSpace(string(line))) == 0 {
+			continue
+		}
+		var row domainstorage.ArchiveExportRow
+		if err := json.Unmarshal(line, &row); err != nil {
+			return err
+		}
+		stop, err := visit(row)
+		if err != nil {
+			return err
+		}
+		if stop {
+			return nil
+		}
+	}
+	return scanner.Err()
+}
+
+func archiveStringValue(row map[string]any, key string) string {
+	raw, ok := row[key]
+	if !ok || raw == nil {
+		return ""
+	}
+	switch v := raw.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case json.Number:
+		return v.String()
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+func archiveSnapshotValue(row map[string]any) map[string]any {
+	raw := row["snapshot"]
+	switch v := raw.(type) {
+	case map[string]any:
+		return v
+	case string:
+		var parsed map[string]any
+		if err := json.Unmarshal([]byte(v), &parsed); err == nil && parsed != nil {
+			return parsed
+		}
+	}
+	return map[string]any{}
 }
 
 func appendUnique(values []string, next string) []string {
