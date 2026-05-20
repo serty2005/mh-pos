@@ -528,9 +528,18 @@ def generate_edge_sync_events(cloud_client, summary, seed_plan=None, batches=1, 
     for batch in range(1, max(1, int(batches)) + 1):
         batch_plan = json.loads(json.dumps(plan))
         suffix = command_suffix()
+        sku_rewrite_map = {}
         for item in batch_plan.get("catalog", []):
-            item["sku"] = f"{item['sku']}-{batch}-{suffix}"
+            original_sku = item["sku"]
+            rewritten_sku = f"{original_sku}-{batch}-{suffix}"
+            item["sku"] = rewritten_sku
             item["name"] = f"{item['name']} {batch}-{suffix}"
+            sku_rewrite_map[original_sku] = rewritten_sku
+        for group in batch_plan.get("modifier_groups", []):
+            rewritten_binds = []
+            for sku in group.get("bind_to_sku", []):
+                rewritten_binds.append(sku_rewrite_map.get(sku, sku))
+            group["bind_to_sku"] = rewritten_binds
         generated = seed_reference_data(
             cloud_client,
             summary["restaurant_id"],

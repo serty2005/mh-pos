@@ -178,6 +178,7 @@ class SeedWorkflowTest(unittest.TestCase):
 
         self.assertEqual(len(events), 2)
         self.assertTrue(all(event["publication_id"].startswith("publication-") for event in events))
+        self.assertTrue(all(event["modifier_binding_ids"] for event in events))
 
 if __name__ == "__main__":
     unittest.main()
