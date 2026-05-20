@@ -29,7 +29,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Reprint final check from immutable snapshot.
 - Append-only financial operation ledger для full/partial cancellation и full/partial refund: `financial_operations`, `financial_operation_items`, `CancellationRecorded`, `RefundRecorded`.
 - Bounded read закрытых заказов: `GET /api/v1/orders/closed` поддерживает безопасный default/max limit, `offset`, фильтры по business date/range, shift, device и check, стабильную сортировку newest-first и SQLite indexes.
-- Read surface ledger по чеку: `GET /api/v1/checks/{id}/financial-operations` возвращает append-only operations/items для closed-order detail под `pos.check.view`.
+- Bounded read surfaces ledger: `GET /api/v1/checks/{id}/financial-operations?limit=&offset=` возвращает append-only operations/items для closed-order detail под `pos.check.view`; `GET /api/v1/financial-operations?business_date_from=&business_date_to=&operation_type=&shift_id=&original_shift_id=&check_id=&limit=&offset=` добавляет backend-owned local reporting filter без мутации finalized документов.
 - Bounded activity/sync reads: `GET /api/v1/sync/outbox` и `GET /api/v1/sync/local-events` имеют backend default bounded limit, cap oversized requests and are used by POS UI with `limit=5`.
 - Основа POS Edge local storage lifecycle: `GET /api/v1/storage/status` и `POST /api/v1/storage/retention/dry-run` дают read-only оценку размера SQLite, объемов closed orders/checks/prechecks/payments/financial operations, business-date окна и outbox blocking state. Retention mode сейчас `dry_run_only`; физическое удаление не выполняется.
 - Export-only archive readiness для closed orders: `POST /api/v1/storage/archive/export` создает typed JSONL archive и JSON manifest с cutoff, counts, business-date range, SHA-256, protected flags и block reasons для будущего destructive apply, не удаляя и не мутируя source SQLite rows.
@@ -51,7 +51,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - POS Edge Cloud -> Edge ingest for catalog folders/tags/item tags, services, modifier groups/options/menu item links and `pricing_policy` tax/service-charge/automatic discount-surcharge reference rows.
 - POS Edge outbox/local event foundation for cashier operational events.
 - `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud financial operation events. `PaymentRefunded` and `CheckRefunded` remain accepted legacy operational event types for older payloads.
-- Cloud receiver validates current `RefundRecorded`/`CancellationRecorded` payload fields, stores raw/journal rows idempotently and updates event-type stats plus coarse shift finance refund counters for refunds; detailed financial operation projection remains separate from cashier runtime.
+- Cloud receiver validates current `RefundRecorded`/`CancellationRecorded` payload fields, stores raw/journal rows idempotently, updates event-type stats plus coarse shift finance refund counters for refunds and maintains detailed `cloud_projection_financial_operations` for current financial operations. Legacy `PaymentRefunded`/`CheckRefunded` remain inbound-compatible but do not populate the detailed operation projection.
 - Python 3 local stack smoke runner: отдельные suites `health`, `license_pairing`, `cloud_to_edge_masterdata`, `pos_cashier_runtime`, `pos_refund_after_shift_close`. Runtime suites проверяют Cloud seed -> POS Edge sync -> PIN login -> personal shift -> cash shift -> hall/table/menu reads -> order -> regular line -> modifier line при наличии seed data -> service line при наличии seed data -> precheck -> payment by `precheck_id` -> final check -> bounded closed orders -> get/reprint check -> cancellation ledger в той же смене -> financial operations read -> storage status, а также отдельный refund после закрытия исходных cash/personal shifts с проверкой ledger и closed-order reads.
 - DDD context map exists in `docs/architecture/DDD-CONTEXT-MAP.md`.
 
@@ -113,7 +113,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - реализовать `stock_ledger` with `unit_cost_minor`, `total_cost_minor`, `costing_status` and retro recalculation jobs;
   - реализовать stop-list как единственный механизм блокировки продаж; stock balance остается аналитическим и может быть отрицательным.
 - Cancellation/refund/reprint hardening:
-  - backend ledger, immutable snapshots, no-over-cancel/no-over-refund/no-over-line-amount tests, current `CancellationRecorded`/`RefundRecorded` sync contracts, idempotent Cloud raw/journal receipt checks and coarse Cloud refund projection реализованы;
+  - backend ledger, immutable snapshots, no-over-cancel/no-over-refund/no-over-line-amount tests, current `CancellationRecorded`/`RefundRecorded` sync contracts, idempotent Cloud raw/journal receipt checks, coarse Cloud refund counters and detailed Cloud financial operation projection реализованы;
   - cashier UI full whole-check и partial `order_line`/quantity cancellation/refund через ledger endpoints реализован с выбором inventory disposition; compatibility refund по captured payment оставлен отдельным fallback;
   - выполнено: `scripts/run-stack-smoke.py --suite all` включает `pos_cashier_runtime` для cancellation ledger в той же смене, check reprint, bounded closed orders и storage status sanity check;
   - выполнено: отдельная suite `pos_refund_after_shift_close` закрывает исходные personal/cash shifts, открывает новую cash-session boundary для refund, пишет full refund через `/checks/{id}/refunds` и проверяет ledger/closed-order reads;
@@ -130,7 +130,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Расширять OpenAPI smoke contract, stack smoke suites и demo seed dataset вместе с новыми Cloud-owned справочниками, publication streams и POS read flows, чтобы ручной наглядный тест не отставал от runtime.
 - Сверка RBAC matrix с фактическим UI и backend permissions.
 - Проверка migration/backup behavior на старой SQLite DB.
-- Богатая financial operation ledger projection для отчетности, если raw/journal payload и текущих event counters недостаточно.
+- Публичный Cloud reporting API/UI поверх `cloud_projection_financial_operations`, если пилоту потребуется Cloud-side финансовая отчетность beyond service/repository layer.
 - Destructive apply/delete/compaction policy для больших локальных SQLite БД закрытых заказов поверх текущего status/dry-run/export-only foundation.
 
 ## После Пилота

@@ -631,8 +631,9 @@ export function getCheck(checkId: string) {
   return request(`/checks/${encodeURIComponent(checkId)}`, checkSchema);
 }
 
-export function listFinancialOperationsByCheck(checkId: string) {
-  return request(`/checks/${encodeURIComponent(checkId)}/financial-operations`, z.array(financialOperationSchema));
+export function listFinancialOperationsByCheck(checkId: string, limit = 50, offset = 0) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return request(`/checks/${encodeURIComponent(checkId)}/financial-operations?${params}`, z.array(financialOperationSchema));
 }
 
 export function reprintCheck(checkId: string) {

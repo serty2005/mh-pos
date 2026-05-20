@@ -177,6 +177,7 @@ type InventoryDisposition = financial.InventoryDisposition
 type FinancialOperationItemScope = financial.OperationItemScope
 type FinancialOperation = financial.Operation
 type FinancialOperationItem = financial.OperationItem
+type FinancialOperationListQuery = financial.OperationListQuery
 
 const (
 	FinancialOperationCancellation = financial.OperationCancellation

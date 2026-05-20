@@ -408,10 +408,14 @@ function Invoke-RuntimeSmoke {
 
   $outbox = Invoke-JsonGet "$edgeApi/sync/outbox?limit=50" -Headers $headers
   $localEvents = Invoke-JsonGet "$edgeApi/sync/local-events?limit=50" -Headers $headers
+  $refundLedger = Invoke-JsonGet "$edgeApi/checks/$($closedOrder.check.id)/financial-operations?limit=10&offset=0" -Headers $headers
+  $refundReport = Invoke-JsonGet "$edgeApi/financial-operations?operation_type=refund&check_id=$($closedOrder.check.id)&shift_id=$($refundShift.id)&limit=10&offset=0" -Headers $headers
 
   Assert-JsonContains $outbox $refund.id "Expected refund operation event in Edge outbox."
   Assert-JsonContains $outbox $cancellation.id "Expected cancellation operation event in Edge outbox."
   Assert-JsonContains $localEvents $order.id "Expected order events in Edge local event log."
+  Assert-JsonContains $refundLedger $refund.id "Expected refund operation in per-check ledger read."
+  Assert-JsonContains $refundReport $refund.id "Expected refund operation in filtered ledger report read."
 
   Write-Step "Closing refund shift and cash shift"
   Invoke-JsonPost "$edgeApi/cash-shifts/$($refundCashShift.id)/close" @{

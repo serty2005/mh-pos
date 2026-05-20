@@ -357,6 +357,8 @@ describe('api request helpers', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const url = String(fetchMock.mock.calls[0]?.[0]);
     expect(url).toContain('/checks/check-1/financial-operations');
+    expect(url).toContain('limit=50');
+    expect(url).toContain('offset=0');
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(init.method).toBeUndefined();
   });

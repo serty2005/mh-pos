@@ -271,11 +271,11 @@ Cancellation/refund sync behavior:
 - `CancellationRecorded` и `RefundRecorded` являются текущими Edge -> Cloud operational events для append-only financial operation ledger.
 - Whole-check и partial `order_line`/quantity cancellation/refund UI, а также compatibility payment refund пишут те же текущие ledger events: `CancellationRecorded` для cancellation и `RefundRecorded` для refund. Переданный UI `command_id` остается idempotency key; `inventory_disposition` и operation `items[]` остаются payload data и не являются stock movement event.
 - `PaymentRefunded` и `CheckRefunded` остаются валидируемыми legacy event types, но новый POS Edge refund flow пишет `RefundRecorded`.
-- Cloud receiver валидирует для текущих `CancellationRecorded`/`RefundRecorded` operation id, check id, original/current shift ids, amount, currency, business date, operation-level inventory disposition и immutable snapshot; затем сохраняет raw envelope/journal rows и обновляет event-type stats.
+- Cloud receiver валидирует для текущих `CancellationRecorded`/`RefundRecorded` operation id, edge operation id, check id, original/current shift ids, amount, currency, business date, operation-level inventory disposition и immutable snapshot; затем сохраняет raw envelope/journal rows, обновляет event-type stats и поддерживает detailed projection `cloud_projection_financial_operations`.
 - `GET /api/v1/sync/edge-events` реализовано сейчас как безопасный Cloud UI/API журнал receipt metadata: `restaurant_id`, `device_id`, `event_type`, aggregate metadata, timestamps и SHA-256 raw payload; raw payload в ответ не включается.
 - `cloud_edge_event_receipts.event_type` принимает весь текущий catalog и legacy inbound-only types, чтобы runtime schema не расходилась с Go validation contract.
 - Cloud shift finance foundation обновляет coarse refund counters from `RefundRecorded` (`checks_refunded_count`, `checks_refunded_total`) and legacy `PaymentRefunded`/`CheckRefunded` counters where such envelopes are received.
-- Shift finance projection не является полной ledger projection для cancellation/refund; detailed reporting by operation item scope, inventory disposition, approval and original shift must read stored raw/journal payloads until a dedicated financial operation projection exists.
+- Shift finance projection не является полной ledger projection для cancellation/refund; detailed reporting foundation теперь читает `cloud_projection_financial_operations` для current `CancellationRecorded`/`RefundRecorded`. Public Cloud reporting HTTP API/UI остается запланировано далее.
 - `GET /api/v1/orders/closed` pagination/filtering является POS local read API behavior; оно не меняет Edge -> Cloud event payloads или Cloud receiver contracts.
 - `GET /api/v1/storage/status`, `POST /api/v1/storage/retention/dry-run` и `POST /api/v1/storage/archive/export` являются локальными POS operational lifecycle API. Они не создают sync envelopes; dry-run и export-only manifest только сообщают non-sent `edge_to_cloud` outbox rows как blocking state для будущей destructive retention/archive policy.
 - `GET /api/v1/sync/outbox`, `GET /api/v1/sync/local-events` и POS UI activity/sync drawer читают только bounded local windows; они не являются sync cleanup или archive contract.
@@ -396,7 +396,7 @@ Cancellation/refund sync behavior:
 - KDS/Production events as Edge business facts, not Edge stock moves;
 - Cloud-generated inventory stock documents/moves;
 - PSP/fiscal integration events;
-- richer financial operation reporting projections and optional ClickHouse acceleration.
+- public Cloud financial operation reporting API/UI over current projection and optional ClickHouse acceleration.
 
 ## Pricing policy stream completeness
 

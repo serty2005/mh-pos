@@ -122,7 +122,7 @@ INSERT INTO cloud_operational_events(
 	); err != nil {
 		return contracts.EventAck{}, err
 	}
-	if err := r.applyEventProjections(ctx, tx, receipt); err != nil {
+	if err := r.applyEventProjections(ctx, tx, receipt, ack.CloudReceiptID); err != nil {
 		return contracts.EventAck{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -173,6 +173,88 @@ LIMIT $4`, filter.RestaurantID, filter.DeviceID, filter.EventType, limit)
 			return nil, err
 		}
 		out = append(out, view)
+	}
+	return out, rows.Err()
+}
+
+// ListFinancialOperations читает detailed financial operation projection без raw payload.
+func (r *Repository) ListFinancialOperations(ctx context.Context, filter app.FinancialOperationProjectionFilter) ([]contracts.FinancialOperationProjection, error) {
+	limit := filter.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT operation_id,edge_operation_id,event_id,receipt_id,restaurant_id,device_id,
+       node_device_id,client_device_id,actor_employee_id,session_id,
+       shift_id,original_shift_id,check_id,precheck_id,operation_type,operation_kind,
+       amount,currency,business_date_local,inventory_disposition,reason,
+       COALESCE(created_by_employee_id,''),approved_by_employee_id,snapshot_json,
+       operation_created_at,occurred_at,cloud_received_at,raw_payload_sha256_hex
+FROM cloud_projection_financial_operations
+WHERE ($1 = '' OR restaurant_id = $1)
+  AND ($2 = '' OR business_date_local >= $2)
+  AND ($3 = '' OR business_date_local <= $3)
+  AND ($4 = '' OR operation_type = $4)
+  AND ($5 = '' OR shift_id = $5)
+  AND ($6 = '' OR original_shift_id = $6)
+  AND ($7 = '' OR check_id = $7)
+ORDER BY operation_created_at DESC, operation_id DESC
+LIMIT $8 OFFSET $9`,
+		filter.RestaurantID,
+		filter.BusinessDateFrom,
+		filter.BusinessDateTo,
+		filter.OperationType,
+		filter.ShiftID,
+		filter.OriginalShiftID,
+		filter.CheckID,
+		limit,
+		offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]contracts.FinancialOperationProjection, 0, limit)
+	for rows.Next() {
+		var v contracts.FinancialOperationProjection
+		if err := rows.Scan(
+			&v.OperationID,
+			&v.EdgeOperationID,
+			&v.EventID,
+			&v.ReceiptID,
+			&v.RestaurantID,
+			&v.DeviceID,
+			&v.NodeDeviceID,
+			&v.ClientDeviceID,
+			&v.ActorEmployeeID,
+			&v.SessionID,
+			&v.ShiftID,
+			&v.OriginalShiftID,
+			&v.CheckID,
+			&v.PrecheckID,
+			&v.OperationType,
+			&v.OperationKind,
+			&v.Amount,
+			&v.Currency,
+			&v.BusinessDateLocal,
+			&v.InventoryDisposition,
+			&v.Reason,
+			&v.CreatedByEmployeeID,
+			&v.ApprovedByEmployeeID,
+			&v.Snapshot,
+			&v.OperationCreatedAt,
+			&v.OccurredAt,
+			&v.CloudReceivedAt,
+			&v.RawPayloadSHA256Hex,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
 	}
 	return out, rows.Err()
 }
@@ -284,7 +366,7 @@ WHERE node_device_id = $1`, strings.TrimSpace(nodeDeviceID)).Scan(&storedRestaur
 	return nil
 }
 
-func (r *Repository) applyEventProjections(ctx context.Context, tx pgx.Tx, receipt app.EdgeEventReceipt) error {
+func (r *Repository) applyEventProjections(ctx context.Context, tx pgx.Tx, receipt app.EdgeEventReceipt, receiptID string) error {
 	if _, err := tx.Exec(ctx, `
 INSERT INTO cloud_projection_event_type_stats(
   restaurant_id,device_id,event_type,event_count,first_occurred_at,last_occurred_at,last_cloud_received_at,last_event_id,last_command_id,updated_at
@@ -305,6 +387,9 @@ ON CONFLICT (restaurant_id,device_id,event_type) DO UPDATE SET
 		receipt.Envelope.EventID,
 		receipt.Envelope.CommandID,
 	); err != nil {
+		return err
+	}
+	if err := applyFinancialOperationProjection(ctx, tx, receipt, receiptID); err != nil {
 		return err
 	}
 	if receipt.Envelope.ShiftID == nil || strings.TrimSpace(*receipt.Envelope.ShiftID) == "" {
@@ -345,6 +430,64 @@ ON CONFLICT (restaurant_id,device_id,event_type) DO UPDATE SET
 	default:
 		return nil
 	}
+}
+
+func applyFinancialOperationProjection(ctx context.Context, tx pgx.Tx, receipt app.EdgeEventReceipt, receiptID string) error {
+	if receipt.Envelope.EventType != contracts.EventCancellationRecorded && receipt.Envelope.EventType != contracts.EventRefundRecorded {
+		return nil
+	}
+	var payload contracts.Payload[contracts.FinancialOperationRecorded]
+	if err := json.Unmarshal(receipt.Envelope.Payload, &payload); err != nil {
+		return fmt.Errorf("%w: invalid financial operation payload", contracts.ErrInvalidEnvelope)
+	}
+	data := payload.Data
+	_, err := tx.Exec(ctx, `
+INSERT INTO cloud_projection_financial_operations(
+  operation_id,edge_operation_id,event_id,receipt_id,restaurant_id,device_id,
+  node_device_id,client_device_id,actor_employee_id,session_id,
+  shift_id,original_shift_id,check_id,precheck_id,operation_type,operation_kind,
+  amount,currency,business_date_local,inventory_disposition,reason,
+  created_by_employee_id,approved_by_employee_id,snapshot_json,
+  operation_created_at,occurred_at,cloud_received_at,raw_payload_sha256_hex,created_at
+) VALUES (
+  $1,$2,$3,$4,$5,$6,
+  $7,$8,$9,$10,
+  $11,$12,$13,$14,$15,$16,
+  $17,$18,$19,$20,$21,
+  $22,$23,$24::jsonb,
+  $25,$26,$27,$28,$27
+)
+ON CONFLICT (operation_id) DO NOTHING`,
+		strings.TrimSpace(data.ID),
+		strings.TrimSpace(data.EdgeOperationID),
+		strings.TrimSpace(receipt.Envelope.EventID),
+		receiptID,
+		strings.TrimSpace(data.RestaurantID),
+		strings.TrimSpace(data.DeviceID),
+		nullableText(receipt.Envelope.NodeDeviceID),
+		nullableStringPtr(receipt.Envelope.ClientDeviceID),
+		nullableStringPtr(receipt.Envelope.ActorEmployeeID),
+		nullableStringPtr(receipt.Envelope.SessionID),
+		strings.TrimSpace(data.ShiftID),
+		strings.TrimSpace(data.OriginalShiftID),
+		strings.TrimSpace(data.CheckID),
+		strings.TrimSpace(data.PrecheckID),
+		strings.TrimSpace(data.OperationType),
+		strings.TrimSpace(data.OperationKind),
+		data.Amount,
+		strings.TrimSpace(data.Currency),
+		strings.TrimSpace(data.BusinessDateLocal),
+		strings.TrimSpace(data.InventoryDisposition),
+		strings.TrimSpace(data.Reason),
+		nullableText(data.CreatedByEmployeeID),
+		nullableStringPtr(data.ApprovedByEmployeeID),
+		string(data.Snapshot),
+		data.CreatedAt,
+		receipt.Envelope.OccurredAt,
+		receipt.CloudReceivedAt,
+		receipt.RawPayloadSHA256,
+	)
+	return err
 }
 
 func upsertShiftFinanceProjection(ctx context.Context, tx pgx.Tx, receipt app.EdgeEventReceipt, shiftID string, paymentCount, paymentTotal, paymentRefundCount, paymentRefundTotal, checkCount, checkTotal, checkRefundCount, checkRefundTotal int64) error {
@@ -434,6 +577,13 @@ func nullableText(v string) any {
 		return nil
 	}
 	return strings.TrimSpace(v)
+}
+
+func nullableStringPtr(v *string) any {
+	if v == nil {
+		return nil
+	}
+	return nullableText(*v)
 }
 
 func scanAck(row pgx.Row) (contracts.EventAck, error) {

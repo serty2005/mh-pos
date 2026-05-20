@@ -72,6 +72,8 @@
 - `POST /api/v1/checks/{id}/reprint`
 - `POST /api/v1/checks/{id}/cancellations`
 - `POST /api/v1/checks/{id}/refunds`
+- `GET /api/v1/checks/{id}/financial-operations`
+- `GET /api/v1/financial-operations`
 - `POST /api/v1/payments/{id}/refund`
 - `POST /api/v1/cash-shifts/open`
 - `POST /api/v1/cash-shifts/{id}/close`
@@ -140,7 +142,8 @@ Read contract закрытых заказов:
 - Default `limit` = `50`, max `limit` = `100`; отрицательный `offset` и невалидные business date фильтры отклоняются.
 - Сортировка stable newest-first: close timestamp, затем `id`.
 - API без фильтра возвращает только bounded latest page, а не всю историю.
-- Реализовано сейчас: `GET /api/v1/checks/{id}/financial-operations` возвращает append-only ledger operations/items по конкретному final check под `pos.check.view`; это read surface для closed-order detail, а не агрегированная отчетность.
+- Реализовано сейчас: `GET /api/v1/checks/{id}/financial-operations` принимает `limit`/`offset` и возвращает append-only ledger operations/items по конкретному final check под `pos.check.view`.
+- Реализовано сейчас: `GET /api/v1/financial-operations` принимает `business_date_from`, `business_date_to`, `operation_type`, `shift_id`, `original_shift_id`, `check_id`, `limit`, `offset`; это backend-owned локальная отчетная выдача ledger, не UI total calculator.
 
 Operational activity/sync read contract:
 
@@ -224,7 +227,7 @@ Pricing contract:
 - Operation snapshot embeds immutable check snapshot and operation items.
 - Inventory disposition is explicit: `no_stock_effect`, `return_to_stock`, `write_off_waste`, `manual_review`; financial operation does not mutate stock tables.
 - Current POS Edge events are `CancellationRecorded` and `RefundRecorded`. New refund runtime does not emit legacy `PaymentRefunded`/`CheckRefunded`; those names remain Cloud-accepted legacy sync event types only.
-- Cloud receiver validates current financial operation payload fields, stores raw/journal envelopes and event-type stats, but Cloud does not implement a full financial ledger projection.
+- Cloud receiver validates current financial operation payload fields, stores raw/journal envelopes and event-type stats, and maintains detailed `cloud_projection_financial_operations` for current `CancellationRecorded`/`RefundRecorded`; public Cloud reporting HTTP/UI remains planned next.
 
 Не реализовано сейчас:
 

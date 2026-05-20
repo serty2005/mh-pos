@@ -252,13 +252,16 @@ go test ./...
 Реализовано сейчас storage:
 - `cloud_projection_event_type_stats`
 - `cloud_projection_shift_finance`
+- `cloud_projection_financial_operations`
 - `cloud_master_data_packages`
 
 Реализовано сейчас financial operation sync behavior:
 - `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud financial operation events.
 - `PaymentRefunded` and `CheckRefunded` remain legacy inbound-only event types for older Edge payloads.
 - Cloud stores raw payloads and operational journal rows idempotently for current and legacy events.
-- `cloud_projection_shift_finance` tracks coarse refund counters/totals from `RefundRecorded` and legacy refund events; cancellation is kept in raw/journal/event-type stats until a dedicated ledger projection exists.
+- `cloud_projection_shift_finance` tracks coarse refund counters/totals from `RefundRecorded` and legacy refund events.
+- `cloud_projection_financial_operations` stores detailed current `CancellationRecorded`/`RefundRecorded` operation projection with operation/check/shift/date/type/disposition/reason/snapshot metadata; legacy refund events do not populate this primary ledger projection.
+- Public Cloud reporting HTTP/UI for this projection is planned next and is not part of current sync receiver API.
 
 ## Pricing policy publication
 

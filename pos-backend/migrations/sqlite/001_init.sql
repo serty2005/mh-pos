@@ -1629,6 +1629,27 @@ CREATE INDEX IF NOT EXISTS checks_business_date_closed_at ON checks(business_dat
 -- sqlite:repair-sql
 CREATE INDEX IF NOT EXISTS checks_order_id_closed_at ON checks(order_id, closed_at);
 
+-- sqlite:repair-sql
+CREATE INDEX IF NOT EXISTS orders_closed_restaurant_created_at ON orders(restaurant_id, status, created_at, id);
+
+-- sqlite:repair-sql
+CREATE INDEX IF NOT EXISTS payments_business_date_shift_created_at ON payments(business_date_local, shift_id, created_at, id);
+
+-- sqlite:repair-sql
+CREATE INDEX IF NOT EXISTS financial_operations_restaurant_business_date_type_created_at ON financial_operations(restaurant_id, business_date_local, operation_type, created_at, id);
+
+-- sqlite:repair-sql
+CREATE INDEX IF NOT EXISTS financial_operations_original_shift_created_at ON financial_operations(original_shift_id, created_at, id);
+
+-- sqlite:repair-sql
+CREATE INDEX IF NOT EXISTS financial_operations_check_created_at ON financial_operations(check_id, created_at, id);
+
+-- sqlite:repair-sql
+CREATE INDEX IF NOT EXISTS local_event_log_occurred_at ON local_event_log(occurred_at, id);
+
+-- sqlite:repair-sql
+CREATE INDEX IF NOT EXISTS pos_sync_outbox_created_at ON pos_sync_outbox(created_at, id);
+
 -- === 003_pricing_policy_sync_foundation.sql ===
 -- sqlite:repair-column tax_profiles cloud_version
 ALTER TABLE tax_profiles ADD COLUMN cloud_version INTEGER NOT NULL DEFAULT 0 CHECK (cloud_version >= 0);

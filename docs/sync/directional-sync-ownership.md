@@ -81,11 +81,11 @@ Edge Outbox
 Реализовано сейчас:
 
 - `CancellationRecorded` и `RefundRecorded` принимаются Cloud receiver и сохраняются как operational events;
-- Cloud receiver validates current financial operation payload fields: operation id, check id, original/current shift ids, amount, currency, business date, operation-level inventory disposition and immutable snapshot;
+- Cloud receiver validates current financial operation payload fields: operation id, edge operation id, check id, original/current shift ids, amount, currency, business date, operation-level inventory disposition and immutable snapshot;
 - cashier UI for whole-check and partial `order_line`/quantity cancellation/refund не добавляет новые sync event names; он использует текущие Edge-owned ledger events и отправляет command id, inventory disposition и operation items как payload fields;
 - `PaymentRefunded` и `CheckRefunded` остаются legacy accepted event types для старых payloads;
 - Cloud event-type stats обновляются для всех accepted operational events;
-- Cloud shift finance foundation считает coarse refund totals from current `RefundRecorded` and legacy `PaymentRefunded`/`CheckRefunded`, but it is not a full projection for financial operation ledger item scopes, inventory disposition, approval policy or original-shift reconciliation.
+- Cloud shift finance foundation считает coarse refund totals from current `RefundRecorded` and legacy `PaymentRefunded`/`CheckRefunded`; detailed `cloud_projection_financial_operations` stores current `CancellationRecorded`/`RefundRecorded` operations for reporting filters. Legacy events do not become primary financial operation projection rows.
 - Pagination/filtering закрытых заказов является local POS read-model behavior и не добавляет sync ownership или event names.
 - Bounded outbox/local-event visibility в POS API/UI является local operational window and does not acknowledge, remove or archive sync rows.
 - POS Edge storage lifecycle status/dry-run/export-only archive является local operational read/export model и не добавляет sync event names. Любая будущая destructive retention/archive policy должна блокироваться при наличии non-sent `edge_to_cloud` outbox messages; текущий runtime только сообщает это blocking state и создает локальный archive artifact без sync envelope.

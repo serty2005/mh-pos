@@ -54,6 +54,28 @@ func TestRequiredSchemaIncludesCloudInventoryFoundationTables(t *testing.T) {
 	}
 }
 
+func TestRequiredSchemaIncludesFinancialOperationProjection(t *testing.T) {
+	var found bool
+	for _, req := range RequiredSchema() {
+		if req.Table != "cloud_projection_financial_operations" {
+			continue
+		}
+		found = true
+		columns := map[string]bool{}
+		for _, column := range req.Columns {
+			columns[column] = true
+		}
+		for _, column := range []string{"operation_id", "edge_operation_id", "event_id", "receipt_id", "restaurant_id", "device_id", "shift_id", "original_shift_id", "check_id", "precheck_id", "operation_type", "operation_kind", "amount", "currency", "business_date_local", "inventory_disposition", "reason", "snapshot_json", "operation_created_at", "cloud_received_at"} {
+			if !columns[column] {
+				t.Fatalf("expected cloud_projection_financial_operations.%s in schema verification contract", column)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected cloud_projection_financial_operations in schema verification contract")
+	}
+}
+
 func TestCloudInventoryConstraintsRejectInvalidValues(t *testing.T) {
 	ctx := context.Background()
 	pool, closeFn := openPostgresWithBaseline(t, ctx)

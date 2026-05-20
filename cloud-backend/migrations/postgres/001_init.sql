@@ -116,6 +116,53 @@ CREATE TABLE IF NOT EXISTS cloud_projection_shift_finance (
   PRIMARY KEY (restaurant_id, device_id, shift_id)
 );
 
+CREATE TABLE IF NOT EXISTS cloud_projection_financial_operations (
+  operation_id TEXT PRIMARY KEY CHECK (operation_id <> ''),
+  edge_operation_id TEXT NOT NULL CHECK (edge_operation_id <> ''),
+  event_id TEXT NOT NULL UNIQUE CHECK (event_id <> ''),
+  receipt_id TEXT NOT NULL UNIQUE REFERENCES cloud_edge_event_receipts(id) ON DELETE RESTRICT,
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  device_id TEXT NOT NULL CHECK (device_id <> ''),
+  node_device_id TEXT CHECK (node_device_id IS NULL OR node_device_id <> ''),
+  client_device_id TEXT CHECK (client_device_id IS NULL OR client_device_id <> ''),
+  actor_employee_id TEXT CHECK (actor_employee_id IS NULL OR actor_employee_id <> ''),
+  session_id TEXT CHECK (session_id IS NULL OR session_id <> ''),
+  shift_id TEXT NOT NULL CHECK (shift_id <> ''),
+  original_shift_id TEXT NOT NULL CHECK (original_shift_id <> ''),
+  check_id TEXT NOT NULL CHECK (check_id <> ''),
+  precheck_id TEXT NOT NULL CHECK (precheck_id <> ''),
+  operation_type TEXT NOT NULL CHECK (operation_type IN ('cancellation','refund')),
+  operation_kind TEXT NOT NULL CHECK (operation_kind IN ('full','partial')),
+  amount BIGINT NOT NULL CHECK (amount > 0),
+  currency TEXT NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  business_date_local TEXT NOT NULL CHECK (business_date_local ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
+  inventory_disposition TEXT NOT NULL CHECK (inventory_disposition IN ('no_stock_effect','return_to_stock','write_off_waste','manual_review')),
+  reason TEXT NOT NULL CHECK (reason <> ''),
+  created_by_employee_id TEXT CHECK (created_by_employee_id IS NULL OR created_by_employee_id <> ''),
+  approved_by_employee_id TEXT CHECK (approved_by_employee_id IS NULL OR approved_by_employee_id <> ''),
+  snapshot_json JSONB NOT NULL,
+  operation_created_at TIMESTAMPTZ NOT NULL,
+  occurred_at TIMESTAMPTZ NOT NULL,
+  cloud_received_at TIMESTAMPTZ NOT NULL,
+  raw_payload_sha256_hex TEXT NOT NULL CHECK (raw_payload_sha256_hex <> ''),
+  created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS cloud_projection_financial_operations_edge_operation
+  ON cloud_projection_financial_operations(restaurant_id, device_id, edge_operation_id);
+
+CREATE INDEX IF NOT EXISTS cloud_projection_financial_operations_restaurant_date_type
+  ON cloud_projection_financial_operations(restaurant_id, business_date_local, operation_type, operation_created_at DESC);
+
+CREATE INDEX IF NOT EXISTS cloud_projection_financial_operations_shift
+  ON cloud_projection_financial_operations(restaurant_id, shift_id, operation_created_at DESC);
+
+CREATE INDEX IF NOT EXISTS cloud_projection_financial_operations_original_shift
+  ON cloud_projection_financial_operations(restaurant_id, original_shift_id, operation_created_at DESC);
+
+CREATE INDEX IF NOT EXISTS cloud_projection_financial_operations_check
+  ON cloud_projection_financial_operations(restaurant_id, check_id, operation_created_at DESC);
+
 CREATE TABLE IF NOT EXISTS cloud_master_data_packages (
   stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','currencies')),
   node_device_id TEXT NOT NULL DEFAULT '',

@@ -76,6 +76,26 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			},
 		},
 		{
+			Table:         "cloud_projection_financial_operations",
+			RequiredBy:    "cloudsync postgres repository detailed CancellationRecorded/RefundRecorded reporting projection",
+			MigrationFile: "001_init.sql",
+			Columns: []string{
+				"operation_id", "edge_operation_id", "event_id", "receipt_id", "restaurant_id", "device_id",
+				"node_device_id", "client_device_id", "actor_employee_id", "session_id",
+				"shift_id", "original_shift_id", "check_id", "precheck_id", "operation_type", "operation_kind",
+				"amount", "currency", "business_date_local", "inventory_disposition", "reason",
+				"created_by_employee_id", "approved_by_employee_id", "snapshot_json",
+				"operation_created_at", "occurred_at", "cloud_received_at", "raw_payload_sha256_hex", "created_at",
+			},
+			Indexes: []string{
+				"cloud_projection_financial_operations_edge_operation",
+				"cloud_projection_financial_operations_restaurant_date_type",
+				"cloud_projection_financial_operations_shift",
+				"cloud_projection_financial_operations_original_shift",
+				"cloud_projection_financial_operations_check",
+			},
+		},
+		{
 			Table:         "cloud_master_data_packages",
 			RequiredBy:    "cloudsync postgres repository master data package storage",
 			MigrationFile: "001_init.sql",

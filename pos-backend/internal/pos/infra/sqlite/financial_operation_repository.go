@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strings"
 
 	"pos-backend/internal/pos/domain"
 )
@@ -28,8 +29,56 @@ func (r *Repository) CreateFinancialOperationItem(ctx context.Context, v *domain
 	return normalizeErr(err)
 }
 
+func (r *Repository) ListFinancialOperations(ctx context.Context, query domain.FinancialOperationListQuery) ([]domain.FinancialOperation, error) {
+	where := []string{"1 = 1"}
+	args := make([]any, 0, 9)
+	if strings.TrimSpace(query.RestaurantID) != "" {
+		where = append(where, "restaurant_id = ?")
+		args = append(args, strings.TrimSpace(query.RestaurantID))
+	}
+	if strings.TrimSpace(query.CheckID) != "" {
+		where = append(where, "check_id = ?")
+		args = append(args, strings.TrimSpace(query.CheckID))
+	}
+	if strings.TrimSpace(query.BusinessDateFrom) != "" {
+		where = append(where, "business_date_local >= ?")
+		args = append(args, strings.TrimSpace(query.BusinessDateFrom))
+	}
+	if strings.TrimSpace(query.BusinessDateTo) != "" {
+		where = append(where, "business_date_local <= ?")
+		args = append(args, strings.TrimSpace(query.BusinessDateTo))
+	}
+	if query.OperationType != "" {
+		where = append(where, "operation_type = ?")
+		args = append(args, string(query.OperationType))
+	}
+	if strings.TrimSpace(query.ShiftID) != "" {
+		where = append(where, "shift_id = ?")
+		args = append(args, strings.TrimSpace(query.ShiftID))
+	}
+	if strings.TrimSpace(query.OriginalShiftID) != "" {
+		where = append(where, "original_shift_id = ?")
+		args = append(args, strings.TrimSpace(query.OriginalShiftID))
+	}
+	limit := query.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset := query.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	args = append(args, limit, offset)
+	sqlText := financialOperationSelectSQL + ` WHERE ` + strings.Join(where, " AND ") + ` ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`
+	return r.queryFinancialOperations(ctx, sqlText, args...)
+}
+
 func (r *Repository) ListFinancialOperationsByCheck(ctx context.Context, checkID string) ([]domain.FinancialOperation, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, financialOperationSelectSQL+` WHERE check_id = ? ORDER BY created_at, id`, checkID)
+	return r.queryFinancialOperations(ctx, financialOperationSelectSQL+` WHERE check_id = ? ORDER BY created_at, id`, checkID)
+}
+
+func (r *Repository) queryFinancialOperations(ctx context.Context, sqlText string, args ...any) ([]domain.FinancialOperation, error) {
+	rows, err := r.queryer(ctx).QueryContext(ctx, sqlText, args...)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}

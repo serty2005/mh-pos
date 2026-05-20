@@ -62,6 +62,19 @@ type Operation struct {
 	CreatedAt            time.Time            `json:"created_at"`
 }
 
+// OperationListQuery задает bounded read model для append-only ledger reporting.
+type OperationListQuery struct {
+	RestaurantID       string
+	CheckID            string
+	BusinessDateFrom   string
+	BusinessDateTo     string
+	OperationType      OperationType
+	ShiftID            string
+	OriginalShiftID    string
+	Limit              int
+	Offset             int
+}
+
 // OperationItem описывает часть операции: весь чек, строку, количество строки, modifier/service/tip или payment allocation.
 type OperationItem struct {
 	ID          string             `json:"id"`

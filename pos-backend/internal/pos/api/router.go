@@ -82,6 +82,7 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/prechecks/{id}/reprint", h.reprintPrecheck)
 		r.Post("/prechecks/{id}/payments", h.capturePrecheckPayment)
 
+		r.Get("/financial-operations", h.listFinancialOperations)
 		r.Get("/checks/{id}", h.getCheck)
 		r.Get("/checks/{id}/financial-operations", h.listCheckFinancialOperations)
 		r.Post("/checks/{id}/reprint", h.reprintCheck)
@@ -813,10 +814,50 @@ func (h *Handler) getCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listCheckFinancialOperations(w http.ResponseWriter, r *http.Request) {
+	limit, offset, ok := readLimitOffset(w, r)
+	if !ok {
+		return
+	}
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
-	v, err := h.service.ListFinancialOperationsByCheckAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
+	v, err := h.service.ListFinancialOperationsByCheckAsOperator(r.Context(), chi.URLParam(r, "id"), meta, limit, offset)
 	writeOK(w, r, v, err)
+}
+
+func (h *Handler) listFinancialOperations(w http.ResponseWriter, r *http.Request) {
+	limit, offset, ok := readLimitOffset(w, r)
+	if !ok {
+		return
+	}
+	query := r.URL.Query()
+	cmd := app.ListFinancialOperationsCommand{
+		BusinessDateFrom: query.Get("business_date_from"),
+		BusinessDateTo:   query.Get("business_date_to"),
+		OperationType:    domain.FinancialOperationType(query.Get("operation_type")),
+		ShiftID:          query.Get("shift_id"),
+		OriginalShiftID:  query.Get("original_shift_id"),
+		CheckID:          query.Get("check_id"),
+		Limit:            limit,
+		Offset:           offset,
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.ListFinancialOperationsAsOperator(r.Context(), cmd)
+	writeOK(w, r, v, err)
+}
+
+func readLimitOffset(w http.ResponseWriter, r *http.Request) (int, int, bool) {
+	query := r.URL.Query()
+	limit, err := optionalNonNegativeInt(query.Get("limit"), "limit")
+	if err != nil {
+		httpx.Error(w, err, r)
+		return 0, 0, false
+	}
+	offset, err := optionalNonNegativeInt(query.Get("offset"), "offset")
+	if err != nil {
+		httpx.Error(w, err, r)
+		return 0, 0, false
+	}
+	return limit, offset, true
 }
 
 func (h *Handler) reprintCheck(w http.ResponseWriter, r *http.Request) {

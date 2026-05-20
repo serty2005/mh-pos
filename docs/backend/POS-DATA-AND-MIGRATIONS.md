@@ -54,7 +54,8 @@ Cashier runtime invariants:
 - `financial_operations` and `financial_operation_items` are append-only ledger tables for cancellation/refund; they do not mutate finalized payment/check/precheck rows.
 - `financial_operation_items.scope` supports `whole_check`, `order_line`, `modifier_line`, `service_charge`, `tip`, `payment`.
 - `financial_operations.inventory_disposition` stores `no_stock_effect`, `return_to_stock`, `write_off_waste` or `manual_review`; it is not an automatic stock movement.
-- `financial_operations_check_type_created_at` supports per-check ledger reads used by `GET /api/v1/checks/{id}/financial-operations`.
+- `financial_operations_check_type_created_at`, `financial_operations_restaurant_business_date_type_created_at`, `financial_operations_original_shift_created_at` and `financial_operations_check_created_at` support bounded ledger reads used by `GET /api/v1/checks/{id}/financial-operations` and `GET /api/v1/financial-operations`.
+- `payments_business_date_shift_created_at`, `orders_closed_restaurant_created_at`, `local_event_log_occurred_at` and `pos_sync_outbox_created_at` are growth-control indexes for bounded operational reads; they do not imply physical retention/delete.
 - `business_date_local` is stored for shifts, cash sessions, payments, checks and financial operations.
 - Целевой Cloud-centric inventory contract запрещает POS Edge создавать складские документы и проводки.
 - Следующий inventory baseline должен удалить Edge-side `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`.
@@ -236,14 +237,16 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 - `financial_operation_items` stores item allocations for whole check, order line, modifier line, service charge, tip and payment scope.
 - SQLite triggers reject update/delete for both financial operation tables.
 - Backend records `CancellationRecorded` and `RefundRecorded` outbox/local events.
-- Backend exposes `GET /api/v1/checks/{id}/financial-operations` as a read-only per-check ledger surface for activity detail.
+- Backend exposes `GET /api/v1/checks/{id}/financial-operations` and `GET /api/v1/financial-operations` as read-only bounded ledger surfaces for activity detail and local reporting filters.
 - Legacy payment refund route writes the same ledger through payment scope instead of updating payment/check/precheck statuses.
 - Cashier UI whole-check и partial `order_line`/quantity cancellation/refund использует те же ledger endpoints, отправляет явный `inventory_disposition` и не требует schema changes или mutable status columns у finalized payments/checks. Line/quantity UI опирается на immutable check/precheck snapshot и пишет `financial_operation_items` со scope `order_line`; modifier/service/tip UI не реализован сейчас.
 - Storage archive export сохраняет `financial_operations`, `financial_operation_items` и immutable snapshots как protected data в JSONL artifact без пересчета или мутации source rows.
 
+- Реализовано сейчас в Cloud: `cloud_projection_financial_operations` stores current `CancellationRecorded`/`RefundRecorded` operation projections from raw/journal receipt with operation/check/shift/date/type/disposition/reason/snapshot metadata. Legacy `PaymentRefunded`/`CheckRefunded` do not populate this detailed projection.
+
 Не реализовано сейчас:
 
-- separate refund projection tables in Cloud;
+- public Cloud HTTP reporting API/UI over financial operation projection;
 - fiscal/correction document storage;
 - automatic inventory stock moves from `inventory_disposition`.
 - physical local delete/compaction policy для закрытых заказов.

@@ -20,6 +20,9 @@ import (
 const (
 	defaultClosedOrdersLimit = 50
 	maxClosedOrdersLimit     = 100
+
+	defaultFinancialOperationsLimit = 50
+	maxFinancialOperationsLimit     = 200
 )
 
 type Service struct {
@@ -68,6 +71,19 @@ type ListClosedOrdersCommand struct {
 	Offset                int
 }
 
+// ListFinancialOperationsCommand задает read-only фильтры ledger history для POS UI/reporting.
+type ListFinancialOperationsCommand struct {
+	shared.CommandMeta
+	CheckID          string
+	BusinessDateFrom string
+	BusinessDateTo   string
+	OperationType    domain.FinancialOperationType
+	ShiftID          string
+	OriginalShiftID  string
+	Limit            int
+	Offset           int
+}
+
 func (s *Service) GetCheck(ctx context.Context, id string) (*domain.Check, error) {
 	return s.repo.GetCheck(ctx, id)
 }
@@ -82,23 +98,82 @@ func (s *Service) GetCheckAsOperator(ctx context.Context, id string, meta shared
 
 // ListFinancialOperationsByCheckAsOperator возвращает append-only ledger операций по final check
 // только внутри restaurant scope текущего оператора.
-func (s *Service) ListFinancialOperationsByCheckAsOperator(ctx context.Context, checkID string, meta shared.CommandMeta) ([]domain.FinancialOperation, error) {
-	operator, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionCheckView))
+func (s *Service) ListFinancialOperationsByCheckAsOperator(ctx context.Context, checkID string, meta shared.CommandMeta, limit, offset int) ([]domain.FinancialOperation, error) {
+	cmd := ListFinancialOperationsCommand{
+		CommandMeta: meta,
+		CheckID:     checkID,
+		Limit:       limit,
+		Offset:      offset,
+	}
+	return s.ListFinancialOperationsAsOperator(ctx, cmd)
+}
+
+// ListFinancialOperationsAsOperator возвращает bounded append-only ledger history в restaurant scope оператора.
+func (s *Service) ListFinancialOperationsAsOperator(ctx context.Context, cmd ListFinancialOperationsCommand) ([]domain.FinancialOperation, error) {
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionCheckView))
 	if err != nil {
 		return nil, err
 	}
-	check, err := s.repo.GetCheck(ctx, strings.TrimSpace(checkID))
+	query, err := normalizeFinancialOperationListQuery(cmd, operator.Employee.RestaurantID)
 	if err != nil {
 		return nil, err
 	}
-	order, err := s.repo.GetOrder(ctx, check.OrderID)
-	if err != nil {
-		return nil, err
+	if query.CheckID != "" {
+		check, err := s.repo.GetCheck(ctx, query.CheckID)
+		if err != nil {
+			return nil, err
+		}
+		order, err := s.repo.GetOrder(ctx, check.OrderID)
+		if err != nil {
+			return nil, err
+		}
+		if order.RestaurantID != operator.Employee.RestaurantID {
+			return nil, fmt.Errorf("%w: check is outside operator restaurant", domain.ErrForbidden)
+		}
 	}
-	if order.RestaurantID != operator.Employee.RestaurantID {
-		return nil, fmt.Errorf("%w: check is outside operator restaurant", domain.ErrForbidden)
+	return s.repo.ListFinancialOperations(ctx, query)
+}
+
+func normalizeFinancialOperationListQuery(cmd ListFinancialOperationsCommand, restaurantID string) (domain.FinancialOperationListQuery, error) {
+	limit := cmd.Limit
+	if limit <= 0 {
+		limit = defaultFinancialOperationsLimit
 	}
-	return s.repo.ListFinancialOperationsByCheck(ctx, check.ID)
+	if limit > maxFinancialOperationsLimit {
+		limit = maxFinancialOperationsLimit
+	}
+	if cmd.Offset < 0 {
+		return domain.FinancialOperationListQuery{}, fmt.Errorf("%w: financial operations offset must be non-negative", domain.ErrInvalid)
+	}
+	fromDate := strings.TrimSpace(cmd.BusinessDateFrom)
+	toDate := strings.TrimSpace(cmd.BusinessDateTo)
+	if fromDate != "" {
+		if err := validateBusinessDateFilter(fromDate); err != nil {
+			return domain.FinancialOperationListQuery{}, err
+		}
+	}
+	if toDate != "" {
+		if err := validateBusinessDateFilter(toDate); err != nil {
+			return domain.FinancialOperationListQuery{}, err
+		}
+	}
+	if fromDate != "" && toDate != "" && fromDate > toDate {
+		return domain.FinancialOperationListQuery{}, fmt.Errorf("%w: business_date_from must be before business_date_to", domain.ErrInvalid)
+	}
+	if cmd.OperationType != "" && cmd.OperationType != domain.FinancialOperationCancellation && cmd.OperationType != domain.FinancialOperationRefund {
+		return domain.FinancialOperationListQuery{}, fmt.Errorf("%w: operation_type must be cancellation or refund", domain.ErrInvalid)
+	}
+	return domain.FinancialOperationListQuery{
+		RestaurantID:     strings.TrimSpace(restaurantID),
+		CheckID:          strings.TrimSpace(cmd.CheckID),
+		BusinessDateFrom: fromDate,
+		BusinessDateTo:   toDate,
+		OperationType:    cmd.OperationType,
+		ShiftID:          strings.TrimSpace(cmd.ShiftID),
+		OriginalShiftID:  strings.TrimSpace(cmd.OriginalShiftID),
+		Limit:            limit,
+		Offset:           cmd.Offset,
+	}, nil
 }
 
 func (s *Service) ListClosedOrders(ctx context.Context, cmd ListClosedOrdersCommand) ([]order.OrderSummary, error) {

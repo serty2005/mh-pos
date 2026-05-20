@@ -176,6 +176,21 @@ func TestReceiveRefundRecordedReplaysIdempotentlyAndUpdatesShiftFinance(t *testi
 	if len(finance) != 1 || finance[0].ChecksRefundedCount != 1 || finance[0].ChecksRefundedTotal != 1000 {
 		t.Fatalf("unexpected refund shift finance projection: %+v", finance)
 	}
+	projected, err := service.ListFinancialOperations(context.Background(), app.FinancialOperationProjectionFilter{
+		RestaurantID:     "restaurant-1",
+		BusinessDateFrom: "2026-05-06",
+		BusinessDateTo:   "2026-05-06",
+		OperationType:    "refund",
+		ShiftID:          "shift-refund-1",
+		CheckID:          "check-1",
+		Limit:            10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projected) != 1 || projected[0].OperationID != "financial-operation-1" || projected[0].EdgeOperationID == "" || projected[0].Amount != 1000 {
+		t.Fatalf("unexpected refund operation projection: %+v", projected)
+	}
 }
 
 func TestReceiveCancellationRecordedReplaysIdempotentlyAndKeepsCurrentEventStats(t *testing.T) {
@@ -206,6 +221,51 @@ func TestReceiveCancellationRecordedReplaysIdempotentlyAndKeepsCurrentEventStats
 	}
 	if finance := repo.ShiftFinance(); len(finance) != 0 {
 		t.Fatalf("cancellation should not update coarse refund shift finance projection, got %+v", finance)
+	}
+	projected, err := service.ListFinancialOperations(context.Background(), app.FinancialOperationProjectionFilter{
+		RestaurantID:    "restaurant-1",
+		OperationType:   "cancellation",
+		OriginalShiftID: "shift-sale-1",
+		Limit:           10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projected) != 1 || projected[0].OperationType != "cancellation" || projected[0].CheckID != "check-1" {
+		t.Fatalf("unexpected cancellation operation projection: %+v", projected)
+	}
+	refunds, err := service.ListFinancialOperations(context.Background(), app.FinancialOperationProjectionFilter{
+		RestaurantID:  "restaurant-1",
+		OperationType: "refund",
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refunds) != 0 {
+		t.Fatalf("cancellation must not appear in refund projection filter, got %+v", refunds)
+	}
+}
+
+func TestLegacyRefundEventsDoNotPopulateFinancialOperationProjection(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+	if _, err := service.Receive(context.Background(), sampleLegacyPaymentRefundedEnvelope(t)); err != nil {
+		t.Fatal(err)
+	}
+	projected, err := service.ListFinancialOperations(context.Background(), app.FinancialOperationProjectionFilter{
+		RestaurantID: "restaurant-1",
+		Limit:        10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projected) != 0 {
+		t.Fatalf("legacy PaymentRefunded must not become financial operation projection, got %+v", projected)
+	}
+	finance := repo.ShiftFinance()
+	if len(finance) != 1 || finance[0].PaymentsRefundedCount != 1 || finance[0].PaymentsRefundedTotal != 1000 {
+		t.Fatalf("legacy refund compatibility should remain only in coarse counters, got %+v", finance)
 	}
 }
 
@@ -399,8 +459,52 @@ func sampleFinancialOperationEnvelope(t *testing.T, eventType contracts.EventTyp
 				"business_date_local":   businessDate,
 				"inventory_disposition": "no_stock_effect",
 				"reason":                "guest return",
+				"created_by_employee_id": "manager-1",
 				"snapshot":              map[string]any{"document_type": "financial_operation", "check_id": "check-1"},
 				"created_at":            businessDate + "T09:00:00Z",
+			},
+		},
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func sampleLegacyPaymentRefundedEnvelope(t *testing.T) []byte {
+	t.Helper()
+	body := map[string]any{
+		"version":           "1",
+		"event_id":          "018f0000-0000-7000-8000-0000000000e1",
+		"command_id":        "command-legacy-refund-1",
+		"event_type":        string(contracts.EventPaymentRefunded),
+		"aggregate_type":    "Payment",
+		"aggregate_id":      "payment-1",
+		"restaurant_id":     "restaurant-1",
+		"device_id":         "device-1",
+		"node_device_id":    "device-1",
+		"client_device_id":  "client-1",
+		"actor_employee_id": "manager-1",
+		"session_id":        "session-1",
+		"shift_id":          "shift-refund-1",
+		"occurred_at":       "2026-05-06T09:00:00Z",
+		"payload": map[string]any{
+			"origin": "edge_device",
+			"data": map[string]any{
+				"id":                  "payment-1",
+				"edge_payment_id":     "edge-payment-1",
+				"restaurant_id":       "restaurant-1",
+				"device_id":           "device-1",
+				"shift_id":            "shift-refund-1",
+				"precheck_id":         "precheck-1",
+				"method":              "cash",
+				"amount":              1000,
+				"currency":            "RUB",
+				"status":              "refunded",
+				"business_date_local": "2026-05-06",
+				"created_at":          "2026-05-06T09:00:00Z",
+				"updated_at":          "2026-05-06T09:00:00Z",
 			},
 		},
 	}

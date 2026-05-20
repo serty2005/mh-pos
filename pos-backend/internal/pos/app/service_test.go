@@ -3511,6 +3511,140 @@ func TestRecordCancellationDuringOpenShiftSupportsFullAndRejectsOverCancel(t *te
 	}
 }
 
+func TestListFinancialOperationsAsOperatorFiltersAndPaginates(t *testing.T) {
+	f := newFixture(t)
+	shift := f.openShift(t)
+	cashSession := f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 2}); err != nil {
+		t.Fatal(err)
+	}
+	lines, err := f.repo.ListOrderLines(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 1 {
+		t.Fatalf("expected one order line, got %+v", lines)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+		CommandMeta: f.edgeMetaCommand("cmd-ledger-list-payment"),
+		PrecheckID:  precheck.ID,
+		Method:      domain.PaymentCash,
+		Amount:      precheck.Total,
+		Currency:    "RUB",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancellation, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-ledger-list-cancel"),
+		CheckID:              check.ID,
+		OperationKind:        domain.FinancialOperationPartial,
+		InventoryDisposition: domain.InventoryManualReview,
+		Reason:               "partial cancellation for list filters",
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:       domain.FinancialItemOrderLine,
+			OrderLineID: lines[0].ID,
+			Quantity:    1,
+			Amount:      lines[0].UnitPrice,
+			Currency:    "RUB",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.closeCashSessionAndShift(t, shift, cashSession, "ledger-list")
+	refundShift := f.openShift(t)
+	f.openCashSession(t)
+	refund, err := f.service.RecordRefund(f.ctx, app.RecordCheckRefundCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-ledger-list-refund"),
+		CheckID:              check.ID,
+		InventoryDisposition: domain.InventoryNoStockEffect,
+		Reason:               "remaining refund for list filters",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := f.service.ListFinancialOperationsAsOperator(f.ctx, app.ListFinancialOperationsCommand{
+		CommandMeta:      f.managerMetaCommand("cmd-ledger-list-read-all"),
+		BusinessDateFrom: "2026-05-04",
+		BusinessDateTo:   "2026-05-04",
+		CheckID:          check.ID,
+		Limit:            10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("expected two ledger operations, got %+v", all)
+	}
+	refunds, err := f.service.ListFinancialOperationsAsOperator(f.ctx, app.ListFinancialOperationsCommand{
+		CommandMeta:   f.managerMetaCommand("cmd-ledger-list-read-refunds"),
+		OperationType: domain.FinancialOperationRefund,
+		ShiftID:       refundShift.ID,
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refunds) != 1 || refunds[0].ID != refund.ID || refunds[0].Type != domain.FinancialOperationRefund {
+		t.Fatalf("unexpected refund filter result: %+v", refunds)
+	}
+	originalShift, err := f.service.ListFinancialOperationsAsOperator(f.ctx, app.ListFinancialOperationsCommand{
+		CommandMeta:     f.managerMetaCommand("cmd-ledger-list-read-original-shift"),
+		OriginalShiftID: shift.ID,
+		Limit:           10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(originalShift) != 2 {
+		t.Fatalf("expected both operations by original shift, got %+v", originalShift)
+	}
+	secondPage, err := f.service.ListFinancialOperationsAsOperator(f.ctx, app.ListFinancialOperationsCommand{
+		CommandMeta: f.managerMetaCommand("cmd-ledger-list-read-page"),
+		CheckID:     check.ID,
+		Limit:       1,
+		Offset:      1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(secondPage) != 1 || secondPage[0].ID == refund.ID {
+		t.Fatalf("expected second page to advance past latest refund, got %+v", secondPage)
+	}
+	if cancellation.Type != domain.FinancialOperationCancellation {
+		t.Fatalf("expected cancellation operation fixture, got %+v", cancellation)
+	}
+
+	var checkStatus, precheckStatus, paymentStatus string
+	var checkPaidTotal, precheckPaidTotal int64
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status, paid_total FROM checks WHERE id = ?`, check.ID).Scan(&checkStatus, &checkPaidTotal); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status, paid_total FROM prechecks WHERE id = ?`, precheck.ID).Scan(&precheckStatus, &precheckPaidTotal); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM payments WHERE id = ?`, payment.ID).Scan(&paymentStatus); err != nil {
+		t.Fatal(err)
+	}
+	if checkStatus != string(domain.CheckPaid) || checkPaidTotal != check.Total || precheckStatus != string(domain.PrecheckClosed) || precheckPaidTotal != precheck.Total || paymentStatus != string(domain.PaymentCaptured) {
+		t.Fatalf("ledger reads/writes must not mutate finalized docs, check=%s/%d precheck=%s/%d payment=%s", checkStatus, checkPaidTotal, precheckStatus, precheckPaidTotal, paymentStatus)
+	}
+}
+
 func TestFinancialOperationBoundarySeparatesCancellationAndRefund(t *testing.T) {
 	f := newFixture(t)
 	shift := f.openShift(t)

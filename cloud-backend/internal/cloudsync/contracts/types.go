@@ -182,8 +182,42 @@ type FinancialOperationRecorded struct {
 	BusinessDateLocal    string          `json:"business_date_local"`
 	InventoryDisposition string          `json:"inventory_disposition"`
 	Reason               string          `json:"reason"`
+	CreatedByEmployeeID  string          `json:"created_by_employee_id,omitempty"`
+	ApprovedByEmployeeID *string         `json:"approved_by_employee_id,omitempty"`
 	Snapshot             json.RawMessage `json:"snapshot,omitempty"`
 	CreatedAt            time.Time       `json:"created_at"`
+}
+
+// FinancialOperationProjection описывает Cloud read model ledger operation без чтения mutable POS state.
+type FinancialOperationProjection struct {
+	OperationID          string          `json:"operation_id"`
+	EdgeOperationID      string          `json:"edge_operation_id"`
+	EventID              string          `json:"event_id"`
+	ReceiptID            string          `json:"receipt_id"`
+	RestaurantID         string          `json:"restaurant_id"`
+	DeviceID             string          `json:"device_id"`
+	NodeDeviceID         *string         `json:"node_device_id,omitempty"`
+	ClientDeviceID       *string         `json:"client_device_id,omitempty"`
+	ActorEmployeeID      *string         `json:"actor_employee_id,omitempty"`
+	SessionID            *string         `json:"session_id,omitempty"`
+	ShiftID              string          `json:"shift_id"`
+	OriginalShiftID      string          `json:"original_shift_id"`
+	CheckID              string          `json:"check_id"`
+	PrecheckID           string          `json:"precheck_id"`
+	OperationType        string          `json:"operation_type"`
+	OperationKind        string          `json:"operation_kind"`
+	Amount               int64           `json:"amount"`
+	Currency             string          `json:"currency"`
+	BusinessDateLocal    string          `json:"business_date_local"`
+	InventoryDisposition string          `json:"inventory_disposition"`
+	Reason               string          `json:"reason"`
+	CreatedByEmployeeID  string          `json:"created_by_employee_id,omitempty"`
+	ApprovedByEmployeeID *string         `json:"approved_by_employee_id,omitempty"`
+	Snapshot             json.RawMessage `json:"snapshot,omitempty"`
+	OperationCreatedAt   time.Time       `json:"operation_created_at"`
+	OccurredAt           time.Time       `json:"occurred_at"`
+	CloudReceivedAt      time.Time       `json:"cloud_received_at"`
+	RawPayloadSHA256Hex  string          `json:"raw_payload_sha256_hex"`
 }
 
 type OrderClosed = OrderCreated
@@ -409,8 +443,8 @@ func validateFinancialOperationRecordedPayload(v SyncEnvelope) error {
 		return fmt.Errorf("%w: payload.origin is required", ErrInvalidEnvelope)
 	}
 	data := payload.Data
-	if strings.TrimSpace(data.ID) == "" || strings.TrimSpace(data.CheckID) == "" || strings.TrimSpace(data.OriginalShiftID) == "" || strings.TrimSpace(data.ShiftID) == "" {
-		return fmt.Errorf("%w: financial operation id, check_id, original_shift_id and shift_id are required", ErrInvalidEnvelope)
+	if strings.TrimSpace(data.ID) == "" || strings.TrimSpace(data.EdgeOperationID) == "" || strings.TrimSpace(data.CheckID) == "" || strings.TrimSpace(data.OriginalShiftID) == "" || strings.TrimSpace(data.ShiftID) == "" {
+		return fmt.Errorf("%w: financial operation id, edge_operation_id, check_id, original_shift_id and shift_id are required", ErrInvalidEnvelope)
 	}
 	if strings.TrimSpace(v.AggregateType) != "FinancialOperation" || strings.TrimSpace(v.AggregateID) != strings.TrimSpace(data.ID) {
 		return fmt.Errorf("%w: financial operation aggregate must match payload id", ErrInvalidEnvelope)

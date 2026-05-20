@@ -1234,7 +1234,7 @@ func TestListCheckFinancialOperationsThroughPublicAPI(t *testing.T) {
 	}
 	operation := decodeAPIResponse[domain.FinancialOperation](t, cancelled)
 
-	rr := f.get(t, "/api/v1/checks/"+check.ID+"/financial-operations")
+	rr := f.get(t, "/api/v1/checks/"+check.ID+"/financial-operations?limit=10&offset=0")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -1244,5 +1244,19 @@ func TestListCheckFinancialOperationsThroughPublicAPI(t *testing.T) {
 	}
 	if len(operations[0].Items) != 1 || operations[0].Items[0].Scope != domain.FinancialItemWholeCheck {
 		t.Fatalf("expected whole-check operation item, got %+v", operations[0].Items)
+	}
+
+	rr = f.get(t, "/api/v1/financial-operations?business_date_from=2026-05-04&business_date_to=2026-05-04&operation_type=cancellation&shift_id="+operation.ShiftID+"&check_id="+check.ID+"&limit=1")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 from financial operation report endpoint, got %d: %s", rr.Code, rr.Body.String())
+	}
+	reportOperations := decodeAPIResponse[[]domain.FinancialOperation](t, rr)
+	if len(reportOperations) != 1 || reportOperations[0].ID != operation.ID {
+		t.Fatalf("unexpected report endpoint response: %+v", reportOperations)
+	}
+
+	rr = f.get(t, "/api/v1/financial-operations?operation_type=void&limit=1")
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid operation type to return 400, got %d: %s", rr.Code, rr.Body.String())
 	}
 }

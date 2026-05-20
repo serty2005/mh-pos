@@ -24,6 +24,7 @@ type Repository struct {
 	masterDataByKey   map[string]contracts.MasterDataPackage
 	eventStatsByKey   map[string]EventTypeProjection
 	shiftFinanceByKey map[string]ShiftFinanceProjection
+	financialOpsByID  map[string]contracts.FinancialOperationProjection
 	authorizedNodes   map[string]authorizedNode
 }
 
@@ -78,6 +79,7 @@ func NewRepository() *Repository {
 		masterDataByKey:   map[string]contracts.MasterDataPackage{},
 		eventStatsByKey:   map[string]EventTypeProjection{},
 		shiftFinanceByKey: map[string]ShiftFinanceProjection{},
+		financialOpsByID:  map[string]contracts.FinancialOperationProjection{},
 		authorizedNodes:   map[string]authorizedNode{},
 	}
 }
@@ -125,6 +127,7 @@ func (r *Repository) ReceiveEdgeEvent(_ context.Context, receipt app.EdgeEventRe
 	}
 	r.rawByID[ack.CloudReceiptID] = append([]byte(nil), receipt.RawPayload...)
 	r.applyEventTypeProjection(receipt)
+	r.applyFinancialOperationProjection(receipt, ack.CloudReceiptID)
 	r.applyShiftFinanceProjection(receipt)
 	return ack, nil
 }
@@ -158,6 +161,60 @@ func (r *Repository) ListEdgeEvents(_ context.Context, filter app.EdgeEventListF
 		}
 		return strings.Compare(b.CloudReceiptID, a.CloudReceiptID)
 	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// ListFinancialOperations возвращает current financial operation projection с bounded pagination.
+func (r *Repository) ListFinancialOperations(_ context.Context, filter app.FinancialOperationProjectionFilter) ([]contracts.FinancialOperationProjection, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	limit := filter.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	out := make([]contracts.FinancialOperationProjection, 0, min(limit, len(r.financialOpsByID)))
+	for _, item := range r.financialOpsByID {
+		if filter.RestaurantID != "" && item.RestaurantID != filter.RestaurantID {
+			continue
+		}
+		if filter.BusinessDateFrom != "" && item.BusinessDateLocal < filter.BusinessDateFrom {
+			continue
+		}
+		if filter.BusinessDateTo != "" && item.BusinessDateLocal > filter.BusinessDateTo {
+			continue
+		}
+		if filter.OperationType != "" && item.OperationType != filter.OperationType {
+			continue
+		}
+		if filter.ShiftID != "" && item.ShiftID != filter.ShiftID {
+			continue
+		}
+		if filter.OriginalShiftID != "" && item.OriginalShiftID != filter.OriginalShiftID {
+			continue
+		}
+		if filter.CheckID != "" && item.CheckID != filter.CheckID {
+			continue
+		}
+		out = append(out, copyFinancialOperationProjection(item))
+	}
+	slices.SortFunc(out, func(a, b contracts.FinancialOperationProjection) int {
+		if cmp := b.OperationCreatedAt.Compare(a.OperationCreatedAt); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(b.OperationID, a.OperationID)
+	})
+	if offset >= len(out) {
+		return []contracts.FinancialOperationProjection{}, nil
+	}
+	out = out[offset:]
 	if len(out) > limit {
 		out = out[:limit]
 	}
@@ -277,6 +334,54 @@ func (r *Repository) applyEventTypeProjection(receipt app.EdgeEventReceipt) {
 	r.eventStatsByKey[key] = current
 }
 
+func (r *Repository) applyFinancialOperationProjection(receipt app.EdgeEventReceipt, receiptID string) {
+	if receipt.Envelope.EventType != contracts.EventCancellationRecorded && receipt.Envelope.EventType != contracts.EventRefundRecorded {
+		return
+	}
+	var payload contracts.Payload[contracts.FinancialOperationRecorded]
+	if err := json.Unmarshal(receipt.Envelope.Payload, &payload); err != nil {
+		return
+	}
+	data := payload.Data
+	operationID := strings.TrimSpace(data.ID)
+	if operationID == "" {
+		return
+	}
+	if _, exists := r.financialOpsByID[operationID]; exists {
+		return
+	}
+	r.financialOpsByID[operationID] = contracts.FinancialOperationProjection{
+		OperationID:          operationID,
+		EdgeOperationID:      strings.TrimSpace(data.EdgeOperationID),
+		EventID:              strings.TrimSpace(receipt.Envelope.EventID),
+		ReceiptID:            receiptID,
+		RestaurantID:         strings.TrimSpace(data.RestaurantID),
+		DeviceID:             strings.TrimSpace(data.DeviceID),
+		NodeDeviceID:         stringPtr(receipt.Envelope.NodeDeviceID),
+		ClientDeviceID:       trimStringPtr(receipt.Envelope.ClientDeviceID),
+		ActorEmployeeID:      trimStringPtr(receipt.Envelope.ActorEmployeeID),
+		SessionID:            trimStringPtr(receipt.Envelope.SessionID),
+		ShiftID:              strings.TrimSpace(data.ShiftID),
+		OriginalShiftID:      strings.TrimSpace(data.OriginalShiftID),
+		CheckID:              strings.TrimSpace(data.CheckID),
+		PrecheckID:           strings.TrimSpace(data.PrecheckID),
+		OperationType:        strings.TrimSpace(data.OperationType),
+		OperationKind:        strings.TrimSpace(data.OperationKind),
+		Amount:               data.Amount,
+		Currency:             strings.TrimSpace(data.Currency),
+		BusinessDateLocal:    strings.TrimSpace(data.BusinessDateLocal),
+		InventoryDisposition: strings.TrimSpace(data.InventoryDisposition),
+		Reason:               strings.TrimSpace(data.Reason),
+		CreatedByEmployeeID:  strings.TrimSpace(data.CreatedByEmployeeID),
+		ApprovedByEmployeeID: trimStringPtr(data.ApprovedByEmployeeID),
+		Snapshot:             append(json.RawMessage(nil), data.Snapshot...),
+		OperationCreatedAt:   data.CreatedAt,
+		OccurredAt:           receipt.Envelope.OccurredAt,
+		CloudReceivedAt:      receipt.CloudReceivedAt,
+		RawPayloadSHA256Hex:  receipt.RawPayloadSHA256,
+	}
+}
+
 func (r *Repository) applyShiftFinanceProjection(receipt app.EdgeEventReceipt) {
 	shiftID := ""
 	if receipt.Envelope.ShiftID != nil {
@@ -348,6 +453,40 @@ func copyMasterDataPackage(v contracts.MasterDataPackage) contracts.MasterDataPa
 		copyValue.CloudUpdatedAt = &t
 	}
 	return copyValue
+}
+
+func copyFinancialOperationProjection(v contracts.FinancialOperationProjection) contracts.FinancialOperationProjection {
+	copyValue := v
+	copyValue.NodeDeviceID = copyStringPtr(v.NodeDeviceID)
+	copyValue.ClientDeviceID = copyStringPtr(v.ClientDeviceID)
+	copyValue.ActorEmployeeID = copyStringPtr(v.ActorEmployeeID)
+	copyValue.SessionID = copyStringPtr(v.SessionID)
+	copyValue.ApprovedByEmployeeID = copyStringPtr(v.ApprovedByEmployeeID)
+	copyValue.Snapshot = append(json.RawMessage(nil), v.Snapshot...)
+	return copyValue
+}
+
+func stringPtr(v string) *string {
+	value := strings.TrimSpace(v)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func trimStringPtr(v *string) *string {
+	if v == nil {
+		return nil
+	}
+	return stringPtr(*v)
+}
+
+func copyStringPtr(v *string) *string {
+	if v == nil {
+		return nil
+	}
+	value := *v
+	return &value
 }
 
 func secretHash(v string) string {

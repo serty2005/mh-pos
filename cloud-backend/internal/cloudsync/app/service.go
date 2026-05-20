@@ -18,6 +18,7 @@ import (
 type Repository interface {
 	ReceiveEdgeEvent(context.Context, EdgeEventReceipt) (contracts.EventAck, error)
 	ListEdgeEvents(context.Context, EdgeEventListFilter) ([]contracts.EdgeEventView, error)
+	ListFinancialOperations(context.Context, FinancialOperationProjectionFilter) ([]contracts.FinancialOperationProjection, error)
 	UpsertMasterDataPackage(context.Context, contracts.MasterDataPackage) (contracts.MasterDataPackage, error)
 	GetMasterDataPackage(context.Context, string, string) (contracts.MasterDataPackage, error)
 	AuthenticateNodeToken(context.Context, string, string, string) error
@@ -37,6 +38,19 @@ type EdgeEventListFilter struct {
 	DeviceID     string
 	EventType    string
 	Limit        int
+}
+
+// FinancialOperationProjectionFilter задает bounded Cloud read model query для current ledger events.
+type FinancialOperationProjectionFilter struct {
+	RestaurantID       string
+	BusinessDateFrom   string
+	BusinessDateTo     string
+	OperationType      string
+	ShiftID            string
+	OriginalShiftID    string
+	CheckID            string
+	Limit              int
+	Offset             int
 }
 
 type Service struct {
@@ -83,6 +97,38 @@ func (s *Service) ListEdgeEvents(ctx context.Context, filter EdgeEventListFilter
 		filter.Limit = 50
 	}
 	return s.repo.ListEdgeEvents(ctx, filter)
+}
+
+// ListFinancialOperations возвращает detailed Cloud projection для CancellationRecorded/RefundRecorded.
+func (s *Service) ListFinancialOperations(ctx context.Context, filter FinancialOperationProjectionFilter) ([]contracts.FinancialOperationProjection, error) {
+	filter.RestaurantID = strings.TrimSpace(filter.RestaurantID)
+	filter.BusinessDateFrom = strings.TrimSpace(filter.BusinessDateFrom)
+	filter.BusinessDateTo = strings.TrimSpace(filter.BusinessDateTo)
+	filter.OperationType = strings.TrimSpace(filter.OperationType)
+	filter.ShiftID = strings.TrimSpace(filter.ShiftID)
+	filter.OriginalShiftID = strings.TrimSpace(filter.OriginalShiftID)
+	filter.CheckID = strings.TrimSpace(filter.CheckID)
+	if err := validateBusinessDateFilter(filter.BusinessDateFrom, "business_date_from"); err != nil {
+		return nil, err
+	}
+	if err := validateBusinessDateFilter(filter.BusinessDateTo, "business_date_to"); err != nil {
+		return nil, err
+	}
+	if filter.BusinessDateFrom != "" && filter.BusinessDateTo != "" && filter.BusinessDateFrom > filter.BusinessDateTo {
+		return nil, fmt.Errorf("%w: business_date_from must be before business_date_to", contracts.ErrInvalidEnvelope)
+	}
+	switch filter.OperationType {
+	case "", "cancellation", "refund":
+	default:
+		return nil, fmt.Errorf("%w: operation_type must be cancellation or refund", contracts.ErrInvalidEnvelope)
+	}
+	if filter.Limit <= 0 || filter.Limit > 200 {
+		filter.Limit = 50
+	}
+	if filter.Offset < 0 {
+		return nil, fmt.Errorf("%w: offset must be non-negative", contracts.ErrInvalidEnvelope)
+	}
+	return s.repo.ListFinancialOperations(ctx, filter)
 }
 
 // ReceiveBatch принимает batch SyncEnvelope и возвращает item-level ACK decisions.
@@ -269,6 +315,16 @@ func exchangeAckError(clientItemID string, err error) contracts.SyncExchangeEdge
 		item.MessageKey = "errors.server"
 	}
 	return item
+}
+
+func validateBusinessDateFilter(value, name string) error {
+	if value == "" {
+		return nil
+	}
+	if _, err := time.Parse("2006-01-02", value); err != nil {
+		return fmt.Errorf("%w: %s must use YYYY-MM-DD", contracts.ErrInvalidEnvelope, name)
+	}
+	return nil
 }
 
 func (s *Service) receiveExchangeEdgeEvent(ctx context.Context, req contracts.SyncExchangeRequest, item contracts.SyncExchangeEdgeEvent) (contracts.EventAck, error) {
