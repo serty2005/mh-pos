@@ -53,37 +53,52 @@
         </button>
       </div>
 
-      <div class="context-main-action">
-        <template v-if="activeSection === 'order' && terminal.activePrecheck.value">
-          <q-btn square unelevated color="negative" class="main-split-action" :label="terminal.t('pos.cancelPrecheck')" :disable="terminal.activePrecheck.value.paid_total > 0 || !terminal.canCancelPrecheck.value" @click="terminal.cancelDialog.value = true" />
-          <q-btn square unelevated color="primary" class="main-split-action" :label="terminal.t('pos.check')" :disable="terminal.remainingPayment.value <= 0" @click="paymentDialog = true" />
-        </template>
-        <q-btn
-          v-else-if="activeSection === 'order'"
-          square
-          unelevated
-          color="primary"
-          class="main-wide-action"
-          :label="orderMainActionLabel"
-          :disable="!terminal.activeOrder.value || (!terminal.activePrecheck.value && !terminal.canIssuePrecheck.value)"
-          :loading="terminal.issuePrecheckMutation.isPending.value"
-          @click="runOrderMainAction"
-        />
-        <q-btn
-          v-else-if="activeSection === 'floor'"
-          square
-          unelevated
-          color="primary"
-          class="main-wide-action"
-          :label="terminal.t('pos.quickCheck')"
-          :disable="!quickCheckAvailable"
-          :title="quickCheckAvailable ? '' : terminal.t('pos.quickCheckNeedsDefaultTable')"
-          @click="createQuickCheck"
-        />
-        <div v-else class="main-wide-action section-state-action">
-          {{ terminal.t(currentSectionActionKey) }}
-        </div>
+      <div v-if="activeSection === 'order'" class="top-status-grid order-status-grid">
+        <span class="top-status-cell">
+          <small>{{ terminal.t('pos.orderNumberLabel') }}</small>
+          <strong>{{ terminal.activeOrder.value ? terminal.shortId(terminal.activeOrder.value.id) : '-' }}</strong>
+        </span>
+        <span class="top-status-cell">
+          <small>{{ terminal.t('pos.hallTable') }}</small>
+          <strong>{{ hallTableLabel }}</strong>
+        </span>
+        <span class="top-status-cell">
+          <small>{{ terminal.t('pos.waiter') }}</small>
+          <strong>{{ terminal.actorName.value || '-' }}</strong>
+        </span>
+        <button class="top-status-cell two-line-cell" type="button" @click="discountDialog = true">
+          <small>{{ openedLabel }}</small>
+          <strong>{{ discountLabel }}</strong>
+        </button>
       </div>
+
+      <div v-else-if="activeSection === 'floor'" class="top-status-grid floor-status-grid">
+        <span class="top-status-cell">
+          <small>{{ terminal.t('pos.shiftTotal') }}</small>
+          <strong>{{ terminal.money(shiftTotal, terminal.orderCurrency.value) }}</strong>
+        </span>
+        <span class="top-status-cell">
+          <small>{{ terminal.t('pos.averageCheck') }}</small>
+          <strong>{{ terminal.money(averageCheck, terminal.orderCurrency.value) }}</strong>
+        </span>
+        <span class="top-status-cell">
+          <small>{{ terminal.t('pos.ordersCount') }}</small>
+          <strong>{{ ordersCount }}</strong>
+        </span>
+        <span class="top-status-cell">
+          <small>{{ terminal.t('pos.completedCount') }}</small>
+          <strong>{{ completedCount }}</strong>
+        </span>
+      </div>
+
+      <div v-else class="top-status-grid">
+        <span class="top-status-cell">
+          <small>{{ terminal.t(currentSectionTitleKey) }}</small>
+          <strong>{{ sectionStatusLabel }}</strong>
+        </span>
+      </div>
+
+      <q-btn flat square icon="lock" class="top-lock-button" :aria-label="terminal.t('actions.lock')" @click="terminal.lockTerminal" />
     </header>
 
     <section class="pos-main-workspace" :aria-label="terminal.t('pos.workspace')">
@@ -98,7 +113,7 @@
           @open-payment="paymentDialog = true"
         />
       </template>
-      <section v-else class="section-workspace">
+      <section v-else class="section-workspace" :class="{ 'shift-workspace-shell': activeSection === 'shift' }">
         <component :is="fallbackComponent" :terminal="terminal" />
       </section>
     </section>
@@ -108,8 +123,55 @@
       :active-section="activeSection"
       :menu-open="sectionMenuOpen"
       @toggle-menu="sectionMenuOpen = !sectionMenuOpen"
-      @open-discounts="discountDialog = true"
-    />
+    >
+      <template #actions>
+        <template v-if="activeSection === 'order' && terminal.activePrecheck.value">
+          <q-btn square unelevated color="negative" class="bottom-main-action" :label="terminal.t('pos.cancelPrecheck')" :disable="terminal.activePrecheck.value.paid_total > 0 || !terminal.canCancelPrecheck.value" @click="terminal.cancelDialog.value = true" />
+          <q-btn square unelevated color="primary" class="bottom-main-action" :label="terminal.t('pos.check')" :disable="terminal.remainingPayment.value <= 0" @click="paymentDialog = true" />
+        </template>
+        <q-btn
+          v-else-if="activeSection === 'order' && terminal.activeOrder.value"
+          square
+          unelevated
+          color="primary"
+          class="bottom-main-action"
+          :label="orderMainActionLabel"
+          :disable="!terminal.canIssuePrecheck.value"
+          :loading="terminal.issuePrecheckMutation.isPending.value"
+          @click="runOrderMainAction"
+        />
+        <q-btn
+          v-else-if="activeSection === 'order'"
+          square
+          unelevated
+          color="primary"
+          class="bottom-main-action"
+          icon="receipt_long"
+          :label="terminal.t('actions.createOrder')"
+          :disable="!terminal.canCreateOrder.value"
+          :loading="terminal.createOrderMutation.isPending.value"
+          @click="terminal.createOrderMutation.mutate()"
+        />
+        <template v-else-if="activeSection === 'floor'">
+          <q-btn square unelevated color="primary" class="bottom-main-action" icon="add" :label="terminal.t('pos.createOrderShort')" :disable="!terminal.activeTables.value.length" @click="createOrderDialog = true" />
+          <q-btn
+            square
+            outline
+            color="secondary"
+            class="bottom-main-action"
+            :label="terminal.t('pos.quickCheck')"
+            :disable="!quickCheckAvailable"
+            :title="quickCheckAvailable ? '' : terminal.t('pos.quickCheckNeedsDefaultTable')"
+            @click="createQuickCheck"
+          />
+        </template>
+        <template v-else-if="activeSection === 'shift'">
+          <q-btn square unelevated color="primary" class="bottom-main-action" icon="inventory_2" :label="terminal.t('pos.cashDrawer')" :disable="!terminal.canRecordCashDrawerEvent.value" @click="terminal.cashDrawerDialog.value = true" />
+          <q-btn v-if="terminal.canViewSync.value" square outline color="secondary" class="bottom-main-action" icon="sync" :label="terminal.t('pos.syncStatus')" @click="terminal.syncDrawer.value = true" />
+          <q-btn v-if="terminal.canRetrySync.value && terminal.syncProblems.value > 0" square outline color="secondary" class="bottom-main-action" icon="published_with_changes" :label="terminal.t('actions.retrySync')" :loading="terminal.retrySyncMutation.isPending.value" @click="terminal.retrySyncMutation.mutate()" />
+        </template>
+      </template>
+    </pos-bottom-bar>
 
     <div v-if="sectionMenuOpen" class="pos-section-menu-layer" @click.self="sectionMenuOpen = false">
       <nav class="pos-section-menu" :aria-label="terminal.t('pos.sections.title')">
@@ -309,7 +371,30 @@ const waiterFilters = reactive([
 const selectedLineName = computed(() => terminal.selectedOrderLine.value?.name ?? terminal.t('pos.noSelectedLine'));
 const selectedHallName = computed(() => terminal.activeHalls.value.find((hall) => hall.id === terminal.selectedHallId.value)?.name ?? terminal.t('pos.halls'));
 const currentSectionTitleKey = computed(() => sections.find((section) => section.id === activeSection.value)?.labelKey ?? 'pos.sections.order');
-const currentSectionActionKey = computed(() => (activeSection.value === 'shift' ? 'pos.cashierReadiness' : 'pos.reportScope'));
+const hallTableLabel = computed(() => {
+  const hall = terminal.activeHalls.value.find((item) => item.id === terminal.selectedHallId.value)?.name ?? terminal.t('pos.currentHall');
+  const table = terminal.selectedTable.value?.name ?? '-';
+  return `${hall} / ${table}`;
+});
+const openedLabel = computed(() => {
+  const openedAt = terminal.activeOrder.value?.opened_at;
+  if (!openedAt) return terminal.t('pos.openedEmpty');
+  return terminal.t('pos.openedAt', { value: formatOpenedAt(openedAt) });
+});
+const discountLabel = computed(() => terminal.t('pos.discountPercent', { value: 0 }));
+const shiftTotal = computed(() => (terminal.closedOrders.data.value ?? []).reduce((sum, order) => sum + order.total, 0) + (terminal.activeOrder.value?.total ?? 0));
+const ordersCount = computed(() => (terminal.closedOrders.data.value ?? []).length + (terminal.activeOrder.value ? 1 : 0));
+const averageCheck = computed(() => ordersCount.value > 0 ? Math.round(shiftTotal.value / ordersCount.value) : 0);
+const completedCount = computed(() => (terminal.closedOrders.data.value ?? []).length);
+const sectionStatusLabel = computed(() => {
+  if (activeSection.value === 'shift') {
+    return terminal.currentCashSession.data.value ? terminal.t('pos.cashSessionOpen') : terminal.t('pos.noCashSession');
+  }
+  if (activeSection.value === 'analytics') {
+    return terminal.t('pos.closedOrdersCount', { count: completedCount.value });
+  }
+  return terminal.t(currentSectionTitleKey.value);
+});
 const quickCheckAvailable = computed(() => Boolean(terminal.activeTables.value[0] && terminal.currentShift.data.value));
 const orderMainActionLabel = computed(() => {
   if (!terminal.activeOrder.value) return terminal.t('pos.chooseTable');
@@ -369,5 +454,12 @@ function createOrderAtTable(tableId: string) {
     terminal.createOrderMutation.mutate();
     openSection('order');
   });
+}
+
+function formatOpenedAt(value: string) {
+  const date = new Date(value);
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  return new Intl.DateTimeFormat('ru-RU', sameDay ? { hour: '2-digit', minute: '2-digit' } : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date);
 }
 </script>

@@ -2,15 +2,6 @@
   <section class="menu-workspace" :aria-label="terminal.t('pos.menu')">
     <q-banner v-if="terminal.statusError.value" class="error-banner dense-banner">{{ terminal.statusError.value }}</q-banner>
     <q-banner v-if="terminal.menu.isError.value" class="error-banner dense-banner">{{ terminal.t('common.error') }}</q-banner>
-    <blocking-notice
-      v-if="menuLockedNotice"
-      :terminal="terminal"
-      :title="terminal.t(menuLockedNotice.titleKey)"
-      :reason="terminal.t(menuLockedNotice.reasonKey)"
-      :permission="menuLockedNotice.permission"
-      icon="lock"
-    />
-
     <nav class="menu-category-tabs" :aria-label="terminal.t('pos.menuGroups')">
       <button
         v-for="option in categoryOptions"
@@ -23,6 +14,11 @@
         {{ terminal.t(option.labelKey) }}
       </button>
     </nav>
+
+    <div v-if="readonlyNoticeKey" class="menu-readonly-note">
+      <q-icon name="lock" size="18px" />
+      <span>{{ terminal.t(readonlyNoticeKey) }}</span>
+    </div>
 
     <div v-if="terminal.menu.isPending.value" class="dish-grid">
       <q-skeleton v-for="n in 12" :key="n" class="dish-card dish-card-skeleton" />
@@ -40,7 +36,7 @@
         <span class="dish-card-media">{{ initials(item.name) }}</span>
         <span class="dish-card-title">{{ item.name }}</span>
         <strong>{{ terminal.money(item.price, item.currency) }}</strong>
-        <small v-if="!terminal.canAddOrderLine.value">{{ terminal.t(disabledHintKey) }}</small>
+        <small v-if="!terminal.canAddOrderLine.value && disabledHintKey">{{ terminal.t(disabledHintKey) }}</small>
       </button>
     </div>
 
@@ -52,7 +48,6 @@
 import { computed, ref } from 'vue';
 
 import type { MenuItem } from '../../shared/schemas';
-import BlockingNotice from './BlockingNotice.vue';
 import type { CashierTerminal } from './useCashierTerminal';
 
 type MenuGroup = 'all' | 'food' | 'services';
@@ -75,13 +70,13 @@ const visibleItems = computed(() => {
   return [...props.terminal.visibleMenuItems.value, ...props.terminal.visibleServiceItems.value];
 });
 
-const menuLockedNotice = computed(() => {
-  if (!props.terminal.activeOrder.value) return null;
-  return props.terminal.actionBlocker('pos.order.add_line', props.terminal.canAddOrderLine.value);
+const readonlyNoticeKey = computed(() => {
+  if (props.terminal.activePrecheck.value || props.terminal.activeOrder.value?.status === 'locked') return 'pos.lockedAddHint';
+  return '';
 });
 
 const disabledHintKey = computed(() => {
-  if (props.terminal.activePrecheck.value || props.terminal.activeOrder.value?.status === 'locked') return 'pos.lockedAddHint';
+  if (props.terminal.activePrecheck.value || props.terminal.activeOrder.value?.status === 'locked') return '';
   if (!props.terminal.activeOrder.value) return 'pos.noActiveOrderShort';
   return 'pos.actionUnavailable';
 });

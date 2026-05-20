@@ -93,23 +93,6 @@
       </div>
     </main>
 
-    <aside class="section-action-rail cash-action-rail" :aria-label="terminal.t('pos.terminalActions')">
-      <div class="rail-head">
-        <div>
-          <p class="eyebrow">{{ terminal.t('pos.primaryOperations') }}</p>
-          <h2>{{ terminal.t('pos.terminalActions') }}</h2>
-        </div>
-      </div>
-      <div class="rail-actions integrated-action-bar">
-        <q-btn color="primary" unelevated class="touch-button primary-action" icon="inventory_2" :label="terminal.t('pos.cashDrawer')" :disable="!terminal.canRecordCashDrawerEvent.value" @click="terminal.cashDrawerDialog.value = true" />
-        <q-btn v-if="terminal.canViewSync.value" outline color="secondary" class="touch-button" icon="sync" :label="terminal.t('pos.syncStatus')" @click="terminal.syncDrawer.value = true" />
-        <q-btn v-if="terminal.canRetrySync.value" outline color="secondary" class="touch-button" icon="published_with_changes" :label="terminal.t('actions.retrySync')" :disable="!terminal.syncProblems.value" :loading="terminal.retrySyncMutation.isPending.value" @click="terminal.retrySyncMutation.mutate()" />
-      </div>
-      <div class="rail-actions integrated-action-bar">
-        <q-btn outline color="secondary" class="touch-button" icon="lock" :label="terminal.t('actions.lock')" @click="terminal.lockTerminal" />
-        <q-btn outline color="secondary" class="touch-button" icon="logout" :label="terminal.t('actions.logout')" :loading="terminal.logoutMutation.isPending.value" @click="terminal.logoutMutation.mutate()" />
-      </div>
-    </aside>
   </section>
 </template>
 

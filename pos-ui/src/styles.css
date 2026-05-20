@@ -2330,7 +2330,7 @@ button.bottom-status {
 
 .pos-context-bar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--pos-right-panel-width);
+  grid-template-columns: minmax(220px, max-content) minmax(0, 1fr) 72px;
   min-height: var(--pos-top-height);
   background: var(--pos-surface);
   border-bottom: 1px solid var(--pos-border);
@@ -2413,6 +2413,54 @@ button.bottom-status {
   gap: 8px;
 }
 
+.top-status-grid {
+  min-width: 0;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(132px, 1fr);
+  align-items: stretch;
+  overflow-x: auto;
+}
+
+.top-status-cell {
+  min-width: 0;
+  min-height: var(--pos-top-height);
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 0 16px;
+  color: var(--pos-text);
+  background: #ffffff;
+  border: 0;
+  border-left: 1px solid var(--pos-border);
+  text-align: left;
+}
+
+.top-status-cell small {
+  color: var(--pos-muted);
+  font-size: 12px;
+}
+
+.top-status-cell strong {
+  min-width: 0;
+  color: var(--pos-text);
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.top-status-cell {
+  cursor: pointer;
+}
+
+.top-lock-button {
+  min-height: var(--pos-top-height);
+  color: var(--pos-text);
+  border-left: 1px solid var(--pos-border);
+}
+
 .pos-main-workspace {
   display: grid;
   min-height: 0;
@@ -2428,6 +2476,14 @@ button.bottom-status {
   overflow: hidden;
 }
 
+.cash-workspace.section-workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.shift-workspace-shell {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .menu-workspace,
 .hall-workspace,
 .section-main-surface,
@@ -2440,7 +2496,7 @@ button.bottom-status {
 
 .menu-workspace {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 0;
   padding: 0;
 }
@@ -2459,6 +2515,19 @@ button.bottom-status {
   overflow-x: auto;
   border-bottom: 1px solid var(--pos-border);
   background: #ffffff;
+}
+
+.menu-readonly-note {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  color: #7a4a20;
+  background: #fff6e8;
+  border-bottom: 1px solid #ead7b7;
+  font-size: 13px;
+  font-weight: 650;
 }
 
 .menu-category-tab {
@@ -2631,7 +2700,7 @@ button.bottom-status {
 }
 
 .order-item-row:hover .row-more-action {
-  opacity: 1;
+  opacity: 0;
 }
 
 .line-note {
@@ -2797,7 +2866,7 @@ button.bottom-status {
   z-index: 20;
   min-height: var(--pos-bottom-height);
   display: grid;
-  grid-template-columns: 198px minmax(0, 1fr) 86px;
+  grid-template-columns: 198px minmax(0, 1fr) minmax(360px, max-content);
   gap: 0;
   align-items: stretch;
   padding: 0;
@@ -2805,6 +2874,33 @@ button.bottom-status {
   background: var(--pos-dark);
   border-radius: 0;
   box-shadow: none;
+}
+
+.bottom-action-area {
+  grid-column: 3;
+  min-width: 0;
+  min-height: var(--pos-bottom-height);
+  display: flex;
+  justify-content: flex-end;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.bottom-main-action {
+  min-width: 170px;
+  min-height: 60px;
+  font-weight: 800;
+}
+
+.bottom-main-action .q-btn__content {
+  white-space: nowrap;
+}
+
+.bottom-action-area .q-btn--outline {
+  color: #f4f8f6 !important;
+  border-color: rgba(255, 255, 255, 0.42);
 }
 
 .bottom-section-button {
@@ -2859,12 +2955,6 @@ button.bottom-status {
 
 button.bottom-status-cell {
   cursor: pointer;
-}
-
-.bottom-lock-button {
-  min-height: var(--pos-bottom-height);
-  color: #ffffff;
-  border-left: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .pos-section-menu-layer {
@@ -2980,6 +3070,10 @@ button.bottom-status-cell {
     overflow: auto;
   }
 
+  .cash-workspace.section-workspace {
+    display: grid;
+  }
+
   .section-main-surface,
   .section-action-rail,
   .activity-detail-rail,
@@ -2997,14 +3091,36 @@ button.bottom-status-cell {
   }
 
   .pos-context-bar {
+    grid-template-columns: minmax(0, 1fr) 58px;
     grid-template-rows: 58px 58px;
     min-height: var(--pos-top-height);
   }
 
   .context-actions {
+    grid-column: 1;
+    grid-row: 1;
     min-height: 58px;
     padding: 5px 10px;
     align-items: center;
+  }
+
+  .top-lock-button {
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 58px;
+  }
+
+  .top-status-grid {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(148px, 1fr);
+    overflow-x: auto;
+  }
+
+  .top-status-cell {
+    min-height: 58px;
+    padding: 0 12px;
   }
 
   .context-button,
@@ -3018,28 +3134,13 @@ button.bottom-status-cell {
     min-width: 150px;
   }
 
-  .context-main-action {
-    border-left: 0;
-    border-top: 1px solid var(--pos-border);
-  }
-
-  .section-state-action {
-    border-left: 0;
-  }
-
-  .main-wide-action,
-  .main-split-action {
-    min-height: 58px;
-  }
-
   .pos-bottom-bar {
-    grid-template-columns: minmax(0, 1fr) 58px;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 56px 76px;
     min-height: var(--pos-bottom-height);
   }
 
-  .bottom-section-button,
-  .bottom-lock-button {
+  .bottom-section-button {
     min-height: 56px;
   }
 
@@ -3047,22 +3148,17 @@ button.bottom-status-cell {
     padding: 0 18px;
   }
 
-  .bottom-lock-button {
-    grid-column: 2;
-    grid-row: 1;
-  }
-
-  .bottom-status-grid {
+  .bottom-action-area {
     grid-column: 1 / -1;
     grid-row: 2;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(150px, 1fr);
+    min-height: 76px;
+    justify-content: flex-start;
     overflow-x: auto;
   }
 
-  .bottom-status-cell {
-    min-height: 76px;
-    padding: 0 14px;
+  .bottom-main-action {
+    min-height: 60px;
+    flex: 0 0 auto;
   }
 
   .pos-section-menu {
