@@ -453,6 +453,412 @@
         }
       }
     },
+    "/employee-shifts/open": {
+      "post": {
+        "operationId": "openEmployeeShift",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenEmployeeShift"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Employee shift opened"
+          }
+        }
+      }
+    },
+    "/employee-shifts/current": {
+      "get": {
+        "operationId": "getCurrentEmployeeShift",
+        "responses": {
+          "200": {
+            "description": "Current employee shift or null"
+          }
+        }
+      }
+    },
+    "/employee-shifts/{id}/close": {
+      "post": {
+        "operationId": "closeEmployeeShift",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseEmployeeShift"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Employee shift closed"
+          }
+        }
+      }
+    },
+    "/cash-shifts/open": {
+      "post": {
+        "operationId": "openCashShift",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenCashShift"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Cash shift opened"
+          }
+        }
+      }
+    },
+    "/cash-shifts/current": {
+      "get": {
+        "operationId": "getCurrentCashShift",
+        "responses": {
+          "200": {
+            "description": "Current cash shift"
+          }
+        }
+      }
+    },
+    "/cash-shifts/{id}/close": {
+      "post": {
+        "operationId": "closeCashShift",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseCashShift"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cash shift closed"
+          }
+        }
+      }
+    },
+    "/orders": {
+      "post": {
+        "operationId": "createOrder",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrder"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Order created"
+          }
+        }
+      }
+    },
+    "/orders/closed": {
+      "get": {
+        "operationId": "listClosedOrders",
+        "parameters": [
+          {
+            "name": "business_date_local",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from_business_date_local",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to_business_date_local",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "shift_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "device_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "check_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Closed orders bounded read"
+          }
+        }
+      }
+    },
+    "/orders/{id}": {
+      "get": {
+        "operationId": "getOrder",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Order details"
+          }
+        }
+      }
+    },
+    "/orders/{id}/lines": {
+      "post": {
+        "operationId": "addOrderLine",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddOrderLine"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Order line added"
+          }
+        }
+      }
+    },
+    "/orders/{id}/lines/{line_id}/modifiers": {
+      "patch": {
+        "operationId": "updateOrderLineModifiers",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          },
+          {
+            "$ref": "#/components/parameters/LineID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOrderLineModifiers"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Order line modifiers updated"
+          }
+        }
+      }
+    },
+    "/orders/{id}/precheck": {
+      "post": {
+        "operationId": "issuePrecheck",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandOnly"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Precheck issued"
+          }
+        }
+      }
+    },
+    "/prechecks/{id}/payments": {
+      "post": {
+        "operationId": "capturePrecheckPayment",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CapturePrecheckPayment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Payment captured"
+          }
+        }
+      }
+    },
+    "/checks/{id}": {
+      "get": {
+        "operationId": "getCheck",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Final check"
+          }
+        }
+      }
+    },
+    "/checks/{id}/reprint": {
+      "post": {
+        "operationId": "reprintCheck",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandOnly"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Check reprint document created"
+          }
+        }
+      }
+    },
+    "/checks/{id}/cancellations": {
+      "post": {
+        "operationId": "recordCheckCancellation",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordCheckCancellation"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Check cancellation ledger operation recorded"
+          }
+        }
+      }
+    },
+    "/checks/{id}/financial-operations": {
+      "get": {
+        "operationId": "listCheckFinancialOperations",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Check financial operations"
+          }
+        }
+      }
+    },
+    "/storage/status": {
+      "get": {
+        "operationId": "getStorageStatus",
+        "responses": {
+          "200": {
+            "description": "Storage lifecycle status"
+          }
+        }
+      }
+    },
     "/sync/status": {
       "get": {
         "operationId": "getSyncStatus",
@@ -514,6 +920,22 @@
       },
       "NodeDeviceID": {
         "name": "node_device_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "LineID": {
+        "name": "line_id",
         "in": "path",
         "required": true,
         "schema": {
@@ -589,6 +1011,46 @@
       "ResolveLicensePairingCode": {
         "type": "object",
         "required": ["pairing_code", "node_device_id"]
+      },
+      "CommandOnly": {
+        "type": "object",
+        "required": ["command_id"]
+      },
+      "OpenEmployeeShift": {
+        "type": "object",
+        "required": ["command_id", "restaurant_id", "opened_by_employee_id"]
+      },
+      "CloseEmployeeShift": {
+        "type": "object",
+        "required": ["command_id", "closed_by_employee_id"]
+      },
+      "OpenCashShift": {
+        "type": "object",
+        "required": ["command_id", "restaurant_id", "opened_by_employee_id", "opening_cash_amount"]
+      },
+      "CloseCashShift": {
+        "type": "object",
+        "required": ["command_id", "closed_by_employee_id", "closing_cash_amount"]
+      },
+      "CreateOrder": {
+        "type": "object",
+        "required": ["command_id", "restaurant_id", "shift_id", "table_id", "guest_count"]
+      },
+      "AddOrderLine": {
+        "type": "object",
+        "required": ["command_id", "menu_item_id", "quantity"]
+      },
+      "UpdateOrderLineModifiers": {
+        "type": "object",
+        "required": ["command_id", "selected_modifiers"]
+      },
+      "CapturePrecheckPayment": {
+        "type": "object",
+        "required": ["command_id", "method", "amount", "currency"]
+      },
+      "RecordCheckCancellation": {
+        "type": "object",
+        "required": ["command_id", "operation_kind", "inventory_disposition", "reason"]
       }
     }
   }

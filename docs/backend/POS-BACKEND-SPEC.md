@@ -116,6 +116,24 @@
 12. Кассир или менеджер может повторно напечатать копию precheck/check из immutable snapshot.
 13. Авторизованный оператор может записать cancellation/refund operation; текущий cashier UI использует check-level ledger routes для full whole-check и partial `order_line`/quantity cancellation/refund и оставляет compatibility payment refund route как fallback для закрытых заказов.
 
+## Portable Stack Smoke
+
+Реализовано сейчас:
+
+- `scripts/run-stack-smoke.py` использует OpenAPI smoke contract `docs/api/mhpos-local-smoke.openapi.json`; новые локальные smoke HTTP calls должны сначала получить `operationId` в этом contract.
+- Suites: `health`, `license_pairing`, `cloud_to_edge_masterdata`, `pos_cashier_runtime`.
+- `pos_cashier_runtime` переиспользует Cloud -> Edge seed summary из предыдущей suite или `scripts/.local-masterdata-summary.json` для уже paired Edge.
+- `pos_cashier_runtime` проверяет backend runtime path: PIN login manager/cashier, открытие личной смены при отсутствии текущей, открытие cash shift при отсутствии текущего, чтение hall/table/menu read models, создание заказа на стол, обычную menu строку, modifier option через `PATCH /orders/{id}/lines/{line_id}/modifiers` при наличии modifier data, service item при наличии seed data, выпуск precheck, оплату через `POST /api/v1/prechecks/{id}/payments`, создание final check, bounded `GET /api/v1/orders/closed`, `GET /api/v1/checks/{id}`, `POST /api/v1/checks/{id}/reprint`, full cancellation в той же смене через `POST /api/v1/checks/{id}/cancellations`, `GET /api/v1/checks/{id}/financial-operations` и read-only `GET /api/v1/storage/status`.
+- Financial mutations в suite отправляют уникальный `command_id`; smoke runner не делает automatic retry financial mutations.
+- JSON result содержит только безопасные ids, statuses и counts; PIN, pairing code, auth session id, token и credentials не выводятся.
+
+Вне текущего объема:
+
+- refund-after-shift-close smoke suite;
+- destructive retention apply/delete, archive restore/read path, `VACUUM`, compaction;
+- PSP refund, fiscal integration;
+- замена полноценным e2e/UI тестам.
+
 Read contract закрытых заказов:
 
 - Реализовано сейчас: `GET /api/v1/orders/closed` принимает `limit`, `offset`, `business_date_local`, `from_business_date_local`, `to_business_date_local`, `shift_id`, `device_id`, `check_id`.

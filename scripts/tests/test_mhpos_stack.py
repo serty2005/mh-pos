@@ -52,7 +52,10 @@ class StackSmokeTest(unittest.TestCase):
             parse_suites(["health,license_pairing", "cloud_to_edge_masterdata"]),
             ["health", "license_pairing", "cloud_to_edge_masterdata"],
         )
-        self.assertEqual(parse_suites(["all"]), ["health", "license_pairing", "cloud_to_edge_masterdata"])
+        self.assertEqual(
+            parse_suites(["all"]),
+            ["health", "license_pairing", "cloud_to_edge_masterdata", "pos_cashier_runtime"],
+        )
 
     def test_health_suite_checks_cloud_pos_and_license(self):
         from mhpos_stack import StackContext, run_health_suite
@@ -212,6 +215,124 @@ class StackSmokeTest(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn("post-pairing Cloud->Edge menu item did not sync", result["suites"][0]["error"])
         self.assertIn("SYNC_FORBIDDEN", result["suites"][0]["error"])
+
+    def test_pos_cashier_runtime_suite_runs_full_backend_path_and_hides_sessions(self):
+        from mhpos_http import HttpError
+        from mhpos_stack import StackContext, run_pos_cashier_runtime_suite
+
+        class RuntimePOS(FakeClient):
+            def __init__(self):
+                super().__init__("pos")
+                self.patches = []
+
+            def post(self, path, body=None, headers=None, expected_status=(200, 201)):
+                self.posts.append((path, body or {}, headers or {}, tuple(expected_status)))
+                if path == "/auth/pin-login":
+                    return {"session": {"id": "session-manager"}, "actor": {"employee_id": "manager-1"}}
+                if path == "/employee-shifts/open":
+                    return {"id": "shift-1", "opened_by_employee_id": body["opened_by_employee_id"]}
+                if path == "/cash-shifts/open":
+                    return {"id": "cash-1", "shift_id": "shift-1", "opened_by_employee_id": body["opened_by_employee_id"]}
+                if path == "/orders":
+                    return {"id": "order-1", "status": "open"}
+                if path == "/orders/order-1/lines":
+                    if body["menu_item_id"] == "menu-mod":
+                        return {"id": "line-mod", "menu_item_id": body["menu_item_id"]}
+                    if body["menu_item_id"] == "menu-service":
+                        return {"id": "line-service", "menu_item_id": body["menu_item_id"]}
+                    return {"id": "line-normal", "menu_item_id": body["menu_item_id"]}
+                if path == "/orders/order-1/precheck":
+                    return {"id": "precheck-1", "total": 35000, "remaining_total": 35000, "currency_code": "RUB"}
+                if path == "/prechecks/precheck-1/payments":
+                    return {"id": "payment-1", "status": "captured"}
+                if path == "/checks/check-1/reprint":
+                    return {"id": "reprint-1", "document_type": "check"}
+                if path == "/checks/check-1/cancellations":
+                    return {
+                        "id": "operation-1",
+                        "operation_type": "cancellation",
+                        "operation_kind": body["operation_kind"],
+                    }
+                return super().post(path, body=body, headers=headers, expected_status=expected_status)
+
+            def patch(self, path, body=None, headers=None, expected_status=(200,)):
+                self.patches.append((path, body or {}, headers or {}, tuple(expected_status)))
+                if path == "/orders/order-1/lines/line-mod/modifiers":
+                    return {"id": "line-mod", "modifiers": body["selected_modifiers"]}
+                raise AssertionError(f"unexpected PATCH {path}")
+
+            def get(self, path, headers=None, expected_status=(200,)):
+                self.gets.append((path, headers or {}, tuple(expected_status)))
+                if path == "/system/provisioning-status":
+                    return {"node_device_id": "node-1", "paired": True, "restaurant_id": "restaurant-1"}
+                if path == "/employee-shifts/current":
+                    return None
+                if path == "/cash-shifts/current":
+                    raise HttpError("GET", path, 404, "{}")
+                if path.startswith("/halls"):
+                    return [{"id": "hall-1", "name": "Main"}]
+                if path.startswith("/tables"):
+                    return [{"id": "table-1", "name": "T1"}]
+                if path == "/menu/items":
+                    return [
+                        {"id": "menu-normal", "item_type": "dish", "active": True},
+                        {
+                            "id": "menu-mod",
+                            "item_type": "dish",
+                            "active": True,
+                            "modifier_groups": [
+                                {
+                                    "id": "modifier-group-1",
+                                    "active": True,
+                                    "max_count": 1,
+                                    "options": [{"id": "modifier-option-1", "active": True}],
+                                }
+                            ],
+                        },
+                        {"id": "menu-service", "item_type": "service", "active": True},
+                    ]
+                if path == "/orders/order-1":
+                    return {"id": "order-1", "status": "closed", "check": {"id": "check-1", "status": "paid"}}
+                if path.startswith("/orders/closed"):
+                    return [{"id": "order-1", "status": "closed", "check": {"id": "check-1"}}]
+                if path == "/checks/check-1":
+                    return {"id": "check-1", "status": "paid", "total": 35000}
+                if path == "/checks/check-1/financial-operations":
+                    return [{"id": "operation-1", "operation_type": "cancellation"}]
+                if path == "/storage/status":
+                    return {
+                        "retention_mode": "dry_run_only",
+                        "database_size_bytes": 4096,
+                        "counts": {"closed_orders": 1, "checks": 1, "financial_operations": 1},
+                    }
+                raise AssertionError(f"unexpected GET {path}")
+
+        summary = {
+            "restaurant_id": "restaurant-1",
+            "node_device_id": "node-1",
+            "manager_pin": "2222",
+            "manager_employee_id": "manager-1",
+            "cashier_pin": "1111",
+            "cashier_employee_id": "cashier-1",
+            "hall_id": "hall-1",
+            "table_ids": ["table-1"],
+            "menu_item_ids": ["menu-normal", "menu-mod", "menu-service"],
+        }
+        pos = RuntimePOS()
+        ctx = StackContext(FakeClient("cloud"), pos, FakeClient("license"))
+
+        result = run_pos_cashier_runtime_suite(ctx, existing_summary=summary, client_device_id="client-1")
+
+        self.assertEqual(result["name"], "pos_cashier_runtime")
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["details"]["order_id"], "order-1")
+        self.assertEqual(result["details"]["modifier_line_added"], True)
+        self.assertEqual(result["details"]["service_line_added"], True)
+        payment_posts = [body for path, body, *_ in pos.posts if path == "/prechecks/precheck-1/payments"]
+        cancellation_posts = [body for path, body, *_ in pos.posts if path == "/checks/check-1/cancellations"]
+        self.assertTrue(payment_posts[0]["command_id"].startswith("capture-payment-"))
+        self.assertTrue(cancellation_posts[0]["command_id"].startswith("record-cancellation-"))
+        self.assertNotIn("session-manager", str(result))
 
     def test_stack_cli_returns_non_zero_when_suite_failed(self):
         script_path = ROOT / "run-stack-smoke.py"

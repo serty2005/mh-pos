@@ -24,10 +24,11 @@ Runner выполняет независимые suites и возвращает 
 - `health`: проверяет `/health` для Cloud, POS Edge и License Server.
 - `license_pairing`: напрямую регистрирует одноразовый pairing code в License Server, resolve-ит его и проверяет, что code consumed.
 - `cloud_to_edge_masterdata`: создает Cloud-owned demo справочники, выполняет POS Edge provisioning через License Code с Cloud assignment fallback, проверяет POS read model и post-pairing Cloud -> Edge sync.
+- `pos_cashier_runtime`: переиспользует summary из `cloud_to_edge_masterdata` или `scripts/.local-masterdata-summary.json` и проверяет backend path `login -> personal shift -> cash shift -> hall/table/menu reads -> order -> regular/modifier/service lines -> precheck -> payment by precheck_id -> final check -> closed orders -> check get/reprint -> cancellation ledger в той же смене -> financial operations -> storage status`.
 
 Запланировано далее:
 
-- `cashier_runtime`: runtime путь `login -> shift/cash session -> order -> precheck -> payment -> check -> reprint -> cancellation/refund -> close shifts`.
+- Отдельная refund-after-shift-close suite, close shifts и negative/permission cases.
 - service-specific suites для новых Cloud, Edge и License endpoints, когда они становятся частью smoke acceptance.
 
 ## Error Handling
@@ -45,7 +46,7 @@ python3 scripts/run-stack-smoke.py --suite all --json-output scripts/.stack-smok
 Аргументы:
 
 - `--cloud-base`, `--pos-base`, `--license-base`;
-- `--suite` с повторением или comma-separated list: `all`, `health`, `license_pairing`, `cloud_to_edge_masterdata`;
+- `--suite` с повторением или comma-separated list: `all`, `health`, `license_pairing`, `cloud_to_edge_masterdata`, `pos_cashier_runtime`;
 - `--output` для существующего seed summary;
 - `--json-output` для полного stack smoke result;
 - `--skip-post-pairing-sync-check`, `--wait-seconds`, `--interval-seconds`.
