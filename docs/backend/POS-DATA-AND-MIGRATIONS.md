@@ -242,7 +242,7 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 - Cashier UI whole-check и partial `order_line`/quantity cancellation/refund использует те же ledger endpoints, отправляет явный `inventory_disposition` и не требует schema changes или mutable status columns у finalized payments/checks. Line/quantity UI опирается на immutable check/precheck snapshot и пишет `financial_operation_items` со scope `order_line`; modifier/service/tip UI не реализован сейчас.
 - Storage archive export сохраняет `financial_operations`, `financial_operation_items` и immutable snapshots как protected data в JSONL artifact без пересчета или мутации source rows.
 
-- Реализовано сейчас в Cloud: `cloud_projection_financial_operations` stores current `CancellationRecorded`/`RefundRecorded` operation projections from raw/journal receipt with operation/check/shift/date/type/disposition/reason/snapshot metadata. Legacy `PaymentRefunded`/`CheckRefunded` do not populate this detailed projection.
+- Реализовано сейчас в Cloud: `cloud_projection_financial_operations` stores current `CancellationRecorded`/`RefundRecorded` operation projections from raw/journal receipt with operation/check/precheck/shift/date/type/disposition/reason/snapshot metadata. Current financial operation payload validation requires совпадение payload `restaurant_id`/`device_id` с envelope, `precheck_id`, `reason` и immutable snapshot. Legacy `PaymentRefunded`/`CheckRefunded` do not populate this detailed projection.
 
 Не реализовано сейчас:
 

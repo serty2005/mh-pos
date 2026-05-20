@@ -81,7 +81,7 @@ Edge Outbox
 Реализовано сейчас:
 
 - `CancellationRecorded` и `RefundRecorded` принимаются Cloud receiver и сохраняются как operational events;
-- Cloud receiver validates current financial operation payload fields: operation id, edge operation id, check id, original/current shift ids, amount, currency, business date, operation-level inventory disposition and immutable snapshot;
+- Cloud receiver валидирует current financial operation payload fields: operation id, edge operation id, совпадение payload `restaurant_id`/`device_id` с envelope, check id, precheck id, original/current shift ids, amount, currency, business date, operation-level inventory disposition, reason и immutable snapshot;
 - cashier UI for whole-check and partial `order_line`/quantity cancellation/refund не добавляет новые sync event names; он использует текущие Edge-owned ledger events и отправляет command id, inventory disposition и operation items как payload fields;
 - `PaymentRefunded` и `CheckRefunded` остаются legacy accepted event types для старых payloads;
 - Cloud event-type stats обновляются для всех accepted operational events;

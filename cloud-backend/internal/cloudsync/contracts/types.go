@@ -443,8 +443,21 @@ func validateFinancialOperationRecordedPayload(v SyncEnvelope) error {
 		return fmt.Errorf("%w: payload.origin is required", ErrInvalidEnvelope)
 	}
 	data := payload.Data
-	if strings.TrimSpace(data.ID) == "" || strings.TrimSpace(data.EdgeOperationID) == "" || strings.TrimSpace(data.CheckID) == "" || strings.TrimSpace(data.OriginalShiftID) == "" || strings.TrimSpace(data.ShiftID) == "" {
-		return fmt.Errorf("%w: financial operation id, edge_operation_id, check_id, original_shift_id and shift_id are required", ErrInvalidEnvelope)
+	if strings.TrimSpace(data.ID) == "" ||
+		strings.TrimSpace(data.EdgeOperationID) == "" ||
+		strings.TrimSpace(data.RestaurantID) == "" ||
+		strings.TrimSpace(data.DeviceID) == "" ||
+		strings.TrimSpace(data.CheckID) == "" ||
+		strings.TrimSpace(data.PrecheckID) == "" ||
+		strings.TrimSpace(data.OriginalShiftID) == "" ||
+		strings.TrimSpace(data.ShiftID) == "" {
+		return fmt.Errorf("%w: financial operation id, edge_operation_id, restaurant_id, device_id, check_id, precheck_id, original_shift_id and shift_id are required", ErrInvalidEnvelope)
+	}
+	if v.RestaurantID == nil || strings.TrimSpace(*v.RestaurantID) != strings.TrimSpace(data.RestaurantID) {
+		return fmt.Errorf("%w: financial operation restaurant_id must match envelope restaurant_id", ErrInvalidEnvelope)
+	}
+	if strings.TrimSpace(v.DeviceID) != strings.TrimSpace(data.DeviceID) {
+		return fmt.Errorf("%w: financial operation device_id must match envelope device_id", ErrInvalidEnvelope)
 	}
 	if strings.TrimSpace(v.AggregateType) != "FinancialOperation" || strings.TrimSpace(v.AggregateID) != strings.TrimSpace(data.ID) {
 		return fmt.Errorf("%w: financial operation aggregate must match payload id", ErrInvalidEnvelope)
@@ -464,6 +477,9 @@ func validateFinancialOperationRecordedPayload(v SyncEnvelope) error {
 	}
 	if strings.TrimSpace(data.Status) != "recorded" {
 		return fmt.Errorf("%w: financial operation status must be recorded", ErrInvalidEnvelope)
+	}
+	if strings.TrimSpace(data.Reason) == "" {
+		return fmt.Errorf("%w: financial operation reason is required", ErrInvalidEnvelope)
 	}
 	if data.Amount <= 0 || !validCurrency(data.Currency) {
 		return fmt.Errorf("%w: financial operation amount and currency are required", ErrInvalidEnvelope)

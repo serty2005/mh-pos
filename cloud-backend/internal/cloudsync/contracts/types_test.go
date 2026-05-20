@@ -110,6 +110,42 @@ func TestValidateEnvelopeRejectsInvalidFinancialOperationPayload(t *testing.T) {
 	}
 }
 
+func TestValidateEnvelopeRejectsFinancialOperationPayloadIdentityMismatch(t *testing.T) {
+	tests := []struct {
+		name       string
+		field      string
+		value      any
+		envelopeFn func(*contracts.SyncEnvelope)
+	}{
+		{name: "missing precheck", field: "precheck_id", value: ""},
+		{name: "missing reason", field: "reason", value: ""},
+		{name: "restaurant mismatch", field: "restaurant_id", value: "restaurant-other"},
+		{name: "device mismatch", field: "device_id", value: "device-other"},
+		{name: "envelope restaurant mismatch", envelopeFn: func(envelope *contracts.SyncEnvelope) {
+			other := "restaurant-other"
+			envelope.RestaurantID = &other
+		}},
+		{name: "envelope device mismatch", envelopeFn: func(envelope *contracts.SyncEnvelope) {
+			envelope.DeviceID = "device-other"
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			envelope := validFinancialOperationEnvelope(t, contracts.EventRefundRecorded, "refund")
+			if tt.field != "" {
+				setFinancialOperationPayloadField(t, &envelope, tt.field, tt.value)
+			}
+			if tt.envelopeFn != nil {
+				tt.envelopeFn(&envelope)
+			}
+			err := contracts.ValidateEnvelope(envelope)
+			if !errors.Is(err, contracts.ErrInvalidEnvelope) {
+				t.Fatalf("expected invalid financial operation payload, got %v", err)
+			}
+		})
+	}
+}
+
 func validEnvelope(t *testing.T, eventType contracts.EventType) contracts.SyncEnvelope {
 	t.Helper()
 	raw := []byte(`{
@@ -147,6 +183,24 @@ func validEnvelope(t *testing.T, eventType contracts.EventType) contracts.SyncEn
 	}
 	envelope.EventType = eventType
 	return envelope
+}
+
+func setFinancialOperationPayloadField(t *testing.T, envelope *contracts.SyncEnvelope, field string, value any) {
+	t.Helper()
+	var payload map[string]any
+	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	data, ok := payload["data"].(map[string]any)
+	if !ok {
+		t.Fatal("expected financial operation payload data object")
+	}
+	data[field] = value
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope.Payload = raw
 }
 
 func validFinancialOperationEnvelope(t *testing.T, eventType contracts.EventType, operationType string) contracts.SyncEnvelope {
