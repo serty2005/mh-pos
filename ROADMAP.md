@@ -79,9 +79,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 Реализовано сейчас:
 
-- Документация сверена с фактическими POS Edge routes, Cloud routes, миграционными baseline, sync contracts и текущими Vue UI entry points. Критичных обещаний отсутствующего runtime в профильных документах не найдено.
-- Отдельный audit report зафиксирован в `docs/temp/DOCUMENTATION-AUDIT-2026-05-15.md`.
-- Отдельный промпт для UI/UX hardening зафиксирован в `docs/temp/UI-UX-FIX-PROMPT-2026-05-15.md`.
+- Документация частично сверена с фактическими POS Edge routes, Cloud routes, миграционными baseline и smoke-скриптами; сверка продолжается по мере выявления расхождений в route lists и формулировках runtime-coverage.
+- Результаты сверки фиксируются напрямую в профильных документах и этом roadmap без ссылок на отсутствующие временные отчеты.
 
 Запланировано далее:
 
@@ -114,7 +113,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Cancellation/refund/reprint hardening:
   - backend ledger, immutable snapshots, no-over-cancel/no-over-refund/no-over-line-amount tests, current `CancellationRecorded`/`RefundRecorded` sync contracts, idempotent Cloud raw/journal receipt checks and coarse Cloud refund projection реализованы;
   - cashier UI full whole-check и partial `order_line`/quantity cancellation/refund через ledger endpoints реализован с выбором inventory disposition; compatibility refund по captured payment оставлен отдельным fallback;
-  - production-way smoke script покрывает Cloud master data для dishes/services/modifiers, Edge ingest, login, shift/cash session, order, modifiers/services, precheck, payment, check reprint, same-shift cancellation, post-shift full refund and shift close.
+  - текущий `scripts/run-stack-smoke.py` покрывает только suites `health`, `license_pairing`, `cloud_to_edge_masterdata`; runtime-путь `login -> shift/cash session -> order -> precheck -> payment -> check -> cancellation/refund -> shift close` остается запланированным расширением smoke.
 - Documentation freeze:
   - поддерживать `SPECv1.3.md` как frozen pilot contract;
   - дальние контуры переносить в roadmap/ADR, а не в pilot spec.
