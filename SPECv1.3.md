@@ -76,13 +76,16 @@
 
 - `POST /api/v1/orders`
 - `GET /api/v1/orders/current`
+- `GET /api/v1/orders/active`
 - `GET /api/v1/orders/{id}`
 - `GET /api/v1/orders/closed`
 - `POST /api/v1/orders/{id}/lines`
 - `PATCH /api/v1/orders/{id}/lines/{line_id}`
 - `PATCH /api/v1/orders/{id}/lines/{line_id}/modifiers`
+- `PATCH /api/v1/orders/{id}/lines/{line_id}/details`
 - `POST /api/v1/orders/{id}/lines/{line_id}/void`
 - `POST /api/v1/orders/{id}/close`
+- `GET /api/v1/pricing/policies`
 
 Order line snapshot содержит `menu_item_id`, `catalog_item_id`, name, quantity, unit price, total price и selected modifiers. `SelectedModifierCommand.Quantity` означает количество выбранной modifier option на всю строку заказа; line total считается как `unit_price * line.quantity + sum(selected_modifier.total_price)`. Add/update modifiers выполняются только для активной строки открытого заказа без active precheck/final check; backend проверяет required/min/max, active group/option, принадлежность option к group, link menu item -> modifier group и неотрицательную цену option.
 

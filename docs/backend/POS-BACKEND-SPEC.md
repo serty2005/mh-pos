@@ -60,6 +60,7 @@
 - `GET /api/v1/orders/{id}/pricing`
 - `POST /api/v1/orders/{id}/discounts`
 - `POST /api/v1/orders/{id}/surcharges`
+- `GET /api/v1/pricing/policies`
 - `POST /api/v1/orders/{id}/precheck`
 - `GET /api/v1/orders/{id}/prechecks`
 - `POST /api/v1/orders/{id}/close`
