@@ -30,17 +30,17 @@ class FakeClient:
             return {"paired": True, "node_device_id": "node-1", "restaurant_id": "restaurant-1"}
         if path == "/restaurants":
             return {"id": "restaurant-1"}
-        if path == "/roles":
+        if path in ("/roles", "/master-data/roles"):
             return {"id": f"role-{self.counter}"}
-        if path == "/employees":
+        if path in ("/employees", "/master-data/employees"):
             return {"id": "manager-1" if body.get("pin") == "2222" else "cashier-1"}
-        if path == "/halls":
+        if path in ("/halls", "/master-data/floor/halls"):
             return {"id": "hall-1"}
-        if path == "/tables":
+        if path in ("/tables", "/master-data/floor/tables"):
             return {"id": "table-1"}
-        if path == "/catalog/items":
+        if path in ("/catalog/items", "/master-data/catalog/items"):
             return {"id": f"catalog-{self.counter}"}
-        if path == "/menu/items":
+        if path in ("/menu/items", "/master-data/menu/items"):
             return {"id": "menu-service" if body.get("name", "").endswith("Service") else "menu-tea"}
         if path == "/master-data/modifiers/groups":
             return {"id": "modifier-group-1"}
@@ -48,6 +48,8 @@ class FakeClient:
             return {"id": "modifier-option-1"}
         if path == "/master-data/modifiers/bindings":
             return {"id": "modifier-binding-1"}
+        if path == "/master-data/publications":
+            return {"id": f"publication-{self.counter}"}
         return {"id": f"{path.strip('/').replace('/', '-')}-{self.counter}"}
 
     def get(self, path, headers=None, expected_status=(200,)):
@@ -97,10 +99,10 @@ class SeedWorkflowTest(unittest.TestCase):
 
         paths = [path for path, *_ in client.posts]
         self.assertIn("/restaurants", paths)
-        self.assertIn("/roles", paths)
-        self.assertIn("/employees", paths)
+        self.assertIn("/master-data/roles", paths)
+        self.assertIn("/master-data/employees", paths)
         self.assertIn("/master-data/modifiers/groups", paths)
-        self.assertIn("/restaurants/restaurant-1/master-data/publish", paths)
+        self.assertIn("/master-data/publications", paths)
         self.assertEqual(summary["restaurant_id"], "restaurant-1")
         self.assertEqual(summary["node_device_id"], "node-1")
         self.assertEqual(len(summary["menu_item_ids"]), 3)

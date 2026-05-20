@@ -84,7 +84,7 @@ docker compose -f docker-compose.local.yml down -v
 
 ## Заполнение Cloud и проверка POS на Linux/Fedora
 
-Реализовано сейчас: канонический локальный путь использует Python 3 scripts без внешних Python dependencies. Скрипты создают demo справочники через Cloud HTTP API, выполняют POS Edge provisioning через License/Cloud API, затем проверяют POS read model через POS HTTP API. Прямые записи в PostgreSQL/SQLite не используются.
+Реализовано сейчас: канонический локальный путь использует Python 3 scripts без внешних Python dependencies. Скрипты создают demo справочники через Cloud HTTP API, выполняют POS Edge provisioning через License/Cloud API, затем проверяют POS read model через POS HTTP API. HTTP calls в Python ядре строятся из OpenAPI contract `docs/api/mhpos-local-smoke.openapi.json` по `operationId`; прямые записи в PostgreSQL/SQLite не используются.
 
 Полный semi-automatic smoke для поднятого Docker stack:
 
@@ -95,6 +95,26 @@ python3 scripts/run-local-masterdata-smoke.py \
   --license-base http://localhost:8095 \
   --output scripts/.local-masterdata-summary.json
 ```
+
+Полный stack smoke, который проверяет Cloud API, POS Edge API и License Server одной Python-утилитой:
+
+```bash
+python3 scripts/run-stack-smoke.py \
+  --suite all \
+  --cloud-base http://localhost:8090 \
+  --pos-base http://localhost:8080 \
+  --license-base http://localhost:8095 \
+  --output scripts/.local-masterdata-summary.json \
+  --json-output scripts/.stack-smoke-result.json
+```
+
+Реализованные suites:
+
+- `health` - проверяет root health endpoint Cloud, POS Edge и License Server;
+- `license_pairing` - напрямую регистрирует одноразовый pairing code в License Server, resolve-ит его и проверяет, что повторный resolve отклоняется;
+- `cloud_to_edge_masterdata` - создает Cloud-owned demo master data, выполняет POS Edge provisioning, проверяет POS read model и post-pairing Cloud -> Edge sync.
+
+Правило расширения: когда в Cloud API, POS Edge API или License Server появляется новая функциональность, которая должна входить в локальную приемку, добавить OpenAPI operation в `docs/api/mhpos-local-smoke.openapi.json`, отдельную suite или шаг suite в `scripts/lib/mhpos_stack.py`, unit test в `scripts/tests` и обновить этот раздел документации.
 
 То же через thin Bash wrapper:
 
@@ -129,9 +149,13 @@ Windows-compatible wrappers остаются тонкими оболочками
 .\scripts\run-local-masterdata-smoke.ps1 --output scripts/.local-masterdata-summary.json
 ```
 
-`scripts/.local-masterdata-summary.json` содержит локальные demo PIN для последующих автоматических шагов и добавлен в `.gitignore`; не коммить этот файл.
+`scripts/.local-masterdata-summary.json` содержит локальные demo PIN для последующих автоматических шагов и добавлен в `.gitignore`; не коммить этот файл. `scripts/.stack-smoke-result.json` содержит безопасный JSON-отчет `run-stack-smoke.py` и тоже игнорируется git.
 
-Важно для ручного наглядного теста: demo seed dataset должен расширяться вместе с развитием проекта. Когда появляются новые Cloud-owned справочники, publication streams или POS read flows, их нужно добавлять в Python seed/sync сценарии и в эту документацию в том же PR.
+Повторный запуск `run-stack-smoke.py --suite all` на уже provisioned Edge использует существующий `--output` summary, если `restaurant_id` и `node_device_id` совпадают с текущей POS Edge привязкой. В этом режиме suite не пересоздает pairing, а проверяет текущий POS read model и публикует новый post-pairing Cloud -> Edge item в тот же ресторан. Если summary отсутствует или относится к другому ресторану, suite завершается fail-fast: нужно либо передать корректный summary, либо пересоздать локальные Docker volumes.
+
+Python HTTP layer игнорирует системные proxy-переменные для `localhost`/loopback адресов. Это важно для Windows/Linux окружений, где `HTTP_PROXY`/`HTTPS_PROXY` могут уводить запросы к Docker published ports в корпоративный proxy. Если post-pairing sync не доходит до POS Edge, отчет дополнительно выводит `sync_status` и последний `last_error` из Edge outbox, например `SYNC_FORBIDDEN`.
+
+Важно для ручного наглядного теста: demo seed dataset должен расширяться вместе с развитием проекта. Когда появляются новые Cloud-owned справочники, publication streams или POS read flows, их нужно добавлять в OpenAPI contract, Python seed/sync сценарии и эту документацию в том же PR.
 
 Для production-like Zero-to-Cashier через Cloud Approve:
 

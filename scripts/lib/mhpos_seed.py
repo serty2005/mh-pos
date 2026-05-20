@@ -2,8 +2,11 @@ import json
 import time
 import uuid
 
+from mhpos_contract import load_default_contract
 from mhpos_http import wait_until
 
+
+CONTRACT = load_default_contract()
 
 CASHIER_PERMISSIONS = [
     "pos.employee_shift.open",
@@ -50,14 +53,40 @@ def permissions_json(items):
     return json.dumps({item: True for item in sorted(set(items))}, separators=(",", ":"))
 
 
+def call(client, operation_id, body=None, path_params=None, query=None, headers=None, expected_status=None):
+    request = CONTRACT.build_request(operation_id, path_params=path_params, query=query, body=body)
+    statuses = expected_status or request["expected_status"]
+    if hasattr(client, "request"):
+        return client.request(
+            request["method"],
+            request["path"],
+            body,
+            headers,
+            statuses,
+            api_prefix=request["api_prefix"],
+        )
+    if not request["api_prefix"]:
+        return client.root_get(request["path"], headers=headers, expected_status=statuses)
+    if request["method"] == "GET":
+        return client.get(request["path"], headers=headers, expected_status=statuses)
+    if request["method"] == "POST":
+        return client.post(request["path"], body or {}, headers=headers, expected_status=statuses)
+    if request["method"] == "PATCH":
+        return client.patch(request["path"], body or {}, headers=headers, expected_status=statuses)
+    if request["method"] == "PUT":
+        return client.put(request["path"], body or {}, headers=headers, expected_status=statuses)
+    raise ValueError(f"unsupported HTTP method {request['method']} for {operation_id}")
+
+
 def health_check(raw_client):
-    return raw_client.root_get("/health")
+    return call(raw_client, "health")
 
 
 def create_cloud_seed(client, restaurant_name="", cashier_pin="1111", manager_pin="2222", node_device_id="", suffix=""):
     suffix = suffix or command_suffix()
-    restaurant = client.post(
-        "/restaurants",
+    restaurant = call(
+        client,
+        "createRestaurant",
         {
             "name": restaurant_name or f"Local Demo Bistro {suffix}",
             "timezone": "Europe/Moscow",
@@ -67,32 +96,40 @@ def create_cloud_seed(client, restaurant_name="", cashier_pin="1111", manager_pi
         },
     )
     restaurant_id = restaurant["id"]
-    cashier_role = client.post(
-        "/roles",
+    cashier_role = call(
+        client,
+        "createRole",
         {
             "restaurant_id": restaurant_id,
             "name": f"cashier-{suffix}",
             "permissions_json": permissions_json(CASHIER_PERMISSIONS),
         },
     )
-    manager_role = client.post(
-        "/roles",
+    manager_role = call(
+        client,
+        "createRole",
         {
             "restaurant_id": restaurant_id,
             "name": f"manager-{suffix}",
             "permissions_json": permissions_json(MANAGER_PERMISSIONS),
         },
     )
-    cashier = client.post(
-        "/employees",
+    cashier = call(
+        client,
+        "createEmployee",
         {"restaurant_id": restaurant_id, "role_id": cashier_role["id"], "name": "Demo Cashier", "pin": cashier_pin},
     )
-    manager = client.post(
-        "/employees",
+    manager = call(
+        client,
+        "createEmployee",
         {"restaurant_id": restaurant_id, "role_id": manager_role["id"], "name": "Demo Manager", "pin": manager_pin},
     )
-    hall = client.post("/halls", {"restaurant_id": restaurant_id, "name": "Main Hall"})
-    table = client.post("/tables", {"restaurant_id": restaurant_id, "hall_id": hall["id"], "name": "T1", "seats": 2})
+    hall = call(client, "createHall", {"restaurant_id": restaurant_id, "name": "Main Hall"})
+    table = call(
+        client,
+        "createTable",
+        {"restaurant_id": restaurant_id, "hall_id": hall["id"], "name": "T1", "seats": 2},
+    )
 
     catalog_tea = create_catalog_item(client, restaurant_id, "dish", f"Demo Tea {suffix}", f"DEMO-TEA-{suffix}", "portion")
     catalog_soup = create_catalog_item(client, restaurant_id, "dish", f"Demo Soup {suffix}", f"DEMO-SOUP-{suffix}", "portion")
@@ -102,12 +139,14 @@ def create_cloud_seed(client, restaurant_name="", cashier_pin="1111", manager_pi
     menu_soup = create_menu_item(client, restaurant_id, catalog_soup["id"], "Demo Soup", 25000)
     menu_service = create_menu_item(client, restaurant_id, catalog_service["id"], "Demo Service", 5000)
 
-    modifier_group = client.post(
-        "/master-data/modifiers/groups",
+    modifier_group = call(
+        client,
+        "createModifierGroup",
         {"restaurant_id": restaurant_id, "name": "Demo Add-ons", "required": False, "min_count": 0, "max_count": 2},
     )
-    modifier_option = client.post(
-        "/master-data/modifiers/options",
+    modifier_option = call(
+        client,
+        "createModifierOption",
         {
             "restaurant_id": restaurant_id,
             "modifier_group_id": modifier_group["id"],
@@ -115,8 +154,9 @@ def create_cloud_seed(client, restaurant_name="", cashier_pin="1111", manager_pi
             "price_minor": 3000,
         },
     )
-    modifier_binding = client.post(
-        "/master-data/modifiers/bindings",
+    modifier_binding = call(
+        client,
+        "createModifierBinding",
         {
             "restaurant_id": restaurant_id,
             "modifier_group_id": modifier_group["id"],
@@ -146,15 +186,17 @@ def create_cloud_seed(client, restaurant_name="", cashier_pin="1111", manager_pi
 
 
 def create_catalog_item(client, restaurant_id, kind, name, sku, base_unit):
-    return client.post(
-        "/catalog/items",
-        {"restaurant_id": restaurant_id, "type": kind, "name": name, "sku": sku, "base_unit": base_unit},
+    return call(
+        client,
+        "createCatalogItem",
+        {"restaurant_id": restaurant_id, "kind": kind, "name": name, "sku": sku, "base_unit": base_unit},
     )
 
 
 def create_menu_item(client, restaurant_id, catalog_item_id, name, price):
-    return client.post(
-        "/menu/items",
+    return call(
+        client,
+        "createMenuItem",
         {
             "restaurant_id": restaurant_id,
             "catalog_item_id": catalog_item_id,
@@ -167,14 +209,14 @@ def create_menu_item(client, restaurant_id, catalog_item_id, name, price):
 
 
 def publish_master_data(client, restaurant_id, node_device_id="", published_by="python-masterdata-seed"):
-    body = {"published_by": published_by}
+    body = {"restaurant_id": restaurant_id, "published_by": published_by}
     if node_device_id:
         body["node_device_id"] = node_device_id
-    return client.post(f"/restaurants/{restaurant_id}/master-data/publish", body)
+    return call(client, "publishMasterData", body)
 
 
 def get_edge_node_device_id(pos_client):
-    status = pos_client.get("/system/provisioning-status")
+    status = call(pos_client, "getProvisioningStatus")
     node_device_id = status.get("node_device_id", "")
     if not node_device_id:
         raise RuntimeError("POS Edge did not return node_device_id")
@@ -182,11 +224,13 @@ def get_edge_node_device_id(pos_client):
 
 
 def provision_via_license(cloud_client, pos_client, restaurant_id, node_device_id, display_name="POS Terminal 1"):
-    pairing = cloud_client.post(
-        f"/restaurants/{restaurant_id}/devices/generate-pairing-code",
+    pairing = call(
+        cloud_client,
+        "generatePairingCode",
         {"node_device_id": node_device_id, "display_name": display_name, "expires_in_minutes": 30},
+        path_params={"restaurant_id": restaurant_id},
     )
-    paired = pos_client.post("/system/provisioning/pair-via-license", {"pairing_code": pairing["pairing_code"]})
+    paired = call(pos_client, "pairViaLicense", {"pairing_code": pairing["pairing_code"]})
     return {"pairing_code": pairing["pairing_code"], "pairing_status": paired}
 
 
@@ -199,17 +243,21 @@ def provision_pos_edge(cloud_client, pos_client, cloud_base_url, restaurant_id, 
         if not allow_assignment_fallback:
             raise
     try:
-        pos_client.post(
-            "/system/provisioning/register-cloud",
+        call(
+            pos_client,
+            "registerCloudProvisioning",
             {"cloud_url": cloud_base_url.rstrip("/"), "display_name": display_name, "app_version": "local-python-smoke"},
-            expected_status=(200,),
         )
     except Exception:
         pass
-    assignment = cloud_client.post(f"/restaurants/{restaurant_id}/devices/{node_device_id}/assign", {}, expected_status=(200,))
+    assignment = call(
+        cloud_client,
+        "assignDevice",
+        path_params={"restaurant_id": restaurant_id, "node_device_id": node_device_id},
+    )
 
     def check():
-        status = pos_client.get("/system/provisioning-status")
+        status = call(pos_client, "getProvisioningStatus")
         return status if status.get("paired") else None
 
     paired = wait_until(check, timeout_seconds=60, interval_seconds=1)
@@ -226,10 +274,10 @@ def auth_headers(login, node_device_id, client_device_id):
 
 
 def login_with_pin(pos_client, node_device_id, client_device_id, pin):
-    return pos_client.post(
-        "/auth/pin-login",
+    return call(
+        pos_client,
+        "pinLogin",
         {"node_device_id": node_device_id, "client_device_id": client_device_id, "pin": pin},
-        expected_status=(201,),
     )
 
 
@@ -239,12 +287,14 @@ def verify_pos_read_model(pos_client, summary, client_device_id="python-masterda
     if expected_manager and login["actor"]["employee_id"] != expected_manager:
         raise AssertionError("manager PIN resolved unexpected employee_id")
     headers = auth_headers(login, summary["node_device_id"], client_device_id)
-    halls = pos_client.get(f"/halls?restaurant_id={summary['restaurant_id']}", headers=headers)
-    tables = pos_client.get(
-        f"/tables?restaurant_id={summary['restaurant_id']}&hall_id={summary['hall_id']}",
+    halls = call(pos_client, "listPOSHalls", query={"restaurant_id": summary["restaurant_id"]}, headers=headers)
+    tables = call(
+        pos_client,
+        "listPOSTables",
+        query={"restaurant_id": summary["restaurant_id"], "hall_id": summary["hall_id"]},
         headers=headers,
     )
-    menu_items = pos_client.get("/menu/items", headers=headers)
+    menu_items = call(pos_client, "listPOSMenuItems", headers=headers)
     assert_contains_id(halls, summary["hall_id"], "Cloud-created hall is not visible on POS Edge")
     for table_id in summary.get("table_ids", []):
         assert_contains_id(tables, table_id, "Cloud-created table is not visible on POS Edge")
@@ -269,7 +319,7 @@ def create_post_pairing_sync_item(cloud_client, summary, suffix=""):
 
 def wait_for_menu_item(pos_client, menu_item_id, headers, timeout_seconds=90, interval_seconds=2):
     def check():
-        items = pos_client.get("/menu/items", headers=headers)
+        items = call(pos_client, "listPOSMenuItems", headers=headers)
         return find_by_id(items, menu_item_id)
 
     return wait_until(check, timeout_seconds, interval_seconds)
@@ -277,9 +327,9 @@ def wait_for_menu_item(pos_client, menu_item_id, headers, timeout_seconds=90, in
 
 def verify_sync_status(pos_client, headers):
     return {
-        "sync_status": pos_client.get("/sync/status", headers=headers),
-        "outbox": pos_client.get("/sync/outbox?limit=5", headers=headers),
-        "local_events": pos_client.get("/sync/local-events?limit=5", headers=headers),
+        "sync_status": call(pos_client, "getSyncStatus", headers=headers),
+        "outbox": call(pos_client, "listSyncOutbox", query={"limit": 5}, headers=headers),
+        "local_events": call(pos_client, "listSyncLocalEvents", query={"limit": 5}, headers=headers),
     }
 
 

@@ -1,4 +1,5 @@
 import json
+import ipaddress
 import time
 import urllib.error
 import urllib.parse
@@ -33,6 +34,26 @@ def root_url(base_url, path):
     return base + clean_path
 
 
+def should_bypass_proxy(url):
+    host = urllib.parse.urlparse(url).hostname
+    if not host:
+        return False
+    host = host.lower()
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def open_request(req, timeout_seconds):
+    if should_bypass_proxy(req.full_url):
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        return opener.open(req, timeout=timeout_seconds)
+    return urllib.request.urlopen(req, timeout=timeout_seconds)
+
+
 class JsonClient:
     def __init__(self, base_url, timeout_seconds=20):
         self.base_url = normalize_base_url(base_url)
@@ -64,7 +85,7 @@ class JsonClient:
             request_headers["Content-Type"] = "application/json"
         req = urllib.request.Request(url, data=data, headers=request_headers, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
+            with open_request(req, self.timeout_seconds) as resp:
                 raw = resp.read()
                 status = resp.getcode()
         except urllib.error.HTTPError as exc:
@@ -74,6 +95,8 @@ class JsonClient:
             raise HttpError(method, url, status, text) from exc
         except urllib.error.URLError as exc:
             raise HttpError(method, url, 0, str(exc.reason)) from exc
+        except TimeoutError as exc:
+            raise HttpError(method, url, 0, str(exc)) from exc
         if status not in tuple(expected_status):
             text = raw.decode("utf-8", errors="replace")
             raise HttpError(method, url, status, text)

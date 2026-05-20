@@ -11,6 +11,7 @@ data
 *.exe
 .dev-stack-pids.json
 scripts/.local-masterdata-summary.json
+scripts/.stack-smoke-result.json
 .lazyweb/
 .kilo
 *.png
