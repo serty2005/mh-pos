@@ -37,6 +37,7 @@
 - append-only cancellation/refund ledger, cashier UI для full whole-check и partial `order_line`/quantity cancellation/refund с явным `inventory_disposition` и compatibility payment refund fallback;
 - Edge -> Cloud operational outbox foundation;
 - Cloud -> Edge master-data ingest for supported streams.
+- POS Edge stop-list sale blocking при `AddOrderLine` и увеличении quantity по direct `catalog_item_id` и mandatory active recipe components из локальных `recipe_versions`/`recipe_lines`.
 - Целевая Cloud-centric inventory architecture зафиксирована в `docs/backend/INVENTORY-COSTING-SPEC.md`, но полный runtime engine не реализован сейчас.
 
 Цель полной пилотной реализации:
@@ -285,7 +286,7 @@ Boundary rules:
 - Продажу блокирует только `StopList`.
 - Edge SQLite целевая схема содержит `recipe_versions`, `recipe_lines` read-only и `stop_lists`; Edge-side `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines` удалены из целевого baseline.
 - `StopList` содержит `catalog_item_id` и `available_quantity`; запись может относиться к блюду, ингредиенту или заготовке и синхронизируется Edge <-> Cloud.
-- При добавлении позиции Edge локально разворачивает read-only рецептуру и блокирует продажу, если само блюдо или обязательный компонент находится в stop-list с `available_quantity = 0`.
+- При добавлении позиции и увеличении quantity Edge локально разворачивает read-only active recipe version и блокирует продажу, если само блюдо или обязательный компонент находится в active stop-list с `available_quantity = 0` или `NULL`.
 - Modifier на Edge остается ценовой опцией `modifier_option_id`; Cloud-only `ModifierOption.linked_catalog_item_id` приводит к отдельному списанию только в Inventory Worker.
 - `CheckClosed` является финальным batch trigger для заказа; Worker делает delta consumption после сверки с уже обработанными KDS событиями `ItemServed`.
 - `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted` и `ItemServed` являются Edge/KDS input events, а не Edge stock documents.
@@ -308,7 +309,7 @@ Inventory and costing logic:
 
 Не реализовано сейчас:
 
-- `stop_lists` sync Edge <-> Cloud;
+- Edge manager/KDS stop-list edit flow и conflict policy для двустороннего Edge <-> Cloud stop-list sync;
 - KDS `ItemServed` / `ProductionCompleted` runtime;
 - advanced KDS lifecycle events, chef stock receipt capture, catalog proposals, recipe change proposals and stop-list conflict policy;
 - ClickHouse `olap_stock_moves` projection;
@@ -317,9 +318,8 @@ Inventory and costing logic:
 
 Запланировано до полного пилота:
 
-- Cloud authoring для recipes и stop-list с публикацией streams `recipes` и `stop_lists`;
-- POS Edge ingest для `recipe_versions`, `recipe_lines`, `stop_lists`;
-- локальная POS Edge проверка stop-list в `AddOrderLine` и увеличении quantity;
+- Cloud authoring/UI для recipes и stop-list поверх уже поддержанного package contract/storage;
+- smoke для Cloud package -> Edge sync -> offline sale blocking;
 - генерация `CheckClosed` при финальном чеке и `KitchenTicketStatusChanged`/`ItemServed` из advanced KDS;
 - `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested` и `StopListUpdated` как Edge -> Cloud events с Cloud worker review/apply flow;
 - full inventory engine: recipe expansion, modifier linked catalog item consumption, production, purchase/receipt input, inventory count adjustments, refund/cancellation stock dispositions, balances, costing status и retro recalculation DAG;

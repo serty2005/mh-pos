@@ -86,6 +86,9 @@ type ApplyMasterDataCommand struct {
 	TaxRules               []domain.TaxRule               `json:"tax_rules,omitempty"`
 	ServiceChargeRules     []domain.ServiceChargeRule     `json:"service_charge_rules,omitempty"`
 	PricingPolicies        []domain.PricingPolicy         `json:"pricing_policies,omitempty"`
+	RecipeVersions         []domain.RecipeVersion         `json:"recipe_versions,omitempty"`
+	RecipeLines            []domain.RecipeLine            `json:"recipe_lines,omitempty"`
+	StopListEntries        []domain.StopListEntry         `json:"stop_lists,omitempty"`
 }
 
 type ApplyMasterDataResult struct {
@@ -401,6 +404,37 @@ func (s *Service) applyStream(ctx context.Context, stream domain.MasterDataStrea
 			}
 		}
 		counts[string(stream)] = len(cmd.TaxProfiles) + len(cmd.TaxRules) + len(cmd.ServiceChargeRules) + len(cmd.PricingPolicies)
+	case domain.MasterDataStreamRecipes:
+		for i := range cmd.RecipeVersions {
+			v := normalizeRecipeVersion(cmd.RecipeVersions[i], now)
+			if err := validateRecipeVersion(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterRecipeVersion(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
+		for i := range cmd.RecipeLines {
+			v := normalizeRecipeLine(cmd.RecipeLines[i], now)
+			if err := validateRecipeLine(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterRecipeLine(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
+		counts[string(stream)] = len(cmd.RecipeVersions) + len(cmd.RecipeLines)
+	case domain.MasterDataStreamInventory:
+		for i := range cmd.StopListEntries {
+			v := normalizeStopListEntry(cmd.StopListEntries[i], cmd.RestaurantID, now)
+			if err := validateStopListEntry(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterStopListEntry(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
+		counts[string(stream)] = len(cmd.StopListEntries)
 	default:
 		return fmt.Errorf("%w: unsupported master data stream %q", domain.ErrInvalid, stream)
 	}
@@ -517,6 +551,23 @@ func validatePayload(cmd ApplyMasterDataCommand, streams []domain.MasterDataStre
 					return err
 				}
 			}
+		case domain.MasterDataStreamRecipes:
+			for i := range cmd.RecipeVersions {
+				if err := validateRecipeVersion(normalizeRecipeVersion(cmd.RecipeVersions[i], now)); err != nil {
+					return err
+				}
+			}
+			for i := range cmd.RecipeLines {
+				if err := validateRecipeLine(normalizeRecipeLine(cmd.RecipeLines[i], now)); err != nil {
+					return err
+				}
+			}
+		case domain.MasterDataStreamInventory:
+			for i := range cmd.StopListEntries {
+				if err := validateStopListEntry(normalizeStopListEntry(cmd.StopListEntries[i], cmd.RestaurantID, now)); err != nil {
+					return err
+				}
+			}
 		default:
 			return fmt.Errorf("%w: unsupported master data stream %q", domain.ErrInvalid, stream)
 		}
@@ -542,6 +593,10 @@ func payloadRowCount(cmd ApplyMasterDataCommand, streams []domain.MasterDataStre
 			total += len(cmd.MenuItems)
 		case domain.MasterDataStreamPricing:
 			total += len(cmd.TaxProfiles) + len(cmd.TaxRules) + len(cmd.ServiceChargeRules) + len(cmd.PricingPolicies)
+		case domain.MasterDataStreamRecipes:
+			total += len(cmd.RecipeVersions) + len(cmd.RecipeLines)
+		case domain.MasterDataStreamInventory:
+			total += len(cmd.StopListEntries)
 		}
 	}
 	return total
@@ -629,6 +684,12 @@ func streamsToApply(cmd ApplyMasterDataCommand) ([]domain.MasterDataStream, erro
 	if len(cmd.TaxProfiles) > 0 || len(cmd.TaxRules) > 0 || len(cmd.ServiceChargeRules) > 0 || len(cmd.PricingPolicies) > 0 {
 		streams = append(streams, domain.MasterDataStreamPricing)
 	}
+	if len(cmd.RecipeVersions) > 0 || len(cmd.RecipeLines) > 0 {
+		streams = append(streams, domain.MasterDataStreamRecipes)
+	}
+	if len(cmd.StopListEntries) > 0 {
+		streams = append(streams, domain.MasterDataStreamInventory)
+	}
 	if len(streams) == 0 {
 		return nil, fmt.Errorf("%w: at least one supported master data stream is required", domain.ErrInvalid)
 	}
@@ -643,7 +704,9 @@ func supportedStream(stream domain.MasterDataStream) bool {
 		domain.MasterDataStreamFloor,
 		domain.MasterDataStreamCatalog,
 		domain.MasterDataStreamMenu,
-		domain.MasterDataStreamPricing:
+		domain.MasterDataStreamPricing,
+		domain.MasterDataStreamRecipes,
+		domain.MasterDataStreamInventory:
 		return true
 	default:
 		return false
@@ -868,6 +931,41 @@ func normalizePricingPolicy(v domain.PricingPolicy, now time.Time) domain.Pricin
 		v.Scope = domain.DiscountScopeOrder
 	}
 	v.CreatedAt = defaultTime(v.CreatedAt, now)
+	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
+	return v
+}
+
+func normalizeRecipeVersion(v domain.RecipeVersion, now time.Time) domain.RecipeVersion {
+	v.ID = strings.TrimSpace(v.ID)
+	v.DishCatalogItemID = strings.TrimSpace(v.DishCatalogItemID)
+	v.Name = strings.TrimSpace(v.Name)
+	v.YieldUnit = strings.TrimSpace(v.YieldUnit)
+	v.CreatedAt = defaultTime(v.CreatedAt, now)
+	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
+	return v
+}
+
+func normalizeRecipeLine(v domain.RecipeLine, now time.Time) domain.RecipeLine {
+	v.ID = strings.TrimSpace(v.ID)
+	v.RecipeVersionID = strings.TrimSpace(v.RecipeVersionID)
+	v.CatalogItemID = strings.TrimSpace(v.CatalogItemID)
+	v.Unit = strings.TrimSpace(v.Unit)
+	v.CreatedAt = defaultTime(v.CreatedAt, now)
+	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
+	return v
+}
+
+func normalizeStopListEntry(v domain.StopListEntry, fallbackRestaurantID string, now time.Time) domain.StopListEntry {
+	v.ID = strings.TrimSpace(v.ID)
+	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
+	if v.RestaurantID == "" {
+		v.RestaurantID = strings.TrimSpace(fallbackRestaurantID)
+	}
+	v.CatalogItemID = strings.TrimSpace(v.CatalogItemID)
+	v.Source = strings.TrimSpace(v.Source)
+	if v.Source == "" {
+		v.Source = "cloud"
+	}
 	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
 	return v
 }
@@ -1102,6 +1200,35 @@ func validatePricingPolicy(v domain.PricingPolicy) error {
 		}
 	default:
 		return fmt.Errorf("%w: unsupported pricing policy amount_kind", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func validateRecipeVersion(v domain.RecipeVersion) error {
+	if v.ID == "" || v.DishCatalogItemID == "" || v.Name == "" || v.Version <= 0 || v.YieldQuantity <= 0 || v.YieldUnit == "" {
+		return fmt.Errorf("%w: recipe version identity, owner, version, yield and unit are required", domain.ErrInvalid)
+	}
+	switch v.Status {
+	case domain.RecipeVersionDraft, domain.RecipeVersionActive, domain.RecipeVersionArchived:
+		return nil
+	default:
+		return fmt.Errorf("%w: unsupported recipe version status", domain.ErrInvalid)
+	}
+}
+
+func validateRecipeLine(v domain.RecipeLine) error {
+	if v.ID == "" || v.RecipeVersionID == "" || v.CatalogItemID == "" || v.Quantity <= 0 || v.Unit == "" || v.LossPercent < 0 || v.LossPercent > 100 {
+		return fmt.Errorf("%w: recipe line identity, component, quantity, unit and loss percent are required", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func validateStopListEntry(v domain.StopListEntry) error {
+	if v.ID == "" || v.RestaurantID == "" || v.CatalogItemID == "" || v.Source == "" {
+		return fmt.Errorf("%w: stop-list id, restaurant_id, catalog_item_id and source are required", domain.ErrInvalid)
+	}
+	if v.AvailableQuantity != nil && *v.AvailableQuantity < 0 {
+		return fmt.Errorf("%w: stop-list available_quantity must be non-negative", domain.ErrInvalid)
 	}
 	return nil
 }

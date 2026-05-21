@@ -31,6 +31,7 @@ var (
 	ErrTooManyRequests  = shared.ErrTooManyRequests
 	ErrDuplicate        = shared.ErrDuplicate
 	ErrDuplicateCommand = shared.ErrDuplicateCommand
+	ErrSaleUnavailable  = shared.ErrSaleUnavailable
 )
 
 type Restaurant = restaurant.Restaurant
@@ -267,8 +268,8 @@ type DataOwner = shared.DataOwner
 type SyncDirection = shared.SyncDirection
 type SyncMode = shared.SyncMode
 type MasterDataStream = shared.MasterDataStream
-type MasterDataSyncState = shared.MasterDataSyncState
 type MasterRecordSyncMeta = shared.MasterRecordSyncMeta
+type MasterDataSyncState = shared.MasterDataSyncState
 type SyncExchangeState = shared.SyncExchangeState
 type SyncExchangeRequest = shared.SyncExchangeRequest
 type SyncExchangeEdgeEvent = shared.SyncExchangeEdgeEvent
@@ -365,6 +366,7 @@ func NewReprintDocument(documentType, sourceID string, snapshot []byte, actorEmp
 type RecipeVersionStatus = inventory.RecipeVersionStatus
 type RecipeVersion = inventory.RecipeVersion
 type RecipeLine = inventory.RecipeLine
+type StopListEntry = inventory.StopListEntry
 
 const (
 	RecipeVersionDraft    = inventory.RecipeVersionDraft

@@ -253,6 +253,11 @@ func (s *Service) ChangeOrderLineQuantity(ctx context.Context, cmd ChangeOrderLi
 		if line.Status != domain.OrderLineActive {
 			return fmt.Errorf("%w: cannot change non-active order line", domain.ErrConflict)
 		}
+		if cmd.Quantity > line.Quantity {
+			if err := s.ensureSaleAvailable(ctx, order.RestaurantID, line.CatalogItemID); err != nil {
+				return err
+			}
+		}
 		line.Quantity = cmd.Quantity
 		line.TotalPrice = line.UnitPrice*cmd.Quantity + orderLineModifierTotal(line.Modifiers)
 		line.UpdatedAt = now
@@ -400,6 +405,9 @@ func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*d
 		}
 		if !menuItem.Active {
 			return fmt.Errorf("%w: menu item is archived", domain.ErrConflict)
+		}
+		if err := s.ensureSaleAvailable(ctx, order.RestaurantID, menuItem.CatalogItemID); err != nil {
+			return err
 		}
 		selectedModifiers, modifierTotal, err := s.buildSelectedModifiers(ctx, cmd.SelectedModifiers)
 		if err != nil {
@@ -549,6 +557,36 @@ func (s *Service) validateSelectedModifiers(ctx context.Context, menuItemID stri
 		}
 		if group.MaxCount > 0 && count > int64(group.MaxCount) {
 			return fmt.Errorf("%w: modifier group max_count exceeded", domain.ErrInvalid)
+		}
+	}
+	return nil
+}
+
+func (s *Service) ensureSaleAvailable(ctx context.Context, restaurantID, catalogItemID string) error {
+	if strings.TrimSpace(restaurantID) == "" || strings.TrimSpace(catalogItemID) == "" {
+		return fmt.Errorf("%w: restaurant_id and catalog_item_id are required for sale availability check", domain.ErrInvalid)
+	}
+	if _, err := s.repo.GetBlockingStopListEntry(ctx, restaurantID, catalogItemID); err == nil {
+		return fmt.Errorf("%w: catalog item is in active stop-list", domain.ErrSaleUnavailable)
+	} else if !errors.Is(err, domain.ErrNotFound) {
+		return err
+	}
+	recipe, err := s.repo.GetActiveRecipeVersionByCatalogItem(ctx, catalogItemID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	lines, err := s.repo.ListRecipeLines(ctx, recipe.ID)
+	if err != nil {
+		return err
+	}
+	for _, line := range lines {
+		if _, err := s.repo.GetBlockingStopListEntry(ctx, restaurantID, line.CatalogItemID); err == nil {
+			return fmt.Errorf("%w: recipe component is in active stop-list", domain.ErrSaleUnavailable)
+		} else if !errors.Is(err, domain.ErrNotFound) {
+			return err
 		}
 	}
 	return nil

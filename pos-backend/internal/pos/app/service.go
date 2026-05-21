@@ -729,6 +729,8 @@ func syncExchangeStreams() []domain.MasterDataStream {
 		domain.MasterDataStreamCatalog,
 		domain.MasterDataStreamMenu,
 		domain.MasterDataStreamPricing,
+		domain.MasterDataStreamRecipes,
+		domain.MasterDataStreamInventory,
 	}
 }
 

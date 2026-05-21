@@ -186,7 +186,7 @@ CREATE INDEX IF NOT EXISTS cloud_projection_financial_operations_check
   ON cloud_projection_financial_operations(restaurant_id, check_id, operation_created_at DESC);
 
 CREATE TABLE IF NOT EXISTS cloud_master_data_packages (
-  stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','currencies')),
+  stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','currencies')),
   node_device_id TEXT NOT NULL DEFAULT '',
   restaurant_id TEXT,
   sync_mode TEXT NOT NULL CHECK (sync_mode IN ('full_snapshot','incremental')),
@@ -358,7 +358,7 @@ CREATE TABLE IF NOT EXISTS cloud_projection_shift_finance (
 );
 
 CREATE TABLE IF NOT EXISTS cloud_master_data_packages (
-  stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','currencies')),
+  stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','currencies')),
   node_device_id TEXT NOT NULL DEFAULT '',
   restaurant_id TEXT,
   sync_mode TEXT NOT NULL CHECK (sync_mode IN ('full_snapshot','incremental')),
@@ -859,7 +859,7 @@ ALTER TABLE cloud_master_data_packages
   DROP CONSTRAINT IF EXISTS cloud_master_data_packages_stream_name_check;
 
 ALTER TABLE cloud_master_data_packages
-  ADD CONSTRAINT cloud_master_data_packages_stream_name_check CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','currencies'));
+  ADD CONSTRAINT cloud_master_data_packages_stream_name_check CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','currencies'));
 
 -- === 008_catalog_v2_modifiers_pricing_policy.sql ===
 ALTER TABLE cloud_catalog_items
@@ -999,7 +999,7 @@ ALTER TABLE cloud_master_data_packages
   DROP CONSTRAINT IF EXISTS cloud_master_data_packages_stream_name_check;
 
 ALTER TABLE cloud_master_data_packages
-  ADD CONSTRAINT cloud_master_data_packages_stream_name_check CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','currencies'));
+  ADD CONSTRAINT cloud_master_data_packages_stream_name_check CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','currencies'));
 
 
 -- === 004_cloud_inventory_foundation.sql ===

@@ -16,6 +16,7 @@ describe('i18n messages', () => {
       'errors.conflict_active_precheck',
       'errors.conflict_duplicate_command',
       'errors.conflict_duplicate_pin',
+      'errors.stopListConflict',
     ];
 
     for (const key of keys) {

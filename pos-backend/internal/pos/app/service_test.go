@@ -507,6 +507,32 @@ func execTestSQL(t *testing.T, f *fixture, query string, args ...any) {
 	}
 }
 
+func insertStopList(t *testing.T, f *fixture, id, catalogItemID string, availableQuantity *float64, active bool) {
+	t.Helper()
+	activeValue := 0
+	if active {
+		activeValue = 1
+	}
+	var available any
+	if availableQuantity != nil {
+		available = *availableQuantity
+	}
+	execTestSQL(t, f, `INSERT INTO stop_lists(id,restaurant_id,catalog_item_id,available_quantity,source,reason,active,cloud_version,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+		id, f.restaurant.ID, catalogItemID, available, "test", "fixture", activeValue, int64(1), appshared.DBTime(fixedClock{}.Now()))
+}
+
+func insertRecipe(t *testing.T, f *fixture, recipeID, ownerCatalogItemID, componentCatalogItemID string) {
+	t.Helper()
+	execTestSQL(t, f, `INSERT INTO recipe_versions(id,dish_catalog_item_id,version,name,status,yield_quantity,yield_unit,active,created_at,updated_at,cloud_version) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		recipeID, ownerCatalogItemID, 1, "Fixture recipe", string(domain.RecipeVersionActive), 1, "portion", 1, appshared.DBTime(fixedClock{}.Now()), appshared.DBTime(fixedClock{}.Now()), int64(1))
+	execTestSQL(t, f, `INSERT INTO recipe_lines(id,recipe_version_id,catalog_item_id,quantity,unit,loss_percent,created_at,updated_at,cloud_version) VALUES (?,?,?,?,?,?,?,?,?)`,
+		recipeID+"-line", recipeID, componentCatalogItemID, 100, "g", 0, appshared.DBTime(fixedClock{}.Now()), appshared.DBTime(fixedClock{}.Now()), int64(1))
+}
+
+func floatPtr(v float64) *float64 {
+	return &v
+}
+
 func containsString(values []string, needle string) bool {
 	for _, value := range values {
 		if value == needle {
@@ -6214,6 +6240,147 @@ func TestListLocalEventsThroughServiceSupportsLimitAndFilter(t *testing.T) {
 	}
 	if events[0].EventType != "OrderCreated" || events[0].AggregateID != order.ID {
 		t.Fatalf("unexpected event: type=%s aggregate_id=%s", events[0].EventType, events[0].AggregateID)
+	}
+}
+
+func TestAddOrderLineBlockedByDirectStopList(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	insertStopList(t, f, "stop-soup", f.menuItem.CatalogItemID, nil, true)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMetaCommand("cmd-stop-create-order"), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMetaCommand("cmd-stop-add-soup"), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1})
+	if !errors.Is(err, domain.ErrSaleUnavailable) || !strings.Contains(err.Error(), "active stop-list") {
+		t.Fatalf("expected stop-list sale conflict, got %v", err)
+	}
+
+	catalog, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: seedMeta(f.device.ID), Type: domain.CatalogItemDish, Name: "Salad", SKU: "SALAD", BaseUnit: "portion"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	menuItem, err := f.service.CreateMenuItem(f.ctx, app.CreateMenuItemCommand{CommandMeta: seedMeta(f.device.ID), CatalogItemID: catalog.ID, Name: "Salad", Price: 1200, Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMetaCommand("cmd-stop-add-salad"), OrderID: order.ID, MenuItemID: menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatalf("expected unblocked item to be added, got %v", err)
+	}
+}
+
+func TestChangeOrderLineQuantityBlocksOnlyIncreaseForStopList(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMetaCommand("cmd-qty-stop-create-order"), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMetaCommand("cmd-qty-stop-add"), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	insertStopList(t, f, "stop-soup-qty", f.menuItem.CatalogItemID, floatPtr(0), true)
+
+	if _, err := f.service.ChangeOrderLineQuantity(f.ctx, app.ChangeOrderLineQuantityCommand{CommandMeta: f.edgeMetaCommand("cmd-qty-stop-decrease"), OrderID: order.ID, LineID: line.ID, Quantity: 1}); err != nil {
+		t.Fatalf("expected quantity decrease to remain available, got %v", err)
+	}
+	_, err = f.service.ChangeOrderLineQuantity(f.ctx, app.ChangeOrderLineQuantityCommand{CommandMeta: f.edgeMetaCommand("cmd-qty-stop-increase"), OrderID: order.ID, LineID: line.ID, Quantity: 3})
+	if !errors.Is(err, domain.ErrSaleUnavailable) {
+		t.Fatalf("expected stop-list conflict on increase, got %v", err)
+	}
+}
+
+func TestAddOrderLineBlockedByRecipeComponentStopList(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	component, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: seedMeta(f.device.ID), Type: domain.CatalogItemGood, Name: "Potato", SKU: "POTATO", BaseUnit: "g"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	insertRecipe(t, f, "recipe-soup", f.menuItem.CatalogItemID, component.ID)
+	insertStopList(t, f, "stop-potato", component.ID, nil, true)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMetaCommand("cmd-recipe-stop-create-order"), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMetaCommand("cmd-recipe-stop-add"), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1})
+	if !errors.Is(err, domain.ErrSaleUnavailable) || !strings.Contains(err.Error(), "recipe component") {
+		t.Fatalf("expected recipe component stop-list conflict, got %v", err)
+	}
+}
+
+func TestApplyMasterDataRecipesAndInventoryReferenceStreams(t *testing.T) {
+	f := newFixture(t)
+	component, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: seedMeta(f.device.ID), Type: domain.CatalogItemGood, Name: "Carrot", SKU: "CARROT", BaseUnit: "g"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:    app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		RestaurantID:   f.restaurant.ID,
+		StreamName:     domain.MasterDataStreamRecipes,
+		SyncMode:       domain.SyncModeIncremental,
+		CloudVersion:   101,
+		CloudUpdatedAt: appshared.DBTime(fixedClock{}.Now()),
+		RecipeVersions: []domain.RecipeVersion{{
+			ID:                "recipe-cloud-soup",
+			DishCatalogItemID: f.menuItem.CatalogItemID,
+			Version:           1,
+			Name:              "Soup recipe",
+			Status:            domain.RecipeVersionActive,
+			YieldQuantity:     1,
+			YieldUnit:         "portion",
+			Active:            true,
+		}},
+		RecipeLines: []domain.RecipeLine{{
+			ID:              "recipe-cloud-line-carrot",
+			RecipeVersionID: "recipe-cloud-soup",
+			CatalogItemID:   component.ID,
+			Quantity:        100,
+			Unit:            "g",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipe, err := f.repo.GetActiveRecipeVersionByCatalogItem(f.ctx, f.menuItem.CatalogItemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines, err := f.repo.ListRecipeLines(f.ctx, recipe.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recipe.CloudVersion != 101 || len(lines) != 1 || lines[0].CatalogItemID != component.ID {
+		t.Fatalf("expected recipe stream upsert, recipe=%+v lines=%+v", recipe, lines)
+	}
+
+	_, err = f.service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:    app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		RestaurantID:   f.restaurant.ID,
+		StreamName:     domain.MasterDataStreamInventory,
+		SyncMode:       domain.SyncModeIncremental,
+		CloudVersion:   102,
+		CloudUpdatedAt: appshared.DBTime(fixedClock{}.Now()),
+		StopListEntries: []domain.StopListEntry{{
+			ID:            "stop-cloud-carrot",
+			RestaurantID:  f.restaurant.ID,
+			CatalogItemID: component.ID,
+			Source:        "cloud",
+			Active:        true,
+			UpdatedAt:     fixedClock{}.Now(),
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop, err := f.repo.GetBlockingStopListEntry(f.ctx, f.restaurant.ID, component.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stop.ID != "stop-cloud-carrot" || stop.CloudVersion == nil || *stop.CloudVersion != 102 {
+		t.Fatalf("expected blocking stop-list entry from inventory_reference stream, got %+v", stop)
 	}
 }
 

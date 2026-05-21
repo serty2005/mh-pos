@@ -81,6 +81,33 @@ func TestValidateMasterDataPackagePricingPolicyStream(t *testing.T) {
 	}
 }
 
+func TestValidateMasterDataPackageRecipesAndInventoryReferenceStreams(t *testing.T) {
+	tests := []contracts.MasterDataPackage{
+		{
+			StreamName:   contracts.MasterDataStreamRecipes,
+			SyncMode:     contracts.SyncModeIncremental,
+			CloudVersion: 3,
+			PayloadJSON: json.RawMessage(`{
+				"recipe_versions":[{"id":"recipe-1","dish_catalog_item_id":"dish-1","version":1,"name":"Soup","status":"active","yield_quantity":1,"yield_unit":"portion","active":true}],
+				"recipe_lines":[{"id":"line-1","recipe_version_id":"recipe-1","catalog_item_id":"good-1","quantity":100,"unit":"g","loss_percent":0}]
+			}`),
+		},
+		{
+			StreamName:   contracts.MasterDataStreamInventory,
+			SyncMode:     contracts.SyncModeIncremental,
+			CloudVersion: 4,
+			PayloadJSON: json.RawMessage(`{
+				"stop_lists":[{"id":"stop-1","restaurant_id":"restaurant-1","catalog_item_id":"dish-1","available_quantity":0,"source":"cloud","active":true,"updated_at":"2026-05-21T00:00:00Z"}]
+			}`),
+		},
+	}
+	for _, tt := range tests {
+		if err := contracts.ValidateMasterDataPackage(tt); err != nil {
+			t.Fatalf("expected valid %s package, got %v", tt.StreamName, err)
+		}
+	}
+}
+
 func TestValidateMasterDataPackageRejectsUnknownPayloadShape(t *testing.T) {
 	err := contracts.ValidateMasterDataPackage(contracts.MasterDataPackage{
 		StreamName:   contracts.MasterDataStreamCatalog,

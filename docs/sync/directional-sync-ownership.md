@@ -14,10 +14,10 @@
 | Menu item | Cloud | No | Cloud -> Edge | реализовано сейчас for ingest stream `menu` |
 | Catalog folder/tag | Cloud | No | Cloud -> Edge via `catalog` | реализовано сейчас |
 | Modifier group/option | Cloud | No | Cloud -> Edge via `catalog` | реализовано сейчас |
-| Recipe reference | Cloud | Edge read-only | Cloud -> Edge запланировано | запланировано до полного пилота: `recipe_versions`/`recipe_lines` для KDS UI и stop-list checks |
+| Recipe reference | Cloud | Edge read-only | Cloud -> Edge `recipes` | реализовано сейчас: `recipe_versions`/`recipe_lines` ingest для KDS UI и stop-list checks |
 | Recipe change proposal | Cloud review queue | Edge creates suggestion only | Edge -> Cloud `RecipeChangeSuggested` | запланировано до полного пилота |
 | Catalog change proposal | Cloud review queue | Edge creates suggestion only | Edge -> Cloud `CatalogItemChangeSuggested` | запланировано до полного пилота |
-| Stop-list | Cloud + Edge kitchen/manager input | Yes, only stop-list overlay | двусторонний sync через `StopListUpdated`, ordering by `stop_list_conflict_policy` | запланировано до полного пилота |
+| Stop-list | Cloud + Edge kitchen/manager input | Edge runtime reads local overlay; Edge edit flow запланирован | Cloud -> Edge `inventory_reference` сейчас; Edge -> Cloud `StopListUpdated` запланировано | реализовано сейчас: sale blocking по local `stop_lists`; conflict policy запланирован далее |
 | Employee shift | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Cash session/drawer event | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Order/order line | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
@@ -32,7 +32,7 @@
 
 ## Текущий Cloud -> Edge Ingest
 
-`mastersync.Service` сейчас поддерживает только:
+`mastersync.Service` сейчас поддерживает:
 
 - `restaurants`
 - `devices`
@@ -41,16 +41,16 @@
 - `catalog`
 - `menu`
 - `pricing_policy`
+- `recipes`
+- `inventory_reference`
 
-`recipes`, `inventory_reference` и `stop_lists` нельзя документировать как реализованные POS Edge ingest streams, пока `mastersync.Service` не применяет их payloads.
 `catalog` payload включает catalog folders/tags/services и modifier groups/options/bindings/effective links; `menu` payload включает menu items. Menu categories остаются отдельным понятием и не заменяют catalog folders.
 `pricing_policy` включает tax/service-charge reference tables и automatic discount/surcharge policies; manual override runtime остается backend RBAC-controlled action.
+`recipes` включает `recipe_versions` и `recipe_lines`; `inventory_reference` включает `stop_lists`.
 
 Запланировано до полного пилота:
 
-- добавить поддерживаемые streams `recipes` и `stop_lists`;
-- фиксировать stream checkpoint в `cloud_master_sync_state` той же transaction boundary, что и apply rows;
-- при ошибке отдельного package помечать stream `failed` и не блокировать accepted Edge -> Cloud ACK;
+- добавить Cloud authoring UI/publication workflow для recipes/stop-list;
 - не включать Cloud-owned stock documents/moves/balances в Edge ingest.
 
 Реализовано сейчас:

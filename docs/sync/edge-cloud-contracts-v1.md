@@ -185,21 +185,19 @@ Request body shape currently supported by POS Edge:
 - `menu_items[]` в ingest payload не содержит embedded rich `modifier_groups[]`; POS runtime read model собирает modifiers из top-level groups/options/links после применения snapshot.
 - `restaurants` применяет Cloud-authored настройки ресторана и `active`; опубликованный active restaurant должен попадать в Edge read model как `active = true`.
 - `pricing_policy` применяет Cloud-authored `tax_profiles`, `tax_rules`, `service_charge_rules` и automatic discount/surcharge `pricing_policies` в Edge read-model tables с sync metadata.
+- `recipes` применяет `recipe_versions` и `recipe_lines`.
+- `inventory_reference` применяет active/inactive `stop_lists` overlay rows.
 - Unsupported JSON fields отклоняются strict decode; неизвестные stream names не применяются.
-- `recipes`, `inventory_reference` и `stop_lists` пока не являются поддерживаемыми POS Edge apply payloads.
 
 Только основа:
 
 - Cloud schema содержит recipe/inventory-adjacent publication foundation.
-- Целевая inventory architecture требует Cloud -> Edge packages для read-only `recipe_versions`/`recipe_lines` и `stop_lists`.
-- Эти streams нельзя документировать как реализованный POS Edge runtime ingest, пока `mastersync.Service` не применяет их payloads.
+- Generic Cloud package contracts/storage поддерживают `recipes` и `inventory_reference`; Cloud authoring UI/publication workflow для этих данных остается запланирован далее.
 
 Запланировано до полного пилота:
 
-- `recipes` stream применяет `recipe_versions` и `recipe_lines`;
-- `stop_lists` stream применяет active/inactive stop-list overlay rows;
-- оба stream используют existing `cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at` metadata и `cloud_master_sync_state`;
-- failed package фиксируется как failed stream без отката accepted Edge -> Cloud ACK.
+- Cloud UI authoring для recipes/stop-list и deterministic publication из Cloud authority tables;
+- offline smoke для Cloud package -> Edge ingest -> blocked/unblocked sale.
 
 ## Edge -> Cloud Operational Events
 
@@ -437,7 +435,7 @@ Cloud worker не применяет `CatalogItemChangeSuggested`/`RecipeChangeS
 Не реализовано сейчас:
 
 - inventory consumption events;
-- stop-list sync;
+- Edge-origin stop-list edit sync/conflict policy;
 - KDS runtime для генерации `KitchenTicketStatusChanged` / `ItemServed` / `ProductionCompleted`;
 - proposal events `CatalogItemChangeSuggested` и `RecipeChangeSuggested`;
 - recipe expansion, modifier linked catalog item consumption и retro costing DAG;
@@ -459,7 +457,7 @@ Cloud worker не применяет `CatalogItemChangeSuggested`/`RecipeChangeS
 Запланировано до полного пилота:
 
 - Cloud-authored pricing/tax UI и полный publication workflow поверх generic `pricing_policy` package storage/apply;
-- `recipes`/`stop_lists` Cloud -> Edge streams;
+- Cloud authoring workflow для `recipes`/`inventory_reference` package generation;
 - `CheckClosed`/`KitchenTicketStatusChanged`/`ItemServed` pilot inventory and KDS facts;
 - `CatalogItemChangeSuggested`/`RecipeChangeSuggested` review queues;
 - full inventory event catalog and Cloud Inventory Engine;

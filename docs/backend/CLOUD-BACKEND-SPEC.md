@@ -46,8 +46,7 @@
 
 Запланировано до полного пилота:
 
-- Cloud authoring для `cloud_recipe_items` и `stop_lists`;
-- публикация streams `recipes` и `stop_lists` в Cloud -> Edge packages;
+- Cloud authoring/publication workflow для streams `recipes` и `inventory_reference` поверх Cloud authority tables;
 - projection update для `StopListUpdated` из Edge/Cloud без raw payload exposure;
 - review/apply очереди для `CatalogItemChangeSuggested` и `RecipeChangeSuggested`, созданных kitchen worker на Edge;
 - обработка `KitchenTicketStatusChanged`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested` и `StopListUpdated` как business events без synchronous apply в request path;
@@ -75,7 +74,7 @@
 - Cloud не является платежным процессором и не выполняет fiscalization.
 - Cloud не принимает POS operator session как security boundary.
 - Cloud не использует ClickHouse в текущем runtime, но ClickHouse является обязательным компонентом полного пилота.
-- Cloud пока не предоставляет pilot-ready CRUD для recipes/stop-list и не публикует эти streams как поддерживаемый POS Edge ingest.
+- Cloud пока не предоставляет pilot-ready CRUD/publication UI для recipes/stop-list; generic package storage/contracts уже принимают `recipes` и `inventory_reference`.
 - Cloud пока не предоставляет review/apply runtime для Edge-originated catalog/recipe proposals.
 
 ## Runtime Modules
@@ -358,6 +357,8 @@ PIN policy:
 - `catalog`;
 - `menu`;
 - `pricing_policy`;
+- `recipes` через generic package storage/validation;
+- `inventory_reference` через generic package storage/validation;
 - `currencies` через generic package storage/validation.
 
 Publication DTO правила:
@@ -369,11 +370,12 @@ Publication DTO правила:
 - `modifier_options[]` передает `id`, `restaurant_id`, `modifier_group_id`, `name`, `price_minor`, `active`.
 - `modifier_bindings[]` передает `id`, `restaurant_id`, `modifier_group_id`, `target_type`, `target_id`, `sort_order`, `active`.
 - `pricing_policy` stream передает `tax_profiles`, `tax_rules`, `service_charge_rules`, `pricing_policies`, когда соответствующий package сохранен/опубликован.
+- `recipes` stream передает `recipe_versions` и `recipe_lines`, когда соответствующий package сохранен/опубликован.
+- `inventory_reference` stream передает `stop_lists`, когда соответствующий package сохранен/опубликован.
 
 Не реализовано сейчас:
 
-- Поддержанный POS Edge ingest для recipes, inventory reference и stop-list streams как production runtime.
-- Полный Cloud UI сценарий налоговых профилей и service-charge rules.
+- Полный Cloud UI сценарий recipes/stop-list, налоговых профилей и service-charge rules.
 
 ## Provisioning
 
@@ -517,7 +519,7 @@ Schema verification:
 
 Запланировано до полного пилота:
 
-- Stop-list sync становится sale-blocking availability overlay.
+- Cloud authoring/publication workflow для stop-list/recipes становится штатным источником sale-blocking availability overlay; POS Edge runtime уже блокирует продажи по локальному `stop_lists`.
 - `CatalogItemChangeSuggested` создает Cloud review item; upsert в catalog разрешен только при policy `auto_apply_catalog_suggestions = true` или после manager approve.
 - `RecipeChangeSuggested` создает Cloud review item с diff по ingredients, quantities, units, loss percent и prep time; published recipe не меняется до approve/apply.
 - `StockReceiptCaptured` создает Cloud-owned receipt document и может ссылаться на pending catalog suggestion, если товар еще не утвержден.
@@ -562,7 +564,7 @@ Schema verification:
 ## Запланировано далее
 
 - Production authorization and tenant perimeter для Cloud API.
-- До полного пилота: recipes/stop-list authoring, publication streams, stop-list sync, full recipe/costing inventory engine, ClickHouse async forwarder, `olap_stock_moves` export, OLAP API и readiness/observability UI.
+- До полного пилота: recipes/stop-list authoring UI, deterministic publication from Cloud authority tables, Edge-origin stop-list sync/conflict policy, full recipe/costing inventory engine, ClickHouse async forwarder, `olap_stock_moves` export, OLAP API и readiness/observability UI.
 - После полного пилота: Public Cloud reporting UI beyond pilot OLAP API.
 - Data-preserving PostgreSQL migrations после первого реального внедрения.
 - Cloud UI сценарий налогов/service-charge rules, если пилот требует централизованное управление.

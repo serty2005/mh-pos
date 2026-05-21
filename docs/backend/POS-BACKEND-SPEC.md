@@ -17,12 +17,12 @@
 - API чтения активных заказов зала для статусов столов и панели активных заказов POS.
 - Runtime-поля курса подачи и комментария строки заказа, которые не влияют на финансовые итоги.
 - Service catalog items as sellable POS items.
+- Stop-list sale blocking для добавления order line и увеличения quantity по локальным read model tables `stop_lists`, `recipe_versions`, `recipe_lines`.
 
 Не реализовано сейчас:
 
 - `sqlc` как текущий persistence implementation;
-- stop-list sale blocking в `AddOrderLine`/quantity increase;
-- POS ingest streams `recipes` и `stop_lists`;
+- Edge-side stock documents/moves/balances/costing;
 - advanced kitchen ticket runtime, `KitchenTicketStatusChanged`, `ItemServed`, chef receipt and proposal generation;
 - POS-generated `CheckClosed` inventory fact;
 - payment processor module;
@@ -296,12 +296,13 @@ Pricing contract:
 - `required`, `min_count`, `max_count`, `active` принадлежат top-level `modifier_groups[]`; эти поля не публикуются внутри `menu_item_modifier_groups[]` и не встраиваются как rich `menu_items[].modifier_groups[]` в ingest payload. Inventory/recipe expansion для modifiers не выполняется в POS order/pricing/precheck/check runtime.
 - `restaurants` применяет Cloud-authored settings и `active`; опубликованный active restaurant сохраняется в Edge read model как active row.
 - `pricing_policy` применяет `tax_profiles`, `tax_rules`, `service_charge_rules` и automatic discount/surcharge `pricing_policies` с sync metadata.
+- `recipes` применяет `recipe_versions` и `recipe_lines` с sync metadata.
+- `inventory_reference` применяет `stop_lists` с sync metadata.
 - Strict JSON decode отклоняет неизвестные request fields; unsupported stream names отклоняются до partial apply.
 
 Только основа:
 
-- Domain constants и SQLite state знают о `recipes` и `inventory_reference`, но `mastersync.Service` пока не применяет эти streams.
-- Cloud schema foundation для recipes/inventory-adjacent data не делает их поддерживаемыми POS Edge ingest payloads.
+- Cloud authoring UI/publication workflow для recipes/stop-list еще не является полным runtime; текущий POS Edge принимает package payloads, которые переданы через provisioning/sync exchange.
 
 ## Pricing, Modifiers And Inventory Boundaries
 
@@ -328,8 +329,9 @@ Recipes/inventory:
 - Реализовано сейчас: Cloud Inventory Worker обрабатывает `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated` через durable queue.
 - Реализовано сейчас: Cloud PostgreSQL хранит `inventory_event_queue`, `stock_documents`, `stock_ledger` with `unit_cost_minor`, `total_cost_minor` and `costing_status`; ClickHouse batch projection `olap_stock_moves` запланирована до полного пилота.
 - Реализовано сейчас: cancellation/refund ledger хранит явный `inventory_disposition`; POS runtime не мутирует local stock tables, потому что local stock tables удалены.
-- Не реализовано сейчас: stop-list sync, POS Edge recipe/stop-list ingest, local sale blocking, POS-generated `CheckClosed`, advanced KDS lifecycle, KDS `ItemServed` generation, chef receipt/catalog/recipe proposal flows, modifier linked catalog item stock consumption, retro costing DAG.
-- Запланировано до полного пилота: локальная проверка active stop-list для sellable catalog item и mandatory recipe components, Cloud -> Edge streams `recipes`/`stop_lists`, `CheckClosed` outbox envelope при final check, advanced kitchen tickets, `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested` и `StopListUpdated`.
+- Реализовано сейчас: POS Edge recipe/stop-list ingest, локальная sale blocking проверка active stop-list для sellable catalog item и mandatory active recipe components. Проверка не читает stock balance и не создает stock documents/moves.
+- Не реализовано сейчас: POS-generated `CheckClosed`, advanced KDS lifecycle, KDS `ItemServed` generation, chef receipt/catalog/recipe proposal flows, modifier linked catalog item stock consumption, retro costing DAG.
+- Запланировано до полного пилота: Cloud authoring/publication UI для recipes/stop-list, Edge manager/KDS stop-list edit flow, `CheckClosed` outbox envelope при final check, advanced kitchen tickets, `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested` и `StopListUpdated`.
 - Профильный целевой contract: `docs/backend/INVENTORY-COSTING-SPEC.md`.
 
 ## Full Pilot Backend Delta

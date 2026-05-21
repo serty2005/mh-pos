@@ -25,16 +25,18 @@
 - Reprint precheck/check строится из immutable snapshot.
 - Python stack smoke содержит suite `pos_cashier_runtime`, которая проверяет backend путь после Cloud -> Edge master-data sync: PIN login, личную смену, cash shift, hall/table/menu read models, заказ, обычную строку, modifiers при наличии, service item при наличии, precheck, оплату по `precheck_id`, final check, bounded closed orders, check get/reprint, same-shift cancellation ledger, financial operations read и `GET /api/v1/storage/status`.
 - Python stack smoke содержит suite `pos_refund_after_shift_close`, которая создает отдельную POS sale, закрывает исходные cash shift и personal employee shift, открывает новую сменную границу для refund под менеджером, записывает full refund через `/checks/{id}/refunds`, проверяет ledger через `/checks/{id}/financial-operations` и bounded closed-order/check reads без PSP, fiscal или destructive storage действий.
-- Cloud -> Edge master-data ingest в POS Edge runtime поддерживает потоки `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
+- Cloud -> Edge master-data ingest в POS Edge runtime поддерживает потоки `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`, `recipes`, `inventory_reference`.
+- POS Edge backend локально блокирует продажу при добавлении order line и при увеличении quantity, если продаваемый `catalog_item_id` или обязательный компонент active recipe version находится в active `stop_lists` с `available_quantity = 0` или `NULL`; stock balance для sale blocking не используется.
 - Cloud/Edge master data разделяет menu categories, catalog folders и tags; `catalog` stream передает folders, folder parameters, tags, item tags, services и modifier groups/options/bindings, а `menu` stream передает menu items и effective modifier links.
 - Cloud publication snapshot для POS Edge публикуется как typed ingest DTO: `modifier_groups[]` сохраняет `required`, `min_count`, `max_count`, `active`, а `menu_item_modifier_groups[]` остается link-only без rich/UI fields. Production-way bootstrap отправляет опубликованный Cloud snapshot на POS Edge без PowerShell field stripping.
 - Inventory runtime переведен на Cloud-centric cutover: POS Edge больше не содержит manual stock document service и SQLite tables `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`; исторически этот pre-pilot Edge-side метод использовался как foundation и удален при переходе.
-- Cloud принимает inventory events через sync receiver, кладет их в durable `inventory_event_queue`, а Cloud Inventory Worker пишет Cloud-owned `stock_documents` и `stock_ledger` для нормализованных item payloads. Recipe expansion, ретроспективный costing DAG и ClickHouse `olap_stock_moves` остаются отдельными следующими шагами.
+- Cloud принимает inventory events через sync receiver, кладет их в durable `inventory_event_queue`, а Cloud Inventory Worker пишет Cloud-owned `stock_documents` и `stock_ledger` для нормализованных item payloads. Cloud package contracts/storage принимают `recipes` и `inventory_reference`, но Cloud authoring UI/publication workflow для recipes/stop-list остается следующим шагом. Recipe-expanded consumption, ретроспективный costing DAG и ClickHouse `olap_stock_moves` остаются отдельными следующими шагами.
 
 Вне текущего runtime:
 
 - automatic recipe expansion / stock consumption engine;
 - recipe-expanded stock return/write-off from financial operations beyond normalized item payloads;
+- Cloud authoring UI/conflict policy для stop-list и recipes;
 - PSP refund smoke и fiscal integration;
 - destructive retention apply, archive restore в active SQLite, `VACUUM` и compaction;
 - fiscal shift/business day сущности как отдельные runtime aggregates;

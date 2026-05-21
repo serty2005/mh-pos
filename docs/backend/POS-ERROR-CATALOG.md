@@ -44,6 +44,7 @@ Internal cause пишется только в structured backend log.
 | `DUPLICATE_PIN` | 409 | `errors.conflict_duplicate_pin` | PIN совпал с несколькими active employees | Modal с бизнес-сообщением, не показывать PIN | no | WARN | PIN не возвращается и не логируется |
 | `ACTIVE_PRECHECK_CONFLICT` | 409 | `errors.conflict_active_precheck` | Для заказа уже есть активный precheck | Modal с предложением обновить заказ/precheck | no | WARN | Без raw domain error |
 | `DUPLICATE_COMMAND` | 409 | `errors.conflict_duplicate_command` | Повтор command id/idempotency conflict | Modal/notice, не auto-retry write command | no | WARN | Без raw payload |
+| `SALE_STOP_LIST_CONFLICT` | 409 | `errors.stopListConflict` | Позиция или обязательный recipe component находится в active stop-list | UI показывает localized business error и не рассчитывает availability на клиенте | no | WARN | Без stock/internal query details |
 | `RATE_LIMITED` | 429 | `errors.rateLimit` | Превышен лимит PIN login attempts | Notice/modal с рекомендацией подождать | yes, вручную | WARN | PIN не возвращается и не логируется |
 | `INTERNAL_ERROR` | 500 | `errors.server` | Неожиданная или инфраструктурная ошибка | Modal с generic текстом и support code | no для write, осторожно для read/status | ERROR | Stack trace и SQL details только в backend log |
 
@@ -52,6 +53,7 @@ Internal cause пишется только в structured backend log.
 - реализовано сейчас: `POST /api/v1/system/provisioning/pair-via-license` мапит ожидаемые `PAIRING_CODE_INVALID` и `PAIRING_CODE_EXPIRED` от License Server в `400 VALIDATION_FAILED`, а не в `500 INTERNAL_ERROR`; внутренняя причина остается только в structured log и `edge_provisioning_state.last_error`.
 - реализовано сейчас: `GET /api/v1/employee-shifts/current` при отсутствии открытой личной смены возвращает `200 null`, а не `404 NOT_FOUND`; это empty state, а не error contract.
 - реализовано сейчас: `POST /api/v1/prechecks/{id}/payments` возвращает `409 CONFLICT` / `errors.conflict` для state conflicts, включая отсутствие открытой кассовой смены, несовпадение кассовой смены с личной сменой заказа, stale/inactive precheck, overpayment и уже созданный final check. Backend не возвращает raw internal reason в response; UI обязан показать безопасное бизнес-сообщение, обновить состояние заказа/precheck/check/current cash session и не повторять оплату автоматически.
+- реализовано сейчас: add/increase order line commands возвращают `409 SALE_STOP_LIST_CONFLICT` / `errors.stopListConflict`, если продаваемая позиция или обязательный recipe component находится в active локальном stop-list. Backend не возвращает stock balance, raw SQL или internal query details.
 
 ## Поведение логирования
 

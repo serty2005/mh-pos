@@ -53,7 +53,7 @@
 Реализовано сейчас:
 
 - Edge cashier operations write local events/outbox for core runtime.
-- Cloud -> Edge `mastersync.Service` applies `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
+- Cloud -> Edge `mastersync.Service` applies `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`, `recipes`, `inventory_reference`.
 - `catalog` sync includes folders, tags, services and modifier groups/options/links; `menu` sync includes menu items. Menu categories remain separate from catalog folders.
 - Reprint events use immutable snapshots.
 - Cancellation/refund backend flow writes local event/outbox records; `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud operational events.
@@ -63,9 +63,8 @@
 
 Реализована только основа:
 
-- Domain constants mention `recipes` and `inventory_reference`.
-- Целевая Edge schema keeps only read-only `recipe_versions`/`recipe_lines` и bidirectional `stop_lists` for inventory availability checks.
-- Apply path для `recipes`, `inventory_reference` и `stop_lists` не реализован сейчас в `mastersync.Service`.
+- Edge schema keeps only read-only `recipe_versions`/`recipe_lines` и `stop_lists` for inventory availability checks.
+- POS Edge blocks sale by local stop-list for direct catalog item and mandatory active recipe components; stock balance never blocks sale.
 
 ## Data Flow
 
@@ -105,6 +104,7 @@ Modifiers:
 Recipes/Inventory:
 
 - реализовано сейчас: Edge emits immutable business events, Cloud Inventory Worker computes stock documents and ledger for normalized item payloads;
+- реализовано сейчас: POS Edge enforces local stop-list sale blocking from `recipes`/`inventory_reference` read models without Edge stock documents/moves;
 - реализовано сейчас: `CheckClosed` является финальным batch trigger; KDS `ItemServed` event contract принят Cloud receiver and worker;
 - запланировано до полного пилота: `KitchenTicketStatusChanged`, `ProductionCompleted`, chef stock receipt, catalog proposals and recipe change proposals feed Cloud Inventory Worker/review queues; auto-production split expands unavailable semi-finished quantity to raw ingredients;
 - реализовано сейчас: `stock_ledger.unit_cost_minor` stores event-time fallback cost; last-known cost and DAG-based retro recalculation запланированы до полного пилота;

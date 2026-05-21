@@ -78,6 +78,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Recipes: целевая Edge SQLite схема хранит read-only `recipe_versions`, `recipe_lines`; Cloud остается authoring/source.
 - Inventory: целевая architecture is Cloud-centric Event-Driven Inventory. Edge-side `stock_documents`, `stock_moves`, `stock_balances`, `item_costs` and purchase receipt foundation использовались как pre-pilot legacy и удалены из целевого SQLite baseline.
 - Master-data publications: Cloud package/publication foundation пока шире текущего POS Edge runtime для recipes/inventory.
+- Stop-list sale blocking foundation: POS Edge уже применяет `recipes`/`inventory_reference` ingest и локально блокирует продажу по active stop-list; Cloud authoring UI/conflict policy и полный smoke остаются следующим шагом.
 
 ## Аудит 2026-05-15
 
@@ -109,11 +110,11 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Recipes/inventory:
   - целевой contract зафиксирован в `docs/backend/INVENTORY-COSTING-SPEC.md`;
   - Edge должен стать только генератором events и UI ввода, без stock documents/moves/balances/costing;
-  - целевая Edge SQLite schema: read-only `recipe_versions`, `recipe_lines`, двусторонний `stop_lists`;
+  - выполнено: Edge SQLite schema содержит read-only `recipe_versions`, `recipe_lines` и `stop_lists`;
   - выполнено: Cloud Inventory Worker принимает через durable queue `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
   - выполнено: Cloud PostgreSQL baseline содержит `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`;
   - выполнено: worker пишет `stock_ledger` with `unit_cost_minor`, `total_cost_minor`, `costing_status` для нормализованных item payloads; retro recalculation jobs остаются следующим шагом;
-  - реализовать stop-list как единственный механизм блокировки продаж; stock balance остается аналитическим и может быть отрицательным.
+  - выполнено: POS Edge использует stop-list как единственный механизм блокировки продаж при add/increase order line; stock balance остается аналитическим и может быть отрицательным.
 - Cancellation/refund/reprint hardening:
   - backend ledger, immutable snapshots, no-over-cancel/no-over-refund/no-over-line-amount tests, current `CancellationRecorded`/`RefundRecorded` sync contracts, idempotent Cloud raw/journal receipt checks, coarse Cloud refund counters and detailed Cloud financial operation projection реализованы;
   - cashier UI full whole-check и partial `order_line`/quantity cancellation/refund через ledger endpoints реализован с выбором inventory disposition; compatibility refund по captured payment оставлен отдельным fallback;
@@ -127,8 +128,9 @@ Roadmap фиксирует статусы, блокеры и следующий 
 Расширенные блокеры полного пилота:
 
 - Stop-list sale blocking:
-  - выполнить POS Edge lookup active `stop_lists` для самого блюда и обязательных recipe components при `AddOrderLine` и увеличении quantity;
-  - добавить Cloud authoring, publication streams `recipes`/`stop_lists` и POS Edge ingest этих streams;
+  - выполнено: POS Edge lookup active `stop_lists` для самого блюда и обязательных active recipe components при `AddOrderLine` и увеличении quantity;
+  - выполнено: POS Edge ingest streams `recipes` и `inventory_reference`; Cloud generic package validation/storage принимает эти streams;
+  - добавить Cloud authoring/publication UI для recipes/stop-list и conflict policy;
   - покрыть offline smoke: Edge блокирует stop-listed item без связи с Cloud.
 - Advanced KDS/kitchen lifecycle:
   - создать POS Edge kitchen ticket lifecycle `new -> accepted -> in_progress -> ready -> served` с `hold`/`recall`/`cancelled` ветками;
@@ -210,7 +212,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 - cashier flow из `Definition Of Ready For Cashier Pilot` остается зеленым;
 - Cloud UI позволяет настроить stop-list и recipes, опубликовать их и увидеть readiness Edge;
-- POS Edge применяет `recipes` и `stop_lists` через managed sync и локально блокирует stop-listed sale offline;
+- POS Edge применяет `recipes` и `inventory_reference` через managed sync и локально блокирует stop-listed sale offline по локальному `stop_lists`;
 - waiter mobile UI проходит Playwright mobile flow без payment/refund authority;
 - kitchen UI проходит Playwright flow по status lifecycle, `ItemServed`, receipt capture, recipe suggestion и stop-list edit;
 - Cloud worker создает review/proposal записи из `CatalogItemChangeSuggested` и `RecipeChangeSuggested`, а не применяет их без policy/manager review;

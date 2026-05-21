@@ -10,4 +10,5 @@ var (
 	ErrTooManyRequests  = errors.New("too many requests")
 	ErrDuplicate        = errors.New("duplicate resource")
 	ErrDuplicateCommand = errors.New("duplicate command")
+	ErrSaleUnavailable  = errors.New("sale unavailable")
 )

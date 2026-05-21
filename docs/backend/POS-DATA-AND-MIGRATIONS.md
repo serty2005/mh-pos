@@ -59,7 +59,7 @@ Cashier runtime invariants:
 - `business_date_local` is stored for shifts, cash sessions, payments, checks and financial operations.
 - Целевой Cloud-centric inventory contract запрещает POS Edge создавать складские документы и проводки.
 - Текущий inventory baseline удалил Edge-side `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`; прежний Edge-side manual stock method был pre-pilot foundation и больше не является runtime path.
-- Для локальной проверки stop-list Edge хранит только read-only recipes и двусторонний overlay `stop_lists`.
+- Для локальной проверки stop-list Edge хранит только read-only recipes и `stop_lists` read model/overlay.
 
 ## Recipe/Inventory Runtime Boundary
 
@@ -71,8 +71,8 @@ Cashier runtime invariants:
 
 Правила:
 
-- `recipe_versions` и `recipe_lines` являются Cloud-owned read-only reference data для KDS UI и локальной проверки stop-list.
-- `stop_lists` является двусторонним overlay: менеджер может обновить stop-list на Edge или в Cloud admin UI.
+- `recipe_versions` и `recipe_lines` являются Cloud-owned read-only reference data для KDS UI и локальной проверки stop-list; POS Edge применяет их через stream `recipes`.
+- `stop_lists` применяется через stream `inventory_reference`; Edge manager/KDS write overlay и conflict policy остаются запланировано далее.
 - POS Edge не создает `StockDocument`, `StockMove`, stock balance или costing rows.
 - `StockDocumentPosted` не входит в целевой Edge -> Cloud operational catalog.
 - Все складские документы, движения, остатки и себестоимость создаются только Cloud Inventory Worker.
@@ -122,11 +122,11 @@ Managed SQL files, реализовано сейчас:
 
 Ограничение текущей основы:
 
-- Cloud recipe/inventory-adjacent foundation is not equal to POS Edge recipe/inventory runtime support.
+- Cloud recipe/inventory-adjacent foundation is not equal to full POS Edge inventory runtime support.
 - POS Edge `ApplyMasterData` сейчас принимает `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
 - `catalog` stream applies catalog folders/tags/items, service catalog items and modifier groups/options/bindings/effective menu-item links; `menu` stream applies menu items.
 - Cloud хранит menu categories отдельно от catalog folders; catalog publication не использует menu categories как замену folder hierarchy.
-- `recipes` и `inventory_reference` могут существовать в constants/schema state, но пока не поддерживаются `mastersync.Service` apply path.
+- `recipes` и `inventory_reference` поддерживаются `mastersync.Service` apply path для `recipe_versions`, `recipe_lines` и `stop_lists`.
 
 Реализовано сейчас для Cloud-centric inventory:
 
@@ -310,7 +310,7 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 Запланировано до полного пилота:
 
 - Recipes are versioned in Edge read-only tables `recipe_versions` and `recipe_lines`.
-- Edge локально использует recipes только для KDS UI и проверки stop-list при добавлении позиции.
+- Edge локально использует recipes только для KDS UI и проверки stop-list при добавлении позиции и увеличении quantity.
 - Edge inventory mutation tables удалены из целевой SQLite схемы.
 - Cloud Inventory Worker создает Cloud-owned stock documents and `stock_ledger` from Edge/KDS business events.
 - `CheckClosed` запускает batch delta consumption после сверки с `ItemServed`.

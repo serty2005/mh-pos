@@ -90,7 +90,7 @@ func statusForError(err error) int {
 		return http.StatusForbidden
 	case errors.Is(err, domain.ErrTooManyRequests):
 		return http.StatusTooManyRequests
-	case errors.Is(err, domain.ErrConflict), errors.Is(err, domain.ErrDuplicate), errors.Is(err, domain.ErrDuplicateCommand):
+	case errors.Is(err, domain.ErrSaleUnavailable), errors.Is(err, domain.ErrConflict), errors.Is(err, domain.ErrDuplicate), errors.Is(err, domain.ErrDuplicateCommand):
 		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
@@ -103,6 +103,8 @@ func codeForError(err error, status int) string {
 		return "RATE_LIMITED"
 	case errors.Is(err, domain.ErrDuplicateCommand):
 		return "DUPLICATE_COMMAND"
+	case errors.Is(err, domain.ErrSaleUnavailable):
+		return "SALE_STOP_LIST_CONFLICT"
 	case status == http.StatusUnauthorized && isSessionRevokedError(err):
 		return "SESSION_REVOKED"
 	case status == http.StatusUnauthorized:
@@ -165,6 +167,8 @@ func messageKeyForCode(code, fallback string) string {
 		return "errors.conflict_active_precheck"
 	case "DUPLICATE_COMMAND":
 		return "errors.conflict_duplicate_command"
+	case "SALE_STOP_LIST_CONFLICT":
+		return "errors.stopListConflict"
 	case "VALIDATION_FAILED":
 		return "errors.validation"
 	case "NOT_FOUND":
