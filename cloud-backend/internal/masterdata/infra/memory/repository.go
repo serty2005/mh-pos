@@ -26,6 +26,8 @@ type Repository struct {
 	modifierOptions  map[string]domain.ModifierOption
 	modifierBindings map[string]domain.ModifierGroupBinding
 	pricingPolicies  map[string]domain.PricingPolicy
+	recipeItems      map[string]domain.RecipeItem
+	stopLists        map[string]domain.StopListEntry
 	categories       map[string]domain.Category
 	halls            map[string]domain.Hall
 	tables           map[string]domain.Table
@@ -48,6 +50,8 @@ func NewRepository() *Repository {
 		modifierOptions:  map[string]domain.ModifierOption{},
 		modifierBindings: map[string]domain.ModifierGroupBinding{},
 		pricingPolicies:  map[string]domain.PricingPolicy{},
+		recipeItems:      map[string]domain.RecipeItem{},
+		stopLists:        map[string]domain.StopListEntry{},
 		categories:       map[string]domain.Category{},
 		halls:            map[string]domain.Hall{},
 		tables:           map[string]domain.Table{},
@@ -517,6 +521,86 @@ func (r *Repository) ListPricingPolicies(_ context.Context, restaurantID string)
 		}
 		return strings.Compare(a.ID, b.ID)
 	})
+	return out, nil
+}
+
+func (r *Repository) CreateRecipeItem(_ context.Context, v domain.RecipeItem) (domain.RecipeItem, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, item := range r.recipeItems {
+		if item.RecipeOwnerCatalogItemID == v.RecipeOwnerCatalogItemID && item.ComponentCatalogItemID == v.ComponentCatalogItemID {
+			return domain.RecipeItem{}, domain.ErrConflict
+		}
+	}
+	r.recipeItems[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) UpdateRecipeItem(_ context.Context, v domain.RecipeItem) (domain.RecipeItem, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.recipeItems[v.ID]; !ok {
+		return domain.RecipeItem{}, domain.ErrNotFound
+	}
+	r.recipeItems[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) GetRecipeItem(_ context.Context, id string) (domain.RecipeItem, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.recipeItems[strings.TrimSpace(id)]
+	if !ok {
+		return domain.RecipeItem{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) ListRecipeItems(_ context.Context, restaurantID string) ([]domain.RecipeItem, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.RecipeItem
+	for _, item := range r.recipeItems {
+		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) UpsertStopListEntry(_ context.Context, v domain.StopListEntry) (domain.StopListEntry, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, item := range r.stopLists {
+		if item.RestaurantID == v.RestaurantID && item.CatalogItemID == v.CatalogItemID {
+			v.ID = item.ID
+			r.stopLists[id] = v
+			return v, nil
+		}
+	}
+	r.stopLists[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) GetStopListEntry(_ context.Context, id string) (domain.StopListEntry, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.stopLists[strings.TrimSpace(id)]
+	if !ok {
+		return domain.StopListEntry{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) ListStopListEntries(_ context.Context, restaurantID string) ([]domain.StopListEntry, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.StopListEntry
+	for _, item := range r.stopLists {
+		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+			out = append(out, item)
+		}
+	}
 	return out, nil
 }
 

@@ -265,6 +265,46 @@
         }
       }
     },
+    "/master-data/recipes/items": {
+      "post": {
+        "operationId": "createRecipeItem",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRecipeItem"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Recipe item created"
+          }
+        }
+      }
+    },
+    "/master-data/inventory/stop-list": {
+      "post": {
+        "operationId": "createStopListEntry",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStopListEntry"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Stop-list entry created or updated"
+          }
+        }
+      }
+    },
     "/master-data/publications": {
       "post": {
         "operationId": "publishMasterData",
@@ -1122,6 +1162,14 @@
       "CreateModifierBinding": {
         "type": "object",
         "required": ["restaurant_id", "modifier_group_id", "target_type", "target_id", "sort_order"]
+      },
+      "CreateRecipeItem": {
+        "type": "object",
+        "required": ["restaurant_id", "recipe_owner_catalog_item_id", "component_catalog_item_id", "quantity", "unit"]
+      },
+      "CreateStopListEntry": {
+        "type": "object",
+        "required": ["restaurant_id", "catalog_item_id"]
       },
       "PublishMasterData": {
         "type": "object",

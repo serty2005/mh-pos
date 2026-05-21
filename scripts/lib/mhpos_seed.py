@@ -208,6 +208,35 @@ def create_menu_item(client, restaurant_id, catalog_item_id, name, price):
     )
 
 
+def create_recipe_item(client, restaurant_id, owner_catalog_item_id, component_catalog_item_id, quantity=1, unit="g", loss_percent=0):
+    return call(
+        client,
+        "createRecipeItem",
+        {
+            "restaurant_id": restaurant_id,
+            "recipe_owner_catalog_item_id": owner_catalog_item_id,
+            "component_catalog_item_id": component_catalog_item_id,
+            "quantity": int(quantity),
+            "unit": unit,
+            "loss_percent": int(loss_percent),
+        },
+    )
+
+
+def create_stop_list_entry(client, restaurant_id, catalog_item_id, available_quantity=0, reason="stack smoke stop-list"):
+    return call(
+        client,
+        "createStopListEntry",
+        {
+            "restaurant_id": restaurant_id,
+            "catalog_item_id": catalog_item_id,
+            "available_quantity": available_quantity,
+            "reason": reason,
+            "active": True,
+        },
+    )
+
+
 def publish_master_data(client, restaurant_id, node_device_id="", published_by="python-masterdata-seed"):
     body = {"restaurant_id": restaurant_id, "published_by": published_by}
     if node_device_id:

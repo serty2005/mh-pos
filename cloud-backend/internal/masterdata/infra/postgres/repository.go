@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -464,6 +465,85 @@ func (r *Repository) ListPricingPolicies(ctx context.Context, restaurantID strin
 	return out, rows.Err()
 }
 
+func (r *Repository) CreateRecipeItem(ctx context.Context, v domain.RecipeItem) (domain.RecipeItem, error) {
+	out, err := scanRecipeItem(r.pool.QueryRow(ctx, `
+INSERT INTO cloud_recipe_items(id,restaurant_id,recipe_owner_catalog_item_id,component_catalog_item_id,quantity,unit,loss_percent,created_at,updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+RETURNING id,restaurant_id,recipe_owner_catalog_item_id,component_catalog_item_id,quantity,unit,loss_percent,created_at,updated_at`,
+		v.ID, v.RestaurantID, v.RecipeOwnerCatalogItemID, v.ComponentCatalogItemID, v.Quantity, v.Unit, v.LossPercent, v.CreatedAt, v.UpdatedAt))
+	return out, normalizeErr(err)
+}
+
+func (r *Repository) UpdateRecipeItem(ctx context.Context, v domain.RecipeItem) (domain.RecipeItem, error) {
+	out, err := scanRecipeItem(r.pool.QueryRow(ctx, `
+UPDATE cloud_recipe_items
+SET quantity=$2,unit=$3,loss_percent=$4,updated_at=$5
+WHERE id=$1
+RETURNING id,restaurant_id,recipe_owner_catalog_item_id,component_catalog_item_id,quantity,unit,loss_percent,created_at,updated_at`,
+		v.ID, v.Quantity, v.Unit, v.LossPercent, v.UpdatedAt))
+	return out, normalizeErr(err)
+}
+
+func (r *Repository) GetRecipeItem(ctx context.Context, id string) (domain.RecipeItem, error) {
+	v, err := scanRecipeItem(r.pool.QueryRow(ctx, `SELECT id,restaurant_id,recipe_owner_catalog_item_id,component_catalog_item_id,quantity,unit,loss_percent,created_at,updated_at FROM cloud_recipe_items WHERE id=$1`, strings.TrimSpace(id)))
+	return v, normalizeErr(err)
+}
+
+func (r *Repository) ListRecipeItems(ctx context.Context, restaurantID string) ([]domain.RecipeItem, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id,restaurant_id,recipe_owner_catalog_item_id,component_catalog_item_id,quantity,unit,loss_percent,created_at,updated_at FROM cloud_recipe_items WHERE restaurant_id=$1 ORDER BY recipe_owner_catalog_item_id,id`, strings.TrimSpace(restaurantID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.RecipeItem
+	for rows.Next() {
+		v, err := scanRecipeItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) UpsertStopListEntry(ctx context.Context, v domain.StopListEntry) (domain.StopListEntry, error) {
+	out, err := scanStopListEntry(r.pool.QueryRow(ctx, `
+INSERT INTO stop_lists(id,restaurant_id,catalog_item_id,available_quantity,source,reason,active,cloud_version,updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+ON CONFLICT (restaurant_id,catalog_item_id) DO UPDATE SET
+  available_quantity=EXCLUDED.available_quantity,
+  source=EXCLUDED.source,
+  reason=EXCLUDED.reason,
+  active=EXCLUDED.active,
+  cloud_version=COALESCE(stop_lists.cloud_version,0)+1,
+  updated_at=EXCLUDED.updated_at
+RETURNING id,restaurant_id,catalog_item_id,available_quantity::float8,source,COALESCE(reason,''),active,cloud_version,updated_at`,
+		v.ID, v.RestaurantID, v.CatalogItemID, v.AvailableQuantity, v.Source, nullableText(v.Reason), v.Active, v.CloudVersion, v.UpdatedAt))
+	return out, normalizeErr(err)
+}
+
+func (r *Repository) GetStopListEntry(ctx context.Context, id string) (domain.StopListEntry, error) {
+	v, err := scanStopListEntry(r.pool.QueryRow(ctx, `SELECT id,restaurant_id,catalog_item_id,available_quantity::float8,source,COALESCE(reason,''),active,cloud_version,updated_at FROM stop_lists WHERE id=$1`, strings.TrimSpace(id)))
+	return v, normalizeErr(err)
+}
+
+func (r *Repository) ListStopListEntries(ctx context.Context, restaurantID string) ([]domain.StopListEntry, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id,restaurant_id,catalog_item_id,available_quantity::float8,source,COALESCE(reason,''),active,cloud_version,updated_at FROM stop_lists WHERE restaurant_id=$1 ORDER BY catalog_item_id,id`, strings.TrimSpace(restaurantID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.StopListEntry
+	for rows.Next() {
+		v, err := scanStopListEntry(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) CreateCategory(ctx context.Context, v domain.Category) (domain.Category, error) {
 	out, err := scanCategory(r.pool.QueryRow(ctx, `
 INSERT INTO cloud_categories(id,restaurant_id,name,status,sort_order,created_at,updated_at)
@@ -791,6 +871,26 @@ func scanPricingPolicy(row scanner) (domain.PricingPolicy, error) {
 	err := row.Scan(&v.ID, &v.RestaurantID, &v.Name, &kind, &v.Scope, &v.AmountKind, &v.AmountMinor, &v.ValueBasisPoints, &v.ApplicationIndex, &v.Manual, &v.RequiresPermission, &status, &v.CloudVersion, &v.ArchivedAt, &v.CreatedAt, &v.UpdatedAt)
 	v.Kind = domain.PricingPolicyKind(kind)
 	v.Status = domain.LifecycleStatus(status)
+	return v, err
+}
+
+func scanRecipeItem(row scanner) (domain.RecipeItem, error) {
+	var v domain.RecipeItem
+	err := row.Scan(&v.ID, &v.RestaurantID, &v.RecipeOwnerCatalogItemID, &v.ComponentCatalogItemID, &v.Quantity, &v.Unit, &v.LossPercent, &v.CreatedAt, &v.UpdatedAt)
+	return v, err
+}
+
+func scanStopListEntry(row scanner) (domain.StopListEntry, error) {
+	var v domain.StopListEntry
+	var available sql.NullFloat64
+	var cloudVersion sql.NullInt64
+	err := row.Scan(&v.ID, &v.RestaurantID, &v.CatalogItemID, &available, &v.Source, &v.Reason, &v.Active, &cloudVersion, &v.UpdatedAt)
+	if available.Valid {
+		v.AvailableQuantity = &available.Float64
+	}
+	if cloudVersion.Valid {
+		v.CloudVersion = &cloudVersion.Int64
+	}
 	return v, err
 }
 

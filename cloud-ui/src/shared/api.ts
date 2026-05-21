@@ -15,12 +15,14 @@ import {
   modifierGroupSchema,
   modifierOptionSchema,
   pricingPolicySchema,
+  recipeItemSchema,
   assignDeviceResultSchema,
   assignmentStatusSchema,
   pairingCodeResultSchema,
   publicationSummarySchema,
   restaurantSchema,
   roleSchema,
+  stopListEntrySchema,
   tableSchema,
   unassignedEdgeNodeSchema,
   type AssignDeviceResult,
@@ -40,10 +42,12 @@ import {
   type ModifierOption,
   type PairingCodeResult,
   type PricingPolicy,
+  type RecipeItem,
   type PublicationSummary,
   type Restaurant,
   type RestaurantTable,
   type Role,
+  type StopListEntry,
   type UnassignedEdgeNode,
 } from './schemas';
 
@@ -395,6 +399,34 @@ export function createPricingPolicy(payload: Payload) {
 
 export function updatePricingPolicy(id: string, payload: Payload) {
   return patch(`/master-data/pricing/policies/${encodeURIComponent(id)}`, pricingPolicySchema, payload);
+}
+
+export function listRecipeItems(restaurantId: string): Promise<RecipeItem[]> {
+  return request(`/master-data/recipes/items?${query(restaurantId)}`, z.array(recipeItemSchema));
+}
+
+export function createRecipeItem(payload: Payload) {
+  return post('/master-data/recipes/items', recipeItemSchema, payload);
+}
+
+export function updateRecipeItem(id: string, payload: Payload) {
+  return patch(`/master-data/recipes/items/${encodeURIComponent(id)}`, recipeItemSchema, payload);
+}
+
+export function listStopListEntries(restaurantId: string): Promise<StopListEntry[]> {
+  return request(`/master-data/inventory/stop-list?${query(restaurantId)}`, z.array(stopListEntrySchema));
+}
+
+export function upsertStopListEntry(payload: Payload) {
+  return post('/master-data/inventory/stop-list', stopListEntrySchema, payload);
+}
+
+export function updateStopListEntry(id: string, payload: Payload) {
+  return patch(`/master-data/inventory/stop-list/${encodeURIComponent(id)}`, stopListEntrySchema, payload);
+}
+
+export function deactivateStopListEntry(id: string) {
+  return post(`/master-data/inventory/stop-list/${encodeURIComponent(id)}/deactivate`, stopListEntrySchema, {});
 }
 
 export function createCategory(payload: Payload): Promise<Category> {

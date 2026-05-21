@@ -346,6 +346,32 @@ func (p PricingPolicy) ActiveForPOS() bool {
 	return p.Status == StatusPublished
 }
 
+// RecipeItem описывает Cloud-owned строку рецепта, из которой публикация строит Edge recipe read model.
+type RecipeItem struct {
+	ID                       string    `json:"id"`
+	RestaurantID             string    `json:"restaurant_id"`
+	RecipeOwnerCatalogItemID string    `json:"recipe_owner_catalog_item_id"`
+	ComponentCatalogItemID   string    `json:"component_catalog_item_id"`
+	Quantity                 int64     `json:"quantity"`
+	Unit                     string    `json:"unit"`
+	LossPercent              int64     `json:"loss_percent"`
+	CreatedAt                time.Time `json:"created_at"`
+	UpdatedAt                time.Time `json:"updated_at"`
+}
+
+// StopListEntry описывает Cloud-owned состояние stop-list, публикуемое на Edge для offline sale blocking.
+type StopListEntry struct {
+	ID                string    `json:"id"`
+	RestaurantID      string    `json:"restaurant_id"`
+	CatalogItemID     string    `json:"catalog_item_id"`
+	AvailableQuantity *float64  `json:"available_quantity,omitempty"`
+	Source            string    `json:"source"`
+	Reason            string    `json:"reason,omitempty"`
+	Active            bool      `json:"active"`
+	CloudVersion      *int64    `json:"cloud_version,omitempty"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
 // MenuItem описывает продаваемую позицию меню с lifecycle и основой routing/availability.
 type MenuItem struct {
 	ID                string          `json:"id"`
@@ -414,6 +440,9 @@ type MasterDataPacket struct {
 	Halls                  []EdgeHall                  `json:"halls,omitempty"`
 	Tables                 []EdgeTable                 `json:"tables,omitempty"`
 	PricingPolicies        []EdgePricingPolicy         `json:"pricing_policies,omitempty"`
+	RecipeVersions        []EdgeRecipeVersion         `json:"recipe_versions,omitempty"`
+	RecipeLines           []EdgeRecipeLine            `json:"recipe_lines,omitempty"`
+	StopLists             []EdgeStopListEntry         `json:"stop_lists,omitempty"`
 }
 
 // EdgeRestaurant является projection ресторана в существующий POS Edge restaurants stream.
@@ -593,6 +622,44 @@ type EdgePricingPolicy struct {
 	Manual             bool   `json:"manual"`
 	RequiresPermission string `json:"requires_permission,omitempty"`
 	Active             bool   `json:"active"`
+}
+
+// EdgeRecipeVersion является projection Cloud recipe owner в POS Edge recipes stream.
+type EdgeRecipeVersion struct {
+	ID                string    `json:"id"`
+	DishCatalogItemID string    `json:"dish_catalog_item_id"`
+	Version           int       `json:"version"`
+	Name              string    `json:"name"`
+	Status            string    `json:"status"`
+	YieldQuantity     int64     `json:"yield_quantity"`
+	YieldUnit         string    `json:"yield_unit"`
+	Active            bool      `json:"active"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+// EdgeRecipeLine является projection Cloud recipe component в POS Edge recipes stream.
+type EdgeRecipeLine struct {
+	ID              string    `json:"id"`
+	RecipeVersionID string    `json:"recipe_version_id"`
+	CatalogItemID   string    `json:"catalog_item_id"`
+	Quantity        int64     `json:"quantity"`
+	Unit            string    `json:"unit"`
+	LossPercent     int       `json:"loss_percent"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// EdgeStopListEntry является projection Cloud stop-list в POS Edge inventory_reference stream.
+type EdgeStopListEntry struct {
+	ID                string    `json:"id"`
+	RestaurantID      string    `json:"restaurant_id"`
+	CatalogItemID     string    `json:"catalog_item_id"`
+	AvailableQuantity *float64  `json:"available_quantity,omitempty"`
+	Source            string    `json:"source"`
+	Reason            string    `json:"reason,omitempty"`
+	Active            bool      `json:"active"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 // ValidateEmployeeStatus проверяет допустимое lifecycle состояние сотрудника.

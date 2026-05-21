@@ -1,3 +1,4 @@
+import json
 import time
 import uuid
 from dataclasses import dataclass
@@ -7,7 +8,11 @@ from mhpos_seed import (
     auth_headers,
     call,
     create_cloud_seed,
+    create_catalog_item,
+    create_menu_item,
     create_post_pairing_sync_item,
+    create_recipe_item,
+    create_stop_list_entry,
     get_edge_node_device_id,
     health_check,
     login_with_pin,
@@ -28,6 +33,7 @@ ALL_SUITES = [
     "health",
     "license_pairing",
     "cloud_to_edge_masterdata",
+    "pos_stop_list_sale_blocking",
     "pos_cashier_runtime",
     "pos_refund_after_shift_close",
 ]
@@ -424,6 +430,100 @@ def run_pos_cashier_runtime_suite(
     return result
 
 
+def run_pos_stop_list_sale_blocking_suite(
+    ctx,
+    restaurant_name="",
+    cashier_pin="1111",
+    manager_pin="2222",
+    node_device_id="",
+    suffix="",
+    client_device_id="python-stack-smoke-client",
+    skip_post_pairing_sync_check=False,
+    wait_seconds=90,
+    interval_seconds=2,
+    existing_summary=None,
+):
+    started = time.monotonic()
+    summary = ensure_pos_runtime_summary(
+        ctx,
+        restaurant_name=restaurant_name,
+        cashier_pin=cashier_pin,
+        manager_pin=manager_pin,
+        node_device_id=node_device_id,
+        suffix=suffix,
+        client_device_id=client_device_id,
+        skip_post_pairing_sync_check=skip_post_pairing_sync_check,
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+        existing_summary=existing_summary,
+    )
+    session = prepare_pos_runtime_session(ctx, summary, client_device_id)
+    runtime_headers = session["runtime_headers"]
+    employee_shift = session["employee_shift"]
+    suffix = uuid.uuid4().hex[:8]
+    direct_catalog = create_catalog_item(ctx.cloud, summary["restaurant_id"], "dish", "Blocked Direct " + suffix, "BLOCK-DIRECT-" + suffix, "portion")
+    direct_menu = create_menu_item(ctx.cloud, summary["restaurant_id"], direct_catalog["id"], "Blocked Direct " + suffix, 12000)
+    recipe_owner = create_catalog_item(ctx.cloud, summary["restaurant_id"], "dish", "Blocked Recipe " + suffix, "BLOCK-RECIPE-" + suffix, "portion")
+    component = create_catalog_item(ctx.cloud, summary["restaurant_id"], "good", "Blocked Component " + suffix, "BLOCK-COMP-" + suffix, "g")
+    recipe_menu = create_menu_item(ctx.cloud, summary["restaurant_id"], recipe_owner["id"], "Blocked Recipe " + suffix, 16000)
+    recipe_line = create_recipe_item(ctx.cloud, summary["restaurant_id"], recipe_owner["id"], component["id"], quantity=100, unit="g")
+    direct_stop = create_stop_list_entry(ctx.cloud, summary["restaurant_id"], direct_catalog["id"], available_quantity=0, reason="stack smoke direct stop-list")
+    component_stop = create_stop_list_entry(ctx.cloud, summary["restaurant_id"], component["id"], available_quantity=0, reason="stack smoke component stop-list")
+    publication = call(
+        ctx.cloud,
+        "publishMasterData",
+        {
+            "restaurant_id": summary["restaurant_id"],
+            "published_by": "python-stop-list-smoke",
+            "node_device_id": summary.get("node_device_id", ""),
+        },
+    )
+    wait_for_menu_item(ctx.pos, direct_menu["id"], runtime_headers, timeout_seconds=wait_seconds, interval_seconds=interval_seconds)
+    wait_for_menu_item(ctx.pos, recipe_menu["id"], runtime_headers, timeout_seconds=wait_seconds, interval_seconds=interval_seconds)
+    halls = call(ctx.pos, "listPOSHalls", query={"restaurant_id": summary["restaurant_id"]}, headers=runtime_headers)
+    tables = call(
+        ctx.pos,
+        "listPOSTables",
+        query={"restaurant_id": summary["restaurant_id"], "hall_id": first_hall_id(summary, halls)},
+        headers=runtime_headers,
+    )
+    table = choose_table(summary, tables)
+    order = call(
+        ctx.pos,
+        "createOrder",
+        {
+            "command_id": new_command_id("create-stop-list-order"),
+            "restaurant_id": summary["restaurant_id"],
+            "shift_id": employee_shift["id"],
+            "table_id": table["id"],
+            "table_name": table.get("name", ""),
+            "guest_count": 1,
+        },
+        headers=runtime_headers,
+    )
+    direct_blocked = expect_stop_list_conflict(ctx.pos, order["id"], direct_menu["id"], runtime_headers)
+    recipe_blocked = expect_stop_list_conflict(ctx.pos, order["id"], recipe_menu["id"], runtime_headers)
+    result = passed_result(
+        "pos_stop_list_sale_blocking",
+        {
+            "reused_existing_pairing": bool(existing_summary),
+            "order_id": order["id"],
+            "direct_catalog_item_id": direct_catalog["id"],
+            "recipe_owner_catalog_item_id": recipe_owner["id"],
+            "recipe_component_catalog_item_id": component["id"],
+            "recipe_line_id": recipe_line.get("id"),
+            "direct_stop_list_id": direct_stop.get("id"),
+            "component_stop_list_id": component_stop.get("id"),
+            "publication_id": publication.get("id"),
+            "direct_block_error_code": direct_blocked.get("error", {}).get("code"),
+            "recipe_block_error_code": recipe_blocked.get("error", {}).get("code"),
+        },
+        started=started,
+    )
+    result["_artifacts"] = {"masterdata_summary": dict(summary)}
+    return result
+
+
 def run_pos_refund_after_shift_close_suite(
     ctx,
     restaurant_name="",
@@ -781,6 +881,35 @@ def optional_call(client, operation_id, **kwargs):
         raise
 
 
+def expect_stop_list_conflict(pos_client, order_id, menu_item_id, headers):
+    try:
+        payload = call(
+            pos_client,
+            "addOrderLine",
+            {
+                "command_id": new_command_id("add-stop-list-blocked-line"),
+                "menu_item_id": menu_item_id,
+                "quantity": 1,
+            },
+            path_params={"id": order_id},
+            headers=headers,
+            expected_status=[409],
+        )
+    except HttpError as exc:
+        try:
+            payload = json.loads(exc.body)
+        except Exception:
+            payload = {}
+        code = payload.get("error", {}).get("code") if isinstance(payload.get("error"), dict) else ""
+        if code != "SALE_STOP_LIST_CONFLICT":
+            raise AssertionError("expected SALE_STOP_LIST_CONFLICT, got " + str(code)) from exc
+        return payload
+    code = payload.get("error", {}).get("code") if isinstance(payload, dict) and isinstance(payload.get("error"), dict) else ""
+    if code != "SALE_STOP_LIST_CONFLICT":
+        raise AssertionError("expected SALE_STOP_LIST_CONFLICT, got " + str(code))
+    return payload
+
+
 def new_command_id(prefix):
     return prefix + "-" + uuid.uuid4().hex
 
@@ -951,6 +1080,11 @@ def run_selected_suites(ctx, suites, **options):
                 result = run_license_pairing_suite(ctx)
             elif suite == "cloud_to_edge_masterdata":
                 result = run_cloud_to_edge_masterdata_suite(ctx, **options)
+            elif suite == "pos_stop_list_sale_blocking":
+                suite_options = dict(options)
+                if artifacts.get("masterdata_summary"):
+                    suite_options["existing_summary"] = artifacts["masterdata_summary"]
+                result = run_pos_stop_list_sale_blocking_suite(ctx, **suite_options)
             elif suite == "pos_cashier_runtime":
                 suite_options = dict(options)
                 if artifacts.get("masterdata_summary"):

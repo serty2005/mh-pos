@@ -58,6 +58,7 @@ class StackSmokeTest(unittest.TestCase):
                 "health",
                 "license_pairing",
                 "cloud_to_edge_masterdata",
+                "pos_stop_list_sale_blocking",
                 "pos_cashier_runtime",
                 "pos_refund_after_shift_close",
             ],

@@ -68,6 +68,13 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 		r.Post("/pricing/policies", h.createPricingPolicy)
 		r.Get("/pricing/policies", h.listPricingPolicies)
 		r.Patch("/pricing/policies/{id}", h.updatePricingPolicy)
+		r.Post("/recipes/items", h.createRecipeItem)
+		r.Get("/recipes/items", h.listRecipeItems)
+		r.Patch("/recipes/items/{id}", h.updateRecipeItem)
+		r.Post("/inventory/stop-list", h.upsertStopListEntry)
+		r.Get("/inventory/stop-list", h.listStopListEntries)
+		r.Patch("/inventory/stop-list/{id}", h.updateStopListEntry)
+		r.Post("/inventory/stop-list/{id}/deactivate", h.deactivateStopListEntry)
 		r.Post("/menu/categories", h.createCategory)
 		r.Post("/floor/halls", h.createHall)
 		r.Get("/floor/halls", h.listHalls)
@@ -463,6 +470,57 @@ func (h *Handler) updatePricingPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := h.service.UpdatePricingPolicy(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) createRecipeItem(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateRecipeItemCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.CreateRecipeItem(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) listRecipeItems(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListRecipeItems(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) updateRecipeItem(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdateRecipeItemCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpdateRecipeItem(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) upsertStopListEntry(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpsertStopListEntryCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpsertStopListEntry(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) listStopListEntries(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListStopListEntries(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) updateStopListEntry(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpsertStopListEntryCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpdateStopListEntry(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) deactivateStopListEntry(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.DeactivateStopListEntry(r.Context(), chi.URLParam(r, "id"))
 	write(w, http.StatusOK, v, err)
 }
 

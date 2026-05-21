@@ -170,6 +170,30 @@ export const pricingPolicySchema = z.object({
   archived_at: z.string().optional(),
 });
 
+export const recipeItemSchema = z.object({
+  id: z.string(),
+  restaurant_id: z.string(),
+  recipe_owner_catalog_item_id: z.string(),
+  component_catalog_item_id: z.string(),
+  quantity: z.number(),
+  unit: z.string(),
+  loss_percent: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const stopListEntrySchema = z.object({
+  id: z.string(),
+  restaurant_id: z.string(),
+  catalog_item_id: z.string(),
+  available_quantity: z.number().nullable().optional(),
+  source: z.string(),
+  reason: z.string().optional().default(''),
+  active: z.boolean(),
+  cloud_version: z.number().optional(),
+  updated_at: z.string(),
+});
+
 export const hallSchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
@@ -300,6 +324,8 @@ export type ModifierGroup = z.infer<typeof modifierGroupSchema>;
 export type ModifierOption = z.infer<typeof modifierOptionSchema>;
 export type ModifierBinding = z.infer<typeof modifierBindingSchema>;
 export type PricingPolicy = z.infer<typeof pricingPolicySchema>;
+export type RecipeItem = z.infer<typeof recipeItemSchema>;
+export type StopListEntry = z.infer<typeof stopListEntrySchema>;
 export type Hall = z.infer<typeof hallSchema>;
 export type RestaurantTable = z.infer<typeof tableSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;

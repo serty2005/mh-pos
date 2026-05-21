@@ -77,6 +77,13 @@ type Repository interface {
 	UpdatePricingPolicy(context.Context, domain.PricingPolicy) (domain.PricingPolicy, error)
 	GetPricingPolicy(context.Context, string) (domain.PricingPolicy, error)
 	ListPricingPolicies(context.Context, string) ([]domain.PricingPolicy, error)
+	CreateRecipeItem(context.Context, domain.RecipeItem) (domain.RecipeItem, error)
+	UpdateRecipeItem(context.Context, domain.RecipeItem) (domain.RecipeItem, error)
+	GetRecipeItem(context.Context, string) (domain.RecipeItem, error)
+	ListRecipeItems(context.Context, string) ([]domain.RecipeItem, error)
+	UpsertStopListEntry(context.Context, domain.StopListEntry) (domain.StopListEntry, error)
+	GetStopListEntry(context.Context, string) (domain.StopListEntry, error)
+	ListStopListEntries(context.Context, string) ([]domain.StopListEntry, error)
 	CreateCategory(context.Context, domain.Category) (domain.Category, error)
 	ListCategories(context.Context, string) ([]domain.Category, error)
 	CreateHall(context.Context, domain.Hall) (domain.Hall, error)
@@ -333,6 +340,32 @@ type UpdatePricingPolicyCommand struct {
 	Manual             *bool                   `json:"manual,omitempty"`
 	RequiresPermission *string                 `json:"requires_permission,omitempty"`
 	Status             *domain.LifecycleStatus `json:"status,omitempty"`
+}
+
+// CreateRecipeItemCommand описывает минимальную Cloud-owned строку рецепта для публикации read-only Edge recipe.
+type CreateRecipeItemCommand struct {
+	RestaurantID             string `json:"restaurant_id"`
+	RecipeOwnerCatalogItemID string `json:"recipe_owner_catalog_item_id"`
+	ComponentCatalogItemID   string `json:"component_catalog_item_id"`
+	Quantity                 int64  `json:"quantity"`
+	Unit                     string `json:"unit"`
+	LossPercent              int64  `json:"loss_percent"`
+}
+
+// UpdateRecipeItemCommand описывает изменение количества/единицы компонента рецепта без Edge-side authoring.
+type UpdateRecipeItemCommand struct {
+	Quantity    *int64  `json:"quantity,omitempty"`
+	Unit        string  `json:"unit,omitempty"`
+	LossPercent *int64  `json:"loss_percent,omitempty"`
+}
+
+// UpsertStopListEntryCommand описывает Cloud-owned stop-list состояние для публикации sale blocking.
+type UpsertStopListEntryCommand struct {
+	RestaurantID       string   `json:"restaurant_id"`
+	CatalogItemID      string   `json:"catalog_item_id"`
+	AvailableQuantity *float64  `json:"available_quantity,omitempty"`
+	Reason            string   `json:"reason,omitempty"`
+	Active            *bool    `json:"active,omitempty"`
 }
 
 // CreateCategoryCommand описывает создание категории меню.
@@ -1218,6 +1251,143 @@ func (s *Service) UpdatePricingPolicy(ctx context.Context, id string, cmd Update
 	return s.repo.UpdatePricingPolicy(ctx, policy)
 }
 
+// CreateRecipeItem добавляет Cloud-owned recipe component для будущей публикации на Edge.
+func (s *Service) CreateRecipeItem(ctx context.Context, cmd CreateRecipeItemCommand) (domain.RecipeItem, error) {
+	restaurantID := strings.TrimSpace(cmd.RestaurantID)
+	ownerID := strings.TrimSpace(cmd.RecipeOwnerCatalogItemID)
+	componentID := strings.TrimSpace(cmd.ComponentCatalogItemID)
+	unit := strings.TrimSpace(cmd.Unit)
+	if restaurantID == "" || ownerID == "" || componentID == "" || cmd.Quantity <= 0 || unit == "" || cmd.LossPercent < 0 || cmd.LossPercent > 100 {
+		return domain.RecipeItem{}, fmt.Errorf("%w: recipe item requires restaurant_id, owner, component, positive quantity, unit and loss_percent 0..100", domain.ErrInvalid)
+	}
+	if err := s.ensureRestaurantActive(ctx, restaurantID); err != nil {
+		return domain.RecipeItem{}, err
+	}
+	if err := s.ensureCatalogItemKind(ctx, restaurantID, ownerID, domain.CatalogItemDish, domain.CatalogItemSemiFinished); err != nil {
+		return domain.RecipeItem{}, err
+	}
+	if err := s.ensureCatalogItemKind(ctx, restaurantID, componentID, domain.CatalogItemGood, domain.CatalogItemSemiFinished); err != nil {
+		return domain.RecipeItem{}, err
+	}
+	now := s.clock.Now().UTC()
+	item := domain.RecipeItem{
+		ID:                       s.ids.NewID(),
+		RestaurantID:             restaurantID,
+		RecipeOwnerCatalogItemID: ownerID,
+		ComponentCatalogItemID:   componentID,
+		Quantity:                 cmd.Quantity,
+		Unit:                     unit,
+		LossPercent:              cmd.LossPercent,
+		CreatedAt:                now,
+		UpdatedAt:                now,
+	}
+	return s.repo.CreateRecipeItem(ctx, item)
+}
+
+// ListRecipeItems возвращает recipe reference rows ресторана.
+func (s *Service) ListRecipeItems(ctx context.Context, restaurantID string) ([]domain.RecipeItem, error) {
+	return s.repo.ListRecipeItems(ctx, strings.TrimSpace(restaurantID))
+}
+
+// UpdateRecipeItem изменяет recipe component без создания Edge-side stock documents.
+func (s *Service) UpdateRecipeItem(ctx context.Context, id string, cmd UpdateRecipeItemCommand) (domain.RecipeItem, error) {
+	item, err := s.repo.GetRecipeItem(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.RecipeItem{}, err
+	}
+	if cmd.Quantity != nil {
+		if *cmd.Quantity <= 0 {
+			return domain.RecipeItem{}, fmt.Errorf("%w: recipe quantity must be positive", domain.ErrInvalid)
+		}
+		item.Quantity = *cmd.Quantity
+	}
+	if strings.TrimSpace(cmd.Unit) != "" {
+		item.Unit = strings.TrimSpace(cmd.Unit)
+	}
+	if cmd.LossPercent != nil {
+		if *cmd.LossPercent < 0 || *cmd.LossPercent > 100 {
+			return domain.RecipeItem{}, fmt.Errorf("%w: loss_percent must be 0..100", domain.ErrInvalid)
+		}
+		item.LossPercent = *cmd.LossPercent
+	}
+	item.UpdatedAt = s.clock.Now().UTC()
+	return s.repo.UpdateRecipeItem(ctx, item)
+}
+
+// UpsertStopListEntry создает или обновляет Cloud-owned stop-list row по restaurant/catalog item.
+func (s *Service) UpsertStopListEntry(ctx context.Context, cmd UpsertStopListEntryCommand) (domain.StopListEntry, error) {
+	restaurantID := strings.TrimSpace(cmd.RestaurantID)
+	catalogItemID := strings.TrimSpace(cmd.CatalogItemID)
+	if restaurantID == "" || catalogItemID == "" {
+		return domain.StopListEntry{}, fmt.Errorf("%w: restaurant_id and catalog_item_id are required", domain.ErrInvalid)
+	}
+	if cmd.AvailableQuantity != nil && *cmd.AvailableQuantity < 0 {
+		return domain.StopListEntry{}, fmt.Errorf("%w: available_quantity must be non-negative or null", domain.ErrInvalid)
+	}
+	if err := s.ensureRestaurantActive(ctx, restaurantID); err != nil {
+		return domain.StopListEntry{}, err
+	}
+	if _, err := s.ensureCatalogItemInRestaurant(ctx, restaurantID, catalogItemID); err != nil {
+		return domain.StopListEntry{}, err
+	}
+	active := true
+	if cmd.Active != nil {
+		active = *cmd.Active
+	}
+	now := s.clock.Now().UTC()
+	version := int64(1)
+	entry := domain.StopListEntry{
+		ID:                s.ids.NewID(),
+		RestaurantID:      restaurantID,
+		CatalogItemID:     catalogItemID,
+		AvailableQuantity: cmd.AvailableQuantity,
+		Source:            "cloud",
+		Reason:            strings.TrimSpace(cmd.Reason),
+		Active:            active,
+		CloudVersion:      &version,
+		UpdatedAt:         now,
+	}
+	return s.repo.UpsertStopListEntry(ctx, entry)
+}
+
+// ListStopListEntries возвращает Cloud-owned stop-list rows ресторана.
+func (s *Service) ListStopListEntries(ctx context.Context, restaurantID string) ([]domain.StopListEntry, error) {
+	return s.repo.ListStopListEntries(ctx, strings.TrimSpace(restaurantID))
+}
+
+// UpdateStopListEntry изменяет Cloud-owned stop-list row по identifier.
+func (s *Service) UpdateStopListEntry(ctx context.Context, id string, cmd UpsertStopListEntryCommand) (domain.StopListEntry, error) {
+	entry, err := s.repo.GetStopListEntry(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.StopListEntry{}, err
+	}
+	if cmd.AvailableQuantity != nil && *cmd.AvailableQuantity < 0 {
+		return domain.StopListEntry{}, fmt.Errorf("%w: available_quantity must be non-negative or null", domain.ErrInvalid)
+	}
+	if cmd.AvailableQuantity != nil {
+		entry.AvailableQuantity = cmd.AvailableQuantity
+	}
+	if strings.TrimSpace(cmd.Reason) != "" {
+		entry.Reason = strings.TrimSpace(cmd.Reason)
+	}
+	if cmd.Active != nil {
+		entry.Active = *cmd.Active
+	}
+	version := int64(1)
+	if entry.CloudVersion != nil {
+		version = *entry.CloudVersion + 1
+	}
+	entry.CloudVersion = &version
+	entry.UpdatedAt = s.clock.Now().UTC()
+	return s.repo.UpsertStopListEntry(ctx, entry)
+}
+
+// DeactivateStopListEntry переводит stop-list row в inactive, чтобы Edge получил явное снятие блокировки.
+func (s *Service) DeactivateStopListEntry(ctx context.Context, id string) (domain.StopListEntry, error) {
+	active := false
+	return s.UpdateStopListEntry(ctx, id, UpsertStopListEntryCommand{Active: &active})
+}
+
 // CreateCategory создает draft категорию меню.
 func (s *Service) CreateCategory(ctx context.Context, cmd CreateCategoryCommand) (domain.Category, error) {
 	if strings.TrimSpace(cmd.RestaurantID) == "" || strings.TrimSpace(cmd.Name) == "" {
@@ -1584,13 +1754,16 @@ func (s *Service) GetCurrentPublishedState(ctx context.Context, restaurantID str
 	var packet domain.MasterDataPacket
 	_ = json.Unmarshal(pub.PackageJSON, &packet)
 	counts := map[string]int{
-		"restaurants":   len(packet.Restaurants),
-		"roles":         len(packet.Roles),
-		"employees":     len(packet.Employees),
-		"catalog_items": len(packet.CatalogItems),
-		"menu_items":    len(packet.MenuItems),
-		"halls":         len(packet.Halls),
-		"tables":        len(packet.Tables),
+		"restaurants":     len(packet.Restaurants),
+		"roles":           len(packet.Roles),
+		"employees":       len(packet.Employees),
+		"catalog_items":   len(packet.CatalogItems),
+		"menu_items":      len(packet.MenuItems),
+		"halls":           len(packet.Halls),
+		"tables":          len(packet.Tables),
+		"recipe_versions": len(packet.RecipeVersions),
+		"recipe_lines":    len(packet.RecipeLines),
+		"stop_lists":      len(packet.StopLists),
 	}
 	return summarizePublication(pub, counts), nil
 }
@@ -1674,12 +1847,23 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
 	}
+	recipeItems, err := s.repo.ListRecipeItems(ctx, restaurantID)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
+	stopLists, err := s.repo.ListStopListEntries(ctx, restaurantID)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
 	sortRoles(roles)
 	sortEmployees(employees)
 	sortCatalog(catalogItems)
 	sortMenu(menuItems)
 	sortHalls(halls)
 	sortTables(tables)
+	sortRecipeItems(recipeItems)
+	sortStopLists(stopLists)
+	recipeVersions, recipeLines := edgeRecipes(recipeItems, catalogItems)
 
 	restaurants := []domain.Restaurant{}
 	if restaurant.ID != "" && restaurant.Status == domain.RestaurantActive {
@@ -1708,6 +1892,9 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 		Halls:                  edgeHalls(halls),
 		Tables:                 edgeTables(tables),
 		PricingPolicies:        edgePricingPolicies(pricingPolicies),
+		RecipeVersions:        recipeVersions,
+		RecipeLines:           recipeLines,
+		StopLists:             edgeStopLists(stopLists),
 	}
 	counts := map[string]int{
 		"restaurants":               len(packet.Restaurants),
@@ -1726,6 +1913,9 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 		"menu_items":                len(packet.MenuItems),
 		"halls":                     len(packet.Halls),
 		"tables":                    len(packet.Tables),
+		"recipe_versions":           len(packet.RecipeVersions),
+		"recipe_lines":              len(packet.RecipeLines),
+		"stop_lists":                len(packet.StopLists),
 	}
 	streams, err := streamPackages(packet)
 	if err != nil {
@@ -1802,6 +1992,25 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 		ServiceChargeRules []json.RawMessage          `json:"service_charge_rules"`
 		PricingPolicies    []domain.EdgePricingPolicy `json:"pricing_policies"`
 	}
+	type recipesPayload struct {
+		NodeDeviceID    string                     `json:"node_device_id,omitempty"`
+		RestaurantID    string                     `json:"restaurant_id"`
+		SyncMode        string                     `json:"sync_mode"`
+		CheckpointToken string                     `json:"checkpoint_token,omitempty"`
+		CloudVersion    int64                      `json:"cloud_version"`
+		CloudUpdatedAt  time.Time                  `json:"cloud_updated_at"`
+		RecipeVersions  []domain.EdgeRecipeVersion `json:"recipe_versions"`
+		RecipeLines     []domain.EdgeRecipeLine    `json:"recipe_lines"`
+	}
+	type inventoryPayload struct {
+		NodeDeviceID    string                     `json:"node_device_id,omitempty"`
+		RestaurantID    string                     `json:"restaurant_id"`
+		SyncMode        string                     `json:"sync_mode"`
+		CheckpointToken string                     `json:"checkpoint_token,omitempty"`
+		CloudVersion    int64                      `json:"cloud_version"`
+		CloudUpdatedAt  time.Time                  `json:"cloud_updated_at"`
+		StopLists       []domain.EdgeStopListEntry `json:"stop_lists"`
+	}
 	build := func(stream string, payload any) (StreamPackage, error) {
 		body, err := json.Marshal(payload)
 		if err != nil {
@@ -1842,7 +2051,15 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []StreamPackage{restaurants, staff, catalog, floor, menu, pricing}, nil
+	recipes, err := build("recipes", recipesPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, RecipeVersions: packet.RecipeVersions, RecipeLines: packet.RecipeLines})
+	if err != nil {
+		return nil, err
+	}
+	inventory, err := build("inventory_reference", inventoryPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, StopLists: packet.StopLists})
+	if err != nil {
+		return nil, err
+	}
+	return []StreamPackage{restaurants, staff, catalog, floor, menu, pricing, recipes, inventory}, nil
 }
 
 func edgeRestaurants(items []domain.Restaurant) []domain.EdgeRestaurant {
@@ -2012,6 +2229,73 @@ func edgePricingPolicies(items []domain.PricingPolicy) []domain.EdgePricingPolic
 	return out
 }
 
+func edgeRecipes(items []domain.RecipeItem, catalogItems []domain.CatalogItem) ([]domain.EdgeRecipeVersion, []domain.EdgeRecipeLine) {
+	catalogByID := map[string]domain.CatalogItem{}
+	for _, item := range catalogItems {
+		catalogByID[item.ID] = item
+	}
+	versionIDByOwner := map[string]string{}
+	versions := make([]domain.EdgeRecipeVersion, 0)
+	lines := make([]domain.EdgeRecipeLine, 0, len(items))
+	for _, item := range items {
+		owner := catalogByID[item.RecipeOwnerCatalogItemID]
+		versionID := "recipe-" + item.RecipeOwnerCatalogItemID + "-v1"
+		if _, ok := versionIDByOwner[item.RecipeOwnerCatalogItemID]; !ok {
+			versionIDByOwner[item.RecipeOwnerCatalogItemID] = versionID
+			name := owner.Name
+			if strings.TrimSpace(name) == "" {
+				name = item.RecipeOwnerCatalogItemID
+			}
+			yieldUnit := owner.BaseUnit
+			if strings.TrimSpace(yieldUnit) == "" {
+				yieldUnit = "portion"
+			}
+			active := owner.ActiveForPOS()
+			status := "archived"
+			if active {
+				status = "active"
+			}
+			versions = append(versions, domain.EdgeRecipeVersion{
+				ID:                versionID,
+				DishCatalogItemID: item.RecipeOwnerCatalogItemID,
+				Version:           1,
+				Name:              name + " recipe",
+				Status:            status,
+				YieldQuantity:     1,
+				YieldUnit:         yieldUnit,
+				Active:            active,
+				CreatedAt:         item.CreatedAt,
+				UpdatedAt:         item.UpdatedAt,
+			})
+		}
+		lines = append(lines, domain.EdgeRecipeLine{
+			ID:              item.ID,
+			RecipeVersionID: versionID,
+			CatalogItemID:   item.ComponentCatalogItemID,
+			Quantity:        item.Quantity,
+			Unit:            item.Unit,
+			LossPercent:     int(item.LossPercent),
+			CreatedAt:       item.CreatedAt,
+			UpdatedAt:       item.UpdatedAt,
+		})
+	}
+	sort.SliceStable(versions, func(i, j int) bool { return versions[i].ID < versions[j].ID })
+	sort.SliceStable(lines, func(i, j int) bool { return lines[i].ID < lines[j].ID })
+	return versions, lines
+}
+
+func edgeStopLists(items []domain.StopListEntry) []domain.EdgeStopListEntry {
+	out := make([]domain.EdgeStopListEntry, 0, len(items))
+	for _, item := range items {
+		source := strings.TrimSpace(item.Source)
+		if source == "" {
+			source = "cloud"
+		}
+		out = append(out, domain.EdgeStopListEntry{ID: item.ID, RestaurantID: item.RestaurantID, CatalogItemID: item.CatalogItemID, AvailableQuantity: item.AvailableQuantity, Source: source, Reason: item.Reason, Active: item.Active, UpdatedAt: item.UpdatedAt})
+	}
+	return out
+}
+
 func edgeMenuItems(items []domain.MenuItem) []domain.EdgeMenuItem {
 	out := make([]domain.EdgeMenuItem, 0, len(items))
 	for _, item := range items {
@@ -2039,6 +2323,41 @@ func validateCatalogFields(restaurantID string, kind domain.CatalogItemKind, nam
 		return fmt.Errorf("%w: restaurant_id, name, sku and base_unit are required", domain.ErrInvalid)
 	}
 	return domain.ValidateCatalogItemKind(kind)
+}
+
+func (s *Service) ensureRestaurantActive(ctx context.Context, restaurantID string) error {
+	restaurant, err := s.repo.GetRestaurant(ctx, strings.TrimSpace(restaurantID))
+	if err != nil {
+		return err
+	}
+	if restaurant.Status != domain.RestaurantActive {
+		return fmt.Errorf("%w: restaurant must be active", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func (s *Service) ensureCatalogItemInRestaurant(ctx context.Context, restaurantID, catalogItemID string) (domain.CatalogItem, error) {
+	item, err := s.repo.GetCatalogItem(ctx, strings.TrimSpace(catalogItemID))
+	if err != nil {
+		return domain.CatalogItem{}, err
+	}
+	if item.RestaurantID != strings.TrimSpace(restaurantID) {
+		return domain.CatalogItem{}, fmt.Errorf("%w: catalog item belongs to another restaurant", domain.ErrInvalid)
+	}
+	return item, nil
+}
+
+func (s *Service) ensureCatalogItemKind(ctx context.Context, restaurantID, catalogItemID string, allowed ...domain.CatalogItemKind) error {
+	item, err := s.ensureCatalogItemInRestaurant(ctx, restaurantID, catalogItemID)
+	if err != nil {
+		return err
+	}
+	for _, kind := range allowed {
+		if item.Kind == kind {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: catalog item kind is not valid for recipe role", domain.ErrInvalid)
 }
 
 func validatePolicyScope(kind domain.PricingPolicyKind, scope string) error {
@@ -2296,6 +2615,24 @@ func sortTables(items []domain.Table) {
 			return items[i].ID < items[j].ID
 		}
 		return items[i].HallID < items[j].HallID
+	})
+}
+
+func sortRecipeItems(items []domain.RecipeItem) {
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].RecipeOwnerCatalogItemID == items[j].RecipeOwnerCatalogItemID {
+			return items[i].ID < items[j].ID
+		}
+		return items[i].RecipeOwnerCatalogItemID < items[j].RecipeOwnerCatalogItemID
+	})
+}
+
+func sortStopLists(items []domain.StopListEntry) {
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].CatalogItemID == items[j].CatalogItemID {
+			return items[i].ID < items[j].ID
+		}
+		return items[i].CatalogItemID < items[j].CatalogItemID
 	})
 }
 

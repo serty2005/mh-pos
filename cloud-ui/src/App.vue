@@ -63,9 +63,11 @@ import {
   createModifierGroup,
   createModifierOption,
   createPricingPolicy,
+  createRecipeItem,
   createRestaurant,
   createRole,
   createTable,
+  deactivateStopListEntry,
   generatePairingCode,
   getAssignmentStatus,
   getPublicationState,
@@ -81,8 +83,10 @@ import {
   listModifierGroups,
   listModifierOptions,
   listPricingPolicies,
+  listRecipeItems,
   listRestaurants,
   listRoles,
+  listStopListEntries,
   listTables,
   listUnassignedDevices,
   publishMasterData,
@@ -99,9 +103,12 @@ import {
   updateModifierGroup,
   updateModifierOption,
   updatePricingPolicy,
+  updateRecipeItem,
   updateRestaurant,
   updateRole,
+  updateStopListEntry,
   updateTable,
+  upsertStopListEntry,
   ApiError,
 } from './shared/api';
 import type { AssignmentStatus, EdgeEvent, PairingCodeResult, PublicationSummary, Restaurant, UnassignedEdgeNode } from './shared/schemas';
@@ -121,6 +128,8 @@ type ResourceKey =
   | 'modifierOptions'
   | 'modifierBindings'
   | 'pricingPolicies'
+  | 'recipeItems'
+  | 'stopLists'
   | 'halls'
   | 'tables'
   | 'menuItems'
@@ -146,6 +155,8 @@ const autoPublishResourceKeys = new Set<ResourceKey>([
   'modifierOptions',
   'modifierBindings',
   'pricingPolicies',
+  'recipeItems',
+  'stopLists',
   'halls',
   'tables',
   'menuItems',
@@ -369,6 +380,8 @@ const scopedRows = reactive<Record<ScopedResourceKey, Row[]>>({
   modifierOptions: [],
   modifierBindings: [],
   pricingPolicies: [],
+  recipeItems: [],
+  stopLists: [],
   halls: [],
   tables: [],
   menuItems: [],
@@ -523,6 +536,38 @@ const resourceConfigs: ResourceConfig[] = [
     update: updatePricingPolicy,
   },
   {
+    key: 'recipeItems',
+    groupKey: 'cloud.groups.inventory',
+    titleKey: 'cloud.resources.recipeItems',
+    descriptionKey: 'cloud.descriptions.recipeItems',
+    columns: columns(['recipe_owner_catalog_item_id', 'component_catalog_item_id', 'quantity', 'unit', 'loss_percent']),
+    fields: [
+      field('recipe_owner_catalog_item_id', { options: 'catalogItems' }),
+      field('component_catalog_item_id', { options: 'catalogItems' }),
+      field('quantity', { type: 'number', defaultValue: 1 }),
+      field('unit', { defaultValue: 'g' }),
+      field('loss_percent', { type: 'number', defaultValue: 0 }),
+    ],
+    create: createRecipeItem,
+    update: updateRecipeItem,
+  },
+  {
+    key: 'stopLists',
+    groupKey: 'cloud.groups.inventory',
+    titleKey: 'cloud.resources.stopLists',
+    descriptionKey: 'cloud.descriptions.stopLists',
+    columns: columns(['catalog_item_id', 'available_quantity', 'active', 'source', 'reason', 'updated_at']),
+    fields: [
+      field('catalog_item_id', { options: 'catalogItems', createOnly: true }),
+      field('available_quantity', { type: 'number', defaultValue: 0 }),
+      field('reason'),
+      field('active', { type: 'checkbox', defaultValue: true }),
+    ],
+    create: upsertStopListEntry,
+    update: updateStopListEntry,
+    archive: deactivateStopListEntry,
+  },
+  {
     key: 'halls',
     groupKey: 'cloud.groups.floor',
     titleKey: 'cloud.resources.halls',
@@ -581,7 +626,7 @@ const scenarioNav = [
 ];
 
 const navGroups = computed(() => {
-  const groupKeys = ['cloud.groups.scenarios', 'cloud.groups.organization', 'cloud.groups.staff', 'cloud.groups.catalog', 'cloud.groups.modifiers', 'cloud.groups.pricing', 'cloud.groups.floor', 'cloud.groups.menu', 'cloud.groups.publication'];
+  const groupKeys = ['cloud.groups.scenarios', 'cloud.groups.organization', 'cloud.groups.staff', 'cloud.groups.catalog', 'cloud.groups.modifiers', 'cloud.groups.pricing', 'cloud.groups.inventory', 'cloud.groups.floor', 'cloud.groups.menu', 'cloud.groups.publication'];
   return groupKeys.map((labelKey) => ({
     key: labelKey,
     labelKey,
@@ -644,6 +689,7 @@ const onboardingChecks = computed(() => {
   const halls = scopedRows.halls.length;
   const tables = scopedRows.tables.length;
   const menuItems = scopedRows.menuItems.length;
+  const stopLists = scopedRows.stopLists.length;
   const nodeReady = Boolean(assignmentResult.value || assignmentStatus.value?.status === 'assigned');
   const snapshotReady = Boolean(assignmentResult.value?.snapshot_url || assignmentStatus.value?.snapshot_url || publication.value?.package_sha256);
   return [
@@ -651,6 +697,7 @@ const onboardingChecks = computed(() => {
     { key: 'staff', ready: roles > 0 && employees > 0, titleKey: 'cloud.onboarding.staff.title', descriptionKey: 'cloud.onboarding.staff.description', params: { roles, employees }, target: 'roles' as ResourceKey, actionKey: 'cloud.onboarding.actions.configure', icon: 'badge' },
     { key: 'floor', ready: halls > 0 && tables > 0, titleKey: 'cloud.onboarding.floor.title', descriptionKey: 'cloud.onboarding.floor.description', params: { halls, tables }, target: 'halls' as ResourceKey, actionKey: 'cloud.onboarding.actions.configure', icon: 'table_restaurant' },
     { key: 'menu', ready: menuItems > 0, titleKey: 'cloud.onboarding.menu.title', descriptionKey: 'cloud.onboarding.menu.description', params: { menuItems }, target: 'menuItems' as ResourceKey, actionKey: 'cloud.onboarding.actions.configure', icon: 'restaurant_menu' },
+    { key: 'inventory', ready: stopLists > 0, titleKey: 'cloud.onboarding.inventory.title', descriptionKey: 'cloud.onboarding.inventory.description', params: { stopLists }, target: 'stopLists' as ResourceKey, actionKey: 'cloud.onboarding.actions.configure', icon: 'block' },
     { key: 'edge', ready: nodeReady, titleKey: 'cloud.onboarding.edge.title', descriptionKey: 'cloud.onboarding.edge.description', params: { count: knownNodeOptions.value.length }, target: 'edgeDevices' as ResourceKey, actionKey: 'cloud.onboarding.actions.connect', icon: 'devices' },
     { key: 'publication', ready: Boolean(publication.value), titleKey: 'cloud.onboarding.publication.title', descriptionKey: 'cloud.onboarding.publication.description', params: { version: publication.value?.version ?? '-' }, target: 'publications' as ResourceKey, actionKey: 'cloud.onboarding.actions.publish', icon: 'publish' },
     { key: 'snapshot', ready: snapshotReady, titleKey: 'cloud.onboarding.snapshot.title', descriptionKey: 'cloud.onboarding.snapshot.description', params: { code: publication.value?.package_sha256 ? shortId(publication.value.package_sha256) : '-' }, target: 'publications' as ResourceKey, actionKey: 'cloud.onboarding.actions.open', icon: 'inventory' },
@@ -958,6 +1005,8 @@ async function loadScopedResource(key: ScopedResourceKey) {
     if (key === 'modifierOptions') scopedRows.modifierOptions = (await listModifierOptions(restaurantId)) as unknown as Row[];
     if (key === 'modifierBindings') scopedRows.modifierBindings = (await listModifierBindings(restaurantId)) as unknown as Row[];
     if (key === 'pricingPolicies') scopedRows.pricingPolicies = (await listPricingPolicies(restaurantId)) as unknown as Row[];
+    if (key === 'recipeItems') scopedRows.recipeItems = (await listRecipeItems(restaurantId)) as unknown as Row[];
+    if (key === 'stopLists') scopedRows.stopLists = (await listStopListEntries(restaurantId)) as unknown as Row[];
     if (key === 'halls') scopedRows.halls = (await listHalls(restaurantId)) as unknown as Row[];
     if (key === 'tables') scopedRows.tables = (await listTables(restaurantId)) as unknown as Row[];
     if (key === 'menuItems') scopedRows.menuItems = (await listMenuItems(restaurantId)) as unknown as Row[];
@@ -1317,7 +1366,7 @@ function togglePermission(permission: string, checked: boolean) {
 function referenceLabel(key: string, value: string) {
   if (key === 'role_id') return rowLabel(scopedRows.roles, value);
   if (key === 'folder_id' || key === 'parent_id') return rowLabel(scopedRows.catalogFolders, value);
-  if (key === 'catalog_item_id') return rowLabel(scopedRows.catalogItems, value);
+  if (key === 'catalog_item_id' || key === 'recipe_owner_catalog_item_id' || key === 'component_catalog_item_id') return rowLabel(scopedRows.catalogItems, value);
   if (key === 'tag_id') return rowLabel(scopedRows.catalogTags, value);
   if (key === 'modifier_group_id') return rowLabel(scopedRows.modifierGroups, value);
   if (key === 'hall_id') return rowLabel(scopedRows.halls, value);

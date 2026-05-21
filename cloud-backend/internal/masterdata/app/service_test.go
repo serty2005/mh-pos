@@ -338,6 +338,58 @@ func TestCatalogItemKindServiceAndSemiFinishedRoundTripAndPublication(t *testing
 	}
 }
 
+func TestPublicationIncludesRecipesAndStopListPackages(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	restaurant, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "Demo Bistro", Timezone: "Europe/Moscow", Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dish, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: restaurant.ID, Kind: domain.CatalogItemDish, Name: "Soup", SKU: "SOUP", BaseUnit: "portion"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	component, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: restaurant.ID, Kind: domain.CatalogItemGood, Name: "Potato", SKU: "POTATO", BaseUnit: "g"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	published := domain.StatusPublished
+	if _, err := service.UpdateCatalogItem(ctx, dish.ID, app.UpdateCatalogItemCommand{Status: &published}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpdateCatalogItem(ctx, component.ID, app.UpdateCatalogItemCommand{Status: &published}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateRecipeItem(ctx, app.CreateRecipeItemCommand{RestaurantID: restaurant.ID, RecipeOwnerCatalogItemID: dish.ID, ComponentCatalogItemID: component.ID, Quantity: 150, Unit: "g"}); err != nil {
+		t.Fatal(err)
+	}
+	zero := 0.0
+	if _, err := service.UpsertStopListEntry(ctx, app.UpsertStopListEntryCommand{RestaurantID: restaurant.ID, CatalogItemID: component.ID, AvailableQuantity: &zero, Reason: "ingredient unavailable"}); err != nil {
+		t.Fatal(err)
+	}
+	pub, err := service.Publish(ctx, app.PublishCommand{RestaurantID: restaurant.ID, PublishedBy: "operator-1", NodeDeviceID: "node-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pub.Counts["recipe_versions"] != 1 || pub.Counts["recipe_lines"] != 1 || pub.Counts["stop_lists"] != 1 {
+		t.Fatalf("expected recipes and stop-list counts, got %+v", pub.Counts)
+	}
+	recipesPackage, ok := repo.Package("recipes", "node-1")
+	if !ok {
+		t.Fatal("expected recipes stream package")
+	}
+	if !strings.Contains(string(recipesPackage.PayloadJSON), `"recipe_versions"`) || !strings.Contains(string(recipesPackage.PayloadJSON), component.ID) {
+		t.Fatalf("expected recipes package to include component, payload=%s", recipesPackage.PayloadJSON)
+	}
+	inventoryPackage, ok := repo.Package("inventory_reference", "node-1")
+	if !ok {
+		t.Fatal("expected inventory_reference stream package")
+	}
+	if !strings.Contains(string(inventoryPackage.PayloadJSON), `"stop_lists"`) || !strings.Contains(string(inventoryPackage.PayloadJSON), `"available_quantity":0`) {
+		t.Fatalf("expected inventory_reference package to include blocking stop-list, payload=%s", inventoryPackage.PayloadJSON)
+	}
+}
+
 func TestCatalogActiveSKUCanBeReusedAfterArchive(t *testing.T) {
 	service, _ := newService()
 	ctx := context.Background()
