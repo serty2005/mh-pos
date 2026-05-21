@@ -147,3 +147,49 @@ WHERE id = $1`, queueID, reason, now)
 func errorsIsNoRows(err error) bool {
 	return err == pgx.ErrNoRows
 }
+
+func (r *Repository) ListActiveRecipeLines(ctx context.Context, restaurantID, catalogItemID string) ([]app.RecipeLine, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT component_catalog_item_id, quantity::text, unit
+FROM cloud_recipe_items
+WHERE restaurant_id = $1 AND recipe_owner_catalog_item_id = $2
+ORDER BY component_catalog_item_id`, strings.TrimSpace(restaurantID), strings.TrimSpace(catalogItemID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	lines := make([]app.RecipeLine, 0)
+	for rows.Next() {
+		var line app.RecipeLine
+		if err := rows.Scan(&line.ComponentCatalogItemID, &line.Quantity, &line.UnitCode); err != nil {
+			return nil, err
+		}
+		lines = append(lines, line)
+	}
+	return lines, rows.Err()
+}
+
+func (r *Repository) ListModifierOptionLinks(ctx context.Context, restaurantID string, optionIDs []string) (map[string]string, error) {
+	if len(optionIDs) == 0 {
+		return map[string]string{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT id, COALESCE(linked_catalog_item_id,'')
+FROM cloud_modifier_options
+WHERE restaurant_id = $1
+  AND id = ANY($2)`, strings.TrimSpace(restaurantID), optionIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]string, len(optionIDs))
+	for rows.Next() {
+		var id string
+		var linked string
+		if err := rows.Scan(&id, &linked); err != nil {
+			return nil, err
+		}
+		out[id] = strings.TrimSpace(linked)
+	}
+	return out, rows.Err()
+}
