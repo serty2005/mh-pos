@@ -147,3 +147,24 @@ WHERE id = $1`, queueID, reason, now)
 func errorsIsNoRows(err error) bool {
 	return err == pgx.ErrNoRows
 }
+
+func (r *Repository) ListActiveRecipeLines(ctx context.Context, restaurantID, catalogItemID string) ([]app.RecipeLine, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT component_catalog_item_id, quantity::text, unit
+FROM cloud_recipe_items
+WHERE restaurant_id = $1 AND recipe_owner_catalog_item_id = $2
+ORDER BY component_catalog_item_id`, strings.TrimSpace(restaurantID), strings.TrimSpace(catalogItemID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	lines := make([]app.RecipeLine, 0)
+	for rows.Next() {
+		var line app.RecipeLine
+		if err := rows.Scan(&line.ComponentCatalogItemID, &line.Quantity, &line.UnitCode); err != nil {
+			return nil, err
+		}
+		lines = append(lines, line)
+	}
+	return lines, rows.Err()
+}

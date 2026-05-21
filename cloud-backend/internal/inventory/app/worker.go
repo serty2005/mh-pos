@@ -32,11 +32,18 @@ type IDGenerator interface {
 	NewID() string
 }
 
+type RecipeLine struct {
+	ComponentCatalogItemID string
+	Quantity               string
+	UnitCode               string
+}
+
 type Repository interface {
 	ClaimPending(context.Context, ClaimCommand) ([]QueuedEvent, error)
 	CreateStockDocument(context.Context, StockDocument) error
 	MarkProcessed(context.Context, string, time.Time) error
 	MarkFailed(context.Context, string, string, time.Time) error
+	ListActiveRecipeLines(context.Context, string, string) ([]RecipeLine, error)
 }
 
 type ClaimCommand struct {
@@ -164,7 +171,12 @@ func (w *Worker) checkClosedDocument(event QueuedEvent, now time.Time) (StockDoc
 	if err != nil {
 		return StockDocument{}, false, err
 	}
-	return w.documentFromItems(event, now, DocumentSale, MovementOut, payload.Data.BusinessDateLocal, payload.Data.Items, false)
+	items, err := w.expandRecipeItems(context.Background(), event.RestaurantID, payload.Data.Items)
+	if err != nil {
+		return StockDocument{}, false, err
+	}
+	items = append(items, modifierItemsFromPayload(event.Payload)...)
+	return w.documentFromItems(event, now, DocumentSale, MovementOut, payload.Data.BusinessDateLocal, items, false)
 }
 
 func (w *Worker) itemServedDocument(event QueuedEvent, now time.Time) (StockDocument, bool, error) {
@@ -178,7 +190,11 @@ func (w *Worker) itemServedDocument(event QueuedEvent, now time.Time) (StockDocu
 		Quantity:      payload.Data.Quantity,
 		UnitCode:      payload.Data.UnitCode,
 	}
-	return w.documentFromItems(event, now, DocumentSale, MovementOut, businessDate(event.OccurredAt), []contracts.InventoryItem{item}, false)
+	items, err := w.expandRecipeItems(context.Background(), event.RestaurantID, []contracts.InventoryItem{item})
+	if err != nil {
+		return StockDocument{}, false, err
+	}
+	return w.documentFromItems(event, now, DocumentSale, MovementOut, businessDate(event.OccurredAt), items, false)
 }
 
 func (w *Worker) stockReceiptDocument(event QueuedEvent, now time.Time) (StockDocument, bool, error) {
@@ -207,7 +223,16 @@ func (w *Worker) productionDocument(event QueuedEvent, now time.Time) (StockDocu
 		Quantity:      payload.Data.Quantity,
 		UnitCode:      payload.Data.UnitCode,
 	}
-	return w.documentFromItems(event, now, DocumentProduction, MovementIn, payload.Data.BusinessDateLocal, []contracts.InventoryItem{item}, false)
+	doc, ok, err := w.documentFromItems(event, now, DocumentProduction, MovementIn, payload.Data.BusinessDateLocal, []contracts.InventoryItem{item}, false)
+	if err != nil || !ok {
+		return doc, ok, err
+	}
+	components, err := w.recipeToLedger(context.Background(), event.RestaurantID, payload.Data.SemiFinishedCatalogItemID, payload.Data.Quantity, payload.Data.BusinessDateLocal, event, now)
+	if err != nil {
+		return StockDocument{}, false, err
+	}
+	doc.Ledger = append(doc.Ledger, components...)
+	return doc, true, nil
 }
 
 func (w *Worker) financialOperationDocument(event QueuedEvent, now time.Time) (StockDocument, bool, error) {
@@ -327,4 +352,81 @@ func safeError(err error) string {
 		return msg[:500]
 	}
 	return msg
+}
+
+func (w *Worker) expandRecipeItems(ctx context.Context, restaurantID string, items []contracts.InventoryItem) ([]contracts.InventoryItem, error) {
+	out := make([]contracts.InventoryItem, 0, len(items))
+	for _, item := range items {
+		if strings.TrimSpace(item.CatalogItemID) == "" || !positive(item.Quantity) {
+			continue
+		}
+		lines, err := w.repo.ListActiveRecipeLines(ctx, restaurantID, strings.TrimSpace(item.CatalogItemID))
+		if err != nil {
+			return nil, err
+		}
+		if len(lines) == 0 {
+			out = append(out, item)
+			continue
+		}
+		for _, line := range lines {
+			if !positive(line.Quantity) || strings.TrimSpace(line.UnitCode) == "" {
+				return nil, fmt.Errorf("invalid recipe line for %s", item.CatalogItemID)
+			}
+			q := scaledQuantity(item.Quantity, line.Quantity)
+			out = append(out, contracts.InventoryItem{OrderLineID: item.OrderLineID, CatalogItemID: line.ComponentCatalogItemID, Quantity: q, UnitCode: line.UnitCode})
+		}
+	}
+	return out, nil
+}
+
+func (w *Worker) recipeToLedger(ctx context.Context, restaurantID, ownerID, baseQty, businessDateLocal string, event QueuedEvent, now time.Time) ([]StockLedgerEntry, error) {
+	lines, err := w.repo.ListActiveRecipeLines(ctx, restaurantID, ownerID)
+	if err != nil || len(lines) == 0 {
+		return nil, err
+	}
+	entries := make([]StockLedgerEntry, 0, len(lines))
+	for _, line := range lines {
+		if !positive(line.Quantity) || strings.TrimSpace(line.UnitCode) == "" {
+			return nil, fmt.Errorf("invalid recipe line for %s", ownerID)
+		}
+		entries = append(entries, StockLedgerEntry{ID: w.ids.NewID(), RestaurantID: event.RestaurantID, SourceEventID: event.EventID, SourceEventType: string(event.EventType), CatalogItemID: line.ComponentCatalogItemID, MovementType: MovementOut, Quantity: scaledQuantity(baseQty, line.Quantity), UnitCode: line.UnitCode, CostingStatus: "estimated", OccurredAt: event.OccurredAt, BusinessDateLocal: businessDateLocal, CreatedAt: now})
+	}
+	return entries, nil
+}
+
+func scaledQuantity(left, right string) string {
+	ln, _ := strconv.ParseFloat(strings.TrimSpace(left), 64)
+	rn, _ := strconv.ParseFloat(strings.TrimSpace(right), 64)
+	return fmt.Sprintf("%.3f", ln*rn)
+}
+
+func modifierItemsFromPayload(raw json.RawMessage) []contracts.InventoryItem {
+	var root map[string]any
+	if json.Unmarshal(raw, &root) != nil {
+		return nil
+	}
+	data, _ := root["data"].(map[string]any)
+	items, _ := data["items"].([]any)
+	out := []contracts.InventoryItem{}
+	for _, iv := range items {
+		im, _ := iv.(map[string]any)
+		mods, _ := im["modifiers"].([]any)
+		for _, mv := range mods {
+			m, _ := mv.(map[string]any)
+			cid, _ := m["linked_catalog_item_id"].(string)
+			if strings.TrimSpace(cid) == "" {
+				continue
+			}
+			qty, _ := m["quantity"].(string)
+			if strings.TrimSpace(qty) == "" {
+				qty = "1.000"
+			}
+			unit, _ := m["unit_code"].(string)
+			if strings.TrimSpace(unit) == "" {
+				unit = "PC"
+			}
+			out = append(out, contracts.InventoryItem{CatalogItemID: cid, Quantity: qty, UnitCode: unit})
+		}
+	}
+	return out
 }
