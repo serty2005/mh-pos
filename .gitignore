@@ -17,3 +17,4 @@ scripts/.stack-smoke-result.json
 *.png
 *.jpg
 *.webp
+*.zip
