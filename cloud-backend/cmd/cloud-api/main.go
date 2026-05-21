@@ -73,7 +73,9 @@ func run() error {
 	}
 
 	repo := syncpg.NewRepository(pool)
-	service := app.NewService(repo, clock.SystemClock{})
+	service := app.NewServiceWithOptions(repo, clock.SystemClock{}, app.Options{
+		MaxCloudPackagesPerExchange: cfg.Int("CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE", 3),
+	})
 	masterRepo := masterpg.NewRepository(pool)
 	masterService := masterapp.NewService(masterRepo, clock.SystemClock{}, masterapp.RandomIDGenerator{})
 	var licenseClient provisioningapp.LicenseClient

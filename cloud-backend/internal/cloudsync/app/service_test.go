@@ -116,6 +116,49 @@ func TestExchangeReturnsItemAckAndNewerCloudPackage(t *testing.T) {
 	}
 }
 
+func TestExchangeLimitsCloudPackagesPerSession(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewServiceWithOptions(repo, fixedClock{}, app.Options{MaxCloudPackagesPerExchange: 2})
+	streams := []string{
+		contracts.MasterDataStreamRestaurants,
+		contracts.MasterDataStreamCatalog,
+		contracts.MasterDataStreamMenu,
+	}
+	for idx, stream := range streams {
+		if _, err := service.UpsertMasterDataPackage(context.Background(), contracts.MasterDataPackage{
+			StreamName:      stream,
+			NodeDeviceID:    "device-1",
+			RestaurantID:    "restaurant-1",
+			SyncMode:        contracts.SyncModeIncremental,
+			CloudVersion:    int64(10 + idx),
+			CheckpointToken: stream + ":new",
+			PayloadJSON:     payloadForStream(stream),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	resp, err := service.Exchange(context.Background(), contracts.SyncExchangeRequest{
+		ProtocolVersion: contracts.SyncExchangeProtocolVersion,
+		NodeDeviceID:    "device-1",
+		RestaurantID:    "restaurant-1",
+		Streams: []contracts.SyncExchangeStreamRequest{
+			{StreamName: contracts.MasterDataStreamRestaurants, LastCloudVersion: 1},
+			{StreamName: contracts.MasterDataStreamCatalog, LastCloudVersion: 1},
+			{StreamName: contracts.MasterDataStreamMenu, LastCloudVersion: 1},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.CloudPackages) != 2 {
+		t.Fatalf("expected two cloud packages in bounded exchange, got %+v", resp.CloudPackages)
+	}
+	if len(resp.StreamResults) != 3 {
+		t.Fatalf("expected stream results for all requested streams, got %+v", resp.StreamResults)
+	}
+}
+
 func TestExchangeRejectsRevisionAheadBeforeReceivingEdgeEvents(t *testing.T) {
 	repo := memory.NewRepository()
 	service := app.NewService(repo, fixedClock{})
@@ -143,6 +186,26 @@ func TestExchangeRejectsRevisionAheadBeforeReceivingEdgeEvents(t *testing.T) {
 	}
 	if repo.Count() != 0 {
 		t.Fatalf("edge events must not be received when stream preflight fails, got %d", repo.Count())
+	}
+}
+
+func TestReceiveBatchStoresProblemItemsForAnalysis(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+
+	ack := service.ReceiveBatch(context.Background(), [][]byte{
+		sampleEnvelope(t),
+		[]byte(`{"version":"1"}`),
+	})
+	if ack.Status != "partial" {
+		t.Fatalf("expected partial status, got %+v", ack)
+	}
+	problems := repo.ProblemEdgeEvents()
+	if len(problems) != 1 {
+		t.Fatalf("expected one stored problem item, got %+v", problems)
+	}
+	if problems[0].Direction != "edge_to_cloud" || problems[0].ErrorCode != "INVALID_ENVELOPE" {
+		t.Fatalf("unexpected problem item: %+v", problems[0])
 	}
 }
 
@@ -418,6 +481,19 @@ func sampleEnvelope(t *testing.T) []byte {
 	return raw
 }
 
+func payloadForStream(stream string) json.RawMessage {
+	switch stream {
+	case contracts.MasterDataStreamRestaurants:
+		return json.RawMessage(`{"restaurants":[{"id":"restaurant-1","name":"Cafe","timezone":"Europe/Moscow","currency":"RUB","active":true}]}`)
+	case contracts.MasterDataStreamCatalog:
+		return json.RawMessage(`{"catalog_items":[{"id":"cat-1","type":"dish","name":"Tea","sku":"tea","base_unit":"pc","active":true}]}`)
+	case contracts.MasterDataStreamMenu:
+		return json.RawMessage(`{"menu_items":[{"id":"menu-1","catalog_item_id":"cat-1","name":"Tea","price":100,"currency":"RUB","active":true}]}`)
+	default:
+		return json.RawMessage(`{}`)
+	}
+}
+
 func sampleRefundRecordedEnvelope(t *testing.T) []byte {
 	t.Helper()
 	return sampleFinancialOperationEnvelope(t, contracts.EventRefundRecorded, "018f0000-0000-7000-8000-0000000000f1", "command-refund-1", "financial-operation-1", "refund", 1000, "shift-refund-1", "2026-05-06")
@@ -443,25 +519,25 @@ func sampleFinancialOperationEnvelope(t *testing.T, eventType contracts.EventTyp
 		"payload": map[string]any{
 			"origin": "edge_device",
 			"data": map[string]any{
-				"id":                    operationID,
-				"edge_operation_id":     "edge-" + operationID,
-				"restaurant_id":         "restaurant-1",
-				"device_id":             "device-1",
-				"shift_id":              shiftID,
-				"original_shift_id":     "shift-sale-1",
-				"check_id":              "check-1",
-				"precheck_id":           "precheck-1",
-				"operation_type":        operationType,
-				"operation_kind":        "full",
-				"status":                "recorded",
-				"amount":                amount,
-				"currency":              "RUB",
-				"business_date_local":   businessDate,
-				"inventory_disposition": "no_stock_effect",
-				"reason":                "guest return",
+				"id":                     operationID,
+				"edge_operation_id":      "edge-" + operationID,
+				"restaurant_id":          "restaurant-1",
+				"device_id":              "device-1",
+				"shift_id":               shiftID,
+				"original_shift_id":      "shift-sale-1",
+				"check_id":               "check-1",
+				"precheck_id":            "precheck-1",
+				"operation_type":         operationType,
+				"operation_kind":         "full",
+				"status":                 "recorded",
+				"amount":                 amount,
+				"currency":               "RUB",
+				"business_date_local":    businessDate,
+				"inventory_disposition":  "no_stock_effect",
+				"reason":                 "guest return",
 				"created_by_employee_id": "manager-1",
-				"snapshot":              map[string]any{"document_type": "financial_operation", "check_id": "check-1"},
-				"created_at":            businessDate + "T09:00:00Z",
+				"snapshot":               map[string]any{"document_type": "financial_operation", "check_id": "check-1"},
+				"created_at":             businessDate + "T09:00:00Z",
 			},
 		},
 	}

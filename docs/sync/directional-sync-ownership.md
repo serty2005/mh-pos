@@ -47,8 +47,11 @@
 
 - POS Edge sync sender использует authenticated `POST /api/v1/sync/exchange` как приоритетный Cloud-Edge цикл, когда локальное provisioning state содержит `node_token`.
 - Edge отправляет текущие `cloud_master_sync_state` revisions/checkpoints по поддерживаемым streams и получает только более новые Cloud packages.
+- Sync sender работает по строгому poll interval. При достижении `POS_SYNC_SENDER_EMERGENCY_PENDING_THRESHOLD` для pending Edge -> Cloud outbox rows следующая итерация выполняется немедленно, чтобы backlog не ждал штатного таймера.
+- Cloud ограничивает Cloud -> Edge выдачу `CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE`; Edge забирает оставшиеся changed streams последовательными exchange-сессиями после применения предыдущей порции.
 - Cloud package apply и commit соответствующего stream checkpoint выполняются существующей transaction boundary `mastersync.Service`.
-- Если локальный apply не проходит, Edge не помечает accepted outbox rows как `sent`; retry повторяет exchange, а Cloud idempotency возвращает стабильный ACK для уже принятого event.
+- Если отдельный Cloud package не проходит локальный apply, Edge фиксирует проблемный stream в `cloud_master_sync_state` со статусом `failed`, продолжает применять остальные packages и не блокирует accepted Edge -> Cloud ACK.
+- Если transport/auth exchange не завершился успешно, Edge не помечает outbox rows как `sent`; retry повторяет exchange, а Cloud idempotency возвращает стабильный ACK для уже принятого event.
 - После successful pairing/assignment POS Edge не выполняет повторный Cloud device registration/snapshot provisioning loop; фоновая maintenance только регистрирует not configured node или poll-ит `pending_admin_approval`.
 - Пустой exchange без Edge outbox throttled отдельным Cloud pull interval, а появившиеся Edge outbox events отправляются в ближайший worker tick без ожидания этого throttling interval.
 - Cloud UI после успешного CRUD Cloud-owned master data автоматически создает новый published package через canonical publication API. Поэтому роль, сотрудник или PIN, созданные оператором в Cloud UI после pairing, попадают на Edge в ближайший Cloud -> Edge exchange. Ручная публикация остается реализована сейчас как явный operator checkpoint.
@@ -61,6 +64,7 @@
 - POS runtime продолжает работу, если Cloud недоступен;
 - Cloud receiver/projection foundation существует.
 - authenticated `sync/exchange` принимает Edge events с item-level ACK и сохраняет существующую idempotency model;
+- проблемные Edge -> Cloud items сохраняются в `cloud_sync_problem_events` и не блокируют остальные items в batch/exchange;
 - legacy `/sync/edge-events` и `/sync/edge-events/batch` остаются совместимыми inbound routes.
 
 Freezed Principle для event archive:

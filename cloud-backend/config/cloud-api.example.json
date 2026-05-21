@@ -6,5 +6,6 @@
   "CLOUD_POSTGRES_DSN": "postgres://postgres:postgres@localhost:5432/mh_pos_cloud?sslmode=disable",
   "CLOUD_POSTGRES_MIGRATIONS_DIR": "migrations/postgres",
   "CLOUD_POSTGRES_BACKUP_DIR": "data/cloud-backups",
+  "CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE": 3,
   "LICENSE_SERVER_URL": ""
 }

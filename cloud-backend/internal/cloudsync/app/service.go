@@ -17,6 +17,7 @@ import (
 
 type Repository interface {
 	ReceiveEdgeEvent(context.Context, EdgeEventReceipt) (contracts.EventAck, error)
+	RecordProblemEdgeEvent(context.Context, ProblemEdgeEvent) error
 	ListEdgeEvents(context.Context, EdgeEventListFilter) ([]contracts.EdgeEventView, error)
 	ListFinancialOperations(context.Context, FinancialOperationProjectionFilter) ([]contracts.FinancialOperationProjection, error)
 	UpsertMasterDataPackage(context.Context, contracts.MasterDataPackage) (contracts.MasterDataPackage, error)
@@ -32,6 +33,19 @@ type EdgeEventReceipt struct {
 	CloudReceivedAt  time.Time
 }
 
+// ProblemEdgeEvent хранит rejected/retryable sync item без раскрытия payload в обычных read APIs.
+type ProblemEdgeEvent struct {
+	Direction        string
+	NodeDeviceID     string
+	RestaurantID     string
+	ClientItemID     string
+	ErrorCode        string
+	ErrorMessage     string
+	RawPayload       []byte
+	RawPayloadSHA256 string
+	CreatedAt        time.Time
+}
+
 // EdgeEventListFilter ограничивает журнал incoming Edge events безопасным page-size и restaurant scope.
 type EdgeEventListFilter struct {
 	RestaurantID string
@@ -42,24 +56,38 @@ type EdgeEventListFilter struct {
 
 // FinancialOperationProjectionFilter задает bounded Cloud read model query для current ledger events.
 type FinancialOperationProjectionFilter struct {
-	RestaurantID       string
-	BusinessDateFrom   string
-	BusinessDateTo     string
-	OperationType      string
-	ShiftID            string
-	OriginalShiftID    string
-	CheckID            string
-	Limit              int
-	Offset             int
+	RestaurantID     string
+	BusinessDateFrom string
+	BusinessDateTo   string
+	OperationType    string
+	ShiftID          string
+	OriginalShiftID  string
+	CheckID          string
+	Limit            int
+	Offset           int
 }
 
 type Service struct {
-	repo  Repository
-	clock clock.Clock
+	repo    Repository
+	clock   clock.Clock
+	options Options
+}
+
+// Options задает runtime limits для sync exchange без изменения wire contract.
+type Options struct {
+	MaxCloudPackagesPerExchange int
 }
 
 func NewService(repo Repository, clock clock.Clock) *Service {
-	return &Service{repo: repo, clock: clock}
+	return NewServiceWithOptions(repo, clock, Options{})
+}
+
+// NewServiceWithOptions создает Cloud sync service с bounded Cloud -> Edge выдачей.
+func NewServiceWithOptions(repo Repository, clock clock.Clock, options Options) *Service {
+	if options.MaxCloudPackagesPerExchange <= 0 {
+		options.MaxCloudPackagesPerExchange = 3
+	}
+	return &Service{repo: repo, clock: clock, options: options}
 }
 
 func (s *Service) Receive(ctx context.Context, raw []byte) (contracts.EventAck, error) {
@@ -161,6 +189,14 @@ func (s *Service) ReceiveBatch(ctx context.Context, raws [][]byte) contracts.Bat
 			item.Status = contracts.BatchItemRetryable
 			item.ErrorCode = "INTERNAL"
 		}
+		_ = s.recordProblemEdgeEvent(ctx, ProblemEdgeEvent{
+			Direction:        "edge_to_cloud",
+			ErrorCode:        item.ErrorCode,
+			ErrorMessage:     item.Error,
+			RawPayload:       raw,
+			RawPayloadSHA256: rawSHA256(raw),
+			CreatedAt:        s.clock.Now().UTC(),
+		})
 		items = append(items, item)
 	}
 	status := "accepted"
@@ -241,10 +277,25 @@ func (s *Service) Exchange(ctx context.Context, req contracts.SyncExchangeReques
 			continue
 		}
 		allAccepted = false
-		edgeAcks = append(edgeAcks, exchangeAckError(item.ClientItemID, err))
+		ackErr := exchangeAckError(item.ClientItemID, err)
+		_ = s.recordProblemEdgeEvent(ctx, ProblemEdgeEvent{
+			Direction:        "edge_to_cloud",
+			NodeDeviceID:     req.NodeDeviceID,
+			RestaurantID:     req.RestaurantID,
+			ClientItemID:     item.ClientItemID,
+			ErrorCode:        ackErr.ErrorCode,
+			ErrorMessage:     err.Error(),
+			RawPayload:       item.Payload,
+			RawPayloadSHA256: rawSHA256(item.Payload),
+			CreatedAt:        s.clock.Now().UTC(),
+		})
+		edgeAcks = append(edgeAcks, ackErr)
 	}
 	cloudPackages := make([]contracts.SyncExchangeCloudPackage, 0, len(streamPackages))
 	for _, stream := range req.Streams {
+		if len(cloudPackages) >= s.options.MaxCloudPackagesPerExchange {
+			break
+		}
 		pkg, ok := streamPackages[strings.TrimSpace(stream.StreamName)]
 		if !ok {
 			continue
@@ -367,4 +418,26 @@ func masterPackageToExchange(pkg contracts.MasterDataPackage, nodeDeviceID strin
 		out.CloudUpdatedAt = pkg.CloudUpdatedAt.UTC().Format(time.RFC3339)
 	}
 	return out
+}
+
+func (s *Service) recordProblemEdgeEvent(ctx context.Context, item ProblemEdgeEvent) error {
+	item.Direction = strings.TrimSpace(item.Direction)
+	item.NodeDeviceID = strings.TrimSpace(item.NodeDeviceID)
+	item.RestaurantID = strings.TrimSpace(item.RestaurantID)
+	item.ClientItemID = strings.TrimSpace(item.ClientItemID)
+	item.ErrorCode = strings.TrimSpace(item.ErrorCode)
+	item.ErrorMessage = strings.TrimSpace(item.ErrorMessage)
+	item.RawPayload = bytes.TrimSpace(item.RawPayload)
+	if item.RawPayloadSHA256 == "" {
+		item.RawPayloadSHA256 = rawSHA256(item.RawPayload)
+	}
+	if item.CreatedAt.IsZero() {
+		item.CreatedAt = s.clock.Now().UTC()
+	}
+	return s.repo.RecordProblemEdgeEvent(ctx, item)
+}
+
+func rawSHA256(raw []byte) string {
+	sum := sha256.Sum256(bytes.TrimSpace(raw))
+	return hex.EncodeToString(sum[:])
 }

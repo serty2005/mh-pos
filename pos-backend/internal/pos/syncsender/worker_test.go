@@ -20,6 +20,7 @@ type fakeOutboxService struct {
 	retryable     []string
 	suspended     map[string]string
 	releasedLocks []string
+	syncStatus    domain.SyncStatus
 	exchangeState SyncExchangeState
 	applied       []CloudPackage
 	applyErr      error
@@ -70,6 +71,10 @@ func (f *fakeOutboxService) GetSyncExchangeState(context.Context) (SyncExchangeS
 		}
 	}
 	return f.exchangeState, nil
+}
+
+func (f *fakeOutboxService) GetSyncStatus(context.Context) (domain.SyncStatus, error) {
+	return f.syncStatus, nil
 }
 
 func (f *fakeOutboxService) ApplySyncExchangeCloudPackages(_ context.Context, packages []CloudPackage) error {
@@ -344,6 +349,20 @@ func TestRunOnceThrottlesEmptyExchangePulls(t *testing.T) {
 	}
 }
 
+func TestShouldRunEmergencyWhenPendingOutboxReachesThreshold(t *testing.T) {
+	service := &fakeOutboxService{syncStatus: domain.SyncStatus{Pending: 12}}
+	worker := NewWorker(service, fakeSender{}, Config{
+		WorkerID:                  "worker-test",
+		PollInterval:              time.Hour,
+		EmergencyPendingThreshold: 10,
+	}, nil)
+	worker.lastClaimedCount = 10
+
+	if !worker.shouldRunEmergency(context.Background()) {
+		t.Fatal("expected emergency run when pending outbox reaches threshold")
+	}
+}
+
 func TestNextPollDelayWithoutJitterUsesBaseInterval(t *testing.T) {
 	worker := NewWorker(&fakeOutboxService{}, fakeSender{}, Config{PollInterval: 30 * time.Second, PollJitter: 0}, nil)
 	if got := worker.nextPollDelay(); got != 30*time.Second {
@@ -351,12 +370,12 @@ func TestNextPollDelayWithoutJitterUsesBaseInterval(t *testing.T) {
 	}
 }
 
-func TestNextPollDelayWithJitterStaysWithinBounds(t *testing.T) {
+func TestNextPollDelayIgnoresJitterForStrictPeriod(t *testing.T) {
 	worker := NewWorker(&fakeOutboxService{}, fakeSender{}, Config{PollInterval: 30 * time.Second, PollJitter: 3 * time.Second}, nil)
 	for i := 0; i < 100; i++ {
 		got := worker.nextPollDelay()
-		if got < 30*time.Second || got > 33*time.Second {
-			t.Fatalf("expected delay in [30s,33s], got %s", got)
+		if got != 30*time.Second {
+			t.Fatalf("expected strict interval, got %s", got)
 		}
 	}
 }

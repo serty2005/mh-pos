@@ -131,6 +131,51 @@ INSERT INTO cloud_operational_events(
 	return ack, nil
 }
 
+func (r *Repository) RecordProblemEdgeEvent(ctx context.Context, item app.ProblemEdgeEvent) error {
+	raw := strings.TrimSpace(string(item.RawPayload))
+	if raw == "" {
+		raw = "{}"
+	}
+	errorCode := strings.TrimSpace(item.ErrorCode)
+	if errorCode == "" {
+		errorCode = "UNKNOWN"
+	}
+	errorMessage := strings.TrimSpace(item.ErrorMessage)
+	if errorMessage == "" {
+		errorMessage = "sync problem item"
+	}
+	createdAt := item.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = time.Now().UTC()
+	}
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		strings.TrimSpace(item.Direction),
+		strings.TrimSpace(item.NodeDeviceID),
+		strings.TrimSpace(item.RestaurantID),
+		strings.TrimSpace(item.ClientItemID),
+		item.RawPayloadSHA256,
+		errorCode,
+		createdAt.Format(time.RFC3339Nano),
+	}, "|")))
+	id := "sync-problem-" + hex.EncodeToString(sum[:])
+	_, err := r.pool.Exec(ctx, `
+INSERT INTO cloud_sync_problem_events(
+  id,direction,node_device_id,restaurant_id,client_item_id,error_code,error_message,raw_payload,raw_payload_sha256_hex,created_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		id,
+		strings.TrimSpace(item.Direction),
+		nullableText(item.NodeDeviceID),
+		nullableText(item.RestaurantID),
+		nullableText(item.ClientItemID),
+		errorCode,
+		errorMessage,
+		raw,
+		item.RawPayloadSHA256,
+		createdAt,
+	)
+	return err
+}
+
 // ListEdgeEvents возвращает безопасный журнал входящих Edge events без raw payload.
 func (r *Repository) ListEdgeEvents(ctx context.Context, filter app.EdgeEventListFilter) ([]contracts.EdgeEventView, error) {
 	limit := filter.Limit
