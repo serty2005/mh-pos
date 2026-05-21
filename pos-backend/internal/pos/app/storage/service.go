@@ -139,9 +139,9 @@ func (s *Service) DryRunRetention(ctx context.Context, cmd RetentionDryRunComman
 	if _, err := shared.EnsureOperatorSession(ctx, s.auth, cmd.CommandMeta, string(shared.PermissionSyncView)); err != nil {
 		return domainstorage.RetentionDryRunResult{}, err
 	}
-	cutoff := strings.TrimSpace(cmd.CutoffBusinessDateLocal)
-	if _, err := time.Parse("2006-01-02", cutoff); err != nil {
-		return domainstorage.RetentionDryRunResult{}, fmt.Errorf("%w: cutoff_business_date_local must use YYYY-MM-DD", domain.ErrInvalid)
+	cutoff, err := s.validateCutoff(cmd.CutoffBusinessDateLocal)
+	if err != nil {
+		return domainstorage.RetentionDryRunResult{}, err
 	}
 	result, err := s.repo.DryRunStorageRetention(ctx, cutoff)
 	if err != nil {
@@ -164,9 +164,9 @@ func (s *Service) BuildArchiveExportPlan(ctx context.Context, cmd ArchiveExportP
 	if _, err := shared.EnsureOperatorSession(ctx, s.auth, cmd.CommandMeta, string(shared.PermissionSyncView)); err != nil {
 		return domainstorage.ArchiveExportPlan{}, err
 	}
-	cutoff := strings.TrimSpace(cmd.CutoffBusinessDateLocal)
-	if _, err := time.Parse("2006-01-02", cutoff); err != nil {
-		return domainstorage.ArchiveExportPlan{}, fmt.Errorf("%w: cutoff_business_date_local must use YYYY-MM-DD", domain.ErrInvalid)
+	cutoff, err := s.validateCutoff(cmd.CutoffBusinessDateLocal)
+	if err != nil {
+		return domainstorage.ArchiveExportPlan{}, err
 	}
 	mode := strings.TrimSpace(cmd.Mode)
 	if mode == "" {
@@ -727,7 +727,7 @@ func verifyArchiveJSONL(path string, manifest domainstorage.ArchiveManifest) (ar
 				if businessDateRange.Newest == "" || businessDate > businessDateRange.Newest {
 					businessDateRange.Newest = businessDate
 				}
-				if manifest.CutoffBusinessDateLocal != "" && businessDate > manifest.CutoffBusinessDateLocal {
+				if manifest.CutoffBusinessDateLocal != "" && businessDate >= manifest.CutoffBusinessDateLocal {
 					businessDateConsistent = false
 				}
 			}

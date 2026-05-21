@@ -195,6 +195,23 @@ func (f *apiFixture) createOrderWithLine(t *testing.T) *domain.Order {
 	return order
 }
 
+func (f *apiFixture) makeOrderOlderThanArchiveCutoff(t *testing.T, orderID string) {
+	t.Helper()
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE checks SET business_date_local = '2026-05-03' WHERE order_id = ?`, orderID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `
+UPDATE payments
+SET business_date_local = '2026-05-03'
+WHERE precheck_id IN (
+  SELECT id
+  FROM prechecks
+  WHERE order_id = ?
+)`, orderID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (f *apiFixture) openCashSession(t *testing.T) *domain.CashSession {
 	t.Helper()
 	session, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
@@ -904,13 +921,13 @@ func TestStorageStatusAPIRequiresSyncViewPermission(t *testing.T) {
 
 func TestStorageRetentionDryRunAPI(t *testing.T) {
 	f := newAPIFixture(t)
-	rr := f.postJSON(t, "/api/v1/storage/retention/dry-run", `{"cutoff_business_date_local":"2026-05-05"}`)
+	rr := f.postJSON(t, "/api/v1/storage/retention/dry-run", `{"cutoff_business_date_local":"2026-05-04"}`)
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for cashier retention dry-run, got %d: %s", rr.Code, rr.Body.String())
 	}
 
 	f.useManagerOperator(t)
-	rr = f.postJSON(t, "/api/v1/storage/retention/dry-run", `{"cutoff_business_date_local":"2026-05-05"}`)
+	rr = f.postJSON(t, "/api/v1/storage/retention/dry-run", `{"cutoff_business_date_local":"2026-05-04"}`)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200 for manager retention dry-run, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -940,8 +957,9 @@ func TestStorageArchiveExportPlanAPIRequiresSyncViewAndReturnsManifestOnly(t *te
 	}); err != nil {
 		t.Fatal(err)
 	}
+	f.makeOrderOlderThanArchiveCutoff(t, order.ID)
 
-	body := `{"cutoff_business_date_local":"2026-05-05","mode":"manifest_only"}`
+	body := `{"cutoff_business_date_local":"2026-05-04","mode":"manifest_only"}`
 	rr := f.postJSON(t, "/api/v1/storage/archive/export-plan", body)
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for cashier archive export-plan, got %d: %s", rr.Code, rr.Body.String())
@@ -977,6 +995,7 @@ func TestStorageArchiveExportAPIRequiresSyncViewAndCreatesArchive(t *testing.T) 
 	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
 		t.Fatal(err)
 	}
+	f.makeOrderOlderThanArchiveCutoff(t, order.ID)
 
 	body := `{"cutoff_business_date_local":"2026-05-04","reason":"operator export from API"}`
 	rr := f.postJSON(t, "/api/v1/storage/archive/export", body)
@@ -1025,6 +1044,7 @@ func TestStorageArchiveApplyPlanAPIRequiresSyncViewAndReturnsBlockedPlan(t *test
 	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
 		t.Fatal(err)
 	}
+	f.makeOrderOlderThanArchiveCutoff(t, order.ID)
 	cashier := f.employee
 	cashierSession := f.session
 	f.useManagerOperator(t)

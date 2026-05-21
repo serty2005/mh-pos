@@ -458,7 +458,7 @@ func archiveCountsTotalRows(counts storage.ArchiveExportCounts) int {
 
 const eligibleOrdersSQL = `SELECT o.id FROM orders o JOIN checks c ON c.order_id = o.id WHERE o.status = 'closed' AND c.business_date_local < ?`
 
-const eligibleOrdersForArchiveSQL = `SELECT o.id FROM orders o JOIN checks c ON c.order_id = o.id WHERE o.status = 'closed' AND c.business_date_local <= ?`
+const eligibleOrdersForArchiveSQL = eligibleOrdersSQL
 
 const eligibleArchiveRefsSQL = `
 eligible_orders AS (` + eligibleOrdersForArchiveSQL + `),
@@ -552,7 +552,7 @@ func (r *Repository) archiveBusinessDateRange(ctx context.Context, cutoffBusines
 SELECT MIN(c.business_date_local), MAX(c.business_date_local)
 FROM orders o
 JOIN checks c ON c.order_id = o.id
-WHERE o.status = 'closed' AND c.business_date_local <= ?`, cutoffBusinessDateLocal).Scan(&oldest, &newest); err != nil {
+WHERE o.status = 'closed' AND c.business_date_local < ?`, cutoffBusinessDateLocal).Scan(&oldest, &newest); err != nil {
 		return storage.BusinessDateRange{}, normalizeErr(err)
 	}
 	return storage.BusinessDateRange{Oldest: oldest.String, Newest: newest.String}, nil

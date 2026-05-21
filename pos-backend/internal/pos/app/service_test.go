@@ -477,6 +477,21 @@ func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 	return order, check
 }
 
+func makeCheckOlderThanArchiveCutoff(t *testing.T, f *fixture, checkID string) {
+	t.Helper()
+	execTestSQL(t, f, `UPDATE checks SET business_date_local = '2026-05-03' WHERE id = ?`, checkID)
+	execTestSQL(t, f, `
+UPDATE payments
+SET business_date_local = '2026-05-03'
+WHERE precheck_id = (
+  SELECT p.id
+  FROM prechecks p
+  JOIN checks c ON c.order_id = p.order_id
+  WHERE c.id = ?
+  LIMIT 1
+)`, checkID)
+}
+
 func insertClosedOrderFixture(t *testing.T, f *fixture, shiftID, deviceID, orderID, checkID, businessDate string, closedAt time.Time) {
 	t.Helper()
 	openedAt := closedAt.Add(-30 * time.Minute)
@@ -726,6 +741,7 @@ func TestStorageLifecycleStatusRequiresPermissionAndSummarizesRuntimeState(t *te
 func TestStorageRetentionDryRunCountsEligibleRowsWithoutMutatingProtectedTables(t *testing.T) {
 	f := newFixture(t)
 	order, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	if _, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
 		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-storage-cancel-for-dry-run"),
 		CheckID:              check.ID,
@@ -752,7 +768,7 @@ func TestStorageRetentionDryRunCountsEligibleRowsWithoutMutatingProtectedTables(
 
 	result, err := f.service.DryRunStorageRetention(f.ctx, app.RetentionDryRunCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-retention-dry-run"),
-		CutoffBusinessDateLocal: "2026-05-05",
+		CutoffBusinessDateLocal: "2026-05-04",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -796,14 +812,24 @@ func TestStorageRetentionDryRunCountsEligibleRowsWithoutMutatingProtectedTables(
 	}
 }
 
-func TestStorageRetentionDryRunRejectsInvalidCutoff(t *testing.T) {
+func TestStorageRetentionDryRunRejectsInvalidAndFutureCutoff(t *testing.T) {
 	f := newFixture(t)
-	_, err := f.service.DryRunStorageRetention(f.ctx, app.RetentionDryRunCommand{
-		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-retention-invalid"),
-		CutoffBusinessDateLocal: "2026/05/05",
-	})
-	if !errors.Is(err, domain.ErrInvalid) {
-		t.Fatalf("expected invalid cutoff error, got %v", err)
+	for _, tc := range []struct {
+		name   string
+		cutoff string
+	}{
+		{name: "invalid", cutoff: "2026/05/05"},
+		{name: "future", cutoff: "2026-05-05"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := f.service.DryRunStorageRetention(f.ctx, app.RetentionDryRunCommand{
+				CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-retention-"+tc.name),
+				CutoffBusinessDateLocal: tc.cutoff,
+			})
+			if !errors.Is(err, domain.ErrInvalid) {
+				t.Fatalf("expected invalid cutoff error, got %v", err)
+			}
+		})
 	}
 }
 
@@ -811,7 +837,7 @@ func TestStorageArchiveExportPlanRequiresPermissionAndRejectsInvalidInput(t *tes
 	f := newFixture(t)
 	_, err := f.service.BuildStorageArchiveExportPlan(f.ctx, app.ArchiveExportPlanCommand{
 		CommandMeta:             f.edgeMetaCommand("cmd-storage-archive-plan-cashier-denied"),
-		CutoffBusinessDateLocal: "2026-05-05",
+		CutoffBusinessDateLocal: "2026-05-04",
 		Mode:                    "manifest_only",
 	})
 	if !errors.Is(err, domain.ErrForbidden) {
@@ -828,8 +854,17 @@ func TestStorageArchiveExportPlanRequiresPermissionAndRejectsInvalidInput(t *tes
 	}
 
 	_, err = f.service.BuildStorageArchiveExportPlan(f.ctx, app.ArchiveExportPlanCommand{
-		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-archive-plan-invalid-mode"),
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-archive-plan-future-cutoff"),
 		CutoffBusinessDateLocal: "2026-05-05",
+		Mode:                    "manifest_only",
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected future cutoff error, got %v", err)
+	}
+
+	_, err = f.service.BuildStorageArchiveExportPlan(f.ctx, app.ArchiveExportPlanCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-archive-plan-invalid-mode"),
+		CutoffBusinessDateLocal: "2026-05-04",
 		Mode:                    "delete",
 	})
 	if !errors.Is(err, domain.ErrInvalid) {
@@ -840,6 +875,7 @@ func TestStorageArchiveExportPlanRequiresPermissionAndRejectsInvalidInput(t *tes
 func TestStorageArchiveExportPlanCountsProtectedRowsBlocksOutboxAndDoesNotMutate(t *testing.T) {
 	f := newFixture(t)
 	order, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	if _, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
 		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-storage-archive-plan-cancel"),
 		CheckID:              check.ID,
@@ -875,7 +911,7 @@ func TestStorageArchiveExportPlanCountsProtectedRowsBlocksOutboxAndDoesNotMutate
 
 	result, err := f.service.BuildStorageArchiveExportPlan(f.ctx, app.ArchiveExportPlanCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-archive-plan"),
-		CutoffBusinessDateLocal: "2026-05-05",
+		CutoffBusinessDateLocal: "2026-05-04",
 		Mode:                    "manifest_only",
 	})
 	if err != nil {
@@ -906,10 +942,10 @@ func TestStorageArchiveExportPlanCountsProtectedRowsBlocksOutboxAndDoesNotMutate
 		t.Fatalf("expected operational blockers in archive plan, got active=%d shifts=%d cash=%d", result.ActiveOrders, result.OpenShifts, result.OpenCashSessions)
 	}
 	if result.Manifest.FormatVersion != "storage-archive-manifest-v1" ||
-		result.Manifest.CutoffBusinessDateLocal != "2026-05-05" || result.Manifest.RestaurantID != f.restaurant.ID {
+		result.Manifest.CutoffBusinessDateLocal != "2026-05-04" || result.Manifest.RestaurantID != f.restaurant.ID {
 		t.Fatalf("unexpected manifest metadata: %+v", result.Manifest)
 	}
-	if result.Manifest.BusinessDateRange.Oldest != "2026-05-04" || result.Manifest.BusinessDateRange.Newest != "2026-05-04" {
+	if result.Manifest.BusinessDateRange.Oldest != "2026-05-03" || result.Manifest.BusinessDateRange.Newest != "2026-05-03" {
 		t.Fatalf("unexpected manifest business date range: %+v", result.Manifest.BusinessDateRange)
 	}
 	if len(result.Manifest.Tables) != 14 || result.Manifest.Tables[0].Name != "orders" ||
@@ -975,9 +1011,88 @@ func TestStorageArchiveExportCreatesEmptyNoopArtifact(t *testing.T) {
 	}
 }
 
+func TestStorageArchiveCutoffIsExclusiveAcrossPlanExportAndApplyPlan(t *testing.T) {
+	f := newFixture(t)
+	shift := f.openShift(t)
+	insertClosedOrderFixture(
+		t, f, shift.ID, f.device.ID,
+		"archive-old-order", "archive-old-check",
+		"2026-05-03", fixedClock{}.Now().Add(-24*time.Hour),
+	)
+	insertClosedOrderFixture(
+		t, f, shift.ID, f.device.ID,
+		"archive-boundary-order", "archive-boundary-check",
+		"2026-05-04", fixedClock{}.Now(),
+	)
+
+	dryRun, err := f.service.DryRunStorageRetention(f.ctx, app.RetentionDryRunCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-exclusive-dry-run"),
+		CutoffBusinessDateLocal: "2026-05-04",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dryRun.Eligible.ClosedOrders != 1 || dryRun.Eligible.Checks != 1 {
+		t.Fatalf("expected dry-run cutoff to be exclusive, got %+v", dryRun.Eligible)
+	}
+
+	plan, err := f.service.BuildStorageArchiveExportPlan(f.ctx, app.ArchiveExportPlanCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-exclusive-export-plan"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Mode:                    "manifest_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ArchiveSet.ClosedOrders != 1 ||
+		plan.Manifest.BusinessDateRange.Oldest != "2026-05-03" ||
+		plan.Manifest.BusinessDateRange.Newest != "2026-05-03" {
+		t.Fatalf("expected export-plan cutoff to be exclusive, got archive_set=%+v range=%+v", plan.ArchiveSet, plan.Manifest.BusinessDateRange)
+	}
+
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-exclusive-export"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "exclusive cutoff fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exported.Counts.ClosedOrders != 1 ||
+		exported.Counts.Checks != 1 ||
+		exported.BusinessDateRange.Oldest != "2026-05-03" ||
+		exported.BusinessDateRange.Newest != "2026-05-03" {
+		t.Fatalf("expected export cutoff to be exclusive, got counts=%+v range=%+v", exported.Counts, exported.BusinessDateRange)
+	}
+	rawArchive, err := os.ReadFile(exported.ArchivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rawArchive), "archive-old-order") || strings.Contains(string(rawArchive), "archive-boundary-order") {
+		t.Fatalf("archive cutoff must include old order and exclude boundary order: %s", string(rawArchive))
+	}
+
+	applyPlan, err := f.service.BuildStorageArchiveApplyPlan(f.ctx, app.ArchiveApplyPlanCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-exclusive-apply-plan"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             exported.ArchivePath,
+		ManifestPath:            exported.ManifestPath,
+		Mode:                    "plan_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applyPlan.EligibleCounts.ClosedOrders != 1 ||
+		applyPlan.ArchiveCounts.ClosedOrders != 1 ||
+		containsString(applyPlan.BlockReasons, "archive_counts_mismatch") {
+		t.Fatalf("expected apply-plan runtime/archive counts to use exclusive cutoff, got %+v", applyPlan)
+	}
+}
+
 func TestStorageArchiveExportIncludesClosedOrderGraphLedgerAndManifestWithoutMutatingSource(t *testing.T) {
 	f := newFixture(t)
 	order, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	var checkSnapshotBefore string
 	if err := f.db.QueryRowContext(f.ctx, `SELECT snapshot FROM checks WHERE id = ?`, check.ID).Scan(&checkSnapshotBefore); err != nil {
 		t.Fatal(err)
@@ -1035,7 +1150,7 @@ func TestStorageArchiveExportIncludesClosedOrderGraphLedgerAndManifestWithoutMut
 	if result.Counts.FinancialOperations != 1 || result.Counts.FinancialOperationItems != 1 || result.Counts.OutboxMessageReferences == 0 || result.Counts.LocalEventReferences == 0 || result.Counts.BlockingOutboxMessages == 0 {
 		t.Fatalf("expected ledger and sync references, got %+v", result.Counts)
 	}
-	if result.BusinessDateRange.Oldest != "2026-05-04" || result.BusinessDateRange.Newest != "2026-05-04" {
+	if result.BusinessDateRange.Oldest != "2026-05-03" || result.BusinessDateRange.Newest != "2026-05-03" {
 		t.Fatalf("unexpected archive business date range: %+v", result.BusinessDateRange)
 	}
 	if result.Source.SourceNodeDeviceID != f.device.ID || result.Source.SourceDeviceCode != f.device.DeviceCode {
@@ -1144,7 +1259,8 @@ func TestStorageArchiveApplyPlanBlocksInvalidAndFutureCutoff(t *testing.T) {
 
 func TestStorageArchiveApplyPlanVerifiesArchiveSHAAndCounts(t *testing.T) {
 	f := newFixture(t)
-	f.createPaidOrder(t)
+	_, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-export"),
 		CutoffBusinessDateLocal: "2026-05-04",
@@ -1194,7 +1310,8 @@ func TestStorageArchiveApplyPlanVerifiesArchiveSHAAndCounts(t *testing.T) {
 
 func TestStorageArchiveApplyPlanBlocksManifestVersionMismatch(t *testing.T) {
 	f := newFixture(t)
-	f.createPaidOrder(t)
+	_, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-version-export"),
 		CutoffBusinessDateLocal: "2026-05-04",
@@ -1224,7 +1341,8 @@ func TestStorageArchiveApplyPlanBlocksManifestVersionMismatch(t *testing.T) {
 
 func TestStorageArchiveApplyPlanBlocksRuntimeMismatchOutboxAndOpenBoundary(t *testing.T) {
 	f := newFixture(t)
-	f.createPaidOrder(t)
+	_, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	activeOrder, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{
 		CommandMeta: f.edgeMetaCommand("cmd-storage-apply-active-order"),
 		TableID:     f.table.ID,
@@ -1267,7 +1385,8 @@ func TestStorageArchiveApplyPlanBlocksRuntimeMismatchOutboxAndOpenBoundary(t *te
 
 func TestStorageArchiveApplyPlanDetectsMissingSnapshotPayload(t *testing.T) {
 	f := newFixture(t)
-	f.createPaidOrder(t)
+	_, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-snapshot-export"),
 		CutoffBusinessDateLocal: "2026-05-04",
@@ -1306,7 +1425,8 @@ func TestStorageArchiveApplyPlanDetectsMissingSnapshotPayload(t *testing.T) {
 
 func TestStorageArchiveVerifyRequiresPermissionAndValidatesExport(t *testing.T) {
 	f := newFixture(t)
-	f.createPaidOrder(t)
+	_, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-verify-export"),
 		CutoffBusinessDateLocal: "2026-05-04",
@@ -1358,7 +1478,8 @@ func TestStorageArchiveVerifyReportsMissingAndMalformedArtifacts(t *testing.T) {
 		t.Fatalf("expected missing manifest verification error, got %+v", missing)
 	}
 
-	f.createPaidOrder(t)
+	_, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-verify-malformed-export"),
 		CutoffBusinessDateLocal: "2026-05-04",
@@ -1385,7 +1506,8 @@ func TestStorageArchiveVerifyReportsMissingAndMalformedArtifacts(t *testing.T) {
 
 func TestStorageArchiveVerifyDetectsIdentityDateRuntimeAndPayloadPolicyViolations(t *testing.T) {
 	f := newFixture(t)
-	f.createPaidOrder(t)
+	_, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-verify-policy-export"),
 		CutoffBusinessDateLocal: "2026-05-04",
@@ -1432,7 +1554,8 @@ func TestStorageArchiveVerifyDetectsIdentityDateRuntimeAndPayloadPolicyViolation
 
 func TestStorageArchiveReadPlanHappyPathAfterExport(t *testing.T) {
 	f := newFixture(t)
-	f.createPaidOrder(t)
+	_, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-read-export"),
 		CutoffBusinessDateLocal: "2026-05-04",
@@ -1498,9 +1621,8 @@ func TestStorageArchiveReadPlanBoundsAndFiltersArchivedClosedOrders(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.Limit != 2 || page.Offset != 1 || page.Returned != 2 ||
-		page.ArchivedClosedOrders[0].OrderID != "archive-order-2" ||
-		page.ArchivedClosedOrders[1].OrderID != "archive-order-3" {
+	if page.Limit != 2 || page.Offset != 1 || page.Returned != 1 ||
+		page.ArchivedClosedOrders[0].OrderID != "archive-order-2" {
 		t.Fatalf("unexpected bounded archive read page: %+v", page)
 	}
 	filtered, err := f.service.BuildStorageArchiveReadPlan(f.ctx, app.ArchiveReadPlanCommand{
@@ -1525,7 +1647,7 @@ func TestStorageArchiveReadPlanBoundsAndFiltersArchivedClosedOrders(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if byCheck.Returned != 1 || byCheck.ArchivedClosedOrders[0].OrderID != "archive-order-3" {
+	if byCheck.Returned != 0 {
 		t.Fatalf("unexpected check filtered archive read-plan: %+v", byCheck)
 	}
 	raw, err := json.Marshal(filtered)
@@ -1539,7 +1661,8 @@ func TestStorageArchiveReadPlanBoundsAndFiltersArchivedClosedOrders(t *testing.T
 
 func TestStorageArchiveReadPlanRejectsPathOutsideArchiveDir(t *testing.T) {
 	f := newFixture(t)
-	f.createPaidOrder(t)
+	_, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-read-outside-export"),
 		CutoffBusinessDateLocal: "2026-05-04",
@@ -1564,7 +1687,8 @@ func TestStorageArchiveReadPlanRejectsPathOutsideArchiveDir(t *testing.T) {
 
 func TestStorageArchiveReadPlanDetectsSHAMismatch(t *testing.T) {
 	f := newFixture(t)
-	f.createPaidOrder(t)
+	_, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-read-sha-export"),
 		CutoffBusinessDateLocal: "2026-05-04",
@@ -1592,7 +1716,8 @@ func TestStorageArchiveReadPlanDetectsSHAMismatch(t *testing.T) {
 
 func TestStorageArchiveReadPlanDetectsManifestCountsMismatch(t *testing.T) {
 	f := newFixture(t)
-	f.createPaidOrder(t)
+	_, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-read-counts-export"),
 		CutoffBusinessDateLocal: "2026-05-04",
@@ -1622,6 +1747,7 @@ func TestStorageArchiveReadPlanDetectsManifestCountsMismatch(t *testing.T) {
 func TestStorageArchiveLookupByCheckIDReturnsImmutableSnapshots(t *testing.T) {
 	f := newFixture(t)
 	order, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-lookup-check-export"),
 		CutoffBusinessDateLocal: "2026-05-04",
@@ -1660,6 +1786,7 @@ func TestStorageArchiveLookupByCheckIDReturnsImmutableSnapshots(t *testing.T) {
 func TestStorageArchiveLookupByOrderIDReturnsMatchingArchivedPreview(t *testing.T) {
 	f := newFixture(t)
 	order, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-lookup-order-export"),
 		CutoffBusinessDateLocal: "2026-05-04",
@@ -1706,7 +1833,8 @@ func TestStorageArchiveLookupRejectsEmptyAndAmbiguousKeys(t *testing.T) {
 
 func TestStorageArchiveLookupReturnsStructuredNotFound(t *testing.T) {
 	f := newFixture(t)
-	f.createPaidOrder(t)
+	_, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-lookup-not-found-export"),
 		CutoffBusinessDateLocal: "2026-05-04",
@@ -1733,6 +1861,7 @@ func TestStorageArchiveLookupReturnsStructuredNotFound(t *testing.T) {
 func TestStorageArchiveReadPlanAndLookupKeepRuntimeCountsUnchanged(t *testing.T) {
 	f := newFixture(t)
 	order, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-zero-delete-export"),
 		CutoffBusinessDateLocal: "2026-05-04",
