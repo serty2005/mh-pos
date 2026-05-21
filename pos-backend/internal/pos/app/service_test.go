@@ -4270,6 +4270,82 @@ func TestRecordRefundAllowsLaterBusinessDateWithOpenCashSession(t *testing.T) {
 	}
 }
 
+func TestRecordRefundRejectsAmountAboveCheckTotal(t *testing.T) {
+	f := newFixture(t)
+	shift := f.openShift(t)
+	cashSession := f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.closeCashSessionAndShift(t, shift, cashSession, "before-over-refund")
+	f.openShift(t)
+	f.openCashSession(t)
+	operationsBefore := countRows(t, f, "financial_operations")
+	itemsBefore := countRows(t, f, "financial_operation_items")
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+
+	_, err = f.service.RecordRefund(f.ctx, app.RecordCheckRefundCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-refund-above-check-total"),
+		CheckID:              check.ID,
+		InventoryDisposition: domain.InventoryNoStockEffect,
+		Reason:               "over refund must be rejected",
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:    domain.FinancialItemWholeCheck,
+			Amount:   check.Total + 1,
+			Currency: "RUB",
+		}},
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected refund above check total to conflict, got %v", err)
+	}
+	if operations := countRows(t, f, "financial_operations"); operations != operationsBefore {
+		t.Fatalf("expected no refund operation write, before=%d after=%d", operationsBefore, operations)
+	}
+	if items := countRows(t, f, "financial_operation_items"); items != itemsBefore {
+		t.Fatalf("expected no refund item write, before=%d after=%d", itemsBefore, items)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no refund outbox write, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected no refund local event write, before=%d after=%d", eventsBefore, events)
+	}
+	total, err := f.repo.SumFinancialOperationAmountByCheck(f.ctx, check.ID, domain.FinancialOperationRefund)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 0 {
+		t.Fatalf("expected refund ledger to stay empty, got total=%d", total)
+	}
+	var paymentStatus, checkStatus string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM payments WHERE id = ?`, payment.ID).Scan(&paymentStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM checks WHERE id = ?`, check.ID).Scan(&checkStatus); err != nil {
+		t.Fatal(err)
+	}
+	if paymentStatus != string(domain.PaymentCaptured) || checkStatus != string(domain.CheckPaid) {
+		t.Fatalf("rejected refund must not mutate finalized docs, payment=%s check=%s", paymentStatus, checkStatus)
+	}
+}
+
 func TestRecordCancellationSupportsPartialLineQuantityAndInventoryDisposition(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)

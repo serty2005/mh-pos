@@ -279,7 +279,7 @@ func decodeAPIResponse[T any](t *testing.T, rr *httptest.ResponseRecorder) T {
 func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 	t.Helper()
 	switch table {
-	case "prechecks", "checks", "payments", "payment_attempts", "pos_sync_outbox", "local_event_log", "manager_override_audit", "auth_sessions", "halls", "tables", "catalog_items", "cloud_master_sync_state":
+	case "prechecks", "checks", "payments", "payment_attempts", "financial_operations", "financial_operation_items", "pos_sync_outbox", "local_event_log", "manager_override_audit", "auth_sessions", "halls", "tables", "catalog_items", "cloud_master_sync_state":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -1455,5 +1455,106 @@ func TestListCheckFinancialOperationsThroughPublicAPI(t *testing.T) {
 	rr = f.get(t, "/api/v1/financial-operations?operation_type=void&limit=1")
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected invalid operation type to return 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestRecordRefundAboveCheckTotalThroughPublicAPIReturnsConflict(t *testing.T) {
+	f := newAPIFixture(t)
+	order := f.createOrderWithLine(t)
+	cashSession := f.openCashSession(t)
+	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-over-refund-issue","node_device_id":"`+f.device.ID+`"}`)
+	if issued.Code != http.StatusCreated {
+		t.Fatalf("expected precheck 201, got %d: %s", issued.Code, issued.Body.String())
+	}
+	precheck := decodeAPIResponse[domain.Precheck](t, issued)
+	paid := f.postJSON(t, "/api/v1/prechecks/"+precheck.ID+"/payments", `{"command_id":"cmd-api-over-refund-payment","node_device_id":"`+f.device.ID+`","method":"cash","amount":`+fmt.Sprint(precheck.Total)+`,"currency":"RUB"}`)
+	if paid.Code != http.StatusCreated {
+		t.Fatalf("expected payment 201, got %d: %s", paid.Code, paid.Body.String())
+	}
+	payment := decodeAPIResponse[domain.Payment](t, paid)
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cashier := f.employee
+	cashierSession := f.session
+	f.useManagerOperator(t)
+	manager := f.employee
+	managerSession := f.session
+	if _, err := f.service.CloseCashSession(f.ctx, app.CloseCashSessionCommand{
+		CommandMeta:        f.edgeMeta(),
+		ID:                 cashSession.ID,
+		ClosedByEmployeeID: f.employee.ID,
+		ClosingCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.employee = cashier
+	f.session = cashierSession
+	if _, err := f.service.CloseShift(f.ctx, app.CloseShiftCommand{
+		CommandMeta:        f.edgeMeta(),
+		ID:                 order.ShiftID,
+		ClosedByEmployeeID: f.employee.ID,
+		ClosingCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.employee = manager
+	f.session = managerSession
+	if _, err := f.service.OpenShift(f.ctx, app.OpenShiftCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	operationsBefore := countAPIRows(t, f, "financial_operations")
+	itemsBefore := countAPIRows(t, f, "financial_operation_items")
+	outboxBefore := countAPIRows(t, f, "pos_sync_outbox")
+	eventsBefore := countAPIRows(t, f, "local_event_log")
+
+	body := fmt.Sprintf(`{"command_id":"cmd-api-refund-above-check-total","node_device_id":"%s","operation_kind":"partial","inventory_disposition":"no_stock_effect","reason":"over refund must be rejected","items":[{"scope":"whole_check","amount":%d,"currency":"RUB"}]}`, f.device.ID, check.Total+1)
+	rr := f.postJSON(t, "/api/v1/checks/"+check.ID+"/refunds", body)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected over-refund 409, got %d: %s", rr.Code, rr.Body.String())
+	}
+	errBody := decodeAPIResponse[httpx.ErrorResponse](t, rr)
+	if errBody.Error.Code != "CONFLICT" || errBody.Error.MessageKey != "errors.conflict" {
+		t.Fatalf("expected conflict error contract, got %+v", errBody.Error)
+	}
+	if got := rr.Header().Get("X-Error-Code"); got != "CONFLICT" {
+		t.Fatalf("expected X-Error-Code CONFLICT, got %q", got)
+	}
+	if operations := countAPIRows(t, f, "financial_operations"); operations != operationsBefore {
+		t.Fatalf("expected no refund operation write, before=%d after=%d", operationsBefore, operations)
+	}
+	if items := countAPIRows(t, f, "financial_operation_items"); items != itemsBefore {
+		t.Fatalf("expected no refund item write, before=%d after=%d", itemsBefore, items)
+	}
+	if outbox := countAPIRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no refund outbox write, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countAPIRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected no refund local event write, before=%d after=%d", eventsBefore, events)
+	}
+	var paymentStatus, checkStatus string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM payments WHERE id = ?`, payment.ID).Scan(&paymentStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM checks WHERE id = ?`, check.ID).Scan(&checkStatus); err != nil {
+		t.Fatal(err)
+	}
+	if paymentStatus != string(domain.PaymentCaptured) || checkStatus != string(domain.CheckPaid) {
+		t.Fatalf("rejected refund must not mutate finalized docs, payment=%s check=%s", paymentStatus, checkStatus)
 	}
 }
