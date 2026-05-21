@@ -3,6 +3,7 @@
 Статус: актуальный backend contract для frozen cashier pilot.
 
 Код и тесты являются источником истины. Этот документ не описывает будущие API как реализованные.
+Сводная карта фактически реализованного функционала по всем runtime-модулям находится в `docs/CURRENT-FUNCTIONAL-STATE.md`.
 
 ## Runtime Modules
 

@@ -1,0 +1,186 @@
+# Текущее функциональное состояние проекта
+
+Статус: реализовано сейчас по коду, тестам и документации на 2026-05-21.
+
+Этот документ является сводной картой фактического состояния репозитория. Он не заменяет профильные спецификации: архитектурные инварианты остаются в `SPECv1.3.md`, backend-контракты - в `docs/backend/*`, контракты интерфейсов - в `docs/ui/*`, синхронизация - в `docs/sync/*`.
+
+Источник истины для реализованного runtime: код, миграции и тесты. Если этот документ конфликтует с кодом или тестами, сначала фиксируется фактическое поведение по коду, затем обновляется документация.
+
+## Найдено при ревью
+
+Реализовано сейчас:
+
+- Документация уже описывает ключевой кассовый поток `Order -> Precheck -> Payment -> Check`, предчеки, оплаты, итоговые чеки, возвраты/отмены, синхронизацию и локальный smoke path.
+- Основной пробел был не в отдельных POS-инвариантах, а в отсутствии единой русскоязычной сводки по всему репозиторию: POS Edge, Cloud Backend, License Server, POS UI, Cloud UI, миграции, скрипты и тестовое покрытие были описаны в разных документах.
+- Кодовая база содержит больше подтвержденных Cloud и provisioning маршрутов, чем явно видно из POS-ориентированных документов; они зафиксированы ниже как реализованная сейчас функциональность.
+
+Не обнаружено сейчас:
+
+- Подтвержденного runtime для KDS, доставки, настоящего платежного процессинга, фискального адаптера, Cloud Inventory Worker, ClickHouse pipeline или destructive archive apply.
+- Публичного Cloud HTTP/API интерфейса отчетов по детальной проекции финансовых операций. Сервисная и repository-основа есть, публичный reporting surface остается запланированным далее.
+
+## POS Edge Backend
+
+Реализовано сейчас:
+
+- HTTP API на `chi` с безопасным JSON error contract, request id, структурированным audit log и CORS для локального POS UI.
+- PIN-вход, backend-сессии, привязка `node_device_id` / `client_device_id`, проверка actor context и rate limit для PIN.
+- RBAC на уровне application services; UI visibility не является границей безопасности.
+- Личная смена сотрудника и кассовая смена устройства как разные runtime-понятия.
+- Залы, столы, меню и каталог как локальные read models, получаемые из Cloud-owned справочников.
+- Создание заказов, чтение текущего/активных/закрытых заказов, добавление строк, изменение количества, списание строки, курс подачи и комментарий строки.
+- Выбор и редактирование модификаторов активной строки заказа; backend проверяет активность группы/опции, связь с menu item, required/min/max и цену.
+- Backend authoritative pricing: скидки, надбавки, automatic policies из Cloud, единый порядок применения по `application_index`, налог последним шагом и целочисленное округление.
+- Выпуск предчека с immutable snapshot и блокировкой заказа.
+- Отмена unpaid active предчека через manager override с PIN и правами.
+- Оплаты по `precheck_id`, частичные оплаты, итоговый чек только после полной оплаты.
+- Повторная печать предчека и итогового чека из immutable snapshot.
+- Append-only ledger финансовых операций: `CancellationRecorded` и `RefundRecorded` для полных и частичных операций, без мутации уже финализированных payment/precheck/check.
+- Compatibility route `POST /api/v1/payments/{id}/refund`, который записывает refund operation по payment allocation, но не возвращает оплату или чек в изменяемое состояние.
+- Ограниченные read endpoints для закрытых заказов, financial operations, outbox и local events.
+- Локальный lifecycle SQLite: status, retention dry-run, archive export plan, export-only JSONL archive, read-plan, lookup preview и apply-plan verification без удаления runtime rows.
+- Cloud -> Edge master-data ingest для `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
+- Sync sender через authenticated `sync/exchange`, item-level ACK, retry/reclaim/backoff и безопасную обработку неподдержанных направлений.
+- Минимальная legacy-основа ручного складского документа в POS Edge. Она реализована как переходный internal foundation и не является целевой складской архитектурой.
+
+Вне текущего объема:
+
+- Автоматическое списание склада из продажи.
+- Автоматический возврат на склад или списание в отходы из cancellation/refund.
+- Целевой Cloud Inventory Worker и расчет себестоимости.
+- Destructive retention apply, удаление строк из active SQLite, restore archive в active SQLite и compaction.
+- Настоящий платежный процессинг, webhooks, фискальные смены и фискальный адаптер.
+
+## Cloud Backend
+
+Реализовано сейчас:
+
+- HTTP API на `chi` с локальным CORS для Cloud UI и структурированным request log.
+- Прием Edge events: `POST /api/v1/sync/edge-events`, batch прием и `POST /api/v1/sync/exchange`.
+- `sync/exchange` проверяет bearer `node_token`, assigned restaurant и device status.
+- Idempotent receipt для Edge events, raw payload checksum, event type stats и coarse shift finance projection.
+- Детальная PostgreSQL projection для current `CancellationRecorded` и `RefundRecorded`; legacy `PaymentRefunded`/`CheckRefunded` принимаются, но не наполняют detailed operation projection.
+- Безопасный список входящих Edge events для Cloud UI без raw payload.
+- Хранилище master-data packages и Cloud -> Edge package retrieval.
+- Cloud-owned master data authority: рестораны, роли, сотрудники, PIN lifecycle, каталог, услуги, папки, параметры папок, теги, привязки тегов, группы/опции/привязки модификаторов, policies скидок/надбавок, залы, столы, menu items и публикации.
+- Publication flow формирует typed ingest DTO для POS Edge: top-level modifier groups/options/bindings и link-only `menu_item_modifier_groups`.
+- Provisioning endpoints: регистрация устройства, список незакрепленных устройств, назначение ресторану, статус назначения и генерация одноразового pairing code через License Server.
+
+Вне текущего объема:
+
+- Production auth/RBAC perimeter для Cloud API.
+- Публичный Cloud reporting API/UI по financial operation projection.
+- Async ClickHouse forwarder и immutable OLAP archive.
+- Полный Cloud Inventory Worker.
+
+## License Server
+
+Реализовано сейчас:
+
+- Health endpoint.
+- Регистрация одноразового pairing code.
+- Resolve pairing code с проверкой срока действия и consumed status.
+- Безопасный error contract для invalid/expired/consumed code.
+- Structured logs без раскрытия самого pairing code; логируются только факт наличия и длина.
+
+## POS UI
+
+Реализовано сейчас:
+
+- Vue/Quasar cashier UI с PIN-сессией и backend actor context.
+- Рабочий терминал кассира: заказ, зал/столы, смена, активность, отчеты, настройки и вспомогательные drawer/dialog surfaces.
+- Открытие/закрытие личной смены и кассовой смены.
+- Выбор столов, активные заказы по залу, создание заказа, добавление меню/услуг, модификаторы, изменение количества, списание строки.
+- Выпуск/отмена/повторная печать предчека.
+- Оплата наличными, manual card и other через backend.
+- Закрытые заказы с постраничной выдачей, фильтром по бизнес-дате и деталями итогового чека.
+- Финансовые операции закрытого чека: просмотр ledger, full cancellation/refund и partial `order_line`/quantity cancellation/refund с явным `inventory_disposition`.
+- Compatibility payment refund как отдельный fallback, визуально отделенный от основного ledger flow.
+- Sync drawer для status/outbox/local events с bounded запросами.
+- Нормализация безопасных API-ошибок и optional empty states; пользовательский текст идет через `vue-i18n`.
+
+Вне текущего объема:
+
+- UI для скидок/надбавок/налоговых профилей в кассовом терминале.
+- UI для modifier/service/tip scopes в financial operation ledger.
+- Складские операции, KDS, доставка, мобильный официант, PSP/fiscal device screens.
+
+## Cloud UI
+
+Реализовано сейчас:
+
+- Отдельный интерфейс для Cloud-owned сценариев, не использующий POS session или POS Edge stores.
+- Первый сценарий запуска: readiness panel, Edge-device flow, master data preparation и публикация snapshot.
+- Управление ресторанами, ролями, сотрудниками, каталогом, папками, тегами, модификаторами, policies, залами, столами, menu items и публикациями по подтвержденным Cloud routes.
+- Генерация pairing code и назначение Edge-device ресторану.
+- Просмотр безопасного списка входящих Edge events без raw payload.
+- Локализованные сообщения, safe error details, no raw payload / PIN / token display.
+
+Вне текущего объема:
+
+- Cashier runtime в Cloud UI.
+- Cloud auth/RBAC UI.
+- KDS, PSP, fiscalization, delivery и inventory runtime.
+
+## Данные и миграции
+
+Реализовано сейчас:
+
+- POS Edge SQLite является локальным OLTP/source of truth для кассового runtime.
+- Cloud PostgreSQL является Cloud OLTP/source of truth для приема событий, projections, master data и provisioning foundation.
+- License Server использует локальную SQLite БД.
+- Active pre-pilot path использует один managed SQL baseline на runtime-модуль и runtime startup migration/verification.
+- UUID runtime генерируется как UUIDv7 там, где код создает новые ids через `idgen`.
+- Профильные schema tests проверяют критичные таблицы, индексы, constraints, runtime version gates и migration repair behavior.
+
+Вне текущего объема:
+
+- Data-preserving production migrations после первого внедрения.
+- Подтвержденный rollout `sqlc`.
+- ClickHouse как запущенный runtime pipeline.
+
+## Скрипты и локальная приемка
+
+Реализовано сейчас:
+
+- Docker compose поднимает Cloud PostgreSQL, Cloud API, License API и POS Edge без POS UI.
+- Python smoke ядро использует OpenAPI contract и не делает прямых записей в PostgreSQL/SQLite.
+- `run-stack-smoke.py` проверяет health, license pairing, Cloud -> Edge master data, кассовую продажу, cancellation ledger и refund после закрытия исходной смены.
+- PowerShell/Bash wrappers являются тонкими оболочками над Python ядром или legacy zero-to-cashier flows.
+- HTTP слой скриптов игнорирует proxy для localhost/loopback, чтобы не ломать Docker published ports.
+
+## Покрытие тестами бизнес-логики
+
+Реализовано сейчас:
+
+- POS service tests покрывают RBAC, PIN/auth, смены, кассовые смены, idempotency command id, transaction rollback, order/precheck/payment/check lifecycle, manager override, business date, reprint, modifiers, service items, pricing, financial operation caps, partial cancellation/refund, mixed refunds, outbox, Cloud master-data ingest и storage archive readiness.
+- POS API tests покрывают безопасные HTTP errors, сессии, pairing/provisioning, master-data route boundaries, floor/order/precheck/payment/check endpoints, sync/storage endpoints и CORS.
+- POS SQLite tests покрывают schema constraints, active managed baseline, payments by `precheck_id`, prechecks, local event log, outbox retry schema, modifiers, inventory foundation и migration repair.
+- Cloud sync tests покрывают idempotent receive, item-level batch ACK, authenticated exchange, revision conflicts, current financial operation events, legacy refund events, master-data packages и contract validation.
+- Cloud master-data tests покрывают CRUD/validation, PIN reuse rules, role permission validation, catalog/menu/publication shape, service/semi-finished kinds, lifecycle statuses и pricing policies.
+- License tests покрывают registration, resolve, consumed/expired/invalid pairing codes.
+- UI unit/e2e tests покрывают currency/error/session guards, RBAC, schema parsing, cashier terminal conflict handling, compensation boundaries, modifier flow, payments/refunds and sync/provisioning flows.
+- Script tests покрывают HTTP/OpenAPI helper layer, seed flow, stack smoke orchestration and contract usage.
+
+Оставшиеся риски:
+
+- Полный `go test ./...` и `npm run build` нужно запускать после каждого изменения соответствующего кода; этот документ фиксирует покрытие по найденным тестам, а не заменяет запуск CI.
+- Cloud Backend теперь имеет отдельный профильный contract: `docs/backend/CLOUD-BACKEND-SPEC.md`; при изменении Cloud routes, provisioning, publication, sync receiver или PostgreSQL schema его нужно обновлять вместе с кодом.
+- Legacy Edge-side manual inventory foundation остается в коде и миграции, хотя целевая архитектура требует Cloud-centric inventory. Это нужно удалить отдельным изменением, когда будет принят следующий inventory baseline.
+
+## Запланировано далее
+
+- Поддерживать `docs/backend/CLOUD-BACKEND-SPEC.md` как профильный документ Cloud Backend при каждом изменении Cloud routes, payloads, sync/provisioning contracts или schema.
+- Публичный Cloud reporting API/UI для detailed financial operation projection.
+- Целевой Cloud Inventory Worker, stop-list sync и удаление legacy Edge-side stock foundation.
+- Data-preserving migrations после первого реального внедрения.
+- Production auth/RBAC perimeter для Cloud/License API.
+
+## Вне текущего объема
+
+- KDS runtime.
+- Delivery/channel integrations.
+- Настоящий PSP/payment processor module и PSP refund.
+- Fiscal device integration.
+- ClickHouse runtime pipeline.
+- Destructive archive apply/restore/compaction в active SQLite.
