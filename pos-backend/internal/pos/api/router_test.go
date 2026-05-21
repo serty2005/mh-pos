@@ -1678,3 +1678,207 @@ func TestRecordRefundAfterCancellationAboveRemainingThroughPublicAPIReturnsConfl
 		t.Fatalf("rejected refund must not mutate finalized docs, payment=%s check=%s", paymentStatus, checkStatus)
 	}
 }
+
+func TestRecordRefundAfterLineCancellationAboveRemainingQuantityThroughPublicAPIReturnsConflict(t *testing.T) {
+	f := newAPIFixture(t)
+	order := f.createOrderWithLine(t)
+	lines, err := f.repo.ListOrderLines(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 1 || lines[0].Quantity != 2 {
+		t.Fatalf("expected one order line with quantity 2, got %+v", lines)
+	}
+	line := lines[0]
+	cashSession := f.openCashSession(t)
+	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-line-over-refund-issue","node_device_id":"`+f.device.ID+`"}`)
+	if issued.Code != http.StatusCreated {
+		t.Fatalf("expected precheck 201, got %d: %s", issued.Code, issued.Body.String())
+	}
+	precheck := decodeAPIResponse[domain.Precheck](t, issued)
+	paid := f.postJSON(t, "/api/v1/prechecks/"+precheck.ID+"/payments", `{"command_id":"cmd-api-line-over-refund-payment","node_device_id":"`+f.device.ID+`","method":"cash","amount":`+fmt.Sprint(precheck.Total)+`,"currency":"RUB"}`)
+	if paid.Code != http.StatusCreated {
+		t.Fatalf("expected payment 201, got %d: %s", paid.Code, paid.Body.String())
+	}
+	payment := decodeAPIResponse[domain.Payment](t, paid)
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cashier := f.employee
+	cashierSession := f.session
+	f.useManagerOperator(t)
+	unitAmount := line.TotalPrice / line.Quantity
+	cancelBody := fmt.Sprintf(`{"command_id":"cmd-api-line-cancel-one","node_device_id":"%s","operation_kind":"partial","inventory_disposition":"manual_review","reason":"one prepared item cancelled","items":[{"scope":"order_line","order_line_id":"%s","quantity":1,"amount":%d,"currency":"RUB"}]}`, f.device.ID, line.ID, unitAmount)
+	cancelled := f.postJSON(t, "/api/v1/checks/"+check.ID+"/cancellations", cancelBody)
+	if cancelled.Code != http.StatusCreated {
+		t.Fatalf("expected cancellation 201, got %d: %s", cancelled.Code, cancelled.Body.String())
+	}
+	cancellation := decodeAPIResponse[domain.FinancialOperation](t, cancelled)
+	if cancellation.Type != domain.FinancialOperationCancellation || len(cancellation.Items) != 1 || cancellation.Items[0].OrderLineID == nil || *cancellation.Items[0].OrderLineID != line.ID {
+		t.Fatalf("unexpected line cancellation operation: %+v", cancellation)
+	}
+
+	manager := f.employee
+	managerSession := f.session
+	if _, err := f.service.CloseCashSession(f.ctx, app.CloseCashSessionCommand{
+		CommandMeta:        f.edgeMeta(),
+		ID:                 cashSession.ID,
+		ClosedByEmployeeID: f.employee.ID,
+		ClosingCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.employee = cashier
+	f.session = cashierSession
+	if _, err := f.service.CloseShift(f.ctx, app.CloseShiftCommand{
+		CommandMeta:        f.edgeMeta(),
+		ID:                 order.ShiftID,
+		ClosedByEmployeeID: f.employee.ID,
+		ClosingCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.employee = manager
+	f.session = managerSession
+	if _, err := f.service.OpenShift(f.ctx, app.OpenShiftCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	operationsBefore := countAPIRows(t, f, "financial_operations")
+	itemsBefore := countAPIRows(t, f, "financial_operation_items")
+	outboxBefore := countAPIRows(t, f, "pos_sync_outbox")
+	eventsBefore := countAPIRows(t, f, "local_event_log")
+
+	body := fmt.Sprintf(`{"command_id":"cmd-api-line-refund-over-quantity","node_device_id":"%s","operation_kind":"partial","inventory_disposition":"no_stock_effect","reason":"line refund quantity above remaining must be rejected","items":[{"scope":"order_line","order_line_id":"%s","quantity":2,"amount":%d,"currency":"RUB"}]}`, f.device.ID, line.ID, unitAmount)
+	rr := f.postJSON(t, "/api/v1/checks/"+check.ID+"/refunds", body)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected line over-refund quantity 409, got %d: %s", rr.Code, rr.Body.String())
+	}
+	errBody := decodeAPIResponse[httpx.ErrorResponse](t, rr)
+	if errBody.Error.Code != "CONFLICT" || errBody.Error.MessageKey != "errors.conflict" {
+		t.Fatalf("expected conflict error contract, got %+v", errBody.Error)
+	}
+	if got := rr.Header().Get("X-Error-Code"); got != "CONFLICT" {
+		t.Fatalf("expected X-Error-Code CONFLICT, got %q", got)
+	}
+	if operations := countAPIRows(t, f, "financial_operations"); operations != operationsBefore {
+		t.Fatalf("expected no refund operation write, before=%d after=%d", operationsBefore, operations)
+	}
+	if items := countAPIRows(t, f, "financial_operation_items"); items != itemsBefore {
+		t.Fatalf("expected no refund item write, before=%d after=%d", itemsBefore, items)
+	}
+	if outbox := countAPIRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no refund outbox write, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countAPIRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected no refund local event write, before=%d after=%d", eventsBefore, events)
+	}
+	operations, err := f.repo.ListFinancialOperationsByCheck(f.ctx, check.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(operations) != 1 || operations[0].ID != cancellation.ID || operations[0].Type != domain.FinancialOperationCancellation {
+		t.Fatalf("expected only the original line cancellation operation, got %+v", operations)
+	}
+	var paymentStatus, checkStatus string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM payments WHERE id = ?`, payment.ID).Scan(&paymentStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM checks WHERE id = ?`, check.ID).Scan(&checkStatus); err != nil {
+		t.Fatal(err)
+	}
+	if paymentStatus != string(domain.PaymentCaptured) || checkStatus != string(domain.CheckPaid) {
+		t.Fatalf("rejected refund must not mutate finalized docs, payment=%s check=%s", paymentStatus, checkStatus)
+	}
+}
+
+func TestRecordCancellationLineAmountAboveSelectedQuantityThroughPublicAPIReturnsConflict(t *testing.T) {
+	f := newAPIFixture(t)
+	order := f.createOrderWithLine(t)
+	lines, err := f.repo.ListOrderLines(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 1 || lines[0].Quantity != 2 {
+		t.Fatalf("expected one order line with quantity 2, got %+v", lines)
+	}
+	line := lines[0]
+	f.openCashSession(t)
+	issued := f.postJSON(t, "/api/v1/orders/"+order.ID+"/precheck", `{"command_id":"cmd-api-line-over-amount-issue","node_device_id":"`+f.device.ID+`"}`)
+	if issued.Code != http.StatusCreated {
+		t.Fatalf("expected precheck 201, got %d: %s", issued.Code, issued.Body.String())
+	}
+	precheck := decodeAPIResponse[domain.Precheck](t, issued)
+	paid := f.postJSON(t, "/api/v1/prechecks/"+precheck.ID+"/payments", `{"command_id":"cmd-api-line-over-amount-payment","node_device_id":"`+f.device.ID+`","method":"cash","amount":`+fmt.Sprint(precheck.Total)+`,"currency":"RUB"}`)
+	if paid.Code != http.StatusCreated {
+		t.Fatalf("expected payment 201, got %d: %s", paid.Code, paid.Body.String())
+	}
+	payment := decodeAPIResponse[domain.Payment](t, paid)
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f.useManagerOperator(t)
+	operationsBefore := countAPIRows(t, f, "financial_operations")
+	itemsBefore := countAPIRows(t, f, "financial_operation_items")
+	outboxBefore := countAPIRows(t, f, "pos_sync_outbox")
+	eventsBefore := countAPIRows(t, f, "local_event_log")
+
+	unitAmount := line.TotalPrice / line.Quantity
+	body := fmt.Sprintf(`{"command_id":"cmd-api-line-cancel-over-amount","node_device_id":"%s","operation_kind":"partial","inventory_disposition":"manual_review","reason":"line amount above selected quantity must be rejected","items":[{"scope":"order_line","order_line_id":"%s","quantity":1,"amount":%d,"currency":"RUB"}]}`, f.device.ID, line.ID, unitAmount+1)
+	rr := f.postJSON(t, "/api/v1/checks/"+check.ID+"/cancellations", body)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected line over-amount cancellation 409, got %d: %s", rr.Code, rr.Body.String())
+	}
+	errBody := decodeAPIResponse[httpx.ErrorResponse](t, rr)
+	if errBody.Error.Code != "CONFLICT" || errBody.Error.MessageKey != "errors.conflict" {
+		t.Fatalf("expected conflict error contract, got %+v", errBody.Error)
+	}
+	if got := rr.Header().Get("X-Error-Code"); got != "CONFLICT" {
+		t.Fatalf("expected X-Error-Code CONFLICT, got %q", got)
+	}
+	if operations := countAPIRows(t, f, "financial_operations"); operations != operationsBefore {
+		t.Fatalf("expected no cancellation operation write, before=%d after=%d", operationsBefore, operations)
+	}
+	if items := countAPIRows(t, f, "financial_operation_items"); items != itemsBefore {
+		t.Fatalf("expected no cancellation item write, before=%d after=%d", itemsBefore, items)
+	}
+	if outbox := countAPIRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no cancellation outbox write, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countAPIRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected no cancellation local event write, before=%d after=%d", eventsBefore, events)
+	}
+	operations, err := f.repo.ListFinancialOperationsByCheck(f.ctx, check.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(operations) != 0 {
+		t.Fatalf("expected no financial operations after rejected cancellation, got %+v", operations)
+	}
+	var paymentStatus, checkStatus string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM payments WHERE id = ?`, payment.ID).Scan(&paymentStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status FROM checks WHERE id = ?`, check.ID).Scan(&checkStatus); err != nil {
+		t.Fatal(err)
+	}
+	if paymentStatus != string(domain.PaymentCaptured) || checkStatus != string(domain.CheckPaid) {
+		t.Fatalf("rejected cancellation must not mutate finalized docs, payment=%s check=%s", paymentStatus, checkStatus)
+	}
+}
