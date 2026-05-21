@@ -108,6 +108,8 @@ $env:POS_CLOUD_SYNC_URL="http://localhost:8090" # можно также указ
 $env:LICENSE_SERVER_URL="http://localhost:8095"
 $env:POS_SYNC_SENDER_BATCH_SIZE="25"
 $env:POS_SYNC_SENDER_POLL_INTERVAL="2s"
+$env:POS_SYNC_SENDER_EMERGENCY_PENDING_THRESHOLD="100"
+$env:POS_SYNC_SENDER_CLOUD_PACKAGE_BURST_THRESHOLD="2"
 $env:POS_SYNC_SENDER_RECLAIM_AFTER="5m"
 $env:POS_SYNC_SENDER_SEND_TIMEOUT="10s"
 ```
@@ -213,7 +215,7 @@ Cloud -> Edge master-data ingest endpoints:
 - `POST /api/v1/sync/master-data/snapshots`
 - `POST /api/v1/sync/master-data/{stream}`
 
-Реализовано сейчас: supported POS Edge ingest streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`. Payload принимает `node_device_id`, `sync_mode` (`incremental` по умолчанию или явный `full_snapshot`), optional `full_snapshot_reason`, optional `checkpoint_token`, `cloud_version`, optional `cloud_updated_at` и stream arrays (`restaurants`, `devices`, `roles`, `employees`, `halls`, `tables`, `catalog_items`, `menu_items`, `tax_profiles`, `tax_rules`, `service_charge_rules`). Explicit `full_snapshot` разрешен только для `terminal_restaurant_changed` или `node_role_changed`; ingest пишет master/reference tables и `cloud_master_sync_state` в одной транзакции и не создает Edge -> Cloud outbox rows. Unsupported streams и unknown JSON fields отклоняются до partial apply.
+Реализовано сейчас: supported POS Edge ingest streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`. Payload принимает `node_device_id`, `sync_mode` (`incremental` по умолчанию или явный `full_snapshot`), optional `full_snapshot_reason`, optional `checkpoint_token`, `cloud_version`, optional `cloud_updated_at` и stream arrays (`restaurants`, `devices`, `roles`, `employees`, `halls`, `tables`, `catalog_items`, `menu_items`, `tax_profiles`, `tax_rules`, `service_charge_rules`). Explicit `full_snapshot` разрешен только для `terminal_restaurant_changed` или `node_role_changed`; ingest пишет master/reference tables и `cloud_master_sync_state` в одной транзакции и не создает Edge -> Cloud outbox rows. Unsupported streams и unknown JSON fields отклоняются до partial apply. В `sync/exchange` проблемный Cloud package фиксируется в `cloud_master_sync_state` со статусом `failed`, не ломает остальные packages в response и не блокирует item-level ACK для Edge -> Cloud событий.
 
 Cloud production delivery path:
 

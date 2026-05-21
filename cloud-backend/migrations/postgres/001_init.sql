@@ -63,6 +63,22 @@ CREATE TABLE IF NOT EXISTS cloud_edge_event_raw_payloads (
   created_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS cloud_sync_problem_events (
+  id TEXT PRIMARY KEY,
+  direction TEXT NOT NULL CHECK (direction IN ('edge_to_cloud','cloud_to_edge')),
+  node_device_id TEXT,
+  restaurant_id TEXT,
+  client_item_id TEXT,
+  error_code TEXT NOT NULL CHECK (error_code <> ''),
+  error_message TEXT NOT NULL CHECK (error_message <> ''),
+  raw_payload TEXT NOT NULL,
+  raw_payload_sha256_hex TEXT NOT NULL CHECK (raw_payload_sha256_hex <> ''),
+  created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS cloud_sync_problem_events_created_at
+  ON cloud_sync_problem_events(created_at DESC);
+
 CREATE TABLE IF NOT EXISTS cloud_operational_events (
   id TEXT PRIMARY KEY,
   receipt_id TEXT NOT NULL UNIQUE REFERENCES cloud_edge_event_receipts(id) ON DELETE RESTRICT,

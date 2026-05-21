@@ -69,7 +69,7 @@
 Реализовано сейчас:
 
 - `cmd/cloud-api` — entrypoint, конфигурация, PostgreSQL startup migration/verification, HTTP server lifecycle.
-- `internal/cloudsync` — прием Edge events, batch ACK, authenticated `sync/exchange`, master-data package storage, operational projections.
+- `internal/cloudsync` — прием Edge events, batch ACK, authenticated `sync/exchange`, problem item quarantine, master-data package storage, operational projections.
 - `internal/masterdata` — Cloud-owned справочники, lifecycle, PIN policy, publication workflow, Edge DTO generation.
 - `internal/provisioning` — регистрация/назначение Edge-устройств, pairing code flow через License Server, node token lifecycle.
 - `internal/platform/httpx` — безопасный error envelope.
@@ -89,6 +89,7 @@
 - `CLOUD_POSTGRES_MIGRATIONS_DIR` по умолчанию `migrations/postgres`.
 - `CLOUD_POSTGRES_BACKUP_DIR` по умолчанию `data/cloud-backups`.
 - `MH_POS_VERSION` участвует в runtime version gate.
+- `CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE` ограничивает Cloud -> Edge packages в одном `sync/exchange` response, чтобы крупные публикации уходили несколькими последовательными сессиями.
 
 Startup path:
 
@@ -397,11 +398,12 @@ License Code:
 - Принимает Edge outbox events.
 - Возвращает ACK по каждому client item.
 - Сравнивает stream revisions/checkpoints.
-- Возвращает новые Cloud packages для запрошенных streams.
+- Возвращает новые Cloud packages для запрошенных streams, но не больше `CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE` за одну сессию.
 - Если Edge revision ahead, request отклоняется до приема Edge events.
 - Если revision равен, но checkpoint отличается, request отклоняется до приема Edge events.
 - Если package отсутствует, stream result получает `not_found`, HTTP request остается успешным.
-- Если POS Edge не применил Cloud package, ACK не коммитится локально как sent; следующий exchange безопасно повторяет Edge events.
+- Ошибочные Edge items получают item-level `rejected`/`retryable` и сохраняются в `cloud_sync_problem_events` для анализа, не блокируя остальные items.
+- Если transport/auth exchange не завершился успешно, POS Edge не коммитит ACK локально как sent; следующий exchange безопасно повторяет Edge events.
 
 Current Edge -> Cloud events:
 
@@ -462,7 +464,7 @@ Managed SQL file, реализовано сейчас:
 
 Основные таблицы:
 
-- Sync receiver: `cloud_edge_event_receipts`, `cloud_edge_event_raw_payloads`, `cloud_operational_events`.
+- Sync receiver: `cloud_edge_event_receipts`, `cloud_edge_event_raw_payloads`, `cloud_sync_problem_events`, `cloud_operational_events`.
 - Projections: `cloud_projection_event_type_stats`, `cloud_projection_shift_finance`, `cloud_projection_financial_operations`.
 - Master-data packages: `cloud_master_data_packages`.
 - Currency reference: `cloud_currency_reference`.

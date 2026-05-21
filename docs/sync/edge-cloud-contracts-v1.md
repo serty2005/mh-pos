@@ -100,6 +100,9 @@ Response:
 Правила:
 
 - `edge_events` ограничен 100 items; один envelope ограничен 2 MiB; body endpoint ограничен 8 MiB.
+- POS Edge worker выполняет строгий periodic cycle без random jitter. Если pending Edge -> Cloud backlog достигает configured high-watermark, worker запускает следующую итерацию без ожидания poll interval.
+- Cloud ограничивает число `cloud_packages` в одном `sync/exchange` response настройкой `CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE`; большие Cloud -> Edge изменения передаются несколькими последовательными exchange-сессиями.
+- Если POS Edge получил bounded Cloud -> Edge response с числом packages не меньше `POS_SYNC_SENDER_CLOUD_PACKAGE_BURST_THRESHOLD`, следующий Cloud pull выполняется без ожидания `POS_SYNC_SENDER_CLOUD_PULL_INTERVAL`.
 - `event_id` для всех Edge POS/KDS business events должен быть UUIDv7.
 - Поддерживаемые exchange streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
 - ACK statuses: `accepted`, `rejected`, `retryable`; rejected/retryable items возвращают стабильный `error_code` и `message_key`.
@@ -108,7 +111,8 @@ Response:
 - Edge revision больше Cloud revision отклоняет весь request как `409 SYNC_REVISION_AHEAD` до приема Edge events.
 - Равная revision с другим checkpoint отклоняет весь request как `409 SYNC_CHECKPOINT_CONFLICT` до приема Edge events.
 - POS Edge применяет `cloud_packages` через существующий `mastersync.Service`; stream data и `cloud_master_sync_state` фиксируются одной SQLite transaction boundary.
-- Если Edge не смог применить Cloud package, outbox ACK не коммитится как `sent`; следующий exchange безопасно повторяет Edge events через Cloud idempotency.
+- POS Edge применяет каждый Cloud package только после полного приема HTTP response и successful JSON decode. Ошибочный package извлекается из текущей порции, фиксируется как `cloud_master_sync_state.status = "failed"` с `last_error`, не ломает применение остальных packages и не блокирует Edge -> Cloud ACK.
+- Если весь Cloud exchange request не принят транспортно или авторизационно, Edge outbox ACK не коммитится как `sent`; следующий exchange безопасно повторяет Edge events через Cloud idempotency.
 
 ## Cloud -> Edge Master Data Ingest
 
@@ -272,6 +276,7 @@ Cancellation/refund sync behavior:
 - Whole-check и partial `order_line`/quantity cancellation/refund UI, а также compatibility payment refund пишут те же текущие ledger events: `CancellationRecorded` для cancellation и `RefundRecorded` для refund. Переданный UI `command_id` остается idempotency key; `inventory_disposition` и operation `items[]` остаются payload data и не являются stock movement event.
 - `PaymentRefunded` и `CheckRefunded` остаются валидируемыми legacy event types, но новый POS Edge refund flow пишет `RefundRecorded`.
 - Cloud receiver валидирует для текущих `CancellationRecorded`/`RefundRecorded` operation id, edge operation id, совпадение payload `restaurant_id`/`device_id` с envelope, check id, precheck id, original/current shift ids, amount, currency, business date, operation-level inventory disposition, reason и immutable snapshot; затем сохраняет raw envelope/journal rows, обновляет event-type stats и поддерживает detailed projection `cloud_projection_financial_operations`.
+- Ошибочные items в batch/exchange не останавливают прием остальных items: Cloud возвращает item-level `rejected`/`retryable` ACK и сохраняет проблемный raw item в `cloud_sync_problem_events` для последующего анализа.
 - `GET /api/v1/sync/edge-events` реализовано сейчас как безопасный Cloud UI/API журнал receipt metadata: `restaurant_id`, `device_id`, `event_type`, aggregate metadata, timestamps и SHA-256 raw payload; raw payload в ответ не включается.
 - `cloud_edge_event_receipts.event_type` принимает весь текущий catalog и legacy inbound-only types, чтобы runtime schema не расходилась с Go validation contract.
 - Cloud shift finance foundation обновляет coarse refund counters from `RefundRecorded` (`checks_refunded_count`, `checks_refunded_total`) and legacy `PaymentRefunded`/`CheckRefunded` counters where such envelopes are received.

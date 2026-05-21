@@ -43,6 +43,16 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			},
 		},
 		{
+			Table:         "cloud_sync_problem_events",
+			RequiredBy:    "cloudsync postgres repository problem item quarantine",
+			MigrationFile: "001_init.sql",
+			Columns: []string{
+				"id", "direction", "node_device_id", "restaurant_id", "client_item_id", "error_code",
+				"error_message", "raw_payload", "raw_payload_sha256_hex", "created_at",
+			},
+			Indexes: []string{"cloud_sync_problem_events_created_at"},
+		},
+		{
 			Table:         "cloud_operational_events",
 			RequiredBy:    "cloudsync postgres repository ReceiveEdgeEvent operational journal",
 			MigrationFile: "001_init.sql",
