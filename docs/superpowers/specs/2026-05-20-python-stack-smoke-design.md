@@ -25,6 +25,7 @@ Runner выполняет независимые suites и возвращает 
 - `license_pairing`: напрямую регистрирует одноразовый pairing code в License Server, resolve-ит его и проверяет, что code consumed.
 - `cloud_to_edge_masterdata`: создает Cloud-owned demo справочники, выполняет POS Edge provisioning через License Code с Cloud assignment fallback, проверяет POS read model и post-pairing Cloud -> Edge sync.
 - `pos_cashier_runtime`: переиспользует summary из `cloud_to_edge_masterdata` или `scripts/.local-masterdata-summary.json` и проверяет backend path `login -> personal shift -> cash shift -> hall/table/menu reads -> order -> regular/modifier/service lines -> precheck -> payment by precheck_id -> final check -> closed orders -> check get/reprint -> cancellation ledger в той же смене -> financial operations -> storage status`.
+- Контракт smoke helper теперь знает read-only `buildStorageArchiveApplyReadiness` для будущей lightweight проверки archive readiness после export/read-plan. Полный stack smoke пока не выполняет destructive storage actions и не запускает physical delete/restore/compaction.
 - `pos_refund_after_shift_close`: переиспользует тот же summary, создает отдельную sale, закрывает исходные personal/cash shifts, открывает новую employee/cash shift для refund под менеджером при необходимости, записывает full refund через `/checks/{id}/refunds` и проверяет ledger/closed-order reads.
 
 Запланировано далее:

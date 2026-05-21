@@ -1138,10 +1138,10 @@ func TestStorageArchiveExportIncludesClosedOrderGraphLedgerAndManifestWithoutMut
 	if !result.FinancialLedgerProtected || !result.ImmutableSnapshotsProtected {
 		t.Fatalf("expected protected flags, got %+v", result)
 	}
-	if !containsString(result.BlockReasons, "destructive_apply_not_supported") ||
+	if !containsString(result.BlockReasons, "destructive_apply_not_enabled") ||
 		!containsString(result.BlockReasons, "financial_ledger_protected") ||
 		!containsString(result.BlockReasons, "immutable_snapshots_protected") ||
-		!containsString(result.BlockReasons, "pending_edge_to_cloud_outbox_for_archive_scope") {
+		!containsString(result.BlockReasons, "pending_edge_to_cloud_outbox") {
 		t.Fatalf("unexpected block reasons: %+v", result.BlockReasons)
 	}
 	if result.Counts.ClosedOrders != 1 || result.Counts.Checks != 1 || result.Counts.Prechecks != 1 || result.Counts.Payments != 1 || result.Counts.OrderLines != 1 {
@@ -1229,6 +1229,33 @@ func TestStorageArchiveApplyPlanWithoutManifestBlocksAndDoesNotMutate(t *testing
 	assertProtectedStorageCounts(t, f, before, "apply-plan without manifest")
 }
 
+func TestStorageArchiveApplyReadinessWithoutManifestBlocksAndDoesNotMutate(t *testing.T) {
+	f := newFixture(t)
+	before := protectedStorageCounts(t, f)
+	result, err := f.service.BuildStorageArchiveApplyReadiness(f.ctx, app.ArchiveApplyReadinessCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-readiness-missing-manifest"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             filepath.Join(f.archiveDir, "missing", "archive.jsonl"),
+		ManifestPath:            filepath.Join(f.archiveDir, "missing", "manifest.json"),
+		Mode:                    "plan_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ResultMode != "apply_readiness_only" || result.DestructiveApplySupported || result.ReadyForDestructiveApply || result.RuntimeRowsDeleted {
+		t.Fatalf("expected blocked read-only readiness, got %+v", result)
+	}
+	if result.ArchiveVerified || result.ManifestVerified || !result.RuntimeScopeVerified {
+		t.Fatalf("expected missing manifest to fail archive verification only, got %+v", result)
+	}
+	if !containsString(result.BlockReasons, "archive_manifest_missing") ||
+		!containsString(result.BlockReasons, "destructive_apply_not_enabled") ||
+		!containsString(result.BlockReasons, "runtime_restore_apply_path_missing") {
+		t.Fatalf("expected missing manifest/default block reasons, got %+v", result.BlockReasons)
+	}
+	assertProtectedStorageCounts(t, f, before, "apply-readiness without manifest")
+}
+
 func TestStorageArchiveApplyPlanBlocksInvalidAndFutureCutoff(t *testing.T) {
 	f := newFixture(t)
 	for _, tc := range []struct {
@@ -1305,6 +1332,95 @@ func TestStorageArchiveApplyPlanVerifiesArchiveSHAAndCounts(t *testing.T) {
 	}
 	if !containsString(result.BlockReasons, "archive_manifest_counts_mismatch") {
 		t.Fatalf("expected archive_manifest_counts_mismatch, got %+v", result.BlockReasons)
+	}
+}
+
+func TestStorageArchiveApplyReadinessAggregatesIntegrityAndRuntimeBlockers(t *testing.T) {
+	f := newFixture(t)
+	_, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-readiness-export"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "readiness fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := protectedStorageCounts(t, f)
+	result, err := f.service.BuildStorageArchiveApplyReadiness(f.ctx, app.ArchiveApplyReadinessCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-readiness"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             exported.ArchivePath,
+		ManifestPath:            exported.ManifestPath,
+		Mode:                    "plan_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ResultMode != "apply_readiness_only" || result.DestructiveApplySupported || result.ReadyForDestructiveApply || result.RuntimeRowsDeleted {
+		t.Fatalf("unexpected readiness mode flags: %+v", result)
+	}
+	if !result.ArchiveVerified || !result.ManifestVerified || !result.SnapshotPayloadVerified || !result.RuntimeScopeVerified {
+		t.Fatalf("expected verified archive/runtime scope, got %+v", result)
+	}
+	if !result.PendingEdgeToCloudOutbox || result.BlockingOutboxCount == 0 ||
+		!result.OpenOperationalBoundaries.Open ||
+		result.OpenOperationalBoundaries.OpenShifts == 0 ||
+		result.OpenOperationalBoundaries.OpenCashSessions == 0 {
+		t.Fatalf("expected outbox and open boundary blockers, got %+v", result)
+	}
+	if !result.ProtectedData.FinancialLedgerProtected ||
+		!result.ProtectedData.ImmutableSnapshotsProtected ||
+		!result.ProtectedData.LocalEventsProtected ||
+		!result.ProtectedData.OutboxProtected {
+		t.Fatalf("expected protected data flags, got %+v", result.ProtectedData)
+	}
+	if !containsString(result.BlockReasons, "destructive_apply_not_enabled") ||
+		!containsString(result.BlockReasons, "runtime_restore_apply_path_missing") ||
+		!containsString(result.BlockReasons, "pending_edge_to_cloud_outbox") ||
+		!containsString(result.BlockReasons, "open_operational_boundary") {
+		t.Fatalf("expected destructive/outbox/open boundary reasons, got %+v", result.BlockReasons)
+	}
+	assertProtectedStorageCounts(t, f, before, "apply-readiness")
+}
+
+func TestStorageArchiveApplyReadinessReportsSHAAndCountsMismatch(t *testing.T) {
+	f := newFixture(t)
+	_, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-readiness-mismatch-export"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "readiness mismatch fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := appendArchiveLine(exported.ArchivePath, `{"table":"unknown","row":{}}`); err != nil {
+		t.Fatal(err)
+	}
+	manifest := readArchiveManifest(t, exported.ManifestPath)
+	manifest.Counts.ClosedOrders++
+	writeArchiveManifest(t, exported.ManifestPath, manifest)
+
+	result, err := f.service.BuildStorageArchiveApplyReadiness(f.ctx, app.ArchiveApplyReadinessCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-readiness-mismatch"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             exported.ArchivePath,
+		ManifestPath:            exported.ManifestPath,
+		Mode:                    "plan_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ArchiveVerified || result.RuntimeScopeVerified || result.ReadyForDestructiveApply {
+		t.Fatalf("expected mismatched archive to fail readiness, got %+v", result)
+	}
+	if !containsString(result.BlockReasons, "archive_sha_mismatch") ||
+		!containsString(result.BlockReasons, "archive_manifest_counts_mismatch") ||
+		!containsString(result.BlockReasons, "archive_counts_mismatch") {
+		t.Fatalf("expected sha/count mismatch reasons, got %+v", result.BlockReasons)
 	}
 }
 

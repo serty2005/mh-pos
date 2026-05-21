@@ -202,6 +202,15 @@ type ArchiveApplyRuntimeScope struct {
 	BlockingOutboxMessages int
 }
 
+// ArchiveOpenOperationalBoundaries агрегирует открытые runtime boundaries,
+// которые блокируют будущий destructive apply/delete/compaction.
+type ArchiveOpenOperationalBoundaries struct {
+	ActiveOrders     int  `json:"active_orders"`
+	OpenShifts       int  `json:"open_shifts"`
+	OpenCashSessions int  `json:"open_cash_sessions"`
+	Open             bool `json:"open"`
+}
+
 // ArchiveVerificationSummary описывает результат streaming-проверки archive JSONL.
 type ArchiveVerificationSummary struct {
 	ArchivePath            string              `json:"archive_path,omitempty"`
@@ -395,4 +404,30 @@ type ArchiveApplyPlan struct {
 	OpenCashSessions          int                        `json:"open_cash_sessions"`
 	BlockingOutboxMessages    int                        `json:"blocking_outbox_messages"`
 	Verification              ArchiveVerificationSummary `json:"verification"`
+}
+
+// ArchiveApplyReadiness описывает отдельный read-only policy gate для будущего
+// destructive archive apply/delete/compaction без смешения с apply-plan.
+type ArchiveApplyReadiness struct {
+	GeneratedAt                    time.Time                         `json:"generated_at"`
+	CutoffBusinessDateLocal        string                            `json:"cutoff_business_date_local"`
+	ArchiveID                      string                            `json:"archive_id,omitempty"`
+	ArchiveSHA256                  string                            `json:"archive_sha256,omitempty"`
+	ResultMode                     string                            `json:"result_mode"`
+	DestructiveApplySupported      bool                              `json:"destructive_apply_supported"`
+	ReadyForDestructiveApply       bool                              `json:"ready_for_destructive_apply"`
+	RuntimeRowsDeleted             bool                              `json:"runtime_rows_deleted"`
+	ArchiveVerified                bool                              `json:"archive_verified"`
+	ManifestVerified               bool                              `json:"manifest_verified"`
+	SnapshotPayloadVerified        bool                              `json:"snapshot_payload_verified"`
+	RuntimeScopeVerified           bool                              `json:"runtime_scope_verified"`
+	BlockingOutboxCount            int                               `json:"blocking_outbox_count"`
+	PendingEdgeToCloudOutbox        bool                              `json:"pending_edge_to_cloud_outbox"`
+	OpenOperationalBoundaries       ArchiveOpenOperationalBoundaries  `json:"open_operational_boundaries"`
+	ProtectedData                  ArchivePlanProtectedFlags         `json:"protected_data"`
+	BlockReasons                   []string                          `json:"block_reasons"`
+	HumanSummary                   string                            `json:"human_summary"`
+	EligibleCounts                 ArchiveExportCounts               `json:"eligible_counts"`
+	ArchiveCounts                  ArchiveExportCounts               `json:"archive_counts"`
+	Verification                   ArchiveVerificationSummary        `json:"verification"`
 }

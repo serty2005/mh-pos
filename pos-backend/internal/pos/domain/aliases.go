@@ -308,6 +308,8 @@ type StorageArchivePlanTableManifest = storage.ArchivePlanTableManifest
 type StorageArchivePlanManifest = storage.ArchivePlanManifest
 type StorageArchiveExportPlan = storage.ArchiveExportPlan
 type StorageArchiveApplyPlan = storage.ArchiveApplyPlan
+type StorageArchiveOpenOperationalBoundaries = storage.ArchiveOpenOperationalBoundaries
+type StorageArchiveApplyReadiness = storage.ArchiveApplyReadiness
 
 const (
 	OutboxPending    = shared.OutboxPending

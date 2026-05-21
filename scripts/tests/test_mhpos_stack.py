@@ -91,6 +91,36 @@ class StackSmokeTest(unittest.TestCase):
         self.assertEqual(result["details"]["pos"]["status"], "passed")
         self.assertEqual(result["details"]["license"]["status"], "passed")
 
+    def test_storage_archive_apply_readiness_helper_uses_read_only_operation(self):
+        from mhpos_stack import build_storage_archive_apply_readiness
+
+        class StoragePOS(FakeClient):
+            def post(self, path, body=None, headers=None, expected_status=(200, 201)):
+                self.posts.append((path, body or {}, headers or {}, tuple(expected_status)))
+                if path == "/storage/archive/apply-readiness":
+                    return {
+                        "result_mode": "apply_readiness_only",
+                        "destructive_apply_supported": False,
+                        "runtime_rows_deleted": False,
+                        "block_reasons": ["destructive_apply_not_enabled"],
+                    }
+                return super().post(path, body=body, headers=headers, expected_status=expected_status)
+
+        pos = StoragePOS("pos")
+        result = build_storage_archive_apply_readiness(
+            pos,
+            "/tmp/archive.jsonl",
+            "/tmp/manifest.json",
+            "2026-05-04",
+            {"X-Session-ID": "session-1"},
+        )
+
+        self.assertEqual(result["result_mode"], "apply_readiness_only")
+        self.assertEqual(pos.posts[0][0], "/storage/archive/apply-readiness")
+        self.assertEqual(pos.posts[0][1]["mode"], "plan_only")
+        self.assertFalse(result["destructive_apply_supported"])
+        self.assertFalse(result["runtime_rows_deleted"])
+
     def test_license_pairing_suite_registers_resolves_and_checks_consumed_code(self):
         from mhpos_stack import StackContext, run_license_pairing_suite
 

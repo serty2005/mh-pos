@@ -162,12 +162,12 @@ func (r *Repository) BuildStorageArchiveExportScope(ctx context.Context, cutoffB
 		return storage.ArchiveExportScope{}, err
 	}
 	blockReasons := []string{
-		"destructive_apply_not_supported",
+		"destructive_apply_not_enabled",
 		"financial_ledger_protected",
 		"immutable_snapshots_protected",
 	}
 	if blocking > 0 {
-		blockReasons = append(blockReasons, "pending_edge_to_cloud_outbox_for_archive_scope")
+		blockReasons = append(blockReasons, "pending_edge_to_cloud_outbox")
 	}
 
 	scope := storage.ArchiveExportScope{

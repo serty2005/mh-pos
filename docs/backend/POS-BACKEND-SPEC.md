@@ -95,6 +95,7 @@
 - `POST /api/v1/storage/archive/read-plan`
 - `POST /api/v1/storage/archive/lookup`
 - `POST /api/v1/storage/archive/apply-plan`
+- `POST /api/v1/storage/archive/apply-readiness`
 
 ## Текущие Optional Reads
 
@@ -176,6 +177,8 @@ Operational activity/sync read contract:
 - Archive apply-plan response всегда возвращает `result_mode = apply_blocked`, `destructive_apply_supported = false`, `runtime_rows_deleted = false`, `blocked = true`, `eligible_counts`, `archive_counts`, protected flags, verification summary и machine-readable `block_reasons`.
 - Apply-plan verification читает manifest, проверяет `version = pos_storage_archive_export_v1`, streaming-считает SHA-256 и rows по table из JSONL без загрузки всего archive payload в память, сверяет archive counts с manifest и текущим eligible runtime scope по `checks.business_date_local < cutoff`, проверяет наличие snapshot payload в `prechecks`/`checks`, required identity fields, business-date range/exclusive cutoff consistency, `runtime_rows_deleted = false` и summary-only payload policy.
 - Apply-plan blockers включают `archive_manifest_missing`, `archive_manifest_version_mismatch`, `archive_sha_mismatch`, `archive_manifest_counts_mismatch`, `archive_counts_mismatch`, `pending_edge_to_cloud_outbox`, `open_operational_boundary`, `archive_snapshot_payload_missing`, `destructive_apply_not_enabled`, `runtime_restore_apply_path_missing`; невалидный или будущий cutoff возвращается как blocked plan с `invalid_cutoff` или `future_cutoff`.
+- Реализовано сейчас: `POST /api/v1/storage/archive/apply-readiness` принимает тот же read-only input, что apply-plan, и возвращает отдельный policy gate для будущего destructive apply/delete/compaction.
+- Archive apply-readiness response всегда возвращает `result_mode = apply_readiness_only`, `destructive_apply_supported = false`, `ready_for_destructive_apply = false`, `runtime_rows_deleted = false`, `archive_verified`, `manifest_verified`, `snapshot_payload_verified`, `runtime_scope_verified`, `blocking_outbox_count`, `pending_edge_to_cloud_outbox`, `open_operational_boundaries`, `protected_data`, `eligible_counts`, `archive_counts`, verification summary и `block_reasons`.
 - `local_event_log` и `pos_sync_outbox` в archive export включаются только как summary/reference rows без `payload_json`; payload остается в active DB, чтобы не выносить потенциально sensitive sync/event data в архивный файл.
 - Все storage lifecycle endpoints требуют operator session с `pos.sync.view`; UI visibility не является security boundary.
 - Текущий retention mode равен `dry_run_only`: response всегда помечает destructive apply как unsupported, ledger/snapshots как protected и возвращает block reason `dry_run_only_no_archive_policy`. Active orders, open shifts, open cash sessions и non-sent `edge_to_cloud` outbox messages возвращаются как blockers для будущего destructive apply; outbox добавляет `pending_edge_to_cloud_outbox`.

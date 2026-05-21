@@ -75,6 +75,16 @@ type ArchiveApplyPlanCommand struct {
 	Mode                    string `json:"mode"`
 }
 
+// ArchiveApplyReadinessCommand агрегирует archive/runtime readiness без destructive apply.
+type ArchiveApplyReadinessCommand struct {
+	shared.CommandMeta
+	ArchiveID               string `json:"archive_id"`
+	CutoffBusinessDateLocal string `json:"cutoff_business_date_local"`
+	ArchivePath             string `json:"archive_path"`
+	ManifestPath            string `json:"manifest_path"`
+	Mode                    string `json:"mode"`
+}
+
 // ArchiveVerifyCommand явно проверяет ранее экспортированный archive artifact без изменения runtime rows.
 type ArchiveVerifyCommand struct {
 	shared.CommandMeta
@@ -320,6 +330,22 @@ func (s *Service) BuildArchiveApplyPlan(ctx context.Context, cmd ArchiveApplyPla
 	return result, nil
 }
 
+// BuildArchiveApplyReadiness возвращает отдельный read-only policy verdict для будущего destructive apply.
+func (s *Service) BuildArchiveApplyReadiness(ctx context.Context, cmd ArchiveApplyReadinessCommand) (domainstorage.ArchiveApplyReadiness, error) {
+	plan, err := s.BuildArchiveApplyPlan(ctx, ArchiveApplyPlanCommand{
+		CommandMeta:             cmd.CommandMeta,
+		ArchiveID:               cmd.ArchiveID,
+		CutoffBusinessDateLocal: cmd.CutoffBusinessDateLocal,
+		ArchivePath:             cmd.ArchivePath,
+		ManifestPath:            cmd.ManifestPath,
+		Mode:                    cmd.Mode,
+	})
+	if err != nil {
+		return domainstorage.ArchiveApplyReadiness{}, err
+	}
+	return archiveApplyReadinessFromPlan(plan), nil
+}
+
 // VerifyArchive проверяет manifest/JSONL artifact и не обращается к active runtime tables.
 func (s *Service) VerifyArchive(ctx context.Context, cmd ArchiveVerifyCommand) (domainstorage.ArchiveVerifyResult, error) {
 	if _, err := shared.EnsureOperatorSession(ctx, s.auth, cmd.CommandMeta, string(shared.PermissionSyncView)); err != nil {
@@ -476,6 +502,52 @@ func retentionCapability() domainstorage.RetentionCapability {
 		ImmutableSnapshotsProtected: true,
 		Reason:                      retentionDryRunOnlyReason,
 	}
+}
+
+func archiveApplyReadinessFromPlan(plan domainstorage.ArchiveApplyPlan) domainstorage.ArchiveApplyReadiness {
+	verification := plan.Verification
+	openBoundaries := domainstorage.ArchiveOpenOperationalBoundaries{
+		ActiveOrders:     plan.ActiveOrders,
+		OpenShifts:       plan.OpenShifts,
+		OpenCashSessions: plan.OpenCashSessions,
+	}
+	openBoundaries.Open = openBoundaries.ActiveOrders > 0 || openBoundaries.OpenShifts > 0 || openBoundaries.OpenCashSessions > 0
+	runtimeScopeVerified := !containsString(plan.BlockReasons, "invalid_cutoff") &&
+		!containsString(plan.BlockReasons, "future_cutoff") &&
+		!containsString(plan.BlockReasons, "archive_counts_mismatch")
+	readiness := domainstorage.ArchiveApplyReadiness{
+		GeneratedAt:               plan.GeneratedAt,
+		CutoffBusinessDateLocal:   plan.CutoffBusinessDateLocal,
+		ArchiveID:                 plan.ArchiveID,
+		ArchiveSHA256:             plan.ArchiveSHA256,
+		ResultMode:                "apply_readiness_only",
+		DestructiveApplySupported: false,
+		ReadyForDestructiveApply:  false,
+		RuntimeRowsDeleted:        false,
+		ArchiveVerified: verification.ArchiveExists &&
+			verification.SHA256Matched &&
+			verification.CountsMatchedManifest &&
+			verification.IdentityFieldsPresent &&
+			verification.BusinessDateConsistent &&
+			verification.RuntimeRowsNotDeleted &&
+			verification.PayloadPolicyPreserved,
+		ManifestVerified:        verification.ManifestExists && verification.ManifestVersionMatched,
+		SnapshotPayloadVerified: verification.SnapshotPayloadPresent,
+		RuntimeScopeVerified:    runtimeScopeVerified,
+		BlockingOutboxCount:     plan.BlockingOutboxMessages,
+		PendingEdgeToCloudOutbox: plan.BlockingOutboxMessages > 0,
+		OpenOperationalBoundaries: openBoundaries,
+		ProtectedData:             plan.Protected,
+		BlockReasons:              plan.BlockReasons,
+		HumanSummary:              "destructive archive apply is disabled; readiness is informational and runtime rows remain protected",
+		EligibleCounts:            plan.EligibleCounts,
+		ArchiveCounts:             plan.ArchiveCounts,
+		Verification:              verification,
+	}
+	if containsString(plan.BlockReasons, "archive_snapshot_payload_missing") {
+		readiness.SnapshotPayloadVerified = false
+	}
+	return readiness
 }
 
 func (s *Service) planCutoff(raw string, result *domainstorage.ArchiveApplyPlan) (string, bool) {
@@ -1227,4 +1299,13 @@ func appendUnique(values []string, next string) []string {
 		}
 	}
 	return append(values, next)
+}
+
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
 }

@@ -110,6 +110,7 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/storage/archive/read-plan", h.storageArchiveReadPlan)
 		r.Post("/storage/archive/lookup", h.storageArchiveLookup)
 		r.Post("/storage/archive/apply-plan", h.storageArchiveApplyPlan)
+		r.Post("/storage/archive/apply-readiness", h.storageArchiveApplyReadiness)
 	})
 
 	return r
@@ -1050,6 +1051,17 @@ func (h *Handler) storageArchiveApplyPlan(w http.ResponseWriter, r *http.Request
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.BuildStorageArchiveApplyPlan(r.Context(), cmd)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) storageArchiveApplyReadiness(w http.ResponseWriter, r *http.Request) {
+	var cmd app.ArchiveApplyReadinessCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.BuildStorageArchiveApplyReadiness(r.Context(), cmd)
 	writeOK(w, r, v, err)
 }
 

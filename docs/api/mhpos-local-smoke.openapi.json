@@ -1038,6 +1038,43 @@
         }
       }
     },
+    "/storage/archive/apply-readiness": {
+      "post": {
+        "operationId": "buildStorageArchiveApplyReadiness",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "archive_id": {
+                    "type": "string"
+                  },
+                  "cutoff_business_date_local": {
+                    "type": "string"
+                  },
+                  "manifest_path": {
+                    "type": "string"
+                  },
+                  "archive_path": {
+                    "type": "string"
+                  },
+                  "mode": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Read-only archive apply readiness gate"
+          }
+        }
+      }
+    },
     "/sync/status": {
       "get": {
         "operationId": "getSyncStatus",

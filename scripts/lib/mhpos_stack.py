@@ -1041,6 +1041,21 @@ def storage_status_details(status):
     }
 
 
+def build_storage_archive_apply_readiness(pos_client, archive_path, manifest_path, cutoff_business_date_local, headers, archive_id=""):
+    return call(
+        pos_client,
+        "buildStorageArchiveApplyReadiness",
+        {
+            "archive_id": archive_id,
+            "archive_path": archive_path,
+            "manifest_path": manifest_path,
+            "cutoff_business_date_local": cutoff_business_date_local,
+            "mode": "plan_only",
+        },
+        headers=headers,
+    )
+
+
 def post_pairing_timeout_message(sync_status):
     status = sync_status.get("sync_status", {}) if isinstance(sync_status, dict) else {}
     outbox = sync_status.get("outbox", []) if isinstance(sync_status, dict) else []

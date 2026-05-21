@@ -89,6 +89,7 @@ class OpenAPIContractTest(unittest.TestCase):
             "recordCheckRefund": ("POST", "/checks/check-1/refunds", {"command_id": "cmd-9", "operation_kind": "full", "inventory_disposition": "no_stock_effect", "reason": "smoke"}),
             "listCheckFinancialOperations": ("GET", "/checks/check-1/financial-operations", None),
             "getStorageStatus": ("GET", "/storage/status", None),
+            "buildStorageArchiveApplyReadiness": ("POST", "/storage/archive/apply-readiness", {"archive_path": "/tmp/archive.jsonl", "manifest_path": "/tmp/manifest.json", "cutoff_business_date_local": "2026-05-04", "mode": "plan_only"}),
         }
 
         for operation_id, (method, path, body) in checks.items():

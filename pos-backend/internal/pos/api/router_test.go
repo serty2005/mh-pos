@@ -1098,6 +1098,74 @@ func TestStorageArchiveApplyPlanAPIRequiresSyncViewAndReturnsBlockedPlan(t *test
 	}
 }
 
+func TestStorageArchiveApplyReadinessAPIRequiresSyncViewAndReturnsReadOnlyGate(t *testing.T) {
+	f := newAPIFixture(t)
+	order := f.createOrderWithLine(t)
+	f.openCashSession(t)
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMeta(), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	f.makeOrderOlderThanArchiveCutoff(t, order.ID)
+	cashier := f.employee
+	cashierSession := f.session
+	f.useManagerOperator(t)
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.edgeMeta(),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "api apply readiness fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := f.employee
+	managerSession := f.session
+	body := struct {
+		CutoffBusinessDateLocal string `json:"cutoff_business_date_local"`
+		ArchivePath             string `json:"archive_path"`
+		ManifestPath            string `json:"manifest_path"`
+		Mode                    string `json:"mode"`
+	}{
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             exported.ArchivePath,
+		ManifestPath:            exported.ManifestPath,
+		Mode:                    "plan_only",
+	}
+	rawBody, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f.employee = cashier
+	f.session = cashierSession
+	rr := f.postJSON(t, "/api/v1/storage/archive/apply-readiness", string(rawBody))
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cashier archive apply-readiness, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	f.employee = manager
+	f.session = managerSession
+	rr = f.postJSON(t, "/api/v1/storage/archive/apply-readiness", string(rawBody))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for manager archive apply-readiness, got %d: %s", rr.Code, rr.Body.String())
+	}
+	result := decodeAPIResponse[domain.StorageArchiveApplyReadiness](t, rr)
+	if result.ResultMode != "apply_readiness_only" || result.DestructiveApplySupported || result.ReadyForDestructiveApply || result.RuntimeRowsDeleted {
+		t.Fatalf("unexpected archive apply-readiness response: %+v", result)
+	}
+	if !result.ArchiveVerified || !result.ManifestVerified || !result.SnapshotPayloadVerified ||
+		!result.PendingEdgeToCloudOutbox || !result.OpenOperationalBoundaries.Open {
+		t.Fatalf("expected verified archive and runtime blockers, got %+v", result)
+	}
+	if !apiContainsString(result.BlockReasons, "destructive_apply_not_enabled") ||
+		!apiContainsString(result.BlockReasons, "runtime_restore_apply_path_missing") {
+		t.Fatalf("expected blocked-by-default readiness reasons, got %+v", result.BlockReasons)
+	}
+}
+
 func TestStorageArchiveReadPlanAndLookupAPIRequireSyncView(t *testing.T) {
 	f := newAPIFixture(t)
 	order := f.createOrderWithLine(t)
