@@ -55,8 +55,10 @@
 
 ## Главные документы
 
+- `docs/CURRENT-FUNCTIONAL-STATE.md` — сводка фактически реализованного функционала, тестового покрытия и границ текущего runtime.
 - `SPECv1.3.md` — frozen cashier pilot contract до первого pilot.
 - `ROADMAP.md` — статусы, блокеры и следующий план.
+- `docs/backend/CLOUD-BACKEND-SPEC.md` — фактический Cloud backend contract.
 - `docs/backend/POS-BACKEND-SPEC.md` — фактический POS backend contract.
 - `docs/backend/POS-DATA-AND-MIGRATIONS.md` — SQLite/PostgreSQL schema и migration policy.
 - `docs/ui/POS-UI-SPEC.md` — фактический cashier UI contract.

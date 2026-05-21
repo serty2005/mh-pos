@@ -2,6 +2,8 @@
 
 Cloud backend для POS/RMS платформы: прием Edge operational events, PostgreSQL runtime projections и foundation Cloud-authored master data.
 
+Профильный контракт Cloud Backend описан в `../docs/backend/CLOUD-BACKEND-SPEC.md`.
+
 Текущий scope:
 
 - Go HTTP entrypoint: `cmd/cloud-api`;
