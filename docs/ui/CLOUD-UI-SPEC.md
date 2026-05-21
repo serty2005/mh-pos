@@ -20,6 +20,7 @@
 
 - вывести связи `catalog item -> menu item -> modifier bindings -> pricing policies` как единый сценарий подготовки продажи;
 - показывать версии опубликованного пакета и состояние доставки на Edge, когда backend подтвердит такой контракт.
+- до полного пилота превратить Cloud UI в полноценное менеджерское web app: recipes, stop-list, catalog/recipe proposal review, inventory operations, costing status, ClickHouse export readiness, OLAP API diagnostics и безопасную диагностику sync/problem events;
 
 вне текущего объема:
 
@@ -55,13 +56,25 @@
 - `GET /api/v1/restaurants/{id}/master-data/publication-state` возвращает `200 null` до первой публикации выбранного ресторана; Cloud UI трактует это как empty state панели публикации, а не как ошибку browser console;
 - отдельный раздел `События от Edge`, который читает `GET /api/v1/sync/edge-events` и показывает только безопасные receipt metadata без raw payload.
 
-вне текущего объема:
+запланировано до полного пилота:
 
-- KDS;
+- recipes editor: owner catalog item, component catalog item, quantity, unit, loss percent;
+- recipe change review queue: diff по ingredients, quantities, units, loss percent, prep time delta и approve/reject actions;
+- catalog suggestion review queue: create/update proposal из Edge receipt flow, duplicate hints, linked receipt line и approve/reject actions;
+- stop-list panel: catalog item, active toggle, optional available quantity, reason, source/status;
+- inventory operations workspace: stock receipts, inventory counts, production completion input, stock ledger/balances and costing/recalculation status;
+- ClickHouse/OLAP workspace: export health, retry/backfill controls and read-only OLAP endpoint previews;
+- launch readiness должен учитывать stop-list review и публикацию streams `recipes`/`stop_lists`;
+- publication panel должен показывать latest package version, target Edge node и статус доставки/ACK, когда backend contract готов;
+- Edge events/problem events panel должен показывать accepted/rejected/retryable metadata без raw payload.
+
+вне текущего объема полного пилота:
+
+- KDS runtime screens в Cloud UI;
 - PSP;
 - fiscalization;
-- inventory runtime;
-- recipe consumption;
+- ERP/accounting integrations;
+- rich BI dashboards beyond pilot OLAP endpoint previews;
 - delivery;
 - cashier runtime;
 - POS order/payment/check/precheck flows.
@@ -87,6 +100,7 @@
 - command-only разделы не показывают неподтвержденную таблицу;
 - Cloud UI показывает безопасные локализованные ошибки возле активного failed step с recovery action: retry, select restaurant или open related section; message key, support code, correlation id и безопасные details выводятся без raw payload;
 - раздел входящих Edge events выводит event metadata и checksum, но не показывает raw payload, sensitive request dumps или payload-derived финансовые details;
+- UX ориентиры полного пилота зафиксированы в `docs/ui/PILOT-UX-MARKET-REVIEW.md`; business workflows не должны требовать ручного ввода UUID/raw JSON для обычного менеджерского сценария;
 - пользовательские тексты идут через `vue-i18n`.
 
 ## API
@@ -98,6 +112,8 @@
 - `cloud-backend/internal/cloudsync/api/router.go` для безопасного списка входящих Edge events.
 
 Для entities без подтвержденного `GET list` route UI показывает форму команды и поясняет, что list route не подтвержден.
+
+запланировано до полного пилота: после добавления Cloud backend routes API client должен покрыть `recipes`, `stop-lists`, inventory operations, costing/recalculation status, ClickHouse export status и OLAP read endpoints; UI не должен вызывать неподтвержденные endpoints до появления backend contract.
 
 ## Runtime Code
 

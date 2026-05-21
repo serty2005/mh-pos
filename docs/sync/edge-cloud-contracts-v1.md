@@ -1,6 +1,6 @@
 # Edge / Cloud Sync Contracts v1
 
-Статус: актуализировано под frozen cashier pilot.
+Статус: актуализировано под текущий cashier runtime и целевой полный пилот.
 
 ## Direction Model
 
@@ -10,6 +10,7 @@
 - Cloud owns master/reference/configuration authoring.
 - POS Edge can continue cashier runtime while Cloud is unavailable.
 - Directional ownership matrix is maintained in `docs/sync/directional-sync-ownership.md`.
+- Запланировано до полного пилота: POS Edge также генерирует waiter/kitchen inventory facts, а Cloud publishes recipe/stop-list reference data для offline sale blocking.
 
 ## SyncExchange v1
 
@@ -193,6 +194,13 @@ Request body shape currently supported by POS Edge:
 - Целевая inventory architecture требует Cloud -> Edge packages для read-only `recipe_versions`/`recipe_lines` и `stop_lists`.
 - Эти streams нельзя документировать как реализованный POS Edge runtime ingest, пока `mastersync.Service` не применяет их payloads.
 
+Запланировано до полного пилота:
+
+- `recipes` stream применяет `recipe_versions` и `recipe_lines`;
+- `stop_lists` stream применяет active/inactive stop-list overlay rows;
+- оба stream используют existing `cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at` metadata и `cloud_master_sync_state`;
+- failed package фиксируется как failed stream без отката accepted Edge -> Cloud ACK.
+
 ## Edge -> Cloud Operational Events
 
 Реализовано сейчас:
@@ -200,7 +208,7 @@ Request body shape currently supported by POS Edge:
 - POS Edge пишет local operational events и outbox rows для cashier runtime commands.
 - Детали sender/cloud receiver являются implementation-specific; документация не должна обещать Cloud reporting semantics для events, которых нет в подтвержденном Edge -> Cloud catalog.
 
-Freezed Principle для дальнейшей реализации:
+Замороженный принцип для дальнейшей реализации:
 
 ```text
 Edge Outbox
@@ -252,8 +260,11 @@ StockDocumentPosted
 
 ```text
 CheckClosed
+KitchenTicketStatusChanged
 ItemServed
 StockReceiptCaptured
+CatalogItemChangeSuggested
+RecipeChangeSuggested
 InventoryCountCaptured
 ProductionCompleted
 RefundRecorded
@@ -288,7 +299,7 @@ Cancellation/refund sync behavior:
 
 ### Inventory Event Payloads Target
 
-Запланировано далее. Все payloads передаются внутри стандартного sync envelope в `payload.data`.
+Запланировано до полного пилота для всех inventory/KDS/proposal payloads, необходимых полному Cloud Inventory Engine и ClickHouse OLAP: `CheckClosed`, `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `InventoryCountCaptured`, `ProductionCompleted`, `StopListUpdated`, `RefundRecorded`, `CancellationRecorded`. Все payloads передаются внутри стандартного sync envelope в `payload.data`.
 
 `CheckClosed` является финальным batch-delta trigger:
 
@@ -330,6 +341,49 @@ Cancellation/refund sync behavior:
 }
 ```
 
+`KitchenTicketStatusChanged` фиксирует advanced KDS lifecycle без прямой складской проводки:
+
+```json
+{
+  "status_event_id": "018f0000-0000-7000-8000-000000000111",
+  "restaurant_id": "018f0000-0000-7000-8000-000000000004",
+  "order_id": "018f0000-0000-7000-8000-000000000002",
+  "order_line_id": "018f0000-0000-7000-8000-000000000010",
+  "station_id": "kitchen-hot",
+  "from_status": "accepted",
+  "to_status": "in_progress",
+  "changed_by_employee_id": "018f0000-0000-7000-8000-000000000112",
+  "changed_at": "2026-05-19T12:12:00Z",
+  "reason": null
+}
+```
+
+Допустимые KDS statuses полного пилота: `new`, `accepted`, `in_progress`, `hold`, `ready`, `served`, `recall`, `cancelled`. Переход `served` должен сопровождаться `ItemServed`.
+
+`StockReceiptCaptured`, `CatalogItemChangeSuggested` и `RecipeChangeSuggested` создают Cloud worker review/apply flow:
+
+```json
+{
+  "event_type": "RecipeChangeSuggested",
+  "suggestion_id": "018f0000-0000-7000-8000-000000000311",
+  "restaurant_id": "018f0000-0000-7000-8000-000000000004",
+  "recipe_version_id": "018f0000-0000-7000-8000-000000000312",
+  "prep_time_delta_minutes": 5,
+  "changes": [
+    {
+      "action": "replace_ingredient",
+      "from_catalog_item_id": "018f0000-0000-7000-8000-000000000314",
+      "to_catalog_item_id": "018f0000-0000-7000-8000-000000000315",
+      "quantity": "0.120",
+      "unit_code": "KG",
+      "loss_percent": "3.00"
+    }
+  ]
+}
+```
+
+Cloud worker не применяет `CatalogItemChangeSuggested`/`RecipeChangeSuggested` к master data без explicit policy или manager approve. `RecipeChangeSuggested.prep_time_delta_minutes` валидируется по `recipe_suggestion_max_time_delta_minutes`.
+
 `RefundRecorded` и `CancellationRecorded` сейчас передают operation-level disposition, а не disposition по каждой строке:
 
 ```json
@@ -365,6 +419,7 @@ Cancellation/refund sync behavior:
   "available_quantity": "0.000",
   "active": true,
   "source": "edge",
+  "conflict_policy": "most_restrictive",
   "reason": "ingredient_unavailable",
   "updated_at": "2026-05-19T12:05:00Z"
 }
@@ -383,23 +438,39 @@ Cancellation/refund sync behavior:
 
 - inventory consumption events;
 - stop-list sync;
-- KDS runtime для генерации `ItemServed` / `ProductionCompleted`;
+- KDS runtime для генерации `KitchenTicketStatusChanged` / `ItemServed` / `ProductionCompleted`;
+- proposal events `CatalogItemChangeSuggested` и `RecipeChangeSuggested`;
 - recipe expansion, modifier linked catalog item consumption и retro costing DAG;
+- ClickHouse forwarder/projection export and bounded OLAP API;
 - PSP/fiscal event streams.
+
+Запланировано до полного пилота:
+
+- POS Edge генерирует `CheckClosed` при создании final check;
+- advanced KDS генерирует `KitchenTicketStatusChanged`, `ItemServed` и cooking events;
+- chef receipt/catalog/recipe proposal flows генерируют `StockReceiptCaptured`, `CatalogItemChangeSuggested` и `RecipeChangeSuggested`;
+- stop-list changes синхронизируются через Cloud -> Edge packages и, если включен Edge manager input, через `StopListUpdated`;
+- Cloud Inventory Worker дедуплицирует `ItemServed` и `CheckClosed` для одной order line;
+- Cloud Inventory Worker обрабатывает receipts, counts, production, sale consumption, refund/cancellation dispositions, balances and costing;
+- ClickHouse pipeline экспортирует `raw_business_events` and `olap_stock_moves`, а Cloud OLAP API читает bounded aggregates.
 
 ## Запланированные Границы
 
-Запланировано до пилота только при отдельном принятии:
+Запланировано до полного пилота:
 
 - Cloud-authored pricing/tax UI и полный publication workflow поверх generic `pricing_policy` package storage/apply;
-- modifier print/reporting projections if pilot acceptance requires them;
+- `recipes`/`stop_lists` Cloud -> Edge streams;
+- `CheckClosed`/`KitchenTicketStatusChanged`/`ItemServed` pilot inventory and KDS facts;
+- `CatalogItemChangeSuggested`/`RecipeChangeSuggested` review queues;
+- full inventory event catalog and Cloud Inventory Engine;
+- ClickHouse `raw_business_events`, `olap_stock_moves`, retry/backfill/export state and OLAP API;
+- stop-list sale blocking smoke через offline Edge.
 
-После пилота:
+После полного пилота:
 
-- KDS/Production events as Edge business facts, not Edge stock moves;
-- Cloud-generated inventory stock documents/moves;
+- hardware bump-bar/printer integrations and rich BI dashboards beyond bounded OLAP/KDS metrics;
 - PSP/fiscal integration events;
-- public Cloud financial operation reporting API/UI over current projection and optional ClickHouse acceleration.
+- public Cloud reporting UI beyond pilot OLAP API.
 
 ## Pricing policy stream completeness
 

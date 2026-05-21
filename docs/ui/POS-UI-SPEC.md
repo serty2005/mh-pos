@@ -1,6 +1,6 @@
 # POS UI Spec
 
-Статус: актуальный cashier UI contract для frozen pilot.
+Статус: актуальный cashier UI contract и целевой POS UI contract для полного пилота.
 
 UI не является security boundary. Backend RBAC и application-layer checks остаются авторитетными.
 
@@ -65,8 +65,8 @@ UI calls backend APIs for authoritative state and does not compute authoritative
 
 Refund:
 
-- Backend ledger capability is implemented through `POST /api/v1/checks/{id}/cancellations` and `POST /api/v1/checks/{id}/refunds`.
-- Backend ledger read capability for closed-order detail is implemented through bounded `GET /api/v1/checks/{id}/financial-operations`; backend also exposes bounded `GET /api/v1/financial-operations` for local reporting filters, but POS UI does not compute authoritative totals from it.
+- Backend ledger capability реализован через `POST /api/v1/checks/{id}/cancellations` и `POST /api/v1/checks/{id}/refunds`.
+- Backend ledger read capability для closed-order detail реализован через bounded `GET /api/v1/checks/{id}/financial-operations`; backend also exposes bounded `GET /api/v1/financial-operations` for local reporting filters, но POS UI не считает authoritative totals из него.
 - Cashier UI has full whole-check cancellation through `POST /api/v1/checks/{id}/cancellations` guarded by `pos.precheck.cancel` and an open current cash session that belongs to the original shift.
 - Cashier UI has full whole-check refund through `POST /api/v1/checks/{id}/refunds` guarded by `pos.payment.refund`, captured payment presence and an open current cash session different from the original payment shift.
 - Диалог cancellation/refund отправляет `command_id`, reason, выбранный `inventory_disposition` и `operation_kind`. Whole-check режим не отправляет `items[]`; partial `order_line`/quantity режим строит выбор из immutable `check.snapshot.precheck_snapshot.lines` и отправляет `items[]` со scope `order_line`, `order_line_id`, `quantity`, `amount`, `currency` и `tax_amount`.
@@ -81,7 +81,7 @@ Refund:
 
 Reprint:
 
-- Backend precheck/check reprint is implemented from immutable snapshots.
+- Backend precheck/check reprint реализован из immutable snapshots.
 - UI has reprint actions guarded by `pos.precheck.reprint` and `pos.check.reprint`.
 - UI displays copy readiness through i18n text, not hardcoded source strings outside locale.
 - Cancel/refund dialogs use safe operator wording through i18n and do not expose raw backend details, PIN, SQL or stack traces.
@@ -156,6 +156,16 @@ Requirements:
 - Разделы `Доставка` и `Настройки` пока используют существующие безопасные placeholder/utility surfaces до появления отдельных backend/API contracts.
 - Основные route components загружаются через lazy imports/code splitting, чтобы снизить нагрузку на initial bundle.
 
+Запланировано до полного пилота:
+
+- `/pos/waiter` должен перейти от route shell к mobile-first интерфейсу официанта;
+- `/pos/waiter` является единственным mobile layout полного пилота: остальные modes не получают мобильные варианты;
+- `/pos/kitchen` должен перейти от route shell к advanced KDS lifecycle screen;
+- `/pos/manager` остается вне POS UI runtime, если manager операции полностью покрыты Cloud UI;
+- waiter UI переиспользует backend order/precheck APIs, но не показывает payment/refund/cash drawer controls без соответствующих permissions;
+- kitchen UI читает kitchen tickets, показывает статусы `new`, `accepted`, `in_progress`, `hold`, `ready`, `served`, `recall`, `cancelled` и отправляет status actions, которые backend превращает в `KitchenTicketStatusChanged`/`ItemServed`;
+- kitchen UI дает повару сценарии приемки поставки, catalog suggestion, просмотра техкарты, `RecipeChangeSuggested` и редактирования stop-list через backend routes.
+
 ## POS Shell Visual Contract
 
 Реализовано сейчас:
@@ -173,19 +183,30 @@ Requirements:
 
 Вне текущего объема:
 
-- `/pos/waiter`, `/pos/kitchen` и `/pos/manager` являются только route shells. Они не реализуют waiter mobile, KDS или manager runtime без backend/API contracts.
+- Реализовано сейчас: `/pos/waiter`, `/pos/kitchen` и `/pos/manager` являются только route shells.
+- Запланировано до полного пилота: `/pos/waiter` и `/pos/kitchen` становятся рабочими runtime routes после появления backend/API contracts.
 
 ## Вне Текущего Объема
 
-Вне текущего cashier pilot UI:
+Вне текущего объема полного пилота:
 
-- KDS runtime screens;
 - delivery/channel screens;
 - real PSP terminal integration UI;
 - fiscal device operation UI;
-- full inventory/procurement UI;
+- Cloud inventory/procurement back-office UI inside POS UI;
+- hardware bump-bar/printer UI and rich KDS analytics beyond bounded pilot timing metrics;
 - rich partial cancellation/refund ledger UI beyond current order-line/quantity actions;
 - discount/surcharge cashier editor and tax policy UI on top of existing backend pricing foundation.
+
+## Full Pilot POS UI Acceptance
+
+Запланировано до полного пилота:
+
+- waiter mobile viewport `390x844`: login, table selection, active order creation, menu/modifier selection, quantity change, void line, issue/reprint precheck, no payment controls by default;
+- kitchen tablet/desktop viewport: ticket list by station/status, accept/start/hold/ready/served/recall/cancel actions, receipt capture, recipe suggestion, stop-list edit, safe localized error handling and sync pending indicator;
+- cashier/KDS/manager routes are checked at desktop/tablet widths only; mobile acceptance belongs to waiter route;
+- cashier regression: current cashier flow remains unchanged and still passes payment/refund/sync e2e tests;
+- all new labels, empty states, errors and dialog text are added through `vue-i18n`.
 
 ## Выбор скидок и надбавок по policy
 

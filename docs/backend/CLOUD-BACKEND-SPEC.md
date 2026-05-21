@@ -1,6 +1,6 @@
 # Cloud Backend Spec
 
-Статус: актуальный Cloud backend contract для frozen cashier pilot на 2026-05-21.
+Статус: актуальный Cloud backend contract для текущего cashier runtime и целевого полного пилота на 2026-05-21.
 
 Код, миграции и тесты являются источником истины для фактически реализованного runtime. Этот документ описывает текущий Cloud Backend, восстановленные архитектурные решения и границы, но не документирует будущую функциональность как реализованную.
 
@@ -42,9 +42,21 @@
 Вне текущего объема:
 
 - production auth/RBAC perimeter для Cloud API;
-- публичный Cloud reporting API/UI по detailed financial operation projection;
-- Async ClickHouse forwarder;
-- full recipe/costing inventory engine beyond normalized event item processing.
+- публичный Cloud reporting UI beyond pilot OLAP API;
+
+Запланировано до полного пилота:
+
+- Cloud authoring для `cloud_recipe_items` и `stop_lists`;
+- публикация streams `recipes` и `stop_lists` в Cloud -> Edge packages;
+- projection update для `StopListUpdated` из Edge/Cloud без raw payload exposure;
+- review/apply очереди для `CatalogItemChangeSuggested` и `RecipeChangeSuggested`, созданных kitchen worker на Edge;
+- обработка `KitchenTicketStatusChanged`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested` и `StopListUpdated` как business events без synchronous apply в request path;
+- параметр `stop_list_conflict_policy` для порядка применения Cloud-authored stop-list и Edge overlay;
+- readiness API/UI signals для stop-list publication, Edge ACK и sync problem events;
+- поддержка `CheckClosed`/`ItemServed` как pilot inventory facts через текущий receiver и Inventory Worker;
+- full inventory engine для receipts, counts, production, consumption, refund/cancellation dispositions, balances, costing и retro recalculation;
+- ClickHouse runtime: async forwarder, `raw_business_events`, `olap_stock_moves`, retry/backfill/export checkpoints;
+- bounded read-only Cloud OLAP API для event archive, stock moves, sales aggregates, COGS/margin и kitchen timing.
 
 ## Назначение
 
@@ -62,7 +74,9 @@
 - Cloud не выполняет cashier runtime commands: заказы, предчеки, оплаты и чеки создаются на POS Edge.
 - Cloud не является платежным процессором и не выполняет fiscalization.
 - Cloud не принимает POS operator session как security boundary.
-- Cloud не использует ClickHouse в текущем runtime.
+- Cloud не использует ClickHouse в текущем runtime, но ClickHouse является обязательным компонентом полного пилота.
+- Cloud пока не предоставляет pilot-ready CRUD для recipes/stop-list и не публикует эти streams как поддерживаемый POS Edge ingest.
+- Cloud пока не предоставляет review/apply runtime для Edge-originated catalog/recipe proposals.
 
 ## Runtime Modules
 
@@ -181,6 +195,19 @@ Master data under canonical namespace:
 - `POST /api/v1/master-data/pricing/policies`
 - `GET /api/v1/master-data/pricing/policies`
 - `PATCH /api/v1/master-data/pricing/policies/{id}`
+- Запланировано до полного пилота:
+  - `POST /api/v1/master-data/recipes`
+  - `GET /api/v1/master-data/recipes`
+  - `PATCH /api/v1/master-data/recipes/{id}`
+  - `GET /api/v1/master-data/recipe-change-suggestions`
+  - `POST /api/v1/master-data/recipe-change-suggestions/{id}/approve`
+  - `POST /api/v1/master-data/recipe-change-suggestions/{id}/reject`
+  - `GET /api/v1/master-data/catalog-suggestions`
+  - `POST /api/v1/master-data/catalog-suggestions/{id}/approve`
+  - `POST /api/v1/master-data/catalog-suggestions/{id}/reject`
+  - `POST /api/v1/master-data/stop-lists`
+  - `GET /api/v1/master-data/stop-lists`
+  - `PATCH /api/v1/master-data/stop-lists/{id}`
 - `POST /api/v1/master-data/menu/categories`
 - `POST /api/v1/master-data/floor/halls`
 - `GET /api/v1/master-data/floor/halls`
@@ -405,7 +432,7 @@ License Code:
 - Ошибочные Edge items получают item-level `rejected`/`retryable` и сохраняются в `cloud_sync_problem_events` для анализа, не блокируя остальные items.
 - Если transport/auth exchange не завершился успешно, POS Edge не коммитит ACK локально как sent; следующий exchange безопасно повторяет Edge events.
 
-Current Edge -> Cloud events:
+Текущие Edge -> Cloud events:
 
 - `ShiftOpened`
 - `ShiftClosed`
@@ -440,7 +467,7 @@ Inbound compatibility:
 
 Реализовано сейчас:
 
-- Current `CancellationRecorded` и `RefundRecorded` проходят строгую validation.
+- Текущие `CancellationRecorded` и `RefundRecorded` проходят строгую validation.
 - Payload должен содержать operation id, edge operation id, restaurant id, device id, check id, precheck id, current shift id, original shift id, amount, currency, business date, operation type/kind, inventory disposition, reason и snapshot metadata.
 - Payload `restaurant_id` и `device_id` должны совпадать с sync envelope.
 - Cloud сохраняет raw payload, receipt и operational journal idempotently.
@@ -488,16 +515,20 @@ Schema verification:
 
 - Cloud Inventory Worker создает stock documents and stock ledger из accepted normalized item events.
 
-Запланировано далее:
+Запланировано до полного пилота:
 
 - Stop-list sync становится sale-blocking availability overlay.
+- `CatalogItemChangeSuggested` создает Cloud review item; upsert в catalog разрешен только при policy `auto_apply_catalog_suggestions = true` или после manager approve.
+- `RecipeChangeSuggested` создает Cloud review item с diff по ingredients, quantities, units, loss percent и prep time; published recipe не меняется до approve/apply.
+- `StockReceiptCaptured` создает Cloud-owned receipt document и может ссылаться на pending catalog suggestion, если товар еще не утвержден.
+- `KitchenTicketStatusChanged` и `ItemServed` используются для kitchen timing и inventory deduplication, но не меняют finalized checks.
 - ClickHouse `raw_business_events` становится бессрочным архивом business events.
 - Async Batch Forwarder переносит accepted events из PostgreSQL inbox buffer в ClickHouse.
+- Recipe expansion, modifier linked catalog item consumption, stock balances and retro costing DAG становятся частью Cloud Inventory Engine.
+- Cloud OLAP API читает bounded aggregates из ClickHouse projections.
 
 Вне текущего объема:
 
-- Recipe expansion, modifier linked catalog item consumption and retro costing DAG.
-- ClickHouse runtime dependency.
 - Synchronous dual-write PostgreSQL + ClickHouse.
 
 ## Cloud UI Boundary
@@ -509,11 +540,12 @@ Schema verification:
 - Cloud UI не показывает raw payloads, PIN material, token material или sensitive request dumps.
 - Cloud UI работает в local pilot perimeter через CORS origins `5174`.
 
-Вне текущего объема:
+Вне текущего объема полного пилота:
 
 - Cashier runtime в Cloud UI.
 - Cloud auth/RBAC UI.
-- KDS, PSP, fiscalization, delivery, inventory runtime screens.
+- KDS runtime screens в Cloud UI.
+- PSP, fiscalization, delivery и advanced procurement planning screens beyond pilot stock receipt/count/production input.
 
 ## Тестовое покрытие
 
@@ -530,18 +562,16 @@ Schema verification:
 ## Запланировано далее
 
 - Production authorization and tenant perimeter для Cloud API.
-- Public Cloud reporting API/UI для detailed financial operation projection.
-- Full recipe/costing inventory engine.
-- Stop-list sync.
-- Async ClickHouse forwarder.
+- До полного пилота: recipes/stop-list authoring, publication streams, stop-list sync, full recipe/costing inventory engine, ClickHouse async forwarder, `olap_stock_moves` export, OLAP API и readiness/observability UI.
+- После полного пилота: Public Cloud reporting UI beyond pilot OLAP API.
 - Data-preserving PostgreSQL migrations после первого реального внедрения.
 - Cloud UI сценарий налогов/service-charge rules, если пилот требует централизованное управление.
 
-## Вне текущего объема
+## Вне текущего объема полного пилота
 
 - POS cashier runtime commands в Cloud Backend.
 - Payment processor and fiscal adapter.
-- KDS runtime.
+- POS-side KDS runtime screens and hardware bump-bar/printer integrations.
 - Delivery/channel integrations.
 - ClickHouse как transactional source of truth.
 - Manual ad-hoc SQL repair as canonical path.

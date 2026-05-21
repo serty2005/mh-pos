@@ -1,10 +1,10 @@
 # Inventory And Costing Spec
 
-Статус: запланировано далее, архитектурные принципы заморожены для будущей реализации; schema foundation частично реализован сейчас.
+Статус: целевая архитектура полного Cloud-owned складского движка, stop-list, costing и ClickHouse OLAP для полного пилота; schema/worker foundation частично реализован сейчас, runtime gaps отмечены ниже.
 
 Этот документ является source of truth для дальнейшей реализации склада, stop-list, рецептурного списания и себестоимости. Он заменяет прежнюю идею, где POS Edge сам создавал `StockDocument`, `StockMove` и считал остатки.
 
-## Freezed Principles
+## Замороженные Принципы
 
 - POS Edge и KDS являются генераторами неизменяемых business events и интерфейсом ввода данных.
 - POS Edge не создает складские документы, складские проводки и не считает себестоимость.
@@ -29,6 +29,31 @@ POS Edge / KDS
 POS Edge сохраняет cashier/KDS факты локально и отправляет события через outbox. Cloud API принимает события идемпотентно, пишет их в PostgreSQL `inbox_events` и не выполняет synchronous dual-write в ClickHouse. Async Batch Forwarder экспортирует события в ClickHouse `raw_business_events`. Inventory Worker асинхронно обрабатывает accepted events, разворачивает рецепты, применяет stop-list side effects, создает Cloud-owned складские документы и пишет хронологический `stock_ledger`.
 
 PostgreSQL хранит транзакционный журнал и состояния пересчета. ClickHouse хранит immutable `raw_business_events` бессрочно, а также получает батчевую проекцию `olap_stock_moves` для отчетов по COGS, расходу, маржинальности, списаниям, остаткам и кухонной аналитике.
+
+## Pilot Implementation Boundary
+
+Реализовано сейчас:
+
+- Cloud PostgreSQL baseline содержит `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs` и `stop_lists`.
+- Cloud Inventory Worker умеет принимать нормализованные item payloads по inventory-relevant events и писать pilot ledger rows.
+- POS Edge SQLite baseline содержит `recipe_versions`, `recipe_lines` и `stop_lists`, но эти таблицы пока не являются полным runtime flow.
+
+Запланировано до полного пилота:
+
+- Cloud UI/API authoring для recipes и stop-list;
+- publication streams `recipes` и `stop_lists`;
+- POS Edge ingest этих streams в read-only recipe tables и локальный stop-list overlay;
+- POS Edge sale blocking по active stop-list для блюда и mandatory recipe components;
+- POS-generated `CheckClosed` и KDS-generated `KitchenTicketStatusChanged`/`ItemServed`;
+- chef stock receipt, catalog suggestion, recipe change suggestion и stop-list edit events from KDS/POS Edge;
+- full inventory engine: stock receipts, inventory counts, production, sale consumption, refund/cancellation dispositions, recipe expansion, modifier linked catalog item consumption, stock balances, costing status и retro recalculation DAG;
+- ClickHouse runtime: managed schema, `raw_business_events`, `olap_stock_moves`, async forwarder/export jobs, retry/backfill state and bounded read-only OLAP API;
+- smoke-проверка дедупликации `ItemServed` + `CheckClosed`, stock documents/ledger/balances/costing, ClickHouse export и OLAP API в Cloud Inventory Worker.
+
+Вне текущего объема полного пилота:
+
+- procurement planning и transfer workflows;
+- hardware bump-bar integrations, kitchen printer orchestration and rich BI dashboards beyond bounded pilot OLAP/KDS metrics.
 
 ## POS Edge SQLite Target Schema
 
@@ -112,6 +137,8 @@ erDiagram
 
 `StopList` блокирует продажу независимо от аналитического stock balance. Запись может относиться к `dish`, `good` или `semi_finished`.
 
+Статус: запланировано до полного пилота. Таблица `stop_lists` есть в POS Edge и Cloud baseline, но проверка продажи и поддерживаемый Cloud -> Edge stream пока не являются реализованным runtime.
+
 Правила POS Edge при добавлении позиции:
 
 1. Проверить сам `catalog_item_id` блюда в локальном `stop_lists`.
@@ -120,7 +147,7 @@ erDiagram
 4. Если блюдо или хотя бы один обязательный компонент имеет активную запись с `available_quantity = 0`, отклонить добавление позиции.
 5. Если stop-list отсутствует или `available_quantity > 0`, продажа разрешена. Stock balance при этом не проверяется.
 
-Изменение stop-list может прийти из Cloud admin UI или быть создано менеджером на Edge. В обоих случаях публикуется `StopListUpdated`.
+Изменение stop-list может прийти из Cloud manager UI или быть создано kitchen worker/manager на Edge. В обоих случаях публикуется `StopListUpdated`. Порядок применения Cloud package и Edge overlay задается параметром `stop_list_conflict_policy`: `cloud_wins`, `edge_wins`, `last_event_wins` или `most_restrictive`. Для полного пилота default должен быть `most_restrictive`, чтобы Cloud мог добавить товар, а Edge мог временно исключить его или указать допустимый остаток через `available_quantity`.
 
 ## Modifier Inventory Rule
 
@@ -135,6 +162,8 @@ Cloud справочник `ModifierOption` может иметь `linked_catalo
 ### CheckClosed
 
 `CheckClosed` является финальным batch trigger для заказа. Worker использует его для delta consumption: списывает только позиции, которые еще не были списаны по `ItemServed`.
+
+Статус: контракт запланирован до полного пилота. Cloud contracts/worker foundation есть; POS Edge должен начать генерировать этот event при создании final check.
 
 ```json
 {
@@ -167,6 +196,8 @@ Cloud справочник `ModifierOption` может иметь `linked_catalo
 
 `ItemServed` фиксирует KDS факт подачи гостю и может вызвать раннее списание позиции. Cloud обязан дедуплицировать его с последующим `CheckClosed`.
 
+Статус: контракт запланирован до полного пилота. Advanced KDS должен генерировать `KitchenTicketStatusChanged`, а переход в `served` дополнительно генерирует `ItemServed`.
+
 ```json
 {
   "served_event_id": "018f0000-0000-7000-8000-000000000101",
@@ -180,7 +211,28 @@ Cloud справочник `ModifierOption` может иметь `linked_catalo
 }
 ```
 
+### KitchenTicketStatusChanged
+
+`KitchenTicketStatusChanged` фиксирует полный KDS lifecycle без прямой складской проводки. Допустимые статусы полного пилота: `new`, `accepted`, `in_progress`, `hold`, `ready`, `served`, `recall`, `cancelled`. Cloud использует событие для audit, kitchen timing и OLAP; переход `served` дополнительно сопровождается `ItemServed`.
+
+```json
+{
+  "status_event_id": "018f0000-0000-7000-8000-000000000111",
+  "restaurant_id": "018f0000-0000-7000-8000-000000000004",
+  "order_id": "018f0000-0000-7000-8000-000000000002",
+  "order_line_id": "018f0000-0000-7000-8000-000000000010",
+  "station_id": "kitchen-hot",
+  "from_status": "accepted",
+  "to_status": "in_progress",
+  "changed_by_employee_id": "018f0000-0000-7000-8000-000000000112",
+  "changed_at": "2026-05-19T12:12:00Z",
+  "reason": null
+}
+```
+
 ### StockReceiptCaptured
+
+`StockReceiptCaptured` фиксирует приемку поставки kitchen worker на Edge. Если товар выбран из каталога, payload содержит `catalog_item_id`. Если товар новый или требует правки, payload содержит `catalog_suggestion_id`, а Cloud worker создает review item и связывает receipt line с pending catalog proposal до approve/apply.
 
 ```json
 {
@@ -198,6 +250,53 @@ Cloud справочник `ModifierOption` может иметь `linked_catalo
       "currency": "RUB"
     }
   ]
+}
+```
+
+### CatalogItemChangeSuggested
+
+`CatalogItemChangeSuggested` не создает Cloud-owned master data напрямую. Cloud worker сохраняет proposal, показывает его в manager review queue и применяет только при `auto_apply_catalog_suggestions = true` или после manager approve.
+
+```json
+{
+  "suggestion_id": "018f0000-0000-7000-8000-000000000211",
+  "restaurant_id": "018f0000-0000-7000-8000-000000000004",
+  "suggested_by_employee_id": "018f0000-0000-7000-8000-000000000212",
+  "action": "create",
+  "catalog_item_id": null,
+  "name": "Fresh basil",
+  "kind": "goods",
+  "unit_code": "G",
+  "sku": null,
+  "reason": "supplier_delivery",
+  "created_at": "2026-05-19T08:01:00Z"
+}
+```
+
+### RecipeChangeSuggested
+
+`RecipeChangeSuggested` фиксирует участие повара в правке техкарты. Edge не применяет правку локально; Cloud worker создает recipe change proposal с diff, проверяет предел `recipe_suggestion_max_time_delta_minutes` и ждет manager approve/apply.
+
+```json
+{
+  "suggestion_id": "018f0000-0000-7000-8000-000000000311",
+  "restaurant_id": "018f0000-0000-7000-8000-000000000004",
+  "recipe_version_id": "018f0000-0000-7000-8000-000000000312",
+  "suggested_by_employee_id": "018f0000-0000-7000-8000-000000000212",
+  "prep_time_delta_minutes": 5,
+  "changes": [
+    {
+      "line_id": "018f0000-0000-7000-8000-000000000313",
+      "action": "replace_ingredient",
+      "from_catalog_item_id": "018f0000-0000-7000-8000-000000000314",
+      "to_catalog_item_id": "018f0000-0000-7000-8000-000000000315",
+      "quantity": "0.120",
+      "unit_code": "KG",
+      "loss_percent": "3.00"
+    }
+  ],
+  "reason": "supplier_substitution",
+  "created_at": "2026-05-19T10:15:00Z"
 }
 ```
 
@@ -275,6 +374,7 @@ Cloud справочник `ModifierOption` может иметь `linked_catalo
   "available_quantity": "0.000",
   "active": true,
   "source": "edge",
+  "conflict_policy": "most_restrictive",
   "reason": "ingredient_unavailable",
   "updated_at": "2026-05-19T12:05:00Z"
 }
@@ -350,12 +450,14 @@ Whole-check операции должны быть нормализованы д
 - Cloud receiver сохраняет inventory-relevant events в durable `inventory_event_queue`;
 - Cloud Inventory Worker создает Cloud-owned `stock_documents` и `stock_ledger` из нормализованных item payloads.
 
-Запланировано далее:
+Запланировано до полного пилота:
 
 - добавить `stop_lists` и Cloud -> Edge / Edge -> Cloud sync для stop-list;
 - расширить Cloud receiver catalog событий;
+- добавить proposal queues для `CatalogItemChangeSuggested` и `RecipeChangeSuggested`;
 - добавить batch export в ClickHouse `olap_stock_moves`;
-- покрыть дедупликацию `ItemServed`/`CheckClosed`, auto-production split и retro costing тестами.
+- реализовать bounded Cloud OLAP API поверх ClickHouse projections;
+- покрыть дедупликацию `ItemServed`/`CheckClosed`, auto-production split, stock balances, costing status и retro costing тестами.
 
 Вне текущего объема:
 

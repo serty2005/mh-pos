@@ -1,6 +1,6 @@
 # POS Data And Migrations
 
-Статус: актуальный data/migration contract для frozen cashier pilot и Freezed Principles по ClickHouse event archive.
+Статус: актуальный data/migration contract для текущего cashier runtime, целевого полного пилота и замороженных принципов ClickHouse event archive.
 
 ## Canonical Policy
 
@@ -11,7 +11,7 @@
 - Active pre-pilot migration path uses one managed baseline SQL file per runtime module and runtime startup migration/verification.
 - Existing dev/test databases are recreated from the baseline; data-preserving upgrade migrations are outside the current pre-client scope.
 - Manual ad-hoc SQL is not canonical upgrade path.
-- Current persistence implementation is handwritten repository code, not confirmed `sqlc`.
+- Реализовано сейчас: persistence implementation использует handwritten repository code, а не подтвержденный `sqlc`.
 
 Запланировано далее:
 
@@ -139,7 +139,7 @@ Managed SQL files, реализовано сейчас:
 
 ## ClickHouse Immutable Event Store
 
-Запланировано далее как Freezed Principle:
+Запланировано далее как замороженный принцип:
 
 ```text
 Edge Outbox
@@ -241,7 +241,7 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 - Cashier UI whole-check и partial `order_line`/quantity cancellation/refund использует те же ledger endpoints, отправляет явный `inventory_disposition` и не требует schema changes или mutable status columns у finalized payments/checks. Line/quantity UI опирается на immutable check/precheck snapshot и пишет `financial_operation_items` со scope `order_line`; modifier/service/tip UI не реализован сейчас.
 - Storage archive export сохраняет `financial_operations`, `financial_operation_items` и immutable snapshots как protected data в JSONL artifact без пересчета или мутации source rows.
 
-- Реализовано сейчас в Cloud: `cloud_projection_financial_operations` stores current `CancellationRecorded`/`RefundRecorded` operation projections from raw/journal receipt with operation/check/precheck/shift/date/type/disposition/reason/snapshot metadata. Current financial operation payload validation requires совпадение payload `restaurant_id`/`device_id` с envelope, `precheck_id`, `reason` и immutable snapshot. Legacy `PaymentRefunded`/`CheckRefunded` do not populate this detailed projection.
+- Реализовано сейчас в Cloud: `cloud_projection_financial_operations` хранит текущие projections для `CancellationRecorded`/`RefundRecorded` из raw/journal receipt с operation/check/precheck/shift/date/type/disposition/reason/snapshot metadata. Текущая validation financial operation payload требует совпадение payload `restaurant_id`/`device_id` с envelope, `precheck_id`, `reason` и immutable snapshot. Legacy `PaymentRefunded`/`CheckRefunded` не заполняют эту detailed projection.
 
 Не реализовано сейчас:
 
@@ -306,26 +306,27 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 
 ## Recipe And Inventory Data
 
-Запланировано далее:
+Запланировано до полного пилота:
 
 - Recipes are versioned in Edge read-only tables `recipe_versions` and `recipe_lines`.
 - Edge локально использует recipes только для KDS UI и проверки stop-list при добавлении позиции.
 - Edge inventory mutation tables удалены из целевой SQLite схемы.
 - Cloud Inventory Worker создает Cloud-owned stock documents and `stock_ledger` from Edge/KDS business events.
 - `CheckClosed` запускает batch delta consumption после сверки с `ItemServed`.
-- `ProductionCompleted` создает `PRODUCTION`: приход заготовки и расход сырья.
 - `RefundRecorded` и `CancellationRecorded` должны содержать operation-level `inventory_disposition`; отдельный `items[].inventory_disposition` в текущем payload не реализован.
 - `StopListUpdated` синхронизируется Edge <-> Cloud.
 - UOM reference model with separate code/display fields remains запланировано далее.
+- `ProductionCompleted` создает `PRODUCTION`: приход заготовки и расход сырья.
+- semi-finished fallback expansion.
+- costing recalculation.
+- ClickHouse `olap_stock_moves`.
+- Cloud OLAP API читает ClickHouse projections и не участвует в transactional command validation.
 
 Вне текущего runtime:
 
 - automatic recipe consumption after check;
-- costing recalculation;
-- ClickHouse `olap_stock_moves`;
 - automatic return-to-stock/write-off after cancellation/refund;
-- KDS `ItemServed` inventory trigger;
-- semi-finished fallback expansion.
+- KDS `ItemServed` inventory trigger.
 
 ## Migration Safety
 

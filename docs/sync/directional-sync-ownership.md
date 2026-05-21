@@ -1,6 +1,6 @@
 # Directional Sync Ownership
 
-Статус: актуально для frozen cashier pilot.
+Статус: актуально для текущего cashier runtime и целевого полного пилота.
 
 ## Ownership Matrix
 
@@ -14,8 +14,10 @@
 | Menu item | Cloud | No | Cloud -> Edge | реализовано сейчас for ingest stream `menu` |
 | Catalog folder/tag | Cloud | No | Cloud -> Edge via `catalog` | реализовано сейчас |
 | Modifier group/option | Cloud | No | Cloud -> Edge via `catalog` | реализовано сейчас |
-| Recipe reference | Cloud | Edge read-only | Cloud -> Edge planned | запланировано далее: `recipe_versions`/`recipe_lines` для KDS UI и stop-list checks |
-| Stop-list | Cloud + Edge manager input | Yes, only stop-list overlay | Bi-directional planned via `StopListUpdated` | запланировано далее |
+| Recipe reference | Cloud | Edge read-only | Cloud -> Edge запланировано | запланировано до полного пилота: `recipe_versions`/`recipe_lines` для KDS UI и stop-list checks |
+| Recipe change proposal | Cloud review queue | Edge creates suggestion only | Edge -> Cloud `RecipeChangeSuggested` | запланировано до полного пилота |
+| Catalog change proposal | Cloud review queue | Edge creates suggestion only | Edge -> Cloud `CatalogItemChangeSuggested` | запланировано до полного пилота |
+| Stop-list | Cloud + Edge kitchen/manager input | Yes, only stop-list overlay | двусторонний sync через `StopListUpdated`, ordering by `stop_list_conflict_policy` | запланировано до полного пилота |
 | Employee shift | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Cash session/drawer event | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Order/order line | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
@@ -26,8 +28,9 @@
 | Tax/pricing policy reference | Cloud | Edge read model only | `pricing_policy` Cloud -> Edge stream for `tax_profiles`, `tax_rules`, `service_charge_rules`, `pricing_policies` | реализовано сейчас |
 | Operational order adjustments | Edge | Yes while order is open | runtime-команды; будущие policy ids могут ограничивать допустимые варианты | реализовано сейчас |
 | Stock document/move/ledger | Cloud Inventory Worker | No | Edge business events -> Cloud worker | реализовано сейчас for normalized item payloads; Edge-side stock document service был pre-pilot legacy и удален |
+| Kitchen ticket/status | POS Edge/KDS | Yes | Edge -> Cloud `KitchenTicketStatusChanged`/`ItemServed` | запланировано до полного пилота |
 
-## Current Cloud -> Edge Ingest
+## Текущий Cloud -> Edge Ingest
 
 `mastersync.Service` сейчас поддерживает только:
 
@@ -43,6 +46,13 @@
 `catalog` payload включает catalog folders/tags/services и modifier groups/options/bindings/effective links; `menu` payload включает menu items. Menu categories остаются отдельным понятием и не заменяют catalog folders.
 `pricing_policy` включает tax/service-charge reference tables и automatic discount/surcharge policies; manual override runtime остается backend RBAC-controlled action.
 
+Запланировано до полного пилота:
+
+- добавить поддерживаемые streams `recipes` и `stop_lists`;
+- фиксировать stream checkpoint в `cloud_master_sync_state` той же transaction boundary, что и apply rows;
+- при ошибке отдельного package помечать stream `failed` и не блокировать accepted Edge -> Cloud ACK;
+- не включать Cloud-owned stock documents/moves/balances в Edge ingest.
+
 Реализовано сейчас:
 
 - POS Edge sync sender использует authenticated `POST /api/v1/sync/exchange` как приоритетный Cloud-Edge цикл, когда локальное provisioning state содержит `node_token`.
@@ -56,7 +66,7 @@
 - Пустой exchange без Edge outbox throttled отдельным Cloud pull interval, а появившиеся Edge outbox events отправляются в ближайший worker tick без ожидания этого throttling interval.
 - Cloud UI после успешного CRUD Cloud-owned master data автоматически создает новый published package через canonical publication API. Поэтому роль, сотрудник или PIN, созданные оператором в Cloud UI после pairing, попадают на Edge в ближайший Cloud -> Edge exchange. Ручная публикация остается реализована сейчас как явный operator checkpoint.
 
-## Current Edge -> Cloud Runtime
+## Текущий Edge -> Cloud Runtime
 
 Реализовано сейчас:
 
@@ -67,7 +77,7 @@
 - проблемные Edge -> Cloud items сохраняются в `cloud_sync_problem_events` и не блокируют остальные items в batch/exchange;
 - legacy `/sync/edge-events` и `/sync/edge-events/batch` остаются совместимыми inbound routes.
 
-Freezed Principle для event archive:
+Замороженный принцип для event archive:
 
 ```text
 Edge Outbox
@@ -97,13 +107,26 @@ Edge Outbox
 
 Реализовано сейчас:
 
-- Edge/KDS events `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
+- Edge/KDS events `CheckClosed`, `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
 - Cloud Inventory Worker создает `stock_documents` и `stock_ledger` из accepted events;
 - `stock_balances` остаются аналитической проекцией и не блокируют продажи;
 
+Требуется до полного пилота:
+
+- POS Edge должен начать генерировать `CheckClosed` при final check;
+- advanced KDS должен генерировать `KitchenTicketStatusChanged`, `ItemServed` и cooking events;
+- kitchen receipt/proposal flows должны генерировать `StockReceiptCaptured`, `CatalogItemChangeSuggested` и `RecipeChangeSuggested`;
+- Cloud receiver/worker должен сохранить идемпотентность replay и дедупликацию `ItemServed` с `CheckClosed`;
+- stop-list changes должны синхронизироваться без raw sensitive payload в UI/API diagnostics.
+- полный Cloud Inventory Engine должен обработать receipts, counts, production, sale consumption, refund/cancellation dispositions, balances и costing/recalculation state.
+
+Запланировано до полного пилота:
+
+- ClickHouse получает immutable `raw_business_events` и OLAP projection из Cloud PostgreSQL/Cloud inventory data.
+- Cloud OLAP API читает bounded aggregates из ClickHouse и не участвует в transactional command validation.
+
 Запланировано далее:
 
-- ClickHouse получает только OLAP projection из Cloud PostgreSQL.
 - richer modifier/pricing reporting projections после pilot acceptance.
 
 ## Master Data Rule

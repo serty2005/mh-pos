@@ -77,15 +77,30 @@ Permission ids used by cashier UI:
 
 Pagination/filter controls закрытых заказов не вводят новые permission ids; backend `pos.check.view` остается authoritative для read.
 
+## Запланировано До Полного Пилота
+
+| UI action | Required backend permission | Status |
+| --- | --- | --- |
+| Waiter mobile floor/menu/order entry | `pos.floor.view`, `pos.menu.view`, `pos.catalog.view`, `pos.order.create`, `pos.order.add_line`, `pos.order.change_quantity`, `pos.order.void_line` | запланировано далее |
+| Waiter issue/reprint precheck | `pos.precheck.issue`, `pos.precheck.reprint` | запланировано далее |
+| Waiter payment/refund controls | payment/refund permissions only when explicitly granted | вне текущего waiter default |
+| Kitchen ticket list | `pos.kitchen.view` | запланировано далее |
+| Kitchen ticket accept/start/hold/ready/served/recall/cancel | `pos.kitchen.update` | запланировано далее |
+| Kitchen stock receipt capture | `pos.kitchen.receipt.capture` | запланировано далее |
+| Kitchen catalog suggestion | `pos.kitchen.catalog.suggest` | запланировано далее |
+| Kitchen recipe view | `pos.kitchen.recipe.view` | запланировано далее |
+| Kitchen recipe change suggestion | `pos.kitchen.recipe.suggest` | запланировано далее |
+| Kitchen stop-list view/edit | `pos.kitchen.stop_list.view`, `pos.kitchen.stop_list.update` | запланировано далее |
+| Stop-list sale blocking UI error | backend-owned sale blocking error code/message key | запланировано далее |
+
 ## Вне Текущего UI Объема
 
 - waiter payment without cashier permissions;
-- waiter mobile runtime;
 - order transfer/split/merge;
 - partial modifier/service/tip cancellation/refund ledger screens beyond current order-line/quantity actions;
 - discount/surcharge/tax override controls;
 - inventory/procurement operations;
-- KDS screens;
+- hardware bump-bar/printer operation and rich KDS analytics beyond bounded pilot timing metrics;
 - manager tools runtime beyond cashier-visible sync/closed-orders/cash-drawer panels;
 - PSP terminal/fiscal device operation screens.
 

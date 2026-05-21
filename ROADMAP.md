@@ -1,8 +1,8 @@
 # ROADMAP
 
-Статус документа: актуализировано под фактический код, сводную карту текущего состояния и целевую inventory architecture на 2026-05-21.
+Статус документа: актуализировано под фактический код, сводную карту текущего состояния и цель полной пилотной реализации на 2026-05-21.
 
-Roadmap фиксирует статусы, блокеры и следующий план. Архитектурный контракт находится в `SPECv1.3.md`, backend contract — в `docs/backend/POS-BACKEND-SPEC.md`.
+Roadmap фиксирует статусы, блокеры и следующий план. Архитектурный контракт находится в `SPECv1.3.md`, backend contract — в `docs/backend/POS-BACKEND-SPEC.md`. Текущий runtime является cashier-first; целевой полный пилот добавляет manager, waiter, advanced KDS lifecycle, POS-side authoritative financial/inventory checks, stop-list sale blocking и Cloud-managed setup.
 
 ## Выполнено
 
@@ -121,12 +121,48 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - выполнено: отдельная suite `pos_refund_after_shift_close` закрывает исходные personal/cash shifts, открывает новую cash-session boundary для refund, пишет full refund через `/checks/{id}/refunds` и проверяет ledger/closed-order reads;
   - запланировано далее: PSP refund и fiscal integration.
 - Documentation freeze:
-  - поддерживать `SPECv1.3.md` как frozen pilot contract;
-  - дальние контуры переносить в roadmap/ADR, а не в pilot spec.
+  - поддерживать `SPECv1.3.md` как contract текущего cashier runtime и цели полного пилота;
+  - дальние контуры переносить в roadmap/ADR, а не документировать как реализованное сейчас.
+
+Расширенные блокеры полного пилота:
+
+- Stop-list sale blocking:
+  - выполнить POS Edge lookup active `stop_lists` для самого блюда и обязательных recipe components при `AddOrderLine` и увеличении quantity;
+  - добавить Cloud authoring, publication streams `recipes`/`stop_lists` и POS Edge ingest этих streams;
+  - покрыть offline smoke: Edge блокирует stop-listed item без связи с Cloud.
+- Advanced KDS/kitchen lifecycle:
+  - создать POS Edge kitchen ticket lifecycle `new -> accepted -> in_progress -> ready -> served` с `hold`/`recall`/`cancelled` ветками;
+  - route `/pos/kitchen` должен стать рабочим KDS, а не shell;
+  - status actions пишут `KitchenTicketStatusChanged`, `ItemServed` и при необходимости `ProductionCompleted` в outbox; Cloud принимает events идемпотентно и Cloud Inventory Worker не дублирует расход с `CheckClosed`;
+  - добавить chef stock receipt flow: `StockReceiptCaptured` с выбором существующего catalog item или `CatalogItemChangeSuggested` для нового/измененного товара;
+  - добавить chef recipe proposal flow: просмотр техкарты и `RecipeChangeSuggested` с заменой ингредиента, количеством/единицей/потерями и prep time delta в пределах `recipe_suggestion_max_time_delta_minutes`;
+  - добавить kitchen stop-list edit flow и параметр `stop_list_conflict_policy` для порядка применения Cloud/Edge overlay.
+- POS-side authoritative financial/inventory logic:
+  - POS Edge backend остается авторитетным для offline order/precheck/payment/check commands, financial operation ledger, pricing snapshot, idempotency, cash/session boundaries, stop-list sale blocking и KDS command validation;
+  - POS UI не считает authoritative totals и не принимает финансовые/складские решения;
+  - Cloud остается авторитетным для master data, stock documents, stock ledger, costing/recalculation state, ClickHouse export и OLAP reads.
+- Waiter mobile runtime:
+  - route `/pos/waiter` должен стать mobile-first order entry flow;
+  - waiter mobile является единственным мобильным layout пилота; cashier/KDS/manager не получают mobile variants;
+  - waiter role видит floor/menu/order/precheck actions и не получает payment/refund/cash drawer controls без payment permissions;
+  - Playwright mobile viewport проверяет создание заказа, модификаторы и выпуск precheck.
+- Manager pilot operations:
+  - Cloud UI должен стать полноценным менеджерским web app, а не raw-admin: stop-list, recipe authoring/review, catalog/recipe proposals, inventory operations, publication readiness и безопасный просмотр sync/problem events без raw payload;
+  - launch readiness учитывает restaurant, staff, floor, menu, pricing, stop-list review, publication и known Edge node.
+- Full pilot smoke:
+  - добавить suite `full_pilot`, которая проходит Cloud setup -> publication -> Edge sync -> waiter order -> kitchen served -> cashier payment/final check -> reconnect/outbox ACK -> Cloud inventory ledger -> ClickHouse export -> OLAP API reads.
+- Full Inventory Engine:
+  - реализовать stock receipts, inventory counts, production, sale consumption, refund/cancellation stock disposition, recipe expansion, modifier linked consumption, balances и costing state;
+  - реализовать retro recalculation DAG для документов задним числом и отрицательных остатков;
+  - добавить Cloud UI/API для ручного ввода складских документов и просмотра balances/costing status.
+- ClickHouse OLAP:
+  - поднять ClickHouse как обязательный Cloud runtime component для полного пилота;
+  - реализовать async forwarder `inbox_events -> raw_business_events` и projection export `stock_ledger -> olap_stock_moves`;
+  - добавить bounded read-only Cloud API для OLAP: event archive, stock moves, COGS/margin, sales aggregates и kitchen timing.
 
 ## Далее
 
-После закрытия pilot blockers:
+После закрытия cashier pilot blockers и перед полным пилотом:
 
 - Полный pre-pilot smoke path: поддерживать `scripts/run-stack-smoke.py` как основной Fedora/Linux/Windows-compatible путь; следующий перенос в Python suites — более богатые negative/permission cases.
 - Расширять OpenAPI smoke contract, stack smoke suites и demo seed dataset вместе с новыми Cloud-owned справочниками, publication streams и POS read flows, чтобы ручной наглядный тест не отставал от runtime.
@@ -137,35 +173,24 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 ## После Пилота
 
-После пилота:
+После полного пилота:
 
-- KDS runtime and kitchen ticket lifecycle.
-- `ItemServed` / `ProductionCompleted` triggers.
-- Recipe expansion, semi-finished auto-production split policies.
-- Stop-list bi-directional sync and Edge local recipe-based stop-list checks.
-- Costing Engine with negative balance rules and retro recalculation DAG.
-- ClickHouse immutable event store `raw_business_events` на UUIDv7:
-  - anti-fraud audit: сохранить trail `ItemAdded`/`ItemRemoved` до финального `CheckClosed`;
-  - Speed of Service: считать median/percentiles между `CheckClosed` и `ItemServed`;
-  - Data Lake: ABC analysis, cohort analysis и BI без нагрузки на PostgreSQL.
+- Hardware bump-bar integrations, kitchen printer orchestration и rich BI dashboards beyond bounded pilot OLAP/KDS metrics.
 - Real PSP/payment processor integrations.
 - Fiscal adapter/fiscalization integrations.
 - Delivery/channel integrations.
-- ClickHouse `olap_stock_moves` OLAP/reporting accelerator and PostgreSQL projection pipeline.
 - `sqlc` adoption, если после стабилизации схемы это уменьшит риск persistence layer.
 - Full accounting/ERP integrations.
 
 ## Вне Текущего Объема
 
-Вне текущего объема первого cashier pilot:
+Вне текущего объема полного пилота:
 
-- KDS as required runtime dependency.
 - Real PSP authorization/capture/refund flow.
 - Fiscal device integration.
-- Full inventory/procurement engine.
-- ClickHouse runtime dependency.
 - UI-side authoritative financial calculation.
 - Edge-side creation of Cloud-owned master data.
+- Cashier/KDS/manager mobile variants outside waiter screen.
 - Synchronous dual-write в PostgreSQL и ClickHouse в request path.
 
 ## Definition Of Ready For Cashier Pilot
@@ -177,7 +202,23 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - pricing/modifiers/inventory либо реализованы и протестированы, либо явно исключены из pilot acceptance;
 - backend and UI docs согласованы по refund/reprint/current routes;
 - cancellation/refund boundaries явно разделены: cancellation внутри открытой исходной смены/дня, refund после закрытия исходной смены или на следующую business date;
-- `sqlc` и ClickHouse описаны только как запланировано далее/после пилота, не как текущий runtime.
+- `sqlc` описан только как запланировано далее/после пилота, не как текущий runtime.
+
+## Definition Of Ready For Full Pilot
+
+Готовность к полному пилоту означает:
+
+- cashier flow из `Definition Of Ready For Cashier Pilot` остается зеленым;
+- Cloud UI позволяет настроить stop-list и recipes, опубликовать их и увидеть readiness Edge;
+- POS Edge применяет `recipes` и `stop_lists` через managed sync и локально блокирует stop-listed sale offline;
+- waiter mobile UI проходит Playwright mobile flow без payment/refund authority;
+- kitchen UI проходит Playwright flow по status lifecycle, `ItemServed`, receipt capture, recipe suggestion и stop-list edit;
+- Cloud worker создает review/proposal записи из `CatalogItemChangeSuggested` и `RecipeChangeSuggested`, а не применяет их без policy/manager review;
+- Cloud принимает `CheckClosed`/`ItemServed`, дедуплицирует replay и Cloud Inventory Worker пишет полный stock document/ledger/balance/costing state;
+- Cloud Inventory Engine покрывает stock receipt, inventory count, production, sale consumption, refund/cancellation disposition, recipe expansion, modifier linked consumption, negative-balance costing и retro recalculation DAG;
+- ClickHouse runtime поднят как обязательный Cloud component: `raw_business_events`, `olap_stock_moves`, async forwarder, retry/backfill, export checkpoints и bounded OLAP API проходят smoke;
+- `scripts/run-stack-smoke.py --suite full_pilot` проходит без ручной правки данных;
+- все новые routes, payloads, UI flows, RBAC, DB schema, sync events, error keys и smoke scripts отражены в профильных docs.
 
 ## Pricing/tax pilot readiness
 

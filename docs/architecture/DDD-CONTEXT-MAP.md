@@ -1,6 +1,6 @@
 # DDD Context Map
 
-Статус: актуальная context map для frozen cashier pilot.
+Статус: актуальная context map для текущего cashier runtime и целевого полного пилота.
 
 Статусы:
 
@@ -26,11 +26,11 @@
 | `Payment` | captured payments, payment attempts, payment methods, provider metadata | реализовано сейчас for manual/trusted `cash/card/other` | PSP boundary decision only if pilot needs it | real PSP integration | fiscalization, order line pricing, inventory, cancellation/refund ledger |
 | `Check` | final paid document after full precheck payment, immutable check snapshot | реализовано сейчас | fiscal/tax fields only if policy exists | legal fiscal receipt adapter | PSP authorization and stock consumption |
 | `Financial Operations` | append-only cancellation/refund ledger, operation item scopes, inventory disposition, no-over-compensation rules | реализовано сейчас: full/partial cancellation and refund records, bounded POS ledger read endpoints, cashier UI for whole-check and partial `order_line`/quantity actions с явным inventory disposition, `CancellationRecorded`, `RefundRecorded`, Cloud detailed operation projection service/repository | rich partial UI for modifier/service/tip only if pilot acceptance requires it | public Cloud reporting UI/API, richer accounting exports | inventory mutation, PSP refund execution, fiscal correction documents |
-| `Inventory` | Cloud-owned stock documents, stock ledger, costing, stop-list authority, inventory worker policy | реализовано сейчас: Cloud-centric Event-Driven Inventory для normalized item payloads; Edge-side manual stock foundation был pre-pilot legacy и удален | recipe expansion, stop-list sync, retro costing | full recipe/costing implementation, ClickHouse OLAP projection | Edge-side stock documents/moves, order/payment/check direct mutation |
-| `Production` | KDS tickets, stations, cooking/dish served lifecycle, `ItemServed`, `ProductionCompleted` input events | вне текущего объема | none unless pilot changes | KDS runtime feeding Cloud Inventory Worker | financial close and Cloud ledger writes |
+| `Inventory` | Cloud-owned stock documents, stock ledger, costing, balances, stop-list authority, inventory worker policy | реализовано сейчас: Cloud-centric Event-Driven Inventory для normalized item payloads; Edge-side manual stock foundation был pre-pilot legacy и удален | full recipe/costing implementation, stop-list sync, retro costing, ClickHouse OLAP projection | ERP/accounting integration | Edge-side stock documents/moves, order/payment/check direct mutation |
+| `Production` | KDS tickets, stations, cooking/dish served lifecycle, `KitchenTicketStatusChanged`, `ItemServed`, `ProductionCompleted` input events | запланировано до полного пилота для advanced KDS lifecycle | POS Edge/KDS runtime, chef receipt/catalog/recipe proposal flows | hardware bump-bar/printer integrations, rich BI dashboards | financial close and Cloud ledger writes |
 | `CRM` | customer identity/preferences/history | вне текущего объема except `guest_count` | none | full CRM | order/payment lifecycle |
 | `Loyalty` | bonuses/coupons/customer promos | вне текущего объема | none | full loyalty engine | backend authoritative totals unless integrated through Pricing |
-| `Accounting / Finance / Analytics` | reporting, reconciliation, profit views, immutable business event archive | реализована основа in Cloud projections: event-type stats, coarse shift finance counters and detailed current financial operation projection | ClickHouse `raw_business_events` target contract | ERP/accounting integration, public reporting API/UI, ClickHouse analytics and data lake | runtime capture/check mutation |
+| `Accounting / Finance / Analytics` | reporting, reconciliation, profit views, immutable business event archive, OLAP API | реализована основа in Cloud projections: event-type stats, coarse shift finance counters and detailed current financial operation projection | ClickHouse `raw_business_events`, `olap_stock_moves` and bounded OLAP API | ERP/accounting integration and rich BI UI | runtime capture/check mutation |
 
 ## Mandatory Boundaries
 
@@ -65,11 +65,11 @@
 
 - Domain constants mention `recipes` and `inventory_reference`.
 - Целевая Edge schema keeps only read-only `recipe_versions`/`recipe_lines` и bidirectional `stop_lists` for inventory availability checks.
-- Apply path for `recipes`, `inventory_reference` and `stop_lists` is not implemented in `mastersync.Service`.
+- Apply path для `recipes`, `inventory_reference` и `stop_lists` не реализован сейчас в `mastersync.Service`.
 
 ## Data Flow
 
-Freezed Principle для immutable event archive:
+Замороженный принцип для immutable event archive:
 
 ```text
 Edge Outbox
@@ -106,8 +106,8 @@ Recipes/Inventory:
 
 - реализовано сейчас: Edge emits immutable business events, Cloud Inventory Worker computes stock documents and ledger for normalized item payloads;
 - реализовано сейчас: `CheckClosed` является финальным batch trigger; KDS `ItemServed` event contract принят Cloud receiver and worker;
-- запланировано далее: `ProductionCompleted` creates `PRODUCTION`, and auto-production split expands unavailable semi-finished quantity to raw ingredients;
-- реализовано сейчас: `stock_ledger.unit_cost_minor` stores event-time fallback cost; last-known cost and DAG-based retro recalculation запланированы далее;
+- запланировано до полного пилота: `KitchenTicketStatusChanged`, `ProductionCompleted`, chef stock receipt, catalog proposals and recipe change proposals feed Cloud Inventory Worker/review queues; auto-production split expands unavailable semi-finished quantity to raw ingredients;
+- реализовано сейчас: `stock_ledger.unit_cost_minor` stores event-time fallback cost; last-known cost and DAG-based retro recalculation запланированы до полного пилота;
 - UOM остается string-based; separate UOM reference with `code`, `name`, `short_name` and translations запланирована далее только при расширении inventory runtime.
 
 Payment/Fiscal:

@@ -1,6 +1,6 @@
 # Текущее функциональное состояние проекта
 
-Статус: реализовано сейчас по коду, тестам и документации на 2026-05-21.
+Статус: реализовано сейчас по коду, тестам и документации на 2026-05-21; цель полного пилота зафиксирована отдельно и не считается текущим runtime.
 
 Этот документ является сводной картой фактического состояния репозитория. Он не заменяет профильные спецификации: архитектурные инварианты остаются в `SPECv1.3.md`, backend-контракты - в `docs/backend/*`, контракты интерфейсов - в `docs/ui/*`, синхронизация - в `docs/sync/*`.
 
@@ -18,6 +18,18 @@
 
 - Подтвержденного runtime для KDS, доставки, настоящего платежного процессинга, фискального адаптера, ClickHouse pipeline или destructive archive apply.
 - Публичного Cloud HTTP/API интерфейса отчетов по детальной проекции финансовых операций. Сервисная и repository-основа есть, публичный reporting surface остается запланированным далее.
+
+Цель полной пилотной реализации:
+
+- сохранить текущий cashier runtime как базовый поток;
+- добавить stop-list sale blocking на POS Edge с Cloud authoring/publication и offline локальной проверкой;
+- добавить mobile-first waiter runtime без payment/refund authority по умолчанию;
+- добавить advanced KDS lifecycle: статусы блюд, cooking events, `ItemServed`, приемку поставки, catalog proposals, recipe change proposals и stop-list edit;
+- зафиксировать POS Edge backend как авторитетный runtime для financial/order/KDS command validation и stop-list sale blocking; POS UI не становится авторитетным слоем;
+- добавить Cloud manager flow для recipes, stop-list, catalog/recipe proposal review, inventory operations, publication readiness и sync/problem observability;
+- добавить полный Cloud-owned складской движок: stock receipts, inventory counts, production, sale consumption, refund/cancellation dispositions, recipe expansion, balances, costing и retro recalculation DAG;
+- добавить ClickHouse runtime как immutable/OLAP storage, async export pipeline и bounded Cloud OLAP API;
+- закрыть полный smoke path Cloud setup -> Edge sync -> waiter order -> kitchen served -> cashier payment/check -> Cloud inventory ledger -> ClickHouse export -> OLAP API.
 
 ## POS Edge Backend
 
@@ -102,7 +114,7 @@
 
 - UI для скидок/надбавок/налоговых профилей в кассовом терминале.
 - UI для modifier/service/tip scopes в financial operation ledger.
-- Складские операции, KDS, доставка, мобильный официант, PSP/fiscal device screens.
+- Складские операции в POS UI, KDS runtime, доставка, мобильный официант, PSP/fiscal device screens.
 
 ## Cloud UI
 
@@ -119,7 +131,7 @@
 
 - Cashier runtime в Cloud UI.
 - Cloud auth/RBAC UI.
-- KDS, PSP, fiscalization, delivery и inventory runtime.
+- KDS runtime screens, PSP, fiscalization, delivery и cashier runtime в Cloud UI; inventory runtime должен появиться в Cloud UI как manager workspace до полного пилота.
 
 ## Данные и миграции
 
@@ -171,15 +183,15 @@
 
 - Поддерживать `docs/backend/CLOUD-BACKEND-SPEC.md` как профильный документ Cloud Backend при каждом изменении Cloud routes, payloads, sync/provisioning contracts или schema.
 - Публичный Cloud reporting API/UI для detailed financial operation projection.
-- Stop-list sync, recipe expansion и retro costing DAG.
+- До полного пилота: stop-list sync, Cloud recipe/stop-list authoring, POS Edge recipe/stop-list ingest, local sale blocking, waiter mobile runtime, advanced KDS lifecycle, chef receipt/catalog/recipe proposal flows, полный Cloud Inventory Engine, ClickHouse runtime/OLAP API и `full_pilot` smoke.
+- После полного пилота: hardware bump-bar integrations, kitchen printer orchestration, rich BI dashboards, ERP/accounting integrations и внешние delivery/payment/fiscal контуры.
 - Data-preserving migrations после первого реального внедрения.
 - Production auth/RBAC perimeter для Cloud/License API.
 
-## Вне текущего объема
+## Вне текущего объема полного пилота
 
-- KDS runtime.
 - Delivery/channel integrations.
 - Настоящий PSP/payment processor module и PSP refund.
 - Fiscal device integration.
-- ClickHouse runtime pipeline.
+- Cashier/KDS/manager mobile variants outside waiter screen.
 - Destructive archive apply/restore/compaction в active SQLite.
