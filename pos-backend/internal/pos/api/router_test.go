@@ -307,6 +307,74 @@ func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 	return n
 }
 
+type apiFinancialOperationOutboxEnvelope struct {
+	Version         string  `json:"version"`
+	EventID         string  `json:"event_id"`
+	CommandID       string  `json:"command_id"`
+	EventType       string  `json:"event_type"`
+	AggregateType   string  `json:"aggregate_type"`
+	AggregateID     string  `json:"aggregate_id"`
+	RestaurantID    *string `json:"restaurant_id"`
+	DeviceID        string  `json:"device_id"`
+	NodeDeviceID    string  `json:"node_device_id"`
+	ClientDeviceID  *string `json:"client_device_id"`
+	ShiftID         *string `json:"shift_id"`
+	ActorEmployeeID *string `json:"actor_employee_id"`
+	SessionID       *string `json:"session_id"`
+	Payload         struct {
+		Origin domain.CommandOrigin      `json:"origin"`
+		Data   domain.FinancialOperation `json:"data"`
+	} `json:"payload"`
+}
+
+func assertAPIFinancialOperationOutboxEnvelope(t *testing.T, f *apiFixture, commandID, eventType string, operation domain.FinancialOperation) {
+	t.Helper()
+	msg, err := f.repo.GetOutboxByCommandID(f.ctx, commandID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.CommandType != eventType || msg.AggregateType != "FinancialOperation" || msg.AggregateID != operation.ID {
+		t.Fatalf("unexpected financial operation outbox row: %+v", msg)
+	}
+	if msg.Origin != domain.OriginEdgeDevice || msg.SyncDirection != domain.SyncDirectionEdgeToCloud || msg.Status != domain.OutboxPending {
+		t.Fatalf("unexpected financial operation outbox delivery state: origin=%s direction=%s status=%s", msg.Origin, msg.SyncDirection, msg.Status)
+	}
+	if msg.RestaurantID == nil || *msg.RestaurantID != f.restaurant.ID || msg.DeviceID != f.device.ID || msg.NodeDeviceID != f.device.ID {
+		t.Fatalf("unexpected financial operation outbox device scope: %+v", msg)
+	}
+	if msg.ClientDeviceID == nil || *msg.ClientDeviceID != f.clientID || msg.ActorEmployeeID == nil || *msg.ActorEmployeeID != operation.CreatedByEmployeeID || msg.SessionID == nil || *msg.SessionID != f.session.ID {
+		t.Fatalf("unexpected financial operation outbox actor scope: %+v", msg)
+	}
+
+	var envelope apiFinancialOperationOutboxEnvelope
+	if err := json.Unmarshal([]byte(msg.PayloadJSON), &envelope); err != nil {
+		t.Fatalf("decode financial operation outbox envelope: %v; payload=%s", err, msg.PayloadJSON)
+	}
+	if envelope.Version != domain.SyncEnvelopeVersion || envelope.EventID == "" || envelope.CommandID != commandID || envelope.EventType != eventType || envelope.AggregateType != "FinancialOperation" || envelope.AggregateID != operation.ID {
+		t.Fatalf("unexpected financial operation outbox envelope identity: %+v", envelope)
+	}
+	if envelope.RestaurantID == nil || *envelope.RestaurantID != f.restaurant.ID || envelope.DeviceID != f.device.ID || envelope.NodeDeviceID != f.device.ID {
+		t.Fatalf("unexpected financial operation outbox envelope device scope: %+v", envelope)
+	}
+	if envelope.ClientDeviceID == nil || *envelope.ClientDeviceID != f.clientID || envelope.ShiftID == nil || *envelope.ShiftID != operation.ShiftID || envelope.ActorEmployeeID == nil || *envelope.ActorEmployeeID != operation.CreatedByEmployeeID || envelope.SessionID == nil || *envelope.SessionID != f.session.ID {
+		t.Fatalf("unexpected financial operation outbox envelope actor scope: %+v", envelope)
+	}
+	if envelope.Payload.Origin != domain.OriginEdgeDevice {
+		t.Fatalf("expected edge_device payload origin, got %s", envelope.Payload.Origin)
+	}
+	if envelope.Payload.Data.ID != operation.ID || envelope.Payload.Data.CheckID != operation.CheckID || envelope.Payload.Data.Type != operation.Type || envelope.Payload.Data.Kind != operation.Kind || envelope.Payload.Data.Amount != operation.Amount {
+		t.Fatalf("unexpected financial operation outbox payload: %+v", envelope.Payload.Data)
+	}
+
+	var localEvents int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM local_event_log WHERE event_id = ? AND command_id = ? AND envelope_version = ? AND event_type = ? AND aggregate_type = 'FinancialOperation' AND aggregate_id = ? AND shift_id = ?`, envelope.EventID, commandID, domain.SyncEnvelopeVersion, eventType, operation.ID, operation.ShiftID).Scan(&localEvents); err != nil {
+		t.Fatal(err)
+	}
+	if localEvents != 1 {
+		t.Fatalf("expected one matching local event for %s outbox envelope, got %d", eventType, localEvents)
+	}
+}
+
 func TestPinLoginAndSessionAPI(t *testing.T) {
 	f := newAPIFixture(t)
 	rr := f.postJSON(t, "/api/v1/auth/pin-login", `{"command_id":"cmd-api-pin-login","node_device_id":"`+f.device.ID+`","pin":"1111"}`)
@@ -2006,6 +2074,8 @@ func TestRecordCancellationThenRefundRemainingThroughPublicAPISucceeds(t *testin
 	cashier := f.employee
 	cashierSession := f.session
 	f.useManagerOperator(t)
+	outboxBeforeCancellation := countAPIRows(t, f, "pos_sync_outbox")
+	eventsBeforeCancellation := countAPIRows(t, f, "local_event_log")
 	cancellationAmount := check.Total / 2
 	cancelBody := fmt.Sprintf(`{"command_id":"cmd-api-mixed-success-cancel","node_device_id":"%s","operation_kind":"partial","inventory_disposition":"manual_review","reason":"partial cancellation before refund","items":[{"scope":"whole_check","amount":%d,"currency":"RUB"}]}`, f.device.ID, cancellationAmount)
 	cancelled := f.postJSON(t, "/api/v1/checks/"+check.ID+"/cancellations", cancelBody)
@@ -2016,6 +2086,13 @@ func TestRecordCancellationThenRefundRemainingThroughPublicAPISucceeds(t *testin
 	if cancellation.Type != domain.FinancialOperationCancellation || cancellation.Kind != domain.FinancialOperationPartial || cancellation.Amount != cancellationAmount {
 		t.Fatalf("unexpected cancellation operation: %+v", cancellation)
 	}
+	if outbox := countAPIRows(t, f, "pos_sync_outbox"); outbox != outboxBeforeCancellation+1 {
+		t.Fatalf("expected one cancellation outbox write, before=%d after=%d", outboxBeforeCancellation, outbox)
+	}
+	if events := countAPIRows(t, f, "local_event_log"); events != eventsBeforeCancellation+1 {
+		t.Fatalf("expected one cancellation local event write, before=%d after=%d", eventsBeforeCancellation, events)
+	}
+	assertAPIFinancialOperationOutboxEnvelope(t, f, "cmd-api-mixed-success-cancel", "CancellationRecorded", cancellation)
 
 	manager := f.employee
 	managerSession := f.session
@@ -2086,20 +2163,7 @@ func TestRecordCancellationThenRefundRemainingThroughPublicAPISucceeds(t *testin
 	if events := countAPIRows(t, f, "local_event_log"); events != eventsBefore+1 {
 		t.Fatalf("expected one refund local event write, before=%d after=%d", eventsBefore, events)
 	}
-	var refundEvents int
-	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM local_event_log WHERE event_type = 'RefundRecorded' AND aggregate_type = 'FinancialOperation' AND aggregate_id = ?`, refund.ID).Scan(&refundEvents); err != nil {
-		t.Fatal(err)
-	}
-	if refundEvents != 1 {
-		t.Fatalf("expected one RefundRecorded local event, got %d", refundEvents)
-	}
-	var refundOutbox int
-	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM pos_sync_outbox WHERE command_id = 'cmd-api-mixed-success-refund' AND command_type = 'RefundRecorded' AND aggregate_type = 'FinancialOperation' AND aggregate_id = ? AND sync_direction = 'edge_to_cloud'`, refund.ID).Scan(&refundOutbox); err != nil {
-		t.Fatal(err)
-	}
-	if refundOutbox != 1 {
-		t.Fatalf("expected one edge_to_cloud RefundRecorded outbox row, got %d", refundOutbox)
-	}
+	assertAPIFinancialOperationOutboxEnvelope(t, f, "cmd-api-mixed-success-refund", "RefundRecorded", refund)
 	operations, err := f.repo.ListFinancialOperationsByCheck(f.ctx, check.ID)
 	if err != nil {
 		t.Fatal(err)
