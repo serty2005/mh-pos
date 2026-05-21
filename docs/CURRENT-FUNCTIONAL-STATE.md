@@ -16,7 +16,7 @@
 
 Не обнаружено сейчас:
 
-- Подтвержденного runtime для KDS, доставки, настоящего платежного процессинга, фискального адаптера, Cloud Inventory Worker, ClickHouse pipeline или destructive archive apply.
+- Подтвержденного runtime для KDS, доставки, настоящего платежного процессинга, фискального адаптера, ClickHouse pipeline или destructive archive apply.
 - Публичного Cloud HTTP/API интерфейса отчетов по детальной проекции финансовых операций. Сервисная и repository-основа есть, публичный reporting surface остается запланированным далее.
 
 ## POS Edge Backend
@@ -41,13 +41,12 @@
 - Локальный lifecycle SQLite: status, retention dry-run, archive export plan, export-only JSONL archive, read-plan, lookup preview и apply-plan verification без удаления runtime rows.
 - Cloud -> Edge master-data ingest для `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
 - Sync sender через authenticated `sync/exchange`, item-level ACK, retry/reclaim/backoff и безопасную обработку неподдержанных направлений.
-- Минимальная legacy-основа ручного складского документа в POS Edge. Она реализована как переходный internal foundation и не является целевой складской архитектурой.
+- Cloud-centric Inventory foundation: Cloud sync receiver принимает целевые складские события, durable `inventory_event_queue` передает их Cloud Inventory Worker, POS Edge legacy manual stock foundation удален из runtime.
 
 Вне текущего объема:
 
-- Автоматическое списание склада из продажи.
-- Автоматический возврат на склад или списание в отходы из cancellation/refund.
-- Целевой Cloud Inventory Worker и расчет себестоимости.
+- Recipe-based автоматическое списание склада из продажи.
+- Полный ретроспективный расчет себестоимости.
 - Destructive retention apply, удаление строк из active SQLite, restore archive в active SQLite и compaction.
 - Настоящий платежный процессинг, webhooks, фискальные смены и фискальный адаптер.
 
@@ -71,7 +70,7 @@
 - Production auth/RBAC perimeter для Cloud API.
 - Публичный Cloud reporting API/UI по financial operation projection.
 - Async ClickHouse forwarder и immutable OLAP archive.
-- Полный Cloud Inventory Worker.
+- Recipe expansion, semi-finished auto-production split и retro costing DAG.
 
 ## License Server
 
@@ -155,7 +154,7 @@
 
 - POS service tests покрывают RBAC, PIN/auth, смены, кассовые смены, idempotency command id, transaction rollback, order/precheck/payment/check lifecycle, manager override, business date, reprint, modifiers, service items, pricing, financial operation caps, partial cancellation/refund, mixed refunds, outbox, Cloud master-data ingest и storage archive readiness.
 - POS API tests покрывают безопасные HTTP errors, сессии, pairing/provisioning, master-data route boundaries, floor/order/precheck/payment/check endpoints, sync/storage endpoints и CORS.
-- POS SQLite tests покрывают schema constraints, active managed baseline, payments by `precheck_id`, prechecks, local event log, outbox retry schema, modifiers, inventory foundation и migration repair.
+- POS SQLite tests покрывают schema constraints, active managed baseline, payments by `precheck_id`, prechecks, local event log, outbox retry schema, modifiers, отсутствие legacy Edge stock tables и migration repair.
 - Cloud sync tests покрывают idempotent receive, item-level batch ACK, authenticated exchange, revision conflicts, current financial operation events, legacy refund events, master-data packages и contract validation.
 - Cloud master-data tests покрывают CRUD/validation, PIN reuse rules, role permission validation, catalog/menu/publication shape, service/semi-finished kinds, lifecycle statuses и pricing policies.
 - License tests покрывают registration, resolve, consumed/expired/invalid pairing codes.
@@ -166,13 +165,13 @@
 
 - Полный `go test ./...` и `npm run build` нужно запускать после каждого изменения соответствующего кода; этот документ фиксирует покрытие по найденным тестам, а не заменяет запуск CI.
 - Cloud Backend теперь имеет отдельный профильный contract: `docs/backend/CLOUD-BACKEND-SPEC.md`; при изменении Cloud routes, provisioning, publication, sync receiver или PostgreSQL schema его нужно обновлять вместе с кодом.
-- Legacy Edge-side manual inventory foundation остается в коде и миграции, хотя целевая архитектура требует Cloud-centric inventory. Это нужно удалить отдельным изменением, когда будет принят следующий inventory baseline.
+- Legacy Edge-side manual inventory foundation удален из кода и managed SQLite baseline; историческая пометка сохранена в профильных sync/data docs.
 
 ## Запланировано далее
 
 - Поддерживать `docs/backend/CLOUD-BACKEND-SPEC.md` как профильный документ Cloud Backend при каждом изменении Cloud routes, payloads, sync/provisioning contracts или schema.
 - Публичный Cloud reporting API/UI для detailed financial operation projection.
-- Целевой Cloud Inventory Worker, stop-list sync и удаление legacy Edge-side stock foundation.
+- Stop-list sync, recipe expansion и retro costing DAG.
 - Data-preserving migrations после первого реального внедрения.
 - Production auth/RBAC perimeter для Cloud/License API.
 

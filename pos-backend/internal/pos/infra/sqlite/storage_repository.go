@@ -138,11 +138,11 @@ func (r *Repository) BuildStorageArchiveExportPlan(ctx context.Context, cutoffBu
 		OpenCashSessions:       counts.OpenCashSessions,
 		BlockingOutboxMessages: blocking,
 		Manifest: storage.ArchivePlanManifest{
-			FormatVersion:             "storage-archive-manifest-v1",
-			RestaurantID:              restaurantID,
-			BusinessDateRange:         dateRange,
-			CutoffBusinessDateLocal:   cutoffBusinessDateLocal,
-			Tables:                    archivePlanTableManifest(eligible),
+			FormatVersion:           "storage-archive-manifest-v1",
+			RestaurantID:            restaurantID,
+			BusinessDateRange:       dateRange,
+			CutoffBusinessDateLocal: cutoffBusinessDateLocal,
+			Tables:                  archivePlanTableManifest(eligible),
 		},
 	}, nil
 }
@@ -283,9 +283,7 @@ SELECT
   (SELECT COUNT(1) FROM cash_sessions),
   (SELECT COUNT(1) FROM cash_sessions WHERE status = 'open'),
   (SELECT COUNT(1) FROM local_event_log),
-  (SELECT COUNT(1) FROM pos_sync_outbox),
-  (SELECT COUNT(1) FROM stock_documents),
-  (SELECT COUNT(1) FROM stock_moves)`).
+  (SELECT COUNT(1) FROM pos_sync_outbox)`).
 		Scan(
 			&counts.OrderLines,
 			&counts.OrderLineModifiers,
@@ -306,8 +304,6 @@ SELECT
 			&counts.OpenCashSessions,
 			&counts.LocalEvents,
 			&counts.OutboxMessages,
-			&counts.StockDocuments,
-			&counts.StockMoves,
 		); err != nil {
 		return counts, normalizeErr(err)
 	}

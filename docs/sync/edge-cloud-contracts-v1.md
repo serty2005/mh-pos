@@ -279,7 +279,7 @@ Cancellation/refund sync behavior:
 - `GET /api/v1/orders/closed` pagination/filtering является POS local read API behavior; оно не меняет Edge -> Cloud event payloads или Cloud receiver contracts.
 - `GET /api/v1/storage/status`, `POST /api/v1/storage/retention/dry-run`, `POST /api/v1/storage/archive/export-plan`, `POST /api/v1/storage/archive/export` и `POST /api/v1/storage/archive/apply-plan` являются локальными POS operational lifecycle API. Они не создают sync envelopes; dry-run, manifest-only export-plan, export-only archive и apply-plan только сообщают active/open blockers и non-sent `edge_to_cloud` outbox rows как blocking state для будущей destructive retention/archive policy. Export-only/apply-plan явно возвращают `runtime_rows_deleted = false`; apply-plan всегда возвращает `result_mode = apply_blocked`.
 - `GET /api/v1/sync/outbox`, `GET /api/v1/sync/local-events` и POS UI activity/sync drawer читают только bounded local windows; они не являются sync cleanup или archive contract.
-- Manual `StockDocumentPosted` остается local-only в текущем POS Edge и не принимается/не проецируется Cloud receiver. В целевой inventory architecture этот event должен быть retired.
+- Manual `StockDocumentPosted` исторически был local-only pre-pilot Edge event, не принимался и не проецировался Cloud receiver; при Cloud-centric inventory cutover этот Edge runtime path удален.
 
 ### Inventory Event Payloads Target
 
@@ -377,11 +377,9 @@ Cancellation/refund sync behavior:
 Не реализовано сейчас:
 
 - inventory consumption events;
-- KDS/stock input events;
 - stop-list sync;
-- Cloud Inventory Worker projection from these events;
-- stock movement events for refund/cancellation disposition;
-- Cloud receipt/projection contract for manual stock document events;
+- KDS runtime для генерации `ItemServed` / `ProductionCompleted`;
+- recipe expansion, modifier linked catalog item consumption и retro costing DAG;
 - PSP/fiscal event streams.
 
 ## Запланированные Границы

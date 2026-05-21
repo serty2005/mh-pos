@@ -27,6 +27,12 @@ CREATE TABLE IF NOT EXISTS cloud_edge_event_receipts (
     'PaymentRefunded',
     'CancellationRecorded',
     'RefundRecorded',
+    'CheckClosed',
+    'ItemServed',
+    'StockReceiptCaptured',
+    'InventoryCountCaptured',
+    'ProductionCompleted',
+    'StopListUpdated',
     'OrderClosed',
     'CashSessionOpened',
     'CashSessionClosed',
@@ -240,6 +246,12 @@ CREATE TABLE IF NOT EXISTS cloud_edge_event_receipts (
     'PaymentRefunded',
     'CancellationRecorded',
     'RefundRecorded',
+    'CheckClosed',
+    'ItemServed',
+    'StockReceiptCaptured',
+    'InventoryCountCaptured',
+    'ProductionCompleted',
+    'StopListUpdated',
     'OrderClosed',
     'CashSessionOpened',
     'CashSessionClosed',
@@ -806,6 +818,12 @@ ALTER TABLE cloud_edge_event_receipts
     'PaymentRefunded',
     'CancellationRecorded',
     'RefundRecorded',
+    'CheckClosed',
+    'ItemServed',
+    'StockReceiptCaptured',
+    'InventoryCountCaptured',
+    'ProductionCompleted',
+    'StopListUpdated',
     'OrderClosed',
     'CashSessionOpened',
     'CashSessionClosed',
@@ -969,6 +987,33 @@ ALTER TABLE cloud_master_data_packages
 
 
 -- === 004_cloud_inventory_foundation.sql ===
+CREATE TABLE IF NOT EXISTS inventory_event_queue (
+  id TEXT PRIMARY KEY,
+  receipt_id TEXT NOT NULL UNIQUE REFERENCES cloud_edge_event_receipts(id) ON DELETE RESTRICT,
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  device_id TEXT NOT NULL CHECK (device_id <> ''),
+  event_id TEXT NOT NULL CHECK (event_id <> ''),
+  event_type TEXT NOT NULL CHECK (event_type <> ''),
+  aggregate_type TEXT NOT NULL CHECK (aggregate_type <> ''),
+  aggregate_id TEXT NOT NULL CHECK (aggregate_id <> ''),
+  status TEXT NOT NULL CHECK (status IN ('pending','processing','processed','failed')),
+  attempts BIGINT NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  next_retry_at TIMESTAMPTZ,
+  locked_at TIMESTAMPTZ,
+  locked_by TEXT,
+  processed_at TIMESTAMPTZ,
+  last_error TEXT,
+  occurred_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS inventory_event_queue_status_retry
+  ON inventory_event_queue(status, next_retry_at, occurred_at, id);
+
+CREATE INDEX IF NOT EXISTS inventory_event_queue_event_type
+  ON inventory_event_queue(event_type, occurred_at, id);
+
 CREATE TABLE IF NOT EXISTS stock_documents (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
@@ -982,6 +1027,9 @@ CREATE TABLE IF NOT EXISTS stock_documents (
 
 CREATE INDEX IF NOT EXISTS stock_documents_restaurant_occurred_at
   ON stock_documents(restaurant_id, occurred_at, id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS stock_documents_source_event_unique
+  ON stock_documents(source_event_id, source_event_type);
 
 CREATE TABLE IF NOT EXISTS stock_ledger (
   id TEXT PRIMARY KEY,

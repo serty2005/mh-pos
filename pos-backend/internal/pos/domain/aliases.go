@@ -363,36 +363,9 @@ func NewReprintDocument(documentType, sourceID string, snapshot []byte, actorEmp
 type RecipeVersionStatus = inventory.RecipeVersionStatus
 type RecipeVersion = inventory.RecipeVersion
 type RecipeLine = inventory.RecipeLine
-type PurchaseReceiptStatus = inventory.PurchaseReceiptStatus
-type PurchaseReceipt = inventory.PurchaseReceipt
-type PurchaseReceiptLine = inventory.PurchaseReceiptLine
-type StockDocumentType = inventory.StockDocumentType
-type StockDocumentStatus = inventory.StockDocumentStatus
-type StockDocument = inventory.StockDocument
-type StockMoveType = inventory.StockMoveType
-type StockMove = inventory.StockMove
-type StockBalance = inventory.StockBalance
-type ItemCostType = inventory.ItemCostType
-type ItemCost = inventory.ItemCost
 
 const (
-	RecipeVersionDraft           = inventory.RecipeVersionDraft
-	RecipeVersionActive          = inventory.RecipeVersionActive
-	RecipeVersionArchived        = inventory.RecipeVersionArchived
-	PurchaseReceiptDraft         = inventory.PurchaseReceiptDraft
-	PurchaseReceiptPosted        = inventory.PurchaseReceiptPosted
-	PurchaseReceiptCancelled     = inventory.PurchaseReceiptCancelled
-	StockDocumentPurchaseReceipt = inventory.StockDocumentPurchaseReceipt
-	StockDocumentAdjustment      = inventory.StockDocumentAdjustment
-	StockDocumentTransfer        = inventory.StockDocumentTransfer
-	StockDocumentWriteOff        = inventory.StockDocumentWriteOff
-	StockDocumentProduction      = inventory.StockDocumentProduction
-	StockDocumentDraft           = inventory.StockDocumentDraft
-	StockDocumentPosted          = inventory.StockDocumentPosted
-	StockDocumentCancelled       = inventory.StockDocumentCancelled
-	StockMoveIn                  = inventory.StockMoveIn
-	StockMoveOut                 = inventory.StockMoveOut
-	StockMoveAdjustment          = inventory.StockMoveAdjustment
-	ItemCostLastPurchase         = inventory.ItemCostLastPurchase
-	ItemCostMovingAverage        = inventory.ItemCostMovingAverage
+	RecipeVersionDraft    = inventory.RecipeVersionDraft
+	RecipeVersionActive   = inventory.RecipeVersionActive
+	RecipeVersionArchived = inventory.RecipeVersionArchived
 )

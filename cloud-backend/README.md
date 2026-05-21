@@ -19,6 +19,7 @@ Cloud backend для POS/RMS платформы: прием Edge operational eve
 - реализовано сейчас: generic Cloud -> Edge package storage/validation поддерживает stream `pricing_policy` для tax/service-charge reference payloads; full Cloud UI/publication workflow для pricing/tax остается запланирован далее;
 - реализовано сейчас: device provisioning поддерживает Cloud Approve и License Code flow для чистого подключения POS Edge без dev bootstrap;
 - реализовано сейчас: Cloud UI API responses по сотрудникам и публикациям не возвращают PIN и `pin_hash`; PIN hash присутствует только внутри sync-ready staff package для device/system delivery на Edge.
+- реализовано сейчас: Cloud sync receiver принимает inventory event catalog, пишет durable `inventory_event_queue`, а Cloud Inventory Worker создает Cloud-owned `stock_documents` и `stock_ledger` для нормализованных item payloads.
 
 ## Запуск
 
@@ -52,7 +53,7 @@ MH_POS_VERSION=0.1.4
 
 Реализовано сейчас: Cloud Backend также читает optional `config/cloud-api.json`; пример полного файла находится в `config/cloud-api.example.json`. Если `CLOUD_CONFIG_PATH` задан явно, файл обязателен. Порядок приоритета: defaults -> env -> JSON-файл. Общий контракт описан в `../docs/backend/RUNTIME-CONFIG.md`.
 
-Реализовано сейчас: PostgreSQL использует managed migrations из `migrations/postgres`; в pre-pilot режиме активен один схлопнутый baseline `001_init.sql`, который содержит receiver storage, projection tables, Cloud-owned master-data authority schema, restaurants API tables, provisioning tables, refund event catalog, refund finance projection columns и `pricing_policy` package stream.
+Реализовано сейчас: PostgreSQL использует managed migrations из `migrations/postgres`; в pre-pilot режиме активен один схлопнутый baseline `001_init.sql`, который содержит receiver storage, projection tables, Cloud-owned master-data authority schema, restaurants API tables, provisioning tables, refund event catalog, refund finance projection columns, `pricing_policy` package stream, `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs` и `stop_lists`.
 Реализовано сейчас: `schema_migrations` хранит имя SQL file, checksum и status; уже примененный baseline не выполняется повторно.
 Реализовано сейчас: до первого клиента существующие dev/test БД не поддерживаются как data-preserving upgrade path и пересоздаются из baseline. Если active baseline меняется, `MH_POS_VERSION` повышается, чтобы startup policy не принимала checksum drift как ту же runtime-версию; для local/dev recovery предпочтительно пересоздать Cloud PostgreSQL volume из актуального baseline.
 Реализовано сейчас: startup policy использует `db_runtime_versions`; checksum drift при той же версии останавливает startup, а `DB version > MH_POS_VERSION` завершает startup fail-fast.

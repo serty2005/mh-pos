@@ -36,7 +36,7 @@
 - `d3789b0` добавил безопасный Cloud UI журнал входящих Edge events без raw payload и выровнял accepted event catalog со schema baseline.
 - `6eb98a0` подтвердил, что транспорт Cloud -> Edge работает через publication version/checkpoint; после Cloud-owned CRUD нужна публикация, иначе Edge честно остается на старой версии.
 - `51d95d0` принял ADR-016: PostgreSQL остается транзакционным Cloud store, ClickHouse является будущим бессрочным архивом business events; синхронный dual-write запрещен.
-- `689e075` перенес целевую складскую архитектуру в Cloud: stock documents, stock ledger, costing jobs и stop-lists принадлежат Cloud Inventory Worker; Edge-side stock foundation является переходным legacy.
+- `689e075` перенес целевую складскую архитектуру в Cloud: stock documents, stock ledger, costing jobs и stop-lists принадлежат Cloud Inventory Worker; Edge-side stock foundation был переходным legacy и удален при cutover.
 - `86e1dee` усилил current financial operation payload contract: `CancellationRecorded`/`RefundRecorded` требуют identity fields, check/precheck/shift/date/reason/snapshot и не смешиваются с legacy refund events.
 
 Вне текущего объема:
@@ -44,7 +44,7 @@
 - production auth/RBAC perimeter для Cloud API;
 - публичный Cloud reporting API/UI по detailed financial operation projection;
 - Async ClickHouse forwarder;
-- полный Cloud Inventory Worker.
+- full recipe/costing inventory engine beyond normalized event item processing.
 
 ## Назначение
 
@@ -468,7 +468,7 @@ Managed SQL file, реализовано сейчас:
 - Currency reference: `cloud_currency_reference`.
 - Master data: `cloud_restaurants`, `cloud_roles`, `cloud_employees`, `cloud_categories`, `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_services`, `cloud_catalog_folders`, `cloud_catalog_folder_parameters`, `cloud_catalog_tags`, `cloud_catalog_item_tags`, `cloud_recipe_items`, `cloud_modifier_groups`, `cloud_modifier_options`, `cloud_modifier_group_bindings`, `cloud_pricing_policies`, `cloud_menu_items`, `cloud_menu_item_modifier_groups`, `cloud_menu_location_assignments`, `cloud_master_data_publications`.
 - Provisioning: `cloud_edge_nodes`, `cloud_unassigned_edge_nodes`, `cloud_pairing_codes`.
-- Inventory target foundation: `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`.
+- Inventory runtime: `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`.
 
 Schema verification:
 
@@ -479,20 +479,22 @@ Schema verification:
 
 Реализована только основа:
 
-- PostgreSQL baseline содержит Cloud inventory foundation tables.
-- `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists` являются целевой Cloud-owned основой.
+- PostgreSQL baseline содержит Cloud inventory runtime tables.
+- `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists` являются целевой Cloud-owned основой.
+
+Реализовано сейчас:
+
+- Cloud Inventory Worker создает stock documents and stock ledger из accepted normalized item events.
 
 Запланировано далее:
 
-- Cloud Inventory Worker создает stock documents, stock ledger и costing jobs из Edge business events.
 - Stop-list sync становится sale-blocking availability overlay.
 - ClickHouse `raw_business_events` становится бессрочным архивом business events.
 - Async Batch Forwarder переносит accepted events из PostgreSQL inbox buffer в ClickHouse.
 
 Вне текущего объема:
 
-- Запущенный Cloud Inventory Worker.
-- Автоматическое складское движение при продаже/возврате/отмене.
+- Recipe expansion, modifier linked catalog item consumption and retro costing DAG.
 - ClickHouse runtime dependency.
 - Synchronous dual-write PostgreSQL + ClickHouse.
 
@@ -527,7 +529,7 @@ Schema verification:
 
 - Production authorization and tenant perimeter для Cloud API.
 - Public Cloud reporting API/UI для detailed financial operation projection.
-- Cloud Inventory Worker.
+- Full recipe/costing inventory engine.
 - Stop-list sync.
 - Async ClickHouse forwarder.
 - Data-preserving PostgreSQL migrations после первого реального внедрения.

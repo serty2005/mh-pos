@@ -25,7 +25,7 @@
 | Check | Edge | Generated after full payment; finalized checks are not rewritten by cancellation/refund | `CheckCreated` is current Edge -> Cloud operational event; `CheckRefunded` is legacy accepted | реализовано сейчас |
 | Tax/pricing policy reference | Cloud | Edge read model only | `pricing_policy` Cloud -> Edge stream for `tax_profiles`, `tax_rules`, `service_charge_rules`, `pricing_policies` | реализовано сейчас |
 | Operational order adjustments | Edge | Yes while order is open | runtime-команды; будущие policy ids могут ограничивать допустимые варианты | реализовано сейчас |
-| Stock document/move/ledger | Cloud Inventory Worker | No | Edge business events -> Cloud worker | запланировано далее; Edge-side stock document service должен быть выведен из целевой архитектуры |
+| Stock document/move/ledger | Cloud Inventory Worker | No | Edge business events -> Cloud worker | реализовано сейчас for normalized item payloads; Edge-side stock document service был pre-pilot legacy и удален |
 
 ## Current Cloud -> Edge Ingest
 
@@ -89,13 +89,16 @@ Edge Outbox
 - Pagination/filtering закрытых заказов является local POS read-model behavior и не добавляет sync ownership или event names.
 - Bounded outbox/local-event visibility в POS API/UI является local operational window and does not acknowledge, remove or archive sync rows.
 - POS Edge storage lifecycle status/dry-run/manifest-only export-plan/export-only archive/apply-plan является local operational read/export/verification model и не добавляет sync event names. Любая будущая destructive retention/archive policy должна блокироваться при наличии active/open blockers и non-sent `edge_to_cloud` outbox messages; текущий runtime только сообщает это blocking state, возвращает manifest-only план с `result_mode = plan_only`, может создать локальный export artifact без sync envelope и возвращает apply-plan как `result_mode = apply_blocked` с `runtime_rows_deleted = false`.
-- manual Inventory service реализовано сейчас пишет `StockDocumentPosted` как local-only outbox/local event; это не часть Edge -> Cloud operational catalog и должно быть выведено из целевой архитектуры при переходе на Cloud-centric inventory.
+- Исторически manual Inventory service писал `StockDocumentPosted` как local-only outbox/local event; этот pre-pilot legacy path удален и не входит в Edge -> Cloud operational catalog.
 
-Запланировано далее:
+Реализовано сейчас:
 
 - Edge/KDS events `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
 - Cloud Inventory Worker создает `stock_documents` и `stock_ledger` из accepted events;
 - `stock_balances` остаются аналитической проекцией и не блокируют продажи;
+
+Запланировано далее:
+
 - ClickHouse получает только OLAP projection из Cloud PostgreSQL.
 - richer modifier/pricing reporting projections после pilot acceptance.
 

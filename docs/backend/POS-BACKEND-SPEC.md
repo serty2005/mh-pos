@@ -23,7 +23,7 @@
 - `sqlc` как текущий persistence implementation;
 - ClickHouse runtime;
 - inventory consumption engine;
-- Cloud Inventory Worker и costing engine;
+- full costing engine;
 - payment processor module;
 - fiscal adapter.
 
@@ -320,12 +320,12 @@ Modifiers:
 
 Recipes/inventory:
 
-- Запланировано далее: POS Edge работает как генератор events и UI ввода; он не создает `StockDocument`, `StockMove`, stock balance или costing rows.
-- Запланировано далее: Edge SQLite содержит only read-only `recipe_versions`, `recipe_lines` and bidirectional `stop_lists`; legacy Edge-side stock tables должны быть удалены из целевого baseline.
-- Запланировано далее: Cloud Inventory Worker обрабатывает `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`.
-- Запланировано далее: Cloud PostgreSQL хранит `stock_ledger` with `unit_cost_minor`, `total_cost_minor` and `costing_status`; ClickHouse получает batch projection `olap_stock_moves`.
-- Реализовано сейчас: cancellation/refund ledger хранит явный `inventory_disposition`, но текущий POS runtime не мутирует stock tables.
-- Не реализовано сейчас: Cloud Inventory Worker, stop-list sync, recipe expansion, modifier linked catalog item stock consumption, automatic stock return/write-off.
+- Реализовано сейчас: POS Edge работает как генератор events и UI ввода; он не создает `StockDocument`, `StockMove`, stock balance или costing rows.
+- Реализовано сейчас: Edge SQLite содержит read-only `recipe_versions`, `recipe_lines` и `stop_lists`; legacy Edge-side stock tables удалены из целевого baseline.
+- Реализовано сейчас: Cloud Inventory Worker обрабатывает `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated` через durable queue.
+- Реализовано сейчас: Cloud PostgreSQL хранит `inventory_event_queue`, `stock_documents`, `stock_ledger` with `unit_cost_minor`, `total_cost_minor` and `costing_status`; ClickHouse получает batch projection `olap_stock_moves` запланировано далее.
+- Реализовано сейчас: cancellation/refund ledger хранит явный `inventory_disposition`; POS runtime не мутирует local stock tables, потому что local stock tables удалены.
+- Не реализовано сейчас: stop-list sync, recipe expansion, modifier linked catalog item stock consumption, retro costing DAG.
 - Профильный целевой contract: `docs/backend/INVENTORY-COSTING-SPEC.md`.
 
 ## RBAC

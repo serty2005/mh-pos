@@ -260,7 +260,18 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			RequiredBy:    "cloud inventory foundation immutable stock document header",
 			MigrationFile: "001_init.sql",
 			Columns:       []string{"id", "restaurant_id", "document_type", "source_event_id", "source_event_type", "business_date_local", "occurred_at", "created_at"},
-			Indexes:       []string{"stock_documents_restaurant_occurred_at"},
+			Indexes:       []string{"stock_documents_restaurant_occurred_at", "stock_documents_source_event_unique"},
+		},
+		{
+			Table:         "inventory_event_queue",
+			RequiredBy:    "Cloud Inventory Worker durable queue for accepted Edge inventory events",
+			MigrationFile: "001_init.sql",
+			Columns: []string{
+				"id", "receipt_id", "restaurant_id", "device_id", "event_id", "event_type", "aggregate_type", "aggregate_id",
+				"status", "attempts", "next_retry_at", "locked_at", "locked_by", "processed_at", "last_error",
+				"occurred_at", "created_at", "updated_at",
+			},
+			Indexes: []string{"inventory_event_queue_status_retry", "inventory_event_queue_event_type"},
 		},
 		{
 			Table:         "stock_ledger",

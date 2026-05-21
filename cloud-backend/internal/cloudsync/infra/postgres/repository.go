@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -17,6 +16,7 @@ import (
 
 	"cloud-backend/internal/cloudsync/app"
 	"cloud-backend/internal/cloudsync/contracts"
+	"cloud-backend/internal/platform/idgen"
 )
 
 type Repository struct {
@@ -124,6 +124,11 @@ INSERT INTO cloud_operational_events(
 	}
 	if err := r.applyEventProjections(ctx, tx, receipt, ack.CloudReceiptID); err != nil {
 		return contracts.EventAck{}, err
+	}
+	if contracts.IsInventoryRelevantEventType(receipt.Envelope.EventType) {
+		if err := enqueueInventoryEvent(ctx, tx, receipt, ack.CloudReceiptID); err != nil {
+			return contracts.EventAck{}, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return contracts.EventAck{}, err
@@ -490,6 +495,26 @@ ON CONFLICT (operation_id) DO NOTHING`,
 	return err
 }
 
+func enqueueInventoryEvent(ctx context.Context, tx pgx.Tx, receipt app.EdgeEventReceipt, receiptID string) error {
+	_, err := tx.Exec(ctx, `
+INSERT INTO inventory_event_queue(
+  id,receipt_id,restaurant_id,device_id,event_id,event_type,aggregate_type,aggregate_id,status,attempts,occurred_at,created_at,updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',0,$9,$10,$10)
+ON CONFLICT (receipt_id) DO NOTHING`,
+		receiptID,
+		receiptID,
+		strings.TrimSpace(*receipt.Envelope.RestaurantID),
+		strings.TrimSpace(receipt.Envelope.DeviceID),
+		strings.TrimSpace(receipt.Envelope.EventID),
+		string(receipt.Envelope.EventType),
+		strings.TrimSpace(receipt.Envelope.AggregateType),
+		strings.TrimSpace(receipt.Envelope.AggregateID),
+		receipt.Envelope.OccurredAt,
+		receipt.CloudReceivedAt,
+	)
+	return err
+}
+
 func upsertShiftFinanceProjection(ctx context.Context, tx pgx.Tx, receipt app.EdgeEventReceipt, shiftID string, paymentCount, paymentTotal, paymentRefundCount, paymentRefundTotal, checkCount, checkTotal, checkRefundCount, checkRefundTotal int64) error {
 	_, err := tx.Exec(ctx, `
 INSERT INTO cloud_projection_shift_finance(
@@ -605,19 +630,7 @@ func scanAck(row pgx.Row) (contracts.EventAck, error) {
 }
 
 func newID() (string, error) {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%s-%s-%s-%s-%s",
-		hex.EncodeToString(b[0:4]),
-		hex.EncodeToString(b[4:6]),
-		hex.EncodeToString(b[6:8]),
-		hex.EncodeToString(b[8:10]),
-		hex.EncodeToString(b[10:16]),
-	), nil
+	return idgen.NewV7()
 }
 
 func secretHash(v string) string {

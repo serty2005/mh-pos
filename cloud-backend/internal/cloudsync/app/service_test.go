@@ -193,6 +193,27 @@ func TestReceiveRefundRecordedReplaysIdempotentlyAndUpdatesShiftFinance(t *testi
 	}
 }
 
+func TestReceiveInventoryEventEnqueuesOnceOnReplay(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+	raw := sampleCheckClosedEnvelope(t)
+
+	first, err := service.Receive(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.Receive(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatalf("expected stable ack on CheckClosed replay\nfirst=%+v\nsecond=%+v", first, second)
+	}
+	if got := repo.InventoryQueueCount(); got != 1 {
+		t.Fatalf("expected one inventory queue row after replay, got %d", got)
+	}
+}
+
 func TestReceiveCancellationRecordedReplaysIdempotentlyAndKeepsCurrentEventStats(t *testing.T) {
 	repo := memory.NewRepository()
 	service := app.NewService(repo, fixedClock{})
@@ -418,6 +439,46 @@ func sampleEnvelope(t *testing.T) []byte {
 	return raw
 }
 
+func sampleCheckClosedEnvelope(t *testing.T) []byte {
+	t.Helper()
+	body := map[string]any{
+		"version":        "1",
+		"event_id":       "018f0000-0000-7000-8000-0000000000a1",
+		"command_id":     "command-check-closed-1",
+		"event_type":     string(contracts.EventCheckClosed),
+		"aggregate_type": "Check",
+		"aggregate_id":   "check-1",
+		"restaurant_id":  "restaurant-1",
+		"device_id":      "device-1",
+		"node_device_id": "device-1",
+		"shift_id":       "shift-1",
+		"occurred_at":    "2026-05-05T09:00:00Z",
+		"payload": map[string]any{
+			"origin": "edge_device",
+			"data": map[string]any{
+				"check_id":            "check-1",
+				"order_id":            "order-1",
+				"precheck_id":         "precheck-1",
+				"restaurant_id":       "restaurant-1",
+				"business_date_local": "2026-05-05",
+				"closed_at":           "2026-05-05T09:00:00Z",
+				"items": []map[string]any{{
+					"order_line_id":          "line-1",
+					"catalog_item_id":        "item-1",
+					"quantity":               "2.000",
+					"unit_code":              "PC",
+					"required_for_inventory": true,
+				}},
+			},
+		},
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
 func sampleRefundRecordedEnvelope(t *testing.T) []byte {
 	t.Helper()
 	return sampleFinancialOperationEnvelope(t, contracts.EventRefundRecorded, "018f0000-0000-7000-8000-0000000000f1", "command-refund-1", "financial-operation-1", "refund", 1000, "shift-refund-1", "2026-05-06")
@@ -443,25 +504,25 @@ func sampleFinancialOperationEnvelope(t *testing.T, eventType contracts.EventTyp
 		"payload": map[string]any{
 			"origin": "edge_device",
 			"data": map[string]any{
-				"id":                    operationID,
-				"edge_operation_id":     "edge-" + operationID,
-				"restaurant_id":         "restaurant-1",
-				"device_id":             "device-1",
-				"shift_id":              shiftID,
-				"original_shift_id":     "shift-sale-1",
-				"check_id":              "check-1",
-				"precheck_id":           "precheck-1",
-				"operation_type":        operationType,
-				"operation_kind":        "full",
-				"status":                "recorded",
-				"amount":                amount,
-				"currency":              "RUB",
-				"business_date_local":   businessDate,
-				"inventory_disposition": "no_stock_effect",
-				"reason":                "guest return",
+				"id":                     operationID,
+				"edge_operation_id":      "edge-" + operationID,
+				"restaurant_id":          "restaurant-1",
+				"device_id":              "device-1",
+				"shift_id":               shiftID,
+				"original_shift_id":      "shift-sale-1",
+				"check_id":               "check-1",
+				"precheck_id":            "precheck-1",
+				"operation_type":         operationType,
+				"operation_kind":         "full",
+				"status":                 "recorded",
+				"amount":                 amount,
+				"currency":               "RUB",
+				"business_date_local":    businessDate,
+				"inventory_disposition":  "no_stock_effect",
+				"reason":                 "guest return",
 				"created_by_employee_id": "manager-1",
-				"snapshot":              map[string]any{"document_type": "financial_operation", "check_id": "check-1"},
-				"created_at":            businessDate + "T09:00:00Z",
+				"snapshot":               map[string]any{"document_type": "financial_operation", "check_id": "check-1"},
+				"created_at":             businessDate + "T09:00:00Z",
 			},
 		},
 	}

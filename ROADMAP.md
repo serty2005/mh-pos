@@ -76,7 +76,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 Эти зоны имеют schema/domain foundation, но не являются готовым pilot runtime:
 
 - Recipes: целевая Edge SQLite схема хранит read-only `recipe_versions`, `recipe_lines`; Cloud остается authoring/source.
-- Inventory: целевая architecture is Cloud-centric Event-Driven Inventory. Edge-side `stock_documents`, `stock_moves`, `stock_balances`, `item_costs` and purchase receipt foundation являются legacy для roadmap и должны быть удалены из целевого baseline.
+- Inventory: целевая architecture is Cloud-centric Event-Driven Inventory. Edge-side `stock_documents`, `stock_moves`, `stock_balances`, `item_costs` and purchase receipt foundation использовались как pre-pilot legacy и удалены из целевого SQLite baseline.
 - Master-data publications: Cloud package/publication foundation пока шире текущего POS Edge runtime для recipes/inventory.
 
 ## Аудит 2026-05-15
@@ -110,9 +110,9 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - целевой contract зафиксирован в `docs/backend/INVENTORY-COSTING-SPEC.md`;
   - Edge должен стать только генератором events и UI ввода, без stock documents/moves/balances/costing;
   - целевая Edge SQLite schema: read-only `recipe_versions`, `recipe_lines`, двусторонний `stop_lists`;
-  - Cloud Inventory Worker должен обрабатывать `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated` (запланировано далее);
-  - выполнено: Cloud PostgreSQL baseline уже содержит foundation tables `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`;
-  - реализовать `stock_ledger` with `unit_cost_minor`, `total_cost_minor`, `costing_status` and retro recalculation jobs;
+  - выполнено: Cloud Inventory Worker принимает через durable queue `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
+  - выполнено: Cloud PostgreSQL baseline содержит `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`;
+  - выполнено: worker пишет `stock_ledger` with `unit_cost_minor`, `total_cost_minor`, `costing_status` для нормализованных item payloads; retro recalculation jobs остаются следующим шагом;
   - реализовать stop-list как единственный механизм блокировки продаж; stock balance остается аналитическим и может быть отрицательным.
 - Cancellation/refund/reprint hardening:
   - backend ledger, immutable snapshots, no-over-cancel/no-over-refund/no-over-line-amount tests, current `CancellationRecorded`/`RefundRecorded` sync contracts, idempotent Cloud raw/journal receipt checks, coarse Cloud refund counters and detailed Cloud financial operation projection реализованы;
@@ -141,7 +141,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 - KDS runtime and kitchen ticket lifecycle.
 - `ItemServed` / `ProductionCompleted` triggers.
-- Cloud Inventory Worker, recipe expansion, semi-finished auto-production split policies.
+- Recipe expansion, semi-finished auto-production split policies.
 - Stop-list bi-directional sync and Edge local recipe-based stop-list checks.
 - Costing Engine with negative balance rules and retro recalculation DAG.
 - ClickHouse immutable event store `raw_business_events` на UUIDv7:

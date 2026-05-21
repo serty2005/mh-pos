@@ -38,8 +38,6 @@ type TableCounts struct {
 	OpenCashSessions        int `json:"open_cash_sessions"`
 	LocalEvents             int `json:"local_events"`
 	OutboxMessages          int `json:"outbox_messages"`
-	StockDocuments          int `json:"stock_documents"`
-	StockMoves              int `json:"stock_moves"`
 }
 
 // BusinessDateRange показывает фактический диапазон business_date_local у закрытых чеков.

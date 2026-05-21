@@ -28,13 +28,13 @@
 - Cloud -> Edge master-data ingest в POS Edge runtime поддерживает потоки `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
 - Cloud/Edge master data разделяет menu categories, catalog folders и tags; `catalog` stream передает folders, folder parameters, tags, item tags, services и modifier groups/options/bindings, а `menu` stream передает menu items и effective modifier links.
 - Cloud publication snapshot для POS Edge публикуется как typed ingest DTO: `modifier_groups[]` сохраняет `required`, `min_count`, `max_count`, `active`, а `menu_item_modifier_groups[]` остается link-only без rich/UI fields. Production-way bootstrap отправляет опубликованный Cloud snapshot на POS Edge без PowerShell field stripping.
-- Inventory runtime имеет минимальный backend boundary для ручного posted stock document: `stock_documents` и `stock_moves` immutable, optional balance update выполняется только через service transaction.
-- SQLite schema содержит foundation для recipes/inventory. Это не означает готовый cashier runtime для recipe expansion, automatic consumption или automatic return/write-off из cancellation/refund.
+- Inventory runtime переведен на Cloud-centric cutover: POS Edge больше не содержит manual stock document service и SQLite tables `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`; исторически этот pre-pilot Edge-side метод использовался как foundation и удален при переходе.
+- Cloud принимает inventory events через sync receiver, кладет их в durable `inventory_event_queue`, а Cloud Inventory Worker пишет Cloud-owned `stock_documents` и `stock_ledger` для нормализованных item payloads. Recipe expansion, ретроспективный costing DAG и ClickHouse `olap_stock_moves` остаются отдельными следующими шагами.
 
 Вне текущего runtime:
 
 - automatic recipe expansion / stock consumption engine;
-- automatic stock return/write-off from financial operations;
+- recipe-expanded stock return/write-off from financial operations beyond normalized item payloads;
 - PSP refund smoke и fiscal integration;
 - destructive retention apply, archive restore в active SQLite, `VACUUM` и compaction;
 - fiscal shift/business day сущности как отдельные runtime aggregates;

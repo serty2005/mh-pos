@@ -196,8 +196,8 @@ Boundary rules:
 
 - Целевая Edge inventory схема содержит только `recipe_versions`, `recipe_lines` в read-only режиме и двусторонний overlay `stop_lists`.
 - Целевая Edge schema не должна содержать `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`.
-- Целевой Cloud runtime владеет `stock_documents`, `stock_ledger`, costing state, stop-list authority и очередью Inventory Worker. Реализовано сейчас: Cloud PostgreSQL baseline содержит foundation tables `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`; full Inventory Worker остается вне текущего runtime.
-- Legacy Edge-side manual stock document foundation должен быть удален при переходе на Cloud-centric Event-Driven Inventory.
+- Целевой Cloud runtime владеет `stock_documents`, `stock_ledger`, costing state, stop-list authority и очередью Inventory Worker. Реализовано сейчас: Cloud PostgreSQL baseline содержит `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`; Cloud Inventory Worker обрабатывает нормализованные item payloads с fallback costing `estimated`.
+- Legacy Edge-side manual stock document foundation использовался в pre-pilot runtime и удален при переходе на Cloud-centric Event-Driven Inventory.
 
 ## Pricing, Discounts And Tax
 
@@ -267,7 +267,7 @@ Boundary rules:
 - ClickHouse используется как immutable business event archive и Cloud OLAP/reporting accelerator через batch projection `olap_stock_moves`; он не является transactional source of truth и не входит в POS transaction path.
 - Остаток склада является аналитическим показателем, допускает отрицательные значения и не блокирует продажу.
 - Продажу блокирует только `StopList`.
-- Edge SQLite целевая схема содержит `recipe_versions`, `recipe_lines` read-only и `stop_lists`; Edge-side `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines` должны быть удалены из целевого baseline.
+- Edge SQLite целевая схема содержит `recipe_versions`, `recipe_lines` read-only и `stop_lists`; Edge-side `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines` удалены из целевого baseline.
 - `StopList` содержит `catalog_item_id` и `available_quantity`; запись может относиться к блюду, ингредиенту или заготовке и синхронизируется Edge <-> Cloud.
 - При добавлении позиции Edge локально разворачивает read-only рецептуру и блокирует продажу, если само блюдо или обязательный компонент находится в stop-list с `available_quantity = 0`.
 - Modifier на Edge остается ценовой опцией `modifier_option_id`; Cloud-only `ModifierOption.linked_catalog_item_id` приводит к отдельному списанию только в Inventory Worker.
@@ -291,12 +291,10 @@ Inventory and costing logic:
 
 Не реализовано сейчас:
 
-- Cloud Inventory Worker;
-- `stock_ledger` и `stock_recalculation_jobs`;
 - `stop_lists` sync Edge <-> Cloud;
 - KDS `ItemServed` / `ProductionCompleted` runtime;
 - ClickHouse `olap_stock_moves` projection;
-- удаление legacy Edge-side stock tables из текущего runtime baseline.
+- recipe expansion, semi-finished auto-production split и retro costing DAG.
 
 ## Payment Processor And Fiscal Boundary
 

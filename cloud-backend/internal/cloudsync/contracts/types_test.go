@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"cloud-backend/internal/cloudsync/contracts"
 )
@@ -77,6 +78,61 @@ func TestValidateEnvelopeAcceptsCurrentFinancialOperationEvents(t *testing.T) {
 				t.Fatalf("expected %s payload to be accepted, got %v", tt.eventType, err)
 			}
 		})
+	}
+}
+
+func TestValidateEnvelopeAcceptsTargetInventoryEvents(t *testing.T) {
+	tests := []struct {
+		name      string
+		eventType contracts.EventType
+		payload   json.RawMessage
+	}{
+		{
+			name:      "check closed",
+			eventType: contracts.EventCheckClosed,
+			payload:   json.RawMessage(`{"origin":"edge_device","data":{"check_id":"check-1","order_id":"order-1","precheck_id":"precheck-1","restaurant_id":"restaurant-1","business_date_local":"2026-05-05","closed_at":"2026-05-05T09:00:00Z","items":[{"order_line_id":"line-1","catalog_item_id":"item-1","quantity":"2.000","unit_code":"PC","required_for_inventory":true}]}}`),
+		},
+		{
+			name:      "item served",
+			eventType: contracts.EventItemServed,
+			payload:   json.RawMessage(`{"origin":"edge_device","data":{"served_event_id":"served-1","order_id":"order-1","order_line_id":"line-1","catalog_item_id":"item-1","quantity":"1.000","unit_code":"PC","served_at":"2026-05-05T09:00:00Z","station_id":"kitchen-hot"}}`),
+		},
+		{
+			name:      "stock receipt",
+			eventType: contracts.EventStockReceiptCaptured,
+			payload:   json.RawMessage(`{"origin":"edge_device","data":{"receipt_id":"receipt-1","restaurant_id":"restaurant-1","received_at":"2026-05-05T08:00:00Z","business_date_local":"2026-05-05","supplier_id":"supplier-1","items":[{"catalog_item_id":"item-1","quantity":"10.000","unit_code":"KG","unit_cost_minor":5000,"currency":"RUB"}]}}`),
+		},
+		{
+			name:      "inventory count",
+			eventType: contracts.EventInventoryCountCaptured,
+			payload:   json.RawMessage(`{"origin":"edge_device","data":{"count_id":"count-1","restaurant_id":"restaurant-1","counted_at":"2026-05-05T21:00:00Z","business_date_local":"2026-05-05","items":[{"catalog_item_id":"item-1","counted_quantity":"3.250","unit_code":"KG"}]}}`),
+		},
+		{
+			name:      "production completed",
+			eventType: contracts.EventProductionCompleted,
+			payload:   json.RawMessage(`{"origin":"edge_device","data":{"production_id":"production-1","restaurant_id":"restaurant-1","semi_finished_catalog_item_id":"semi-1","quantity":"5.000","unit_code":"KG","completed_at":"2026-05-05T10:15:00Z","business_date_local":"2026-05-05"}}`),
+		},
+		{
+			name:      "stop list updated",
+			eventType: contracts.EventStopListUpdated,
+			payload:   json.RawMessage(`{"origin":"edge_device","data":{"stop_list_id":"stop-1","restaurant_id":"restaurant-1","catalog_item_id":"item-1","available_quantity":"0.000","active":true,"source":"edge","reason":"ingredient_unavailable","updated_at":"2026-05-05T12:05:00Z"}}`),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			envelope := validInventoryEnvelope(t, tt.eventType, tt.payload)
+			if err := contracts.ValidateEnvelope(envelope); err != nil {
+				t.Fatalf("expected %s to be accepted, got %v", tt.eventType, err)
+			}
+		})
+	}
+}
+
+func TestValidateEnvelopeRejectsInvalidTargetInventoryPayload(t *testing.T) {
+	envelope := validInventoryEnvelope(t, contracts.EventCheckClosed, json.RawMessage(`{"origin":"edge_device","data":{"check_id":"check-1","business_date_local":"2026-05-05","closed_at":"2026-05-05T09:00:00Z","items":[{"catalog_item_id":"item-1","quantity":"0.000","unit_code":"PC","required_for_inventory":true}]}}`))
+	err := contracts.ValidateEnvelope(envelope)
+	if !errors.Is(err, contracts.ErrInvalidEnvelope) {
+		t.Fatalf("expected invalid inventory payload, got %v", err)
 	}
 }
 
@@ -185,6 +241,26 @@ func validEnvelope(t *testing.T, eventType contracts.EventType) contracts.SyncEn
 	return envelope
 }
 
+func validInventoryEnvelope(t *testing.T, eventType contracts.EventType, payload json.RawMessage) contracts.SyncEnvelope {
+	t.Helper()
+	restaurantID := "restaurant-1"
+	shiftID := "shift-1"
+	return contracts.SyncEnvelope{
+		Version:       "1",
+		EventID:       "018f0000-0000-7000-8000-0000000000a1",
+		CommandID:     "command-inventory-1",
+		EventType:     eventType,
+		AggregateType: "InventoryEvent",
+		AggregateID:   "inventory-event-1",
+		RestaurantID:  &restaurantID,
+		DeviceID:      "device-1",
+		NodeDeviceID:  "device-1",
+		ShiftID:       &shiftID,
+		OccurredAt:    mustParseTime(t, "2026-05-05T09:00:00Z"),
+		Payload:       payload,
+	}
+}
+
 func setFinancialOperationPayloadField(t *testing.T, envelope *contracts.SyncEnvelope, field string, value any) {
 	t.Helper()
 	var payload map[string]any
@@ -201,6 +277,15 @@ func setFinancialOperationPayloadField(t *testing.T, envelope *contracts.SyncEnv
 		t.Fatal(err)
 	}
 	envelope.Payload = raw
+}
+
+func mustParseTime(t *testing.T, value string) time.Time {
+	t.Helper()
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parsed
 }
 
 func validFinancialOperationEnvelope(t *testing.T, eventType contracts.EventType, operationType string) contracts.SyncEnvelope {

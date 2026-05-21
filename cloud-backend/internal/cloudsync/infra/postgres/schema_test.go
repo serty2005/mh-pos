@@ -37,6 +37,7 @@ func TestRequiredSchemaIncludesCloudInventoryFoundationTables(t *testing.T) {
 		reqs[req.Table] = cols
 	}
 	for table, cols := range map[string][]string{
+		"inventory_event_queue":    {"id", "receipt_id", "restaurant_id", "device_id", "event_id", "event_type", "status", "attempts", "occurred_at", "created_at", "updated_at"},
 		"stock_documents":          {"id", "restaurant_id", "document_type", "source_event_id", "source_event_type", "business_date_local", "occurred_at", "created_at"},
 		"stock_ledger":             {"id", "restaurant_id", "stock_document_id", "source_event_id", "source_event_type", "catalog_item_id", "order_line_id", "movement_type", "quantity", "unit_code", "unit_cost_minor", "total_cost_minor", "costing_status", "occurred_at", "business_date_local", "created_at"},
 		"stock_recalculation_jobs": {"id", "restaurant_id", "source_document_id", "status", "recalculate_from", "created_at", "updated_at"},

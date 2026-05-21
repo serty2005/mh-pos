@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,6 +30,12 @@ const (
 	EventPaymentRefunded          EventType = "PaymentRefunded"
 	EventCancellationRecorded     EventType = "CancellationRecorded"
 	EventRefundRecorded           EventType = "RefundRecorded"
+	EventCheckClosed              EventType = "CheckClosed"
+	EventItemServed               EventType = "ItemServed"
+	EventStockReceiptCaptured     EventType = "StockReceiptCaptured"
+	EventInventoryCountCaptured   EventType = "InventoryCountCaptured"
+	EventProductionCompleted      EventType = "ProductionCompleted"
+	EventStopListUpdated          EventType = "StopListUpdated"
 	EventOrderClosed              EventType = "OrderClosed"
 	EventCashSessionOpened        EventType = "CashSessionOpened"
 	EventCashSessionClosed        EventType = "CashSessionClosed"
@@ -166,26 +173,36 @@ type PaymentRefunded = PaymentCaptured
 type CheckRefunded = CheckCreated
 
 type FinancialOperationRecorded struct {
-	ID                   string          `json:"id"`
-	EdgeOperationID      string          `json:"edge_operation_id"`
-	RestaurantID         string          `json:"restaurant_id"`
-	DeviceID             string          `json:"device_id"`
-	ShiftID              string          `json:"shift_id"`
-	OriginalShiftID      string          `json:"original_shift_id"`
-	CheckID              string          `json:"check_id"`
-	PrecheckID           string          `json:"precheck_id"`
-	OperationType        string          `json:"operation_type"`
-	OperationKind        string          `json:"operation_kind"`
-	Status               string          `json:"status"`
-	Amount               int64           `json:"amount"`
-	Currency             string          `json:"currency"`
-	BusinessDateLocal    string          `json:"business_date_local"`
-	InventoryDisposition string          `json:"inventory_disposition"`
-	Reason               string          `json:"reason"`
-	CreatedByEmployeeID  string          `json:"created_by_employee_id,omitempty"`
-	ApprovedByEmployeeID *string         `json:"approved_by_employee_id,omitempty"`
-	Snapshot             json.RawMessage `json:"snapshot,omitempty"`
-	CreatedAt            time.Time       `json:"created_at"`
+	ID                   string                     `json:"id"`
+	EdgeOperationID      string                     `json:"edge_operation_id"`
+	RestaurantID         string                     `json:"restaurant_id"`
+	DeviceID             string                     `json:"device_id"`
+	ShiftID              string                     `json:"shift_id"`
+	OriginalShiftID      string                     `json:"original_shift_id"`
+	CheckID              string                     `json:"check_id"`
+	PrecheckID           string                     `json:"precheck_id"`
+	OperationType        string                     `json:"operation_type"`
+	OperationKind        string                     `json:"operation_kind"`
+	Status               string                     `json:"status"`
+	Amount               int64                      `json:"amount"`
+	Currency             string                     `json:"currency"`
+	BusinessDateLocal    string                     `json:"business_date_local"`
+	InventoryDisposition string                     `json:"inventory_disposition"`
+	Reason               string                     `json:"reason"`
+	CreatedByEmployeeID  string                     `json:"created_by_employee_id,omitempty"`
+	ApprovedByEmployeeID *string                    `json:"approved_by_employee_id,omitempty"`
+	Snapshot             json.RawMessage            `json:"snapshot,omitempty"`
+	Items                []InventoryDispositionItem `json:"items,omitempty"`
+	CreatedAt            time.Time                  `json:"created_at"`
+}
+
+type InventoryDispositionItem struct {
+	OrderLineID          string `json:"order_line_id"`
+	CatalogItemID        string `json:"catalog_item_id"`
+	Quantity             string `json:"quantity"`
+	UnitCode             string `json:"unit_code,omitempty"`
+	InventoryDisposition string `json:"inventory_disposition"`
+	Reason               string `json:"reason,omitempty"`
 }
 
 // FinancialOperationProjection описывает Cloud read model ledger operation без чтения mutable POS state.
@@ -221,6 +238,76 @@ type FinancialOperationProjection struct {
 }
 
 type OrderClosed = OrderCreated
+
+type InventoryItem struct {
+	OrderLineID          string `json:"order_line_id,omitempty"`
+	CatalogItemID        string `json:"catalog_item_id"`
+	Quantity             string `json:"quantity"`
+	CountedQuantity      string `json:"counted_quantity,omitempty"`
+	UnitCode             string `json:"unit_code"`
+	RequiredForInventory bool   `json:"required_for_inventory,omitempty"`
+	UnitCostMinor        int64  `json:"unit_cost_minor,omitempty"`
+	Currency             string `json:"currency,omitempty"`
+}
+
+type CheckClosed struct {
+	CheckID           string          `json:"check_id"`
+	OrderID           string          `json:"order_id"`
+	PrecheckID        string          `json:"precheck_id"`
+	RestaurantID      string          `json:"restaurant_id"`
+	BusinessDateLocal string          `json:"business_date_local"`
+	ClosedAt          time.Time       `json:"closed_at"`
+	Items             []InventoryItem `json:"items"`
+}
+
+type ItemServed struct {
+	ServedEventID string    `json:"served_event_id"`
+	OrderID       string    `json:"order_id"`
+	OrderLineID   string    `json:"order_line_id"`
+	CatalogItemID string    `json:"catalog_item_id"`
+	Quantity      string    `json:"quantity"`
+	UnitCode      string    `json:"unit_code"`
+	ServedAt      time.Time `json:"served_at"`
+	StationID     string    `json:"station_id,omitempty"`
+}
+
+type StockReceiptCaptured struct {
+	ReceiptID         string          `json:"receipt_id"`
+	RestaurantID      string          `json:"restaurant_id"`
+	ReceivedAt        time.Time       `json:"received_at"`
+	BusinessDateLocal string          `json:"business_date_local"`
+	SupplierID        string          `json:"supplier_id,omitempty"`
+	Items             []InventoryItem `json:"items"`
+}
+
+type InventoryCountCaptured struct {
+	CountID           string          `json:"count_id"`
+	RestaurantID      string          `json:"restaurant_id"`
+	CountedAt         time.Time       `json:"counted_at"`
+	BusinessDateLocal string          `json:"business_date_local"`
+	Items             []InventoryItem `json:"items"`
+}
+
+type ProductionCompleted struct {
+	ProductionID              string    `json:"production_id"`
+	RestaurantID              string    `json:"restaurant_id"`
+	SemiFinishedCatalogItemID string    `json:"semi_finished_catalog_item_id"`
+	Quantity                  string    `json:"quantity"`
+	UnitCode                  string    `json:"unit_code"`
+	CompletedAt               time.Time `json:"completed_at"`
+	BusinessDateLocal         string    `json:"business_date_local"`
+}
+
+type StopListUpdated struct {
+	StopListID        string    `json:"stop_list_id"`
+	RestaurantID      string    `json:"restaurant_id"`
+	CatalogItemID     string    `json:"catalog_item_id"`
+	AvailableQuantity string    `json:"available_quantity,omitempty"`
+	Active            bool      `json:"active"`
+	Source            string    `json:"source"`
+	Reason            string    `json:"reason,omitempty"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
 
 type CashSessionOpened struct {
 	ID                 string    `json:"id"`
@@ -389,6 +476,18 @@ func ValidateEventPayload(v SyncEnvelope) error {
 		return validatePayload[PaymentRefunded](v)
 	case EventCancellationRecorded, EventRefundRecorded:
 		return validateFinancialOperationRecordedPayload(v)
+	case EventCheckClosed:
+		return validateCheckClosedPayload(v)
+	case EventItemServed:
+		return validateItemServedPayload(v)
+	case EventStockReceiptCaptured:
+		return validateStockReceiptCapturedPayload(v)
+	case EventInventoryCountCaptured:
+		return validateInventoryCountCapturedPayload(v)
+	case EventProductionCompleted:
+		return validateProductionCompletedPayload(v)
+	case EventStopListUpdated:
+		return validateStopListUpdatedPayload(v)
 	case EventOrderClosed:
 		return validatePayload[OrderClosed](v)
 	case EventCashSessionOpened:
@@ -501,6 +600,155 @@ func validateFinancialOperationRecordedPayload(v SyncEnvelope) error {
 	return nil
 }
 
+func validateCheckClosedPayload(v SyncEnvelope) error {
+	payload, err := decodePayload[CheckClosed](v)
+	if err != nil {
+		return err
+	}
+	data := payload.Data
+	if strings.TrimSpace(data.CheckID) == "" || strings.TrimSpace(data.OrderID) == "" || strings.TrimSpace(data.PrecheckID) == "" || strings.TrimSpace(data.RestaurantID) == "" {
+		return fmt.Errorf("%w: check closed ids are required", ErrInvalidEnvelope)
+	}
+	if err := validateBusinessDate(data.BusinessDateLocal, "check closed business_date_local"); err != nil {
+		return err
+	}
+	if data.ClosedAt.IsZero() || len(data.Items) == 0 {
+		return fmt.Errorf("%w: check closed closed_at and items are required", ErrInvalidEnvelope)
+	}
+	return validateInventoryItems(data.Items, false)
+}
+
+func validateItemServedPayload(v SyncEnvelope) error {
+	payload, err := decodePayload[ItemServed](v)
+	if err != nil {
+		return err
+	}
+	data := payload.Data
+	if strings.TrimSpace(data.ServedEventID) == "" || strings.TrimSpace(data.OrderID) == "" || strings.TrimSpace(data.OrderLineID) == "" || strings.TrimSpace(data.CatalogItemID) == "" {
+		return fmt.Errorf("%w: item served ids are required", ErrInvalidEnvelope)
+	}
+	if !positiveDecimal(data.Quantity) || strings.TrimSpace(data.UnitCode) == "" || data.ServedAt.IsZero() {
+		return fmt.Errorf("%w: item served quantity, unit_code and served_at are required", ErrInvalidEnvelope)
+	}
+	return nil
+}
+
+func validateStockReceiptCapturedPayload(v SyncEnvelope) error {
+	payload, err := decodePayload[StockReceiptCaptured](v)
+	if err != nil {
+		return err
+	}
+	data := payload.Data
+	if strings.TrimSpace(data.ReceiptID) == "" || strings.TrimSpace(data.RestaurantID) == "" || data.ReceivedAt.IsZero() {
+		return fmt.Errorf("%w: stock receipt id, restaurant_id and received_at are required", ErrInvalidEnvelope)
+	}
+	if err := validateBusinessDate(data.BusinessDateLocal, "stock receipt business_date_local"); err != nil {
+		return err
+	}
+	return validateInventoryItems(data.Items, false)
+}
+
+func validateInventoryCountCapturedPayload(v SyncEnvelope) error {
+	payload, err := decodePayload[InventoryCountCaptured](v)
+	if err != nil {
+		return err
+	}
+	data := payload.Data
+	if strings.TrimSpace(data.CountID) == "" || strings.TrimSpace(data.RestaurantID) == "" || data.CountedAt.IsZero() {
+		return fmt.Errorf("%w: inventory count id, restaurant_id and counted_at are required", ErrInvalidEnvelope)
+	}
+	if err := validateBusinessDate(data.BusinessDateLocal, "inventory count business_date_local"); err != nil {
+		return err
+	}
+	return validateInventoryItems(data.Items, true)
+}
+
+func validateProductionCompletedPayload(v SyncEnvelope) error {
+	payload, err := decodePayload[ProductionCompleted](v)
+	if err != nil {
+		return err
+	}
+	data := payload.Data
+	if strings.TrimSpace(data.ProductionID) == "" || strings.TrimSpace(data.RestaurantID) == "" || strings.TrimSpace(data.SemiFinishedCatalogItemID) == "" {
+		return fmt.Errorf("%w: production ids are required", ErrInvalidEnvelope)
+	}
+	if err := validateBusinessDate(data.BusinessDateLocal, "production business_date_local"); err != nil {
+		return err
+	}
+	if !positiveDecimal(data.Quantity) || strings.TrimSpace(data.UnitCode) == "" || data.CompletedAt.IsZero() {
+		return fmt.Errorf("%w: production quantity, unit_code and completed_at are required", ErrInvalidEnvelope)
+	}
+	return nil
+}
+
+func validateStopListUpdatedPayload(v SyncEnvelope) error {
+	payload, err := decodePayload[StopListUpdated](v)
+	if err != nil {
+		return err
+	}
+	data := payload.Data
+	if strings.TrimSpace(data.StopListID) == "" || strings.TrimSpace(data.RestaurantID) == "" || strings.TrimSpace(data.CatalogItemID) == "" || strings.TrimSpace(data.Source) == "" || data.UpdatedAt.IsZero() {
+		return fmt.Errorf("%w: stop list id, restaurant_id, catalog_item_id, source and updated_at are required", ErrInvalidEnvelope)
+	}
+	if strings.TrimSpace(data.AvailableQuantity) != "" && !nonNegativeDecimal(data.AvailableQuantity) {
+		return fmt.Errorf("%w: stop list available_quantity is invalid", ErrInvalidEnvelope)
+	}
+	return nil
+}
+
+func decodePayload[T any](v SyncEnvelope) (Payload[T], error) {
+	var payload Payload[T]
+	if err := json.Unmarshal(v.Payload, &payload); err != nil {
+		return payload, fmt.Errorf("%w: invalid %s payload: %v", ErrInvalidEnvelope, v.EventType, err)
+	}
+	if strings.TrimSpace(payload.Origin) == "" {
+		return payload, fmt.Errorf("%w: payload.origin is required", ErrInvalidEnvelope)
+	}
+	return payload, nil
+}
+
+func validateInventoryItems(items []InventoryItem, useCountedQuantity bool) error {
+	if len(items) == 0 {
+		return fmt.Errorf("%w: inventory items are required", ErrInvalidEnvelope)
+	}
+	for _, item := range items {
+		if strings.TrimSpace(item.CatalogItemID) == "" || strings.TrimSpace(item.UnitCode) == "" {
+			return fmt.Errorf("%w: inventory item catalog_item_id and unit_code are required", ErrInvalidEnvelope)
+		}
+		quantity := item.Quantity
+		if useCountedQuantity {
+			quantity = item.CountedQuantity
+		}
+		if !positiveDecimal(quantity) {
+			return fmt.Errorf("%w: inventory item quantity must be positive", ErrInvalidEnvelope)
+		}
+		if item.UnitCostMinor < 0 {
+			return fmt.Errorf("%w: inventory item unit_cost_minor must be non-negative", ErrInvalidEnvelope)
+		}
+		if strings.TrimSpace(item.Currency) != "" && !validCurrency(item.Currency) {
+			return fmt.Errorf("%w: inventory item currency is invalid", ErrInvalidEnvelope)
+		}
+	}
+	return nil
+}
+
+func validateBusinessDate(value, name string) error {
+	if _, err := time.Parse("2006-01-02", strings.TrimSpace(value)); err != nil {
+		return fmt.Errorf("%w: %s must use YYYY-MM-DD", ErrInvalidEnvelope, name)
+	}
+	return nil
+}
+
+func positiveDecimal(value string) bool {
+	n, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	return err == nil && n > 0
+}
+
+func nonNegativeDecimal(value string) bool {
+	n, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	return err == nil && n >= 0
+}
+
 func validCurrency(v string) bool {
 	v = strings.TrimSpace(v)
 	if len(v) != 3 {
@@ -516,7 +764,16 @@ func validCurrency(v string) bool {
 
 func IsKnownEventType(v EventType) bool {
 	switch v {
-	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckReprinted, EventPrecheckCancelled, EventCheckCreated, EventCheckRefunded, EventCheckReprinted, EventPaymentCaptured, EventPaymentRefunded, EventCancellationRecorded, EventRefundRecorded, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
+	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckReprinted, EventPrecheckCancelled, EventCheckCreated, EventCheckRefunded, EventCheckReprinted, EventPaymentCaptured, EventPaymentRefunded, EventCancellationRecorded, EventRefundRecorded, EventCheckClosed, EventItemServed, EventStockReceiptCaptured, EventInventoryCountCaptured, EventProductionCompleted, EventStopListUpdated, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsInventoryRelevantEventType(v EventType) bool {
+	switch v {
+	case EventCheckClosed, EventItemServed, EventStockReceiptCaptured, EventInventoryCountCaptured, EventProductionCompleted, EventStopListUpdated, EventRefundRecorded, EventCancellationRecorded:
 		return true
 	default:
 		return false

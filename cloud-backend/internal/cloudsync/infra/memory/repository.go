@@ -25,6 +25,7 @@ type Repository struct {
 	eventStatsByKey   map[string]EventTypeProjection
 	shiftFinanceByKey map[string]ShiftFinanceProjection
 	financialOpsByID  map[string]contracts.FinancialOperationProjection
+	inventoryQueue    map[string]contracts.EventAck
 	authorizedNodes   map[string]authorizedNode
 }
 
@@ -80,6 +81,7 @@ func NewRepository() *Repository {
 		eventStatsByKey:   map[string]EventTypeProjection{},
 		shiftFinanceByKey: map[string]ShiftFinanceProjection{},
 		financialOpsByID:  map[string]contracts.FinancialOperationProjection{},
+		inventoryQueue:    map[string]contracts.EventAck{},
 		authorizedNodes:   map[string]authorizedNode{},
 	}
 }
@@ -129,6 +131,9 @@ func (r *Repository) ReceiveEdgeEvent(_ context.Context, receipt app.EdgeEventRe
 	r.applyEventTypeProjection(receipt)
 	r.applyFinancialOperationProjection(receipt, ack.CloudReceiptID)
 	r.applyShiftFinanceProjection(receipt)
+	if contracts.IsInventoryRelevantEventType(receipt.Envelope.EventType) {
+		r.inventoryQueue[ack.CloudReceiptID] = ack
+	}
 	return ack, nil
 }
 
@@ -308,6 +313,12 @@ func (r *Repository) ShiftFinance() []ShiftFinanceProjection {
 		out = append(out, item)
 	}
 	return out
+}
+
+func (r *Repository) InventoryQueueCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.inventoryQueue)
 }
 
 func (r *Repository) applyEventTypeProjection(receipt app.EdgeEventReceipt) {

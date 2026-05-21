@@ -14,9 +14,12 @@ import (
 	"cloud-backend/internal/cloudsync/app"
 	"cloud-backend/internal/cloudsync/contracts"
 	syncpg "cloud-backend/internal/cloudsync/infra/postgres"
+	inventoryapp "cloud-backend/internal/inventory/app"
+	inventorypg "cloud-backend/internal/inventory/infra/postgres"
 	masterapp "cloud-backend/internal/masterdata/app"
 	masterpg "cloud-backend/internal/masterdata/infra/postgres"
 	"cloud-backend/internal/platform/clock"
+	"cloud-backend/internal/platform/idgen"
 	"cloud-backend/internal/platform/logging"
 	platformpg "cloud-backend/internal/platform/postgres"
 	"cloud-backend/internal/platform/version"
@@ -74,6 +77,10 @@ func run() error {
 
 	repo := syncpg.NewRepository(pool)
 	service := app.NewService(repo, clock.SystemClock{})
+	inventoryWorker := inventoryapp.NewWorker(inventorypg.NewRepository(pool), idgen.UUIDGenerator{}, clock.SystemClock{}, inventoryapp.Config{
+		WorkerID:  cfg.Get("CLOUD_INVENTORY_WORKER_ID", "cloud-inventory-worker"),
+		BatchSize: 25,
+	})
 	masterRepo := masterpg.NewRepository(pool)
 	masterService := masterapp.NewService(masterRepo, clock.SystemClock{}, masterapp.RandomIDGenerator{})
 	var licenseClient provisioningapp.LicenseClient
@@ -93,6 +100,9 @@ func run() error {
 			slog.Error("http server failed", "error", err)
 		}
 	}()
+	workerCtx, workerCancel := context.WithCancel(ctx)
+	defer workerCancel()
+	go runInventoryWorker(workerCtx, inventoryWorker, 2*time.Second)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
@@ -101,4 +111,19 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return server.Shutdown(shutdownCtx)
+}
+
+func runInventoryWorker(ctx context.Context, worker *inventoryapp.Worker, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if err := worker.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("cloud inventory worker failed", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }

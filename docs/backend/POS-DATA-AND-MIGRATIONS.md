@@ -58,7 +58,7 @@ Cashier runtime invariants:
 - `payments_business_date_shift_created_at`, `orders_closed_restaurant_created_at`, `local_event_log_occurred_at` and `pos_sync_outbox_created_at` are growth-control indexes for bounded operational reads; they do not imply physical retention/delete.
 - `business_date_local` is stored for shifts, cash sessions, payments, checks and financial operations.
 - Целевой Cloud-centric inventory contract запрещает POS Edge создавать складские документы и проводки.
-- Следующий inventory baseline должен удалить Edge-side `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`.
+- Текущий inventory baseline удалил Edge-side `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`; прежний Edge-side manual stock method был pre-pilot foundation и больше не является runtime path.
 - Для локальной проверки stop-list Edge хранит только read-only recipes и двусторонний overlay `stop_lists`.
 
 ## Recipe/Inventory Runtime Boundary
@@ -80,9 +80,7 @@ Cashier runtime invariants:
 Не реализовано сейчас:
 
 - целевой `stop_lists` sync Edge <-> Cloud;
-- удаление legacy Edge-side stock foundation tables из managed SQLite baseline (они оставлены как transitional internal foundation до следующей фазы).
-- Cloud Inventory Worker;
-- удаление legacy Edge-side stock foundation из текущего managed SQLite baseline.
+- recipe expansion and retro costing DAG.
 
 Modifier acceptance реализовано сейчас только в order/pricing/precheck/check storage path: `order_line_modifiers` и `precheck_line_modifiers` сохраняют selected modifiers для replay/audit/reprint. В целевой inventory architecture Edge не знает о `ModifierOption.linked_catalog_item_id`; эту связь применяет только Cloud Inventory Worker.
 
@@ -130,10 +128,11 @@ Managed SQL files, реализовано сейчас:
 - Cloud хранит menu categories отдельно от catalog folders; catalog publication не использует menu categories как замену folder hierarchy.
 - `recipes` и `inventory_reference` могут существовать в constants/schema state, но пока не поддерживаются `mastersync.Service` apply path.
 
-Запланировано далее для Cloud-centric inventory:
+Реализовано сейчас для Cloud-centric inventory:
 
-- Реализовано сейчас: PostgreSQL baseline уже содержит Cloud-owned `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`.
+- PostgreSQL baseline содержит Cloud-owned `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`.
 - `stock_ledger` хранит `unit_cost_minor`, `total_cost_minor`, `costing_status`, `source_event_id`, `source_event_type`, `occurred_at` и `business_date_local`.
+- Cloud Inventory Worker пишет документы и ledger из нормализованных item payloads.
 - `modifier_options` получает optional `linked_catalog_item_id`; POS Edge не применяет это поле в order/pricing runtime.
 - ClickHouse `raw_business_events` наполняется только Async Batch Forwarder из PostgreSQL `inbox_events` и является бессрочным архивом business events.
 - ClickHouse `olap_stock_moves` наполняется только batch projection из PostgreSQL/ClickHouse event data и не является transactional source of truth.
@@ -261,7 +260,7 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 - Backend предоставляет non-destructive archive read/lookup preview через `POST /api/v1/storage/archive/read-plan` и `POST /api/v1/storage/archive/lookup`.
 - Backend предоставляет read-only apply-plan verification через `POST /api/v1/storage/archive/apply-plan`; destructive apply/delete остается disabled.
 - Status использует SQLite PRAGMA `page_count`, `page_size`, `freelist_count`, `journal_mode` для безопасной оценки размера без чтения файловой системы.
-- Status считает high-level объемы runtime tables: orders/order lines/modifiers, prechecks and breakdown tables, payments/attempts, checks, financial operation ledger, shifts, cash sessions, local events, outbox and legacy stock foundation tables until they are removed from the Edge target baseline.
+- Status считает high-level объемы runtime tables: orders/order lines/modifiers, prechecks and breakdown tables, payments/attempts, checks, financial operation ledger, shifts, cash sessions, local events and outbox. Legacy Edge stock foundation tables удалены из целевого baseline и не входят в status counts.
 - Status агрегирует closed orders по `checks.business_date_local` и возвращает oldest/newest closed check business date.
 - Dry-run считает candidate rows только для closed orders с `checks.business_date_local < cutoff_business_date_local`; cutoff должен использовать формат `YYYY-MM-DD`.
 - Dry-run не пишет и не удаляет строки. `financial_operations`, `financial_operation_items`, immutable precheck/check snapshots, local events и outbox остаются protected.
@@ -311,7 +310,7 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 
 - Recipes are versioned in Edge read-only tables `recipe_versions` and `recipe_lines`.
 - Edge локально использует recipes только для KDS UI и проверки stop-list при добавлении позиции.
-- Edge inventory mutation tables должны быть удалены из целевой SQLite схемы.
+- Edge inventory mutation tables удалены из целевой SQLite схемы.
 - Cloud Inventory Worker создает Cloud-owned stock documents and `stock_ledger` from Edge/KDS business events.
 - `CheckClosed` запускает batch delta consumption после сверки с `ItemServed`.
 - `ProductionCompleted` создает `PRODUCTION`: приход заготовки и расход сырья.
@@ -322,8 +321,7 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 Вне текущего runtime:
 
 - automatic recipe consumption after check;
-- Cloud Inventory Worker;
-- `stock_ledger` and costing recalculation;
+- costing recalculation;
 - ClickHouse `olap_stock_moves`;
 - automatic return-to-stock/write-off after cancellation/refund;
 - KDS `ItemServed` inventory trigger;
