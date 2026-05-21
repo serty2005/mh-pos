@@ -26,6 +26,10 @@ const retentionDryRunOnlyReason = "physical archive/delete is not implemented; f
 const archiveExportVersion = "pos_storage_archive_export_v1"
 const archivePlanModeManifestOnly = "manifest_only"
 const archiveApplyPlanModeOnly = "plan_only"
+const archiveReadPlanDefaultLimit = 50
+const archiveReadPlanMaxLimit = 100
+
+var errArchiveJSONLMalformed = errors.New("archive jsonl malformed")
 
 // Service предоставляет read-only lifecycle surface для локальной POS Edge БД.
 type Service struct {
@@ -64,22 +68,38 @@ type ArchiveExportCommand struct {
 // ArchiveApplyPlanCommand проверяет готовность archive artifact к будущему apply без удаления строк.
 type ArchiveApplyPlanCommand struct {
 	shared.CommandMeta
+	ArchiveID               string `json:"archive_id"`
 	CutoffBusinessDateLocal string `json:"cutoff_business_date_local"`
 	ArchivePath             string `json:"archive_path"`
 	ManifestPath            string `json:"manifest_path"`
 	Mode                    string `json:"mode"`
 }
 
+// ArchiveVerifyCommand явно проверяет ранее экспортированный archive artifact без изменения runtime rows.
+type ArchiveVerifyCommand struct {
+	shared.CommandMeta
+	ArchiveID    string `json:"archive_id"`
+	ManifestPath string `json:"manifest_path"`
+	ArchivePath  string `json:"archive_path"`
+}
+
 // ArchiveReadPlanCommand проверяет archive artifact без восстановления или изменения runtime rows.
 type ArchiveReadPlanCommand struct {
 	shared.CommandMeta
-	ManifestPath string `json:"manifest_path"`
-	ArchivePath  string `json:"archive_path"`
+	ArchiveID         string `json:"archive_id"`
+	ManifestPath      string `json:"manifest_path"`
+	ArchivePath       string `json:"archive_path"`
+	BusinessDateLocal string `json:"business_date_local"`
+	OrderID           string `json:"order_id"`
+	CheckID           string `json:"check_id"`
+	Limit             int    `json:"limit"`
+	Offset            int    `json:"offset"`
 }
 
 // ArchiveLookupCommand ищет один archived check/order и возвращает только immutable preview.
 type ArchiveLookupCommand struct {
 	shared.CommandMeta
+	ArchiveID    string `json:"archive_id"`
 	ManifestPath string `json:"manifest_path"`
 	ArchivePath  string `json:"archive_path"`
 	CheckID      string `json:"check_id"`
@@ -279,7 +299,8 @@ func (s *Service) BuildArchiveApplyPlan(ctx context.Context, cmd ArchiveApplyPla
 			result.BlockReasons = appendUnique(result.BlockReasons, "open_operational_boundary")
 		}
 	}
-	verification, manifest, reasons := s.verifyArchive(cmd.ArchivePath, cmd.ManifestPath)
+	archivePath, manifestPath := s.archivePaths(cmd.ArchiveID, cmd.ArchivePath, cmd.ManifestPath)
+	verification, manifest, reasons := s.verifyArchive(archivePath, manifestPath)
 	result.Verification = verification
 	result.ArchiveCounts = verification.Counts
 	result.ArchiveSHA256 = verification.ArchiveSHA256
@@ -299,21 +320,67 @@ func (s *Service) BuildArchiveApplyPlan(ctx context.Context, cmd ArchiveApplyPla
 	return result, nil
 }
 
+// VerifyArchive проверяет manifest/JSONL artifact и не обращается к active runtime tables.
+func (s *Service) VerifyArchive(ctx context.Context, cmd ArchiveVerifyCommand) (domainstorage.ArchiveVerifyResult, error) {
+	if _, err := shared.EnsureOperatorSession(ctx, s.auth, cmd.CommandMeta, string(shared.PermissionSyncView)); err != nil {
+		return domainstorage.ArchiveVerifyResult{}, err
+	}
+	archivePath, manifestPath := s.archivePaths(cmd.ArchiveID, cmd.ArchivePath, cmd.ManifestPath)
+	verification, manifest, reasons := s.verifyArchive(archivePath, manifestPath)
+	result := domainstorage.ArchiveVerifyResult{
+		GeneratedAt:       s.clock.Now(),
+		Valid:             len(reasons) == 0,
+		Errors:            reasons,
+		ArchivePath:       verification.ArchivePath,
+		ManifestPath:      verification.ManifestPath,
+		Counts:            verification.Counts,
+		Verification:      verification,
+		BusinessDateRange: verification.BusinessDateRange,
+	}
+	if manifest != nil {
+		result.ArchiveID = manifest.ArchiveID
+		result.CutoffBusinessDateLocal = manifest.CutoffBusinessDateLocal
+		result.ArchivePath = verification.ArchivePath
+		result.ManifestPath = verification.ManifestPath
+		result.RuntimeRowsDeleted = manifest.RuntimeRowsDeleted
+		result.DestructiveApplySupported = manifest.DestructiveApplySupported
+		result.BusinessDateRange = manifest.BusinessDateRange
+		result.Tables = manifest.Tables
+	}
+	return result, nil
+}
+
 // BuildArchiveReadPlan проверяет archive manifest/JSONL как non-destructive read preview foundation.
 func (s *Service) BuildArchiveReadPlan(ctx context.Context, cmd ArchiveReadPlanCommand) (domainstorage.ArchiveReadPlan, error) {
 	if _, err := shared.EnsureOperatorSession(ctx, s.auth, cmd.CommandMeta, string(shared.PermissionSyncView)); err != nil {
 		return domainstorage.ArchiveReadPlan{}, err
 	}
-	verification, manifest, reasons := s.verifyArchive(cmd.ArchivePath, cmd.ManifestPath)
+	limit, offset, err := normalizeArchiveReadPlanBounds(cmd.Limit, cmd.Offset)
+	if err != nil {
+		return domainstorage.ArchiveReadPlan{}, err
+	}
+	businessDate := strings.TrimSpace(cmd.BusinessDateLocal)
+	if businessDate != "" {
+		if _, err := time.Parse("2006-01-02", businessDate); err != nil {
+			return domainstorage.ArchiveReadPlan{}, fmt.Errorf("%w: business_date_local must use YYYY-MM-DD", domain.ErrInvalid)
+		}
+	}
+	archivePath, manifestPath := s.archivePaths(cmd.ArchiveID, cmd.ArchivePath, cmd.ManifestPath)
+	verification, manifest, reasons := s.verifyArchive(archivePath, manifestPath)
 	result := domainstorage.ArchiveReadPlan{
-		GeneratedAt:    s.clock.Now(),
-		ResultMode:     "read_plan_only",
-		Blocked:        len(reasons) > 0,
-		BlockReasons:   reasons,
-		ArchiveSHA256:  verification.ArchiveSHA256,
-		ComputedSHA256: verification.ComputedSHA256,
-		Counts:         verification.Counts,
-		Verification:   verification,
+		GeneratedAt:        s.clock.Now(),
+		ResultMode:         "read_plan_only",
+		Blocked:            len(reasons) > 0,
+		BlockReasons:       reasons,
+		ArchiveSHA256:      verification.ArchiveSHA256,
+		ComputedSHA256:     verification.ComputedSHA256,
+		Counts:             verification.Counts,
+		Verification:       verification,
+		Limit:              limit,
+		Offset:             offset,
+		RuntimeRowsDeleted: false,
+		RuntimeRestored:    false,
+		PayloadPolicy:      "archive_preview_without_sync_payloads",
 	}
 	if manifest != nil {
 		result.ArchiveID = manifest.ArchiveID
@@ -321,6 +388,23 @@ func (s *Service) BuildArchiveReadPlan(ctx context.Context, cmd ArchiveReadPlanC
 		result.ArchiveSHA256 = manifest.SHA256
 		result.BusinessDateRange = manifest.BusinessDateRange
 		result.Tables = manifest.Tables
+		result.RuntimeRowsDeleted = manifest.RuntimeRowsDeleted
+	}
+	if len(reasons) == 0 {
+		preview, err := collectArchiveReadPlanPreview(verification.ArchivePath, archiveReadPlanFilter{
+			businessDateLocal: businessDate,
+			orderID:           strings.TrimSpace(cmd.OrderID),
+			checkID:           strings.TrimSpace(cmd.CheckID),
+			limit:             limit,
+			offset:            offset,
+		})
+		if err != nil {
+			result.Blocked = true
+			result.BlockReasons = appendUnique(result.BlockReasons, "archive_unreadable")
+			return result, nil
+		}
+		result.ArchivedClosedOrders = preview
+		result.Returned = len(preview)
 	}
 	return result, nil
 }
@@ -336,7 +420,8 @@ func (s *Service) LookupArchivePreview(ctx context.Context, cmd ArchiveLookupCom
 		return domainstorage.ArchiveLookupPreview{}, fmt.Errorf("%w: exactly one of check_id or order_id is required", domain.ErrInvalid)
 	}
 
-	verification, manifest, reasons := s.verifyArchive(cmd.ArchivePath, cmd.ManifestPath)
+	archivePath, manifestPath := s.archivePaths(cmd.ArchiveID, cmd.ArchivePath, cmd.ManifestPath)
+	verification, manifest, reasons := s.verifyArchive(archivePath, manifestPath)
 	result := domainstorage.ArchiveLookupPreview{
 		GeneratedAt:  s.clock.Now(),
 		ResultMode:   "archive_lookup_preview",
@@ -428,11 +513,33 @@ func (s *Service) validateCutoff(raw string) (string, error) {
 	return cutoff, nil
 }
 
+func (s *Service) archivePaths(archiveID, archivePath, manifestPath string) (string, string) {
+	archivePath = strings.TrimSpace(archivePath)
+	manifestPath = strings.TrimSpace(manifestPath)
+	archiveID = strings.TrimSpace(archiveID)
+	if archiveID != "" {
+		root, err := filepath.Abs(s.archiveDir)
+		if err == nil {
+			if archivePath == "" {
+				archivePath = filepath.Join(root, archiveID, "archive.jsonl")
+			}
+			if manifestPath == "" {
+				manifestPath = filepath.Join(root, archiveID, "manifest.json")
+			}
+		}
+	}
+	return archivePath, manifestPath
+}
+
 func (s *Service) verifyArchive(archivePath, manifestPath string) (domainstorage.ArchiveVerificationSummary, *domainstorage.ArchiveManifest, []string) {
 	verification := domainstorage.ArchiveVerificationSummary{
 		ArchivePath:            strings.TrimSpace(archivePath),
 		ManifestPath:           strings.TrimSpace(manifestPath),
 		SnapshotPayloadPresent: true,
+		IdentityFieldsPresent:  true,
+		BusinessDateConsistent: true,
+		RuntimeRowsNotDeleted:  true,
+		PayloadPolicyPreserved: true,
 	}
 	reasons := []string{}
 	if verification.ManifestPath == "" {
@@ -466,11 +573,22 @@ func (s *Service) verifyArchive(archivePath, manifestPath string) (domainstorage
 	}
 	verification.ArchiveSHA256 = manifest.SHA256
 	verification.ManifestVersionMatched = manifest.Version == archiveExportVersion
+	verification.RuntimeRowsNotDeleted = !manifest.RuntimeRowsDeleted
 	if !verification.ManifestVersionMatched {
 		reasons = appendUnique(reasons, "archive_manifest_version_mismatch")
 	}
+	if manifest.RuntimeRowsDeleted {
+		reasons = appendUnique(reasons, "archive_runtime_rows_deleted_true")
+	}
+	if !manifestPayloadPolicyPreserved(manifest.Tables) {
+		verification.PayloadPolicyPreserved = false
+		reasons = appendUnique(reasons, "archive_sensitive_payload_policy_violation")
+	}
 	if verification.ArchivePath == "" {
 		verification.ArchivePath = manifest.ArchivePath
+	}
+	if verification.ArchivePath != "" && manifest.ArchivePath != "" && verification.ArchivePath != manifest.ArchivePath {
+		reasons = appendUnique(reasons, "archive_path_manifest_mismatch")
 	}
 	if verification.ArchivePath == "" {
 		reasons = appendUnique(reasons, "archive_missing")
@@ -480,21 +598,29 @@ func (s *Service) verifyArchive(archivePath, manifestPath string) (domainstorage
 		reasons = appendUnique(reasons, "archive_path_outside_archive_dir")
 		return verification, &manifest, reasons
 	}
-	counts, sha, snapshotPresent, err := verifyArchiveJSONL(verification.ArchivePath)
+	scan, err := verifyArchiveJSONL(verification.ArchivePath, manifest)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			reasons = appendUnique(reasons, "archive_missing")
+			return verification, &manifest, reasons
+		}
+		if errors.Is(err, errArchiveJSONLMalformed) {
+			reasons = appendUnique(reasons, "archive_jsonl_malformed")
 			return verification, &manifest, reasons
 		}
 		reasons = appendUnique(reasons, "archive_unreadable")
 		return verification, &manifest, reasons
 	}
 	verification.ArchiveExists = true
-	verification.Counts = counts
-	verification.ComputedSHA256 = sha
-	verification.SHA256Matched = sha == manifest.SHA256
-	verification.CountsMatchedManifest = archiveCountsEqual(counts, manifest.Counts)
-	verification.SnapshotPayloadPresent = snapshotPresent
+	verification.Counts = scan.counts
+	verification.BusinessDateRange = scan.businessDateRange
+	verification.ComputedSHA256 = scan.sha256
+	verification.SHA256Matched = scan.sha256 == manifest.SHA256
+	verification.CountsMatchedManifest = archiveCountsEqual(scan.counts, manifest.Counts)
+	verification.SnapshotPayloadPresent = scan.snapshotPayloadPresent
+	verification.IdentityFieldsPresent = scan.identityFieldsPresent
+	verification.BusinessDateConsistent = scan.businessDateConsistent
+	verification.PayloadPolicyPreserved = verification.PayloadPolicyPreserved && scan.payloadPolicyPreserved
 	if !verification.SHA256Matched {
 		reasons = appendUnique(reasons, "archive_sha_mismatch")
 	}
@@ -503,6 +629,15 @@ func (s *Service) verifyArchive(archivePath, manifestPath string) (domainstorage
 	}
 	if !verification.SnapshotPayloadPresent {
 		reasons = appendUnique(reasons, "archive_snapshot_payload_missing")
+	}
+	if !verification.IdentityFieldsPresent {
+		reasons = appendUnique(reasons, "archive_identity_fields_missing")
+	}
+	if !verification.BusinessDateConsistent {
+		reasons = appendUnique(reasons, "archive_business_date_range_mismatch")
+	}
+	if !verification.PayloadPolicyPreserved {
+		reasons = appendUnique(reasons, "archive_sensitive_payload_policy_violation")
 	}
 	return verification, &manifest, reasons
 }
@@ -542,17 +677,31 @@ func writeArchiveJSONL(path string, rows []domainstorage.ArchiveExportRow) (stri
 	return hex.EncodeToString(hash.Sum(nil)), tableCounts, nil
 }
 
-func verifyArchiveJSONL(path string) (domainstorage.ArchiveExportCounts, string, bool, error) {
+type archiveJSONLScan struct {
+	counts                 domainstorage.ArchiveExportCounts
+	sha256                 string
+	businessDateRange      domainstorage.BusinessDateRange
+	snapshotPayloadPresent bool
+	identityFieldsPresent  bool
+	businessDateConsistent bool
+	payloadPolicyPreserved bool
+}
+
+func verifyArchiveJSONL(path string, manifest domainstorage.ArchiveManifest) (archiveJSONLScan, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return domainstorage.ArchiveExportCounts{}, "", false, err
+		return archiveJSONLScan{}, err
 	}
 	defer file.Close()
 	hash := sha256.New()
 	scanner := bufio.NewScanner(io.TeeReader(file, hash))
 	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	tableCounts := map[string]int{}
+	businessDateRange := domainstorage.BusinessDateRange{}
 	snapshotPayloadPresent := true
+	identityFieldsPresent := true
+	businessDateConsistent := true
+	payloadPolicyPreserved := true
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(strings.TrimSpace(string(line))) == 0 {
@@ -560,17 +709,48 @@ func verifyArchiveJSONL(path string) (domainstorage.ArchiveExportCounts, string,
 		}
 		var row domainstorage.ArchiveExportRow
 		if err := json.Unmarshal(line, &row); err != nil {
-			return domainstorage.ArchiveExportCounts{}, "", false, err
+			return archiveJSONLScan{}, fmt.Errorf("%w: %v", errArchiveJSONLMalformed, err)
 		}
 		tableCounts[row.Table]++
+		if !archiveRowHasRequiredIdentity(row) {
+			identityFieldsPresent = false
+		}
 		if (row.Table == "checks" || row.Table == "prechecks") && !archiveRowHasSnapshotPayload(row.Row) {
 			snapshotPayloadPresent = false
 		}
+		if row.Table == "checks" {
+			businessDate := archiveStringValue(row.Row, "business_date_local")
+			if businessDate != "" {
+				if businessDateRange.Oldest == "" || businessDate < businessDateRange.Oldest {
+					businessDateRange.Oldest = businessDate
+				}
+				if businessDateRange.Newest == "" || businessDate > businessDateRange.Newest {
+					businessDateRange.Newest = businessDate
+				}
+				if manifest.CutoffBusinessDateLocal != "" && businessDate > manifest.CutoffBusinessDateLocal {
+					businessDateConsistent = false
+				}
+			}
+		}
+		if (row.Table == "local_event_log_summary" || row.Table == "pos_sync_outbox_summary") && !summaryRowPayloadPolicyPreserved(row.Row) {
+			payloadPolicyPreserved = false
+		}
 	}
 	if err := scanner.Err(); err != nil {
-		return domainstorage.ArchiveExportCounts{}, "", false, err
+		return archiveJSONLScan{}, err
 	}
-	return archiveCountsFromTableCounts(tableCounts), hex.EncodeToString(hash.Sum(nil)), snapshotPayloadPresent, nil
+	if businessDateRange != manifest.BusinessDateRange {
+		businessDateConsistent = false
+	}
+	return archiveJSONLScan{
+		counts:                 archiveCountsFromTableCounts(tableCounts),
+		sha256:                 hex.EncodeToString(hash.Sum(nil)),
+		businessDateRange:      businessDateRange,
+		snapshotPayloadPresent: snapshotPayloadPresent,
+		identityFieldsPresent:  identityFieldsPresent,
+		businessDateConsistent: businessDateConsistent,
+		payloadPolicyPreserved: payloadPolicyPreserved,
+	}, nil
 }
 
 func archiveRowHasSnapshotPayload(row map[string]any) bool {
@@ -584,6 +764,61 @@ func archiveRowHasSnapshotPayload(row map[string]any) bool {
 	default:
 		return true
 	}
+}
+
+func archiveRowHasRequiredIdentity(row domainstorage.ArchiveExportRow) bool {
+	fields := map[string][]string{
+		"orders":                    {"id"},
+		"order_lines":               {"id", "order_id"},
+		"order_line_modifiers":      {"id", "order_line_id"},
+		"order_line_discounts":      {"id", "order_id"},
+		"order_surcharges":          {"id", "order_id"},
+		"prechecks":                 {"id", "order_id"},
+		"precheck_lines":            {"id", "precheck_id"},
+		"precheck_line_modifiers":   {"id", "precheck_id"},
+		"precheck_discounts":        {"id", "precheck_id"},
+		"precheck_surcharges":       {"id", "precheck_id"},
+		"precheck_taxes":            {"id", "precheck_id"},
+		"payments":                  {"id", "precheck_id"},
+		"payment_attempts":          {"id", "payment_id"},
+		"checks":                    {"id", "order_id"},
+		"financial_operations":      {"id", "check_id"},
+		"financial_operation_items": {"id", "operation_id"},
+		"local_event_log_summary":   {"id", "event_id", "aggregate_type", "aggregate_id"},
+		"pos_sync_outbox_summary":   {"id", "command_id", "aggregate_type", "aggregate_id"},
+	}
+	required, ok := fields[row.Table]
+	if !ok {
+		return false
+	}
+	for _, field := range required {
+		if archiveStringValue(row.Row, field) == "" {
+			return false
+		}
+	}
+	return true
+}
+
+func manifestPayloadPolicyPreserved(tables []domainstorage.ArchiveTableManifest) bool {
+	for _, table := range tables {
+		if table.Name != "local_event_log_summary" && table.Name != "pos_sync_outbox_summary" {
+			continue
+		}
+		if table.PayloadIncluded || table.Content != "summary_without_payload" {
+			return false
+		}
+	}
+	return true
+}
+
+func summaryRowPayloadPolicyPreserved(row map[string]any) bool {
+	if _, ok := row["payload_json"]; ok {
+		return false
+	}
+	if _, ok := row["payload"]; ok {
+		return false
+	}
+	return archiveStringValue(row, "payload_policy") == "summary_without_payload"
 }
 
 func writeManifest(path string, manifest domainstorage.ArchiveManifest) error {
@@ -736,6 +971,107 @@ type archiveLookupCollected struct {
 	RelatedCounts domainstorage.ArchiveLookupRelatedCounts
 }
 
+type archiveReadPlanFilter struct {
+	businessDateLocal string
+	orderID           string
+	checkID           string
+	limit             int
+	offset            int
+}
+
+func normalizeArchiveReadPlanBounds(rawLimit, rawOffset int) (int, int, error) {
+	if rawOffset < 0 {
+		return 0, 0, fmt.Errorf("%w: archive read-plan offset must be non-negative", domain.ErrInvalid)
+	}
+	limit := rawLimit
+	if limit <= 0 {
+		limit = archiveReadPlanDefaultLimit
+	}
+	if limit > archiveReadPlanMaxLimit {
+		limit = archiveReadPlanMaxLimit
+	}
+	return limit, rawOffset, nil
+}
+
+func collectArchiveReadPlanPreview(path string, filter archiveReadPlanFilter) ([]domainstorage.ArchiveReadPlanClosedOrder, error) {
+	selected := []domainstorage.ArchiveReadPlanClosedOrder{}
+	selectedByOrder := map[string]int{}
+	selectedByCheck := map[string]int{}
+	skipped := 0
+	err := scanArchiveJSONL(path, func(row domainstorage.ArchiveExportRow) (bool, error) {
+		if row.Table != "checks" {
+			return false, nil
+		}
+		orderID := archiveStringValue(row.Row, "order_id")
+		checkID := archiveStringValue(row.Row, "id")
+		businessDate := archiveStringValue(row.Row, "business_date_local")
+		if filter.businessDateLocal != "" && businessDate != filter.businessDateLocal {
+			return false, nil
+		}
+		if filter.orderID != "" && orderID != filter.orderID {
+			return false, nil
+		}
+		if filter.checkID != "" && checkID != filter.checkID {
+			return false, nil
+		}
+		if skipped < filter.offset {
+			skipped++
+			return false, nil
+		}
+		item := domainstorage.ArchiveReadPlanClosedOrder{
+			OrderID:              orderID,
+			CheckID:              checkID,
+			BusinessDateLocal:    businessDate,
+			ClosedAt:             archiveStringValue(row.Row, "closed_at"),
+			CurrencyCode:         archiveStringValue(row.Row, "currency_code"),
+			Total:                archiveInt64Value(row.Row, "total"),
+			DocumentState:        "archived_preview",
+			RuntimeRestored:      false,
+			CheckSnapshotPresent: archiveRowHasSnapshotPayload(row.Row),
+		}
+		selectedByOrder[orderID] = len(selected)
+		selectedByCheck[checkID] = len(selected)
+		selected = append(selected, item)
+		return len(selected) >= filter.limit, nil
+	})
+	if err != nil || len(selected) == 0 {
+		return selected, err
+	}
+	operationToCheck := map[string]string{}
+	err = scanArchiveJSONL(path, func(row domainstorage.ArchiveExportRow) (bool, error) {
+		switch row.Table {
+		case "order_lines":
+			if idx, ok := selectedByOrder[archiveStringValue(row.Row, "order_id")]; ok {
+				selected[idx].RelatedCounts.OrderLines++
+			}
+		case "prechecks":
+			if idx, ok := selectedByOrder[archiveStringValue(row.Row, "order_id")]; ok {
+				selected[idx].PrecheckID = archiveStringValue(row.Row, "id")
+				selected[idx].PrecheckSnapshotPresent = archiveRowHasSnapshotPayload(row.Row)
+			}
+		case "payments":
+			precheckID := archiveStringValue(row.Row, "precheck_id")
+			for i := range selected {
+				if selected[i].PrecheckID == precheckID {
+					selected[i].RelatedCounts.Payments++
+					break
+				}
+			}
+		case "financial_operations":
+			if idx, ok := selectedByCheck[archiveStringValue(row.Row, "check_id")]; ok {
+				operationToCheck[archiveStringValue(row.Row, "id")] = archiveStringValue(row.Row, "check_id")
+				selected[idx].RelatedCounts.FinancialOperations++
+			}
+		case "financial_operation_items":
+			if idx, ok := selectedByCheck[operationToCheck[archiveStringValue(row.Row, "operation_id")]]; ok {
+				selected[idx].RelatedCounts.FinancialOperationItems++
+			}
+		}
+		return false, nil
+	})
+	return selected, err
+}
+
 func findArchiveLookupIdentity(path, checkID, orderID string) (archiveLookupIdentity, error) {
 	var identity archiveLookupIdentity
 	err := scanArchiveJSONL(path, func(row domainstorage.ArchiveExportRow) (bool, error) {
@@ -844,6 +1180,30 @@ func archiveStringValue(row map[string]any, key string) string {
 	default:
 		return fmt.Sprint(v)
 	}
+}
+
+func archiveInt64Value(row map[string]any, key string) int64 {
+	raw, ok := row[key]
+	if !ok || raw == nil {
+		return 0
+	}
+	switch v := raw.(type) {
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case float64:
+		return int64(v)
+	case json.Number:
+		n, _ := v.Int64()
+		return n
+	case string:
+		var n int64
+		if _, err := fmt.Sscan(strings.TrimSpace(v), &n); err == nil {
+			return n
+		}
+	}
+	return 0
 }
 
 func archiveSnapshotValue(row map[string]any) map[string]any {

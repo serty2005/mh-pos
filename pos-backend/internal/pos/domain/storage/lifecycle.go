@@ -209,28 +209,74 @@ type ArchiveVerificationSummary struct {
 	ArchiveSHA256          string              `json:"archive_sha256,omitempty"`
 	ComputedSHA256         string              `json:"computed_sha256,omitempty"`
 	Counts                 ArchiveExportCounts `json:"counts"`
+	BusinessDateRange      BusinessDateRange   `json:"business_date_range"`
 	ArchiveExists          bool                `json:"archive_exists"`
 	ManifestExists         bool                `json:"manifest_exists"`
 	ManifestVersionMatched bool                `json:"manifest_version_matched"`
 	SHA256Matched          bool                `json:"sha256_matched"`
 	CountsMatchedManifest  bool                `json:"counts_matched_manifest"`
 	SnapshotPayloadPresent bool                `json:"snapshot_payload_present"`
+	IdentityFieldsPresent  bool                `json:"identity_fields_present"`
+	BusinessDateConsistent bool                `json:"business_date_consistent"`
+	RuntimeRowsNotDeleted  bool                `json:"runtime_rows_not_deleted"`
+	PayloadPolicyPreserved bool                `json:"payload_policy_preserved"`
+}
+
+// ArchiveVerifyResult возвращает явный integrity verdict для export-only archive artifact.
+type ArchiveVerifyResult struct {
+	GeneratedAt               time.Time                  `json:"generated_at"`
+	Valid                     bool                       `json:"valid"`
+	Warnings                  []string                   `json:"warnings,omitempty"`
+	Errors                    []string                   `json:"errors,omitempty"`
+	ArchiveID                 string                     `json:"archive_id,omitempty"`
+	CutoffBusinessDateLocal   string                     `json:"cutoff_business_date_local,omitempty"`
+	ArchivePath               string                     `json:"archive_path,omitempty"`
+	ManifestPath              string                     `json:"manifest_path,omitempty"`
+	RuntimeRowsDeleted        bool                       `json:"runtime_rows_deleted"`
+	DestructiveApplySupported bool                       `json:"destructive_apply_supported"`
+	Counts                    ArchiveExportCounts        `json:"counts"`
+	BusinessDateRange         BusinessDateRange          `json:"business_date_range"`
+	Tables                    []ArchiveTableManifest     `json:"tables,omitempty"`
+	Verification              ArchiveVerificationSummary `json:"verification"`
+}
+
+// ArchiveReadPlanClosedOrder содержит bounded preview archived closed order без восстановления в runtime SQLite.
+type ArchiveReadPlanClosedOrder struct {
+	OrderID                 string                     `json:"order_id"`
+	CheckID                 string                     `json:"check_id"`
+	PrecheckID              string                     `json:"precheck_id,omitempty"`
+	BusinessDateLocal       string                     `json:"business_date_local,omitempty"`
+	ClosedAt                string                     `json:"closed_at,omitempty"`
+	CurrencyCode            string                     `json:"currency_code,omitempty"`
+	Total                   int64                      `json:"total"`
+	DocumentState           string                     `json:"document_state"`
+	RuntimeRestored         bool                       `json:"runtime_restored"`
+	CheckSnapshotPresent    bool                       `json:"check_snapshot_present"`
+	PrecheckSnapshotPresent bool                       `json:"precheck_snapshot_present"`
+	RelatedCounts           ArchiveLookupRelatedCounts `json:"related_counts"`
 }
 
 // ArchiveReadPlan описывает non-destructive проверку archive artifact без чтения business payload наружу.
 type ArchiveReadPlan struct {
-	GeneratedAt             time.Time                  `json:"generated_at"`
-	ResultMode              string                     `json:"result_mode"`
-	Blocked                 bool                       `json:"blocked"`
-	BlockReasons            []string                   `json:"block_reasons,omitempty"`
-	ArchiveID               string                     `json:"archive_id,omitempty"`
-	CutoffBusinessDateLocal string                     `json:"cutoff_business_date_local,omitempty"`
-	ArchiveSHA256           string                     `json:"archive_sha256,omitempty"`
-	ComputedSHA256          string                     `json:"computed_sha256,omitempty"`
-	Counts                  ArchiveExportCounts        `json:"counts"`
-	BusinessDateRange       BusinessDateRange          `json:"business_date_range"`
-	Tables                  []ArchiveTableManifest     `json:"tables"`
-	Verification            ArchiveVerificationSummary `json:"verification"`
+	GeneratedAt             time.Time                    `json:"generated_at"`
+	ResultMode              string                       `json:"result_mode"`
+	Blocked                 bool                         `json:"blocked"`
+	BlockReasons            []string                     `json:"block_reasons,omitempty"`
+	ArchiveID               string                       `json:"archive_id,omitempty"`
+	CutoffBusinessDateLocal string                       `json:"cutoff_business_date_local,omitempty"`
+	ArchiveSHA256           string                       `json:"archive_sha256,omitempty"`
+	ComputedSHA256          string                       `json:"computed_sha256,omitempty"`
+	Counts                  ArchiveExportCounts          `json:"counts"`
+	BusinessDateRange       BusinessDateRange            `json:"business_date_range"`
+	Tables                  []ArchiveTableManifest       `json:"tables"`
+	Verification            ArchiveVerificationSummary   `json:"verification"`
+	Limit                   int                          `json:"limit"`
+	Offset                  int                          `json:"offset"`
+	Returned                int                          `json:"returned"`
+	RuntimeRowsDeleted      bool                         `json:"runtime_rows_deleted"`
+	RuntimeRestored         bool                         `json:"runtime_restored"`
+	PayloadPolicy           string                       `json:"payload_policy"`
+	ArchivedClosedOrders    []ArchiveReadPlanClosedOrder `json:"archived_closed_orders"`
 }
 
 // ArchiveLookupKey фиксирует разрешенный способ поиска archived preview без произвольных table names.

@@ -884,6 +884,37 @@
         }
       }
     },
+    "/storage/archive/verify": {
+      "post": {
+        "operationId": "verifyStorageArchive",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "archive_id": {
+                    "type": "string"
+                  },
+                  "manifest_path": {
+                    "type": "string"
+                  },
+                  "archive_path": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Non-destructive storage archive verification"
+          }
+        }
+      }
+    },
     "/storage/archive/read-plan": {
       "post": {
         "operationId": "buildStorageArchiveReadPlan",
@@ -893,15 +924,30 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "manifest_path"
-                ],
                 "properties": {
+                  "archive_id": {
+                    "type": "string"
+                  },
                   "manifest_path": {
                     "type": "string"
                   },
                   "archive_path": {
                     "type": "string"
+                  },
+                  "business_date_local": {
+                    "type": "string"
+                  },
+                  "order_id": {
+                    "type": "string"
+                  },
+                  "check_id": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "offset": {
+                    "type": "integer"
                   }
                 }
               }
@@ -924,10 +970,10 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "manifest_path"
-                ],
                 "properties": {
+                  "archive_id": {
+                    "type": "string"
+                  },
                   "manifest_path": {
                     "type": "string"
                   },

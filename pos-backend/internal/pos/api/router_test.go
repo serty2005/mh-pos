@@ -1127,7 +1127,11 @@ func TestStorageArchiveReadPlanAndLookupAPIRequireSyncView(t *testing.T) {
 
 	f.employee = cashier
 	f.session = cashierSession
-	rr := f.postJSON(t, "/api/v1/storage/archive/read-plan", string(rawReadBody))
+	rr := f.postJSON(t, "/api/v1/storage/archive/verify", string(rawReadBody))
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cashier archive verify, got %d: %s", rr.Code, rr.Body.String())
+	}
+	rr = f.postJSON(t, "/api/v1/storage/archive/read-plan", string(rawReadBody))
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for cashier archive read-plan, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -1138,12 +1142,21 @@ func TestStorageArchiveReadPlanAndLookupAPIRequireSyncView(t *testing.T) {
 
 	f.employee = manager
 	f.session = managerSession
+	rr = f.postJSON(t, "/api/v1/storage/archive/verify", string(rawReadBody))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for manager archive verify, got %d: %s", rr.Code, rr.Body.String())
+	}
+	verify := decodeAPIResponse[domain.StorageArchiveVerifyResult](t, rr)
+	if !verify.Valid || verify.ArchiveID != exported.ArchiveID || verify.Counts.ClosedOrders != 1 {
+		t.Fatalf("unexpected archive verify API response: %+v", verify)
+	}
 	rr = f.postJSON(t, "/api/v1/storage/archive/read-plan", string(rawReadBody))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200 for manager archive read-plan, got %d: %s", rr.Code, rr.Body.String())
 	}
 	readPlan := decodeAPIResponse[domain.StorageArchiveReadPlan](t, rr)
-	if readPlan.Blocked || readPlan.ResultMode != "read_plan_only" || readPlan.ArchiveID != exported.ArchiveID {
+	if readPlan.Blocked || readPlan.ResultMode != "read_plan_only" || readPlan.ArchiveID != exported.ArchiveID ||
+		readPlan.Returned != 1 || len(readPlan.ArchivedClosedOrders) != 1 {
 		t.Fatalf("unexpected archive read-plan API response: %+v", readPlan)
 	}
 	rr = f.postJSON(t, "/api/v1/storage/archive/lookup", string(rawLookupBody))

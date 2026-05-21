@@ -92,6 +92,7 @@ type RetentionDryRunCommand = appstorage.RetentionDryRunCommand
 type ArchiveExportPlanCommand = appstorage.ArchiveExportPlanCommand
 type ArchiveExportCommand = appstorage.ArchiveExportCommand
 type ArchiveApplyPlanCommand = appstorage.ArchiveApplyPlanCommand
+type ArchiveVerifyCommand = appstorage.ArchiveVerifyCommand
 type ArchiveReadPlanCommand = appstorage.ArchiveReadPlanCommand
 type ArchiveLookupCommand = appstorage.ArchiveLookupCommand
 
@@ -705,6 +706,10 @@ func (s *Service) ExportStorageArchive(ctx context.Context, cmd ArchiveExportCom
 
 func (s *Service) BuildStorageArchiveApplyPlan(ctx context.Context, cmd ArchiveApplyPlanCommand) (domain.StorageArchiveApplyPlan, error) {
 	return s.storage.BuildArchiveApplyPlan(ctx, cmd)
+}
+
+func (s *Service) VerifyStorageArchive(ctx context.Context, cmd ArchiveVerifyCommand) (domain.StorageArchiveVerifyResult, error) {
+	return s.storage.VerifyArchive(ctx, cmd)
 }
 
 func (s *Service) BuildStorageArchiveReadPlan(ctx context.Context, cmd ArchiveReadPlanCommand) (domain.StorageArchiveReadPlan, error) {
