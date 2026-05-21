@@ -26,10 +26,12 @@ func (f *fixedIDs) NewID() string {
 }
 
 type fakeRepo struct {
-	events    []app.QueuedEvent
-	documents []app.StockDocument
-	processed []string
-	failed    map[string]string
+	events              []app.QueuedEvent
+	documents           []app.StockDocument
+	processed           []string
+	failed              map[string]string
+	recipes             map[string][]app.RecipeLine
+	modifierOptionLinks map[string]string
 }
 
 func (f *fakeRepo) ClaimPending(context.Context, app.ClaimCommand) ([]app.QueuedEvent, error) {
@@ -46,6 +48,23 @@ func (f *fakeRepo) CreateStockDocument(_ context.Context, document app.StockDocu
 func (f *fakeRepo) MarkProcessed(_ context.Context, queueID string, _ time.Time) error {
 	f.processed = append(f.processed, queueID)
 	return nil
+}
+
+func (f *fakeRepo) ListActiveRecipeLines(_ context.Context, _ string, catalogItemID string) ([]app.RecipeLine, error) {
+	if f.recipes == nil {
+		return nil, nil
+	}
+	return f.recipes[catalogItemID], nil
+}
+
+func (f *fakeRepo) ListModifierOptionLinks(_ context.Context, _ string, optionIDs []string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, id := range optionIDs {
+		if linked := f.modifierOptionLinks[id]; linked != "" {
+			out[id] = linked
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeRepo) MarkFailed(_ context.Context, queueID, reason string, _ time.Time) error {
@@ -78,6 +97,34 @@ func TestRunOnceCreatesSaleLedgerFromCheckClosed(t *testing.T) {
 	}
 	if len(repo.processed) != 1 || repo.processed[0] != "queue-1" {
 		t.Fatalf("expected queue row processed, got %+v", repo.processed)
+	}
+}
+
+func TestRunOnceExpandsRecipeAndModifiersForCheckClosed(t *testing.T) {
+	repo := &fakeRepo{
+		events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventCheckClosed, checkClosedPayloadWithModifier(t))},
+		recipes: map[string][]app.RecipeLine{
+			"item-1": {{ComponentCatalogItemID: "ing-1", Quantity: "0.500", UnitCode: "KG"}},
+		},
+		modifierOptionLinks: map[string]string{"mod-opt-1": "mod-item-1"},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101", "018f0000-0000-7000-8000-00000000d102"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 1 || len(repo.documents[0].Ledger) != 2 {
+		t.Fatalf("unexpected docs %+v", repo.documents)
+	}
+}
+
+func TestRunOnceFailsOnInvalidRecipeLine(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventCheckClosed, checkClosedPayload(t, []map[string]any{{"order_line_id": "line-1", "catalog_item_id": "item-1", "quantity": "1.000", "unit_code": "PC", "required_for_inventory": true}}))}, recipes: map[string][]app.RecipeLine{"item-1": {{ComponentCatalogItemID: "ing-1", Quantity: "0", UnitCode: "KG"}}}}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000d001"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repo.failed["queue-1"] == "" {
+		t.Fatalf("expected failed queue row")
 	}
 }
 
@@ -201,9 +248,13 @@ func (f *failingRepo) ClaimPending(context.Context, app.ClaimCommand) ([]app.Que
 func (f *failingRepo) CreateStockDocument(context.Context, app.StockDocument) error {
 	return f.err
 }
-func (f *failingRepo) MarkProcessed(context.Context, string, time.Time) error { return f.err }
-func (f *failingRepo) MarkFailed(context.Context, string, string, time.Time) error {
-	return f.err
+func (f *failingRepo) MarkProcessed(context.Context, string, time.Time) error      { return f.err }
+func (f *failingRepo) MarkFailed(context.Context, string, string, time.Time) error { return f.err }
+func (f *failingRepo) ListActiveRecipeLines(context.Context, string, string) ([]app.RecipeLine, error) {
+	return nil, f.err
+}
+func (f *failingRepo) ListModifierOptionLinks(context.Context, string, []string) (map[string]string, error) {
+	return nil, f.err
 }
 
 type fixedClock struct{}
@@ -334,4 +385,28 @@ func marshalPayload(t *testing.T, data map[string]any) json.RawMessage {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+func checkClosedPayloadWithModifier(t *testing.T) json.RawMessage {
+	t.Helper()
+	return marshalPayload(t, map[string]any{
+		"check_id":            "check-1",
+		"order_id":            "order-1",
+		"precheck_id":         "precheck-1",
+		"restaurant_id":       "restaurant-1",
+		"business_date_local": "2026-05-05",
+		"closed_at":           "2026-05-05T09:00:00Z",
+		"items": []map[string]any{{
+			"order_line_id":          "line-1",
+			"catalog_item_id":        "item-1",
+			"quantity":               "2.000",
+			"unit_code":              "PC",
+			"required_for_inventory": true,
+			"modifiers": []map[string]any{{
+				"modifier_option_id": "mod-opt-1",
+				"quantity":           "1.000",
+				"unit_code":          "PC",
+			}},
+		}},
+	})
 }
