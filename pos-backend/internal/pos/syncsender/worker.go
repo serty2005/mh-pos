@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand"
 	"strings"
 	"time"
 
@@ -22,6 +21,7 @@ type OutboxService interface {
 	MarkOutboxSent(context.Context, string) error
 	MarkOutboxRetryableFailure(context.Context, string, string) error
 	SuspendOutboxMessage(context.Context, string, string) error
+	GetSyncStatus(context.Context) (domain.SyncStatus, error)
 	RefreshSyncExchangeState(context.Context) error
 	GetSyncExchangeState(context.Context) (SyncExchangeState, error)
 	ApplySyncExchangeCloudPackages(context.Context, []CloudPackage) error
@@ -69,14 +69,22 @@ type Config struct {
 	CloudPullInterval time.Duration
 	ReclaimAfter      time.Duration
 	SendTimeout       time.Duration
+	// EmergencyPendingThreshold включает немедленную следующую итерацию,
+	// если Edge->Cloud backlog достиг high-watermark.
+	EmergencyPendingThreshold int
+	// CloudPackageBurstThreshold разрешает немедленный Cloud pull после
+	// bounded Cloud->Edge response, чтобы забрать следующие порции.
+	CloudPackageBurstThreshold int
 }
 
 type Worker struct {
-	service         OutboxService
-	sender          Sender
-	config          Config
-	logger          *slog.Logger
-	lastCloudPullAt time.Time
+	service          OutboxService
+	sender           Sender
+	config           Config
+	logger           *slog.Logger
+	lastCloudPullAt  time.Time
+	forceCloudPull   bool
+	lastClaimedCount int
 }
 
 func NewWorker(service OutboxService, sender Sender, config Config, logger *slog.Logger) *Worker {
@@ -100,6 +108,12 @@ func NewWorker(service OutboxService, sender Sender, config Config, logger *slog
 	}
 	if config.SendTimeout <= 0 {
 		config.SendTimeout = 10 * time.Second
+	}
+	if config.EmergencyPendingThreshold < 0 {
+		config.EmergencyPendingThreshold = 0
+	}
+	if config.CloudPackageBurstThreshold <= 0 {
+		config.CloudPackageBurstThreshold = 1
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -146,6 +160,9 @@ func (w *Worker) Run(ctx context.Context) {
 				ErrorCode: "ITERATION_FAILED",
 			}, "worker_id", w.config.WorkerID, "error", err)
 		}
+		if w.forceCloudPull || w.shouldRunEmergency(ctx) {
+			continue
+		}
 		waitFor := w.nextPollDelay()
 		select {
 		case <-ctx.Done():
@@ -178,6 +195,7 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("claim pending outbox: %w", err)
 	}
+	w.lastClaimedCount = len(messages)
 	platformlog.Log(ctx, w.logger, slog.LevelDebug, "POS sync sender claimed pending batch", platformlog.Event{
 		Operation: "sync.sender",
 		Action:    "claim.pending_batch",
@@ -311,6 +329,11 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 func (w *Worker) allowEmptyExchangePull(now time.Time) bool {
 	// Пустой exchange нужен для Cloud->Edge pull, но не должен превращаться
 	// в шумный heartbeat на каждом poll tick, когда локального outbox нет.
+	if w.forceCloudPull {
+		w.forceCloudPull = false
+		w.lastCloudPullAt = now
+		return true
+	}
 	if w.lastCloudPullAt.IsZero() || now.Sub(w.lastCloudPullAt) >= w.config.CloudPullInterval {
 		w.lastCloudPullAt = now
 		return true
@@ -372,6 +395,9 @@ func (w *Worker) sendExchange(ctx context.Context, sender ExchangeSender, messag
 		return fmt.Errorf("exchange send failure: %w", err)
 	}
 	if len(resp.CloudPackages) > 0 {
+		if len(resp.CloudPackages) >= w.config.CloudPackageBurstThreshold {
+			w.forceCloudPull = true
+		}
 		if err := w.service.ApplySyncExchangeCloudPackages(ctx, resp.CloudPackages); err != nil {
 			for _, msg := range messages {
 				if markErr := w.service.MarkOutboxRetryableFailure(ctx, msg.ID, err.Error()); markErr != nil {
@@ -487,8 +513,30 @@ func derefOptional(v *string) string {
 }
 
 func (w *Worker) nextPollDelay() time.Duration {
-	if w.config.PollJitter <= 0 {
-		return w.config.PollInterval
+	return w.config.PollInterval
+}
+
+func (w *Worker) shouldRunEmergency(ctx context.Context) bool {
+	if w.config.EmergencyPendingThreshold <= 0 || w.lastClaimedCount == 0 || ctx.Err() != nil {
+		return false
 	}
-	return w.config.PollInterval + time.Duration(rand.Int63n(w.config.PollJitter.Nanoseconds()+1))
+	status, err := w.service.GetSyncStatus(ctx)
+	if err != nil {
+		platformlog.Log(ctx, w.logger, slog.LevelWarn, "POS sync sender failed to inspect sync status", platformlog.Event{
+			Operation: "sync.sender",
+			Action:    "status.inspect",
+			Result:    "rejected",
+			ErrorCode: "SYNC_STATUS_FAILED",
+		}, "worker_id", w.config.WorkerID, "error", err)
+		return false
+	}
+	if status.Pending < w.config.EmergencyPendingThreshold {
+		return false
+	}
+	platformlog.Log(ctx, w.logger, slog.LevelInfo, "POS sync sender emergency iteration requested", platformlog.Event{
+		Operation: "sync.sender",
+		Action:    "iteration.emergency",
+		Result:    "attempt",
+	}, "worker_id", w.config.WorkerID, "pending_count", status.Pending, "threshold", w.config.EmergencyPendingThreshold)
+	return true
 }

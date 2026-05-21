@@ -117,6 +117,8 @@ type ReclaimStaleOutboxCommand struct {
 
 type Service struct {
 	repo         ports.Repository
+	ids          idgen.Generator
+	clock        clock.Clock
 	restaurants  *apprestaurant.Service
 	devices      *appdevice.Service
 	employees    *appemployee.Service
@@ -156,6 +158,8 @@ func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idge
 	pricingSvc := apppricing.NewService(repo, tx, ids, clock)
 	s := &Service{
 		repo:        repo,
+		ids:         ids,
+		clock:       clock,
 		restaurants: apprestaurant.NewService(repo, tx, ids, clock),
 		devices:     appdevice.NewService(repo, tx, ids, clock),
 		employees:   appemployee.NewService(repo, tx, ids, clock),
@@ -575,11 +579,13 @@ func (s *Service) ApplySyncExchangeCloudPackages(ctx context.Context, packages [
 	for _, pkg := range packages {
 		stream := domain.MasterDataStream(strings.TrimSpace(pkg.StreamName))
 		if !isSyncExchangeStream(stream) {
-			return fmt.Errorf("%w: unsupported exchange stream %q", domain.ErrInvalid, pkg.StreamName)
+			s.recordSyncExchangePackageProblem(ctx, pkg, fmt.Errorf("%w: unsupported exchange stream %q", domain.ErrInvalid, pkg.StreamName))
+			continue
 		}
 		state, err := s.repo.GetMasterDataSyncState(ctx, strings.TrimSpace(pkgNodeDeviceID(pkg)), stream)
 		if err != nil && !errors.Is(err, domain.ErrNotFound) {
-			return err
+			s.recordSyncExchangePackageProblem(ctx, pkg, err)
+			continue
 		}
 		if state != nil {
 			localCheckpoint := ""
@@ -587,10 +593,12 @@ func (s *Service) ApplySyncExchangeCloudPackages(ctx context.Context, packages [
 				localCheckpoint = *state.CheckpointToken
 			}
 			if state.LastCloudVersion > pkg.CloudVersion {
-				return fmt.Errorf("%w: local stream %s version is ahead of cloud package", domain.ErrConflict, stream)
+				s.recordSyncExchangePackageProblem(ctx, pkg, fmt.Errorf("%w: local stream %s version is ahead of cloud package", domain.ErrConflict, stream))
+				continue
 			}
 			if state.LastCloudVersion == pkg.CloudVersion && localCheckpoint != "" && pkg.CheckpointToken != "" && localCheckpoint != pkg.CheckpointToken {
-				return fmt.Errorf("%w: local stream %s checkpoint conflicts with cloud package", domain.ErrConflict, stream)
+				s.recordSyncExchangePackageProblem(ctx, pkg, fmt.Errorf("%w: local stream %s checkpoint conflicts with cloud package", domain.ErrConflict, stream))
+				continue
 			}
 			if state.LastCloudVersion == pkg.CloudVersion && (localCheckpoint == pkg.CheckpointToken || pkg.CheckpointToken == "") {
 				continue
@@ -598,7 +606,8 @@ func (s *Service) ApplySyncExchangeCloudPackages(ctx context.Context, packages [
 		}
 		var cmd ApplyMasterDataCommand
 		if err := json.Unmarshal(pkg.PayloadJSON, &cmd); err != nil {
-			return fmt.Errorf("%w: exchange package payload is invalid JSON", domain.ErrInvalid)
+			s.recordSyncExchangePackageProblem(ctx, pkg, fmt.Errorf("%w: exchange package payload is invalid JSON", domain.ErrInvalid))
+			continue
 		}
 		cmd.StreamName = stream
 		cmd.RestaurantID = strings.TrimSpace(pkg.RestaurantID)
@@ -609,10 +618,69 @@ func (s *Service) ApplySyncExchangeCloudPackages(ctx context.Context, packages [
 		cmd.CloudUpdatedAt = strings.TrimSpace(pkg.CloudUpdatedAt)
 		cmd.CommandMeta = CommandMeta{NodeDeviceID: pkgNodeDeviceID(pkg), DeviceID: pkgNodeDeviceID(pkg), Origin: domain.OriginCloudSync}
 		if _, err := s.ApplyMasterData(ctx, cmd); err != nil {
-			return err
+			s.recordSyncExchangePackageProblem(ctx, pkg, err)
+			continue
 		}
 	}
 	return nil
+}
+
+func (s *Service) recordSyncExchangePackageProblem(ctx context.Context, pkg domain.CloudPackage, cause error) {
+	now := shared.DBTime(s.clock.Now())
+	stream := domain.MasterDataStream(strings.TrimSpace(pkg.StreamName))
+	if stream == "" {
+		stream = domain.MasterDataStream("unknown")
+	}
+	nodeDeviceID := strings.TrimSpace(pkgNodeDeviceID(pkg))
+	if isSyncExchangeStream(stream) && nodeDeviceID != "" {
+		if current, err := s.repo.GetMasterDataSyncState(ctx, nodeDeviceID, stream); err == nil && current.LastCloudVersion > pkg.CloudVersion {
+			return
+		}
+	}
+	reason := strings.TrimSpace(cause.Error())
+	if reason == "" {
+		reason = "cloud package apply failed"
+	}
+	checkpoint := strings.TrimSpace(pkg.CheckpointToken)
+	var checkpointPtr *string
+	if checkpoint != "" {
+		checkpointPtr = &checkpoint
+	}
+	restaurantID := strings.TrimSpace(pkg.RestaurantID)
+	var restaurantPtr *string
+	if restaurantID != "" {
+		restaurantPtr = &restaurantID
+	}
+	cloudUpdatedAt := strings.TrimSpace(pkg.CloudUpdatedAt)
+	var cloudUpdatedAtPtr *string
+	if cloudUpdatedAt != "" {
+		cloudUpdatedAtPtr = &cloudUpdatedAt
+	}
+	state := domain.MasterDataSyncState{
+		ID:                 s.ids.NewID(),
+		RestaurantID:       restaurantPtr,
+		NodeDeviceID:       nodeDeviceID,
+		StreamName:         stream,
+		Direction:          domain.SyncDirectionCloudToEdge,
+		SyncMode:           domain.SyncMode(strings.TrimSpace(pkg.SyncMode)),
+		CheckpointToken:    checkpointPtr,
+		LastCloudVersion:   pkg.CloudVersion,
+		LastCloudUpdatedAt: cloudUpdatedAtPtr,
+		Status:             "failed",
+		LastError:          &reason,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	if state.NodeDeviceID == "" {
+		state.NodeDeviceID = "unknown"
+	}
+	if state.SyncMode == "" {
+		state.SyncMode = domain.SyncModeIncremental
+	}
+	if err := s.repo.UpsertMasterDataSyncState(ctx, &state); err != nil {
+		// Quarantine write failure must not block other packages or Edge ACK.
+		_ = err
+	}
 }
 
 func (s *Service) ListOutbox(ctx context.Context, limit int) ([]domain.OutboxMessage, error) {

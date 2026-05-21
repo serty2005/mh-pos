@@ -76,7 +76,9 @@ func run() error {
 	}
 
 	repo := syncpg.NewRepository(pool)
-	service := app.NewService(repo, clock.SystemClock{})
+	service := app.NewServiceWithOptions(repo, clock.SystemClock{}, app.Options{
+		MaxCloudPackagesPerExchange: cfg.Int("CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE", 3),
+	})
 	inventoryWorker := inventoryapp.NewWorker(inventorypg.NewRepository(pool), idgen.UUIDGenerator{}, clock.SystemClock{}, inventoryapp.Config{
 		WorkerID:  cfg.Get("CLOUD_INVENTORY_WORKER_ID", "cloud-inventory-worker"),
 		BatchSize: 25,

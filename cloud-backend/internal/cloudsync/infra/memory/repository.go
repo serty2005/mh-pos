@@ -27,6 +27,7 @@ type Repository struct {
 	financialOpsByID  map[string]contracts.FinancialOperationProjection
 	inventoryQueue    map[string]contracts.EventAck
 	authorizedNodes   map[string]authorizedNode
+	problemEdgeEvents []app.ProblemEdgeEvent
 }
 
 type authorizedNode struct {
@@ -135,6 +136,15 @@ func (r *Repository) ReceiveEdgeEvent(_ context.Context, receipt app.EdgeEventRe
 		r.inventoryQueue[ack.CloudReceiptID] = ack
 	}
 	return ack, nil
+}
+
+func (r *Repository) RecordProblemEdgeEvent(_ context.Context, item app.ProblemEdgeEvent) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	copyItem := item
+	copyItem.RawPayload = append([]byte(nil), item.RawPayload...)
+	r.problemEdgeEvents = append(r.problemEdgeEvents, copyItem)
+	return nil
 }
 
 // ListEdgeEvents возвращает последние принятые events из memory storage без raw payload.
@@ -293,6 +303,18 @@ func (r *Repository) RawPayload(receiptID string) []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]byte(nil), r.rawByID[receiptID]...)
+}
+
+func (r *Repository) ProblemEdgeEvents() []app.ProblemEdgeEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]app.ProblemEdgeEvent, 0, len(r.problemEdgeEvents))
+	for _, item := range r.problemEdgeEvents {
+		copyItem := item
+		copyItem.RawPayload = append([]byte(nil), item.RawPayload...)
+		out = append(out, copyItem)
+	}
+	return out
 }
 
 func (r *Repository) EventTypeStats() []EventTypeProjection {

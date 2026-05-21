@@ -256,7 +256,10 @@ go test ./...
 - `cloud_projection_event_type_stats`
 - `cloud_projection_shift_finance`
 - `cloud_projection_financial_operations`
+- `cloud_sync_problem_events`
 - `cloud_master_data_packages`
+
+Реализовано сейчас: `CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE` ограничивает число Cloud -> Edge packages в одном authenticated `sync/exchange` response. Ошибочные Edge batch/exchange items получают item-level ACK и сохраняются в `cloud_sync_problem_events`, не блокируя прием остальных items.
 
 Реализовано сейчас financial operation sync behavior:
 - `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud financial operation events.

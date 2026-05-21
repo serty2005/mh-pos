@@ -116,6 +116,49 @@ func TestExchangeReturnsItemAckAndNewerCloudPackage(t *testing.T) {
 	}
 }
 
+func TestExchangeLimitsCloudPackagesPerSession(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewServiceWithOptions(repo, fixedClock{}, app.Options{MaxCloudPackagesPerExchange: 2})
+	streams := []string{
+		contracts.MasterDataStreamRestaurants,
+		contracts.MasterDataStreamCatalog,
+		contracts.MasterDataStreamMenu,
+	}
+	for idx, stream := range streams {
+		if _, err := service.UpsertMasterDataPackage(context.Background(), contracts.MasterDataPackage{
+			StreamName:      stream,
+			NodeDeviceID:    "device-1",
+			RestaurantID:    "restaurant-1",
+			SyncMode:        contracts.SyncModeIncremental,
+			CloudVersion:    int64(10 + idx),
+			CheckpointToken: stream + ":new",
+			PayloadJSON:     payloadForStream(stream),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	resp, err := service.Exchange(context.Background(), contracts.SyncExchangeRequest{
+		ProtocolVersion: contracts.SyncExchangeProtocolVersion,
+		NodeDeviceID:    "device-1",
+		RestaurantID:    "restaurant-1",
+		Streams: []contracts.SyncExchangeStreamRequest{
+			{StreamName: contracts.MasterDataStreamRestaurants, LastCloudVersion: 1},
+			{StreamName: contracts.MasterDataStreamCatalog, LastCloudVersion: 1},
+			{StreamName: contracts.MasterDataStreamMenu, LastCloudVersion: 1},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.CloudPackages) != 2 {
+		t.Fatalf("expected two cloud packages in bounded exchange, got %+v", resp.CloudPackages)
+	}
+	if len(resp.StreamResults) != 3 {
+		t.Fatalf("expected stream results for all requested streams, got %+v", resp.StreamResults)
+	}
+}
+
 func TestExchangeRejectsRevisionAheadBeforeReceivingEdgeEvents(t *testing.T) {
 	repo := memory.NewRepository()
 	service := app.NewService(repo, fixedClock{})
@@ -143,6 +186,26 @@ func TestExchangeRejectsRevisionAheadBeforeReceivingEdgeEvents(t *testing.T) {
 	}
 	if repo.Count() != 0 {
 		t.Fatalf("edge events must not be received when stream preflight fails, got %d", repo.Count())
+	}
+}
+
+func TestReceiveBatchStoresProblemItemsForAnalysis(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+
+	ack := service.ReceiveBatch(context.Background(), [][]byte{
+		sampleEnvelope(t),
+		[]byte(`{"version":"1"}`),
+	})
+	if ack.Status != "partial" {
+		t.Fatalf("expected partial status, got %+v", ack)
+	}
+	problems := repo.ProblemEdgeEvents()
+	if len(problems) != 1 {
+		t.Fatalf("expected one stored problem item, got %+v", problems)
+	}
+	if problems[0].Direction != "edge_to_cloud" || problems[0].ErrorCode != "INVALID_ENVELOPE" {
+		t.Fatalf("unexpected problem item: %+v", problems[0])
 	}
 }
 
@@ -437,6 +500,19 @@ func sampleEnvelope(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+func payloadForStream(stream string) json.RawMessage {
+	switch stream {
+	case contracts.MasterDataStreamRestaurants:
+		return json.RawMessage(`{"restaurants":[{"id":"restaurant-1","name":"Cafe","timezone":"Europe/Moscow","currency":"RUB","active":true}]}`)
+	case contracts.MasterDataStreamCatalog:
+		return json.RawMessage(`{"catalog_items":[{"id":"cat-1","type":"dish","name":"Tea","sku":"tea","base_unit":"pc","active":true}]}`)
+	case contracts.MasterDataStreamMenu:
+		return json.RawMessage(`{"menu_items":[{"id":"menu-1","catalog_item_id":"cat-1","name":"Tea","price":100,"currency":"RUB","active":true}]}`)
+	default:
+		return json.RawMessage(`{}`)
+	}
 }
 
 func sampleCheckClosedEnvelope(t *testing.T) []byte {

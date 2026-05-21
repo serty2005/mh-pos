@@ -5250,6 +5250,47 @@ func TestApplyMasterDataAcceptsCloudCatalogStreamPackageShape(t *testing.T) {
 	}
 }
 
+func TestApplySyncExchangeCloudPackagesQuarantinesBadPackageAndAppliesRest(t *testing.T) {
+	f := newFixture(t)
+	err := f.service.ApplySyncExchangeCloudPackages(f.ctx, []domain.CloudPackage{
+		{
+			StreamName:      string(domain.MasterDataStreamCatalog),
+			NodeDeviceID:    f.device.ID,
+			RestaurantID:    f.restaurant.ID,
+			SyncMode:        string(domain.SyncModeIncremental),
+			CloudVersion:    70,
+			CheckpointToken: "catalog:70",
+			PayloadJSON:     json.RawMessage(`{"catalog_items":[{"id":"bad-catalog","type":"dish","name":"Broken","base_unit":"pc","active":true}]}`),
+		},
+		{
+			StreamName:      string(domain.MasterDataStreamRestaurants),
+			NodeDeviceID:    f.device.ID,
+			RestaurantID:    f.restaurant.ID,
+			SyncMode:        string(domain.SyncModeIncremental),
+			CloudVersion:    71,
+			CheckpointToken: "restaurants:71",
+			PayloadJSON:     json.RawMessage(`{"restaurants":[{"id":"cloud-restaurant-ok","name":"Cloud OK","timezone":"Europe/Moscow","currency":"RUB","active":true}]}`),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restaurantName string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT name FROM restaurants WHERE id = 'cloud-restaurant-ok'`).Scan(&restaurantName); err != nil {
+		t.Fatal(err)
+	}
+	if restaurantName != "Cloud OK" {
+		t.Fatalf("expected valid package applied, got restaurant name %q", restaurantName)
+	}
+	var failedStatus, failedError string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT status,last_error FROM cloud_master_sync_state WHERE node_device_id = ? AND stream_name = 'catalog'`, f.device.ID).Scan(&failedStatus, &failedError); err != nil {
+		t.Fatal(err)
+	}
+	if failedStatus != "failed" || !strings.Contains(failedError, "catalog item") {
+		t.Fatalf("expected catalog package quarantined, status=%q error=%q", failedStatus, failedError)
+	}
+}
+
 func TestApplyMasterDataFullPackageAppliesMenuItemsBeforeModifierLinks(t *testing.T) {
 	f := newFixture(t)
 	payload := []byte(`{

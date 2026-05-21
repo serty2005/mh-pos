@@ -51,9 +51,13 @@
 Реализовано сейчас:
 
 - `POS_CLOUD_SYNC_URL` может указывать на legacy `/api/v1/sync/edge-events`; POS Edge client автоматически использует `/api/v1/sync/exchange` для authenticated exchange, когда provisioning state содержит `node_token`.
-- `POS_SYNC_SENDER_ENABLED`, `POS_SYNC_SENDER_BATCH_SIZE`, `POS_SYNC_SENDER_POLL_INTERVAL`, `POS_SYNC_SENDER_POLL_JITTER`, `POS_SYNC_SENDER_CLOUD_PULL_INTERVAL`, `POS_SYNC_SENDER_RECLAIM_AFTER` и `POS_SYNC_SENDER_SEND_TIMEOUT` управляют worker cycle.
+- `POS_SYNC_SENDER_ENABLED`, `POS_SYNC_SENDER_BATCH_SIZE`, `POS_SYNC_SENDER_POLL_INTERVAL`, `POS_SYNC_SENDER_CLOUD_PULL_INTERVAL`, `POS_SYNC_SENDER_RECLAIM_AFTER`, `POS_SYNC_SENDER_SEND_TIMEOUT`, `POS_SYNC_SENDER_EMERGENCY_PENDING_THRESHOLD` и `POS_SYNC_SENDER_CLOUD_PACKAGE_BURST_THRESHOLD` управляют worker cycle.
+- `POS_SYNC_SENDER_POLL_INTERVAL` задает строгую периодику worker-а. `POS_SYNC_SENDER_POLL_JITTER` сохранен как compatibility config key, но не добавляет случайную задержку к sync cycle.
+- `POS_SYNC_SENDER_EMERGENCY_PENDING_THRESHOLD` включает немедленную следующую итерацию, если число pending Edge -> Cloud outbox rows достигло high-watermark.
+- `POS_SYNC_SENDER_CLOUD_PACKAGE_BURST_THRESHOLD` включает немедленный следующий Cloud pull после bounded Cloud -> Edge response, если Cloud вернул не меньше указанного числа packages.
 - `POS_SYNC_SENDER_CLOUD_PULL_INTERVAL` ограничивает пустой authenticated exchange без Edge outbox; если local outbox содержит sendable rows, exchange выполняется на ближайшем worker tick и не ждет этот interval.
 - `node_token` хранится в local Edge provisioning state после Cloud/License provisioning и не выводится в HTTP responses или structured logs.
+- `CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE` ограничивает число Cloud -> Edge packages в одном `sync/exchange` response. Остальные changed streams передаются следующими exchange-сессиями после применения предыдущей порции на Edge.
 
 Вне текущего объема:
 
