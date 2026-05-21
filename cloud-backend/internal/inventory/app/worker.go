@@ -44,6 +44,7 @@ type Repository interface {
 	MarkProcessed(context.Context, string, time.Time) error
 	MarkFailed(context.Context, string, string, time.Time) error
 	ListActiveRecipeLines(context.Context, string, string) ([]RecipeLine, error)
+	ListModifierOptionLinks(context.Context, string, []string) (map[string]string, error)
 }
 
 type ClaimCommand struct {
@@ -175,7 +176,11 @@ func (w *Worker) checkClosedDocument(event QueuedEvent, now time.Time) (StockDoc
 	if err != nil {
 		return StockDocument{}, false, err
 	}
-	items = append(items, modifierItemsFromPayload(event.Payload)...)
+	modifierItems, err := w.modifierItemsFromPayload(context.Background(), event.RestaurantID, event.Payload)
+	if err != nil {
+		return StockDocument{}, false, err
+	}
+	items = append(items, modifierItems...)
 	return w.documentFromItems(event, now, DocumentSale, MovementOut, payload.Data.BusinessDateLocal, items, false)
 }
 
@@ -400,21 +405,24 @@ func scaledQuantity(left, right string) string {
 	return fmt.Sprintf("%.3f", ln*rn)
 }
 
-func modifierItemsFromPayload(raw json.RawMessage) []contracts.InventoryItem {
+func (w *Worker) modifierItemsFromPayload(ctx context.Context, restaurantID string, raw json.RawMessage) ([]contracts.InventoryItem, error) {
 	var root map[string]any
 	if json.Unmarshal(raw, &root) != nil {
-		return nil
+		return nil, nil
 	}
 	data, _ := root["data"].(map[string]any)
 	items, _ := data["items"].([]any)
-	out := []contracts.InventoryItem{}
+	type modRef struct{ qty, unit string }
+	refs := map[string][]modRef{}
+	optionIDs := make([]string, 0)
 	for _, iv := range items {
 		im, _ := iv.(map[string]any)
 		mods, _ := im["modifiers"].([]any)
 		for _, mv := range mods {
 			m, _ := mv.(map[string]any)
-			cid, _ := m["linked_catalog_item_id"].(string)
-			if strings.TrimSpace(cid) == "" {
+			optionID, _ := m["modifier_option_id"].(string)
+			optionID = strings.TrimSpace(optionID)
+			if optionID == "" {
 				continue
 			}
 			qty, _ := m["quantity"].(string)
@@ -422,11 +430,32 @@ func modifierItemsFromPayload(raw json.RawMessage) []contracts.InventoryItem {
 				qty = "1.000"
 			}
 			unit, _ := m["unit_code"].(string)
-			if strings.TrimSpace(unit) == "" {
-				unit = "PC"
+			refs[optionID] = append(refs[optionID], modRef{qty: qty, unit: unit})
+			if len(refs[optionID]) == 1 {
+				optionIDs = append(optionIDs, optionID)
 			}
-			out = append(out, contracts.InventoryItem{CatalogItemID: cid, Quantity: qty, UnitCode: unit})
 		}
 	}
-	return out
+	if len(optionIDs) == 0 {
+		return nil, nil
+	}
+	links, err := w.repo.ListModifierOptionLinks(ctx, restaurantID, optionIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]contracts.InventoryItem, 0)
+	for _, optionID := range optionIDs {
+		cid := strings.TrimSpace(links[optionID])
+		if cid == "" {
+			continue
+		}
+		for _, ref := range refs[optionID] {
+			unit := strings.TrimSpace(ref.unit)
+			if unit == "" {
+				unit = "PC"
+			}
+			out = append(out, contracts.InventoryItem{CatalogItemID: cid, Quantity: ref.qty, UnitCode: unit})
+		}
+	}
+	return out, nil
 }

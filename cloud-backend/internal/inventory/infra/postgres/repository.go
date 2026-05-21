@@ -168,3 +168,28 @@ ORDER BY component_catalog_item_id`, strings.TrimSpace(restaurantID), strings.Tr
 	}
 	return lines, rows.Err()
 }
+
+func (r *Repository) ListModifierOptionLinks(ctx context.Context, restaurantID string, optionIDs []string) (map[string]string, error) {
+	if len(optionIDs) == 0 {
+		return map[string]string{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT id, COALESCE(linked_catalog_item_id,'')
+FROM cloud_modifier_options
+WHERE restaurant_id = $1
+  AND id = ANY($2)`, strings.TrimSpace(restaurantID), optionIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]string, len(optionIDs))
+	for rows.Next() {
+		var id string
+		var linked string
+		if err := rows.Scan(&id, &linked); err != nil {
+			return nil, err
+		}
+		out[id] = strings.TrimSpace(linked)
+	}
+	return out, rows.Err()
+}

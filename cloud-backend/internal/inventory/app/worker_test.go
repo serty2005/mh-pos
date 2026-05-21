@@ -26,11 +26,12 @@ func (f *fixedIDs) NewID() string {
 }
 
 type fakeRepo struct {
-	events    []app.QueuedEvent
-	documents []app.StockDocument
-	processed []string
-	failed    map[string]string
-	recipes   map[string][]app.RecipeLine
+	events              []app.QueuedEvent
+	documents           []app.StockDocument
+	processed           []string
+	failed              map[string]string
+	recipes             map[string][]app.RecipeLine
+	modifierOptionLinks map[string]string
 }
 
 func (f *fakeRepo) ClaimPending(context.Context, app.ClaimCommand) ([]app.QueuedEvent, error) {
@@ -54,6 +55,16 @@ func (f *fakeRepo) ListActiveRecipeLines(_ context.Context, _ string, catalogIte
 		return nil, nil
 	}
 	return f.recipes[catalogItemID], nil
+}
+
+func (f *fakeRepo) ListModifierOptionLinks(_ context.Context, _ string, optionIDs []string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, id := range optionIDs {
+		if linked := f.modifierOptionLinks[id]; linked != "" {
+			out[id] = linked
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeRepo) MarkFailed(_ context.Context, queueID, reason string, _ time.Time) error {
@@ -95,6 +106,7 @@ func TestRunOnceExpandsRecipeAndModifiersForCheckClosed(t *testing.T) {
 		recipes: map[string][]app.RecipeLine{
 			"item-1": {{ComponentCatalogItemID: "ing-1", Quantity: "0.500", UnitCode: "KG"}},
 		},
+		modifierOptionLinks: map[string]string{"mod-opt-1": "mod-item-1"},
 	}
 	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101", "018f0000-0000-7000-8000-00000000d102"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
 	if err := worker.RunOnce(context.Background()); err != nil {
@@ -239,6 +251,9 @@ func (f *failingRepo) CreateStockDocument(context.Context, app.StockDocument) er
 func (f *failingRepo) MarkProcessed(context.Context, string, time.Time) error      { return f.err }
 func (f *failingRepo) MarkFailed(context.Context, string, string, time.Time) error { return f.err }
 func (f *failingRepo) ListActiveRecipeLines(context.Context, string, string) ([]app.RecipeLine, error) {
+	return nil, f.err
+}
+func (f *failingRepo) ListModifierOptionLinks(context.Context, string, []string) (map[string]string, error) {
 	return nil, f.err
 }
 
@@ -388,9 +403,9 @@ func checkClosedPayloadWithModifier(t *testing.T) json.RawMessage {
 			"unit_code":              "PC",
 			"required_for_inventory": true,
 			"modifiers": []map[string]any{{
-				"linked_catalog_item_id": "mod-item-1",
-				"quantity":               "1.000",
-				"unit_code":              "PC",
+				"modifier_option_id": "mod-opt-1",
+				"quantity":           "1.000",
+				"unit_code":          "PC",
 			}},
 		}},
 	})
