@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@quasar/extras": "^1.18.0",
+    "@rolldown/binding-win32-x64-msvc": "^1.0.2",
     "@tanstack/vue-query": "^5.100.9",
     "pinia": "^3.0.4",
     "quasar": "^2.19.3",
