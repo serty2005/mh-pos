@@ -16,7 +16,7 @@
 
 Не обнаружено сейчас:
 
-- Подтвержденного runtime для KDS, доставки, настоящего платежного процессинга, фискального адаптера, ClickHouse pipeline или destructive archive apply.
+- Подтвержденного runtime для KDS, доставки, настоящего платежного процессинга, фискального адаптера, ClickHouse pipeline.
 - Публичного Cloud HTTP/API интерфейса отчетов по детальной проекции финансовых операций. Сервисная и repository-основа есть, публичный reporting surface остается запланированным далее.
 
 Цель полной пилотной реализации:
@@ -50,7 +50,7 @@
 - Append-only ledger финансовых операций: `CancellationRecorded` и `RefundRecorded` для полных и частичных операций, без мутации уже финализированных payment/precheck/check.
 - Compatibility route `POST /api/v1/payments/{id}/refund`, который записывает refund operation по payment allocation, но не возвращает оплату или чек в изменяемое состояние.
 - Ограниченные read endpoints для закрытых заказов, financial operations, outbox и local events.
-- Локальный lifecycle SQLite: status, retention dry-run, archive export plan, export-only JSONL archive, read-plan, lookup preview и apply-plan verification по exclusive cutoff rule `< cutoff` без удаления runtime rows.
+- Локальный lifecycle SQLite: status, retention dry-run, archive export plan, export-only JSONL archive, read-plan, lookup preview, apply-plan и apply-readiness с поддержкой destructive apply (физическое удаление закрытых orders/checks/financial_operations и связанных при verified JSONL + чистый scoped outbox + отсутствие открытых operational boundaries для cutoff периода) и последующий VACUUM compaction БД.
 - Cloud -> Edge master-data ingest для `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
 - Sync sender через authenticated `sync/exchange`, item-level ACK, retry/reclaim/backoff и безопасную обработку неподдержанных направлений.
 - Cloud-centric Inventory foundation: Cloud sync receiver принимает целевые складские события, durable `inventory_event_queue` передает их Cloud Inventory Worker, POS Edge legacy manual stock foundation удален из runtime.
@@ -59,7 +59,7 @@
 
 - Recipe-based автоматическое списание склада из продажи.
 - Полный ретроспективный расчет себестоимости.
-- Destructive retention apply, удаление строк из active SQLite, restore archive в active SQLite и compaction.
+- (реализовано) Destructive retention apply + VACUUM.
 - Настоящий платежный процессинг, webhooks, фискальные смены и фискальный адаптер.
 
 ## Cloud Backend
@@ -194,4 +194,4 @@
 - Настоящий PSP/payment processor module и PSP refund.
 - Fiscal device integration.
 - Cashier/KDS/manager mobile variants outside waiter screen.
-- Destructive archive apply/restore/compaction в active SQLite.
+- (реализовано сейчас) Destructive archive apply + VACUUM в active SQLite.

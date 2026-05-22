@@ -683,6 +683,24 @@ SELECT
 
 func (r *Repository) deleteStorageArchiveScope(ctx context.Context, cutoffBusinessDateLocal string) error {
 	scopeArgs := []any{cutoffBusinessDateLocal}
+
+	// Snapshot eligible order ids early while all tables present. This avoids
+	// join dependencies in later DELETE statements after child tables (checks, prechecks)
+	// have been removed. All subsequent parent deletes use the stable id list.
+	if _, err := r.execer(ctx).ExecContext(ctx, `CREATE TEMP TABLE IF NOT EXISTS _tmp_eligible_order_ids (id TEXT PRIMARY KEY)`); err != nil {
+		return normalizeErr(err)
+	}
+	if _, err := r.execer(ctx).ExecContext(ctx, `DELETE FROM _tmp_eligible_order_ids`); err != nil {
+		return normalizeErr(err)
+	}
+	if _, err := r.execer(ctx).ExecContext(ctx, `
+INSERT INTO _tmp_eligible_order_ids (id)
+WITH eligible_orders AS (`+eligibleOrdersForArchiveSQL+`)
+SELECT id FROM eligible_orders
+`, cutoffBusinessDateLocal); err != nil {
+		return normalizeErr(err)
+	}
+
 	statements := []struct {
 		sql  string
 		args []any
@@ -790,18 +808,10 @@ WHERE order_id IN (SELECT id FROM eligible_orders)`, args: scopeArgs},
 		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
 DELETE FROM order_surcharges
 WHERE order_id IN (SELECT id FROM eligible_orders)`, args: scopeArgs},
-		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
-DELETE FROM checks
-WHERE order_id IN (SELECT id FROM eligible_orders)`, args: scopeArgs},
-		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
-DELETE FROM prechecks
-WHERE order_id IN (SELECT id FROM eligible_orders)`, args: scopeArgs},
-		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
-DELETE FROM order_lines
-WHERE order_id IN (SELECT id FROM eligible_orders)`, args: scopeArgs},
-		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
-DELETE FROM orders
-WHERE id IN (SELECT id FROM eligible_orders)`, args: scopeArgs},
+		{sql: `DELETE FROM checks WHERE order_id IN (SELECT id FROM _tmp_eligible_order_ids)`},
+		{sql: `DELETE FROM prechecks WHERE order_id IN (SELECT id FROM _tmp_eligible_order_ids)`},
+		{sql: `DELETE FROM order_lines WHERE order_id IN (SELECT id FROM _tmp_eligible_order_ids)`},
+		{sql: `DELETE FROM orders WHERE id IN (SELECT id FROM _tmp_eligible_order_ids)`},
 	}
 	for _, stmt := range statements {
 		if _, err := r.execer(ctx).ExecContext(ctx, stmt.sql, stmt.args...); err != nil {
