@@ -1,12 +1,12 @@
 <template>
-  <q-dialog :model-value="modelValue" @update:model-value="$emit('update:modelValue', $event)">
-    <q-card class="dialog-card actions-dialog-card">
-      <q-card-section>
-        <p class="eyebrow">{{ terminal.t('pos.activeOrder') }}</p>
-        <h2>{{ terminal.t('pos.actions') }}</h2>
-      </q-card-section>
-
-      <q-card-section class="form-stack">
+  <PosDialog
+    :model-value="modelValue"
+    card-class="actions-dialog-card"
+    body-class="form-stack pos-scrollarea-y pos-scrollbar-thin"
+    :eyebrow="terminal.t('pos.activeOrder')"
+    :title="terminal.t('pos.actions')"
+    @update:model-value="$emit('update:modelValue', $event)"
+  >
         <blocking-notice
           v-if="terminal.activePrecheck.value || terminal.activeOrder.value?.status === 'locked'"
           :terminal="terminal"
@@ -22,51 +22,54 @@
               <strong>{{ line.name }}</strong>
               <span>{{ terminal.money(line.total_price, terminal.orderCurrency.value) }}</span>
             </div>
-            <div class="quantity-stepper compact-stepper" :aria-label="line.name">
-              <q-btn flat round class="stepper-button" icon="remove" :aria-label="terminal.t('actions.remove')" :disable="!terminal.canChangeOrderLine.value || line.quantity <= 1" @click="terminal.changeQuantity(line.id, line.quantity - 1)" />
-              <span>{{ line.quantity }}</span>
-              <q-btn flat round class="stepper-button" icon="add" :aria-label="terminal.t('actions.add')" :disable="!terminal.canChangeOrderLine.value" @click="terminal.changeQuantity(line.id, line.quantity + 1)" />
-            <q-btn flat round class="stepper-button" icon="tune" :aria-label="terminal.t('actions.editModifiers')" :disable="!terminal.canChangeOrderLine.value || !terminal.canEditLineModifiers(line.id)" @click="terminal.editLineModifiers(line.id)" />
-            </div>
-            <q-btn flat round color="negative" icon="delete" class="stepper-button" :aria-label="terminal.t('actions.voidLine')" :disable="!terminal.canVoidOrderLine.value" @click="terminal.voidLine(line.id)" />
+            <PosQuantityStepper
+              compact
+              :value="line.quantity"
+              :label="line.name"
+              :decrement-label="terminal.t('actions.remove')"
+              :increment-label="terminal.t('actions.add')"
+              :decrement-disabled="!terminal.canChangeOrderLine.value || line.quantity <= 1"
+              :increment-disabled="!terminal.canChangeOrderLine.value"
+              @decrement="terminal.changeQuantity(line.id, line.quantity - 1)"
+              @increment="terminal.changeQuantity(line.id, line.quantity + 1)"
+            />
+            <PosButton variant="neutral" mode="flat" round dense compact icon="tune" class="stepper-button" :aria-label="terminal.t('actions.editModifiers')" :disabled="!terminal.canChangeOrderLine.value || !terminal.canEditLineModifiers(line.id)" @click="terminal.editLineModifiers(line.id)" />
+            <PosButton variant="danger" mode="flat" round dense compact icon="delete" class="stepper-button" :aria-label="terminal.t('actions.voidLine')" :disabled="!terminal.canVoidOrderLine.value" @click="terminal.voidLine(line.id)" />
           </article>
         </div>
-        <div v-else class="empty-state">{{ terminal.t('pos.emptyOrder') }}</div>
+        <PosEmptyState v-else :label="terminal.t('pos.emptyOrder')" />
 
         <div class="supported-action-list">
-          <q-btn
+          <PosButton
             v-if="terminal.latestPrecheck.value"
-            outline
-            color="secondary"
-            class="touch-button"
+            variant="secondary"
+            mode="outline"
             icon="print"
             :label="terminal.t('actions.reprintPrecheck')"
-            :disable="!terminal.canReprintPrecheck.value"
+            :disabled="!terminal.canReprintPrecheck.value"
             :loading="terminal.reprintPrecheckMutation.isPending.value"
             @click="terminal.reprintPrecheckMutation.mutate(terminal.latestPrecheck.value.id)"
           />
-          <q-btn
+          <PosButton
             v-if="terminal.finalCheckData.value"
-            outline
-            color="secondary"
-            class="touch-button"
+            variant="secondary"
+            mode="outline"
             icon="print"
             :label="terminal.t('actions.reprintCheck')"
-            :disable="!terminal.canReprintCheck.value"
+            :disabled="!terminal.canReprintCheck.value"
             :loading="terminal.reprintCheckMutation.isPending.value"
             @click="terminal.reprintCheckMutation.mutate(terminal.finalCheckData.value.id)"
           />
         </div>
-      </q-card-section>
 
-      <q-card-actions align="right" class="dialog-actions">
-        <q-btn flat :label="terminal.t('actions.close')" @click="$emit('update:modelValue', false)" />
-      </q-card-actions>
-    </q-card>
-  </q-dialog>
+      <template #actions>
+        <PosButton variant="neutral" mode="flat" :label="terminal.t('actions.close')" @click="$emit('update:modelValue', false)" />
+      </template>
+  </PosDialog>
 </template>
 
 <script setup lang="ts">
+import { PosButton, PosDialog, PosEmptyState, PosQuantityStepper } from '../../shared/ui';
 import BlockingNotice from './BlockingNotice.vue';
 import type { CashierTerminal } from './useCashierTerminal';
 

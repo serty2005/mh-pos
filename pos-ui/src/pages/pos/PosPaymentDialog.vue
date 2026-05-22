@@ -1,12 +1,12 @@
 <template>
-  <q-dialog :model-value="modelValue" @update:model-value="$emit('update:modelValue', $event)">
-    <q-card class="dialog-card payment-dialog-card">
-      <q-card-section>
-        <p class="eyebrow">{{ terminal.t('pos.cashier') }}</p>
-        <h2>{{ terminal.t('pos.payment') }}</h2>
-      </q-card-section>
-
-      <q-card-section class="form-stack">
+  <PosDialog
+    :model-value="modelValue"
+    card-class="payment-dialog-card"
+    body-class="form-stack pos-scrollarea-y pos-scrollbar-thin"
+    :eyebrow="terminal.t('pos.cashier')"
+    :title="terminal.t('pos.payment')"
+    @update:model-value="$emit('update:modelValue', $event)"
+  >
         <div class="payment-metrics">
           <div>
             <span>{{ terminal.t('pos.amountDue') }}</span>
@@ -23,9 +23,7 @@
           <span :class="{ good: terminal.currentCashSession.data.value }">{{ terminal.t('pos.cashSession') }}: {{ terminal.currentCashSession.data.value ? terminal.t('status.open') : terminal.t('pos.noCashSession') }}</span>
         </div>
 
-        <q-banner v-if="terminal.finalCheckData.value" class="success-banner" rounded>
-          {{ terminal.t('pos.paymentCompleteCheckClosed') }}
-        </q-banner>
+        <PosBanner v-if="terminal.finalCheckData.value" tone="success" :label="terminal.t('pos.paymentCompleteCheckClosed')" />
 
         <template v-if="terminal.activePrecheck.value && !terminal.finalCheckData.value">
           <q-input
@@ -50,49 +48,44 @@
           />
         </template>
 
-        <div v-else-if="!terminal.finalCheckData.value" class="empty-state">
-          {{ terminal.t('pos.noActivePrecheck') }}
-        </div>
-      </q-card-section>
+        <PosEmptyState v-else-if="!terminal.finalCheckData.value" :label="terminal.t('pos.noActivePrecheck')" />
 
-      <q-card-actions align="right" class="dialog-actions">
-        <q-btn flat :label="terminal.t('actions.close')" @click="$emit('update:modelValue', false)" />
-        <q-btn
+      <template #actions>
+        <PosButton variant="neutral" mode="flat" :label="terminal.t('actions.close')" @click="$emit('update:modelValue', false)" />
+        <PosButton
           v-if="terminal.finalCheckData.value"
-          outline
-          color="secondary"
+          variant="secondary"
+          mode="outline"
           icon="print"
           :label="terminal.t('actions.reprintCheck')"
-          :disable="!terminal.canReprintCheck.value"
+          :disabled="!terminal.canReprintCheck.value"
           :loading="terminal.reprintCheckMutation.isPending.value"
           @click="terminal.reprintCheckMutation.mutate(terminal.finalCheckData.value.id)"
         />
         <template v-else>
-          <q-btn
-            color="primary"
-            unelevated
+          <PosButton
+            variant="primary"
             icon="payments"
             :label="terminal.t('actions.payCash')"
-            :disable="!terminal.canPayCash.value"
+            :disabled="!terminal.canPayCash.value"
             :loading="terminal.paymentMutation.isPending.value"
             @click="terminal.pay('cash')"
           />
-          <q-btn
-            color="secondary"
-            unelevated
+          <PosButton
+            variant="secondary"
             icon="credit_card"
             :label="terminal.t('actions.payCard')"
-            :disable="!terminal.canPayCard.value"
+            :disabled="!terminal.canPayCard.value"
             :loading="terminal.paymentMutation.isPending.value"
             @click="terminal.pay('card')"
           />
         </template>
-      </q-card-actions>
-    </q-card>
-  </q-dialog>
+      </template>
+  </PosDialog>
 </template>
 
 <script setup lang="ts">
+import { PosBanner, PosButton, PosDialog, PosEmptyState } from '../../shared/ui';
 import BlockingNotice from './BlockingNotice.vue';
 import type { CashierTerminal } from './useCashierTerminal';
 

@@ -1,12 +1,10 @@
 <template>
   <aside class="current-order-panel" :aria-label="terminal.t('pos.currentOrderRail')">
     <PosBanner v-if="terminal.orderError.value" tone="error" :label="terminal.orderError.value" />
-    <q-skeleton v-if="terminal.orderLoading.value" class="order-skeleton rail-skeleton" />
+    <PosSkeleton v-if="terminal.orderLoading.value" kind="rail" />
 
     <template v-else-if="terminal.activeOrder.value">
-      <q-banner v-if="terminal.finalCheckData.value" class="success-banner">
-        {{ terminal.t('pos.paymentCompleteCheckClosed') }}
-      </q-banner>
+      <PosBanner v-if="terminal.finalCheckData.value" tone="success" :label="terminal.t('pos.paymentCompleteCheckClosed')" />
 
       <blocking-notice
         v-if="terminal.activeOrder.value.status === 'locked' || terminal.activePrecheck.value"
@@ -36,7 +34,7 @@
             <strong>{{ line.name }}</strong>
             <span>{{ line.quantity }}</span>
             <strong>{{ terminal.money(line.total_price, terminal.orderCurrency.value) }}</strong>
-            <q-btn flat dense square icon="more_vert" class="line-menu-button" :aria-label="terminal.t('pos.lineActions')" @click.stop="$emit('open-line-actions')" />
+            <PosButton variant="neutral" mode="flat" dense square icon="more_vert" class="line-menu-button" :aria-label="terminal.t('pos.lineActions')" @click.stop="$emit('open-line-actions')" />
           </div>
 
           <ul v-if="line.modifiers.length" class="line-modifiers">
@@ -142,7 +140,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
-import { PosBanner, PosButton, PosDialog, PosEmptyState, PosQuantityStepper } from '../../shared/ui';
+import { PosBanner, PosButton, PosDialog, PosEmptyState, PosQuantityStepper, PosSkeleton } from '../../shared/ui';
 import BlockingNotice from './BlockingNotice.vue';
 import type { CashierTerminal } from './useCashierTerminal';
 

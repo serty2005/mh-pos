@@ -140,7 +140,7 @@ function Ensure-DockerPostgres() {
     $exists = docker ps -a --filter "name=^${dockerName}$" --format "{{.Names}}" 2>$null
     if (-not $exists) {
         Write-Host "Container was not found. Creating..."
-        docker run --name $dockerName -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=mh_pos_cloud -p 5432:5432 -d postgres:16 | Out-Null
+        docker run --name $dockerName -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=mh_pos_cloud -p 5432:5432 -d postgres:16-alpine | Out-Null
     } else {
         $running = docker ps --filter "name=^${dockerName}$" --format "{{.Names}}"
         if (-not $running) {

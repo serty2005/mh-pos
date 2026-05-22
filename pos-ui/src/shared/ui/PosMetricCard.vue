@@ -1,5 +1,5 @@
 <template>
-  <article :class="posToneClasses('dashboard-metric', tone)">
+  <article :class="[...posToneClasses('dashboard-metric', tone), sizeClass]">
     <span>{{ label }}</span>
     <strong>{{ value }}</strong>
     <small v-if="hint">{{ hint }}</small>
@@ -7,15 +7,21 @@
 </template>
 
 <script setup lang="ts">
-import { posToneClasses, type PosStatusTone } from './uiTypes';
+import { computed } from 'vue';
 
-withDefaults(defineProps<{
+import { posSizeClass, posToneClasses, type PosSize, type PosTone } from './uiTypes';
+
+const props = withDefaults(defineProps<{
   label: string;
   value: string | number;
   hint?: string;
-  tone?: PosStatusTone;
+  tone?: PosTone;
+  size?: PosSize;
 }>(), {
   hint: undefined,
   tone: 'neutral',
+  size: 'regular',
 });
+
+const sizeClass = computed(() => posSizeClass(props.size));
 </script>

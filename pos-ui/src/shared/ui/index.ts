@@ -1,12 +1,18 @@
+export { default as PosActionRail } from './PosActionRail.vue';
 export { default as PosBanner } from './PosBanner.vue';
 export { default as PosButton } from './PosButton.vue';
 export { default as PosContextButton } from './PosContextButton.vue';
+export { default as PosDataRow } from './PosDataRow.vue';
 export { default as PosDialog } from './PosDialog.vue';
 export { default as PosEmptyState } from './PosEmptyState.vue';
+export { default as PosFormRow } from './PosFormRow.vue';
 export { default as PosMetricCard } from './PosMetricCard.vue';
 export { default as PosPagination } from './PosPagination.vue';
+export { default as PosPanel } from './PosPanel.vue';
 export { default as PosQuantityStepper } from './PosQuantityStepper.vue';
 export { default as PosSectionHeader } from './PosSectionHeader.vue';
+export { default as PosSkeleton } from './PosSkeleton.vue';
 export { default as PosStatusStrip } from './PosStatusStrip.vue';
 export { default as PosTabs } from './PosTabs.vue';
 export type { PosTabOption } from './PosTabs.vue';
+export type { PosActionMode, PosButtonMode, PosButtonVariant, PosSize, PosStatusTone, PosTone } from './uiTypes';

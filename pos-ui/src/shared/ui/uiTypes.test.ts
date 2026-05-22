@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { posButtonClasses, posButtonColor, posButtonModeProps, posToneClasses } from './uiTypes';
+import { posButtonClasses, posButtonColor, posButtonModeProps, posSizeClass, posToneClasses } from './uiTypes';
 
 describe('POS UI primitive helpers', () => {
   it('maps button variants to Quasar colors', () => {
@@ -19,5 +19,11 @@ describe('POS UI primitive helpers', () => {
   it('keeps shared button and tone classes stable', () => {
     expect(posButtonClasses({ primary: true })).toEqual(['touch-button', 'primary-action']);
     expect(posToneClasses('status-strip', 'warning')).toEqual(['status-strip', 'warning']);
+  });
+
+  it('maps shared POS sizes to stable class names', () => {
+    expect(posSizeClass('compact')).toBe('compact');
+    expect(posSizeClass('regular')).toBe('');
+    expect(posSizeClass('large')).toBe('large');
   });
 });

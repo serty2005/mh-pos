@@ -3,7 +3,7 @@
     :model-value="terminal.refundDialog.value"
     persistent
     :title="terminal.t(terminal.refundDialogTitleKey())"
-    body-class="form-stack"
+    body-class="form-stack pos-scrollarea-y pos-scrollbar-thin"
     @update:model-value="terminal.refundDialog.value = $event"
   >
         <p class="dialog-copy">{{ terminal.t(terminal.refundDialogCopyKey()) }}</p>

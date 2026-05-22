@@ -17,10 +17,7 @@
       </div>
 
       <div class="cash-operation-grid">
-        <section class="integrated-panel">
-          <div class="section-head slim">
-            <h2>{{ terminal.t('pos.shift') }}</h2>
-          </div>
+        <PosPanel :title="terminal.t('pos.shift')">
           <p>{{ terminal.t('pos.employeeShiftBody') }}</p>
           <PosButton
             v-if="!terminal.currentShift.data.value"
@@ -42,42 +39,27 @@
             :loading="terminal.closeShiftMutation.isPending.value"
             @click="terminal.closeShiftMutation.mutate(terminal.currentShift.data.value.id)"
           />
-        </section>
+        </PosPanel>
 
-        <section class="integrated-panel">
-          <div class="section-head slim">
-            <h2>{{ terminal.t('pos.cashSession') }}</h2>
-          </div>
+        <PosPanel :title="terminal.t('pos.cashSession')">
           <p>{{ terminal.t('pos.cashSessionBody') }}</p>
-          <div v-if="terminal.currentShift.data.value && !terminal.currentCashSession.data.value" class="cash-form-row">
+          <PosFormRow v-if="terminal.currentShift.data.value && !terminal.currentCashSession.data.value">
             <q-input v-model.number="terminal.openingCashAmount.value" outlined type="number" min="0" :step="terminal.currencyInputStep(terminal.currency.value)" :label="terminal.t('common.amount')" :suffix="terminal.currency.value" />
             <PosButton variant="primary" primary icon="point_of_sale" :label="terminal.t('actions.openCashSession')" :disabled="!terminal.canOpenCashSession.value" :loading="terminal.openCashMutation.isPending.value" @click="terminal.openCashMutation.mutate(terminal.openingCashAmount.value)" />
-          </div>
-          <div v-if="terminal.currentCashSession.data.value" class="cash-form-row">
+          </PosFormRow>
+          <PosFormRow v-if="terminal.currentCashSession.data.value">
             <q-input v-model.number="terminal.closingCashAmount.value" outlined type="number" min="0" :step="terminal.currencyInputStep(terminal.currency.value)" :label="terminal.t('common.amount')" :suffix="terminal.currency.value" />
             <PosButton variant="secondary" mode="outline" icon="payments" :label="terminal.t('actions.closeCashSession')" :disabled="!terminal.canCloseCashSession.value" :loading="terminal.closeCashMutation.isPending.value" @click="terminal.closeCashMutation.mutate({ cashSessionId: terminal.currentCashSession.data.value.id, amount: terminal.closingCashAmount.value })" />
-          </div>
-        </section>
+          </PosFormRow>
+        </PosPanel>
 
-        <section class="integrated-panel">
-          <div class="section-head slim">
-            <h2>{{ terminal.t('pos.syncStatus') }}</h2>
-          </div>
+        <PosPanel :title="terminal.t('pos.syncStatus')">
           <div class="sync-grid compact-sync-grid">
-            <div class="sync-metric">
-              <span>{{ terminal.t('pos.syncPending') }}</span>
-              <strong>{{ terminal.syncStatus.data.value?.pending ?? 0 }}</strong>
-            </div>
-            <div class="sync-metric" :class="{ active: terminal.syncProblems.value > 0 }">
-              <span>{{ terminal.t('pos.syncFailed') }}</span>
-              <strong>{{ terminal.syncProblems.value }}</strong>
-            </div>
-            <div class="sync-metric">
-              <span>{{ terminal.t('pos.syncSent') }}</span>
-              <strong>{{ terminal.syncStatus.data.value?.sent ?? 0 }}</strong>
-            </div>
+            <PosMetricCard size="compact" :label="terminal.t('pos.syncPending')" :value="terminal.syncStatus.data.value?.pending ?? 0" />
+            <PosMetricCard size="compact" :label="terminal.t('pos.syncFailed')" :value="terminal.syncProblems.value" :tone="terminal.syncProblems.value > 0 ? 'warning' : 'neutral'" />
+            <PosMetricCard size="compact" :label="terminal.t('pos.syncSent')" :value="terminal.syncStatus.data.value?.sent ?? 0" />
           </div>
-        </section>
+        </PosPanel>
       </div>
     </main>
 
@@ -85,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { PosBanner, PosButton, PosSectionHeader, PosStatusStrip } from '../../shared/ui';
+import { PosBanner, PosButton, PosFormRow, PosMetricCard, PosPanel, PosSectionHeader, PosStatusStrip } from '../../shared/ui';
 import type { CashierTerminal } from './useCashierTerminal';
 
 defineProps<{

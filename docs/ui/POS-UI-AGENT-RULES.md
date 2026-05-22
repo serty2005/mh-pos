@@ -174,4 +174,6 @@ POS UI должен руководствоваться восемью золот
 - Все новые labels, empty states, validation messages, modal copy и action text идут через `vue-i18n`.
 - Цвета и состояния идут через semantic CSS tokens и POS utility classes; raw/hardcoded colors в feature-компонентах запрещены.
 - Backend-неподдержанные действия показывать только как disabled/backlog state с понятной причиной; не делать активную кнопку без backend/API contract.
-- Оставшийся backlog миграции после текущего прохода: `SyncDrawer`, `ClosedOrdersDrawer`, `PosActionsDialog`, `PosPaymentDialog`, legacy checkout/floor helper panels и таблицы/списки, где еще есть feature-local variants.
+- Реализовано сейчас в reusable layer: `PosButton`, `PosContextButton`, `PosDialog`, `PosSectionHeader`, `PosTabs`, `PosPagination`, `PosQuantityStepper`, `PosBanner`, `PosEmptyState`, `PosStatusStrip`, `PosMetricCard`, `PosActionRail`, `PosPanel`, `PosDataRow`, `PosFormRow` и `PosSkeleton`.
+- Scroll/overflow contract использовать через `.pos-scrollarea`, `.pos-scrollarea-y`, `.pos-scrollarea-x` и `.pos-scrollbar-thin`; не добавлять локальные scrollbar-варианты в feature-компонентах.
+- Оставшийся backlog миграции после текущего прохода: `OrderWorkspace`, `CatalogCheckoutPanel`, `FloorTableSelector`, `PosFloorSection`, legacy checkout/floor helper panels и таблицы/списки, где еще есть feature-local variants.

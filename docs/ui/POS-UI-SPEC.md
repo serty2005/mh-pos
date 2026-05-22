@@ -152,22 +152,22 @@ Requirements:
 Реализовано сейчас:
 
 - Cashier POS UI имеет внутренний reusable presentation layer в `pos-ui/src/shared/ui`.
-- Первый слой primitives/composites включает `PosButton`, `PosContextButton`, `PosDialog`, `PosSectionHeader`, `PosTabs`, `PosPagination`, `PosQuantityStepper`, `PosBanner`, `PosEmptyState`, `PosStatusStrip` и `PosMetricCard`.
+- Первый слой primitives/composites включает `PosButton`, `PosContextButton`, `PosDialog`, `PosSectionHeader`, `PosTabs`, `PosPagination`, `PosQuantityStepper`, `PosBanner`, `PosEmptyState`, `PosStatusStrip`, `PosMetricCard`, `PosActionRail`, `PosPanel`, `PosDataRow`, `PosFormRow` и `PosSkeleton`.
 - Эти компоненты являются dumb/presentational: они принимают labels, variant/state props и callbacks, но не получают `terminal` и не владеют cashier business logic.
-- `PosPage`, `PosMenuGrid`, `PosOrderRail`, `PosActivitySection`, `PosCashSection`, `PosReportsSection`, `ModifierSelectionDialog`, `RefundDialog`, `PrecheckCancelDialog` и `CashDrawerDialog` уже используют часть этого слоя для повторяющихся кнопок, tabs/chips, dialog shell, section header, status/metric cards, empty/error states и quantity steppers.
-- `pos-ui/src/styles.css` содержит общий POS scrollbar contract через `.pos-scrollarea` и связанные scroll containers: thin scrollbar, semantic colors, dense touch UI и отсутствие неуправляемого горизонтального скролла в основных cashier surfaces.
+- `PosPage`, `PosMenuGrid`, `PosOrderRail`, `PosActivitySection`, `PosCashSection`, `PosReportsSection`, `PosPaymentDialog`, `PosActionsDialog`, `ModifierSelectionDialog`, `RefundDialog`, `PrecheckCancelDialog`, `CashDrawerDialog`, `SyncDrawer` и `ClosedOrdersDrawer` уже используют часть этого слоя для повторяющихся кнопок, tabs/chips, dialog shell, section header, action rail, panels, data rows, status/metric cards, empty/error/loading states и quantity steppers.
+- `pos-ui/src/styles.css` содержит общий POS scrollbar contract через `.pos-scrollarea`, `.pos-scrollarea-y`, `.pos-scrollarea-x` и `.pos-scrollbar-thin`: thin scrollbar, semantic colors, touch-friendly overflow и отсутствие неуправляемого горизонтального скролла в основных cashier surfaces.
 
 Правила для следующих изменений:
 
 - Новый POS UI элемент сначала проектируется как reusable primitive/composite или расширение существующего компонента в `pos-ui/src/shared/ui`, если он может повторяться.
-- Feature-компоненты не должны накапливать локальные варианты одинаковых кнопок, табов, модалок, карточек, scrollbar и action panels.
+- Feature-компоненты не должны накапливать локальные варианты одинаковых кнопок, табов, модалок, карточек, rows, panels, scrollbar и action panels.
 - Пользовательский текст для новых компонентов передается из feature layer через `vue-i18n`; primitive не хардкодит человекочитаемые labels.
 - Цвета и visual state должны идти через semantic CSS tokens или уже существующие POS utility classes, а не через локальные raw colors.
 - Backend-неподдержанные действия остаются disabled/backlog presentation с причиной, а не активными кнопками.
 
 Запланировано далее:
 
-- Постепенно мигрировать оставшиеся legacy/compatibility поверхности (`SyncDrawer`, `ClosedOrdersDrawer`, `PosActionsDialog`, `PosPaymentDialog`, старые checkout/floor helper panels) на тот же `shared/ui` layer без изменения backend/API behavior.
+- Постепенно мигрировать оставшиеся legacy/compatibility поверхности (`OrderWorkspace`, `CatalogCheckoutPanel`, `FloorTableSelector`, `PosFloorSection`, старые checkout/floor helper panels и отдельные feature-local table/list rows) на тот же `shared/ui` layer без изменения backend/API behavior.
 
 ## Разделение Интерфейсов
 

@@ -1272,6 +1272,10 @@ button:focus-visible,
   border-radius: 8px;
 }
 
+.dialog-card > .pos-scrollarea-y {
+  max-height: min(62dvh, 560px);
+}
+
 .dialog-card.modifier-dialog {
   width: min(680px, calc(100vw - 32px));
   max-width: 680px;
@@ -1790,6 +1794,16 @@ button:focus-visible,
   gap: 10px;
 }
 
+.pos-form-row.inline {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+}
+
+.pos-form-row-actions {
+  display: grid;
+  gap: 8px;
+}
+
 .compact-filter-bar {
   display: grid;
   grid-template-columns: minmax(220px, 320px) minmax(150px, 180px) repeat(2, auto) minmax(112px, auto) minmax(0, 1fr);
@@ -1965,6 +1979,41 @@ button:focus-visible,
   padding: 10px 12px;
 }
 
+.pos-data-row {
+  color: var(--pos-text-primary);
+}
+
+.pos-data-row.interactive {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pos-data-row.interactive:hover,
+.pos-data-row.selected {
+  background: var(--pos-surface-muted);
+  border-color: var(--pos-accent);
+}
+
+.pos-data-row.warning .pos-data-row-side strong {
+  color: var(--pos-status-warning);
+}
+
+.pos-data-row.danger .pos-data-row-side strong {
+  color: var(--pos-status-danger);
+}
+
+.pos-data-row-main,
+.pos-data-row-side {
+  display: grid;
+  gap: 4px;
+}
+
+.pos-data-row-side {
+  text-align: right;
+  white-space: nowrap;
+}
+
 .ledger-row {
   align-items: flex-start;
 }
@@ -1989,6 +2038,16 @@ button:focus-visible,
 
 .dashboard-metric {
   min-height: 112px;
+}
+
+.dashboard-metric.compact {
+  min-height: 62px;
+  gap: 2px;
+  padding: 9px;
+}
+
+.dashboard-metric.compact strong {
+  font-size: 22px;
 }
 
 .dashboard-metric span,
@@ -2031,6 +2090,20 @@ button:focus-visible,
 
 .payment-summary-cell strong {
   font-size: 20px;
+}
+
+.pos-panel-footer {
+  display: grid;
+  gap: 8px;
+}
+
+.pos-action-rail-content {
+  min-height: 0;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  flex: 1;
+  overflow: auto;
 }
 
 .cash-status-strip {
@@ -2082,7 +2155,7 @@ button:focus-visible,
 }
 
 .action-line {
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
 }
 
@@ -2575,6 +2648,9 @@ button.bottom-status {
 }
 
 .pos-scrollarea,
+.pos-scrollarea-y,
+.pos-scrollarea-x,
+.pos-scrollbar-thin,
 .context-actions,
 .top-status-grid,
 .menu-workspace,
@@ -2594,7 +2670,25 @@ button.bottom-status {
   scrollbar-color: var(--pos-scrollbar-thumb) var(--pos-scrollbar-track);
 }
 
+.pos-scrollarea,
+.pos-scrollarea-y {
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.pos-scrollarea-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
+}
+
 .pos-scrollarea::-webkit-scrollbar,
+.pos-scrollarea-y::-webkit-scrollbar,
+.pos-scrollarea-x::-webkit-scrollbar,
+.pos-scrollbar-thin::-webkit-scrollbar,
 .context-actions::-webkit-scrollbar,
 .top-status-grid::-webkit-scrollbar,
 .menu-workspace::-webkit-scrollbar,
@@ -2615,6 +2709,9 @@ button.bottom-status {
 }
 
 .pos-scrollarea::-webkit-scrollbar-track,
+.pos-scrollarea-y::-webkit-scrollbar-track,
+.pos-scrollarea-x::-webkit-scrollbar-track,
+.pos-scrollbar-thin::-webkit-scrollbar-track,
 .context-actions::-webkit-scrollbar-track,
 .top-status-grid::-webkit-scrollbar-track,
 .menu-workspace::-webkit-scrollbar-track,
@@ -2634,6 +2731,9 @@ button.bottom-status {
 }
 
 .pos-scrollarea::-webkit-scrollbar-thumb,
+.pos-scrollarea-y::-webkit-scrollbar-thumb,
+.pos-scrollarea-x::-webkit-scrollbar-thumb,
+.pos-scrollbar-thin::-webkit-scrollbar-thumb,
 .context-actions::-webkit-scrollbar-thumb,
 .top-status-grid::-webkit-scrollbar-thumb,
 .menu-workspace::-webkit-scrollbar-thumb,
@@ -2653,6 +2753,9 @@ button.bottom-status {
 }
 
 .pos-scrollarea::-webkit-scrollbar-thumb:hover,
+.pos-scrollarea-y::-webkit-scrollbar-thumb:hover,
+.pos-scrollarea-x::-webkit-scrollbar-thumb:hover,
+.pos-scrollbar-thin::-webkit-scrollbar-thumb:hover,
 .context-actions::-webkit-scrollbar-thumb:hover,
 .top-status-grid::-webkit-scrollbar-thumb:hover,
 .menu-workspace::-webkit-scrollbar-thumb:hover,

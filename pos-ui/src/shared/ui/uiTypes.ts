@@ -1,6 +1,9 @@
 export type PosButtonVariant = 'primary' | 'secondary' | 'danger' | 'neutral';
 export type PosButtonMode = 'filled' | 'outline' | 'flat';
-export type PosStatusTone = 'neutral' | 'good' | 'warning' | 'danger' | 'info' | 'primary';
+export type PosSize = 'compact' | 'regular' | 'large';
+export type PosTone = 'neutral' | 'good' | 'warning' | 'danger' | 'info' | 'primary';
+export type PosActionMode = PosButtonMode;
+export type PosStatusTone = PosTone;
 
 export interface PosButtonClassOptions {
   primary?: boolean;
@@ -39,4 +42,10 @@ export function posToneClasses(baseClass: string, tone: PosStatusTone): string[]
     tone === 'info' ? 'info' : '',
     tone === 'primary' ? 'primary' : '',
   ].filter(Boolean);
+}
+
+export function posSizeClass(size: PosSize, compactClass = 'compact', largeClass = 'large'): string {
+  if (size === 'compact') return compactClass;
+  if (size === 'large') return largeClass;
+  return '';
 }

@@ -15,13 +15,13 @@
           <h2>{{ terminal.t('pos.closedOrders') }}</h2>
         </div>
         <div class="drawer-actions">
-          <q-btn flat round icon="refresh" class="icon-touch" :aria-label="terminal.t('actions.retry')" @click="() => terminal.closedOrders.refetch()" />
-          <q-btn flat round icon="close" class="icon-touch" :aria-label="terminal.t('actions.close')" @click="terminal.closedOrdersDrawer.value = false" />
+          <PosButton variant="neutral" mode="flat" round dense compact icon="refresh" class="icon-touch" :aria-label="terminal.t('actions.retry')" @click="() => terminal.closedOrders.refetch()" />
+          <PosButton variant="neutral" mode="flat" round dense compact icon="close" class="icon-touch" :aria-label="terminal.t('actions.close')" @click="terminal.closedOrdersDrawer.value = false" />
         </div>
       </div>
 
-      <q-banner v-if="terminal.closedOrders.error.value" class="error-banner dense-banner" rounded>{{ terminal.t(terminal.displayErrorMessageKey(terminal.closedOrders.error.value)) }}</q-banner>
-      <q-skeleton v-if="terminal.closedOrders.isFetching.value" class="order-skeleton drawer-skeleton" />
+      <PosBanner v-if="terminal.closedOrders.error.value" tone="error" :label="terminal.t(terminal.displayErrorMessageKey(terminal.closedOrders.error.value))" />
+      <PosSkeleton v-if="terminal.closedOrders.isFetching.value" kind="order" class="drawer-skeleton" />
 
       <div class="drawer-filter-row">
         <q-input
@@ -32,27 +32,15 @@
           type="date"
           :label="terminal.t('pos.businessDate')"
         />
-        <div class="pagination-controls">
-          <q-btn
-            flat
-            round
-            icon="chevron_left"
-            class="icon-touch"
-            :aria-label="terminal.t('actions.previousPage')"
-            :disable="!terminal.closedOrdersHasPreviousPage.value"
-            @click="terminal.previousClosedOrdersPage"
-          />
-          <span>{{ terminal.closedOrdersOffset.value + 1 }}</span>
-          <q-btn
-            flat
-            round
-            icon="chevron_right"
-            class="icon-touch"
-            :aria-label="terminal.t('actions.nextPage')"
-            :disable="!terminal.closedOrdersHasNextPage.value"
-            @click="terminal.nextClosedOrdersPage"
-          />
-        </div>
+        <PosPagination
+          :value="terminal.closedOrdersOffset.value + 1"
+          :previous-label="terminal.t('actions.previousPage')"
+          :next-label="terminal.t('actions.nextPage')"
+          :previous-disabled="!terminal.closedOrdersHasPreviousPage.value"
+          :next-disabled="!terminal.closedOrdersHasNextPage.value"
+          @previous="terminal.previousClosedOrdersPage"
+          @next="terminal.nextClosedOrdersPage"
+        />
       </div>
 
       <div v-if="!terminal.closedOrders.isFetching.value && terminal.closedOrders.data.value?.length" class="closed-orders-list">
@@ -76,49 +64,46 @@
             </div>
           </div>
           <div class="closed-order-actions">
-            <q-btn
-              color="negative"
-              unelevated
-              class="touch-button"
+            <PosButton
+              variant="danger"
               icon="cancel"
               :label="terminal.t('pos.checkCancellation')"
               :title="terminal.closedOrderCancellationUnavailableKey(order) ? terminal.t(terminal.closedOrderCancellationUnavailableKey(order)) : terminal.t('pos.checkCancellationCopy')"
-              :disable="!terminal.canCancelClosedOrder(order)"
+              :disabled="!terminal.canCancelClosedOrder(order)"
               :loading="terminal.refundMutation.isPending.value && terminal.refundMode.value === 'check_cancellation'"
               @click="terminal.openCheckCancellationDialogForOrder(order)"
             />
-            <q-btn
-              color="negative"
-              outline
-              class="touch-button"
+            <PosButton
+              variant="danger"
+              mode="outline"
               icon="undo"
               :label="terminal.t('pos.checkRefund')"
               :title="terminal.closedOrderRefundUnavailableKey(order) ? terminal.t(terminal.closedOrderRefundUnavailableKey(order)) : terminal.t('pos.checkRefundCopy')"
-              :disable="!terminal.canRefundClosedOrder(order)"
+              :disabled="!terminal.canRefundClosedOrder(order)"
               :loading="terminal.refundMutation.isPending.value && terminal.refundMode.value === 'check_refund'"
               @click="terminal.openCheckRefundDialogForOrder(order)"
             />
-            <q-btn
+            <PosButton
               v-if="order.check?.payments?.some((payment) => payment.status === 'captured')"
-              color="negative"
-              flat
-              class="touch-button"
+              variant="danger"
+              mode="flat"
               icon="payments"
               :label="terminal.t('pos.paymentRefundFallback')"
               :title="terminal.closedOrderPaymentRefundUnavailableKey(order) ? terminal.t(terminal.closedOrderPaymentRefundUnavailableKey(order)) : terminal.t('pos.paymentRefundFallbackCopy')"
-              :disable="!terminal.canRefundPaymentForOrder(order)"
+              :disabled="!terminal.canRefundPaymentForOrder(order)"
               :loading="terminal.refundMutation.isPending.value && terminal.refundMode.value === 'payment_refund'"
               @click="terminal.openRefundDialogForOrder(order)"
             />
           </div>
         </article>
       </div>
-      <div v-else-if="!terminal.closedOrders.isFetching.value" class="empty-state wide">{{ terminal.t('common.empty') }}</div>
+      <PosEmptyState v-else-if="!terminal.closedOrders.isFetching.value" size="wide" :label="terminal.t('common.empty')" />
     </section>
   </q-drawer>
 </template>
 
 <script setup lang="ts">
+import { PosBanner, PosButton, PosEmptyState, PosPagination, PosSkeleton } from '../../shared/ui';
 import type { CashierTerminal } from './useCashierTerminal';
 
 defineProps<{

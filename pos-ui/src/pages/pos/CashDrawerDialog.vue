@@ -4,7 +4,7 @@
     persistent
     :eyebrow="terminal.t('pos.cashSession')"
     :title="terminal.t('pos.cashDrawer')"
-    body-class="form-stack"
+    body-class="form-stack pos-scrollarea-y pos-scrollbar-thin"
     @update:model-value="terminal.cashDrawerDialog.value = $event"
   >
         <q-select

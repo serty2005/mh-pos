@@ -3,7 +3,7 @@
     :model-value="terminal.modifierDialog.value"
     persistent
     card-class="modifier-dialog"
-    body-class="modifier-groups"
+    body-class="modifier-groups pos-scrollarea-y pos-scrollbar-thin"
     :eyebrow="terminal.t(terminal.modifierDialogMode.value === 'edit' ? 'pos.editModifiers' : 'pos.modifiers')"
     :title="terminal.modifierMenuItem.value?.name ?? ''"
     @update:model-value="terminal.closeModifierDialog"

@@ -3,7 +3,7 @@
     :model-value="terminal.cancelDialog.value"
     persistent
     :title="terminal.t('pos.cancelPrecheck')"
-    body-class="form-stack"
+    body-class="form-stack pos-scrollarea-y pos-scrollbar-thin"
     @update:model-value="terminal.cancelDialog.value = $event"
   >
         <p class="dialog-copy">{{ terminal.t('pos.precheckCancelCopy') }}</p>

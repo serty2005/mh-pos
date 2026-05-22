@@ -46,7 +46,7 @@
       <PosBanner v-if="terminal.closedOrders.error.value" tone="error" :label="terminal.t(terminal.displayErrorMessageKey(terminal.closedOrders.error.value))" />
 
       <div v-if="terminal.closedOrders.isFetching.value" class="activity-list">
-        <q-skeleton v-for="n in 8" :key="n" class="activity-order-item skeleton-row" />
+        <PosSkeleton v-for="n in 8" :key="n" kind="list-row" class="activity-order-item" />
       </div>
 
       <PosEmptyState v-else-if="!terminal.canViewClosedOrders.value" size="wide" :label="terminal.t('pos.noPermissionForClosedOrders')" />
@@ -75,16 +75,14 @@
       <PosEmptyState v-else size="wide" :label="terminal.t('pos.noClosedOrders')" />
     </main>
 
-    <aside class="activity-detail-rail section-action-rail" :aria-label="terminal.t('pos.closedOrderDetails')">
-      <div class="rail-head">
-        <div>
-          <p class="eyebrow">{{ terminal.t('pos.finalCheck') }}</p>
-          <h2>{{ selectedOrder ? terminal.t('pos.closedOrderDetails') : terminal.t('common.empty') }}</h2>
-        </div>
-      </div>
-
-      <template v-if="selectedOrder">
-        <div class="rail-summary">
+    <PosActionRail
+      class="activity-detail-rail"
+      :eyebrow="terminal.t('pos.finalCheck')"
+      :title="selectedOrder ? terminal.t('pos.closedOrderDetails') : terminal.t('common.empty')"
+      :aria-label="terminal.t('pos.closedOrderDetails')"
+      :empty="!selectedOrder"
+    >
+      <template #summary v-if="selectedOrder">
           <div>
             <span>{{ terminal.t('pos.table') }}</span>
             <strong>{{ selectedOrder.table_name || terminal.t('common.empty') }}</strong>
@@ -97,42 +95,43 @@
             <span>{{ terminal.t('common.status') }}</span>
             <strong>{{ terminal.statusLabel(selectedOrder.check?.status ?? selectedOrder.status) }}</strong>
           </div>
-        </div>
+      </template>
 
+      <template v-if="selectedOrder">
         <div class="payment-list">
           <p class="eyebrow">{{ terminal.t('pos.payments') }}</p>
-          <article v-for="payment in selectedOrder.check?.payments ?? []" :key="payment.id" class="payment-row">
-            <span>
+          <PosDataRow v-for="payment in selectedOrder.check?.payments ?? []" :key="payment.id" :value="terminal.money(payment.amount, payment.currency)">
+            <template #main>
               <strong>{{ terminal.t(`pos.paymentMethods.${payment.method}`) }}</strong>
               <small>{{ terminal.statusLabel(payment.status) }}</small>
-            </span>
-            <strong>{{ terminal.money(payment.amount, payment.currency) }}</strong>
-          </article>
+            </template>
+          </PosDataRow>
           <PosEmptyState v-if="!(selectedOrder.check?.payments?.length)" size="small" :label="terminal.t('common.empty')" />
         </div>
 
         <div class="payment-list">
           <p class="eyebrow">{{ terminal.t('pos.financialOperations') }}</p>
           <PosBanner v-if="financialOperations.error.value" tone="error" :label="terminal.t(terminal.displayErrorMessageKey(financialOperations.error.value))" />
-          <q-skeleton v-if="financialOperations.isFetching.value" class="order-skeleton" />
-          <article v-for="operation in financialOperations.data.value ?? []" :key="operation.id" class="payment-row ledger-row">
-            <span>
+          <PosSkeleton v-if="financialOperations.isFetching.value" kind="order" />
+          <PosDataRow v-for="operation in financialOperations.data.value ?? []" :key="operation.id" layout="ledger">
+            <template #main>
               <strong>{{ operationTitle(operation) }}</strong>
               <small>{{ operation.reason }}</small>
               <small>{{ terminal.t('pos.businessDate') }}: {{ operation.business_date_local }}</small>
               <small>{{ terminal.t('pos.inventoryDisposition') }}: {{ terminal.t(`pos.inventoryDispositions.${operation.inventory_disposition}`) }}</small>
               <small>{{ terminal.t('pos.createdByEmployee') }}: {{ terminal.shortId(operation.created_by_employee_id) }}</small>
               <small v-if="operation.approved_by_employee_id">{{ terminal.t('pos.approvedByEmployee') }}: {{ terminal.shortId(operation.approved_by_employee_id) }}</small>
-            </span>
-            <span class="ledger-row-side">
+            </template>
+            <template #side>
               <strong>{{ terminal.money(operation.amount, operation.currency) }}</strong>
               <small>{{ terminal.formatDate(operation.created_at) }}</small>
-            </span>
-          </article>
+            </template>
+          </PosDataRow>
           <PosEmptyState v-if="!financialOperations.isFetching.value && !(financialOperations.data.value?.length)" size="small" :label="terminal.t('common.empty')" />
         </div>
+      </template>
 
-        <div class="rail-actions integrated-action-bar">
+      <template #actions v-if="selectedOrder">
           <PosButton
             variant="primary"
             primary
@@ -168,13 +167,12 @@
             :loading="terminal.refundMutation.isPending.value && terminal.refundMode.value === 'payment_refund'"
             @click="terminal.openRefundDialogForOrder(selectedOrder)"
           />
-        </div>
       </template>
 
-      <div v-else class="rail-empty">
+      <template #empty>
         <p>{{ terminal.t('pos.chooseClosedOrder') }}</p>
-      </div>
-    </aside>
+      </template>
+    </PosActionRail>
   </section>
 </template>
 
@@ -184,7 +182,7 @@ import { computed, ref, watch } from 'vue';
 
 import { listFinancialOperationsByCheck } from '../../shared/api';
 import type { ClosedOrder, FinancialOperation } from '../../shared/schemas';
-import { PosBanner, PosButton, PosEmptyState, PosPagination, PosSectionHeader, PosStatusStrip, PosTabs, type PosTabOption } from '../../shared/ui';
+import { PosActionRail, PosBanner, PosButton, PosDataRow, PosEmptyState, PosPagination, PosSectionHeader, PosSkeleton, PosStatusStrip, PosTabs, type PosTabOption } from '../../shared/ui';
 import type { CashierTerminal } from './useCashierTerminal';
 
 type ActivityFilter = 'all' | 'refundable';
