@@ -20,6 +20,9 @@
     <launch-readiness-panel v-if="activeKey === 'launchPlan'" :ctx="cloudCtx" />
     <edge-device-panel v-else-if="activeKey === 'edgeDevices'" :ctx="cloudCtx" />
     <edge-events-panel v-else-if="activeKey === 'edgeEvents'" :ctx="cloudCtx" />
+    <proposal-review-queue v-else-if="activeKey === 'proposalReview'" />
+    <inventory-readiness-panel v-else-if="activeKey === 'inventoryReadiness'" />
+    <olap-export-readiness-panel v-else-if="activeKey === 'olapExports'" />
     <section v-else-if="activeKey !== 'restaurants' && !selectedRestaurantId" class="empty-state wide">
       {{ t('cloud.empty.selectRestaurant') }}
     </section>
@@ -35,8 +38,11 @@ import { useI18n } from 'vue-i18n';
 import CloudShell from './components/cloud/CloudShell.vue';
 import EdgeDevicePanel from './components/cloud/EdgeDevicePanel.vue';
 import EdgeEventsPanel from './components/cloud/EdgeEventsPanel.vue';
+import InventoryReadinessPanel from './components/cloud/InventoryReadinessPanel.vue';
 import LaunchReadinessPanel from './components/cloud/LaunchReadinessPanel.vue';
+import OlapExportReadinessPanel from './components/cloud/OlapExportReadinessPanel.vue';
 import PublicationPanel from './components/cloud/PublicationPanel.vue';
+import ProposalReviewQueue from './components/cloud/ProposalReviewQueue.vue';
 import ResourceWorkspace from './components/cloud/ResourceWorkspace.vue';
 import {
   activateEmployee,
@@ -113,7 +119,7 @@ import {
 } from './shared/api';
 import type { AssignmentStatus, EdgeEvent, PairingCodeResult, PublicationSummary, Restaurant, UnassignedEdgeNode } from './shared/schemas';
 
-type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents';
+type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
 type ResourceKey =
   | ScenarioKey
   | 'restaurants'
@@ -623,6 +629,9 @@ const scenarioNav = [
   { key: 'launchPlan' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.launchPlan', descriptionKey: 'cloud.descriptions.launchPlan' },
   { key: 'edgeDevices' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.edgeDevices', descriptionKey: 'cloud.descriptions.edgeDevices' },
   { key: 'edgeEvents' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.edgeEvents', descriptionKey: 'cloud.descriptions.edgeEvents' },
+  { key: 'proposalReview' as ResourceKey, groupKey: 'cloud.groups.inventory', titleKey: 'cloud.resources.proposalReview', descriptionKey: 'cloud.descriptions.proposalReview' },
+  { key: 'inventoryReadiness' as ResourceKey, groupKey: 'cloud.groups.inventory', titleKey: 'cloud.resources.inventoryReadiness', descriptionKey: 'cloud.descriptions.inventoryReadiness' },
+  { key: 'olapExports' as ResourceKey, groupKey: 'cloud.groups.publication', titleKey: 'cloud.resources.olapExports', descriptionKey: 'cloud.descriptions.olapExports' },
 ];
 
 const navGroups = computed(() => {
@@ -631,7 +640,7 @@ const navGroups = computed(() => {
     key: labelKey,
     labelKey,
     items: [
-      ...(labelKey === 'cloud.groups.scenarios' ? scenarioNav : []),
+      ...scenarioNav.filter((item) => item.groupKey === labelKey),
       ...resourceConfigs.filter((item) => item.groupKey === labelKey),
       ...(labelKey === publicationNav.groupKey ? [publicationNav] : []),
     ],
@@ -648,7 +657,7 @@ const visibleFields = computed(() => (activeConfig.value?.fields ?? []).filter((
 const permissionFields = computed(() => visibleFields.value.filter((item) => item.type === 'permissionMatrix'));
 const currentRows = computed<Row[]>(() => {
   if (activeKey.value === 'restaurants') return restaurants.value as unknown as Row[];
-  if (activeKey.value === 'launchPlan' || activeKey.value === 'edgeDevices' || activeKey.value === 'edgeEvents' || activeKey.value === 'publications' || activeKey.value === 'itemTags' || activeKey.value === 'categories') return [];
+  if (activeKey.value === 'launchPlan' || activeKey.value === 'edgeDevices' || activeKey.value === 'edgeEvents' || activeKey.value === 'proposalReview' || activeKey.value === 'inventoryReadiness' || activeKey.value === 'olapExports' || activeKey.value === 'publications' || activeKey.value === 'itemTags' || activeKey.value === 'categories') return [];
   return scopedRows[activeKey.value as ScopedResourceKey];
 });
 const filteredRows = computed(() => {
@@ -845,7 +854,7 @@ function setActive(key: ResourceKey) {
 }
 
 function isScopedResourceKey(key: ResourceKey): key is ScopedResourceKey {
-  return !['launchPlan', 'edgeDevices', 'edgeEvents', 'restaurants', 'publications', 'itemTags', 'categories'].includes(key);
+  return !['launchPlan', 'edgeDevices', 'edgeEvents', 'proposalReview', 'inventoryReadiness', 'olapExports', 'restaurants', 'publications', 'itemTags', 'categories'].includes(key);
 }
 
 function navCount(key: ResourceKey) {

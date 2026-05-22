@@ -78,13 +78,25 @@ Permission ids used by cashier UI:
 
 Pagination/filter controls закрытых заказов не вводят новые permission ids; backend `pos.check.view` остается authoritative для read.
 
+## Waiter Mobile UI Actions
+
+| UI action | Required backend permission | Status |
+| --- | --- | --- |
+| Waiter view floor/tables | `pos.floor.view` | реализовано сейчас |
+| Waiter view menu | `pos.menu.view` | реализовано сейчас |
+| Waiter view/select active orders | `pos.order.view` | реализовано сейчас |
+| Waiter create order | `pos.order.create` | реализовано сейчас |
+| Waiter add order line with modifiers | `pos.order.add_line` | реализовано сейчас |
+| Waiter change line quantity | `pos.order.change_quantity` | реализовано сейчас |
+| Waiter void line | `pos.order.void_line` | реализовано сейчас |
+| Waiter issue precheck | `pos.precheck.issue` | реализовано сейчас |
+| Waiter view/reprint precheck | `pos.precheck.view`, `pos.precheck.reprint` | реализовано сейчас |
+| Waiter payment/refund/cash drawer controls | payment/refund/cash permissions | вне текущего waiter default |
+
 ## Запланировано До Полного Пилота
 
 | UI action | Required backend permission | Status |
 | --- | --- | --- |
-| Waiter mobile floor/menu/order entry | `pos.floor.view`, `pos.menu.view`, `pos.catalog.view`, `pos.order.create`, `pos.order.add_line`, `pos.order.change_quantity`, `pos.order.void_line` | запланировано далее |
-| Waiter issue/reprint precheck | `pos.precheck.issue`, `pos.precheck.reprint` | запланировано далее |
-| Waiter payment/refund controls | payment/refund permissions only when explicitly granted | вне текущего waiter default |
 | Kitchen ticket list | `pos.kitchen.view` | запланировано далее |
 | Kitchen ticket accept/start/hold/ready/served/recall/cancel | `pos.kitchen.update` | запланировано далее |
 | Kitchen stock receipt capture | `pos.kitchen.receipt.capture` | запланировано далее |

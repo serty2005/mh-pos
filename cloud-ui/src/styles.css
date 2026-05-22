@@ -723,6 +723,19 @@ button:focus-visible,
   overflow-wrap: anywhere;
 }
 
+.readiness-only-panel {
+  max-width: 760px;
+}
+
+.cloud-gap-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 18px;
+  color: #66706b;
+  line-height: 1.45;
+}
+
 @media (max-width: 1120px) {
   .cloud-page {
     grid-template-columns: 1fr;

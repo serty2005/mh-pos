@@ -15,12 +15,14 @@
 3. Подготовка продаваемого меню поверх существующих Cloud-owned master data.
 4. Явная публикация master data package для Edge.
 5. Передача опубликованного snapshot на Edge, где далее формируются заказ и продажа.
+6. Manager-facing recipes и stop-list authoring по подтвержденным Cloud master-data routes.
+7. Readiness-only поверхности для proposal review, inventory operations/costing и OLAP exports без неподтвержденных команд.
 
 запланировано далее:
 
 - вывести связи `catalog item -> menu item -> modifier bindings -> pricing policies` как единый сценарий подготовки продажи;
 - показывать версии опубликованного пакета и состояние доставки на Edge, когда backend подтвердит такой контракт.
-- до полного пилота превратить Cloud UI в полноценное менеджерское web app: recipes, stop-list, catalog/recipe proposal review, inventory operations, costing status, ClickHouse export readiness, OLAP API diagnostics и безопасную диагностику sync/problem events;
+- до полного пилота превратить readiness-only manager surfaces для catalog/recipe proposal review, inventory operations, costing status, ClickHouse export readiness и OLAP API diagnostics в runtime только после появления подтвержденных Cloud backend routes;
 
 вне текущего объема:
 
@@ -48,6 +50,9 @@
 - item tags как command-only привязка;
 - modifier groups, options и bindings;
 - pricing policies;
+- recipe items через `/api/v1/master-data/recipes/items`;
+- stop-list entries через `/api/v1/master-data/inventory/stop-list`;
+- readiness-only разделы `Очередь предложений`, `Готовность склада` и `OLAP exports`, которые показывают `запланировано далее` и contract gaps вместо CRUD-муляжа;
 - halls и tables;
 - menu items;
 - menu category create как command-only операция, потому что list/update routes не подтверждены;
@@ -58,10 +63,10 @@
 
 запланировано до полного пилота:
 
-- recipes editor: owner catalog item, component catalog item, quantity, unit, loss percent;
+- recipe editor уже имеет bounded route-backed строки recipe items; далее нужен сценарный editor версий/диффов поверх подтвержденных contracts;
 - recipe change review queue: diff по ingredients, quantities, units, loss percent, prep time delta и approve/reject actions;
 - catalog suggestion review queue: create/update proposal из Edge receipt flow, duplicate hints, linked receipt line и approve/reject actions;
-- stop-list panel: catalog item, active toggle, optional available quantity, reason, source/status;
+- stop-list panel уже имеет bounded route-backed rows; далее нужны conflict policy, review и publication readiness по отдельным contracts;
 - inventory operations workspace: stock receipts, inventory counts, production completion input, stock ledger/balances and costing/recalculation status;
 - ClickHouse/OLAP workspace: export health, retry/backfill controls and read-only OLAP endpoint previews;
 - launch readiness должен учитывать stop-list review и публикацию streams `recipes`/`stop_lists`;

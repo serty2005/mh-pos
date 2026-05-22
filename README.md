@@ -13,6 +13,8 @@
 - POS Edge order runtime хранит selected modifiers в строках заказа, учитывает цену modifiers в backend authoritative totals и сохраняет modifiers в precheck/check snapshots.
 - POS cashier UI показывает отдельную секцию услуг, открывает выбор modifiers для позиций с modifier groups и отображает выбранные modifiers в активном заказе.
 - POS cashier UI использует текущий shell `floor` / `order` / `activity` / `reports` / `cash`; delivery, settings, storage/archive/retention и Cloud reporting не являются operator-facing cashier flows.
+- POS waiter UI реализован как mobile-first route `/pos/waiter`: зал/стол, активные заказы, создание заказа, меню/поиск, modifiers при добавлении строки, quantity, void line и issue/reprint precheck без payment/refund/cash drawer authority по умолчанию.
+- POS kitchen route `/pos/kitchen` реализован сейчас только как honest readiness screen: он показывает `запланировано далее` и отсутствующие KDS backend contracts, не активный KDS lifecycle runtime.
 - Active-looking POS UI placeholders для переноса/разделения строки, banquet/preorder, mock waiter filters и discount/surcharge editor не считаются реализованным runtime: они скрыты, passive или disabled/backlog до появления backend/API/UI contract.
 - `CancelPrecheck` требует manager override, проверяет PIN/permission и возвращает unpaid active precheck order в `open`.
 - Оплата выполняется через `precheck_id`; partial payments разрешены; final check создается только после полной оплаты.
@@ -32,13 +34,13 @@
 - Cloud/Edge master data разделяет menu categories, catalog folders и tags; `catalog` stream передает folders, folder parameters, tags, item tags, services и modifier groups/options/bindings, а `menu` stream передает menu items и effective modifier links.
 - Cloud publication snapshot для POS Edge публикуется как typed ingest DTO: `modifier_groups[]` сохраняет `required`, `min_count`, `max_count`, `active`, а `menu_item_modifier_groups[]` остается link-only без rich/UI fields. Production-way bootstrap отправляет опубликованный Cloud snapshot на POS Edge без PowerShell field stripping.
 - Inventory runtime переведен на Cloud-centric cutover: POS Edge больше не содержит manual stock document service и SQLite tables `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`; исторически этот pre-pilot Edge-side метод использовался как foundation и удален при переходе.
-- Cloud принимает inventory events через sync receiver, кладет их в durable `inventory_event_queue`, а Cloud Inventory Worker пишет Cloud-owned `stock_documents` и `stock_ledger` для нормализованных item payloads. Cloud package contracts/storage принимают `recipes` и `inventory_reference`, но Cloud authoring UI/publication workflow для recipes/stop-list остается следующим шагом. Recipe-expanded consumption, ретроспективный costing DAG и ClickHouse `olap_stock_moves` остаются отдельными следующими шагами.
+- Cloud принимает inventory events через sync receiver, кладет их в durable `inventory_event_queue`, а Cloud Inventory Worker пишет Cloud-owned `stock_documents` и `stock_ledger` для нормализованных item payloads. Cloud package contracts/storage принимают `recipes` и `inventory_reference`; Cloud UI уже имеет manager-facing authoring для recipe items и stop-list по подтвержденным master-data routes. Proposal review, inventory operations/costing и OLAP exports пока показаны как readiness-only surfaces без имитации отсутствующих endpoints.
 
 Вне текущего runtime:
 
 - automatic recipe expansion / stock consumption engine;
 - recipe-expanded stock return/write-off from financial operations beyond normalized item payloads;
-- Cloud authoring UI/conflict policy для stop-list и recipes;
+- Cloud proposal review, inventory operations/costing UI и OLAP export runtime;
 - PSP refund smoke и fiscal integration;
 - destructive retention apply, archive restore в active SQLite, `VACUUM` и compaction;
 - fiscal shift/business day сущности как отдельные runtime aggregates;

@@ -104,6 +104,9 @@ export const i18n = createI18n({
           pricingPolicies: 'Pricing policies',
           recipeItems: 'Рецепты',
           stopLists: 'Stop-list',
+          proposalReview: 'Очередь предложений',
+          inventoryReadiness: 'Готовность склада',
+          olapExports: 'OLAP exports',
           halls: 'Залы',
           tables: 'Столы',
           menuItems: 'Menu items',
@@ -128,6 +131,9 @@ export const i18n = createI18n({
           pricingPolicies: 'Правила скидок и надбавок, публикуемые в Edge pricing stream.',
           recipeItems: 'Минимальные Cloud-owned строки рецептов для публикации read-only recipe stream на POS Edge.',
           stopLists: 'Cloud-owned блокировки продаж, публикуемые на POS Edge через inventory_reference без передачи складских остатков.',
+          proposalReview: 'Readiness-поверхность для будущих заявок и ручных складских решений без неподтвержденного workflow.',
+          inventoryReadiness: 'Readiness-поверхность облачной обработки inventory events без UI-side расчета остатков и себестоимости.',
+          olapExports: 'Readiness-поверхность аналитических экспортов без имитации отсутствующего export API.',
           halls: 'Cloud-owned залы ресторана.',
           tables: 'Cloud-owned столы с привязкой к залу.',
           menuItems: 'Продаваемые позиции меню поверх catalog items.',
@@ -269,6 +275,33 @@ export const i18n = createI18n({
           assignRole: 'Назначить роль',
           rotatePin: 'Сменить PIN',
           suspend: 'Приостановить',
+        },
+        readiness: {
+          status: 'запланировано далее',
+          proposalReview: {
+            copy: 'Cloud backend пока не предоставляет manager queue для proposal review. UI фиксирует границы будущего workflow и не создает локальные решения.',
+            gaps: {
+              queue: 'Нет list endpoint для очереди предложений с безопасными summary-полями.',
+              approval: 'Нет approve/reject команд с idempotency и audit metadata.',
+              audit: 'Нет contract для просмотра истории решений без raw payload.',
+            },
+          },
+          inventory: {
+            copy: 'Inventory worker и durable queue существуют на backend-стороне, но manager UI для документов, пересчета и ручного review пока не подтвержден routes.',
+            gaps: {
+              documents: 'Нет read endpoints для stock documents и movement ledger.',
+              costing: 'Нет безопасного API для просмотра costing/recalculation state.',
+              review: 'Нет manager review queue для manual_review inventory disposition.',
+            },
+          },
+          olap: {
+            copy: 'Аналитическое хранилище и exports не имеют подтвержденного Cloud UI API. Экран не показывает фиктивные выгрузки.',
+            gaps: {
+              exportRoute: 'Нет endpoint для запуска и скачивания OLAP export.',
+              dataset: 'Нет contract для выбора dataset и периода.',
+              retention: 'Нет UI contract для retention, masking и audit экспорта.',
+            },
+          },
         },
         scenarios: {
           operatorJourney: 'Путь оператора',

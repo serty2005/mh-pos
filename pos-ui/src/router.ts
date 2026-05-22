@@ -9,16 +9,8 @@ export const router = createRouter({
     { path: '/lock', component: () => import('./pages/LockPage.vue') },
     { path: '/pos', component: () => import('./pages/PosPage.vue') },
     { path: '/pos/cashier', component: () => import('./pages/PosPage.vue') },
-    {
-      path: '/pos/waiter',
-      component: () => import('./pages/WorkspaceShellPage.vue'),
-      meta: { titleKey: 'pos.waiterMobile', bodyKey: 'pos.interfaceNotAvailableBody' },
-    },
-    {
-      path: '/pos/kitchen',
-      component: () => import('./pages/WorkspaceShellPage.vue'),
-      meta: { titleKey: 'pos.kitchenDisplay', bodyKey: 'pos.interfaceNotAvailableBody' },
-    },
+    { path: '/pos/waiter', component: () => import('./pages/WaiterPage.vue') },
+    { path: '/pos/kitchen', component: () => import('./pages/KitchenPage.vue') },
     {
       path: '/pos/manager',
       component: () => import('./pages/WorkspaceShellPage.vue'),

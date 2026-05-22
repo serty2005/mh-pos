@@ -67,75 +67,75 @@ Received: undefined
   42  |     await saveViewportScreenshot(page, testInfo, `route-${path.replaceAll('/', '-') || 'root'}.png`);
   43  |   }
   44  | 
-  45  |   for (const path of ['/pos/waiter', '/pos/kitchen', '/pos/manager']) {
-  46  |     await page.goto(path);
-  47  |     await expect(page.getByText('Вне текущего объема')).toBeVisible();
-  48  |     await expect(page.getByText(/runtime-сценарий не реализован/i)).toBeVisible();
-  49  |     await expect(page.getByRole('link', { name: /Терминал кассира/i })).toBeVisible();
-  50  |     await expect(page.locator('.q-layout')).not.toContainText(/готовый runtime|runtime готов|реализовано сейчас/i);
-  51  |   }
-  52  | });
-  53  | 
-  54  | test('redesigned POS shell supports section navigation and cashier flow', async ({ page }, testInfo) => {
-  55  |   await page.setViewportSize({ width: 1440, height: 900 });
-  56  |   await loginAsManager(page);
-  57  |   await page.goto('/pos');
-  58  | 
-  59  |   await expectRedesignedShell(page);
-  60  |   await expect(page.getByText('Production Manager')).toBeVisible();
-  61  |   await expectTouchTargets(page);
-  62  | 
-  63  |   await page.keyboard.press('Tab');
-  64  |   await expectVisibleFocusRing(page);
-  65  | 
-  66  |   await assertSectionMenuNavigation(page, testInfo);
-  67  |   await ensureOperationsReady(page);
-  68  |   await saveViewportScreenshot(page, testInfo, 'redesign-cash-ready-desktop.png');
+  45  |   await page.setViewportSize({ width: 390, height: 844 });
+  46  |   await page.goto('/pos/waiter');
+  47  |   await expect(page.locator('.waiter-page')).toBeVisible();
+  48  |   await expect(page.getByText(/не принимает финансовые решения/i)).toBeVisible();
+  49  |   await expect(page.getByRole('button', { name: /Наличные|Карта|Кассовый ящик|Вернуть оплату/i })).toHaveCount(0);
+  50  | 
+  51  |   for (const path of ['/pos/kitchen', '/pos/manager']) {
+  52  |     await page.goto(path);
+  53  |     if (path === '/pos/kitchen') {
+  54  |       await expect(page.getByText('запланировано далее')).toBeVisible();
+  55  |       await expect(page.getByText(/нет routes для kitchen tickets/i)).toBeVisible();
+  56  |     } else {
+  57  |       await expect(page.getByText('Вне текущего объема')).toBeVisible();
+  58  |       await expect(page.getByText(/runtime-сценарий не реализован/i)).toBeVisible();
+  59  |       await expect(page.getByRole('link', { name: /Терминал кассира/i })).toBeVisible();
+  60  |     }
+  61  |     await expect(page.locator('.q-layout')).not.toContainText(/готовый runtime|runtime готов|реализовано сейчас/i);
+  62  |   }
+  63  | });
+  64  | 
+  65  | test('redesigned POS shell supports section navigation and cashier flow', async ({ page }, testInfo) => {
+  66  |   await page.setViewportSize({ width: 1440, height: 900 });
+  67  |   await loginAsManager(page);
+  68  |   await page.goto('/pos');
   69  | 
-  70  |   await openSection(page, 'Залы и столы');
-  71  |   const hall = page.locator('.hall-chip').first();
-  72  |   await expect(hall).toHaveAttribute('aria-pressed', 'true');
+  70  |   await expectRedesignedShell(page);
+  71  |   await expect(page.getByText('Production Manager')).toBeVisible();
+  72  |   await expectTouchTargets(page);
   73  | 
-  74  |   const table = page.locator('.floor-table-tile').first();
-  75  |   await table.click();
-  76  |   await expect(page.locator('.floor-order-rail')).toBeVisible();
-  77  |   await expect(page.locator('.floor-order-rail')).toContainText(/На выбранном столе нет активного заказа|Активные заказы/i);
-  78  |   await saveViewportScreenshot(page, testInfo, 'redesign-order-empty-desktop.png');
-  79  | 
-  80  |   const createOrder = page.getByRole('button', { name: /Создать заказ/i }).last();
-  81  |   if (await createOrder.isVisible()) {
-  82  |     await expect(createOrder).toBeEnabled();
-  83  |     await createOrder.click();
-  84  |   }
-  85  |   await expect(page.locator('.pos-menu-area')).toBeVisible();
-  86  |   await expect(page.locator('.pos-order-rail')).toBeVisible();
-  87  |   await expect(page.locator('.rail-summary')).toBeVisible();
-  88  | 
-  89  |   await cancelIssuedPrecheckIfPresent(page);
-  90  |   const lineCountBeforeAdd = await page.locator('.rail-line').count();
-  91  |   const menuTile = page.locator('.menu-tile:not([disabled])').filter({ hasNotText: /Есть модификаторы/i }).first();
-  92  |   await expect(menuTile).toBeVisible();
-  93  |   await menuTile.click();
-  94  |   await expect.poll(() => page.locator('.rail-line').count()).toBeGreaterThan(lineCountBeforeAdd);
-  95  |   await saveViewportScreenshot(page, testInfo, 'redesign-order-line.png');
-  96  | 
-  97  |   await page.getByRole('button', { name: /Выпустить пречек/i }).click();
-  98  |   await expect(page.locator('.pos-order-rail')).toContainText('Пречек выпущен');
+  74  |   await page.keyboard.press('Tab');
+  75  |   await expectVisibleFocusRing(page);
+  76  | 
+  77  |   await assertSectionMenuNavigation(page, testInfo);
+  78  |   await ensureOperationsReady(page);
+  79  |   await saveViewportScreenshot(page, testInfo, 'redesign-cash-ready-desktop.png');
+  80  | 
+  81  |   await openSection(page, 'Залы и столы');
+  82  |   const hall = page.locator('.hall-chip').first();
+  83  |   await expect(hall).toHaveAttribute('aria-pressed', 'true');
+  84  | 
+  85  |   const table = page.locator('.floor-table-tile').first();
+  86  |   await table.click();
+  87  |   await expect(page.locator('.floor-order-rail')).toBeVisible();
+  88  |   await expect(page.locator('.floor-order-rail')).toContainText(/На выбранном столе нет активного заказа|Активные заказы/i);
+  89  |   await saveViewportScreenshot(page, testInfo, 'redesign-order-empty-desktop.png');
+  90  | 
+  91  |   const createOrder = page.getByRole('button', { name: /Создать заказ/i }).last();
+  92  |   if (await createOrder.isVisible()) {
+  93  |     await expect(createOrder).toBeEnabled();
+  94  |     await createOrder.click();
+  95  |   }
+  96  |   await expect(page.locator('.pos-menu-area')).toBeVisible();
+  97  |   await expect(page.locator('.pos-order-rail')).toBeVisible();
+  98  |   await expect(page.locator('.rail-summary')).toBeVisible();
   99  | 
-  100 |   await page.getByRole('button', { name: /Отмена пречека/i }).click();
-  101 |   const cancelDialog = page.locator('.q-dialog').filter({ hasText: 'Отмена пречека' });
-  102 |   await expect(cancelDialog).toBeVisible();
-  103 |   await expect(cancelDialog.getByLabel(/PIN менеджера/i)).toHaveAttribute('type', 'password');
-  104 |   await cancelDialog.getByLabel(/ID менеджера/i).fill(demo.manager_employee_id);
-  105 |   await cancelDialog.getByLabel(/PIN менеджера/i).fill('0000');
-  106 |   await cancelDialog.getByLabel(/Причина отмены/i).fill('playwright invalid manager override');
-  107 |   await cancelDialog.getByRole('button', { name: /Отмена пречека/i }).click();
-  108 |   await expect(page.getByRole('heading', { name: /Операция не выполнена|Недостаточно прав|Проверьте данные/i })).toBeVisible();
-  109 |   await expectNoSensitiveText(page, ['0000', 'manager_pin', 'managerPin', 'sql:', 'stack trace', 'panic:']);
-  110 |   await page.getByRole('button', { name: /Закрыть/i }).last().click();
-  111 | 
-  112 |   await cancelDialog.getByLabel(/PIN менеджера/i).fill(demo.manager_pin);
-  113 |   await cancelDialog.getByLabel(/Причина отмены/i).fill('playwright cancel precheck');
-  114 |   await cancelDialog.getByRole('button', { name: /Отмена пречека/i }).click();
-  115 |   await expect(cancelDialog).toBeHidden();
+  100 |   await cancelIssuedPrecheckIfPresent(page);
+  101 |   const lineCountBeforeAdd = await page.locator('.rail-line').count();
+  102 |   const menuTile = page.locator('.menu-tile:not([disabled])').filter({ hasNotText: /Есть модификаторы/i }).first();
+  103 |   await expect(menuTile).toBeVisible();
+  104 |   await menuTile.click();
+  105 |   await expect.poll(() => page.locator('.rail-line').count()).toBeGreaterThan(lineCountBeforeAdd);
+  106 |   await saveViewportScreenshot(page, testInfo, 'redesign-order-line.png');
+  107 | 
+  108 |   await page.getByRole('button', { name: /Выпустить пречек/i }).click();
+  109 |   await expect(page.locator('.pos-order-rail')).toContainText('Пречек выпущен');
+  110 | 
+  111 |   await page.getByRole('button', { name: /Отмена пречека/i }).click();
+  112 |   const cancelDialog = page.locator('.q-dialog').filter({ hasText: 'Отмена пречека' });
+  113 |   await expect(cancelDialog).toBeVisible();
+  114 |   await expect(cancelDialog.getByLabel(/PIN менеджера/i)).toHaveAttribute('type', 'password');
+  115 |   await cancelDialog.getByLabel(/ID менеджера/i).fill(demo.manager_employee_id);
 ```

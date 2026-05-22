@@ -1,6 +1,6 @@
 # Текущее функциональное состояние проекта
 
-Статус: реализовано сейчас по коду, тестам и документации на 2026-05-21; цель полного пилота зафиксирована отдельно и не считается текущим runtime.
+Статус: реализовано сейчас по коду, тестам и документации на 2026-05-22; цель полного пилота зафиксирована отдельно и не считается текущим runtime.
 
 Этот документ является сводной картой фактического состояния репозитория. Он не заменяет профильные спецификации: архитектурные инварианты остаются в `SPECv1.3.md`, backend-контракты - в `docs/backend/*`, контракты интерфейсов - в `docs/ui/*`, синхронизация - в `docs/sync/*`.
 
@@ -16,14 +16,14 @@
 
 Не обнаружено сейчас:
 
-- Подтвержденного runtime для KDS, доставки, настоящего платежного процессинга, фискального адаптера, ClickHouse pipeline.
+- Подтвержденного runtime для KDS lifecycle actions, доставки, настоящего платежного процессинга, фискального адаптера, ClickHouse pipeline.
 - Публичного Cloud HTTP/API интерфейса отчетов по детальной проекции финансовых операций. Сервисная и repository-основа есть, публичный reporting surface остается запланированным далее.
 
 Цель полной пилотной реализации:
 
 - сохранить текущий cashier runtime как базовый поток;
 - добавить stop-list sale blocking на POS Edge с Cloud authoring/publication и offline локальной проверкой;
-- добавить mobile-first waiter runtime без payment/refund authority по умолчанию;
+- расширять mobile-first waiter runtime без payment/refund authority по умолчанию только по подтвержденным backend contracts;
 - добавить advanced KDS lifecycle: статусы блюд, cooking events, `ItemServed`, приемку поставки, catalog proposals, recipe change proposals и stop-list edit;
 - зафиксировать POS Edge backend как авторитетный runtime для financial/order/KDS command validation и stop-list sale blocking; POS UI не становится авторитетным слоем;
 - добавить Cloud manager flow для recipes, stop-list, catalog/recipe proposal review, inventory operations, publication readiness и sync/problem observability;
@@ -108,12 +108,14 @@
 - Compatibility payment refund как отдельный fallback, визуально отделенный от основного ledger flow.
 - Sync drawer для status/outbox/local events с bounded запросами.
 - Нормализация безопасных API-ошибок и optional empty states; пользовательский текст идет через `vue-i18n`.
+- `/pos/waiter` как mobile-first order/precheck runtime: выбор зала/стола, активные заказы, создание заказа, меню/поиск, добавление строк с модификаторами, изменение quantity, void line, issue/reprint precheck без payment/refund/cash drawer controls по умолчанию.
+- `/pos/kitchen` как readiness-only экран с пометкой `запланировано далее`, списком отсутствующих KDS backend contracts и подготовленными lifecycle slots без активных действий.
 
 Вне текущего объема:
 
 - UI для скидок/надбавок/налоговых профилей в кассовом терминале.
 - UI для modifier/service/tip scopes в financial operation ledger.
-- Складские операции в POS UI, KDS runtime, доставка, мобильный официант, PSP/fiscal device screens.
+- Складские операции в POS UI, KDS runtime actions, доставка, PSP/fiscal device screens.
 
 ## Cloud UI
 
@@ -124,13 +126,15 @@
 - Управление ресторанами, ролями, сотрудниками, каталогом, папками, тегами, модификаторами, policies, залами, столами, menu items и публикациями по подтвержденным Cloud routes.
 - Генерация pairing code и назначение Edge-device ресторану.
 - Просмотр безопасного списка входящих Edge events без raw payload.
+- Cloud-owned recipes и stop-list authoring через подтвержденные master-data routes.
+- Readiness-only manager surfaces для catalog/recipe proposal review, inventory operations/costing и OLAP exports без имитации отсутствующих Cloud routes.
 - Локализованные сообщения, safe error details, no raw payload / PIN / token display.
 
 Вне текущего объема:
 
 - Cashier runtime в Cloud UI.
 - Cloud auth/RBAC UI.
-- KDS runtime screens, PSP, fiscalization, delivery и cashier runtime в Cloud UI; inventory runtime должен появиться в Cloud UI как manager workspace до полного пилота.
+- KDS runtime screens, PSP, fiscalization, delivery и cashier runtime в Cloud UI; inventory runtime actions и OLAP exports должны появиться в Cloud UI только после подтвержденных backend contracts.
 
 ## Данные и миграции
 
@@ -182,7 +186,7 @@
 
 - Поддерживать `docs/backend/CLOUD-BACKEND-SPEC.md` как профильный документ Cloud Backend при каждом изменении Cloud routes, payloads, sync/provisioning contracts или schema.
 - Публичный Cloud reporting API/UI для detailed financial operation projection.
-- До полного пилота: stop-list sync, Cloud recipe/stop-list authoring, POS Edge recipe/stop-list ingest, local sale blocking, waiter mobile runtime, advanced KDS lifecycle, chef receipt/catalog/recipe proposal flows, полный Cloud Inventory Engine, ClickHouse runtime/OLAP API и `full_pilot` smoke.
+- До полного пилота: POS Edge recipe/stop-list ingest, local sale blocking, advanced KDS lifecycle, chef receipt/catalog/recipe proposal flows, полный Cloud Inventory Engine, ClickHouse runtime/OLAP API и `full_pilot` smoke.
 - После полного пилота: hardware bump-bar integrations, kitchen printer orchestration, rich BI dashboards, ERP/accounting integrations и внешние delivery/payment/fiscal контуры.
 - Data-preserving migrations после первого реального внедрения.
 - Production auth/RBAC perimeter для Cloud/License API.

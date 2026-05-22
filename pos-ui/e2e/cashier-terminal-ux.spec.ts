@@ -42,11 +42,22 @@ test('lazy routes load redesigned POS shell and out-of-scope workspace shells', 
     await saveViewportScreenshot(page, testInfo, `route-${path.replaceAll('/', '-') || 'root'}.png`);
   }
 
-  for (const path of ['/pos/waiter', '/pos/kitchen', '/pos/manager']) {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/pos/waiter');
+  await expect(page.locator('.waiter-page')).toBeVisible();
+  await expect(page.getByText(/не принимает финансовые решения/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: /Наличные|Карта|Кассовый ящик|Вернуть оплату/i })).toHaveCount(0);
+
+  for (const path of ['/pos/kitchen', '/pos/manager']) {
     await page.goto(path);
-    await expect(page.getByText('Вне текущего объема')).toBeVisible();
-    await expect(page.getByText(/runtime-сценарий не реализован/i)).toBeVisible();
-    await expect(page.getByRole('link', { name: /Терминал кассира/i })).toBeVisible();
+    if (path === '/pos/kitchen') {
+      await expect(page.getByText('запланировано далее')).toBeVisible();
+      await expect(page.getByText(/нет routes для kitchen tickets/i)).toBeVisible();
+    } else {
+      await expect(page.getByText('Вне текущего объема')).toBeVisible();
+      await expect(page.getByText(/runtime-сценарий не реализован/i)).toBeVisible();
+      await expect(page.getByRole('link', { name: /Терминал кассира/i })).toBeVisible();
+    }
     await expect(page.locator('.q-layout')).not.toContainText(/готовый runtime|runtime готов|реализовано сейчас/i);
   }
 });

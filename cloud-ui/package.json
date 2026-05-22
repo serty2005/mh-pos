@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@quasar/extras": "^1.18.0",
-    "@rolldown/binding-win32-x64-msvc": "^1.0.2",
     "quasar": "^2.19.3",
     "vue": "^3.5.34",
     "vue-i18n": "^11.4.0",

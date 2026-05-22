@@ -1,6 +1,6 @@
-# SPECv1.3 — current cashier runtime and full pilot target
+# SPECv1.3 — current POS runtime and full pilot target
 
-Статус: актуализировано под фактический cashier runtime и целевой полный пилот.
+Статус: актуализировано под фактический cashier/waiter UI runtime, KDS readiness route и целевой полный пилот.
 
 Этот документ фиксирует проверенный runtime surface, инварианты и явно принятые boundary decisions. Полный пилот включает cashier, manager, waiter, advanced KDS lifecycle, stop-list sale blocking, Cloud-managed setup, полный Cloud-owned складской движок и ClickHouse runtime как immutable/OLAP storage с Cloud API-ручками для OLAP-движка; все элементы полного пилота, которых нет в коде, считаются `запланировано далее`, пока не переведены в код, тесты, smoke-приемку и профильную документацию.
 
@@ -37,6 +37,8 @@
 - append-only cancellation/refund ledger, cashier UI для full whole-check и partial `order_line`/quantity cancellation/refund с явным `inventory_disposition` и compatibility payment refund fallback;
 - cashier POS UI shell состоит из разделов `floor`, `order`, `activity`, `reports`, `cash`; storage/archive/backoffice, Cloud reporting, delivery runtime и settings не входят в operator-facing cashier flow;
 - cashier POS UI не показывает active commands для table/order transfer, split/fractional split, banquet/preorder, mock waiter filters или discount/surcharge editor без отдельного backend/API/UI contract;
+- `/pos/waiter` реализован как mobile-first order/precheck UI route: выбор зала/стола, активные заказы, создание заказа, меню/поиск, добавление строк с модификаторами, quantity, void line, issue/reprint precheck; payment/refund/cash drawer authority не входит в default waiter surface;
+- `/pos/kitchen` реализован только как readiness route с `запланировано далее` и отсутствующими KDS backend contracts; KDS lifecycle actions не являются текущим runtime;
 - Edge -> Cloud operational outbox foundation;
 - Cloud -> Edge master-data ingest for supported streams.
 - POS Edge stop-list sale blocking при `AddOrderLine` и увеличении quantity по direct `catalog_item_id` и mandatory active recipe components из локальных `recipe_versions`/`recipe_lines`.
@@ -46,7 +48,7 @@
 
 - cashier runtime остается обязательным базовым потоком и не расширяется фискализацией/PSP-интеграцией до отдельного решения;
 - manager runtime должен позволять через Cloud UI подготовить ресторан, роли, сотрудников, зал/столы, catalog/menu/modifiers/pricing, recipes и stop-list, опубликовать master-data и увидеть readiness/sync состояние Edge;
-- waiter runtime должен работать как mobile-first POS UI route для выбора стола, создания/изменения заказа, выбора модификаторов, выпуска и повторной печати precheck без права оплаты, если роль не имеет cashier payment permissions;
+- waiter runtime должен расширяться как mobile-first POS UI route для выбора стола, создания/изменения заказа, выбора модификаторов, выпуска и повторной печати precheck без права оплаты, если роль не имеет cashier payment permissions;
 - advanced KDS runtime должен показывать kitchen ticket items по станциям/приоритету, поддерживать lifecycle `new -> accepted -> in_progress -> ready -> served` с ветками `hold`, `recall` и `cancelled`, генерировать cooking events и отправлять их как Edge business events через outbox;
 - kitchen worker должен уметь принять поставку на Edge, выбрать существующие товары или создать предложение нового catalog item; Cloud worker превращает такие события в review/proposal или в upsert только по явной policy;
 - kitchen worker должен видеть техкарту и отправлять `RecipeChangeSuggested` с заменой ингредиента, правкой количества/единицы/потерь и изменением prep time в пределах параметра `recipe_suggestion_max_time_delta_minutes`; правка не применяется на Edge и не меняет Cloud recipe до review/apply шага;

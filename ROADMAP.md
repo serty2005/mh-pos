@@ -131,11 +131,13 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Stop-list sale blocking:
   - выполнено: POS Edge lookup active `stop_lists` для самого блюда и обязательных active recipe components при `AddOrderLine` и увеличении quantity;
   - выполнено: POS Edge ingest streams `recipes` и `inventory_reference`; Cloud generic package validation/storage принимает эти streams;
-  - добавить Cloud authoring/publication UI для recipes/stop-list и conflict policy;
+  - выполнено: Cloud UI имеет bounded authoring для recipe items и stop-list entries по подтвержденным master-data routes;
+  - добавить conflict policy, сценарный recipe version editor/review и publication readiness поверх этих данных;
   - покрыть offline smoke: Edge блокирует stop-listed item без связи с Cloud.
 - Advanced KDS/kitchen lifecycle:
+  - выполнено: `/pos/kitchen` заменен с generic shell на readiness-only экран с contract gaps и `запланировано далее`;
   - создать POS Edge kitchen ticket lifecycle `new -> accepted -> in_progress -> ready -> served` с `hold`/`recall`/`cancelled` ветками;
-  - route `/pos/kitchen` должен стать рабочим KDS, а не shell;
+  - route `/pos/kitchen` должен стать рабочим KDS после появления backend endpoints, а не readiness-only screen;
   - status actions пишут `KitchenTicketStatusChanged`, `ItemServed` и при необходимости `ProductionCompleted` в outbox; Cloud принимает events идемпотентно и Cloud Inventory Worker не дублирует расход с `CheckClosed`;
   - добавить chef stock receipt flow: `StockReceiptCaptured` с выбором существующего catalog item или `CatalogItemChangeSuggested` для нового/измененного товара;
   - добавить chef recipe proposal flow: просмотр техкарты и `RecipeChangeSuggested` с заменой ингредиента, количеством/единицей/потерями и prep time delta в пределах `recipe_suggestion_max_time_delta_minutes`;
@@ -145,12 +147,13 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - POS UI не считает authoritative totals и не принимает финансовые/складские решения;
   - Cloud остается авторитетным для master data, stock documents, stock ledger, costing/recalculation state, ClickHouse export и OLAP reads.
 - Waiter mobile runtime:
-  - route `/pos/waiter` должен стать mobile-first order entry flow;
+  - выполнено: route `/pos/waiter` стал mobile-first order/precheck flow по существующим order/menu/floor/precheck contracts;
   - waiter mobile является единственным мобильным layout пилота; cashier/KDS/manager не получают mobile variants;
   - waiter role видит floor/menu/order/precheck actions и не получает payment/refund/cash drawer controls без payment permissions;
-  - Playwright mobile viewport проверяет создание заказа, модификаторы и выпуск precheck.
+  - Playwright mobile viewport spec добавлен для создания заказа, модификаторов, выпуска precheck и отсутствия payment/refund/cash drawer controls; локальный запуск требует demo bootstrap.
 - Manager pilot operations:
-  - Cloud UI должен стать полноценным менеджерским web app, а не raw-admin: stop-list, recipe authoring/review, catalog/recipe proposals, inventory operations, publication readiness и безопасный просмотр sync/problem events без raw payload;
+  - выполнено: Cloud UI содержит stop-list/recipe authoring и readiness-only surfaces для proposal review, inventory operations/costing и OLAP exports без CRUD-муляжа;
+  - Cloud UI должен довести readiness-only surfaces до runtime только после появления подтвержденных Cloud backend routes;
   - launch readiness учитывает restaurant, staff, floor, menu, pricing, stop-list review, publication и known Edge node.
 - Full pilot smoke:
   - добавить suite `full_pilot`, которая проходит Cloud setup -> publication -> Edge sync -> waiter order -> kitchen served -> cashier payment/final check -> reconnect/outbox ACK -> Cloud inventory ledger -> ClickHouse export -> OLAP API reads.
@@ -215,7 +218,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Cloud UI позволяет настроить stop-list и recipes, опубликовать их и увидеть readiness Edge;
 - POS Edge применяет `recipes` и `inventory_reference` через managed sync и локально блокирует stop-listed sale offline по локальному `stop_lists`;
 - waiter mobile UI проходит Playwright mobile flow без payment/refund authority;
-- kitchen UI проходит Playwright flow по status lifecycle, `ItemServed`, receipt capture, recipe suggestion и stop-list edit;
+- kitchen UI сначала проходит readiness spec при отсутствии KDS endpoints; после появления backend routes должен проходить Playwright flow по status lifecycle, `ItemServed`, receipt capture, recipe suggestion и stop-list edit;
 - Cloud worker создает review/proposal записи из `CatalogItemChangeSuggested` и `RecipeChangeSuggested`, а не применяет их без policy/manager review;
 - Cloud принимает `CheckClosed`/`ItemServed`, дедуплицирует replay и Cloud Inventory Worker пишет полный stock document/ledger/balance/costing state;
 - Cloud Inventory Engine покрывает stock receipt, inventory count, production, sale consumption, refund/cancellation disposition, recipe expansion, modifier linked consumption, negative-balance costing и retro recalculation DAG;
