@@ -177,7 +177,7 @@ test('cashier can add and edit selected modifiers on an open order line', async 
   await openSection(page, 'Залы и столы');
   await page.locator('.floor-table-tile').first().click();
 
-  await openSection(page, 'ЗАКАЗ');
+  await openSection(page, 'Заказы');
   await cancelIssuedPrecheckIfPresent(page);
 
   const createOrder = page.getByRole('button', { name: /Создать заказ/i }).last();
@@ -254,13 +254,13 @@ async function loginAsManager(page: Page) {
 }
 
 async function expectRedesignedShell(page: Page) {
-  await expect(page.locator('.pos-stage')).toBeVisible();
+  await expect(page.locator('.pos-app-shell')).toBeVisible();
   await expect(page.locator('.pos-bottom-bar')).toBeVisible();
   await expect(page.locator('.bottom-section-button')).toBeVisible();
 }
 
 async function assertSectionMenuNavigation(page: Page, testInfo: TestInfo) {
-  for (const section of ['Залы / столы', 'ЗАКАЗ', 'Аналитика', 'Смена']) {
+  for (const section of ['Залы / столы', 'Заказы', 'Активность', 'Отчеты', 'Касса']) {
     await openSection(page, section);
     await expect(page.locator('.bottom-section-button')).toContainText(section);
     await expect(page.locator('.pos-section-menu')).toBeHidden();
@@ -276,10 +276,10 @@ async function assertSectionMenuNavigation(page: Page, testInfo: TestInfo) {
 async function openSection(page: Page, section: string) {
   const sectionAliases: Record<string, string> = {
     'Залы и столы': 'Залы / столы',
-    Заказы: 'ЗАКАЗ',
-    Активность: 'Аналитика',
-    Отчеты: 'Аналитика',
-    Касса: 'Смена',
+    Заказы: 'Заказы',
+    Активность: 'Активность',
+    Отчеты: 'Отчеты',
+    Касса: 'Касса',
   };
   const label = sectionAliases[section] ?? section;
   await page.locator('.bottom-section-button').click();

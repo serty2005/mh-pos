@@ -63,6 +63,54 @@
         <q-btn flat square icon="add" class="quantity-button" :aria-label="terminal.t('actions.add')" :disable="!selectedLine || !terminal.canChangeOrderLine.value" @click="changeSelectedQuantity(1)" />
         <q-btn flat square icon="tune" class="quantity-button" :aria-label="terminal.t('actions.editModifiers')" :disable="!selectedLine || !terminal.canChangeOrderLine.value || !terminal.canEditLineModifiers(selectedLine.id)" @click="selectedLine && terminal.editLineModifiers(selectedLine.id)" />
       </div>
+
+      <div class="rail-actions order-rail-actions">
+        <template v-if="terminal.activePrecheck.value || terminal.activeOrder.value.status === 'locked'">
+          <q-btn
+            color="primary"
+            unelevated
+            square
+            class="touch-button primary-action"
+            icon="point_of_sale"
+            :label="terminal.t('pos.cashier')"
+            :disable="terminal.remainingPayment.value <= 0"
+            @click="$emit('open-payment')"
+          />
+          <q-btn
+            color="negative"
+            outline
+            square
+            class="touch-button"
+            icon="lock_open"
+            :label="terminal.t('pos.cancelPrecheck')"
+            :disable="Boolean(terminal.activePrecheck.value && terminal.activePrecheck.value.paid_total > 0) || !terminal.canCancelPrecheck.value"
+            @click="$emit('open-cancel-precheck')"
+          />
+        </template>
+        <template v-else>
+          <q-btn
+            color="secondary"
+            outline
+            square
+            class="touch-button"
+            icon="tune"
+            :label="terminal.t('pos.actions')"
+            :disable="!terminal.activeLines.value.length"
+            @click="$emit('open-actions')"
+          />
+          <q-btn
+            color="primary"
+            unelevated
+            square
+            class="touch-button primary-action"
+            icon="receipt_long"
+            :label="terminal.t('pos.precheck')"
+            :disable="!terminal.canIssuePrecheck.value"
+            :loading="terminal.issuePrecheckMutation.isPending.value"
+            @click="terminal.activeOrder.value?.id && terminal.issuePrecheckMutation.mutate(terminal.activeOrder.value.id)"
+          />
+        </template>
+      </div>
     </template>
 
     <div v-else class="rail-empty">
@@ -108,6 +156,8 @@ const props = defineProps<{
 defineEmits<{
   (event: 'open-line-actions'): void;
   (event: 'open-payment'): void;
+  (event: 'open-actions'): void;
+  (event: 'open-cancel-precheck'): void;
 }>();
 
 const quantityDialog = ref(false);

@@ -2,6 +2,24 @@
   <section class="menu-workspace" :aria-label="terminal.t('pos.menu')">
     <q-banner v-if="terminal.statusError.value" class="error-banner dense-banner">{{ terminal.statusError.value }}</q-banner>
     <q-banner v-if="terminal.menu.isError.value" class="error-banner dense-banner">{{ terminal.t('common.error') }}</q-banner>
+
+    <div class="menu-search-row">
+      <q-input
+        v-model="terminal.menuSearch.value"
+        outlined
+        dense
+        square
+        clearable
+        class="menu-search-field"
+        :label="terminal.t('pos.searchMenu')"
+        type="search"
+      >
+        <template #prepend>
+          <q-icon name="search" />
+        </template>
+      </q-input>
+    </div>
+
     <nav class="menu-category-tabs" :aria-label="terminal.t('pos.menuGroups')">
       <button
         v-for="option in categoryOptions"

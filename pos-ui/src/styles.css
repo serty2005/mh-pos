@@ -2693,7 +2693,7 @@ button.top-status-cell {
 
 .menu-workspace {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 0;
   padding: 0;
 }
@@ -2701,6 +2701,16 @@ button.top-status-cell {
 .menu-workspace > .error-banner,
 .menu-workspace > .blocking-notice {
   margin: 10px 16px 0;
+}
+
+.menu-search-row {
+  padding: 14px 16px 12px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--pos-border);
+}
+
+.menu-search-field {
+  max-width: 460px;
 }
 
 .menu-category-tabs {
@@ -2924,6 +2934,12 @@ button.top-status-cell {
   background: #ffffff;
 }
 
+.order-rail-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 12px;
+  background: #ffffff;
+}
+
 .quantity-button,
 .quantity-value {
   min-height: 62px;
@@ -3063,7 +3079,7 @@ button.top-status-cell {
   z-index: 20;
   min-height: var(--pos-bottom-height);
   display: grid;
-  grid-template-columns: 198px minmax(0, 1fr) minmax(360px, max-content);
+  grid-template-columns: 198px minmax(0, 1fr) minmax(420px, max-content);
   gap: 0;
   align-items: stretch;
   padding: 0;
@@ -3073,31 +3089,91 @@ button.top-status-cell {
   box-shadow: none;
 }
 
-.bottom-action-area {
+.context-chip-row {
+  grid-column: 2;
+  min-height: var(--pos-bottom-height);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  overflow-x: auto;
+}
+
+.context-chip {
+  flex: 0 0 auto;
+  min-height: 48px;
+  max-width: 220px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  color: #edf5f1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.context-chip.warning {
+  color: #fff1d7;
+  background: rgba(234, 88, 12, 0.22);
+  border-color: rgba(234, 88, 12, 0.36);
+}
+
+.context-chip.total {
+  color: #ffffff;
+  background: rgba(31, 111, 91, 0.4);
+}
+
+.context-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bottom-status-area {
   grid-column: 3;
   min-width: 0;
   min-height: var(--pos-bottom-height);
   display: flex;
   justify-content: flex-end;
   align-items: stretch;
-  gap: 8px;
-  padding: 8px;
+  gap: 0;
   border-left: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-.bottom-main-action {
-  min-width: 170px;
-  min-height: 60px;
-  font-weight: 800;
+.bottom-status-item {
+  min-width: 112px;
+  min-height: var(--pos-bottom-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  color: #c6d2cb;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.bottom-main-action .q-btn__content {
-  white-space: nowrap;
+.bottom-status-item.good {
+  color: #d9f5e8;
 }
 
-.bottom-action-area .q-btn--outline {
-  color: #f4f8f6 !important;
-  border-color: rgba(255, 255, 255, 0.42);
+.bottom-status-item.warning {
+  color: #ffdfba;
+}
+
+.bottom-status-item.clickable {
+  cursor: pointer;
+}
+
+.bottom-status-item.clickable:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .bottom-section-button {
@@ -3333,29 +3409,42 @@ button.bottom-status-cell {
 
   .pos-bottom-bar {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 56px 76px;
+    grid-template-rows: 48px 42px 42px;
     min-height: var(--pos-bottom-height);
   }
 
   .bottom-section-button {
-    min-height: 56px;
+    min-height: 48px;
   }
 
   .bottom-section-button {
     padding: 0 18px;
   }
 
-  .bottom-action-area {
+  .context-chip-row {
     grid-column: 1 / -1;
     grid-row: 2;
-    min-height: 76px;
-    justify-content: flex-start;
+    min-height: 42px;
+    padding: 4px 8px;
     overflow-x: auto;
   }
 
-  .bottom-main-action {
-    min-height: 60px;
-    flex: 0 0 auto;
+  .context-chip {
+    min-height: 34px;
+    max-width: 180px;
+  }
+
+  .bottom-status-area {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    min-height: 42px;
+    justify-content: flex-start;
+    overflow-x: auto;
+    border-left: 0;
+  }
+
+  .bottom-status-item {
+    min-height: 42px;
   }
 
   .pos-section-menu {

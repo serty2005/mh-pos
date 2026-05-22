@@ -110,12 +110,12 @@
         <pos-order-rail
           :terminal="terminal"
           @open-line-actions="lineActionsDialog = true"
+          @open-actions="actionsDialog = true"
           @open-payment="paymentDialog = true"
+          @open-cancel-precheck="terminal.cancelDialog.value = true"
         />
       </template>
-      <section v-else class="section-workspace" :class="{ 'shift-workspace-shell': activeSection === 'shift' }">
-        <component :is="fallbackComponent" :terminal="terminal" />
-      </section>
+      <component v-else :is="sectionComponent" :terminal="terminal" />
     </section>
 
     <pos-bottom-bar
@@ -123,55 +123,7 @@
       :active-section="activeSection"
       :menu-open="sectionMenuOpen"
       @toggle-menu="sectionMenuOpen = !sectionMenuOpen"
-    >
-      <template #actions>
-        <template v-if="activeSection === 'order' && terminal.activePrecheck.value">
-          <q-btn square unelevated color="negative" class="bottom-main-action" :label="terminal.t('pos.cancelPrecheck')" :disable="terminal.activePrecheck.value.paid_total > 0 || !terminal.canCancelPrecheck.value" @click="terminal.cancelDialog.value = true" />
-          <q-btn square unelevated color="primary" class="bottom-main-action" :label="terminal.t('pos.check')" :disable="terminal.remainingPayment.value <= 0" @click="paymentDialog = true" />
-        </template>
-        <q-btn
-          v-else-if="activeSection === 'order' && terminal.activeOrder.value"
-          square
-          unelevated
-          color="primary"
-          class="bottom-main-action"
-          :label="orderMainActionLabel"
-          :disable="!terminal.canIssuePrecheck.value"
-          :loading="terminal.issuePrecheckMutation.isPending.value"
-          @click="runOrderMainAction"
-        />
-        <q-btn
-          v-else-if="activeSection === 'order'"
-          square
-          unelevated
-          color="primary"
-          class="bottom-main-action"
-          icon="receipt_long"
-          :label="terminal.t('actions.createOrder')"
-          :disable="!terminal.canCreateOrder.value"
-          :loading="terminal.createOrderMutation.isPending.value"
-          @click="terminal.createOrderMutation.mutate()"
-        />
-        <template v-else-if="activeSection === 'floor'">
-          <q-btn square unelevated color="primary" class="bottom-main-action" icon="add" :label="terminal.t('pos.createOrderShort')" :disable="!terminal.activeTables.value.length" @click="createOrderDialog = true" />
-          <q-btn
-            square
-            outline
-            color="secondary"
-            class="bottom-main-action"
-            :label="terminal.t('pos.quickCheck')"
-            :disable="!quickCheckAvailable"
-            :title="quickCheckAvailable ? '' : terminal.t('pos.quickCheckNeedsDefaultTable')"
-            @click="createQuickCheck"
-          />
-        </template>
-        <template v-else-if="activeSection === 'shift'">
-          <q-btn square unelevated color="primary" class="bottom-main-action" icon="inventory_2" :label="terminal.t('pos.cashDrawer')" :disable="!terminal.canRecordCashDrawerEvent.value" @click="terminal.cashDrawerDialog.value = true" />
-          <q-btn v-if="terminal.canViewSync.value" square outline color="secondary" class="bottom-main-action" icon="sync" :label="terminal.t('pos.syncStatus')" @click="terminal.syncDrawer.value = true" />
-          <q-btn v-if="terminal.canRetrySync.value && terminal.syncProblems.value > 0" square outline color="secondary" class="bottom-main-action" icon="published_with_changes" :label="terminal.t('actions.retrySync')" :loading="terminal.retrySyncMutation.isPending.value" @click="terminal.retrySyncMutation.mutate()" />
-        </template>
-      </template>
-    </pos-bottom-bar>
+    />
 
     <div v-if="sectionMenuOpen" class="pos-section-menu-layer" @click.self="sectionMenuOpen = false">
       <nav class="pos-section-menu" :aria-label="terminal.t('pos.sections.title')">
@@ -310,12 +262,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, shallowRef, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 
 import CashDrawerDialog from './pos/CashDrawerDialog.vue';
 import ClosedOrdersDrawer from './pos/ClosedOrdersDrawer.vue';
 import ModifierSelectionDialog from './pos/ModifierSelectionDialog.vue';
 import PosActionsDialog from './pos/PosActionsDialog.vue';
+import PosActivitySection from './pos/PosActivitySection.vue';
 import PosBottomBar from './pos/PosBottomBar.vue';
 import PosCashSection from './pos/PosCashSection.vue';
 import PosFloorSection from './pos/PosFloorSection.vue';
@@ -328,7 +281,7 @@ import RefundDialog from './pos/RefundDialog.vue';
 import SyncDrawer from './pos/SyncDrawer.vue';
 import { useCashierTerminal } from './pos/useCashierTerminal';
 
-type PosSectionId = 'order' | 'floor' | 'shift' | 'analytics';
+type PosSectionId = 'floor' | 'order' | 'activity' | 'reports' | 'cash';
 
 const terminal = useCashierTerminal();
 const activeSection = ref<PosSectionId>('floor');
@@ -345,13 +298,12 @@ const banquetDialog = ref(false);
 const discountDialog = ref(false);
 const sectionWasInitialized = ref(false);
 
-const fallbackComponent = shallowRef(PosCashSection);
-
 const sections: Array<{ id: PosSectionId; icon: string; labelKey: string }> = [
-  { id: 'order', icon: 'apps', labelKey: 'pos.sections.order' },
   { id: 'floor', icon: 'grid_view', labelKey: 'pos.sections.floor' },
-  { id: 'shift', icon: 'schedule', labelKey: 'pos.sections.shift' },
-  { id: 'analytics', icon: 'bar_chart', labelKey: 'pos.sections.analytics' },
+  { id: 'order', icon: 'apps', labelKey: 'pos.sections.order' },
+  { id: 'activity', icon: 'history', labelKey: 'pos.sections.activity' },
+  { id: 'reports', icon: 'bar_chart', labelKey: 'pos.sections.reports' },
+  { id: 'cash', icon: 'point_of_sale', labelKey: 'pos.sections.cash' },
 ];
 
 const courseOptions = ['1', '2', '3', '4', '5', 'VIP'];
@@ -387,19 +339,18 @@ const ordersCount = computed(() => (terminal.closedOrders.data.value ?? []).leng
 const averageCheck = computed(() => ordersCount.value > 0 ? Math.round(shiftTotal.value / ordersCount.value) : 0);
 const completedCount = computed(() => (terminal.closedOrders.data.value ?? []).length);
 const sectionStatusLabel = computed(() => {
-  if (activeSection.value === 'shift') {
+  if (activeSection.value === 'cash') {
     return terminal.currentCashSession.data.value ? terminal.t('pos.cashSessionOpen') : terminal.t('pos.noCashSession');
   }
-  if (activeSection.value === 'analytics') {
+  if (activeSection.value === 'activity' || activeSection.value === 'reports') {
     return terminal.t('pos.closedOrdersCount', { count: completedCount.value });
   }
   return terminal.t(currentSectionTitleKey.value);
 });
-const quickCheckAvailable = computed(() => Boolean(terminal.activeTables.value[0] && terminal.currentShift.data.value));
-const orderMainActionLabel = computed(() => {
-  if (!terminal.activeOrder.value) return terminal.t('pos.chooseTable');
-  if (terminal.finalCheckData.value) return terminal.t('pos.check');
-  return terminal.t('pos.precheck');
+const sectionComponent = computed(() => {
+  if (activeSection.value === 'activity') return PosActivitySection;
+  if (activeSection.value === 'reports') return PosReportsSection;
+  return PosCashSection;
 });
 
 watch(terminal.activeTables, (tables) => {
@@ -411,8 +362,6 @@ watch(terminal.activeTables, (tables) => {
 function openSection(section: PosSectionId) {
   activeSection.value = section;
   sectionMenuOpen.value = false;
-  if (section === 'shift') fallbackComponent.value = PosCashSection;
-  if (section === 'analytics') fallbackComponent.value = PosReportsSection;
 }
 
 watch(lineCommentDialog, (open) => {
@@ -428,23 +377,6 @@ function saveCourse(course: string) {
 function saveLineComment() {
   terminal.saveSelectedLineDetails();
   lineCommentDialog.value = false;
-}
-
-function runOrderMainAction() {
-  if (terminal.activePrecheck.value || terminal.finalCheckData.value) {
-    paymentDialog.value = true;
-    return;
-  }
-  if (terminal.activeOrder.value?.id) terminal.issuePrecheckMutation.mutate(terminal.activeOrder.value.id);
-}
-
-async function createQuickCheck() {
-  const defaultTable = terminal.activeTables.value[0];
-  if (!defaultTable) return;
-  terminal.selectTable(defaultTable.id);
-  await nextTick();
-  terminal.createOrderMutation.mutate();
-  openSection('order');
 }
 
 function createOrderAtTable(tableId: string) {
