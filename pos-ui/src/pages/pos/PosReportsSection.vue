@@ -1,30 +1,17 @@
 <template>
   <section class="reports-workspace section-workspace">
     <main class="section-main-surface" :aria-label="terminal.t('pos.reportsTitle')">
-      <div class="pos-section-head">
-        <div>
-          <p class="eyebrow">{{ terminal.t('pos.sections.reports') }}</p>
-          <h1>{{ terminal.t('pos.reportsTitle') }}</h1>
-        </div>
-        <q-btn flat round icon="refresh" class="icon-touch" :aria-label="terminal.t('actions.retry')" @click="refreshReports" />
-      </div>
+      <PosSectionHeader
+        :eyebrow="terminal.t('pos.sections.reports')"
+        :title="terminal.t('pos.reportsTitle')"
+        :refresh-label="terminal.t('actions.retry')"
+        @refresh="refreshReports"
+      />
 
       <div class="dashboard-metric-grid">
-        <article class="dashboard-metric primary">
-          <span>{{ terminal.t('pos.closedOrders') }}</span>
-          <strong>{{ closedOrderCount }}</strong>
-          <small>{{ terminal.t('pos.operationalDataOnly') }}</small>
-        </article>
-        <article class="dashboard-metric">
-          <span>{{ terminal.t('pos.total') }}</span>
-          <strong>{{ terminal.money(closedOrdersTotal, reportCurrency) }}</strong>
-          <small>{{ terminal.t('pos.closedOrdersSummary') }}</small>
-        </article>
-        <article class="dashboard-metric" :class="{ warning: terminal.syncProblems.value > 0 }">
-          <span>{{ terminal.t('pos.syncStatus') }}</span>
-          <strong>{{ terminal.syncProblems.value }}</strong>
-          <small>{{ terminal.syncProblems.value > 0 ? terminal.t('pos.syncFailed') : terminal.t('status.sent') }}</small>
-        </article>
+        <PosMetricCard :label="terminal.t('pos.closedOrders')" :value="closedOrderCount" :hint="terminal.t('pos.operationalDataOnly')" tone="primary" />
+        <PosMetricCard :label="terminal.t('pos.total')" :value="terminal.money(closedOrdersTotal, reportCurrency)" :hint="terminal.t('pos.closedOrdersSummary')" />
+        <PosMetricCard :label="terminal.t('pos.syncStatus')" :value="terminal.syncProblems.value" :hint="terminal.syncProblems.value > 0 ? terminal.t('pos.syncFailed') : terminal.t('status.sent')" :tone="terminal.syncProblems.value > 0 ? 'warning' : 'neutral'" />
       </div>
 
       <section class="integrated-panel">
@@ -44,18 +31,9 @@
           <h2>{{ terminal.t('pos.shiftReadiness') }}</h2>
         </div>
         <div class="status-strip-grid">
-          <div class="status-strip large" :class="{ good: terminal.currentShift.data.value }">
-            <span>{{ terminal.t('pos.shift') }}</span>
-            <strong>{{ terminal.currentShift.data.value ? terminal.t('status.open') : terminal.t('pos.noShift') }}</strong>
-          </div>
-          <div class="status-strip large" :class="{ good: terminal.currentCashSession.data.value }">
-            <span>{{ terminal.t('pos.cashSession') }}</span>
-            <strong>{{ terminal.currentCashSession.data.value ? terminal.t('status.open') : terminal.t('pos.noCashSession') }}</strong>
-          </div>
-          <div class="status-strip large" :class="{ good: terminal.canViewSync.value && terminal.syncProblems.value === 0, warning: terminal.syncProblems.value > 0 }">
-            <span>{{ terminal.t('pos.syncPending') }}</span>
-            <strong>{{ terminal.syncStatus.data.value?.pending ?? 0 }}</strong>
-          </div>
+          <PosStatusStrip :label="terminal.t('pos.shift')" :value="terminal.currentShift.data.value ? terminal.t('status.open') : terminal.t('pos.noShift')" :tone="terminal.currentShift.data.value ? 'good' : 'neutral'" large />
+          <PosStatusStrip :label="terminal.t('pos.cashSession')" :value="terminal.currentCashSession.data.value ? terminal.t('status.open') : terminal.t('pos.noCashSession')" :tone="terminal.currentCashSession.data.value ? 'good' : 'neutral'" large />
+          <PosStatusStrip :label="terminal.t('pos.syncPending')" :value="terminal.syncStatus.data.value?.pending ?? 0" :tone="terminal.syncProblems.value > 0 ? 'warning' : terminal.canViewSync.value ? 'good' : 'neutral'" large />
         </div>
       </section>
     </main>
@@ -78,8 +56,8 @@
         </div>
       </div>
       <div class="rail-actions integrated-action-bar">
-        <q-btn outline color="secondary" class="touch-button" icon="inventory_2" :label="terminal.t('pos.cashDrawer')" :disable="!terminal.canRecordCashDrawerEvent.value" @click="terminal.cashDrawerDialog.value = true" />
-        <q-btn v-if="terminal.canViewSync.value" outline color="secondary" class="touch-button" icon="sync" :label="terminal.t('pos.syncStatus')" @click="terminal.syncDrawer.value = true" />
+        <PosButton variant="secondary" mode="outline" icon="inventory_2" :label="terminal.t('pos.cashDrawer')" :disabled="!terminal.canRecordCashDrawerEvent.value" @click="terminal.cashDrawerDialog.value = true" />
+        <PosButton v-if="terminal.canViewSync.value" variant="secondary" mode="outline" icon="sync" :label="terminal.t('pos.syncStatus')" @click="terminal.syncDrawer.value = true" />
       </div>
     </aside>
   </section>
@@ -88,6 +66,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
+import { PosButton, PosMetricCard, PosSectionHeader, PosStatusStrip } from '../../shared/ui';
 import type { CashierTerminal } from './useCashierTerminal';
 
 const props = defineProps<{

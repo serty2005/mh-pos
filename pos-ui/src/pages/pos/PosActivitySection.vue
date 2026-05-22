@@ -1,13 +1,12 @@
 <template>
   <section class="activity-workspace section-workspace">
     <main class="section-main-surface" :aria-label="terminal.t('pos.activityTitle')">
-      <div class="pos-section-head">
-        <div>
-          <p class="eyebrow">{{ terminal.t('pos.sections.activity') }}</p>
-          <h1>{{ terminal.t('pos.activityTitle') }}</h1>
-        </div>
-        <q-btn flat round icon="refresh" class="icon-touch" :aria-label="terminal.t('actions.retry')" @click="() => terminal.closedOrders.refetch()" />
-      </div>
+      <PosSectionHeader
+        :eyebrow="terminal.t('pos.sections.activity')"
+        :title="terminal.t('pos.activityTitle')"
+        :refresh-label="terminal.t('actions.retry')"
+        @refresh="() => terminal.closedOrders.refetch()"
+      />
 
       <div class="compact-filter-bar" :aria-label="terminal.t('pos.activityFilters')">
         <q-input
@@ -32,50 +31,25 @@
           class="date-filter"
           :label="terminal.t('pos.businessDate')"
         />
-        <button
-          v-for="option in filterOptions"
-          :key="option.value"
-          class="menu-filter-chip"
-          :class="{ active: filter === option.value }"
-          type="button"
-          @click="filter = option.value"
-        >
-          {{ terminal.t(option.labelKey) }}
-        </button>
-        <div class="pagination-controls">
-          <q-btn
-            flat
-            round
-            icon="chevron_left"
-            class="icon-touch"
-            :aria-label="terminal.t('actions.previousPage')"
-            :disable="!terminal.closedOrdersHasPreviousPage.value"
-            @click="terminal.previousClosedOrdersPage"
-          />
-          <span>{{ terminal.closedOrdersOffset.value + 1 }}</span>
-          <q-btn
-            flat
-            round
-            icon="chevron_right"
-            class="icon-touch"
-            :aria-label="terminal.t('actions.nextPage')"
-            :disable="!terminal.closedOrdersHasNextPage.value"
-            @click="terminal.nextClosedOrdersPage"
-          />
-        </div>
+        <PosTabs :model-value="filter" :options="filterTabs" :accessibility-label="terminal.t('pos.activityFilters')" variant="chip" @update:model-value="setFilter" />
+        <PosPagination
+          :value="terminal.closedOrdersOffset.value + 1"
+          :previous-label="terminal.t('actions.previousPage')"
+          :next-label="terminal.t('actions.nextPage')"
+          :previous-disabled="!terminal.closedOrdersHasPreviousPage.value"
+          :next-disabled="!terminal.closedOrdersHasNextPage.value"
+          @previous="terminal.previousClosedOrdersPage"
+          @next="terminal.nextClosedOrdersPage"
+        />
       </div>
 
-      <q-banner v-if="terminal.closedOrders.error.value" class="error-banner dense-banner" rounded>
-        {{ terminal.t(terminal.displayErrorMessageKey(terminal.closedOrders.error.value)) }}
-      </q-banner>
+      <PosBanner v-if="terminal.closedOrders.error.value" tone="error" :label="terminal.t(terminal.displayErrorMessageKey(terminal.closedOrders.error.value))" />
 
       <div v-if="terminal.closedOrders.isFetching.value" class="activity-list">
         <q-skeleton v-for="n in 8" :key="n" class="activity-order-item skeleton-row" />
       </div>
 
-      <div v-else-if="!terminal.canViewClosedOrders.value" class="empty-state wide">
-        {{ terminal.t('pos.noPermissionForClosedOrders') }}
-      </div>
+      <PosEmptyState v-else-if="!terminal.canViewClosedOrders.value" size="wide" :label="terminal.t('pos.noPermissionForClosedOrders')" />
 
       <div v-else-if="visibleOrders.length" class="activity-list">
         <button
@@ -94,13 +68,11 @@
             <strong>{{ terminal.money(order.total, order.check?.currency_code ?? 'RUB') }}</strong>
             <small>{{ order.check?.business_date_local ?? terminal.statusLabel(order.status) }}</small>
           </span>
-          <span class="status-strip" :class="{ good: hasCapturedPayment(order), warning: hasRefundedPayment(order) }">
-            {{ paymentStateLabel(order) }}
-          </span>
+          <PosStatusStrip :value="paymentStateLabel(order)" :tone="paymentStateTone(order)" />
         </button>
       </div>
 
-      <div v-else class="empty-state wide">{{ terminal.t('pos.noClosedOrders') }}</div>
+      <PosEmptyState v-else size="wide" :label="terminal.t('pos.noClosedOrders')" />
     </main>
 
     <aside class="activity-detail-rail section-action-rail" :aria-label="terminal.t('pos.closedOrderDetails')">
@@ -136,14 +108,12 @@
             </span>
             <strong>{{ terminal.money(payment.amount, payment.currency) }}</strong>
           </article>
-          <div v-if="!(selectedOrder.check?.payments?.length)" class="empty-state small">{{ terminal.t('common.empty') }}</div>
+          <PosEmptyState v-if="!(selectedOrder.check?.payments?.length)" size="small" :label="terminal.t('common.empty')" />
         </div>
 
         <div class="payment-list">
           <p class="eyebrow">{{ terminal.t('pos.financialOperations') }}</p>
-          <q-banner v-if="financialOperations.error.value" class="error-banner dense-banner" rounded>
-            {{ terminal.t(terminal.displayErrorMessageKey(financialOperations.error.value)) }}
-          </q-banner>
+          <PosBanner v-if="financialOperations.error.value" tone="error" :label="terminal.t(terminal.displayErrorMessageKey(financialOperations.error.value))" />
           <q-skeleton v-if="financialOperations.isFetching.value" class="order-skeleton" />
           <article v-for="operation in financialOperations.data.value ?? []" :key="operation.id" class="payment-row ledger-row">
             <span>
@@ -159,47 +129,42 @@
               <small>{{ terminal.formatDate(operation.created_at) }}</small>
             </span>
           </article>
-          <div v-if="!financialOperations.isFetching.value && !(financialOperations.data.value?.length)" class="empty-state small">{{ terminal.t('common.empty') }}</div>
+          <PosEmptyState v-if="!financialOperations.isFetching.value && !(financialOperations.data.value?.length)" size="small" :label="terminal.t('common.empty')" />
         </div>
 
         <div class="rail-actions integrated-action-bar">
-          <q-btn
-            color="primary"
-            unelevated
-            class="touch-button primary-action"
+          <PosButton
+            variant="primary"
+            primary
             icon="print"
             :label="terminal.t('actions.reprintCheck')"
-            :disable="!terminal.canReprintClosedCheck.value || !selectedOrder.check"
+            :disabled="!terminal.canReprintClosedCheck.value || !selectedOrder.check"
             :loading="terminal.reprintCheckMutation.isPending.value"
             @click="selectedOrder.check && terminal.reprintCheckMutation.mutate(selectedOrder.check.id)"
           />
-          <q-btn
-            color="negative"
-            unelevated
-            class="touch-button"
+          <PosButton
+            variant="danger"
             icon="cancel"
             :label="terminal.t('pos.checkCancellation')"
-            :disable="!canCancelSelected"
+            :disabled="!canCancelSelected"
             :loading="terminal.refundMutation.isPending.value && terminal.refundMode.value === 'check_cancellation'"
             @click="terminal.openCheckCancellationDialogForOrder(selectedOrder)"
           />
-          <q-btn
-            color="negative"
-            outline
-            class="touch-button"
+          <PosButton
+            variant="danger"
+            mode="outline"
             icon="undo"
             :label="terminal.t('pos.checkRefund')"
-            :disable="!canRefundSelected"
+            :disabled="!canRefundSelected"
             :loading="terminal.refundMutation.isPending.value && terminal.refundMode.value === 'check_refund'"
             @click="terminal.openCheckRefundDialogForOrder(selectedOrder)"
           />
-          <q-btn
-            color="negative"
-            flat
-            class="touch-button"
+          <PosButton
+            variant="danger"
+            mode="flat"
             icon="payments"
             :label="terminal.t('pos.paymentRefund')"
-            :disable="!canRefundPaymentSelected"
+            :disabled="!canRefundPaymentSelected"
             :loading="terminal.refundMutation.isPending.value && terminal.refundMode.value === 'payment_refund'"
             @click="terminal.openRefundDialogForOrder(selectedOrder)"
           />
@@ -219,6 +184,7 @@ import { computed, ref, watch } from 'vue';
 
 import { listFinancialOperationsByCheck } from '../../shared/api';
 import type { ClosedOrder, FinancialOperation } from '../../shared/schemas';
+import { PosBanner, PosButton, PosEmptyState, PosPagination, PosSectionHeader, PosStatusStrip, PosTabs, type PosTabOption } from '../../shared/ui';
 import type { CashierTerminal } from './useCashierTerminal';
 
 type ActivityFilter = 'all' | 'refundable';
@@ -235,6 +201,11 @@ const filterOptions: Array<{ value: ActivityFilter; labelKey: string }> = [
   { value: 'all', labelKey: 'pos.allClosedOrders' },
   { value: 'refundable', labelKey: 'pos.refundableOrders' },
 ];
+
+const filterTabs = computed<PosTabOption[]>(() => filterOptions.map((option) => ({
+  value: option.value,
+  label: props.terminal.t(option.labelKey),
+})));
 
 const orders = computed(() => props.terminal.closedOrders.data.value ?? []);
 
@@ -291,6 +262,18 @@ function paymentStateLabel(order: ClosedOrder) {
   if (hasRefundedPayment(order)) return props.terminal.t('status.refunded');
   if (hasCapturedPayment(order)) return props.terminal.t('status.paid');
   return props.terminal.statusLabel(order.check?.status ?? order.status);
+}
+
+function paymentStateTone(order: ClosedOrder) {
+  if (hasRefundedPayment(order)) return 'warning';
+  if (hasCapturedPayment(order)) return 'good';
+  return 'neutral';
+}
+
+function setFilter(value: string) {
+  if (value === 'all' || value === 'refundable') {
+    filter.value = value;
+  }
 }
 
 function operationTitle(operation: FinancialOperation) {

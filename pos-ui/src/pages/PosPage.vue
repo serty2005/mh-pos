@@ -2,17 +2,20 @@
   <q-page class="pos-page pos-app-shell" :class="`section-${activeSection}`">
     <header class="pos-context-bar" :aria-label="terminal.t('pos.topContext')">
       <div v-if="activeSection === 'order' && terminal.activeOrder.value" class="context-actions order-context-actions">
-        <span class="context-button selected-item-button passive-context-button" :aria-label="terminal.t('pos.selectedLine')">
-          {{ selectedLineName }}
-        </span>
-        <button class="context-button" type="button" :disabled="!canEditSelectedLineModifiers" :title="editSelectedLineModifiersTitle" @click="editSelectedLineModifiers">
-          <q-icon name="tune" size="20px" />
-          <span>{{ terminal.t('pos.lineModifier') }}</span>
-        </button>
-        <button class="context-button" type="button" :disabled="!canEditSelectedLineDetails" @click="lineCommentDialog = true">
-          <q-icon name="notes" size="20px" />
-          <span>{{ terminal.t('pos.lineComment') }}</span>
-        </button>
+        <PosContextButton :label="selectedLineName" passive selected :aria-label="terminal.t('pos.selectedLine')" />
+        <PosContextButton
+          icon="tune"
+          :label="terminal.t('pos.lineModifier')"
+          :disabled="!canEditSelectedLineModifiers"
+          :title="editSelectedLineModifiersTitle"
+          @click="editSelectedLineModifiers"
+        />
+        <PosContextButton
+          icon="notes"
+          :label="terminal.t('pos.lineComment')"
+          :disabled="!canEditSelectedLineDetails"
+          @click="lineCommentDialog = true"
+        />
         <q-btn-dropdown
           flat
           square
@@ -38,20 +41,12 @@
             </q-item>
           </q-list>
         </q-btn-dropdown>
-        <span class="context-button passive-context-button">
-          <q-icon name="person" size="20px" />
-          <span>{{ waiterContextLabel }}</span>
-        </span>
-        <span class="context-button passive-context-button backlog-context-button" :title="terminal.t('pos.backlogFeatureReason')">
-          <q-icon name="event" size="20px" />
-          <span>{{ terminal.t('pos.banquetBacklog') }}</span>
-        </span>
+        <PosContextButton icon="person" :label="waiterContextLabel" passive />
+        <PosContextButton icon="event" :label="terminal.t('pos.banquetBacklog')" passive backlog :title="terminal.t('pos.backlogFeatureReason')" />
       </div>
 
       <div v-else class="context-actions">
-        <button class="context-button selected-item-button" type="button">
-          {{ terminal.t(currentSectionTitleKey) }}
-        </button>
+        <PosContextButton :label="terminal.t(currentSectionTitleKey)" selected />
       </div>
 
       <div v-if="activeSection === 'order'" class="top-status-grid order-status-grid">
@@ -142,61 +137,42 @@
       </nav>
     </div>
 
-    <q-dialog v-model="lineCommentDialog">
-      <q-card class="dialog-card pos-square-dialog">
-        <q-card-section>
-          <p class="eyebrow">{{ selectedLineName }}</p>
-          <h2>{{ terminal.t('pos.lineComment') }}</h2>
-        </q-card-section>
-        <q-card-section>
-          <q-input v-model="terminal.lineCommentDraft.value" type="textarea" outlined square autogrow :label="terminal.t('pos.lineCommentInput')" />
-        </q-card-section>
-        <q-card-actions align="right">
-          <q-btn flat :label="terminal.t('actions.cancel')" @click="lineCommentDialog = false" />
-          <q-btn color="primary" unelevated square :label="terminal.t('actions.save')" :loading="terminal.lineDetailsMutation.isPending.value" @click="saveLineComment" />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    <PosDialog v-model="lineCommentDialog" :eyebrow="selectedLineName" :title="terminal.t('pos.lineComment')">
+      <q-input v-model="terminal.lineCommentDraft.value" type="textarea" outlined square autogrow :label="terminal.t('pos.lineCommentInput')" />
+      <template #actions>
+        <PosButton variant="neutral" mode="flat" :label="terminal.t('actions.cancel')" @click="lineCommentDialog = false" />
+        <PosButton variant="primary" :label="terminal.t('actions.save')" :loading="terminal.lineDetailsMutation.isPending.value" @click="saveLineComment" />
+      </template>
+    </PosDialog>
 
-    <q-dialog v-model="lineActionsDialog">
-      <q-card class="dialog-card pos-square-dialog">
-        <q-card-section>
-          <p class="eyebrow">{{ selectedLineName }}</p>
-          <h2>{{ terminal.t('pos.lineActions') }}</h2>
-        </q-card-section>
-        <q-card-section class="line-action-grid">
-          <article v-for="item in lineActionItems" :key="item.labelKey" class="backlog-action-card" aria-disabled="true">
+    <PosDialog v-model="lineActionsDialog" :eyebrow="selectedLineName" :title="terminal.t('pos.lineActions')" body-class="line-action-grid">
+      <article v-for="item in lineActionItems" :key="item.labelKey" class="backlog-action-card" aria-disabled="true">
             <q-icon :name="item.icon" size="20px" />
             <span>
               <strong>{{ terminal.t(item.labelKey) }}</strong>
               <small>{{ terminal.t(item.reasonKey) }}</small>
             </span>
           </article>
-        </q-card-section>
-        <q-card-actions align="right"><q-btn flat :label="terminal.t('actions.close')" @click="lineActionsDialog = false" /></q-card-actions>
-      </q-card>
-    </q-dialog>
+      <template #actions>
+        <PosButton variant="neutral" mode="flat" :label="terminal.t('actions.close')" @click="lineActionsDialog = false" />
+      </template>
+    </PosDialog>
 
-    <q-dialog v-model="createOrderDialog">
-      <q-card class="create-order-dialog pos-square-dialog">
-        <q-card-section>
-          <h2>{{ terminal.t('pos.createOrder') }}</h2>
-        </q-card-section>
-        <q-card-section class="create-order-body">
-          <nav class="hall-tabs">
-            <button v-for="hall in terminal.activeHalls.value" :key="hall.id" class="hall-chip" :class="{ selected: hall.id === terminal.selectedHallId.value }" type="button" @click="terminal.selectHall(hall.id)">
-              {{ hall.name }}
-            </button>
-          </nav>
-          <div class="floor-table-grid dialog-table-grid">
-            <button v-for="table in terminal.activeTables.value" :key="table.id" class="floor-table-tile is-free" type="button" @click="createOrderAtTable(table.id)">
-              <span>{{ table.name }}</span>
-              <small>{{ terminal.t('pos.free') }}</small>
-            </button>
-          </div>
-        </q-card-section>
-      </q-card>
-    </q-dialog>
+    <PosDialog v-model="createOrderDialog" :title="terminal.t('pos.createOrder')" card-class="create-order-dialog" body-class="create-order-body">
+      <PosTabs
+        :model-value="terminal.selectedHallId.value"
+        :options="hallTabOptions"
+        :accessibility-label="terminal.t('pos.halls')"
+        variant="chip"
+        @update:model-value="terminal.selectHall"
+      />
+      <div class="floor-table-grid dialog-table-grid">
+        <button v-for="table in terminal.activeTables.value" :key="table.id" class="floor-table-tile is-free" type="button" @click="createOrderAtTable(table.id)">
+          <span>{{ table.name }}</span>
+          <small>{{ terminal.t('pos.free') }}</small>
+        </button>
+      </div>
+    </PosDialog>
 
     <pos-payment-dialog v-model="paymentDialog" :terminal="terminal" />
     <pos-actions-dialog v-model="actionsDialog" :terminal="terminal" />
@@ -228,6 +204,7 @@ import PrecheckCancelDialog from './pos/PrecheckCancelDialog.vue';
 import RefundDialog from './pos/RefundDialog.vue';
 import SyncDrawer from './pos/SyncDrawer.vue';
 import { useCashierTerminal } from './pos/useCashierTerminal';
+import { PosButton, PosContextButton, PosDialog, PosTabs, type PosTabOption } from '../shared/ui';
 
 type PosSectionId = 'floor' | 'order' | 'activity' | 'reports' | 'cash';
 
@@ -266,6 +243,7 @@ const canEditSelectedLineModifiers = computed(() => {
 const editSelectedLineModifiersTitle = computed(() => canEditSelectedLineModifiers.value ? terminal.t('actions.editModifiers') : terminal.t('pos.modifierEditUnavailable'));
 const waiterContextLabel = computed(() => terminal.actorName.value ? terminal.t('pos.waiterContext', { name: terminal.actorName.value }) : terminal.t('pos.waiter'));
 const selectedHallName = computed(() => terminal.activeHalls.value.find((hall) => hall.id === terminal.selectedHallId.value)?.name ?? terminal.t('pos.halls'));
+const hallTabOptions = computed<PosTabOption[]>(() => terminal.activeHalls.value.map((hall) => ({ value: hall.id, label: hall.name })));
 const currentSectionTitleKey = computed(() => sections.find((section) => section.id === activeSection.value)?.labelKey ?? 'pos.sections.order');
 const hallTableLabel = computed(() => {
   const hall = terminal.activeHalls.value.find((item) => item.id === terminal.selectedHallId.value)?.name ?? terminal.t('pos.currentHall');

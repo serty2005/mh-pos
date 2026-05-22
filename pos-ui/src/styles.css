@@ -8,6 +8,7 @@
      ========================================================================== */
   --pos-bg: #f5f7f9;
   --pos-surface: #ffffff;
+  --pos-surface-raised: #ffffff;
   --pos-surface-muted: #f0f2f5;
   --pos-rail: #fafbfc;
   --pos-rail-strong: #1a1f24;
@@ -25,6 +26,7 @@
   --pos-text-primary: #1a1f24;
   --pos-text-secondary: #5c6773;
   --pos-text-muted: #8a95a1;
+  --pos-text-disabled: #8a95a1;
   --pos-text-inverse: #ffffff;
   
   /* ==========================================================================
@@ -34,6 +36,8 @@
   --pos-accent-hover: #1d4ed8;
   --pos-accent-light: #dbeafe;
   --pos-accent-strong: #1e40af;
+  --pos-action-primary: var(--pos-accent);
+  --pos-action-secondary: var(--pos-rail-strong);
   
   /* ==========================================================================
      Status Colors
@@ -46,6 +50,13 @@
   --pos-danger-light: #fee2e2;
   --pos-info: #0891b2;
   --pos-info-light: #cffafe;
+  --pos-status-success: var(--pos-success);
+  --pos-status-warning: var(--pos-warning);
+  --pos-status-danger: var(--pos-danger);
+  --pos-status-info: var(--pos-info);
+  --pos-scrollbar-thumb: var(--pos-border-strong);
+  --pos-scrollbar-thumb-hover: var(--pos-text-muted);
+  --pos-scrollbar-track: transparent;
   
   /* ==========================================================================
      Dimensions & Spacing
@@ -701,6 +712,12 @@ button:focus-visible,
   border: 1px solid #afd5c4;
 }
 
+.warning-banner {
+  color: var(--pos-status-warning);
+  background: var(--pos-warning-light);
+  border: 1px solid var(--pos-border-strong);
+}
+
 .skeleton-row {
   min-height: 44px;
   border-radius: 6px;
@@ -724,6 +741,10 @@ button:focus-visible,
 
 .empty-state.wide {
   min-height: 220px;
+}
+
+.touch-button-compact {
+  min-height: var(--pos-touch-target-min);
 }
 
 .compact-list {
@@ -1249,6 +1270,11 @@ button:focus-visible,
 .dialog-card {
   width: min(94vw, 440px);
   border-radius: 8px;
+}
+
+.dialog-card.modifier-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-width: 680px;
 }
 
 .dialog-copy {
@@ -1887,6 +1913,18 @@ button:focus-visible,
   border-color: #e7c59b;
 }
 
+.status-strip.danger {
+  color: var(--pos-status-danger);
+  background: var(--pos-danger-light);
+  border-color: var(--pos-border-strong);
+}
+
+.status-strip.info {
+  color: var(--pos-status-info);
+  background: var(--pos-info-light);
+  border-color: var(--pos-border-strong);
+}
+
 .status-strip.large {
   min-height: 72px;
   justify-items: start;
@@ -1977,6 +2015,14 @@ button:focus-visible,
 
 .dashboard-metric.warning strong {
   color: var(--pos-warning);
+}
+
+.dashboard-metric.danger strong {
+  color: var(--pos-status-danger);
+}
+
+.dashboard-metric.info strong {
+  color: var(--pos-status-info);
 }
 
 .payment-summary-grid {
@@ -2475,6 +2521,19 @@ button.bottom-status {
   --pos-accent: #1f6f5b;
   --pos-accent-strong: #195b4b;
   --pos-danger: #c93d31;
+  --pos-surface-raised: var(--pos-surface);
+  --pos-text-primary: var(--pos-text);
+  --pos-text-secondary: var(--pos-muted);
+  --pos-text-disabled: #87908a;
+  --pos-action-primary: var(--pos-accent);
+  --pos-action-secondary: var(--pos-dark-2);
+  --pos-status-success: #1f6f5b;
+  --pos-status-warning: #d84b13;
+  --pos-status-danger: var(--pos-danger);
+  --pos-status-info: #426076;
+  --pos-scrollbar-thumb: var(--pos-border-strong);
+  --pos-scrollbar-thumb-hover: var(--pos-muted);
+  --pos-scrollbar-track: transparent;
   min-height: 100dvh;
   height: 100dvh;
   display: grid;
@@ -2513,6 +2572,103 @@ button.bottom-status {
 .pos-main-workspace,
 .pos-bottom-bar {
   min-width: 0;
+}
+
+.pos-scrollarea,
+.context-actions,
+.top-status-grid,
+.menu-workspace,
+.section-main-surface,
+.section-workspace,
+.dish-grid,
+.order-items-list,
+.activity-list,
+.payment-list,
+.drawer-body,
+.pane-scroll,
+.rail-lines,
+.menu-product-surface,
+.bottom-status-area,
+.context-chip-row {
+  scrollbar-width: thin;
+  scrollbar-color: var(--pos-scrollbar-thumb) var(--pos-scrollbar-track);
+}
+
+.pos-scrollarea::-webkit-scrollbar,
+.context-actions::-webkit-scrollbar,
+.top-status-grid::-webkit-scrollbar,
+.menu-workspace::-webkit-scrollbar,
+.section-main-surface::-webkit-scrollbar,
+.section-workspace::-webkit-scrollbar,
+.dish-grid::-webkit-scrollbar,
+.order-items-list::-webkit-scrollbar,
+.activity-list::-webkit-scrollbar,
+.payment-list::-webkit-scrollbar,
+.drawer-body::-webkit-scrollbar,
+.pane-scroll::-webkit-scrollbar,
+.rail-lines::-webkit-scrollbar,
+.menu-product-surface::-webkit-scrollbar,
+.bottom-status-area::-webkit-scrollbar,
+.context-chip-row::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.pos-scrollarea::-webkit-scrollbar-track,
+.context-actions::-webkit-scrollbar-track,
+.top-status-grid::-webkit-scrollbar-track,
+.menu-workspace::-webkit-scrollbar-track,
+.section-main-surface::-webkit-scrollbar-track,
+.section-workspace::-webkit-scrollbar-track,
+.dish-grid::-webkit-scrollbar-track,
+.order-items-list::-webkit-scrollbar-track,
+.activity-list::-webkit-scrollbar-track,
+.payment-list::-webkit-scrollbar-track,
+.drawer-body::-webkit-scrollbar-track,
+.pane-scroll::-webkit-scrollbar-track,
+.rail-lines::-webkit-scrollbar-track,
+.menu-product-surface::-webkit-scrollbar-track,
+.bottom-status-area::-webkit-scrollbar-track,
+.context-chip-row::-webkit-scrollbar-track {
+  background: var(--pos-scrollbar-track);
+}
+
+.pos-scrollarea::-webkit-scrollbar-thumb,
+.context-actions::-webkit-scrollbar-thumb,
+.top-status-grid::-webkit-scrollbar-thumb,
+.menu-workspace::-webkit-scrollbar-thumb,
+.section-main-surface::-webkit-scrollbar-thumb,
+.section-workspace::-webkit-scrollbar-thumb,
+.dish-grid::-webkit-scrollbar-thumb,
+.order-items-list::-webkit-scrollbar-thumb,
+.activity-list::-webkit-scrollbar-thumb,
+.payment-list::-webkit-scrollbar-thumb,
+.drawer-body::-webkit-scrollbar-thumb,
+.pane-scroll::-webkit-scrollbar-thumb,
+.rail-lines::-webkit-scrollbar-thumb,
+.menu-product-surface::-webkit-scrollbar-thumb,
+.bottom-status-area::-webkit-scrollbar-thumb,
+.context-chip-row::-webkit-scrollbar-thumb {
+  background: var(--pos-scrollbar-thumb);
+}
+
+.pos-scrollarea::-webkit-scrollbar-thumb:hover,
+.context-actions::-webkit-scrollbar-thumb:hover,
+.top-status-grid::-webkit-scrollbar-thumb:hover,
+.menu-workspace::-webkit-scrollbar-thumb:hover,
+.section-main-surface::-webkit-scrollbar-thumb:hover,
+.section-workspace::-webkit-scrollbar-thumb:hover,
+.dish-grid::-webkit-scrollbar-thumb:hover,
+.order-items-list::-webkit-scrollbar-thumb:hover,
+.activity-list::-webkit-scrollbar-thumb:hover,
+.payment-list::-webkit-scrollbar-thumb:hover,
+.drawer-body::-webkit-scrollbar-thumb:hover,
+.pane-scroll::-webkit-scrollbar-thumb:hover,
+.rail-lines::-webkit-scrollbar-thumb:hover,
+.menu-product-surface::-webkit-scrollbar-thumb:hover,
+.bottom-status-area::-webkit-scrollbar-thumb:hover,
+.context-chip-row::-webkit-scrollbar-thumb:hover {
+  background: var(--pos-scrollbar-thumb-hover);
 }
 
 .pos-context-bar {
@@ -2723,6 +2879,81 @@ button.top-status-cell {
   background: #ffffff;
 }
 
+.pos-tab-list {
+  min-width: 0;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pos-scrollbar-thumb) var(--pos-scrollbar-track);
+}
+
+.pos-tab-list--underline {
+  min-height: 56px;
+  align-items: end;
+  gap: 0;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--pos-border);
+  background: var(--pos-surface);
+}
+
+.pos-tab-list--chip {
+  align-items: center;
+  gap: 8px;
+}
+
+.pos-tab-button {
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  color: var(--pos-text);
+  background: transparent;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.pos-tab-list--underline .pos-tab-button {
+  min-height: 56px;
+  border: 0;
+  border-bottom: 4px solid transparent;
+}
+
+.pos-tab-list--underline .pos-tab-button.active {
+  color: var(--pos-accent);
+  border-bottom-color: var(--pos-accent);
+}
+
+.pos-tab-list--chip .pos-tab-button {
+  min-width: 112px;
+  padding: 0 16px;
+  color: var(--pos-text);
+  background: var(--pos-surface-muted);
+  border-color: transparent;
+  text-align: left;
+}
+
+.pos-tab-list--chip .pos-tab-button.active {
+  color: var(--pos-text-inverse);
+  background: var(--pos-accent);
+}
+
+.pos-tab-button:disabled {
+  color: var(--pos-text-disabled);
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.pos-tab-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
 .menu-readonly-note {
   min-height: 38px;
   display: flex;
@@ -2931,6 +3162,10 @@ button.top-status-cell {
   grid-template-columns: 64px minmax(0, 1fr) 64px;
   border-top: 1px solid var(--pos-border);
   background: #ffffff;
+}
+
+.quantity-control.quantity-control-with-edit {
+  grid-template-columns: 64px minmax(0, 1fr) 64px 64px;
 }
 
 .order-rail-actions {

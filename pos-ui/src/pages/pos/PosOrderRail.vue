@@ -1,6 +1,6 @@
 <template>
   <aside class="current-order-panel" :aria-label="terminal.t('pos.currentOrderRail')">
-    <q-banner v-if="terminal.orderError.value" class="error-banner dense-banner">{{ terminal.orderError.value }}</q-banner>
+    <PosBanner v-if="terminal.orderError.value" tone="error" :label="terminal.orderError.value" />
     <q-skeleton v-if="terminal.orderLoading.value" class="order-skeleton rail-skeleton" />
 
     <template v-else-if="terminal.activeOrder.value">
@@ -48,7 +48,7 @@
           <p v-if="line.id === selectedLineId && line.course" class="line-note">{{ terminal.t('pos.courseValue', { value: line.course }) }}</p>
           <p v-if="line.id === selectedLineId && line.comment" class="line-note">{{ line.comment }}</p>
         </article>
-        <div v-if="!terminal.activeLines.value.length" class="empty-state">{{ terminal.t('pos.emptyOrder') }}</div>
+        <PosEmptyState v-if="!terminal.activeLines.value.length" :label="terminal.t('pos.emptyOrder')" />
       </div>
 
       <div class="order-panel-total">
@@ -56,57 +56,59 @@
         <strong>{{ terminal.money(terminal.activeOrder.value.total, terminal.orderCurrency.value) }}</strong>
       </div>
 
-      <div class="quantity-control" :aria-label="selectedLineName">
-        <q-btn flat square icon="remove" class="quantity-button" :aria-label="terminal.t('actions.remove')" :disable="!selectedLine || !terminal.canChangeOrderLine.value || selectedLine.quantity <= 1" @click="changeSelectedQuantity(-1)" />
-        <button class="quantity-value" type="button" :disabled="!selectedLine" @click="quantityDialog = true">
-          {{ selectedLine ? terminal.t('pos.quantityPieces', { count: selectedLine.quantity }) : terminal.t('pos.noSelectedLine') }}
-        </button>
-        <q-btn flat square icon="add" class="quantity-button" :aria-label="terminal.t('actions.add')" :disable="!selectedLine || !terminal.canChangeOrderLine.value" @click="changeSelectedQuantity(1)" />
-        <q-btn flat square icon="tune" class="quantity-button" :aria-label="terminal.t('actions.editModifiers')" :disable="!selectedLine || !terminal.canChangeOrderLine.value || !terminal.canEditLineModifiers(selectedLine.id)" @click="selectedLine && terminal.editLineModifiers(selectedLine.id)" />
-      </div>
+      <PosQuantityStepper
+        :value="selectedLine?.quantity ?? 0"
+        :label="selectedLineName"
+        :value-label="selectedLine ? terminal.t('pos.quantityPieces', { count: selectedLine.quantity }) : terminal.t('pos.noSelectedLine')"
+        :decrement-label="terminal.t('actions.remove')"
+        :increment-label="terminal.t('actions.add')"
+        :edit-label="terminal.t('actions.editModifiers')"
+        :disabled="!selectedLine"
+        :decrement-disabled="!terminal.canChangeOrderLine.value || Boolean(selectedLine && selectedLine.quantity <= 1)"
+        :increment-disabled="!terminal.canChangeOrderLine.value"
+        :edit-disabled="!selectedLine || !terminal.canChangeOrderLine.value || !terminal.canEditLineModifiers(selectedLine.id)"
+        editable
+        show-edit
+        @decrement="changeSelectedQuantity(-1)"
+        @increment="changeSelectedQuantity(1)"
+        @edit-value="quantityDialog = true"
+        @edit="selectedLine && terminal.editLineModifiers(selectedLine.id)"
+      />
 
       <div class="rail-actions order-rail-actions">
         <template v-if="terminal.activePrecheck.value || terminal.activeOrder.value.status === 'locked'">
-          <q-btn
-            color="primary"
-            unelevated
-            square
-            class="touch-button primary-action"
+          <PosButton
+            variant="primary"
+            primary
             icon="point_of_sale"
             :label="terminal.t('pos.cashier')"
-            :disable="terminal.remainingPayment.value <= 0"
+            :disabled="terminal.remainingPayment.value <= 0"
             @click="$emit('open-payment')"
           />
-          <q-btn
-            color="negative"
-            outline
-            square
-            class="touch-button"
+          <PosButton
+            variant="danger"
+            mode="outline"
             icon="lock_open"
             :label="terminal.t('pos.cancelPrecheck')"
-            :disable="Boolean(terminal.activePrecheck.value && terminal.activePrecheck.value.paid_total > 0) || !terminal.canCancelPrecheck.value"
+            :disabled="Boolean(terminal.activePrecheck.value && terminal.activePrecheck.value.paid_total > 0) || !terminal.canCancelPrecheck.value"
             @click="$emit('open-cancel-precheck')"
           />
         </template>
         <template v-else>
-          <q-btn
-            color="secondary"
-            outline
-            square
-            class="touch-button"
+          <PosButton
+            variant="secondary"
+            mode="outline"
             icon="tune"
             :label="terminal.t('pos.actions')"
-            :disable="!terminal.activeLines.value.length"
+            :disabled="!terminal.activeLines.value.length"
             @click="$emit('open-actions')"
           />
-          <q-btn
-            color="primary"
-            unelevated
-            square
-            class="touch-button primary-action"
+          <PosButton
+            variant="primary"
+            primary
             icon="receipt_long"
             :label="terminal.t('pos.precheck')"
-            :disable="!terminal.canIssuePrecheck.value"
+            :disabled="!terminal.canIssuePrecheck.value"
             :loading="terminal.issuePrecheckMutation.isPending.value"
             @click="terminal.activeOrder.value?.id && terminal.issuePrecheckMutation.mutate(terminal.activeOrder.value.id)"
           />
@@ -116,7 +118,7 @@
 
     <div v-else class="rail-empty">
       <p>{{ terminal.selectedTableId.value ? terminal.t('pos.noActiveOrder') : terminal.t('pos.chooseTable') }}</p>
-      <q-btn color="primary" unelevated square class="touch-button primary-action" icon="receipt_long" :label="terminal.t('actions.createOrder')" :disable="!terminal.canCreateOrder.value" :loading="terminal.createOrderMutation.isPending.value" @click="terminal.createOrderMutation.mutate()" />
+      <PosButton variant="primary" primary icon="receipt_long" :label="terminal.t('actions.createOrder')" :disabled="!terminal.canCreateOrder.value" :loading="terminal.createOrderMutation.isPending.value" @click="terminal.createOrderMutation.mutate()" />
       <blocking-notice
         v-if="terminal.selectedTableId.value && terminal.actionBlocker('pos.order.create', terminal.canCreateOrder.value)"
         :terminal="terminal"
@@ -127,26 +129,20 @@
       />
     </div>
 
-    <q-dialog v-model="quantityDialog">
-      <q-card class="dialog-card pos-square-dialog">
-        <q-card-section>
-          <h2>{{ terminal.t('pos.quantityInput') }}</h2>
-        </q-card-section>
-        <q-card-section>
-          <q-input v-model.number="quantityDraft" type="number" min="1" outlined square inputmode="numeric" :label="terminal.t('pos.quantity')" />
-        </q-card-section>
-        <q-card-actions align="right">
-          <q-btn flat :label="terminal.t('actions.cancel')" @click="quantityDialog = false" />
-          <q-btn color="primary" unelevated square :label="terminal.t('actions.save')" @click="submitQuantity" />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    <PosDialog v-model="quantityDialog" :title="terminal.t('pos.quantityInput')">
+      <q-input v-model.number="quantityDraft" type="number" min="1" outlined square inputmode="numeric" :label="terminal.t('pos.quantity')" />
+      <template #actions>
+        <PosButton variant="neutral" mode="flat" :label="terminal.t('actions.cancel')" @click="quantityDialog = false" />
+        <PosButton variant="primary" :label="terminal.t('actions.save')" @click="submitQuantity" />
+      </template>
+    </PosDialog>
   </aside>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
+import { PosBanner, PosButton, PosDialog, PosEmptyState, PosQuantityStepper } from '../../shared/ui';
 import BlockingNotice from './BlockingNotice.vue';
 import type { CashierTerminal } from './useCashierTerminal';
 

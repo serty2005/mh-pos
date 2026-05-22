@@ -1,14 +1,13 @@
 <template>
-  <q-dialog :model-value="terminal.refundDialog.value" persistent @update:model-value="terminal.refundDialog.value = $event">
-    <q-card class="dialog-card">
-      <q-card-section>
-        <h2>{{ terminal.t(terminal.refundDialogTitleKey()) }}</h2>
-      </q-card-section>
-      <q-card-section class="form-stack">
+  <PosDialog
+    :model-value="terminal.refundDialog.value"
+    persistent
+    :title="terminal.t(terminal.refundDialogTitleKey())"
+    body-class="form-stack"
+    @update:model-value="terminal.refundDialog.value = $event"
+  >
         <p class="dialog-copy">{{ terminal.t(terminal.refundDialogCopyKey()) }}</p>
-        <q-banner v-if="terminal.refundMode.value === 'payment_refund'" class="compatibility-banner" rounded>
-          {{ terminal.t('pos.paymentRefundFallbackCopy') }}
-        </q-banner>
+        <PosBanner v-if="terminal.refundMode.value === 'payment_refund'" tone="warning" :label="terminal.t('pos.paymentRefundFallbackCopy')" />
         <q-input v-model="terminal.refundReason.value" outlined :label="terminal.t('pos.refundReason')" type="textarea" autogrow />
         <template v-if="terminal.refundDialogShowsLedgerControls()">
           <q-option-group
@@ -71,24 +70,22 @@
             </div>
           </div>
         </template>
-      </q-card-section>
-      <q-card-actions align="right">
-        <q-btn flat :label="terminal.t('actions.cancel')" @click="terminal.closeRefundDialog" />
-        <q-btn
-          color="negative"
-          unelevated
+      <template #actions>
+        <PosButton variant="neutral" mode="flat" :label="terminal.t('actions.cancel')" @click="terminal.closeRefundDialog" />
+        <PosButton
+          variant="danger"
           :icon="terminal.refundDialogIcon()"
           :label="terminal.t(terminal.refundDialogSubmitKey())"
           :loading="terminal.refundMutation.isPending.value"
-          :disable="!terminal.refundReason.value.trim() || (terminal.refundScope.value === 'order_line' && !terminal.selectedRefundLine.value)"
+          :disabled="!terminal.refundReason.value.trim() || (terminal.refundScope.value === 'order_line' && !terminal.selectedRefundLine.value)"
           @click="terminal.refundMutation.mutate()"
         />
-      </q-card-actions>
-    </q-card>
-  </q-dialog>
+      </template>
+  </PosDialog>
 </template>
 
 <script setup lang="ts">
+import { PosBanner, PosButton, PosDialog } from '../../shared/ui';
 import type { CashierTerminal } from './useCashierTerminal';
 
 defineProps<{
@@ -108,26 +105,21 @@ defineProps<{
   gap: 12px;
   min-height: 40px;
   padding: 8px 12px;
-  border: 1px solid rgba(36, 42, 54, 0.14);
+  border: 1px solid var(--pos-border);
   border-radius: 8px;
 }
 
 .ledger-line-summary span {
-  color: #6d7280;
-}
-
-.compatibility-banner {
-  background: rgba(143, 99, 0, 0.08);
-  color: #5f4300;
+  color: var(--pos-muted, var(--pos-text-secondary));
 }
 
 .unsupported-scope-panel {
   display: grid;
   gap: 8px;
   padding: 12px;
-  border: 1px solid rgba(36, 42, 54, 0.14);
+  border: 1px solid var(--pos-border);
   border-radius: 8px;
-  background: rgba(36, 42, 54, 0.03);
+  background: var(--pos-surface-muted);
 }
 
 .unsupported-scope-list {

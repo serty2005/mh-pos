@@ -1,29 +1,19 @@
 <template>
   <section class="cash-workspace section-workspace">
     <main class="section-main-surface" :aria-label="terminal.t('pos.cashTitle')">
-      <div class="pos-section-head">
-        <div>
-          <p class="eyebrow">{{ terminal.t('pos.sections.cash') }}</p>
-          <h1>{{ terminal.t('pos.cashTitle') }}</h1>
-        </div>
-        <q-btn flat round icon="refresh" class="icon-touch" :aria-label="terminal.t('actions.retry')" @click="terminal.refreshOps" />
-      </div>
+      <PosSectionHeader
+        :eyebrow="terminal.t('pos.sections.cash')"
+        :title="terminal.t('pos.cashTitle')"
+        :refresh-label="terminal.t('actions.retry')"
+        @refresh="terminal.refreshOps"
+      />
 
-      <q-banner v-if="terminal.statusError.value" class="error-banner dense-banner" rounded>{{ terminal.statusError.value }}</q-banner>
+      <PosBanner v-if="terminal.statusError.value" tone="error" :label="terminal.statusError.value" />
 
       <div class="cash-status-strip">
-        <div class="status-strip large" :class="{ good: terminal.currentShift.data.value }">
-          <span>{{ terminal.t('pos.shift') }}</span>
-          <strong>{{ terminal.currentShift.data.value ? terminal.t('status.open') : terminal.t('pos.noShift') }}</strong>
-        </div>
-        <div class="status-strip large" :class="{ good: terminal.currentCashSession.data.value }">
-          <span>{{ terminal.t('pos.cashSession') }}</span>
-          <strong>{{ terminal.currentCashSession.data.value ? terminal.t('status.open') : terminal.t('pos.noCashSession') }}</strong>
-        </div>
-        <div class="status-strip large" :class="{ good: terminal.syncProblems.value === 0, warning: terminal.syncProblems.value > 0 }">
-          <span>{{ terminal.t('pos.syncStatus') }}</span>
-          <strong>{{ terminal.syncProblems.value > 0 ? terminal.syncProblems.value : terminal.t('status.sent') }}</strong>
-        </div>
+        <PosStatusStrip :label="terminal.t('pos.shift')" :value="terminal.currentShift.data.value ? terminal.t('status.open') : terminal.t('pos.noShift')" :tone="terminal.currentShift.data.value ? 'good' : 'neutral'" large />
+        <PosStatusStrip :label="terminal.t('pos.cashSession')" :value="terminal.currentCashSession.data.value ? terminal.t('status.open') : terminal.t('pos.noCashSession')" :tone="terminal.currentCashSession.data.value ? 'good' : 'neutral'" large />
+        <PosStatusStrip :label="terminal.t('pos.syncStatus')" :value="terminal.syncProblems.value > 0 ? terminal.syncProblems.value : terminal.t('status.sent')" :tone="terminal.syncProblems.value > 0 ? 'warning' : 'good'" large />
       </div>
 
       <div class="cash-operation-grid">
@@ -32,25 +22,23 @@
             <h2>{{ terminal.t('pos.shift') }}</h2>
           </div>
           <p>{{ terminal.t('pos.employeeShiftBody') }}</p>
-          <q-btn
+          <PosButton
             v-if="!terminal.currentShift.data.value"
-            color="primary"
-            unelevated
-            class="touch-button primary-action"
+            variant="primary"
+            primary
             icon="schedule"
             :label="terminal.t('actions.openShift')"
-            :disable="!terminal.canOpenShift.value"
+            :disabled="!terminal.canOpenShift.value"
             :loading="terminal.openShiftMutation.isPending.value"
             @click="terminal.openShiftMutation.mutate()"
           />
-          <q-btn
+          <PosButton
             v-else
-            outline
-            color="secondary"
-            class="touch-button"
+            variant="secondary"
+            mode="outline"
             icon="event_busy"
             :label="terminal.t('actions.closeShift')"
-            :disable="!terminal.canCloseShift.value"
+            :disabled="!terminal.canCloseShift.value"
             :loading="terminal.closeShiftMutation.isPending.value"
             @click="terminal.closeShiftMutation.mutate(terminal.currentShift.data.value.id)"
           />
@@ -63,11 +51,11 @@
           <p>{{ terminal.t('pos.cashSessionBody') }}</p>
           <div v-if="terminal.currentShift.data.value && !terminal.currentCashSession.data.value" class="cash-form-row">
             <q-input v-model.number="terminal.openingCashAmount.value" outlined type="number" min="0" :step="terminal.currencyInputStep(terminal.currency.value)" :label="terminal.t('common.amount')" :suffix="terminal.currency.value" />
-            <q-btn color="primary" unelevated class="touch-button primary-action" icon="point_of_sale" :label="terminal.t('actions.openCashSession')" :disable="!terminal.canOpenCashSession.value" :loading="terminal.openCashMutation.isPending.value" @click="terminal.openCashMutation.mutate(terminal.openingCashAmount.value)" />
+            <PosButton variant="primary" primary icon="point_of_sale" :label="terminal.t('actions.openCashSession')" :disabled="!terminal.canOpenCashSession.value" :loading="terminal.openCashMutation.isPending.value" @click="terminal.openCashMutation.mutate(terminal.openingCashAmount.value)" />
           </div>
           <div v-if="terminal.currentCashSession.data.value" class="cash-form-row">
             <q-input v-model.number="terminal.closingCashAmount.value" outlined type="number" min="0" :step="terminal.currencyInputStep(terminal.currency.value)" :label="terminal.t('common.amount')" :suffix="terminal.currency.value" />
-            <q-btn outline color="secondary" class="touch-button" icon="payments" :label="terminal.t('actions.closeCashSession')" :disable="!terminal.canCloseCashSession.value" :loading="terminal.closeCashMutation.isPending.value" @click="terminal.closeCashMutation.mutate({ cashSessionId: terminal.currentCashSession.data.value.id, amount: terminal.closingCashAmount.value })" />
+            <PosButton variant="secondary" mode="outline" icon="payments" :label="terminal.t('actions.closeCashSession')" :disabled="!terminal.canCloseCashSession.value" :loading="terminal.closeCashMutation.isPending.value" @click="terminal.closeCashMutation.mutate({ cashSessionId: terminal.currentCashSession.data.value.id, amount: terminal.closingCashAmount.value })" />
           </div>
         </section>
 
@@ -97,6 +85,7 @@
 </template>
 
 <script setup lang="ts">
+import { PosBanner, PosButton, PosSectionHeader, PosStatusStrip } from '../../shared/ui';
 import type { CashierTerminal } from './useCashierTerminal';
 
 defineProps<{

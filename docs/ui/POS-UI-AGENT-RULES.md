@@ -163,3 +163,15 @@ POS UI должен руководствоваться восемью золот
 
 - Пользовательский текст через vue-i18n.
 - Не хардкодить русский/английский текст внутри компонентов.
+
+## POS UI Component Standardization / Design-System Rules
+
+- Перед созданием нового POS UI элемента проверить `pos-ui/src/shared/ui`.
+- Если нужный primitive/composite уже есть, использовать его вместо локальной разметки и локальных классов.
+- Если нужного primitive нет, создать переиспользуемый компонент или расширить существующий так, чтобы следующий экран мог использовать тот же API.
+- Не плодить локальные копии кнопок, context buttons, tabs/chips, dialog shell, metric/status cards, empty/error states, quantity steppers, tables/lists, action rails и scrollbar patterns внутри feature-компонентов.
+- Presentation primitive не получает `terminal`, backend entities или composable state целиком. Feature layer передает простые props, localized labels и handlers.
+- Все новые labels, empty states, validation messages, modal copy и action text идут через `vue-i18n`.
+- Цвета и состояния идут через semantic CSS tokens и POS utility classes; raw/hardcoded colors в feature-компонентах запрещены.
+- Backend-неподдержанные действия показывать только как disabled/backlog state с понятной причиной; не делать активную кнопку без backend/API contract.
+- Оставшийся backlog миграции после текущего прохода: `SyncDrawer`, `ClosedOrdersDrawer`, `PosActionsDialog`, `PosPaymentDialog`, legacy checkout/floor helper panels и таблицы/списки, где еще есть feature-local variants.

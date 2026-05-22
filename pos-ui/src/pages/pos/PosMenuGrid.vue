@@ -1,7 +1,7 @@
 <template>
   <section class="menu-workspace" :aria-label="terminal.t('pos.menu')">
-    <q-banner v-if="terminal.statusError.value" class="error-banner dense-banner">{{ terminal.statusError.value }}</q-banner>
-    <q-banner v-if="terminal.menu.isError.value" class="error-banner dense-banner">{{ terminal.t('common.error') }}</q-banner>
+    <PosBanner v-if="terminal.statusError.value" tone="error" :label="terminal.statusError.value" />
+    <PosBanner v-if="terminal.menu.isError.value" tone="error" :label="terminal.t('common.error')" />
 
     <div class="menu-search-row">
       <q-input
@@ -20,25 +20,14 @@
       </q-input>
     </div>
 
-    <nav class="menu-category-tabs" :aria-label="terminal.t('pos.menuGroups')">
-      <button
-        v-for="option in categoryOptions"
-        :key="option.value"
-        class="menu-category-tab"
-        :class="{ active: group === option.value }"
-        type="button"
-        @click="group = option.value"
-      >
-        {{ terminal.t(option.labelKey) }}
-      </button>
-    </nav>
+    <PosTabs :model-value="group" :options="categoryTabs" :accessibility-label="terminal.t('pos.menuGroups')" @update:model-value="setGroup" />
 
     <div v-if="readonlyNoticeKey" class="menu-readonly-note">
       <q-icon name="lock" size="18px" />
       <span>{{ terminal.t(readonlyNoticeKey) }}</span>
     </div>
 
-    <div v-if="!terminal.canViewMenu.value" class="empty-state wide">{{ terminal.t('pos.noPermissionForMenu') }}</div>
+    <PosEmptyState v-if="!terminal.canViewMenu.value" size="wide" :label="terminal.t('pos.noPermissionForMenu')" />
 
     <div v-else-if="terminal.menu.isPending.value" class="dish-grid">
       <q-skeleton v-for="n in 12" :key="n" class="dish-card dish-card-skeleton" />
@@ -60,7 +49,7 @@
       </button>
     </div>
 
-    <div v-else class="empty-state wide">{{ terminal.regularMenuItems.value.length || terminal.serviceMenuItems.value.length ? terminal.t('pos.noMenuMatches') : terminal.t('pos.emptyMenu') }}</div>
+    <PosEmptyState v-else size="wide" :label="terminal.regularMenuItems.value.length || terminal.serviceMenuItems.value.length ? terminal.t('pos.noMenuMatches') : terminal.t('pos.emptyMenu')" />
   </section>
 </template>
 
@@ -68,6 +57,7 @@
 import { computed, ref } from 'vue';
 
 import type { MenuItem } from '../../shared/schemas';
+import { PosBanner, PosEmptyState, PosTabs, type PosTabOption } from '../../shared/ui';
 import type { CashierTerminal } from './useCashierTerminal';
 
 type MenuGroup = 'all' | 'food' | 'services';
@@ -83,6 +73,11 @@ const categoryOptions: Array<{ value: MenuGroup; labelKey: string }> = [
   { value: 'food', labelKey: 'pos.menuCategoryFood' },
   { value: 'services', labelKey: 'pos.services' },
 ];
+
+const categoryTabs = computed<PosTabOption[]>(() => categoryOptions.map((option) => ({
+  value: option.value,
+  label: props.terminal.t(option.labelKey),
+})));
 
 const visibleItems = computed(() => {
   if (group.value === 'food') return props.terminal.visibleMenuItems.value;
@@ -109,5 +104,11 @@ function initials(name: string) {
     .slice(0, 2)
     .map((part) => part[0]?.toLocaleUpperCase('ru-RU') ?? '')
     .join('');
+}
+
+function setGroup(value: string) {
+  if (value === 'all' || value === 'food' || value === 'services') {
+    group.value = value;
+  }
 }
 </script>
