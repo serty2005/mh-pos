@@ -515,11 +515,30 @@ func countRows(t *testing.T, f *fixture, table string) int {
 	return n
 }
 
+func countRowsWhere(t *testing.T, f *fixture, table, where string, args ...any) int {
+	t.Helper()
+	switch table {
+	case "orders", "checks", "financial_operations", "financial_operation_items", "pos_sync_outbox", "local_event_log":
+	default:
+		t.Fatalf("unexpected table %q", table)
+	}
+	var n int
+	if err := f.db.QueryRowContext(f.ctx, fmt.Sprintf("SELECT COUNT(1) FROM %s WHERE %s", table, where), args...).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
 func execTestSQL(t *testing.T, f *fixture, query string, args ...any) {
 	t.Helper()
 	if _, err := f.db.ExecContext(f.ctx, query, args...); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func markEdgeOutboxSent(t *testing.T, f *fixture) {
+	t.Helper()
+	execTestSQL(t, f, `UPDATE pos_sync_outbox SET status = 'sent', sent_at = COALESCE(sent_at, updated_at), locked_at = NULL, locked_by = NULL WHERE sync_direction = 'edge_to_cloud'`)
 }
 
 func insertStopList(t *testing.T, f *fixture, id, catalogItemID string, availableQuantity *float64, active bool) {
@@ -733,8 +752,8 @@ func TestStorageLifecycleStatusRequiresPermissionAndSummarizesRuntimeState(t *te
 	if len(status.ClosedOrdersByBusinessDate) < 2 {
 		t.Fatalf("expected closed orders grouped by business date, got %+v", status.ClosedOrdersByBusinessDate)
 	}
-	if status.Retention.Mode != "dry_run_only" || status.Retention.DestructiveApplySupported {
-		t.Fatalf("expected dry-run-only retention capability, got %+v", status.Retention)
+	if status.Retention.Mode != "archive_apply_supported" || !status.Retention.DestructiveApplySupported {
+		t.Fatalf("expected archive apply retention capability, got %+v", status.Retention)
 	}
 }
 
@@ -993,7 +1012,7 @@ func TestStorageArchiveExportCreatesEmptyNoopArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Mode != "export_only" || !result.ExportCreated || !result.Blocked || result.DestructiveApplySupported {
+	if result.Mode != "export_only" || !result.ExportCreated || result.Blocked || !result.DestructiveApplySupported {
 		t.Fatalf("unexpected empty archive result: %+v", result)
 	}
 	if result.Counts.ArchivedRows != 0 || result.Counts.ClosedOrders != 0 || result.BusinessDateRange.Oldest != "" || result.BusinessDateRange.Newest != "" {
@@ -1132,16 +1151,13 @@ func TestStorageArchiveExportIncludesClosedOrderGraphLedgerAndManifestWithoutMut
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Mode != "export_only" || result.ResultMode != "export_only" || result.DestructiveApplySupported || result.RuntimeRowsDeleted || !result.ExportCreated {
+	if result.Mode != "export_only" || result.ResultMode != "export_only" || !result.DestructiveApplySupported || result.RuntimeRowsDeleted || !result.ExportCreated {
 		t.Fatalf("unexpected archive mode flags: %+v", result)
 	}
 	if !result.FinancialLedgerProtected || !result.ImmutableSnapshotsProtected {
 		t.Fatalf("expected protected flags, got %+v", result)
 	}
-	if !containsString(result.BlockReasons, "destructive_apply_not_enabled") ||
-		!containsString(result.BlockReasons, "financial_ledger_protected") ||
-		!containsString(result.BlockReasons, "immutable_snapshots_protected") ||
-		!containsString(result.BlockReasons, "pending_edge_to_cloud_outbox") {
+	if !containsString(result.BlockReasons, "pending_edge_to_cloud_outbox") {
 		t.Fatalf("unexpected block reasons: %+v", result.BlockReasons)
 	}
 	if result.Counts.ClosedOrders != 1 || result.Counts.Checks != 1 || result.Counts.Prechecks != 1 || result.Counts.Payments != 1 || result.Counts.OrderLines != 1 {
@@ -1218,12 +1234,10 @@ func TestStorageArchiveApplyPlanWithoutManifestBlocksAndDoesNotMutate(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Blocked || result.ResultMode != "apply_blocked" || result.DestructiveApplySupported || result.RuntimeRowsDeleted {
-		t.Fatalf("expected blocked read-only apply plan, got %+v", result)
+	if !result.Blocked || result.ResultMode != "apply_blocked" || !result.DestructiveApplySupported || result.RuntimeRowsDeleted {
+		t.Fatalf("expected blocked apply plan, got %+v", result)
 	}
-	if !containsString(result.BlockReasons, "archive_manifest_missing") ||
-		!containsString(result.BlockReasons, "destructive_apply_not_enabled") ||
-		!containsString(result.BlockReasons, "runtime_restore_apply_path_missing") {
+	if !containsString(result.BlockReasons, "archive_manifest_missing") {
 		t.Fatalf("expected missing manifest/default block reasons, got %+v", result.BlockReasons)
 	}
 	assertProtectedStorageCounts(t, f, before, "apply-plan without manifest")
@@ -1242,15 +1256,13 @@ func TestStorageArchiveApplyReadinessWithoutManifestBlocksAndDoesNotMutate(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ResultMode != "apply_readiness_only" || result.DestructiveApplySupported || result.ReadyForDestructiveApply || result.RuntimeRowsDeleted {
-		t.Fatalf("expected blocked read-only readiness, got %+v", result)
+	if result.ResultMode != "apply_readiness_only" || !result.DestructiveApplySupported || result.ReadyForDestructiveApply || result.RuntimeRowsDeleted {
+		t.Fatalf("expected blocked readiness, got %+v", result)
 	}
 	if result.ArchiveVerified || result.ManifestVerified || !result.RuntimeScopeVerified {
 		t.Fatalf("expected missing manifest to fail archive verification only, got %+v", result)
 	}
-	if !containsString(result.BlockReasons, "archive_manifest_missing") ||
-		!containsString(result.BlockReasons, "destructive_apply_not_enabled") ||
-		!containsString(result.BlockReasons, "runtime_restore_apply_path_missing") {
+	if !containsString(result.BlockReasons, "archive_manifest_missing") {
 		t.Fatalf("expected missing manifest/default block reasons, got %+v", result.BlockReasons)
 	}
 	assertProtectedStorageCounts(t, f, before, "apply-readiness without manifest")
@@ -1358,17 +1370,14 @@ func TestStorageArchiveApplyReadinessAggregatesIntegrityAndRuntimeBlockers(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ResultMode != "apply_readiness_only" || result.DestructiveApplySupported || result.ReadyForDestructiveApply || result.RuntimeRowsDeleted {
+	if result.ResultMode != "apply_readiness_only" || !result.DestructiveApplySupported || result.ReadyForDestructiveApply || result.RuntimeRowsDeleted {
 		t.Fatalf("unexpected readiness mode flags: %+v", result)
 	}
 	if !result.ArchiveVerified || !result.ManifestVerified || !result.SnapshotPayloadVerified || !result.RuntimeScopeVerified {
 		t.Fatalf("expected verified archive/runtime scope, got %+v", result)
 	}
-	if !result.PendingEdgeToCloudOutbox || result.BlockingOutboxCount == 0 ||
-		!result.OpenOperationalBoundaries.Open ||
-		result.OpenOperationalBoundaries.OpenShifts == 0 ||
-		result.OpenOperationalBoundaries.OpenCashSessions == 0 {
-		t.Fatalf("expected outbox and open boundary blockers, got %+v", result)
+	if !result.PendingEdgeToCloudOutbox || result.BlockingOutboxCount == 0 || result.OpenOperationalBoundaries.Open {
+		t.Fatalf("expected scoped outbox blocker without current-day open boundary blockers, got %+v", result)
 	}
 	if !result.ProtectedData.FinancialLedgerProtected ||
 		!result.ProtectedData.ImmutableSnapshotsProtected ||
@@ -1376,13 +1385,124 @@ func TestStorageArchiveApplyReadinessAggregatesIntegrityAndRuntimeBlockers(t *te
 		!result.ProtectedData.OutboxProtected {
 		t.Fatalf("expected protected data flags, got %+v", result.ProtectedData)
 	}
-	if !containsString(result.BlockReasons, "destructive_apply_not_enabled") ||
-		!containsString(result.BlockReasons, "runtime_restore_apply_path_missing") ||
-		!containsString(result.BlockReasons, "pending_edge_to_cloud_outbox") ||
-		!containsString(result.BlockReasons, "open_operational_boundary") {
-		t.Fatalf("expected destructive/outbox/open boundary reasons, got %+v", result.BlockReasons)
+	if !containsString(result.BlockReasons, "pending_edge_to_cloud_outbox") ||
+		containsString(result.BlockReasons, "open_operational_boundary") {
+		t.Fatalf("expected scoped outbox block reason only, got %+v", result.BlockReasons)
 	}
 	assertProtectedStorageCounts(t, f, before, "apply-readiness")
+}
+
+func TestStorageArchiveApplyReadinessAndDestructiveApplyDeletesRuntimeRowsButKeepsArchivePreview(t *testing.T) {
+	f := newFixture(t)
+	order, check := f.createPaidOrder(t)
+	operation, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-storage-apply-cancel"),
+		CheckID:              check.ID,
+		Reason:               "guest returned immediately",
+		InventoryDisposition: domain.InventoryNoStockEffect,
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:    domain.FinancialItemWholeCheck,
+			Amount:   check.Total,
+			Currency: check.CurrencyCode,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
+	markEdgeOutboxSent(t, f)
+
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-export-ready"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "destructive apply fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readiness, err := f.service.BuildStorageArchiveApplyReadiness(f.ctx, app.ArchiveApplyReadinessCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-readiness-ready"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             exported.ArchivePath,
+		ManifestPath:            exported.ManifestPath,
+		Mode:                    "plan_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !readiness.ReadyForDestructiveApply || readiness.BlockingOutboxCount != 0 || readiness.OpenOperationalBoundaries.Open {
+		t.Fatalf("expected ready destructive apply gate, got %+v", readiness)
+	}
+
+	beforeOrders := countRows(t, f, "orders")
+	beforeFinancialOperations := countRows(t, f, "financial_operations")
+	applied, err := f.service.BuildStorageArchiveApplyPlan(f.ctx, app.ArchiveApplyPlanCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-run"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             exported.ArchivePath,
+		ManifestPath:            exported.ManifestPath,
+		Mode:                    "plan_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied.Blocked || applied.ResultMode != "destructive_apply" || !applied.DestructiveApplySupported || !applied.RuntimeRowsDeleted {
+		t.Fatalf("expected destructive apply success, got %+v", applied)
+	}
+	if got := countRowsWhere(t, f, "orders", "id = ?", order.ID); got != 0 {
+		t.Fatalf("expected runtime order %s to be deleted, got %d rows", order.ID, got)
+	}
+	if got := countRowsWhere(t, f, "checks", "id = ?", check.ID); got != 0 {
+		t.Fatalf("expected runtime check %s to be deleted, got %d rows", check.ID, got)
+	}
+	if got := countRowsWhere(t, f, "financial_operations", "id = ?", operation.ID); got != 0 {
+		t.Fatalf("expected financial operation %s to be deleted, got %d rows", operation.ID, got)
+	}
+	if got := countRowsWhere(t, f, "financial_operation_items", "operation_id = ?", operation.ID); got != 0 {
+		t.Fatalf("expected financial operation items for %s to be deleted, got %d rows", operation.ID, got)
+	}
+	if got := countRows(t, f, "orders"); got >= beforeOrders {
+		t.Fatalf("expected order table to shrink after apply, before=%d after=%d", beforeOrders, got)
+	}
+	if got := countRows(t, f, "financial_operations"); got >= beforeFinancialOperations {
+		t.Fatalf("expected financial_operations to shrink after apply, before=%d after=%d", beforeFinancialOperations, got)
+	}
+
+	closed, err := f.service.ListClosedOrders(f.ctx, app.ListClosedOrdersCommand{
+		CommandMeta: f.edgeMetaCommand("cmd-storage-apply-closed-orders-after"),
+		CheckID:     check.ID,
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(closed) != 0 {
+		t.Fatalf("expected deleted check to disappear from /orders/closed read model, got %+v", closed)
+	}
+	readPlan, err := f.service.BuildStorageArchiveReadPlan(f.ctx, app.ArchiveReadPlanCommand{
+		CommandMeta:  f.managerEdgeMetaCommand(t, "cmd-storage-apply-read-plan-after"),
+		ArchivePath:  exported.ArchivePath,
+		ManifestPath: exported.ManifestPath,
+		CheckID:      check.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readPlan.Blocked || readPlan.Returned != 1 || readPlan.ArchivedClosedOrders[0].CheckID != check.ID {
+		t.Fatalf("expected archive read-plan to preview deleted check, got %+v", readPlan)
+	}
+	lookup, err := f.service.LookupStorageArchivePreview(f.ctx, app.ArchiveLookupCommand{
+		CommandMeta:  f.managerEdgeMetaCommand(t, "cmd-storage-apply-lookup-after"),
+		ArchivePath:  exported.ArchivePath,
+		ManifestPath: exported.ManifestPath,
+		CheckID:      check.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !lookup.Lookup.Found || lookup.Check == nil || lookup.Check.ID != check.ID {
+		t.Fatalf("expected archive lookup to find deleted check, got %+v", lookup)
+	}
 }
 
 func TestStorageArchiveApplyReadinessReportsSHAAndCountsMismatch(t *testing.T) {
@@ -1468,6 +1588,8 @@ func TestStorageArchiveApplyPlanBlocksRuntimeMismatchOutboxAndOpenBoundary(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
+	execTestSQL(t, f, `UPDATE shifts SET business_date_local = '2026-05-03' WHERE id = ?`, activeOrder.ShiftID)
+	execTestSQL(t, f, `UPDATE cash_sessions SET business_date_local = '2026-05-03' WHERE shift_id = ? AND status = 'open'`, activeOrder.ShiftID)
 	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
 		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-apply-empty-export"),
 		CutoffBusinessDateLocal: "2026-05-03",
@@ -1492,8 +1614,7 @@ func TestStorageArchiveApplyPlanBlocksRuntimeMismatchOutboxAndOpenBoundary(t *te
 	}
 	if !containsString(result.BlockReasons, "archive_counts_mismatch") ||
 		!containsString(result.BlockReasons, "pending_edge_to_cloud_outbox") ||
-		!containsString(result.BlockReasons, "open_operational_boundary") ||
-		!containsString(result.BlockReasons, "runtime_restore_apply_path_missing") {
+		!containsString(result.BlockReasons, "open_operational_boundary") {
 		t.Fatalf("expected runtime mismatch/outbox/open boundary block reasons, got %+v", result.BlockReasons)
 	}
 	assertProtectedStorageCounts(t, f, before, "apply-plan runtime mismatch")

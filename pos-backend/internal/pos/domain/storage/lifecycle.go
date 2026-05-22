@@ -63,7 +63,7 @@ type OutboxStatusCount struct {
 	Count         int    `json:"count"`
 }
 
-// RetentionCapability фиксирует, что текущий runtime умеет только безопасный status/dry-run.
+// RetentionCapability фиксирует текущие возможности runtime storage lifecycle.
 type RetentionCapability struct {
 	Mode                        string `json:"mode"`
 	DestructiveApplySupported   bool   `json:"destructive_apply_supported"`
@@ -193,7 +193,7 @@ type ArchiveExportScope struct {
 	Rows              []ArchiveExportRow
 }
 
-// ArchiveApplyRuntimeScope содержит только read-only runtime blockers и counts для будущего apply.
+// ArchiveApplyRuntimeScope содержит runtime blockers и counts для destructive apply.
 type ArchiveApplyRuntimeScope struct {
 	Counts                 ArchiveExportCounts
 	ActiveOrders           int
@@ -203,7 +203,7 @@ type ArchiveApplyRuntimeScope struct {
 }
 
 // ArchiveOpenOperationalBoundaries агрегирует открытые runtime boundaries,
-// которые блокируют будущий destructive apply/delete/compaction.
+// которые блокируют destructive apply/delete/compaction для очищаемого периода.
 type ArchiveOpenOperationalBoundaries struct {
 	ActiveOrders     int  `json:"active_orders"`
 	OpenShifts       int  `json:"open_shifts"`
@@ -324,7 +324,7 @@ type ArchiveLookupPreview struct {
 	Verification  ArchiveVerificationSummary `json:"verification,omitempty"`
 }
 
-// ArchivePlanProtectedFlags фиксирует таблицы, которые future archive apply не может менять без отдельной политики.
+// ArchivePlanProtectedFlags фиксирует protected-by-policy части archive/apply contract.
 type ArchivePlanProtectedFlags struct {
 	FinancialLedgerProtected    bool `json:"financial_ledger_protected"`
 	ImmutableSnapshotsProtected bool `json:"immutable_snapshots_protected"`
@@ -384,7 +384,7 @@ type RetentionDryRunResult struct {
 	ImmutableSnapshotsProtected bool                    `json:"immutable_snapshots_protected"`
 }
 
-// ArchiveApplyPlan описывает blocked-by-default planning/verification для будущего destructive apply.
+// ArchiveApplyPlan описывает verification и destructive apply локального archive scope.
 type ArchiveApplyPlan struct {
 	GeneratedAt               time.Time                  `json:"generated_at"`
 	CutoffBusinessDateLocal   string                     `json:"cutoff_business_date_local"`
@@ -406,28 +406,28 @@ type ArchiveApplyPlan struct {
 	Verification              ArchiveVerificationSummary `json:"verification"`
 }
 
-// ArchiveApplyReadiness описывает отдельный read-only policy gate для будущего
+// ArchiveApplyReadiness описывает отдельный read-only policy gate для
 // destructive archive apply/delete/compaction без смешения с apply-plan.
 type ArchiveApplyReadiness struct {
-	GeneratedAt                    time.Time                         `json:"generated_at"`
-	CutoffBusinessDateLocal        string                            `json:"cutoff_business_date_local"`
-	ArchiveID                      string                            `json:"archive_id,omitempty"`
-	ArchiveSHA256                  string                            `json:"archive_sha256,omitempty"`
-	ResultMode                     string                            `json:"result_mode"`
-	DestructiveApplySupported      bool                              `json:"destructive_apply_supported"`
-	ReadyForDestructiveApply       bool                              `json:"ready_for_destructive_apply"`
-	RuntimeRowsDeleted             bool                              `json:"runtime_rows_deleted"`
-	ArchiveVerified                bool                              `json:"archive_verified"`
-	ManifestVerified               bool                              `json:"manifest_verified"`
-	SnapshotPayloadVerified        bool                              `json:"snapshot_payload_verified"`
-	RuntimeScopeVerified           bool                              `json:"runtime_scope_verified"`
-	BlockingOutboxCount            int                               `json:"blocking_outbox_count"`
-	PendingEdgeToCloudOutbox        bool                              `json:"pending_edge_to_cloud_outbox"`
-	OpenOperationalBoundaries       ArchiveOpenOperationalBoundaries  `json:"open_operational_boundaries"`
-	ProtectedData                  ArchivePlanProtectedFlags         `json:"protected_data"`
-	BlockReasons                   []string                          `json:"block_reasons"`
-	HumanSummary                   string                            `json:"human_summary"`
-	EligibleCounts                 ArchiveExportCounts               `json:"eligible_counts"`
-	ArchiveCounts                  ArchiveExportCounts               `json:"archive_counts"`
-	Verification                   ArchiveVerificationSummary        `json:"verification"`
+	GeneratedAt               time.Time                        `json:"generated_at"`
+	CutoffBusinessDateLocal   string                           `json:"cutoff_business_date_local"`
+	ArchiveID                 string                           `json:"archive_id,omitempty"`
+	ArchiveSHA256             string                           `json:"archive_sha256,omitempty"`
+	ResultMode                string                           `json:"result_mode"`
+	DestructiveApplySupported bool                             `json:"destructive_apply_supported"`
+	ReadyForDestructiveApply  bool                             `json:"ready_for_destructive_apply"`
+	RuntimeRowsDeleted        bool                             `json:"runtime_rows_deleted"`
+	ArchiveVerified           bool                             `json:"archive_verified"`
+	ManifestVerified          bool                             `json:"manifest_verified"`
+	SnapshotPayloadVerified   bool                             `json:"snapshot_payload_verified"`
+	RuntimeScopeVerified      bool                             `json:"runtime_scope_verified"`
+	BlockingOutboxCount       int                              `json:"blocking_outbox_count"`
+	PendingEdgeToCloudOutbox  bool                             `json:"pending_edge_to_cloud_outbox"`
+	OpenOperationalBoundaries ArchiveOpenOperationalBoundaries `json:"open_operational_boundaries"`
+	ProtectedData             ArchivePlanProtectedFlags        `json:"protected_data"`
+	BlockReasons              []string                         `json:"block_reasons"`
+	HumanSummary              string                           `json:"human_summary"`
+	EligibleCounts            ArchiveExportCounts              `json:"eligible_counts"`
+	ArchiveCounts             ArchiveExportCounts              `json:"archive_counts"`
+	Verification              ArchiveVerificationSummary       `json:"verification"`
 }
