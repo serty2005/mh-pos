@@ -924,6 +924,53 @@
         }
       }
     },
+    "/storage/archive/export": {
+      "post": {
+        "operationId": "exportStorageArchive",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cutoff_business_date_local": {"type": "string"},
+                  "reason": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {"description": "Archive export manifest"}
+        }
+      }
+    },
+    "/storage/archive/apply-plan": {
+      "post": {
+        "operationId": "buildStorageArchiveApplyPlan",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "archive_id": {"type": "string"},
+                  "cutoff_business_date_local": {"type": "string"},
+                  "archive_path": {"type": "string"},
+                  "manifest_path": {"type": "string"},
+                  "mode": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {"description": "Archive apply plan result"}
+        }
+      }
+    },
     "/storage/archive/verify": {
       "post": {
         "operationId": "verifyStorageArchive",

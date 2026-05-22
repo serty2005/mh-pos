@@ -5,7 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
+	platformsqlite "pos-backend/internal/platform/sqlite"
+	txctx "pos-backend/internal/platform/tx"
 	"pos-backend/internal/pos/domain/storage"
 )
 
@@ -161,20 +164,23 @@ func (r *Repository) BuildStorageArchiveExportScope(ctx context.Context, cutoffB
 	if err != nil {
 		return storage.ArchiveExportScope{}, err
 	}
-	blockReasons := []string{
-		"destructive_apply_not_enabled",
-		"financial_ledger_protected",
-		"immutable_snapshots_protected",
+	activeOrders, openShifts, openCashSessions, err := r.openOperationalBoundariesForArchiveScope(ctx, cutoffBusinessDateLocal)
+	if err != nil {
+		return storage.ArchiveExportScope{}, err
 	}
+	blockReasons := []string{}
 	if blocking > 0 {
 		blockReasons = append(blockReasons, "pending_edge_to_cloud_outbox")
+	}
+	if activeOrders > 0 || openShifts > 0 || openCashSessions > 0 {
+		blockReasons = append(blockReasons, "open_operational_boundary")
 	}
 
 	scope := storage.ArchiveExportScope{
 		BusinessDateRange: dateRange,
 		Source:            source,
 		BlockReasons:      blockReasons,
-		Blocked:           true,
+		Blocked:           len(blockReasons) > 0,
 	}
 	tables := []archiveTableQuery{
 		{name: "orders", query: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT o.* FROM orders o JOIN eligible_orders eo ON eo.id = o.id ORDER BY o.closed_at, o.id`},
@@ -215,21 +221,93 @@ func (r *Repository) BuildStorageArchiveApplyRuntimeScope(ctx context.Context, c
 	if err != nil {
 		return storage.ArchiveApplyRuntimeScope{}, err
 	}
-	tableCounts, err := r.storageTableCounts(ctx)
+	activeOrders, openShifts, openCashSessions, err := r.openOperationalBoundariesForArchiveScope(ctx, cutoffBusinessDateLocal)
 	if err != nil {
 		return storage.ArchiveApplyRuntimeScope{}, err
 	}
-	blocking, err := r.blockingOutboxMessages(ctx)
+	blocking, err := r.blockingOutboxMessagesForArchiveScope(ctx, cutoffBusinessDateLocal)
 	if err != nil {
 		return storage.ArchiveApplyRuntimeScope{}, err
 	}
 	return storage.ArchiveApplyRuntimeScope{
 		Counts:                 counts,
-		ActiveOrders:           tableCounts.OpenOrders + tableCounts.LockedOrders,
-		OpenShifts:             tableCounts.OpenShifts,
-		OpenCashSessions:       tableCounts.OpenCashSessions,
+		ActiveOrders:           activeOrders,
+		OpenShifts:             openShifts,
+		OpenCashSessions:       openCashSessions,
 		BlockingOutboxMessages: blocking,
 	}, nil
+}
+
+// ApplyStorageArchiveDestructive удаляет verified archive scope в одной SQLite transaction boundary,
+// а затем запускает VACUUM через отдельное соединение, чтобы не удерживать основной pool.
+func (r *Repository) ApplyStorageArchiveDestructive(ctx context.Context, cutoffBusinessDateLocal string) (storage.ArchiveExportCounts, error) {
+	conn, err := r.db.Conn(ctx)
+	if err != nil {
+		return storage.ArchiveExportCounts{}, err
+	}
+	if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
+		_ = conn.Close()
+		return storage.ArchiveExportCounts{}, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_, _ = conn.ExecContext(context.Background(), `ROLLBACK`)
+			_ = conn.Close()
+		}
+	}()
+
+	txCtx := txctx.ContextWithTx(ctx, conn)
+	if err := r.ensureStorageArchiveDestructiveSafety(txCtx, cutoffBusinessDateLocal); err != nil {
+		return storage.ArchiveExportCounts{}, err
+	}
+	deleted, err := r.archiveEligibleCounts(txCtx, cutoffBusinessDateLocal)
+	if err != nil {
+		return storage.ArchiveExportCounts{}, err
+	}
+	if err := r.deleteStorageArchiveScope(txCtx, cutoffBusinessDateLocal); err != nil {
+		return storage.ArchiveExportCounts{}, err
+	}
+	remaining, err := r.archiveEligibleCounts(txCtx, cutoffBusinessDateLocal)
+	if err != nil {
+		return storage.ArchiveExportCounts{}, err
+	}
+	if archiveCountsTotalRows(remaining) != 0 {
+		return storage.ArchiveExportCounts{}, fmt.Errorf("storage archive destructive apply left %d eligible rows", archiveCountsTotalRows(remaining))
+	}
+	if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
+		return storage.ArchiveExportCounts{}, err
+	}
+	committed = true
+	if err := conn.Close(); err != nil {
+		return storage.ArchiveExportCounts{}, err
+	}
+	if err := r.vacuumAfterStorageApply(ctx); err != nil {
+		return storage.ArchiveExportCounts{}, err
+	}
+	return deleted, nil
+}
+
+func (r *Repository) ensureStorageArchiveDestructiveSafety(ctx context.Context, cutoffBusinessDateLocal string) error {
+	blocking, err := r.blockingOutboxMessagesForArchiveScope(ctx, cutoffBusinessDateLocal)
+	if err != nil {
+		return err
+	}
+	activeOrders, openShifts, openCashSessions, err := r.openOperationalBoundariesForArchiveScope(ctx, cutoffBusinessDateLocal)
+	if err != nil {
+		return err
+	}
+	reasons := []string{}
+	if blocking > 0 {
+		reasons = append(reasons, "pending_edge_to_cloud_outbox")
+	}
+	if activeOrders > 0 || openShifts > 0 || openCashSessions > 0 {
+		reasons = append(reasons, "open_operational_boundary")
+	}
+	if len(reasons) > 0 {
+		return fmt.Errorf("storage archive destructive apply blocked: %s", strings.Join(reasons, ","))
+	}
+	return nil
 }
 
 func (r *Repository) sqliteDatabaseStats(ctx context.Context) (storage.SQLiteDatabaseStats, error) {
@@ -460,6 +538,18 @@ const eligibleOrdersSQL = `SELECT o.id FROM orders o JOIN checks c ON c.order_id
 
 const eligibleOrdersForArchiveSQL = eligibleOrdersSQL
 
+const financialOperationsNoDeleteTriggerSQL = `CREATE TRIGGER IF NOT EXISTS financial_operations_no_delete
+BEFORE DELETE ON financial_operations
+BEGIN
+  SELECT RAISE(ABORT, 'financial_operations are append-only');
+END`
+
+const financialOperationItemsNoDeleteTriggerSQL = `CREATE TRIGGER IF NOT EXISTS financial_operation_items_no_delete
+BEFORE DELETE ON financial_operation_items
+BEGIN
+  SELECT RAISE(ABORT, 'financial_operation_items are append-only');
+END`
+
 const eligibleArchiveRefsSQL = `
 eligible_orders AS (` + eligibleOrdersForArchiveSQL + `),
 eligible_refs AS (
@@ -596,6 +686,202 @@ FROM pos_sync_outbox o
 JOIN eligible_refs r ON r.aggregate_type = o.aggregate_type AND r.aggregate_id = o.aggregate_id
 WHERE o.sync_direction = 'edge_to_cloud' AND o.status <> 'sent'`, cutoffBusinessDateLocal).Scan(&n)
 	return n, normalizeErr(err)
+}
+
+func (r *Repository) openOperationalBoundariesForArchiveScope(ctx context.Context, cutoffBusinessDateLocal string) (int, int, int, error) {
+	var activeOrders, openShifts, openCashSessions int
+	err := r.queryer(ctx).QueryRowContext(ctx, `
+SELECT
+  (SELECT COUNT(1)
+   FROM orders o
+   JOIN shifts s ON s.id = o.shift_id
+   WHERE o.status IN ('open','locked') AND s.business_date_local < ?),
+  (SELECT COUNT(1)
+   FROM shifts
+   WHERE status = 'open' AND business_date_local < ?),
+  (SELECT COUNT(1)
+   FROM cash_sessions
+   WHERE status = 'open' AND business_date_local < ?)`,
+		cutoffBusinessDateLocal, cutoffBusinessDateLocal, cutoffBusinessDateLocal).
+		Scan(&activeOrders, &openShifts, &openCashSessions)
+	return activeOrders, openShifts, openCashSessions, normalizeErr(err)
+}
+
+func (r *Repository) deleteStorageArchiveScope(ctx context.Context, cutoffBusinessDateLocal string) error {
+	scopeArgs := []any{cutoffBusinessDateLocal}
+
+	// Snapshot eligible order ids early while all tables present. This avoids
+	// join dependencies in later DELETE statements after child tables (checks, prechecks)
+	// have been removed. All subsequent parent deletes use the stable id list.
+	if _, err := r.execer(ctx).ExecContext(ctx, `CREATE TEMP TABLE IF NOT EXISTS _tmp_eligible_order_ids (id TEXT PRIMARY KEY)`); err != nil {
+		return normalizeErr(err)
+	}
+	if _, err := r.execer(ctx).ExecContext(ctx, `DELETE FROM _tmp_eligible_order_ids`); err != nil {
+		return normalizeErr(err)
+	}
+	if _, err := r.execer(ctx).ExecContext(ctx, `
+INSERT INTO _tmp_eligible_order_ids (id)
+WITH eligible_orders AS (`+eligibleOrdersForArchiveSQL+`)
+SELECT id FROM eligible_orders
+`, cutoffBusinessDateLocal); err != nil {
+		return normalizeErr(err)
+	}
+
+	statements := []struct {
+		sql  string
+		args []any
+	}{
+		{sql: `WITH ` + eligibleArchiveRefsSQL + `
+DELETE FROM local_event_log
+WHERE EXISTS (
+  SELECT 1
+  FROM eligible_refs r
+  WHERE r.aggregate_type = local_event_log.aggregate_type AND r.aggregate_id = local_event_log.aggregate_id
+)`, args: scopeArgs},
+		{sql: `WITH ` + eligibleArchiveRefsSQL + `
+DELETE FROM pos_sync_outbox
+WHERE EXISTS (
+  SELECT 1
+  FROM eligible_refs r
+  WHERE r.aggregate_type = pos_sync_outbox.aggregate_type AND r.aggregate_id = pos_sync_outbox.aggregate_id
+)`, args: scopeArgs},
+		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
+DELETE FROM manager_override_audit
+WHERE order_id IN (SELECT id FROM eligible_orders)
+   OR precheck_id IN (SELECT p.id FROM prechecks p JOIN eligible_orders eo ON eo.id = p.order_id)`, args: scopeArgs},
+		{sql: `DROP TRIGGER IF EXISTS financial_operation_items_no_delete`},
+		{sql: `DROP TRIGGER IF EXISTS financial_operations_no_delete`},
+		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
+DELETE FROM financial_operation_items
+WHERE operation_id IN (
+  SELECT fo.id
+  FROM financial_operations fo
+  JOIN checks c ON c.id = fo.check_id
+  JOIN eligible_orders eo ON eo.id = c.order_id
+)`, args: scopeArgs},
+		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
+DELETE FROM financial_operations
+WHERE check_id IN (
+  SELECT c.id
+  FROM checks c
+  JOIN eligible_orders eo ON eo.id = c.order_id
+)`, args: scopeArgs},
+		{sql: financialOperationItemsNoDeleteTriggerSQL},
+		{sql: financialOperationsNoDeleteTriggerSQL},
+		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
+DELETE FROM payment_attempts
+WHERE payment_id IN (
+  SELECT pay.id
+  FROM payments pay
+  JOIN prechecks p ON p.id = pay.precheck_id
+  JOIN eligible_orders eo ON eo.id = p.order_id
+)`, args: scopeArgs},
+		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
+DELETE FROM payments
+WHERE precheck_id IN (
+  SELECT p.id
+  FROM prechecks p
+  JOIN eligible_orders eo ON eo.id = p.order_id
+)`, args: scopeArgs},
+		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
+DELETE FROM precheck_line_modifiers
+WHERE precheck_id IN (
+  SELECT p.id
+  FROM prechecks p
+  JOIN eligible_orders eo ON eo.id = p.order_id
+)`, args: scopeArgs},
+		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
+DELETE FROM precheck_lines
+WHERE precheck_id IN (
+  SELECT p.id
+  FROM prechecks p
+  JOIN eligible_orders eo ON eo.id = p.order_id
+)`, args: scopeArgs},
+		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
+DELETE FROM precheck_discounts
+WHERE precheck_id IN (
+  SELECT p.id
+  FROM prechecks p
+  JOIN eligible_orders eo ON eo.id = p.order_id
+)`, args: scopeArgs},
+		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
+DELETE FROM precheck_surcharges
+WHERE precheck_id IN (
+  SELECT p.id
+  FROM prechecks p
+  JOIN eligible_orders eo ON eo.id = p.order_id
+)`, args: scopeArgs},
+		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
+DELETE FROM precheck_taxes
+WHERE precheck_id IN (
+  SELECT p.id
+  FROM prechecks p
+  JOIN eligible_orders eo ON eo.id = p.order_id
+)`, args: scopeArgs},
+		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
+DELETE FROM order_level_discounts
+WHERE order_id IN (SELECT id FROM eligible_orders)`, args: scopeArgs},
+		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
+DELETE FROM order_line_modifiers
+WHERE order_line_id IN (
+  SELECT ol.id
+  FROM order_lines ol
+  JOIN eligible_orders eo ON eo.id = ol.order_id
+)`, args: scopeArgs},
+		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
+DELETE FROM order_line_discounts
+WHERE order_id IN (SELECT id FROM eligible_orders)`, args: scopeArgs},
+		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
+DELETE FROM order_surcharges
+WHERE order_id IN (SELECT id FROM eligible_orders)`, args: scopeArgs},
+		{sql: `DELETE FROM checks WHERE order_id IN (SELECT id FROM _tmp_eligible_order_ids)`},
+		{sql: `DELETE FROM prechecks WHERE order_id IN (SELECT id FROM _tmp_eligible_order_ids)`},
+		{sql: `DELETE FROM order_lines WHERE order_id IN (SELECT id FROM _tmp_eligible_order_ids)`},
+		{sql: `DELETE FROM orders WHERE id IN (SELECT id FROM _tmp_eligible_order_ids)`},
+	}
+	for _, stmt := range statements {
+		if _, err := r.execer(ctx).ExecContext(ctx, stmt.sql, stmt.args...); err != nil {
+			return normalizeErr(err)
+		}
+	}
+	return nil
+}
+
+func (r *Repository) vacuumAfterStorageApply(ctx context.Context) error {
+	dbPath, err := r.mainDatabasePath(ctx)
+	if err != nil {
+		return err
+	}
+	if dbPath == "" {
+		_, err := r.db.ExecContext(ctx, `VACUUM`)
+		return normalizeErr(err)
+	}
+	vacuumDB, err := platformsqlite.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer vacuumDB.Close()
+	_, err = vacuumDB.ExecContext(ctx, `VACUUM`)
+	return normalizeErr(err)
+}
+
+func (r *Repository) mainDatabasePath(ctx context.Context) (string, error) {
+	rows, err := r.db.QueryContext(ctx, `PRAGMA database_list`)
+	if err != nil {
+		return "", normalizeErr(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var seq int
+		var name, file string
+		if err := rows.Scan(&seq, &name, &file); err != nil {
+			return "", normalizeErr(err)
+		}
+		if name == "main" {
+			return file, nil
+		}
+	}
+	return "", normalizeErr(rows.Err())
 }
 
 func (r *Repository) storageArchiveSourceMetadata(ctx context.Context) (storage.ArchiveSourceMetadata, error) {

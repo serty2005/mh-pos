@@ -22,7 +22,7 @@ import (
 	"pos-backend/internal/pos/ports"
 )
 
-const retentionDryRunOnlyReason = "physical archive/delete is not implemented; financial ledger, immutable snapshots and audit/sync rows remain protected"
+const retentionApplySupportedReason = "destructive apply requires a verified JSONL archive, scoped sent outbox and no open operational boundaries for the cutoff period"
 const archiveExportVersion = "pos_storage_archive_export_v1"
 const archivePlanModeManifestOnly = "manifest_only"
 const archiveApplyPlanModeOnly = "plan_only"
@@ -31,7 +31,7 @@ const archiveReadPlanMaxLimit = 100
 
 var errArchiveJSONLMalformed = errors.New("archive jsonl malformed")
 
-// Service предоставляет read-only lifecycle surface для локальной POS Edge БД.
+// Service предоставляет lifecycle surface для локальной POS Edge БД.
 type Service struct {
 	repo       ports.StorageLifecycleRepository
 	auth       ports.Repository
@@ -65,7 +65,7 @@ type ArchiveExportCommand struct {
 	Reason                  string `json:"reason"`
 }
 
-// ArchiveApplyPlanCommand проверяет готовность archive artifact к будущему apply без удаления строк.
+// ArchiveApplyPlanCommand применяет verified archive artifact к active SQLite, если policy gate открыт.
 type ArchiveApplyPlanCommand struct {
 	shared.CommandMeta
 	ArchiveID               string `json:"archive_id"`
@@ -234,7 +234,7 @@ func (s *Service) ExportArchive(ctx context.Context, cmd ArchiveExportCommand) (
 		Version:                     archiveExportVersion,
 		Mode:                        "export_only",
 		ResultMode:                  "export_only",
-		DestructiveApplySupported:   false,
+		DestructiveApplySupported:   true,
 		RuntimeRowsDeleted:          false,
 		GeneratedAt:                 generatedAt,
 		ArchiveID:                   archiveID,
@@ -247,7 +247,7 @@ func (s *Service) ExportArchive(ctx context.Context, cmd ArchiveExportCommand) (
 		BusinessDateRange:           scope.BusinessDateRange,
 		Tables:                      archiveTableManifest(tableCounts),
 		Source:                      scope.Source,
-		Blocked:                     true,
+		Blocked:                     scope.Blocked,
 		BlockReasons:                scope.BlockReasons,
 		FinancialLedgerProtected:    true,
 		ImmutableSnapshotsProtected: true,
@@ -259,23 +259,40 @@ func (s *Service) ExportArchive(ctx context.Context, cmd ArchiveExportCommand) (
 	return manifest, nil
 }
 
-// BuildArchiveApplyPlan проверяет archive artifact и всегда блокирует destructive apply в текущем runtime.
+// BuildArchiveApplyPlan проверяет archive artifact и выполняет destructive apply, если readiness gate открыт.
 func (s *Service) BuildArchiveApplyPlan(ctx context.Context, cmd ArchiveApplyPlanCommand) (domainstorage.ArchiveApplyPlan, error) {
 	if _, err := shared.EnsureOperatorSession(ctx, s.auth, cmd.CommandMeta, string(shared.PermissionSyncView)); err != nil {
 		return domainstorage.ArchiveApplyPlan{}, err
 	}
+	result, cutoff, ready, err := s.evaluateArchiveApplyPlan(ctx, cmd)
+	if err != nil {
+		return domainstorage.ArchiveApplyPlan{}, err
+	}
+	if !ready {
+		return result, nil
+	}
+	deleted, err := s.repo.ApplyStorageArchiveDestructive(ctx, cutoff)
+	if err != nil {
+		return domainstorage.ArchiveApplyPlan{}, fmt.Errorf("storage archive destructive apply: %w", err)
+	}
+	result.GeneratedAt = s.clock.Now()
+	result.ResultMode = "destructive_apply"
+	result.RuntimeRowsDeleted = true
+	result.Blocked = false
+	result.BlockReasons = nil
+	result.EligibleCounts = deleted
+	return result, nil
+}
+
+func (s *Service) evaluateArchiveApplyPlan(ctx context.Context, cmd ArchiveApplyPlanCommand) (domainstorage.ArchiveApplyPlan, string, bool, error) {
 	result := domainstorage.ArchiveApplyPlan{
 		GeneratedAt:               s.clock.Now(),
 		CutoffBusinessDateLocal:   strings.TrimSpace(cmd.CutoffBusinessDateLocal),
 		Mode:                      archiveApplyPlanModeOnly,
 		ResultMode:                "apply_blocked",
-		DestructiveApplySupported: false,
+		DestructiveApplySupported: true,
 		RuntimeRowsDeleted:        false,
 		Blocked:                   true,
-		BlockReasons: []string{
-			"destructive_apply_not_enabled",
-			"runtime_restore_apply_path_missing",
-		},
 		Protected: domainstorage.ArchivePlanProtectedFlags{
 			FinancialLedgerProtected:    true,
 			ImmutableSnapshotsProtected: true,
@@ -289,13 +306,13 @@ func (s *Service) BuildArchiveApplyPlan(ctx context.Context, cmd ArchiveApplyPla
 	}
 	if mode != archiveApplyPlanModeOnly {
 		result.BlockReasons = appendUnique(result.BlockReasons, "invalid_apply_plan_mode")
-		return result, nil
+		return result, "", false, nil
 	}
 	cutoff, cutoffOK := s.planCutoff(result.CutoffBusinessDateLocal, &result)
 	if cutoffOK {
 		runtimeScope, err := s.repo.BuildStorageArchiveApplyRuntimeScope(ctx, cutoff)
 		if err != nil {
-			return domainstorage.ArchiveApplyPlan{}, err
+			return domainstorage.ArchiveApplyPlan{}, "", false, err
 		}
 		result.EligibleCounts = runtimeScope.Counts
 		result.ActiveOrders = runtimeScope.ActiveOrders
@@ -327,13 +344,17 @@ func (s *Service) BuildArchiveApplyPlan(ctx context.Context, cmd ArchiveApplyPla
 	if cutoffOK && verification.ArchiveExists && !archiveCountsEqual(result.EligibleCounts, verification.Counts) {
 		result.BlockReasons = appendUnique(result.BlockReasons, "archive_counts_mismatch")
 	}
-	return result, nil
+	result.Blocked = len(result.BlockReasons) > 0
+	ready := cutoffOK && !result.Blocked && archiveApplyVerificationReady(verification)
+	return result, cutoff, ready, nil
 }
 
-// BuildArchiveApplyReadiness возвращает отдельный read-only policy verdict для будущего destructive apply.
+// BuildArchiveApplyReadiness возвращает отдельный read-only policy verdict для destructive apply.
 func (s *Service) BuildArchiveApplyReadiness(ctx context.Context, cmd ArchiveApplyReadinessCommand) (domainstorage.ArchiveApplyReadiness, error) {
-	plan, err := s.BuildArchiveApplyPlan(ctx, ArchiveApplyPlanCommand{
-		CommandMeta:             cmd.CommandMeta,
+	if _, err := shared.EnsureOperatorSession(ctx, s.auth, cmd.CommandMeta, string(shared.PermissionSyncView)); err != nil {
+		return domainstorage.ArchiveApplyReadiness{}, err
+	}
+	plan, _, _, err := s.evaluateArchiveApplyPlan(ctx, ArchiveApplyPlanCommand{
 		ArchiveID:               cmd.ArchiveID,
 		CutoffBusinessDateLocal: cmd.CutoffBusinessDateLocal,
 		ArchivePath:             cmd.ArchivePath,
@@ -496,12 +517,25 @@ func (s *Service) LookupArchivePreview(ctx context.Context, cmd ArchiveLookupCom
 
 func retentionCapability() domainstorage.RetentionCapability {
 	return domainstorage.RetentionCapability{
-		Mode:                        "dry_run_only",
-		DestructiveApplySupported:   false,
+		Mode:                        "archive_apply_supported",
+		DestructiveApplySupported:   true,
 		FinancialLedgerProtected:    true,
 		ImmutableSnapshotsProtected: true,
-		Reason:                      retentionDryRunOnlyReason,
+		Reason:                      retentionApplySupportedReason,
 	}
+}
+
+func archiveApplyVerificationReady(verification domainstorage.ArchiveVerificationSummary) bool {
+	return verification.ArchiveExists &&
+		verification.ManifestExists &&
+		verification.ManifestVersionMatched &&
+		verification.SHA256Matched &&
+		verification.CountsMatchedManifest &&
+		verification.IdentityFieldsPresent &&
+		verification.BusinessDateConsistent &&
+		verification.RuntimeRowsNotDeleted &&
+		verification.PayloadPolicyPreserved &&
+		verification.SnapshotPayloadPresent
 }
 
 func archiveApplyReadinessFromPlan(plan domainstorage.ArchiveApplyPlan) domainstorage.ArchiveApplyReadiness {
@@ -514,32 +548,41 @@ func archiveApplyReadinessFromPlan(plan domainstorage.ArchiveApplyPlan) domainst
 	openBoundaries.Open = openBoundaries.ActiveOrders > 0 || openBoundaries.OpenShifts > 0 || openBoundaries.OpenCashSessions > 0
 	runtimeScopeVerified := !containsString(plan.BlockReasons, "invalid_cutoff") &&
 		!containsString(plan.BlockReasons, "future_cutoff") &&
-		!containsString(plan.BlockReasons, "archive_counts_mismatch")
+		!containsString(plan.BlockReasons, "archive_counts_mismatch") &&
+		!containsString(plan.BlockReasons, "pending_edge_to_cloud_outbox") &&
+		!containsString(plan.BlockReasons, "open_operational_boundary")
+	archiveVerified := archiveApplyVerificationReady(verification)
+	manifestVerified := verification.ManifestExists && verification.ManifestVersionMatched
+	snapshotVerified := verification.SnapshotPayloadPresent
+	ready := plan.DestructiveApplySupported &&
+		archiveVerified &&
+		manifestVerified &&
+		snapshotVerified &&
+		runtimeScopeVerified &&
+		len(plan.BlockReasons) == 0
+	humanSummary := "destructive archive apply is blocked until archive integrity and runtime safety checks pass"
+	if ready {
+		humanSummary = "archive is verified and runtime scope is ready for destructive apply"
+	}
 	readiness := domainstorage.ArchiveApplyReadiness{
 		GeneratedAt:               plan.GeneratedAt,
 		CutoffBusinessDateLocal:   plan.CutoffBusinessDateLocal,
 		ArchiveID:                 plan.ArchiveID,
 		ArchiveSHA256:             plan.ArchiveSHA256,
 		ResultMode:                "apply_readiness_only",
-		DestructiveApplySupported: false,
-		ReadyForDestructiveApply:  false,
+		DestructiveApplySupported: plan.DestructiveApplySupported,
+		ReadyForDestructiveApply:  ready,
 		RuntimeRowsDeleted:        false,
-		ArchiveVerified: verification.ArchiveExists &&
-			verification.SHA256Matched &&
-			verification.CountsMatchedManifest &&
-			verification.IdentityFieldsPresent &&
-			verification.BusinessDateConsistent &&
-			verification.RuntimeRowsNotDeleted &&
-			verification.PayloadPolicyPreserved,
-		ManifestVerified:        verification.ManifestExists && verification.ManifestVersionMatched,
-		SnapshotPayloadVerified: verification.SnapshotPayloadPresent,
-		RuntimeScopeVerified:    runtimeScopeVerified,
-		BlockingOutboxCount:     plan.BlockingOutboxMessages,
-		PendingEdgeToCloudOutbox: plan.BlockingOutboxMessages > 0,
+		ArchiveVerified:           archiveVerified,
+		ManifestVerified:          manifestVerified,
+		SnapshotPayloadVerified:   snapshotVerified,
+		RuntimeScopeVerified:      runtimeScopeVerified,
+		BlockingOutboxCount:       plan.BlockingOutboxMessages,
+		PendingEdgeToCloudOutbox:  plan.BlockingOutboxMessages > 0,
 		OpenOperationalBoundaries: openBoundaries,
 		ProtectedData:             plan.Protected,
 		BlockReasons:              plan.BlockReasons,
-		HumanSummary:              "destructive archive apply is disabled; readiness is informational and runtime rows remain protected",
+		HumanSummary:              humanSummary,
 		EligibleCounts:            plan.EligibleCounts,
 		ArchiveCounts:             plan.ArchiveCounts,
 		Verification:              verification,

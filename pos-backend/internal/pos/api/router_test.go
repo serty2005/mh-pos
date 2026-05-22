@@ -982,7 +982,7 @@ func TestStorageStatusAPIRequiresSyncViewPermission(t *testing.T) {
 		t.Fatalf("expected 200 for manager storage status access, got %d: %s", rr.Code, rr.Body.String())
 	}
 	status := decodeAPIResponse[domain.StorageLifecycleStatus](t, rr)
-	if status.SQLite.PageCount <= 0 || status.Retention.Mode != "dry_run_only" || status.Retention.DestructiveApplySupported {
+	if status.SQLite.PageCount <= 0 || status.Retention.Mode != "archive_apply_supported" || !status.Retention.DestructiveApplySupported {
 		t.Fatalf("unexpected storage status: %+v", status)
 	}
 }
@@ -1077,7 +1077,7 @@ func TestStorageArchiveExportAPIRequiresSyncViewAndCreatesArchive(t *testing.T) 
 		t.Fatalf("expected 201 for manager archive export, got %d: %s", rr.Code, rr.Body.String())
 	}
 	result := decodeAPIResponse[domain.StorageArchiveExportResult](t, rr)
-	if result.Mode != "export_only" || result.ResultMode != "export_only" || result.DestructiveApplySupported || result.RuntimeRowsDeleted || !result.ExportCreated || result.Counts.ClosedOrders != 1 {
+	if result.Mode != "export_only" || result.ResultMode != "export_only" || !result.DestructiveApplySupported || result.RuntimeRowsDeleted || !result.ExportCreated || result.Counts.ClosedOrders != 1 {
 		t.Fatalf("unexpected archive export response: %+v", result)
 	}
 	if _, err := os.Stat(result.ArchivePath); err != nil {
@@ -1156,12 +1156,10 @@ func TestStorageArchiveApplyPlanAPIRequiresSyncViewAndReturnsBlockedPlan(t *test
 		t.Fatalf("expected 200 for manager archive apply-plan, got %d: %s", rr.Code, rr.Body.String())
 	}
 	result := decodeAPIResponse[domain.StorageArchiveApplyPlan](t, rr)
-	if !result.Blocked || result.ResultMode != "apply_blocked" || result.DestructiveApplySupported || result.RuntimeRowsDeleted {
+	if !result.Blocked || result.ResultMode != "apply_blocked" || !result.DestructiveApplySupported || result.RuntimeRowsDeleted {
 		t.Fatalf("unexpected archive apply-plan response: %+v", result)
 	}
-	if !apiContainsString(result.BlockReasons, "destructive_apply_not_enabled") ||
-		!apiContainsString(result.BlockReasons, "runtime_restore_apply_path_missing") ||
-		!apiContainsString(result.BlockReasons, "pending_edge_to_cloud_outbox") {
+	if !apiContainsString(result.BlockReasons, "pending_edge_to_cloud_outbox") {
 		t.Fatalf("expected blocked-by-default apply-plan reasons, got %+v", result.BlockReasons)
 	}
 }
@@ -1221,16 +1219,15 @@ func TestStorageArchiveApplyReadinessAPIRequiresSyncViewAndReturnsReadOnlyGate(t
 		t.Fatalf("expected 200 for manager archive apply-readiness, got %d: %s", rr.Code, rr.Body.String())
 	}
 	result := decodeAPIResponse[domain.StorageArchiveApplyReadiness](t, rr)
-	if result.ResultMode != "apply_readiness_only" || result.DestructiveApplySupported || result.ReadyForDestructiveApply || result.RuntimeRowsDeleted {
+	if result.ResultMode != "apply_readiness_only" || !result.DestructiveApplySupported || result.ReadyForDestructiveApply || result.RuntimeRowsDeleted {
 		t.Fatalf("unexpected archive apply-readiness response: %+v", result)
 	}
 	if !result.ArchiveVerified || !result.ManifestVerified || !result.SnapshotPayloadVerified ||
-		!result.PendingEdgeToCloudOutbox || !result.OpenOperationalBoundaries.Open {
+		!result.PendingEdgeToCloudOutbox || result.OpenOperationalBoundaries.Open {
 		t.Fatalf("expected verified archive and runtime blockers, got %+v", result)
 	}
-	if !apiContainsString(result.BlockReasons, "destructive_apply_not_enabled") ||
-		!apiContainsString(result.BlockReasons, "runtime_restore_apply_path_missing") {
-		t.Fatalf("expected blocked-by-default readiness reasons, got %+v", result.BlockReasons)
+	if !apiContainsString(result.BlockReasons, "pending_edge_to_cloud_outbox") {
+		t.Fatalf("expected pending outbox readiness reason, got %+v", result.BlockReasons)
 	}
 }
 
@@ -1249,6 +1246,7 @@ func TestStorageArchiveReadPlanAndLookupAPIRequireSyncView(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f.makeOrderOlderThanArchiveCutoff(t, order.ID)
 	cashier := f.employee
 	cashierSession := f.session
 	f.useManagerOperator(t)

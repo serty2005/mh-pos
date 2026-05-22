@@ -82,7 +82,15 @@ def health_check(raw_client):
     return call(raw_client, "health")
 
 
-def create_cloud_seed(client, restaurant_name="", cashier_pin="1111", manager_pin="2222", node_device_id="", suffix=""):
+def create_cloud_seed(
+    client,
+    restaurant_name="",
+    cashier_pin="1111",
+    manager_pin="2222",
+    node_device_id="",
+    suffix="",
+    business_day_boundary_local_time="04:00",
+):
     suffix = suffix or command_suffix()
     restaurant = call(
         client,
@@ -92,7 +100,7 @@ def create_cloud_seed(client, restaurant_name="", cashier_pin="1111", manager_pi
             "timezone": "Europe/Moscow",
             "currency": "RUB",
             "business_day_mode": "standard",
-            "business_day_boundary_local_time": "04:00",
+            "business_day_boundary_local_time": business_day_boundary_local_time,
         },
     )
     restaurant_id = restaurant["id"]
@@ -182,6 +190,7 @@ def create_cloud_seed(client, restaurant_name="", cashier_pin="1111", manager_pi
         "modifier_binding_id": modifier_binding["id"],
         "publication_id": publication["id"],
         "suffix": suffix,
+        "business_day_boundary_local_time": business_day_boundary_local_time,
     }
 
 

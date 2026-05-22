@@ -312,3 +312,11 @@ go test ./...
 Статус: реализовано сейчас.
 
 POS backend поддерживает применение скидок и надбавок по `pricing_policy_id` через существующие order pricing endpoints. Runtime копирует amount/scope/kind/application order из активной синхронизированной policy и сохраняет `pricing_policy_id` для audit/precheck snapshot.
+
+## Storage Retention Lifecycle destructive apply
+
+Статус: реализовано сейчас.
+
+`POST /api/v1/storage/archive/apply-readiness` проверяет verified JSONL archive, scoped Edge -> Cloud outbox и open operational boundaries для cutoff. При успешном gate возвращает `ready_for_destructive_apply = true`.
+
+`POST /api/v1/storage/archive/apply-plan` при verified archive и runtime safety выполняет destructive apply по exclusive cutoff `checks.business_date_local < cutoff_business_date_local`, удаляет scoped closed orders/checks/prechecks/payments/financial operation rows и связанные local event/outbox references, затем запускает SQLite `VACUUM`. При успехе ответ содержит `result_mode = destructive_apply` и `runtime_rows_deleted = true`; при blockers возвращается `apply_blocked`.

@@ -58,7 +58,7 @@
 - Reprint events use immutable snapshots.
 - Cancellation/refund backend flow writes local event/outbox records; `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud operational events.
 - `PaymentRefunded` and `CheckRefunded` remain accepted legacy inbound event types for older payloads; new POS Edge refund runtime emits `RefundRecorded`.
-- Просмотр закрытых заказов относится к POS local read model: bounded pagination/filtering реализовано сейчас. Manifest-only export-plan и export-only archive readiness для старых closed orders относятся к operations/data lifecycle и не меняют cashier runtime ownership; destructive retention/apply/delete/compaction остается будущей темой.
+- Просмотр закрытых заказов относится к POS local read model: bounded pagination/filtering реализовано сейчас. Manifest-only export-plan, export-only archive readiness и destructive apply/VACUUM для старых closed orders относятся к operations/data lifecycle и не меняют cashier runtime ownership.
 - Просмотр financial operations в POS activity detail относится к bounded POS local read model. Cloud detailed projection существует как service/repository read model для current financial operation events, но public Cloud reporting API/UI не реализован сейчас.
 
 Реализована только основа:
