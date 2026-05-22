@@ -37,6 +37,25 @@
 
 ## 2. Визуальная система
 
+### 2.0 UI/UX Standards Baseline
+
+Этот redesign plan должен использовать общий документ стандартов UI/UX как обязательный baseline:
+
+```text
+docs/ui/UI-UX-STANDARDS.md
+```
+
+Ключевое разделение проекта:
+
+- **POS Front** — разуплотненный, крупный, широкий, touch-first интерфейс для кассиров/официантов, преимущественно на Android-планшетах и POS touch-устройствах;
+- **BackOffice** — более плотный интерфейс для работы с данными, таблицами, формами, фильтрами, справочниками и настройками.
+
+Android в проекте рассматривается как целевой класс устройств для POS Front, а не как отдельная Android-native дизайн-система. Основная UI-система единая, но имеет разные режимы плотности и разные правила layout для Front и BackOffice.
+
+Главное правило POS Front: основной shell всегда должен влезать в размер экрана и не должен иметь document-level scrollbars. Скролл допускается только внутри внутренних областей.
+
+WCAG не является основным дизайн-стандартом проекта. Его можно использовать только как справочный checklist для отдельных accessibility-проверок: контраст, фокус, labels, понятные ошибки и modal focus management.
+
 ### 2.1 CSS Design Tokens
 
 ```css
@@ -224,7 +243,7 @@ docs/ui/UI-ICON-SYSTEM.md
 - ощущение контроля у пользователя, без неожиданных переходов и скрытых side effects;
 - снижение нагрузки на память пользователя через видимый контекст: стол, заказ, пречек, сумма, смена, статус.
 
-Подробная адаптация этих правил зафиксирована в `docs/ui/UI-ICON-SYSTEM.md`.
+Подробная адаптация этих правил зафиксирована в `docs/ui/UI-UX-STANDARDS.md`.
 
 ## 3. Экран выбранного заказа (Приоритет #1)
 
@@ -532,7 +551,8 @@ const permissions = {
 3. Улучшить visual hierarchy order rail
 4. Реализовать четкий locked state
 5. Зафиксировать viewport без document-level scrollbars, touch-first scroll controls, Lucide icons и ellipsis overflow rules
-6. Подключить `docs/ui/UI-ICON-SYSTEM.md` как обязательный источник правил по иконкам и UI-принципам Шнейдермана
+6. Подключить `docs/ui/UI-ICON-SYSTEM.md` как обязательный источник правил по иконкам
+7. Подключить `docs/ui/UI-UX-STANDARDS.md` как обязательный источник правил по плотности POS Front/BackOffice, touch-first поведению и UI-принципам Шнейдермана
 
 ### Phase 2 (Неделя 3-4)
 1. Переименовать разделы согласно design.md
@@ -576,11 +596,17 @@ const permissions = {
 
 ## 9. Accessibility
 
-- Все интерактивные элементы имеют aria-label
-- Keyboard navigation support
-- Focus indicators visible
-- Color contrast WCAG AA compliant
-- Screen reader friendly structure
+WCAG не является основным дизайн-стандартом проекта. Accessibility-проверки должны соответствовать `docs/ui/UI-UX-STANDARDS.md` и могут использовать WCAG-like критерии только как справочный technical checklist.
+
+Практические требования:
+
+- все интерактивные элементы имеют понятное имя или aria-label;
+- keyboard navigation support там, где это применимо;
+- focus indicators visible;
+- достаточный контраст для рабочих состояний;
+- readable errors и disabled reasons;
+- корректное управление фокусом в модальных окнах;
+- screen reader friendly structure там, где это применимо.
 
 ## 10. Performance
 
