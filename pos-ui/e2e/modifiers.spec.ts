@@ -1,8 +1,10 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
 
+import { bootstrapRequiredMessage, loadBootstrapJson } from './support/bootstrap';
+
 const apiBase = (process.env.POS_E2E_API_BASE ?? 'http://localhost:8080/api/v1').replace(/\/$/, '');
 const clientDeviceId = process.env.POS_E2E_CLIENT_DEVICE_ID ?? 'playwright-modifiers-client';
-const bootstrapJson = process.env.POS_E2E_BOOTSTRAP_JSON;
+const bootstrapJson = loadBootstrapJson();
 
 type DemoBootstrap = {
   restaurant_id: string;
@@ -62,7 +64,7 @@ let commandSequence = 0;
 test.beforeAll(async ({ playwright }) => {
   const request = await playwright.request.newContext();
   try {
-    expect(bootstrapJson, 'Run scripts/bootstrap-production-way.ps1 and pass its JSON as POS_E2E_BOOTSTRAP_JSON').toBeTruthy();
+    expect(bootstrapJson, bootstrapRequiredMessage()).toBeTruthy();
     demo = JSON.parse(bootstrapJson ?? '{}') as DemoBootstrap;
     const login = await post<LoginResult>(request, '/auth/pin-login', {
       node_device_id: demo.node_device_id,

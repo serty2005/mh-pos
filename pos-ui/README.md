@@ -44,6 +44,33 @@ npm run dev
 5. На `/login` используй cashier PIN `1111`.
 6. Для cancel unpaid precheck в manager override введи `manager_employee_id` из bootstrap и manager PIN `2222`.
 
+Playwright specs читают `POS_E2E_BOOTSTRAP_JSON` как JSON-строку или как путь к JSON-файлу. Для Docker devbox canonical path:
+
+```bash
+POS_E2E_BOOTSTRAP_JSON=/workspace/myhoreca-pos/.e2e/bootstrap.json
+```
+
+Пример формы лежит в `.e2e/bootstrap.example.json`. Реальный `.e2e/bootstrap.json` создается локальным bootstrap/smoke script и не коммитится.
+
+Docker devbox flow:
+
+```bash
+docker compose -f docker-compose.local.yml --profile devbox build devbox
+docker compose -f docker-compose.local.yml up --build -d cloud-postgres license-api cloud-api pos-edge
+docker compose -f docker-compose.local.yml --profile devbox up -d devbox
+docker compose -f docker-compose.local.yml exec devbox bash -lc 'cd pos-ui && npm install'
+docker compose -f docker-compose.local.yml exec devbox bash -lc 'mkdir -p .e2e && python3 scripts/run-stack-smoke.py --suite cloud_to_edge_masterdata --cloud-base http://cloud-api:8090 --pos-base http://pos-edge:8080 --license-base http://license-api:8095 --output .e2e/bootstrap.json'
+```
+
+Внутри devbox backend доступен через Docker service DNS: `http://pos-edge:8080/api/v1`. Поэтому devbox задает `VITE_POS_API_BASE=http://pos-edge:8080/api/v1` и `POS_E2E_API_BASE=http://pos-edge:8080/api/v1`. Для UI, открытого host browser, используй `http://localhost:8080/api/v1`.
+
+E2E smoke:
+
+```bash
+docker compose -f docker-compose.local.yml exec devbox bash -lc 'cd pos-ui && npm run dev'
+docker compose -f docker-compose.local.yml exec devbox bash -lc 'cd pos-ui && npx playwright test e2e/waiter-mobile-flow.spec.ts e2e/kitchen-flow.spec.ts'
+```
+
 Ручной UI flow:
 
 ```text

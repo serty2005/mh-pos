@@ -5,9 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { bootstrapRequiredMessage, loadBootstrapJson } from './support/bootstrap';
+
 const cloudBase = (process.env.POS_E2E_CLOUD_BASE ?? 'http://localhost:8090/api/v1').replace(/\/$/, '');
 const edgeBase = (process.env.POS_E2E_API_BASE ?? 'http://localhost:8080/api/v1').replace(/\/$/, '');
-const bootstrapJson = process.env.POS_E2E_BOOTSTRAP_JSON;
+const bootstrapJson = loadBootstrapJson();
 const nodeToken = process.env.POS_E2E_NODE_TOKEN?.trim();
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -26,7 +28,7 @@ let headers: Record<string, string>;
 let actorEmployeeId: string;
 
 test.beforeAll(async ({ playwright }) => {
-  test.skip(!bootstrapJson, 'Run scripts/bootstrap-production-way.ps1 and pass POS_E2E_BOOTSTRAP_JSON');
+  test.skip(!bootstrapJson, bootstrapRequiredMessage());
   demo = JSON.parse(bootstrapJson ?? '{}') as Bootstrap;
   const request = await playwright.request.newContext();
   const login = await request.post(`${edgeBase}/auth/pin-login`, {

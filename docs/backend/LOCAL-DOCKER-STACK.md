@@ -1,6 +1,6 @@
-# Локальный Docker stack без POS UI
+# Локальный Docker stack и UI devbox
 
-Документ описывает локальный запуск `cloud-postgres`, `cloud-api`, `license-api` и `pos-edge` через общий Docker Compose. `pos-ui` намеренно не входит в compose: его удобнее запускать локально через Vite/Quasar dev server.
+Документ описывает локальный запуск `cloud-postgres`, `cloud-api`, `license-api` и `pos-edge` через общий Docker Compose. Для UI build/unit/e2e есть отдельный opt-in `devbox` profile: он не поднимается обычным backend stack и нужен только для разработки/проверок frontend.
 
 ## Что запускается
 
@@ -11,12 +11,19 @@
 - `license-api` - локальный License Server stub для Option B pairing code flow;
 - `pos-edge` - POS Edge backend с SQLite, IANA timezone data (`tzdata`) для `business_date_local` и включенным sync sender.
 
+Опционально через profile `devbox`:
+
+- `devbox` - Node/Playwright контейнер на `mcr.microsoft.com/playwright:v1.59.1-noble` с Chromium и Linux dependencies, установленными на этапе build image.
+
 Именованные volumes:
 
 - `cloud_postgres_data` - данные PostgreSQL;
 - `cloud_api_data` - Cloud runtime data и PostgreSQL backup snapshots;
 - `license_sqlite_data` - SQLite БД license-server;
 - `pos_edge_sqlite_data` - SQLite БД POS Edge и backup files.
+- `pos_ui_node_modules` - `pos-ui/node_modules` внутри Docker volume, а не Windows bind mount;
+- `cloud_ui_node_modules` - `cloud-ui/node_modules` внутри Docker volume;
+- `devbox_npm_cache` - npm cache пользователя `pwuser`.
 
 ## Конфиги
 
@@ -38,6 +45,19 @@ POS_SQLITE_PATH=/app/data/pos-edge.db
 ```
 
 Файловый конфиг имеет приоритет над env. Общий контракт описан в `docs/backend/RUNTIME-CONFIG.md`.
+
+Devbox E2E environment:
+
+```text
+POS_E2E_BOOTSTRAP_JSON=/workspace/myhoreca-pos/.e2e/bootstrap.json
+POS_E2E_UI_BASE=http://localhost:5173
+POS_E2E_API_BASE=http://pos-edge:8080/api/v1
+POS_E2E_CLOUD_BASE=http://cloud-api:8090/api/v1
+VITE_POS_API_BASE=http://pos-edge:8080/api/v1
+VITE_CLOUD_API_BASE=http://cloud-api:8090/api/v1
+```
+
+Внутри `devbox` Playwright browser и Vite dev server живут в одном контейнере, поэтому UI base остается `http://localhost:5173`. Backend API при этом доступен не через `localhost:8080`, а через Docker service DNS `http://pos-edge:8080/api/v1`. Host gateway для этого сценария не нужен.
 
 ## Запуск
 
@@ -61,6 +81,69 @@ curl -fsS http://localhost:8090/health
 curl -fsS http://localhost:8095/health
 curl -fsS http://localhost:8080/health
 ```
+
+## UI devbox для build/unit/e2e
+
+Собери devbox один раз; Chromium и системные зависимости Playwright устанавливаются в image build, а не при каждом запуске Codex:
+
+```bash
+docker compose -f docker-compose.local.yml --profile devbox build devbox
+```
+
+Запусти backend stack и devbox:
+
+```bash
+docker compose -f docker-compose.local.yml up --build -d cloud-postgres license-api cloud-api pos-edge
+docker compose -f docker-compose.local.yml --profile devbox up -d devbox
+```
+
+Установи UI dependencies в Docker volumes, не в Windows-mounted `node_modules`:
+
+```bash
+docker compose -f docker-compose.local.yml exec devbox bash -lc 'cd pos-ui && npm install'
+docker compose -f docker-compose.local.yml exec devbox bash -lc 'cd cloud-ui && npm install'
+```
+
+Проверки build/unit:
+
+```bash
+docker compose -f docker-compose.local.yml exec devbox bash -lc 'cd pos-ui && npm run build'
+docker compose -f docker-compose.local.yml exec devbox bash -lc 'cd pos-ui && npm run test'
+docker compose -f docker-compose.local.yml exec devbox bash -lc 'cd cloud-ui && npm run build'
+```
+
+Перед POS UI E2E нужен bootstrap файл. Он содержит demo identifiers/PIN для локального стенда и не коммитится:
+
+```bash
+docker compose -f docker-compose.local.yml exec devbox bash -lc '
+  mkdir -p .e2e &&
+  python3 scripts/run-stack-smoke.py \
+    --suite cloud_to_edge_masterdata \
+    --cloud-base http://cloud-api:8090 \
+    --pos-base http://pos-edge:8080 \
+    --license-base http://license-api:8095 \
+    --output .e2e/bootstrap.json
+'
+```
+
+Файл `.e2e/bootstrap.example.json` показывает ожидаемую форму. Реальный `.e2e/bootstrap.json` игнорируется git.
+
+Для browser-based E2E запусти Vite в devbox, затем тесты во втором shell:
+
+```bash
+docker compose -f docker-compose.local.yml exec devbox bash -lc 'cd pos-ui && npm run dev'
+```
+
+```bash
+docker compose -f docker-compose.local.yml exec devbox bash -lc '
+  cd pos-ui &&
+  npx playwright test e2e/waiter-mobile-flow.spec.ts e2e/kitchen-flow.spec.ts
+'
+```
+
+Для API-only E2E specs тот же `POS_E2E_BOOTSTRAP_JSON` путь уже задан service environment. Если нужно передать JSON напрямую, `POS_E2E_BOOTSTRAP_JSON` также принимает содержимое JSON-строки.
+
+Если UI открывается из host browser по `http://localhost:5173`, не используй devbox service DNS в browser bundle: запусти UI локально или переопредели `VITE_POS_API_BASE=http://localhost:8080/api/v1`. Service DNS `pos-edge:8080` предназначен для Playwright, запущенного внутри devbox.
 
 Логи:
 
@@ -216,4 +299,4 @@ POS sync sender доставляет Edge -> Cloud operational rows автома
 - пустой `sync/exchange` для Cloud -> Edge pull ограничен отдельным interval, чтобы локальный Docker stack не создавал шумный Cloud access log при отсутствии локальных событий.
 - Cloud UI после successful master-data CRUD автоматически вызывает publication API от имени `cloud-ui`; ручная публикация в разделе Publication state остается доступна для явного operator checkpoint.
 
-вне текущего объема: запуск `pos-ui` внутри этого compose и production auth perimeter для Cloud/License API.
+вне текущего объема: production serving `pos-ui` из Docker Compose и production auth perimeter для Cloud/License API.

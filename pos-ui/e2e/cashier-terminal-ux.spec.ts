@@ -1,6 +1,8 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
-const bootstrapJson = process.env.POS_E2E_BOOTSTRAP_JSON;
+import { bootstrapRequiredMessage, loadBootstrapJson } from './support/bootstrap';
+
+const bootstrapJson = loadBootstrapJson();
 
 type DemoBootstrap = {
   manager_employee_id: string;
@@ -12,7 +14,7 @@ test.describe.configure({ mode: 'serial' });
 let demo: DemoBootstrap;
 
 test.beforeAll(() => {
-  expect(bootstrapJson, 'Run scripts/bootstrap-production-way.ps1 and pass its JSON as POS_E2E_BOOTSTRAP_JSON').toBeTruthy();
+  expect(bootstrapJson, bootstrapRequiredMessage()).toBeTruthy();
   demo = JSON.parse(bootstrapJson ?? '{}') as DemoBootstrap;
 });
 

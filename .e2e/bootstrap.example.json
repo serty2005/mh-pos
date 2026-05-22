@@ -1,0 +1,28 @@
+{
+  "restaurant_id": "018f0000-0000-7000-8000-000000000001",
+  "node_device_id": "dev-node-example",
+  "pairing_code": "MHPOS:example",
+  "cashier_pin": "1111",
+  "manager_pin": "2222",
+  "cashier_employee_id": "018f0000-0000-7000-8000-000000000101",
+  "manager_employee_id": "018f0000-0000-7000-8000-000000000102",
+  "hall_id": "018f0000-0000-7000-8000-000000000201",
+  "table_ids": [
+    "018f0000-0000-7000-8000-000000000301"
+  ],
+  "catalog_item_ids": [
+    "018f0000-0000-7000-8000-000000000401",
+    "018f0000-0000-7000-8000-000000000402"
+  ],
+  "menu_item_ids": [
+    "018f0000-0000-7000-8000-000000000501",
+    "018f0000-0000-7000-8000-000000000502"
+  ],
+  "modifier_group_id": "018f0000-0000-7000-8000-000000000601",
+  "modifier_option_id": "018f0000-0000-7000-8000-000000000602",
+  "modifier_binding_id": "018f0000-0000-7000-8000-000000000603",
+  "publication_id": "018f0000-0000-7000-8000-000000000701",
+  "cloud_base_url": "http://cloud-api:8090",
+  "edge_base_url": "http://pos-edge:8080",
+  "ui_base_url": "http://localhost:5173"
+}

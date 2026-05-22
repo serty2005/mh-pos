@@ -80,6 +80,15 @@ Docker stack:
 docker compose -f docker-compose.local.yml up --build -d
 ```
 
+UI/E2E devbox с Playwright Chromium и Docker volumes для `node_modules`:
+
+```bash
+docker compose -f docker-compose.local.yml --profile devbox build devbox
+docker compose -f docker-compose.local.yml --profile devbox up -d devbox
+```
+
+Подробный порядок запуска backend, bootstrap `.e2e/bootstrap.json`, Vite и Playwright описан в `docs/backend/LOCAL-DOCKER-STACK.md`.
+
 Полуавтоматическое заполнение Cloud справочников и проверка POS Edge sync на Linux/Fedora:
 
 ```bash

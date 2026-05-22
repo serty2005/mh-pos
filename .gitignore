@@ -12,6 +12,9 @@ data
 .dev-stack-pids.json
 scripts/.local-masterdata-summary.json
 scripts/.stack-smoke-result.json
+.e2e/*
+!.e2e/
+!.e2e/bootstrap.example.json
 .lazyweb/
 .kilo
 *.png
