@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	platformsqlite "pos-backend/internal/platform/sqlite"
 	txctx "pos-backend/internal/platform/tx"
@@ -257,6 +258,9 @@ func (r *Repository) ApplyStorageArchiveDestructive(ctx context.Context, cutoffB
 	}()
 
 	txCtx := txctx.ContextWithTx(ctx, conn)
+	if err := r.ensureStorageArchiveDestructiveSafety(txCtx, cutoffBusinessDateLocal); err != nil {
+		return storage.ArchiveExportCounts{}, err
+	}
 	deleted, err := r.archiveEligibleCounts(txCtx, cutoffBusinessDateLocal)
 	if err != nil {
 		return storage.ArchiveExportCounts{}, err
@@ -282,6 +286,28 @@ func (r *Repository) ApplyStorageArchiveDestructive(ctx context.Context, cutoffB
 		return storage.ArchiveExportCounts{}, err
 	}
 	return deleted, nil
+}
+
+func (r *Repository) ensureStorageArchiveDestructiveSafety(ctx context.Context, cutoffBusinessDateLocal string) error {
+	blocking, err := r.blockingOutboxMessagesForArchiveScope(ctx, cutoffBusinessDateLocal)
+	if err != nil {
+		return err
+	}
+	activeOrders, openShifts, openCashSessions, err := r.openOperationalBoundariesForArchiveScope(ctx, cutoffBusinessDateLocal)
+	if err != nil {
+		return err
+	}
+	reasons := []string{}
+	if blocking > 0 {
+		reasons = append(reasons, "pending_edge_to_cloud_outbox")
+	}
+	if activeOrders > 0 || openShifts > 0 || openCashSessions > 0 {
+		reasons = append(reasons, "open_operational_boundary")
+	}
+	if len(reasons) > 0 {
+		return fmt.Errorf("storage archive destructive apply blocked: %s", strings.Join(reasons, ","))
+	}
+	return nil
 }
 
 func (r *Repository) sqliteDatabaseStats(ctx context.Context) (storage.SQLiteDatabaseStats, error) {

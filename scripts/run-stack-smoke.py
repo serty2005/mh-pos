@@ -77,11 +77,12 @@ def main(argv=None):
 
 # Расширение smoke для Storage Retention Lifecycle (destructive apply + VACUUM):
 # В mhpos_stack.py в run_pos_cashier_runtime_suite добавлены проверки:
-# 1. /storage/archive/apply-readiness -> ready_for_destructive_apply=true после export+verify (для старого cutoff)
+# 1. /storage/archive/apply-readiness -> ready_for_destructive_apply=true после export+verify
 # 2. /storage/archive/apply-plan -> runtime_rows_deleted=true, result_mode=destructive_apply без ошибок
-# 3. /orders/closed продолжает возвращать актуальные записи (не удалены)
+# 3. /orders/closed больше не возвращает удаленный closed check
 # 4. /storage/archive/read-plan и /lookup возвращают превью из JSONL-архива
-# (использован старый cutoff 2020-01-01 чтобы не затрагивать runtime данные smoke)
+# Для нового smoke seed используется business-day boundary 23:59, чтобы sale попала
+# в безопасный cutoff сегодняшней даты без ручного SQL.
 
 
 if __name__ == "__main__":

@@ -313,47 +313,10 @@ go test ./...
 
 POS backend поддерживает применение скидок и надбавок по `pricing_policy_id` через существующие order pricing endpoints. Runtime копирует amount/scope/kind/application order из активной синхронизированной policy и сохраняет `pricing_policy_id` для audit/precheck snapshot.
 
-Роль: Ведущий Go-разработчик / Специалист по базам данных SQLite.
+## Storage Retention Lifecycle destructive apply
 
-Задача:
-Реализовать этап физического удаления данных (destructive apply) и последующее сжатие базы данных SQLite (команда VACUUM) в рамках жизненного цикла хранения локальной БД (Storage Retention Lifecycle) в pos-backend.
+Статус: реализовано сейчас.
 
-Контекст и ограничения:
-1. На данный момент эндпоинт POST /api/v1/storage/archive/apply-plan жестко возвращает result_mode = apply_blocked.
-2. Эндпоинт POST /api/v1/storage/archive/apply-readiness возвращает ready_for_destructive_apply = false и runtime_rows_deleted = false.
-3. Учитывайте выполненный переход на облачный учет инвентаря (Cloud-centric inventory cutover). Ни в коем случае НЕ создавайте и НЕ возвращайте локальные таблицы складского учета на кассе (такие как stock_documents, stock_moves, stock_balances).
-4. Все финансовые расчеты при удалении или калькуляции должны использовать только целочисленное представление (integer) и детерминированное округление.
-5. Любые изменения в схеме БД или транзакциях должны соответствовать политике миграции, описанной в docs/backend/POS-DATA-AND-MIGRATIONS.md.
+`POST /api/v1/storage/archive/apply-readiness` проверяет verified JSONL archive, scoped Edge -> Cloud outbox и open operational boundaries для cutoff. При успешном gate возвращает `ready_for_destructive_apply = true`.
 
-Пошаговые инструкции по реализации:
-
-Шаг 1: Реализация проверки готовности к удалению (Apply Readiness)
-- Доработайте логику эндпоинта POST /api/v1/storage/archive/apply-readiness.
-- Эндпоинт должен агрегировать и проверять все условия безопасности:
-  * Наличие успешно созданного и верифицированного JSONL-архива (через вызов валидации архива /storage/archive/verify).
-  * Отсутствие неотправленных событий в очереди синхронизации (outbox) для очищаемого периода бизнес-дат.
-  * Отсутствие открытых операционных кассовых смен или активных транзакций за архивируемый период.
-- При успешном прохождении всех проверок возвращайте ready_for_destructive_apply = true.
-
-Шаг 2: Реализация физического удаления (Destructive Apply)
-- Разблокируйте выполнение операции в эндпоинте POST /api/v1/storage/archive/apply-plan.
-- При вызове с подтвержденным токеном/манифестом архива и при условии готовности (ready_for_destructive_apply = true), запустите транзакцию в активной SQLite для удаления данных:
-  * Удалите закрытые заказы и чеки (orders, checks), у которых локальная бизнес-дата меньше пороговой (checks.business_date_local < cutoff_business_date_local).
-  * Каскадно удалите связанные записи финансовых операций (financial_operations, financial_operation_items), детали платежей и локальные логи событий синхронизации для удаляемых сущностей.
-- После успешного завершения транзакции установите runtime_rows_deleted = true в возвращаемом ответе.
-
-Шаг 3: Сжатие базы данных (VACUUM)
-- Сразу после успешного коммита транзакции удаления инициируйте операцию сжатия базы данных с помощью команды SQLite VACUUM;.
-- Реализуйте этот вызов так, чтобы он не приводил к длительной блокировке пула соединений БД для активных кассовых операций (убедитесь в корректной настройке параметров пула в режиме WAL).
-
-Шаг 4: Расширение интеграционных smoke-тестов на Python
-- Добавьте проверки в существующий тестовый сценарий ретеншена в файле scripts/run-stack-smoke.py:
-  1. Убедитесь, что /storage/archive/apply-readiness переключается в ready_for_destructive_apply = true после генерации и верификации тестового архива.
-  2. Проверьте, что вызов /storage/archive/apply-plan возвращает runtime_rows_deleted = true и не вызывает ошибок блокировки.
-  3. Убедитесь, что активные запросы чтения закрытых заказов (например, /orders/closed) больше не возвращают удаленные записи.
-  4. Проверьте, что удаленные чеки по-прежнему доступны для превью и точечного поиска через методы работы с архивом (/storage/archive/read-plan и /storage/archive/lookup) напрямую из JSONL-архива без импорта обратно в SQLite.
-
-Документирование изменений:
-- Обновите файл docs/CURRENT-FUNCTIONAL-STATE.md, указав, что физическое удаление архивных данных и очистка/сжатие локальной БД SQLite переведены из статуса [planned] в полностью рабочий рантайм.
-
-Мы должны закончить выполнение промпта выше. Прошлый прогресс прервался изза ошибки
+`POST /api/v1/storage/archive/apply-plan` при verified archive и runtime safety выполняет destructive apply по exclusive cutoff `checks.business_date_local < cutoff_business_date_local`, удаляет scoped closed orders/checks/prechecks/payments/financial operation rows и связанные local event/outbox references, затем запускает SQLite `VACUUM`. При успехе ответ содержит `result_mode = destructive_apply` и `runtime_rows_deleted = true`; при blockers возвращается `apply_blocked`.

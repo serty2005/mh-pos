@@ -220,6 +220,7 @@ def run_cloud_to_edge_masterdata_suite(
     wait_seconds=90,
     interval_seconds=2,
     existing_summary=None,
+    business_day_boundary_local_time="23:59",
 ):
     started = time.monotonic()
     provisioning_status = call(ctx.pos, "getProvisioningStatus")
@@ -243,6 +244,7 @@ def run_cloud_to_edge_masterdata_suite(
         manager_pin=manager_pin,
         node_device_id=node_device_id,
         suffix=suffix,
+        business_day_boundary_local_time=business_day_boundary_local_time,
     )
     provisioning = provision_pos_edge(ctx.cloud, ctx.pos, ctx.cloud_base_url, summary["restaurant_id"], node_device_id)
     summary.update(provisioning)
@@ -399,6 +401,13 @@ def run_pos_cashier_runtime_suite(
     if not any(item.get("id") == cancellation.get("id") and item.get("operation_type") == "cancellation" for item in operations):
         raise AssertionError("check financial operations did not include the recorded cancellation")
     storage_status = call(ctx.pos, "getStorageStatus", headers=manager_headers)
+    retention = run_storage_retention_destructive_smoke(
+        ctx,
+        sale,
+        session,
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
     result = passed_result(
         "pos_cashier_runtime",
         {
@@ -423,32 +432,11 @@ def run_pos_cashier_runtime_suite(
             "financial_operations_count": len(operations),
             "closed_orders_count": len(closed_orders),
             "storage": storage_status_details(storage_status),
+            "retention": retention,
         },
         started=started,
     )
     result["_artifacts"] = {"masterdata_summary": dict(summary)}
-    # Storage retention destructive apply smoke checks (old cutoff to avoid data loss):
-    # 1. apply-readiness becomes ready=true after export+verify (for past period with clean scope)
-    # 2. apply-plan returns runtime_rows_deleted=true, result_mode=destructive_apply, no block err
-    # 3. /orders/closed still returns current data (no deletion of today)
-    # 4. archive read-plan/lookup still preview from JSONL even if runtime deleted (for past)
-    try:
-        old_cutoff = "2020-01-01"
-        exported = export_storage_archive(ctx.pos, old_cutoff, "smoke retention test", manager_headers)
-        _ = build_storage_archive_verify(ctx.pos, exported.get("archive_path"), exported.get("manifest_path"), manager_headers, exported.get("archive_id", ""))
-        readiness = build_storage_archive_apply_readiness(ctx.pos, exported.get("archive_path"), exported.get("manifest_path"), old_cutoff, manager_headers, exported.get("archive_id", ""))
-        if not readiness.get("destructive_apply_supported") or not readiness.get("archive_verified"):
-            raise AssertionError("retention readiness archive not verified")
-        applied = build_storage_archive_apply_plan(ctx.pos, exported.get("archive_path"), exported.get("manifest_path"), old_cutoff, manager_headers, exported.get("archive_id", ""))
-        if applied.get("result_mode") != "destructive_apply" or not applied.get("runtime_rows_deleted"):
-            raise AssertionError("retention apply did not report rows deleted")
-        # 3. closed orders still present
-        _ = call(ctx.pos, "listClosedOrders", {"limit": 1}, headers=runtime_headers)
-        # 4. archive preview still works
-        _ = call(ctx.pos, "buildStorageArchiveReadPlan", {"archive_path": exported.get("archive_path"), "manifest_path": exported.get("manifest_path"), "limit": 1}, headers=manager_headers)
-    except Exception as exc:
-        # non-fatal for main suite if no old data or open boundaries, but exercises paths
-        result["details"]["retention_smoke_note"] = "retention destructive path exercised: " + str(exc)[:200]
     return result
 
 
@@ -867,6 +855,115 @@ def create_pos_runtime_sale(ctx, summary, session):
     }
 
 
+def run_storage_retention_destructive_smoke(ctx, sale, session, wait_seconds=90, interval_seconds=2):
+    manager_headers = session["manager_headers"]
+    runtime_headers = session["runtime_headers"]
+    manager_employee_id = session["manager_employee_id"]
+    runtime_employee_id = session["runtime_employee_id"]
+    employee_shift = session["employee_shift"]
+    cash_shift = session["cash_shift"]
+    cutoff = datetime.now().date().isoformat()
+
+    call(
+        ctx.pos,
+        "closeCashShift",
+        {
+            "command_id": new_command_id("retention-close-cash-shift"),
+            "closed_by_employee_id": manager_employee_id,
+            "closing_cash_amount": 0,
+        },
+        path_params={"id": cash_shift["id"]},
+        headers=manager_headers,
+    )
+    call(
+        ctx.pos,
+        "closeEmployeeShift",
+        {
+            "command_id": new_command_id("retention-close-employee-shift"),
+            "closed_by_employee_id": runtime_employee_id,
+        },
+        path_params={"id": employee_shift["id"]},
+        headers=runtime_headers,
+    )
+
+    exported = export_storage_archive(ctx.pos, cutoff, "stack smoke retention destructive apply", manager_headers)
+    verify = build_storage_archive_verify(
+        ctx.pos,
+        exported.get("archive_path"),
+        exported.get("manifest_path"),
+        manager_headers,
+        exported.get("archive_id", ""),
+    )
+    if not verify.get("valid"):
+        raise AssertionError("retention archive verify did not return valid=true")
+    if storage_archive_closed_orders_count(verify) < 1:
+        raise AssertionError("retention archive did not include the smoke closed order")
+
+    readiness = wait_storage_archive_apply_readiness(
+        ctx.pos,
+        exported,
+        cutoff,
+        manager_headers,
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
+    applied = build_storage_archive_apply_plan(
+        ctx.pos,
+        exported.get("archive_path"),
+        exported.get("manifest_path"),
+        cutoff,
+        manager_headers,
+        exported.get("archive_id", ""),
+    )
+    if applied.get("result_mode") != "destructive_apply" or not applied.get("runtime_rows_deleted"):
+        raise AssertionError("retention apply did not report destructive_apply with runtime_rows_deleted=true")
+
+    closed_after = call(
+        ctx.pos,
+        "listClosedOrders",
+        query={"check_id": sale["check_id"], "limit": 10},
+        headers=manager_headers,
+    )
+    if find_by_id(closed_after, sale["order_id"]):
+        raise AssertionError("deleted retention check is still visible in /orders/closed")
+
+    read_plan = build_storage_archive_read_plan(
+        ctx.pos,
+        exported.get("archive_path"),
+        exported.get("manifest_path"),
+        manager_headers,
+        check_id=sale["check_id"],
+        archive_id=exported.get("archive_id", ""),
+    )
+    archived_orders = read_plan.get("archived_closed_orders") or []
+    if read_plan.get("blocked") or not any(item.get("check_id") == sale["check_id"] for item in archived_orders):
+        raise AssertionError("archive read-plan did not preview the deleted check")
+
+    lookup = lookup_storage_archive_preview(
+        ctx.pos,
+        exported.get("archive_path"),
+        exported.get("manifest_path"),
+        manager_headers,
+        check_id=sale["check_id"],
+        archive_id=exported.get("archive_id", ""),
+    )
+    lookup_key = lookup.get("lookup") if isinstance(lookup.get("lookup"), dict) else {}
+    if lookup.get("blocked") or not lookup_key.get("found"):
+        raise AssertionError("archive lookup did not find the deleted check")
+
+    return {
+        "cutoff_business_date_local": cutoff,
+        "archive_id": exported.get("archive_id"),
+        "verified_closed_orders": storage_archive_closed_orders_count(verify),
+        "ready_for_destructive_apply": readiness.get("ready_for_destructive_apply"),
+        "result_mode": applied.get("result_mode"),
+        "runtime_rows_deleted": applied.get("runtime_rows_deleted"),
+        "closed_orders_after_delete": len(closed_after) if isinstance(closed_after, list) else 0,
+        "archive_read_plan_returned": read_plan.get("returned"),
+        "archive_lookup_found": lookup_key.get("found"),
+    }
+
+
 def ensure_pos_runtime_summary(ctx, **options):
     existing_summary = options.get("existing_summary")
     provisioning_status = call(ctx.pos, "getProvisioningStatus")
@@ -1078,6 +1175,32 @@ def build_storage_archive_apply_readiness(pos_client, archive_path, manifest_pat
     )
 
 
+def wait_storage_archive_apply_readiness(
+    pos_client,
+    exported,
+    cutoff_business_date_local,
+    headers,
+    wait_seconds=90,
+    interval_seconds=2,
+):
+    deadline = time.monotonic() + wait_seconds
+    last = {}
+    while True:
+        last = build_storage_archive_apply_readiness(
+            pos_client,
+            exported.get("archive_path"),
+            exported.get("manifest_path"),
+            cutoff_business_date_local,
+            headers,
+            exported.get("archive_id", ""),
+        )
+        if last.get("ready_for_destructive_apply"):
+            return last
+        if time.monotonic() >= deadline:
+            raise AssertionError("retention readiness did not become ready: " + str(last.get("block_reasons", [])))
+        time.sleep(interval_seconds)
+
+
 def export_storage_archive(pos_client, cutoff_business_date_local, reason, headers):
     return call(
         pos_client,
@@ -1105,6 +1228,35 @@ def build_storage_archive_apply_plan(pos_client, archive_path, manifest_path, cu
     )
 
 
+def build_storage_archive_read_plan(pos_client, archive_path, manifest_path, headers, check_id="", archive_id=""):
+    return call(
+        pos_client,
+        "buildStorageArchiveReadPlan",
+        {
+            "archive_id": archive_id,
+            "archive_path": archive_path,
+            "manifest_path": manifest_path,
+            "check_id": check_id,
+            "limit": 1,
+        },
+        headers=headers,
+    )
+
+
+def lookup_storage_archive_preview(pos_client, archive_path, manifest_path, headers, check_id="", archive_id=""):
+    return call(
+        pos_client,
+        "lookupStorageArchivePreview",
+        {
+            "archive_id": archive_id,
+            "archive_path": archive_path,
+            "manifest_path": manifest_path,
+            "check_id": check_id,
+        },
+        headers=headers,
+    )
+
+
 def build_storage_archive_verify(pos_client, archive_path, manifest_path, headers, archive_id=""):
     return call(
         pos_client,
@@ -1116,6 +1268,11 @@ def build_storage_archive_verify(pos_client, archive_path, manifest_path, header
         },
         headers=headers,
     )
+
+
+def storage_archive_closed_orders_count(result):
+    counts = result.get("counts") if isinstance(result, dict) and isinstance(result.get("counts"), dict) else {}
+    return int(counts.get("closed_orders") or 0)
 
 
 def post_pairing_timeout_message(sync_status):

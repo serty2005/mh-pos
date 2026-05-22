@@ -59,7 +59,6 @@
 
 - Recipe-based автоматическое списание склада из продажи.
 - Полный ретроспективный расчет себестоимости.
-- (реализовано) Destructive retention apply + VACUUM.
 - Настоящий платежный процессинг, webhooks, фискальные смены и фискальный адаптер.
 
 ## Cloud Backend
@@ -194,4 +193,3 @@
 - Настоящий PSP/payment processor module и PSP refund.
 - Fiscal device integration.
 - Cashier/KDS/manager mobile variants outside waiter screen.
-- (реализовано сейчас) Destructive archive apply + VACUUM в active SQLite.

@@ -97,14 +97,14 @@ class StackSmokeTest(unittest.TestCase):
         class StoragePOS(FakeClient):
             def post(self, path, body=None, headers=None, expected_status=(200, 201)):
                 self.posts.append((path, body or {}, headers or {}, tuple(expected_status)))
-				if path == "/storage/archive/apply-readiness":
-					return {
-						"result_mode": "apply_readiness_only",
-						"destructive_apply_supported": True,
-						"ready_for_destructive_apply": False,
-						"runtime_rows_deleted": False,
-						"block_reasons": ["pending_edge_to_cloud_outbox"],
-					}
+                if path == "/storage/archive/apply-readiness":
+                    return {
+                        "result_mode": "apply_readiness_only",
+                        "destructive_apply_supported": True,
+                        "ready_for_destructive_apply": False,
+                        "runtime_rows_deleted": False,
+                        "block_reasons": ["pending_edge_to_cloud_outbox"],
+                    }
                 return super().post(path, body=body, headers=headers, expected_status=expected_status)
 
         pos = StoragePOS("pos")
@@ -116,12 +116,12 @@ class StackSmokeTest(unittest.TestCase):
             {"X-Session-ID": "session-1"},
         )
 
-		self.assertEqual(result["result_mode"], "apply_readiness_only")
-		self.assertEqual(pos.posts[0][0], "/storage/archive/apply-readiness")
-		self.assertEqual(pos.posts[0][1]["mode"], "plan_only")
-		self.assertTrue(result["destructive_apply_supported"])
-		self.assertFalse(result.get("ready_for_destructive_apply", False))
-		self.assertFalse(result["runtime_rows_deleted"])
+        self.assertEqual(result["result_mode"], "apply_readiness_only")
+        self.assertEqual(pos.posts[0][0], "/storage/archive/apply-readiness")
+        self.assertEqual(pos.posts[0][1]["mode"], "plan_only")
+        self.assertTrue(result["destructive_apply_supported"])
+        self.assertFalse(result.get("ready_for_destructive_apply", False))
+        self.assertFalse(result["runtime_rows_deleted"])
 
     def test_license_pairing_suite_registers_resolves_and_checks_consumed_code(self):
         from mhpos_stack import StackContext, run_license_pairing_suite
@@ -263,6 +263,7 @@ class StackSmokeTest(unittest.TestCase):
             def __init__(self):
                 super().__init__("pos")
                 self.patches = []
+                self.retention_applied = False
 
             def post(self, path, body=None, headers=None, expected_status=(200, 201)):
                 self.posts.append((path, body or {}, headers or {}, tuple(expected_status)))
@@ -291,6 +292,53 @@ class StackSmokeTest(unittest.TestCase):
                         "id": "operation-1",
                         "operation_type": "cancellation",
                         "operation_kind": body["operation_kind"],
+                    }
+                if path == "/cash-shifts/cash-1/close":
+                    return {"id": "cash-1", "status": "closed", "shift_id": "shift-1"}
+                if path == "/employee-shifts/shift-1/close":
+                    return {"id": "shift-1", "status": "closed"}
+                if path == "/storage/archive/export":
+                    return {
+                        "archive_id": "archive-1",
+                        "archive_path": "/tmp/archive-1/archive.jsonl",
+                        "manifest_path": "/tmp/archive-1/manifest.json",
+                        "counts": {"closed_orders": 1, "checks": 1},
+                    }
+                if path == "/storage/archive/verify":
+                    return {
+                        "valid": True,
+                        "archive_id": "archive-1",
+                        "counts": {"closed_orders": 1, "checks": 1},
+                    }
+                if path == "/storage/archive/apply-readiness":
+                    return {
+                        "result_mode": "apply_readiness_only",
+                        "destructive_apply_supported": True,
+                        "ready_for_destructive_apply": True,
+                        "runtime_rows_deleted": False,
+                        "archive_verified": True,
+                        "block_reasons": [],
+                    }
+                if path == "/storage/archive/apply-plan":
+                    self.retention_applied = True
+                    return {
+                        "result_mode": "destructive_apply",
+                        "runtime_rows_deleted": True,
+                        "blocked": False,
+                    }
+                if path == "/storage/archive/read-plan":
+                    return {
+                        "result_mode": "read_plan_only",
+                        "blocked": False,
+                        "returned": 1,
+                        "archived_closed_orders": [{"order_id": "order-1", "check_id": "check-1"}],
+                    }
+                if path == "/storage/archive/lookup":
+                    return {
+                        "result_mode": "archive_lookup_preview",
+                        "blocked": False,
+                        "lookup": {"found": True, "check_id": "check-1", "order_id": "order-1"},
+                        "check": {"id": "check-1"},
                     }
                 return super().post(path, body=body, headers=headers, expected_status=expected_status)
 
@@ -332,6 +380,8 @@ class StackSmokeTest(unittest.TestCase):
                     ]
                 if path == "/orders/order-1":
                     return {"id": "order-1", "status": "closed", "check": {"id": "check-1", "status": "paid"}}
+                if path.startswith("/orders/closed") and "check_id=check-1" in path and self.retention_applied:
+                    return []
                 if path.startswith("/orders/closed"):
                     return [{"id": "order-1", "status": "closed", "check": {"id": "check-1"}}]
                 if path == "/checks/check-1":
@@ -367,6 +417,9 @@ class StackSmokeTest(unittest.TestCase):
         self.assertEqual(result["details"]["order_id"], "order-1")
         self.assertEqual(result["details"]["modifier_line_added"], True)
         self.assertEqual(result["details"]["service_line_added"], True)
+        self.assertEqual(result["details"]["retention"]["result_mode"], "destructive_apply")
+        self.assertTrue(result["details"]["retention"]["runtime_rows_deleted"])
+        self.assertTrue(result["details"]["retention"]["archive_lookup_found"])
         payment_posts = [body for path, body, *_ in pos.posts if path == "/prechecks/precheck-1/payments"]
         cancellation_posts = [body for path, body, *_ in pos.posts if path == "/checks/check-1/cancellations"]
         self.assertTrue(payment_posts[0]["command_id"].startswith("capture-payment-"))

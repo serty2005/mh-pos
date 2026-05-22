@@ -760,7 +760,6 @@ func TestStorageLifecycleStatusRequiresPermissionAndSummarizesRuntimeState(t *te
 func TestStorageRetentionDryRunCountsEligibleRowsWithoutMutatingProtectedTables(t *testing.T) {
 	f := newFixture(t)
 	order, check := f.createPaidOrder(t)
-	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	if _, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
 		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-storage-cancel-for-dry-run"),
 		CheckID:              check.ID,
@@ -774,6 +773,7 @@ func TestStorageRetentionDryRunCountsEligibleRowsWithoutMutatingProtectedTables(
 	}); err != nil {
 		t.Fatal(err)
 	}
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 	activeOrder, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMetaCommand("cmd-storage-active-order"), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -1129,6 +1129,7 @@ func TestStorageArchiveExportIncludesClosedOrderGraphLedgerAndManifestWithoutMut
 	if err != nil {
 		t.Fatal(err)
 	}
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
 
 	before := map[string]int{
 		"orders":                    countRows(t, f, "orders"),
@@ -1506,6 +1507,26 @@ func TestStorageArchiveApplyReadinessAndDestructiveApplyDeletesRuntimeRowsButKee
 	}
 	if !lookup.Lookup.Found || lookup.Check == nil || lookup.Check.ID != check.ID {
 		t.Fatalf("expected archive lookup to find deleted check, got %+v", lookup)
+	}
+}
+
+func TestStorageArchiveDestructiveApplyRechecksPendingOutboxInsideTransaction(t *testing.T) {
+	f := newFixture(t)
+	order, check := f.createPaidOrder(t)
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
+
+	_, err := f.repo.ApplyStorageArchiveDestructive(f.ctx, "2026-05-04")
+	if err == nil {
+		t.Fatal("expected destructive apply to reject scoped pending outbox")
+	}
+	if !strings.Contains(err.Error(), "pending_edge_to_cloud_outbox") {
+		t.Fatalf("expected pending outbox blocker, got %v", err)
+	}
+	if got := countRowsWhere(t, f, "orders", "id = ?", order.ID); got != 1 {
+		t.Fatalf("expected order %s to remain after blocked apply, got %d rows", order.ID, got)
+	}
+	if got := countRowsWhere(t, f, "checks", "id = ?", check.ID); got != 1 {
+		t.Fatalf("expected check %s to remain after blocked apply, got %d rows", check.ID, got)
 	}
 }
 

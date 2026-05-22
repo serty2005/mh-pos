@@ -1246,6 +1246,7 @@ func TestStorageArchiveReadPlanAndLookupAPIRequireSyncView(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f.makeOrderOlderThanArchiveCutoff(t, order.ID)
 	cashier := f.employee
 	cashierSession := f.session
 	f.useManagerOperator(t)
