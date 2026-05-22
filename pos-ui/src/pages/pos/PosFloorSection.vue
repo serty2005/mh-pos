@@ -3,7 +3,14 @@
     <main class="hall-workspace" :aria-label="terminal.t('pos.floorPlan')">
       <q-banner v-if="terminal.statusError.value" class="error-banner dense-banner">{{ terminal.statusError.value }}</q-banner>
 
-      <div v-if="!terminal.currentShift.data.value" class="empty-state small">{{ terminal.t('pos.noShift') }}</div>
+      <blocking-notice
+        v-if="!terminal.currentShift.data.value && terminal.currentBlockingNotice.value"
+        :terminal="terminal"
+        :title="terminal.t(terminal.currentBlockingNotice.value.titleKey)"
+        :reason="terminal.t(terminal.currentBlockingNotice.value.reasonKey)"
+        :permission="terminal.currentBlockingNotice.value.permission"
+        icon="lock_clock"
+      />
       <div v-else-if="!terminal.canViewFloor.value" class="empty-state small">{{ terminal.t('pos.noPermissionForFloor') }}</div>
       <div v-else-if="terminal.tables.isPending.value" class="floor-table-grid">
         <q-skeleton v-for="n in 15" :key="n" class="floor-table-tile skeleton-tile" />
@@ -50,6 +57,7 @@
 <script setup lang="ts">
 import { computed, nextTick } from 'vue';
 
+import BlockingNotice from './BlockingNotice.vue';
 import type { CashierTerminal } from './useCashierTerminal';
 
 type TableStatus = 'free' | 'open' | 'precheck' | 'paid' | 'unavailable';

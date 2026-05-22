@@ -2906,6 +2906,14 @@ button.bottom-status {
   white-space: nowrap;
 }
 
+.top-status-cell.good strong {
+  color: var(--pos-status-success);
+}
+
+.top-status-cell.technical-cell strong {
+  font-size: 13px;
+}
+
 button.top-status-cell {
   cursor: pointer;
 }

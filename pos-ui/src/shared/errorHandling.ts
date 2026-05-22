@@ -10,6 +10,7 @@ export type NormalizedAppError = {
   category: ApiErrorCategory | 'unknown';
   severity: ErrorDialogSeverity;
   correlationId: string;
+  supportCode: string;
   retryable: boolean;
 };
 
@@ -24,6 +25,7 @@ export function normalizeApiError(error: unknown): NormalizedAppError {
       category: error.category,
       severity: severityForCategory(error.category),
       correlationId: error.correlationId,
+      supportCode: error.correlationId || error.code,
       retryable: error.retryable,
     };
   }
@@ -35,6 +37,7 @@ export function normalizeApiError(error: unknown): NormalizedAppError {
     category: 'unknown',
     severity: 'fatal',
     correlationId: '',
+    supportCode: 'UNEXPECTED_CLIENT_ERROR',
     retryable: false,
   };
 }
@@ -42,6 +45,11 @@ export function normalizeApiError(error: unknown): NormalizedAppError {
 /** displayErrorMessageKey возвращает i18n key для компактного inline fallback без сырого текста. */
 export function displayErrorMessageKey(error: unknown) {
   return normalizeApiError(error).messageKey;
+}
+
+/** displayErrorSupportCode возвращает request/correlation id или stable error_code для поддержки. */
+export function displayErrorSupportCode(error: unknown) {
+  return normalizeApiError(error).supportCode;
 }
 
 /** useErrorHandling централизует UX-поведение для auth/permission/network/business ошибок. */
@@ -61,6 +69,7 @@ export function useErrorHandling() {
       severity: normalized.severity,
       category: normalized.category,
       correlationId: normalized.correlationId,
+      supportCode: normalized.supportCode,
       primaryAction: normalized.category === 'auth' ? 'login' : 'close',
     });
   }

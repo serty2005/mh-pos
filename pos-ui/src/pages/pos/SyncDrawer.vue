@@ -20,7 +20,7 @@
         </div>
       </div>
 
-      <PosBanner v-if="terminal.syncStatus.isError.value" tone="error" :label="terminal.t('common.error')" />
+      <PosBanner v-if="terminal.syncStatus.error.value" tone="error" :label="terminal.errorLabel(terminal.syncStatus.error.value)" />
       <div v-else class="sync-grid">
         <PosMetricCard size="compact" :label="terminal.t('pos.syncPending')" :value="terminal.syncStatus.data.value?.pending ?? 0" />
         <PosMetricCard size="compact" :label="terminal.t('pos.syncFailed')" :value="terminal.syncProblems.value" :tone="terminal.syncProblems.value > 0 ? 'warning' : 'neutral'" />

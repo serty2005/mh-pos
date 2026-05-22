@@ -43,7 +43,7 @@
         />
       </div>
 
-      <PosBanner v-if="terminal.closedOrders.error.value" tone="error" :label="terminal.t(terminal.displayErrorMessageKey(terminal.closedOrders.error.value))" />
+      <PosBanner v-if="terminal.closedOrders.error.value" tone="error" :label="terminal.errorLabel(terminal.closedOrders.error.value)" />
 
       <div v-if="terminal.closedOrders.isFetching.value" class="activity-list">
         <PosSkeleton v-for="n in 8" :key="n" kind="list-row" class="activity-order-item" />
@@ -111,7 +111,7 @@
 
         <div class="payment-list">
           <p class="eyebrow">{{ terminal.t('pos.financialOperations') }}</p>
-          <PosBanner v-if="financialOperations.error.value" tone="error" :label="terminal.t(terminal.displayErrorMessageKey(financialOperations.error.value))" />
+          <PosBanner v-if="financialOperations.error.value" tone="error" :label="terminal.errorLabel(financialOperations.error.value)" />
           <PosSkeleton v-if="financialOperations.isFetching.value" kind="order" />
           <PosDataRow v-for="operation in financialOperations.data.value ?? []" :key="operation.id" layout="ledger">
             <template #main>
@@ -162,7 +162,7 @@
             variant="danger"
             mode="flat"
             icon="payments"
-            :label="terminal.t('pos.paymentRefund')"
+            :label="terminal.t('pos.paymentRefundFallback')"
             :disabled="!canRefundPaymentSelected"
             :loading="terminal.refundMutation.isPending.value && terminal.refundMode.value === 'payment_refund'"
             @click="terminal.openRefundDialogForOrder(selectedOrder)"

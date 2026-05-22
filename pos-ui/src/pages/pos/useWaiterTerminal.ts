@@ -26,7 +26,7 @@ import {
   voidOrderLine,
 } from '../../shared/api';
 import { formatMinorCurrency } from '../../shared/currency';
-import { displayErrorMessageKey, useErrorHandling } from '../../shared/errorHandling';
+import { displayErrorMessageKey, displayErrorSupportCode, useErrorHandling } from '../../shared/errorHandling';
 import { hasPermission, permissionCatalog } from '../../shared/rbac';
 import { resolveProtectedPosFallback } from '../../shared/sessionGuards';
 import type { MenuItem, Order } from '../../shared/schemas';
@@ -364,8 +364,10 @@ export function useWaiterTerminal() {
 
   function firstError(errors: unknown[]) {
     const found = errors.find(Boolean);
-    if (found instanceof ApiError) return t(displayErrorMessageKey(found));
-    return found ? t('common.error') : '';
+    if (!found) return '';
+    const code = displayErrorSupportCode(found);
+    const message = found instanceof ApiError ? t(displayErrorMessageKey(found)) : t('common.error');
+    return code ? `${message} · ${t('errors.supportCode')}: ${code}` : message;
   }
 
   return {

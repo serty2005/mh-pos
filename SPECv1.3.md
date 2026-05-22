@@ -36,6 +36,7 @@
 - controlled precheck/check reprint from immutable snapshots;
 - append-only cancellation/refund ledger, cashier UI для full whole-check и partial `order_line`/quantity cancellation/refund с явным `inventory_disposition` и compatibility payment refund fallback;
 - cashier POS UI shell состоит из разделов `floor`, `order`, `activity`, `reports`, `cash`; storage/archive/backoffice, Cloud reporting, delivery runtime и settings не входят в operator-facing cashier flow;
+- cashier POS UI top context показывает backend/session readiness: restaurant id, actor, node device, selected table/order, personal shift, cash session и backend session state; UI не создает отдельную бизнес-модель этих контекстов;
 - cashier POS UI не показывает active commands для table/order transfer, split/fractional split, banquet/preorder, mock waiter filters или discount/surcharge editor без отдельного backend/API/UI contract;
 - `/pos/waiter` реализован как mobile-first order/precheck UI route: выбор зала/стола, активные заказы, создание заказа, меню/поиск, добавление строк с модификаторами, quantity, void line, issue/reprint precheck; payment/refund/cash drawer authority не входит в default waiter surface;
 - `/pos/kitchen` реализован только как readiness route с `запланировано далее` и отсутствующими KDS backend contracts; KDS lifecycle actions не являются текущим runtime;

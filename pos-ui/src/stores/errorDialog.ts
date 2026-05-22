@@ -25,6 +25,7 @@ export type ErrorDialogState = {
   severity: ErrorDialogSeverity;
   category: ApiErrorCategory | 'unknown';
   correlationId: string;
+  supportCode: string;
   primaryAction: ErrorDialogAction;
 };
 
@@ -38,6 +39,7 @@ export const useErrorDialogStore = defineStore('errorDialog', {
     severity: 'business_error',
     category: 'unknown',
     correlationId: '',
+    supportCode: '',
     primaryAction: 'close',
   }),
   actions: {
@@ -48,6 +50,7 @@ export const useErrorDialogStore = defineStore('errorDialog', {
       this.severity = payload.severity ?? 'business_error';
       this.category = payload.category ?? 'unknown';
       this.correlationId = payload.correlationId ?? '';
+      this.supportCode = payload.supportCode ?? payload.correlationId ?? '';
       this.primaryAction = payload.primaryAction ?? 'close';
       this.open = true;
     },

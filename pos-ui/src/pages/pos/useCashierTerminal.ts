@@ -51,7 +51,7 @@ import {
   type SelectedModifierPayload,
 } from '../../shared/api';
 import { currencyInputStep, formatMinorCurrency, minorToMoney, moneyToMinor } from '../../shared/currency';
-import { displayErrorMessageKey, useErrorHandling } from '../../shared/errorHandling';
+import { displayErrorMessageKey, displayErrorSupportCode, useErrorHandling } from '../../shared/errorHandling';
 import { hasPermission, permissionCatalog } from '../../shared/rbac';
 import { resolveProtectedPosFallback } from '../../shared/sessionGuards';
 import { checkSnapshotSchema, type CheckSnapshotLine, type ClosedOrder, type MenuItem, type Order } from '../../shared/schemas';
@@ -432,6 +432,12 @@ export function useCashierTerminal() {
   const statusError = computed(() => firstError([currentShift.error.value, currentCashSession.error.value]));
   const orderError = computed(() => firstError([activeOrdersQuery.error.value, tableOrder.error.value, order.error.value, prechecks.error.value]));
   const actorName = computed(() => auth.actor?.name || auth.actor?.employee_id || '');
+  const backendSessionLabel = computed(() => {
+    if (!auth.sessionId) return t('errors.session.required');
+    if (session.isFetching.value) return t('common.loading');
+    if (session.error.value) return errorLabel(session.error.value);
+    return session.data.value?.session.status ? statusLabel(session.data.value.session.status) : t('common.active');
+  });
   const syncProblems = computed(() => (syncStatus.data.value?.failed ?? 0) + (syncStatus.data.value?.suspended ?? 0));
   const closedOrdersHasPreviousPage = computed(() => closedOrdersOffset.value > 0);
   const closedOrdersHasNextPage = computed(() => (closedOrders.data.value?.length ?? 0) >= closedOrdersLimit.value);
@@ -1150,7 +1156,13 @@ export function useCashierTerminal() {
 
   function firstError(errors: unknown[]) {
     const found = errors.find(Boolean);
-    return found ? t(displayErrorMessageKey(found)) : '';
+    return found ? errorLabel(found) : '';
+  }
+
+  function errorLabel(error: unknown) {
+    const code = displayErrorSupportCode(error);
+    const message = t(displayErrorMessageKey(error));
+    return code ? `${message} · ${t('errors.supportCode')}: ${code}` : message;
   }
 
   return {
@@ -1231,6 +1243,7 @@ export function useCashierTerminal() {
     currentLedgerOperationKind,
     unsupportedLedgerScopeOptions,
     pairing,
+    session,
     currentShift,
     recentShifts,
     currentCashSession,
@@ -1267,6 +1280,7 @@ export function useCashierTerminal() {
     statusError,
     orderError,
     actorName,
+    backendSessionLabel,
     syncProblems,
     closedOrdersHasPreviousPage,
     closedOrdersHasNextPage,
@@ -1335,6 +1349,7 @@ export function useCashierTerminal() {
     actionBlocker,
     currencyInputStep,
     displayErrorMessageKey,
+    errorLabel,
   };
 }
 

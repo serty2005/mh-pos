@@ -98,16 +98,16 @@
 Реализовано сейчас:
 
 - Vue/Quasar cashier UI с PIN-сессией и backend actor context.
-- Рабочий терминал кассира: заказ, зал/столы, смена, активность, отчеты, настройки и вспомогательные drawer/dialog surfaces.
+- Рабочий терминал кассира: заказ, зал/столы, смена/касса, активность, отчеты и вспомогательные drawer/dialog surfaces.
 - Открытие/закрытие личной смены и кассовой смены.
 - Выбор столов, активные заказы по залу, создание заказа, добавление меню/услуг, модификаторы, изменение количества, списание строки.
 - Выпуск/отмена/повторная печать предчека.
-- Оплата наличными, manual card и other через backend.
+- Оплата наличными и trusted manual card через backend.
 - Закрытые заказы с постраничной выдачей, фильтром по бизнес-дате и деталями итогового чека.
 - Финансовые операции закрытого чека: просмотр ledger, full cancellation/refund и partial `order_line`/quantity cancellation/refund с явным `inventory_disposition`.
 - Compatibility payment refund как отдельный fallback, визуально отделенный от основного ledger flow.
 - Sync drawer для status/outbox/local events с bounded запросами.
-- Нормализация безопасных API-ошибок и optional empty states; пользовательский текст идет через `vue-i18n`.
+- Нормализация безопасных API-ошибок и optional empty states; пользовательский текст идет через `vue-i18n`, а dialog/inline banners показывают безопасный support code (`correlation_id` или stable `error_code`) без raw backend details.
 - `/pos/waiter` как mobile-first order/precheck runtime: выбор зала/стола, активные заказы, создание заказа, меню/поиск, добавление строк с модификаторами, изменение quantity, void line, issue/reprint precheck без payment/refund/cash drawer controls по умолчанию; active issued precheck/locked order визуально блокирует add/change/void actions.
 - `/pos/kitchen` как readiness-only экран с пометкой `запланировано далее`, списком отсутствующих KDS backend contracts, будущими lifecycle slots и activation gates без активных действий.
 

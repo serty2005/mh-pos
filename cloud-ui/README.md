@@ -31,6 +31,16 @@ npm run dev
 
 Открой `http://localhost:5174`.
 
+## Скрипты
+
+Реализовано сейчас:
+
+- `npm run dev` - Vite dev server для Cloud admin UI.
+- `npm run build` - `vue-tsc --noEmit` и production build.
+- `npm run preview` - локальный preview production build.
+
+В `cloud-ui/package.json` нет `test` script, поэтому `npm run test` не является поддержанной проверкой этого модуля.
+
 Для другого Cloud API:
 
 ```powershell

@@ -20,7 +20,7 @@
         </div>
       </div>
 
-      <PosBanner v-if="terminal.closedOrders.error.value" tone="error" :label="terminal.t(terminal.displayErrorMessageKey(terminal.closedOrders.error.value))" />
+      <PosBanner v-if="terminal.closedOrders.error.value" tone="error" :label="terminal.errorLabel(terminal.closedOrders.error.value)" />
       <PosSkeleton v-if="terminal.closedOrders.isFetching.value" kind="order" class="drawer-skeleton" />
 
       <div class="drawer-filter-row">

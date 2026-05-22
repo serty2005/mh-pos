@@ -66,24 +66,44 @@
           <small>{{ openedLabel }}</small>
           <strong>{{ pricingAdjustmentsLabel }}</strong>
         </span>
+        <span class="top-status-cell" :class="{ good: terminal.currentShift.data.value }">
+          <small>{{ terminal.t('pos.shift') }}</small>
+          <strong>{{ terminal.currentShift.data.value ? terminal.t('status.open') : terminal.t('pos.noShift') }}</strong>
+        </span>
+        <span class="top-status-cell" :class="{ good: terminal.currentCashSession.data.value }">
+          <small>{{ terminal.t('pos.cashSession') }}</small>
+          <strong>{{ terminal.currentCashSession.data.value ? terminal.t('status.open') : terminal.t('pos.noCashSession') }}</strong>
+        </span>
+        <span class="top-status-cell technical-cell">
+          <small>{{ terminal.t('pos.session') }}</small>
+          <strong>{{ terminal.backendSessionLabel.value }}</strong>
+        </span>
       </div>
 
       <div v-else-if="activeSection === 'floor'" class="top-status-grid floor-status-grid">
         <span class="top-status-cell">
-          <small>{{ terminal.t('pos.shiftTotal') }}</small>
-          <strong>{{ terminal.money(shiftTotal, terminal.orderCurrency.value) }}</strong>
+          <small>{{ terminal.t('pos.restaurant') }}</small>
+          <strong>{{ terminal.shortId(terminal.auth.restaurantId || '-') }}</strong>
         </span>
         <span class="top-status-cell">
-          <small>{{ terminal.t('pos.averageCheck') }}</small>
-          <strong>{{ terminal.money(averageCheck, terminal.orderCurrency.value) }}</strong>
+          <small>{{ terminal.t('pos.actor') }}</small>
+          <strong>{{ terminal.actorName.value || '-' }}</strong>
         </span>
         <span class="top-status-cell">
-          <small>{{ terminal.t('pos.ordersCount') }}</small>
-          <strong>{{ ordersCount }}</strong>
+          <small>{{ terminal.t('common.node') }}</small>
+          <strong>{{ terminal.shortId(terminal.auth.nodeDeviceId || '-') }}</strong>
         </span>
-        <span class="top-status-cell">
-          <small>{{ terminal.t('pos.completedCount') }}</small>
-          <strong>{{ completedCount }}</strong>
+        <span class="top-status-cell" :class="{ good: terminal.currentShift.data.value }">
+          <small>{{ terminal.t('pos.shift') }}</small>
+          <strong>{{ terminal.currentShift.data.value ? terminal.t('status.open') : terminal.t('pos.noShift') }}</strong>
+        </span>
+        <span class="top-status-cell" :class="{ good: terminal.currentCashSession.data.value }">
+          <small>{{ terminal.t('pos.cashSession') }}</small>
+          <strong>{{ terminal.currentCashSession.data.value ? terminal.t('status.open') : terminal.t('pos.noCashSession') }}</strong>
+        </span>
+        <span class="top-status-cell technical-cell">
+          <small>{{ terminal.t('pos.session') }}</small>
+          <strong>{{ terminal.backendSessionLabel.value }}</strong>
         </span>
       </div>
 
@@ -91,6 +111,26 @@
         <span class="top-status-cell">
           <small>{{ terminal.t(currentSectionTitleKey) }}</small>
           <strong>{{ sectionStatusLabel }}</strong>
+        </span>
+        <span class="top-status-cell">
+          <small>{{ terminal.t('pos.restaurant') }}</small>
+          <strong>{{ terminal.shortId(terminal.auth.restaurantId || '-') }}</strong>
+        </span>
+        <span class="top-status-cell">
+          <small>{{ terminal.t('pos.actor') }}</small>
+          <strong>{{ terminal.actorName.value || '-' }}</strong>
+        </span>
+        <span class="top-status-cell" :class="{ good: terminal.currentShift.data.value }">
+          <small>{{ terminal.t('pos.shift') }}</small>
+          <strong>{{ terminal.currentShift.data.value ? terminal.t('status.open') : terminal.t('pos.noShift') }}</strong>
+        </span>
+        <span class="top-status-cell" :class="{ good: terminal.currentCashSession.data.value }">
+          <small>{{ terminal.t('pos.cashSession') }}</small>
+          <strong>{{ terminal.currentCashSession.data.value ? terminal.t('status.open') : terminal.t('pos.noCashSession') }}</strong>
+        </span>
+        <span class="top-status-cell technical-cell">
+          <small>{{ terminal.t('pos.session') }}</small>
+          <strong>{{ terminal.backendSessionLabel.value }}</strong>
         </span>
       </div>
 
@@ -264,9 +304,6 @@ const pricingAdjustmentsLabel = computed(() => {
     surcharge: terminal.money(surcharge, terminal.orderCurrency.value),
   });
 });
-const shiftTotal = computed(() => (terminal.closedOrders.data.value ?? []).reduce((sum, order) => sum + order.total, 0) + (terminal.activeOrder.value?.total ?? 0));
-const ordersCount = computed(() => (terminal.closedOrders.data.value ?? []).length + (terminal.activeOrder.value ? 1 : 0));
-const averageCheck = computed(() => ordersCount.value > 0 ? Math.round(shiftTotal.value / ordersCount.value) : 0);
 const completedCount = computed(() => (terminal.closedOrders.data.value ?? []).length);
 const sectionStatusLabel = computed(() => {
   if (activeSection.value === 'cash') {

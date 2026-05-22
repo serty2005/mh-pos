@@ -402,6 +402,7 @@ export const i18n = createI18n({
         cashSessionBody: 'Кассовая смена нужна для оплат, возвратов и операций кассового ящика.',
         primaryOperations: 'Основные операции',
         recentPersonalShifts: 'Последние личные смены',
+        restaurant: 'Ресторан',
         session: 'Техническая сессия',
         shift: 'Личная смена',
         syncFailed: 'Проблемы',
@@ -501,6 +502,7 @@ export const i18n = createI18n({
         },
       },
       status: {
+        active: 'активна',
         cancelled: 'отменен',
         captured: 'оплачен',
         closed: 'закрыт',

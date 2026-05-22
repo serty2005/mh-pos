@@ -29,8 +29,8 @@
         <q-card-section class="form-stack">
           <p>{{ t(errorDialog.messageKey) }}</p>
           <p class="meta-line">{{ t(errorDialog.recommendationKey) }}</p>
-          <p v-if="errorDialog.correlationId" class="meta-line">
-            {{ t('errors.supportCode') }}: {{ errorDialog.correlationId }}
+          <p v-if="errorDialog.supportCode" class="meta-line">
+            {{ t('errors.supportCode') }}: {{ errorDialog.supportCode }}
           </p>
         </q-card-section>
         <q-card-actions align="right">

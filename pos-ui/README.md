@@ -10,6 +10,16 @@ npm install
 npm run dev
 ```
 
+## Скрипты
+
+Реализовано сейчас:
+
+- `npm run dev` - Vite dev server.
+- `npm run build` - `vue-tsc --noEmit` и production build.
+- `npm run preview` - локальный preview production build.
+- `npm run test` - Vitest unit tests.
+- `npm run test:e2e` - Playwright tests; для backend-backed сценариев нужен `POS_E2E_BOOTSTRAP_JSON`.
+
 По умолчанию UI ходит в `http://localhost:8080/api/v1`. Для другого backend:
 
 ```powershell
@@ -125,7 +135,7 @@ Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=10 -Heade
 Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10 -Headers $headers
 ```
 
-Вне текущего объема: waiter UI, KDS, rich partial cancellation/refund scopes, inventory consumption и fiscalization.
+Вне текущего объема: KDS runtime, modifier/service/tip ledger scopes, inventory consumption, PSP и fiscalization. `/pos/waiter` реализован как order/precheck mobile readiness/runtime surface без payment/refund/cash drawer authority по умолчанию, а `/pos/kitchen` остается readiness-only до появления KDS backend contracts.
 
 ## Что реализовано
 
@@ -133,7 +143,7 @@ Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10 -Headers $he
 - `/login` вызывает реальный `POST /api/v1/auth/pin-login`.
 - `/lock` вызывает реальный `POST /api/v1/auth/logout`, очищает локальную session и требует новый PIN.
 - `/pos` реализует POS Terminal Core для одного кассира на одном Primary Edge Node:
-  - показывает сотрудника, session, pairing/node status;
+  - показывает сотрудника, ресторан, node/client device, backend session, личную смену, кассовую смену и pairing/node status;
   - показывает текущую личную смену и кассовую смену;
   - открывает личную смену и кассовую смену;
   - закрывает кассовую смену и показывает безопасное действие закрытия личной смены;
@@ -170,6 +180,7 @@ Server state хранится только через `@tanstack/vue-query`. Fro
 - `src/shared/api.ts` является единым API client и различает `401/403/404/409/429/5xx/network/timeout`.
 - Backend error envelope нормализуется в `ApiError` с `code`, `messageKey`, `category` и `correlationId`.
 - Critical/business errors показываются через global Quasar dialog из `src/stores/errorDialog.ts`.
+- Dialog/inline banners показывают безопасный support code: `correlation_id`, если он есть, иначе стабильный `error_code` вроде `INVALID_RESPONSE`, `NETWORK_ERROR` или backend code.
 - Все user-facing ошибки идут через `vue-i18n` keys.
 - `401` очищает local session и ведет к login flow.
 - `403` показывает "Недостаточно прав" и не выполняет logout.
@@ -192,14 +203,19 @@ Server state хранится только через `@tanstack/vue-query`. Fro
 - `GET /api/v1/cash-shifts/current`
 - `POST /api/v1/cash-shifts/open`
 - `POST /api/v1/cash-shifts/{id}/close`
+- `POST /api/v1/cash-drawer-events`
 - `GET /api/v1/halls`
 - `GET /api/v1/tables`
 - `GET /api/v1/menu/items`
 - `GET /api/v1/orders/current?table_id=...`
+- `GET /api/v1/orders/active?hall_id=...`
+- `GET /api/v1/orders/closed`
 - `POST /api/v1/orders`
 - `GET /api/v1/orders/{id}`
 - `POST /api/v1/orders/{id}/lines`
 - `PATCH /api/v1/orders/{id}/lines/{line_id}`
+- `PATCH /api/v1/orders/{id}/lines/{line_id}/modifiers`
+- `PATCH /api/v1/orders/{id}/lines/{line_id}/details`
 - `POST /api/v1/orders/{id}/lines/{line_id}/void`
 - `POST /api/v1/orders/{id}/precheck`
 - `GET /api/v1/orders/{id}/prechecks`
@@ -210,13 +226,18 @@ Server state хранится только через `@tanstack/vue-query`. Fro
 - `POST /api/v1/checks/{id}/reprint`
 - `POST /api/v1/checks/{id}/cancellations`
 - `POST /api/v1/checks/{id}/refunds`
+- `GET /api/v1/checks/{id}/financial-operations?limit=&offset=`
 - `POST /api/v1/payments/{id}/refund` (compatibility-only)
+- `GET /api/v1/sync/status`
+- `GET /api/v1/sync/outbox?limit=`
+- `GET /api/v1/sync/local-events?limit=&event_type=`
+- `POST /api/v1/sync/outbox/retry-failed`
 
 ## Ограничения
 
-- Нет waiter mode.
-- Нет KDS runtime.
-- Refund/cancellation pilot flow реализован для закрытых заказов: full check cancellation через `/checks/{id}/cancellations`, full check refund через `/checks/{id}/refunds`, compatibility refund по captured payment через `/payments/{id}/refund`.
+- Waiter route `/pos/waiter` реализован только как mobile order/precheck surface по существующим POS contracts; payment/refund/cash drawer authority в нем не включена по умолчанию.
+- KDS route `/pos/kitchen` является readiness-only экраном, не KDS runtime.
+- Refund/cancellation pilot flow реализован для закрытых заказов: full whole-check и partial `order_line`/quantity cancellation/refund через `/checks/{id}/cancellations` и `/checks/{id}/refunds`, compatibility refund по captured payment через `/payments/{id}/refund`.
 - Нет tax engine rewrite.
 - Precheck/check reprint UI использует backend immutable snapshot endpoints.
 - Нет backoffice.
