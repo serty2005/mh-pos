@@ -35,6 +35,8 @@
 - cashier modifier selection/edit flow for menu items with modifier groups;
 - controlled precheck/check reprint from immutable snapshots;
 - append-only cancellation/refund ledger, cashier UI для full whole-check и partial `order_line`/quantity cancellation/refund с явным `inventory_disposition` и compatibility payment refund fallback;
+- cashier POS UI shell состоит из разделов `floor`, `order`, `activity`, `reports`, `cash`; storage/archive/backoffice, Cloud reporting, delivery runtime и settings не входят в operator-facing cashier flow;
+- cashier POS UI не показывает active commands для table/order transfer, split/fractional split, banquet/preorder, mock waiter filters или discount/surcharge editor без отдельного backend/API/UI contract;
 - Edge -> Cloud operational outbox foundation;
 - Cloud -> Edge master-data ingest for supported streams.
 - POS Edge stop-list sale blocking при `AddOrderLine` и увеличении quantity по direct `catalog_item_id` и mandatory active recipe components из локальных `recipe_versions`/`recipe_lines`.
@@ -395,6 +397,7 @@ Inventory and costing logic:
 
 - Cloud-authored `pricing_policy` доставляется на Edge с `manual`, `requires_permission`, `application_index`, amount fields и lifecycle-derived `active`.
 - POS runtime применяет скидки/надбавки по `pricing_policy_id`, копирует расчетные поля из policy и сохраняет `pricing_policy_id` в runtime adjustment и precheck breakdown.
+- Текущий cashier UI показывает backend-provided totals скидок/надбавок, но не содержит active discount/surcharge editor.
 - Canonical calculation pipeline остается `order lines subtotal -> ordered discounts/surcharges by application_index -> taxable base -> taxes -> grand total`.
 - Tax Always Last: налоги считаются только после всех discounts/surcharges.
 

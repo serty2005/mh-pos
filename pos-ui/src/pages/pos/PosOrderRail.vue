@@ -45,7 +45,8 @@
               <strong>{{ terminal.money(modifier.total_price, terminal.orderCurrency.value) }}</strong>
             </li>
           </ul>
-          <p v-if="line.id === selectedLineId" class="line-note">{{ terminal.t('pos.courseValue', { value: 2 }) }}</p>
+          <p v-if="line.id === selectedLineId && line.course" class="line-note">{{ terminal.t('pos.courseValue', { value: line.course }) }}</p>
+          <p v-if="line.id === selectedLineId && line.comment" class="line-note">{{ line.comment }}</p>
         </article>
         <div v-if="!terminal.activeLines.value.length" class="empty-state">{{ terminal.t('pos.emptyOrder') }}</div>
       </div>

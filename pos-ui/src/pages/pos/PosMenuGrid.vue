@@ -38,7 +38,9 @@
       <span>{{ terminal.t(readonlyNoticeKey) }}</span>
     </div>
 
-    <div v-if="terminal.menu.isPending.value" class="dish-grid">
+    <div v-if="!terminal.canViewMenu.value" class="empty-state wide">{{ terminal.t('pos.noPermissionForMenu') }}</div>
+
+    <div v-else-if="terminal.menu.isPending.value" class="dish-grid">
       <q-skeleton v-for="n in 12" :key="n" class="dish-card dish-card-skeleton" />
     </div>
 
@@ -89,6 +91,7 @@ const visibleItems = computed(() => {
 });
 
 const readonlyNoticeKey = computed(() => {
+  if (!props.terminal.currentShift.data.value) return 'pos.noShift';
   if (props.terminal.activePrecheck.value || props.terminal.activeOrder.value?.status === 'locked') return 'pos.lockedAddHint';
   return '';
 });

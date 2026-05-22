@@ -1835,8 +1835,7 @@ button:focus-visible,
 
 .activity-order-main,
 .activity-order-meta,
-.payment-row span,
-.planned-block {
+.payment-row span {
   display: grid;
   gap: 4px;
 }
@@ -1845,7 +1844,6 @@ button:focus-visible,
 .activity-order-meta small,
 .payment-row small,
 .integrated-panel p,
-.planned-block p,
 .dashboard-metric small {
   color: var(--pos-muted);
 }
@@ -2003,14 +2001,6 @@ button:focus-visible,
 
 .compact-sync-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.planned-block {
-  margin: 12px;
-  padding: 12px;
-  background: #ffffff;
-  border: 1px dashed #cbd3ce;
-  border-radius: 8px;
 }
 
 .payment-dialog-card {
@@ -2564,7 +2554,6 @@ button.bottom-status {
   font-weight: 700;
 }
 
-.placeholder-action,
 .section-state-action {
   display: grid;
   place-items: center;
@@ -2597,6 +2586,16 @@ button.bottom-status {
 .context-primary-left:disabled {
   opacity: 0.52;
   cursor: not-allowed;
+}
+
+.passive-context-button {
+  pointer-events: none;
+  cursor: default;
+}
+
+.backlog-context-button {
+  color: var(--pos-muted);
+  border-style: dashed;
 }
 
 .selected-item-button {
@@ -3302,9 +3301,31 @@ button.bottom-status-cell {
   font-weight: 650;
 }
 
-.planned-list {
-  margin: 8px 0 0;
-  padding-left: 18px;
+.backlog-action-card {
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  color: var(--pos-muted);
+  background: #f7f8f8;
+  border: 1px dashed var(--pos-border);
+}
+
+.backlog-action-card span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.backlog-action-card strong {
+  color: var(--pos-text);
+}
+
+.backlog-action-card small {
+  color: var(--pos-muted);
+  line-height: 1.35;
 }
 
 @media (max-width: 1180px) {

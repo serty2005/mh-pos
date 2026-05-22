@@ -12,6 +12,8 @@
 - POS Edge backend содержит MVP `Pricing` boundary: line/order discounts, synced automatic discount/surcharge policies, manual/service/PB1 surcharge foundation, единый ordered discount/surcharge pipeline по `application_index`, percentage/fixed amounts, percentage/fixed tax rules, inclusive/exclusive tax foundation и deterministic integer rounding.
 - POS Edge order runtime хранит selected modifiers в строках заказа, учитывает цену modifiers в backend authoritative totals и сохраняет modifiers в precheck/check snapshots.
 - POS cashier UI показывает отдельную секцию услуг, открывает выбор modifiers для позиций с modifier groups и отображает выбранные modifiers в активном заказе.
+- POS cashier UI использует текущий shell `floor` / `order` / `activity` / `reports` / `cash`; delivery, settings, storage/archive/retention и Cloud reporting не являются operator-facing cashier flows.
+- Active-looking POS UI placeholders для переноса/разделения строки, banquet/preorder, mock waiter filters и discount/surcharge editor не считаются реализованным runtime: они скрыты, passive или disabled/backlog до появления backend/API/UI contract.
 - `CancelPrecheck` требует manager override, проверяет PIN/permission и возвращает unpaid active precheck order в `open`.
 - Оплата выполняется через `precheck_id`; partial payments разрешены; final check создается только после полной оплаты.
 - `POST /api/v1/checks/{id}/cancellations` и `POST /api/v1/checks/{id}/refunds` пишут append-only ledger `financial_operations`/`financial_operation_items` для full/partial cancellation и refund без мутации finalized payment/precheck/check.

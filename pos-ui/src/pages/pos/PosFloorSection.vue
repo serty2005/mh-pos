@@ -3,7 +3,9 @@
     <main class="hall-workspace" :aria-label="terminal.t('pos.floorPlan')">
       <q-banner v-if="terminal.statusError.value" class="error-banner dense-banner">{{ terminal.statusError.value }}</q-banner>
 
-      <div v-if="terminal.tables.isPending.value" class="floor-table-grid">
+      <div v-if="!terminal.currentShift.data.value" class="empty-state small">{{ terminal.t('pos.noShift') }}</div>
+      <div v-else-if="!terminal.canViewFloor.value" class="empty-state small">{{ terminal.t('pos.noPermissionForFloor') }}</div>
+      <div v-else-if="terminal.tables.isPending.value" class="floor-table-grid">
         <q-skeleton v-for="n in 15" :key="n" class="floor-table-tile skeleton-tile" />
       </div>
       <q-banner v-else-if="terminal.tables.isError.value" class="error-banner dense-banner">{{ terminal.t('common.error') }}</q-banner>
@@ -124,6 +126,7 @@ function openTable(card: TableCard) {
   props.terminal.selectTable(card.id);
   if (card.status === 'free') {
     void nextTick(() => {
+      if (!props.terminal.canCreateOrder.value) return;
       props.terminal.createOrderMutation.mutate();
       emit('open-orders');
     });

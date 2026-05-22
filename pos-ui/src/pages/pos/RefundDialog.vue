@@ -62,9 +62,9 @@
             :label="terminal.t('pos.operationKind')"
             disable
           />
-          <div class="planned-scope-panel">
+          <div class="unsupported-scope-panel">
             <p class="eyebrow">{{ terminal.t('pos.unsupportedLedgerScopes') }}</p>
-            <div class="planned-scope-list">
+            <div class="unsupported-scope-list">
               <q-chip v-for="scope in terminal.unsupportedLedgerScopeOptions.value" :key="scope" dense outline color="grey-7">
                 {{ scope }}
               </q-chip>
@@ -121,7 +121,7 @@ defineProps<{
   color: #5f4300;
 }
 
-.planned-scope-panel {
+.unsupported-scope-panel {
   display: grid;
   gap: 8px;
   padding: 12px;
@@ -130,7 +130,7 @@ defineProps<{
   background: rgba(36, 42, 54, 0.03);
 }
 
-.planned-scope-list {
+.unsupported-scope-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;

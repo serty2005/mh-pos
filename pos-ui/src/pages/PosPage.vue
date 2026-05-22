@@ -2,14 +2,14 @@
   <q-page class="pos-page pos-app-shell" :class="`section-${activeSection}`">
     <header class="pos-context-bar" :aria-label="terminal.t('pos.topContext')">
       <div v-if="activeSection === 'order' && terminal.activeOrder.value" class="context-actions order-context-actions">
-        <button class="context-button selected-item-button" type="button" :disabled="!terminal.selectedOrderLine.value" @click="selectedItemDialog = true">
+        <span class="context-button selected-item-button passive-context-button" :aria-label="terminal.t('pos.selectedLine')">
           {{ selectedLineName }}
-        </button>
-        <button class="context-button" type="button" :disabled="!terminal.selectedOrderLine.value" @click="lineModifierDialog = true">
-          <q-icon name="construction" size="20px" />
+        </span>
+        <button class="context-button" type="button" :disabled="!canEditSelectedLineModifiers" :title="editSelectedLineModifiersTitle" @click="editSelectedLineModifiers">
+          <q-icon name="tune" size="20px" />
           <span>{{ terminal.t('pos.lineModifier') }}</span>
         </button>
-        <button class="context-button" type="button" :disabled="!terminal.selectedOrderLine.value" @click="lineCommentDialog = true">
+        <button class="context-button" type="button" :disabled="!canEditSelectedLineDetails" @click="lineCommentDialog = true">
           <q-icon name="notes" size="20px" />
           <span>{{ terminal.t('pos.lineComment') }}</span>
         </button>
@@ -19,7 +19,7 @@
           class="context-button course-button"
           icon="add_circle_outline"
           :label="terminal.t('pos.course')"
-          :disable="!terminal.selectedOrderLine.value"
+          :disable="!canEditSelectedLineDetails"
         >
           <q-list dense>
             <q-item v-for="course in courseOptions" :key="course" v-close-popup clickable @click="saveCourse(course)">
@@ -30,7 +30,7 @@
       </div>
 
       <div v-else-if="activeSection === 'floor'" class="context-actions floor-context-actions">
-        <q-btn color="primary" unelevated square class="context-primary-left" icon="add" :label="terminal.t('pos.createOrderShort')" :disable="!terminal.activeTables.value.length" @click="createOrderDialog = true" />
+        <q-btn color="primary" unelevated square class="context-primary-left" icon="add" :label="terminal.t('pos.createOrderShort')" :disable="!terminal.activeTables.value.length || !terminal.canStartOrderFromFloor.value" @click="createOrderDialog = true" />
         <q-btn-dropdown flat square class="context-button" :label="selectedHallName">
           <q-list dense>
             <q-item v-for="hall in terminal.activeHalls.value" :key="hall.id" v-close-popup clickable @click="terminal.selectHall(hall.id)">
@@ -38,13 +38,14 @@
             </q-item>
           </q-list>
         </q-btn-dropdown>
-        <button class="context-button" type="button" @click="waiterFilterDialog = true">
-          <span>{{ terminal.t('pos.waiterFilter') }}</span>
-        </button>
-        <button class="context-button" type="button" @click="banquetDialog = true">
-          <q-icon name="add" size="20px" />
-          <span>{{ terminal.t('pos.banquet') }}</span>
-        </button>
+        <span class="context-button passive-context-button">
+          <q-icon name="person" size="20px" />
+          <span>{{ waiterContextLabel }}</span>
+        </span>
+        <span class="context-button passive-context-button backlog-context-button" :title="terminal.t('pos.backlogFeatureReason')">
+          <q-icon name="event" size="20px" />
+          <span>{{ terminal.t('pos.banquetBacklog') }}</span>
+        </span>
       </div>
 
       <div v-else class="context-actions">
@@ -66,10 +67,10 @@
           <small>{{ terminal.t('pos.waiter') }}</small>
           <strong>{{ terminal.actorName.value || '-' }}</strong>
         </span>
-        <button class="top-status-cell two-line-cell" type="button" @click="discountDialog = true">
+        <span class="top-status-cell two-line-cell">
           <small>{{ openedLabel }}</small>
-          <strong>{{ discountLabel }}</strong>
-        </button>
+          <strong>{{ pricingAdjustmentsLabel }}</strong>
+        </span>
       </div>
 
       <div v-else-if="activeSection === 'floor'" class="top-status-grid floor-status-grid">
@@ -141,28 +142,6 @@
       </nav>
     </div>
 
-    <q-dialog v-model="selectedItemDialog">
-      <q-card class="dialog-card pos-square-dialog">
-        <q-card-section>
-          <p class="eyebrow">{{ terminal.t('pos.selectedLine') }}</p>
-          <h2>{{ selectedLineName }}</h2>
-        </q-card-section>
-        <q-card-section class="dialog-copy">{{ terminal.t('pos.selectedLinePlaceholder') }}</q-card-section>
-        <q-card-actions align="right"><q-btn flat :label="terminal.t('actions.close')" @click="selectedItemDialog = false" /></q-card-actions>
-      </q-card>
-    </q-dialog>
-
-    <q-dialog v-model="lineModifierDialog">
-      <q-card class="dialog-card pos-square-dialog">
-        <q-card-section>
-          <p class="eyebrow">{{ selectedLineName }}</p>
-          <h2>{{ terminal.t('pos.lineModifier') }}</h2>
-        </q-card-section>
-        <q-card-section class="dialog-copy">{{ terminal.t('pos.lineModifierPlaceholder') }}</q-card-section>
-        <q-card-actions align="right"><q-btn flat :label="terminal.t('actions.close')" @click="lineModifierDialog = false" /></q-card-actions>
-      </q-card>
-    </q-dialog>
-
     <q-dialog v-model="lineCommentDialog">
       <q-card class="dialog-card pos-square-dialog">
         <q-card-section>
@@ -186,7 +165,13 @@
           <h2>{{ terminal.t('pos.lineActions') }}</h2>
         </q-card-section>
         <q-card-section class="line-action-grid">
-          <button v-for="key in lineActionKeys" :key="key" class="line-action-button" type="button">{{ terminal.t(key) }}</button>
+          <article v-for="item in lineActionItems" :key="item.labelKey" class="backlog-action-card" aria-disabled="true">
+            <q-icon :name="item.icon" size="20px" />
+            <span>
+              <strong>{{ terminal.t(item.labelKey) }}</strong>
+              <small>{{ terminal.t(item.reasonKey) }}</small>
+            </span>
+          </article>
         </q-card-section>
         <q-card-actions align="right"><q-btn flat :label="terminal.t('actions.close')" @click="lineActionsDialog = false" /></q-card-actions>
       </q-card>
@@ -213,43 +198,6 @@
       </q-card>
     </q-dialog>
 
-    <q-dialog v-model="waiterFilterDialog">
-      <q-card class="dialog-card pos-square-dialog">
-        <q-card-section><h2>{{ terminal.t('pos.waiterFilter') }}</h2></q-card-section>
-        <q-card-section class="waiter-filter-list">
-          <q-checkbox v-for="waiter in waiterFilters" :key="waiter.nameKey" v-model="waiter.selected" :label="`${terminal.t(waiter.nameKey)} (${waiter.count})`" />
-        </q-card-section>
-        <q-card-actions align="right"><q-btn flat :label="terminal.t('actions.close')" @click="waiterFilterDialog = false" /></q-card-actions>
-      </q-card>
-    </q-dialog>
-
-    <q-dialog v-model="banquetDialog">
-      <q-card class="dialog-card pos-square-dialog">
-        <q-card-section>
-          <h2>{{ terminal.t('pos.banquetPlannedTitle') }}</h2>
-        </q-card-section>
-        <q-card-section class="dialog-copy">
-          <p>{{ terminal.t('pos.banquetPlannedBody') }}</p>
-          <ul class="planned-list">
-            <li>{{ terminal.t('pos.banquetPlanTables') }}</li>
-            <li>{{ terminal.t('pos.banquetPlanTime') }}</li>
-            <li>{{ terminal.t('pos.banquetPlanPrepayment') }}</li>
-            <li>{{ terminal.t('pos.banquetPlanPreorder') }}</li>
-            <li>{{ terminal.t('pos.banquetPlanFutureOrder') }}</li>
-          </ul>
-        </q-card-section>
-        <q-card-actions align="right"><q-btn flat :label="terminal.t('actions.close')" @click="banquetDialog = false" /></q-card-actions>
-      </q-card>
-    </q-dialog>
-
-    <q-dialog v-model="discountDialog">
-      <q-card class="dialog-card pos-square-dialog">
-        <q-card-section><h2>{{ terminal.t('pos.discountSurcharge') }}</h2></q-card-section>
-        <q-card-section class="dialog-copy">{{ terminal.t('pos.discountSurchargePlaceholder') }}</q-card-section>
-        <q-card-actions align="right"><q-btn flat :label="terminal.t('actions.close')" @click="discountDialog = false" /></q-card-actions>
-      </q-card>
-    </q-dialog>
-
     <pos-payment-dialog v-model="paymentDialog" :terminal="terminal" />
     <pos-actions-dialog v-model="actionsDialog" :terminal="terminal" />
     <closed-orders-drawer :terminal="terminal" />
@@ -262,7 +210,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import CashDrawerDialog from './pos/CashDrawerDialog.vue';
 import ClosedOrdersDrawer from './pos/ClosedOrdersDrawer.vue';
@@ -288,14 +236,9 @@ const activeSection = ref<PosSectionId>('floor');
 const sectionMenuOpen = ref(false);
 const paymentDialog = ref(false);
 const actionsDialog = ref(false);
-const selectedItemDialog = ref(false);
-const lineModifierDialog = ref(false);
 const lineCommentDialog = ref(false);
 const lineActionsDialog = ref(false);
 const createOrderDialog = ref(false);
-const waiterFilterDialog = ref(false);
-const banquetDialog = ref(false);
-const discountDialog = ref(false);
 const sectionWasInitialized = ref(false);
 
 const sections: Array<{ id: PosSectionId; icon: string; labelKey: string }> = [
@@ -307,20 +250,21 @@ const sections: Array<{ id: PosSectionId; icon: string; labelKey: string }> = [
 ];
 
 const courseOptions = ['1', '2', '3', '4', '5', 'VIP'];
-const lineActionKeys = [
-  'pos.moveToAnotherTable',
-  'pos.moveToAnotherOrder',
-  'pos.splitDish',
-  'pos.enableFractionalSplit',
+const lineActionItems = [
+  { labelKey: 'pos.moveToAnotherTable', reasonKey: 'pos.lineActionBacklogReason', icon: 'table_restaurant' },
+  { labelKey: 'pos.moveToAnotherOrder', reasonKey: 'pos.lineActionBacklogReason', icon: 'receipt_long' },
+  { labelKey: 'pos.splitDish', reasonKey: 'pos.lineActionBacklogReason', icon: 'call_split' },
+  { labelKey: 'pos.enableFractionalSplit', reasonKey: 'pos.lineActionBacklogReason', icon: 'splitscreen' },
 ];
 
-const waiterFilters = reactive([
-  { nameKey: 'pos.mockWaiters.oleg', count: 12, selected: true },
-  { nameKey: 'pos.mockWaiters.anna', count: 8, selected: true },
-  { nameKey: 'pos.mockWaiters.ivan', count: 3, selected: false },
-]);
-
 const selectedLineName = computed(() => terminal.selectedOrderLine.value?.name ?? terminal.t('pos.noSelectedLine'));
+const canEditSelectedLineDetails = computed(() => Boolean(terminal.selectedOrderLine.value && terminal.canChangeOrderLine.value));
+const canEditSelectedLineModifiers = computed(() => {
+  const lineId = terminal.selectedOrderLine.value?.id;
+  return Boolean(lineId && terminal.canChangeOrderLine.value && terminal.canEditLineModifiers(lineId));
+});
+const editSelectedLineModifiersTitle = computed(() => canEditSelectedLineModifiers.value ? terminal.t('actions.editModifiers') : terminal.t('pos.modifierEditUnavailable'));
+const waiterContextLabel = computed(() => terminal.actorName.value ? terminal.t('pos.waiterContext', { name: terminal.actorName.value }) : terminal.t('pos.waiter'));
 const selectedHallName = computed(() => terminal.activeHalls.value.find((hall) => hall.id === terminal.selectedHallId.value)?.name ?? terminal.t('pos.halls'));
 const currentSectionTitleKey = computed(() => sections.find((section) => section.id === activeSection.value)?.labelKey ?? 'pos.sections.order');
 const hallTableLabel = computed(() => {
@@ -333,7 +277,15 @@ const openedLabel = computed(() => {
   if (!openedAt) return terminal.t('pos.openedEmpty');
   return terminal.t('pos.openedAt', { value: formatOpenedAt(openedAt) });
 });
-const discountLabel = computed(() => terminal.t('pos.discountPercent', { value: 0 }));
+const pricingAdjustmentsLabel = computed(() => {
+  const discount = terminal.activePrecheck.value?.discount_total ?? terminal.finalCheckData.value?.discount_total ?? terminal.activeOrder.value?.discount_total ?? 0;
+  const surcharge = terminal.activePrecheck.value?.surcharge_total ?? terminal.finalCheckData.value?.surcharge_total ?? 0;
+  if (discount === 0 && surcharge === 0) return terminal.t('pos.pricingAdjustmentsNone');
+  return terminal.t('pos.pricingAdjustmentsValue', {
+    discount: terminal.money(discount, terminal.orderCurrency.value),
+    surcharge: terminal.money(surcharge, terminal.orderCurrency.value),
+  });
+});
 const shiftTotal = computed(() => (terminal.closedOrders.data.value ?? []).reduce((sum, order) => sum + order.total, 0) + (terminal.activeOrder.value?.total ?? 0));
 const ordersCount = computed(() => (terminal.closedOrders.data.value ?? []).length + (terminal.activeOrder.value ? 1 : 0));
 const averageCheck = computed(() => ordersCount.value > 0 ? Math.round(shiftTotal.value / ordersCount.value) : 0);
@@ -369,20 +321,29 @@ watch(lineCommentDialog, (open) => {
 });
 
 function saveCourse(course: string) {
+  if (!canEditSelectedLineDetails.value) return;
   terminal.lineCourseDraft.value = course;
   terminal.lineCommentDraft.value = terminal.selectedOrderLine.value?.comment ?? '';
   terminal.saveSelectedLineDetails();
 }
 
 function saveLineComment() {
+  if (!canEditSelectedLineDetails.value) return;
   terminal.saveSelectedLineDetails();
   lineCommentDialog.value = false;
+}
+
+function editSelectedLineModifiers() {
+  const lineId = terminal.selectedOrderLine.value?.id;
+  if (!lineId || !canEditSelectedLineModifiers.value) return;
+  terminal.editLineModifiers(lineId);
 }
 
 function createOrderAtTable(tableId: string) {
   terminal.selectTable(tableId);
   createOrderDialog.value = false;
   void nextTick(() => {
+    if (!terminal.canCreateOrder.value) return;
     terminal.createOrderMutation.mutate();
     openSection('order');
   });

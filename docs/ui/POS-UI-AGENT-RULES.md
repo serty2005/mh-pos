@@ -129,7 +129,7 @@ POS UI должен руководствоваться восемью золот
 
 ## Modals
 
-- Модалки используются для процессов: payment, refund, manager override, cash drawer event, precheck cancel, запланированные modifiers/split.
+- Модалки используются для процессов: payment, refund, manager override, cash drawer event, precheck cancel и реально поддержанное редактирование modifiers. Split/transfer/merge можно показывать только как disabled/backlog state без active command.
 - Modal не меняет текущий section/context.
 - Financial/destructive modal должен показывать сумму, действие, последствия и confirmation.
 
@@ -142,7 +142,7 @@ POS UI должен руководствоваться восемью золот
 
 ## Backend boundaries
 
-- Сейчас реализованы: halls/tables read, menu/catalog read, service item секция, selected modifiers при добавлении order line, orders, order lines quantity/void, backend stop-list sale blocking error handling, backend pricing preview, precheck, payments, reprint, bounded ledger history reads, whole-check и partial `order_line`/quantity cancellation/refund, compatibility payment refund, shifts, cash sessions, cash drawer events, sync status.
+- Сейчас реализованы: halls/tables read, menu/catalog read, service item секция, selected modifiers при добавлении order line, редактирование modifiers активной открытой строки, comment/course для строки заказа, orders, order lines quantity/void, backend stop-list sale blocking error handling, backend pricing preview, precheck, payments, reprint, bounded ledger history reads, whole-check и partial `order_line`/quantity cancellation/refund, compatibility payment refund, shifts, cash sessions, cash drawer events, sync status.
 - Сейчас не реализованы как UI runtime: rich partial cancellation/refund scopes by line/modifier/service/tip, cashier discount/surcharge editor, tax policy editor, split bill, transfer/merge tables, KDS lifecycle, delivery/pickup/QR/reservations, real PSP, fiscal adapter.
 - Для будущих функций компоненты можно проектировать extensible, но не показывать активную кнопку без ручки.
 

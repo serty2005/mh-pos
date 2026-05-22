@@ -405,6 +405,7 @@ export function useCashierTerminal() {
   const currency = computed(() => activeMenuItems.value[0]?.currency ?? 'RUB');
   const orderCurrency = computed(() => activeMenuItems.value.find((item) => activeLines.value.some((line) => line.menu_item_id === item.id))?.currency ?? currency.value);
   const canRecordCashDrawerEvent = computed(() => Boolean(currentCashSession.data.value && hasPermission(grantedPermissions.value, permissionCatalog.cashDrawerRecordEvent)));
+  const canStartOrderFromFloor = computed(() => Boolean(currentShift.data.value && hasPermission(grantedPermissions.value, permissionCatalog.orderCreate)));
   const canCreateOrder = computed(() => Boolean(selectedTableId.value && currentShift.data.value && !activeOrder.value && hasPermission(grantedPermissions.value, permissionCatalog.orderCreate)));
   const canAddOrderLine = computed(() => Boolean(activeOrder.value?.status === 'open' && !activePrecheck.value && !activeOrder.value.check && hasPermission(grantedPermissions.value, permissionCatalog.orderAddLine)));
   const canChangeOrderLine = computed(() => Boolean(activeOrder.value?.status === 'open' && !activePrecheck.value && !activeOrder.value.check && hasPermission(grantedPermissions.value, permissionCatalog.orderChangeQuantity)));
@@ -1197,12 +1198,15 @@ export function useCashierTerminal() {
     canCloseShift,
     canOpenCashSession,
     canCloseCashSession,
+    canViewFloor,
+    canViewMenu,
     canRecordCashDrawerEvent,
     canViewSync,
     canRetrySync,
     canViewClosedOrders,
     canRefundPayment,
     canRecordCheckCancellation,
+    canStartOrderFromFloor,
     canCreateOrder,
     canAddOrderLine,
     canChangeOrderLine,
