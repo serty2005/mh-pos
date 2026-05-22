@@ -8,21 +8,22 @@
     <template v-for="field in ctx.visibleFields.value" :key="field.key">
       <q-checkbox v-if="field.type === 'checkbox'" v-model="ctx.form[field.key]" :label="t(field.labelKey)" />
       <template v-else-if="field.type === 'permissionMatrix'" />
-      <q-select
-        v-else-if="field.options"
-        :key="`${field.key}-${ctx.selectOptions(field).length}`"
-        :model-value="ctx.form[field.key]"
-        @update:model-value="(value) => ctx.setFormValue(field.key, value)"
-        dense
-        outlined
-        clearable
-        emit-value
-        map-options
-        :disable="ctx.isSelectDisabled(field)"
-        :label="t(field.labelKey)"
-        :options="ctx.selectOptions(field)"
-      />
-      <p v-if="field.options && ctx.isSelectDisabled(field)" class="cloud-field-hint">{{ t('cloud.form.selectDataFirst') }}</p>
+      <template v-else-if="field.options">
+        <q-select
+          :key="`${field.key}-${ctx.selectOptions(field).length}`"
+          :model-value="ctx.form[field.key]"
+          @update:model-value="(value) => ctx.setFormValue(field.key, value)"
+          dense
+          outlined
+          clearable
+          emit-value
+          map-options
+          :disable="ctx.isSelectDisabled(field)"
+          :label="t(field.labelKey)"
+          :options="ctx.selectOptions(field)"
+        />
+        <p v-if="ctx.isSelectDisabled(field)" class="cloud-field-hint">{{ t('cloud.form.selectDataFirst') }}</p>
+      </template>
       <q-input
         v-else
         :model-value="ctx.inputModelValue(field.key)"
