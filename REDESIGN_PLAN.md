@@ -90,6 +90,138 @@
 | Плитки меню (tablet/desktop) | 96-128 px | Menu grid |
 | Плитки меню (compact) | 80-104 px | Mobile adaptation |
 
+### 2.3 Главный viewport и правила скролла
+
+Главное POS-окно всегда должно занимать ровно размер экрана/viewport и не должно иметь собственных scrollbar-ов.
+
+Правило обязательное:
+
+- `html`, `body`, корневой app container и основной POS shell должны работать в пределах `100vw` × `100vh`;
+- главное окно POS не должно прокручиваться целиком;
+- прокрутка допускается только внутри внутренних областей: menu grid, order lines, activity list, reports table, cash events, modal body;
+- bottom bar, action rail, modal stack и основные navigation controls не должны уезжать за пределы экрана;
+- при нехватке места должен скроллиться внутренний список/панель, а не весь POS shell;
+- любые новые страницы/разделы должны проходить проверку: у главного окна нет document-level scrollbars.
+
+Рекомендуемый CSS-инвариант:
+
+```css
+html,
+body,
+#app {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.pos-shell {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.pos-main {
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.pos-scroll-area {
+  min-height: 0;
+  overflow: auto;
+}
+```
+
+### 2.4 Touch-first scrollbar и управление без мыши
+
+POS-интерфейс проектируется в первую очередь под touch/touchpad-работу. Работа мышью является вторичной.
+
+Обязательные требования:
+
+- все кнопки, action controls, list rows и scroll controls должны быть увеличены под палец;
+- мелкие desktop-style controls запрещены на рабочих POS-экранах;
+- scrollbar должен быть заметным, крупным и удобным для touch;
+- стандартный узкий desktop scrollbar не должен быть единственным способом навигации;
+- для длинных списков желательно иметь дополнительные touch-friendly кнопки прокрутки.
+
+Специальное правило для кастомных scrollbars:
+
+- убрать классический маленький ползунок между кнопками, если он неудобен для touch;
+- по краям scrollable-области отрисовывать две полупрозрачные кнопки прокрутки;
+- для горизонтального скролла использовать кнопки с иконками `left` / `right`;
+- для вертикального скролла использовать кнопки с иконками `up` / `down`;
+- кнопки должны быть достаточно крупными и не перекрывать критичный контент;
+- кнопки могут появляться только когда соответствующая прокрутка возможна;
+- при удержании кнопки допускается continuous scroll;
+- wheel/mouse scrolling и touch/trackpad scrolling должны оставаться рабочими.
+
+### 2.5 Иконки UI
+
+Для MVP используется единая базовая библиотека иконок: **Lucide Icons**.
+
+Правила стиля:
+
+- стиль: outline;
+- stroke width: 1.75–2px;
+- без цветного визуального шума;
+- цвет иконки должен наследоваться от состояния компонента или design token;
+- размеры: 16 / 20 / 24 / 32 px;
+- для POS-экрана использовать крупнее: 28 / 32 px;
+- для backoffice использовать компактнее: 16 / 20 / 24 px;
+- не смешивать Lucide с другими icon packs без отдельного решения.
+
+Базовое соответствие разделов и иконок:
+
+| Раздел / сущность | Lucide icon |
+|-------------------|-------------|
+| Заказы | `ReceiptText` / `ShoppingCart` |
+| Столы | `Armchair` / `LayoutGrid` |
+| Гости | `Users` |
+| Оплата | `CreditCard` |
+| Наличные | `Banknote` |
+| Смена | `Clock` / `CalendarClock` |
+| Касса | `Landmark` / `Wallet` |
+| Кухня | `ChefHat` |
+| Склад | `Warehouse` |
+| Номенклатура | `Package` |
+| Блюда | `Utensils` |
+| Модификаторы | `ListPlus` / `SlidersHorizontal` |
+| Скидки | `BadgePercent` |
+| Лояльность | `Gift` / `HeartHandshake` |
+| Фискализация | `FileCheck` |
+| Настройки | `Settings` |
+| Организация | `Building2` |
+| Ресторан / точка | `Store` |
+| Отчёты | `ChartNoAxesColumn` / `BarChart3` |
+| Персонал | `UserCog` |
+| Доставка | `Truck` |
+| Резервы | `CalendarCheck` |
+
+### 2.6 Тянущийся дизайн и обрезка текста
+
+Весь POS UI должен быть тянущимся и адаптивным. Интерфейс не должен ломаться из-за длинных названий блюд, столов, категорий, сотрудников, ресторанов или статусов.
+
+Правило обязательное:
+
+- если текст не помещается в кнопку, плитку, строку таблицы, chip, tab или action control, текст не нужно пытаться впихнуть уменьшением шрифта до нечитаемого размера;
+- вместо этого текст должен обрезаться и завершаться `...`;
+- layout должен сохранять размеры и не раздвигать соседние элементы;
+- компоненты должны поддерживать `min-width: 0`, `overflow: hidden`, `text-overflow: ellipsis`, `white-space: nowrap` там, где это уместно;
+- для важных длинных значений можно использовать tooltip/details modal, но рабочий экран не должен переполняться.
+
+Рекомендуемый CSS-паттерн:
+
+```css
+.pos-ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+```
+
 ## 3. Экран выбранного заказа (Приоритет #1)
 
 ### 3.1 Layout
@@ -395,6 +527,7 @@ const permissions = {
 2. Добавить context chips в bottom bar
 3. Улучшить visual hierarchy order rail
 4. Реализовать четкий locked state
+5. Зафиксировать viewport без document-level scrollbars, touch-first scroll controls, Lucide icons и ellipsis overflow rules
 
 ### Phase 2 (Неделя 3-4)
 1. Переименовать разделы согласно design.md
