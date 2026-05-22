@@ -691,10 +691,13 @@ const selectedPermissions = computed(() => {
   const value = form.permission_ids;
   return Array.isArray(value) ? value : [];
 });
-const errorDetailsList = computed(() => Object.entries(errorDetails.value).map(([key, value]) => ({ key, label: readableDetailLabel(key), value })));
+const errorDetailsList = computed(() => Object.entries(errorDetails.value).map(([key, value]) => ({ key, label: readableDetailLabel(key), value: safeDetailValue(key, value) })));
 const onboardingChecks = computed(() => {
   const roles = scopedRows.roles.length;
   const employees = scopedRows.employees.length;
+  const catalogItems = scopedRows.catalogItems.length;
+  const modifierGroups = scopedRows.modifierGroups.length;
+  const pricingPolicies = scopedRows.pricingPolicies.length;
   const halls = scopedRows.halls.length;
   const tables = scopedRows.tables.length;
   const menuItems = scopedRows.menuItems.length;
@@ -705,7 +708,10 @@ const onboardingChecks = computed(() => {
     { key: 'restaurant', ready: Boolean(selectedRestaurant.value), titleKey: 'cloud.onboarding.restaurant.title', descriptionKey: 'cloud.onboarding.restaurant.description', params: { count: restaurants.value.length }, target: 'restaurants' as ResourceKey, actionKey: 'cloud.onboarding.actions.open', icon: 'storefront' },
     { key: 'staff', ready: roles > 0 && employees > 0, titleKey: 'cloud.onboarding.staff.title', descriptionKey: 'cloud.onboarding.staff.description', params: { roles, employees }, target: 'roles' as ResourceKey, actionKey: 'cloud.onboarding.actions.configure', icon: 'badge' },
     { key: 'floor', ready: halls > 0 && tables > 0, titleKey: 'cloud.onboarding.floor.title', descriptionKey: 'cloud.onboarding.floor.description', params: { halls, tables }, target: 'halls' as ResourceKey, actionKey: 'cloud.onboarding.actions.configure', icon: 'table_restaurant' },
+    { key: 'catalog', ready: catalogItems > 0, titleKey: 'cloud.onboarding.catalog.title', descriptionKey: 'cloud.onboarding.catalog.description', params: { catalogItems }, target: 'catalogItems' as ResourceKey, actionKey: 'cloud.onboarding.actions.configure', icon: 'inventory_2' },
     { key: 'menu', ready: menuItems > 0, titleKey: 'cloud.onboarding.menu.title', descriptionKey: 'cloud.onboarding.menu.description', params: { menuItems }, target: 'menuItems' as ResourceKey, actionKey: 'cloud.onboarding.actions.configure', icon: 'restaurant_menu' },
+    { key: 'modifiers', ready: modifierGroups > 0, titleKey: 'cloud.onboarding.modifiers.title', descriptionKey: 'cloud.onboarding.modifiers.description', params: { modifierGroups }, target: 'modifierGroups' as ResourceKey, actionKey: 'cloud.onboarding.actions.configure', icon: 'tune' },
+    { key: 'pricing', ready: pricingPolicies > 0, titleKey: 'cloud.onboarding.pricing.title', descriptionKey: 'cloud.onboarding.pricing.description', params: { pricingPolicies }, target: 'pricingPolicies' as ResourceKey, actionKey: 'cloud.onboarding.actions.configure', icon: 'sell' },
     { key: 'inventory', ready: stopLists > 0, titleKey: 'cloud.onboarding.inventory.title', descriptionKey: 'cloud.onboarding.inventory.description', params: { stopLists }, target: 'stopLists' as ResourceKey, actionKey: 'cloud.onboarding.actions.configure', icon: 'block' },
     { key: 'edge', ready: nodeReady, titleKey: 'cloud.onboarding.edge.title', descriptionKey: 'cloud.onboarding.edge.description', params: { count: knownNodeOptions.value.length }, target: 'edgeDevices' as ResourceKey, actionKey: 'cloud.onboarding.actions.connect', icon: 'devices' },
     { key: 'publication', ready: Boolean(publication.value), titleKey: 'cloud.onboarding.publication.title', descriptionKey: 'cloud.onboarding.publication.description', params: { version: publication.value?.version ?? '-' }, target: 'publications' as ResourceKey, actionKey: 'cloud.onboarding.actions.publish', icon: 'publish' },
@@ -714,9 +720,12 @@ const onboardingChecks = computed(() => {
 });
 
 const launchSteps = [
-  { key: 'edge', status: 'current', badgeKey: 'cloud.launchPlan.badges.now', titleKey: 'cloud.launchPlan.steps.edge.title', descriptionKey: 'cloud.launchPlan.steps.edge.description' },
-  { key: 'organization', status: 'next', badgeKey: 'cloud.launchPlan.badges.next', titleKey: 'cloud.launchPlan.steps.organization.title', descriptionKey: 'cloud.launchPlan.steps.organization.description' },
+  { key: 'organization', status: 'current', badgeKey: 'cloud.launchPlan.badges.now', titleKey: 'cloud.launchPlan.steps.organization.title', descriptionKey: 'cloud.launchPlan.steps.organization.description' },
+  { key: 'staff', status: 'next', badgeKey: 'cloud.launchPlan.badges.next', titleKey: 'cloud.launchPlan.steps.staff.title', descriptionKey: 'cloud.launchPlan.steps.staff.description' },
+  { key: 'floor', status: 'next', badgeKey: 'cloud.launchPlan.badges.next', titleKey: 'cloud.launchPlan.steps.floor.title', descriptionKey: 'cloud.launchPlan.steps.floor.description' },
+  { key: 'catalog', status: 'next', badgeKey: 'cloud.launchPlan.badges.next', titleKey: 'cloud.launchPlan.steps.catalog.title', descriptionKey: 'cloud.launchPlan.steps.catalog.description' },
   { key: 'menu', status: 'next', badgeKey: 'cloud.launchPlan.badges.next', titleKey: 'cloud.launchPlan.steps.menu.title', descriptionKey: 'cloud.launchPlan.steps.menu.description' },
+  { key: 'edge', status: 'next', badgeKey: 'cloud.launchPlan.badges.next', titleKey: 'cloud.launchPlan.steps.edge.title', descriptionKey: 'cloud.launchPlan.steps.edge.description' },
   { key: 'publish', status: 'next', badgeKey: 'cloud.launchPlan.badges.next', titleKey: 'cloud.launchPlan.steps.publish.title', descriptionKey: 'cloud.launchPlan.steps.publish.description' },
   { key: 'sale', status: 'later', badgeKey: 'cloud.launchPlan.badges.later', titleKey: 'cloud.launchPlan.steps.sale.title', descriptionKey: 'cloud.launchPlan.steps.sale.description' },
 ];
@@ -806,6 +815,7 @@ const cloudCtx = {
   formatCell,
   statusText,
   edgeStatusText,
+  safeOperationalValue,
   formatDate,
   permissionLabel,
   togglePermission,
@@ -1315,6 +1325,12 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short' }).format(date);
 }
 
+function safeOperationalValue(value: string) {
+  if (!value || value === '-') return '-';
+  if (value.length <= 32) return value;
+  return `${value.slice(0, 16)}...${value.slice(-8)}`;
+}
+
 function shortId(value: string) {
   return value.length > 12 ? `${value.slice(0, 8)}...` : value;
 }
@@ -1406,5 +1422,11 @@ function readableDetailLabel(key: string) {
   const translationKey = `errors.details.${key}`;
   const translated = t(translationKey);
   return translated === translationKey ? key : translated;
+}
+
+function safeDetailValue(key: string, value: string) {
+  if (/payload|token|secret|pin|password|credential|sql|stack/i.test(key)) return t('errors.details.redacted');
+  if (/payload|token|secret|pin|password|credential|sql|stack/i.test(value)) return t('errors.details.redacted');
+  return value.length > 96 ? `${value.slice(0, 96)}...` : value;
 }
 </script>

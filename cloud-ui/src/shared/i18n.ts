@@ -45,6 +45,7 @@ export const i18n = createI18n({
         details: {
           field: 'Поле',
           reason: 'Причина',
+          redacted: 'Скрыто в интерфейсе',
         },
         device: {
           alreadyRegistered: 'Edge-устройство уже зарегистрировано.',
@@ -268,6 +269,7 @@ export const i18n = createI18n({
           createAction: 'Создать',
           edit: 'Редактирование',
           new: 'Новая запись',
+          selectDataFirst: 'Сначала создайте или загрузите связанные данные. Ручной ввод ID в этом поле не используется.',
         },
         actions: {
           activate: 'Активировать',
@@ -327,17 +329,29 @@ export const i18n = createI18n({
             later: 'после пилота',
           },
           steps: {
-            edge: {
-              title: 'Подключить Edge-device к Cloud',
-              description: 'Оператор видит незакрепленные терминалы, назначает ресторан и получает безопасную точку входа к snapshot master data.',
-            },
             organization: {
-              title: 'Проверить ресторан, зал, роли и сотрудников',
-              description: 'Cloud UI ведет по минимальным данным запуска, не заставляя пользователя работать с техническими таблицами.',
+              title: 'Выбрать ресторан',
+              description: 'Оператор начинает с ресторана и его базовых настроек учетного дня.',
+            },
+            staff: {
+              title: 'Подготовить роли и сотрудников',
+              description: 'Роли, права и PIN-сотрудники задаются до публикации в POS Edge.',
+            },
+            floor: {
+              title: 'Собрать зал и столы',
+              description: 'Залы и столы выбираются из master data, без ручного ввода идентификаторов в рабочем сценарии.',
+            },
+            catalog: {
+              title: 'Подготовить каталог, модификаторы и цены',
+              description: 'Каталог, группы модификаторов и pricing policies формируют основу продаваемого меню.',
             },
             menu: {
               title: 'Собрать продаваемое меню',
-              description: 'Каталог, модификаторы, цены и меню должны стать сценариями подготовки продажи на Edge-стороне.',
+              description: 'Menu items связываются с catalog items и публикуются как подтвержденный master-data stream.',
+            },
+            edge: {
+              title: 'Подключить Edge-device к Cloud',
+              description: 'Оператор видит незакрепленные терминалы, назначает ресторан и получает безопасную точку входа к snapshot master data.',
             },
             publish: {
               title: 'Опубликовать пакет и убедиться в готовности Edge',
@@ -387,6 +401,18 @@ export const i18n = createI18n({
           menu: {
             title: 'Продаваемое меню',
             description: 'Позиций меню: {menuItems}.',
+          },
+          catalog: {
+            title: 'Каталог',
+            description: 'Позиций каталога: {catalogItems}.',
+          },
+          modifiers: {
+            title: 'Модификаторы',
+            description: 'Групп модификаторов: {modifierGroups}.',
+          },
+          pricing: {
+            title: 'Цены',
+            description: 'Pricing policies: {pricingPolicies}.',
           },
           edge: {
             title: 'Edge подключен',

@@ -17,10 +17,19 @@
         </PosPanel>
 
         <PosPanel :eyebrow="t('pos.kdsLifecycle')" :title="t('pos.kitchenLifecycleSlots')">
-          <div class="kds-status-grid" :aria-label="t('pos.kdsLifecycle')">
-            <span v-for="status in statuses" :key="status">{{ t(status) }}</span>
+          <div class="kds-lifecycle-map" :aria-label="t('pos.kdsLifecycle')">
+            <span v-for="(status, index) in statuses" :key="status" class="kds-status-node">
+              <strong>{{ t(status) }}</strong>
+              <small v-if="index < statuses.length - 1">{{ t('pos.kitchenLifecycleFutureStep') }}</small>
+            </span>
           </div>
           <p class="kitchen-muted">{{ t('pos.kitchenLifecycleDisabled') }}</p>
+        </PosPanel>
+
+        <PosPanel :eyebrow="t('pos.plannedNext')" :title="t('pos.kitchenActivationGates')">
+          <ul class="readiness-list">
+            <li v-for="item in activationGates" :key="item">{{ t(item) }}</li>
+          </ul>
         </PosPanel>
 
         <PosPanel :eyebrow="t('pos.syncStatus')" :title="t('pos.kitchenSyncReadiness')">
@@ -60,5 +69,11 @@ const statuses = [
   'pos.kdsStatuses.served',
   'pos.kdsStatuses.recall',
   'pos.kdsStatuses.cancelled',
+];
+
+const activationGates = [
+  'pos.kitchenGates.ticketReadModel',
+  'pos.kitchenGates.lifecyclePermissions',
+  'pos.kitchenGates.syncEvents',
 ];
 </script>

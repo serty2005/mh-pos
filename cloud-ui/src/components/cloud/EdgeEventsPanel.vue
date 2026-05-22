@@ -13,8 +13,8 @@
       <div v-if="ctx.edgeEvents.value.length === 0" class="empty-state">
         {{ t('cloud.edgeEvents.empty') }}
       </div>
-      <div v-else class="cloud-table-scroll">
-        <table class="resource-table">
+      <div v-else class="cloud-table-wrap">
+        <table class="cloud-table">
           <thead>
             <tr>
               <th>{{ t('cloud.fields.cloud_received_at') }}</th>
@@ -29,7 +29,7 @@
             <tr v-for="event in ctx.edgeEvents.value" :key="event.cloud_receipt_id">
               <td>{{ ctx.formatDate(event.cloud_received_at) }}</td>
               <td><span class="cloud-status published">{{ event.event_type }}</span></td>
-              <td>{{ event.device_id }}</td>
+              <td>{{ ctx.formatCell('device_id', event.device_id) }}</td>
               <td>{{ event.aggregate_type }}</td>
               <td>{{ ctx.formatCell('aggregate_id', event.aggregate_id) }}</td>
               <td>{{ ctx.formatCell('raw_payload_sha256_hex', event.raw_payload_sha256_hex) }}</td>

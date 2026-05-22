@@ -22,6 +22,7 @@
         :label="t(field.labelKey)"
         :options="ctx.selectOptions(field)"
       />
+      <p v-if="field.options && ctx.isSelectDisabled(field)" class="cloud-field-hint">{{ t('cloud.form.selectDataFirst') }}</p>
       <q-input
         v-else
         :model-value="ctx.inputModelValue(field.key)"

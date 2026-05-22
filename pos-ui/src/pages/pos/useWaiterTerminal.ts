@@ -140,6 +140,7 @@ export function useWaiterTerminal() {
     return activeMenuItems.value.filter((item) => item.name.toLocaleLowerCase('ru-RU').includes(query));
   });
   const activePrecheck = computed(() => prechecks.data.value?.find((item) => item.status === 'issued') ?? null);
+  const orderIsLocked = computed(() => Boolean(activePrecheck.value || activeOrder.value?.status === 'locked' || activeOrder.value?.check));
   const latestPrecheck = computed(() => {
     const items = prechecks.data.value ?? [];
     return items.reduce((latest, item) => (latest === null || item.version > latest.version ? item : latest), null as (typeof items)[number] | null);
@@ -157,11 +158,12 @@ export function useWaiterTerminal() {
     return payload;
   });
   const canCreateOrder = computed(() => Boolean(selectedTableId.value && currentShift.data.value && !activeOrder.value && canCreateOrderPermission.value));
-  const canAddOrderLine = computed(() => Boolean(activeOrder.value?.status === 'open' && !activePrecheck.value && !activeOrder.value.check && canAddLinePermission.value));
-  const canChangeOrderLine = computed(() => Boolean(activeOrder.value?.status === 'open' && !activePrecheck.value && !activeOrder.value.check && canChangeLinePermission.value));
-  const canVoidOrderLine = computed(() => Boolean(activeOrder.value?.status === 'open' && !activePrecheck.value && !activeOrder.value.check && canVoidLinePermission.value));
+  const canAddOrderLine = computed(() => Boolean(activeOrder.value?.status === 'open' && !orderIsLocked.value && canAddLinePermission.value));
+  const canChangeOrderLine = computed(() => Boolean(activeOrder.value?.status === 'open' && !orderIsLocked.value && canChangeLinePermission.value));
+  const canVoidOrderLine = computed(() => Boolean(activeOrder.value?.status === 'open' && !orderIsLocked.value && canVoidLinePermission.value));
   const canIssuePrecheck = computed(() => Boolean(activeOrder.value?.status === 'open' && activeLines.value.length > 0 && !activePrecheck.value && canIssuePrecheckPermission.value));
   const canReprintPrecheck = computed(() => Boolean(latestPrecheck.value && canReprintPrecheckPermission.value));
+  const canSubmitModifierSelection = computed(() => Boolean(canAddOrderLine.value && modifierMenuItem.value && !addLineMutation.isPending.value));
   const statusError = computed(() => firstError([currentShift.error.value, halls.error.value, tables.error.value]));
   const orderError = computed(() => firstError([activeOrdersQuery.error.value, tableOrder.error.value, order.error.value, prechecks.error.value, menu.error.value]));
   const actorName = computed(() => auth.actor?.name || auth.actor?.employee_id || '');
@@ -408,6 +410,7 @@ export function useWaiterTerminal() {
     activeMenuItems,
     visibleMenuItems,
     activePrecheck,
+    orderIsLocked,
     latestPrecheck,
     orderCurrency,
     modifierGroupsForDialog,
@@ -417,6 +420,7 @@ export function useWaiterTerminal() {
     canVoidOrderLine,
     canIssuePrecheck,
     canReprintPrecheck,
+    canSubmitModifierSelection,
     statusError,
     orderError,
     actorName,

@@ -108,8 +108,8 @@
 - Compatibility payment refund как отдельный fallback, визуально отделенный от основного ledger flow.
 - Sync drawer для status/outbox/local events с bounded запросами.
 - Нормализация безопасных API-ошибок и optional empty states; пользовательский текст идет через `vue-i18n`.
-- `/pos/waiter` как mobile-first order/precheck runtime: выбор зала/стола, активные заказы, создание заказа, меню/поиск, добавление строк с модификаторами, изменение quantity, void line, issue/reprint precheck без payment/refund/cash drawer controls по умолчанию.
-- `/pos/kitchen` как readiness-only экран с пометкой `запланировано далее`, списком отсутствующих KDS backend contracts и подготовленными lifecycle slots без активных действий.
+- `/pos/waiter` как mobile-first order/precheck runtime: выбор зала/стола, активные заказы, создание заказа, меню/поиск, добавление строк с модификаторами, изменение quantity, void line, issue/reprint precheck без payment/refund/cash drawer controls по умолчанию; active issued precheck/locked order визуально блокирует add/change/void actions.
+- `/pos/kitchen` как readiness-only экран с пометкой `запланировано далее`, списком отсутствующих KDS backend contracts, будущими lifecycle slots и activation gates без активных действий.
 
 Вне текущего объема:
 
@@ -122,7 +122,7 @@
 Реализовано сейчас:
 
 - Отдельный интерфейс для Cloud-owned сценариев, не использующий POS session или POS Edge stores.
-- Первый сценарий запуска: readiness panel, Edge-device flow, master data preparation и публикация snapshot.
+- Первый сценарий запуска: readiness panel по restaurant/staff/floor/catalog/menu/modifiers/pricing/Edge/publication, Edge-device flow, master data preparation и публикация snapshot.
 - Управление ресторанами, ролями, сотрудниками, каталогом, папками, тегами, модификаторами, policies, залами, столами, menu items и публикациями по подтвержденным Cloud routes.
 - Генерация pairing code и назначение Edge-device ресторану.
 - Просмотр безопасного списка входящих Edge events без raw payload.

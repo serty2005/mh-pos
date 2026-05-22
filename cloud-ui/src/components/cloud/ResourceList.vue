@@ -49,7 +49,7 @@
           :class="{ selected: ctx.selectedRowId.value === ctx.rowKey(row) }"
           @click="ctx.selectRow(row)"
         >
-          <strong>{{ ctx.formatCell('name', row.name ?? row.id) }}</strong>
+          <strong>{{ row.name ? ctx.formatCell('name', row.name) : ctx.formatCell('id', row.id) }}</strong>
           <span v-for="column in ctx.activeColumns.value.slice(0, 4)" :key="column.key">
             {{ t(column.labelKey) }}: {{ ctx.formatCell(column.key, row[column.key]) }}
           </span>

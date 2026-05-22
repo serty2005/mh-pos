@@ -21,7 +21,7 @@
         >
           <span class="cloud-status" :class="node.status">{{ ctx.edgeStatusText(node.status) }}</span>
           <strong>{{ node.display_name }}</strong>
-          <small>{{ node.node_device_id }}</small>
+          <small>{{ ctx.nodeDisplayName(node.node_device_id) }}</small>
           <span>{{ t('cloud.fields.app_version') }}: {{ node.app_version || '-' }}</span>
           <span>{{ t('cloud.fields.last_seen_at') }}: {{ ctx.formatDate(node.last_seen_at) }}</span>
         </button>
@@ -47,11 +47,11 @@
       <q-btn flat icon="manage_search" :disable="!ctx.selectedEdgeNodeId.value" :loading="ctx.isLoading('edge-status')" :label="t('cloud.edgeDevices.checkStatus')" @click="ctx.loadSelectedAssignmentStatus()" />
       <div v-if="ctx.assignmentResult.value" class="cloud-result-box">
         <span>{{ t('cloud.fields.status') }}: {{ ctx.assignmentResult.value.status }}</span>
-        <span>{{ t('cloud.fields.snapshot_url') }}: {{ ctx.assignmentResult.value.snapshot_url }}</span>
+        <span>{{ t('cloud.fields.snapshot_url') }}: {{ ctx.safeOperationalValue(ctx.assignmentResult.value.snapshot_url) }}</span>
       </div>
       <div v-if="ctx.assignmentStatus.value" class="cloud-result-box muted">
         <span>{{ t('cloud.fields.status') }}: {{ ctx.assignmentStatus.value.status }}</span>
-        <span>{{ t('cloud.fields.cloud_url') }}: {{ ctx.assignmentStatus.value.cloud_url || '-' }}</span>
+        <span>{{ t('cloud.fields.cloud_url') }}: {{ ctx.safeOperationalValue(ctx.assignmentStatus.value.cloud_url || '-') }}</span>
       </div>
       <q-separator />
       <div class="section-head stacked">

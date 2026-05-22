@@ -56,11 +56,14 @@ Waiter mobile UI in `pos-ui/src/pages/WaiterPage.vue` и `pos-ui/src/pages/pos/u
 - использует только подтвержденные POS backend contracts: смена сотрудника, залы, столы, активные/current orders, menu items, добавление строки с modifier dialog, изменение quantity, void line, issue/reprint precheck;
 - не требует кассовую смену и не показывает payment/refund/cash drawer controls по умолчанию;
 - не считает authoritative totals, цены модификаторов, складские остатки или платежные статусы; показывает backend-provided order/precheck totals;
+- после active issued precheck или locked order визуально блокирует меню, quantity и void controls; selected table/order/status остаются видимыми в mobile context strip;
+- modifier dialog показывает required/min/max правила, validation message и disabled/loading submit state без локальной подмены backend validation;
 - empty/loading/error/no-permission states идут через `vue-i18n` и reusable primitives из `pos-ui/src/shared/ui`.
 
 KDS route реализовано сейчас как bounded readiness screen:
 
 - route `/pos/kitchen` больше не generic shell; он показывает `запланировано далее`, отсутствующие backend contracts для kitchen tickets/lifecycle/stations/recall/printer и подготовленные статусы `new`, `accepted`, `in_progress`, `hold`, `ready`, `served`, `recall`, `cancelled`;
+- readiness screen группирует будущий lifecycle и activation gates, но не показывает active buttons для `accepted`, `in_progress`, `ready`, `served`, `recall` или `cancelled`;
 - активные KDS lifecycle actions не отображаются, потому что в POS backend нет kitchen ticket endpoints;
 - hardware bump-bar/printer orchestration не описывается как реализованное.
 

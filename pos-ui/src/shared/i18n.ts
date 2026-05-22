@@ -259,6 +259,9 @@ export const i18n = createI18n({
         modifierEditUnavailable: 'Для этой строки нет доступных модификаторов.',
         requiredModifierGroup: 'Обязательно',
         optionalModifierGroup: 'По выбору',
+        modifierGroupRequiredRange: 'Обязательно: от {min} до {max}',
+        modifierGroupRequiredMin: 'Обязательно: минимум {min}',
+        modifierGroupOptionalMax: 'По выбору: максимум {max}',
         noLimit: 'без лимита',
         freeModifier: 'Без доплаты',
         noActiveOrder: 'На выбранном столе нет активного заказа',
@@ -421,7 +424,9 @@ export const i18n = createI18n({
         kitchenReadinessCopy: 'Экран показывает границы будущего KDS и не имитирует работу кухни без backend-контрактов.',
         kitchenMissingContracts: 'Отсутствующие контракты',
         kitchenLifecycleSlots: 'Подготовленные статусы',
+        kitchenLifecycleFutureStep: 'будущий переход',
         kitchenLifecycleDisabled: 'Действия по статусам будут включены только после появления backend endpoints и проверок прав.',
+        kitchenActivationGates: 'Что нужно до активации',
         kitchenSyncReadiness: 'Readiness и синхронизация',
         kitchenSyncReadinessCopy: 'Индикаторы очереди, bump-bar и printer orchestration остаются вне текущего runtime до появления контрактов.',
         kitchenContracts: {
@@ -430,6 +435,11 @@ export const i18n = createI18n({
           stationGrouping: 'Справочник кухонных станций и routing из menu item.',
           recall: 'Recall/cancel flow с безопасной причиной и audit metadata.',
           printer: 'Контракты bump-bar/printer orchestration без raw hardware payload в UI.',
+        },
+        kitchenGates: {
+          ticketReadModel: 'Read model кухонных tickets с фильтрами по станции, статусу и времени.',
+          lifecyclePermissions: 'RBAC и idempotency для lifecycle-команд кухни.',
+          syncEvents: 'События KDS/outbox без raw printer или hardware payload в обычном интерфейсе.',
         },
         kdsStatuses: {
           new: 'new',

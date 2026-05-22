@@ -56,6 +56,7 @@ test('waiter mobile can select a table, create an order, add a line and issue pr
   await expect(page.locator('.waiter-line-row').first()).toBeVisible();
   await page.getByRole('button', { name: /Выпустить пречек/i }).click();
   await expect(page.getByText(/Пречек выпущен|Заказ заблокирован активным пречеком/i)).toBeVisible();
+  await expect(page.locator('.waiter-menu-item:not([disabled])')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Наличные|Карта|Кассовый ящик|Вернуть оплату/i })).toHaveCount(0);
 });
 

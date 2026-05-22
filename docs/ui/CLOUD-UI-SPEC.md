@@ -35,7 +35,7 @@
 реализовано сейчас:
 
 - план запуска Cloud UI от подключения Edge-device до продажи на Edge-стороне является primary journey первого экрана;
-- панель готовности онбординга по выбранному ресторану: ресторан выбран, роли/сотрудники готовы, зал/столы готовы, меню продаваемо, Edge назначен, публикация создана и snapshot доступен;
+- панель готовности онбординга по выбранному ресторану: ресторан выбран, роли/сотрудники готовы, зал/столы готовы, каталог заполнен, меню продаваемо, модификаторы и pricing policies подготовлены, Edge назначен, публикация создана и snapshot доступен;
 - для каждого blocked readiness item показывается next best action button к профильному разделу;
 - список незакрепленных Edge-device из `/api/v1/devices/unassigned`;
 - назначение Edge-device ресторану через `/api/v1/restaurants/{restaurant_id}/devices/{node_device_id}/assign`;
@@ -103,7 +103,7 @@
 - роли выбираются из профилей `cashier`, `senior_cashier`, `waiter`, `manager`, `kitchen`, `support_admin`, после чего оператор может изменить права в матрице;
 - Edge-device flow не показывает секреты кроме одноразового pairing code, который возвращает backend;
 - command-only разделы не показывают неподтвержденную таблицу;
-- Cloud UI показывает безопасные локализованные ошибки возле активного failed step с recovery action: retry, select restaurant или open related section; message key, support code, correlation id и безопасные details выводятся без raw payload;
+- Cloud UI показывает безопасные локализованные ошибки возле активного failed step с recovery action: retry, select restaurant или open related section; message key, support code, correlation id и безопасные details выводятся без raw payload, а подозрительные `payload`/`token`/`PIN`/`SQL`/`stack` details редактируются в UI;
 - раздел входящих Edge events выводит event metadata и checksum, но не показывает raw payload, sensitive request dumps или payload-derived финансовые details;
 - UX ориентиры полного пилота зафиксированы в `docs/ui/PILOT-UX-MARKET-REVIEW.md`; business workflows не должны требовать ручного ввода UUID/raw JSON для обычного менеджерского сценария;
 - пользовательские тексты идут через `vue-i18n`.

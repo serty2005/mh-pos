@@ -310,6 +310,13 @@ p {
   gap: 10px;
 }
 
+.cloud-field-hint {
+  margin-top: -6px;
+  color: #66706b;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .inline-action {
   display: grid;
   gap: 8px;
@@ -721,6 +728,10 @@ button:focus-visible,
   color: #66706b;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.onboarding-check .q-btn {
+  min-width: 112px;
 }
 
 .readiness-only-panel {

@@ -20,7 +20,7 @@
           v-for="line in terminal.activeLines.value"
           :key="line.id"
           class="order-item-row"
-          :class="{ selected: line.id === selectedLineId }"
+          :class="{ selected: line.id === selectedLineId, locked: orderIsLocked }"
           @click="terminal.selectOrderLine(line.id)"
         >
           <div class="row-swipe-action row-delete-action">
@@ -61,7 +61,7 @@
         :decrement-label="terminal.t('actions.remove')"
         :increment-label="terminal.t('actions.add')"
         :edit-label="terminal.t('actions.editModifiers')"
-        :disabled="!selectedLine"
+        :disabled="!selectedLine || !terminal.canChangeOrderLine.value"
         :decrement-disabled="!terminal.canChangeOrderLine.value || Boolean(selectedLine && selectedLine.quantity <= 1)"
         :increment-disabled="!terminal.canChangeOrderLine.value"
         :edit-disabled="!selectedLine || !terminal.canChangeOrderLine.value || !terminal.canEditLineModifiers(selectedLine.id)"
@@ -69,7 +69,7 @@
         show-edit
         @decrement="changeSelectedQuantity(-1)"
         @increment="changeSelectedQuantity(1)"
-        @edit-value="quantityDialog = true"
+        @edit-value="openQuantityDialog"
         @edit="selectedLine && terminal.editLineModifiers(selectedLine.id)"
       />
 
@@ -161,6 +161,7 @@ const quantityDraft = ref(1);
 const selectedLine = computed(() => props.terminal.selectedOrderLine.value);
 const selectedLineId = computed(() => selectedLine.value?.id ?? '');
 const selectedLineName = computed(() => selectedLine.value?.name ?? props.terminal.t('pos.noSelectedLine'));
+const orderIsLocked = computed(() => Boolean(props.terminal.activePrecheck.value || props.terminal.activeOrder.value?.status === 'locked' || props.terminal.activeOrder.value?.check));
 
 watch(selectedLine, (line) => {
   quantityDraft.value = line?.quantity ?? 1;
@@ -172,9 +173,15 @@ function changeSelectedQuantity(delta: number) {
   props.terminal.changeQuantity(line.id, line.quantity + delta);
 }
 
+function openQuantityDialog() {
+  if (!selectedLine.value || !props.terminal.canChangeOrderLine.value) return;
+  quantityDialog.value = true;
+}
+
 function submitQuantity() {
   const line = selectedLine.value;
   const nextQuantity = Number(quantityDraft.value);
+  if (!props.terminal.canChangeOrderLine.value) return;
   if (!line || !Number.isFinite(nextQuantity) || nextQuantity < 1) return;
   props.terminal.changeQuantity(line.id, nextQuantity);
   quantityDialog.value = false;

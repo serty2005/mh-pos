@@ -95,7 +95,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 - POS UI: добавлен primary flow strip `готовность смены -> стол -> заказ -> пречек -> оплата`, secondary operations визуально отделены, blocking states унифицированы, tablet breakpoint пересмотрен так, чтобы checkout/precheck/payment не уходили под active order около 1100px.
 - POS UI: cashier shell подтвержден как `floor` / `order` / `activity` / `reports` / `cash`; active-looking placeholders для line transfer/split/fractional split, banquet/preorder, mock waiter filters, selected-line placeholder и discount/surcharge editor убраны или переведены в passive/disabled backlog state без backend command.
-- Cloud UI: presentation layer вынесен из монолитного `App.vue` в flow components, launch/readiness checklist стал primary journey, master-data CRUD оставлен secondary/admin layer, добавлен card/list fallback для narrow screens.
+- Cloud UI: presentation layer вынесен из монолитного `App.vue` в flow components, launch/readiness checklist стал primary journey с restaurant/staff/floor/catalog/menu/modifiers/pricing/Edge/publication gates, master-data CRUD оставлен secondary/admin layer, добавлен card/list fallback для narrow screens.
 
 ## В Работе / До Пилота
 
@@ -154,7 +154,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Manager pilot operations:
   - выполнено: Cloud UI содержит stop-list/recipe authoring и readiness-only surfaces для proposal review, inventory operations/costing и OLAP exports без CRUD-муляжа;
   - Cloud UI должен довести readiness-only surfaces до runtime только после появления подтвержденных Cloud backend routes;
-  - launch readiness учитывает restaurant, staff, floor, menu, pricing, stop-list review, publication и known Edge node.
+  - launch readiness учитывает restaurant, staff, floor, catalog, menu, modifiers, pricing, stop-list review, publication и known Edge node.
 - Full pilot smoke:
   - добавить suite `full_pilot`, которая проходит Cloud setup -> publication -> Edge sync -> waiter order -> kitchen served -> cashier payment/final check -> reconnect/outbox ACK -> Cloud inventory ledger -> ClickHouse export -> OLAP API reads.
 - Full Inventory Engine:
