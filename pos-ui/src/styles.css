@@ -1,28 +1,94 @@
+/* ==========================================================================
+   POS UI Design Tokens - Industrial Grade RMS-POS System
+   ========================================================================== */
+
 :root {
-  --pos-bg: #eef1ec;
-  --pos-surface: #fffdfa;
-  --pos-surface-muted: #f5f7f2;
-  --pos-rail: #f4f0e8;
-  --pos-rail-strong: #24332d;
-  --pos-border: #d8ded7;
-  --pos-border-soft: #e7ebe5;
-  --pos-text: #202622;
-  --pos-muted: #66706b;
-  --pos-accent: #1f6f5b;
-  --pos-accent-strong: #195b4b;
-  --pos-warning: #b8563f;
-  --pos-danger: #9d372f;
-  --pos-info: #3b7184;
-  --pos-radius: 8px;
-  --pos-shadow: 0 18px 46px -36px rgba(36, 51, 45, 0.55);
-  color: #202124;
+  /* ==========================================================================
+     Surface Colors
+     ========================================================================== */
+  --pos-bg: #f5f7f9;
+  --pos-surface: #ffffff;
+  --pos-surface-muted: #f0f2f5;
+  --pos-rail: #fafbfc;
+  --pos-rail-strong: #1a1f24;
+  
+  /* ==========================================================================
+     Border Colors
+     ========================================================================== */
+  --pos-border: #dfe3e8;
+  --pos-border-soft: #e8ecf1;
+  --pos-border-strong: #c9cfd6;
+  
+  /* ==========================================================================
+     Text Colors
+     ========================================================================== */
+  --pos-text-primary: #1a1f24;
+  --pos-text-secondary: #5c6773;
+  --pos-text-muted: #8a95a1;
+  --pos-text-inverse: #ffffff;
+  
+  /* ==========================================================================
+     Accent & Brand Colors
+     ========================================================================== */
+  --pos-accent: #2563eb;
+  --pos-accent-hover: #1d4ed8;
+  --pos-accent-light: #dbeafe;
+  --pos-accent-strong: #1e40af;
+  
+  /* ==========================================================================
+     Status Colors
+     ========================================================================== */
+  --pos-success: #16a34a;
+  --pos-success-light: #dcfce7;
+  --pos-warning: #ea580c;
+  --pos-warning-light: #ffedd5;
+  --pos-danger: #dc2626;
+  --pos-danger-light: #fee2e2;
+  --pos-info: #0891b2;
+  --pos-info-light: #cffafe;
+  
+  /* ==========================================================================
+     Dimensions & Spacing
+     ========================================================================== */
+  --pos-bottom-nav-height: 64px;
+  --pos-top-bar-height: 56px;
+  --pos-action-rail-width: 380px;
+  --pos-touch-target-min: 48px;
+  --pos-touch-target-main: 56px;
+  --pos-section-gap: 24px;
+  
+  /* ==========================================================================
+     Typography
+     ========================================================================== */
+  --pos-font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --pos-font-mono: 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+  --pos-font-size-xs: 11px;
+  --pos-font-size-sm: 13px;
+  --pos-font-size-base: 15px;
+  --pos-font-size-lg: 18px;
+  --pos-font-size-xl: 22px;
+  --pos-font-size-2xl: 28px;
+  
+  /* ==========================================================================
+     Border Radius
+     ========================================================================== */
+  --pos-radius-sm: 6px;
+  --pos-radius-md: 10px;
+  --pos-radius-lg: 14px;
+  --pos-radius-xl: 18px;
+  
+  /* ==========================================================================
+     Shadows
+     ========================================================================== */
+  --pos-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --pos-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --pos-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --pos-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  
+  /* Legacy compatibility */
+  color: var(--pos-text-primary);
   background: var(--pos-bg);
-  font-family:
-    "Segoe UI",
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
+  font-family: var(--pos-font-family);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -1982,36 +2048,165 @@ button:focus-visible,
   align-items: center;
 }
 
+/* ==========================================================================
+   Bottom Navigation Bar - Industrial Grade
+   ========================================================================== */
+
 .pos-bottom-bar {
   position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  z-index: 10;
-  min-height: 64px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  height: var(--pos-bottom-nav-height);
+  min-height: var(--pos-bottom-nav-height);
   display: grid;
-  grid-template-columns: minmax(170px, auto) minmax(0, 1fr) auto;
-  gap: 12px;
+  grid-template-columns: 220px minmax(0, 1fr) auto;
   align-items: center;
-  padding: 8px;
-  color: #f6f8f4;
-  background: #24332d;
-  border-radius: 8px;
-  box-shadow: 0 18px 42px -24px rgba(20, 31, 27, 0.76);
+  padding: 0;
+  color: var(--pos-text-inverse);
+  background: var(--pos-rail-strong);
+  box-shadow: var(--pos-shadow-lg);
 }
 
+/* Section button (left) */
 .bottom-section-button {
+  height: var(--pos-bottom-nav-height);
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 16px;
-  color: #ffffff;
-  background: #1f6f5b;
-  font-weight: 800;
+  gap: 12px;
+  padding: 0 24px;
+  color: var(--pos-text-inverse);
+  background: var(--pos-accent);
+  border: none;
+  font-weight: 700;
+  font-size: var(--pos-font-size-base);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.bottom-section-button:hover {
+  background: var(--pos-accent-hover);
 }
 
 .bottom-section-button.active {
-  background: #2d856f;
+  background: var(--pos-accent-strong);
+}
+
+/* Context chips area (center) */
+.context-chip-row,
+.bottom-status-cluster {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  padding: 0 16px;
+}
+
+.context-chip-row {
+  justify-content: flex-start;
+}
+
+/* Context chip component */
+.context-chip {
+  flex: 0 0 auto;
+  min-width: 48px;
+  max-width: 180px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  color: var(--pos-text-inverse);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--pos-radius-md);
+  font-size: var(--pos-font-size-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.context-chip-icon {
+  flex: 0 0 auto;
+  opacity: 0.9;
+}
+
+.context-chip-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Status area (right) */
+.bottom-status-area {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 16px;
+}
+
+.bottom-status-item {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  color: var(--pos-text-muted);
+  background: transparent;
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: var(--pos-font-size-sm);
+  cursor: default;
+}
+
+.bottom-status-item.clickable {
+  cursor: pointer;
+}
+
+.bottom-status-item.clickable:hover {
+  color: var(--pos-text-inverse);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.bottom-status-item strong {
+  color: var(--pos-text-inverse);
+  font-weight: 700;
+}
+
+/* Action area within bottom bar */
+.bottom-action-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  overflow-x: auto;
+}
+
+.bottom-main-action {
+  height: 48px;
+  min-width: 120px;
+  padding: 0 20px;
+  font-weight: 700;
+  border-radius: var(--pos-radius-md);
+  transition: all 0.15s ease;
+}
+
+.bottom-main-action .q-btn__content {
+  white-space: nowrap;
+}
+
+.bottom-action-area .q-btn--outline {
+  color: var(--pos-text-inverse) !important;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.bottom-action-area .q-btn--outline:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.6);
 }
 
 .context-chip-row,
