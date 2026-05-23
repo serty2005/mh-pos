@@ -96,8 +96,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - POS UI: добавлен primary flow strip `готовность смены -> стол -> заказ -> пречек -> оплата`, secondary operations визуально отделены, blocking states унифицированы, tablet breakpoint пересмотрен так, чтобы checkout/precheck/payment не уходили под active order около 1100px.
 - POS UI: верхний cashier context показывает restaurant/actor/node/backend session readiness, а dialog/inline error states показывают безопасный support code без raw backend details.
 - POS UI: cashier shell подтвержден как `floor` / `order` / `activity` / `reports` / `cash`; active-looking placeholders для line transfer/split/fractional split, banquet/preorder, mock waiter filters, selected-line placeholder и discount/surcharge editor убраны или переведены в passive/disabled backlog state без backend command.
-- POS UI: `PosFloorSection` переведен на shared `PosBanner`/`PosEmptyState`/`PosSkeleton`, waiter mobile viewport `390x844` уплотнен без payment/refund/cash drawer authority, `/pos/kitchen` оставлен readiness-only с disabled future action chips и activation gates.
-- Cloud UI: presentation layer вынесен из монолитного `App.vue` в flow components, launch/readiness checklist стал primary journey с restaurant/staff/floor/catalog/menu/modifiers/pricing/Edge/publication gates, master-data CRUD оставлен secondary/admin layer, добавлен card/list fallback для narrow screens.
+- POS UI: `PosFloorSection` и `PosMenuGrid` переведены на shared `PosBanner`/`PosEmptyState`/`PosSkeleton`, waiter mobile viewport `390x844` уплотнен с явной status strip полномочий и без payment/refund/cash drawer authority, `/pos/kitchen` оставлен readiness-only с disabled future action chips и activation gates.
+- Cloud UI: presentation layer вынесен из монолитного `App.vue` в flow components, launch/readiness checklist стал primary journey с restaurant/staff/floor/catalog/menu/modifiers/pricing/Edge/publication gates, master-data CRUD оставлен secondary/admin layer, добавлен card/list fallback для narrow screens, включая Edge events metadata/checksum без raw payload.
 
 ## В Работе / До Пилота
 

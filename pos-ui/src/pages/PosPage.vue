@@ -33,7 +33,15 @@
       </div>
 
       <div v-else-if="activeSection === 'floor'" class="context-actions floor-context-actions">
-        <q-btn color="primary" unelevated square class="context-primary-left" icon="add" :label="terminal.t('pos.createOrderShort')" :disable="!terminal.activeTables.value.length || !terminal.canStartOrderFromFloor.value" @click="createOrderDialog = true" />
+        <PosButton
+          variant="primary"
+          class="context-primary-left"
+          icon="add"
+          :label="terminal.t('pos.createOrderShort')"
+          :disabled="!terminal.activeTables.value.length || !terminal.canStartOrderFromFloor.value"
+          :title="terminal.activeTables.value.length ? terminal.t('pos.createOrder') : terminal.t('pos.noTables')"
+          @click="createOrderDialog = true"
+        />
         <q-btn-dropdown flat square class="context-button" :label="selectedHallName">
           <q-list dense>
             <q-item v-for="hall in terminal.activeHalls.value" :key="hall.id" v-close-popup clickable @click="terminal.selectHall(hall.id)">
@@ -187,12 +195,12 @@
 
     <PosDialog v-model="lineActionsDialog" :eyebrow="selectedLineName" :title="terminal.t('pos.lineActions')" body-class="line-action-grid">
       <article v-for="item in lineActionItems" :key="item.labelKey" class="backlog-action-card" aria-disabled="true">
-            <q-icon :name="item.icon" size="20px" />
-            <span>
-              <strong>{{ terminal.t(item.labelKey) }}</strong>
-              <small>{{ terminal.t(item.reasonKey) }}</small>
-            </span>
-          </article>
+        <q-icon :name="item.icon" size="20px" />
+        <span>
+          <strong>{{ terminal.t(item.labelKey) }}</strong>
+          <small>{{ terminal.t(item.reasonKey) }}</small>
+        </span>
+      </article>
       <template #actions>
         <PosButton variant="neutral" mode="flat" :label="terminal.t('actions.close')" @click="lineActionsDialog = false" />
       </template>

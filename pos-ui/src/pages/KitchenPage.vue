@@ -106,5 +106,6 @@ const disabledActions = [
   'pos.kitchenActions.ready',
   'pos.kitchenActions.served',
   'pos.kitchenActions.recall',
+  'pos.kitchenActions.cancel',
 ];
 </script>

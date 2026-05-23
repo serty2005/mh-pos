@@ -59,7 +59,7 @@
 - publication summary и явная публикация master data;
 - опубликованный snapshot для Edge использует backend Cloud -> POS Edge ingest DTO: top-level modifier groups/options/bindings передаются отдельно от link-only `menu_item_modifier_groups`, без rich/UI projection fields внутри `menu_items`;
 - `GET /api/v1/restaurants/{id}/master-data/publication-state` возвращает `200 null` до первой публикации выбранного ресторана; Cloud UI трактует это как empty state панели публикации, а не как ошибку browser console;
-- отдельный раздел `События от Edge`, который читает `GET /api/v1/sync/edge-events` и показывает только безопасные receipt metadata без raw payload.
+- отдельный раздел `События от Edge`, который читает `GET /api/v1/sync/edge-events` и показывает только безопасные receipt metadata/checksum без raw payload; на narrow screens таблица заменяется card/list fallback с теми же безопасными полями.
 
 запланировано до полного пилота:
 
@@ -96,7 +96,7 @@
 - первое действие оператора — открыть план запуска или подключить Edge-device;
 - выбор ресторана остается обязательным для restaurant-scoped операций;
 - UX разбит на presentation components: shell/navigation, launch readiness, Edge-device flow, publication panel, resource list/table, resource form и role permission matrix;
-- для narrow screens ключевые launch/Edge/publication/resource states имеют card/list fallback, а таблицы остаются desktop/admin представлением;
+- для narrow screens ключевые launch/Edge/publication/resource states и Edge events имеют card/list fallback, а таблицы остаются desktop/admin представлением;
 - технические связи между сущностями выбираются из загруженных справочников; пользователь не вводит ID вручную в подтвержденных связях;
 - pairing code flow не требует ввода `node_device_id`: Cloud генерирует device id на backend-стороне;
 - publication flow позволяет выбрать известное Edge-устройство из UI-состояния или опубликовать общий пакет без ручного ввода ID;

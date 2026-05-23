@@ -30,7 +30,7 @@
     <PosEmptyState v-if="!terminal.canViewMenu.value" size="wide" :label="terminal.t('pos.noPermissionForMenu')" />
 
     <div v-else-if="terminal.menu.isPending.value" class="dish-grid">
-      <q-skeleton v-for="n in 12" :key="n" class="dish-card dish-card-skeleton" />
+      <PosSkeleton v-for="n in 12" :key="n" kind="card" />
     </div>
 
     <div v-else-if="visibleItems.length" class="dish-grid">
@@ -57,7 +57,7 @@
 import { computed, ref } from 'vue';
 
 import type { MenuItem } from '../../shared/schemas';
-import { PosBanner, PosEmptyState, PosTabs, type PosTabOption } from '../../shared/ui';
+import { PosBanner, PosEmptyState, PosSkeleton, PosTabs, type PosTabOption } from '../../shared/ui';
 import type { CashierTerminal } from './useCashierTerminal';
 
 type MenuGroup = 'all' | 'food' | 'services';

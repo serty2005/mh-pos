@@ -14,6 +14,12 @@
     <PosBanner tone="info" :label="t('pos.waiterNoPaymentAuthority')" />
     <PosBanner v-if="terminal.orderIsLocked.value" tone="warning" :label="t('pos.waiterPrecheckLockedCopy')" />
 
+    <div class="waiter-authority-strip" :aria-label="t('pos.waiterAuthority')">
+      <PosStatusStrip :value="t('pos.waiterOrderPrecheckRuntime')" tone="good" />
+      <PosStatusStrip :value="t('pos.waiterPaymentHidden')" tone="info" />
+      <PosStatusStrip :value="terminal.currentShift.data.value ? t('status.open') : t('pos.noShift')" :tone="terminal.currentShift.data.value ? 'good' : 'warning'" />
+    </div>
+
     <PosPanel v-if="!terminal.currentShift.data.value" class="waiter-readiness-panel" :eyebrow="t('pos.serviceReadiness')" :title="t('pos.noShift')">
       <p class="waiter-muted">{{ terminal.canOpenShift.value ? t('pos.waiterOpenShiftHint') : t('pos.blocking.noShift.permissionReason') }}</p>
       <template #footer>
@@ -131,6 +137,7 @@
                 :decrement-label="t('actions.remove')"
                 :increment-label="t('actions.add')"
                 :disabled="!terminal.canChangeOrderLine.value"
+                :title="terminal.canChangeOrderLine.value ? t('pos.quantityInput') : t('pos.waiterLockedControlReason')"
                 :min="1"
                 @decrement="terminal.changeQuantity(line.id, line.quantity - 1)"
                 @increment="terminal.changeQuantity(line.id, line.quantity + 1)"
@@ -141,6 +148,7 @@
                 icon="delete_outline"
                 :aria-label="t('actions.voidLine')"
                 :disable="!terminal.canVoidOrderLine.value"
+                :title="terminal.canVoidOrderLine.value ? t('actions.voidLine') : t('pos.waiterLockedControlReason')"
                 @click.stop="terminal.voidLine(line.id)"
               />
             </article>
@@ -163,6 +171,7 @@
             :class="{ locked: terminal.orderIsLocked.value }"
             type="button"
             :disabled="!terminal.canAddOrderLine.value"
+            :title="terminal.canAddOrderLine.value ? item.name : t('pos.waiterLockedControlReason')"
             @click="terminal.openMenuItem(item)"
           >
             <span>{{ item.name }}</span>
@@ -242,7 +251,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 
 import { useWaiterTerminal } from './pos/useWaiterTerminal';
-import { PosBanner, PosButton, PosDialog, PosEmptyState, PosPanel, PosQuantityStepper, PosSkeleton, PosTabs, type PosTabOption } from '../shared/ui';
+import { PosBanner, PosButton, PosDialog, PosEmptyState, PosPanel, PosQuantityStepper, PosSkeleton, PosStatusStrip, PosTabs, type PosTabOption } from '../shared/ui';
 
 const { t } = useI18n();
 const router = useRouter();

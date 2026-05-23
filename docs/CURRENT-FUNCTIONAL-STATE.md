@@ -109,9 +109,9 @@
 - Sync drawer для status/outbox/local events с bounded запросами.
 - Нормализация безопасных API-ошибок и optional empty states; пользовательский текст идет через `vue-i18n`, а dialog/inline banners показывают безопасный support code (`correlation_id` или stable `error_code`) без raw backend details.
 - `/pos/waiter` как mobile-first order/precheck runtime: выбор зала/стола, активные заказы, создание заказа, меню/поиск, добавление строк с модификаторами, изменение quantity, void line, issue/reprint precheck без payment/refund/cash drawer controls по умолчанию; active issued precheck/locked order визуально блокирует add/change/void actions.
-- `/pos/waiter` дополнительно стабилизирован под viewport `390x844`: compact context strip, sticky topbar, touch-friendly table/menu/order rows и modifier dialog layout без добавления financial authority.
+- `/pos/waiter` дополнительно стабилизирован под viewport `390x844`: compact context strip, явная status strip границ полномочий, sticky topbar, touch-friendly table/menu/order rows и modifier dialog layout без добавления financial authority.
 - `/pos/kitchen` как readiness-only экран с пометкой `запланировано далее`, списком отсутствующих KDS backend contracts, будущими lifecycle slots, disabled/readiness chips для будущих действий и activation gates без активных lifecycle controls.
-- POS shared UI layer шире используется в cashier floor surface: loading/error/empty/no-permission states переведены на `PosBanner`, `PosEmptyState` и `PosSkeleton`.
+- POS shared UI layer шире используется в cashier surfaces: loading/error/empty/no-permission states и menu skeleton cards переведены на `PosBanner`, `PosEmptyState` и `PosSkeleton`, а top/context actions используют shared button/context primitives.
 
 Вне текущего объема:
 
@@ -127,7 +127,7 @@
 - Первый сценарий запуска: readiness panel по restaurant/staff/floor/catalog/menu/modifiers/pricing/Edge/publication, Edge-device flow, master data preparation и публикация snapshot.
 - Управление ресторанами, ролями, сотрудниками, каталогом, папками, тегами, модификаторами, policies, залами, столами, menu items и публикациями по подтвержденным Cloud routes.
 - Генерация pairing code и назначение Edge-device ресторану.
-- Просмотр безопасного списка входящих Edge events без raw payload.
+- Просмотр безопасного списка входящих Edge events без raw payload, включая card/list fallback на narrow screens с metadata/checksum вместо raw event payload.
 - Cloud-owned recipes и stop-list authoring через подтвержденные master-data routes.
 - Readiness-only manager surfaces для catalog/recipe proposal review, inventory operations/costing и OLAP exports без имитации отсутствующих Cloud routes.
 - Локализованные сообщения, safe error details, no raw payload / PIN / token display.

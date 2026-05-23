@@ -42,7 +42,7 @@
 - recipe-expanded stock return/write-off from financial operations beyond normalized item payloads;
 - Cloud proposal review, inventory operations/costing UI и OLAP export runtime;
 - PSP refund smoke и fiscal integration;
-- destructive retention apply, archive restore в active SQLite, `VACUUM` и compaction;
+- operator-facing storage/archive/retention UI, archive restore в active SQLite и ручной destructive retention flow вне подтвержденного backend archive apply contract;
 - fiscal shift/business day сущности как отдельные runtime aggregates;
 - real payment processor module, PSP webhooks и fiscal adapter;
 - ClickHouse runtime pipeline;

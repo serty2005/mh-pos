@@ -177,4 +177,4 @@ POS UI должен руководствоваться восемью золот
 - Backend-неподдержанные действия показывать только как disabled/backlog state с понятной причиной; не делать активную кнопку без backend/API contract.
 - Реализовано сейчас в reusable layer: `PosButton`, `PosContextButton`, `PosDialog`, `PosSectionHeader`, `PosTabs`, `PosPagination`, `PosQuantityStepper`, `PosBanner`, `PosEmptyState`, `PosStatusStrip`, `PosMetricCard`, `PosActionRail`, `PosPanel`, `PosDataRow`, `PosFormRow` и `PosSkeleton`.
 - Scroll/overflow contract использовать через `.pos-scrollarea`, `.pos-scrollarea-y`, `.pos-scrollarea-x` и `.pos-scrollbar-thin`; не добавлять локальные scrollbar-варианты в feature-компонентах.
-- Оставшийся backlog миграции после текущего прохода: `OrderWorkspace`, `CatalogCheckoutPanel`, `FloorTableSelector`, `PosFloorSection`, legacy checkout/floor helper panels и таблицы/списки, где еще есть feature-local variants.
+- Оставшийся backlog миграции после текущего прохода: `OrderWorkspace`, `CatalogCheckoutPanel`, `FloorTableSelector`, legacy checkout/floor helper panels и таблицы/списки, где еще есть feature-local variants.

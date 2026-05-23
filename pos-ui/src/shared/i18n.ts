@@ -413,6 +413,10 @@ export const i18n = createI18n({
         waiterMobile: 'Мобильный интерфейс официанта',
         waiterWorkspaceTitle: 'Столы, заказ и пречек',
         waiterNoPaymentAuthority: 'Оплата, возвраты и кассовый ящик скрыты: официантский экран не принимает финансовые решения.',
+        waiterAuthority: 'Границы полномочий официанта',
+        waiterOrderPrecheckRuntime: 'Заказ и пречек доступны',
+        waiterPaymentHidden: 'Оплата скрыта',
+        waiterLockedControlReason: 'Изменение недоступно: заказ заблокирован пречеком или нет нужного права.',
         waiterOpenShiftHint: 'Откройте личную смену, чтобы получить залы, столы и текущие заказы.',
         waiterNoOrderPermission: 'Текущая роль не дает права просматривать заказы.',
         waiterNoPrecheckPermission: 'Текущая роль не дает права просматривать пречеки.',
@@ -457,6 +461,7 @@ export const i18n = createI18n({
           ready: 'ready: нет endpoint',
           served: 'served: нет endpoint',
           recall: 'recall: нет endpoint',
+          cancel: 'cancel: нет endpoint',
         },
         kdsStatuses: {
           new: 'new',

@@ -2776,7 +2776,7 @@ button.bottom-status {
 
 .pos-context-bar {
   display: grid;
-  grid-template-columns: minmax(220px, max-content) minmax(0, 1fr) 72px;
+  grid-template-columns: minmax(220px, min(560px, 38vw)) minmax(0, 1fr) 72px;
   min-height: var(--pos-top-height);
   background: var(--pos-surface);
   border-bottom: 1px solid var(--pos-border);
@@ -2839,6 +2839,10 @@ button.bottom-status {
   border: 1px solid var(--pos-border);
   font-weight: 650;
   white-space: nowrap;
+}
+
+.context-primary-left {
+  flex: 0 0 auto;
 }
 
 .context-button:disabled,
@@ -3902,6 +3906,12 @@ button.bottom-status-cell {
   gap: 12px;
 }
 
+.waiter-authority-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .waiter-chip {
   min-height: 32px;
   display: inline-flex;
@@ -3957,7 +3967,7 @@ button.bottom-status-cell {
 
 .waiter-context-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
   gap: 8px;
 }
 
@@ -4075,6 +4085,11 @@ button.bottom-status-cell {
 .waiter-menu-item.locked,
 .waiter-line-row.locked {
   background: #f7f8f6;
+}
+
+.waiter-line-row.locked .quantity-stepper,
+.waiter-line-row.locked .q-btn {
+  opacity: 0.62;
 }
 
 .waiter-action-row {
@@ -4288,6 +4303,10 @@ button.bottom-status-cell {
   }
 
   .waiter-action-row {
+    grid-template-columns: 1fr;
+  }
+
+  .waiter-authority-strip {
     grid-template-columns: 1fr;
   }
 

@@ -611,6 +611,11 @@ button:focus-visible,
   gap: 10px;
 }
 
+.edge-event-card-list {
+  display: none;
+  gap: 10px;
+}
+
 .edge-device-card {
   display: grid;
   justify-items: start;
@@ -632,11 +637,29 @@ button:focus-visible,
 }
 
 .edge-device-card small,
-.edge-device-card span:not(.cloud-status) {
+.edge-device-card span:not(.cloud-status),
+.edge-event-card small {
   color: #66706b;
   font-family: "Consolas", "SFMono-Regular", monospace;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.edge-event-card {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  padding: 12px;
+  color: #344039;
+  background: #fbfcfa;
+  border: 1px solid #e4e8e5;
+  border-radius: 8px;
+}
+
+.edge-event-card strong {
+  color: #202124;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  font-size: 13px;
 }
 
 .cloud-result-box,
@@ -802,7 +825,8 @@ button:focus-visible,
     display: none;
   }
 
-  .resource-card-list {
+  .resource-card-list,
+  .edge-event-card-list {
     display: grid;
   }
 
