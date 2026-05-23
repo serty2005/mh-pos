@@ -1,6 +1,6 @@
 # Текущее функциональное состояние проекта
 
-Статус: реализовано сейчас по коду, тестам и документации на 2026-05-22; цель полного пилота зафиксирована отдельно и не считается текущим runtime.
+Статус: реализовано сейчас по коду, тестам и документации на 2026-05-23; цель полного пилота зафиксирована отдельно и не считается текущим runtime.
 
 Этот документ является сводной картой фактического состояния репозитория. Он не заменяет профильные спецификации: архитектурные инварианты остаются в `SPECv1.3.md`, backend-контракты - в `docs/backend/*`, контракты интерфейсов - в `docs/ui/*`, синхронизация - в `docs/sync/*`.
 
@@ -109,7 +109,9 @@
 - Sync drawer для status/outbox/local events с bounded запросами.
 - Нормализация безопасных API-ошибок и optional empty states; пользовательский текст идет через `vue-i18n`, а dialog/inline banners показывают безопасный support code (`correlation_id` или stable `error_code`) без raw backend details.
 - `/pos/waiter` как mobile-first order/precheck runtime: выбор зала/стола, активные заказы, создание заказа, меню/поиск, добавление строк с модификаторами, изменение quantity, void line, issue/reprint precheck без payment/refund/cash drawer controls по умолчанию; active issued precheck/locked order визуально блокирует add/change/void actions.
-- `/pos/kitchen` как readiness-only экран с пометкой `запланировано далее`, списком отсутствующих KDS backend contracts, будущими lifecycle slots и activation gates без активных действий.
+- `/pos/waiter` дополнительно стабилизирован под viewport `390x844`: compact context strip, sticky topbar, touch-friendly table/menu/order rows и modifier dialog layout без добавления financial authority.
+- `/pos/kitchen` как readiness-only экран с пометкой `запланировано далее`, списком отсутствующих KDS backend contracts, будущими lifecycle slots, disabled/readiness chips для будущих действий и activation gates без активных lifecycle controls.
+- POS shared UI layer шире используется в cashier floor surface: loading/error/empty/no-permission states переведены на `PosBanner`, `PosEmptyState` и `PosSkeleton`.
 
 Вне текущего объема:
 

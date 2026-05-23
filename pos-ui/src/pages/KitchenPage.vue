@@ -10,26 +10,36 @@
       <PosBanner tone="warning" :label="t('pos.kitchenNoRuntime')" />
 
       <div class="kitchen-readiness-grid">
-        <PosPanel :eyebrow="t('pos.backendContracts')" :title="t('pos.kitchenMissingContracts')">
+        <PosPanel class="kitchen-contract-panel" :eyebrow="t('pos.backendContracts')" :title="t('pos.kitchenMissingContracts')">
           <ul class="readiness-list">
             <li v-for="item in missingContracts" :key="item">{{ t(item) }}</li>
           </ul>
         </PosPanel>
 
-        <PosPanel :eyebrow="t('pos.kdsLifecycle')" :title="t('pos.kitchenLifecycleSlots')">
+        <PosPanel class="kitchen-lifecycle-panel" :eyebrow="t('pos.kdsLifecycle')" :title="t('pos.kitchenLifecycleSlots')">
           <div class="kds-lifecycle-map" :aria-label="t('pos.kdsLifecycle')">
             <span v-for="(status, index) in statuses" :key="status" class="kds-status-node">
+              <small>{{ index + 1 }}</small>
               <strong>{{ t(status) }}</strong>
-              <small v-if="index < statuses.length - 1">{{ t('pos.kitchenLifecycleFutureStep') }}</small>
+              <em>{{ index < statuses.length - 1 ? t('pos.kitchenLifecycleFutureStep') : t('pos.kitchenLifecycleTerminalStep') }}</em>
             </span>
           </div>
           <p class="kitchen-muted">{{ t('pos.kitchenLifecycleDisabled') }}</p>
+          <div class="kitchen-disabled-actions" :aria-label="t('pos.kitchenDisabledActions')">
+            <span v-for="action in disabledActions" :key="action" aria-disabled="true">
+              {{ t(action) }}
+            </span>
+          </div>
         </PosPanel>
 
         <PosPanel :eyebrow="t('pos.plannedNext')" :title="t('pos.kitchenActivationGates')">
-          <ul class="readiness-list">
-            <li v-for="item in activationGates" :key="item">{{ t(item) }}</li>
-          </ul>
+          <div class="kitchen-gate-list">
+            <article v-for="gate in activationGates" :key="gate.titleKey" class="kitchen-gate-card">
+              <span>{{ t(gate.statusKey) }}</span>
+              <strong>{{ t(gate.titleKey) }}</strong>
+              <small>{{ t(gate.copyKey) }}</small>
+            </article>
+          </div>
         </PosPanel>
 
         <PosPanel :eyebrow="t('pos.syncStatus')" :title="t('pos.kitchenSyncReadiness')">
@@ -72,8 +82,29 @@ const statuses = [
 ];
 
 const activationGates = [
-  'pos.kitchenGates.ticketReadModel',
-  'pos.kitchenGates.lifecyclePermissions',
-  'pos.kitchenGates.syncEvents',
+  {
+    statusKey: 'pos.plannedBeforePilot',
+    titleKey: 'pos.kitchenGates.ticketReadModel',
+    copyKey: 'pos.kitchenGateDetails.ticketReadModel',
+  },
+  {
+    statusKey: 'pos.plannedBeforePilot',
+    titleKey: 'pos.kitchenGates.lifecyclePermissions',
+    copyKey: 'pos.kitchenGateDetails.lifecyclePermissions',
+  },
+  {
+    statusKey: 'pos.plannedNext',
+    titleKey: 'pos.kitchenGates.syncEvents',
+    copyKey: 'pos.kitchenGateDetails.syncEvents',
+  },
+];
+
+const disabledActions = [
+  'pos.kitchenActions.accept',
+  'pos.kitchenActions.start',
+  'pos.kitchenActions.hold',
+  'pos.kitchenActions.ready',
+  'pos.kitchenActions.served',
+  'pos.kitchenActions.recall',
 ];
 </script>

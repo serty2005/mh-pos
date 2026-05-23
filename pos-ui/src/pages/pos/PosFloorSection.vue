@@ -1,7 +1,7 @@
 <template>
   <section class="hall-orders-screen">
     <main class="hall-workspace" :aria-label="terminal.t('pos.floorPlan')">
-      <q-banner v-if="terminal.statusError.value" class="error-banner dense-banner">{{ terminal.statusError.value }}</q-banner>
+      <PosBanner v-if="terminal.statusError.value" tone="error" :label="terminal.statusError.value" />
 
       <blocking-notice
         v-if="!terminal.currentShift.data.value && terminal.currentBlockingNotice.value"
@@ -11,11 +11,11 @@
         :permission="terminal.currentBlockingNotice.value.permission"
         icon="lock_clock"
       />
-      <div v-else-if="!terminal.canViewFloor.value" class="empty-state small">{{ terminal.t('pos.noPermissionForFloor') }}</div>
+      <PosEmptyState v-else-if="!terminal.canViewFloor.value" size="small" :label="terminal.t('pos.noPermissionForFloor')" />
       <div v-else-if="terminal.tables.isPending.value" class="floor-table-grid">
-        <q-skeleton v-for="n in 15" :key="n" class="floor-table-tile skeleton-tile" />
+        <PosSkeleton v-for="n in 15" :key="n" class="floor-table-tile skeleton-tile" />
       </div>
-      <q-banner v-else-if="terminal.tables.isError.value" class="error-banner dense-banner">{{ terminal.t('common.error') }}</q-banner>
+      <PosBanner v-else-if="terminal.tables.isError.value" tone="error" :label="terminal.t('common.error')" />
       <div v-else-if="tableCards.length" class="floor-table-grid">
         <button
           v-for="card in tableCards"
@@ -35,7 +35,7 @@
           <small v-if="card.duration">{{ card.duration }}</small>
         </button>
       </div>
-      <div v-else class="empty-state small">{{ terminal.t('pos.noTables') }}</div>
+      <PosEmptyState v-else size="small" :label="terminal.t('pos.noTables')" />
     </main>
 
     <aside class="active-orders-panel" :aria-label="terminal.t('pos.activeOrders')">
@@ -49,7 +49,7 @@
           <span>{{ order.duration }}</span>
         </button>
       </div>
-      <div v-if="!activeOrderGroups.length" class="empty-state">{{ terminal.t('pos.noActiveOrder') }}</div>
+      <PosEmptyState v-if="!activeOrderGroups.length" :label="terminal.t('pos.noActiveOrder')" />
     </aside>
   </section>
 </template>
@@ -57,6 +57,7 @@
 <script setup lang="ts">
 import { computed, nextTick } from 'vue';
 
+import { PosBanner, PosEmptyState, PosSkeleton } from '../../shared/ui';
 import BlockingNotice from './BlockingNotice.vue';
 import type { CashierTerminal } from './useCashierTerminal';
 
