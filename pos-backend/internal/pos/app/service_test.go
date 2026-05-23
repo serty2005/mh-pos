@@ -1510,6 +1510,98 @@ func TestStorageArchiveApplyReadinessAndDestructiveApplyDeletesRuntimeRowsButKee
 	}
 }
 
+func TestStorageArchiveApplyReadinessBlocksRepeatApplyAfterRuntimeRowsDeleted(t *testing.T) {
+	f := newFixture(t)
+	order, check := f.createPaidOrder(t)
+	operation, err := f.service.RecordCancellation(f.ctx, app.RecordCheckCancellationCommand{
+		CommandMeta:          f.managerEdgeMetaCommand(t, "cmd-storage-repeat-apply-cancel"),
+		CheckID:              check.ID,
+		Reason:               "guest returned immediately",
+		InventoryDisposition: domain.InventoryNoStockEffect,
+		Items: []app.FinancialOperationItemCommand{{
+			Scope:    domain.FinancialItemWholeCheck,
+			Amount:   check.Total,
+			Currency: check.CurrencyCode,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	makeCheckOlderThanArchiveCutoff(t, f, check.ID)
+	markEdgeOutboxSent(t, f)
+
+	exported, err := f.service.ExportStorageArchive(f.ctx, app.ArchiveExportCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-repeat-apply-export"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		Reason:                  "repeat destructive apply fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstApply, err := f.service.BuildStorageArchiveApplyPlan(f.ctx, app.ArchiveApplyPlanCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-repeat-apply-first"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             exported.ArchivePath,
+		ManifestPath:            exported.ManifestPath,
+		Mode:                    "plan_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstApply.Blocked || !firstApply.RuntimeRowsDeleted || firstApply.ResultMode != "destructive_apply" {
+		t.Fatalf("expected first destructive apply to succeed, got %+v", firstApply)
+	}
+	if got := countRowsWhere(t, f, "orders", "id = ?", order.ID); got != 0 {
+		t.Fatalf("expected runtime order %s to be deleted by first apply, got %d rows", order.ID, got)
+	}
+	if got := countRowsWhere(t, f, "financial_operations", "id = ?", operation.ID); got != 0 {
+		t.Fatalf("expected runtime financial operation %s to be deleted by first apply, got %d rows", operation.ID, got)
+	}
+
+	beforeRepeat := protectedStorageCounts(t, f)
+	readiness, err := f.service.BuildStorageArchiveApplyReadiness(f.ctx, app.ArchiveApplyReadinessCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-repeat-apply-readiness"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             exported.ArchivePath,
+		ManifestPath:            exported.ManifestPath,
+		Mode:                    "plan_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readiness.ReadyForDestructiveApply || readiness.RuntimeScopeVerified || !readiness.ArchiveVerified || !readiness.ManifestVerified {
+		t.Fatalf("expected repeat readiness to block on runtime/archive counts mismatch only, got %+v", readiness)
+	}
+	if !containsString(readiness.BlockReasons, "archive_counts_mismatch") ||
+		containsString(readiness.BlockReasons, "pending_edge_to_cloud_outbox") ||
+		containsString(readiness.BlockReasons, "open_operational_boundary") {
+		t.Fatalf("expected repeat readiness count mismatch without runtime blockers, got %+v", readiness.BlockReasons)
+	}
+	if readiness.EligibleCounts.ClosedOrders != 0 || readiness.ArchiveCounts.ClosedOrders != 1 ||
+		readiness.ArchiveCounts.FinancialOperations != 1 || readiness.ArchiveCounts.FinancialOperationItems != 1 {
+		t.Fatalf("expected empty runtime scope against archived compensation ledger, got eligible=%+v archive=%+v", readiness.EligibleCounts, readiness.ArchiveCounts)
+	}
+	assertProtectedStorageCounts(t, f, beforeRepeat, "repeat apply-readiness after destructive apply")
+
+	repeatApply, err := f.service.BuildStorageArchiveApplyPlan(f.ctx, app.ArchiveApplyPlanCommand{
+		CommandMeta:             f.managerEdgeMetaCommand(t, "cmd-storage-repeat-apply-blocked"),
+		CutoffBusinessDateLocal: "2026-05-04",
+		ArchivePath:             exported.ArchivePath,
+		ManifestPath:            exported.ManifestPath,
+		Mode:                    "plan_only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !repeatApply.Blocked || repeatApply.RuntimeRowsDeleted || repeatApply.ResultMode != "apply_blocked" {
+		t.Fatalf("expected repeat destructive apply to be blocked without deleting rows, got %+v", repeatApply)
+	}
+	if !containsString(repeatApply.BlockReasons, "archive_counts_mismatch") {
+		t.Fatalf("expected repeat apply archive_counts_mismatch, got %+v", repeatApply.BlockReasons)
+	}
+	assertProtectedStorageCounts(t, f, beforeRepeat, "repeat destructive apply")
+}
+
 func TestStorageArchiveDestructiveApplyRechecksPendingOutboxInsideTransaction(t *testing.T) {
 	f := newFixture(t)
 	order, check := f.createPaidOrder(t)

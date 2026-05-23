@@ -307,6 +307,65 @@ func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 	return n
 }
 
+func assertSafeConflictAPIError(t *testing.T, rr *httptest.ResponseRecorder, forbiddenSubstrings ...string) {
+	t.Helper()
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected safe conflict 409, got %d: %s", rr.Code, rr.Body.String())
+	}
+	errBody := decodeAPIResponse[httpx.ErrorResponse](t, rr)
+	if errBody.Error.Code != "CONFLICT" || errBody.Error.MessageKey != "errors.conflict" {
+		t.Fatalf("expected safe conflict error contract, got %+v", errBody.Error)
+	}
+	if got := rr.Header().Get("X-Error-Code"); got != "CONFLICT" {
+		t.Fatalf("expected X-Error-Code CONFLICT, got %q", got)
+	}
+	if len(errBody.Error.Details) != 0 {
+		t.Fatalf("expected conflict response without unsafe details, got %+v", errBody.Error.Details)
+	}
+
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(rr.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode conflict envelope: %v; body=%s", err, rr.Body.String())
+	}
+	if len(envelope) != 1 || envelope["error"] == nil {
+		t.Fatalf("expected only top-level error envelope, got %s", rr.Body.String())
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(envelope["error"], &fields); err != nil {
+		t.Fatalf("decode conflict error object: %v; body=%s", err, rr.Body.String())
+	}
+	allowed := map[string]bool{
+		"code":           true,
+		"message_key":    true,
+		"details":        true,
+		"correlation_id": true,
+	}
+	for field := range fields {
+		if !allowed[field] {
+			t.Fatalf("unexpected unsafe conflict error field %q in %s", field, rr.Body.String())
+		}
+	}
+
+	rawBody := strings.ToLower(rr.Body.String())
+	leaks := append([]string{
+		"internal_error",
+		"constraint",
+		"foreign key",
+		"sqlite",
+		"sql:",
+		"stack",
+		"panic",
+		"domain invariant",
+		"financial operation",
+		"operation line",
+	}, forbiddenSubstrings...)
+	for _, leak := range leaks {
+		if strings.Contains(rawBody, strings.ToLower(leak)) {
+			t.Fatalf("expected safe conflict response not to expose %q: %s", leak, rr.Body.String())
+		}
+	}
+}
+
 type apiFinancialOperationOutboxEnvelope struct {
 	Version         string  `json:"version"`
 	EventID         string  `json:"event_id"`
@@ -1692,16 +1751,7 @@ func TestRecordRefundAboveCheckTotalThroughPublicAPIReturnsConflict(t *testing.T
 
 	body := fmt.Sprintf(`{"command_id":"cmd-api-refund-above-check-total","node_device_id":"%s","operation_kind":"partial","inventory_disposition":"no_stock_effect","reason":"over refund must be rejected","items":[{"scope":"whole_check","amount":%d,"currency":"RUB"}]}`, f.device.ID, check.Total+1)
 	rr := f.postJSON(t, "/api/v1/checks/"+check.ID+"/refunds", body)
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("expected over-refund 409, got %d: %s", rr.Code, rr.Body.String())
-	}
-	errBody := decodeAPIResponse[httpx.ErrorResponse](t, rr)
-	if errBody.Error.Code != "CONFLICT" || errBody.Error.MessageKey != "errors.conflict" {
-		t.Fatalf("expected conflict error contract, got %+v", errBody.Error)
-	}
-	if got := rr.Header().Get("X-Error-Code"); got != "CONFLICT" {
-		t.Fatalf("expected X-Error-Code CONFLICT, got %q", got)
-	}
+	assertSafeConflictAPIError(t, rr, "financial operation exceeds remaining check amount")
 	if operations := countAPIRows(t, f, "financial_operations"); operations != operationsBefore {
 		t.Fatalf("expected no refund operation write, before=%d after=%d", operationsBefore, operations)
 	}
@@ -1805,16 +1855,7 @@ func TestRecordRefundAfterCancellationAboveRemainingThroughPublicAPIReturnsConfl
 	remaining := check.Total - cancellation.Amount
 	body := fmt.Sprintf(`{"command_id":"cmd-api-refund-above-remaining-after-cancel","node_device_id":"%s","operation_kind":"partial","inventory_disposition":"no_stock_effect","reason":"refund above remaining must be rejected","items":[{"scope":"whole_check","amount":%d,"currency":"RUB"}]}`, f.device.ID, remaining+1)
 	rr := f.postJSON(t, "/api/v1/checks/"+check.ID+"/refunds", body)
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("expected over-refund after cancellation 409, got %d: %s", rr.Code, rr.Body.String())
-	}
-	errBody := decodeAPIResponse[httpx.ErrorResponse](t, rr)
-	if errBody.Error.Code != "CONFLICT" || errBody.Error.MessageKey != "errors.conflict" {
-		t.Fatalf("expected conflict error contract, got %+v", errBody.Error)
-	}
-	if got := rr.Header().Get("X-Error-Code"); got != "CONFLICT" {
-		t.Fatalf("expected X-Error-Code CONFLICT, got %q", got)
-	}
+	assertSafeConflictAPIError(t, rr, "financial operation exceeds remaining check amount")
 	if operations := countAPIRows(t, f, "financial_operations"); operations != operationsBefore {
 		t.Fatalf("expected no refund operation write, before=%d after=%d", operationsBefore, operations)
 	}
@@ -1932,16 +1973,7 @@ func TestRecordRefundAfterLineCancellationAboveRemainingQuantityThroughPublicAPI
 
 	body := fmt.Sprintf(`{"command_id":"cmd-api-line-refund-over-quantity","node_device_id":"%s","operation_kind":"partial","inventory_disposition":"no_stock_effect","reason":"line refund quantity above remaining must be rejected","items":[{"scope":"order_line","order_line_id":"%s","quantity":2,"amount":%d,"currency":"RUB"}]}`, f.device.ID, line.ID, unitAmount)
 	rr := f.postJSON(t, "/api/v1/checks/"+check.ID+"/refunds", body)
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("expected line over-refund quantity 409, got %d: %s", rr.Code, rr.Body.String())
-	}
-	errBody := decodeAPIResponse[httpx.ErrorResponse](t, rr)
-	if errBody.Error.Code != "CONFLICT" || errBody.Error.MessageKey != "errors.conflict" {
-		t.Fatalf("expected conflict error contract, got %+v", errBody.Error)
-	}
-	if got := rr.Header().Get("X-Error-Code"); got != "CONFLICT" {
-		t.Fatalf("expected X-Error-Code CONFLICT, got %q", got)
-	}
+	assertSafeConflictAPIError(t, rr, "operation line quantity exceeds remaining line quantity")
 	if operations := countAPIRows(t, f, "financial_operations"); operations != operationsBefore {
 		t.Fatalf("expected no refund operation write, before=%d after=%d", operationsBefore, operations)
 	}
@@ -2009,16 +2041,7 @@ func TestRecordCancellationLineAmountAboveSelectedQuantityThroughPublicAPIReturn
 	unitAmount := line.TotalPrice / line.Quantity
 	body := fmt.Sprintf(`{"command_id":"cmd-api-line-cancel-over-amount","node_device_id":"%s","operation_kind":"partial","inventory_disposition":"manual_review","reason":"line amount above selected quantity must be rejected","items":[{"scope":"order_line","order_line_id":"%s","quantity":1,"amount":%d,"currency":"RUB"}]}`, f.device.ID, line.ID, unitAmount+1)
 	rr := f.postJSON(t, "/api/v1/checks/"+check.ID+"/cancellations", body)
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("expected line over-amount cancellation 409, got %d: %s", rr.Code, rr.Body.String())
-	}
-	errBody := decodeAPIResponse[httpx.ErrorResponse](t, rr)
-	if errBody.Error.Code != "CONFLICT" || errBody.Error.MessageKey != "errors.conflict" {
-		t.Fatalf("expected conflict error contract, got %+v", errBody.Error)
-	}
-	if got := rr.Header().Get("X-Error-Code"); got != "CONFLICT" {
-		t.Fatalf("expected X-Error-Code CONFLICT, got %q", got)
-	}
+	assertSafeConflictAPIError(t, rr, "operation line amount exceeds selected line amount")
 	if operations := countAPIRows(t, f, "financial_operations"); operations != operationsBefore {
 		t.Fatalf("expected no cancellation operation write, before=%d after=%d", operationsBefore, operations)
 	}
