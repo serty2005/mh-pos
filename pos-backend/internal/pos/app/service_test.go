@@ -5627,6 +5627,114 @@ func TestFullPaymentCreatesFinalCheckAndClosesOrder(t *testing.T) {
 	}
 }
 
+func TestFullPaymentWritesCheckClosedOutboxFromImmutableCheckSnapshot(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMetaCommand("cmd-checkclosed-precheck"), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+		CommandMeta: f.edgeMetaCommand("cmd-checkclosed-payment"),
+		PrecheckID:  precheck.ID,
+		Method:      domain.PaymentCash,
+		Amount:      precheck.Total,
+		Currency:    "RUB",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var snapshot struct {
+		CheckID           string `json:"check_id"`
+		OrderID           string `json:"order_id"`
+		PrecheckID        string `json:"precheck_id"`
+		RestaurantID      string `json:"restaurant_id"`
+		BusinessDateLocal string `json:"business_date_local"`
+		PrecheckSnapshot  struct {
+			Lines []struct {
+				OrderLineID   string `json:"order_line_id"`
+				CatalogItemID string `json:"catalog_item_id"`
+				Quantity      int64  `json:"quantity"`
+			} `json:"lines"`
+		} `json:"precheck_snapshot"`
+	}
+	if err := json.Unmarshal(check.Snapshot, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.CheckID != check.ID || snapshot.OrderID != order.ID || snapshot.PrecheckID != precheck.ID {
+		t.Fatalf("unexpected immutable check snapshot identity: %+v", snapshot)
+	}
+	if len(snapshot.PrecheckSnapshot.Lines) != 1 {
+		t.Fatalf("expected one immutable snapshot line, got %+v", snapshot.PrecheckSnapshot.Lines)
+	}
+	snapshotLine := snapshot.PrecheckSnapshot.Lines[0]
+	if snapshotLine.OrderLineID != line.ID || snapshotLine.CatalogItemID != f.menuItem.CatalogItemID || snapshotLine.Quantity != 2 {
+		t.Fatalf("unexpected immutable snapshot line: %+v", snapshotLine)
+	}
+
+	var payloadJSON string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT payload_json FROM pos_sync_outbox WHERE command_type = 'CheckClosed' AND aggregate_type = 'Check' AND aggregate_id = ?`, check.ID).Scan(&payloadJSON); err != nil {
+		t.Fatalf("expected CheckClosed outbox envelope for final check %s: %v", check.ID, err)
+	}
+	var envelope struct {
+		Version       string `json:"version"`
+		EventType     string `json:"event_type"`
+		AggregateType string `json:"aggregate_type"`
+		AggregateID   string `json:"aggregate_id"`
+		RestaurantID  string `json:"restaurant_id"`
+		DeviceID      string `json:"device_id"`
+		Payload       struct {
+			Origin string `json:"origin"`
+			Data   struct {
+				CheckID           string `json:"check_id"`
+				OrderID           string `json:"order_id"`
+				PrecheckID        string `json:"precheck_id"`
+				RestaurantID      string `json:"restaurant_id"`
+				BusinessDateLocal string `json:"business_date_local"`
+				Items             []struct {
+					OrderLineID          string `json:"order_line_id"`
+					CatalogItemID        string `json:"catalog_item_id"`
+					Quantity             string `json:"quantity"`
+					UnitCode             string `json:"unit_code"`
+					RequiredForInventory bool   `json:"required_for_inventory"`
+				} `json:"items"`
+			} `json:"data"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal([]byte(payloadJSON), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Version != domain.SyncEnvelopeVersion || envelope.EventType != "CheckClosed" || envelope.AggregateType != "Check" || envelope.AggregateID != check.ID {
+		t.Fatalf("unexpected CheckClosed envelope metadata: %+v", envelope)
+	}
+	if envelope.Payload.Data.CheckID != snapshot.CheckID ||
+		envelope.Payload.Data.OrderID != snapshot.OrderID ||
+		envelope.Payload.Data.PrecheckID != snapshot.PrecheckID ||
+		envelope.Payload.Data.BusinessDateLocal != snapshot.BusinessDateLocal {
+		t.Fatalf("CheckClosed identity must come from immutable check snapshot, snapshot=%+v envelope=%+v", snapshot, envelope.Payload.Data)
+	}
+	if len(envelope.Payload.Data.Items) != len(snapshot.PrecheckSnapshot.Lines) {
+		t.Fatalf("CheckClosed items must mirror immutable snapshot lines, snapshot=%+v envelope=%+v", snapshot.PrecheckSnapshot.Lines, envelope.Payload.Data.Items)
+	}
+	item := envelope.Payload.Data.Items[0]
+	if item.OrderLineID != snapshotLine.OrderLineID || item.CatalogItemID != snapshotLine.CatalogItemID || item.Quantity != "2.000" || item.UnitCode == "" || !item.RequiredForInventory {
+		t.Fatalf("CheckClosed item must be built from immutable snapshot line, snapshot=%+v item=%+v", snapshotLine, item)
+	}
+}
+
 func TestListClosedOrdersUsesBoundedPaginationAndStableNewestFirstSort(t *testing.T) {
 	f := newFixture(t)
 	shift := f.openShift(t)
