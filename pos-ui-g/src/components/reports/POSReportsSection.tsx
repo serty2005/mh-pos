@@ -164,7 +164,7 @@ export const POSReportsSection: React.FC = () => {
               <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">Соединение с Cloud</span>
               <PosStatusStrip
                 title="Очередь транзакций"
-                message={syncStatus === 'online' ? `Т tethered онлайн • ${outboxCount} в outbox` : 'Не в сети (Офлайн буфер)'}
+                message={syncStatus === 'online' ? `Связь активна · ${outboxCount} в outbox` : `Есть проблемы sync · ${outboxCount} в outbox`}
                 variant={syncStatus === 'online' ? 'success' : 'danger'}
               />
             </div>

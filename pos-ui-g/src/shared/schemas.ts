@@ -176,6 +176,50 @@ export const orderLineSchema = z.object({
   updated_at: z.string(),
 });
 
+export const pricingPolicySchema = z.object({
+  id: z.string(),
+  restaurant_id: z.string(),
+  kind: z.enum(['discount', 'surcharge']),
+  name: z.string(),
+  scope: z.enum(['line', 'order']),
+  amount_kind: z.enum(['fixed', 'percentage']),
+  amount_minor: z.number().optional().default(0),
+  value_basis_points: z.number().optional().default(0),
+  application_index: z.number(),
+  requires_permission: z.string().optional().default(''),
+  manual: z.boolean().optional().default(false),
+  active: z.boolean(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const orderDiscountSchema = z.object({
+  id: z.string(),
+  order_id: z.string(),
+  order_line_id: optionalNullableString,
+  pricing_policy_id: optionalNullableString,
+  scope: z.enum(['line', 'order']),
+  application_index: z.number(),
+  amount_kind: z.enum(['fixed', 'percentage']),
+  amount_minor: z.number().optional().default(0),
+  value_basis_points: z.number().optional().default(0),
+  reason: optionalNullableString,
+  created_at: z.string(),
+});
+
+export const orderSurchargeSchema = z.object({
+  id: z.string(),
+  order_id: z.string(),
+  pricing_policy_id: optionalNullableString,
+  kind: z.enum(['service_charge', 'pb1_service_fee', 'manual']),
+  application_index: z.number(),
+  amount_kind: z.enum(['fixed', 'percentage']),
+  amount_minor: z.number().optional().default(0),
+  value_basis_points: z.number().optional().default(0),
+  reason: optionalNullableString,
+  created_at: z.string(),
+});
+
 export const paymentSchema = z.object({
   id: z.string(),
   edge_payment_id: z.string(),
@@ -347,6 +391,50 @@ export const retryFailedOutboxResultSchema = z.object({
   retried: z.number(),
 });
 
+export const storageMetadataRowSchema = z.object({
+  module_name: z.string().optional(),
+  module_version: z.string().optional(),
+  schema_version: z.string().optional(),
+  version: z.string().optional(),
+  checksum_sha256: z.string().optional(),
+  status: z.string().optional(),
+  applied_at: z.string().optional(),
+  updated_at: z.string().optional(),
+}).passthrough();
+
+export const storageStatusSchema = z.object({
+  generated_at: z.string(),
+  sqlite: z.object({
+    page_count: z.number(),
+    page_size_bytes: z.number(),
+    freelist_count: z.number(),
+    estimated_size_bytes: z.number(),
+    freelist_bytes: z.number(),
+    journal_mode: z.string(),
+  }),
+  tables: z.object({}).passthrough(),
+  closed_order_business_date_range: z.object({
+    oldest: z.string().optional(),
+    newest: z.string().optional(),
+  }).passthrough(),
+  closed_orders_by_business_date: z.array(z.object({}).passthrough()).optional().default([]),
+  outbox: z.array(z.object({
+    status: z.string(),
+    sync_direction: z.string(),
+    count: z.number(),
+  }).passthrough()).optional().default([]),
+  blocking_outbox_messages: z.number(),
+  retention: z.object({
+    mode: z.string(),
+    destructive_apply_supported: z.boolean(),
+    financial_ledger_protected: z.boolean(),
+    immutable_snapshots_protected: z.boolean(),
+    reason: z.string(),
+  }).passthrough(),
+  runtime_versions: z.array(storageMetadataRowSchema).optional().default([]),
+  schema_migrations: z.array(storageMetadataRowSchema).optional().default([]),
+}).passthrough();
+
 export type BackendActorContext = z.infer<typeof actorContextSchema>;
 export type BackendCashDrawerEvent = z.infer<typeof cashDrawerEventSchema>;
 export type BackendCashSession = z.infer<typeof cashSessionSchema>;
@@ -355,6 +443,7 @@ export type BackendClosedOrder = z.infer<typeof closedOrderSchema>;
 export type BackendFinancialOperation = z.infer<typeof financialOperationSchema>;
 export type BackendHall = z.infer<typeof hallSchema>;
 export type BackendMenuItem = z.infer<typeof menuItemSchema>;
+export type BackendPricingPolicy = z.infer<typeof pricingPolicySchema>;
 export type BackendOrder = z.infer<typeof orderSchema>;
 export type BackendOrderLine = z.infer<typeof orderLineSchema>;
 export type BackendPairingStatus = z.infer<typeof pairingStatusSchema>;
@@ -364,4 +453,5 @@ export type BackendPrecheck = z.infer<typeof precheckSchema>;
 export type BackendProvisioningStatus = z.infer<typeof provisioningStatusSchema>;
 export type BackendShift = z.infer<typeof shiftSchema>;
 export type BackendSyncStatus = z.infer<typeof syncStatusSchema>;
+export type BackendStorageStatus = z.infer<typeof storageStatusSchema>;
 export type BackendTable = z.infer<typeof tableSchema>;

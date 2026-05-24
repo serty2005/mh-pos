@@ -8,7 +8,8 @@ import {
   PosSkeleton, 
   PosBanner,
   PosActionRail,
-  PosStatusStrip
+  PosStatusStrip,
+  PosDialog
 } from '../../shared/ui';
 import { 
   ModifierSelectionDialog 
@@ -28,17 +29,18 @@ import {
   Utensils, 
   Printer, 
   Banknote, 
-  ShieldAlert, 
   X,
   Lock,
-  MessageSquare
+  MessageSquare,
+  BadgePercent
 } from 'lucide-react';
-import { MenuItem, OrderLine, SelectedModifier } from '../../types';
+import { MenuItem, OrderLine, PricingPolicy, SelectedModifier } from '../../types';
 
 export const POSOrderSection: React.FC = () => {
   const {
     currentOrder,
     addMenuItemToOrder,
+    editOrderLineModifiers,
     changeLineQuantity,
     removeOrderLine,
     updateCommentAndCourse,
@@ -47,7 +49,9 @@ export const POSOrderSection: React.FC = () => {
     reprintPrecheck,
     currentOperator,
     setCurrentSection,
-    menuItems
+    menuItems,
+    pricingPolicies,
+    applyPricingPolicy
   } = usePOS();
 
   // Search and Category filters
@@ -59,6 +63,7 @@ export const POSOrderSection: React.FC = () => {
 
   // Submodals triggers
   const [selectedItemForMod, setSelectedItemForMod] = useState<MenuItem | null>(null);
+  const [selectedLineForMod, setSelectedLineForMod] = useState<OrderLine | null>(null);
   const [isModModalOpen, setModModalOpen] = useState<boolean>(false);
 
   const [isPaymentModalOpen, setPaymentModalOpen] = useState<boolean>(false);
@@ -66,6 +71,10 @@ export const POSOrderSection: React.FC = () => {
   const [isActionsModalOpen, setActionsModalOpen] = useState<boolean>(false);
 
   const [isPrecheckCancelOpen, setPrecheckCancelOpen] = useState<boolean>(false);
+  const [isPricingModalOpen, setPricingModalOpen] = useState<boolean>(false);
+  const [selectedPricingPolicyId, setSelectedPricingPolicyId] = useState<string>('');
+  const [pricingReason, setPricingReason] = useState<string>('');
+  const [pricingLineId, setPricingLineId] = useState<string>('');
 
   // Local notification banner for stop list alerts
   const [stopListAlertProduct, setStopListAlertProduct] = useState<string | null>(null);
@@ -114,10 +123,44 @@ export const POSOrderSection: React.FC = () => {
   };
 
   const handleModifiersSubmit = (selections: SelectedModifier[]) => {
+    if (selectedItemForMod && selectedLineForMod) {
+      editOrderLineModifiers(selectedLineForMod.id, selections);
+      setModModalOpen(false);
+      setSelectedItemForMod(null);
+      setSelectedLineForMod(null);
+      return;
+    }
     if (selectedItemForMod) {
       addMenuItemToOrder(selectedItemForMod, selections);
       setModModalOpen(false);
       setSelectedItemForMod(null);
+    }
+  };
+
+  const openLineModifierEditor = (line: OrderLine) => {
+    const item = menuItems.find((menuItem) => menuItem.id === line.itemId);
+    if (!item?.modifierGroups?.length || currentOrder?.status !== 'open') return;
+    setSelectedLineForMod(line);
+    setSelectedItemForMod(item);
+    setModModalOpen(true);
+  };
+
+  const selectedPricingPolicy = pricingPolicies.find((policy) => policy.id === selectedPricingPolicyId) ?? pricingPolicies[0];
+
+  const openPricingDialog = () => {
+    const firstPolicy = pricingPolicies[0];
+    setSelectedPricingPolicyId(firstPolicy?.id ?? '');
+    setPricingLineId(currentOrder?.lines[0]?.id ?? '');
+    setPricingReason('');
+    setPricingModalOpen(true);
+  };
+
+  const submitPricingPolicy = async () => {
+    const policy = pricingPolicies.find((item) => item.id === selectedPricingPolicyId);
+    if (!policy) return;
+    const result = await applyPricingPolicy(policy.id, policy.scope === 'line' ? pricingLineId : '', pricingReason);
+    if (result.success) {
+      setPricingModalOpen(false);
     }
   };
 
@@ -340,6 +383,20 @@ export const POSOrderSection: React.FC = () => {
                             </div>
                           )}
                         </div>
+                        {menuItems.find((menuItem) => menuItem.id === line.itemId)?.modifierGroups?.length ? (
+                          <button
+                            type="button"
+                            className="w-8 h-8 border border-[var(--pos-border)] flex items-center justify-center text-[var(--pos-text-secondary)] hover:bg-[var(--pos-surface-raised)] disabled:opacity-40"
+                            disabled={isLocked}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openLineModifierEditor(line);
+                            }}
+                            aria-label="Изменить модификаторы"
+                          >
+                            <SlidersHorizontal className="w-4 h-4" />
+                          </button>
+                        ) : null}
                         <span className="font-mono text-xs font-black tracking-tight shrink-0">{line.price} ₽</span>
                       </div>
 
@@ -386,6 +443,12 @@ export const POSOrderSection: React.FC = () => {
                 <span>НДС (10%):</span>
                 <span>{currentOrder.tax} ₽</span>
               </div>
+              {(currentOrder.discount > 0 || pricingPolicies.length > 0) && (
+                <div className="flex justify-between items-baseline font-mono text-xs text-[var(--pos-text-muted)]">
+                  <span>{t.common.discount}:</span>
+                  <span>{currentOrder.discount} ₽</span>
+                </div>
+              )}
               <div className="flex justify-between items-baseline font-mono text-base font-black text-[var(--pos-text-primary)] border-t border-[var(--pos-border)] pt-2 uppercase tracking-wide">
                 <span>{t.common.total}:</span>
                 <span className="text-sm md:text-xl font-black text-[var(--pos-status-success)]">{currentOrder.total} ₽</span>
@@ -412,6 +475,17 @@ export const POSOrderSection: React.FC = () => {
                     disabled={currentOrder.lines.length === 0}
                   >
                     Действия
+                  </PosButton>
+
+                  <PosButton
+                    id="order-pricing-btn"
+                    variant="secondary"
+                    size="md"
+                    onClick={openPricingDialog}
+                    disabled={currentOrder.lines.length === 0 || pricingPolicies.length === 0}
+                    icon={<BadgePercent className="w-4 h-4" />}
+                  >
+                    {t.pricing.action}
                   </PosButton>
 
                   {/* Precheck issuance triggers */}
@@ -462,9 +536,30 @@ export const POSOrderSection: React.FC = () => {
       {/* Sub Modals components declarations */}
       <ModifierSelectionDialog
         isOpen={isModModalOpen}
-        onClose={() => setModModalOpen(false)}
+        onClose={() => {
+          setModModalOpen(false);
+          setSelectedLineForMod(null);
+          setSelectedItemForMod(null);
+        }}
         item={selectedItemForMod}
+        initialSelections={selectedLineForMod?.selectedModifiers ?? []}
+        mode={selectedLineForMod ? 'edit' : 'add'}
         onSubmit={handleModifiersSubmit}
+      />
+
+      <PricingPolicyDialog
+        isOpen={isPricingModalOpen}
+        onClose={() => setPricingModalOpen(false)}
+        policies={pricingPolicies}
+        selectedPolicyId={selectedPricingPolicyId}
+        selectedPolicy={selectedPricingPolicy}
+        onPolicyChange={setSelectedPricingPolicyId}
+        lines={currentOrder?.lines ?? []}
+        selectedLineId={pricingLineId}
+        onLineChange={setPricingLineId}
+        reason={pricingReason}
+        onReasonChange={setPricingReason}
+        onSubmit={submitPricingPolicy}
       />
 
       <PaymentDialog
@@ -512,4 +607,99 @@ function categoryLabel(id: string) {
     default:
       return id;
   }
+}
+
+function PricingPolicyDialog({
+  isOpen,
+  onClose,
+  policies,
+  selectedPolicyId,
+  selectedPolicy,
+  onPolicyChange,
+  lines,
+  selectedLineId,
+  onLineChange,
+  reason,
+  onReasonChange,
+  onSubmit,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  policies: PricingPolicy[];
+  selectedPolicyId: string;
+  selectedPolicy?: PricingPolicy;
+  onPolicyChange: (value: string) => void;
+  lines: OrderLine[];
+  selectedLineId: string;
+  onLineChange: (value: string) => void;
+  reason: string;
+  onReasonChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <PosDialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title={t.pricing.title}
+      footer={
+        <>
+          <PosButton variant="secondary" size="sm" onClick={onClose}>
+            {t.common.cancel}
+          </PosButton>
+          <PosButton variant="primary" size="sm" onClick={onSubmit} disabled={!selectedPolicyId || (selectedPolicy?.scope === 'line' && !selectedLineId)}>
+            {t.pricing.apply}
+          </PosButton>
+        </>
+      }
+    >
+      {policies.length === 0 ? (
+        <PosEmptyState title={t.pricing.noPolicies} />
+      ) : (
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 gap-2">
+            {policies.map((policy) => {
+              const active = policy.id === selectedPolicyId;
+              return (
+                <button
+                  key={policy.id}
+                  type="button"
+                  onClick={() => onPolicyChange(policy.id)}
+                  className={`p-3 border text-left rounded-none ${active ? 'bg-[var(--pos-action-primary)] text-[var(--pos-surface)] border-[var(--pos-action-primary)]' : 'bg-[var(--pos-surface)] border-[var(--pos-border)] text-[var(--pos-text-primary)]'}`}
+                >
+                  <span className="font-sans text-sm font-bold block">{policy.name}</span>
+                  <span className="font-mono text-[10px] uppercase opacity-80">
+                    {policy.kind === 'discount' ? t.pricing.discount : t.pricing.surcharge} · {policy.scope === 'line' ? t.pricing.lineScope : t.pricing.orderScope} · {policy.amountKind === 'percentage' ? `${policy.valueBasisPoints / 100}%` : `${policy.amount} ₽`}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {selectedPolicy?.scope === 'line' && (
+            <label className="block space-y-2">
+              <span className="font-mono text-xs font-bold uppercase text-[var(--pos-text-secondary)]">{t.pricing.lineScope}</span>
+              <select
+                className="w-full h-11 border border-[var(--pos-border)] bg-[var(--pos-surface)] px-3 font-sans text-sm text-[var(--pos-text-primary)]"
+                value={selectedLineId}
+                onChange={(event) => onLineChange(event.target.value)}
+              >
+                {lines.map((line) => (
+                  <option key={line.id} value={line.id}>{line.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          <label className="block space-y-2">
+            <span className="font-mono text-xs font-bold uppercase text-[var(--pos-text-secondary)]">{t.pricing.reason}</span>
+            <input
+              className="w-full h-11 border border-[var(--pos-border)] bg-[var(--pos-surface)] px-3 font-sans text-sm text-[var(--pos-text-primary)]"
+              value={reason}
+              onChange={(event) => onReasonChange(event.target.value)}
+            />
+          </label>
+        </div>
+      )}
+    </PosDialog>
+  );
 }

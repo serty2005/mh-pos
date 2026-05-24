@@ -28,6 +28,19 @@ export interface SelectedModifier {
   optionId: string;
   optionName: string;
   price: number;
+  quantity?: number;
+}
+
+export interface PricingPolicy {
+  id: string;
+  kind: 'discount' | 'surcharge';
+  name: string;
+  scope: 'line' | 'order';
+  amountKind: 'fixed' | 'percentage';
+  amount: number;
+  valueBasisPoints: number;
+  applicationIndex: number;
+  requiresPermission?: string;
 }
 
 export interface OrderLine {

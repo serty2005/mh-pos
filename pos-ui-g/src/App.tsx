@@ -36,7 +36,8 @@ function POSAppShellContent() {
     selectedTableId,
     tables,
     syncStatus,
-    outboxCount
+    outboxCount,
+    appVersion
   } = usePOS();
 
   const [isSideMenuOpen, setSideMenuOpen] = useState<boolean>(false);
@@ -121,7 +122,7 @@ function POSAppShellContent() {
             <Menu className="w-5 h-5" />
           </button>
           
-          <h1 className="text-sm md:text-lg font-serif italic font-medium tracking-wider text-[var(--pos-text-secondary)] mr-1 shrink-0">L'ESSENCE POS</h1>
+          <h1 className="text-sm md:text-lg font-sans font-semibold tracking-normal text-[var(--pos-text-secondary)] mr-1 shrink-0">MyHoreca POS</h1>
           <div className="h-6 w-px bg-[var(--pos-border)] hidden sm:block"></div>
           
           <div className="hidden sm:flex flex-col">
@@ -296,7 +297,7 @@ function POSAppShellContent() {
 
               {/* Mini Diagnostic strip */}
               <div className="space-y-1 font-mono text-[9px] text-[var(--pos-text-muted)] uppercase tracking-widest leading-none select-none">
-                <div>Версия: 2.0.7p (Edge)</div>
+                <div>Версия БД: {appVersion}</div>
                 <div>Буфер Outbox: {outboxCount} событий</div>
                 <div className="flex items-center gap-1 mt-1 font-bold">
                   <div className={`w-1.5 h-1.5 rounded-full ${syncStatus === 'online' ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`} />

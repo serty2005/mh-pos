@@ -10,6 +10,7 @@ import {
   mapMenuItem,
   mapOperator,
   mapOrder,
+  mapPricingPolicy,
   mapSyncStatus,
   mapTable,
   outboxCount,
@@ -25,7 +26,9 @@ import type {
   BackendMenuItem,
   BackendOrder,
   BackendPrecheck,
+  BackendPricingPolicy,
   BackendShift,
+  BackendStorageStatus,
   BackendSyncStatus,
   BackendTable,
 } from '../shared/schemas';
@@ -37,6 +40,7 @@ import {
   MenuItem,
   Order,
   POSSection,
+  PricingPolicy,
   SelectedModifier,
   Table,
 } from '../types';
@@ -76,6 +80,7 @@ interface POSContextType {
   activeOrders: Order[];
   currentOrder: Order | null;
   addMenuItemToOrder: (item: MenuItem, selectedModifiers: SelectedModifier[]) => Promise<CommandResult>;
+  editOrderLineModifiers: (lineId: string, selectedModifiers: SelectedModifier[]) => Promise<CommandResult>;
   removeOrderLine: (lineId: string) => Promise<void>;
   changeLineQuantity: (lineId: string, newQty: number) => Promise<CommandResult>;
   updateCommentAndCourse: (lineId: string, comment: string, course: number) => Promise<void>;
@@ -87,10 +92,12 @@ interface POSContextType {
   refundCheck: (checkId: string, reason: string, disposition: 'waste' | 'return') => Promise<void>;
   partialRefundCheck: (checkId: string, lineId: string, qtyToRefund: number, reason: string, disposition: 'waste' | 'return') => Promise<void>;
   reprintCheck: (checkId: string) => Promise<void>;
+  pricingPolicies: PricingPolicy[];
+  applyPricingPolicy: (policyId: string, orderLineId?: string, reason?: string) => Promise<CommandResult>;
   outboxCount: number;
   syncOutbox: () => Promise<void>;
   syncStatus: 'online' | 'offline';
-  setSyncStatus: (status: 'online' | 'offline') => void;
+  appVersion: string;
   logEvents: LogEvent[];
   addLogEvent: (msg: string, type?: 'info' | 'warn' | 'success') => void;
 }
@@ -133,10 +140,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [tablesDto, setTablesDto] = useState<BackendTable[]>([]);
   const [activeOrdersDto, setActiveOrdersDto] = useState<BackendOrder[]>([]);
   const [menuDto, setMenuDto] = useState<BackendMenuItem[]>([]);
+  const [pricingPoliciesDto, setPricingPoliciesDto] = useState<BackendPricingPolicy[]>([]);
   const [prechecksDto, setPrechecksDto] = useState<BackendPrecheck[]>([]);
   const [closedOrdersDto, setClosedOrdersDto] = useState<BackendClosedOrder[]>([]);
   const [syncStatusDto, setSyncStatusDto] = useState<BackendSyncStatus | null>(null);
-  const [forcedSyncStatus, setForcedSyncStatus] = useState<'online' | 'offline' | null>(null);
+  const [storageStatusDto, setStorageStatusDto] = useState<BackendStorageStatus | null>(null);
   const [logEvents, setLogEvents] = useState<LogEvent[]>([]);
 
   const setAuth = useCallback((next: AuthSnapshot) => {
@@ -200,13 +208,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshDirectory = useCallback(async () => {
     if (!authRef.current.sessionId || !authRef.current.restaurantId || !shift) return;
-    const [halls, menu] = await Promise.all([
+    const [halls, menu, pricingPolicies] = await Promise.all([
       api.listHalls(),
       api.listMenuItems(),
+      api.listActivePricingPolicies().catch(() => []),
     ]);
     const activeHalls = halls.filter((hall) => hall.active);
     setHallsDto(activeHalls);
     setMenuDto(menu);
+    setPricingPoliciesDto(pricingPolicies.filter((policy) => policy.active && !policy.manual));
     if (!activeHallId && activeHalls[0]) {
       setActiveHallIdState(activeHalls[0].id);
     }
@@ -233,12 +243,14 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshActivity = useCallback(async () => {
     if (!authRef.current.sessionId) return;
-    const [closedOrders, sync] = await Promise.all([
+    const [closedOrders, sync, storage] = await Promise.all([
       api.listClosedOrders(50).catch(() => []),
       api.getSyncStatus().catch(() => null),
+      api.getStorageStatus().catch(() => null),
     ]);
     setClosedOrdersDto(closedOrders);
     setSyncStatusDto(sync);
+    setStorageStatusDto(storage);
   }, [api]);
 
   const refreshAll = useCallback(async () => {
@@ -305,7 +317,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const employeeShifts = useMemo(() => recentShifts.map((item) => mapOperator(actor, item)).filter(Boolean) as EmployeeShift[], [actor, recentShifts]);
   const closedOrders = useMemo(() => closedOrdersDto.map((item) => mapClosedOrder(item)), [closedOrdersDto]);
   const menuItems = useMemo(() => menuDto.map(mapMenuItem), [menuDto]);
-  const syncStatus = forcedSyncStatus ?? mapSyncStatus(syncStatusDto);
+  const pricingPolicies = useMemo(() => pricingPoliciesDto.map(mapPricingPolicy), [pricingPoliciesDto]);
+  const syncStatus = mapSyncStatus(syncStatusDto);
+  const appVersion = useMemo(() => {
+    const runtime = storageStatusDto?.runtime_versions.find((item) => item.module_name === 'pos-backend') ?? storageStatusDto?.runtime_versions[0];
+    const schemaVersion = runtime?.schema_version || storageStatusDto?.schema_migrations[0]?.version || '';
+    const moduleVersion = runtime?.module_version || '';
+    if (moduleVersion && schemaVersion) return `${moduleVersion} / ${schemaVersion}`;
+    return moduleVersion || schemaVersion || 'н/д';
+  }, [storageStatusDto]);
 
   const setActiveHallId = useCallback((id: string) => {
     setActiveHallIdState(id);
@@ -448,6 +468,40 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, errorKey: 'errors.conflict' };
     }
   }, [api, backendCurrentOrder, handleError, refreshCurrentPrechecks, refreshFloor]);
+
+  const editOrderLineModifiers = useCallback(async (lineId: string, selectedModifiers: SelectedModifier[]): Promise<CommandResult> => {
+    if (!backendCurrentOrder) return { success: false, errorKey: 'blocks.noOrderSelected' };
+    try {
+      await api.updateOrderLineModifiers(backendCurrentOrder.id, lineId, selectedModifiersToPayload(selectedModifiers));
+      await refreshFloor();
+      await refreshCurrentPrechecks(backendCurrentOrder.id);
+      return { success: true };
+    } catch (error) {
+      handleError(error, 'Не удалось обновить модификаторы');
+      return { success: false, errorKey: 'errors.conflict' };
+    }
+  }, [api, backendCurrentOrder, handleError, refreshCurrentPrechecks, refreshFloor]);
+
+  const applyPricingPolicy = useCallback(async (policyId: string, orderLineId = '', reason = ''): Promise<CommandResult> => {
+    if (!backendCurrentOrder) return { success: false, errorKey: 'blocks.noOrderSelected' };
+    const policy = pricingPoliciesDto.find((item) => item.id === policyId);
+    if (!policy) return { success: false, errorKey: 'errors.conflict' };
+    try {
+      if (policy.kind === 'discount') {
+        await api.applyDiscountPolicy(backendCurrentOrder.id, policy.id, policy.scope === 'line' ? orderLineId : '', reason);
+      } else {
+        await api.applySurchargePolicy(backendCurrentOrder.id, policy.id, reason);
+      }
+      addLogEvent(`Применена настройка цены: ${policy.name}.`, 'success');
+      await refreshFloor();
+      await refreshCurrentPrechecks(backendCurrentOrder.id);
+      await refreshActivity();
+      return { success: true };
+    } catch (error) {
+      handleError(error, 'Не удалось применить скидку или надбавку');
+      return { success: false, errorKey: 'errors.conflict' };
+    }
+  }, [addLogEvent, api, backendCurrentOrder, handleError, pricingPoliciesDto, refreshActivity, refreshCurrentPrechecks, refreshFloor]);
 
   const removeOrderLine = useCallback(async (lineId: string) => {
     if (!backendCurrentOrder) return;
@@ -632,6 +686,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     activeOrders,
     currentOrder,
     addMenuItemToOrder,
+    editOrderLineModifiers,
     removeOrderLine,
     changeLineQuantity,
     updateCommentAndCourse,
@@ -643,10 +698,12 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     refundCheck,
     partialRefundCheck,
     reprintCheck,
+    pricingPolicies,
+    applyPricingPolicy,
     outboxCount: outboxCount(syncStatusDto),
     syncOutbox,
     syncStatus,
-    setSyncStatus: setForcedSyncStatus,
+    appVersion,
     logEvents,
     addLogEvent,
   }), [
@@ -656,6 +713,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addCashDrawerEvent,
     addLogEvent,
     addMenuItemToOrder,
+    appVersion,
+    applyPricingPolicy,
     cancelPrecheck,
     cashDrawerEventsDto,
     cashSession,
@@ -667,8 +726,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     currentOperator,
     currentOrder,
     currentSection,
+    editOrderLineModifiers,
     employeeShifts,
-    forcedSyncStatus,
     halls,
     isPinLocked,
     logEvents,
@@ -679,6 +738,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     partialRefundCheck,
     payOrder,
     pinLogin,
+    pricingPolicies,
     refundCheck,
     removeOrderLine,
     reprintCheck,

@@ -142,5 +142,16 @@ export const t = {
     openSession: 'Открыть кассовую смену',
     closeSession: 'Закрыть кассовую смену',
     recordDrawer: 'Зафиксировать операцию наличных',
+  },
+  pricing: {
+    title: 'Скидки и надбавки',
+    action: 'Скидки',
+    noPolicies: 'Нет активных настроенных скидок или надбавок',
+    reason: 'Комментарий для аудита',
+    apply: 'Применить',
+    orderScope: 'На заказ',
+    lineScope: 'На позицию',
+    discount: 'Скидка',
+    surcharge: 'Надбавка',
   }
 } as const;

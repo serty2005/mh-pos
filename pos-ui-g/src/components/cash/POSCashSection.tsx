@@ -37,9 +37,7 @@ export const POSCashSection: React.FC = () => {
     outboxCount,
     syncOutbox,
     syncStatus,
-    setSyncStatus,
     logEvents,
-    addLogEvent
   } = usePOS();
 
   const [isEventModalOpen, setEventModalOpen] = useState<boolean>(false);
@@ -61,16 +59,6 @@ export const POSCashSection: React.FC = () => {
 
   const handleSyncOutboxClick = () => {
     syncOutbox();
-  };
-
-  const handleToggleSyncStatus = () => {
-    if (syncStatus === 'online') {
-      setSyncStatus('offline');
-      addLogEvent('Переключено в режим офлайн. Входящие и исходящие запросы буферизуются.', 'warn');
-    } else {
-      setSyncStatus('online');
-      addLogEvent('Соединение с Cloud восстановлено. Терминал онлайн.', 'success');
-    }
   };
 
   return (
@@ -281,22 +269,16 @@ export const POSCashSection: React.FC = () => {
             </PosButton>
           </div>
 
-          {/* Sync status toggler */}
+          {/* Sync status diagnostics */}
           <div className="p-4 border-b border-[var(--pos-border)] bg-[var(--pos-surface-raised)]/10 select-none space-y-3">
             <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)] block">
-              Отладка сети и синхронизации
+              Синхронизация с backend
             </span>
             <div className="flex gap-2">
-              <PosButton
-                id="cash-device-toggle-btn"
-                variant="secondary"
-                size="sm"
-                className="flex-1 text-xs"
-                onClick={handleToggleSyncStatus}
-                icon={syncStatus === 'online' ? <Wifi className="w-4 h-4 text-emerald-500" /> : <WifiOff className="w-4 h-4 text-red-500 animate-pulse" />}
-              >
-                {syncStatus === 'online' ? 'Имитировать Офлайн' : 'Вернуть Онлайн'}
-              </PosButton>
+              <div className="h-10 flex-1 border border-[var(--pos-border)] bg-[var(--pos-surface)] px-3 flex items-center gap-2 font-mono text-[10px] font-bold uppercase text-[var(--pos-text-secondary)]">
+                {syncStatus === 'online' ? <Wifi className="w-4 h-4 text-emerald-500" /> : <WifiOff className="w-4 h-4 text-red-500" />}
+                <span>{syncStatus === 'online' ? 'Связь активна' : 'Есть проблемы sync'}</span>
+              </div>
 
               <PosButton
                 id="cash-sync-flush-btn"

@@ -14,10 +14,14 @@ import {
   paymentSchema,
   pinLoginResultSchema,
   precheckSchema,
+  pricingPolicySchema,
+  orderDiscountSchema,
+  orderSurchargeSchema,
   provisioningStatusSchema,
   reprintDocumentSchema,
   retryFailedOutboxResultSchema,
   shiftSchema,
+  storageStatusSchema,
   syncStatusSchema,
   tableSchema,
 } from './schemas';
@@ -276,9 +280,22 @@ export function createApiClient(getAuth: () => AuthSnapshot, base = (viteEnv.env
       method: 'PATCH',
       body: JSON.stringify({ course, comment }),
     }),
+    updateOrderLineModifiers: (orderId: string, lineId: string, selectedModifiers: SelectedModifierPayload[]) => request(`/orders/${encodeURIComponent(orderId)}/lines/${encodeURIComponent(lineId)}/modifiers`, orderLineSchema, {
+      method: 'PATCH',
+      body: JSON.stringify({ selected_modifiers: selectedModifiers }),
+    }),
     voidOrderLine: (orderId: string, lineId: string, reason: string) => request(`/orders/${encodeURIComponent(orderId)}/lines/${encodeURIComponent(lineId)}/void`, orderLineSchema, {
       method: 'POST',
       body: JSON.stringify({ reason }),
+    }),
+    listActivePricingPolicies: () => request('/pricing/policies', z.array(pricingPolicySchema)),
+    applyDiscountPolicy: (orderId: string, pricingPolicyId: string, orderLineId = '', reason = '') => request(`/orders/${encodeURIComponent(orderId)}/discounts`, orderDiscountSchema, {
+      method: 'POST',
+      body: JSON.stringify({ pricing_policy_id: pricingPolicyId, order_line_id: orderLineId, reason }),
+    }),
+    applySurchargePolicy: (orderId: string, pricingPolicyId: string, reason = '') => request(`/orders/${encodeURIComponent(orderId)}/surcharges`, orderSurchargeSchema, {
+      method: 'POST',
+      body: JSON.stringify({ pricing_policy_id: pricingPolicyId, reason }),
     }),
     listPrechecksByOrder: (orderId: string) => request(`/orders/${encodeURIComponent(orderId)}/prechecks`, z.array(precheckSchema)),
     issuePrecheck: (orderId: string) => request(`/orders/${encodeURIComponent(orderId)}/precheck`, precheckSchema, {
@@ -318,6 +335,7 @@ export function createApiClient(getAuth: () => AuthSnapshot, base = (viteEnv.env
     }),
     getSyncStatus: () => request('/sync/status', syncStatusSchema),
     listSyncOutbox: (limit = 5) => request(`/sync/outbox?limit=${limit}`, z.array(outboxMessageSchema)),
+    getStorageStatus: () => request('/storage/status', storageStatusSchema),
     retryFailedOutbox: () => request('/sync/retry-failed', retryFailedOutboxResultSchema, {
       method: 'POST',
       body: JSON.stringify({}),

@@ -9,6 +9,7 @@ import type {
   Order,
   OrderLine,
   Payment,
+  PricingPolicy,
   SelectedModifier,
   Table,
 } from '../types';
@@ -24,6 +25,7 @@ import type {
   BackendOrderLine,
   BackendPayment,
   BackendPrecheck,
+  BackendPricingPolicy,
   BackendShift,
   BackendSyncStatus,
   BackendTable,
@@ -72,6 +74,20 @@ export function mapMenuItem(item: BackendMenuItem): MenuItem {
             price: option.price_minor,
           })),
       })),
+  };
+}
+
+export function mapPricingPolicy(policy: BackendPricingPolicy): PricingPolicy {
+  return {
+    id: policy.id,
+    kind: policy.kind,
+    name: policy.name,
+    scope: policy.scope,
+    amountKind: policy.amount_kind,
+    amount: policy.amount_minor,
+    valueBasisPoints: policy.value_basis_points,
+    applicationIndex: policy.application_index,
+    requiresPermission: policy.requires_permission || undefined,
   };
 }
 
@@ -178,7 +194,7 @@ export function selectedModifiersToPayload(selectedModifiers: SelectedModifier[]
   return selectedModifiers.map((modifier) => ({
     modifier_group_id: modifier.groupId,
     modifier_option_id: modifier.optionId,
-    quantity: 1,
+    quantity: modifier.quantity ?? 1,
   }));
 }
 
@@ -199,6 +215,7 @@ function mapOrderLine(line: BackendOrderLine): OrderLine {
       optionId: modifier.modifier_option_id,
       optionName: modifier.name,
       price: modifier.unit_price,
+      quantity: modifier.quantity,
     })),
     comment: line.comment ?? undefined,
     course: Number(line.course) || 1,

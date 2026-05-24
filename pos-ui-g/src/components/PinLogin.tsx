@@ -6,7 +6,7 @@ import { Lock, Delete, ArrowRight } from 'lucide-react';
 import { appendPinDigit, canSubmitPin, pinIndicatorCount } from './pinInput';
 
 export const PinLogin: React.FC = () => {
-  const { pinLogin } = usePOS();
+  const { pinLogin, appVersion } = usePOS();
   const [pin, setPin] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -36,38 +36,26 @@ export const PinLogin: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col md:flex-row bg-[var(--pos-bg)] text-[var(--pos-text-primary)]">
-      {/* Branding Column / Info Column */}
+      {/* Terminal context column */}
       <div className="flex-1 flex flex-col justify-between p-8 md:p-12 border-b md:border-b-0 md:border-r border-[var(--pos-border)] bg-[var(--pos-surface-raised)] select-none">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 border border-[var(--pos-border-strong)] flex items-center justify-center bg-[#050505]">
-            <span className="text-lg font-serif italic text-[var(--pos-text-secondary)] font-semibold">E</span>
+          <div className="w-10 h-10 border border-[var(--pos-border-strong)] flex items-center justify-center bg-[var(--pos-surface)]">
+            <Lock className="w-4 h-4 text-[var(--pos-text-secondary)]" />
           </div>
-          <span className="font-serif text-base tracking-widest uppercase text-[var(--pos-text-secondary)] font-medium">L'ESSENCE POS</span>
+          <span className="font-sans text-base tracking-normal text-[var(--pos-text-secondary)] font-semibold">MyHoreca POS</span>
         </div>
 
         <div className="my-[40px] max-w-md">
-          <h1 className="font-serif text-xl md:text-3xl font-medium tracking-wider italic uppercase mb-3 text-[var(--pos-text-secondary)]">
+          <h1 className="font-sans text-xl md:text-3xl font-semibold tracking-normal mb-3 text-[var(--pos-text-secondary)]">
             {t.auth.pinTitle}
           </h1>
           <p className="font-sans text-xs md:text-sm text-[var(--pos-text-muted)] leading-relaxed font-light">
-            Добро пожаловать в премиальный POS-терминал L'Essence. Введите ваш персональный PIN-код для открытия смены и доступа к столам.
+            Введите PIN-код сотрудника для открытия рабочей сессии и доступа к кассовым операциям.
           </p>
-
-          {/* Test Hint Panel */}
-          <div className="mt-8 p-4 bg-[var(--pos-surface)] border border-[var(--pos-border)]">
-            <span className="font-mono text-[10px] uppercase font-bold text-[var(--pos-text-secondary)] tracking-widest block mb-2">
-              Тестовые PIN-коды авторизации (RBAC):
-            </span>
-            <div className="grid grid-cols-1 gap-2 font-mono text-xs text-[var(--pos-text-muted)]">
-              <div><strong className="text-[var(--pos-text-primary)]">1111</strong> • Старший Кассир (Все права)</div>
-              <div><strong className="text-[var(--pos-text-primary)]">2222</strong> • Официант (Права ограничены)</div>
-              <div><strong className="text-[var(--pos-text-primary)]">3333</strong> • Администратор (Сервисный ключ)</div>
-            </div>
-          </div>
         </div>
 
         <div className="font-mono text-[10px] text-[var(--pos-text-muted)] uppercase tracking-widest">
-          © {new Date().getFullYear()} L'Essence Group • Edge Node v2.0.7p
+          Версия БД: {appVersion}
         </div>
       </div>
 

@@ -8,6 +8,8 @@ interface ModifierSelectionDialogProps {
   isOpen: boolean;
   onClose: () => void;
   item: MenuItem | null;
+  initialSelections?: SelectedModifier[];
+  mode?: 'add' | 'edit';
   onSubmit: (selections: SelectedModifier[]) => void;
 }
 
@@ -15,6 +17,8 @@ export const ModifierSelectionDialog: React.FC<ModifierSelectionDialogProps> = (
   isOpen,
   onClose,
   item,
+  initialSelections = [],
+  mode = 'add',
   onSubmit
 }) => {
   const [selections, setSelections] = useState<SelectedModifier[]>([]);
@@ -22,11 +26,11 @@ export const ModifierSelectionDialog: React.FC<ModifierSelectionDialogProps> = (
 
   useEffect(() => {
     if (item) {
-      setSelections([]);
+      setSelections(initialSelections);
       setErrors({});
       
       // Auto-select standard default options for groups requiring exactly 1 choice
-      if (item.modifierGroups) {
+      if (mode === 'add' && item.modifierGroups) {
         const initialSelections: SelectedModifier[] = [];
         item.modifierGroups.forEach(group => {
           if (group.minRequired === 1 && group.options.length > 0) {
@@ -43,7 +47,7 @@ export const ModifierSelectionDialog: React.FC<ModifierSelectionDialogProps> = (
         setSelections(initialSelections);
       }
     }
-  }, [item, isOpen]);
+  }, [initialSelections, item, isOpen, mode]);
 
   if (!item || !item.modifierGroups) return null;
 
@@ -113,7 +117,7 @@ export const ModifierSelectionDialog: React.FC<ModifierSelectionDialogProps> = (
     <PosDialog
       isOpen={isOpen}
       onClose={onClose}
-      title="Настройка модификаторов"
+      title={mode === 'edit' ? 'Изменение модификаторов' : 'Настройка модификаторов'}
       footer={
         <>
           <PosButton variant="secondary" size="sm" onClick={onClose}>
@@ -126,7 +130,7 @@ export const ModifierSelectionDialog: React.FC<ModifierSelectionDialogProps> = (
             onClick={handleValidationAndSubmit}
             icon={<Check className="w-4 h-4" />}
           >
-            {t.common.confirm} ({calculatedTotal} ₽)
+            {mode === 'edit' ? t.common.save : t.common.confirm} ({calculatedTotal} ₽)
           </PosButton>
         </>
       }
