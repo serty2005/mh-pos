@@ -10,7 +10,7 @@
 - Cloud owns master/reference/configuration authoring.
 - POS Edge can continue cashier runtime while Cloud is unavailable.
 - Directional ownership matrix is maintained in `docs/sync/directional-sync-ownership.md`.
-- Запланировано до полного пилота: POS Edge также генерирует waiter/kitchen inventory facts, а Cloud publishes recipe/stop-list reference data для offline sale blocking.
+- Реализовано сейчас: Cloud публикует recipe/stop-list reference data в streams `recipes` и `inventory_reference`, POS Edge применяет их через текущий master-data ingest pipeline для offline sale blocking.
 
 ## SyncExchange v1
 
@@ -105,7 +105,7 @@ Response:
 - Cloud ограничивает число `cloud_packages` в одном `sync/exchange` response настройкой `CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE`; большие Cloud -> Edge изменения передаются несколькими последовательными exchange-сессиями.
 - Если POS Edge получил bounded Cloud -> Edge response с числом packages не меньше `POS_SYNC_SENDER_CLOUD_PACKAGE_BURST_THRESHOLD`, следующий Cloud pull выполняется без ожидания `POS_SYNC_SENDER_CLOUD_PULL_INTERVAL`.
 - `event_id` для всех Edge POS/KDS business events должен быть UUIDv7.
-- Поддерживаемые exchange streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
+- Поддерживаемые exchange streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`, `recipes`, `inventory_reference`.
 - ACK statuses: `accepted`, `rejected`, `retryable`; rejected/retryable items возвращают стабильный `error_code` и `message_key`.
 - Если stream package отсутствует, `stream_results.status = "not_found"` и HTTP остается успешным.
 - Unknown stream отклоняет весь request как `400 VALIDATION_FAILED` до приема Edge events.
@@ -134,6 +134,8 @@ floor
 catalog
 menu
 pricing_policy
+recipes
+inventory_reference
 ```
 
 Request body shape currently supported by POS Edge:
@@ -191,13 +193,8 @@ Request body shape currently supported by POS Edge:
 
 Только основа:
 
-- Cloud schema содержит recipe/inventory-adjacent publication foundation.
-- Generic Cloud package contracts/storage поддерживают `recipes` и `inventory_reference`; Cloud authoring UI/publication workflow для этих данных остается запланирован далее.
-
-Запланировано до полного пилота:
-
-- Cloud UI authoring для recipes/stop-list и deterministic publication из Cloud authority tables;
-- offline smoke для Cloud package -> Edge ingest -> blocked/unblocked sale.
+- Cloud schema и publication workflow реально публикуют `recipes`/`inventory_reference` в `cloud_master_data_packages` как часть одного детерминированного publication snapshot.
+- Smoke suite `pos_stop_list_sale_blocking` покрывает Cloud authoring -> publication -> Edge import -> blocked sale на POS runtime.
 
 ## Edge -> Cloud Operational Events
 

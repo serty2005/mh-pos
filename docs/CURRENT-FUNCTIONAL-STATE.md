@@ -22,7 +22,7 @@
 Цель полной пилотной реализации:
 
 - сохранить текущий cashier runtime как базовый поток;
-- добавить stop-list sale blocking на POS Edge с Cloud authoring/publication и offline локальной проверкой;
+- stop-list sale blocking на POS Edge с Cloud authoring/publication и offline локальной проверкой уже подтвержден в `pos_stop_list_sale_blocking`;
 - расширять mobile-first waiter runtime без payment/refund authority по умолчанию только по подтвержденным backend contracts;
 - добавить advanced KDS lifecycle: статусы блюд, cooking events, `ItemServed`, приемку поставки, catalog proposals, recipe change proposals и stop-list edit;
 - зафиксировать POS Edge backend как авторитетный runtime для financial/order/KDS command validation и stop-list sale blocking; POS UI не становится авторитетным слоем;
