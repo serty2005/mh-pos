@@ -38,11 +38,11 @@ export const PaymentDialog: React.FC<PaymentDialogProps> = ({
     setInputVal(currentOrder.total.toString());
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const numericAmount = parseFloat(inputVal) || 0;
     
     // Process payment mutation via context
-    const report = payOrder(method, numericAmount);
+    const report = await payOrder(method, numericAmount);
     
     if (report.success) {
       setPaymentReport({

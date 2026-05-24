@@ -52,7 +52,7 @@ npm run dev
 3. Открой `http://localhost:5173`.
 4. На `/pair` используй Cloud provisioning/license code, если он был выдан; при Cloud-approved assignment Edge уже paired.
 5. На `/login` используй cashier PIN `1111`.
-6. Для cancel unpaid precheck в manager override введи `manager_employee_id` из bootstrap и manager PIN `2222`.
+6. Для cancel unpaid precheck в manager override введи manager PIN `2222`; backend сам определяет менеджера по PIN и проверяет право отмены.
 
 Playwright specs читают `POS_E2E_BOOTSTRAP_JSON` как JSON-строку или как путь к JSON-файлу. Для Docker devbox canonical path:
 

@@ -179,7 +179,6 @@ func (f *fixture) cancelPrecheckCommand(commandID, precheckID string) app.Cancel
 	return app.CancelPrecheckCommand{
 		CommandMeta:        f.managerMetaCommand(commandID),
 		PrecheckID:         precheckID,
-		ManagerEmployeeID:  f.manager.ID,
 		ManagerPIN:         "2468",
 		CancellationReason: "guest changed order",
 	}
@@ -3563,7 +3562,6 @@ func TestCannotCancelMissingPrecheck(t *testing.T) {
 	_, err := f.service.CancelPrecheck(f.ctx, app.CancelPrecheckCommand{
 		CommandMeta:        f.managerMetaCommand("cmd-cancel-missing-precheck"),
 		PrecheckID:         "missing-precheck",
-		ManagerEmployeeID:  f.manager.ID,
 		ManagerPIN:         "2468",
 		CancellationReason: "guest changed order",
 	})
@@ -3673,7 +3671,7 @@ func TestCancelPrecheckRejectsWrongManagerPIN(t *testing.T) {
 	}
 }
 
-func TestCancelPrecheckRejectsEmployeeWithoutPermission(t *testing.T) {
+func TestCancelPrecheckRejectsPINWithoutManagerPermission(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
@@ -3688,7 +3686,6 @@ func TestCancelPrecheckRejectsEmployeeWithoutPermission(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := f.cancelPrecheckCommand("cmd-cancel-no-permission", precheck.ID)
-	cmd.ManagerEmployeeID = f.employee.ID
 	cmd.ManagerPIN = "1111"
 	_, err = f.service.CancelPrecheck(f.ctx, cmd)
 	if !errors.Is(err, domain.ErrForbidden) {
@@ -3800,7 +3797,6 @@ func TestCancelPrecheckRejectsActorWithoutOverridePermission(t *testing.T) {
 	cmd := app.CancelPrecheckCommand{
 		CommandMeta:        f.edgeMetaCommand("cmd-cancel-actor-without-permission"),
 		PrecheckID:         precheck.ID,
-		ManagerEmployeeID:  f.manager.ID,
 		ManagerPIN:         "2468",
 		CancellationReason: "actor has no override permission",
 	}
@@ -3951,7 +3947,6 @@ func TestDuplicateCancelPrecheckCommandIDDoesNotDoubleCancel(t *testing.T) {
 	cmd := app.CancelPrecheckCommand{
 		CommandMeta:        f.managerMetaCommand("cmd-cancel-duplicate"),
 		PrecheckID:         precheck.ID,
-		ManagerEmployeeID:  f.manager.ID,
 		ManagerPIN:         "2468",
 		CancellationReason: "guest changed order",
 	}

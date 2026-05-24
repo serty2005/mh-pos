@@ -195,8 +195,8 @@ Operational activity/sync read contract:
 - Only one active issued precheck per order is allowed.
 - Snapshot contains active lines with selected modifiers, currency, discounts, surcharges, taxes, totals and calculation breakdown at issue time.
 - Order becomes `locked`.
-- `CancelPrecheckCommand` requires `precheck_id`, `manager_employee_id`, `manager_pin`, `cancellation_reason`.
-- Cancel requires operator permission `pos.precheck.cancel.request` and manager permission `pos.precheck.cancel`.
+- `CancelPrecheckCommand` требует `precheck_id`, `manager_pin`, `cancellation_reason`; `manager_employee_id` принимается только как legacy compatibility input и не требуется от UI.
+- Отмена требует operator permission `pos.precheck.cancel.request`; backend определяет менеджера по введенному PIN внутри ресторана заказа и требует manager permission `pos.precheck.cancel`.
 - Cancel writes manager override audit and returns order to `open`.
 - Reprint requires `pos.precheck.reprint` and valid immutable snapshot.
 

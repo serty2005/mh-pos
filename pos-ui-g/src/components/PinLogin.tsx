@@ -26,9 +26,9 @@ export const PinLogin: React.FC = () => {
     setPin('');
   };
 
-  const handlePinSubmit = () => {
+  const handlePinSubmit = async () => {
     if (pin.length < 4) return;
-    const success = pinLogin(pin);
+    const success = await pinLogin(pin);
     if (!success) {
       setErrorMsg(t.auth.invalidPin);
       setPin('');

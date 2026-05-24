@@ -1589,7 +1589,7 @@ func TestCancelPrecheckThroughPublicAPIRequiresManagerOverride(t *testing.T) {
 	}
 	precheck := decodeAPIResponse[domain.Precheck](t, issued)
 	f.useManagerOperator(t)
-	body := `{"command_id":"cmd-api-cancel-precheck","node_device_id":"` + f.device.ID + `","manager_employee_id":"` + f.manager.ID + `","manager_pin":"2468","cancellation_reason":"guest changed order"}`
+	body := `{"command_id":"cmd-api-cancel-precheck","node_device_id":"` + f.device.ID + `","manager_pin":"2468","cancellation_reason":"guest changed order"}`
 	rr := f.postJSON(t, "/api/v1/prechecks/"+precheck.ID+"/cancel", body)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { usePOS } from '../../context/POSContext';
-import { mockHalls } from '../../data';
 import { t } from '../../shared/i18n';
 import { 
   PosButton, 
@@ -20,7 +19,8 @@ export const POSFloorSection: React.FC = () => {
     createOrderForTable, 
     activeOrders, 
     setCurrentSection,
-    currentOperator
+    currentOperator,
+    halls
   } = usePOS();
 
   const [isGuestModalOpen, setGuestModalOpen] = useState<boolean>(false);
@@ -69,7 +69,7 @@ export const POSFloorSection: React.FC = () => {
         
         {/* Hall Tabs Header */}
         <div className="flex border-b border-[var(--pos-border)] bg-[var(--pos-surface)] overflow-x-auto pos-scrollbar-thin shrink-0 select-none">
-          {mockHalls.map((hall) => {
+          {halls.map((hall) => {
             const isActive = hall.id === activeHallId;
             return (
               <button

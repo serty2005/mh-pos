@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { usePOS } from '../../context/POSContext';
-import { mockMenuItems } from '../../data';
 import { t } from '../../shared/i18n';
 import { 
   PosButton, 
@@ -47,11 +46,12 @@ export const POSOrderSection: React.FC = () => {
     cancelPrecheck,
     reprintPrecheck,
     currentOperator,
-    setCurrentSection
+    setCurrentSection,
+    menuItems
   } = usePOS();
 
   // Search and Category filters
-  const [activeCategory, setActiveCategory] = useState<string>('starters');
+  const [activeCategory, setActiveCategory] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Skeletons loader simulated transition
@@ -70,16 +70,20 @@ export const POSOrderSection: React.FC = () => {
   // Local notification banner for stop list alerts
   const [stopListAlertProduct, setStopListAlertProduct] = useState<string | null>(null);
 
-  const categories = [
-    { id: 'starters', label: 'Закуски' },
-    { id: 'mains', label: 'Горячее' },
-    { id: 'desserts', label: 'Десерты' },
-    { id: 'drinks', label: 'Напитки' }
-  ];
+  const categories = useMemo(() => {
+    const unique = Array.from(new Set(menuItems.map((item) => item.category))).filter((id): id is string => Boolean(id));
+    return unique.map((id) => ({ id, label: categoryLabel(id) }));
+  }, [menuItems]);
+
+  useEffect(() => {
+    if (!activeCategory && categories[0]) {
+      setActiveCategory(categories[0].id);
+    }
+  }, [activeCategory, categories]);
 
   // Filter Catalog Items
-  const filteredItems = mockMenuItems.filter(item => {
-    const matchCat = item.category === activeCategory;
+  const filteredItems = menuItems.filter(item => {
+    const matchCat = !activeCategory || item.category === activeCategory;
     const matchSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
     return matchCat && matchSearch;
   });
@@ -493,3 +497,19 @@ export const POSOrderSection: React.FC = () => {
     </div>
   );
 };
+
+function categoryLabel(id: string) {
+  switch (id) {
+    case 'dish':
+      return 'Меню';
+    case 'good':
+      return 'Товары';
+    case 'semi_finished':
+      return 'Полуфабрикаты';
+    case 'service':
+    case 'services':
+      return 'Сервис';
+    default:
+      return id;
+  }
+}

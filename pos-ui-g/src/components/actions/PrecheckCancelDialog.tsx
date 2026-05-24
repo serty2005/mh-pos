@@ -6,7 +6,7 @@ import { ShieldAlert, Unlock } from 'lucide-react';
 interface PrecheckCancelDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (pin: string, reason: string) => boolean;
+  onConfirm: (pin: string, reason: string) => Promise<boolean>;
 }
 
 export const PrecheckCancelDialog: React.FC<PrecheckCancelDialogProps> = ({
@@ -26,7 +26,7 @@ export const PrecheckCancelDialog: React.FC<PrecheckCancelDialogProps> = ({
     }
   }, [isOpen]);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!pin) {
       setErrorMsg('Необходимо заполнить PIN-код менеджера.');
       return;
@@ -36,7 +36,7 @@ export const PrecheckCancelDialog: React.FC<PrecheckCancelDialogProps> = ({
       return;
     }
 
-    const success = onConfirm(pin, reason);
+    const success = await onConfirm(pin, reason);
     if (success) {
       onClose();
     } else {
