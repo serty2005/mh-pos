@@ -418,6 +418,14 @@ def redacted_summary(summary):
     return out
 
 
+def test_seed_summary(summary):
+    """Возвращает summary для локального тестового seed-а: PIN видны, pairing code скрыт."""
+    out = dict(summary)
+    if out.get("pairing_code"):
+        out["pairing_code"] = "<redacted>"
+    return out
+
+
 def stamp_summary(summary, cloud_base_url, pos_base_url):
     out = dict(summary)
     out["cloud_base_url"] = cloud_base_url

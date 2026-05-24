@@ -3,6 +3,7 @@ import { usePOS } from '../context/POSContext';
 import { t } from '../shared/i18n';
 import { PosButton } from '../shared/ui';
 import { Lock, Delete, ArrowRight } from 'lucide-react';
+import { appendPinDigit, canSubmitPin, pinIndicatorCount } from './pinInput';
 
 export const PinLogin: React.FC = () => {
   const { pinLogin } = usePOS();
@@ -11,9 +12,7 @@ export const PinLogin: React.FC = () => {
 
   const handleKeyPress = (num: string) => {
     setErrorMsg(null);
-    if (pin.length < 4) {
-      setPin(prev => prev + num);
-    }
+    setPin(prev => appendPinDigit(prev, num));
   };
 
   const handleDelete = () => {
@@ -27,7 +26,7 @@ export const PinLogin: React.FC = () => {
   };
 
   const handlePinSubmit = async () => {
-    if (pin.length < 4) return;
+    if (!canSubmitPin(pin)) return;
     const success = await pinLogin(pin);
     if (!success) {
       setErrorMsg(t.auth.invalidPin);
@@ -76,13 +75,13 @@ export const PinLogin: React.FC = () => {
       <div className="flex-1 flex flex-col justify-center items-center p-8 bg-[var(--pos-surface)] select-none">
         <div className="w-full max-w-[320px] flex flex-col items-center">
           {/* PIN Indicators */}
-          <div className="flex gap-4 mb-6">
-            {[0, 1, 2, 3].map((pos) => {
+          <div className="flex flex-wrap justify-center gap-1.5 mb-6 max-w-full">
+            {Array.from({ length: pinIndicatorCount(pin) }, (_, pos) => {
               const filled = pin.length > pos;
               return (
                 <div 
                   key={pos} 
-                  className={`w-6 h-6 border-2 flex items-center justify-center transition-all duration-100 rounded-none
+                  className={`w-5 h-5 border-2 flex items-center justify-center transition-all duration-100 rounded-none
                     ${filled 
                       ? 'border-[var(--pos-action-primary)] bg-[var(--pos-action-primary)] font-bold text-xs' 
                       : 'border-[var(--pos-border-strong)] bg-transparent'
@@ -156,7 +155,7 @@ export const PinLogin: React.FC = () => {
             size="md"
             fullWidth
             onClick={handlePinSubmit}
-            disabled={pin.length < 4}
+            disabled={!canSubmitPin(pin)}
             className="font-mono text-xs uppercase tracking-widest"
             icon={<ArrowRight className="w-4 h-4" />}
           >

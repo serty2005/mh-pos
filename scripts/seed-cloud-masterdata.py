@@ -9,7 +9,7 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR / "lib"))
 
 from mhpos_http import JsonClient, normalize_base_url
-from mhpos_seed import create_cloud_seed, get_edge_node_device_id, redacted_summary, stamp_summary, write_summary
+from mhpos_seed import create_cloud_seed, get_edge_node_device_id, stamp_summary, test_seed_summary, write_summary
 
 
 def parse_args():
@@ -45,7 +45,7 @@ def main():
     )
     summary = stamp_summary(summary, cloud_base, pos_base)
     write_summary(args.output, summary)
-    print(json.dumps(redacted_summary(summary), ensure_ascii=False, indent=2))
+    print(json.dumps(test_seed_summary(summary), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

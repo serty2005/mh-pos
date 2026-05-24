@@ -153,6 +153,15 @@ class SeedWorkflowTest(unittest.TestCase):
         self.assertEqual(safe["manager_pin"], "<redacted>")
         self.assertEqual(safe["pairing_code"], "<redacted>")
 
+    def test_test_seed_summary_shows_pins_and_hides_pairing_code(self):
+        from mhpos_seed import test_seed_summary
+
+        summary = test_seed_summary({"cashier_pin": "1111", "manager_pin": "2222", "pairing_code": "ABC23456"})
+
+        self.assertEqual(summary["cashier_pin"], "1111")
+        self.assertEqual(summary["manager_pin"], "2222")
+        self.assertEqual(summary["pairing_code"], "<redacted>")
+
 
 
 

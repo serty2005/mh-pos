@@ -1444,22 +1444,37 @@ func TestRemovedLocalBootstrapRouteReturnsNotFound(t *testing.T) {
 func TestCORSPreflightForPairingAPI(t *testing.T) {
 	f := newAPIFixture(t)
 
-	for _, origin := range []string{"http://localhost:5173", "http://host.docker.internal:5173"} {
-		req := httptest.NewRequest(http.MethodOptions, "/api/v1/system/pair", nil)
-		req.Header.Set("Origin", origin)
-		req.Header.Set("Access-Control-Request-Method", "POST")
-		req.Header.Set("Access-Control-Request-Headers", "content-type,x-client-device-id")
-		rr := httptest.NewRecorder()
-		f.router.ServeHTTP(rr, req)
+	cases := []struct {
+		path   string
+		method string
+	}{
+		{path: "/api/v1/system/pairing-status", method: "GET"},
+		{path: "/api/v1/auth/pin-login", method: "POST"},
+	}
+	for _, origin := range []string{
+		"http://localhost:5173",
+		"http://host.docker.internal:5173",
+		"http://localhost:3000",
+		"http://127.0.0.1:3000",
+		"http://host.docker.internal:3000",
+	} {
+		for _, tc := range cases {
+			req := httptest.NewRequest(http.MethodOptions, tc.path, nil)
+			req.Header.Set("Origin", origin)
+			req.Header.Set("Access-Control-Request-Method", tc.method)
+			req.Header.Set("Access-Control-Request-Headers", "content-type,x-client-device-id")
+			rr := httptest.NewRecorder()
+			f.router.ServeHTTP(rr, req)
 
-		if rr.Code != http.StatusNoContent {
-			t.Fatalf("expected preflight 204 for %s, got %d: %s", origin, rr.Code, rr.Body.String())
-		}
-		if got := rr.Header().Get("Access-Control-Allow-Origin"); got != origin {
-			t.Fatalf("expected CORS origin header %q, got %q", origin, got)
-		}
-		if got := rr.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, "POST") || !strings.Contains(got, "OPTIONS") {
-			t.Fatalf("expected CORS methods to include POST and OPTIONS, got %q", got)
+			if rr.Code != http.StatusNoContent {
+				t.Fatalf("expected preflight 204 for %s %s from %s, got %d: %s", tc.method, tc.path, origin, rr.Code, rr.Body.String())
+			}
+			if got := rr.Header().Get("Access-Control-Allow-Origin"); got != origin {
+				t.Fatalf("expected CORS origin header %q for %s, got %q", origin, tc.path, got)
+			}
+			if got := rr.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, tc.method) || !strings.Contains(got, "OPTIONS") {
+				t.Fatalf("expected CORS methods to include %s and OPTIONS for %s, got %q", tc.method, tc.path, got)
+			}
 		}
 	}
 }
