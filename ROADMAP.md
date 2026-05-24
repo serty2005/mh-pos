@@ -49,7 +49,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Cloud PostgreSQL sync receiver and operational projections foundation.
 - Cloud master-data authority foundation in collapsed PostgreSQL baseline `001_init.sql`.
 - Cloud schema foundation for roles, employees, catalog items, dishes, goods, semi-finished products, services, recipe items, menu categories, catalog folders, folder parameters, catalog tags, item tags, modifier groups/options/bindings, menu items, menu assignments and versioned publications.
-- POS Edge Cloud -> Edge ingest for streams `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
+- POS Edge Cloud -> Edge ingest for streams `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`, `recipes`, `inventory_reference`.
 - POS Edge Cloud -> Edge ingest for catalog folders/tags/item tags, services, modifier groups/options/menu item links and `pricing_policy` tax/service-charge/automatic discount-surcharge reference rows.
 - POS Edge outbox/local event foundation for cashier operational events.
 - `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud financial operation events. `PaymentRefunded` and `CheckRefunded` remain accepted legacy operational event types for older payloads.
@@ -77,8 +77,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 - Recipes: целевая Edge SQLite схема хранит read-only `recipe_versions`, `recipe_lines`; Cloud остается authoring/source.
 - Inventory: целевая architecture is Cloud-centric Event-Driven Inventory. Edge-side `stock_documents`, `stock_moves`, `stock_balances`, `item_costs` and purchase receipt foundation использовались как pre-pilot legacy и удалены из целевого SQLite baseline.
-- Master-data publications: Cloud package/publication foundation пока шире текущего POS Edge runtime для recipes/inventory.
-- Stop-list sale blocking foundation: POS Edge уже применяет `recipes`/`inventory_reference` ingest и локально блокирует продажу по active stop-list; Cloud authoring UI/conflict policy и полный smoke остаются следующим шагом.
+- Master-data publications: Cloud deterministic package generation и sync storage уже публикуют `recipes` и `inventory_reference` вместе с базовыми stream-пакетами.
+- Stop-list sale blocking foundation: POS Edge уже применяет `recipes`/`inventory_reference` ingest и локально блокирует продажу по active stop-list; smoke `pos_stop_list_sale_blocking` подтверждает Cloud authoring -> publish -> Edge import -> runtime blocking путь.
 
 ## Аудит 2026-05-15
 
@@ -135,7 +135,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - выполнено: POS Edge ingest streams `recipes` и `inventory_reference`; Cloud generic package validation/storage принимает эти streams;
   - выполнено: Cloud UI имеет bounded authoring для recipe items и stop-list entries по подтвержденным master-data routes;
   - добавить conflict policy, сценарный recipe version editor/review и publication readiness поверх этих данных;
-  - покрыть offline smoke: Edge блокирует stop-listed item без связи с Cloud.
+  - стабилизировать regression-покрытие `pos_stop_list_sale_blocking` для Cloud publish/import контракта и offline blocking-инварианта.
 - Advanced KDS/kitchen lifecycle:
   - выполнено: `/pos/kitchen` заменен с generic shell на readiness-only экран с contract gaps, `запланировано далее`, disabled future action chips и activation gates без активных lifecycle controls;
   - создать POS Edge kitchen ticket lifecycle `new -> accepted -> in_progress -> ready -> served` с `hold`/`recall`/`cancelled` ветками;
