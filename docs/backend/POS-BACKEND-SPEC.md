@@ -18,13 +18,13 @@
 - Runtime-поля курса подачи и комментария строки заказа, которые не влияют на финансовые итоги.
 - Service catalog items as sellable POS items.
 - Stop-list sale blocking для добавления order line и увеличения quantity по локальным read model tables `stop_lists`, `recipe_versions`, `recipe_lines`.
+- POS-generated `CheckClosed` inventory fact при final check после полной оплаты.
 
 Не реализовано сейчас:
 
 - `sqlc` как текущий persistence implementation;
 - Edge-side stock documents/moves/balances/costing;
 - advanced kitchen ticket runtime, `KitchenTicketStatusChanged`, `ItemServed`, chef receipt and proposal generation;
-- POS-generated `CheckClosed` inventory fact;
 - payment processor module;
 - fiscal adapter.
 
@@ -333,8 +333,9 @@ Recipes/inventory:
 - Реализовано сейчас: Cloud PostgreSQL хранит `inventory_event_queue`, `stock_documents`, `stock_ledger` with `unit_cost_minor`, `total_cost_minor` and `costing_status`; ClickHouse batch projection `olap_stock_moves` запланирована до полного пилота.
 - Реализовано сейчас: cancellation/refund ledger хранит явный `inventory_disposition`; POS runtime не мутирует local stock tables, потому что local stock tables удалены.
 - Реализовано сейчас: POS Edge recipe/stop-list ingest, локальная sale blocking проверка active stop-list для sellable catalog item и mandatory active recipe components. Проверка не читает stock balance и не создает stock documents/moves.
-- Не реализовано сейчас: POS-generated `CheckClosed`, advanced KDS lifecycle, KDS `ItemServed` generation, chef receipt/catalog/recipe proposal flows, modifier linked catalog item stock consumption, retro costing DAG.
-- Запланировано до полного пилота: Cloud authoring/publication UI для recipes/stop-list, Edge manager/KDS stop-list edit flow, `CheckClosed` outbox envelope при final check, advanced kitchen tickets, `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested` и `StopListUpdated`.
+- Реализовано сейчас: final check после полной оплаты пишет POS-generated `CheckClosed` outbox envelope из immutable `check.Snapshot`.
+- Не реализовано сейчас: advanced KDS lifecycle, KDS `ItemServed` generation, chef receipt/catalog/recipe proposal flows, modifier linked catalog item stock consumption, retro costing DAG.
+- Запланировано до полного пилота: Cloud authoring/publication UI для recipes/stop-list, Edge manager/KDS stop-list edit flow, advanced kitchen tickets, `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested` и `StopListUpdated`.
 - Профильный целевой contract: `docs/backend/INVENTORY-COSTING-SPEC.md`.
 
 ## Full Pilot Backend Delta
@@ -367,7 +368,7 @@ Recipes/inventory:
   - `POST /api/v1/kitchen/recipe-change-suggestions` пишет `RecipeChangeSuggested` и валидирует `recipe_suggestion_max_time_delta_minutes`;
   - `GET /api/v1/kitchen/stop-list` и `PATCH /api/v1/kitchen/stop-list/{catalog_item_id}` читают/пишут Edge overlay через `StopListUpdated`.
 - Inventory facts:
-  - final check creation writes current financial events and additional `CheckClosed` inventory event;
+  - реализовано сейчас: final check creation writes current financial events and additional `CheckClosed` inventory event;
   - `CheckClosed` payload includes order line id, catalog item id, quantity, unit code and `required_for_inventory`;
   - replay is protected by existing command/outbox idempotency.
 - Cloud inventory/OLAP contract:

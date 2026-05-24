@@ -107,13 +107,13 @@ Edge Outbox
 
 Реализовано сейчас:
 
+- POS Edge генерирует `CheckClosed` при создании final check после полной оплаты; событие строится из immutable `check.Snapshot`;
 - Edge/KDS events `CheckClosed`, `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
 - Cloud Inventory Worker создает `stock_documents` и `stock_ledger` из accepted events;
 - `stock_balances` остаются аналитической проекцией и не блокируют продажи;
 
 Требуется до полного пилота:
 
-- POS Edge должен начать генерировать `CheckClosed` при final check;
 - advanced KDS должен генерировать `KitchenTicketStatusChanged`, `ItemServed` и cooking events;
 - kitchen receipt/proposal flows должны генерировать `StockReceiptCaptured`, `CatalogItemChangeSuggested` и `RecipeChangeSuggested`;
 - Cloud receiver/worker должен сохранить идемпотентность replay и дедупликацию `ItemServed` с `CheckClosed`;

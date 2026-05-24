@@ -294,7 +294,9 @@ Cancellation/refund sync behavior:
 
 ### Inventory Event Payloads Target
 
-Запланировано до полного пилота для всех inventory/KDS/proposal payloads, необходимых полному Cloud Inventory Engine и ClickHouse OLAP: `CheckClosed`, `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `InventoryCountCaptured`, `ProductionCompleted`, `StopListUpdated`, `RefundRecorded`, `CancellationRecorded`. Все payloads передаются внутри стандартного sync envelope в `payload.data`.
+Реализовано сейчас: POS Edge генерирует `CheckClosed` при создании final check после полной оплаты; payload строится из immutable `check.Snapshot` и передается внутри стандартного sync envelope в `payload.data`.
+
+Запланировано до полного пилота для остальных inventory/KDS/proposal payloads, необходимых полному Cloud Inventory Engine и ClickHouse OLAP: `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `InventoryCountCaptured`, `ProductionCompleted`, `StopListUpdated`, `RefundRecorded`, `CancellationRecorded`. Все payloads передаются внутри стандартного sync envelope в `payload.data`.
 
 `CheckClosed` является финальным batch-delta trigger:
 
@@ -302,6 +304,8 @@ Cancellation/refund sync behavior:
 {
   "check_id": "018f0000-0000-7000-8000-000000000001",
   "order_id": "018f0000-0000-7000-8000-000000000002",
+  "precheck_id": "018f0000-0000-7000-8000-000000000003",
+  "restaurant_id": "018f0000-0000-7000-8000-000000000004",
   "business_date_local": "2026-05-19",
   "closed_at": "2026-05-19T12:40:00Z",
   "items": [
@@ -310,11 +314,14 @@ Cancellation/refund sync behavior:
       "catalog_item_id": "018f0000-0000-7000-8000-000000000020",
       "quantity": "2.000",
       "unit_code": "PC",
+      "required_for_inventory": true,
       "modifiers": [
         {
-          "order_line_modifier_id": "018f0000-0000-7000-8000-000000000030",
+          "modifier_group_id": "018f0000-0000-7000-8000-000000000030",
           "modifier_option_id": "018f0000-0000-7000-8000-000000000031",
-          "quantity": "1.000"
+          "name": "Extra sauce",
+          "quantity": "1.000",
+          "unit_code": "PC"
         }
       ]
     }

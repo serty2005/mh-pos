@@ -413,6 +413,13 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Check", check.ID, "CheckCreated", check); err != nil {
 			return err
 		}
+		checkClosedEvent, err := buildCheckClosedEventFromSnapshot(check.Snapshot)
+		if err != nil {
+			return err
+		}
+		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Check", check.ID, "CheckClosed", checkClosedEvent); err != nil {
+			return err
+		}
 		order.Status = domain.OrderClosed
 		order.ClosedAt = &now
 		order.UpdatedAt = now
@@ -556,6 +563,7 @@ type checkSnapshot struct {
 	CheckID           string                 `json:"check_id"`
 	OrderID           string                 `json:"order_id"`
 	PrecheckID        string                 `json:"precheck_id"`
+	RestaurantID      string                 `json:"restaurant_id"`
 	TableID           string                 `json:"table_id"`
 	TableName         string                 `json:"table_name"`
 	Subtotal          int64                  `json:"subtotal"`
@@ -587,6 +595,7 @@ func buildCheckSnapshot(order *domain.Order, precheck *domain.Precheck, payments
 		CheckID:           check.ID,
 		OrderID:           order.ID,
 		PrecheckID:        precheck.ID,
+		RestaurantID:      order.RestaurantID,
 		TableID:           order.TableID,
 		TableName:         order.TableName,
 		CurrencyCode:      check.CurrencyCode,
@@ -616,4 +625,117 @@ func buildCheckSnapshot(order *domain.Order, precheck *domain.Precheck, payments
 		return nil, err
 	}
 	return json.RawMessage(body), nil
+}
+
+type checkClosedEvent struct {
+	CheckID           string                     `json:"check_id"`
+	OrderID           string                     `json:"order_id"`
+	PrecheckID        string                     `json:"precheck_id"`
+	RestaurantID      string                     `json:"restaurant_id"`
+	BusinessDateLocal string                     `json:"business_date_local"`
+	ClosedAt          time.Time                  `json:"closed_at"`
+	Items             []checkClosedInventoryItem `json:"items"`
+}
+
+type checkClosedInventoryItem struct {
+	OrderLineID          string                         `json:"order_line_id"`
+	CatalogItemID        string                         `json:"catalog_item_id"`
+	Quantity             string                         `json:"quantity"`
+	UnitCode             string                         `json:"unit_code"`
+	RequiredForInventory bool                           `json:"required_for_inventory"`
+	Modifiers            []checkClosedInventoryModifier `json:"modifiers,omitempty"`
+}
+
+type checkClosedInventoryModifier struct {
+	ModifierGroupID  string `json:"modifier_group_id"`
+	ModifierOptionID string `json:"modifier_option_id"`
+	Name             string `json:"name,omitempty"`
+	Quantity         string `json:"quantity"`
+	UnitCode         string `json:"unit_code"`
+}
+
+type immutableCheckSnapshot struct {
+	CheckID           string          `json:"check_id"`
+	OrderID           string          `json:"order_id"`
+	PrecheckID        string          `json:"precheck_id"`
+	RestaurantID      string          `json:"restaurant_id"`
+	BusinessDateLocal string          `json:"business_date_local"`
+	ClosedAt          string          `json:"closed_at"`
+	PrecheckSnapshot  json.RawMessage `json:"precheck_snapshot"`
+}
+
+type immutablePrecheckSnapshot struct {
+	Lines []immutableCheckLine `json:"lines"`
+}
+
+type immutableCheckLine struct {
+	OrderLineID   string                       `json:"order_line_id"`
+	CatalogItemID string                       `json:"catalog_item_id"`
+	Quantity      int64                        `json:"quantity"`
+	Modifiers     []immutableCheckLineModifier `json:"modifiers,omitempty"`
+}
+
+type immutableCheckLineModifier struct {
+	ModifierGroupID  string `json:"modifier_group_id"`
+	ModifierOptionID string `json:"modifier_option_id"`
+	Name             string `json:"name,omitempty"`
+	Quantity         int64  `json:"quantity"`
+}
+
+func buildCheckClosedEventFromSnapshot(raw json.RawMessage) (checkClosedEvent, error) {
+	if len(raw) == 0 || !json.Valid(raw) {
+		return checkClosedEvent{}, fmt.Errorf("%w: check snapshot is not available", domain.ErrConflict)
+	}
+	var snapshot immutableCheckSnapshot
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		return checkClosedEvent{}, fmt.Errorf("%w: check snapshot is invalid", domain.ErrConflict)
+	}
+	closedAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(snapshot.ClosedAt))
+	if err != nil {
+		return checkClosedEvent{}, fmt.Errorf("%w: check snapshot closed_at is invalid", domain.ErrConflict)
+	}
+	var precheckSnapshot immutablePrecheckSnapshot
+	if len(snapshot.PrecheckSnapshot) == 0 || !json.Valid(snapshot.PrecheckSnapshot) {
+		return checkClosedEvent{}, fmt.Errorf("%w: precheck snapshot is not available", domain.ErrConflict)
+	}
+	if err := json.Unmarshal(snapshot.PrecheckSnapshot, &precheckSnapshot); err != nil {
+		return checkClosedEvent{}, fmt.Errorf("%w: precheck snapshot is invalid", domain.ErrConflict)
+	}
+	event := checkClosedEvent{
+		CheckID:           strings.TrimSpace(snapshot.CheckID),
+		OrderID:           strings.TrimSpace(snapshot.OrderID),
+		PrecheckID:        strings.TrimSpace(snapshot.PrecheckID),
+		RestaurantID:      strings.TrimSpace(snapshot.RestaurantID),
+		BusinessDateLocal: strings.TrimSpace(snapshot.BusinessDateLocal),
+		ClosedAt:          closedAt,
+		Items:             make([]checkClosedInventoryItem, 0, len(precheckSnapshot.Lines)),
+	}
+	for _, line := range precheckSnapshot.Lines {
+		item := checkClosedInventoryItem{
+			OrderLineID:          strings.TrimSpace(line.OrderLineID),
+			CatalogItemID:        strings.TrimSpace(line.CatalogItemID),
+			Quantity:             formatInventoryQuantity(line.Quantity),
+			UnitCode:             "PC",
+			RequiredForInventory: true,
+		}
+		for _, modifier := range line.Modifiers {
+			item.Modifiers = append(item.Modifiers, checkClosedInventoryModifier{
+				ModifierGroupID:  strings.TrimSpace(modifier.ModifierGroupID),
+				ModifierOptionID: strings.TrimSpace(modifier.ModifierOptionID),
+				Name:             strings.TrimSpace(modifier.Name),
+				Quantity:         formatInventoryQuantity(modifier.Quantity),
+				UnitCode:         "PC",
+			})
+		}
+		event.Items = append(event.Items, item)
+	}
+	if event.CheckID == "" || event.OrderID == "" || event.PrecheckID == "" || event.RestaurantID == "" ||
+		event.BusinessDateLocal == "" || len(event.Items) == 0 {
+		return checkClosedEvent{}, fmt.Errorf("%w: check snapshot is incomplete", domain.ErrConflict)
+	}
+	return event, nil
+}
+
+func formatInventoryQuantity(quantity int64) string {
+	return fmt.Sprintf("%.3f", float64(quantity))
 }

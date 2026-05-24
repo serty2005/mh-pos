@@ -15,7 +15,7 @@
 Найдено по `docs/temp/deep-research-report (11).md` и сверке с кодом:
 
 - Реализовано сейчас: основной кассовый поток `Order -> Precheck -> Payment -> Check`, partial payment, final check, refund/cancellation ledger, роли/PIN, cash shift, Cloud master-data CRUD, публикация master-data, Edge outbox и `sync/exchange`.
-- Реализовано сейчас частично: Cloud Inventory Worker принимает целевые inventory events, но POS Edge не генерирует `CheckClosed`/`KitchenTicketStatusChanged`/`ItemServed` как пилотные складские/KDS факты.
+- Реализовано сейчас частично: Cloud Inventory Worker принимает целевые inventory events; POS Edge генерирует `CheckClosed` из immutable check snapshot, но еще не генерирует `KitchenTicketStatusChanged`/`ItemServed` как пилотные KDS факты.
 - Только foundation: POS SQLite содержит `recipe_versions`, `recipe_lines`, `stop_lists`, но `AddOrderLine` не проверяет stop-list и `mastersync.Service` не применяет streams `recipes`/`stop_lists`.
 - Только route shell: `/pos/waiter`, `/pos/kitchen`, `/pos/manager` ведут на `WorkspaceShellPage.vue` и не реализуют waiter mobile, KDS или manager runtime.
 - Cloud UI уже покрывает базовые CRUD, но нет stop-list/recipe manager flow и нет пилотной операционной панели синхронизации stop-list/KDS.
@@ -154,12 +154,12 @@ Cloud UI:
 - Modify: `cloud-backend/internal/cloudsync/contracts/types_test.go`
 - Modify: `docs/sync/edge-cloud-contracts-v1.md`
 
-- [ ] Написать failing POS test: full payment writes `CheckClosed` outbox envelope with `items[]` from immutable check snapshot.
-- [ ] Ensure `CheckClosed.items[]` includes `order_line_id`, `catalog_item_id`, `quantity`, `unit_code`, `required_for_inventory`.
-- [ ] Keep existing `CheckCreated`, `PaymentCaptured`, `OrderClosed` events for current financial projections.
+- [x] Написать failing POS test: full payment writes `CheckClosed` outbox envelope with `items[]` from immutable check snapshot.
+- [x] Ensure `CheckClosed.items[]` includes `order_line_id`, `catalog_item_id`, `quantity`, `unit_code`, `required_for_inventory`.
+- [x] Keep existing `CheckCreated`, `PaymentCaptured`, `OrderClosed` events for current financial projections.
 - [ ] Verify Cloud receiver accepts replay idempotently and queues one inventory event.
-- [ ] Выполнить `cd pos-backend && go test ./internal/pos/app`.
-- [ ] Выполнить `cd cloud-backend && go test ./internal/cloudsync/... ./internal/inventory/...`.
+- [x] Выполнить `cd pos-backend && go test ./internal/pos/app`.
+- [x] Выполнить `cd cloud-backend && go test ./internal/cloudsync/... ./internal/inventory/...`.
 
 ### Task 6: Cloud Inventory Pilot Projection
 
@@ -410,9 +410,9 @@ Cloud UI:
 
 6. **CheckClosed inventory fact**
    - Files: `pos-backend/internal/pos/app/check/service.go`, `pos-backend/internal/pos/app/service_test.go`, `cloud-backend/internal/cloudsync/*`.
-   - Implement: final check writes `CheckClosed` outbox envelope in addition to current financial events.
-   - Local check: `cd pos-backend && go test ./internal/pos/app`.
-   - Local check: `cd cloud-backend && go test ./internal/cloudsync/... ./internal/inventory/...`.
+   - Done: final check writes `CheckClosed` outbox envelope from immutable `check.Snapshot` in addition to current financial events.
+   - Done: `cd pos-backend && go test ./internal/pos/app`.
+   - Done: `cd cloud-backend && go test ./internal/cloudsync/... ./internal/inventory/...`.
    - Functional proof: replayed envelope is idempotent and Cloud queues one inventory event.
 
 7. **Full Cloud Inventory Engine**
