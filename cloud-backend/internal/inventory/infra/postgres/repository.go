@@ -193,3 +193,31 @@ WHERE restaurant_id = $1
 	}
 	return out, rows.Err()
 }
+
+func (r *Repository) ListServedOrderLineQuantities(ctx context.Context, restaurantID string, orderLineIDs []string) (map[string]string, error) {
+	if len(orderLineIDs) == 0 {
+		return map[string]string{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT order_line_id, SUM(quantity)::text
+FROM stock_ledger
+WHERE restaurant_id = $1
+  AND order_line_id = ANY($2)
+  AND source_event_type = $3
+  AND movement_type = 'OUT'
+GROUP BY order_line_id`, strings.TrimSpace(restaurantID), orderLineIDs, string(contracts.EventItemServed))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]string, len(orderLineIDs))
+	for rows.Next() {
+		var orderLineID string
+		var quantity string
+		if err := rows.Scan(&orderLineID, &quantity); err != nil {
+			return nil, err
+		}
+		out[strings.TrimSpace(orderLineID)] = strings.TrimSpace(quantity)
+	}
+	return out, rows.Err()
+}

@@ -1072,6 +1072,9 @@ CREATE INDEX IF NOT EXISTS stock_ledger_restaurant_occurred_at
 CREATE INDEX IF NOT EXISTS stock_ledger_source_event
   ON stock_ledger(source_event_id, source_event_type);
 
+CREATE INDEX IF NOT EXISTS stock_ledger_order_line_consumption
+  ON stock_ledger(restaurant_id, order_line_id, source_event_type, movement_type);
+
 CREATE TABLE IF NOT EXISTS stock_recalculation_jobs (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),

@@ -117,6 +117,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - выполнено: Cloud Inventory Worker принимает через durable queue `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
   - выполнено: Cloud PostgreSQL baseline содержит `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`;
   - выполнено: worker пишет `stock_ledger` with `unit_cost_minor`, `total_cost_minor`, `costing_status` для нормализованных item payloads; retro recalculation jobs остаются следующим шагом;
+  - выполнено: Cloud Inventory Worker дедуплицирует `ItemServed` replay и `CheckClosed` replay, а `CheckClosed` после обработанного `ItemServed` списывает только положительную unserved delta по `order_line_id`;
   - выполнено: POS Edge пишет `CheckClosed` outbox event из immutable `check.Snapshot` при final check после полной оплаты;
   - выполнено: POS Edge использует stop-list как единственный механизм блокировки продаж при add/increase order line; stock balance остается аналитическим и может быть отрицательным.
 - Cancellation/refund/reprint hardening:
@@ -142,6 +143,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - создать POS Edge kitchen ticket lifecycle `new -> accepted -> in_progress -> ready -> served` с `hold`/`recall`/`cancelled` ветками;
   - route `/pos/kitchen` должен стать рабочим KDS после появления backend endpoints, а не readiness-only screen;
   - status actions пишут `KitchenTicketStatusChanged`, `ItemServed` и при необходимости `ProductionCompleted` в outbox; Cloud принимает events идемпотентно и Cloud Inventory Worker не дублирует расход с `CheckClosed`;
+  - выполнено для Cloud worker: принятый `ItemServed` идемпотентно создает SALE ledger по `order_line_id`, а последующий `CheckClosed` пишет только unserved delta; POS Edge/KDS lifecycle endpoints и UI остаются запланированы далее;
   - добавить chef stock receipt flow: `StockReceiptCaptured` с выбором существующего catalog item или `CatalogItemChangeSuggested` для нового/измененного товара;
   - добавить chef recipe proposal flow: просмотр техкарты и `RecipeChangeSuggested` с заменой ингредиента, количеством/единицей/потерями и prep time delta в пределах `recipe_suggestion_max_time_delta_minutes`;
   - добавить kitchen stop-list edit flow и параметр `stop_list_conflict_policy` для порядка применения Cloud/Edge overlay.

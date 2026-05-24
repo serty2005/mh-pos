@@ -55,6 +55,32 @@ func TestRequiredSchemaIncludesCloudInventoryFoundationTables(t *testing.T) {
 	}
 }
 
+func TestRequiredSchemaIncludesCloudInventoryIndexes(t *testing.T) {
+	reqs := map[string]map[string]bool{}
+	for _, req := range RequiredSchema() {
+		indexes := map[string]bool{}
+		for _, index := range req.Indexes {
+			indexes[index] = true
+		}
+		reqs[req.Table] = indexes
+	}
+	for table, indexes := range map[string][]string{
+		"inventory_event_queue": {"inventory_event_queue_status_retry", "inventory_event_queue_event_type"},
+		"stock_documents":       {"stock_documents_restaurant_occurred_at", "stock_documents_source_event_unique"},
+		"stock_ledger":          {"stock_ledger_restaurant_occurred_at", "stock_ledger_source_event", "stock_ledger_order_line_consumption"},
+	} {
+		found, ok := reqs[table]
+		if !ok {
+			t.Fatalf("expected %s in schema verification contract", table)
+		}
+		for _, index := range indexes {
+			if !found[index] {
+				t.Fatalf("expected %s index in schema verification contract", index)
+			}
+		}
+	}
+}
+
 func TestRequiredSchemaIncludesFinancialOperationProjection(t *testing.T) {
 	var found bool
 	for _, req := range RequiredSchema() {

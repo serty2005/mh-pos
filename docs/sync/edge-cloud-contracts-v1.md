@@ -294,9 +294,9 @@ Cancellation/refund sync behavior:
 
 ### Inventory Event Payloads Target
 
-Реализовано сейчас: POS Edge генерирует `CheckClosed` при создании final check после полной оплаты; payload строится из immutable `check.Snapshot` и передается внутри стандартного sync envelope в `payload.data`.
+Реализовано сейчас: POS Edge генерирует `CheckClosed` при создании final check после полной оплаты; payload строится из immutable `check.Snapshot` и передается внутри стандартного sync envelope в `payload.data`. Cloud receiver принимает `CheckClosed` и `ItemServed`, а Cloud Inventory Worker создает `SALE` stock documents/ledger rows идемпотентно и дедуплицирует уже обработанный `ItemServed` при последующем `CheckClosed`.
 
-Запланировано до полного пилота для остальных inventory/KDS/proposal payloads, необходимых полному Cloud Inventory Engine и ClickHouse OLAP: `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `InventoryCountCaptured`, `ProductionCompleted`, `StopListUpdated`, `RefundRecorded`, `CancellationRecorded`. Все payloads передаются внутри стандартного sync envelope в `payload.data`.
+Запланировано до полного пилота для генерации на POS Edge/KDS и остальных inventory/proposal payloads, необходимых полному Cloud Inventory Engine и ClickHouse OLAP: `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `InventoryCountCaptured`, `ProductionCompleted`, `StopListUpdated`, `RefundRecorded`, `CancellationRecorded`. Все payloads передаются внутри стандартного sync envelope в `payload.data`.
 
 `CheckClosed` является финальным batch-delta trigger:
 
@@ -342,6 +342,15 @@ Cancellation/refund sync behavior:
   "served_at": "2026-05-19T12:25:00Z"
 }
 ```
+
+Реализовано сейчас в Cloud Inventory Worker:
+
+- `ItemServed` пишет `stock_ledger` movement для конкретного `order_line_id`;
+- replay того же `ItemServed` не создает второй stock document;
+- `CheckClosed` после уже обработанного `ItemServed` списывает только положительную unserved delta;
+- replay того же `CheckClosed` не создает второй stock document.
+
+Запланировано далее: POS Edge/KDS endpoints и UI для генерации `KitchenTicketStatusChanged`/`ItemServed`, ClickHouse export, balances, recipe expansion и полный costing engine.
 
 `KitchenTicketStatusChanged` фиксирует advanced KDS lifecycle без прямой складской проводки:
 
@@ -438,7 +447,6 @@ Cloud worker не применяет `CatalogItemChangeSuggested`/`RecipeChangeS
 
 Не реализовано сейчас:
 
-- inventory consumption events;
 - Edge-origin stop-list edit sync/conflict policy;
 - KDS runtime для генерации `KitchenTicketStatusChanged` / `ItemServed` / `ProductionCompleted`;
 - proposal events `CatalogItemChangeSuggested` и `RecipeChangeSuggested`;
@@ -448,12 +456,10 @@ Cloud worker не применяет `CatalogItemChangeSuggested`/`RecipeChangeS
 
 Запланировано до полного пилота:
 
-- POS Edge генерирует `CheckClosed` при создании final check;
 - advanced KDS генерирует `KitchenTicketStatusChanged`, `ItemServed` и cooking events;
 - chef receipt/catalog/recipe proposal flows генерируют `StockReceiptCaptured`, `CatalogItemChangeSuggested` и `RecipeChangeSuggested`;
 - stop-list changes синхронизируются через Cloud -> Edge packages и, если включен Edge manager input, через `StopListUpdated`;
-- Cloud Inventory Worker дедуплицирует `ItemServed` и `CheckClosed` для одной order line;
-- Cloud Inventory Worker обрабатывает receipts, counts, production, sale consumption, refund/cancellation dispositions, balances and costing;
+- Cloud Inventory Worker расширяется до полного receipts, counts, production, refund/cancellation dispositions, balances and costing engine;
 - ClickHouse pipeline экспортирует `raw_business_events` and `olap_stock_moves`, а Cloud OLAP API читает bounded aggregates.
 
 ## Запланированные Границы

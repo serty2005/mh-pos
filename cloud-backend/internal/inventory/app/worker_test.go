@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +44,11 @@ func (f *fakeRepo) ClaimPending(context.Context, app.ClaimCommand) ([]app.Queued
 }
 
 func (f *fakeRepo) CreateStockDocument(_ context.Context, document app.StockDocument) error {
+	for _, existing := range f.documents {
+		if existing.SourceEventID == document.SourceEventID && existing.SourceEventType == document.SourceEventType {
+			return nil
+		}
+	}
 	f.documents = append(f.documents, document)
 	return nil
 }
@@ -63,6 +71,29 @@ func (f *fakeRepo) ListModifierOptionLinks(_ context.Context, _ string, optionID
 		if linked := f.modifierOptionLinks[id]; linked != "" {
 			out[id] = linked
 		}
+	}
+	return out, nil
+}
+
+func (f *fakeRepo) ListServedOrderLineQuantities(_ context.Context, _ string, orderLineIDs []string) (map[string]string, error) {
+	wanted := map[string]bool{}
+	for _, id := range orderLineIDs {
+		wanted[strings.TrimSpace(id)] = true
+	}
+	totals := map[string]float64{}
+	for _, document := range f.documents {
+		for _, entry := range document.Ledger {
+			orderLineID := strings.TrimSpace(entry.OrderLineID)
+			if !wanted[orderLineID] || entry.SourceEventType != string(contracts.EventItemServed) || entry.MovementType != app.MovementOut {
+				continue
+			}
+			qty, _ := strconv.ParseFloat(strings.TrimSpace(entry.Quantity), 64)
+			totals[orderLineID] += qty
+		}
+	}
+	out := map[string]string{}
+	for id, qty := range totals {
+		out[id] = fmt.Sprintf("%.3f", qty)
 	}
 	return out, nil
 }
@@ -125,6 +156,137 @@ func TestRunOnceFailsOnInvalidRecipeLine(t *testing.T) {
 	}
 	if repo.failed["queue-1"] == "" {
 		t.Fatalf("expected failed queue row")
+	}
+}
+
+func TestRunOnceCreatesSaleLedgerFromItemServedForOrderLine(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventItemServed, itemServedPayload(t, "line-1", "item-1", "1.000"))}}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 1 || len(repo.documents[0].Ledger) != 1 {
+		t.Fatalf("expected one item served document, got %+v", repo.documents)
+	}
+	entry := repo.documents[0].Ledger[0]
+	if repo.documents[0].Type != app.DocumentSale || entry.MovementType != app.MovementOut || entry.OrderLineID != "line-1" || entry.Quantity != "1.000" {
+		t.Fatalf("unexpected item served ledger entry: %+v", entry)
+	}
+}
+
+func TestRunOnceSkipsDuplicateItemServedReplay(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{
+		queuedEvent(t, "queue-1", "018f0000-0000-7000-8000-0000000000a1", contracts.EventItemServed, itemServedPayload(t, "line-1", "item-1", "1.000")),
+		queuedEvent(t, "queue-2", "018f0000-0000-7000-8000-0000000000a1", contracts.EventItemServed, itemServedPayload(t, "line-1", "item-1", "1.000")),
+	}}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{
+		"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101",
+		"018f0000-0000-7000-8000-00000000d002", "018f0000-0000-7000-8000-00000000d102",
+	}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 1 {
+		t.Fatalf("expected replay to keep one document, got %+v", repo.documents)
+	}
+	if len(repo.processed) != 2 {
+		t.Fatalf("expected both queue rows processed, got %+v", repo.processed)
+	}
+}
+
+func TestRunOnceCheckClosedAfterServedDoesNotDoubleConsumeLine(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{
+		queuedEvent(t, "queue-1", "018f0000-0000-7000-8000-0000000000a1", contracts.EventItemServed, itemServedPayload(t, "line-1", "item-1", "1.000")),
+		queuedEvent(t, "queue-2", "018f0000-0000-7000-8000-0000000000a2", contracts.EventCheckClosed, checkClosedPayload(t, []map[string]any{{
+			"order_line_id":          "line-1",
+			"catalog_item_id":        "item-1",
+			"quantity":               "1.000",
+			"unit_code":              "PC",
+			"required_for_inventory": true,
+		}})),
+	}}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{
+		"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101",
+	}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 1 {
+		t.Fatalf("expected CheckClosed to create no duplicate document, got %+v", repo.documents)
+	}
+	if repo.documents[0].SourceEventType != string(contracts.EventItemServed) {
+		t.Fatalf("expected only ItemServed document, got %+v", repo.documents[0])
+	}
+}
+
+func TestRunOnceCheckClosedWritesOnlyUnservedDeltaAndLines(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{
+		queuedEvent(t, "queue-1", "018f0000-0000-7000-8000-0000000000a1", contracts.EventItemServed, itemServedPayload(t, "line-1", "item-1", "1.250")),
+		queuedEvent(t, "queue-2", "018f0000-0000-7000-8000-0000000000a2", contracts.EventCheckClosed, checkClosedPayload(t, []map[string]any{
+			{
+				"order_line_id":          "line-1",
+				"catalog_item_id":        "item-1",
+				"quantity":               "2.000",
+				"unit_code":              "PC",
+				"required_for_inventory": true,
+			},
+			{
+				"order_line_id":          "line-2",
+				"catalog_item_id":        "item-2",
+				"quantity":               "3.000",
+				"unit_code":              "PC",
+				"required_for_inventory": true,
+			},
+		})),
+	}}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{
+		"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101",
+		"018f0000-0000-7000-8000-00000000d002", "018f0000-0000-7000-8000-00000000d102", "018f0000-0000-7000-8000-00000000d103",
+	}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 2 || len(repo.documents[1].Ledger) != 2 {
+		t.Fatalf("expected served document plus CheckClosed delta document, got %+v", repo.documents)
+	}
+	got := map[string]string{}
+	for _, entry := range repo.documents[1].Ledger {
+		got[entry.OrderLineID] = entry.Quantity
+	}
+	if got["line-1"] != "0.750" || got["line-2"] != "3.000" {
+		t.Fatalf("unexpected CheckClosed delta quantities: %+v", got)
+	}
+}
+
+func TestRunOnceCheckClosedReplayIsIdempotent(t *testing.T) {
+	payload := checkClosedPayload(t, []map[string]any{{
+		"order_line_id":          "line-1",
+		"catalog_item_id":        "item-1",
+		"quantity":               "2.000",
+		"unit_code":              "PC",
+		"required_for_inventory": true,
+	}})
+	repo := &fakeRepo{events: []app.QueuedEvent{
+		queuedEvent(t, "queue-1", "018f0000-0000-7000-8000-0000000000a1", contracts.EventCheckClosed, payload),
+		queuedEvent(t, "queue-2", "018f0000-0000-7000-8000-0000000000a1", contracts.EventCheckClosed, payload),
+	}}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{
+		"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101",
+		"018f0000-0000-7000-8000-00000000d002", "018f0000-0000-7000-8000-00000000d102",
+	}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 1 {
+		t.Fatalf("expected replay to keep one CheckClosed document, got %+v", repo.documents)
+	}
+	if len(repo.processed) != 2 {
+		t.Fatalf("expected both queue rows processed, got %+v", repo.processed)
 	}
 }
 
@@ -256,6 +418,9 @@ func (f *failingRepo) ListActiveRecipeLines(context.Context, string, string) ([]
 func (f *failingRepo) ListModifierOptionLinks(context.Context, string, []string) (map[string]string, error) {
 	return nil, f.err
 }
+func (f *failingRepo) ListServedOrderLineQuantities(context.Context, string, []string) (map[string]string, error) {
+	return nil, f.err
+}
 
 type fixedClock struct{}
 
@@ -265,12 +430,17 @@ func (fixedClock) Now() time.Time {
 
 func sampleQueuedEvent(t *testing.T, eventType contracts.EventType, payload json.RawMessage) app.QueuedEvent {
 	t.Helper()
+	return queuedEvent(t, "queue-1", "018f0000-0000-7000-8000-0000000000a1", eventType, payload)
+}
+
+func queuedEvent(t *testing.T, queueID, eventID string, eventType contracts.EventType, payload json.RawMessage) app.QueuedEvent {
+	t.Helper()
 	return app.QueuedEvent{
-		ID:           "queue-1",
+		ID:           queueID,
 		ReceiptID:    "receipt-1",
 		RestaurantID: "restaurant-1",
 		DeviceID:     "device-1",
-		EventID:      "018f0000-0000-7000-8000-0000000000a1",
+		EventID:      eventID,
 		EventType:    eventType,
 		OccurredAt:   time.Date(2026, 5, 5, 9, 0, 0, 0, time.UTC),
 		Payload:      payload,
@@ -287,6 +457,20 @@ func checkClosedPayload(t *testing.T, items []map[string]any) json.RawMessage {
 		"business_date_local": "2026-05-05",
 		"closed_at":           "2026-05-05T09:00:00Z",
 		"items":               items,
+	})
+}
+
+func itemServedPayload(t *testing.T, orderLineID, catalogItemID, quantity string) json.RawMessage {
+	t.Helper()
+	return marshalPayload(t, map[string]any{
+		"served_event_id": "served-event-1",
+		"order_id":        "order-1",
+		"order_line_id":   orderLineID,
+		"catalog_item_id": catalogItemID,
+		"quantity":        quantity,
+		"unit_code":       "PC",
+		"served_at":       "2026-05-05T08:50:00Z",
+		"station_id":      "kitchen-hot",
 	})
 }
 

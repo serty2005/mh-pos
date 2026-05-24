@@ -45,6 +45,7 @@ type Repository interface {
 	MarkFailed(context.Context, string, string, time.Time) error
 	ListActiveRecipeLines(context.Context, string, string) ([]RecipeLine, error)
 	ListModifierOptionLinks(context.Context, string, []string) (map[string]string, error)
+	ListServedOrderLineQuantities(context.Context, string, []string) (map[string]string, error)
 }
 
 type ClaimCommand struct {
@@ -139,19 +140,19 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 }
 
 func (w *Worker) processEvent(ctx context.Context, event QueuedEvent, now time.Time) error {
-	document, ok, err := w.documentFromEvent(event, now)
+	document, ok, err := w.documentFromEvent(ctx, event, now)
 	if err != nil || !ok {
 		return err
 	}
 	return w.repo.CreateStockDocument(ctx, document)
 }
 
-func (w *Worker) documentFromEvent(event QueuedEvent, now time.Time) (StockDocument, bool, error) {
+func (w *Worker) documentFromEvent(ctx context.Context, event QueuedEvent, now time.Time) (StockDocument, bool, error) {
 	switch event.EventType {
 	case contracts.EventCheckClosed:
-		return w.checkClosedDocument(event, now)
+		return w.checkClosedDocument(ctx, event, now)
 	case contracts.EventItemServed:
-		return w.itemServedDocument(event, now)
+		return w.itemServedDocument(ctx, event, now)
 	case contracts.EventStockReceiptCaptured:
 		return w.stockReceiptDocument(event, now)
 	case contracts.EventInventoryCountCaptured:
@@ -167,24 +168,31 @@ func (w *Worker) documentFromEvent(event QueuedEvent, now time.Time) (StockDocum
 	}
 }
 
-func (w *Worker) checkClosedDocument(event QueuedEvent, now time.Time) (StockDocument, bool, error) {
+func (w *Worker) checkClosedDocument(ctx context.Context, event QueuedEvent, now time.Time) (StockDocument, bool, error) {
 	payload, err := decode[contracts.CheckClosed](event.Payload)
 	if err != nil {
 		return StockDocument{}, false, err
 	}
-	items, err := w.expandRecipeItems(context.Background(), event.RestaurantID, payload.Data.Items)
+	deltaItems, err := w.checkClosedDeltaItems(ctx, event.RestaurantID, payload.Data.Items)
 	if err != nil {
 		return StockDocument{}, false, err
 	}
-	modifierItems, err := w.modifierItemsFromPayload(context.Background(), event.RestaurantID, event.Payload)
+	items, err := w.expandRecipeItems(ctx, event.RestaurantID, deltaItems)
+	if err != nil {
+		return StockDocument{}, false, err
+	}
+	modifierItems, err := w.modifierItemsFromPayload(ctx, event.RestaurantID, event.Payload)
 	if err != nil {
 		return StockDocument{}, false, err
 	}
 	items = append(items, modifierItems...)
+	if len(items) == 0 {
+		return StockDocument{}, false, nil
+	}
 	return w.documentFromItems(event, now, DocumentSale, MovementOut, payload.Data.BusinessDateLocal, items, false)
 }
 
-func (w *Worker) itemServedDocument(event QueuedEvent, now time.Time) (StockDocument, bool, error) {
+func (w *Worker) itemServedDocument(ctx context.Context, event QueuedEvent, now time.Time) (StockDocument, bool, error) {
 	payload, err := decode[contracts.ItemServed](event.Payload)
 	if err != nil {
 		return StockDocument{}, false, err
@@ -195,7 +203,7 @@ func (w *Worker) itemServedDocument(event QueuedEvent, now time.Time) (StockDocu
 		Quantity:      payload.Data.Quantity,
 		UnitCode:      payload.Data.UnitCode,
 	}
-	items, err := w.expandRecipeItems(context.Background(), event.RestaurantID, []contracts.InventoryItem{item})
+	items, err := w.expandRecipeItems(ctx, event.RestaurantID, []contracts.InventoryItem{item})
 	if err != nil {
 		return StockDocument{}, false, err
 	}
@@ -346,6 +354,54 @@ func totalCostMinor(quantity string, unitCost int64) int64 {
 		return 0
 	}
 	return int64(n * float64(unitCost))
+}
+
+func (w *Worker) checkClosedDeltaItems(ctx context.Context, restaurantID string, items []contracts.InventoryItem) ([]contracts.InventoryItem, error) {
+	orderLineIDs := make([]string, 0, len(items))
+	seen := map[string]bool{}
+	for _, item := range items {
+		orderLineID := strings.TrimSpace(item.OrderLineID)
+		if orderLineID == "" || seen[orderLineID] {
+			continue
+		}
+		seen[orderLineID] = true
+		orderLineIDs = append(orderLineIDs, orderLineID)
+	}
+	served, err := w.repo.ListServedOrderLineQuantities(ctx, restaurantID, orderLineIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]contracts.InventoryItem, 0, len(items))
+	for _, item := range items {
+		orderLineID := strings.TrimSpace(item.OrderLineID)
+		if orderLineID == "" {
+			out = append(out, item)
+			continue
+		}
+		delta, ok := subtractQuantity(item.Quantity, served[orderLineID])
+		if !ok {
+			continue
+		}
+		item.Quantity = delta
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func subtractQuantity(total, consumed string) (string, bool) {
+	totalValue, err := strconv.ParseFloat(strings.TrimSpace(total), 64)
+	if err != nil || totalValue <= 0 {
+		return "", false
+	}
+	consumedValue, err := strconv.ParseFloat(strings.TrimSpace(consumed), 64)
+	if err != nil {
+		consumedValue = 0
+	}
+	delta := totalValue - consumedValue
+	if delta <= 0.0005 {
+		return "", false
+	}
+	return fmt.Sprintf("%.3f", delta), true
 }
 
 func safeError(err error) string {

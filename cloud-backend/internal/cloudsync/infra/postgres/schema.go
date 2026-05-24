@@ -288,7 +288,7 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			RequiredBy:    "cloud inventory foundation immutable stock movement and costing ledger",
 			MigrationFile: "001_init.sql",
 			Columns:       []string{"id", "restaurant_id", "stock_document_id", "source_event_id", "source_event_type", "catalog_item_id", "order_line_id", "movement_type", "quantity", "unit_code", "unit_cost_minor", "total_cost_minor", "costing_status", "occurred_at", "business_date_local", "created_at"},
-			Indexes:       []string{"stock_ledger_restaurant_occurred_at", "stock_ledger_source_event"},
+			Indexes:       []string{"stock_ledger_restaurant_occurred_at", "stock_ledger_source_event", "stock_ledger_order_line_consumption"},
 		},
 		{
 			Table:         "stock_recalculation_jobs",
