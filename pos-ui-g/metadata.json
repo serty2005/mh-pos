@@ -1,0 +1,6 @@
+{
+  "name": "MyHoreca POS",
+  "description": "Waiter-first and cashier restaurant Point of Sale (POS) system with table layout, orders, prechecks, cash sessions, and operational reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
