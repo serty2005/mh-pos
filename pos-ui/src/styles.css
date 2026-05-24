@@ -2858,6 +2858,7 @@ button.bottom-status {
   min-height: var(--pos-top-height);
   background: var(--pos-surface);
   border-bottom: 1px solid var(--pos-border);
+  box-shadow: 0 1px 0 rgba(23, 35, 30, 0.04);
 }
 
 .context-actions {
@@ -2927,6 +2928,12 @@ button.bottom-status {
 .context-primary-left:disabled {
   opacity: 0.52;
   cursor: not-allowed;
+}
+
+.context-button:hover:not(:disabled),
+.context-primary-left:hover:not(:disabled) {
+  background: var(--pos-surface-muted);
+  border-color: var(--pos-border-strong);
 }
 
 .passive-context-button {
@@ -3010,6 +3017,7 @@ button.top-status-cell {
   display: grid;
   min-height: 0;
   overflow: hidden;
+  background: var(--pos-bg);
 }
 
 .hall-orders-screen,
@@ -3910,7 +3918,7 @@ button.bottom-status-cell {
 .waiter-topbar {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 3;
   min-height: 72px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 48px;
@@ -3920,6 +3928,15 @@ button.bottom-status-cell {
   color: var(--pos-text-inverse);
   background: var(--pos-rail-strong);
   border-radius: var(--pos-radius-md);
+}
+
+.waiter-context-dock {
+  position: sticky;
+  top: 84px;
+  z-index: 2;
+  display: grid;
+  padding: 2px 0;
+  background: linear-gradient(180deg, var(--pos-bg) 72%, rgba(245, 247, 249, 0));
 }
 
 .waiter-topbar h1 {
@@ -3951,6 +3968,20 @@ button.bottom-status-cell {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+.waiter-lock-badge {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  color: var(--pos-status-warning);
+  background: var(--pos-warning-light);
+  border: 1px solid var(--pos-border-strong);
+  border-radius: var(--pos-radius-sm);
+  font-size: var(--pos-font-size-xs);
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .waiter-chip {
@@ -4121,11 +4152,13 @@ button.bottom-status-cell {
 
 .waiter-menu-item:disabled {
   opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .waiter-menu-item.locked,
 .waiter-line-row.locked {
   background: #f7f8f6;
+  border-style: dashed;
 }
 
 .waiter-line-row.locked .quantity-stepper,
@@ -4187,6 +4220,12 @@ button.bottom-status-cell {
 .kitchen-readiness-head p:not(.eyebrow) {
   color: var(--pos-text-secondary);
   line-height: 1.5;
+}
+
+.kitchen-runtime-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .kitchen-readiness-grid {
@@ -4301,6 +4340,10 @@ button.bottom-status-cell {
     padding: 10px;
   }
 
+  .waiter-context-dock {
+    top: 72px;
+  }
+
   .waiter-table-grid,
   .waiter-menu-grid {
     gap: 8px;
@@ -4320,6 +4363,10 @@ button.bottom-status-cell {
 
   .waiter-authority-strip {
     grid-template-columns: 1fr;
+  }
+
+  .waiter-lock-badge {
+    white-space: normal;
   }
 
   .waiter-line-row {
@@ -4345,7 +4392,16 @@ button.bottom-status-cell {
   }
 
   .kds-lifecycle-map,
+  .kitchen-runtime-strip,
   .kitchen-disabled-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .kitchen-runtime-strip,
+  .kds-lifecycle-map,
+  .kitchen-disabled-actions {
+    grid-template-columns: 1fr;
   }
 }

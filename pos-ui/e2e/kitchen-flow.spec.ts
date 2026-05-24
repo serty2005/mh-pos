@@ -32,6 +32,8 @@ test('kitchen route is an honest readiness screen while KDS endpoints are absent
   await expect(page.getByRole('heading', { name: /Кухонный экран/i })).toBeVisible();
   await expect(page.getByText('запланировано далее')).toBeVisible();
   await expect(page.getByText(/нет routes для kitchen tickets/i)).toBeVisible();
+  await expect(page.getByText('Только readiness')).toBeVisible();
+  await expect(page.getByText('Lifecycle-команды отключены')).toBeVisible();
   await expect(page.getByText(/GET для kitchen tickets/i)).toBeVisible();
   await expect(page.getByText(/new/)).toBeVisible();
   await expect(page.getByText(/accepted/)).toBeVisible();

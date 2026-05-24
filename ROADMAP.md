@@ -96,8 +96,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - POS UI: добавлен primary flow strip `готовность смены -> стол -> заказ -> пречек -> оплата`, secondary operations визуально отделены, blocking states унифицированы, tablet breakpoint пересмотрен так, чтобы checkout/precheck/payment не уходили под active order около 1100px.
 - POS UI: верхний cashier context показывает restaurant/actor/node/backend session readiness, а dialog/inline error states показывают безопасный support code без raw backend details.
 - POS UI: cashier shell подтвержден как `floor` / `order` / `activity` / `reports` / `cash`; active-looking placeholders для line transfer/split/fractional split, banquet/preorder, mock waiter filters, selected-line placeholder и discount/surcharge editor убраны или переведены в passive/disabled backlog state без backend command.
-- POS UI: `PosFloorSection` и `PosMenuGrid` переведены на shared `PosBanner`/`PosEmptyState`/`PosSkeleton`, passive backlog/readiness states переведены на `PosReadinessCard`, waiter mobile viewport `390x844` уплотнен с явной status strip полномочий и scrollable modifier dialog без payment/refund/cash drawer authority, `/pos/kitchen` оставлен readiness-only с disabled future action cards и activation gates.
-- Cloud UI: presentation layer вынесен из монолитного `App.vue` в flow components, launch/readiness checklist стал primary journey с restaurant/staff/floor/catalog/menu/modifiers/pricing/Edge/publication gates, master-data CRUD оставлен secondary/admin layer, добавлен card/list fallback для narrow screens, включая Edge events metadata/checksum без raw payload.
+- POS UI: `PosFloorSection` и `PosMenuGrid` переведены на shared `PosBanner`/`PosEmptyState`/`PosSkeleton`, passive backlog/readiness states переведены на `PosReadinessCard`, waiter mobile viewport `390x844` уплотнен с sticky status strip полномочий, lock badge и scrollable modifier dialog без payment/refund/cash drawer authority, `/pos/kitchen` оставлен readiness-only с runtime boundary strip, disabled future action cards и activation gates.
+- Cloud UI: presentation layer вынесен из монолитного `App.vue` в flow components, launch/readiness checklist стал primary journey с restaurant/staff/floor/catalog/menu/modifiers/pricing/Edge/publication gates, master-data CRUD оставлен secondary/admin layer, добавлен card/list fallback для narrow screens, включая resource status cards и Edge events metadata/checksum без raw payload.
 
 ## В Работе / До Пилота
 
@@ -139,7 +139,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - добавить conflict policy, сценарный recipe version editor/review и publication readiness поверх этих данных;
   - стабилизировать regression-покрытие `pos_stop_list_sale_blocking` для Cloud publish/import контракта и offline blocking-инварианта.
 - Advanced KDS/kitchen lifecycle:
-  - выполнено: `/pos/kitchen` заменен с generic shell на readiness-only экран с contract gaps, `запланировано далее`, disabled future action cards и activation gates без активных lifecycle controls;
+  - выполнено: `/pos/kitchen` заменен с generic shell на readiness-only экран с contract gaps, `запланировано далее`, runtime boundary strip, disabled future action cards и activation gates без активных lifecycle controls;
   - создать POS Edge kitchen ticket lifecycle `new -> accepted -> in_progress -> ready -> served` с `hold`/`recall`/`cancelled` ветками;
   - route `/pos/kitchen` должен стать рабочим KDS после появления backend endpoints, а не readiness-only screen;
   - status actions пишут `KitchenTicketStatusChanged`, `ItemServed` и при необходимости `ProductionCompleted` в outbox; Cloud принимает events идемпотентно и Cloud Inventory Worker не дублирует расход с `CheckClosed`;

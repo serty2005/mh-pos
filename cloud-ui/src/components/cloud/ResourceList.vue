@@ -50,6 +50,9 @@
           @click="ctx.selectRow(row)"
         >
           <strong>{{ row.name ? ctx.formatCell('name', row.name) : ctx.formatCell('id', row.id) }}</strong>
+          <span v-if="row.status" class="cloud-status" :class="String(row.status)">
+            {{ ctx.statusText(row.status) }}
+          </span>
           <span v-for="column in ctx.activeColumns.value.slice(0, 4)" :key="column.key">
             {{ t(column.labelKey) }}: {{ ctx.formatCell(column.key, row[column.key]) }}
           </span>

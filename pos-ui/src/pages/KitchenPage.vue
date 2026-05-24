@@ -9,6 +9,12 @@
 
       <PosBanner tone="warning" :label="t('pos.kitchenNoRuntime')" />
 
+      <div class="kitchen-runtime-strip" :aria-label="t('pos.kitchenRuntimeBoundary')">
+        <PosStatusStrip :value="t('pos.kitchenReadinessOnly')" tone="warning" />
+        <PosStatusStrip :value="t('pos.kitchenCommandsDisabled')" tone="info" />
+        <PosStatusStrip :value="t('pos.kitchenContractsMissing')" tone="danger" />
+      </div>
+
       <div class="kitchen-readiness-grid">
         <PosPanel class="kitchen-contract-panel" :eyebrow="t('pos.backendContracts')" :title="t('pos.kitchenMissingContracts')">
           <ul class="readiness-list">
@@ -32,6 +38,7 @@
               compact
               passive
               tone="warning"
+              :badge="t('pos.plannedNext')"
               :title="t(action)"
             />
           </div>
@@ -66,7 +73,7 @@
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 
-import { PosBanner, PosButton, PosPanel, PosReadinessCard } from '../shared/ui';
+import { PosBanner, PosButton, PosPanel, PosReadinessCard, PosStatusStrip } from '../shared/ui';
 
 const { t } = useI18n();
 const router = useRouter();

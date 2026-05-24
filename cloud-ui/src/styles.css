@@ -72,6 +72,16 @@ p {
   border-right: 1px solid #d8dedb;
 }
 
+.cloud-sidebar,
+.cloud-main,
+.cloud-table-wrap,
+.resource-card-list,
+.edge-device-list,
+.edge-event-card-list {
+  scrollbar-width: thin;
+  scrollbar-color: #b7c4bc transparent;
+}
+
 .cloud-sidebar-head {
   display: grid;
   gap: 8px;
@@ -728,6 +738,7 @@ button:focus-visible,
   display: grid;
   justify-items: start;
   gap: 5px;
+  min-height: 92px;
   padding: 12px;
   color: #344039;
   background: #fbfcfa;
@@ -736,6 +747,11 @@ button:focus-visible,
   cursor: pointer;
   font: inherit;
   text-align: left;
+}
+
+.resource-card:hover {
+  border-color: #8aa898;
+  background: #f2f6f1;
 }
 
 .resource-card.selected {
@@ -777,6 +793,8 @@ button:focus-visible,
 
   .cloud-sidebar {
     min-height: 0;
+    max-height: 42dvh;
+    overflow: auto;
     border-right: 0;
     border-bottom: 1px solid #d8dedb;
   }
@@ -790,6 +808,17 @@ button:focus-visible,
 
   .cloud-form-panel {
     position: static;
+  }
+}
+
+@media (max-width: 900px) {
+  .cloud-table-wrap {
+    display: none;
+  }
+
+  .resource-card-list,
+  .edge-event-card-list {
+    display: grid;
   }
 }
 
@@ -818,15 +847,6 @@ button:focus-visible,
   }
 
   .cloud-main-head {
-    display: grid;
-  }
-
-  .cloud-table-wrap {
-    display: none;
-  }
-
-  .resource-card-list,
-  .edge-event-card-list {
     display: grid;
   }
 

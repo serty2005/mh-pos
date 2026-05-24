@@ -14,10 +14,12 @@
     <PosBanner tone="info" :label="t('pos.waiterNoPaymentAuthority')" />
     <PosBanner v-if="terminal.orderIsLocked.value" tone="warning" :label="t('pos.waiterPrecheckLockedCopy')" />
 
-    <div class="waiter-authority-strip" :aria-label="t('pos.waiterAuthority')">
-      <PosStatusStrip :value="t('pos.waiterOrderPrecheckRuntime')" tone="good" />
-      <PosStatusStrip :value="t('pos.waiterPaymentHidden')" tone="info" />
-      <PosStatusStrip :value="terminal.currentShift.data.value ? t('status.open') : t('pos.noShift')" :tone="terminal.currentShift.data.value ? 'good' : 'warning'" />
+    <div class="waiter-context-dock">
+      <div class="waiter-authority-strip" :aria-label="t('pos.waiterAuthority')">
+        <PosStatusStrip :value="t('pos.waiterOrderPrecheckRuntime')" tone="good" />
+        <PosStatusStrip :value="t('pos.waiterPaymentHidden')" tone="info" />
+        <PosStatusStrip :value="terminal.currentShift.data.value ? t('status.open') : t('pos.noShift')" :tone="terminal.currentShift.data.value ? 'good' : 'warning'" />
+      </div>
     </div>
 
     <PosPanel v-if="!terminal.currentShift.data.value" class="waiter-readiness-panel" :eyebrow="t('pos.serviceReadiness')" :title="t('pos.noShift')">
@@ -158,6 +160,9 @@
       </PosPanel>
 
       <PosPanel :eyebrow="t('pos.menu')" :title="t('pos.menuCategoryAll')" class="waiter-menu-panel">
+        <template #header-side>
+          <span v-if="terminal.orderIsLocked.value" class="waiter-lock-badge">{{ t('pos.lockedAddHint') }}</span>
+        </template>
         <q-input v-model="terminal.menuSearch.value" dense outlined square clearable :label="t('pos.searchMenu')" />
         <p v-if="terminal.orderIsLocked.value" class="waiter-locked-hint">{{ t('pos.lockedAddHint') }}</p>
         <PosEmptyState v-if="!terminal.canViewMenu.value" size="wide" :label="t('pos.noPermissionForMenu')" />

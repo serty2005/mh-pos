@@ -17,6 +17,9 @@ describe('i18n messages', () => {
       'errors.conflict_duplicate_command',
       'errors.conflict_duplicate_pin',
       'errors.stopListConflict',
+      'pos.kitchenReadinessOnly',
+      'pos.kitchenCommandsDisabled',
+      'pos.kitchenContractsMissing',
     ];
 
     for (const key of keys) {
