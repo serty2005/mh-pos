@@ -10,6 +10,7 @@ export { default as PosMetricCard } from './PosMetricCard.vue';
 export { default as PosPagination } from './PosPagination.vue';
 export { default as PosPanel } from './PosPanel.vue';
 export { default as PosQuantityStepper } from './PosQuantityStepper.vue';
+export { default as PosReadinessCard } from './PosReadinessCard.vue';
 export { default as PosSectionHeader } from './PosSectionHeader.vue';
 export { default as PosSkeleton } from './PosSkeleton.vue';
 export { default as PosStatusStrip } from './PosStatusStrip.vue';

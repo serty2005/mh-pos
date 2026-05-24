@@ -109,9 +109,9 @@
 - Sync drawer для status/outbox/local events с bounded запросами.
 - Нормализация безопасных API-ошибок и optional empty states; пользовательский текст идет через `vue-i18n`, а dialog/inline banners показывают безопасный support code (`correlation_id` или stable `error_code`) без raw backend details.
 - `/pos/waiter` как mobile-first order/precheck runtime: выбор зала/стола, активные заказы, создание заказа, меню/поиск, добавление строк с модификаторами, изменение quantity, void line, issue/reprint precheck без payment/refund/cash drawer controls по умолчанию; active issued precheck/locked order визуально блокирует add/change/void actions.
-- `/pos/waiter` дополнительно стабилизирован под viewport `390x844`: compact context strip, явная status strip границ полномочий, sticky topbar, touch-friendly table/menu/order rows и modifier dialog layout без добавления financial authority.
-- `/pos/kitchen` как readiness-only экран с пометкой `запланировано далее`, списком отсутствующих KDS backend contracts, будущими lifecycle slots, disabled/readiness chips для будущих действий и activation gates без активных lifecycle controls.
-- POS shared UI layer шире используется в cashier surfaces: loading/error/empty/no-permission states и menu skeleton cards переведены на `PosBanner`, `PosEmptyState` и `PosSkeleton`, а top/context actions используют shared button/context primitives.
+- `/pos/waiter` дополнительно стабилизирован под viewport `390x844`: compact context strip, явная status strip границ полномочий, sticky topbar, touch-friendly table/menu/order rows и scrollable modifier dialog layout без добавления financial authority.
+- `/pos/kitchen` как readiness-only экран с пометкой `запланировано далее`, списком отсутствующих KDS backend contracts, будущими lifecycle slots, disabled/readiness cards для будущих действий и activation gates без активных lifecycle controls.
+- POS shared UI layer шире используется в cashier/readiness surfaces: loading/error/empty/no-permission states и menu skeleton cards переведены на `PosBanner`, `PosEmptyState` и `PosSkeleton`, top/context actions используют shared button/context primitives, а passive backlog/readiness states используют `PosReadinessCard`.
 
 Вне текущего объема:
 

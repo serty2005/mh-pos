@@ -26,19 +26,28 @@
           </div>
           <p class="kitchen-muted">{{ t('pos.kitchenLifecycleDisabled') }}</p>
           <div class="kitchen-disabled-actions" :aria-label="t('pos.kitchenDisabledActions')">
-            <span v-for="action in disabledActions" :key="action" aria-disabled="true">
-              {{ t(action) }}
-            </span>
+            <PosReadinessCard
+              v-for="action in disabledActions"
+              :key="action"
+              compact
+              passive
+              tone="warning"
+              :title="t(action)"
+            />
           </div>
         </PosPanel>
 
         <PosPanel :eyebrow="t('pos.plannedNext')" :title="t('pos.kitchenActivationGates')">
           <div class="kitchen-gate-list">
-            <article v-for="gate in activationGates" :key="gate.titleKey" class="kitchen-gate-card">
-              <span>{{ t(gate.statusKey) }}</span>
-              <strong>{{ t(gate.titleKey) }}</strong>
-              <small>{{ t(gate.copyKey) }}</small>
-            </article>
+            <PosReadinessCard
+              v-for="gate in activationGates"
+              :key="gate.titleKey"
+              passive
+              tone="warning"
+              :badge="t(gate.statusKey)"
+              :title="t(gate.titleKey)"
+              :description="t(gate.copyKey)"
+            />
           </div>
         </PosPanel>
 
@@ -57,7 +66,7 @@
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 
-import { PosBanner, PosButton, PosPanel } from '../shared/ui';
+import { PosBanner, PosButton, PosPanel, PosReadinessCard } from '../shared/ui';
 
 const { t } = useI18n();
 const router = useRouter();

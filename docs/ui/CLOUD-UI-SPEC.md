@@ -127,3 +127,5 @@
 реализовано сейчас: `cloud-ui/src/App.vue` оставляет orchestration/state/config, а presentation layer вынесен в `cloud-ui/src/components/cloud/*`.
 
 реализовано сейчас: для запуска Cloud UI из браузера `cloud-backend` разрешает local CORS origin `http://localhost:5174`, `http://127.0.0.1:5174` и `http://host.docker.internal:5174`.
+
+реализовано сейчас: `cloud-ui/package.json` содержит `dev`, `build` и `preview`; отдельный `test` script не заявлен, поэтому проверка Cloud UI в текущем scope выполняется через `npm run build`, если тестовая инфраструктура не добавляется отдельной задачей.

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import PosActionRail from './PosActionRail.vue';
 import PosDataRow from './PosDataRow.vue';
 import PosPanel from './PosPanel.vue';
+import PosReadinessCard from './PosReadinessCard.vue';
 
 describe('POS reusable UI primitives', () => {
   it('renders action rail header, summary and actions slots', async () => {
@@ -43,6 +44,19 @@ describe('POS reusable UI primitives', () => {
     expect(html).toContain('Payment');
     expect(html).toContain('captured');
     expect(html).toContain('100');
+    expect(html).toContain('warning');
+  });
+
+  it('renders passive readiness content without owning business state', async () => {
+    const html = await renderToString(createSSRApp({
+      components: { PosReadinessCard },
+      template: '<PosReadinessCard title="Future action" description="No endpoint" badge="planned" tone="warning" passive />',
+    }));
+
+    expect(html).toContain('Future action');
+    expect(html).toContain('No endpoint');
+    expect(html).toContain('planned');
+    expect(html).toContain('aria-disabled="true"');
     expect(html).toContain('warning');
   });
 });

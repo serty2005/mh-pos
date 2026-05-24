@@ -9,7 +9,7 @@
         </div>
         <slot name="header-side" />
       </q-card-section>
-      <q-card-section v-if="$slots.default" :class="bodyClass">
+      <q-card-section v-if="$slots.default" :class="['dialog-body', bodyClass]">
         <slot />
       </q-card-section>
       <q-card-actions v-if="$slots.actions" align="right" class="dialog-actions">

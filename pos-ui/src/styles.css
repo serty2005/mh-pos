@@ -1143,6 +1143,7 @@ button:focus-visible,
 }
 
 .dialog-head {
+  flex: 0 0 auto;
   display: flex;
   justify-content: space-between;
   gap: 16px;
@@ -1233,6 +1234,7 @@ button:focus-visible,
 }
 
 .dialog-actions {
+  flex: 0 0 auto;
   padding: 8px 16px 16px;
 }
 
@@ -1269,7 +1271,15 @@ button:focus-visible,
 
 .dialog-card {
   width: min(94vw, 440px);
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
   border-radius: 8px;
+}
+
+.dialog-body {
+  min-height: 0;
+  overflow: auto;
 }
 
 .dialog-card > .pos-scrollarea-y {
@@ -2048,6 +2058,74 @@ button:focus-visible,
 
 .dashboard-metric.compact strong {
   font-size: 22px;
+}
+
+.pos-readiness-card {
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  color: var(--pos-muted);
+  background: #f7f8f8;
+  border: 1px dashed var(--pos-border);
+}
+
+.pos-readiness-card:not(.has-icon) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.pos-readiness-card.passive {
+  cursor: default;
+}
+
+.pos-readiness-card-icon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  color: currentColor;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.pos-readiness-card.compact {
+  min-height: 38px;
+  place-items: center;
+  padding: 8px 10px;
+  text-align: center;
+}
+
+.pos-readiness-card.warning {
+  color: var(--pos-status-warning);
+  background: var(--pos-warning-light);
+  border-color: var(--pos-border-strong);
+}
+
+.pos-readiness-card-main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.pos-readiness-card strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--pos-text);
+}
+
+.pos-readiness-card small {
+  color: var(--pos-status-warning);
+  font-size: var(--pos-font-size-xs);
+  font-weight: 700;
+}
+
+.pos-readiness-card em {
+  color: var(--pos-muted);
+  font-size: var(--pos-font-size-sm);
+  font-style: normal;
+  line-height: 1.35;
 }
 
 .dashboard-metric span,
@@ -3646,43 +3724,6 @@ button.bottom-status-cell {
   grid-template-columns: repeat(5, minmax(86px, 1fr));
 }
 
-.line-action-button {
-  min-height: 52px;
-  color: var(--pos-text);
-  background: #ffffff;
-  border: 1px solid var(--pos-border);
-  text-align: left;
-  padding: 0 14px;
-  font-weight: 650;
-}
-
-.backlog-action-card {
-  min-height: 64px;
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  padding: 12px;
-  color: var(--pos-muted);
-  background: #f7f8f8;
-  border: 1px dashed var(--pos-border);
-}
-
-.backlog-action-card span {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-}
-
-.backlog-action-card strong {
-  color: var(--pos-text);
-}
-
-.backlog-action-card small {
-  color: var(--pos-muted);
-  line-height: 1.35;
-}
-
 @media (max-width: 1180px) {
   .pos-page.pos-app-shell {
     --pos-right-panel-width: 300px;
@@ -4225,38 +4266,9 @@ button.bottom-status-cell {
   margin-top: 12px;
 }
 
-.kitchen-disabled-actions span {
-  min-height: 38px;
-  display: grid;
-  place-items: center;
-  color: var(--pos-text-disabled);
-  background: var(--pos-surface-muted);
-  border: 1px dashed var(--pos-border-strong);
+.kitchen-disabled-actions .pos-readiness-card {
   font-family: var(--pos-font-mono);
   font-size: var(--pos-font-size-sm);
-}
-
-.kitchen-gate-card {
-  display: grid;
-  gap: 4px;
-  padding: 10px;
-  background: var(--pos-surface-muted);
-  border: 1px solid var(--pos-border);
-}
-
-.kitchen-gate-card span {
-  color: var(--pos-status-warning);
-  font-size: var(--pos-font-size-xs);
-  font-weight: 700;
-}
-
-.kitchen-gate-card strong {
-  color: var(--pos-text-primary);
-}
-
-.kitchen-gate-card small {
-  color: var(--pos-text-secondary);
-  line-height: 1.35;
 }
 
 @media (min-width: 760px) {

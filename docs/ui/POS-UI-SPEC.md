@@ -59,7 +59,7 @@ Waiter mobile UI in `pos-ui/src/pages/WaiterPage.vue` и `pos-ui/src/pages/pos/u
 - не считает authoritative totals, цены модификаторов, складские остатки или платежные статусы; показывает backend-provided order/precheck totals;
 - явно показывает границы полномочий официанта отдельной status strip: order/precheck runtime доступен, payment/refund/cash drawer authority скрыта;
 - после active issued precheck или locked order визуально блокирует меню, quantity и void controls; selected table/order/status остаются видимыми в mobile context strip;
-- modifier dialog показывает required/min/max правила, validation message и disabled/loading submit state без локальной подмены backend validation;
+- modifier dialog показывает required/min/max правила, validation message и disabled/loading submit state без локальной подмены backend validation; общий `PosDialog` ограничивает высоту карточки и прокручивает body, чтобы длинный список modifiers оставался usable на mobile;
 - viewport `390x844` держит compact context strip, touch-friendly table/menu/order rows и sticky topbar без payment/refund/cash drawer controls;
 - empty/loading/error/no-permission states идут через `vue-i18n` и reusable primitives из `pos-ui/src/shared/ui`.
 
@@ -67,7 +67,7 @@ KDS route реализовано сейчас как bounded readiness screen:
 
 - route `/pos/kitchen` больше не generic shell; он показывает `запланировано далее`, отсутствующие backend contracts для kitchen tickets/lifecycle/stations/recall/printer и подготовленные статусы `new`, `accepted`, `in_progress`, `hold`, `ready`, `served`, `recall`, `cancelled`;
 - readiness screen группирует будущий lifecycle и activation gates, но не показывает active buttons для `accept`, `start`, `hold`, `ready`, `served`, `recall` или `cancel`;
-- будущие lifecycle действия показаны только как disabled/readiness chips; activation gates помечены как `запланировано до пилота` или `запланировано далее`;
+- будущие lifecycle действия показаны только как disabled/readiness cards; activation gates помечены как `запланировано до пилота` или `запланировано далее`;
 - активные KDS lifecycle actions не отображаются, потому что в POS backend нет kitchen ticket endpoints;
 - hardware bump-bar/printer orchestration не описывается как реализованное.
 
@@ -174,9 +174,9 @@ Requirements:
 Реализовано сейчас:
 
 - Cashier POS UI имеет внутренний reusable presentation layer в `pos-ui/src/shared/ui`.
-- Первый слой primitives/composites включает `PosButton`, `PosContextButton`, `PosDialog`, `PosSectionHeader`, `PosTabs`, `PosPagination`, `PosQuantityStepper`, `PosBanner`, `PosEmptyState`, `PosStatusStrip`, `PosMetricCard`, `PosActionRail`, `PosPanel`, `PosDataRow`, `PosFormRow` и `PosSkeleton`.
+- Первый слой primitives/composites включает `PosButton`, `PosContextButton`, `PosDialog`, `PosSectionHeader`, `PosTabs`, `PosPagination`, `PosQuantityStepper`, `PosBanner`, `PosEmptyState`, `PosStatusStrip`, `PosMetricCard`, `PosActionRail`, `PosPanel`, `PosDataRow`, `PosFormRow`, `PosReadinessCard` и `PosSkeleton`.
 - Эти компоненты являются dumb/presentational: они принимают labels, variant/state props и callbacks, но не получают `terminal` и не владеют cashier business logic.
-- `PosPage`, `WaiterPage`, `KitchenPage`, `PosMenuGrid`, `PosOrderRail`, `PosFloorSection`, `PosActivitySection`, `PosCashSection`, `PosReportsSection`, `PosPaymentDialog`, `PosActionsDialog`, `ModifierSelectionDialog`, `RefundDialog`, `PrecheckCancelDialog`, `CashDrawerDialog`, `SyncDrawer` и `ClosedOrdersDrawer` уже используют часть этого слоя для повторяющихся кнопок, tabs/chips, dialog shell, section header, action rail, panels, data rows, status/metric cards, empty/error/loading states, menu skeleton cards и quantity steppers.
+- `PosPage`, `WaiterPage`, `KitchenPage`, `PosMenuGrid`, `PosOrderRail`, `PosFloorSection`, `PosActivitySection`, `PosCashSection`, `PosReportsSection`, `PosPaymentDialog`, `PosActionsDialog`, `ModifierSelectionDialog`, `RefundDialog`, `PrecheckCancelDialog`, `CashDrawerDialog`, `SyncDrawer` и `ClosedOrdersDrawer` уже используют часть этого слоя для повторяющихся кнопок, tabs/chips, dialog shell, section header, action rail, panels, data rows, status/metric/readiness cards, empty/error/loading states, menu skeleton cards и quantity steppers.
 - `pos-ui/src/styles.css` содержит общий POS scrollbar contract через `.pos-scrollarea`, `.pos-scrollarea-y`, `.pos-scrollarea-x` и `.pos-scrollbar-thin`: thin scrollbar, semantic colors, touch-friendly overflow и отсутствие неуправляемого горизонтального скролла в основных cashier surfaces.
 
 Правила для следующих изменений:

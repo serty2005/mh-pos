@@ -194,13 +194,14 @@
     </PosDialog>
 
     <PosDialog v-model="lineActionsDialog" :eyebrow="selectedLineName" :title="terminal.t('pos.lineActions')" body-class="line-action-grid">
-      <article v-for="item in lineActionItems" :key="item.labelKey" class="backlog-action-card" aria-disabled="true">
-        <q-icon :name="item.icon" size="20px" />
-        <span>
-          <strong>{{ terminal.t(item.labelKey) }}</strong>
-          <small>{{ terminal.t(item.reasonKey) }}</small>
-        </span>
-      </article>
+      <PosReadinessCard
+        v-for="item in lineActionItems"
+        :key="item.labelKey"
+        passive
+        :icon="item.icon"
+        :title="terminal.t(item.labelKey)"
+        :description="terminal.t(item.reasonKey)"
+      />
       <template #actions>
         <PosButton variant="neutral" mode="flat" :label="terminal.t('actions.close')" @click="lineActionsDialog = false" />
       </template>
@@ -252,7 +253,7 @@ import PrecheckCancelDialog from './pos/PrecheckCancelDialog.vue';
 import RefundDialog from './pos/RefundDialog.vue';
 import SyncDrawer from './pos/SyncDrawer.vue';
 import { useCashierTerminal } from './pos/useCashierTerminal';
-import { PosButton, PosContextButton, PosDialog, PosTabs, type PosTabOption } from '../shared/ui';
+import { PosButton, PosContextButton, PosDialog, PosReadinessCard, PosTabs, type PosTabOption } from '../shared/ui';
 
 type PosSectionId = 'floor' | 'order' | 'activity' | 'reports' | 'cash';
 
