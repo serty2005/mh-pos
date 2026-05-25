@@ -103,6 +103,8 @@ python3 scripts/seed-dev-system.py \
 
 `scripts/seed-dev-system.py` является единственным пользовательским скриптом в `scripts`. Он создает полный набор текущих Cloud-owned справочников через HTTP API: ресторан, роли, сотрудников с PIN, залы и столы, catalog folders/parameters/tags/items, menu categories/items, modifier groups/options/bindings, pricing policies, recipe items и stop-list examples. После создания и публикации всех сущностей скрипт генерирует license pairing code для POS Edge, выполняет `pair-via-license`, проверяет POS read model и выводит `restaurant_id`, `node_device_id`, pairing code и все PIN-коды для проверки ролей.
 
+Минимальный сквозной smoke запускается тем же скриптом с флагом `--run-minimal-flow`: он проверяет `Cloud recipes/stop-list publication -> Edge sync -> waiter order -> cashier final check -> CheckClosed -> Cloud inventory ledger` через HTTP API без прямых записей в PostgreSQL/SQLite.
+
 Seed-вход содержит только пользовательские данные: названия, имена, PIN, цены, количества, места и права. `restaurant_id`, `role_id`, `employee_id`, `catalog_item_id`, `menu_item_id`, `node_device_id`, generated SKU и остальные технические значения берутся из backend responses или генерируются системой скрипта как производные значения.
 
 `scripts/.seed-dev-system-summary.json` содержит локальные demo credentials и игнорируется git. Повторный запуск рассчитан на чистые backend volumes; если POS Edge уже paired, скрипт завершится fail-fast и попросит пересоздать локальные данные.

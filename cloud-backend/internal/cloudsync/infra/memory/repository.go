@@ -25,6 +25,7 @@ type Repository struct {
 	eventStatsByKey   map[string]EventTypeProjection
 	shiftFinanceByKey map[string]ShiftFinanceProjection
 	financialOpsByID  map[string]contracts.FinancialOperationProjection
+	inventoryLedger   []contracts.InventoryLedgerEntry
 	inventoryQueue    map[string]contracts.EventAck
 	authorizedNodes   map[string]authorizedNode
 	problemEdgeEvents []app.ProblemEdgeEvent
@@ -236,6 +237,54 @@ func (r *Repository) ListFinancialOperations(_ context.Context, filter app.Finan
 	return out, nil
 }
 
+// ListInventoryLedger возвращает bounded memory view для API tests.
+func (r *Repository) ListInventoryLedger(_ context.Context, filter app.InventoryLedgerFilter) ([]contracts.InventoryLedgerEntry, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	limit := filter.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	out := make([]contracts.InventoryLedgerEntry, 0, min(limit, len(r.inventoryLedger)))
+	for _, item := range r.inventoryLedger {
+		if filter.RestaurantID != "" && item.RestaurantID != filter.RestaurantID {
+			continue
+		}
+		if filter.SourceEventType != "" && item.SourceEventType != filter.SourceEventType {
+			continue
+		}
+		if filter.SourceEventID != "" && item.SourceEventID != filter.SourceEventID {
+			continue
+		}
+		if filter.OrderLineID != "" && item.OrderLineID != filter.OrderLineID {
+			continue
+		}
+		if filter.CatalogItemID != "" && item.CatalogItemID != filter.CatalogItemID {
+			continue
+		}
+		out = append(out, item)
+	}
+	slices.SortFunc(out, func(a, b contracts.InventoryLedgerEntry) int {
+		if cmp := b.OccurredAt.Compare(a.OccurredAt); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(b.ID, a.ID)
+	})
+	if offset >= len(out) {
+		return []contracts.InventoryLedgerEntry{}, nil
+	}
+	out = out[offset:]
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
 func (r *Repository) UpsertMasterDataPackage(_ context.Context, v contracts.MasterDataPackage) (contracts.MasterDataPackage, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -341,6 +390,12 @@ func (r *Repository) InventoryQueueCount() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.inventoryQueue)
+}
+
+func (r *Repository) AddInventoryLedgerForTest(items ...contracts.InventoryLedgerEntry) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.inventoryLedger = append(r.inventoryLedger, items...)
 }
 
 func (r *Repository) applyEventTypeProjection(receipt app.EdgeEventReceipt) {

@@ -74,6 +74,26 @@ type Payload[T any] struct {
 	Data   T      `json:"data"`
 }
 
+// InventoryLedgerEntry описывает bounded read-only Cloud inventory ledger view.
+type InventoryLedgerEntry struct {
+	ID                string    `json:"id"`
+	RestaurantID      string    `json:"restaurant_id"`
+	StockDocumentID   string    `json:"stock_document_id"`
+	SourceEventID     string    `json:"source_event_id"`
+	SourceEventType   string    `json:"source_event_type"`
+	CatalogItemID     string    `json:"catalog_item_id"`
+	OrderLineID       string    `json:"order_line_id,omitempty"`
+	MovementType      string    `json:"movement_type"`
+	Quantity          string    `json:"quantity"`
+	UnitCode          string    `json:"unit_code"`
+	UnitCostMinor     int64     `json:"unit_cost_minor"`
+	TotalCostMinor    int64     `json:"total_cost_minor"`
+	CostingStatus     string    `json:"costing_status"`
+	OccurredAt        time.Time `json:"occurred_at"`
+	BusinessDateLocal string    `json:"business_date_local"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
 type ShiftOpened struct {
 	ID                 string    `json:"id"`
 	RestaurantID       string    `json:"restaurant_id"`

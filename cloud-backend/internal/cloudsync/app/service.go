@@ -20,6 +20,7 @@ type Repository interface {
 	RecordProblemEdgeEvent(context.Context, ProblemEdgeEvent) error
 	ListEdgeEvents(context.Context, EdgeEventListFilter) ([]contracts.EdgeEventView, error)
 	ListFinancialOperations(context.Context, FinancialOperationProjectionFilter) ([]contracts.FinancialOperationProjection, error)
+	ListInventoryLedger(context.Context, InventoryLedgerFilter) ([]contracts.InventoryLedgerEntry, error)
 	UpsertMasterDataPackage(context.Context, contracts.MasterDataPackage) (contracts.MasterDataPackage, error)
 	GetMasterDataPackage(context.Context, string, string) (contracts.MasterDataPackage, error)
 	AuthenticateNodeToken(context.Context, string, string, string) error
@@ -65,6 +66,17 @@ type FinancialOperationProjectionFilter struct {
 	CheckID          string
 	Limit            int
 	Offset           int
+}
+
+// InventoryLedgerFilter задает bounded read-only query по Cloud-owned stock ledger.
+type InventoryLedgerFilter struct {
+	RestaurantID    string
+	SourceEventType string
+	SourceEventID   string
+	OrderLineID     string
+	CatalogItemID   string
+	Limit           int
+	Offset          int
 }
 
 type Service struct {
@@ -157,6 +169,22 @@ func (s *Service) ListFinancialOperations(ctx context.Context, filter FinancialO
 		return nil, fmt.Errorf("%w: offset must be non-negative", contracts.ErrInvalidEnvelope)
 	}
 	return s.repo.ListFinancialOperations(ctx, filter)
+}
+
+// ListInventoryLedger возвращает bounded Cloud inventory ledger view без raw event payload.
+func (s *Service) ListInventoryLedger(ctx context.Context, filter InventoryLedgerFilter) ([]contracts.InventoryLedgerEntry, error) {
+	filter.RestaurantID = strings.TrimSpace(filter.RestaurantID)
+	filter.SourceEventType = strings.TrimSpace(filter.SourceEventType)
+	filter.SourceEventID = strings.TrimSpace(filter.SourceEventID)
+	filter.OrderLineID = strings.TrimSpace(filter.OrderLineID)
+	filter.CatalogItemID = strings.TrimSpace(filter.CatalogItemID)
+	if filter.Limit <= 0 || filter.Limit > 200 {
+		filter.Limit = 50
+	}
+	if filter.Offset < 0 {
+		return nil, fmt.Errorf("%w: offset must be non-negative", contracts.ErrInvalidEnvelope)
+	}
+	return s.repo.ListInventoryLedger(ctx, filter)
 }
 
 // ReceiveBatch принимает batch SyncEnvelope и возвращает item-level ACK decisions.

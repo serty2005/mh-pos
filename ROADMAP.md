@@ -119,7 +119,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - выполнено: worker пишет `stock_ledger` with `unit_cost_minor`, `total_cost_minor`, `costing_status` для нормализованных item payloads; retro recalculation jobs остаются следующим шагом;
   - выполнено: Cloud Inventory Worker дедуплицирует `ItemServed` replay и `CheckClosed` replay, а `CheckClosed` после обработанного `ItemServed` списывает только положительную unserved delta по `order_line_id`;
   - выполнено: POS Edge пишет `CheckClosed` outbox event из immutable `check.Snapshot` при final check после полной оплаты;
-  - выполнено: POS Edge использует stop-list как единственный механизм блокировки продаж при add/increase order line; stock balance остается аналитическим и может быть отрицательным.
+  - выполнено: POS Edge использует stop-list как единственный механизм блокировки продаж при add/increase order line; stock balance остается аналитическим и может быть отрицательным;
+  - выполнено: минимальный HTTP-only smoke `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud recipes/stop-list publication -> Edge sync -> waiter order/precheck -> cashier final check -> `CheckClosed` -> Cloud `stock_ledger`.
 - Cancellation/refund/reprint hardening:
   - backend ledger, immutable snapshots, no-over-cancel/no-over-refund/no-over-line-amount tests, current `CancellationRecorded`/`RefundRecorded` sync contracts, idempotent Cloud raw/journal receipt checks, coarse Cloud refund counters and detailed Cloud financial operation projection реализованы;
   - cashier UI full whole-check и partial `order_line`/quantity cancellation/refund через ledger endpoints реализован с выбором inventory disposition; compatibility refund по captured payment оставлен отдельным fallback;
@@ -161,7 +162,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - Cloud UI должен довести readiness-only surfaces до runtime только после появления подтвержденных Cloud backend routes;
   - launch readiness учитывает restaurant, staff, floor, catalog, menu, modifiers, pricing, stop-list review, publication и known Edge node.
 - Full pilot smoke:
-  - добавить runtime e2e, который проходит Cloud setup -> seed publication -> Edge sync -> waiter order -> kitchen served -> cashier payment/final check -> reconnect/outbox ACK -> Cloud inventory ledger -> ClickHouse export -> OLAP API reads.
+  - выполнено сейчас: минимальный runtime smoke без KDS и ClickHouse проходит Cloud setup -> seed publication -> Edge sync -> waiter order/precheck -> cashier payment/final check -> Cloud inventory ledger;
+  - запланировано далее: полный runtime e2e с kitchen served, reconnect/outbox ACK, ClickHouse export и OLAP API reads.
 - Full Inventory Engine:
   - реализовать stock receipts, inventory counts, production, sale consumption, refund/cancellation stock disposition, recipe expansion, modifier linked consumption, balances и costing state;
   - реализовать retro recalculation DAG для документов задним числом и отрицательных остатков;

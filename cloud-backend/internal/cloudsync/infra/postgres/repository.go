@@ -309,6 +309,69 @@ LIMIT $8 OFFSET $9`,
 	return out, rows.Err()
 }
 
+// ListInventoryLedger читает Cloud-owned stock ledger без raw event payload.
+func (r *Repository) ListInventoryLedger(ctx context.Context, filter app.InventoryLedgerFilter) ([]contracts.InventoryLedgerEntry, error) {
+	limit := filter.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT id,restaurant_id,stock_document_id,source_event_id,source_event_type,catalog_item_id,
+       COALESCE(order_line_id,''),movement_type,quantity::text,unit_code,unit_cost_minor,total_cost_minor,
+       costing_status,occurred_at,business_date_local,created_at
+FROM stock_ledger
+WHERE ($1 = '' OR restaurant_id = $1)
+  AND ($2 = '' OR source_event_type = $2)
+  AND ($3 = '' OR source_event_id = $3)
+  AND ($4 = '' OR order_line_id = $4)
+  AND ($5 = '' OR catalog_item_id = $5)
+ORDER BY occurred_at DESC, id DESC
+LIMIT $6 OFFSET $7`,
+		filter.RestaurantID,
+		filter.SourceEventType,
+		filter.SourceEventID,
+		filter.OrderLineID,
+		filter.CatalogItemID,
+		limit,
+		offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]contracts.InventoryLedgerEntry, 0, limit)
+	for rows.Next() {
+		var v contracts.InventoryLedgerEntry
+		if err := rows.Scan(
+			&v.ID,
+			&v.RestaurantID,
+			&v.StockDocumentID,
+			&v.SourceEventID,
+			&v.SourceEventType,
+			&v.CatalogItemID,
+			&v.OrderLineID,
+			&v.MovementType,
+			&v.Quantity,
+			&v.UnitCode,
+			&v.UnitCostMinor,
+			&v.TotalCostMinor,
+			&v.CostingStatus,
+			&v.OccurredAt,
+			&v.BusinessDateLocal,
+			&v.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) UpsertMasterDataPackage(ctx context.Context, v contracts.MasterDataPackage) (contracts.MasterDataPackage, error) {
 	nodeDeviceID := strings.TrimSpace(v.NodeDeviceID)
 	payload := bytesTrimSpace(v.PayloadJSON)

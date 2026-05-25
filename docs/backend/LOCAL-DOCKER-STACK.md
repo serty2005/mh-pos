@@ -180,6 +180,19 @@ python3 scripts/seed-dev-system.py \
 
 Скрипт создает ресторан, роли cashier/senior cashier/waiter/manager/kitchen/support, сотрудников с PIN `1111`/`2222`/`3333`/`4444`/`5555`/`9999`, залы и столы, catalog folders/folder parameters/tags/items, menu categories/items, service item, modifier groups/options/bindings, pricing policies, recipe items, stop-list examples и publication. После создания всех сущностей он генерирует pairing code через Cloud/License flow, привязывает POS Edge и проверяет, что POS видит Cloud-created halls/menu.
 
+Минимальный сквозной smoke для поднятого stack:
+
+```bash
+python3 scripts/seed-dev-system.py \
+  --cloud-base http://localhost:8090 \
+  --pos-base http://localhost:8080 \
+  --license-base http://localhost:8095 \
+  --output scripts/.seed-dev-system-summary.json \
+  --run-minimal-flow
+```
+
+Реализовано сейчас: флаг `--run-minimal-flow` после seed/pairing выполняет HTTP-only сценарий `Cloud recipes/stop-list publication -> Edge sync -> waiter order -> cashier final check -> CheckClosed -> Cloud inventory ledger`. Сценарий проверяет stop-list rejection для demo sold-out item, создает заказ официантом, выпускает precheck, закрывает его оплатой кассира, ожидает `CheckClosed` в Cloud safe event log и проверяет строки `stock_ledger` через bounded Cloud endpoint `GET /api/v1/inventory/stock-ledger`.
+
 Seed-вход содержит только пользовательские данные: названия, имена, PIN, цены, количества, места и наборы прав. ID, `node_device_id`, generated SKU и остальные технические значения берутся из backend responses или генерируются системно. `scripts/.seed-dev-system-summary.json` содержит локальные demo credentials и добавлен в `.gitignore`; не коммить этот файл.
 
 Повторный запуск рассчитан на чистые backend volumes. Если POS Edge уже находится в `paired`, скрипт завершится fail-fast: для нового полного seed нужно пересоздать локальные Docker volumes через `docker compose -f docker-compose.local.yml down -v` и поднять stack заново.

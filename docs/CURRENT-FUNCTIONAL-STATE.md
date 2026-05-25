@@ -69,6 +69,7 @@
 - Прием Edge events: `POST /api/v1/sync/edge-events`, batch прием и `POST /api/v1/sync/exchange`.
 - `sync/exchange` проверяет bearer `node_token`, assigned restaurant и device status.
 - Idempotent receipt для Edge events, raw payload checksum, event type stats и coarse shift finance projection.
+- Bounded read-only Cloud inventory ledger endpoint `GET /api/v1/inventory/stock-ledger` для проверки обработанных Cloud Inventory Worker строк без raw sync payload.
 - Детальная PostgreSQL projection для current `CancellationRecorded` и `RefundRecorded`; legacy `PaymentRefunded`/`CheckRefunded` принимаются, но не наполняют detailed operation projection.
 - Безопасный список входящих Edge events для Cloud UI без raw payload.
 - Хранилище master-data packages и Cloud -> Edge package retrieval.
@@ -162,6 +163,7 @@
 - Docker compose поднимает Cloud PostgreSQL, Cloud API, License API и POS Edge без POS UI.
 - Единственный Python seed script использует HTTP API и не делает прямых записей в PostgreSQL/SQLite.
 - `scripts/seed-dev-system.py` проверяет health Cloud/POS/License, создает полный Cloud-owned seed dataset, публикует master data, выполняет license pairing POS Edge и проверяет базовый POS read model.
+- `scripts/seed-dev-system.py --run-minimal-flow` выполняет минимальный HTTP-only smoke: Cloud recipes/stop-list publication, Edge sync, waiter order/precheck, cashier payment/final check, прием `CheckClosed` в Cloud и появление строк Cloud `stock_ledger`.
 - PowerShell/Bash wrappers и прежние onboarding flows удалены; в `scripts` остается один пользовательский Python seed script.
 - HTTP слой скриптов игнорирует proxy для localhost/loopback, чтобы не ломать Docker published ports.
 

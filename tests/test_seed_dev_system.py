@@ -72,13 +72,52 @@ class FakeClient:
         if path == "/api/v1/system/provisioning/pair-via-license":
             return {"paired": True, "node_device_id": "edge-node-from-pos", "restaurant_id": "restaurant-1"}
         if path == "/api/v1/auth/pin-login":
-            return {"session": {"id": "session-1"}, "actor": {"employee_id": "employee-2222"}}
+            return {"session": {"id": f"session-{body.get('pin', '1')}"}, "actor": {"employee_id": f"employee-{body.get('pin', '2222')}"}}
+        if path == "/api/v1/employee-shifts/open":
+            return {"id": f"shift-{self.counter}"}
+        if path == "/api/v1/cash-shifts/open":
+            return {"id": f"cash-{self.counter}"}
+        if path == "/api/v1/employee-shifts/current":
+            return {"id": "shift-current"}
+        if path == "/api/v1/cash-shifts/current":
+            return {"id": "cash-current"}
         if path.startswith("/api/v1/halls"):
             return [{"id": "hall-1"}]
         if path.startswith("/api/v1/tables"):
             return [{"id": "table-1"}]
         if path == "/api/v1/menu/items":
-            return [{"id": "menu-1", "modifier_groups": [{"options": [{"id": "modifier-option-1"}]}]}]
+            return [
+                {
+                    "id": "menu-soup",
+                    "modifier_groups": [{
+                        "id": "modifier-group-spice",
+                        "required": True,
+                        "min_count": 1,
+                        "max_count": 1,
+                        "options": [{"id": "modifier-option-mild"}],
+                    }],
+                },
+                {"id": "menu-stopped", "modifier_groups": []},
+            ]
+        if path == "/api/v1/orders":
+            return {"id": "order-1", "status": "open"}
+        if path == "/api/v1/orders/order-1/lines":
+            if body.get("menu_item_id") == "menu-stopped":
+                return {"error_code": "SALE_ITEM_STOP_LISTED"}
+            return {"id": "line-soup", "menu_item_id": body.get("menu_item_id"), "modifiers": body.get("selected_modifiers", [])}
+        if path == "/api/v1/orders/order-1/precheck":
+            return {"id": "precheck-1", "status": "issued", "total": 34900, "currency": "RUB"}
+        if path == "/api/v1/prechecks/precheck-1/payments":
+            return {"id": "payment-1", "precheck_id": "precheck-1", "amount": body.get("amount"), "status": "captured"}
+        if path == "/api/v1/orders/order-1":
+            return {"id": "order-1", "status": "closed", "check": {"id": "check-1", "status": "paid"}}
+        if path.startswith("/api/v1/sync/edge-events"):
+            return [{"event_id": "event-check-closed", "event_type": "CheckClosed", "aggregate_id": "check-1"}]
+        if path.startswith("/api/v1/inventory/stock-ledger"):
+            return [
+                {"id": "ledger-1", "source_event_id": "event-check-closed", "source_event_type": "CheckClosed", "order_line_id": "line-soup", "catalog_item_id": "catalog-sirloin"},
+                {"id": "ledger-2", "source_event_id": "event-check-closed", "source_event_type": "CheckClosed", "order_line_id": "line-soup", "catalog_item_id": "catalog-sauce"},
+            ]
         if path == "/api/v1/sync/status":
             return {"status": "ok"}
         raise AssertionError(f"unexpected request {method} {path}")
@@ -140,6 +179,33 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertEqual(summary["pairing_code"], "PAIR1234")
         self.assertIn("waiter_pin", summary["pins"])
         self.assertIn("support_pin", summary["pins"])
+
+    def test_minimal_flow_smoke_runs_waiter_to_cloud_inventory_ledger(self):
+        module = load_seed_module()
+        cloud = FakeClient("cloud")
+        pos = FakeClient("pos")
+
+        result = module.run_minimal_flow_smoke(
+            cloud,
+            pos,
+            restaurant_id="restaurant-1",
+            node_device_id="edge-node-from-pos",
+            client_device_id="unit-client",
+            pins={"waiter_pin": "3333", "cashier_pin": "1111"},
+            table_ids=["table-1"],
+            menu_refs={"soup": "menu-soup", "sold_out_dessert": "menu-stopped"},
+            catalog_refs={"sirloin": "catalog-sirloin", "sauce": "catalog-sauce"},
+            wait_seconds=1,
+            interval_seconds=0,
+        )
+
+        self.assertEqual(result["check_id"], "check-1")
+        self.assertEqual(result["check_closed_event_id"], "event-check-closed")
+        self.assertEqual(result["ledger_entry_count"], 2)
+        self.assertEqual(result["blocked_sale_error_code"], "SALE_ITEM_STOP_LISTED")
+        cloud_paths = [path for _, path, _, _ in cloud.calls]
+        self.assertTrue(any(path.startswith("/api/v1/sync/edge-events") for path in cloud_paths))
+        self.assertTrue(any(path.startswith("/api/v1/inventory/stock-ledger") for path in cloud_paths))
 
 
 if __name__ == "__main__":

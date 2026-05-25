@@ -320,6 +320,7 @@ def seed_full_system(
     suffix="",
     wait_seconds=90,
     interval_seconds=2,
+    run_minimal_flow=False,
 ):
     suffix = suffix or command_suffix()
     health = {
@@ -614,7 +615,7 @@ def seed_full_system(
     paired = request(pos_client, "POST", f"{API_PREFIX}/system/provisioning/pair-via-license", {"pairing_code": pairing_code}, expected_status=(200,))
     verify_pos_ready(pos_client, restaurant_id, node_device_id, client_device_id, pins["manager_pin"], wait_seconds, interval_seconds)
 
-    return {
+    summary = {
         "restaurant_id": restaurant_id,
         "node_device_id": node_device_id,
         "pairing_code": pairing_code,
@@ -628,7 +629,9 @@ def seed_full_system(
         "hall_ids": hall_ids,
         "table_ids": table_ids,
         "catalog_item_ids": list(catalog_ids.values()),
+        "catalog_item_refs": catalog_ids,
         "menu_item_ids": list(menu_ids.values()),
+        "menu_item_refs": menu_ids,
         "modifier_group_ids": list(modifier_group_ids.values()),
         "modifier_option_ids": modifier_option_ids,
         "modifier_binding_ids": modifier_binding_ids,
@@ -638,6 +641,21 @@ def seed_full_system(
         "publication_id": publication["id"],
         "health": health,
     }
+    if run_minimal_flow:
+        summary["minimal_flow"] = run_minimal_flow_smoke(
+            cloud_client,
+            pos_client,
+            restaurant_id=restaurant_id,
+            node_device_id=node_device_id,
+            client_device_id=client_device_id,
+            pins=pins,
+            table_ids=table_ids,
+            menu_refs=menu_ids,
+            catalog_refs=catalog_ids,
+            wait_seconds=wait_seconds,
+            interval_seconds=interval_seconds,
+        )
+    return summary
 
 
 def verify_pos_ready(pos_client, restaurant_id, node_device_id, client_device_id, manager_pin, wait_seconds, interval_seconds):
@@ -670,6 +688,279 @@ def verify_pos_ready(pos_client, restaurant_id, node_device_id, client_device_id
         time.sleep(max(0, interval_seconds))
 
 
+def run_minimal_flow_smoke(
+    cloud_client,
+    pos_client,
+    restaurant_id,
+    node_device_id,
+    client_device_id,
+    pins,
+    table_ids,
+    menu_refs,
+    catalog_refs,
+    wait_seconds,
+    interval_seconds,
+):
+    waiter_headers = login_pos(pos_client, node_device_id, client_device_id, pins["waiter_pin"])
+    ensure_employee_shift(pos_client, restaurant_id, waiter_headers, "minimal-waiter")
+    menu_items = request(pos_client, "GET", f"{API_PREFIX}/menu/items", expected_status=(200,), headers=waiter_headers)
+    smoke_menu_id = menu_refs.get("soup") or first_menu_item_id(menu_items, excluded_id=menu_refs.get("sold_out_dessert", ""))
+    if not smoke_menu_id:
+        raise RuntimeError("minimal flow requires at least one sellable menu item")
+    smoke_menu_item = find_by_id(menu_items, smoke_menu_id)
+    if not smoke_menu_item:
+        raise RuntimeError(f"POS Edge menu does not expose smoke menu item {smoke_menu_id}")
+    table_id = table_ids[0] if table_ids else ""
+    if not table_id:
+        raise RuntimeError("minimal flow requires at least one table")
+
+    order = request(
+        pos_client,
+        "POST",
+        f"{API_PREFIX}/orders",
+        {
+            "command_id": f"cmd-minimal-{command_suffix()}-waiter-order",
+            "restaurant_id": restaurant_id,
+            "table_id": table_id,
+            "table_name": "Minimal Smoke",
+            "guest_count": 1,
+        },
+        expected_status=(201,),
+        headers=waiter_headers,
+    )
+
+    blocked_sale = {}
+    stopped_menu_id = menu_refs.get("sold_out_dessert", "")
+    if stopped_menu_id:
+        blocked_sale = request(
+            pos_client,
+            "POST",
+            f"{API_PREFIX}/orders/{order['id']}/lines",
+            {
+                "command_id": f"cmd-minimal-{command_suffix()}-blocked-sale",
+                "menu_item_id": stopped_menu_id,
+                "quantity": 1,
+            },
+            expected_status=(409,),
+            headers=waiter_headers,
+        )
+
+    line = request(
+        pos_client,
+        "POST",
+        f"{API_PREFIX}/orders/{order['id']}/lines",
+        {
+            "command_id": f"cmd-minimal-{command_suffix()}-waiter-line",
+            "menu_item_id": smoke_menu_id,
+            "quantity": 1,
+            "selected_modifiers": selected_required_modifiers(smoke_menu_item),
+        },
+        expected_status=(201,),
+        headers=waiter_headers,
+    )
+    precheck = request(
+        pos_client,
+        "POST",
+        f"{API_PREFIX}/orders/{order['id']}/precheck",
+        {"command_id": f"cmd-minimal-{command_suffix()}-waiter-precheck"},
+        expected_status=(201,),
+        headers=waiter_headers,
+    )
+
+    cashier_headers = login_pos(pos_client, node_device_id, client_device_id, pins["cashier_pin"])
+    ensure_employee_shift(pos_client, restaurant_id, cashier_headers, "minimal-cashier")
+    ensure_cash_session(pos_client, restaurant_id, cashier_headers, "minimal-cashier")
+    payment = request(
+        pos_client,
+        "POST",
+        f"{API_PREFIX}/prechecks/{precheck['id']}/payments",
+        {
+            "command_id": f"cmd-minimal-{command_suffix()}-cashier-payment",
+            "method": "cash",
+            "amount": precheck["total"],
+            "currency": precheck.get("currency", "RUB"),
+        },
+        expected_status=(201,),
+        headers=cashier_headers,
+    )
+    paid_order = request(pos_client, "GET", f"{API_PREFIX}/orders/{order['id']}", expected_status=(200,), headers=cashier_headers)
+    check = paid_order.get("check") or {}
+    check_id = check.get("id", "")
+    if not check_id:
+        raise RuntimeError("minimal flow payment did not create final check")
+
+    check_closed = wait_for_cloud_event(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        event_type="CheckClosed",
+        aggregate_id=check_id,
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
+    ledger = wait_for_inventory_ledger(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        source_event_id=check_closed["event_id"],
+        order_line_id=line["id"],
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
+    ledger_catalog_ids = sorted({item.get("catalog_item_id", "") for item in ledger if item.get("catalog_item_id")})
+    expected_components = sorted(
+        value
+        for key, value in catalog_refs.items()
+        if key in ("sirloin", "sauce")
+    )
+    if expected_components and not set(expected_components).issubset(set(ledger_catalog_ids)):
+        raise RuntimeError(f"Cloud inventory ledger did not include recipe components: expected {expected_components}, got {ledger_catalog_ids}")
+
+    return {
+        "order_id": order["id"],
+        "order_line_id": line["id"],
+        "precheck_id": precheck["id"],
+        "payment_id": payment["id"],
+        "check_id": check_id,
+        "check_closed_event_id": check_closed["event_id"],
+        "ledger_entry_count": len(ledger),
+        "ledger_catalog_item_ids": ledger_catalog_ids,
+        "blocked_sale_error_code": blocked_sale.get("error_code", ""),
+    }
+
+
+def login_pos(pos_client, node_device_id, client_device_id, pin):
+    login = request(
+        pos_client,
+        "POST",
+        f"{API_PREFIX}/auth/pin-login",
+        {
+            "command_id": f"cmd-minimal-{command_suffix()}-pin-login",
+            "node_device_id": node_device_id,
+            "client_device_id": client_device_id,
+            "pin": pin,
+        },
+        expected_status=(200, 201),
+    )
+    session_id = login.get("session", {}).get("id")
+    actor_id = login.get("actor", {}).get("employee_id")
+    if not session_id or not actor_id:
+        raise RuntimeError("POS PIN login did not return session and actor ids")
+    return {
+        "X-Node-Device-ID": node_device_id,
+        "X-Client-Device-ID": client_device_id,
+        "X-Session-ID": session_id,
+        "X-Actor-Employee-ID": actor_id,
+    }
+
+
+def ensure_employee_shift(pos_client, restaurant_id, headers, prefix):
+    response = request(
+        pos_client,
+        "POST",
+        f"{API_PREFIX}/employee-shifts/open",
+        {
+            "command_id": f"cmd-{prefix}-{command_suffix()}-open-shift",
+            "restaurant_id": restaurant_id,
+            "opened_by_employee_id": headers["X-Actor-Employee-ID"],
+        },
+        expected_status=(201, 409),
+        headers=headers,
+    )
+    if response.get("id"):
+        return response
+    return request(pos_client, "GET", f"{API_PREFIX}/employee-shifts/current", expected_status=(200,), headers=headers)
+
+
+def ensure_cash_session(pos_client, restaurant_id, headers, prefix):
+    response = request(
+        pos_client,
+        "POST",
+        f"{API_PREFIX}/cash-shifts/open",
+        {
+            "command_id": f"cmd-{prefix}-{command_suffix()}-open-cash",
+            "restaurant_id": restaurant_id,
+            "opened_by_employee_id": headers["X-Actor-Employee-ID"],
+            "opening_cash_amount": 0,
+        },
+        expected_status=(201, 409),
+        headers=headers,
+    )
+    if response.get("id"):
+        return response
+    return request(pos_client, "GET", f"{API_PREFIX}/cash-shifts/current", expected_status=(200,), headers=headers)
+
+
+def selected_required_modifiers(menu_item):
+    out = []
+    for group in menu_item.get("modifier_groups", []) or []:
+        if not group.get("required"):
+            continue
+        options = group.get("options", []) or []
+        if not options:
+            continue
+        out.append({
+            "modifier_group_id": group["id"],
+            "modifier_option_id": options[0]["id"],
+            "quantity": max(1, int(group.get("min_count") or 1)),
+        })
+    return out
+
+
+def find_by_id(items, item_id):
+    for item in items:
+        if item.get("id") == item_id:
+            return item
+    return None
+
+
+def first_menu_item_id(items, excluded_id=""):
+    for item in items:
+        item_id = item.get("id", "")
+        if item_id and item_id != excluded_id:
+            return item_id
+    return ""
+
+
+def wait_for_cloud_event(cloud_client, restaurant_id, event_type, aggregate_id, wait_seconds, interval_seconds):
+    deadline = time.monotonic() + max(1, wait_seconds)
+    while True:
+        items = request(
+            cloud_client,
+            "GET",
+            f"{API_PREFIX}/sync/edge-events",
+            expected_status=(200,),
+            query={"restaurant_id": restaurant_id, "event_type": event_type, "limit": 50},
+        )
+        for item in items:
+            if item.get("aggregate_id") == aggregate_id:
+                return item
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"Cloud did not receive {event_type} for aggregate {aggregate_id} before timeout")
+        time.sleep(max(0, interval_seconds))
+
+
+def wait_for_inventory_ledger(cloud_client, restaurant_id, source_event_id, order_line_id, wait_seconds, interval_seconds):
+    deadline = time.monotonic() + max(1, wait_seconds)
+    while True:
+        items = request(
+            cloud_client,
+            "GET",
+            f"{API_PREFIX}/inventory/stock-ledger",
+            expected_status=(200,),
+            query={
+                "restaurant_id": restaurant_id,
+                "source_event_type": "CheckClosed",
+                "source_event_id": source_event_id,
+                "order_line_id": order_line_id,
+                "limit": 50,
+            },
+        )
+        if items:
+            return items
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"Cloud inventory ledger did not receive CheckClosed ledger rows for order line {order_line_id}")
+        time.sleep(max(0, interval_seconds))
+
+
 def write_summary(path, summary):
     if not path:
         return
@@ -690,6 +981,7 @@ def parse_args(argv=None):
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
     parser.add_argument("--wait-seconds", type=int, default=90)
     parser.add_argument("--interval-seconds", type=float, default=2)
+    parser.add_argument("--run-minimal-flow", action="store_true", help="Run Cloud publication -> Edge sync -> waiter order -> cashier check -> Cloud inventory ledger smoke.")
     return parser.parse_args(argv)
 
 
@@ -704,6 +996,7 @@ def main(argv=None):
         suffix=args.suffix,
         wait_seconds=args.wait_seconds,
         interval_seconds=args.interval_seconds,
+        run_minimal_flow=args.run_minimal_flow,
     )
     write_summary(args.output, summary)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
