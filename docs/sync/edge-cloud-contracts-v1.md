@@ -196,6 +196,7 @@ Request body shape currently supported by POS Edge:
 
 - Cloud schema и publication workflow реально публикуют `recipes`/`inventory_reference` в `cloud_master_data_packages` как часть одного детерминированного publication snapshot.
 - `scripts/seed-dev-system.py` создает recipe/stop-list examples и публикует их в Edge; runtime sale-blocking проверяется профильными POS backend tests.
+- Smoke suite `pos_stop_list_sale_blocking` покрывает Cloud authoring -> publication -> Edge import -> блокировку продажи в POS runtime.
 
 ## Edge -> Cloud Operational Events
 
