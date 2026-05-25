@@ -21,9 +21,15 @@ import {
   X, 
   ShieldAlert,
   Wifi,
-  WifiOff
+  WifiOff,
+  ChefHat,
+  Smartphone,
+  Truck,
+  QrCode,
+  Monitor
 } from 'lucide-react';
 import { PosButton } from './shared/ui';
+import type { POSSection } from './types';
 
 function POSAppShellContent() {
   const {
@@ -37,12 +43,15 @@ function POSAppShellContent() {
     selectedTableId,
     tables,
     syncStatus,
+    syncRevision,
     outboxCount,
     appVersion
   } = usePOS();
 
   const [isSideMenuOpen, setSideMenuOpen] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<string>('');
+  const [currentMode, setCurrentMode] = useState<TerminalMode>('pos');
+  const [currentKdsSection, setCurrentKdsSection] = useState<'queue' | 'ready'>('queue');
 
   // Clock snapshot runner
   useEffect(() => {
@@ -66,8 +75,13 @@ function POSAppShellContent() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const handleSectionSelect = (section: 'floor' | 'order' | 'activity' | 'reports' | 'cash') => {
+  const handleSectionSelect = (section: POSSection) => {
     setCurrentSection(section);
+    setSideMenuOpen(false);
+  };
+
+  const handleModeSelect = (mode: TerminalMode) => {
+    setCurrentMode(mode);
     setSideMenuOpen(false);
   };
 
@@ -78,6 +92,15 @@ function POSAppShellContent() {
   };
 
   const renderCurrentSection = () => {
+    if (currentMode === 'kds') {
+      return <ModePlaceholder title={currentKdsSection === 'queue' ? t.modes.kdsQueue : t.modes.kdsReady} />;
+    }
+    if (currentMode === 'waiter') {
+      return <WaiterQrView waiterUrl={`${window.location.origin}/waiter`} />;
+    }
+    if (currentMode === 'delivery') {
+      return <ModePlaceholder title={t.modes.deliveryBacklog} tone="warning" />;
+    }
     switch (currentSection) {
       case 'floor':
         return <POSFloorSection />;
@@ -101,6 +124,68 @@ function POSAppShellContent() {
     { id: 'reports', label: t.sections.reports, icon: BarChart3 },
     { id: 'cash', label: t.sections.cash, icon: Wallet }
   ] as const;
+
+  const modeItems = [
+    { id: 'pos', label: t.modes.pos, icon: Monitor },
+    { id: 'kds', label: t.modes.kds, icon: ChefHat },
+    { id: 'waiter', label: t.modes.waiter, icon: Smartphone },
+    { id: 'delivery', label: t.modes.delivery, icon: Truck, badge: t.status.notAgreed },
+  ] as const;
+
+  const kdsNavItems = [
+    { id: 'queue', label: t.modes.kdsQueue, icon: ChefHat },
+    { id: 'ready', label: t.modes.kdsReady, icon: ReceiptText },
+  ] as const;
+
+  const renderBottomNavigation = () => {
+    if (currentMode === 'pos') {
+      return navItems.map((item) => {
+        const isActive = currentSection === item.id;
+        const Icon = item.icon;
+        return (
+          <button
+            key={item.id}
+            id={`nav-${item.id}`}
+            onClick={() => handleSectionSelect(item.id)}
+            className={`flex-1 h-full font-mono text-center flex flex-col md:flex-row items-center justify-center gap-1.5 border-t-2 select-none whitespace-nowrap cursor-pointer transition-colors
+              ${isActive 
+                ? 'bg-[var(--pos-surface-raised)] border-t-[var(--pos-action-primary)] text-[var(--pos-text-primary)] font-black' 
+                : 'bg-transparent border-t-transparent text-[var(--pos-text-muted)] hover:text-[var(--pos-text-primary)]'
+              }`}
+          >
+            <Icon className={`w-4 h-4 md:w-5 md:h-5 shrink-0 ${isActive ? 'text-[var(--pos-text-primary)]' : 'text-[var(--pos-text-muted)]'}`} />
+            <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest">{item.label}</span>
+          </button>
+        );
+      });
+    }
+
+    if (currentMode === 'kds') {
+      return kdsNavItems.map((item) => {
+        const isActive = currentKdsSection === item.id;
+        const Icon = item.icon;
+        return (
+          <button
+            key={item.id}
+            id={`nav-kds-${item.id}`}
+            onClick={() => setCurrentKdsSection(item.id)}
+            className={`flex-1 h-full font-mono text-center flex items-center justify-center gap-2 border-t-2 select-none cursor-pointer transition-colors ${
+              isActive ? 'bg-[var(--pos-surface-raised)] border-t-[var(--pos-action-primary)] text-[var(--pos-text-primary)] font-black' : 'border-t-transparent text-[var(--pos-text-muted)]'
+            }`}
+          >
+            <Icon className="w-5 h-5 shrink-0" />
+            <span className="text-xs font-bold uppercase tracking-widest">{item.label}</span>
+          </button>
+        );
+      });
+    }
+
+    return (
+      <div className="flex-1 h-full flex items-center justify-center font-mono text-xs font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">
+        {modeItems.find((item) => item.id === currentMode)?.label}
+      </div>
+    );
+  };
 
   function UtensilsIcon(props: any) {
     return <ReceiptText {...props} />; // fallback for dishes
@@ -162,7 +247,7 @@ function POSAppShellContent() {
           <div 
             className={`w-10 h-10 border border-[var(--pos-border)] flex items-center justify-center rounded-none
               ${syncStatus === 'online' ? 'text-[var(--pos-status-success)]' : 'text-[var(--pos-status-danger)] animate-pulse'}`}
-            title={syncStatus === 'online' ? 'Терминал подключен к Cloud' : 'Автономный режим'}
+            title={syncStatus === 'online' ? t.modes.terminalOnlineTitle : t.modes.terminalOfflineTitle}
           >
             {syncStatus === 'online' ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
           </div>
@@ -199,25 +284,7 @@ function POSAppShellContent() {
       {/* 3. Bottom quick access navigation bar */}
       <footer className="h-14 border-t border-[var(--pos-border)] bg-[var(--pos-surface)] flex items-center justify-between select-none shrink-0 select-none">
         <div className="flex w-full divide-x divide-[var(--pos-border)] h-full overflow-hidden">
-          {navItems.map((item) => {
-            const isActive = currentSection === item.id;
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                id={`nav-${item.id}`}
-                onClick={() => handleSectionSelect(item.id)}
-                className={`flex-1 h-full font-mono text-center flex flex-col md:flex-row items-center justify-center gap-1.5 border-t-2 select-none whitespace-nowrap cursor-pointer transition-colors
-                  ${isActive 
-                    ? 'bg-[var(--pos-surface-raised)] border-t-[var(--pos-action-primary)] text-[var(--pos-text-primary)] font-black' 
-                    : 'bg-transparent border-t-transparent text-[var(--pos-text-muted)] hover:text-[var(--pos-text-primary)]'
-                  }`}
-              >
-                <Icon className={`w-4 h-4 md:w-5 md:h-5 shrink-0 ${isActive ? 'text-[var(--pos-text-primary)]' : 'text-[var(--pos-text-muted)]'}`} />
-                <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest">{item.label}</span>
-              </button>
-            );
-          })}
+          {renderBottomNavigation()}
         </div>
       </footer>
 
@@ -261,16 +328,16 @@ function POSAppShellContent() {
                 </button>
               </div>
 
-              {/* Navigator options */}
+              {/* Mode navigator options */}
               <div className="py-4 space-y-1">
-                {navItems.map((item) => {
-                  const isActive = currentSection === item.id;
+                {modeItems.map((item) => {
+                  const isActive = currentMode === item.id;
                   const Icon = item.icon;
                   return (
                     <button
                       key={item.id}
-                      id={`drawer-nav-${item.id}`}
-                      onClick={() => handleSectionSelect(item.id)}
+                      id={`drawer-mode-${item.id}`}
+                      onClick={() => handleModeSelect(item.id)}
                       className={`w-full h-12 px-6 flex items-center gap-4 text-left font-mono font-semibold transition-colors border-none cursor-pointer
                         ${isActive 
                           ? 'bg-[var(--pos-action-secondary)] text-[var(--pos-text-primary)] font-bold border-l-4 border-l-[var(--pos-action-primary)]' 
@@ -279,6 +346,7 @@ function POSAppShellContent() {
                     >
                       <Icon className="w-4.5 h-4.5 shrink-0" />
                       <span className="text-xs uppercase tracking-wider">{item.label}</span>
+                      {'badge' in item && item.badge && <span className="ml-auto text-[8px] border border-amber-500 text-amber-600 px-1 uppercase">{item.badge}</span>}
                     </button>
                   );
                 })}
@@ -292,17 +360,19 @@ function POSAppShellContent() {
               {currentOperator?.role === 'waiter' && (
                 <div className="p-3 border border-red-200 bg-red-50/10 text-red-500 rounded-none flex items-start gap-1.5 text-[10px]">
                   <ShieldAlert className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
-                  <span>Режим официанта: права на прием платежей и возврат ограничены.</span>
+                  <span>{t.blocks.waiterNotice}</span>
                 </div>
               )}
 
               {/* Mini Diagnostic strip */}
-              <div className="space-y-1 font-mono text-[9px] text-[var(--pos-text-muted)] uppercase tracking-widest leading-none select-none">
-                <div>Версия БД: {appVersion}</div>
-                <div>Буфер Outbox: {outboxCount} событий</div>
+              <div className="space-y-1.5 font-mono text-[9px] text-[var(--pos-text-muted)] uppercase tracking-widest leading-none select-none">
+                <div className="font-bold text-[var(--pos-text-secondary)]">{t.modes.serviceData}</div>
+                <div>{t.modes.cloudRevision}: {syncRevision || 'н/д'}</div>
+                <div>{t.modes.edgeDbVersion}: {appVersion}</div>
+                <div>{t.modes.eventBuffer}: {outboxCount}</div>
                 <div className="flex items-center gap-1 mt-1 font-bold">
                   <div className={`w-1.5 h-1.5 rounded-full ${syncStatus === 'online' ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`} />
-                  <span>{syncStatus === 'online' ? 'Связь с Cloud стабильна' : 'Работа в офлаин-режиме'}</span>
+                  <span>{syncStatus === 'online' ? t.modes.connectionOnline : t.modes.connectionOffline}</span>
                 </div>
               </div>
 
@@ -326,6 +396,37 @@ function POSAppShellContent() {
         </div>
       )}
 
+    </div>
+  );
+}
+
+type TerminalMode = 'pos' | 'kds' | 'waiter' | 'delivery';
+
+function ModePlaceholder({ title, tone = 'neutral' }: { title: string; tone?: 'neutral' | 'warning' }) {
+  return (
+    <div className="flex-1 min-h-0 flex items-center justify-center bg-[var(--pos-bg)] p-8">
+      <div className={`max-w-md w-full border ${tone === 'warning' ? 'border-amber-300 text-amber-600' : 'border-[var(--pos-border)] text-[var(--pos-text-secondary)]'} bg-[var(--pos-surface)] p-8 text-center`}>
+        <span className="font-mono text-xs font-black uppercase tracking-widest">{title}</span>
+      </div>
+    </div>
+  );
+}
+
+function WaiterQrView({ waiterUrl }: { waiterUrl: string }) {
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(waiterUrl)}`;
+  return (
+    <div className="flex-1 min-h-0 flex items-center justify-center bg-[var(--pos-bg)] p-8">
+      <div className="w-full max-w-sm border border-[var(--pos-border)] bg-[var(--pos-surface)] p-6 text-center space-y-4">
+        <QrCode className="w-8 h-8 mx-auto text-[var(--pos-text-secondary)]" />
+        <div>
+          <h2 className="font-sans text-lg font-bold text-[var(--pos-text-primary)]">{t.modes.waiterQrTitle}</h2>
+          <p className="font-sans text-xs text-[var(--pos-text-muted)] mt-1">{t.modes.waiterQrDesc}</p>
+        </div>
+        <img className="mx-auto w-[220px] h-[220px] border border-[var(--pos-border)] bg-white" src={qrUrl} alt={t.modes.waiterQrTitle} />
+        <div className="font-mono text-[11px] text-[var(--pos-text-secondary)] break-all border border-[var(--pos-border)] p-2">
+          {waiterUrl}
+        </div>
+      </div>
     </div>
   );
 }

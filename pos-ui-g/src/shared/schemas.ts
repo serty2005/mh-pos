@@ -141,6 +141,9 @@ export const menuItemSchema = z.object({
       active: z.boolean(),
     })).optional().default([]),
   })).optional().default([]),
+  stop_list_active: z.boolean().optional(),
+  stop_list_blocked: z.boolean().optional(),
+  stop_list_available_quantity: z.number().optional(),
   active: z.boolean(),
   created_at: z.string(),
   updated_at: z.string(),
@@ -369,6 +372,27 @@ export const syncStatusSchema = z.object({
   failed: z.number(),
   suspended: z.number(),
   oldest_pending_sequence_no: z.number().optional(),
+  last_cloud_version: z.number().optional().default(0),
+});
+
+export const pricingCalculationLineSchema = z.object({
+  order_line_id: z.string(),
+  subtotal_minor: z.number(),
+  discount_total_minor: z.number().optional().default(0),
+  surcharge_total_minor: z.number().optional().default(0),
+  tax_total_minor: z.number().optional().default(0),
+  total_minor: z.number(),
+});
+
+export const pricingCalculationSchema = z.object({
+  subtotal_minor: z.number(),
+  discount_total_minor: z.number().optional().default(0),
+  surcharge_total_minor: z.number().optional().default(0),
+  tax_total_minor: z.number().optional().default(0),
+  grand_total_minor: z.number(),
+  lines: z.array(pricingCalculationLineSchema).optional().default([]),
+  discounts: z.array(z.unknown()).nullable().optional(),
+  surcharges: z.array(z.unknown()).nullable().optional(),
 });
 
 export const outboxMessageSchema = z.object({
@@ -453,5 +477,6 @@ export type BackendPrecheck = z.infer<typeof precheckSchema>;
 export type BackendProvisioningStatus = z.infer<typeof provisioningStatusSchema>;
 export type BackendShift = z.infer<typeof shiftSchema>;
 export type BackendSyncStatus = z.infer<typeof syncStatusSchema>;
+export type BackendPricingCalculation = z.infer<typeof pricingCalculationSchema>;
 export type BackendStorageStatus = z.infer<typeof storageStatusSchema>;
 export type BackendTable = z.infer<typeof tableSchema>;

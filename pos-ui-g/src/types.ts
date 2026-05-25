@@ -14,10 +14,14 @@ export interface ModifierGroup {
 
 export interface MenuItem {
   id: string;
+  catalogItemId: string;
   name: string;
   price: number;
   category: string;
   isAvailable: boolean;
+  stopListActive?: boolean;
+  stopListBlocked?: boolean;
+  stopListAvailableQuantity?: number;
   modifierGroups?: ModifierGroup[];
   hasImage?: boolean; // Waiter menu items
 }
@@ -48,6 +52,7 @@ export interface OrderLine {
   itemId: string;
   name: string;
   price: number;
+  totalPrice: number;
   quantity: number;
   selectedModifiers: SelectedModifier[];
   comment?: string;

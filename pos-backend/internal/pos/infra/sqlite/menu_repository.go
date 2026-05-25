@@ -14,7 +14,12 @@ func (r *Repository) CreateMenuItem(ctx context.Context, v *domain.MenuItem) err
 }
 
 func (r *Repository) ListMenuItems(ctx context.Context) ([]domain.MenuItem, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT m.id,m.catalog_item_id,COALESCE(c.type,''),m.name,m.price,m.currency,m.tax_profile_id,m.active,m.created_at,m.updated_at FROM menu_items m LEFT JOIN catalog_items c ON c.id = m.catalog_item_id ORDER BY m.created_at`)
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT m.id,m.catalog_item_id,COALESCE(c.type,''),m.name,m.price,m.currency,m.tax_profile_id,m.active,m.created_at,m.updated_at,
+COALESCE(sl.active,0),sl.available_quantity
+FROM menu_items m
+LEFT JOIN catalog_items c ON c.id = m.catalog_item_id
+LEFT JOIN stop_lists sl ON sl.catalog_item_id = m.catalog_item_id AND sl.active = 1 AND sl.cloud_deleted_at IS NULL
+ORDER BY m.created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -22,13 +27,16 @@ func (r *Repository) ListMenuItems(ctx context.Context) ([]domain.MenuItem, erro
 	for rows.Next() {
 		var v domain.MenuItem
 		var active int
+		var stopListActive int
 		var created, updated string
 		var taxProfileID sql.NullString
-		if err := rows.Scan(&v.ID, &v.CatalogItemID, &v.ItemType, &v.Name, &v.Price, &v.Currency, &taxProfileID, &active, &created, &updated); err != nil {
+		var stopListQuantity sql.NullFloat64
+		if err := rows.Scan(&v.ID, &v.CatalogItemID, &v.ItemType, &v.Name, &v.Price, &v.Currency, &taxProfileID, &active, &created, &updated, &stopListActive, &stopListQuantity); err != nil {
 			return nil, err
 		}
 		v.TaxProfileID = stringPtr(taxProfileID)
 		v.Active = active == 1
+		applyMenuStopListOverlay(&v, stopListActive, stopListQuantity)
 		v.CreatedAt = parseTime(created)
 		v.UpdatedAt = parseTime(updated)
 		out = append(out, v)
@@ -51,21 +59,43 @@ func (r *Repository) ListMenuItems(ctx context.Context) ([]domain.MenuItem, erro
 func (r *Repository) GetMenuItem(ctx context.Context, id string) (*domain.MenuItem, error) {
 	var v domain.MenuItem
 	var active int
+	var stopListActive int
 	var created, updated string
 	var taxProfileID sql.NullString
-	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT m.id,m.catalog_item_id,COALESCE(c.type,''),m.name,m.price,m.currency,m.tax_profile_id,m.active,m.created_at,m.updated_at FROM menu_items m LEFT JOIN catalog_items c ON c.id = m.catalog_item_id WHERE m.id = ?`, id).
-		Scan(&v.ID, &v.CatalogItemID, &v.ItemType, &v.Name, &v.Price, &v.Currency, &taxProfileID, &active, &created, &updated)
+	var stopListQuantity sql.NullFloat64
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT m.id,m.catalog_item_id,COALESCE(c.type,''),m.name,m.price,m.currency,m.tax_profile_id,m.active,m.created_at,m.updated_at,
+COALESCE(sl.active,0),sl.available_quantity
+FROM menu_items m
+LEFT JOIN catalog_items c ON c.id = m.catalog_item_id
+LEFT JOIN stop_lists sl ON sl.catalog_item_id = m.catalog_item_id AND sl.active = 1 AND sl.cloud_deleted_at IS NULL
+WHERE m.id = ?`, id).
+		Scan(&v.ID, &v.CatalogItemID, &v.ItemType, &v.Name, &v.Price, &v.Currency, &taxProfileID, &active, &created, &updated, &stopListActive, &stopListQuantity)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
 	v.Active = active == 1
 	v.TaxProfileID = stringPtr(taxProfileID)
+	applyMenuStopListOverlay(&v, stopListActive, stopListQuantity)
 	v.CreatedAt = parseTime(created)
 	v.UpdatedAt = parseTime(updated)
 	if err := r.hydrateMenuItemModifiers(ctx, &v); err != nil {
 		return nil, err
 	}
 	return &v, nil
+}
+
+func applyMenuStopListOverlay(item *domain.MenuItem, active int, available sql.NullFloat64) {
+	item.StopListActive = active == 1
+	if !item.StopListActive {
+		return
+	}
+	if available.Valid {
+		value := available.Float64
+		item.StopListAvailableQuantity = &value
+		item.StopListBlocked = value <= 0
+		return
+	}
+	item.StopListBlocked = true
 }
 
 func (r *Repository) hydrateMenuItemModifiers(ctx context.Context, item *domain.MenuItem) error {

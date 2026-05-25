@@ -58,7 +58,7 @@ func (r *Repository) ListOutbox(ctx context.Context, limit int) ([]domain.Outbox
 
 func (r *Repository) GetSyncStatus(ctx context.Context) (domain.SyncStatus, error) {
 	var status domain.SyncStatus
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT status, COUNT(1) FROM pos_sync_outbox GROUP BY status`)
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT status, COUNT(1) FROM pos_sync_outbox WHERE sync_direction = 'edge_to_cloud' GROUP BY status`)
 	if err != nil {
 		return status, err
 	}
@@ -87,10 +87,17 @@ func (r *Repository) GetSyncStatus(ctx context.Context) (domain.SyncStatus, erro
 		return status, err
 	}
 	var oldest sql.NullInt64
-	if err := r.queryer(ctx).QueryRowContext(ctx, `SELECT MIN(sequence_no) FROM pos_sync_outbox WHERE status = 'pending'`).Scan(&oldest); err != nil {
+	if err := r.queryer(ctx).QueryRowContext(ctx, `SELECT MIN(sequence_no) FROM pos_sync_outbox WHERE sync_direction = 'edge_to_cloud' AND status = 'pending'`).Scan(&oldest); err != nil {
 		return status, normalizeErr(err)
 	}
 	status.OldestPendingSequenceNo = int64Ptr(oldest)
+	var lastCloudVersion sql.NullInt64
+	if err := r.queryer(ctx).QueryRowContext(ctx, `SELECT MAX(last_cloud_version) FROM cloud_master_sync_state WHERE direction = 'cloud_to_edge' AND status = 'applied'`).Scan(&lastCloudVersion); err != nil {
+		return status, normalizeErr(err)
+	}
+	if lastCloudVersion.Valid {
+		status.LastCloudVersion = lastCloudVersion.Int64
+	}
 	return status, nil
 }
 

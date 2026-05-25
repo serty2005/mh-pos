@@ -27,6 +27,7 @@ import type {
   BackendMenuItem,
   BackendOrder,
   BackendPrecheck,
+  BackendPricingCalculation,
   BackendProvisioningStatus,
   BackendPricingPolicy,
   BackendShift,
@@ -99,6 +100,7 @@ interface POSContextType {
   outboxCount: number;
   syncOutbox: () => Promise<void>;
   syncStatus: 'online' | 'offline';
+  syncRevision: number;
   appVersion: string;
   logEvents: LogEvent[];
   addLogEvent: (msg: string, type?: 'info' | 'warn' | 'success') => void;
@@ -152,6 +154,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [menuDto, setMenuDto] = useState<BackendMenuItem[]>([]);
   const [pricingPoliciesDto, setPricingPoliciesDto] = useState<BackendPricingPolicy[]>([]);
   const [prechecksDto, setPrechecksDto] = useState<BackendPrecheck[]>([]);
+  const [currentPricingDto, setCurrentPricingDto] = useState<BackendPricingCalculation | null>(null);
   const [closedOrdersDto, setClosedOrdersDto] = useState<BackendClosedOrder[]>([]);
   const [syncStatusDto, setSyncStatusDto] = useState<BackendSyncStatus | null>(null);
   const [storageStatusDto, setStorageStatusDto] = useState<BackendStorageStatus | null>(null);
@@ -318,17 +321,27 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPrechecksDto(await api.listPrechecksByOrder(id));
   }, [activeOrdersDto, api, selectedTableId]);
 
+  const refreshCurrentPricing = useCallback(async (orderId?: string) => {
+    const id = orderId ?? activeOrdersDto.find((order) => order.table_id === selectedTableId)?.id;
+    if (!id || !authRef.current.sessionId) {
+      setCurrentPricingDto(null);
+      return;
+    }
+    setCurrentPricingDto(await api.getOrderPricing(id).catch(() => null));
+  }, [activeOrdersDto, api, selectedTableId]);
+
   const refreshActivity = useCallback(async () => {
     if (!authRef.current.sessionId) return;
+    const canViewSync = actor?.permissions.includes('pos.sync.view') ?? false;
     const [closedOrders, sync, storage] = await Promise.all([
       api.listClosedOrders(50).catch(() => []),
-      api.getSyncStatus().catch(() => null),
-      api.getStorageStatus().catch(() => null),
+      canViewSync ? api.getSyncStatus().catch(() => null) : Promise.resolve(null),
+      canViewSync ? api.getStorageStatus().catch(() => null) : Promise.resolve(null),
     ]);
     setClosedOrdersDto(closedOrders);
     setSyncStatusDto(sync);
     setStorageStatusDto(storage);
-  }, [api]);
+  }, [actor, api]);
 
   const refreshAll = useCallback(async () => {
     try {
@@ -336,11 +349,12 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await refreshDirectory();
       await refreshFloor();
       await refreshCurrentPrechecks();
+      await refreshCurrentPricing();
       await refreshActivity();
     } catch (error) {
       handleError(error, 'Не удалось обновить состояние POS');
     }
-  }, [handleError, refreshActivity, refreshCurrentPrechecks, refreshDirectory, refreshFloor, refreshOps]);
+  }, [handleError, refreshActivity, refreshCurrentPrechecks, refreshCurrentPricing, refreshDirectory, refreshFloor, refreshOps]);
 
   useEffect(() => {
     void refreshIdentity();
@@ -382,14 +396,18 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     void refreshCurrentPrechecks();
   }, [refreshCurrentPrechecks]);
 
+  useEffect(() => {
+    void refreshCurrentPricing();
+  }, [refreshCurrentPricing]);
+
   const activePrecheck = useMemo(() => activeIssuedPrecheck(prechecksDto), [prechecksDto]);
   const backendCurrentOrder = useMemo(
     () => activeOrdersDto.find((order) => order.table_id === selectedTableId) ?? null,
     [activeOrdersDto, selectedTableId],
   );
   const currentOrder = useMemo(
-    () => backendCurrentOrder ? mapOrder(backendCurrentOrder, activePrecheck) : null,
-    [activePrecheck, backendCurrentOrder],
+    () => backendCurrentOrder ? applyPricingToOrder(mapOrder(backendCurrentOrder, activePrecheck), currentPricingDto) : null,
+    [activePrecheck, backendCurrentOrder, currentPricingDto],
   );
   const activeOrders = useMemo(() => activeOrdersDto.map((order) => mapOrder(order, null)), [activeOrdersDto]);
   const tables = useMemo(
@@ -403,7 +421,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const closedOrders = useMemo(() => closedOrdersDto.map((item) => mapClosedOrder(item)), [closedOrdersDto]);
   const menuItems = useMemo(() => menuDto.map(mapMenuItem), [menuDto]);
   const pricingPolicies = useMemo(() => pricingPoliciesDto.map(mapPricingPolicy), [pricingPoliciesDto]);
-  const syncStatus = mapSyncStatus(syncStatusDto);
+  const syncStatus = syncStatusDto ? mapSyncStatus(syncStatusDto) : isEdgePaired ? 'online' : 'offline';
+  const syncRevision = syncStatusDto?.last_cloud_version ?? 0;
   const appVersion = useMemo(() => {
     const runtime = storageStatusDto?.runtime_versions.find((item) => item.module_name === 'pos-backend') ?? storageStatusDto?.runtime_versions[0];
     const schemaVersion = runtime?.schema_version || storageStatusDto?.schema_migrations[0]?.version || '';
@@ -547,12 +566,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await api.addOrderLine(backendCurrentOrder.id, item.id, 1, selectedModifiersToPayload(selectedModifiers));
       await refreshFloor();
       await refreshCurrentPrechecks(backendCurrentOrder.id);
+      await refreshCurrentPricing(backendCurrentOrder.id);
       return { success: true };
     } catch (error) {
       handleError(error, 'Не удалось добавить позицию');
       return { success: false, errorKey: 'errors.conflict' };
     }
-  }, [api, backendCurrentOrder, handleError, refreshCurrentPrechecks, refreshFloor]);
+  }, [api, backendCurrentOrder, handleError, refreshCurrentPrechecks, refreshCurrentPricing, refreshFloor]);
 
   const editOrderLineModifiers = useCallback(async (lineId: string, selectedModifiers: SelectedModifier[]): Promise<CommandResult> => {
     if (!backendCurrentOrder) return { success: false, errorKey: 'blocks.noOrderSelected' };
@@ -560,12 +580,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await api.updateOrderLineModifiers(backendCurrentOrder.id, lineId, selectedModifiersToPayload(selectedModifiers));
       await refreshFloor();
       await refreshCurrentPrechecks(backendCurrentOrder.id);
+      await refreshCurrentPricing(backendCurrentOrder.id);
       return { success: true };
     } catch (error) {
       handleError(error, 'Не удалось обновить модификаторы');
       return { success: false, errorKey: 'errors.conflict' };
     }
-  }, [api, backendCurrentOrder, handleError, refreshCurrentPrechecks, refreshFloor]);
+  }, [api, backendCurrentOrder, handleError, refreshCurrentPrechecks, refreshCurrentPricing, refreshFloor]);
 
   const applyPricingPolicy = useCallback(async (policyId: string, orderLineId = '', reason = ''): Promise<CommandResult> => {
     if (!backendCurrentOrder) return { success: false, errorKey: 'blocks.noOrderSelected' };
@@ -580,23 +601,25 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addLogEvent(`Применена настройка цены: ${policy.name}.`, 'success');
       await refreshFloor();
       await refreshCurrentPrechecks(backendCurrentOrder.id);
+      await refreshCurrentPricing(backendCurrentOrder.id);
       await refreshActivity();
       return { success: true };
     } catch (error) {
       handleError(error, 'Не удалось применить скидку или надбавку');
       return { success: false, errorKey: 'errors.conflict' };
     }
-  }, [addLogEvent, api, backendCurrentOrder, handleError, pricingPoliciesDto, refreshActivity, refreshCurrentPrechecks, refreshFloor]);
+  }, [addLogEvent, api, backendCurrentOrder, handleError, pricingPoliciesDto, refreshActivity, refreshCurrentPrechecks, refreshCurrentPricing, refreshFloor]);
 
   const removeOrderLine = useCallback(async (lineId: string) => {
     if (!backendCurrentOrder) return;
     try {
       await api.voidOrderLine(backendCurrentOrder.id, lineId, 'Удаление позиции на POS');
       await refreshFloor();
+      await refreshCurrentPricing(backendCurrentOrder.id);
     } catch (error) {
       handleError(error, 'Не удалось удалить позицию');
     }
-  }, [api, backendCurrentOrder, handleError, refreshFloor]);
+  }, [api, backendCurrentOrder, handleError, refreshCurrentPricing, refreshFloor]);
 
   const changeLineQuantity = useCallback(async (lineId: string, newQty: number): Promise<CommandResult> => {
     if (!backendCurrentOrder) return { success: false, errorKey: 'blocks.noOrderSelected' };
@@ -606,23 +629,25 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         await api.changeOrderLineQuantity(backendCurrentOrder.id, lineId, newQty);
         await refreshFloor();
+        await refreshCurrentPricing(backendCurrentOrder.id);
       }
       return { success: true };
     } catch (error) {
       handleError(error, 'Не удалось изменить количество');
       return { success: false, errorKey: 'errors.conflict' };
     }
-  }, [api, backendCurrentOrder, handleError, refreshFloor, removeOrderLine]);
+  }, [api, backendCurrentOrder, handleError, refreshCurrentPricing, refreshFloor, removeOrderLine]);
 
   const updateCommentAndCourse = useCallback(async (lineId: string, comment: string, course: number) => {
     if (!backendCurrentOrder) return;
     try {
       await api.updateOrderLineDetails(backendCurrentOrder.id, lineId, String(course), comment);
       await refreshFloor();
+      await refreshCurrentPricing(backendCurrentOrder.id);
     } catch (error) {
       handleError(error, 'Не удалось обновить позицию');
     }
-  }, [api, backendCurrentOrder, handleError, refreshFloor]);
+  }, [api, backendCurrentOrder, handleError, refreshCurrentPricing, refreshFloor]);
 
   const issuePrecheck = useCallback(async () => {
     if (!backendCurrentOrder) return;
@@ -788,6 +813,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     outboxCount: outboxCount(syncStatusDto),
     syncOutbox,
     syncStatus,
+    syncRevision,
     appVersion,
     logEvents,
     addLogEvent,
@@ -849,6 +875,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncOutbox,
     syncStatus,
     syncStatusDto,
+    syncRevision,
     tables,
     theme,
     toggleTheme,
@@ -874,3 +901,19 @@ export const usePOSMenuItems = () => {
   }
   return context;
 };
+
+function applyPricingToOrder(order: Order, pricing: BackendPricingCalculation | null): Order {
+  if (!pricing) return order;
+  const lineTotals = new Map(pricing.lines.map((line) => [line.order_line_id, line.total_minor]));
+  return {
+    ...order,
+    subtotal: pricing.subtotal_minor,
+    tax: pricing.tax_total_minor,
+    discount: pricing.discount_total_minor,
+    total: pricing.grand_total_minor,
+    lines: order.lines.map((line) => ({
+      ...line,
+      totalPrice: lineTotals.get(line.id) ?? line.totalPrice,
+    })),
+  };
+}

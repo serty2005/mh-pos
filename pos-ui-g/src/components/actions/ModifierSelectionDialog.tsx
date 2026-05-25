@@ -57,7 +57,9 @@ export const ModifierSelectionDialog: React.FC<ModifierSelectionDialogProps> = (
       const isCurrentlySelected = prev.some(sel => sel.optionId === optionId);
 
       if (group.maxAllowed === 1) {
-        // Single choice selection
+        if (isCurrentlySelected && group.minRequired === 0) {
+          return filteredGroup;
+        }
         return [
           ...filteredGroup,
           { groupId: group.id, groupName: group.name, optionId, optionName, price: optionPrice }

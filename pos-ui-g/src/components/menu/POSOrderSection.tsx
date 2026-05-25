@@ -57,6 +57,7 @@ export const POSOrderSection: React.FC = () => {
   // Search and Category filters
   const [activeCategory, setActiveCategory] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [hideStopListed, setHideStopListed] = useState<boolean>(false);
 
   // Skeletons loader simulated transition
   const [loading, setLoading] = useState<boolean>(false);
@@ -94,7 +95,8 @@ export const POSOrderSection: React.FC = () => {
   const filteredItems = menuItems.filter(item => {
     const matchCat = !activeCategory || item.category === activeCategory;
     const matchSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchCat && matchSearch;
+    const matchStopList = !hideStopListed || !item.stopListActive;
+    return matchCat && matchSearch && matchStopList;
   });
 
   const handleCategoryChange = (catId: string) => {
@@ -109,7 +111,7 @@ export const POSOrderSection: React.FC = () => {
     setStopListAlertProduct(null);
 
     // Stop list handling
-    if (!item.isAvailable) {
+    if (!item.isAvailable || item.stopListBlocked) {
       setStopListAlertProduct(item.name);
       return;
     }
@@ -146,6 +148,7 @@ export const POSOrderSection: React.FC = () => {
   };
 
   const selectedPricingPolicy = pricingPolicies.find((policy) => policy.id === selectedPricingPolicyId) ?? pricingPolicies[0];
+  const selectedActionMenuItem = clickedLineForActions ? menuItems.find((menuItem) => menuItem.id === clickedLineForActions.itemId) : null;
 
   const openPricingDialog = () => {
     const firstPolicy = pricingPolicies[0];
@@ -222,6 +225,17 @@ export const POSOrderSection: React.FC = () => {
               </button>
             )}
           </div>
+          <button
+            type="button"
+            onClick={() => setHideStopListed((value) => !value)}
+            className={`h-11 px-4 border font-mono text-[10px] uppercase font-extrabold shrink-0 rounded-none ${
+              hideStopListed
+                ? 'bg-[var(--pos-action-primary)] text-[var(--pos-surface)] border-[var(--pos-action-primary)]'
+                : 'bg-[var(--pos-surface)] text-[var(--pos-text-secondary)] border-[var(--pos-border)]'
+            }`}
+          >
+            {t.menu.notInStopList}
+          </button>
         </div>
 
         {/* Local warning panels if any alerts triggered */}
@@ -264,7 +278,7 @@ export const POSOrderSection: React.FC = () => {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 p-1">
               {filteredItems.map((item) => {
-                const isAvailable = item.isAvailable;
+                const isAvailable = item.isAvailable && !item.stopListBlocked;
                 const hasModifiers = item.modifierGroups && item.modifierGroups.length > 0;
                 
                 return (
@@ -295,7 +309,12 @@ export const POSOrderSection: React.FC = () => {
                       )}
                       {!isAvailable && (
                         <span className="font-mono text-[8px] uppercase font-mono px-1 border border-red-500 text-red-500 font-bold shrink-0 bg-white">
-                          Стоп
+                          ×
+                        </span>
+                      )}
+                      {item.stopListActive && !item.stopListBlocked && item.stopListAvailableQuantity !== undefined && (
+                        <span className="font-mono text-[8px] uppercase px-1 border border-amber-500 text-amber-600 font-bold shrink-0 bg-white">
+                          {t.menu.stopListQty}: {item.stopListAvailableQuantity}
                         </span>
                       )}
                     </div>
@@ -344,13 +363,16 @@ export const POSOrderSection: React.FC = () => {
                     <div 
                       key={line.id} 
                       id={`order-line-${line.id}`}
-                      className="p-4 flex flex-col gap-2 bg-[var(--pos-surface)] hover:bg-[var(--pos-surface-raised)]/30 transition-colors"
+                      data-order-line-id={line.id}
+                      onClick={() => {
+                        if (!isLocked) handleLineClick(line);
+                      }}
+                      className="p-4 flex flex-col gap-2 bg-[var(--pos-surface)] hover:bg-[var(--pos-surface-raised)]/30 transition-colors cursor-pointer"
                     >
                       {/* Name of item and selections */}
                       <div className="flex items-start justify-between gap-1.5 select-none text-[var(--pos-text-primary)]">
                         <div 
-                          className="flex-1 min-w-0 cursor-pointer"
-                          onClick={() => handleLineClick(line)}
+                          className="flex-1 min-w-0"
                         >
                           <span className="font-sans text-xs font-semibold leading-relaxed hover:underline block truncate">
                             {line.name}
@@ -383,25 +405,11 @@ export const POSOrderSection: React.FC = () => {
                             </div>
                           )}
                         </div>
-                        {menuItems.find((menuItem) => menuItem.id === line.itemId)?.modifierGroups?.length ? (
-                          <button
-                            type="button"
-                            className="w-8 h-8 border border-[var(--pos-border)] flex items-center justify-center text-[var(--pos-text-secondary)] hover:bg-[var(--pos-surface-raised)] disabled:opacity-40"
-                            disabled={isLocked}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openLineModifierEditor(line);
-                            }}
-                            aria-label="Изменить модификаторы"
-                          >
-                            <SlidersHorizontal className="w-4 h-4" />
-                          </button>
-                        ) : null}
                         <span className="font-mono text-xs font-black tracking-tight shrink-0">{line.price} ₽</span>
                       </div>
 
                       {/* Line Counts controls / Quantities */}
-                      <div className="flex items-center justify-between mt-1">
+                      <div className="flex items-center justify-between mt-1" onClick={(event) => event.stopPropagation()}>
                         <PosQuantityStepper
                           id={`line-qty-${line.id}`}
                           value={line.quantity}
@@ -410,7 +418,7 @@ export const POSOrderSection: React.FC = () => {
                         />
 
                         <span className="font-mono text-xs font-black text-[var(--pos-text-primary)]">
-                          {line.price * line.quantity} ₽
+                          {line.totalPrice} ₽
                         </span>
                       </div>
                     </div>
@@ -571,9 +579,13 @@ export const POSOrderSection: React.FC = () => {
         isOpen={isActionsModalOpen}
         onClose={() => setActionsModalOpen(false)}
         line={clickedLineForActions}
-        onUpdateLine={(comment, course) => {
+        menuItem={selectedActionMenuItem}
+        onUpdateLine={(comment, course, modifiers) => {
           if (clickedLineForActions) {
             updateCommentAndCourse(clickedLineForActions.id, comment, course);
+            if (selectedActionMenuItem?.modifierGroups?.length) {
+              editOrderLineModifiers(clickedLineForActions.id, modifiers);
+            }
           }
         }}
         onDeleteLine={() => {

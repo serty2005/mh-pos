@@ -9,6 +9,7 @@ import {
   menuItemSchema,
   orderLineSchema,
   orderSchema,
+  pricingCalculationSchema,
   outboxMessageSchema,
   pairingStatusSchema,
   paymentSchema,
@@ -271,6 +272,7 @@ export function createApiClient(getAuth: () => AuthSnapshot, base = (viteEnv.env
     getCurrentOrderByTable: (tableId: string) => requestOptional(`/orders/current?${new URLSearchParams({ table_id: tableId })}`, orderSchema),
     listActiveOrdersByHall: (hallId: string) => request(`/orders/active?${new URLSearchParams({ hall_id: hallId })}`, z.array(orderSchema)),
     getOrder: (orderId: string) => request(`/orders/${encodeURIComponent(orderId)}`, orderSchema),
+    getOrderPricing: (orderId: string) => request(`/orders/${encodeURIComponent(orderId)}/pricing`, pricingCalculationSchema),
     createOrder: (tableId: string, tableName: string, guestCount: number) => request('/orders', orderSchema, {
       method: 'POST',
       body: JSON.stringify({

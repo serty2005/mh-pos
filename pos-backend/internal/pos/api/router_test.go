@@ -904,10 +904,13 @@ func TestSyncStatusAPI(t *testing.T) {
 	clock := &apiFixedClock{}
 	now := appshared.DBTime(clock.Now())
 
-	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'failed', attempts = 1, last_error = 'temporary', updated_at = ? WHERE id = ?`, now, ids[0]); err != nil {
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET sync_direction = 'local_only'`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'processing', locked_at = ?, locked_by = 'api-worker', updated_at = ? WHERE id = ?`, now, now, ids[1]); err != nil {
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET sync_direction = 'edge_to_cloud', status = 'failed', attempts = 1, last_error = 'temporary', updated_at = ? WHERE id = ?`, now, ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET sync_direction = 'edge_to_cloud', status = 'processing', locked_at = ?, locked_by = 'api-worker', updated_at = ? WHERE id = ?`, now, now, ids[1]); err != nil {
 		t.Fatal(err)
 	}
 
@@ -916,12 +919,15 @@ func TestSyncStatusAPI(t *testing.T) {
 		t.Fatalf("expected 403 for cashier sync status access, got %d: %s", rr.Code, rr.Body.String())
 	}
 	f.useManagerOperator(t)
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET sync_direction = 'local_only' WHERE id NOT IN (?, ?)`, ids[0], ids[1]); err != nil {
+		t.Fatal(err)
+	}
 	rr = f.get(t, "/api/v1/sync/status")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 	status := decodeAPIResponse[domain.SyncStatus](t, rr)
-	if status.Total != countAPIRows(t, f, "pos_sync_outbox") || status.Failed != 1 || status.Processing != 1 {
+	if status.Total != 2 || status.Failed != 1 || status.Processing != 1 {
 		t.Fatalf("unexpected sync status: %+v", status)
 	}
 }

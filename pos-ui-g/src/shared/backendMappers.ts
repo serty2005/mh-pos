@@ -55,10 +55,14 @@ export function mapTable(table: BackendTable, activeOrder?: BackendOrder | null)
 export function mapMenuItem(item: BackendMenuItem): MenuItem {
   return {
     id: item.id,
+    catalogItemId: item.catalog_item_id,
     name: item.name,
     price: item.price,
     category: item.item_type === 'service' ? 'services' : item.item_type,
-    isAvailable: item.active,
+    isAvailable: item.active && !item.stop_list_blocked,
+    stopListActive: item.stop_list_active ?? false,
+    stopListBlocked: item.stop_list_blocked ?? false,
+    stopListAvailableQuantity: item.stop_list_available_quantity,
     modifierGroups: item.modifier_groups
       .filter((group) => group.active)
       .map((group) => ({
@@ -182,7 +186,7 @@ export function mapOperator(actor: BackendActorContext | null, shift: BackendShi
 
 export function mapSyncStatus(status: BackendSyncStatus | null): 'online' | 'offline' {
   if (!status) return 'offline';
-  return status.failed > 0 || status.suspended > 0 ? 'offline' : 'online';
+  return status.failed > 0 ? 'offline' : 'online';
 }
 
 export function outboxCount(status: BackendSyncStatus | null): number {
@@ -208,6 +212,7 @@ function mapOrderLine(line: BackendOrderLine): OrderLine {
     itemId: line.menu_item_id,
     name: line.name,
     price: line.unit_price,
+    totalPrice: line.total_price,
     quantity: line.quantity,
     selectedModifiers: line.modifiers.map((modifier) => ({
       groupId: modifier.modifier_group_id,
@@ -247,6 +252,7 @@ function extractClosedOrderLines(snapshot: unknown): OrderLine[] {
       itemId: String(line.menu_item_id ?? line.catalog_item_id ?? ''),
       name: String(line.name ?? ''),
       price: Number(line.unit_price_minor ?? 0),
+      totalPrice: Number(line.total_price_minor ?? line.unit_price_minor ?? 0),
       quantity: Number(line.quantity ?? 0),
       selectedModifiers: [],
       course: 1,

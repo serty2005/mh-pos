@@ -2388,6 +2388,29 @@ func TestFloorAndMenuReadAsOperatorRequiresPermissions(t *testing.T) {
 	}
 }
 
+func TestListMenuItemsExposesStopListOverlay(t *testing.T) {
+	f := newFixture(t)
+	insertStopList(t, f, "stop-menu-overlay", f.menuItem.CatalogItemID, nil, true)
+
+	menuItems, err := f.service.ListMenuItemsAsOperator(f.ctx, f.edgeMetaCommand("cmd-menu-stoplist-overlay"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *domain.MenuItem
+	for i := range menuItems {
+		if menuItems[i].ID == f.menuItem.ID {
+			found = &menuItems[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected fixture menu item in menu list")
+	}
+	if !found.StopListBlocked || found.StopListAvailableQuantity != nil {
+		t.Fatalf("expected menu item to expose blocking stop-list overlay, got %+v", found)
+	}
+}
+
 func TestClaimPendingOutboxSkipsFutureNextRetryAt(t *testing.T) {
 	f := newFixture(t)
 	future := appshared.DBTime(fixedClock{}.Now().Add(time.Hour))
@@ -2504,16 +2527,16 @@ func TestGetSyncStatusAggregatesOutboxRows(t *testing.T) {
 	f := newFixture(t)
 	ids := outboxIDs(t, f, 4)
 	now := appshared.DBTime(fixedClock{}.Now())
-	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'processing', locked_at = ?, locked_by = 'worker', updated_at = ? WHERE id = ?`, now, now, ids[0]); err != nil {
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET sync_direction = 'edge_to_cloud', status = 'processing', locked_at = ?, locked_by = 'worker', updated_at = ? WHERE id = ?`, now, now, ids[0]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'failed', attempts = 1, last_error = 'temporary', updated_at = ? WHERE id = ?`, now, ids[1]); err != nil {
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET sync_direction = 'edge_to_cloud', status = 'failed', attempts = 1, last_error = 'temporary', updated_at = ? WHERE id = ?`, now, ids[1]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'suspended', attempts = 4, last_error = 'threshold', updated_at = ? WHERE id = ?`, now, ids[2]); err != nil {
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET sync_direction = 'edge_to_cloud', status = 'suspended', attempts = 4, last_error = 'threshold', updated_at = ? WHERE id = ?`, now, ids[2]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'sent', sent_at = ?, updated_at = ? WHERE id = ?`, now, now, ids[3]); err != nil {
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET sync_direction = 'edge_to_cloud', status = 'sent', sent_at = ?, updated_at = ? WHERE id = ?`, now, now, ids[3]); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2521,11 +2544,26 @@ func TestGetSyncStatusAggregatesOutboxRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.Total != countRows(t, f, "pos_sync_outbox") || status.Processing != 1 || status.Failed != 1 || status.Suspended != 1 || status.Sent != 1 {
+	if status.Processing != 1 || status.Failed != 1 || status.Suspended != 1 || status.Sent != 1 {
 		t.Fatalf("unexpected sync status: %+v", status)
 	}
 	if status.Pending == 0 || status.OldestPendingSequenceNo == nil {
 		t.Fatalf("expected pending rows with oldest sequence, got %+v", status)
+	}
+}
+
+func TestGetSyncStatusIgnoresLocalOnlyRows(t *testing.T) {
+	f := newFixture(t)
+	ids := outboxIDs(t, f, 1)
+	now := appshared.DBTime(fixedClock{}.Now())
+	execTestSQL(t, f, `UPDATE pos_sync_outbox SET sync_direction = 'local_only', status = 'suspended', attempts = 3, updated_at = ? WHERE id = ?`, now, ids[0])
+
+	status, err := f.service.GetSyncStatus(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Suspended != 0 {
+		t.Fatalf("expected local_only suspended rows to be excluded from Cloud sync status, got %+v", status)
 	}
 }
 
