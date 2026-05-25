@@ -1,4 +1,4 @@
-# POS Backend Spec
+﻿# POS Backend Spec
 
 Статус: актуальный backend contract для текущего cashier runtime и целевого полного пилота.
 
@@ -130,13 +130,10 @@
 
 Реализовано сейчас:
 
-- `scripts/run-stack-smoke.py` использует OpenAPI smoke contract `docs/api/mhpos-local-smoke.openapi.json`; новые локальные smoke HTTP calls должны сначала получить `operationId` в этом contract.
-- Suites: `health`, `license_pairing`, `cloud_to_edge_masterdata`, `pos_cashier_runtime`, `pos_refund_after_shift_close`.
-- `pos_cashier_runtime` переиспользует Cloud -> Edge seed summary из предыдущей suite или `scripts/.local-masterdata-summary.json` для уже paired Edge.
-- `pos_cashier_runtime` проверяет backend runtime path: PIN login manager/cashier, открытие личной смены при отсутствии текущей, открытие cash shift при отсутствии текущего, чтение hall/table/menu read models, создание заказа на стол, обычную menu строку, modifier option через `PATCH /orders/{id}/lines/{line_id}/modifiers` при наличии modifier data, service item при наличии seed data, выпуск precheck, оплату через `POST /api/v1/prechecks/{id}/payments`, создание final check, bounded `GET /api/v1/orders/closed`, `GET /api/v1/checks/{id}`, `POST /api/v1/checks/{id}/reprint`, full cancellation в той же смене через `POST /api/v1/checks/{id}/cancellations`, `GET /api/v1/checks/{id}/financial-operations` и read-only `GET /api/v1/storage/status`.
-- `pos_refund_after_shift_close` проверяет отдельный backend runtime path: POS sale, закрытие исходной cash shift, закрытие исходной personal employee shift, открытие новой employee/cash shift для refund под менеджером при необходимости, full refund через `POST /api/v1/checks/{id}/refunds`, наличие refund operation в `GET /api/v1/checks/{id}/financial-operations`, стабильный `GET /api/v1/checks/{id}` и bounded `GET /api/v1/orders/closed` по исходной смене/check.
-- Financial mutations в suite отправляют уникальный `command_id`; smoke runner не делает automatic retry financial mutations.
-- JSON result содержит только безопасные ids, statuses и counts; PIN, pairing code, auth session id, token и credentials не выводятся.
+- `scripts/seed-dev-system.py` является единственным локальным seed entrypoint: он создает полный набор Cloud-owned справочников, публикует master data, выполняет license pairing POS Edge и проверяет POS read model.
+- Seed script выполняет health check Cloud/POS/License, берет `node_device_id` из POS provisioning status, создает справочники через Cloud API, публикует packages, генерирует license pairing code, вызывает POS `pair-via-license` и проверяет PIN login/menu/floor read model.
+- Runtime cashier/refund flows проверяются отдельными backend/UI тестами. Seed script не выполняет financial mutations и не делает automatic retry financial mutations.
+- JSON summary содержит локальные demo IDs, pairing code и PIN-коды; он предназначен только для local/dev проверки и игнорируется git.
 
 Вне текущего объема:
 

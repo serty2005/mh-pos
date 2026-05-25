@@ -1,4 +1,4 @@
-# MyHoReCa POS Edge Backend
+﻿# MyHoReCa POS Edge Backend
 
 POS Edge Backend - локальный JSON API сервис на Go + SQLite для кассового узла. Он должен работать offline, сохранять критические операции локально и писать `local_event_log` + `pos_sync_outbox` в той же транзакции, что и бизнес-изменение.
 
@@ -27,7 +27,7 @@ Sync/outbox foundation поддерживает retry-safe состояние о
 
 Реализовано сейчас: master/reference/configuration data является Cloud-owned. POS Edge хранит локальную read model для offline POS flow, но Edge runtime не редактирует restaurants, devices metadata, roles, employees, halls, tables, catalog, menu и Cloud-authored tax/service-charge policy reference. Для recipes и inventory reference в Edge оставлены read-only `recipe_versions`, `recipe_lines` и overlay `stop_lists`; legacy manual stock document service и SQLite tables `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines` удалены при Cloud-centric inventory cutover. Cloud-authored supported master data применяется через `POST /api/v1/sync/master-data/snapshots` или `POST /api/v1/sync/master-data/{stream}` с origin `cloud_sync`; Edge dev bootstrap route удален из supported/current runtime. Ownership matrix: `../docs/sync/directional-sync-ownership.md`.
 
-Реализовано сейчас: production path для ресторанов, сотрудников, ролей, залов/столов, каталога и меню - Cloud CRUD API, Cloud-authored publication/package, затем Cloud -> Edge ingest. POS Edge остается offline read-model consumer; local/e2e/smoke flow использует `../scripts/bootstrap-production-way.ps1`.
+Реализовано сейчас: production path для ресторанов, сотрудников, ролей, залов/столов, каталога и меню - Cloud CRUD API, Cloud-authored publication/package, затем Cloud -> Edge ingest. POS Edge остается offline read-model consumer; local/e2e seed flow использует `../scripts/seed-dev-system.py`.
 
 Проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. SQLite clean install использует единый managed baseline `migrations/sqlite/001_init.sql`; старые pre-pilot dev/test БД не поддерживаются как data-preserving upgrade path и пересоздаются. Runtime version/checksum metadata создается кодом startup framework.
 
@@ -72,15 +72,7 @@ Write transactions в POS Edge открываются через `BEGIN IMMEDIAT
 
 - `VACUUM`, `VACUUM INTO`, `PRAGMA optimize` и `PRAGMA wal_checkpoint(TRUNCATE)` являются явными maintenance/snapshot операциями.
 - Они не запускаются автоматически на каждом startup и не выполняются внутри active write transaction.
-- `VACUUM`/`VACUUM INTO` требуют явный `-Force`.
-- Wrapper из корня репозитория: `.\scripts\maintain-sqlite.ps1`.
-
-Пример:
-
-```powershell
-.\scripts\maintain-sqlite.ps1 -DatabasePath "pos-backend\data\pos-edge.db" -Optimize -WalCheckpoint
-.\scripts\maintain-sqlite.ps1 -DatabasePath "pos-backend\data\pos-edge.db" -Vacuum -Force
-```
+- `VACUUM`/`VACUUM INTO` требуют явного операторского действия вне `scripts/`: отдельный maintenance wrapper в репозитории сейчас не поддерживается.
 
 ## Запуск локально на Windows
 
@@ -128,19 +120,19 @@ SQLite хранится в Docker volume `pos_edge_sqlite`. API доступен
 
 ## API Smoke Test
 
-Реализовано сейчас: локальный API smoke использует production-way Cloud -> Edge bootstrap.
+Реализовано сейчас: локальное заполнение POS Edge данными использует единый Cloud -> Edge seed script.
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/health
-..\scripts\bootstrap-production-way.ps1 -RunRuntimeSmoke
+python ..\scripts\seed-dev-system.py --cloud-base http://localhost:8090 --pos-base http://localhost:8080 --license-base http://localhost:8095
 ```
 
-Bootstrap создает справочники через Cloud API, публикует master-data package, применяет Cloud -> Edge snapshot и возвращает `restaurant_id`, `node_device_id`, `pairing_code`, PIN `1111`/`2222`, hall/table ids и menu item ids. Deprecated wrapper `bootstrap-pos-demo.ps1` не участвует в documented happy path.
+Seed создает справочники через Cloud API, публикует master-data package, генерирует license pairing code, выполняет POS Edge `pair-via-license` и возвращает `restaurant_id`, `node_device_id`, `pairing_code`, все PIN, hall/table ids, catalog/menu ids, modifier/pricing/recipe/stop-list ids.
 
-Проверка PIN login после bootstrap:
+Проверка PIN login после seed:
 
 ```powershell
-$demo = ..\scripts\bootstrap-production-way.ps1
+$demo = python ..\scripts\seed-dev-system.py | ConvertFrom-Json
 $clientDeviceID = [guid]::NewGuid().ToString()
 Invoke-RestMethod -Method Post http://localhost:8080/api/v1/auth/pin-login -ContentType "application/json" -Body (@{
   node_device_id = $demo.node_device_id
@@ -231,7 +223,7 @@ Zero-to-Cashier provisioning path:
 - Option B: UI или оператор отправляет license code в `POST /api/v1/system/provisioning/pair-via-license`; Edge resolve-ит code через `LICENSE_SERVER_URL`, сохраняет cloud config/token, скачивает snapshot, применяет master-data и переходит в статус `paired`.
 - `node_device_id` не равен `client_device_id`: первый принадлежит Edge Backend и хранится в SQLite, второй принадлежит браузеру/UI и auto-registers при PIN login.
 
-`..\scripts\cloud-masterdata-e2e.ps1` проверяет этот путь локально: Cloud CRUD -> publish -> POS Edge ingest -> POS catalog/menu read -> PIN login Cloud-created employee.
+`..\scripts\seed-dev-system.py` проверяет этот путь локально: Cloud CRUD -> publish -> POS Edge license pairing -> POS catalog/menu read -> PIN login Cloud-created employee.
 
 Вне текущего объема: direct POS Edge apply for `currencies` stream. Cloud backend already owns canonical ISO 4217 currency reference/provisioning, but POS Edge currently validates currencies from its local canonical catalog rather than importing currency packages through master-data ingest.
 
@@ -268,7 +260,7 @@ go run ./cmd/pos-edge
 Из корня репозитория:
 
 ```powershell
-$demo = .\scripts\bootstrap-production-way.ps1
+$demo = python ..\scripts\seed-dev-system.py | ConvertFrom-Json
 $demo.pairing_code
 ```
 

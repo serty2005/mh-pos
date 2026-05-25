@@ -1,4 +1,4 @@
-# MyHoReCa Cloud Backend
+﻿# MyHoReCa Cloud Backend
 
 Cloud backend для POS/RMS платформы: прием Edge operational events, PostgreSQL runtime projections и foundation Cloud-authored master data.
 
@@ -149,20 +149,17 @@ Cloud генерирует короткий одноразовый code и node 
 
 Вне текущего объема: production authorization perimeter Cloud API. Текущие endpoints предназначены для dev/pilot perimeter и не смешиваются с POS operator auth.
 
-## Локальный smoke test receiver-а
+## Локальная проверка receiver-а
 
 ```powershell
 Invoke-RestMethod http://localhost:8090/health
-..\scripts\send-cloud-test-envelope.ps1 -ReplayTwice
 ```
 
-Replay envelope с ID из production-way bootstrap:
+Для полного локального заполнения данных и привязки POS Edge используется единый seed-скрипт из корня репозитория:
 
 ```powershell
-$demo = ..\scripts\bootstrap-production-way.ps1
-..\scripts\send-cloud-test-envelope.ps1 -RestaurantId $demo.restaurant_id -NodeDeviceId $demo.node_device_id -ReplayTwice
+python ..\scripts\seed-dev-system.py --cloud-base http://localhost:8090 --pos-base http://localhost:8080 --license-base http://localhost:8095
 ```
-
 Минимальное тело, эквивалентное curl-запросу `POST /api/v1/sync/edge-events`:
 
 ```powershell
@@ -213,12 +210,7 @@ $env:CLOUD_POSTGRES_DSN="postgres://postgres:postgres@localhost:5432/mh_pos_clou
 go run ./cmd/cloud-api
 ```
 
-2. После POS bootstrap проверь replay с реальными ID:
-
-```powershell
-$demo = ..\scripts\bootstrap-production-way.ps1
-..\scripts\send-cloud-test-envelope.ps1 -RestaurantId $demo.restaurant_id -NodeDeviceId $demo.node_device_id -ReplayTwice
-```
+2. После полного seed проверь, что Cloud получает POS outbox события автоматически через sync sender worker. Seed summary содержит `restaurant_id` и `node_device_id` для ручных запросов, но отдельный replay-скрипт больше не поддерживается.
 
 реализовано сейчас: POS outbox operational events автоматически доставляются в Cloud POS sender worker-ом, когда `POS_SYNC_SENDER_ENABLED=true`, а `POS_CLOUD_SYNC_URL` указывает на этот receiver.
 
