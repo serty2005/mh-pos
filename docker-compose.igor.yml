@@ -54,9 +54,42 @@ services:
     volumes:
       - pos_edge_sqlite_data:/app/data
 
+  devbox:
+    build:
+      context: .
+      dockerfile: docker/devbox.Dockerfile
+    profiles:
+      - devbox
+    depends_on:
+      cloud-api:
+        condition: service_started
+      license-api:
+        condition: service_started
+      pos-edge:
+        condition: service_started
+    working_dir: /workspace/myhoreca-pos
+    environment:
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+      POS_E2E_BOOTSTRAP_JSON: /workspace/myhoreca-pos/.e2e/bootstrap.json
+      POS_E2E_UI_BASE: http://localhost:5173
+      POS_E2E_API_BASE: http://pos-edge:8080/api/v1
+      POS_E2E_CLOUD_BASE: http://cloud-api:8090/api/v1
+      VITE_POS_API_BASE: http://pos-edge:8080/api/v1
+      VITE_CLOUD_API_BASE: http://cloud-api:8090/api/v1
+    ports:
+      - "5173:5173"
+      - "5174:5174"
+    volumes:
+      - .:/workspace/myhoreca-pos
+      - pos_ui_node_modules:/workspace/myhoreca-pos/pos-ui/node_modules
+      - cloud_ui_node_modules:/workspace/myhoreca-pos/cloud-ui/node_modules
+      - devbox_npm_cache:/home/pwuser/.npm
 
 volumes:
   cloud_postgres_data:
   cloud_api_data:
   license_sqlite_data:
   pos_edge_sqlite_data:
+  pos_ui_node_modules:
+  cloud_ui_node_modules:
+  devbox_npm_cache:
