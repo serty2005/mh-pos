@@ -440,9 +440,9 @@ type MasterDataPacket struct {
 	Halls                  []EdgeHall                  `json:"halls,omitempty"`
 	Tables                 []EdgeTable                 `json:"tables,omitempty"`
 	PricingPolicies        []EdgePricingPolicy         `json:"pricing_policies,omitempty"`
-	RecipeVersions        []EdgeRecipeVersion         `json:"recipe_versions,omitempty"`
-	RecipeLines           []EdgeRecipeLine            `json:"recipe_lines,omitempty"`
-	StopLists             []EdgeStopListEntry         `json:"stop_lists,omitempty"`
+	RecipeVersions         []EdgeRecipeVersion         `json:"recipe_versions,omitempty"`
+	RecipeLines            []EdgeRecipeLine            `json:"recipe_lines,omitempty"`
+	StopLists              []EdgeStopListEntry         `json:"stop_lists,omitempty"`
 }
 
 // EdgeRestaurant является projection ресторана в существующий POS Edge restaurants stream.
@@ -509,30 +509,33 @@ type EdgeCatalogFolder struct {
 
 // EdgeFolderParameter является projection наследуемого параметра папки.
 type EdgeFolderParameter struct {
-	ID        string    `json:"id"`
-	FolderID  string    `json:"folder_id"`
-	Key       string    `json:"parameter_key"`
-	ValueType string    `json:"value_type"`
-	ValueJSON string    `json:"value_json"`
-	Active    bool      `json:"active"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID           string    `json:"id"`
+	RestaurantID string    `json:"restaurant_id"`
+	FolderID     string    `json:"folder_id"`
+	Key          string    `json:"parameter_key"`
+	ValueType    string    `json:"value_type"`
+	ValueJSON    string    `json:"value_json"`
+	Active       bool      `json:"active"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // EdgeCatalogTag является projection аналитической метки каталога.
 type EdgeCatalogTag struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Code      string    `json:"code"`
-	Active    bool      `json:"active"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID           string    `json:"id"`
+	RestaurantID string    `json:"restaurant_id"`
+	Name         string    `json:"name"`
+	Code         string    `json:"code"`
+	Active       bool      `json:"active"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // EdgeCatalogItemTag является projection связи catalog item и tag.
 type EdgeCatalogItemTag struct {
 	CatalogItemID string `json:"catalog_item_id"`
 	TagID         string `json:"tag_id"`
+	RestaurantID  string `json:"restaurant_id"`
 }
 
 // EdgeMenuItem является projection menu item в существующий POS Edge menu stream.

@@ -1,4 +1,4 @@
-# Текущее функциональное состояние проекта
+﻿# Текущее функциональное состояние проекта
 
 Статус: реализовано сейчас по коду, тестам и документации на 2026-05-23; цель полного пилота зафиксирована отдельно и не считается текущим runtime.
 
@@ -160,9 +160,9 @@
 Реализовано сейчас:
 
 - Docker compose поднимает Cloud PostgreSQL, Cloud API, License API и POS Edge без POS UI.
-- Python smoke ядро использует OpenAPI contract и не делает прямых записей в PostgreSQL/SQLite.
-- `run-stack-smoke.py` проверяет health, license pairing, Cloud -> Edge master data, кассовую продажу, cancellation ledger и refund после закрытия исходной смены.
-- PowerShell/Bash wrappers являются тонкими оболочками над Python ядром или legacy zero-to-cashier flows.
+- Единственный Python seed script использует HTTP API и не делает прямых записей в PostgreSQL/SQLite.
+- `scripts/seed-dev-system.py` проверяет health Cloud/POS/License, создает полный Cloud-owned seed dataset, публикует master data, выполняет license pairing POS Edge и проверяет базовый POS read model.
+- PowerShell/Bash wrappers и прежние onboarding flows удалены; в `scripts` остается один пользовательский Python seed script.
 - HTTP слой скриптов игнорирует proxy для localhost/loopback, чтобы не ломать Docker published ports.
 
 ## Покрытие тестами бизнес-логики
@@ -176,7 +176,7 @@
 - Cloud master-data tests покрывают CRUD/validation, PIN reuse rules, role permission validation, catalog/menu/publication shape, service/semi-finished kinds, lifecycle statuses и pricing policies.
 - License tests покрывают registration, resolve, consumed/expired/invalid pairing codes.
 - UI unit/e2e tests покрывают currency/error/session guards, RBAC, schema parsing, cashier terminal conflict handling, compensation boundaries, modifier flow, payments/refunds and sync/provisioning flows.
-- Script tests покрывают HTTP/OpenAPI helper layer, seed flow, stack smoke orchestration and contract usage.
+- Script tests покрывают единственный seed flow, отсутствие других user-facing Python entrypoints в `scripts`, отсутствие preassigned IDs в seed dataset и генерацию pairing после публикации master data.
 
 Оставшиеся риски:
 

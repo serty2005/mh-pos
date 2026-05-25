@@ -597,11 +597,10 @@ export function issuePrecheck(orderId: string) {
   });
 }
 
-export function cancelPrecheck(precheckId: string, managerEmployeeId: string, managerPin: string, cancellationReason: string) {
+export function cancelPrecheck(precheckId: string, managerPin: string, cancellationReason: string) {
   return request(`/prechecks/${encodeURIComponent(precheckId)}/cancel`, precheckSchema, {
     method: 'POST',
     body: JSON.stringify({
-      manager_employee_id: managerEmployeeId,
       manager_pin: managerPin,
       cancellation_reason: cancellationReason,
     }),

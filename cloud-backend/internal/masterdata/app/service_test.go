@@ -196,6 +196,21 @@ func TestCatalogMenuValidationAndPublicationPackageShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	folder, err := service.CreateCatalogFolder(ctx, app.CreateCatalogFolderCommand{RestaurantID: restaurant.ID, Name: "Bar folder", SortOrder: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	folderParameter, err := service.CreateFolderParameter(ctx, app.CreateFolderParameterCommand{RestaurantID: restaurant.ID, FolderID: folder.ID, Key: "station", ValueType: "string", ValueJSON: `"bar"`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tag, err := service.CreateCatalogTag(ctx, app.CreateCatalogTagCommand{RestaurantID: restaurant.ID, Name: "Coffee", Code: "COFFEE"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.AssignCatalogItemTag(ctx, app.AssignCatalogItemTagCommand{RestaurantID: restaurant.ID, CatalogItemID: catalog.ID, TagID: tag.ID}); err != nil {
+		t.Fatal(err)
+	}
 	published := domain.StatusPublished
 	if _, err := service.UpdateCatalogItem(ctx, catalog.ID, app.UpdateCatalogItemCommand{Status: &published}); err != nil {
 		t.Fatal(err)
@@ -264,6 +279,7 @@ func TestCatalogMenuValidationAndPublicationPackageShape(t *testing.T) {
 	if strings.Contains(string(catalogPackage.PayloadJSON), `"categories"`) {
 		t.Fatalf("catalog stream must not publish unsupported categories payload: %s", catalogPackage.PayloadJSON)
 	}
+	assertPOSEdgeCatalogReferencePackage(t, catalogPackage.PayloadJSON, restaurant.ID, folderParameter.ID, folder.ID, tag.ID, catalog.ID)
 	fullPackage, err := service.GetCurrentPublishedPackage(ctx, restaurant.ID, "node-1")
 	if err != nil {
 		t.Fatal(err)
@@ -275,6 +291,7 @@ func TestCatalogMenuValidationAndPublicationPackageShape(t *testing.T) {
 	if strings.Contains(string(fullBody), `"categories"`) {
 		t.Fatalf("full package must not publish unsupported categories payload: %s", fullBody)
 	}
+	assertPOSEdgeCatalogReferencePackage(t, fullBody, restaurant.ID, folderParameter.ID, folder.ID, tag.ID, catalog.ID)
 	assertPOSEdgeModifierIngestPackage(t, fullBody, restaurant.ID, menu.ID, modifierGroup.ID, modifierOption.ID, modifierBinding.ID)
 }
 
@@ -442,9 +459,9 @@ type posEdgeMasterDataCommand struct {
 	Tables                 []json.RawMessage              `json:"tables,omitempty"`
 	CatalogItems           []json.RawMessage              `json:"catalog_items,omitempty"`
 	Folders                []json.RawMessage              `json:"folders,omitempty"`
-	FolderParameters       []json.RawMessage              `json:"folder_parameters,omitempty"`
-	Tags                   []json.RawMessage              `json:"tags,omitempty"`
-	ItemTags               []json.RawMessage              `json:"item_tags,omitempty"`
+	FolderParameters       []posEdgeFolderParameter       `json:"folder_parameters,omitempty"`
+	Tags                   []posEdgeCatalogTag            `json:"tags,omitempty"`
+	ItemTags               []posEdgeCatalogItemTag        `json:"item_tags,omitempty"`
 	ModifierGroups         []posEdgeModifierGroup         `json:"modifier_groups,omitempty"`
 	ModifierOptions        []posEdgeModifierOption        `json:"modifier_options,omitempty"`
 	ModifierBindings       []posEdgeModifierGroupBinding  `json:"modifier_bindings,omitempty"`
@@ -500,6 +517,58 @@ type posEdgeMenuItem struct {
 	Active        bool   `json:"active"`
 	CreatedAt     string `json:"created_at"`
 	UpdatedAt     string `json:"updated_at"`
+}
+
+type posEdgeFolderParameter struct {
+	ID           string `json:"id"`
+	RestaurantID string `json:"restaurant_id"`
+	FolderID     string `json:"folder_id"`
+	ParameterKey string `json:"parameter_key"`
+	ValueType    string `json:"value_type"`
+	ValueJSON    string `json:"value_json"`
+	Active       bool   `json:"active"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
+type posEdgeCatalogTag struct {
+	ID           string `json:"id"`
+	RestaurantID string `json:"restaurant_id"`
+	Name         string `json:"name"`
+	Code         string `json:"code"`
+	Active       bool   `json:"active"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
+type posEdgeCatalogItemTag struct {
+	CatalogItemID string `json:"catalog_item_id"`
+	TagID         string `json:"tag_id"`
+	RestaurantID  string `json:"restaurant_id"`
+}
+
+func assertPOSEdgeCatalogReferencePackage(t *testing.T, body []byte, restaurantID, parameterID, folderID, tagID, catalogItemID string) {
+	t.Helper()
+
+	var cmd posEdgeMasterDataCommand
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cmd); err != nil {
+		t.Fatalf("published package must match POS Edge strict catalog ingest shape: %v\npayload=%s", err, body)
+	}
+	if len(cmd.FolderParameters) != 1 {
+		t.Fatalf("expected one folder parameter, got %+v", cmd.FolderParameters)
+	}
+	parameter := cmd.FolderParameters[0]
+	if parameter.ID != parameterID || parameter.RestaurantID != restaurantID || parameter.FolderID != folderID || parameter.ParameterKey != "station" || parameter.ValueJSON != `"bar"` {
+		t.Fatalf("folder parameter lost POS Edge identity fields: %+v", parameter)
+	}
+	if len(cmd.Tags) != 1 || cmd.Tags[0].ID != tagID || cmd.Tags[0].RestaurantID != restaurantID {
+		t.Fatalf("catalog tag lost POS Edge identity fields: %+v", cmd.Tags)
+	}
+	if len(cmd.ItemTags) != 1 || cmd.ItemTags[0].CatalogItemID != catalogItemID || cmd.ItemTags[0].TagID != tagID || cmd.ItemTags[0].RestaurantID != restaurantID {
+		t.Fatalf("catalog item tag lost POS Edge identity fields: %+v", cmd.ItemTags)
+	}
 }
 
 func assertPOSEdgeModifierIngestPackage(t *testing.T, body []byte, restaurantID, menuItemID, groupID, optionID, bindingID string) {

@@ -1,4 +1,4 @@
-# MyHoReCa POS Edge Backend
+﻿# MyHoReCa POS Edge Backend
 
 POS Edge Backend - локальный JSON API сервис на Go + SQLite для кассового узла. Он должен работать offline, сохранять критические операции локально и писать `local_event_log` + `pos_sync_outbox` в той же транзакции, что и бизнес-изменение.
 
@@ -12,7 +12,7 @@ Order -> Precheck -> Payment -> Check
 
 `Precheck` - рабочий финансовый snapshot для гостя. `Check` - только финальный неизменяемый расчетный документ после полной оплаты precheck.
 
-Текущее состояние кода: backend выполняет runtime flow `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` создает issued immutable financial snapshot и переводит order в `locked`; snapshot содержит `currency_code`, subtotal, discount/surcharge/tax totals, grand total, paid/remaining totals и breakdown строк/скидок/надбавок/налогов. `Pricing` boundary считает totals по canonical pipeline `order lines subtotal -> unified ordered modifiers by application_index -> taxable base -> taxes -> grand total`, отклоняет duplicate `application_index` между discounts/surcharges, применяет Tax Always Last и deterministic integer half-up rounding без float/decimal. Surcharge хранится и считается как отдельная доменная операция, а не как negative discount. Публичный `CancelPrecheck` требует manager employee id, PIN и reason, проверяет локальный PBKDF2 `pin_hash`, пишет `manager_override_audit` и возвращает unpaid active issued precheck в `open`; payment capture идет через `precheck_id`, поддерживает partial payments и создает final `Check` только после полной оплаты. Cancellation/refund не переписывают finalized check/payment/precheck: `POST /api/v1/checks/{id}/cancellations` и `POST /api/v1/checks/{id}/refunds` пишут append-only ledger `financial_operations`; compatibility route `POST /api/v1/payments/{id}/refund` записывает refund operation по payment allocation. `GET /api/v1/checks/{id}/financial-operations` читает ledger по конкретному final check. Backend также включает строгую PIN auth/session/logout foundation, Edge Node pairing, client device auto-registration, actor/session/node/client metadata, halls/tables API, read endpoint текущего активного заказа по столу, меню закрытых заказов `GET /api/v1/orders/closed`, export-only archive readiness `POST /api/v1/storage/archive/export`, order line quantity/void API и backend pricing preview в `GET /api/v1/orders/{id}/pricing`. Публичные compatibility endpoints для старой check/payment модели удалены.
+Текущее состояние кода: backend выполняет runtime flow `Order -> Precheck -> Payment -> Check`. `IssuePrecheck` создает issued immutable financial snapshot и переводит order в `locked`; snapshot содержит `currency_code`, subtotal, discount/surcharge/tax totals, grand total, paid/remaining totals и breakdown строк/скидок/надбавок/налогов. `Pricing` boundary считает totals по canonical pipeline `order lines subtotal -> unified ordered modifiers by application_index -> taxable base -> taxes -> grand total`, отклоняет duplicate `application_index` между discounts/surcharges, применяет Tax Always Last и deterministic integer half-up rounding без float/decimal. Surcharge хранится и считается как отдельная доменная операция, а не как negative discount. Публичный `CancelPrecheck` требует manager PIN и reason, сам определяет менеджера по локальному PBKDF2 `pin_hash`, проверяет право `pos.precheck.cancel`, пишет `manager_override_audit` и возвращает unpaid active issued precheck в `open`; payment capture идет через `precheck_id`, поддерживает partial payments и создает final `Check` только после полной оплаты. Cancellation/refund не переписывают finalized check/payment/precheck: `POST /api/v1/checks/{id}/cancellations` и `POST /api/v1/checks/{id}/refunds` пишут append-only ledger `financial_operations`; compatibility route `POST /api/v1/payments/{id}/refund` записывает refund operation по payment allocation. `GET /api/v1/checks/{id}/financial-operations` читает ledger по конкретному final check. Backend также включает строгую PIN auth/session/logout foundation, Edge Node pairing, client device auto-registration, actor/session/node/client metadata, halls/tables API, read endpoint текущего активного заказа по столу, меню закрытых заказов `GET /api/v1/orders/closed`, export-only archive readiness `POST /api/v1/storage/archive/export`, order line quantity/void API и backend pricing preview в `GET /api/v1/orders/{id}/pricing`. Публичные compatibility endpoints для старой check/payment модели удалены.
 
 Граница auth/device:
 
@@ -27,7 +27,7 @@ Sync/outbox foundation поддерживает retry-safe состояние о
 
 Реализовано сейчас: master/reference/configuration data является Cloud-owned. POS Edge хранит локальную read model для offline POS flow, но Edge runtime не редактирует restaurants, devices metadata, roles, employees, halls, tables, catalog, menu и Cloud-authored tax/service-charge policy reference. Для recipes и inventory reference в Edge оставлены read-only `recipe_versions`, `recipe_lines` и overlay `stop_lists`; legacy manual stock document service и SQLite tables `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines` удалены при Cloud-centric inventory cutover. Cloud-authored supported master data применяется через `POST /api/v1/sync/master-data/snapshots` или `POST /api/v1/sync/master-data/{stream}` с origin `cloud_sync`; Edge dev bootstrap route удален из supported/current runtime. Ownership matrix: `../docs/sync/directional-sync-ownership.md`.
 
-Реализовано сейчас: production path для ресторанов, сотрудников, ролей, залов/столов, каталога и меню - Cloud CRUD API, Cloud-authored publication/package, затем Cloud -> Edge ingest. POS Edge остается offline read-model consumer; local/e2e/smoke flow использует `../scripts/bootstrap-production-way.ps1`.
+Реализовано сейчас: production path для ресторанов, сотрудников, ролей, залов/столов, каталога и меню - Cloud CRUD API, Cloud-authored publication/package, затем Cloud -> Edge ingest. POS Edge остается offline read-model consumer; local/e2e seed flow использует `../scripts/seed-dev-system.py`.
 
 Проект еще не был запущен в production. Реальных production БД с клиентскими данными нет, поэтому production data migration до первого запуска не требуется. SQLite clean install использует единый managed baseline `migrations/sqlite/001_init.sql`; старые pre-pilot dev/test БД не поддерживаются как data-preserving upgrade path и пересоздаются. Runtime version/checksum metadata создается кодом startup framework.
 
@@ -72,15 +72,7 @@ Write transactions в POS Edge открываются через `BEGIN IMMEDIAT
 
 - `VACUUM`, `VACUUM INTO`, `PRAGMA optimize` и `PRAGMA wal_checkpoint(TRUNCATE)` являются явными maintenance/snapshot операциями.
 - Они не запускаются автоматически на каждом startup и не выполняются внутри active write transaction.
-- `VACUUM`/`VACUUM INTO` требуют явный `-Force`.
-- Wrapper из корня репозитория: `.\scripts\maintain-sqlite.ps1`.
-
-Пример:
-
-```powershell
-.\scripts\maintain-sqlite.ps1 -DatabasePath "pos-backend\data\pos-edge.db" -Optimize -WalCheckpoint
-.\scripts\maintain-sqlite.ps1 -DatabasePath "pos-backend\data\pos-edge.db" -Vacuum -Force
-```
+- `VACUUM`/`VACUUM INTO` требуют явного операторского действия вне `scripts/`: отдельный maintenance wrapper в репозитории сейчас не поддерживается.
 
 ## Запуск локально на Windows
 
@@ -128,19 +120,19 @@ SQLite хранится в Docker volume `pos_edge_sqlite`. API доступен
 
 ## API Smoke Test
 
-Реализовано сейчас: локальный API smoke использует production-way Cloud -> Edge bootstrap.
+Реализовано сейчас: локальное заполнение POS Edge данными использует единый Cloud -> Edge seed script.
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/health
-..\scripts\bootstrap-production-way.ps1 -RunRuntimeSmoke
+python ..\scripts\seed-dev-system.py --cloud-base http://localhost:8090 --pos-base http://localhost:8080 --license-base http://localhost:8095
 ```
 
-Bootstrap создает справочники через Cloud API, публикует master-data package, применяет Cloud -> Edge snapshot и возвращает `restaurant_id`, `node_device_id`, `pairing_code`, PIN `1111`/`2222`, hall/table ids и menu item ids. Deprecated wrapper `bootstrap-pos-demo.ps1` не участвует в documented happy path.
+Seed создает справочники через Cloud API, публикует master-data package, генерирует license pairing code, выполняет POS Edge `pair-via-license` и возвращает `restaurant_id`, `node_device_id`, `pairing_code`, все PIN, hall/table ids, catalog/menu ids, modifier/pricing/recipe/stop-list ids.
 
-Проверка PIN login после bootstrap:
+Проверка PIN login после seed:
 
 ```powershell
-$demo = ..\scripts\bootstrap-production-way.ps1
+$demo = python ..\scripts\seed-dev-system.py | ConvertFrom-Json
 $clientDeviceID = [guid]::NewGuid().ToString()
 Invoke-RestMethod -Method Post http://localhost:8080/api/v1/auth/pin-login -ContentType "application/json" -Body (@{
   node_device_id = $demo.node_device_id
@@ -231,7 +223,7 @@ Zero-to-Cashier provisioning path:
 - Option B: UI или оператор отправляет license code в `POST /api/v1/system/provisioning/pair-via-license`; Edge resolve-ит code через `LICENSE_SERVER_URL`, сохраняет cloud config/token, скачивает snapshot, применяет master-data и переходит в статус `paired`.
 - `node_device_id` не равен `client_device_id`: первый принадлежит Edge Backend и хранится в SQLite, второй принадлежит браузеру/UI и auto-registers при PIN login.
 
-`..\scripts\cloud-masterdata-e2e.ps1` проверяет этот путь локально: Cloud CRUD -> publish -> POS Edge ingest -> POS catalog/menu read -> PIN login Cloud-created employee.
+`..\scripts\seed-dev-system.py` проверяет этот путь локально: Cloud CRUD -> publish -> POS Edge license pairing -> POS catalog/menu read -> PIN login Cloud-created employee.
 
 Вне текущего объема: direct POS Edge apply for `currencies` stream. Cloud backend already owns canonical ISO 4217 currency reference/provisioning, but POS Edge currently validates currencies from its local canonical catalog rather than importing currency packages through master-data ingest.
 
@@ -268,7 +260,7 @@ go run ./cmd/pos-edge
 Из корня репозитория:
 
 ```powershell
-$demo = .\scripts\bootstrap-production-way.ps1
+$demo = python ..\scripts\seed-dev-system.py | ConvertFrom-Json
 $demo.pairing_code
 ```
 

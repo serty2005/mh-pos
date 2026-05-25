@@ -1,4 +1,4 @@
-# MyHoReCa POS UI
+﻿# MyHoReCa POS UI
 
 `pos-ui` - Vue 3 + TypeScript + Quasar интерфейс для модели `provisioning/pairing -> login -> pos -> lock/logout`.
 
@@ -29,7 +29,7 @@ npm run dev
 
 ## Zero-to-Cashier Quickstart
 
-Реализовано сейчас: `/pair` поддерживает два режима production onboarding без dev bootstrap.
+Реализовано сейчас: `/pair` поддерживает два режима production onboarding без отдельного dev route для заполнения данных.
 
 - Cloud approval: экран показывает `node_device_id`, `cloud_url`, статус регистрации и polling; после Cloud assign Edge скачивает snapshot и UI автоматически переходит на `/login`.
 - License code: оператор вводит code, UI вызывает `POST /api/v1/system/provisioning/pair-via-license`; после успешного snapshot apply UI переходит на `/login`.
@@ -37,22 +37,21 @@ npm run dev
 Локальная проверка:
 
 ```powershell
-.\scripts\zero-to-cashier-option-a.ps1
-.\scripts\zero-to-cashier-option-b.ps1
+python scripts/seed-dev-system.py --cloud-base http://localhost:8090 --pos-base http://localhost:8080 --license-base http://localhost:8095
 ```
 
 После provisioning войди на `/login` с cashier PIN `1111`.
 
 ## Локальный E2E Prototype Quickstart
 
-Реализовано сейчас: UI проходит основной cashier flow через настоящий POS Edge backend и production-way Cloud -> Edge bootstrap.
+Реализовано сейчас: UI проходит основной cashier flow через настоящий POS Edge backend и Cloud -> Edge данные из единого seed script.
 
 1. Запусти `cloud-backend` и `pos-backend`.
-2. Из корня репозитория выполни `.\scripts\bootstrap-production-way.ps1`.
+2. Из корня репозитория выполни `python scripts/seed-dev-system.py --cloud-base http://localhost:8090 --pos-base http://localhost:8080 --license-base http://localhost:8095`.
 3. Открой `http://localhost:5173`.
 4. На `/pair` используй Cloud provisioning/license code, если он был выдан; при Cloud-approved assignment Edge уже paired.
 5. На `/login` используй cashier PIN `1111`.
-6. Для cancel unpaid precheck в manager override введи `manager_employee_id` из bootstrap и manager PIN `2222`.
+6. Для cancel unpaid precheck в manager override введи manager PIN `2222`; backend сам определяет менеджера по PIN и проверяет право отмены.
 
 Playwright specs читают `POS_E2E_BOOTSTRAP_JSON` как JSON-строку или как путь к JSON-файлу. Для Docker devbox canonical path:
 
@@ -60,7 +59,7 @@ Playwright specs читают `POS_E2E_BOOTSTRAP_JSON` как JSON-строку 
 POS_E2E_BOOTSTRAP_JSON=/workspace/myhoreca-pos/.e2e/bootstrap.json
 ```
 
-Пример формы лежит в `.e2e/bootstrap.example.json`. Реальный `.e2e/bootstrap.json` создается локальным bootstrap/smoke script и не коммитится.
+Пример формы лежит в `.e2e/bootstrap.example.json`. Реальный `.e2e/bootstrap.json` создается локальным `scripts/seed-dev-system.py` и не коммитится.
 
 Docker devbox flow:
 
@@ -69,7 +68,7 @@ docker compose -f docker-compose.local.yml --profile devbox build devbox
 docker compose -f docker-compose.local.yml up --build -d cloud-postgres license-api cloud-api pos-edge
 docker compose -f docker-compose.local.yml --profile devbox up -d devbox
 docker compose -f docker-compose.local.yml exec devbox bash -lc 'cd pos-ui && npm install'
-docker compose -f docker-compose.local.yml exec devbox bash -lc 'mkdir -p .e2e && python3 scripts/run-stack-smoke.py --suite cloud_to_edge_masterdata --cloud-base http://cloud-api:8090 --pos-base http://pos-edge:8080 --license-base http://license-api:8095 --output .e2e/bootstrap.json'
+docker compose -f docker-compose.local.yml exec devbox bash -lc 'mkdir -p .e2e && python3 scripts/seed-dev-system.py --cloud-base http://cloud-api:8090 --pos-base http://pos-edge:8080 --license-base http://license-api:8095 --output .e2e/bootstrap.json'
 ```
 
 Внутри devbox backend доступен через Docker service DNS: `http://pos-edge:8080/api/v1`. Поэтому devbox задает `VITE_POS_API_BASE=http://pos-edge:8080/api/v1` и `POS_E2E_API_BASE=http://pos-edge:8080/api/v1`. Для UI, открытого host browser, используй `http://localhost:8080/api/v1`.
@@ -102,7 +101,7 @@ go run ./cmd/pos-edge
 2. Из корня репозитория получи учетные данные:
 
 ```powershell
-$demo = .\scripts\bootstrap-production-way.ps1
+$demo = python .\scripts\seed-dev-system.py | ConvertFrom-Json
 ```
 
 3. Запусти UI:
@@ -118,7 +117,7 @@ npm run dev
 Из корня репозитория можно проверить Cloud replay и локальный sync:
 
 ```powershell
-.\scripts\send-cloud-test-envelope.ps1 -RestaurantId $demo.restaurant_id -NodeDeviceId $demo.node_device_id -ReplayTwice
+
 $login = Invoke-RestMethod -Method Post http://localhost:8080/api/v1/auth/pin-login -ContentType "application/json" -Body (@{
   node_device_id = $demo.node_device_id
   client_device_id = "dev-ui-readme-client"

@@ -354,16 +354,16 @@ type CreateRecipeItemCommand struct {
 
 // UpdateRecipeItemCommand описывает изменение количества/единицы компонента рецепта без Edge-side authoring.
 type UpdateRecipeItemCommand struct {
-	Quantity    *int64  `json:"quantity,omitempty"`
-	Unit        string  `json:"unit,omitempty"`
-	LossPercent *int64  `json:"loss_percent,omitempty"`
+	Quantity    *int64 `json:"quantity,omitempty"`
+	Unit        string `json:"unit,omitempty"`
+	LossPercent *int64 `json:"loss_percent,omitempty"`
 }
 
 // UpsertStopListEntryCommand описывает Cloud-owned stop-list состояние для публикации sale blocking.
 type UpsertStopListEntryCommand struct {
-	RestaurantID       string   `json:"restaurant_id"`
-	CatalogItemID      string   `json:"catalog_item_id"`
-	AvailableQuantity *float64  `json:"available_quantity,omitempty"`
+	RestaurantID      string   `json:"restaurant_id"`
+	CatalogItemID     string   `json:"catalog_item_id"`
+	AvailableQuantity *float64 `json:"available_quantity,omitempty"`
 	Reason            string   `json:"reason,omitempty"`
 	Active            *bool    `json:"active,omitempty"`
 }
@@ -1892,9 +1892,9 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 		Halls:                  edgeHalls(halls),
 		Tables:                 edgeTables(tables),
 		PricingPolicies:        edgePricingPolicies(pricingPolicies),
-		RecipeVersions:        recipeVersions,
-		RecipeLines:           recipeLines,
-		StopLists:             edgeStopLists(stopLists),
+		RecipeVersions:         recipeVersions,
+		RecipeLines:            recipeLines,
+		StopLists:              edgeStopLists(stopLists),
 	}
 	counts := map[string]int{
 		"restaurants":               len(packet.Restaurants),
@@ -2115,7 +2115,7 @@ func edgeFolders(items []domain.CatalogFolder) []domain.EdgeCatalogFolder {
 func edgeFolderParameters(items []domain.FolderParameter) []domain.EdgeFolderParameter {
 	out := make([]domain.EdgeFolderParameter, 0, len(items))
 	for _, item := range items {
-		out = append(out, domain.EdgeFolderParameter{ID: item.ID, FolderID: item.FolderID, Key: item.Key, ValueType: item.ValueType, ValueJSON: item.ValueJSON, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+		out = append(out, domain.EdgeFolderParameter{ID: item.ID, RestaurantID: item.RestaurantID, FolderID: item.FolderID, Key: item.Key, ValueType: item.ValueType, ValueJSON: item.ValueJSON, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
 	}
 	return out
 }
@@ -2123,7 +2123,7 @@ func edgeFolderParameters(items []domain.FolderParameter) []domain.EdgeFolderPar
 func edgeTags(items []domain.CatalogTag) []domain.EdgeCatalogTag {
 	out := make([]domain.EdgeCatalogTag, 0, len(items))
 	for _, item := range items {
-		out = append(out, domain.EdgeCatalogTag{ID: item.ID, Name: item.Name, Code: item.Code, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+		out = append(out, domain.EdgeCatalogTag{ID: item.ID, RestaurantID: item.RestaurantID, Name: item.Name, Code: item.Code, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
 	}
 	return out
 }
@@ -2131,7 +2131,7 @@ func edgeTags(items []domain.CatalogTag) []domain.EdgeCatalogTag {
 func edgeItemTags(items []domain.CatalogItemTag) []domain.EdgeCatalogItemTag {
 	out := make([]domain.EdgeCatalogItemTag, 0, len(items))
 	for _, item := range items {
-		out = append(out, domain.EdgeCatalogItemTag{CatalogItemID: item.CatalogItemID, TagID: item.TagID})
+		out = append(out, domain.EdgeCatalogItemTag{CatalogItemID: item.CatalogItemID, TagID: item.TagID, RestaurantID: item.RestaurantID})
 	}
 	return out
 }

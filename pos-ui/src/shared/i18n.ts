@@ -247,7 +247,6 @@ export const i18n = createI18n({
         localEvents: 'Локальные события',
         managerTools: 'Инструменты менеджера',
         managerWorkspace: 'Инструменты менеджера',
-        managerEmployeeId: 'ID менеджера',
         managerPin: 'PIN менеджера',
         menu: 'Меню',
         modifiers: 'Модификаторы',

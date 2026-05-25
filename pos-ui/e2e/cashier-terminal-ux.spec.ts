@@ -5,7 +5,6 @@ import { bootstrapRequiredMessage, loadBootstrapJson } from './support/bootstrap
 const bootstrapJson = loadBootstrapJson();
 
 type DemoBootstrap = {
-  manager_employee_id: string;
   manager_pin: string;
 };
 
@@ -114,7 +113,6 @@ test('redesigned POS shell supports section navigation and cashier flow', async 
   const cancelDialog = page.locator('.q-dialog').filter({ hasText: 'Отмена пречека' });
   await expect(cancelDialog).toBeVisible();
   await expect(cancelDialog.getByLabel(/PIN менеджера/i)).toHaveAttribute('type', 'password');
-  await cancelDialog.getByLabel(/ID менеджера/i).fill(demo.manager_employee_id);
   await cancelDialog.getByLabel(/PIN менеджера/i).fill('0000');
   await cancelDialog.getByLabel(/Причина отмены/i).fill('playwright invalid manager override');
   await cancelDialog.getByRole('button', { name: /Отмена пречека/i }).click();
@@ -329,7 +327,6 @@ async function cancelIssuedPrecheckIfPresent(page: Page) {
   await cancelPrecheck.click();
   const cancelDialog = page.locator('.q-dialog').filter({ hasText: 'Отмена пречека' });
   await expect(cancelDialog).toBeVisible();
-  await cancelDialog.getByLabel(/ID менеджера/i).fill(demo.manager_employee_id);
   await cancelDialog.getByLabel(/PIN менеджера/i).fill(demo.manager_pin);
   await cancelDialog.getByLabel(/Причина отмены/i).fill('playwright prepare editable order');
   await cancelDialog.getByRole('button', { name: /Отмена пречека/i }).click();

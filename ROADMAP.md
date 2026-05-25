@@ -1,4 +1,4 @@
-# ROADMAP
+﻿# ROADMAP
 
 Статус документа: актуализировано под фактический код, сводную карту текущего состояния и цель полной пилотной реализации на 2026-05-21.
 
@@ -54,7 +54,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - POS Edge outbox/local event foundation for cashier operational events.
 - `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud financial operation events. `PaymentRefunded` and `CheckRefunded` remain accepted legacy operational event types for older payloads.
 - Cloud receiver валидирует current `RefundRecorded`/`CancellationRecorded` payload fields, включая совпадение payload `restaurant_id`/`device_id` с envelope, precheck id и reason, stores raw/journal rows idempotently, updates event-type stats plus coarse shift finance refund counters for refunds and maintains detailed `cloud_projection_financial_operations` for current financial operations. Legacy `PaymentRefunded`/`CheckRefunded` remain inbound-compatible but do not populate the detailed operation projection.
-- Python 3 local stack smoke runner: отдельные suites `health`, `license_pairing`, `cloud_to_edge_masterdata`, `pos_cashier_runtime`, `pos_refund_after_shift_close`. Runtime suites проверяют Cloud seed -> POS Edge sync -> PIN login -> personal shift -> cash shift -> hall/table/menu reads -> order -> regular line -> modifier line при наличии seed data -> service line при наличии seed data -> precheck -> payment by `precheck_id` -> final check -> bounded closed orders -> get/reprint check -> cancellation ledger в той же смене -> financial operations read -> storage status, а также отдельный refund после закрытия исходных cash/personal shifts с проверкой ledger и closed-order reads.
+- Python 3 local seed runner `scripts/seed-dev-system.py` создает полный Cloud-owned dataset, публикует packages для POS Edge streams, выполняет license pairing и проверяет базовый POS read model. Runtime cashier/refund/e2e сценарии остаются в профильных backend/UI тестах.
 - DDD context map exists in `docs/architecture/DDD-CONTEXT-MAP.md`.
 
 ### Persistence Policy
@@ -84,7 +84,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 Реализовано сейчас:
 
-- Документация частично сверена с фактическими POS Edge routes, Cloud routes, миграционными baseline и smoke-скриптами; сверка продолжается по мере выявления расхождений в route lists и формулировках runtime-coverage.
+- Документация частично сверена с фактическими POS Edge routes, Cloud routes, миграционными baseline и единым seed-путем; сверка продолжается по мере выявления расхождений в route lists и формулировках runtime-coverage.
 - Результаты сверки фиксируются напрямую в профильных документах и этом roadmap без ссылок на отсутствующие временные отчеты.
 
 Запланировано далее:
@@ -123,8 +123,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Cancellation/refund/reprint hardening:
   - backend ledger, immutable snapshots, no-over-cancel/no-over-refund/no-over-line-amount tests, current `CancellationRecorded`/`RefundRecorded` sync contracts, idempotent Cloud raw/journal receipt checks, coarse Cloud refund counters and detailed Cloud financial operation projection реализованы;
   - cashier UI full whole-check и partial `order_line`/quantity cancellation/refund через ledger endpoints реализован с выбором inventory disposition; compatibility refund по captured payment оставлен отдельным fallback;
-  - выполнено: `scripts/run-stack-smoke.py --suite all` включает `pos_cashier_runtime` для cancellation ledger в той же смене, check reprint, bounded closed orders и storage status sanity check;
-  - выполнено: отдельная suite `pos_refund_after_shift_close` закрывает исходные personal/cash shifts, открывает новую cash-session boundary для refund, пишет full refund через `/checks/{id}/refunds` и проверяет ledger/closed-order reads;
+  - выполнено: `scripts/seed-dev-system.py` создает полный локальный набор справочников и проверяет Cloud -> Edge publication/pairing/read-model path; runtime smoke для cancellation/refund остается задачей профильных backend/UI тестов.
+  - запланировано далее: runtime e2e для refund после закрытия исходных personal/cash shifts с проверкой ledger/closed-order reads; seed script только готовит данные и привязку POS Edge;
   - запланировано далее: PSP refund и fiscal integration.
 - Documentation freeze:
   - поддерживать `SPECv1.3.md` как contract текущего cashier runtime и цели полного пилота;
@@ -161,7 +161,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - Cloud UI должен довести readiness-only surfaces до runtime только после появления подтвержденных Cloud backend routes;
   - launch readiness учитывает restaurant, staff, floor, catalog, menu, modifiers, pricing, stop-list review, publication и known Edge node.
 - Full pilot smoke:
-  - добавить suite `full_pilot`, которая проходит Cloud setup -> publication -> Edge sync -> waiter order -> kitchen served -> cashier payment/final check -> reconnect/outbox ACK -> Cloud inventory ledger -> ClickHouse export -> OLAP API reads.
+  - добавить runtime e2e, который проходит Cloud setup -> seed publication -> Edge sync -> waiter order -> kitchen served -> cashier payment/final check -> reconnect/outbox ACK -> Cloud inventory ledger -> ClickHouse export -> OLAP API reads.
 - Full Inventory Engine:
   - реализовать stock receipts, inventory counts, production, sale consumption, refund/cancellation stock disposition, recipe expansion, modifier linked consumption, balances и costing state;
   - реализовать retro recalculation DAG для документов задним числом и отрицательных остатков;
@@ -175,8 +175,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 После закрытия cashier pilot blockers и перед полным пилотом:
 
-- Полный pre-pilot smoke path: поддерживать `scripts/run-stack-smoke.py` как основной Fedora/Linux/Windows-compatible путь; следующий перенос в Python suites — более богатые negative/permission cases.
-- Расширять OpenAPI smoke contract, stack smoke suites и demo seed dataset вместе с новыми Cloud-owned справочниками, publication streams и POS read flows, чтобы ручной наглядный тест не отставал от runtime.
+- Полный pre-pilot seed path: поддерживать `scripts/seed-dev-system.py` как единственный Fedora/Linux/Windows-compatible путь заполнения данных; новые Cloud-owned справочники, publication streams и POS read flows добавлять в этот скрипт и документацию тем же PR.
+- Расширять `scripts/seed-dev-system.py` и demo seed dataset вместе с новыми Cloud-owned справочниками, publication streams и POS read flows, чтобы ручной наглядный тест не отставал от runtime.
 - Сверка RBAC matrix с фактическим UI и backend permissions.
 - Проверка migration/backup behavior на старой SQLite DB.
 - Публичный Cloud reporting API/UI поверх `cloud_projection_financial_operations`, если пилоту потребуется Cloud-side финансовая отчетность beyond service/repository layer.
@@ -228,8 +228,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Cloud принимает `CheckClosed`/`ItemServed`, дедуплицирует replay и Cloud Inventory Worker пишет полный stock document/ledger/balance/costing state;
 - Cloud Inventory Engine покрывает stock receipt, inventory count, production, sale consumption, refund/cancellation disposition, recipe expansion, modifier linked consumption, negative-balance costing и retro recalculation DAG;
 - ClickHouse runtime поднят как обязательный Cloud component: `raw_business_events`, `olap_stock_moves`, async forwarder, retry/backfill, export checkpoints и bounded OLAP API проходят smoke;
-- `scripts/run-stack-smoke.py --suite full_pilot` проходит без ручной правки данных;
-- все новые routes, payloads, UI flows, RBAC, DB schema, sync events, error keys и smoke scripts отражены в профильных docs.
+- `scripts/seed-dev-system.py` создает full-pilot seed dataset без ручной правки данных; runtime full-pilot smoke остается запланированным отдельным e2e покрытием.
+- все новые routes, payloads, UI flows, RBAC, DB schema, sync events, error keys и seed/e2e paths отражены в профильных docs.
 
 ## Pricing/tax pilot readiness
 

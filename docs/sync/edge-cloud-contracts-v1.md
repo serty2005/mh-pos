@@ -1,4 +1,4 @@
-# Edge / Cloud Sync Contracts v1
+﻿# Edge / Cloud Sync Contracts v1
 
 Статус: актуализировано под текущий cashier runtime и целевой полный пилот.
 
@@ -181,6 +181,7 @@ Request body shape currently supported by POS Edge:
 - `catalog` применяет `catalog_items` с canonical `item_type`/`type` values `dish`, `good`, `semi_finished`, `service`, а также `folders`, `folder_parameters`, `tags`, `item_tags`, `modifier_groups`, `modifier_options` и `modifier_bindings`.
 - `menu` применяет `menu_items` и effective `menu_item_modifier_groups` links после применения menu items; для старого explicit `stream: "catalog"` link-only payload остается accepted, если referenced menu item уже существует.
 - Cloud publication package для POS Edge является typed ingest DTO, а не Cloud rich projection. `modifier_groups[]` содержит только поля, которые принимает POS Edge: `id`, `restaurant_id`, `name`, `required`, `min_count`, `max_count`, `active`.
+- `folder_parameters[]`, `tags[]` и `item_tags[]` содержат `restaurant_id`, потому что POS Edge сохраняет эти справочники с restaurant-scoped identity и отклоняет записи без явного restaurant context.
 - `modifier_options[]` содержит `id`, `restaurant_id`, `modifier_group_id`, `name`, `price_minor`, `active`.
 - `modifier_bindings[]` содержит `id`, `restaurant_id`, `modifier_group_id`, `target_type`, `target_id`, `sort_order`, `active`.
 - `menu_item_modifier_groups[]` является link-only массивом и содержит только `menu_item_id`, `modifier_group_id`, `sort_order`. Правила обязательности и count limits остаются в top-level `modifier_groups[]`.
@@ -194,7 +195,7 @@ Request body shape currently supported by POS Edge:
 Только основа:
 
 - Cloud schema и publication workflow реально публикуют `recipes`/`inventory_reference` в `cloud_master_data_packages` как часть одного детерминированного publication snapshot.
-- Smoke suite `pos_stop_list_sale_blocking` покрывает Cloud authoring -> publication -> Edge import -> blocked sale на POS runtime.
+- `scripts/seed-dev-system.py` создает recipe/stop-list examples и публикует их в Edge; runtime sale-blocking проверяется профильными POS backend tests.
 
 ## Edge -> Cloud Operational Events
 
