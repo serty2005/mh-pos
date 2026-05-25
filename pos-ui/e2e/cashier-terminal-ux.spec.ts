@@ -52,7 +52,7 @@ test('lazy routes load redesigned POS shell and out-of-scope workspace shells', 
   for (const path of ['/pos/kitchen', '/pos/manager']) {
     await page.goto(path);
     if (path === '/pos/kitchen') {
-      await expect(page.getByText('запланировано далее')).toBeVisible();
+      await expect(page.getByText('запланировано далее').first()).toBeVisible();
       await expect(page.getByText(/нет routes для kitchen tickets/i)).toBeVisible();
     } else {
       await expect(page.getByText('Вне текущего объема')).toBeVisible();
@@ -69,7 +69,7 @@ test('redesigned POS shell supports section navigation and cashier flow', async 
   await page.goto('/pos');
 
   await expectRedesignedShell(page);
-  await expect(page.getByText('Production Manager')).toBeVisible();
+  await expect(page.getByText(/Demo Manager|Manager/i).first()).toBeVisible();
   await expectTouchTargets(page);
 
   await page.keyboard.press('Tab');

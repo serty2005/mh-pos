@@ -30,14 +30,14 @@ test('kitchen route is an honest readiness screen while KDS endpoints are absent
   await page.goto('/pos/kitchen');
 
   await expect(page.getByRole('heading', { name: /Кухонный экран/i })).toBeVisible();
-  await expect(page.getByText('запланировано далее')).toBeVisible();
+  await expect(page.getByText('запланировано далее').first()).toBeVisible();
   await expect(page.getByText(/нет routes для kitchen tickets/i)).toBeVisible();
   await expect(page.getByText('Только readiness')).toBeVisible();
   await expect(page.getByText('Lifecycle-команды отключены')).toBeVisible();
   await expect(page.getByText(/GET для kitchen tickets/i)).toBeVisible();
-  await expect(page.getByText(/new/)).toBeVisible();
-  await expect(page.getByText(/accepted/)).toBeVisible();
-  await expect(page.getByText(/ready/)).toBeVisible();
+  await expect(page.getByText('new', { exact: true })).toBeVisible();
+  await expect(page.getByText('accepted', { exact: true })).toBeVisible();
+  await expect(page.getByText('ready', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /accepted|in_progress|ready|served|recall|cancelled/i })).toHaveCount(0);
   await expect(page.locator('.kitchen-page')).not.toContainText(/готовый runtime|реализовано сейчас/i);
 });

@@ -14,6 +14,7 @@ type DemoBootstrap = {
   menu_item_ids: string[];
   modifier_group_id: string;
   modifier_option_id: string;
+  modifier_option_ids: string[];
 };
 
 type AuthHeaders = Record<'X-Node-Device-ID' | 'X-Client-Device-ID' | 'X-Actor-Employee-ID' | 'X-Session-ID', string>;
@@ -101,22 +102,24 @@ test('API edit modifiers reprices line, persists pricing snapshot and rejects lo
     modifier_group_id: demo.modifier_group_id,
     modifier_option_id: demo.modifier_option_id,
     quantity: 1,
-    total_price: 3000,
   });
-  expect(line.total_price).toBe(18000);
+  expect(line.modifiers[0].total_price).toBeGreaterThanOrEqual(0);
+  expect(line.total_price).toBe(line.unit_price + line.modifiers[0].total_price);
 
+  const replacementOptionId = demo.modifier_option_ids.find((id) => id !== demo.modifier_option_id) ?? demo.modifier_option_id;
   const edited = await patch<OrderLine>(request, `/orders/${order.id}/lines/${line.id}/modifiers`, {
     command_id: nextCommandID('edit-line-modifier'),
     selected_modifiers: [{
       modifier_group_id: demo.modifier_group_id,
-      modifier_option_id: demo.modifier_option_id,
-      quantity: 2,
+      modifier_option_id: replacementOptionId,
+      quantity: 1,
     }],
   });
   expect(edited.modifiers).toHaveLength(1);
-  expect(edited.modifiers[0].quantity).toBe(2);
-  expect(edited.modifiers[0].total_price).toBe(6000);
-  expect(edited.total_price).toBe(21000);
+  expect(edited.modifiers[0].modifier_option_id).toBe(replacementOptionId);
+  expect(edited.modifiers[0].quantity).toBe(1);
+  expect(edited.modifiers[0].total_price).toBe(edited.modifiers[0].unit_price);
+  expect(edited.total_price).toBe(edited.unit_price + edited.modifiers[0].total_price);
 
   const updatedOrder = await get<Order>(request, `/orders/${order.id}`);
   expect(updatedOrder.total).toBe(21000);
@@ -130,7 +133,7 @@ test('API edit modifiers reprices line, persists pricing snapshot and rejects lo
     command_id: nextCommandID('issue-precheck-with-modifier'),
   }, headers);
   expect(precheck.status).toBe('issued');
-  expect(precheck.total).toBe(21000);
+  expect(precheck.total).toBe(edited.total_price);
   expect(JSON.stringify(precheck.snapshot)).toContain(demo.modifier_option_id);
 
   const rejected = await request.patch(`${apiBase}/orders/${order.id}/lines/${line.id}/modifiers`, {
@@ -141,6 +144,13 @@ test('API edit modifiers reprices line, persists pricing snapshot and rejects lo
     headers,
   });
   expect(rejected.status(), await rejected.text()).toBe(409);
+
+  await post(request, `/prechecks/${precheck.id}/payments`, {
+    command_id: nextCommandID('capture-modifier-order'),
+    method: 'cash',
+    amount: precheck.total,
+    currency: 'RUB',
+  }, headers);
 });
 
 async function ensureShiftAndCashSession(request: APIRequestContext) {

@@ -82,13 +82,15 @@ async function ensureOperationalState(request: APIRequestContext) {
 }
 
 function loadCurrentNodeToken(): string {
+  if (!dockerCLIAvailable()) return nodeToken ?? '';
   const tokenDir = path.join(os.tmpdir(), 'mh-pos-sync-exchange-e2e');
+  const posEdgeContainer = process.env.POS_E2E_POS_EDGE_CONTAINER ?? 'mh-pos-local-pos-edge-1';
   try {
     fs.mkdirSync(tokenDir, { recursive: true });
     for (const suffix of ['', '-wal', '-shm']) {
       execFileSync('docker', [
         'cp',
-        `mh-pos-local-pos-edge-1:/app/data/pos-edge.db${suffix}`,
+        `${posEdgeContainer}:/app/data/pos-edge.db${suffix}`,
         path.join(tokenDir, `pos-edge.db${suffix}`),
       ], { stdio: 'ignore' });
     }
@@ -102,6 +104,15 @@ function loadCurrentNodeToken(): string {
     return execFileSync('python', ['-c', script], { encoding: 'utf-8' }).trim();
   } catch {
     return nodeToken ?? '';
+  }
+}
+
+function dockerCLIAvailable(): boolean {
+  try {
+    execFileSync('docker', ['--version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -226,6 +237,7 @@ test('direct exchange returns partial ACK and idempotent replay for the same eve
 });
 
 test('worker exchange recovers and catches up after Cloud outage', async ({ request }) => {
+  test.skip(!dockerCLIAvailable(), 'Docker CLI is required for the Cloud outage recovery e2e');
   const composeFile = path.join(repoRoot, 'docker-compose.local.yml');
   execFileSync('docker', ['compose', '-f', composeFile, 'stop', 'cloud-api'], { cwd: repoRoot, stdio: 'ignore' });
 
