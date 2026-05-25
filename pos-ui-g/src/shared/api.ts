@@ -185,6 +185,18 @@ export function createApiClient(getAuth: () => AuthSnapshot, base = (viteEnv.env
   return {
     getPairingStatus: () => request('/system/pairing-status', pairingStatusSchema),
     getProvisioningStatus: () => request('/system/provisioning-status', provisioningStatusSchema),
+    registerCloudProvisioning: (cloudUrl = '') => request('/system/provisioning/register-cloud', provisioningStatusSchema, {
+      method: 'POST',
+      body: JSON.stringify({
+        cloud_url: cloudUrl,
+        display_name: 'POS Terminal',
+        app_version: viteEnv.env?.VITE_APP_VERSION ?? 'pos-ui-g',
+      }),
+    }),
+    pairViaLicense: (pairingCode: string) => request('/system/provisioning/pair-via-license', provisioningStatusSchema, {
+      method: 'POST',
+      body: JSON.stringify({ pairing_code: pairingCode }),
+    }),
     pinLogin: (pin: string) => request('/auth/pin-login', pinLoginResultSchema, {
       method: 'POST',
       body: JSON.stringify({

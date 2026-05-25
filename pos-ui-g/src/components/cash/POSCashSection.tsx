@@ -28,6 +28,7 @@ import {
 export const POSCashSection: React.FC = () => {
   const {
     currentOperator,
+    openEmployeeShift,
     closeEmployeeShift,
     cashSession,
     openCashSession,
@@ -110,7 +111,7 @@ export const POSCashSection: React.FC = () => {
               )}
             </div>
 
-            {currentOperator && (
+            {currentOperator ? (
               <PosButton
                 id="cash-close-shift-btn"
                 variant="danger"
@@ -119,6 +120,16 @@ export const POSCashSection: React.FC = () => {
                 onClick={closeEmployeeShift}
               >
                 {t.cash.closeShift}
+              </PosButton>
+            ) : (
+              <PosButton
+                id="cash-open-shift-btn"
+                variant="primary"
+                size="sm"
+                fullWidth
+                onClick={openEmployeeShift}
+              >
+                {t.cash.openShift}
               </PosButton>
             )}
           </div>

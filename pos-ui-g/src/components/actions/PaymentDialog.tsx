@@ -17,7 +17,7 @@ export const PaymentDialog: React.FC<PaymentDialogProps> = ({
   
   const [method, setMethod] = useState<'cash' | 'card'>('cash');
   const [inputVal, setInputVal] = useState<string>('');
-  const [paymentReport, setPaymentReport] = useState<{ change: number; success: boolean } | null>(null);
+  const [paymentReport, setPaymentReport] = useState<{ amountToPay: number; inputAmount: number; change: number; success: boolean } | null>(null);
 
   useEffect(() => {
     if (isOpen && currentOrder) {
@@ -27,7 +27,7 @@ export const PaymentDialog: React.FC<PaymentDialogProps> = ({
     }
   }, [isOpen, currentOrder]);
 
-  if (!currentOrder) return null;
+  if (!currentOrder && !paymentReport) return null;
 
   const handleQuickSum = (amountToAdd: number) => {
     const current = parseFloat(inputVal) || 0;
@@ -35,19 +35,24 @@ export const PaymentDialog: React.FC<PaymentDialogProps> = ({
   };
 
   const handleExactSum = () => {
+    if (!currentOrder) return;
     setInputVal(currentOrder.total.toString());
   };
 
   const handleSubmit = async () => {
+    if (!currentOrder) return;
     const numericAmount = parseFloat(inputVal) || 0;
+    const amountToPay = currentOrder.total;
     
     // Process payment mutation via context
     const report = await payOrder(method, numericAmount);
     
     if (report.success) {
       setPaymentReport({
+        amountToPay,
+        inputAmount: numericAmount,
+        change: report.change,
         success: true,
-        change: report.change
       });
     }
   };
@@ -66,8 +71,8 @@ export const PaymentDialog: React.FC<PaymentDialogProps> = ({
     }
   };
 
-  const amountToPay = currentOrder.total;
-  const inputtedAmount = parseFloat(inputVal) || 0;
+  const amountToPay = currentOrder?.total ?? paymentReport?.amountToPay ?? 0;
+  const inputtedAmount = paymentReport?.inputAmount ?? (parseFloat(inputVal) || 0);
   const changeValue = Math.max(0, inputtedAmount - amountToPay);
   const isInputSufficient = inputtedAmount >= amountToPay;
 

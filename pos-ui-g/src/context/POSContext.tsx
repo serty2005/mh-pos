@@ -17,6 +17,7 @@ import {
   selectedModifiersToPayload,
 } from '../shared/backendMappers';
 import { getClientDeviceId } from '../shared/clientIdentity';
+import { t } from '../shared/i18n';
 import type {
   BackendActorContext,
   BackendCashDrawerEvent,
@@ -26,6 +27,7 @@ import type {
   BackendMenuItem,
   BackendOrder,
   BackendPrecheck,
+  BackendProvisioningStatus,
   BackendPricingPolicy,
   BackendShift,
   BackendStorageStatus,
@@ -100,6 +102,14 @@ interface POSContextType {
   appVersion: string;
   logEvents: LogEvent[];
   addLogEvent: (msg: string, type?: 'info' | 'warn' | 'success') => void;
+  authSnapshot: AuthSnapshot;
+  isEdgePaired: boolean;
+  provisioningStatus: BackendProvisioningStatus | null;
+  provisioningLoading: boolean;
+  provisioningError: string;
+  refreshProvisioningStatus: () => Promise<void>;
+  registerCloudProvisioning: (cloudUrl?: string) => Promise<void>;
+  pairViaLicense: (pairingCode: string) => Promise<void>;
 }
 
 const POSContext = createContext<POSContextType | undefined>(undefined);
@@ -145,15 +155,40 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [closedOrdersDto, setClosedOrdersDto] = useState<BackendClosedOrder[]>([]);
   const [syncStatusDto, setSyncStatusDto] = useState<BackendSyncStatus | null>(null);
   const [storageStatusDto, setStorageStatusDto] = useState<BackendStorageStatus | null>(null);
+  const [provisioningStatusDto, setProvisioningStatusDto] = useState<BackendProvisioningStatus | null>(null);
+  const [provisioningLoading, setProvisioningLoading] = useState<boolean>(false);
+  const [provisioningError, setProvisioningError] = useState<string>('');
   const [logEvents, setLogEvents] = useState<LogEvent[]>([]);
+
+  const isEdgePaired = useMemo(
+    () => Boolean(auth.nodeDeviceId && auth.restaurantId),
+    [auth.nodeDeviceId, auth.restaurantId],
+  );
 
   const setAuth = useCallback((next: AuthSnapshot) => {
     authRef.current = next;
     setAuthState(next);
     if (next.nodeDeviceId) localStorage.setItem(storageKeys.nodeDeviceId, next.nodeDeviceId);
+    else localStorage.removeItem(storageKeys.nodeDeviceId);
     if (next.restaurantId) localStorage.setItem(storageKeys.restaurantId, next.restaurantId);
+    else localStorage.removeItem(storageKeys.restaurantId);
     if (next.sessionId) localStorage.setItem(storageKeys.sessionId, next.sessionId);
+    else localStorage.removeItem(storageKeys.sessionId);
   }, []);
+
+  const applyProvisioningStatus = useCallback((status: BackendProvisioningStatus) => {
+    setProvisioningStatusDto(status);
+    if (!status.paired) {
+      setActor(null);
+    }
+    setAuth({
+      ...authRef.current,
+      nodeDeviceId: status.node_device_id || authRef.current.nodeDeviceId,
+      restaurantId: status.paired && status.restaurant_id ? status.restaurant_id : '',
+      sessionId: status.paired ? authRef.current.sessionId : '',
+      actorEmployeeId: status.paired ? authRef.current.actorEmployeeId : '',
+    });
+  }, [setAuth]);
 
   const addLogEvent = useCallback((msg: string, type: 'info' | 'warn' | 'success' = 'info') => {
     setLogEvents((prev) => [
@@ -182,13 +217,55 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return;
       }
       const provisioning = await api.getProvisioningStatus();
-      if (provisioning.paired && provisioning.node_device_id && provisioning.restaurant_id) {
-        setAuth({ ...authRef.current, nodeDeviceId: provisioning.node_device_id, restaurantId: provisioning.restaurant_id });
-      }
+      applyProvisioningStatus(provisioning);
     } catch (error) {
       handleError(error, 'Не удалось получить pairing status');
     }
-  }, [api, handleError, setAuth]);
+  }, [api, applyProvisioningStatus, handleError, setAuth]);
+
+  const refreshProvisioningStatus = useCallback(async () => {
+    setProvisioningLoading(true);
+    setProvisioningError('');
+    try {
+      const status = await api.getProvisioningStatus();
+      applyProvisioningStatus(status);
+    } catch (error) {
+      setProvisioningError(t.pair.error);
+      handleError(error, 'Не удалось получить provisioning status');
+    } finally {
+      setProvisioningLoading(false);
+    }
+  }, [api, applyProvisioningStatus, handleError]);
+
+  const registerCloudProvisioning = useCallback(async (cloudUrl = '') => {
+    setProvisioningLoading(true);
+    setProvisioningError('');
+    try {
+      const status = await api.registerCloudProvisioning(cloudUrl);
+      applyProvisioningStatus(status);
+      addLogEvent('Регистрация Edge в Cloud отправлена.', 'success');
+    } catch (error) {
+      setProvisioningError(t.pair.error);
+      handleError(error, 'Не удалось зарегистрировать Edge в Cloud');
+    } finally {
+      setProvisioningLoading(false);
+    }
+  }, [addLogEvent, api, applyProvisioningStatus, handleError]);
+
+  const pairViaLicense = useCallback(async (pairingCode: string) => {
+    setProvisioningLoading(true);
+    setProvisioningError('');
+    try {
+      const status = await api.pairViaLicense(pairingCode.trim().toUpperCase());
+      applyProvisioningStatus(status);
+      addLogEvent('Edge привязан по license code.', 'success');
+    } catch (error) {
+      setProvisioningError(t.pair.error);
+      handleError(error, 'Не удалось привязать Edge по license code');
+    } finally {
+      setProvisioningLoading(false);
+    }
+  }, [addLogEvent, api, applyProvisioningStatus, handleError]);
 
   const refreshOps = useCallback(async () => {
     if (!authRef.current.sessionId || !authRef.current.nodeDeviceId) return;
@@ -268,6 +345,14 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     void refreshIdentity();
   }, [refreshIdentity]);
+
+  useEffect(() => {
+    if (isEdgePaired) return undefined;
+    const timer = window.setInterval(() => {
+      void refreshProvisioningStatus();
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [isEdgePaired, refreshProvisioningStatus]);
 
   useEffect(() => {
     const restore = async () => {
@@ -706,10 +791,19 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     appVersion,
     logEvents,
     addLogEvent,
+    authSnapshot: auth,
+    isEdgePaired,
+    provisioningStatus: provisioningStatusDto,
+    provisioningLoading,
+    provisioningError,
+    refreshProvisioningStatus,
+    registerCloudProvisioning,
+    pairViaLicense,
   }), [
     activeHallId,
     activeOrders,
     actor,
+    auth,
     addCashDrawerEvent,
     addLogEvent,
     addMenuItemToOrder,
@@ -730,6 +824,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     employeeShifts,
     halls,
     isPinLocked,
+    isEdgePaired,
     logEvents,
     logout,
     menuItems,
@@ -738,7 +833,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     partialRefundCheck,
     payOrder,
     pinLogin,
+    pairViaLicense,
+    provisioningError,
+    provisioningLoading,
+    provisioningStatusDto,
     pricingPolicies,
+    refreshProvisioningStatus,
+    registerCloudProvisioning,
     refundCheck,
     removeOrderLine,
     reprintCheck,

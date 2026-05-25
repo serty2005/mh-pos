@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { POSProvider, usePOS } from './context/POSContext';
+import { PairingScreen } from './components/PairingScreen';
 import { PinLogin } from './components/PinLogin';
 import { POSFloorSection } from './components/floor/POSFloorSection';
 import { POSOrderSection } from './components/menu/POSOrderSection';
@@ -331,7 +332,11 @@ function POSAppShellContent() {
 
 // Wrap in Auth Lock logic
 function POSAppShell() {
-  const { isPinLocked } = usePOS();
+  const { isEdgePaired, isPinLocked } = usePOS();
+  
+  if (!isEdgePaired) {
+    return <PairingScreen />;
+  }
   
   if (isPinLocked) {
     return <PinLogin />;

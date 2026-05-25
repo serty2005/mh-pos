@@ -180,4 +180,37 @@ describe('POS API client', () => {
       runtime_versions: [{ module_name: 'pos-backend', module_version: '0.1.4' }],
     });
   });
+
+  it('uses provisioning endpoints for cloud registration and license pairing', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        node_device_id: 'node-1',
+        cloud_url: 'http://cloud.local',
+        restaurant_id: 'restaurant-1',
+        status: 'pending_admin_approval',
+        paired: false,
+      }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        node_device_id: 'node-1',
+        cloud_url: 'http://cloud.local',
+        restaurant_id: 'restaurant-1',
+        status: 'paired',
+        paired: true,
+      }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const api = createApiClient(() => auth, 'http://pos.local/api/v1');
+    await api.registerCloudProvisioning('http://cloud.local');
+    await api.pairViaLicense('ABC-123');
+
+    expect(fetchMock.mock.calls[0][0]).toBe('http://pos.local/api/v1/system/provisioning/register-cloud');
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toMatchObject({
+      cloud_url: 'http://cloud.local',
+      display_name: 'POS Terminal',
+    });
+    expect(fetchMock.mock.calls[1][0]).toBe('http://pos.local/api/v1/system/provisioning/pair-via-license');
+    expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).toEqual({
+      pairing_code: 'ABC-123',
+    });
+  });
 });

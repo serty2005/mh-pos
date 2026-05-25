@@ -139,6 +139,7 @@ export const PinLogin: React.FC = () => {
 
           {/* Submit Action Button */}
           <PosButton
+            id="pin-submit-btn"
             variant="primary"
             size="md"
             fullWidth
