@@ -85,6 +85,17 @@ class FakeClient:
             return [{"id": "hall-1"}]
         if path.startswith("/api/v1/tables"):
             return [{"id": "table-1"}]
+        if path.startswith("/api/v1/kitchen/tickets/ticket-line-soup/"):
+            status_by_action = {
+                "accept": "accepted",
+                "start": "in_progress",
+                "ready": "ready",
+                "serve": "served",
+            }
+            action = path.rsplit("/", 1)[-1]
+            return {"id": "ticket-line-soup", "order_line_id": "line-soup", "status": status_by_action[action]}
+        if path.startswith("/api/v1/kitchen/tickets"):
+            return [{"id": "ticket-line-soup", "order_line_id": "line-soup", "status": "new"}]
         if path == "/api/v1/menu/items":
             return [
                 {
@@ -112,11 +123,15 @@ class FakeClient:
         if path == "/api/v1/orders/order-1":
             return {"id": "order-1", "status": "closed", "check": {"id": "check-1", "status": "paid"}}
         if path.startswith("/api/v1/sync/edge-events"):
+            if "event_type=ItemServed" in path:
+                return [{"event_id": "event-item-served", "event_type": "ItemServed", "aggregate_id": "ticket-line-soup"}]
             return [{"event_id": "event-check-closed", "event_type": "CheckClosed", "aggregate_id": "check-1"}]
         if path.startswith("/api/v1/inventory/stock-ledger"):
+            if "source_event_type=CheckClosed" in path:
+                return []
             return [
-                {"id": "ledger-1", "source_event_id": "event-check-closed", "source_event_type": "CheckClosed", "order_line_id": "line-soup", "catalog_item_id": "catalog-sirloin"},
-                {"id": "ledger-2", "source_event_id": "event-check-closed", "source_event_type": "CheckClosed", "order_line_id": "line-soup", "catalog_item_id": "catalog-sauce"},
+                {"id": "ledger-1", "source_event_id": "event-item-served", "source_event_type": "ItemServed", "order_line_id": "line-soup", "catalog_item_id": "catalog-sirloin"},
+                {"id": "ledger-2", "source_event_id": "event-item-served", "source_event_type": "ItemServed", "order_line_id": "line-soup", "catalog_item_id": "catalog-sauce"},
             ]
         if path == "/api/v1/sync/status":
             return {"status": "ok"}
@@ -191,7 +206,7 @@ class SeedDevSystemTest(unittest.TestCase):
             restaurant_id="restaurant-1",
             node_device_id="edge-node-from-pos",
             client_device_id="unit-client",
-            pins={"waiter_pin": "3333", "cashier_pin": "1111"},
+            pins={"waiter_pin": "3333", "cashier_pin": "1111", "kitchen_pin": "5555"},
             table_ids=["table-1"],
             menu_refs={"soup": "menu-soup", "sold_out_dessert": "menu-stopped"},
             catalog_refs={"sirloin": "catalog-sirloin", "sauce": "catalog-sauce"},
@@ -200,12 +215,18 @@ class SeedDevSystemTest(unittest.TestCase):
         )
 
         self.assertEqual(result["check_id"], "check-1")
+        self.assertEqual(result["kitchen_ticket_id"], "ticket-line-soup")
+        self.assertEqual(result["item_served_event_id"], "event-item-served")
         self.assertEqual(result["check_closed_event_id"], "event-check-closed")
-        self.assertEqual(result["ledger_entry_count"], 2)
+        self.assertEqual(result["served_ledger_entry_count"], 2)
+        self.assertEqual(result["check_closed_delta_entry_count"], 0)
+        self.assertEqual(result["ledger_catalog_item_ids"], ["catalog-sauce", "catalog-sirloin"])
         self.assertEqual(result["blocked_sale_error_code"], "SALE_ITEM_STOP_LISTED")
         cloud_paths = [path for _, path, _, _ in cloud.calls]
-        self.assertTrue(any(path.startswith("/api/v1/sync/edge-events") for path in cloud_paths))
-        self.assertTrue(any(path.startswith("/api/v1/inventory/stock-ledger") for path in cloud_paths))
+        self.assertTrue(any("event_type=ItemServed" in path for path in cloud_paths))
+        self.assertTrue(any("event_type=CheckClosed" in path for path in cloud_paths))
+        self.assertTrue(any("source_event_type=ItemServed" in path for path in cloud_paths))
+        self.assertTrue(any("source_event_type=CheckClosed" in path for path in cloud_paths))
 
 
 if __name__ == "__main__":

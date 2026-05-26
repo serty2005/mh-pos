@@ -7049,6 +7049,28 @@ func TestKitchenTicketTransitionMatrixAndEvents(t *testing.T) {
 	if servedOutbox := countOutboxByType(t, f, "ItemServed"); servedOutbox != 1 {
 		t.Fatalf("expected one ItemServed outbox event, got %d", servedOutbox)
 	}
+	var servedPayloadJSON string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT payload_json FROM pos_sync_outbox WHERE command_type = 'ItemServed' AND aggregate_id = ?`, tickets[0].ID).Scan(&servedPayloadJSON); err != nil {
+		t.Fatalf("expected ItemServed outbox payload: %v", err)
+	}
+	var servedEnvelope domain.SyncEnvelope
+	if err := json.Unmarshal([]byte(servedPayloadJSON), &servedEnvelope); err != nil {
+		t.Fatalf("decode ItemServed outbox envelope: %v", err)
+	}
+	payload, ok := servedEnvelope.Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("expected ItemServed payload object, got %+v", servedEnvelope.Payload)
+	}
+	data, ok := payload["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ItemServed payload data object, got %+v", payload)
+	}
+	if servedEnvelope.EventType != "ItemServed" || servedEnvelope.AggregateType != "KitchenTicket" || servedEnvelope.AggregateID != tickets[0].ID {
+		t.Fatalf("unexpected ItemServed envelope identity: %+v", servedEnvelope)
+	}
+	if data["order_line_id"] != line.ID || data["catalog_item_id"] != f.menuItem.CatalogItemID || data["quantity"] != "1.000" || data["unit_code"] != tickets[0].UnitCode {
+		t.Fatalf("unexpected ItemServed inventory identity payload: %+v", data)
+	}
 }
 
 func TestApplyMasterDataRejectsUnsupportedStreamWithoutPartialWrite(t *testing.T) {
