@@ -136,6 +136,10 @@ Sync receiver:
 - `POST /api/v1/sync/edge-events/batch`
 - `POST /api/v1/sync/exchange`
 
+Inventory read model:
+
+- `GET /api/v1/inventory/stock-ledger?restaurant_id=&source_event_type=&source_event_id=&order_line_id=&catalog_item_id=&limit=&offset=` — bounded read-only view of Cloud-owned `stock_ledger` без raw Edge payload.
+
 Generic Cloud -> Edge package storage:
 
 - `PUT /api/v1/provisioning/master-data/{stream}`
@@ -363,7 +367,7 @@ PIN policy:
 
 Publication DTO правила:
 
-- `catalog` stream содержит catalog items, folders, folder parameters, tags, item tags, modifier groups/options/bindings.
+- `catalog` stream содержит catalog items, folders, folder parameters, tags, item tags, modifier groups/options/bindings; `folder_parameters`, `tags` и `item_tags` публикуются с `restaurant_id` для POS Edge restaurant-scoped ingest.
 - `menu` stream содержит menu items and link-only `menu_item_modifier_groups`.
 - Rich modifier group fields не вкладываются внутрь `menu_items`.
 - `modifier_groups[]` передает `id`, `restaurant_id`, `name`, `required`, `min_count`, `max_count`, `active`.
@@ -516,6 +520,7 @@ Schema verification:
 Реализовано сейчас:
 
 - Cloud Inventory Worker создает stock documents and stock ledger из accepted normalized item events.
+- `GET /api/v1/inventory/stock-ledger` возвращает bounded read-only rows из Cloud-owned `stock_ledger` для smoke/операционной проверки `CheckClosed`/`ItemServed` processing; endpoint не раскрывает raw sync payload и не является OLAP API.
 
 Запланировано до полного пилота:
 

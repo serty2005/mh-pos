@@ -7,7 +7,6 @@
     @update:model-value="terminal.cancelDialog.value = $event"
   >
         <p class="dialog-copy">{{ terminal.t('pos.precheckCancelCopy') }}</p>
-        <q-input v-model="terminal.managerEmployeeId.value" outlined :label="terminal.t('pos.managerEmployeeId')" autocomplete="off" />
         <q-input v-model="terminal.managerPin.value" outlined :label="terminal.t('pos.managerPin')" type="password" inputmode="numeric" autocomplete="new-password" />
         <q-input v-model="terminal.cancelReason.value" outlined :label="terminal.t('pos.precheckCancelReason')" type="textarea" autogrow />
       <template #actions>

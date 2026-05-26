@@ -1,4 +1,4 @@
-# POS Backend Spec
+﻿# POS Backend Spec
 
 Статус: актуальный backend contract для текущего cashier runtime и целевого полного пилота.
 
@@ -121,7 +121,7 @@
 7. Кассир может применять backend-authoritative discount/surcharge commands и читать pricing preview.
 8. Кассир выпускает пречек.
 9. Backend блокирует заказ и создает immutable financial precheck snapshot.
-10. Кассир проводит одну или несколько оплат через `precheck_id`.
+10. Кассир проводит одну или несколько оплат через `precheck_id`; заказ сохраняет исходную личную смену оператора, а оплата и final check относятся к текущей кассовой смене кассира.
 11. Backend создает final check только после полной оплаты.
 12. Кассир или менеджер может повторно напечатать копию precheck/check из immutable snapshot.
 13. Авторизованный оператор может записать cancellation/refund operation; текущий cashier UI использует check-level ledger routes для full whole-check и partial `order_line`/quantity cancellation/refund и оставляет compatibility payment refund route как fallback для закрытых заказов.
@@ -130,13 +130,10 @@
 
 Реализовано сейчас:
 
-- `scripts/run-stack-smoke.py` использует OpenAPI smoke contract `docs/api/mhpos-local-smoke.openapi.json`; новые локальные smoke HTTP calls должны сначала получить `operationId` в этом contract.
-- Suites: `health`, `license_pairing`, `cloud_to_edge_masterdata`, `pos_cashier_runtime`, `pos_refund_after_shift_close`.
-- `pos_cashier_runtime` переиспользует Cloud -> Edge seed summary из предыдущей suite или `scripts/.local-masterdata-summary.json` для уже paired Edge.
-- `pos_cashier_runtime` проверяет backend runtime path: PIN login manager/cashier, открытие личной смены при отсутствии текущей, открытие cash shift при отсутствии текущего, чтение hall/table/menu read models, создание заказа на стол, обычную menu строку, modifier option через `PATCH /orders/{id}/lines/{line_id}/modifiers` при наличии modifier data, service item при наличии seed data, выпуск precheck, оплату через `POST /api/v1/prechecks/{id}/payments`, создание final check, bounded `GET /api/v1/orders/closed`, `GET /api/v1/checks/{id}`, `POST /api/v1/checks/{id}/reprint`, full cancellation в той же смене через `POST /api/v1/checks/{id}/cancellations`, `GET /api/v1/checks/{id}/financial-operations` и read-only `GET /api/v1/storage/status`.
-- `pos_refund_after_shift_close` проверяет отдельный backend runtime path: POS sale, закрытие исходной cash shift, закрытие исходной personal employee shift, открытие новой employee/cash shift для refund под менеджером при необходимости, full refund через `POST /api/v1/checks/{id}/refunds`, наличие refund operation в `GET /api/v1/checks/{id}/financial-operations`, стабильный `GET /api/v1/checks/{id}` и bounded `GET /api/v1/orders/closed` по исходной смене/check.
-- Financial mutations в suite отправляют уникальный `command_id`; smoke runner не делает automatic retry financial mutations.
-- JSON result содержит только безопасные ids, statuses и counts; PIN, pairing code, auth session id, token и credentials не выводятся.
+- `scripts/seed-dev-system.py` является единственным локальным seed entrypoint: он создает полный набор Cloud-owned справочников, публикует master data, выполняет license pairing POS Edge и проверяет POS read model.
+- Seed script выполняет health check Cloud/POS/License, берет `node_device_id` из POS provisioning status, создает справочники через Cloud API, публикует packages, генерирует license pairing code, вызывает POS `pair-via-license` и проверяет PIN login/menu/floor read model.
+- `--run-minimal-flow` выполняет минимальную financial mutation через HTTP: waiter order/precheck -> cashier payment/final check -> `CheckClosed` -> Cloud inventory ledger. Refund/cancellation runtime boundaries проверяются отдельными backend/UI тестами. Seed script не делает automatic retry financial mutations и destructive storage actions.
+- JSON summary содержит локальные demo IDs, pairing code и PIN-коды; он предназначен только для local/dev проверки и игнорируется git.
 
 Вне текущего объема:
 
@@ -195,8 +192,8 @@ Operational activity/sync read contract:
 - Only one active issued precheck per order is allowed.
 - Snapshot contains active lines with selected modifiers, currency, discounts, surcharges, taxes, totals and calculation breakdown at issue time.
 - Order becomes `locked`.
-- `CancelPrecheckCommand` requires `precheck_id`, `manager_employee_id`, `manager_pin`, `cancellation_reason`.
-- Cancel requires operator permission `pos.precheck.cancel.request` and manager permission `pos.precheck.cancel`.
+- `CancelPrecheckCommand` требует `precheck_id`, `manager_pin`, `cancellation_reason`; `manager_employee_id` принимается только как legacy compatibility input и не требуется от UI.
+- Отмена требует operator permission `pos.precheck.cancel.request`; backend определяет менеджера по введенному PIN внутри ресторана заказа и требует manager permission `pos.precheck.cancel`.
 - Cancel writes manager override audit and returns order to `open`.
 - Reprint requires `pos.precheck.reprint` and valid immutable snapshot.
 
@@ -231,6 +228,7 @@ Pricing contract:
 - Partial payments are allowed; overpayment is rejected.
 - Full payment creates one final check and closes order.
 - Check snapshot includes immutable precheck snapshot and payment snapshot.
+- Оплата относится к текущей открытой кассовой смене; заказ сохраняет исходную личную смену. `PaymentCaptured`, `CheckCreated` и `CheckClosed` используют кассовую смену оплаты в sync envelope.
 - Check reprint/refund use immutable snapshots and do not re-read current menu modifier data.
 - Reprint check requires `pos.check.reprint`.
 - Cancellation endpoint is `POST /api/v1/checks/{id}/cancellations`.

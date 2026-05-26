@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"testing"
+
+	"cloud-backend/internal/cloudsync/app"
 )
 
 func TestRequiredSchemaIncludesCurrencyReference(t *testing.T) { /* unchanged */
@@ -118,5 +120,31 @@ func TestCloudInventoryConstraintsRejectInvalidValues(t *testing.T) {
 		if _, err := pool.Exec(ctx, q); err == nil {
 			t.Fatal("expected constraint violation")
 		}
+	}
+}
+
+func TestListInventoryLedgerReadsBaselineDateAsText(t *testing.T) {
+	ctx := context.Background()
+	pool, closeFn := openPostgresWithBaseline(t, ctx)
+	defer closeFn()
+
+	if _, err := pool.Exec(ctx, `INSERT INTO stock_documents(id,restaurant_id,document_type,source_event_id,source_event_type,business_date_local,occurred_at,created_at) VALUES ('inv-doc-1','rest-1','SALE','event-check-closed','CheckClosed','2026-05-19',now(),now())`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO stock_ledger(id,restaurant_id,stock_document_id,source_event_id,source_event_type,catalog_item_id,order_line_id,movement_type,quantity,unit_code,unit_cost_minor,total_cost_minor,costing_status,occurred_at,business_date_local,created_at) VALUES ('ledger-1','rest-1','inv-doc-1','event-check-closed','CheckClosed','item-1','line-1','OUT',1,'PC',10,10,'estimated',now(),'2026-05-19',now())`); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := NewRepository(pool).ListInventoryLedger(ctx, app.InventoryLedgerFilter{
+		RestaurantID:    "rest-1",
+		SourceEventType: "CheckClosed",
+		OrderLineID:     "line-1",
+		Limit:           10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].BusinessDateLocal != "2026-05-19" {
+		t.Fatalf("unexpected ledger response: %+v", items)
 	}
 }

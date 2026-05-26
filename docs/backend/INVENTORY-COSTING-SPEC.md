@@ -96,7 +96,6 @@ Cloud PostgreSQL владеет transactional inventory model:
 - `stock_ledger` - immutable хронологический журнал проводок с unit cost.
 - `stock_recalculation_jobs` - очередь ретроспективного пересчета.
 - `stop_lists` - authoritative stop-list state с двусторонней синхронизацией.
-- `modifier_options.linked_catalog_item_id` - опциональная ссылка на складской catalog item.
 - `olap_stock_moves` - ClickHouse проекция, не PostgreSQL source table.
 
 Минимальная структура `stock_ledger`:
@@ -138,7 +137,7 @@ erDiagram
 
 `StopList` блокирует продажу независимо от аналитического stock balance. Запись может относиться к `dish`, `good` или `semi_finished`.
 
-Статус: запланировано до полного пилота. Таблица `stop_lists` есть в POS Edge и Cloud baseline, но проверка продажи и поддерживаемый Cloud -> Edge stream пока не являются реализованным runtime.
+Статус: реализовано сейчас для POS Edge local sale blocking и Cloud -> Edge streams `recipes`/`inventory_reference`; двусторонний Edge-origin stop-list edit sync и conflict policy остаются запланированы до полного пилота.
 
 Правила POS Edge при добавлении позиции:
 
@@ -150,13 +149,17 @@ erDiagram
 
 Реализовано сейчас: проверка выполняется в POS Edge backend при добавлении строки заказа и при увеличении quantity. Проверяется прямой `catalog_item_id` и строки активной recipe version; selected modifiers не разворачиваются в складские позиции, потому что текущая Edge модель modifier option не содержит authoritative linked catalog item.
 
+Реализовано сейчас: минимальный smoke `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud authoring/publication рецептов и stop-list, Edge sync, waiter order/precheck, cashier final check, прием `CheckClosed` в Cloud и появление строк `stock_ledger` через bounded Cloud read endpoint.
+
 Изменение stop-list может прийти из Cloud manager UI или быть создано kitchen worker/manager на Edge. В обоих случаях публикуется `StopListUpdated`. Порядок применения Cloud package и Edge overlay задается параметром `stop_list_conflict_policy`: `cloud_wins`, `edge_wins`, `last_event_wins` или `most_restrictive`. Для полного пилота default должен быть `most_restrictive`, чтобы Cloud мог добавить товар, а Edge мог временно исключить его или указать допустимый остаток через `available_quantity`.
 
 ## Modifier Inventory Rule
 
 На POS Edge modifier является только выбранной опцией с ценой: `modifier_option_id`, quantity, unit price и total price.
 
-Cloud справочник `ModifierOption` может иметь `linked_catalog_item_id`. POS Edge не знает и не применяет эту связь. Если связь есть, Inventory Worker при обработке продажи генерирует отдельное списание linked catalog item. Если связи нет, modifier влияет только на цену и snapshots.
+Реализовано сейчас: POS Edge не знает и не применяет складскую связь modifier option, а Cloud PostgreSQL baseline не содержит `linked_catalog_item_id` в `cloud_modifier_options`. Inventory Worker безопасно трактует modifier links как пустые и списывает только основную позицию/рецепт.
+
+Запланировано далее: Cloud справочник `ModifierOption` получит authoritative `linked_catalog_item_id`, после чего Inventory Worker при обработке продажи будет генерировать отдельное списание linked catalog item. Если связи нет, modifier влияет только на цену и snapshots.
 
 ## Edge Outbox Event Contracts
 

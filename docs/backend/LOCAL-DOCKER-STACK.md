@@ -1,4 +1,4 @@
-# Локальный Docker stack и UI devbox
+﻿# Локальный Docker stack и UI devbox
 
 Документ описывает локальный запуск `cloud-postgres`, `cloud-api`, `license-api` и `pos-edge` через общий Docker Compose. Для UI build/unit/e2e есть отдельный opt-in `devbox` profile: он не поднимается обычным backend stack и нужен только для разработки/проверок frontend.
 
@@ -112,13 +112,12 @@ docker compose -f docker-compose.local.yml exec devbox bash -lc 'cd pos-ui && np
 docker compose -f docker-compose.local.yml exec devbox bash -lc 'cd cloud-ui && npm run build'
 ```
 
-Перед POS UI E2E нужен bootstrap файл. Он содержит demo identifiers/PIN для локального стенда и не коммитится:
+Перед POS UI E2E нужен seed-файл. Он содержит локальные demo identifiers, pairing code и PIN для проверки ролей и не коммитится:
 
 ```bash
 docker compose -f docker-compose.local.yml exec devbox bash -lc '
   mkdir -p .e2e &&
-  python3 scripts/run-stack-smoke.py \
-    --suite cloud_to_edge_masterdata \
+  python3 scripts/seed-dev-system.py \
     --cloud-base http://cloud-api:8090 \
     --pos-base http://pos-edge:8080 \
     --license-base http://license-api:8095 \
@@ -165,98 +164,40 @@ docker compose -f docker-compose.local.yml down
 docker compose -f docker-compose.local.yml down -v
 ```
 
-## Заполнение Cloud и проверка POS на Linux/Fedora
+## Заполнение Cloud и POS начальными данными
 
-Реализовано сейчас: канонический локальный путь использует Python 3 scripts без внешних Python dependencies. Скрипты создают demo справочники через Cloud HTTP API, выполняют POS Edge provisioning через License/Cloud API, затем проверяют POS read model через POS HTTP API. HTTP calls в Python ядре строятся из OpenAPI contract `docs/api/mhpos-local-smoke.openapi.json` по `operationId`; прямые записи в PostgreSQL/SQLite не используются.
+Реализовано сейчас: канонический локальный путь использует один самодостаточный Python 3 скрипт без внешних Python dependencies. `scripts/seed-dev-system.py` создает полный набор текущих Cloud-owned справочников через Cloud HTTP API, публикует master-data packages, генерирует license pairing code, выполняет POS Edge `pair-via-license` и проверяет POS read model через POS HTTP API. Прямые записи в PostgreSQL/SQLite не используются.
 
-Полный semi-automatic smoke для поднятого Docker stack:
+Полный seed для поднятого Docker stack:
 
 ```bash
-python3 scripts/run-local-masterdata-smoke.py \
+python3 scripts/seed-dev-system.py \
   --cloud-base http://localhost:8090 \
   --pos-base http://localhost:8080 \
   --license-base http://localhost:8095 \
-  --output scripts/.local-masterdata-summary.json
+  --output scripts/.seed-dev-system-summary.json
 ```
 
-Полный stack smoke, который проверяет Cloud API, POS Edge API и License Server одной Python-утилитой:
+Скрипт создает ресторан, роли cashier/senior cashier/waiter/manager/kitchen/support, сотрудников с PIN `1111`/`2222`/`3333`/`4444`/`5555`/`9999`, залы и столы, catalog folders/folder parameters/tags/items, menu categories/items, service item, modifier groups/options/bindings, pricing policies, recipe items, stop-list examples и publication. После создания всех сущностей он генерирует pairing code через Cloud/License flow, привязывает POS Edge и проверяет, что POS видит Cloud-created halls/menu.
+
+Минимальный сквозной smoke для поднятого stack:
 
 ```bash
-python3 scripts/run-stack-smoke.py \
-  --suite all \
+python3 scripts/seed-dev-system.py \
   --cloud-base http://localhost:8090 \
   --pos-base http://localhost:8080 \
   --license-base http://localhost:8095 \
-  --output scripts/.local-masterdata-summary.json \
-  --json-output scripts/.stack-smoke-result.json
+  --output scripts/.seed-dev-system-summary.json \
+  --run-minimal-flow
 ```
 
-Реализованные suites:
+Реализовано сейчас: флаг `--run-minimal-flow` после seed/pairing выполняет HTTP-only сценарий `Cloud recipes/stop-list publication -> Edge sync -> waiter order -> cashier final check -> CheckClosed -> Cloud inventory ledger`. Сценарий проверяет stop-list rejection для demo sold-out item, создает заказ официантом, выпускает precheck, закрывает его оплатой кассира, ожидает `CheckClosed` в Cloud safe event log и проверяет строки `stock_ledger` через bounded Cloud endpoint `GET /api/v1/inventory/stock-ledger`.
 
-- `health` - проверяет root health endpoint Cloud, POS Edge и License Server;
-- `license_pairing` - напрямую регистрирует одноразовый pairing code в License Server, resolve-ит его и проверяет, что повторный resolve отклоняется;
-- `cloud_to_edge_masterdata` - создает Cloud-owned demo master data, выполняет POS Edge provisioning, проверяет POS read model и post-pairing Cloud -> Edge sync.
+Seed-вход содержит только пользовательские данные: названия, имена, PIN, цены, количества, места и наборы прав. ID, `node_device_id`, generated SKU и остальные технические значения берутся из backend responses или генерируются системно. `scripts/.seed-dev-system-summary.json` содержит локальные demo credentials и добавлен в `.gitignore`; не коммить этот файл.
 
-Правило расширения: когда в Cloud API, POS Edge API или License Server появляется новая функциональность, которая должна входить в локальную приемку, добавить OpenAPI operation в `docs/api/mhpos-local-smoke.openapi.json`, отдельную suite или шаг suite в `scripts/lib/mhpos_stack.py`, unit test в `scripts/tests` и обновить этот раздел документации.
+Повторный запуск рассчитан на чистые backend volumes. Если POS Edge уже находится в `paired`, скрипт завершится fail-fast: для нового полного seed нужно пересоздать локальные Docker volumes через `docker compose -f docker-compose.local.yml down -v` и поднять stack заново.
 
-То же через thin Bash wrapper:
-
-```bash
-./scripts/run-local-masterdata-smoke.sh \
-  --output scripts/.local-masterdata-summary.json
-```
-
-Сценарий создает ресторан, роли, сотрудников с PIN `1111`/`2222`, зал/стол, catalog/menu items, service item, modifier group/option/binding, публикует typed Cloud -> POS Edge package, выполняет pairing/provisioning и проверяет, что POS видит Cloud-created данные. После pairing скрипт добавляет дополнительную Cloud menu позицию, повторно публикует master data и ждет, пока POS Edge sync sender получит ее через authenticated `sync/exchange`.
-
-Раздельные шаги для отладки:
-
-```bash
-python3 scripts/seed-cloud-masterdata.py \
-  --cloud-base http://localhost:8090 \
-  --pos-base http://localhost:8080 \
-  --output scripts/.local-masterdata-summary.json
-
-python3 scripts/provision-pos-edge.py \
-  --cloud-base http://localhost:8090 \
-  --pos-base http://localhost:8080 \
-  --summary scripts/.local-masterdata-summary.json
-
-python3 scripts/verify-sync.py \
-  --pos-base http://localhost:8080 \
-  --summary scripts/.local-masterdata-summary.json
-```
-
-Windows-compatible wrappers остаются тонкими оболочками над тем же Python ядром:
-
-```powershell
-.\scripts\run-local-masterdata-smoke.ps1 --output scripts/.local-masterdata-summary.json
-```
-
-`scripts/.local-masterdata-summary.json` содержит локальные demo PIN для последующих автоматических шагов и добавлен в `.gitignore`; не коммить этот файл. `scripts/.stack-smoke-result.json` содержит безопасный JSON-отчет `run-stack-smoke.py` и тоже игнорируется git.
-
-Повторный запуск `run-stack-smoke.py --suite all` на уже provisioned Edge использует существующий `--output` summary, если `restaurant_id` и `node_device_id` совпадают с текущей POS Edge привязкой. В этом режиме suite не пересоздает pairing, а проверяет текущий POS read model и публикует новый post-pairing Cloud -> Edge item в тот же ресторан. Если summary отсутствует или относится к другому ресторану, suite завершается fail-fast: нужно либо передать корректный summary, либо пересоздать локальные Docker volumes.
-
-Python HTTP layer игнорирует системные proxy-переменные для `localhost`/loopback адресов. Это важно для Windows/Linux окружений, где `HTTP_PROXY`/`HTTPS_PROXY` могут уводить запросы к Docker published ports в корпоративный proxy. Если post-pairing sync не доходит до POS Edge, отчет дополнительно выводит `sync_status` и последний `last_error` из Edge outbox, например `SYNC_FORBIDDEN`.
-
-Важно для ручного наглядного теста: demo seed dataset должен расширяться вместе с развитием проекта. Когда появляются новые Cloud-owned справочники, publication streams или POS read flows, их нужно добавлять в OpenAPI contract, Python seed/sync сценарии и эту документацию в том же PR.
-
-Для production-like Zero-to-Cashier через Cloud Approve:
-
-```powershell
-.\scripts\zero-to-cashier-option-a.ps1 `
-  -CloudApiBase "http://localhost:8090/api/v1" `
-  -PosApiBase "http://localhost:8080/api/v1"
-```
-
-Для production-like Zero-to-Cashier через License Code:
-
-```powershell
-.\scripts\zero-to-cashier-option-b.ps1 `
-  -CloudApiBase "http://localhost:8090/api/v1" `
-  -PosApiBase "http://localhost:8080/api/v1"
-```
-
-Оба legacy Zero-to-Cashier PowerShell скрипта создают Cloud master data, привязывают POS Edge и проверяют PIN login. По умолчанию cashier PIN: `1111`. Для Fedora/Linux и нового semi-automatic master-data smoke использовать Python scripts выше.
+Python HTTP layer игнорирует системные proxy-переменные для `localhost`/loopback адресов. Это важно для Windows/Linux окружений, где `HTTP_PROXY`/`HTTPS_PROXY` могут уводить запросы к Docker published ports в корпоративный proxy.
 
 ## Ручная проверка через POS UI
 
@@ -270,7 +211,7 @@ npm run dev
 
 Открой `http://localhost:5173`. POS UI ходит в POS Edge на `http://localhost:8080/api/v1`.
 
-Если перед этим был выполнен новый Python master-data smoke или legacy Zero-to-Cashier скрипт, Edge уже paired, а войти можно PIN `1111`. Для manager сценариев в Python smoke используется PIN `2222`.
+Если перед этим был выполнен `scripts/seed-dev-system.py`, Edge уже paired, а войти можно PIN `1111`. Для manager сценариев используется PIN `2222`; остальные PIN перечислены в `scripts/.seed-dev-system-summary.json`.
 
 ## Проверка PostgreSQL и sync
 

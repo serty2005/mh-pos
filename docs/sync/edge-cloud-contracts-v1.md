@@ -1,4 +1,4 @@
-# Edge / Cloud Sync Contracts v1
+﻿# Edge / Cloud Sync Contracts v1
 
 Статус: актуализировано под текущий cashier runtime и целевой полный пилот.
 
@@ -181,6 +181,7 @@ Request body shape currently supported by POS Edge:
 - `catalog` применяет `catalog_items` с canonical `item_type`/`type` values `dish`, `good`, `semi_finished`, `service`, а также `folders`, `folder_parameters`, `tags`, `item_tags`, `modifier_groups`, `modifier_options` и `modifier_bindings`.
 - `menu` применяет `menu_items` и effective `menu_item_modifier_groups` links после применения menu items; для старого explicit `stream: "catalog"` link-only payload остается accepted, если referenced menu item уже существует.
 - Cloud publication package для POS Edge является typed ingest DTO, а не Cloud rich projection. `modifier_groups[]` содержит только поля, которые принимает POS Edge: `id`, `restaurant_id`, `name`, `required`, `min_count`, `max_count`, `active`.
+- `folder_parameters[]`, `tags[]` и `item_tags[]` содержат `restaurant_id`, потому что POS Edge сохраняет эти справочники с restaurant-scoped identity и отклоняет записи без явного restaurant context.
 - `modifier_options[]` содержит `id`, `restaurant_id`, `modifier_group_id`, `name`, `price_minor`, `active`.
 - `modifier_bindings[]` содержит `id`, `restaurant_id`, `modifier_group_id`, `target_type`, `target_id`, `sort_order`, `active`.
 - `menu_item_modifier_groups[]` является link-only массивом и содержит только `menu_item_id`, `modifier_group_id`, `sort_order`. Правила обязательности и count limits остаются в top-level `modifier_groups[]`.
@@ -194,7 +195,8 @@ Request body shape currently supported by POS Edge:
 Только основа:
 
 - Cloud schema и publication workflow реально публикуют `recipes`/`inventory_reference` в `cloud_master_data_packages` как часть одного детерминированного publication snapshot.
-- Smoke suite `pos_stop_list_sale_blocking` покрывает Cloud authoring -> publication -> Edge import -> blocked sale на POS runtime.
+- `scripts/seed-dev-system.py` создает recipe/stop-list examples и публикует их в Edge; runtime sale-blocking проверяется профильными POS backend tests.
+- Smoke suite `pos_stop_list_sale_blocking` покрывает Cloud authoring -> publication -> Edge import -> блокировку продажи в POS runtime.
 
 ## Edge -> Cloud Operational Events
 
@@ -238,6 +240,7 @@ PaymentCaptured
 CancellationRecorded
 RefundRecorded
 CheckCreated
+CheckClosed
 CheckReprinted
 OrderClosed
 AuthSessionStarted
@@ -251,10 +254,9 @@ Local-only POS Edge events that are not Edge -> Cloud operational contracts:
 StockDocumentPosted
 ```
 
-Целевой Cloud-centric inventory Edge -> Cloud catalog, запланировано далее:
+Дополнительный Cloud-centric inventory Edge -> Cloud catalog, запланировано далее:
 
 ```text
-CheckClosed
 KitchenTicketStatusChanged
 ItemServed
 StockReceiptCaptured
@@ -262,8 +264,6 @@ CatalogItemChangeSuggested
 RecipeChangeSuggested
 InventoryCountCaptured
 ProductionCompleted
-RefundRecorded
-CancellationRecorded
 StopListUpdated
 ```
 
@@ -291,6 +291,7 @@ Cancellation/refund sync behavior:
 - `GET /api/v1/storage/status`, `POST /api/v1/storage/retention/dry-run`, `POST /api/v1/storage/archive/export-plan`, `POST /api/v1/storage/archive/export`, `POST /api/v1/storage/archive/verify`, `POST /api/v1/storage/archive/read-plan`, `POST /api/v1/storage/archive/lookup`, `POST /api/v1/storage/archive/apply-plan` и `POST /api/v1/storage/archive/apply-readiness` являются локальными POS operational lifecycle API. Они используют exclusive cutoff rule `checks.business_date_local < cutoff_business_date_local` и не создают sync envelopes. Dry-run, manifest-only export-plan, export-only archive, verify/read-plan/lookup и apply-readiness не мутируют runtime rows. Apply-readiness возвращает `result_mode = apply_readiness_only` и `ready_for_destructive_apply = true` только при verified archive, clean scoped `edge_to_cloud` outbox и отсутствии open operational boundaries. Apply-plan при тех же verified/safety условиях выполняет локальный destructive apply + `VACUUM` и возвращает `result_mode = destructive_apply`, `runtime_rows_deleted = true`; иначе возвращает `apply_blocked`.
 - `GET /api/v1/sync/outbox`, `GET /api/v1/sync/local-events` и POS UI activity/sync drawer читают только bounded local windows; они не являются sync cleanup или archive contract.
 - Manual `StockDocumentPosted` исторически был local-only pre-pilot Edge event, не принимался и не проецировался Cloud receiver; при Cloud-centric inventory cutover этот Edge runtime path удален.
+- `GET /api/v1/inventory/stock-ledger` является Cloud bounded read-only endpoint для проверки результата Cloud Inventory Worker по accepted inventory events; endpoint не раскрывает raw sync payload и не является ClickHouse/OLAP contract.
 
 ### Inventory Event Payloads Target
 
@@ -443,6 +444,7 @@ Cloud worker не применяет `CatalogItemChangeSuggested`/`RecipeChangeS
 - Payloads `PaymentCaptured`, `CheckCreated`, `CancellationRecorded` и `RefundRecorded` включают backend-owned `business_date_local`, если он есть у source aggregate.
 - Precheck/check reprint использует immutable snapshot payload, включая selected modifiers с name, quantity, unit price и total price.
 - Payment ссылается на `precheck_id`, а не на legacy `check_id`.
+- `PaymentCaptured`, `CheckCreated` и `CheckClosed` используют в envelope текущую кассовую смену оплаты; исходная личная смена заказа остается в order payload и не переписывается.
 - `RefundRecorded`/`CancellationRecorded` payload содержит immutable operation snapshot with embedded check snapshot, selected modifiers and item scopes; Cloud raw/journal receipt не должен отбрасывать modifier data из snapshot payload. Текущий validation contract требует operation-level `inventory_disposition`; `items[].inventory_disposition` не является реализованным полем.
 
 Не реализовано сейчас:

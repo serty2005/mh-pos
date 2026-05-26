@@ -1,7 +1,6 @@
 *.py
 !scripts/*.py
-!scripts/lib/*.py
-!scripts/tests/*.py
+!tests/*.py
 __pycache__/
 *.pyc
 node_modules
@@ -10,8 +9,7 @@ dist
 data
 *.exe
 .dev-stack-pids.json
-scripts/.local-masterdata-summary.json
-scripts/.stack-smoke-result.json
+scripts/.seed-dev-system-summary.json
 .e2e/*
 !.e2e/
 !.e2e/bootstrap.example.json

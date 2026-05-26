@@ -52,4 +52,5 @@ type SyncStatus struct {
 	Failed                  int    `json:"failed"`
 	Suspended               int    `json:"suspended"`
 	OldestPendingSequenceNo *int64 `json:"oldest_pending_sequence_no,omitempty"`
+	LastCloudVersion        int64  `json:"last_cloud_version,omitempty"`
 }

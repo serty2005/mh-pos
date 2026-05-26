@@ -1,4 +1,4 @@
-# myhoreca-pos
+﻿# myhoreca-pos
 
 Короткая карта репозитория `ASMaslovMH/myhoreca-pos`. Подробные правила, контракты и планы находятся в профильных документах, а не в README.
 
@@ -17,7 +17,7 @@
 - POS kitchen route `/pos/kitchen` реализован сейчас только как honest readiness screen: он показывает `запланировано далее` и отсутствующие KDS backend contracts, не активный KDS lifecycle runtime.
 - Active-looking POS UI placeholders для переноса/разделения строки, banquet/preorder, mock waiter filters и discount/surcharge editor не считаются реализованным runtime: они скрыты, passive или disabled/backlog до появления backend/API/UI contract; повторяющиеся backlog/readiness cards отображаются через reusable `PosReadinessCard`.
 - `CancelPrecheck` требует manager override, проверяет PIN/permission и возвращает unpaid active precheck order в `open`.
-- Оплата выполняется через `precheck_id`; partial payments разрешены; final check создается только после полной оплаты.
+- Оплата выполняется через `precheck_id`; partial payments разрешены; final check создается только после полной оплаты. Заказ сохраняет исходную личную смену оператора, а `PaymentCaptured`/`CheckCreated`/`CheckClosed` относятся к текущей кассовой смене кассира, поэтому поддержан поток waiter order -> cashier final check.
 - `POST /api/v1/checks/{id}/cancellations` и `POST /api/v1/checks/{id}/refunds` пишут append-only ledger `financial_operations`/`financial_operation_items` для full/partial cancellation и refund без мутации finalized payment/precheck/check.
 - POS cashier UI вызывает check cancellation/refund ledger endpoints из закрытого заказа: поддержаны full whole-check операции и partial `order_line`/quantity операции по immutable check/precheck snapshot; UI отправляет `command_id`, `operation_kind`, `inventory_disposition`, reason и `items[]`, а backend остается источником истины для enforcement. Compatibility payment refund остается отдельным fallback.
 - `GET /api/v1/checks/{id}/financial-operations?limit=&offset=` и `GET /api/v1/financial-operations?business_date_from=&business_date_to=&operation_type=&shift_id=&original_shift_id=&check_id=&limit=&offset=` реализованы сейчас как bounded read-only ledger surfaces; POS activity detail показывает type, kind, amount, reason, employee/approver, business date, inventory disposition и created time.
@@ -27,13 +27,14 @@
 - `POST /api/v1/payments/{id}/refund` оставлен как compatibility wrapper: он требует finalized check, записывает `RefundRecorded` operation по payment allocation и не переводит payment/check обратно в mutable состояние.
 - Cloud receiver принимает current `CancellationRecorded`/`RefundRecorded` и legacy inbound-only `PaymentRefunded`/`CheckRefunded`; для current events validation сверяет `restaurant_id`/`device_id` payload с envelope и требует поля operation/check/precheck/shift/date/type/disposition/reason/snapshot. Реализована detailed PostgreSQL/service projection `cloud_projection_financial_operations` с фильтрами restaurant/date/type/shift/original shift/check. Публичный Cloud HTTP reporting API/UI для этой projection вне текущего runtime.
 - Reprint precheck/check строится из immutable snapshot.
-- Python stack smoke содержит suite `pos_cashier_runtime`, которая проверяет backend путь после Cloud -> Edge master-data sync: PIN login, личную смену, cash shift, hall/table/menu read models, заказ, обычную строку, modifiers при наличии, service item при наличии, precheck, оплату по `precheck_id`, final check, bounded closed orders, check get/reprint, same-shift cancellation ledger, financial operations read и `GET /api/v1/storage/status`.
-- Python stack smoke содержит suite `pos_refund_after_shift_close`, которая создает отдельную POS sale, закрывает исходные cash shift и personal employee shift, открывает новую сменную границу для refund под менеджером, записывает full refund через `/checks/{id}/refunds`, проверяет ledger через `/checks/{id}/financial-operations` и bounded closed-order/check reads без PSP, fiscal или destructive storage действий.
-- Python stack smoke содержит suite `pos_stop_list_sale_blocking`: Cloud authoring recipes/stop-list -> publication -> Edge import -> локальная блокировка продажи по direct stop-list и recipe component stop-list.
+- `scripts/seed-dev-system.py` является единственным локальным Python seed script: он создает полный Cloud-owned dataset, публикует master data, выполняет license pairing POS Edge и проверяет базовый POS read model.
+- Runtime cashier/refund/stop-list сценарии проверяются профильными backend/UI тестами и минимальным HTTP smoke; seed script не выполняет destructive storage actions.
+- `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud recipes/stop-list publication -> Edge sync -> waiter order/precheck -> cashier payment/final check -> `CheckClosed` -> Cloud inventory ledger, включая stop-list rejection для demo sold-out item.
+- Playwright spec `payments-refunds.spec.ts` проверяет оплату по `precheck_id`, immutable finalized payment/check, refund после закрытия исходных personal/cash shifts с ledger read и запрет cancellation после закрытия исходной смены.
 - Cloud -> Edge master-data ingest в POS Edge runtime поддерживает потоки `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`, `recipes`, `inventory_reference`.
 - POS Edge backend локально блокирует продажу при добавлении order line и при увеличении quantity, если продаваемый `catalog_item_id` или обязательный компонент active recipe version находится в active `stop_lists` с `available_quantity = 0` или `NULL`; stock balance для sale blocking не используется.
 - Cloud/Edge master data разделяет menu categories, catalog folders и tags; `catalog` stream передает folders, folder parameters, tags, item tags, services и modifier groups/options/bindings, а `menu` stream передает menu items и effective modifier links.
-- Cloud publication snapshot для POS Edge публикуется как typed ingest DTO: `modifier_groups[]` сохраняет `required`, `min_count`, `max_count`, `active`, а `menu_item_modifier_groups[]` остается link-only без rich/UI fields. Production-way bootstrap отправляет опубликованный Cloud snapshot на POS Edge без PowerShell field stripping.
+- Cloud publication snapshot для POS Edge публикуется как typed ingest DTO: `modifier_groups[]` сохраняет `required`, `min_count`, `max_count`, `active`, а `menu_item_modifier_groups[]` остается link-only без rich/UI fields. Единый seed flow отправляет опубликованный Cloud snapshot на POS Edge без PowerShell field stripping.
 - Inventory runtime переведен на Cloud-centric cutover: POS Edge больше не содержит manual stock document service и SQLite tables `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`; исторически этот pre-pilot Edge-side метод использовался как foundation и удален при переходе.
 - Cloud принимает inventory events через sync receiver, кладет их в durable `inventory_event_queue`, а Cloud Inventory Worker пишет Cloud-owned `stock_documents` и `stock_ledger` для нормализованных item payloads. Cloud package contracts/storage принимают `recipes` и `inventory_reference`; Cloud UI уже имеет manager-facing authoring для recipe items и stop-list по подтвержденным master-data routes. Proposal review, inventory operations/costing и OLAP exports пока показаны как readiness-only surfaces без имитации отсутствующих endpoints.
 
@@ -57,8 +58,7 @@
 - `cloud-ui/` — Cloud web UI (admin/операционные экраны, см. `docs/ui/CLOUD-UI-SPEC.md`).
 - `license-server/` — license/pairing support service.
 - `shared/` — общие platform helpers.
-- `scripts/` — локальные bootstrap/smoke scripts.
-- `docs/` — профильная документация.
+- `scripts/` — единственный локальный seed script `seed-dev-system.py`.
 
 ## Главные документы
 
@@ -88,38 +88,25 @@ docker compose -f docker-compose.local.yml --profile devbox build devbox
 docker compose -f docker-compose.local.yml --profile devbox up -d devbox
 ```
 
-Подробный порядок запуска backend, bootstrap `.e2e/bootstrap.json`, Vite и Playwright описан в `docs/backend/LOCAL-DOCKER-STACK.md`.
+Подробный порядок запуска backend, seed `.e2e/bootstrap.json`, Vite и Playwright описан в `docs/backend/LOCAL-DOCKER-STACK.md`.
 
-Полуавтоматическое заполнение Cloud справочников и проверка POS Edge sync на Linux/Fedora:
+Единое заполнение локальной системы начальными данными:
 
 ```bash
-python3 scripts/run-local-masterdata-smoke.py \
+python3 scripts/seed-dev-system.py \
   --cloud-base http://localhost:8090 \
   --pos-base http://localhost:8080 \
   --license-base http://localhost:8095 \
-  --output scripts/.local-masterdata-summary.json
+  --output scripts/.seed-dev-system-summary.json
 ```
 
-Полный stack smoke для Cloud, POS Edge и License Server:
+`scripts/seed-dev-system.py` является единственным пользовательским скриптом в `scripts`. Он создает полный набор текущих Cloud-owned справочников через HTTP API: ресторан, роли, сотрудников с PIN, залы и столы, catalog folders/parameters/tags/items, menu categories/items, modifier groups/options/bindings, pricing policies, recipe items и stop-list examples. После создания и публикации всех сущностей скрипт генерирует license pairing code для POS Edge, выполняет `pair-via-license`, проверяет POS read model и выводит `restaurant_id`, `node_device_id`, pairing code и все PIN-коды для проверки ролей.
 
-```bash
-python3 scripts/run-stack-smoke.py \
-  --suite all \
-  --cloud-base http://localhost:8090 \
-  --pos-base http://localhost:8080 \
-  --license-base http://localhost:8095 \
-  --output scripts/.local-masterdata-summary.json \
-  --json-output scripts/.stack-smoke-result.json
-```
+Минимальный сквозной smoke запускается тем же скриптом с флагом `--run-minimal-flow`: он проверяет `Cloud recipes/stop-list publication -> Edge sync -> waiter order -> cashier final check -> CheckClosed -> Cloud inventory ledger` через HTTP API без прямых записей в PostgreSQL/SQLite.
 
-`run-stack-smoke.py` выполняет отдельные suites: `health`, `license_pairing`, `cloud_to_edge_masterdata`, `pos_cashier_runtime`, `pos_refund_after_shift_close`. POS runtime suites используют summary из `cloud_to_edge_masterdata` или `scripts/.local-masterdata-summary.json` для уже provisioned Edge и вызывают runtime endpoints только через OpenAPI `operationId`. Они не выполняют destructive storage actions, PSP/fiscal calls и не являются заменой полноценным e2e/UI тестам.
+Seed-вход содержит только пользовательские данные: названия, имена, PIN, цены, количества, места и права. `restaurant_id`, `role_id`, `employee_id`, `catalog_item_id`, `menu_item_id`, `node_device_id`, generated SKU и остальные технические значения берутся из backend responses или генерируются системой скрипта как производные значения.
 
-Те же Python scripts имеют thin wrappers: `scripts/*.sh` для Linux/macOS и ASCII `scripts/*.ps1` для Windows. Python seed/smoke слой строит HTTP calls из OpenAPI contract `docs/api/mhpos-local-smoke.openapi.json`, поэтому новые endpoints для локального теста нужно сначала добавить в этот contract, затем использовать через `operationId` в `scripts/lib`. Demo seed dataset является частью ручного наглядного теста и должен расширяться вместе с новыми Cloud-owned справочниками, publication streams и POS read flows.
-
-Для повторного запуска на уже provisioned Edge `run-stack-smoke.py --suite all` переиспользует `scripts/.local-masterdata-summary.json`, если он соответствует текущим `restaurant_id` и `node_device_id`. HTTP layer обходится без системного proxy для `localhost`/loopback адресов, поэтому Docker published ports проверяются напрямую даже при заданных `HTTP_PROXY`/`HTTPS_PROXY`.
-
-`scripts/.local-masterdata-summary.json` содержит локальные demo PIN для последующих автоматических шагов и игнорируется git. `scripts/.stack-smoke-result.json` содержит безопасный отчет stack smoke и тоже игнорируется git.
-
+`scripts/.seed-dev-system-summary.json` содержит локальные demo credentials и игнорируется git. Повторный запуск рассчитан на чистые backend volumes; если POS Edge уже paired, скрипт завершится fail-fast и попросит пересоздать локальные данные.
 POS UI:
 
 ```powershell
@@ -152,7 +139,7 @@ npm install
 npm run dev
 ```
 
-Скрипты `dev`/`build` для `cloud-ui` определены в `cloud-ui/package.json`; `test` script и отдельные smoke-скрипты для cloud-ui сейчас не заявлены.
+Скрипты `dev`/`build` для `cloud-ui` определены в `cloud-ui/package.json`; локальное заполнение данных выполняется только через `scripts/seed-dev-system.py`.
 
 UI build:
 

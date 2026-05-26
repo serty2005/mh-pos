@@ -128,7 +128,7 @@ func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 func localCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin == "http://localhost:5173" || origin == "http://127.0.0.1:5173" || origin == "http://host.docker.internal:5173" {
+		if isAllowedLocalPOSOrigin(origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Credentials", "false")
@@ -141,6 +141,20 @@ func localCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isAllowedLocalPOSOrigin(origin string) bool {
+	switch origin {
+	case "http://localhost:5173",
+		"http://127.0.0.1:5173",
+		"http://host.docker.internal:5173",
+		"http://localhost:3000",
+		"http://127.0.0.1:3000",
+		"http://host.docker.internal:3000":
+		return true
+	default:
+		return false
+	}
 }
 
 func recoverJSON(next http.Handler) http.Handler {

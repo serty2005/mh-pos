@@ -134,7 +134,6 @@ export function useCashierTerminal() {
   const cashDrawerNote = ref('');
   const localEventFilter = ref('');
   const cancelDialog = ref(false);
-  const managerEmployeeId = ref('');
   const managerPin = ref('');
   const cancelReason = ref('');
   const closedOrdersDrawer = ref(false);
@@ -588,7 +587,7 @@ export function useCashierTerminal() {
   });
 
   const cancelPrecheckMutation = useMutation({
-    mutationFn: () => cancelPrecheck(activePrecheck.value?.id ?? '', managerEmployeeId.value.trim(), managerPin.value, cancelReason.value.trim()),
+    mutationFn: () => cancelPrecheck(activePrecheck.value?.id ?? '', managerPin.value, cancelReason.value.trim()),
     onSuccess() {
       closeCancelDialog();
       void refreshOrder();
@@ -868,13 +867,12 @@ export function useCashierTerminal() {
   }
 
   function submitCancelPrecheck() {
-    if (!managerEmployeeId.value.trim() || !managerPin.value || !cancelReason.value.trim()) return;
+    if (!managerPin.value || !cancelReason.value.trim()) return;
     cancelPrecheckMutation.mutate();
   }
 
   function closeCancelDialog() {
     cancelDialog.value = false;
-    managerEmployeeId.value = '';
     managerPin.value = '';
     cancelReason.value = '';
   }
@@ -1181,7 +1179,6 @@ export function useCashierTerminal() {
     cashDrawerNote,
     localEventFilter,
     cancelDialog,
-    managerEmployeeId,
     managerPin,
     cancelReason,
     closedOrdersDrawer,

@@ -1,0 +1,116 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --font-serif: "Cormorant Garamond", serif;
+}
+
+:root {
+  /* Sophisticated Luxury Light / Gold Theme */
+  --pos-bg: #0A0A0A; /* We default to ultra dark since user requested Sophisticated Dark */
+  --pos-surface: #0F0F0F;
+  --pos-surface-raised: #141414;
+  --pos-border: #2A2620;
+  --pos-border-strong: #C5A059;
+  --pos-text-primary: #E0D7C6;
+  --pos-text-secondary: #C5A059;
+  --pos-text-muted: #7A7060;
+  --pos-text-disabled: #4A4338;
+  
+  --pos-action-primary: #C5A059;
+  --pos-action-primary-hover: #D4B574;
+  --pos-action-secondary: #1F1F1F;
+  --pos-action-secondary-hover: #2A2620;
+  
+  --pos-status-success: #C5A059;
+  --pos-status-warning: #B38F4D;
+  --pos-status-danger: #D9534F;
+  --pos-status-info: #8C99A8;
+  
+  --pos-sync-pending: #C5A059;
+  --pos-sync-error: #D9534F;
+  --pos-payment-fiscal: #C5A059;
+  --pos-payment-non-fiscal: #837255;
+  --pos-selected-table: #C5A059;
+  --pos-selected-order: #1F1F1F;
+  --pos-focus-ring: #C5A059;
+  
+  --pos-bottom-nav-height: 64px;
+}
+
+:root.dark {
+  /* Sophisticated Dark Theme */
+  --pos-bg: #0A0A0A;
+  --pos-surface: #0F0F0F;
+  --pos-surface-raised: #141414;
+  --pos-border: #2A2620;
+  --pos-border-strong: #C5A059;
+  --pos-text-primary: #E0D7C6;
+  --pos-text-secondary: #C5A059;
+  --pos-text-muted: #7A7060;
+  --pos-text-disabled: #4A4338;
+  
+  --pos-action-primary: #C5A059;
+  --pos-action-primary-hover: #D4B574;
+  --pos-action-secondary: #1F1F1F;
+  --pos-action-secondary-hover: #2A2620;
+  
+  --pos-status-success: #C5A059;
+  --pos-status-warning: #B38F4D;
+  --pos-status-danger: #D9534F;
+  --pos-status-info: #8C99A8;
+  
+  --pos-sync-pending: #C5A059;
+  --pos-sync-error: #D9534F;
+  --pos-payment-fiscal: #C5A059;
+  --pos-payment-non-fiscal: #837255;
+  --pos-selected-table: #C5A059;
+  --pos-selected-order: #1F1F1F;
+  --pos-focus-ring: #C5A059;
+}
+
+/* Custom Scrollbar Patterns for Restaurant POS Devices */
+.pos-scrollarea-y {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pos-border-strong) transparent;
+}
+
+.pos-scrollarea-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pos-border-strong) transparent;
+}
+
+.pos-scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.pos-scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pos-scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: var(--pos-border-strong);
+  border-radius: 0px;
+}
+
+body {
+  background-color: var(--pos-bg);
+  color: var(--pos-text-primary);
+  font-family: var(--font-sans);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  transition: background-color 0.2s ease, color 0.15s ease;
+}
+
+/* Hide defaults for mobile/safari zoom issue */
+input, select, textarea, button {
+  font-family: inherit;
+}

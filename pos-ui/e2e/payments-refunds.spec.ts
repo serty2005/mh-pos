@@ -72,6 +72,13 @@ type FinancialOperation = {
   inventory_disposition: 'no_stock_effect' | 'return_to_stock' | 'write_off_waste' | 'manual_review';
 };
 
+type APIErrorResponse = {
+  error?: {
+    code?: string;
+    message_key?: string;
+  };
+};
+
 test.describe.configure({ mode: 'serial' });
 
 let demo: DemoBootstrap;
@@ -187,12 +194,13 @@ test('full check refund records ledger operation without mutating finalized paym
   const { order, precheck } = await createOrderWithPrecheck(request, 1, 1);
   const payment = await capturePayment(request, precheck.id, 'card', precheck.total);
   const paidOrder = await get<Order>(request, `/orders/${order.id}`);
-  expect(paidOrder.check?.id).toBeTruthy();
+  const checkId = paidOrder.check?.id ?? '';
+  expect(checkId).toBeTruthy();
 
   await closeCurrentShiftAndCashSession(request);
   await ensureShiftAndCashSession(request);
 
-  const operation = await post<FinancialOperation>(request, `/checks/${paidOrder.check?.id}/refunds`, {
+  const operation = await post<FinancialOperation>(request, `/checks/${checkId}/refunds`, {
     command_id: nextCommandID('refund-check'),
     operation_kind: 'full',
     inventory_disposition: 'return_to_stock',
@@ -204,9 +212,35 @@ test('full check refund records ledger operation without mutating finalized paym
   expect(operation.inventory_disposition).toBe('return_to_stock');
   expect(operation.amount).toBe(precheck.total);
 
+  const ledger = await get<FinancialOperation[]>(request, `/checks/${checkId}/financial-operations?limit=10`);
+  expect(ledger.some((item) => item.id === operation.id && item.operation_type === 'refund')).toBe(true);
+
   const afterRefund = await get<Order>(request, `/orders/${order.id}`);
   expect(afterRefund.check?.status).toBe('paid');
   expect(afterRefund.check?.payments?.some((item) => item.id === payment.id && item.status === 'captured')).toBe(true);
+});
+
+test('full check cancellation after original shift close is rejected without ledger write', async ({ request }) => {
+  const { order, precheck } = await createOrderWithPrecheck(request, 0, 1);
+  await capturePayment(request, precheck.id, 'cash', precheck.total);
+  const paidOrder = await get<Order>(request, `/orders/${order.id}`);
+  const checkId = paidOrder.check?.id ?? '';
+  expect(checkId).toBeTruthy();
+
+  await closeCurrentShiftAndCashSession(request);
+  await ensureShiftAndCashSession(request);
+
+  const rejected = await post<APIErrorResponse>(request, `/checks/${checkId}/cancellations`, {
+    command_id: nextCommandID('cancel-after-shift-close'),
+    operation_kind: 'full',
+    inventory_disposition: 'manual_review',
+    reason: 'e2e cancellation after closed original shift',
+  }, headers, [409]);
+  expect(rejected.error?.code).toBe('CONFLICT');
+  expect(rejected.error?.message_key).toBe('errors.conflict');
+
+  const ledger = await get<FinancialOperation[]>(request, `/checks/${checkId}/financial-operations?limit=10`);
+  expect(ledger.some((item) => item.operation_type === 'cancellation')).toBe(false);
 });
 
 async function ensureShiftAndCashSession(request: APIRequestContext) {

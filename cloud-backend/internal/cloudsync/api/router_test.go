@@ -302,3 +302,60 @@ func TestListEdgeEventsReturnsSafeIncomingEventLog(t *testing.T) {
 		t.Fatalf("event log response must not expose raw payload: %s", rec.Body.String())
 	}
 }
+
+func TestListInventoryLedgerReturnsBoundedReadOnlyLedger(t *testing.T) {
+	repo := memory.NewRepository()
+	occurred := time.Date(2026, 5, 5, 9, 0, 0, 0, time.UTC)
+	repo.AddInventoryLedgerForTest(
+		contracts.InventoryLedgerEntry{
+			ID:                "ledger-1",
+			RestaurantID:      "restaurant-1",
+			StockDocumentID:   "stock-doc-1",
+			SourceEventID:     "event-check-closed",
+			SourceEventType:   string(contracts.EventCheckClosed),
+			CatalogItemID:     "component-1",
+			OrderLineID:       "line-1",
+			MovementType:      "OUT",
+			Quantity:          "2.000",
+			UnitCode:          "PC",
+			CostingStatus:     "estimated",
+			OccurredAt:        occurred,
+			BusinessDateLocal: "2026-05-05",
+			CreatedAt:         occurred,
+		},
+		contracts.InventoryLedgerEntry{
+			ID:                "ledger-2",
+			RestaurantID:      "restaurant-2",
+			StockDocumentID:   "stock-doc-2",
+			SourceEventID:     "event-other",
+			SourceEventType:   string(contracts.EventItemServed),
+			CatalogItemID:     "component-2",
+			OrderLineID:       "line-2",
+			MovementType:      "OUT",
+			Quantity:          "1.000",
+			UnitCode:          "PC",
+			CostingStatus:     "estimated",
+			OccurredAt:        occurred,
+			BusinessDateLocal: "2026-05-05",
+			CreatedAt:         occurred,
+		},
+	)
+	router := api.NewRouter(app.NewService(repo, fixedClock{}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/inventory/stock-ledger?restaurant_id=restaurant-1&source_event_type=CheckClosed&order_line_id=line-1&limit=10", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var items []contracts.InventoryLedgerEntry
+	if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != "ledger-1" || items[0].SourceEventID != "event-check-closed" {
+		t.Fatalf("unexpected ledger response: %+v", items)
+	}
+	if strings.Contains(rec.Body.String(), "payload") {
+		t.Fatalf("ledger response must not expose raw payload: %s", rec.Body.String())
+	}
+}

@@ -179,7 +179,6 @@ func (f *fixture) cancelPrecheckCommand(commandID, precheckID string) app.Cancel
 	return app.CancelPrecheckCommand{
 		CommandMeta:        f.managerMetaCommand(commandID),
 		PrecheckID:         precheckID,
-		ManagerEmployeeID:  f.manager.ID,
 		ManagerPIN:         "2468",
 		CancellationReason: "guest changed order",
 	}
@@ -527,6 +526,21 @@ func countRowsWhere(t *testing.T, f *fixture, table, where string, args ...any) 
 		t.Fatal(err)
 	}
 	return n
+}
+
+func assertOutboxShift(t *testing.T, f *fixture, commandType, aggregateID, shiftID string) {
+	t.Helper()
+	var payloadJSON string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT payload_json FROM pos_sync_outbox WHERE command_type = ? AND aggregate_id = ?`, commandType, aggregateID).Scan(&payloadJSON); err != nil {
+		t.Fatalf("expected %s outbox for %s: %v", commandType, aggregateID, err)
+	}
+	var envelope domain.SyncEnvelope
+	if err := json.Unmarshal([]byte(payloadJSON), &envelope); err != nil {
+		t.Fatalf("decode %s outbox envelope: %v", commandType, err)
+	}
+	if envelope.ShiftID == nil || *envelope.ShiftID != shiftID {
+		t.Fatalf("expected %s outbox shift %s, got %+v", commandType, shiftID, envelope.ShiftID)
+	}
 }
 
 func execTestSQL(t *testing.T, f *fixture, query string, args ...any) {
@@ -2389,6 +2403,29 @@ func TestFloorAndMenuReadAsOperatorRequiresPermissions(t *testing.T) {
 	}
 }
 
+func TestListMenuItemsExposesStopListOverlay(t *testing.T) {
+	f := newFixture(t)
+	insertStopList(t, f, "stop-menu-overlay", f.menuItem.CatalogItemID, nil, true)
+
+	menuItems, err := f.service.ListMenuItemsAsOperator(f.ctx, f.edgeMetaCommand("cmd-menu-stoplist-overlay"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *domain.MenuItem
+	for i := range menuItems {
+		if menuItems[i].ID == f.menuItem.ID {
+			found = &menuItems[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected fixture menu item in menu list")
+	}
+	if !found.StopListBlocked || found.StopListAvailableQuantity != nil {
+		t.Fatalf("expected menu item to expose blocking stop-list overlay, got %+v", found)
+	}
+}
+
 func TestClaimPendingOutboxSkipsFutureNextRetryAt(t *testing.T) {
 	f := newFixture(t)
 	future := appshared.DBTime(fixedClock{}.Now().Add(time.Hour))
@@ -2505,16 +2542,16 @@ func TestGetSyncStatusAggregatesOutboxRows(t *testing.T) {
 	f := newFixture(t)
 	ids := outboxIDs(t, f, 4)
 	now := appshared.DBTime(fixedClock{}.Now())
-	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'processing', locked_at = ?, locked_by = 'worker', updated_at = ? WHERE id = ?`, now, now, ids[0]); err != nil {
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET sync_direction = 'edge_to_cloud', status = 'processing', locked_at = ?, locked_by = 'worker', updated_at = ? WHERE id = ?`, now, now, ids[0]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'failed', attempts = 1, last_error = 'temporary', updated_at = ? WHERE id = ?`, now, ids[1]); err != nil {
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET sync_direction = 'edge_to_cloud', status = 'failed', attempts = 1, last_error = 'temporary', updated_at = ? WHERE id = ?`, now, ids[1]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'suspended', attempts = 4, last_error = 'threshold', updated_at = ? WHERE id = ?`, now, ids[2]); err != nil {
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET sync_direction = 'edge_to_cloud', status = 'suspended', attempts = 4, last_error = 'threshold', updated_at = ? WHERE id = ?`, now, ids[2]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET status = 'sent', sent_at = ?, updated_at = ? WHERE id = ?`, now, now, ids[3]); err != nil {
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE pos_sync_outbox SET sync_direction = 'edge_to_cloud', status = 'sent', sent_at = ?, updated_at = ? WHERE id = ?`, now, now, ids[3]); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2522,11 +2559,26 @@ func TestGetSyncStatusAggregatesOutboxRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.Total != countRows(t, f, "pos_sync_outbox") || status.Processing != 1 || status.Failed != 1 || status.Suspended != 1 || status.Sent != 1 {
+	if status.Processing != 1 || status.Failed != 1 || status.Suspended != 1 || status.Sent != 1 {
 		t.Fatalf("unexpected sync status: %+v", status)
 	}
 	if status.Pending == 0 || status.OldestPendingSequenceNo == nil {
 		t.Fatalf("expected pending rows with oldest sequence, got %+v", status)
+	}
+}
+
+func TestGetSyncStatusIgnoresLocalOnlyRows(t *testing.T) {
+	f := newFixture(t)
+	ids := outboxIDs(t, f, 1)
+	now := appshared.DBTime(fixedClock{}.Now())
+	execTestSQL(t, f, `UPDATE pos_sync_outbox SET sync_direction = 'local_only', status = 'suspended', attempts = 3, updated_at = ? WHERE id = ?`, now, ids[0])
+
+	status, err := f.service.GetSyncStatus(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Suspended != 0 {
+		t.Fatalf("expected local_only suspended rows to be excluded from Cloud sync status, got %+v", status)
 	}
 }
 
@@ -3563,7 +3615,6 @@ func TestCannotCancelMissingPrecheck(t *testing.T) {
 	_, err := f.service.CancelPrecheck(f.ctx, app.CancelPrecheckCommand{
 		CommandMeta:        f.managerMetaCommand("cmd-cancel-missing-precheck"),
 		PrecheckID:         "missing-precheck",
-		ManagerEmployeeID:  f.manager.ID,
 		ManagerPIN:         "2468",
 		CancellationReason: "guest changed order",
 	})
@@ -3673,7 +3724,7 @@ func TestCancelPrecheckRejectsWrongManagerPIN(t *testing.T) {
 	}
 }
 
-func TestCancelPrecheckRejectsEmployeeWithoutPermission(t *testing.T) {
+func TestCancelPrecheckRejectsPINWithoutManagerPermission(t *testing.T) {
 	f := newFixture(t)
 	f.openShift(t)
 	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
@@ -3688,7 +3739,6 @@ func TestCancelPrecheckRejectsEmployeeWithoutPermission(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := f.cancelPrecheckCommand("cmd-cancel-no-permission", precheck.ID)
-	cmd.ManagerEmployeeID = f.employee.ID
 	cmd.ManagerPIN = "1111"
 	_, err = f.service.CancelPrecheck(f.ctx, cmd)
 	if !errors.Is(err, domain.ErrForbidden) {
@@ -3800,7 +3850,6 @@ func TestCancelPrecheckRejectsActorWithoutOverridePermission(t *testing.T) {
 	cmd := app.CancelPrecheckCommand{
 		CommandMeta:        f.edgeMetaCommand("cmd-cancel-actor-without-permission"),
 		PrecheckID:         precheck.ID,
-		ManagerEmployeeID:  f.manager.ID,
 		ManagerPIN:         "2468",
 		CancellationReason: "actor has no override permission",
 	}
@@ -3951,7 +4000,6 @@ func TestDuplicateCancelPrecheckCommandIDDoesNotDoubleCancel(t *testing.T) {
 	cmd := app.CancelPrecheckCommand{
 		CommandMeta:        f.managerMetaCommand("cmd-cancel-duplicate"),
 		PrecheckID:         precheck.ID,
-		ManagerEmployeeID:  f.manager.ID,
 		ManagerPIN:         "2468",
 		CancellationReason: "guest changed order",
 	}
@@ -4097,6 +4145,59 @@ func TestCapturePaymentCreatesFirstAttemptWithEdgeContext(t *testing.T) {
 	if attempts != 1 {
 		t.Fatalf("expected first payment attempt, got %d", attempts)
 	}
+}
+
+func TestCapturePaymentUsesCurrentCashSessionShiftForDifferentOrderOperator(t *testing.T) {
+	f := newFixture(t)
+	orderShift := f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cashierShift, err := f.service.OpenShift(f.ctx, app.OpenShiftCommand{
+		CommandMeta:        f.managerEdgeMetaCommand(t, "cmd-cross-shift-open-shift"),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.manager.ID,
+		OpeningCashAmount:  0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
+		CommandMeta:        f.managerEdgeMetaCommand(t, "cmd-cross-shift-open-cash"),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.manager.ID,
+		OpeningCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+		CommandMeta: f.managerEdgeMetaCommand(t, "cmd-cross-shift-payment"),
+		PrecheckID:  precheck.ID,
+		Method:      domain.PaymentCash,
+		Amount:      precheck.Total,
+		Currency:    "RUB",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payment.ShiftID != cashierShift.ID || order.ShiftID != orderShift.ID {
+		t.Fatalf("expected payment shift %s and original order shift %s, got payment=%+v order=%+v", cashierShift.ID, orderShift.ID, payment, order)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOutboxShift(t, f, "PaymentCaptured", payment.ID, cashierShift.ID)
+	assertOutboxShift(t, f, "CheckCreated", check.ID, cashierShift.ID)
+	assertOutboxShift(t, f, "CheckClosed", check.ID, cashierShift.ID)
 }
 
 func TestBusinessDateLocalStandardBoundaryAppliesToPaymentAndCheck(t *testing.T) {

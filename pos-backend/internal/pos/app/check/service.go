@@ -291,9 +291,11 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 			}
 			return err
 		}
-		if cashSession.ShiftID != order.ShiftID || cashSession.RestaurantID != order.RestaurantID {
-			return fmt.Errorf("%w: кассовая смена оплаты не совпадает с личной сменой заказа", domain.ErrConflict)
+		if cashSession.RestaurantID != order.RestaurantID {
+			return fmt.Errorf("%w: кассовая смена оплаты не совпадает с рестораном заказа", domain.ErrConflict)
 		}
+		// Оплата относится к текущей кассовой смене оператора, а заказ сохраняет исходную личную смену официанта.
+		paymentShiftID := cashSession.ShiftID
 		restaurant, err := s.repo.GetRestaurant(ctx, order.RestaurantID)
 		if err != nil {
 			return err
@@ -317,7 +319,7 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 			EdgePaymentID:         s.ids.NewID(),
 			RestaurantID:          order.RestaurantID,
 			DeviceID:              order.DeviceID,
-			ShiftID:               order.ShiftID,
+			ShiftID:               paymentShiftID,
 			PrecheckID:            precheck.ID,
 			Method:                cmd.Method,
 			Amount:                cmd.Amount,
@@ -370,7 +372,7 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 			PaidTotalMinor:      precheck.PaidTotal,
 			RemainingTotalMinor: precheck.RemainingTotal,
 		}
-		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Payment", payment.ID, "PaymentCaptured", paymentEvent); err != nil {
+		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, paymentShiftID, "Payment", payment.ID, "PaymentCaptured", paymentEvent); err != nil {
 			return err
 		}
 		if !precheck.IsFullyPaid() {
@@ -410,14 +412,14 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 		if err := s.repo.CreateCheck(ctx, check); err != nil {
 			return err
 		}
-		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Check", check.ID, "CheckCreated", check); err != nil {
+		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, paymentShiftID, "Check", check.ID, "CheckCreated", check); err != nil {
 			return err
 		}
 		checkClosedEvent, err := buildCheckClosedEventFromSnapshot(check.Snapshot)
 		if err != nil {
 			return err
 		}
-		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Check", check.ID, "CheckClosed", checkClosedEvent); err != nil {
+		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, paymentShiftID, "Check", check.ID, "CheckClosed", checkClosedEvent); err != nil {
 			return err
 		}
 		order.Status = domain.OrderClosed

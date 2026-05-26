@@ -46,7 +46,7 @@ Cashier runtime invariants:
 - Activity/sync reads поддержаны bounded queries and indexes: `local_event_log_created_at`, `local_event_log_event_type_created_at`, `local_event_log_command_id_created_at`, `pos_sync_outbox_status_sequence_no`, `pos_sync_outbox_pending_retry_sequence`, `pos_sync_outbox_processing_locked_at`, `pos_sync_outbox_command_id_created_at`.
 - `prechecks` has immutable `snapshot`, `version`, `currency_code`, `paid_total`, `remaining_total`, `discount_total`, `surcharge_total`, `tax_total`, `total`.
 - `precheck_*` breakdown tables persist lines, discounts, surcharges and tax components for audit/reprint/sync replay.
-- `payments` references `precheck_id`, not legacy `check_id`.
+- `payments` references `precheck_id`, not legacy `check_id`; `payments.shift_id` хранит текущую кассовую смену оплаты, а `orders.shift_id` сохраняет исходную личную смену оператора заказа.
 - `checks` references `order_id` and stores immutable `snapshot`.
 - `order_lines.course` и `order_lines.comment` хранят введенные оператором metadata комментария и курса подачи для cashier UI и не участвуют в расчете цены.
 - `order_line_modifiers` stores selected modifiers for active order lines; precheck/check snapshots preserve selected modifiers for reprint/refund.
