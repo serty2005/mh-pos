@@ -102,6 +102,7 @@
 - pairing code flow не требует ввода `node_device_id`: Cloud генерирует device id на backend-стороне;
 - publication flow позволяет выбрать известное Edge-устройство из UI-состояния или опубликовать общий пакет без ручного ввода ID;
 - роли выбираются из профилей `cashier`, `senior_cashier`, `waiter`, `manager`, `kitchen`, `support_admin`, после чего оператор может изменить права в матрице;
+- создание и ротация PIN используют password input; после сохранения Cloud UI показывает только флаги/версии credential lifecycle, а не PIN material;
 - Edge-device flow не показывает секреты кроме одноразового pairing code, который возвращает backend;
 - command-only разделы не показывают неподтвержденную таблицу;
 - Cloud UI показывает безопасные локализованные ошибки возле активного failed step с recovery action: retry, select restaurant или open related section; message key, support code, correlation id и безопасные details выводятся без raw payload, а подозрительные `payload`/`token`/`PIN`/`SQL`/`stack` details редактируются в UI;

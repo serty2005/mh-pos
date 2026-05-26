@@ -414,6 +414,7 @@ export const i18n = createI18n({
         waiterWorkspaceTitle: 'Столы, заказ и пречек',
         waiterNoPaymentAuthority: 'Оплата, возвраты и кассовый ящик скрыты: официантский экран не принимает финансовые решения.',
         waiterAuthority: 'Границы полномочий официанта',
+        waiterCurrentContext: 'Текущий стол, заказ и статус',
         waiterOrderPrecheckRuntime: 'Заказ и пречек доступны',
         waiterPaymentHidden: 'Оплата скрыта',
         waiterLockedControlReason: 'Изменение недоступно: заказ заблокирован пречеком или нет нужного права.',

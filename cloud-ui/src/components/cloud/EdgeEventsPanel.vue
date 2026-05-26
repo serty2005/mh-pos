@@ -23,7 +23,7 @@
                 <th>{{ t('cloud.fields.device_id') }}</th>
                 <th>{{ t('cloud.fields.aggregate_type') }}</th>
                 <th>{{ t('cloud.fields.aggregate_id') }}</th>
-                <th>{{ t('cloud.fields.raw_payload_sha256_hex') }}</th>
+                <th>{{ t('cloud.edgeEvents.payloadHash') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -46,7 +46,7 @@
             <small>{{ t('cloud.fields.device_id') }}: {{ ctx.formatCell('device_id', event.device_id) }}</small>
             <small>{{ t('cloud.fields.aggregate_type') }}: {{ event.aggregate_type }}</small>
             <small>{{ t('cloud.fields.aggregate_id') }}: {{ ctx.formatCell('aggregate_id', event.aggregate_id) }}</small>
-            <small>{{ t('cloud.fields.raw_payload_sha256_hex') }}: {{ ctx.formatCell('raw_payload_sha256_hex', event.raw_payload_sha256_hex) }}</small>
+            <small>{{ t('cloud.edgeEvents.payloadHash') }}: {{ ctx.formatCell('raw_payload_sha256_hex', event.raw_payload_sha256_hex) }}</small>
           </article>
         </div>
       </template>

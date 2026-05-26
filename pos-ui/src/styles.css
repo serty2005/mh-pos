@@ -3935,6 +3935,7 @@ button.bottom-status-cell {
   top: 84px;
   z-index: 2;
   display: grid;
+  gap: 8px;
   padding: 2px 0;
   background: linear-gradient(180deg, var(--pos-bg) 72%, rgba(245, 247, 249, 0));
 }
@@ -3968,6 +3969,41 @@ button.bottom-status-cell {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+.waiter-sticky-context {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  background: rgba(247, 248, 246, 0.96);
+  border: 1px solid var(--pos-border);
+  border-radius: var(--pos-radius-md);
+}
+
+.waiter-sticky-context.locked {
+  background: var(--pos-warning-light);
+  border-color: var(--pos-warning);
+}
+
+.waiter-sticky-context span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.waiter-sticky-context small {
+  color: var(--pos-text-secondary);
+  font-size: var(--pos-font-size-xs);
+}
+
+.waiter-sticky-context strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pos-text-primary);
+  font-size: var(--pos-font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .waiter-lock-badge {
@@ -4344,6 +4380,12 @@ button.bottom-status-cell {
     top: 72px;
   }
 
+  .waiter-sticky-context {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(88px, 0.8fr);
+    gap: 6px;
+    padding: 7px;
+  }
+
   .waiter-table-grid,
   .waiter-menu-grid {
     gap: 8px;
@@ -4362,7 +4404,9 @@ button.bottom-status-cell {
   }
 
   .waiter-authority-strip {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(128px, 1fr));
+    overflow-x: auto;
+    padding-bottom: 2px;
   }
 
   .waiter-lock-badge {

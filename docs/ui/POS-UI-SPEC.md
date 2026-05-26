@@ -57,10 +57,10 @@ Waiter mobile UI in `pos-ui/src/pages/WaiterPage.vue` и `pos-ui/src/pages/pos/u
 - использует только подтвержденные POS backend contracts: смена сотрудника, залы, столы, активные/current orders, menu items, добавление строки с modifier dialog, изменение quantity, void line, issue/reprint precheck;
 - не требует кассовую смену и не показывает payment/refund/cash drawer controls по умолчанию;
 - не считает authoritative totals, цены модификаторов, складские остатки или платежные статусы; показывает backend-provided order/precheck totals;
-- явно показывает границы полномочий официанта отдельной status strip: order/precheck runtime доступен, payment/refund/cash drawer authority скрыта;
+- явно показывает sticky mobile context dock: текущий стол, заказ, статус и границы полномочий официанта; order/precheck runtime доступен, payment/refund/cash drawer authority скрыта;
 - после active issued precheck или locked order визуально блокирует меню, quantity и void controls; selected table/order/status остаются видимыми в mobile context strip, а меню дополнительно показывает lock badge без добавления новых действий;
 - modifier dialog показывает required/min/max правила, validation message и disabled/loading submit state без локальной подмены backend validation; общий `PosDialog` ограничивает высоту карточки и прокручивает body, чтобы длинный список modifiers оставался usable на mobile;
-- viewport `390x844` держит compact context strip, touch-friendly table/menu/order rows, sticky topbar и sticky authority dock без payment/refund/cash drawer controls;
+- viewport `390x844` держит compact sticky context/authority dock, touch-friendly table/menu/order rows и sticky topbar без payment/refund/cash drawer controls;
 - empty/loading/error/no-permission states идут через `vue-i18n` и reusable primitives из `pos-ui/src/shared/ui`.
 
 KDS route реализовано сейчас как bounded readiness screen:

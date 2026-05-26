@@ -30,8 +30,9 @@
         @update:model-value="(value) => ctx.setFormValue(field.key, value)"
         dense
         outlined
-        :type="field.type === 'textarea' ? 'textarea' : field.type === 'number' ? 'number' : 'text'"
+        :type="field.key === 'pin' ? 'password' : field.type === 'textarea' ? 'textarea' : field.type === 'number' ? 'number' : 'text'"
         :rows="field.type === 'textarea' ? field.rows ?? 4 : undefined"
+        :autocomplete="field.key === 'pin' ? 'new-password' : undefined"
         :label="t(field.labelKey)"
       />
     </template>

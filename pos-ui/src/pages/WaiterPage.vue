@@ -15,6 +15,20 @@
     <PosBanner v-if="terminal.orderIsLocked.value" tone="warning" :label="t('pos.waiterPrecheckLockedCopy')" />
 
     <div class="waiter-context-dock">
+      <div v-if="terminal.currentShift.data.value" class="waiter-sticky-context" :class="{ locked: terminal.orderIsLocked.value }" :aria-label="t('pos.waiterCurrentContext')">
+        <span>
+          <small>{{ t('pos.selectedTable') }}</small>
+          <strong>{{ terminal.selectedTable.value?.name ?? t('common.empty') }}</strong>
+        </span>
+        <span>
+          <small>{{ t('pos.order') }}</small>
+          <strong>{{ activeOrderLabel }}</strong>
+        </span>
+        <span>
+          <small>{{ t('common.status') }}</small>
+          <strong>{{ orderStateLabel }}</strong>
+        </span>
+      </div>
       <div class="waiter-authority-strip" :aria-label="t('pos.waiterAuthority')">
         <PosStatusStrip :value="t('pos.waiterOrderPrecheckRuntime')" tone="good" />
         <PosStatusStrip :value="t('pos.waiterPaymentHidden')" tone="info" />
@@ -229,6 +243,7 @@
               :decrement-label="t('actions.remove')"
               :increment-label="t('actions.add')"
               :min="0"
+              :increment-disabled="modifierOptionIncrementDisabled(group)"
               @decrement="terminal.changeModifierQuantity(option.id, (terminal.modifierQuantities.value[option.id] ?? 0) - 1)"
               @increment="terminal.changeModifierQuantity(option.id, (terminal.modifierQuantities.value[option.id] ?? 0) + 1)"
             />
@@ -287,5 +302,10 @@ function modifierGroupRule(group: { required: boolean; min_count: number; max_co
   if (group.required) return t('pos.modifierGroupRequiredMin', { min: group.min_count });
   if (group.max_count > 0) return t('pos.modifierGroupOptionalMax', { max: group.max_count });
   return t('pos.optionalModifierGroup');
+}
+
+function modifierOptionIncrementDisabled(group: { id: string; max_count: number }) {
+  if (group.max_count <= 0) return false;
+  return terminal.modifierGroupCount(group.id) >= group.max_count;
 }
 </script>

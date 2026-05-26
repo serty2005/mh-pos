@@ -225,6 +225,7 @@ export const i18n = createI18n({
           title: 'Входящие события Edge',
           description: 'Cloud показывает receipt metadata и контрольную сумму payload. Сырые payload не выводятся в UI.',
           empty: 'Для выбранного ресторана пока нет принятых Edge events.',
+          payloadHash: 'Payload hash',
         },
         edgeStatuses: {
           pending: 'ожидает',
