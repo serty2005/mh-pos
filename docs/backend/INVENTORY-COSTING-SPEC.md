@@ -149,7 +149,7 @@ erDiagram
 
 Реализовано сейчас: проверка выполняется в POS Edge backend при добавлении строки заказа и при увеличении quantity. Проверяется прямой `catalog_item_id` и строки активной recipe version; selected modifiers не разворачиваются в складские позиции, потому что текущая Edge модель modifier option не содержит authoritative linked catalog item.
 
-Реализовано сейчас: минимальный smoke `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud authoring/publication рецептов и stop-list, Edge sync, waiter order/precheck, cashier final check, прием `CheckClosed` в Cloud и появление строк `stock_ledger` через bounded Cloud read endpoint.
+Реализовано сейчас: минимальный smoke `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud authoring/publication рецептов и stop-list, Edge sync, waiter order/precheck, KDS served, cashier final check, прием `ItemServed`/`CheckClosed` в Cloud, появление строк `stock_ledger` по `ItemServed` и отсутствие duplicate `CheckClosed` delta через bounded Cloud read endpoint.
 
 Изменение stop-list может прийти из Cloud manager UI или быть создано kitchen worker/manager на Edge. В обоих случаях публикуется `StopListUpdated`. Порядок применения Cloud package и Edge overlay задается параметром `stop_list_conflict_policy`: `cloud_wins`, `edge_wins`, `last_event_wins` или `most_restrictive`. Для полного пилота default должен быть `most_restrictive`, чтобы Cloud мог добавить товар, а Edge мог временно исключить его или указать допустимый остаток через `available_quantity`.
 
@@ -202,7 +202,7 @@ erDiagram
 
 `ItemServed` фиксирует KDS факт подачи гостю и может вызвать раннее списание позиции. Cloud обязан дедуплицировать его с последующим `CheckClosed`.
 
-Статус: реализовано сейчас для Cloud contract, Cloud receiver и Cloud Inventory Worker consumption/dedup при принятом event. POS Edge/KDS runtime generation остается запланирован далее.
+Статус: реализовано сейчас для POS Edge KDS `serve` generation, Cloud contract, Cloud receiver и Cloud Inventory Worker consumption/dedup при принятом event. `KitchenTicketStatusChanged` остается operational-only и не создает складскую проводку.
 
 ```json
 {
@@ -462,7 +462,7 @@ Whole-check операции должны быть нормализованы д
 - Edge-side stock tables удалены из managed SQLite baseline;
 - Cloud receiver сохраняет inventory-relevant events в durable `inventory_event_queue`;
 - Cloud Inventory Worker создает Cloud-owned `stock_documents` и `stock_ledger` из нормализованных item payloads.
-- Cloud Inventory Worker покрыт тестами на `ItemServed` + `CheckClosed` dedup/delta без POS KDS runtime, POS UI, ClickHouse и полного costing engine.
+- Cloud Inventory Worker покрыт тестами на `ItemServed` + `CheckClosed` dedup/delta; POS KDS ticket lifecycle генерирует `ItemServed`, но ClickHouse и полный costing engine остаются вне текущего runtime.
 
 Запланировано до полного пилота:
 

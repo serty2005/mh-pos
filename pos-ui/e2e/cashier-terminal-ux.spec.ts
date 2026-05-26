@@ -52,14 +52,16 @@ test('lazy routes load redesigned POS shell and out-of-scope workspace shells', 
   for (const path of ['/pos/kitchen', '/pos/manager']) {
     await page.goto(path);
     if (path === '/pos/kitchen') {
-      await expect(page.getByText('запланировано далее').first()).toBeVisible();
-      await expect(page.getByText(/нет routes для kitchen tickets/i)).toBeVisible();
+      await expect(page.getByText('реализовано сейчас').first()).toBeVisible();
+      await expect(page.getByText(/Нужно право pos\.kitchen\.view/i)).toBeVisible();
+      await expect(page.locator('.q-layout')).not.toContainText(/нет routes для kitchen tickets|Только readiness/i);
+      await expect(page.getByRole('button', { name: /Наличные|Карта|Кассовый ящик|Вернуть оплату/i })).toHaveCount(0);
     } else {
       await expect(page.getByText('Вне текущего объема')).toBeVisible();
       await expect(page.getByText(/runtime-сценарий не реализован/i)).toBeVisible();
       await expect(page.getByRole('link', { name: /Терминал кассира/i })).toBeVisible();
+      await expect(page.locator('.q-layout')).not.toContainText(/готовый runtime|runtime готов|реализовано сейчас/i);
     }
-    await expect(page.locator('.q-layout')).not.toContainText(/готовый runtime|runtime готов|реализовано сейчас/i);
   }
 });
 

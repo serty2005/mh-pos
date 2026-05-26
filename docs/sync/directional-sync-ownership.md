@@ -28,7 +28,7 @@
 | Tax/pricing policy reference | Cloud | Edge read model only | `pricing_policy` Cloud -> Edge stream for `tax_profiles`, `tax_rules`, `service_charge_rules`, `pricing_policies` | реализовано сейчас |
 | Operational order adjustments | Edge | Yes while order is open | runtime-команды; будущие policy ids могут ограничивать допустимые варианты | реализовано сейчас |
 | Stock document/move/ledger | Cloud Inventory Worker | No | Edge business events -> Cloud worker | реализовано сейчас for normalized item payloads; Edge-side stock document service был pre-pilot legacy и удален |
-| Kitchen ticket/status | POS Edge/KDS | Yes | Edge -> Cloud `KitchenTicketStatusChanged`/`ItemServed` | запланировано до полного пилота |
+| Kitchen ticket/status | POS Edge/KDS | Yes | Edge -> Cloud `KitchenTicketStatusChanged`/`ItemServed` | реализовано сейчас для ticket lifecycle; receipt/proposal/stop-list edit flows запланированы далее |
 
 ## Текущий Cloud -> Edge Ingest
 

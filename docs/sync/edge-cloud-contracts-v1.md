@@ -450,7 +450,7 @@ Cloud worker не применяет `CatalogItemChangeSuggested`/`RecipeChangeS
 Не реализовано сейчас:
 
 - Edge-origin stop-list edit sync/conflict policy;
-- KDS runtime для генерации `KitchenTicketStatusChanged` / `ItemServed` / `ProductionCompleted`;
+- KDS runtime для генерации `ProductionCompleted`;
 - proposal events `CatalogItemChangeSuggested` и `RecipeChangeSuggested`;
 - recipe expansion, modifier linked catalog item consumption и retro costing DAG;
 - ClickHouse forwarder/projection export and bounded OLAP API;
@@ -458,7 +458,7 @@ Cloud worker не применяет `CatalogItemChangeSuggested`/`RecipeChangeS
 
 Запланировано до полного пилота:
 
-- advanced KDS генерирует `KitchenTicketStatusChanged`, `ItemServed` и cooking events;
+- advanced KDS расширяется cooking events и production flows поверх уже реализованных `KitchenTicketStatusChanged`/`ItemServed`;
 - chef receipt/catalog/recipe proposal flows генерируют `StockReceiptCaptured`, `CatalogItemChangeSuggested` и `RecipeChangeSuggested`;
 - stop-list changes синхронизируются через Cloud -> Edge packages и, если включен Edge manager input, через `StopListUpdated`;
 - Cloud Inventory Worker расширяется до полного receipts, counts, production, refund/cancellation dispositions, balances and costing engine;

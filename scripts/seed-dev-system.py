@@ -762,6 +762,25 @@ def run_minimal_flow_smoke(
         expected_status=(201,),
         headers=waiter_headers,
     )
+    kitchen_headers = login_pos(pos_client, node_device_id, client_device_id, pins["kitchen_pin"])
+    kitchen_ticket = mark_kitchen_ticket_served(pos_client, line["id"], kitchen_headers)
+    item_served = wait_for_cloud_event(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        event_type="ItemServed",
+        aggregate_id=kitchen_ticket["id"],
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
+    served_ledger = wait_for_inventory_ledger(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        source_event_type="ItemServed",
+        source_event_id=item_served["event_id"],
+        order_line_id=line["id"],
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
     precheck = request(
         pos_client,
         "POST",
@@ -801,15 +820,16 @@ def run_minimal_flow_smoke(
         wait_seconds=wait_seconds,
         interval_seconds=interval_seconds,
     )
-    ledger = wait_for_inventory_ledger(
+    check_closed_delta = list_inventory_ledger(
         cloud_client,
         restaurant_id=restaurant_id,
+        source_event_type="CheckClosed",
         source_event_id=check_closed["event_id"],
         order_line_id=line["id"],
-        wait_seconds=wait_seconds,
-        interval_seconds=interval_seconds,
     )
-    ledger_catalog_ids = sorted({item.get("catalog_item_id", "") for item in ledger if item.get("catalog_item_id")})
+    if check_closed_delta:
+        raise RuntimeError(f"CheckClosed created duplicate inventory ledger rows after ItemServed for order line {line['id']}")
+    ledger_catalog_ids = sorted({item.get("catalog_item_id", "") for item in served_ledger if item.get("catalog_item_id")})
     expected_components = sorted(
         value
         for key, value in catalog_refs.items()
@@ -824,11 +844,40 @@ def run_minimal_flow_smoke(
         "precheck_id": precheck["id"],
         "payment_id": payment["id"],
         "check_id": check_id,
+        "kitchen_ticket_id": kitchen_ticket["id"],
+        "item_served_event_id": item_served["event_id"],
         "check_closed_event_id": check_closed["event_id"],
-        "ledger_entry_count": len(ledger),
+        "served_ledger_entry_count": len(served_ledger),
+        "check_closed_delta_entry_count": len(check_closed_delta),
         "ledger_catalog_item_ids": ledger_catalog_ids,
         "blocked_sale_error_code": blocked_sale.get("error_code", ""),
     }
+
+
+def mark_kitchen_ticket_served(pos_client, order_line_id, headers):
+    tickets = request(
+        pos_client,
+        "GET",
+        f"{API_PREFIX}/kitchen/tickets",
+        expected_status=(200,),
+        query={"limit": 100, "offset": 0},
+        headers=headers,
+    )
+    ticket = next((item for item in tickets if item.get("order_line_id") == order_line_id), None)
+    if not ticket:
+        raise RuntimeError(f"KDS ticket not found for order line {order_line_id}")
+    for action in ("accept", "start", "ready", "serve"):
+        ticket = request(
+            pos_client,
+            "POST",
+            f"{API_PREFIX}/kitchen/tickets/{ticket['id']}/{action}",
+            {"command_id": f"cmd-minimal-{command_suffix()}-kds-{action}"},
+            expected_status=(200,),
+            headers=headers,
+        )
+    if ticket.get("status") != "served":
+        raise RuntimeError(f"KDS ticket did not reach served status: {ticket}")
+    return ticket
 
 
 def login_pos(pos_client, node_device_id, client_device_id, pin):
@@ -942,27 +991,37 @@ def wait_for_cloud_event(cloud_client, restaurant_id, event_type, aggregate_id, 
         time.sleep(max(0, interval_seconds))
 
 
-def wait_for_inventory_ledger(cloud_client, restaurant_id, source_event_id, order_line_id, wait_seconds, interval_seconds):
+def wait_for_inventory_ledger(cloud_client, restaurant_id, source_event_type, source_event_id, order_line_id, wait_seconds, interval_seconds):
     deadline = time.monotonic() + max(1, wait_seconds)
     while True:
-        items = request(
+        items = list_inventory_ledger(
             cloud_client,
-            "GET",
-            f"{API_PREFIX}/inventory/stock-ledger",
-            expected_status=(200,),
-            query={
-                "restaurant_id": restaurant_id,
-                "source_event_type": "CheckClosed",
-                "source_event_id": source_event_id,
-                "order_line_id": order_line_id,
-                "limit": 50,
-            },
+            restaurant_id=restaurant_id,
+            source_event_type=source_event_type,
+            source_event_id=source_event_id,
+            order_line_id=order_line_id,
         )
         if items:
             return items
         if time.monotonic() >= deadline:
-            raise RuntimeError(f"Cloud inventory ledger did not receive CheckClosed ledger rows for order line {order_line_id}")
+            raise RuntimeError(f"Cloud inventory ledger did not receive {source_event_type} ledger rows for order line {order_line_id}")
         time.sleep(max(0, interval_seconds))
+
+
+def list_inventory_ledger(cloud_client, restaurant_id, source_event_type, source_event_id, order_line_id):
+    return request(
+        cloud_client,
+        "GET",
+        f"{API_PREFIX}/inventory/stock-ledger",
+        expected_status=(200,),
+        query={
+            "restaurant_id": restaurant_id,
+            "source_event_type": source_event_type,
+            "source_event_id": source_event_id,
+            "order_line_id": order_line_id,
+            "limit": 50,
+        },
+    )
 
 
 def write_summary(path, summary):

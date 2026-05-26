@@ -308,17 +308,21 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 
 ## Recipe And Inventory Data
 
-Запланировано до полного пилота:
+Реализовано сейчас:
 
 - Recipes are versioned in Edge read-only tables `recipe_versions` and `recipe_lines`.
 - Edge локально использует recipes только для KDS UI и проверки stop-list при добавлении позиции и увеличении quantity.
 - Edge хранит минимальный KDS lifecycle в `kitchen_tickets` и `kitchen_ticket_events`; эти таблицы привязаны к `orders`/`order_lines` и не дублируют financial snapshot.
+- `kitchen_tickets.order_line_id` уникален, `status` ограничен значениями `new`, `accepted`, `in_progress`, `hold`, `ready`, `served`, `recall`, `cancelled`, `unit_code` не может быть пустым; bounded read опирается на индекс `kitchen_tickets_restaurant_status_created_at`, audit trail - на `kitchen_ticket_events_ticket_created_at` и `kitchen_ticket_events_command_id`.
 - Edge inventory mutation tables удалены из целевой SQLite схемы.
 - Cloud Inventory Worker создает Cloud-owned stock documents and `stock_ledger` from Edge/KDS business events.
 - `CheckClosed` запускает batch delta consumption после сверки с `ItemServed`.
 - `RefundRecorded` и `CancellationRecorded` должны содержать operation-level `inventory_disposition`; отдельный `items[].inventory_disposition` в текущем payload не реализован.
-- `StopListUpdated` синхронизируется Edge <-> Cloud.
 - UOM reference model with separate code/display fields remains запланировано далее.
+
+Запланировано далее:
+
+- `StopListUpdated` Edge edit flow и conflict policy для двустороннего Edge <-> Cloud overlay.
 - `ProductionCompleted` создает `PRODUCTION`: приход заготовки и расход сырья.
 - semi-finished fallback expansion.
 - costing recalculation.

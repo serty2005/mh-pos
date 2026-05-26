@@ -431,6 +431,44 @@ func (f *fixture) openCashSession(t *testing.T) *domain.CashSession {
 	return session
 }
 
+func (f *fixture) useKitchenOperator(t *testing.T) app.CommandMeta {
+	t.Helper()
+	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta:     seedMeta(f.device.ID),
+		Name:            string(appshared.RoleKitchen),
+		PermissionsJSON: appshared.RolePermissionsJSON(appshared.RoleKitchen),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinHash, err := appshared.HashPIN("5555", []byte("kitchen-salt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	employee, err := f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, RoleID: role.ID, Name: "Kitchen", PINHash: pinHash})
+	if err != nil {
+		t.Fatal(err)
+	}
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{
+			CommandID:      "cmd-login-kitchen",
+			NodeDeviceID:   f.device.ID,
+			DeviceID:       f.device.ID,
+			ClientDeviceID: f.clientID,
+			Origin:         app.OriginEdgeDevice,
+		},
+		PIN: "5555",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := edgeMeta(f.device.ID)
+	meta.ClientDeviceID = f.clientID
+	meta.ActorEmployeeID = employee.ID
+	meta.SessionID = login.Session.ID
+	return meta
+}
+
 func (f *fixture) closeCashSessionAndShift(t *testing.T, shift *domain.Shift, cashSession *domain.CashSession, suffix string) {
 	t.Helper()
 	if _, err := f.service.CloseCashSession(f.ctx, app.CloseCashSessionCommand{
@@ -503,7 +541,7 @@ func insertClosedOrderFixture(t *testing.T, f *fixture, shiftID, deviceID, order
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
-	case "restaurants", "devices", "orders", "order_lines", "order_line_modifiers", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "roles", "employees", "catalog_items", "catalog_folders", "catalog_tags", "catalog_item_tags", "modifier_groups", "modifier_options", "modifier_group_bindings", "menu_item_modifier_groups", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "pricing_policies", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_line_modifiers", "precheck_discounts", "precheck_surcharges", "precheck_taxes", "financial_operations", "financial_operation_items":
+	case "restaurants", "devices", "orders", "order_lines", "order_line_modifiers", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "kitchen_ticket_events", "manager_override_audit", "roles", "employees", "catalog_items", "catalog_folders", "catalog_tags", "catalog_item_tags", "modifier_groups", "modifier_options", "modifier_group_bindings", "menu_item_modifier_groups", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "pricing_policies", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_line_modifiers", "precheck_discounts", "precheck_surcharges", "precheck_taxes", "financial_operations", "financial_operation_items":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -526,6 +564,11 @@ func countRowsWhere(t *testing.T, f *fixture, table, where string, args ...any) 
 		t.Fatal(err)
 	}
 	return n
+}
+
+func countOutboxByType(t *testing.T, f *fixture, commandType string) int {
+	t.Helper()
+	return countRowsWhere(t, f, "pos_sync_outbox", "command_type = ?", commandType)
 }
 
 func assertOutboxShift(t *testing.T, f *fixture, commandType, aggregateID, shiftID string) {
@@ -6882,6 +6925,116 @@ func TestServiceCatalogItemSellsThroughOrderPricingPrecheckAndCheck(t *testing.T
 	}
 	if check.Total != 600 || !strings.Contains(string(check.Snapshot), `"Delivery"`) {
 		t.Fatalf("expected service item check snapshot and total, check=%+v snapshot=%s", check, check.Snapshot)
+	}
+	if tickets, err := f.repo.ListKitchenTickets(f.ctx, domain.KitchenTicketListQuery{RestaurantID: f.restaurant.ID}); err != nil {
+		t.Fatal(err)
+	} else if len(tickets) != 0 {
+		t.Fatalf("expected service-only line not to create kitchen ticket, got %+v", tickets)
+	}
+}
+
+func TestKitchenTicketCreatedFromOrderLineKeepsCatalogRoutingAndDetails(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	catalog, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{
+		CommandMeta:  seedMeta(f.device.ID),
+		Type:         domain.CatalogItemDish,
+		Name:         "Steak",
+		SKU:          "STEAK",
+		BaseUnit:     "portion",
+		KitchenType:  "hot",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	menuItem, err := f.service.CreateMenuItem(f.ctx, app.CreateMenuItemCommand{CommandMeta: seedMeta(f.device.ID), CatalogItemID: catalog.ID, Name: "Steak", Price: 2500, Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMetaCommand("cmd-kds-order"), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMetaCommand("cmd-kds-line"), OrderID: order.ID, MenuItemID: menuItem.ID, Quantity: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.UpdateOrderLineDetails(f.ctx, app.UpdateOrderLineDetailsCommand{CommandMeta: f.edgeMetaCommand("cmd-kds-line-details"), OrderID: order.ID, LineID: line.ID, Course: "main", Comment: "no salt"}); err != nil {
+		t.Fatal(err)
+	}
+	tickets, err := f.repo.ListKitchenTickets(f.ctx, domain.KitchenTicketListQuery{RestaurantID: f.restaurant.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tickets) != 1 {
+		t.Fatalf("expected one kitchen ticket, got %+v", tickets)
+	}
+	ticket := tickets[0]
+	if ticket.OrderLineID != line.ID || ticket.MenuItemID != menuItem.ID || ticket.CatalogItemID != catalog.ID || ticket.Quantity != 2 || ticket.UnitCode != "portion" || ticket.StationRoutingKey != "hot" || ticket.TableName != "A1" || ticket.ShiftID != order.ShiftID || ticket.DeviceID != order.DeviceID || ticket.RestaurantID != order.RestaurantID {
+		t.Fatalf("unexpected kitchen ticket projection: %+v", ticket)
+	}
+	if ticket.Course == nil || *ticket.Course != "main" || ticket.Comment == nil || *ticket.Comment != "no salt" {
+		t.Fatalf("expected order line details in kitchen ticket, got %+v", ticket)
+	}
+}
+
+func TestKitchenTicketTransitionMatrixAndEvents(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMetaCommand("cmd-kds-matrix-order"), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMetaCommand("cmd-kds-matrix-line"), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tickets, err := f.repo.ListKitchenTickets(f.ctx, domain.KitchenTicketListQuery{RestaurantID: f.restaurant.ID, Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tickets) != 1 || tickets[0].OrderLineID != line.ID {
+		t.Fatalf("expected ticket for order line, got %+v", tickets)
+	}
+	meta := f.useKitchenOperator(t)
+	invalidMeta := meta
+	invalidMeta.CommandID = "cmd-kds-invalid-serve"
+	if _, err := f.service.ChangeKitchenTicketStatus(f.ctx, app.ChangeKitchenTicketStatusCommand{CommandMeta: invalidMeta, TicketID: tickets[0].ID, Action: "serve"}); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected invalid serve transition conflict, got %v", err)
+	}
+	steps := []struct {
+		action string
+		status domain.KitchenTicketStatus
+	}{
+		{"accept", domain.KitchenTicketAccepted},
+		{"start", domain.KitchenTicketInProgress},
+		{"hold", domain.KitchenTicketHold},
+		{"start", domain.KitchenTicketInProgress},
+		{"ready", domain.KitchenTicketReady},
+		{"recall", domain.KitchenTicketRecall},
+		{"start", domain.KitchenTicketInProgress},
+		{"ready", domain.KitchenTicketReady},
+		{"serve", domain.KitchenTicketServed},
+	}
+	for i, step := range steps {
+		stepMeta := meta
+		stepMeta.CommandID = fmt.Sprintf("cmd-kds-matrix-%02d-%s", i, step.action)
+		ticket, err := f.service.ChangeKitchenTicketStatus(f.ctx, app.ChangeKitchenTicketStatusCommand{CommandMeta: stepMeta, TicketID: tickets[0].ID, Action: step.action})
+		if err != nil {
+			t.Fatalf("transition %s failed: %v", step.action, err)
+		}
+		if ticket.Status != step.status {
+			t.Fatalf("expected status %s after %s, got %+v", step.status, step.action, ticket)
+		}
+	}
+	if events := countRows(t, f, "kitchen_ticket_events"); events != len(steps) {
+		t.Fatalf("expected %d kitchen ticket events, got %d", len(steps), events)
+	}
+	if statusOutbox := countOutboxByType(t, f, "KitchenTicketStatusChanged"); statusOutbox != len(steps) {
+		t.Fatalf("expected %d status outbox events, got %d", len(steps), statusOutbox)
+	}
+	if servedOutbox := countOutboxByType(t, f, "ItemServed"); servedOutbox != 1 {
+		t.Fatalf("expected one ItemServed outbox event, got %d", servedOutbox)
 	}
 }
 

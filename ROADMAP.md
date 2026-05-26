@@ -54,7 +54,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - POS Edge outbox/local event foundation for cashier operational events.
 - `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud financial operation events. `PaymentRefunded` and `CheckRefunded` remain accepted legacy operational event types for older payloads.
 - Cloud receiver валидирует current `RefundRecorded`/`CancellationRecorded` payload fields, включая совпадение payload `restaurant_id`/`device_id` с envelope, precheck id и reason, stores raw/journal rows idempotently, updates event-type stats plus coarse shift finance refund counters for refunds and maintains detailed `cloud_projection_financial_operations` for current financial operations. Legacy `PaymentRefunded`/`CheckRefunded` remain inbound-compatible but do not populate the detailed operation projection.
-- Python 3 local seed runner `scripts/seed-dev-system.py` создает полный Cloud-owned dataset, публикует packages для POS Edge streams, выполняет license pairing и проверяет базовый POS read model; флаг `--run-minimal-flow` выполняет минимальный waiter order -> cashier final check -> `CheckClosed` -> Cloud inventory ledger smoke без destructive storage actions.
+- Python 3 local seed runner `scripts/seed-dev-system.py` создает полный Cloud-owned dataset, публикует packages для POS Edge streams, выполняет license pairing и проверяет базовый POS read model; флаг `--run-minimal-flow` выполняет минимальный waiter order -> KDS served -> cashier final check -> `ItemServed`/`CheckClosed` -> Cloud inventory ledger smoke без destructive storage actions.
 - DDD context map exists in `docs/architecture/DDD-CONTEXT-MAP.md`.
 
 ### Persistence Policy
@@ -120,11 +120,11 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - выполнено: Cloud Inventory Worker дедуплицирует `ItemServed` replay и `CheckClosed` replay, а `CheckClosed` после обработанного `ItemServed` списывает только положительную unserved delta по `order_line_id`;
   - выполнено: POS Edge пишет `CheckClosed` outbox event из immutable `check.Snapshot` при final check после полной оплаты;
   - выполнено: POS Edge использует stop-list как единственный механизм блокировки продаж при add/increase order line; stock balance остается аналитическим и может быть отрицательным;
-  - выполнено: минимальный HTTP-only smoke `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud recipes/stop-list publication -> Edge sync -> waiter order/precheck -> cashier final check -> `CheckClosed` -> Cloud `stock_ledger`.
+  - выполнено: минимальный HTTP-only smoke `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud recipes/stop-list publication -> Edge sync -> waiter order -> KDS served -> cashier final check -> `ItemServed`/`CheckClosed` -> Cloud `stock_ledger`.
 - Cancellation/refund/reprint hardening:
   - backend ledger, immutable snapshots, no-over-cancel/no-over-refund/no-over-line-amount tests, current `CancellationRecorded`/`RefundRecorded` sync contracts, idempotent Cloud raw/journal receipt checks, coarse Cloud refund counters and detailed Cloud financial operation projection реализованы;
   - cashier UI full whole-check и partial `order_line`/quantity cancellation/refund через ledger endpoints реализован с выбором inventory disposition; compatibility refund по captured payment оставлен отдельным fallback;
-  - выполнено: `scripts/seed-dev-system.py --run-minimal-flow` проверяет минимальный runtime sale path с waiter order/precheck, cashier payment/final check, `CheckClosed` и Cloud `stock_ledger`; refund/cancellation остаются в профильных backend/UI e2e, а не в seed smoke;
+  - выполнено: `scripts/seed-dev-system.py --run-minimal-flow` проверяет минимальный runtime sale path с waiter order/precheck, KDS served, cashier payment/final check, `ItemServed`/`CheckClosed` и Cloud `stock_ledger`; refund/cancellation остаются в профильных backend/UI e2e, а не в seed smoke;
   - выполнено: Playwright `payments-refunds.spec.ts` закрывает исходные personal/cash shifts, открывает новую сменную границу, проверяет refund ledger read после закрытой смены и ожидаемый запрет cancellation после закрытия исходной смены;
   - запланировано далее: PSP refund и fiscal integration.
 - Documentation freeze:
@@ -162,8 +162,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - Cloud UI должен довести readiness-only surfaces до runtime только после появления подтвержденных Cloud backend routes;
   - launch readiness учитывает restaurant, staff, floor, catalog, menu, modifiers, pricing, stop-list review, publication и known Edge node.
 - Full pilot smoke:
-  - выполнено сейчас: минимальный runtime smoke без ClickHouse проходит Cloud setup -> seed publication -> Edge sync -> waiter order/precheck -> cashier payment/final check -> Cloud inventory ledger; KDS backend/UI foundation добавлен, но полный E2E с Docker bootstrap еще не подтвержден в этой итерации;
-  - запланировано далее: полный runtime e2e с kitchen served, reconnect/outbox ACK, ClickHouse export и OLAP API reads.
+  - выполнено сейчас: минимальный runtime smoke без ClickHouse проходит Cloud setup -> seed publication -> Edge sync -> waiter order/precheck -> KDS served -> cashier payment/final check -> Cloud inventory ledger;
+  - запланировано далее: полный runtime e2e с reconnect/outbox ACK, ClickHouse export и OLAP API reads.
 - Full Inventory Engine:
   - реализовать stock receipts, inventory counts, production, sale consumption, refund/cancellation stock disposition, recipe expansion, modifier linked consumption, balances и costing state;
   - реализовать retro recalculation DAG для документов задним числом и отрицательных остатков;

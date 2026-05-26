@@ -946,6 +946,16 @@ func TestKitchenTicketsLifecycleThroughPublicAPI(t *testing.T) {
 		if got.Status != step.status {
 			t.Fatalf("expected status %s after %s, got %+v", step.status, step.action, got)
 		}
+		if step.status == domain.KitchenTicketAccepted {
+			filtered := f.get(t, "/api/v1/kitchen/tickets?status=accepted&limit=1&offset=0")
+			if filtered.Code != http.StatusOK {
+				t.Fatalf("expected 200 for filtered kitchen tickets, got %d: %s", filtered.Code, filtered.Body.String())
+			}
+			filteredTickets := decodeAPIResponse[[]domain.KitchenTicket](t, filtered)
+			if len(filteredTickets) != 1 || filteredTickets[0].ID != ticketID {
+				t.Fatalf("expected accepted status filter to return ticket %s, got %+v", ticketID, filteredTickets)
+			}
+		}
 	}
 	if payments := countAPIRows(t, f, "payments"); payments != paymentsBefore {
 		t.Fatalf("expected no payment mutations, before=%d after=%d", paymentsBefore, payments)
@@ -1030,6 +1040,17 @@ func TestKitchenTicketsRequireBackendPermission(t *testing.T) {
 	rr := f.get(t, "/api/v1/kitchen/tickets")
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 without kitchen permission, got %d: %s", rr.Code, rr.Body.String())
+	}
+	tickets, err := f.repo.ListKitchenTickets(f.ctx, domain.KitchenTicketListQuery{RestaurantID: f.restaurant.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tickets) != 1 {
+		t.Fatalf("expected one kitchen ticket in repository, got %+v", tickets)
+	}
+	statusChange := f.postJSON(t, "/api/v1/kitchen/tickets/"+tickets[0].ID+"/accept", `{"command_id":"cmd-api-kitchen-forbidden","node_device_id":"`+f.device.ID+`"}`)
+	if statusChange.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without status permission, got %d: %s", statusChange.Code, statusChange.Body.String())
 	}
 }
 

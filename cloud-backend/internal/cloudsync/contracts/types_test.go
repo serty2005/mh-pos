@@ -133,6 +133,15 @@ func TestValidateEnvelopeAcceptsTargetInventoryEvents(t *testing.T) {
 	}
 }
 
+func TestKitchenStatusChangedIsOperationalOnlyAndItemServedIsInventoryRelevant(t *testing.T) {
+	if contracts.IsInventoryRelevantEventType(contracts.EventKitchenTicketStatusChanged) {
+		t.Fatal("KitchenTicketStatusChanged must stay operational-only and not enter inventory_event_queue")
+	}
+	if !contracts.IsInventoryRelevantEventType(contracts.EventItemServed) {
+		t.Fatal("ItemServed must enter durable inventory_event_queue")
+	}
+}
+
 func TestValidateEnvelopeRejectsInvalidTargetInventoryPayload(t *testing.T) {
 	envelope := validInventoryEnvelope(t, contracts.EventCheckClosed, json.RawMessage(`{"origin":"edge_device","data":{"check_id":"check-1","business_date_local":"2026-05-05","closed_at":"2026-05-05T09:00:00Z","items":[{"catalog_item_id":"item-1","quantity":"0.000","unit_code":"PC","required_for_inventory":true}]}}`))
 	err := contracts.ValidateEnvelope(envelope)

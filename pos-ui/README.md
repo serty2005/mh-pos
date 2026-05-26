@@ -134,7 +134,7 @@ Invoke-RestMethod http://localhost:8080/api/v1/sync/local-events?limit=10 -Heade
 Invoke-RestMethod http://localhost:8080/api/v1/sync/outbox?limit=10 -Headers $headers
 ```
 
-Вне текущего объема: KDS runtime, modifier/service/tip ledger scopes, inventory consumption, PSP и fiscalization. `/pos/waiter` реализован как order/precheck mobile readiness/runtime surface без payment/refund/cash drawer authority по умолчанию, а `/pos/kitchen` остается readiness-only до появления KDS backend contracts.
+Вне текущего объема: chef receipt/proposal/recipe/stop-list edit flows, modifier/service/tip ledger scopes, PSP и fiscalization. `/pos/waiter` реализован как order/precheck mobile readiness/runtime surface без payment/refund/cash drawer authority по умолчанию, а `/pos/kitchen` реализован как минимальный backend-backed KDS ticket lifecycle.
 
 ## Что реализовано
 
@@ -235,7 +235,7 @@ Server state хранится только через `@tanstack/vue-query`. Fro
 ## Ограничения
 
 - Waiter route `/pos/waiter` реализован только как mobile order/precheck surface по существующим POS contracts; payment/refund/cash drawer authority в нем не включена по умолчанию.
-- KDS route `/pos/kitchen` является readiness-only экраном, не KDS runtime.
+- KDS route `/pos/kitchen` читает backend tickets, отправляет status actions через POS Edge API и не показывает payment/refund/cash drawer controls.
 - Refund/cancellation pilot flow реализован для закрытых заказов: full whole-check и partial `order_line`/quantity cancellation/refund через `/checks/{id}/cancellations` и `/checks/{id}/refunds`, compatibility refund по captured payment через `/payments/{id}/refund`.
 - Нет tax engine rewrite.
 - Precheck/check reprint UI использует backend immutable snapshot endpoints.

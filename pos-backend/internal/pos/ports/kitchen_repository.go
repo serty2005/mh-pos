@@ -11,6 +11,6 @@ type KitchenRepository interface {
 	GetKitchenTicket(context.Context, string) (*kitchen.Ticket, error)
 	ListKitchenTickets(context.Context, kitchen.TicketListQuery) ([]kitchen.Ticket, error)
 	UpdateKitchenTicketStatus(context.Context, string, kitchen.TicketStatus, string) error
+	UpdateKitchenTicketLineDetails(context.Context, string, *string, *string, string) error
 	CreateKitchenTicketEvent(context.Context, *kitchen.TicketEvent) error
 }
-

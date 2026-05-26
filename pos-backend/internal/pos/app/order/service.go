@@ -430,25 +430,30 @@ func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*d
 				return err
 			}
 		}
-		if menuItem.ItemType != "service" {
+		if menuItem.ItemType != string(domain.CatalogItemService) {
+			catalogItem, err := s.repo.GetCatalogItem(ctx, menuItem.CatalogItemID)
+			if err != nil {
+				return err
+			}
 			ticket := &domain.KitchenTicket{
-				ID:            s.ids.NewID(),
-				RestaurantID:  order.RestaurantID,
-				DeviceID:      order.DeviceID,
-				ShiftID:       order.ShiftID,
-				OrderID:       order.ID,
-				OrderLineID:   line.ID,
-				TableName:     order.TableName,
-				MenuItemID:    line.MenuItemID,
-				CatalogItemID: line.CatalogItemID,
-				Name:          line.Name,
-				Quantity:      line.Quantity,
-				UnitCode:      "PC",
-				Course:        line.Course,
-				Comment:       line.Comment,
-				Status:        domain.KitchenTicketNew,
-				CreatedAt:     now,
-				UpdatedAt:     now,
+				ID:                s.ids.NewID(),
+				RestaurantID:      order.RestaurantID,
+				DeviceID:          order.DeviceID,
+				ShiftID:           order.ShiftID,
+				OrderID:           order.ID,
+				OrderLineID:       line.ID,
+				TableName:         order.TableName,
+				MenuItemID:        line.MenuItemID,
+				CatalogItemID:     line.CatalogItemID,
+				Name:              line.Name,
+				Quantity:          line.Quantity,
+				UnitCode:          catalogItem.BaseUnit,
+				StationRoutingKey: catalogItem.KitchenType,
+				Course:            line.Course,
+				Comment:           line.Comment,
+				Status:            domain.KitchenTicketNew,
+				CreatedAt:         now,
+				UpdatedAt:         now,
 			}
 			if err := s.repo.CreateKitchenTicket(ctx, ticket); err != nil {
 				return err
@@ -494,6 +499,9 @@ func (s *Service) UpdateOrderLineDetails(ctx context.Context, cmd UpdateOrderLin
 		line.Comment = optionalString(cmd.Comment)
 		line.UpdatedAt = now
 		if err := s.repo.UpdateOrderLineDetails(ctx, line); err != nil {
+			return err
+		}
+		if err := s.repo.UpdateKitchenTicketLineDetails(ctx, line.ID, line.Course, line.Comment, shared.DBTime(now)); err != nil {
 			return err
 		}
 		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Order", order.ID, "OrderLineDetailsUpdated", line)

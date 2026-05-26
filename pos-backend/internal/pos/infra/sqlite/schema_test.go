@@ -152,6 +152,46 @@ func TestKitchenFoundationTablesExist(t *testing.T) {
 	}
 }
 
+func TestKitchenTicketConstraintsAndIndexes(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	seedFinancialForSchemaTests(t, ctx, db)
+	execSchema(t, ctx, db, `INSERT INTO menu_items(id,catalog_item_id,name,price,currency,active,created_at,updated_at) VALUES ('menu-1','dish-1','Soup',100,'RUB',1,?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO order_lines(id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,currency_code,status,created_at,updated_at) VALUES ('line-1','order-1','menu-1','dish-1','Soup',1,100,100,'RUB','active',?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO order_lines(id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,currency_code,status,created_at,updated_at) VALUES ('line-2','order-1','menu-1','dish-1','Soup',1,100,100,'RUB','active',?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO order_lines(id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,currency_code,status,created_at,updated_at) VALUES ('line-3','order-1','menu-1','dish-1','Soup',1,100,100,'RUB','active',?,?)`, schemaTestTime, schemaTestTime)
+	insertTicket := `INSERT INTO kitchen_tickets(id,restaurant_id,device_id,shift_id,order_id,order_line_id,table_name,menu_item_id,catalog_item_id,name,quantity,unit_code,station_routing_key,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+	execSchema(t, ctx, db, insertTicket, "ticket-1", "restaurant-1", "device-1", "shift-1", "order-1", "line-1", "A1", "menu-1", "dish-1", "Soup", 1, "portion", "hot", "new", schemaTestTime, schemaTestTime)
+
+	_, err := db.ExecContext(ctx, insertTicket, "ticket-duplicate-line", "restaurant-1", "device-1", "shift-1", "order-1", "line-1", "A1", "menu-1", "dish-1", "Soup", 1, "portion", "hot", "new", schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected duplicate kitchen ticket for one order_line_id to fail")
+	}
+	_, err = db.ExecContext(ctx, insertTicket, "ticket-bad-status", "restaurant-1", "device-1", "shift-1", "order-1", "line-2", "A1", "menu-1", "dish-1", "Soup", 1, "portion", "hot", "bad", schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected invalid kitchen ticket status to fail")
+	}
+	_, err = db.ExecContext(ctx, insertTicket, "ticket-empty-unit", "restaurant-1", "device-1", "shift-1", "order-1", "line-3", "A1", "menu-1", "dish-1", "Soup", 1, "", "hot", "new", schemaTestTime, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected empty unit_code to fail")
+	}
+
+	indexes := []string{
+		"kitchen_tickets_restaurant_status_created_at",
+		"kitchen_tickets_order_id",
+		"kitchen_ticket_events_ticket_created_at",
+		"kitchen_ticket_events_command_id",
+	}
+	for _, index := range indexes {
+		var n int
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM sqlite_master WHERE type = 'index' AND name = ?`, index).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Fatalf("expected kitchen index %s to exist", index)
+		}
+	}
+}
+
 func TestManagerOverrideAuditTableExists(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	var n int

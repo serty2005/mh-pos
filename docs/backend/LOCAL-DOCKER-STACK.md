@@ -191,7 +191,7 @@ python3 scripts/seed-dev-system.py \
   --run-minimal-flow
 ```
 
-Реализовано сейчас: флаг `--run-minimal-flow` после seed/pairing выполняет HTTP-only сценарий `Cloud recipes/stop-list publication -> Edge sync -> waiter order -> cashier final check -> CheckClosed -> Cloud inventory ledger`. Сценарий проверяет stop-list rejection для demo sold-out item, создает заказ официантом, выпускает precheck, закрывает его оплатой кассира, ожидает `CheckClosed` в Cloud safe event log и проверяет строки `stock_ledger` через bounded Cloud endpoint `GET /api/v1/inventory/stock-ledger`.
+Реализовано сейчас: флаг `--run-minimal-flow` после seed/pairing выполняет HTTP-only сценарий `Cloud recipes/stop-list publication -> Edge sync -> waiter order -> KDS served -> cashier final check -> ItemServed/CheckClosed -> Cloud inventory ledger`. Сценарий проверяет stop-list rejection для demo sold-out item, создает заказ официантом, проводит KDS ticket через `accept/start/ready/serve`, выпускает precheck, закрывает его оплатой кассира, ожидает `ItemServed` и `CheckClosed` в Cloud safe event log, проверяет `stock_ledger` для `ItemServed` и отсутствие duplicate `CheckClosed` delta по тому же `order_line_id`.
 
 Seed-вход содержит только пользовательские данные: названия, имена, PIN, цены, количества, места и наборы прав. ID, `node_device_id`, generated SKU и остальные технические значения берутся из backend responses или генерируются системно. `scripts/.seed-dev-system-summary.json` содержит локальные demo credentials и добавлен в `.gitignore`; не коммить этот файл.
 

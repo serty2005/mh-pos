@@ -132,7 +132,7 @@
 
 - `scripts/seed-dev-system.py` является единственным локальным seed entrypoint: он создает полный набор Cloud-owned справочников, публикует master data, выполняет license pairing POS Edge и проверяет POS read model.
 - Seed script выполняет health check Cloud/POS/License, берет `node_device_id` из POS provisioning status, создает справочники через Cloud API, публикует packages, генерирует license pairing code, вызывает POS `pair-via-license` и проверяет PIN login/menu/floor read model.
-- `--run-minimal-flow` выполняет минимальную financial mutation через HTTP: waiter order/precheck -> cashier payment/final check -> `CheckClosed` -> Cloud inventory ledger. Refund/cancellation runtime boundaries проверяются отдельными backend/UI тестами. Seed script не делает automatic retry financial mutations и destructive storage actions.
+- `--run-minimal-flow` выполняет минимальную financial/KDS mutation через HTTP: waiter order/precheck -> KDS served -> cashier payment/final check -> `ItemServed`/`CheckClosed` -> Cloud inventory ledger без double consumption. Refund/cancellation runtime boundaries проверяются отдельными backend/UI тестами. Seed script не делает automatic retry financial mutations и destructive storage actions.
 - JSON summary содержит локальные demo IDs, pairing code и PIN-коды; он предназначен только для local/dev проверки и игнорируется git.
 
 Вне текущего объема:
@@ -359,13 +359,15 @@ Recipes/inventory:
   - `POST /api/v1/kitchen/tickets/{id}/serve`;
   - `POST /api/v1/kitchen/tickets/{id}/recall`;
   - `POST /api/v1/kitchen/tickets/{id}/cancel`;
+  - `GET /api/v1/kitchen/tickets` требует `pos.kitchen.view`, поддерживает `status`, `limit`, `offset`, default/max limit `50/100` и stable sort `created_at ASC, id ASC`;
+  - status actions требуют `pos.kitchen.status.change`, принимают `command_id`, возвращают safe conflict для недопустимого перехода и не считают UI visibility security boundary;
+  - tickets создаются из non-service order lines с переносом `order_line_id`, `catalog_item_id`, `menu_item_id`, `quantity`, `unit_code`, `station_routing_key`, `table_name`, `shift_id`, `device_id`, `restaurant_id`, а course/comment синхронизируются из order line details;
   - status actions пишут `KitchenTicketStatusChanged`, а served action дополнительно пишет `ItemServed` в `local_event_log` и `pos_sync_outbox`.
-- Kitchen inventory/proposal API:
-  - `POST /api/v1/kitchen/receipts` пишет `StockReceiptCaptured`;
-  - `POST /api/v1/kitchen/catalog-suggestions` пишет `CatalogItemChangeSuggested`;
-  - `GET /api/v1/kitchen/recipes/{catalog_item_id}` читает published read-only техкарту;
-  - `POST /api/v1/kitchen/recipe-change-suggestions` пишет `RecipeChangeSuggested` и валидирует `recipe_suggestion_max_time_delta_minutes`;
-  - `GET /api/v1/kitchen/stop-list` и `PATCH /api/v1/kitchen/stop-list/{catalog_item_id}` читают/пишут Edge overlay через `StopListUpdated`.
+- Kitchen inventory/proposal API остается `запланировано далее` и не имеет текущих POS Edge routes:
+  - chef stock receipt capture / `StockReceiptCaptured`;
+  - catalog item suggestions / `CatalogItemChangeSuggested`;
+  - recipe read/change suggestions / `RecipeChangeSuggested`;
+  - kitchen stop-list edit / Edge `StopListUpdated`.
 - Inventory facts:
   - реализовано сейчас: final check creation writes current financial events and additional `CheckClosed` inventory event;
   - `CheckClosed` payload includes order line id, catalog item id, quantity, unit code and `required_for_inventory`;

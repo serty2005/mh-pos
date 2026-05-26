@@ -1,6 +1,6 @@
 ﻿# Текущее функциональное состояние проекта
 
-Статус: реализовано сейчас по коду, тестам и документации на 2026-05-23; цель полного пилота зафиксирована отдельно и не считается текущим runtime.
+Статус: реализовано сейчас по коду, тестам и документации на 2026-05-26; цель полного пилота зафиксирована отдельно и не считается текущим runtime.
 
 Этот документ является сводной картой фактического состояния репозитория. Он не заменяет профильные спецификации: архитектурные инварианты остаются в `SPECv1.3.md`, backend-контракты - в `docs/backend/*`, контракты интерфейсов - в `docs/ui/*`, синхронизация - в `docs/sync/*`.
 
@@ -50,6 +50,7 @@
 - Append-only ledger финансовых операций: `CancellationRecorded` и `RefundRecorded` для полных и частичных операций, без мутации уже финализированных payment/precheck/check.
 - Compatibility route `POST /api/v1/payments/{id}/refund`, который записывает refund operation по payment allocation, но не возвращает оплату или чек в изменяемое состояние.
 - Ограниченные read endpoints для закрытых заказов, financial operations, outbox и local events.
+- Минимальный KDS ticket lifecycle: `kitchen_tickets` создаются из non-service order lines, `GET /api/v1/kitchen/tickets` поддерживает bounded read/status filter, status actions `accept/start/hold/ready/serve/recall/cancel` проверяют `pos.kitchen.status.change`, пишут `KitchenTicketStatusChanged`, а `serve` дополнительно пишет `ItemServed`.
 - Локальный lifecycle SQLite: status, retention dry-run, archive export plan, export-only JSONL archive, read-plan, lookup preview, apply-plan и apply-readiness с поддержкой destructive apply (физическое удаление закрытых orders/checks/financial_operations и связанных при verified JSONL + чистый scoped outbox + отсутствие открытых operational boundaries для cutoff периода) и последующий VACUUM compaction БД.
 - Cloud -> Edge master-data ingest для `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
 - Sync sender через authenticated `sync/exchange`, item-level ACK, retry/reclaim/backoff и безопасную обработку неподдержанных направлений.
@@ -70,6 +71,7 @@
 - `sync/exchange` проверяет bearer `node_token`, assigned restaurant и device status.
 - Idempotent receipt для Edge events, raw payload checksum, event type stats и coarse shift finance projection.
 - Bounded read-only Cloud inventory ledger endpoint `GET /api/v1/inventory/stock-ledger` для проверки обработанных Cloud Inventory Worker строк без raw sync payload.
+- `ItemServed` попадает в durable `inventory_event_queue` и Cloud Inventory Worker создает sale ledger идемпотентно по source event; `KitchenTicketStatusChanged` принимается как operational-only event и не ставится в inventory queue.
 - Детальная PostgreSQL projection для current `CancellationRecorded` и `RefundRecorded`; legacy `PaymentRefunded`/`CheckRefunded` принимаются, но не наполняют detailed operation projection.
 - Безопасный список входящих Edge events для Cloud UI без raw payload.
 - Хранилище master-data packages и Cloud -> Edge package retrieval.
@@ -163,7 +165,7 @@
 - Docker compose поднимает Cloud PostgreSQL, Cloud API, License API и POS Edge без POS UI.
 - Единственный Python seed script использует HTTP API и не делает прямых записей в PostgreSQL/SQLite.
 - `scripts/seed-dev-system.py` проверяет health Cloud/POS/License, создает полный Cloud-owned seed dataset, публикует master data, выполняет license pairing POS Edge и проверяет базовый POS read model.
-- `scripts/seed-dev-system.py --run-minimal-flow` выполняет минимальный HTTP-only smoke: Cloud recipes/stop-list publication, Edge sync, waiter order/precheck, cashier payment/final check, прием `CheckClosed` в Cloud и появление строк Cloud `stock_ledger`.
+- `scripts/seed-dev-system.py --run-minimal-flow` выполняет минимальный HTTP-only smoke: Cloud recipes/stop-list publication, Edge sync, waiter order/precheck, KDS served, cashier payment/final check, прием `ItemServed`/`CheckClosed` в Cloud, появление строк Cloud `stock_ledger` по `ItemServed` и отсутствие duplicate `CheckClosed` delta для того же `order_line_id`.
 - PowerShell/Bash wrappers и прежние onboarding flows удалены; в `scripts` остается один пользовательский Python seed script.
 - HTTP слой скриптов игнорирует proxy для localhost/loopback, чтобы не ломать Docker published ports.
 

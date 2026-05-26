@@ -63,6 +63,11 @@ func (r *Repository) UpdateKitchenTicketStatus(ctx context.Context, id string, s
 	return nil
 }
 
+func (r *Repository) UpdateKitchenTicketLineDetails(ctx context.Context, orderLineID string, course, comment *string, updatedAt string) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `UPDATE kitchen_tickets SET course = ?, comment = ?, updated_at = ? WHERE order_line_id = ?`, nullableString(course), nullableString(comment), updatedAt, strings.TrimSpace(orderLineID))
+	return normalizeErr(err)
+}
+
 func (r *Repository) CreateKitchenTicketEvent(ctx context.Context, v *kitchen.TicketEvent) error {
 	actorID := strings.TrimSpace(v.ActorEmployeeID)
 	var actorIDPtr *string
