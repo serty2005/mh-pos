@@ -63,13 +63,13 @@ Waiter mobile UI in `pos-ui/src/pages/WaiterPage.vue` и `pos-ui/src/pages/pos/u
 - viewport `390x844` держит compact sticky context/authority dock, touch-friendly table/menu/order rows и sticky topbar без payment/refund/cash drawer controls;
 - empty/loading/error/no-permission states идут через `vue-i18n` и reusable primitives из `pos-ui/src/shared/ui`.
 
-KDS route реализовано сейчас как bounded readiness screen:
+KDS route реализовано сейчас как минимальный backend-backed runtime:
 
-- route `/pos/kitchen` больше не generic shell; он показывает `запланировано далее`, отсутствующие backend contracts для kitchen tickets/lifecycle/stations/recall/printer и подготовленные статусы `new`, `accepted`, `in_progress`, `hold`, `ready`, `served`, `recall`, `cancelled`;
-- route `/pos/kitchen` показывает отдельную runtime boundary strip: только readiness, lifecycle-команды отключены, backend API отсутствует;
-- readiness screen группирует будущий lifecycle и activation gates, но не показывает active buttons для `accept`, `start`, `hold`, `ready`, `served`, `recall` или `cancel`;
-- будущие lifecycle действия показаны только как disabled/readiness cards; activation gates помечены как `запланировано до пилота` или `запланировано далее`;
-- активные KDS lifecycle actions не отображаются, потому что в POS backend нет kitchen ticket endpoints;
+- route `/pos/kitchen` читает tickets через `GET /api/v1/kitchen/tickets` и показывает статусы `new`, `accepted`, `in_progress`, `hold`, `ready`, `served`, `recall`, `cancelled`;
+- route `/pos/kitchen` показывает runtime boundary strip: KDS runtime активен, lifecycle-команды доступны только при `pos.kitchen.status.change`, backend остается authoritative;
+- active buttons отображаются только для допустимых backend transitions `accept`, `start`, `hold`, `ready`, `serve`, `recall`, `cancel`;
+- после status action UI не подменяет truth оптимистично, а перечитывает tickets из backend;
+- loading/error/empty/no-permission states идут через shared UI primitives и i18n;
 - hardware bump-bar/printer orchestration не описывается как реализованное.
 
 ## Runtime Error And Empty-State Handling
@@ -198,7 +198,7 @@ Requirements:
 
 - `/pos` and `/pos/cashier` load the current cashier pilot terminal.
 - `/pos/waiter` loads the current waiter mobile order/precheck runtime without payment/refund/cash drawer authority.
-- `/pos/kitchen` loads an honest KDS readiness screen; active KDS runtime remains blocked by absent backend endpoints.
+- `/pos/kitchen` loads the minimal backend-backed KDS ticket lifecycle runtime.
 - Код cashier terminal разделен на composable для runtime/API state и presentation components для POS shell, floor, menu grid, order rail, payment/actions modals и utility panels.
 - Bottom quick access bar и скрываемое side menu являются основным navigation shell для POS runtime.
 - Раздел `order` / `Заказы` является основным рабочим экраном: search/category tabs + dish/service grid + current order panel + payment/actions modal поверх текущего заказа.
@@ -212,7 +212,7 @@ Requirements:
 Запланировано до полного пилота:
 
 - `/pos/waiter` должен расширяться только в пределах подтвержденных backend contracts; он остается единственным mobile layout полного пилота, остальные modes не получают мобильные варианты;
-- `/pos/kitchen` должен перейти от readiness screen к advanced KDS lifecycle screen после появления backend routes;
+- `/pos/kitchen` должен расширяться только поверх подтвержденных backend routes;
 - `/pos/manager` остается вне POS UI runtime, если manager операции полностью покрыты Cloud UI;
 - kitchen UI читает kitchen tickets, показывает статусы `new`, `accepted`, `in_progress`, `hold`, `ready`, `served`, `recall`, `cancelled` и отправляет status actions, которые backend превращает в `KitchenTicketStatusChanged`/`ItemServed`;
 - kitchen UI дает повару сценарии приемки поставки, catalog suggestion, просмотра техкарты, `RecipeChangeSuggested` и редактирования stop-list через backend routes.
@@ -236,7 +236,7 @@ Requirements:
 Вне текущего объема:
 
 - `/pos/manager` является route shell, пока manager operations покрываются Cloud UI.
-- `/pos/kitchen` не является готовым runtime: реализован только readiness screen до появления backend/API contracts.
+- `/pos/kitchen` не покрывает receipt capture, recipe suggestion, stop-list edit, bump-bar/printer orchestration и rich KDS analytics.
 
 ## Вне Текущего Объема
 
@@ -255,8 +255,8 @@ Requirements:
 Запланировано до полного пилота:
 
 - waiter mobile viewport `390x844`: login, table selection, active order creation, menu/modifier selection, quantity change, void line, issue/reprint precheck, no payment controls by default;
-- kitchen readiness route: absent backend contracts are visible, `запланировано далее` is visible, no wording claims `готовый runtime` / `реализовано сейчас` for KDS lifecycle actions;
-- after backend routes appear, kitchen tablet/desktop viewport must cover ticket list by station/status, accept/start/hold/ready/served/recall/cancel actions, receipt capture, recipe suggestion, stop-list edit, safe localized error handling and sync pending indicator;
+- kitchen route: backend-backed ticket list/status lifecycle works with safe localized error handling and no UI-authoritative status decisions;
+- запланировано далее: receipt capture, recipe suggestion, stop-list edit, sync pending indicator, bump-bar/printer orchestration and rich KDS analytics;
 - cashier/KDS/manager routes are checked at desktop/tablet widths only; mobile acceptance belongs to waiter route;
 - cashier regression: current cashier flow remains unchanged and still passes payment/refund/sync e2e tests;
 - all new labels, empty states, errors and dialog text are added through `vue-i18n`.

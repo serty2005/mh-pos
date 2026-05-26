@@ -96,7 +96,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - POS UI: добавлен primary flow strip `готовность смены -> стол -> заказ -> пречек -> оплата`, secondary operations визуально отделены, blocking states унифицированы, tablet breakpoint пересмотрен так, чтобы checkout/precheck/payment не уходили под active order около 1100px.
 - POS UI: верхний cashier context показывает restaurant/actor/node/backend session readiness, а dialog/inline error states показывают безопасный support code без raw backend details.
 - POS UI: cashier shell подтвержден как `floor` / `order` / `activity` / `reports` / `cash`; active-looking placeholders для line transfer/split/fractional split, banquet/preorder, mock waiter filters, selected-line placeholder и discount/surcharge editor убраны или переведены в passive/disabled backlog state без backend command.
-- POS UI: `PosFloorSection` и `PosMenuGrid` переведены на shared `PosBanner`/`PosEmptyState`/`PosSkeleton`, passive backlog/readiness states переведены на `PosReadinessCard`, waiter mobile viewport `390x844` уплотнен с sticky context/authority dock, lock badge и scrollable modifier dialog без payment/refund/cash drawer authority, `/pos/kitchen` оставлен readiness-only с runtime boundary strip, disabled future action cards и activation gates.
+- POS UI: `PosFloorSection` и `PosMenuGrid` переведены на shared `PosBanner`/`PosEmptyState`/`PosSkeleton`, passive backlog/readiness states переведены на `PosReadinessCard`, waiter mobile viewport `390x844` уплотнен с sticky context/authority dock, lock badge и scrollable modifier dialog без payment/refund/cash drawer authority, `/pos/kitchen` переведен на минимальный backend-backed KDS runtime.
 - Cloud UI: presentation layer вынесен из монолитного `App.vue` в flow components, launch/readiness checklist стал primary journey с restaurant/staff/floor/catalog/menu/modifiers/pricing/Edge/publication gates, master-data CRUD оставлен secondary/admin layer, добавлен card/list fallback для narrow screens, включая resource status cards и Edge events metadata/checksum без raw payload.
 
 ## В Работе / До Пилота
@@ -140,11 +140,11 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - добавить conflict policy, сценарный recipe version editor/review и publication readiness поверх этих данных;
   - стабилизировать regression-покрытие `pos_stop_list_sale_blocking` для Cloud publish/import контракта и offline blocking-инварианта.
 - Advanced KDS/kitchen lifecycle:
-  - выполнено: `/pos/kitchen` заменен с generic shell на readiness-only экран с contract gaps, `запланировано далее`, runtime boundary strip, disabled future action cards и activation gates без активных lifecycle controls;
-  - создать POS Edge kitchen ticket lifecycle `new -> accepted -> in_progress -> ready -> served` с `hold`/`recall`/`cancelled` ветками;
-  - route `/pos/kitchen` должен стать рабочим KDS после появления backend endpoints, а не readiness-only screen;
-  - status actions пишут `KitchenTicketStatusChanged`, `ItemServed` и при необходимости `ProductionCompleted` в outbox; Cloud принимает events идемпотентно и Cloud Inventory Worker не дублирует расход с `CheckClosed`;
-  - выполнено для Cloud worker: принятый `ItemServed` идемпотентно создает SALE ledger по `order_line_id`, а последующий `CheckClosed` пишет только unserved delta; POS Edge/KDS lifecycle endpoints и UI остаются запланированы далее;
+  - выполнено: POS Edge создает `kitchen_tickets` из order lines, предоставляет `GET /api/v1/kitchen/tickets` и status endpoints `accept/start/hold/ready/serve/recall/cancel`;
+  - выполнено: lifecycle `new -> accepted -> in_progress -> ready -> served` поддерживает ветки `hold`, `recall`, `cancelled`; backend проверяет `pos.kitchen.view` / `pos.kitchen.status.change`;
+  - выполнено: status actions пишут `KitchenTicketStatusChanged`, а `serve` дополнительно пишет `ItemServed` в `local_event_log` и `pos_sync_outbox`;
+  - выполнено: `/pos/kitchen` читает backend tickets, показывает status columns/list, безопасные loading/error/empty/no-permission states и после action перечитывает backend truth без UI-authoritative статусов;
+  - выполнено для Cloud worker: принятый `ItemServed` идемпотентно создает SALE ledger по `order_line_id`, а последующий `CheckClosed` пишет только unserved delta;
   - добавить chef stock receipt flow: `StockReceiptCaptured` с выбором существующего catalog item или `CatalogItemChangeSuggested` для нового/измененного товара;
   - добавить chef recipe proposal flow: просмотр техкарты и `RecipeChangeSuggested` с заменой ингредиента, количеством/единицей/потерями и prep time delta в пределах `recipe_suggestion_max_time_delta_minutes`;
   - добавить kitchen stop-list edit flow и параметр `stop_list_conflict_policy` для порядка применения Cloud/Edge overlay.
@@ -162,7 +162,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - Cloud UI должен довести readiness-only surfaces до runtime только после появления подтвержденных Cloud backend routes;
   - launch readiness учитывает restaurant, staff, floor, catalog, menu, modifiers, pricing, stop-list review, publication и known Edge node.
 - Full pilot smoke:
-  - выполнено сейчас: минимальный runtime smoke без KDS и ClickHouse проходит Cloud setup -> seed publication -> Edge sync -> waiter order/precheck -> cashier payment/final check -> Cloud inventory ledger;
+  - выполнено сейчас: минимальный runtime smoke без ClickHouse проходит Cloud setup -> seed publication -> Edge sync -> waiter order/precheck -> cashier payment/final check -> Cloud inventory ledger; KDS backend/UI foundation добавлен, но полный E2E с Docker bootstrap еще не подтвержден в этой итерации;
   - запланировано далее: полный runtime e2e с kitchen served, reconnect/outbox ACK, ClickHouse export и OLAP API reads.
 - Full Inventory Engine:
   - реализовать stock receipts, inventory counts, production, sale consumption, refund/cancellation stock disposition, recipe expansion, modifier linked consumption, balances и costing state;
@@ -225,7 +225,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Cloud UI позволяет настроить stop-list и recipes, опубликовать их и увидеть readiness Edge;
 - POS Edge применяет `recipes` и `inventory_reference` через managed sync и локально блокирует stop-listed sale offline по локальному `stop_lists`;
 - waiter mobile UI проходит Playwright mobile flow без payment/refund authority;
-- kitchen UI сначала проходит readiness spec при отсутствии KDS endpoints; после появления backend routes должен проходить Playwright flow по status lifecycle, `ItemServed`, receipt capture, recipe suggestion и stop-list edit;
+- kitchen UI должен проходить Playwright flow по backend-backed status lifecycle и `ItemServed`; receipt capture, recipe suggestion и stop-list edit остаются следующими сценариями после появления backend routes;
 - Cloud worker создает review/proposal записи из `CatalogItemChangeSuggested` и `RecipeChangeSuggested`, а не применяет их без policy/manager review;
 - Cloud принимает `CheckClosed`/`ItemServed`, дедуплицирует replay и Cloud Inventory Worker пишет полный stock document/ledger/balance/costing state;
 - Cloud Inventory Engine покрывает stock receipt, inventory count, production, sale consumption, refund/cancellation disposition, recipe expansion, modifier linked consumption, negative-balance costing и retro recalculation DAG;

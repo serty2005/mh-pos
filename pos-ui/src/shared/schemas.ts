@@ -176,6 +176,28 @@ export const orderLineSchema = z.object({
   updated_at: z.string(),
 });
 
+export const kitchenTicketStatusSchema = z.enum(['new', 'accepted', 'in_progress', 'hold', 'ready', 'served', 'recall', 'cancelled']);
+
+export const kitchenTicketSchema = z.object({
+  id: z.string(),
+  restaurant_id: z.string(),
+  device_id: z.string(),
+  shift_id: z.string(),
+  order_id: z.string(),
+  order_line_id: z.string(),
+  table_name: z.string(),
+  menu_item_id: z.string(),
+  catalog_item_id: z.string(),
+  name: z.string(),
+  quantity: z.number(),
+  unit_code: z.string(),
+  station_routing_key: z.string().optional().default(''),
+  course: optionalNullableString,
+  comment: optionalNullableString,
+  status: kitchenTicketStatusSchema,
+  created_at: z.string(),
+  updated_at: z.string(),
+});
 
 export const pricingPolicySchema = z.object({
   id: z.string(),
@@ -447,6 +469,8 @@ export type OrderSurcharge = z.infer<typeof orderSurchargeSchema>;
 export type Order = z.infer<typeof orderSchema>;
 export type ClosedOrder = z.infer<typeof closedOrderSchema>;
 export type OrderLine = z.infer<typeof orderLineSchema>;
+export type KitchenTicketStatus = z.infer<typeof kitchenTicketStatusSchema>;
+export type KitchenTicket = z.infer<typeof kitchenTicketSchema>;
 export type Precheck = z.infer<typeof precheckSchema>;
 export type Payment = z.infer<typeof paymentSchema>;
 export type Check = z.infer<typeof checkSchema>;

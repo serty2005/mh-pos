@@ -4346,6 +4346,85 @@ button.bottom-status-cell {
   font-size: var(--pos-font-size-sm);
 }
 
+.kds-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 10px;
+  align-items: start;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.kds-column {
+  min-height: 260px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 8px;
+  background: var(--pos-surface-muted);
+  border: 1px solid var(--pos-border);
+}
+
+.kds-column header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+  color: var(--pos-text-primary);
+  font-family: var(--pos-font-mono);
+  font-size: var(--pos-font-size-sm);
+}
+
+.kds-column header span {
+  min-width: 28px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  background: var(--pos-surface);
+  border: 1px solid var(--pos-border);
+}
+
+.kds-ticket {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  background: var(--pos-surface);
+  border: 1px solid var(--pos-border-strong);
+  border-radius: var(--pos-radius-sm);
+}
+
+.kds-ticket-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.kds-ticket-head strong {
+  color: var(--pos-text-primary);
+  font-size: var(--pos-font-size-md);
+}
+
+.kds-ticket-head span,
+.kds-ticket small {
+  color: var(--pos-text-secondary);
+  font-family: var(--pos-font-mono);
+  font-size: var(--pos-font-size-xs);
+}
+
+.kds-ticket p {
+  margin: 0;
+  color: var(--pos-text-secondary);
+  line-height: 1.35;
+}
+
+.kds-ticket-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
 @media (min-width: 760px) {
   .waiter-page {
     grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
@@ -4437,7 +4516,8 @@ button.bottom-status-cell {
 
   .kds-lifecycle-map,
   .kitchen-runtime-strip,
-  .kitchen-disabled-actions {
+  .kitchen-disabled-actions,
+  .kds-board {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -4445,7 +4525,8 @@ button.bottom-status-cell {
 @media (max-width: 560px) {
   .kitchen-runtime-strip,
   .kds-lifecycle-map,
-  .kitchen-disabled-actions {
+  .kitchen-disabled-actions,
+  .kds-board {
     grid-template-columns: 1fr;
   }
 }

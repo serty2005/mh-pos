@@ -263,6 +263,11 @@ const permissionGroups: PermissionGroup[] = [
     permissions: ['pos.payment.cash', 'pos.payment.card.manual', 'pos.payment.other', 'pos.payment.refund', 'pos.check.view', 'pos.check.reprint'],
   },
   {
+    key: 'kitchen',
+    labelKey: 'cloud.permissions.groups.kitchen',
+    permissions: ['pos.kitchen.view', 'pos.kitchen.status.change'],
+  },
+  {
     key: 'sync',
     labelKey: 'cloud.permissions.groups.sync',
     permissions: ['pos.sync.view', 'pos.sync.retry_failed'],
@@ -366,7 +371,7 @@ const rolePresets: RolePreset[] = [
   {
     key: 'kitchen',
     labelKey: 'cloud.rolePresets.kitchen',
-    permissions: [],
+    permissions: ['pos.employee_shift.view_current', 'pos.kitchen.view', 'pos.kitchen.status.change'],
   },
   {
     key: 'support_admin',

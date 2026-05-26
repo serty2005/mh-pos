@@ -44,6 +44,9 @@ const (
 	PermissionPaymentRefund         PermissionID = "pos.payment.refund"
 	PermissionCheckView             PermissionID = "pos.check.view"
 	PermissionCheckReprint          PermissionID = "pos.check.reprint"
+	// Идентификаторы прав KDS runtime.
+	PermissionKitchenView         PermissionID = "pos.kitchen.view"
+	PermissionKitchenStatusChange PermissionID = "pos.kitchen.status.change"
 	PermissionSyncView              PermissionID = "pos.sync.view"
 	// Идентификатор права manager/service sync operation.
 	PermissionSyncRetryFailed PermissionID = "pos.sync.retry_failed"
@@ -81,6 +84,8 @@ var knownPermissionIDs = map[PermissionID]struct{}{
 	PermissionPaymentRefund:            {},
 	PermissionCheckView:                {},
 	PermissionCheckReprint:             {},
+	PermissionKitchenView:              {},
+	PermissionKitchenStatusChange:      {},
 	PermissionSyncView:                 {},
 	PermissionSyncRetryFailed:          {},
 }
@@ -228,8 +233,12 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 		},
 	},
 	RoleKitchen: {
-		Name:        RoleKitchen,
-		Permissions: []PermissionID{},
+		Name: RoleKitchen,
+		Permissions: []PermissionID{
+			PermissionEmployeeShiftViewCurrent,
+			PermissionKitchenView,
+			PermissionKitchenStatusChange,
+		},
 	},
 	RoleSupportAdmin: {
 		Name: RoleSupportAdmin,

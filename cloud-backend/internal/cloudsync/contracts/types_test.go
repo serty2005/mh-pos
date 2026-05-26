@@ -98,6 +98,11 @@ func TestValidateEnvelopeAcceptsTargetInventoryEvents(t *testing.T) {
 			payload:   json.RawMessage(`{"origin":"edge_device","data":{"served_event_id":"served-1","order_id":"order-1","order_line_id":"line-1","catalog_item_id":"item-1","quantity":"1.000","unit_code":"PC","served_at":"2026-05-05T09:00:00Z","station_id":"kitchen-hot"}}`),
 		},
 		{
+			name:      "kitchen status changed",
+			eventType: contracts.EventKitchenTicketStatusChanged,
+			payload:   json.RawMessage(`{"origin":"edge_device","data":{"ticket_id":"ticket-1","order_id":"order-1","order_line_id":"line-1","from_status":"new","to_status":"accepted","changed_at":"2026-05-05T09:00:00Z","station_id":"kitchen-hot"}}`),
+		},
+		{
 			name:      "stock receipt",
 			eventType: contracts.EventStockReceiptCaptured,
 			payload:   json.RawMessage(`{"origin":"edge_device","data":{"receipt_id":"receipt-1","restaurant_id":"restaurant-1","received_at":"2026-05-05T08:00:00Z","business_date_local":"2026-05-05","supplier_id":"supplier-1","items":[{"catalog_item_id":"item-1","quantity":"10.000","unit_code":"KG","unit_cost_minor":5000,"currency":"RUB"}]}}`),

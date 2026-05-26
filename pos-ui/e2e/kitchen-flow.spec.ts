@@ -25,27 +25,25 @@ test.afterEach(async ({ page }) => {
   expect(runtimeErrors).toEqual([]);
 });
 
-test('kitchen route is an honest readiness screen while KDS endpoints are absent', async ({ page }) => {
-  await loginAsManager(page);
+test('kitchen route reads backend KDS tickets without fake runtime', async ({ page }) => {
+  await loginAsKitchen(page);
   await page.goto('/pos/kitchen');
 
   await expect(page.getByRole('heading', { name: /Кухонный экран/i })).toBeVisible();
-  await expect(page.getByText('запланировано далее').first()).toBeVisible();
-  await expect(page.getByText(/нет routes для kitchen tickets/i)).toBeVisible();
-  await expect(page.getByText('Только readiness')).toBeVisible();
-  await expect(page.getByText('Lifecycle-команды отключены')).toBeVisible();
-  await expect(page.getByText(/GET для kitchen tickets/i)).toBeVisible();
+  await expect(page.getByText('реализовано сейчас').first()).toBeVisible();
+  await expect(page.getByText('KDS runtime активен')).toBeVisible();
+  await expect(page.getByText('Backend authoritative')).toBeVisible();
   await expect(page.getByText('new', { exact: true })).toBeVisible();
   await expect(page.getByText('accepted', { exact: true })).toBeVisible();
   await expect(page.getByText('ready', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: /accepted|in_progress|ready|served|recall|cancelled/i })).toHaveCount(0);
-  await expect(page.locator('.kitchen-page')).not.toContainText(/готовый runtime|реализовано сейчас/i);
+  await expect(page.locator('.kitchen-page')).not.toContainText(/нет routes для kitchen tickets/i);
+  await expect(page.locator('.kitchen-page')).not.toContainText(/Только readiness/i);
 });
 
-async function loginAsManager(page: Page) {
+async function loginAsKitchen(page: Page) {
   await page.goto('/login');
   await expect(page.getByRole('heading', { name: /Вход по PIN/i })).toBeVisible();
-  await page.getByLabel(/^PIN$/i).fill('2222');
+  await page.getByLabel(/^PIN$/i).fill('5555');
   await page.getByRole('button', { name: /Войти/i }).click();
   await expect(page.locator('.pos-bottom-bar')).toBeVisible();
 }

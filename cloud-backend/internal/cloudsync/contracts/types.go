@@ -31,6 +31,7 @@ const (
 	EventCancellationRecorded     EventType = "CancellationRecorded"
 	EventRefundRecorded           EventType = "RefundRecorded"
 	EventCheckClosed              EventType = "CheckClosed"
+	EventKitchenTicketStatusChanged EventType = "KitchenTicketStatusChanged"
 	EventItemServed               EventType = "ItemServed"
 	EventStockReceiptCaptured     EventType = "StockReceiptCaptured"
 	EventInventoryCountCaptured   EventType = "InventoryCountCaptured"
@@ -291,6 +292,16 @@ type ItemServed struct {
 	StationID     string    `json:"station_id,omitempty"`
 }
 
+type KitchenTicketStatusChanged struct {
+	TicketID    string    `json:"ticket_id"`
+	OrderID     string    `json:"order_id"`
+	OrderLineID string    `json:"order_line_id"`
+	FromStatus  string    `json:"from_status"`
+	ToStatus    string    `json:"to_status"`
+	ChangedAt   time.Time `json:"changed_at"`
+	StationID   string    `json:"station_id,omitempty"`
+}
+
 type StockReceiptCaptured struct {
 	ReceiptID         string          `json:"receipt_id"`
 	RestaurantID      string          `json:"restaurant_id"`
@@ -498,6 +509,8 @@ func ValidateEventPayload(v SyncEnvelope) error {
 		return validateFinancialOperationRecordedPayload(v)
 	case EventCheckClosed:
 		return validateCheckClosedPayload(v)
+	case EventKitchenTicketStatusChanged:
+		return validateKitchenTicketStatusChangedPayload(v)
 	case EventItemServed:
 		return validateItemServedPayload(v)
 	case EventStockReceiptCaptured:
@@ -653,6 +666,21 @@ func validateItemServedPayload(v SyncEnvelope) error {
 	return nil
 }
 
+func validateKitchenTicketStatusChangedPayload(v SyncEnvelope) error {
+	payload, err := decodePayload[KitchenTicketStatusChanged](v)
+	if err != nil {
+		return err
+	}
+	data := payload.Data
+	if strings.TrimSpace(data.TicketID) == "" || strings.TrimSpace(data.OrderID) == "" || strings.TrimSpace(data.OrderLineID) == "" {
+		return fmt.Errorf("%w: kitchen ticket status ids are required", ErrInvalidEnvelope)
+	}
+	if strings.TrimSpace(data.FromStatus) == "" || strings.TrimSpace(data.ToStatus) == "" || data.ChangedAt.IsZero() {
+		return fmt.Errorf("%w: kitchen ticket statuses and changed_at are required", ErrInvalidEnvelope)
+	}
+	return nil
+}
+
 func validateStockReceiptCapturedPayload(v SyncEnvelope) error {
 	payload, err := decodePayload[StockReceiptCaptured](v)
 	if err != nil {
@@ -784,7 +812,7 @@ func validCurrency(v string) bool {
 
 func IsKnownEventType(v EventType) bool {
 	switch v {
-	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckReprinted, EventPrecheckCancelled, EventCheckCreated, EventCheckRefunded, EventCheckReprinted, EventPaymentCaptured, EventPaymentRefunded, EventCancellationRecorded, EventRefundRecorded, EventCheckClosed, EventItemServed, EventStockReceiptCaptured, EventInventoryCountCaptured, EventProductionCompleted, EventStopListUpdated, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
+	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckReprinted, EventPrecheckCancelled, EventCheckCreated, EventCheckRefunded, EventCheckReprinted, EventPaymentCaptured, EventPaymentRefunded, EventCancellationRecorded, EventRefundRecorded, EventCheckClosed, EventKitchenTicketStatusChanged, EventItemServed, EventStockReceiptCaptured, EventInventoryCountCaptured, EventProductionCompleted, EventStopListUpdated, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
 		return true
 	default:
 		return false

@@ -450,6 +450,7 @@ export const i18n = createI18n({
             pricing: 'Скидки и надбавки',
             precheck: 'Пречек',
             payment: 'Оплаты и чеки',
+            kitchen: 'Кухня',
             sync: 'Синхронизация',
           },
           items: {
@@ -484,6 +485,8 @@ export const i18n = createI18n({
             'pos.payment.refund': 'Возвращать оплату',
             'pos.check.view': 'Видеть чек',
             'pos.check.reprint': 'Печатать копию чека',
+            'pos.kitchen.view': 'Видеть кухонные tickets',
+            'pos.kitchen.status.change': 'Менять статусы кухни',
             'pos.sync.view': 'Видеть синхронизацию',
             'pos.sync.retry_failed': 'Повторять ошибки синхронизации',
           },

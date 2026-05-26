@@ -8,6 +8,7 @@ import {
   closedOrderSchema,
   financialOperationSchema,
   hallSchema,
+  kitchenTicketSchema,
   localEventSchema,
   menuItemSchema,
   pricingPolicySchema,
@@ -30,6 +31,7 @@ import {
   type PricingPolicy,
   type OrderDiscount,
   type OrderSurcharge,
+  type KitchenTicketStatus,
 } from './schemas';
 
 export type SelectedModifierPayload = {
@@ -76,6 +78,14 @@ export type ClosedOrdersQuery = {
   limit?: number;
   offset?: number;
 };
+
+export type KitchenTicketsQuery = {
+  status?: KitchenTicketStatus | '';
+  limit?: number;
+  offset?: number;
+};
+
+export type KitchenTicketAction = 'accept' | 'start' | 'hold' | 'ready' | 'serve' | 'recall' | 'cancel';
 
 let commandSequence = 0;
 
@@ -639,6 +649,21 @@ export function reprintCheck(checkId: string) {
   return request(`/checks/${encodeURIComponent(checkId)}/reprint`, reprintDocumentSchema, {
     method: 'POST',
     body: JSON.stringify({}),
+  });
+}
+
+export function listKitchenTickets(query: KitchenTicketsQuery = {}) {
+  const params = new URLSearchParams();
+  if (query.status) params.set('status', query.status);
+  params.set('limit', String(query.limit ?? 50));
+  params.set('offset', String(query.offset ?? 0));
+  return request(`/kitchen/tickets?${params}`, z.array(kitchenTicketSchema));
+}
+
+export function changeKitchenTicketStatus(ticketId: string, action: KitchenTicketAction) {
+  return request(`/kitchen/tickets/${encodeURIComponent(ticketId)}/${action}`, kitchenTicketSchema, {
+    method: 'POST',
+    body: JSON.stringify({ command_id: nextCommandId(`kitchen-${action}`) }),
   });
 }
 

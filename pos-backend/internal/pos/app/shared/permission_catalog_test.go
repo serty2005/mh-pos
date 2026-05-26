@@ -64,6 +64,17 @@ func TestCanonicalRoleProfiles(t *testing.T) {
 	if !shared.HasPermission(shared.PermissionsJSON(manager.Permissions...), string(shared.PermissionCheckReprint)) {
 		t.Fatal("expected manager to reprint final checks")
 	}
+	kitchen, ok := shared.RoleProfileByName(shared.RoleKitchen)
+	if !ok {
+		t.Fatal("expected kitchen role profile")
+	}
+	kitchenPermissions := shared.PermissionsJSON(kitchen.Permissions...)
+	if !shared.HasPermission(kitchenPermissions, string(shared.PermissionKitchenView)) || !shared.HasPermission(kitchenPermissions, string(shared.PermissionKitchenStatusChange)) {
+		t.Fatal("expected kitchen role to view tickets and change KDS statuses")
+	}
+	if shared.HasAnyPermission(kitchenPermissions, shared.PermissionPaymentCash, shared.PermissionPaymentRefund) {
+		t.Fatal("expected kitchen role payment authority to stay out of scope")
+	}
 	if !shared.HasPermission(shared.RolePermissionsJSON(shared.RoleSupportAdmin), string(shared.PermissionSyncRetryFailed)) {
 		t.Fatal("expected support admin to retry failed syncs")
 	}

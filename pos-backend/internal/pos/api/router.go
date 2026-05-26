@@ -83,6 +83,16 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/prechecks/{id}/payments", h.capturePrecheckPayment)
 
 		r.Get("/financial-operations", h.listFinancialOperations)
+
+		r.Get("/kitchen/tickets", h.listKitchenTickets)
+		r.Post("/kitchen/tickets/{id}/accept", h.acceptKitchenTicket)
+		r.Post("/kitchen/tickets/{id}/start", h.startKitchenTicket)
+		r.Post("/kitchen/tickets/{id}/hold", h.holdKitchenTicket)
+		r.Post("/kitchen/tickets/{id}/ready", h.readyKitchenTicket)
+		r.Post("/kitchen/tickets/{id}/serve", h.serveKitchenTicket)
+		r.Post("/kitchen/tickets/{id}/recall", h.recallKitchenTicket)
+		r.Post("/kitchen/tickets/{id}/cancel", h.cancelKitchenTicket)
+
 		r.Get("/checks/{id}", h.getCheck)
 		r.Get("/checks/{id}/financial-operations", h.listCheckFinancialOperations)
 		r.Post("/checks/{id}/reprint", h.reprintCheck)
@@ -862,6 +872,64 @@ func (h *Handler) listFinancialOperations(w http.ResponseWriter, r *http.Request
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.ListFinancialOperationsAsOperator(r.Context(), cmd)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) listKitchenTickets(w http.ResponseWriter, r *http.Request) {
+	limit, offset, ok := readLimitOffset(w, r)
+	if !ok {
+		return
+	}
+	cmd := app.ListKitchenTicketsCommand{
+		Status: domain.KitchenTicketStatus(r.URL.Query().Get("status")),
+		Limit:  limit,
+		Offset: offset,
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.ListKitchenTickets(r.Context(), cmd)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) acceptKitchenTicket(w http.ResponseWriter, r *http.Request) {
+	h.changeKitchenTicketStatus(w, r, "accept")
+}
+
+func (h *Handler) startKitchenTicket(w http.ResponseWriter, r *http.Request) {
+	h.changeKitchenTicketStatus(w, r, "start")
+}
+
+func (h *Handler) holdKitchenTicket(w http.ResponseWriter, r *http.Request) {
+	h.changeKitchenTicketStatus(w, r, "hold")
+}
+
+func (h *Handler) readyKitchenTicket(w http.ResponseWriter, r *http.Request) {
+	h.changeKitchenTicketStatus(w, r, "ready")
+}
+
+func (h *Handler) serveKitchenTicket(w http.ResponseWriter, r *http.Request) {
+	h.changeKitchenTicketStatus(w, r, "serve")
+}
+
+func (h *Handler) recallKitchenTicket(w http.ResponseWriter, r *http.Request) {
+	h.changeKitchenTicketStatus(w, r, "recall")
+}
+
+func (h *Handler) cancelKitchenTicket(w http.ResponseWriter, r *http.Request) {
+	h.changeKitchenTicketStatus(w, r, "cancel")
+}
+
+func (h *Handler) changeKitchenTicketStatus(w http.ResponseWriter, r *http.Request, action string) {
+	var cmd app.ChangeKitchenTicketStatusCommand
+	if r.Body != nil {
+		if err := httpx.Decode(r, &cmd); err != nil {
+			httpx.Error(w, err, r)
+			return
+		}
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	cmd.TicketID = chi.URLParam(r, "id")
+	cmd.Action = action
+	v, err := h.service.ChangeKitchenTicketStatus(r.Context(), cmd)
 	writeOK(w, r, v, err)
 }
 

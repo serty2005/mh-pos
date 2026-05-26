@@ -312,6 +312,7 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 
 - Recipes are versioned in Edge read-only tables `recipe_versions` and `recipe_lines`.
 - Edge локально использует recipes только для KDS UI и проверки stop-list при добавлении позиции и увеличении quantity.
+- Edge хранит минимальный KDS lifecycle в `kitchen_tickets` и `kitchen_ticket_events`; эти таблицы привязаны к `orders`/`order_lines` и не дублируют financial snapshot.
 - Edge inventory mutation tables удалены из целевой SQLite схемы.
 - Cloud Inventory Worker создает Cloud-owned stock documents and `stock_ledger` from Edge/KDS business events.
 - `CheckClosed` запускает batch delta consumption после сверки с `ItemServed`.
@@ -328,7 +329,7 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 
 - automatic recipe consumption after check;
 - automatic return-to-stock/write-off after cancellation/refund;
-- KDS `ItemServed` inventory trigger.
+- kitchen receipt/proposal/stop-list edit flows beyond `KitchenTicketStatusChanged`/`ItemServed`.
 
 ## Migration Safety
 

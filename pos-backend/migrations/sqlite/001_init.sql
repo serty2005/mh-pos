@@ -386,6 +386,45 @@ CREATE TABLE IF NOT EXISTS order_line_modifiers (
   total_price INTEGER NOT NULL CHECK (total_price >= 0)
 );
 
+CREATE TABLE IF NOT EXISTS kitchen_tickets (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+  device_id TEXT NOT NULL REFERENCES devices(id),
+  shift_id TEXT NOT NULL REFERENCES shifts(id),
+  order_id TEXT NOT NULL REFERENCES orders(id),
+  order_line_id TEXT NOT NULL UNIQUE REFERENCES order_lines(id),
+  table_name TEXT NOT NULL,
+  menu_item_id TEXT NOT NULL REFERENCES menu_items(id),
+  catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
+  name TEXT NOT NULL,
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  unit_code TEXT NOT NULL CHECK (unit_code <> ''),
+  station_routing_key TEXT NOT NULL DEFAULT '',
+  course TEXT,
+  comment TEXT,
+  status TEXT NOT NULL CHECK (status IN ('new','accepted','in_progress','hold','ready','served','recall','cancelled')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS kitchen_tickets_restaurant_status_created_at ON kitchen_tickets(restaurant_id, status, created_at, id);
+CREATE INDEX IF NOT EXISTS kitchen_tickets_order_id ON kitchen_tickets(order_id);
+
+CREATE TABLE IF NOT EXISTS kitchen_ticket_events (
+  id TEXT PRIMARY KEY,
+  ticket_id TEXT NOT NULL REFERENCES kitchen_tickets(id),
+  order_line_id TEXT NOT NULL REFERENCES order_lines(id),
+  from_status TEXT NOT NULL CHECK (from_status IN ('new','accepted','in_progress','hold','ready','served','recall','cancelled')),
+  to_status TEXT NOT NULL CHECK (to_status IN ('new','accepted','in_progress','hold','ready','served','recall','cancelled')),
+  command_id TEXT NOT NULL,
+  actor_employee_id TEXT REFERENCES employees(id),
+  occurred_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS kitchen_ticket_events_ticket_created_at ON kitchen_ticket_events(ticket_id, created_at);
+CREATE INDEX IF NOT EXISTS kitchen_ticket_events_command_id ON kitchen_ticket_events(command_id);
+
 CREATE TABLE IF NOT EXISTS checks (
   id TEXT PRIMARY KEY,
   order_id TEXT NOT NULL UNIQUE REFERENCES orders(id),

@@ -14,7 +14,7 @@
 - POS cashier UI показывает отдельную секцию услуг, открывает выбор modifiers для позиций с modifier groups и отображает выбранные modifiers в активном заказе.
 - POS cashier UI использует текущий shell `floor` / `order` / `activity` / `reports` / `cash`; delivery, settings, storage/archive/retention и Cloud reporting не являются operator-facing cashier flows.
 - POS waiter UI реализован как mobile-first route `/pos/waiter`: зал/стол, активные заказы, создание заказа, меню/поиск, modifiers при добавлении строки, quantity, void line и issue/reprint precheck без payment/refund/cash drawer authority по умолчанию; mobile dock держит текущий стол/заказ/статус и границы полномочий.
-- POS kitchen route `/pos/kitchen` реализован сейчас только как honest readiness screen: он показывает `запланировано далее` и отсутствующие KDS backend contracts, не активный KDS lifecycle runtime.
+- POS Edge backend и route `/pos/kitchen` реализуют минимальный KDS lifecycle runtime: kitchen tickets создаются из order lines, `GET /api/v1/kitchen/tickets` читает backend read model, status actions `accept/start/hold/ready/serve/recall/cancel` проходят backend RBAC и пишут `KitchenTicketStatusChanged`; `serve` дополнительно пишет `ItemServed`.
 - Active-looking POS UI placeholders для переноса/разделения строки, banquet/preorder, mock waiter filters и discount/surcharge editor не считаются реализованным runtime: они скрыты, passive или disabled/backlog до появления backend/API/UI contract; повторяющиеся backlog/readiness cards отображаются через reusable `PosReadinessCard`.
 - `CancelPrecheck` требует manager override, проверяет PIN/permission и возвращает unpaid active precheck order в `open`.
 - Оплата выполняется через `precheck_id`; partial payments разрешены; final check создается только после полной оплаты. Заказ сохраняет исходную личную смену оператора, а `PaymentCaptured`/`CheckCreated`/`CheckClosed` относятся к текущей кассовой смене кассира, поэтому поддержан поток waiter order -> cashier final check.
@@ -45,6 +45,7 @@
 - Cloud proposal review, inventory operations/costing UI и OLAP export runtime;
 - PSP refund smoke и fiscal integration;
 - operator-facing storage/archive/retention UI, archive restore в active SQLite и ручной destructive retention flow вне подтвержденного backend archive apply contract;
+- chef stock receipt/catalog/recipe proposal flows, kitchen stop-list edit, bump-bar/printer orchestration и rich KDS analytics;
 - fiscal shift/business day сущности как отдельные runtime aggregates;
 - real payment processor module, PSP webhooks и fiscal adapter;
 - ClickHouse runtime pipeline;

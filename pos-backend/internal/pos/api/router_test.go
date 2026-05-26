@@ -284,6 +284,41 @@ func (f *apiFixture) useManagerOperator(t *testing.T) {
 	f.session = &login.Session
 }
 
+func (f *apiFixture) useKitchenOperator(t *testing.T) {
+	t.Helper()
+	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta:     apiSeedMeta(f.device.ID),
+		Name:            string(appshared.RoleKitchen),
+		PermissionsJSON: appshared.RolePermissionsJSON(appshared.RoleKitchen),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinHash, err := appshared.HashPIN("3333", []byte("api-kitchen-salt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	employee, err := f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{CommandMeta: apiSeedMeta(f.device.ID), RestaurantID: f.restaurant.ID, RoleID: role.ID, Name: "Kira", PINHash: pinHash})
+	if err != nil {
+		t.Fatal(err)
+	}
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{
+			CommandID:      "cmd-api-kitchen-login",
+			NodeDeviceID:   f.device.ID,
+			DeviceID:       f.device.ID,
+			ClientDeviceID: f.clientID,
+			Origin:         app.OriginEdgeDevice,
+		},
+		PIN: "3333",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.employee = employee
+	f.session = &login.Session
+}
+
 func decodeAPIResponse[T any](t *testing.T, rr *httptest.ResponseRecorder) T {
 	t.Helper()
 	var out T
@@ -296,7 +331,7 @@ func decodeAPIResponse[T any](t *testing.T, rr *httptest.ResponseRecorder) T {
 func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 	t.Helper()
 	switch table {
-	case "prechecks", "checks", "payments", "payment_attempts", "financial_operations", "financial_operation_items", "pos_sync_outbox", "local_event_log", "manager_override_audit", "auth_sessions", "halls", "tables", "catalog_items", "cloud_master_sync_state":
+	case "prechecks", "checks", "payments", "payment_attempts", "financial_operations", "financial_operation_items", "pos_sync_outbox", "local_event_log", "manager_override_audit", "auth_sessions", "halls", "tables", "catalog_items", "kitchen_tickets", "kitchen_ticket_events", "cloud_master_sync_state":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -871,6 +906,130 @@ func TestFloorReadAndOrderLineEditingAPI(t *testing.T) {
 	voided := decodeAPIResponse[domain.OrderLine](t, voidedResp)
 	if voided.Status != domain.OrderLineVoided {
 		t.Fatalf("expected voided line, got %+v", voided)
+	}
+}
+
+func TestKitchenTicketsLifecycleThroughPublicAPI(t *testing.T) {
+	f := newAPIFixture(t)
+	order := f.createOrderWithLine(t)
+	f.useKitchenOperator(t)
+
+	list := f.get(t, "/api/v1/kitchen/tickets?limit=20&offset=0")
+	if list.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", list.Code, list.Body.String())
+	}
+	tickets := decodeAPIResponse[[]domain.KitchenTicket](t, list)
+	if len(tickets) != 1 || tickets[0].OrderID != order.ID || tickets[0].Status != domain.KitchenTicketNew {
+		t.Fatalf("unexpected kitchen tickets: %+v", tickets)
+	}
+	ticketID := tickets[0].ID
+	paymentsBefore := countAPIRows(t, f, "payments")
+	checksBefore := countAPIRows(t, f, "checks")
+	prechecksBefore := countAPIRows(t, f, "prechecks")
+
+	actions := []struct {
+		action string
+		status domain.KitchenTicketStatus
+	}{
+		{"accept", domain.KitchenTicketAccepted},
+		{"start", domain.KitchenTicketInProgress},
+		{"ready", domain.KitchenTicketReady},
+		{"serve", domain.KitchenTicketServed},
+	}
+	for i, step := range actions {
+		body := fmt.Sprintf(`{"command_id":"cmd-api-kitchen-%s-%d","node_device_id":"%s"}`, step.action, i, f.device.ID)
+		rr := f.postJSON(t, "/api/v1/kitchen/tickets/"+ticketID+"/"+step.action, body)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200 for %s, got %d: %s", step.action, rr.Code, rr.Body.String())
+		}
+		got := decodeAPIResponse[domain.KitchenTicket](t, rr)
+		if got.Status != step.status {
+			t.Fatalf("expected status %s after %s, got %+v", step.status, step.action, got)
+		}
+	}
+	if payments := countAPIRows(t, f, "payments"); payments != paymentsBefore {
+		t.Fatalf("expected no payment mutations, before=%d after=%d", paymentsBefore, payments)
+	}
+	if checks := countAPIRows(t, f, "checks"); checks != checksBefore {
+		t.Fatalf("expected no check mutations, before=%d after=%d", checksBefore, checks)
+	}
+	if prechecks := countAPIRows(t, f, "prechecks"); prechecks != prechecksBefore {
+		t.Fatalf("expected no precheck mutations, before=%d after=%d", prechecksBefore, prechecks)
+	}
+
+	var statusEvents int
+	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM pos_sync_outbox WHERE command_type = 'KitchenTicketStatusChanged' AND aggregate_id = ?`, ticketID).Scan(&statusEvents); err != nil {
+		t.Fatal(err)
+	}
+	if statusEvents != 4 {
+		t.Fatalf("expected four status outbox events, got %d", statusEvents)
+	}
+	var servedPayload string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT payload_json FROM pos_sync_outbox WHERE command_type = 'ItemServed' AND aggregate_id = ?`, ticketID).Scan(&servedPayload); err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		EventType string `json:"event_type"`
+		Payload   struct {
+			Data struct {
+				OrderLineID   string `json:"order_line_id"`
+				CatalogItemID string `json:"catalog_item_id"`
+				Quantity      string `json:"quantity"`
+			} `json:"data"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal([]byte(servedPayload), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.EventType != "ItemServed" || envelope.Payload.Data.OrderLineID != tickets[0].OrderLineID || envelope.Payload.Data.CatalogItemID != tickets[0].CatalogItemID || envelope.Payload.Data.Quantity != "2.000" {
+		t.Fatalf("unexpected ItemServed envelope: %+v", envelope)
+	}
+}
+
+func TestKitchenTicketInvalidTransitionAndReplayAreRejectedSafely(t *testing.T) {
+	f := newAPIFixture(t)
+	f.createOrderWithLine(t)
+	f.useKitchenOperator(t)
+	list := f.get(t, "/api/v1/kitchen/tickets")
+	if list.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", list.Code, list.Body.String())
+	}
+	ticket := decodeAPIResponse[[]domain.KitchenTicket](t, list)[0]
+
+	invalid := f.postJSON(t, "/api/v1/kitchen/tickets/"+ticket.ID+"/serve", `{"command_id":"cmd-api-kitchen-invalid","node_device_id":"`+f.device.ID+`"}`)
+	if invalid.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", invalid.Code, invalid.Body.String())
+	}
+	if events := countAPIRows(t, f, "kitchen_ticket_events"); events != 0 {
+		t.Fatalf("expected invalid transition to write no kitchen events, got %d", events)
+	}
+
+	body := `{"command_id":"cmd-api-kitchen-replay","node_device_id":"` + f.device.ID + `"}`
+	accepted := f.postJSON(t, "/api/v1/kitchen/tickets/"+ticket.ID+"/accept", body)
+	if accepted.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", accepted.Code, accepted.Body.String())
+	}
+	eventsBefore := countAPIRows(t, f, "kitchen_ticket_events")
+	outboxBefore := countAPIRows(t, f, "pos_sync_outbox")
+	replay := f.postJSON(t, "/api/v1/kitchen/tickets/"+ticket.ID+"/accept", body)
+	if replay.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", replay.Code, replay.Body.String())
+	}
+	if events := countAPIRows(t, f, "kitchen_ticket_events"); events != eventsBefore {
+		t.Fatalf("expected replay to write no second kitchen event, before=%d after=%d", eventsBefore, events)
+	}
+	if outbox := countAPIRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected replay to write no second outbox event, before=%d after=%d", outboxBefore, outbox)
+	}
+}
+
+func TestKitchenTicketsRequireBackendPermission(t *testing.T) {
+	f := newAPIFixture(t)
+	f.createOrderWithLine(t)
+
+	rr := f.get(t, "/api/v1/kitchen/tickets")
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without kitchen permission, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 

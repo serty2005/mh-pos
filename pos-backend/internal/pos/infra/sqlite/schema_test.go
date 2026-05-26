@@ -135,6 +135,23 @@ func TestPrecheckFoundationTableExists(t *testing.T) {
 	}
 }
 
+func TestKitchenFoundationTablesExist(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	tables := []string{"kitchen_tickets", "kitchen_ticket_events"}
+	for _, table := range tables {
+		t.Run(table, func(t *testing.T) {
+			var n int
+			err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&n)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n != 1 {
+				t.Fatalf("expected table %s to exist", table)
+			}
+		})
+	}
+}
+
 func TestManagerOverrideAuditTableExists(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	var n int

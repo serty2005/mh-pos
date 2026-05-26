@@ -18,6 +18,8 @@ describe('rbac helpers', () => {
     expect(permissionCatalog.paymentCardManual).toBe('pos.payment.card.manual');
     expect(permissionCatalog.precheckReprint).toBe('pos.precheck.reprint');
     expect(permissionCatalog.checkReprint).toBe('pos.check.reprint');
+    expect(permissionCatalog.kitchenView).toBe('pos.kitchen.view');
+    expect(permissionCatalog.kitchenStatusChange).toBe('pos.kitchen.status.change');
   });
 
   it('checks alternatives for role visibility decisions', () => {

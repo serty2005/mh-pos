@@ -18,6 +18,7 @@ import (
 	appdevice "pos-backend/internal/pos/app/device"
 	appemployee "pos-backend/internal/pos/app/employee"
 	appfloor "pos-backend/internal/pos/app/floor"
+	appkitchen "pos-backend/internal/pos/app/kitchen"
 	appmastersync "pos-backend/internal/pos/app/mastersync"
 	appmenu "pos-backend/internal/pos/app/menu"
 	apporder "pos-backend/internal/pos/app/order"
@@ -79,6 +80,8 @@ type ReprintCheckCommand = appcheck.ReprintCheckCommand
 type FinancialOperationItemCommand = appcheck.FinancialOperationItemCommand
 type RecordCheckCancellationCommand = appcheck.RecordCheckCancellationCommand
 type RecordCheckRefundCommand = appcheck.RecordCheckRefundCommand
+type ListKitchenTicketsCommand = appkitchen.ListTicketsCommand
+type ChangeKitchenTicketStatusCommand = appkitchen.ChangeTicketStatusCommand
 type CloseOrderCommand = apporder.CloseOrderCommand
 type OpenCashSessionCommand = appcash.OpenCashSessionCommand
 type CloseCashSessionCommand = appcash.CloseCashSessionCommand
@@ -133,6 +136,7 @@ type Service struct {
 	prechecks    *appprecheck.Service
 	pricing      *apppricing.Service
 	checks       *appcheck.Service
+	kitchen      *appkitchen.Service
 	cash         *appcash.Service
 	masterSync   *appmastersync.Service
 	provisioning *appprovisioning.Service
@@ -174,6 +178,7 @@ func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idge
 		pricing:     pricingSvc,
 		prechecks:   appprecheck.NewService(repo, tx, ids, clock, pricingSvc),
 		checks:      appcheck.NewService(repo, tx, ids, clock),
+		kitchen:     appkitchen.NewService(repo, tx, ids, clock),
 		cash:        appcash.NewService(repo, tx, ids, clock),
 		masterSync: appmastersync.NewServiceWithOptions(repo, tx, ids, clock, appmastersync.Options{
 			BackupBeforeFullSnapshot: options.MasterDataBackupBeforeFullSnapshot,
@@ -499,6 +504,14 @@ func (s *Service) RecordRefund(ctx context.Context, cmd RecordCheckRefundCommand
 
 func (s *Service) ReprintCheck(ctx context.Context, cmd ReprintCheckCommand) (*domain.ReprintDocument, error) {
 	return s.checks.ReprintCheck(ctx, cmd)
+}
+
+func (s *Service) ListKitchenTickets(ctx context.Context, cmd ListKitchenTicketsCommand) ([]domain.KitchenTicket, error) {
+	return s.kitchen.ListTickets(ctx, cmd)
+}
+
+func (s *Service) ChangeKitchenTicketStatus(ctx context.Context, cmd ChangeKitchenTicketStatusCommand) (*domain.KitchenTicket, error) {
+	return s.kitchen.ChangeTicketStatus(ctx, cmd)
 }
 
 func (s *Service) GetCurrentCashSession(ctx context.Context, deviceID string) (*domain.CashSession, error) {

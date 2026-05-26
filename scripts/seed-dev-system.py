@@ -127,7 +127,11 @@ PERMISSIONS = {
         "pos.sync.view",
         "pos.sync.retry_failed",
     ],
-    "kitchen": [],
+    "kitchen": [
+        "pos.employee_shift.view_current",
+        "pos.kitchen.view",
+        "pos.kitchen.status.change",
+    ],
     "support_admin": [
         "pos.sync.view",
         "pos.sync.retry_failed",

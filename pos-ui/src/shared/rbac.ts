@@ -28,6 +28,8 @@ export const permissionCatalog = {
   paymentRefund: 'pos.payment.refund',
   checkView: 'pos.check.view',
   checkReprint: 'pos.check.reprint',
+  kitchenView: 'pos.kitchen.view',
+  kitchenStatusChange: 'pos.kitchen.status.change',
   syncView: 'pos.sync.view',
   syncRetryFailed: 'pos.sync.retry_failed',
 } as const;
