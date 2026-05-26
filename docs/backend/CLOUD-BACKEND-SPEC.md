@@ -54,8 +54,8 @@
 - readiness API/UI signals для stop-list publication, Edge ACK и sync problem events;
 - поддержка `CheckClosed`/`ItemServed` как pilot inventory facts через текущий receiver и Inventory Worker;
 - full inventory engine для receipts, counts, production, consumption, refund/cancellation dispositions, balances, costing и retro recalculation;
-- ClickHouse runtime: async forwarder, `raw_business_events`, `olap_stock_moves`, retry/backfill/export checkpoints;
-- bounded read-only Cloud OLAP API для event archive, stock moves, sales aggregates, COGS/margin и kitchen timing.
+- реализовано сейчас: ClickHouse first slice: managed `raw_business_events`, async forwarder из PostgreSQL `inbox_events`, `processed_for_olap`, retry state, export checkpoint и bounded read-only metadata API;
+- запланировано далее: `olap_stock_moves`, retry/backfill operator controls, stock moves, sales aggregates, COGS/margin и kitchen timing API.
 
 ## Назначение
 
@@ -529,10 +529,10 @@ Schema verification:
 - `RecipeChangeSuggested` создает Cloud review item с diff по ingredients, quantities, units, loss percent и prep time; published recipe не меняется до approve/apply.
 - `StockReceiptCaptured` создает Cloud-owned receipt document и может ссылаться на pending catalog suggestion, если товар еще не утвержден.
 - `KitchenTicketStatusChanged` и `ItemServed` используются для kitchen timing и inventory deduplication, но не меняют finalized checks.
-- ClickHouse `raw_business_events` становится бессрочным архивом business events.
-- Async Batch Forwarder переносит accepted events из PostgreSQL inbox buffer в ClickHouse.
+- ClickHouse `raw_business_events` реализовано сейчас как бессрочный архив business events.
+- Async Batch Forwarder переносит accepted events из PostgreSQL `inbox_events` в ClickHouse и после successful export выставляет `processed_for_olap = true`.
 - Recipe expansion, modifier linked catalog item consumption, stock balances and retro costing DAG становятся частью Cloud Inventory Engine.
-- Cloud OLAP API читает bounded aggregates из ClickHouse projections.
+- `GET /api/v1/olap/raw-business-events` реализовано сейчас как bounded read-only metadata endpoint без raw payload; агрегированные ClickHouse projections запланированы далее.
 
 Вне текущего объема:
 
@@ -569,7 +569,7 @@ Schema verification:
 ## Запланировано далее
 
 - Production authorization and tenant perimeter для Cloud API.
-- До полного пилота: recipes/stop-list authoring UI, deterministic publication from Cloud authority tables, Edge-origin stop-list sync/conflict policy, full recipe/costing inventory engine, ClickHouse async forwarder, `olap_stock_moves` export, OLAP API и readiness/observability UI.
+- До полного пилота: recipes/stop-list authoring UI, deterministic publication from Cloud authority tables, Edge-origin stop-list sync/conflict policy, full recipe/costing inventory engine, `olap_stock_moves` export, агрегированные OLAP API и readiness/observability UI.
 - После полного пилота: Public Cloud reporting UI beyond pilot OLAP API.
 - Data-preserving PostgreSQL migrations после первого реального внедрения.
 - Cloud UI сценарий налогов/service-charge rules, если пилот требует централизованное управление.

@@ -69,7 +69,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 Не выполнено и не должно считаться завершенным:
 
 - `sqlc` rollout как текущий persistence implementation.
-- ClickHouse runtime/projection pipeline.
+- ClickHouse projection pipeline beyond `raw_business_events`.
 
 ## Только Основа
 
@@ -163,14 +163,16 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - launch readiness учитывает restaurant, staff, floor, catalog, menu, modifiers, pricing, stop-list review, publication и known Edge node.
 - Full pilot smoke:
   - выполнено сейчас: минимальный runtime smoke без ClickHouse проходит Cloud setup -> seed publication -> Edge sync -> waiter order/precheck -> KDS served -> cashier payment/final check -> Cloud inventory ledger;
-  - запланировано далее: полный runtime e2e с reconnect/outbox ACK, ClickHouse export и OLAP API reads.
+  - запланировано далее: полный runtime e2e с reconnect/outbox ACK, ClickHouse export, `olap_stock_moves` и агрегированные OLAP API reads.
 - Full Inventory Engine:
   - реализовать stock receipts, inventory counts, production, sale consumption, refund/cancellation stock disposition, recipe expansion, modifier linked consumption, balances и costing state;
   - реализовать retro recalculation DAG для документов задним числом и отрицательных остатков;
   - добавить Cloud UI/API для ручного ввода складских документов и просмотра balances/costing status.
 - ClickHouse OLAP:
-  - поднять ClickHouse как обязательный Cloud runtime component для полного пилота;
-  - реализовать async forwarder `inbox_events -> raw_business_events` и projection export `stock_ledger -> olap_stock_moves`;
+  - выполнено: ClickHouse добавлен в local Cloud runtime component с managed `raw_business_events`;
+  - выполнено: async forwarder `inbox_events -> raw_business_events`, retry state, `processed_for_olap` и checkpoint storage;
+  - выполнено: bounded metadata API `GET /api/v1/olap/raw-business-events` без raw payload;
+  - далее: projection export `stock_ledger -> olap_stock_moves`, backfill controls и агрегированные OLAP API;
   - добавить bounded read-only Cloud API для OLAP: event archive, stock moves, COGS/margin, sales aggregates и kitchen timing.
 
 ## Далее

@@ -91,6 +91,9 @@ func statusForError(err error) int {
 		if contains(err, "license server unavailable") {
 			return http.StatusServiceUnavailable
 		}
+		if contains(err, "olap runtime unavailable") {
+			return http.StatusServiceUnavailable
+		}
 		if contains(err, "pairing code expired") || contains(err, "pairing code invalid") {
 			return http.StatusBadRequest
 		}
@@ -142,6 +145,8 @@ func codeForError(err error, status int) string {
 		return "PAIRING_CODE_EXPIRED"
 	case contains(err, "license server unavailable"):
 		return "LICENSE_SERVER_UNAVAILABLE"
+	case contains(err, "olap runtime unavailable"):
+		return "OLAP_UNAVAILABLE"
 	case contains(err, "snapshot not published"):
 		return "SNAPSHOT_NOT_PUBLISHED"
 	case errors.Is(err, domain.ErrNotFound), errors.Is(err, contracts.ErrNotFound):

@@ -19,6 +19,8 @@ import (
 	"cloud-backend/internal/cloudsync/contracts"
 	masterapi "cloud-backend/internal/masterdata/api"
 	masterapp "cloud-backend/internal/masterdata/app"
+	olapapi "cloud-backend/internal/olap/api"
+	olapapp "cloud-backend/internal/olap/app"
 	httpx "cloud-backend/internal/platform/httpx"
 	provisioningapi "cloud-backend/internal/provisioning/api"
 	provisioningapp "cloud-backend/internal/provisioning/app"
@@ -33,6 +35,10 @@ func NewRouter(service *app.Service, masterServices ...*masterapp.Service) http.
 }
 
 func NewRouterWithProvisioning(service *app.Service, provisioningService *provisioningapp.Service, masterServices ...*masterapp.Service) http.Handler {
+	return NewRouterWithProvisioningAndOLAP(service, provisioningService, nil, masterServices...)
+}
+
+func NewRouterWithProvisioningAndOLAP(service *app.Service, provisioningService *provisioningapp.Service, olapService *olapapp.Service, masterServices ...*masterapp.Service) http.Handler {
 	h := &Handler{service: service}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -56,6 +62,7 @@ func NewRouterWithProvisioning(service *app.Service, provisioningService *provis
 		if len(masterServices) > 0 {
 			masterapi.RegisterRoutes(r, masterServices[0])
 		}
+		olapapi.RegisterRoutes(r, olapService)
 		provisioningapi.RegisterRoutes(r, provisioningService)
 	})
 	return r

@@ -63,6 +63,60 @@ CREATE TABLE IF NOT EXISTS cloud_edge_event_raw_payloads (
   created_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS inbox_events (
+  id TEXT PRIMARY KEY REFERENCES cloud_edge_event_receipts(id) ON DELETE RESTRICT,
+  receipt_id TEXT NOT NULL UNIQUE REFERENCES cloud_edge_event_receipts(id) ON DELETE RESTRICT,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  tenant_id TEXT NOT NULL CHECK (tenant_id <> ''),
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  device_id TEXT NOT NULL CHECK (device_id <> ''),
+  employee_id TEXT NOT NULL DEFAULT '',
+  command_id TEXT NOT NULL CHECK (command_id <> ''),
+  event_id TEXT NOT NULL CHECK (event_id <> ''),
+  edge_event_id TEXT NOT NULL CHECK (edge_event_id <> ''),
+  event_type TEXT NOT NULL CHECK (event_type <> ''),
+  aggregate_type TEXT NOT NULL CHECK (aggregate_type <> ''),
+  aggregate_id TEXT NOT NULL CHECK (aggregate_id <> ''),
+  envelope_version TEXT NOT NULL CHECK (envelope_version = '1'),
+  occurred_at TIMESTAMPTZ NOT NULL,
+  cloud_received_at TIMESTAMPTZ NOT NULL,
+  raw_payload JSONB NOT NULL,
+  raw_payload_sha256_hex TEXT NOT NULL CHECK (raw_payload_sha256_hex <> ''),
+  processed_for_olap BOOLEAN NOT NULL DEFAULT false,
+  olap_export_status TEXT NOT NULL DEFAULT 'pending' CHECK (olap_export_status IN ('pending','processing','processed','failed')),
+  olap_export_attempts BIGINT NOT NULL DEFAULT 0 CHECK (olap_export_attempts >= 0),
+  olap_next_retry_at TIMESTAMPTZ,
+  olap_locked_at TIMESTAMPTZ,
+  olap_locked_by TEXT,
+  olap_processed_at TIMESTAMPTZ,
+  olap_last_error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS inbox_events_event_unique
+  ON inbox_events(restaurant_id, device_id, event_id);
+
+CREATE INDEX IF NOT EXISTS inbox_events_olap_pending
+  ON inbox_events(processed_for_olap, olap_export_status, olap_next_retry_at, cloud_received_at, id);
+
+CREATE INDEX IF NOT EXISTS inbox_events_restaurant_received
+  ON inbox_events(restaurant_id, cloud_received_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS inbox_events_event_type_received
+  ON inbox_events(event_type, cloud_received_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS olap_export_checkpoints (
+  id TEXT PRIMARY KEY,
+  worker_id TEXT NOT NULL DEFAULT '',
+  last_exported_inbox_id TEXT NOT NULL DEFAULT '',
+  last_exported_event_id TEXT NOT NULL DEFAULT '',
+  last_exported_at TIMESTAMPTZ,
+  last_error TEXT NOT NULL DEFAULT '',
+  consecutive_failures BIGINT NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS cloud_sync_problem_events (
   id TEXT PRIMARY KEY,
   direction TEXT NOT NULL CHECK (direction IN ('edge_to_cloud','cloud_to_edge')),

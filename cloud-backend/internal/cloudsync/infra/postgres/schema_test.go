@@ -105,6 +105,38 @@ func TestRequiredSchemaIncludesFinancialOperationProjection(t *testing.T) {
 	}
 }
 
+func TestRequiredSchemaIncludesOlapInboxAndCheckpointTables(t *testing.T) {
+	reqs := map[string]map[string]bool{}
+	indexes := map[string]map[string]bool{}
+	for _, req := range RequiredSchema() {
+		cols := map[string]bool{}
+		for _, c := range req.Columns {
+			cols[c] = true
+		}
+		idx := map[string]bool{}
+		for _, name := range req.Indexes {
+			idx[name] = true
+		}
+		reqs[req.Table] = cols
+		indexes[req.Table] = idx
+	}
+	for _, column := range []string{"id", "receipt_id", "tenant_id", "restaurant_id", "device_id", "event_id", "event_type", "raw_payload", "processed_for_olap", "olap_export_status", "olap_export_attempts", "olap_next_retry_at", "olap_processed_at"} {
+		if !reqs["inbox_events"][column] {
+			t.Fatalf("expected inbox_events.%s in schema verification contract", column)
+		}
+	}
+	for _, index := range []string{"inbox_events_event_unique", "inbox_events_olap_pending"} {
+		if !indexes["inbox_events"][index] {
+			t.Fatalf("expected %s index in schema verification contract", index)
+		}
+	}
+	for _, column := range []string{"id", "last_exported_inbox_id", "last_exported_event_id", "last_exported_at", "last_error", "consecutive_failures", "updated_at"} {
+		if !reqs["olap_export_checkpoints"][column] {
+			t.Fatalf("expected olap_export_checkpoints.%s in schema verification contract", column)
+		}
+	}
+}
+
 func TestCloudInventoryConstraintsRejectInvalidValues(t *testing.T) {
 	ctx := context.Background()
 	pool, closeFn := openPostgresWithBaseline(t, ctx)

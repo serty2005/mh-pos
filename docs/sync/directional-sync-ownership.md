@@ -87,9 +87,9 @@ Edge Outbox
 ```
 
 - Все Edge POS/KDS `event_id` должны быть UUIDv7.
-- Cloud API подтверждает прием после записи в PostgreSQL `inbox_events`.
-- ClickHouse write выполняет только async batch forwarder, не request handler.
-- После successful export в ClickHouse row получает `processed_for_olap = true`.
+- Реализовано сейчас: Cloud API подтверждает прием после записи в PostgreSQL `inbox_events`.
+- Реализовано сейчас: ClickHouse write выполняет только async batch forwarder, не request handler.
+- Реализовано сейчас: после successful export в ClickHouse row получает `processed_for_olap = true`, а checkpoint/retry state хранится в `olap_export_checkpoints` и `inbox_events`.
 - Processed rows старше 3 месяцев можно удалить из PostgreSQL; ClickHouse хранит historical business event trail бессрочно.
 
 Реализовано сейчас:
@@ -122,8 +122,9 @@ Edge Outbox
 
 Запланировано до полного пилота:
 
-- ClickHouse получает immutable `raw_business_events` и OLAP projection из Cloud PostgreSQL/Cloud inventory data.
-- Cloud OLAP API читает bounded aggregates из ClickHouse и не участвует в transactional command validation.
+- Реализовано сейчас: ClickHouse получает immutable `raw_business_events` из Cloud PostgreSQL `inbox_events`.
+- Запланировано далее: ClickHouse получает `olap_stock_moves` projection из Cloud inventory data.
+- Реализовано сейчас: Cloud OLAP API читает bounded `raw_business_events` metadata из ClickHouse и не участвует в transactional command validation; bounded aggregates запланированы далее.
 
 Запланировано далее:
 

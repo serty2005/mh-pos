@@ -214,9 +214,9 @@ Edge Outbox
   -> ClickHouse raw_business_events
 ```
 
-- Cloud API принимает Edge outbox batch, сохраняет events в PostgreSQL `inbox_events` и отвечает `200 OK` без synchronous ClickHouse write.
-- Async Batch Forwarder экспортирует `inbox_events` в ClickHouse batch size от 1 000 до 100 000 rows.
-- После successful export event в PostgreSQL помечается `processed_for_olap = true`.
+- Реализовано сейчас: Cloud API принимает Edge outbox batch, сохраняет accepted events в PostgreSQL `inbox_events` и отвечает без synchronous ClickHouse write.
+- Реализовано сейчас: Async Batch Forwarder экспортирует `inbox_events` в ClickHouse `raw_business_events` bounded batch size от 1 до 100 000 rows.
+- После successful export event в PostgreSQL помечается `processed_for_olap = true`; retry/checkpoint state хранится в `inbox_events` и `olap_export_checkpoints`.
 - `processed_for_olap = true` events старше 3 месяцев можно удалить из PostgreSQL.
 - ClickHouse `raw_business_events` хранит все business events бессрочно.
 - Synchronous dual-write в PostgreSQL и ClickHouse запрещен.
@@ -462,7 +462,8 @@ Cloud worker не применяет `CatalogItemChangeSuggested`/`RecipeChangeS
 - chef receipt/catalog/recipe proposal flows генерируют `StockReceiptCaptured`, `CatalogItemChangeSuggested` и `RecipeChangeSuggested`;
 - stop-list changes синхронизируются через Cloud -> Edge packages и, если включен Edge manager input, через `StopListUpdated`;
 - Cloud Inventory Worker расширяется до полного receipts, counts, production, refund/cancellation dispositions, balances and costing engine;
-- ClickHouse pipeline экспортирует `raw_business_events` and `olap_stock_moves`, а Cloud OLAP API читает bounded aggregates.
+- Реализовано сейчас: ClickHouse pipeline экспортирует `raw_business_events`, а `GET /api/v1/olap/raw-business-events` читает bounded metadata без raw payload.
+- Запланировано далее: `olap_stock_moves` и bounded aggregates.
 
 ## Запланированные Границы
 
@@ -473,7 +474,7 @@ Cloud worker не применяет `CatalogItemChangeSuggested`/`RecipeChangeS
 - `CheckClosed`/`KitchenTicketStatusChanged`/`ItemServed` pilot inventory and KDS facts;
 - `CatalogItemChangeSuggested`/`RecipeChangeSuggested` review queues;
 - full inventory event catalog and Cloud Inventory Engine;
-- ClickHouse `raw_business_events`, `olap_stock_moves`, retry/backfill/export state and OLAP API;
+- ClickHouse `raw_business_events`, retry/export state and bounded event metadata API реализованы сейчас; `olap_stock_moves`, public backfill controls and aggregate OLAP API запланированы далее;
 - stop-list sale blocking smoke через offline Edge.
 
 После полного пилота:

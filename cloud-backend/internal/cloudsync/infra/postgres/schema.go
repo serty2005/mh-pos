@@ -43,6 +43,30 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			},
 		},
 		{
+			Table:         "inbox_events",
+			RequiredBy:    "ClickHouse async forwarder delivery queue without request-path ClickHouse writes",
+			MigrationFile: "001_init.sql",
+			Columns: []string{
+				"id", "receipt_id", "idempotency_key", "tenant_id", "restaurant_id", "device_id", "employee_id",
+				"command_id", "event_id", "edge_event_id", "event_type", "aggregate_type", "aggregate_id",
+				"envelope_version", "occurred_at", "cloud_received_at", "raw_payload", "raw_payload_sha256_hex",
+				"processed_for_olap", "olap_export_status", "olap_export_attempts", "olap_next_retry_at",
+				"olap_locked_at", "olap_locked_by", "olap_processed_at", "olap_last_error", "created_at", "updated_at",
+			},
+			Indexes: []string{
+				"inbox_events_event_unique", "inbox_events_olap_pending", "inbox_events_restaurant_received", "inbox_events_event_type_received",
+			},
+		},
+		{
+			Table:         "olap_export_checkpoints",
+			RequiredBy:    "ClickHouse async forwarder checkpoint and retry observability",
+			MigrationFile: "001_init.sql",
+			Columns: []string{
+				"id", "worker_id", "last_exported_inbox_id", "last_exported_event_id", "last_exported_at",
+				"last_error", "consecutive_failures", "updated_at",
+			},
+		},
+		{
 			Table:         "cloud_sync_problem_events",
 			RequiredBy:    "cloudsync postgres repository problem item quarantine",
 			MigrationFile: "001_init.sql",

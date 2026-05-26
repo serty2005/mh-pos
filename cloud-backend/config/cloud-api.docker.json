@@ -6,6 +6,15 @@
   "CLOUD_POSTGRES_DSN": "postgres://postgres:postgres@cloud-postgres:5432/mh_pos_cloud?sslmode=disable",
   "CLOUD_POSTGRES_MIGRATIONS_DIR": "/app/migrations/postgres",
   "CLOUD_POSTGRES_BACKUP_DIR": "/app/data/cloud-backups",
+  "CLOUD_CLICKHOUSE_URL": "http://cloud-clickhouse:8123",
+  "CLOUD_CLICKHOUSE_DATABASE": "mh_pos_cloud",
+  "CLOUD_CLICKHOUSE_USER": "default",
+  "CLOUD_CLICKHOUSE_PASSWORD": "",
+  "CLOUD_OLAP_FORWARDER_ID": "cloud-olap-forwarder",
+  "CLOUD_OLAP_FORWARDER_BATCH_SIZE": 1000,
+  "CLOUD_OLAP_FORWARDER_INTERVAL_SECONDS": 5,
+  "CLOUD_OLAP_FORWARDER_RETRY_SECONDS": 60,
+  "CLOUD_OLAP_FORWARDER_PROCESSING_TTL_SECONDS": 300,
   "CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE": 3,
   "LICENSE_SERVER_URL": "http://license-api:8095"
 }

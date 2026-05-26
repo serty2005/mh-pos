@@ -16,7 +16,7 @@
 
 Не обнаружено сейчас:
 
-- Подтвержденного runtime для delivery, настоящего платежного процессинга, фискального адаптера, ClickHouse pipeline и расширенных KDS flows за пределами ticket lifecycle foundation.
+- Подтвержденного runtime для delivery, настоящего платежного процессинга, фискального адаптера, `olap_stock_moves` projection и расширенных KDS flows за пределами ticket lifecycle foundation.
 - Публичного Cloud HTTP/API интерфейса отчетов по детальной проекции финансовых операций. Сервисная и repository-основа есть, публичный reporting surface остается запланированным далее.
 
 Цель полной пилотной реализации:
@@ -28,8 +28,8 @@
 - зафиксировать POS Edge backend как авторитетный runtime для financial/order/KDS command validation и stop-list sale blocking; POS UI не становится авторитетным слоем;
 - добавить Cloud manager flow для recipes, stop-list, catalog/recipe proposal review, inventory operations, publication readiness и sync/problem observability;
 - добавить полный Cloud-owned складской движок: stock receipts, inventory counts, production, sale consumption, refund/cancellation dispositions, recipe expansion, balances, costing и retro recalculation DAG;
-- добавить ClickHouse runtime как immutable/OLAP storage, async export pipeline и bounded Cloud OLAP API;
-- закрыть полный smoke path Cloud setup -> Edge sync -> waiter order -> kitchen served -> cashier payment/check -> Cloud inventory ledger -> ClickHouse export -> OLAP API.
+- расширить ClickHouse runtime от первого `raw_business_events` slice до `olap_stock_moves`, агрегатов и observability/backfill controls;
+- закрыть полный smoke path Cloud setup -> Edge sync -> waiter order -> kitchen served -> cashier payment/check -> Cloud inventory ledger -> ClickHouse export -> bounded OLAP API.
 
 ## POS Edge Backend
 
@@ -74,6 +74,9 @@
 - `ItemServed` попадает в durable `inventory_event_queue` и Cloud Inventory Worker создает sale ledger идемпотентно по source event; `KitchenTicketStatusChanged` принимается как operational-only event и не ставится в inventory queue.
 - Детальная PostgreSQL projection для current `CancellationRecorded` и `RefundRecorded`; legacy `PaymentRefunded`/`CheckRefunded` принимаются, но не наполняют detailed operation projection.
 - Безопасный список входящих Edge events для Cloud UI без raw payload.
+- PostgreSQL `inbox_events` как transactional delivery queue для accepted Edge events; Cloud API отвечает после PostgreSQL commit и не пишет в ClickHouse в request path.
+- ClickHouse managed schema для `raw_business_events`, async forwarder `inbox_events -> raw_business_events`, `processed_for_olap`, retry/backoff state и checkpoint table `olap_export_checkpoints`.
+- Bounded read-only metadata endpoint `GET /api/v1/olap/raw-business-events` читает ClickHouse без раскрытия raw payload.
 - Хранилище master-data packages и Cloud -> Edge package retrieval.
 - Cloud-owned master data authority: рестораны, роли, сотрудники, PIN lifecycle, каталог, услуги, папки, параметры папок, теги, привязки тегов, группы/опции/привязки модификаторов, policies скидок/надбавок, залы, столы, menu items и публикации.
 - Publication flow формирует typed ingest DTO для POS Edge: top-level modifier groups/options/bindings и link-only `menu_item_modifier_groups`.
@@ -83,7 +86,7 @@
 
 - Production auth/RBAC perimeter для Cloud API.
 - Публичный Cloud reporting API/UI по financial operation projection.
-- Async ClickHouse forwarder и immutable OLAP archive.
+- ClickHouse `olap_stock_moves`, stock/cost/sales/kitchen агрегаты, backfill/retry controls как публичный operator API.
 - Recipe expansion, semi-finished auto-production split и retro costing DAG.
 
 ## License Server
@@ -147,6 +150,7 @@
 
 - POS Edge SQLite является локальным OLTP/source of truth для кассового runtime.
 - Cloud PostgreSQL является Cloud OLTP/source of truth для приема событий, projections, master data и provisioning foundation.
+- ClickHouse является immutable archive для `raw_business_events`; экспорт выполняет только async forwarder из PostgreSQL `inbox_events`.
 - License Server использует локальную SQLite БД.
 - Active pre-pilot path использует один managed SQL baseline на runtime-модуль и runtime startup migration/verification.
 - UUID runtime генерируется как UUIDv7 там, где код создает новые ids через `idgen`.
@@ -156,13 +160,13 @@
 
 - Data-preserving production migrations после первого внедрения.
 - Подтвержденный rollout `sqlc`.
-- ClickHouse как запущенный runtime pipeline.
+- ClickHouse `olap_stock_moves` и production-grade backfill/retention jobs.
 
 ## Скрипты и локальная приемка
 
 Реализовано сейчас:
 
-- Docker compose поднимает Cloud PostgreSQL, Cloud API, License API и POS Edge без POS UI.
+- Docker compose поднимает Cloud PostgreSQL, ClickHouse, Cloud API, License API и POS Edge без POS UI.
 - Единственный Python seed script использует HTTP API и не делает прямых записей в PostgreSQL/SQLite.
 - `scripts/seed-dev-system.py` проверяет health Cloud/POS/License, создает полный Cloud-owned seed dataset, публикует master data, выполняет license pairing POS Edge и проверяет базовый POS read model.
 - `scripts/seed-dev-system.py --run-minimal-flow` выполняет минимальный HTTP-only smoke: Cloud recipes/stop-list publication, Edge sync, waiter order/precheck, KDS served, cashier payment/final check, прием `ItemServed`/`CheckClosed` в Cloud, появление строк Cloud `stock_ledger` по `ItemServed` и отсутствие duplicate `CheckClosed` delta для того же `order_line_id`.
@@ -177,6 +181,7 @@
 - POS API tests покрывают безопасные HTTP errors, сессии, pairing/provisioning, master-data route boundaries, floor/order/precheck/payment/check endpoints, sync/storage endpoints и CORS.
 - POS SQLite tests покрывают schema constraints, active managed baseline, payments by `precheck_id`, prechecks, local event log, outbox retry schema, modifiers, отсутствие legacy Edge stock tables и migration repair.
 - Cloud sync tests покрывают idempotent receive, item-level batch ACK, authenticated exchange, revision conflicts, current financial operation events, legacy refund events, master-data packages и contract validation.
+- Cloud OLAP tests покрывают forwarder success/retry и bounded read validation; PostgreSQL schema tests покрывают `inbox_events` и checkpoint contract.
 - Cloud master-data tests покрывают CRUD/validation, PIN reuse rules, role permission validation, catalog/menu/publication shape, service/semi-finished kinds, lifecycle statuses и pricing policies.
 - License tests покрывают registration, resolve, consumed/expired/invalid pairing codes.
 - UI unit/e2e tests покрывают currency/error/session guards, RBAC, schema parsing, cashier terminal conflict handling, compensation boundaries, modifier flow, payments/refunds, refund после закрытия исходных personal/cash shifts, запрет cancellation после закрытия исходной смены и sync/provisioning flows.
@@ -192,7 +197,7 @@
 
 - Поддерживать `docs/backend/CLOUD-BACKEND-SPEC.md` как профильный документ Cloud Backend при каждом изменении Cloud routes, payloads, sync/provisioning contracts или schema.
 - Публичный Cloud reporting API/UI для detailed financial operation projection.
-- До полного пилота: расширение KDS за пределы ticket lifecycle foundation, chef receipt/catalog/recipe proposal flows, полный Cloud Inventory Engine, ClickHouse runtime/OLAP API и `full_pilot` smoke.
+- До полного пилота: расширение KDS за пределы ticket lifecycle foundation, chef receipt/catalog/recipe proposal flows, полный Cloud Inventory Engine, `olap_stock_moves`, агрегированные OLAP API и `full_pilot` smoke.
 - После полного пилота: hardware bump-bar integrations, kitchen printer orchestration, rich BI dashboards, ERP/accounting integrations и внешние delivery/payment/fiscal контуры.
 - Data-preserving migrations после первого реального внедрения.
 - Production auth/RBAC perimeter для Cloud/License API.

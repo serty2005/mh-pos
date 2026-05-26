@@ -96,13 +96,13 @@ Managed SQL files, реализовано сейчас:
 
 - `cloud-backend/migrations/postgres/001_init.sql`
 
-Запланировано далее для Cloud event ingestion:
+Реализовано сейчас для первого Cloud event ingestion / OLAP slice:
 
 - PostgreSQL хранит `inbox_events` как transactional приемную очередь Cloud API.
 - Cloud API после приема Edge outbox batch сохраняет events в `inbox_events` и отвечает `200 OK` без синхронной записи в ClickHouse.
-- `inbox_events` должен иметь processing flag `processed_for_olap`.
-- Async Batch Forwarder читает `inbox_events`, собирает batch от 1 000 до 100 000 rows и экспортирует их в ClickHouse.
-- После successful export worker помечает события как `processed_for_olap = true`.
+- `inbox_events` имеет processing flag `processed_for_olap`, retry state, lock metadata и last error.
+- Async Batch Forwarder читает `inbox_events`, собирает bounded batch от 1 до 100 000 rows и экспортирует их в ClickHouse.
+- После successful export worker помечает события как `processed_for_olap = true` и обновляет `olap_export_checkpoints`.
 
 `001_init.sql` provides foundation for:
 
@@ -135,11 +135,11 @@ Managed SQL files, реализовано сейчас:
 - Cloud Inventory Worker пишет документы и ledger из нормализованных item payloads.
 - `modifier_options` получает optional `linked_catalog_item_id`; POS Edge не применяет это поле в order/pricing runtime.
 - ClickHouse `raw_business_events` наполняется только Async Batch Forwarder из PostgreSQL `inbox_events` и является бессрочным архивом business events.
-- ClickHouse `olap_stock_moves` наполняется только batch projection из PostgreSQL/ClickHouse event data и не является transactional source of truth.
+- Запланировано далее: ClickHouse `olap_stock_moves` наполняется только batch projection из PostgreSQL/ClickHouse event data и не является transactional source of truth.
 
 ## ClickHouse Immutable Event Store
 
-Запланировано далее как замороженный принцип:
+Реализовано сейчас как первый runtime slice:
 
 ```text
 Edge Outbox
@@ -152,24 +152,27 @@ Edge Outbox
 
 Целевая таблица ClickHouse: `raw_business_events`.
 
-Engine:
+Engine в реализованном первом slice:
 
 ```sql
-MergeTree
+ReplacingMergeTree(exported_at)
 ```
 
 Обязательные колонки:
 
 | Column | Type | Правило |
 | --- | --- | --- |
-| `event_id` | UUID | UUIDv7 |
-| `tenant_id` | UUID | tenant boundary |
-| `restaurant_id` | UUID | restaurant boundary |
-| `device_id` | UUID | source Edge/KDS device |
-| `employee_id` | UUID | actor employee |
+| `event_id` | String | UUIDv7-compatible event id |
+| `tenant_id` | String | tenant boundary; сейчас заполняется restaurant id |
+| `restaurant_id` | String | restaurant boundary |
+| `device_id` | String | source Edge/KDS device |
+| `employee_id` | String | actor employee, пустая строка если actor не передан |
 | `event_type` | String | domain event type |
-| `occurred_at` | DateTime64 | extracted from UUIDv7 |
+| `occurred_at` | DateTime64 | envelope occurred timestamp |
+| `cloud_received_at` | DateTime64 | Cloud receipt timestamp |
+| `raw_payload_sha256_hex` | String | checksum for support/debug correlation |
 | `payload` | String | full original event body as JSON string |
+| `exported_at` | DateTime64 | async forwarder export timestamp |
 
 Sorting key:
 
@@ -183,7 +186,7 @@ Partitioning:
 PARTITION BY toYYYYMM(occurred_at)
 ```
 
-Схема использует толстые metadata и JSON payload. Новые колонки под отдельные event types не добавляются.
+Схема использует общие metadata и JSON payload. Новые колонки под отдельные event types не добавляются. `ReplacingMergeTree(exported_at)` снижает риск видимых дублей при retry после неудачного checkpoint update; transactional source of truth остается PostgreSQL.
 
 ## Retention And Archiving
 

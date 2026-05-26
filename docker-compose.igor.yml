@@ -17,6 +17,23 @@ services:
       timeout: 3s
       retries: 20
 
+  cloud-clickhouse:
+    image: clickhouse/clickhouse-server:25.5-alpine
+    environment:
+      CLICKHOUSE_DB: mh_pos_cloud
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+    ports:
+      - "${CLOUD_CLICKHOUSE_HOST_PORT:-8123}:8123"
+      - "${CLOUD_CLICKHOUSE_NATIVE_HOST_PORT:-9000}:9000"
+    volumes:
+      - cloud_clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8123/ping | grep -q Ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   license-api:
     build:
       context: .
@@ -32,6 +49,8 @@ services:
       dockerfile: docker/cloud-api.Dockerfile
     depends_on:
       cloud-postgres:
+        condition: service_healthy
+      cloud-clickhouse:
         condition: service_healthy
       license-api:
         condition: service_started
@@ -87,6 +106,7 @@ services:
 
 volumes:
   cloud_postgres_data:
+  cloud_clickhouse_data:
   cloud_api_data:
   license_sqlite_data:
   pos_edge_sqlite_data:

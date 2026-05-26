@@ -18,6 +18,9 @@ import (
 	inventorypg "cloud-backend/internal/inventory/infra/postgres"
 	masterapp "cloud-backend/internal/masterdata/app"
 	masterpg "cloud-backend/internal/masterdata/infra/postgres"
+	olapapp "cloud-backend/internal/olap/app"
+	olapch "cloud-backend/internal/olap/infra/clickhouse"
+	olappg "cloud-backend/internal/olap/infra/postgres"
 	"cloud-backend/internal/platform/clock"
 	"cloud-backend/internal/platform/idgen"
 	"cloud-backend/internal/platform/logging"
@@ -53,6 +56,10 @@ func run() error {
 	migrationsDir := cfg.Get("CLOUD_POSTGRES_MIGRATIONS_DIR", "migrations/postgres")
 	backupDir := cfg.Get("CLOUD_POSTGRES_BACKUP_DIR", "data/cloud-backups")
 	moduleVersion := cfg.Get("MH_POS_VERSION", version.Resolve("MH_POS_VERSION"))
+	clickHouseURL := cfg.Get("CLOUD_CLICKHOUSE_URL", "")
+	clickHouseDatabase := cfg.Get("CLOUD_CLICKHOUSE_DATABASE", "mh_pos_cloud")
+	clickHouseUser := cfg.Get("CLOUD_CLICKHOUSE_USER", "")
+	clickHousePassword := cfg.Get("CLOUD_CLICKHOUSE_PASSWORD", "")
 	if dsn == "" {
 		return errors.New("CLOUD_POSTGRES_DSN is required")
 	}
@@ -75,6 +82,27 @@ func run() error {
 		return err
 	}
 
+	var olapService *olapapp.Service
+	var olapForwarder *olapapp.Forwarder
+	if clickHouseURL != "" {
+		clickHouseRepo := olapch.NewRepository(olapch.Config{
+			URL:      clickHouseURL,
+			Database: clickHouseDatabase,
+			Username: clickHouseUser,
+			Password: clickHousePassword,
+		})
+		if err := clickHouseRepo.Migrate(ctx); err != nil {
+			return err
+		}
+		olapService = olapapp.NewService(clickHouseRepo)
+		olapForwarder = olapapp.NewForwarder(olappg.NewRepository(pool), clickHouseRepo, clock.SystemClock{}, olapapp.ForwarderConfig{
+			WorkerID:      cfg.Get("CLOUD_OLAP_FORWARDER_ID", "cloud-olap-forwarder"),
+			BatchSize:     cfg.Int("CLOUD_OLAP_FORWARDER_BATCH_SIZE", 1000),
+			RetryDelay:    time.Duration(cfg.Int("CLOUD_OLAP_FORWARDER_RETRY_SECONDS", 60)) * time.Second,
+			ProcessingTTL: time.Duration(cfg.Int("CLOUD_OLAP_FORWARDER_PROCESSING_TTL_SECONDS", 300)) * time.Second,
+		})
+	}
+
 	repo := syncpg.NewRepository(pool)
 	service := app.NewServiceWithOptions(repo, clock.SystemClock{}, app.Options{
 		MaxCloudPackagesPerExchange: cfg.Int("CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE", 3),
@@ -92,7 +120,7 @@ func run() error {
 	provisioningService := provisioningapp.NewService(provisioningpg.NewRepository(pool), masterService, clock.SystemClock{}, masterapp.RandomIDGenerator{}, publicURL, licenseClient)
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewRouterWithProvisioning(service, provisioningService, masterService),
+		Handler:           api.NewRouterWithProvisioningAndOLAP(service, provisioningService, olapService, masterService),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -105,6 +133,9 @@ func run() error {
 	workerCtx, workerCancel := context.WithCancel(ctx)
 	defer workerCancel()
 	go runInventoryWorker(workerCtx, inventoryWorker, 2*time.Second)
+	if olapForwarder != nil {
+		go runOLAPForwarder(workerCtx, olapForwarder, time.Duration(cfg.Int("CLOUD_OLAP_FORWARDER_INTERVAL_SECONDS", 5))*time.Second)
+	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
@@ -121,6 +152,24 @@ func runInventoryWorker(ctx context.Context, worker *inventoryapp.Worker, interv
 	for {
 		if err := worker.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("cloud inventory worker failed", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func runOLAPForwarder(ctx context.Context, worker *olapapp.Forwarder, interval time.Duration) {
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if err := worker.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("cloud olap forwarder failed", "error", err)
 		}
 		select {
 		case <-ctx.Done():

@@ -43,6 +43,9 @@ FOR UPDATE`, receipt.IdempotencyKey))
 		if existing.RawPayloadSHA256Hex != receipt.RawPayloadSHA256 {
 			return contracts.EventAck{}, contracts.ErrPayloadConflict
 		}
+		if err := enqueueExistingInboxEvent(ctx, tx, existing.CloudReceiptID); err != nil {
+			return contracts.EventAck{}, err
+		}
 		if err := tx.Commit(ctx); err != nil {
 			return contracts.EventAck{}, err
 		}
@@ -96,6 +99,36 @@ VALUES ($1,$2::jsonb,$3,$4)`,
 		string(receipt.RawPayload),
 		receipt.RawPayloadSHA256,
 		receipt.CloudReceivedAt,
+	); err != nil {
+		return contracts.EventAck{}, err
+	}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO inbox_events(
+  id,receipt_id,idempotency_key,tenant_id,restaurant_id,device_id,employee_id,
+  command_id,event_id,edge_event_id,event_type,aggregate_type,aggregate_id,envelope_version,
+  occurred_at,cloud_received_at,raw_payload,raw_payload_sha256_hex,processed_for_olap,olap_export_status,created_at,updated_at
+) VALUES (
+  $1,$1,$2,$3,$3,$4,$5,
+  $6,$7,$8,$9,$10,$11,$12,
+  $13,$14,$15::jsonb,$16,false,'pending',$14,$14
+)
+ON CONFLICT (id) DO NOTHING`,
+		ack.CloudReceiptID,
+		ack.IdempotencyKey,
+		*receipt.Envelope.RestaurantID,
+		receipt.Envelope.DeviceID,
+		trimStringPtr(receipt.Envelope.ActorEmployeeID),
+		receipt.Envelope.CommandID,
+		receipt.Envelope.EventID,
+		ack.EdgeEventID,
+		string(receipt.Envelope.EventType),
+		receipt.Envelope.AggregateType,
+		receipt.Envelope.AggregateID,
+		receipt.Envelope.Version,
+		receipt.Envelope.OccurredAt,
+		receipt.CloudReceivedAt,
+		string(receipt.RawPayload),
+		receipt.RawPayloadSHA256,
 	); err != nil {
 		return contracts.EventAck{}, err
 	}
@@ -623,6 +656,24 @@ ON CONFLICT (receipt_id) DO NOTHING`,
 	return err
 }
 
+func enqueueExistingInboxEvent(ctx context.Context, tx pgx.Tx, receiptID string) error {
+	_, err := tx.Exec(ctx, `
+INSERT INTO inbox_events(
+  id,receipt_id,idempotency_key,tenant_id,restaurant_id,device_id,employee_id,
+  command_id,event_id,edge_event_id,event_type,aggregate_type,aggregate_id,envelope_version,
+  occurred_at,cloud_received_at,raw_payload,raw_payload_sha256_hex,processed_for_olap,olap_export_status,created_at,updated_at
+)
+SELECT
+  r.id,r.id,r.idempotency_key,r.restaurant_id,r.restaurant_id,r.device_id,'',
+  r.command_id,r.event_id,r.edge_event_id,r.event_type,r.aggregate_type,r.aggregate_id,r.envelope_version,
+  r.occurred_at,r.cloud_received_at,p.raw_payload,p.raw_payload_sha256_hex,false,'pending',r.cloud_received_at,r.cloud_received_at
+FROM cloud_edge_event_receipts r
+JOIN cloud_edge_event_raw_payloads p ON p.receipt_id = r.id
+WHERE r.id = $1
+ON CONFLICT (id) DO NOTHING`, receiptID)
+	return err
+}
+
 func upsertShiftFinanceProjection(ctx context.Context, tx pgx.Tx, receipt app.EdgeEventReceipt, shiftID string, paymentCount, paymentTotal, paymentRefundCount, paymentRefundTotal, checkCount, checkTotal, checkRefundCount, checkRefundTotal int64) error {
 	_, err := tx.Exec(ctx, `
 INSERT INTO cloud_projection_shift_finance(
@@ -717,6 +768,13 @@ func nullableStringPtr(v *string) any {
 		return nil
 	}
 	return nullableText(*v)
+}
+
+func trimStringPtr(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return strings.TrimSpace(*v)
 }
 
 func scanAck(row pgx.Row) (contracts.EventAck, error) {
