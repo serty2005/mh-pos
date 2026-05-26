@@ -1,0 +1,13 @@
+{
+  "status": "failed",
+  "generated_at_unix": 1779267126,
+  "suites": [
+    {
+      "name": "pos_refund_after_shift_close",
+      "status": "failed",
+      "duration_ms": 5,
+      "details": {},
+      "error": "GET http://localhost:8080/api/v1/system/provisioning-status failed with HTTP 0: [Errno 111] Connection refused"
+    }
+  ]
+}
