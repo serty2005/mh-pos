@@ -405,6 +405,7 @@ func TestPublicationIncludesRecipesAndStopListPackages(t *testing.T) {
 	if !strings.Contains(string(inventoryPackage.PayloadJSON), `"stop_lists"`) || !strings.Contains(string(inventoryPackage.PayloadJSON), `"available_quantity":0`) {
 		t.Fatalf("expected inventory_reference package to include blocking stop-list, payload=%s", inventoryPackage.PayloadJSON)
 	}
+	assertPOSEdgeRecipesAndInventoryReferencePackage(t, recipesPackage.PayloadJSON, inventoryPackage.PayloadJSON, restaurant.ID, dish.ID, component.ID)
 }
 
 func TestCatalogActiveSKUCanBeReusedAfterArchive(t *testing.T) {
@@ -471,6 +472,9 @@ type posEdgeMasterDataCommand struct {
 	TaxRules               []json.RawMessage              `json:"tax_rules,omitempty"`
 	ServiceChargeRules     []json.RawMessage              `json:"service_charge_rules,omitempty"`
 	PricingPolicies        []json.RawMessage              `json:"pricing_policies,omitempty"`
+	RecipeVersions         []posEdgeRecipeVersion         `json:"recipe_versions,omitempty"`
+	RecipeLines            []posEdgeRecipeLine            `json:"recipe_lines,omitempty"`
+	StopLists              []posEdgeStopListEntry         `json:"stop_lists,omitempty"`
 }
 
 type posEdgeModifierGroup struct {
@@ -517,6 +521,41 @@ type posEdgeMenuItem struct {
 	Active        bool   `json:"active"`
 	CreatedAt     string `json:"created_at"`
 	UpdatedAt     string `json:"updated_at"`
+}
+
+type posEdgeRecipeVersion struct {
+	ID                string `json:"id"`
+	DishCatalogItemID string `json:"dish_catalog_item_id"`
+	Version           int    `json:"version"`
+	Name              string `json:"name"`
+	Status            string `json:"status"`
+	YieldQuantity     int64  `json:"yield_quantity"`
+	YieldUnit         string `json:"yield_unit"`
+	Active            bool   `json:"active"`
+	CreatedAt         string `json:"created_at"`
+	UpdatedAt         string `json:"updated_at"`
+}
+
+type posEdgeRecipeLine struct {
+	ID              string `json:"id"`
+	RecipeVersionID string `json:"recipe_version_id"`
+	CatalogItemID   string `json:"catalog_item_id"`
+	Quantity        int64  `json:"quantity"`
+	Unit            string `json:"unit"`
+	LossPercent     int    `json:"loss_percent"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at"`
+}
+
+type posEdgeStopListEntry struct {
+	ID                string   `json:"id"`
+	RestaurantID      string   `json:"restaurant_id"`
+	CatalogItemID     string   `json:"catalog_item_id"`
+	AvailableQuantity *float64 `json:"available_quantity,omitempty"`
+	Source            string   `json:"source"`
+	Reason            string   `json:"reason,omitempty"`
+	Active            bool     `json:"active"`
+	UpdatedAt         string   `json:"updated_at"`
 }
 
 type posEdgeFolderParameter struct {
@@ -602,6 +641,48 @@ func assertPOSEdgeModifierIngestPackage(t *testing.T, body []byte, restaurantID,
 	}
 	if len(cmd.MenuItems) != 1 || cmd.MenuItems[0].ID != menuItemID {
 		t.Fatalf("unexpected menu item projection: %+v", cmd.MenuItems)
+	}
+}
+
+func assertPOSEdgeRecipesAndInventoryReferencePackage(t *testing.T, recipesBody, inventoryBody []byte, restaurantID, dishCatalogItemID, componentCatalogItemID string) {
+	t.Helper()
+
+	for _, body := range [][]byte{recipesBody, inventoryBody} {
+		if strings.Contains(string(body), "stock_documents") || strings.Contains(string(body), "stock_moves") || strings.Contains(string(body), "stock_balances") {
+			t.Fatalf("publication must not include Edge-side stock document payload: %s", body)
+		}
+	}
+
+	var recipes posEdgeMasterDataCommand
+	recipesDecoder := json.NewDecoder(bytes.NewReader(recipesBody))
+	recipesDecoder.DisallowUnknownFields()
+	if err := recipesDecoder.Decode(&recipes); err != nil {
+		t.Fatalf("recipes package must match POS Edge strict ingest shape: %v\npayload=%s", err, recipesBody)
+	}
+	if recipes.RestaurantID != restaurantID || len(recipes.RecipeVersions) != 1 || len(recipes.RecipeLines) != 1 {
+		t.Fatalf("unexpected recipes package rows: %+v", recipes)
+	}
+	version := recipes.RecipeVersions[0]
+	if version.DishCatalogItemID != dishCatalogItemID || version.Status != "active" || !version.Active || version.YieldQuantity != 1 || version.YieldUnit != "portion" {
+		t.Fatalf("unexpected recipe version projection: %+v", version)
+	}
+	line := recipes.RecipeLines[0]
+	if line.RecipeVersionID != version.ID || line.CatalogItemID != componentCatalogItemID || line.Quantity != 150 || line.Unit != "g" {
+		t.Fatalf("unexpected recipe line projection: %+v", line)
+	}
+
+	var inventory posEdgeMasterDataCommand
+	inventoryDecoder := json.NewDecoder(bytes.NewReader(inventoryBody))
+	inventoryDecoder.DisallowUnknownFields()
+	if err := inventoryDecoder.Decode(&inventory); err != nil {
+		t.Fatalf("inventory_reference package must match POS Edge strict ingest shape: %v\npayload=%s", err, inventoryBody)
+	}
+	if inventory.RestaurantID != restaurantID || len(inventory.StopLists) != 1 {
+		t.Fatalf("unexpected inventory_reference package rows: %+v", inventory)
+	}
+	stop := inventory.StopLists[0]
+	if stop.RestaurantID != restaurantID || stop.CatalogItemID != componentCatalogItemID || stop.AvailableQuantity == nil || *stop.AvailableQuantity != 0 || stop.Source != "cloud" || !stop.Active {
+		t.Fatalf("unexpected stop-list projection: %+v", stop)
 	}
 }
 

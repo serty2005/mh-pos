@@ -620,6 +620,19 @@ func insertRecipe(t *testing.T, f *fixture, recipeID, ownerCatalogItemID, compon
 		recipeID+"-line", recipeID, componentCatalogItemID, 100, "g", 0, appshared.DBTime(fixedClock{}.Now()), appshared.DBTime(fixedClock{}.Now()), int64(1))
 }
 
+func assertNoEdgeStockTables(t *testing.T, f *fixture) {
+	t.Helper()
+	for _, table := range []string{"stock_documents", "stock_moves", "stock_balances", "item_costs", "purchase_receipts", "purchase_receipt_lines"} {
+		var n int
+		if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Fatalf("expected Edge stock table %s to be absent", table)
+		}
+	}
+}
+
 func floatPtr(v float64) *float64 {
 	return &v
 }
@@ -6937,12 +6950,12 @@ func TestKitchenTicketCreatedFromOrderLineKeepsCatalogRoutingAndDetails(t *testi
 	f := newFixture(t)
 	f.openShift(t)
 	catalog, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{
-		CommandMeta:  seedMeta(f.device.ID),
-		Type:         domain.CatalogItemDish,
-		Name:         "Steak",
-		SKU:          "STEAK",
-		BaseUnit:     "portion",
-		KitchenType:  "hot",
+		CommandMeta: seedMeta(f.device.ID),
+		Type:        domain.CatalogItemDish,
+		Name:        "Steak",
+		SKU:         "STEAK",
+		BaseUnit:    "portion",
+		KitchenType: "hot",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -7227,6 +7240,101 @@ func TestApplyMasterDataRecipesAndInventoryReferenceStreams(t *testing.T) {
 	if stop.ID != "stop-cloud-carrot" || stop.CloudVersion == nil || *stop.CloudVersion != 102 {
 		t.Fatalf("expected blocking stop-list entry from inventory_reference stream, got %+v", stop)
 	}
+}
+
+func TestCloudRecipesStopListPackagesIngestAndBlockOfflineSale(t *testing.T) {
+	f := newFixture(t)
+	component, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: seedMeta(f.device.ID), Type: domain.CatalogItemGood, Name: "Cloud Potato", SKU: "CLOUD-POTATO", BaseUnit: "g"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cloudUpdatedAt := appshared.DBTime(fixedClock{}.Now())
+	err = f.service.ApplySyncExchangeCloudPackages(f.ctx, []domain.CloudPackage{
+		{
+			StreamName:      string(domain.MasterDataStreamRecipes),
+			NodeDeviceID:    f.device.ID,
+			RestaurantID:    f.restaurant.ID,
+			SyncMode:        string(domain.SyncModeIncremental),
+			CloudVersion:    201,
+			CheckpointToken: "master-data:" + f.restaurant.ID + ":201:recipes",
+			CloudUpdatedAt:  cloudUpdatedAt,
+			PayloadJSON: json.RawMessage(fmt.Sprintf(`{
+				"recipe_versions":[{
+					"id":"recipe-cloud-package-soup",
+					"dish_catalog_item_id":%q,
+					"version":1,
+					"name":"Soup recipe",
+					"status":"active",
+					"yield_quantity":1,
+					"yield_unit":"portion",
+					"active":true,
+					"created_at":"2026-05-04T20:00:00Z",
+					"updated_at":"2026-05-04T20:00:00Z"
+				}],
+				"recipe_lines":[{
+					"id":"recipe-cloud-package-line-potato",
+					"recipe_version_id":"recipe-cloud-package-soup",
+					"catalog_item_id":%q,
+					"quantity":100,
+					"unit":"g",
+					"loss_percent":0,
+					"created_at":"2026-05-04T20:00:00Z",
+					"updated_at":"2026-05-04T20:00:00Z"
+				}]
+			}`, f.menuItem.CatalogItemID, component.ID)),
+		},
+		{
+			StreamName:      string(domain.MasterDataStreamInventory),
+			NodeDeviceID:    f.device.ID,
+			RestaurantID:    f.restaurant.ID,
+			SyncMode:        string(domain.SyncModeIncremental),
+			CloudVersion:    202,
+			CheckpointToken: "master-data:" + f.restaurant.ID + ":202:inventory_reference",
+			CloudUpdatedAt:  cloudUpdatedAt,
+			PayloadJSON: json.RawMessage(fmt.Sprintf(`{
+				"stop_lists":[{
+					"id":"stop-cloud-package-potato",
+					"restaurant_id":%q,
+					"catalog_item_id":%q,
+					"available_quantity":0,
+					"source":"cloud",
+					"reason":"ingredient unavailable",
+					"active":true,
+					"updated_at":"2026-05-04T20:00:00Z"
+				}]
+			}`, f.restaurant.ID, component.ID)),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNoEdgeStockTables(t, f)
+	if _, err := f.repo.GetBlockingStopListEntry(f.ctx, f.restaurant.ID, component.ID); err != nil {
+		t.Fatalf("expected cloud stop-list package to create blocking local read model: %v", err)
+	}
+
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMetaCommand("cmd-cloud-stop-create-order"), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	orderLinesBefore := countRows(t, f, "order_lines")
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+	_, err = f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMetaCommand("cmd-cloud-stop-add-soup"), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1})
+	if !errors.Is(err, domain.ErrSaleUnavailable) || !strings.Contains(err.Error(), "recipe component") {
+		t.Fatalf("expected offline recipe component stop-list block, got %v", err)
+	}
+	if lines := countRows(t, f, "order_lines"); lines != orderLinesBefore {
+		t.Fatalf("expected blocked sale not to create order lines, before=%d after=%d", orderLinesBefore, lines)
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected blocked sale not to create outbox rows, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected blocked sale not to create local events, before=%d after=%d", eventsBefore, events)
+	}
+	assertNoEdgeStockTables(t, f)
 }
 
 func TestKeyWritesCreateLocalEventsAndMatchingOutboxEnvelopes(t *testing.T) {
