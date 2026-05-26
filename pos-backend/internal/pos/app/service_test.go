@@ -528,6 +528,21 @@ func countRowsWhere(t *testing.T, f *fixture, table, where string, args ...any) 
 	return n
 }
 
+func assertOutboxShift(t *testing.T, f *fixture, commandType, aggregateID, shiftID string) {
+	t.Helper()
+	var payloadJSON string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT payload_json FROM pos_sync_outbox WHERE command_type = ? AND aggregate_id = ?`, commandType, aggregateID).Scan(&payloadJSON); err != nil {
+		t.Fatalf("expected %s outbox for %s: %v", commandType, aggregateID, err)
+	}
+	var envelope domain.SyncEnvelope
+	if err := json.Unmarshal([]byte(payloadJSON), &envelope); err != nil {
+		t.Fatalf("decode %s outbox envelope: %v", commandType, err)
+	}
+	if envelope.ShiftID == nil || *envelope.ShiftID != shiftID {
+		t.Fatalf("expected %s outbox shift %s, got %+v", commandType, shiftID, envelope.ShiftID)
+	}
+}
+
 func execTestSQL(t *testing.T, f *fixture, query string, args ...any) {
 	t.Helper()
 	if _, err := f.db.ExecContext(f.ctx, query, args...); err != nil {
@@ -4130,6 +4145,59 @@ func TestCapturePaymentCreatesFirstAttemptWithEdgeContext(t *testing.T) {
 	if attempts != 1 {
 		t.Fatalf("expected first payment attempt, got %d", attempts)
 	}
+}
+
+func TestCapturePaymentUsesCurrentCashSessionShiftForDifferentOrderOperator(t *testing.T) {
+	f := newFixture(t)
+	orderShift := f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cashierShift, err := f.service.OpenShift(f.ctx, app.OpenShiftCommand{
+		CommandMeta:        f.managerEdgeMetaCommand(t, "cmd-cross-shift-open-shift"),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.manager.ID,
+		OpeningCashAmount:  0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
+		CommandMeta:        f.managerEdgeMetaCommand(t, "cmd-cross-shift-open-cash"),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.manager.ID,
+		OpeningCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{
+		CommandMeta: f.managerEdgeMetaCommand(t, "cmd-cross-shift-payment"),
+		PrecheckID:  precheck.ID,
+		Method:      domain.PaymentCash,
+		Amount:      precheck.Total,
+		Currency:    "RUB",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payment.ShiftID != cashierShift.ID || order.ShiftID != orderShift.ID {
+		t.Fatalf("expected payment shift %s and original order shift %s, got payment=%+v order=%+v", cashierShift.ID, orderShift.ID, payment, order)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOutboxShift(t, f, "PaymentCaptured", payment.ID, cashierShift.ID)
+	assertOutboxShift(t, f, "CheckCreated", check.ID, cashierShift.ID)
+	assertOutboxShift(t, f, "CheckClosed", check.ID, cashierShift.ID)
 }
 
 func TestBusinessDateLocalStandardBoundaryAppliesToPaymentAndCheck(t *testing.T) {

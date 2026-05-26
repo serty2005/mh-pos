@@ -54,7 +54,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - POS Edge outbox/local event foundation for cashier operational events.
 - `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud financial operation events. `PaymentRefunded` and `CheckRefunded` remain accepted legacy operational event types for older payloads.
 - Cloud receiver валидирует current `RefundRecorded`/`CancellationRecorded` payload fields, включая совпадение payload `restaurant_id`/`device_id` с envelope, precheck id и reason, stores raw/journal rows idempotently, updates event-type stats plus coarse shift finance refund counters for refunds and maintains detailed `cloud_projection_financial_operations` for current financial operations. Legacy `PaymentRefunded`/`CheckRefunded` remain inbound-compatible but do not populate the detailed operation projection.
-- Python 3 local seed runner `scripts/seed-dev-system.py` создает полный Cloud-owned dataset, публикует packages для POS Edge streams, выполняет license pairing и проверяет базовый POS read model. Runtime cashier/refund/e2e сценарии остаются в профильных backend/UI тестах.
+- Python 3 local seed runner `scripts/seed-dev-system.py` создает полный Cloud-owned dataset, публикует packages для POS Edge streams, выполняет license pairing и проверяет базовый POS read model; флаг `--run-minimal-flow` выполняет минимальный waiter order -> cashier final check -> `CheckClosed` -> Cloud inventory ledger smoke без destructive storage actions.
 - DDD context map exists in `docs/architecture/DDD-CONTEXT-MAP.md`.
 
 ### Persistence Policy
@@ -124,8 +124,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Cancellation/refund/reprint hardening:
   - backend ledger, immutable snapshots, no-over-cancel/no-over-refund/no-over-line-amount tests, current `CancellationRecorded`/`RefundRecorded` sync contracts, idempotent Cloud raw/journal receipt checks, coarse Cloud refund counters and detailed Cloud financial operation projection реализованы;
   - cashier UI full whole-check и partial `order_line`/quantity cancellation/refund через ledger endpoints реализован с выбором inventory disposition; compatibility refund по captured payment оставлен отдельным fallback;
-  - выполнено: `scripts/seed-dev-system.py` создает полный локальный набор справочников и проверяет Cloud -> Edge publication/pairing/read-model path; runtime smoke для cancellation/refund остается задачей профильных backend/UI тестов.
-  - запланировано далее: runtime e2e для refund после закрытия исходных personal/cash shifts с проверкой ledger/closed-order reads; seed script только готовит данные и привязку POS Edge;
+  - выполнено: `scripts/seed-dev-system.py --run-minimal-flow` проверяет минимальный runtime sale path с waiter order/precheck, cashier payment/final check, `CheckClosed` и Cloud `stock_ledger`; refund/cancellation остаются в профильных backend/UI e2e, а не в seed smoke;
+  - выполнено: Playwright `payments-refunds.spec.ts` закрывает исходные personal/cash shifts, открывает новую сменную границу, проверяет refund ledger read после закрытой смены и ожидаемый запрет cancellation после закрытия исходной смены;
   - запланировано далее: PSP refund и fiscal integration.
 - Documentation freeze:
   - поддерживать `SPECv1.3.md` как contract текущего cashier runtime и цели полного пилота;

@@ -322,7 +322,7 @@ func (r *Repository) ListInventoryLedger(ctx context.Context, filter app.Invento
 	rows, err := r.pool.Query(ctx, `
 SELECT id,restaurant_id,stock_document_id,source_event_id,source_event_type,catalog_item_id,
        COALESCE(order_line_id,''),movement_type,quantity::text,unit_code,unit_cost_minor,total_cost_minor,
-       costing_status,occurred_at,business_date_local,created_at
+       costing_status,occurred_at,business_date_local::text,created_at
 FROM stock_ledger
 WHERE ($1 = '' OR restaurant_id = $1)
   AND ($2 = '' OR source_event_type = $2)

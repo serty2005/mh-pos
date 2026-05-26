@@ -121,7 +121,7 @@
 7. Кассир может применять backend-authoritative discount/surcharge commands и читать pricing preview.
 8. Кассир выпускает пречек.
 9. Backend блокирует заказ и создает immutable financial precheck snapshot.
-10. Кассир проводит одну или несколько оплат через `precheck_id`.
+10. Кассир проводит одну или несколько оплат через `precheck_id`; заказ сохраняет исходную личную смену оператора, а оплата и final check относятся к текущей кассовой смене кассира.
 11. Backend создает final check только после полной оплаты.
 12. Кассир или менеджер может повторно напечатать копию precheck/check из immutable snapshot.
 13. Авторизованный оператор может записать cancellation/refund operation; текущий cashier UI использует check-level ledger routes для full whole-check и partial `order_line`/quantity cancellation/refund и оставляет compatibility payment refund route как fallback для закрытых заказов.
@@ -132,7 +132,7 @@
 
 - `scripts/seed-dev-system.py` является единственным локальным seed entrypoint: он создает полный набор Cloud-owned справочников, публикует master data, выполняет license pairing POS Edge и проверяет POS read model.
 - Seed script выполняет health check Cloud/POS/License, берет `node_device_id` из POS provisioning status, создает справочники через Cloud API, публикует packages, генерирует license pairing code, вызывает POS `pair-via-license` и проверяет PIN login/menu/floor read model.
-- Runtime cashier/refund flows проверяются отдельными backend/UI тестами. Seed script не выполняет financial mutations и не делает automatic retry financial mutations.
+- `--run-minimal-flow` выполняет минимальную financial mutation через HTTP: waiter order/precheck -> cashier payment/final check -> `CheckClosed` -> Cloud inventory ledger. Refund/cancellation runtime boundaries проверяются отдельными backend/UI тестами. Seed script не делает automatic retry financial mutations и destructive storage actions.
 - JSON summary содержит локальные demo IDs, pairing code и PIN-коды; он предназначен только для local/dev проверки и игнорируется git.
 
 Вне текущего объема:
@@ -228,6 +228,7 @@ Pricing contract:
 - Partial payments are allowed; overpayment is rejected.
 - Full payment creates one final check and closes order.
 - Check snapshot includes immutable precheck snapshot and payment snapshot.
+- Оплата относится к текущей открытой кассовой смене; заказ сохраняет исходную личную смену. `PaymentCaptured`, `CheckCreated` и `CheckClosed` используют кассовую смену оплаты в sync envelope.
 - Check reprint/refund use immutable snapshots and do not re-read current menu modifier data.
 - Reprint check requires `pos.check.reprint`.
 - Cancellation endpoint is `POST /api/v1/checks/{id}/cancellations`.

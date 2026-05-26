@@ -22,9 +22,9 @@
 | Cash session/drawer event | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Order/order line | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Precheck | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
-| Payment | Edge | Yes | Edge -> Cloud operational events for capture | реализовано сейчас |
+| Payment | Edge | Захват относится к текущей кассовой смене кассира, а заказ сохраняет исходную личную смену | Edge -> Cloud operational events for capture | реализовано сейчас |
 | Financial operation | Edge | Yes | `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud operational events | реализовано сейчас |
-| Check | Edge | Generated after full payment; finalized checks are not rewritten by cancellation/refund | `CheckCreated` is current Edge -> Cloud operational event; `CheckRefunded` is legacy accepted | реализовано сейчас |
+| Check | Edge | Создается после полной оплаты под кассовой сменой оплаты; финализированные чеки не переписываются через cancellation/refund | `CheckCreated` and `CheckClosed` are current Edge -> Cloud operational events; `CheckRefunded` is legacy accepted | реализовано сейчас |
 | Tax/pricing policy reference | Cloud | Edge read model only | `pricing_policy` Cloud -> Edge stream for `tax_profiles`, `tax_rules`, `service_charge_rules`, `pricing_policies` | реализовано сейчас |
 | Operational order adjustments | Edge | Yes while order is open | runtime-команды; будущие policy ids могут ограничивать допустимые варианты | реализовано сейчас |
 | Stock document/move/ledger | Cloud Inventory Worker | No | Edge business events -> Cloud worker | реализовано сейчас for normalized item payloads; Edge-side stock document service был pre-pilot legacy и удален |

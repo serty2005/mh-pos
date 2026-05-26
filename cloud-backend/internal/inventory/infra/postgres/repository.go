@@ -173,6 +173,14 @@ func (r *Repository) ListModifierOptionLinks(ctx context.Context, restaurantID s
 	if len(optionIDs) == 0 {
 		return map[string]string{}, nil
 	}
+	out := make(map[string]string, len(optionIDs))
+	hasLinkedCatalogItemID, err := r.columnExists(ctx, "cloud_modifier_options", "linked_catalog_item_id")
+	if err != nil {
+		return nil, err
+	}
+	if !hasLinkedCatalogItemID {
+		return out, nil
+	}
 	rows, err := r.pool.Query(ctx, `
 SELECT id, COALESCE(linked_catalog_item_id,'')
 FROM cloud_modifier_options
@@ -182,7 +190,6 @@ WHERE restaurant_id = $1
 		return nil, err
 	}
 	defer rows.Close()
-	out := make(map[string]string, len(optionIDs))
 	for rows.Next() {
 		var id string
 		var linked string
@@ -192,6 +199,19 @@ WHERE restaurant_id = $1
 		out[id] = strings.TrimSpace(linked)
 	}
 	return out, rows.Err()
+}
+
+func (r *Repository) columnExists(ctx context.Context, tableName, columnName string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+SELECT EXISTS (
+  SELECT 1
+  FROM information_schema.columns
+  WHERE table_schema = 'public'
+    AND table_name = $1
+    AND column_name = $2
+)`, tableName, columnName).Scan(&exists)
+	return exists, err
 }
 
 func (r *Repository) ListServedOrderLineQuantities(ctx context.Context, restaurantID string, orderLineIDs []string) (map[string]string, error) {

@@ -96,7 +96,6 @@ Cloud PostgreSQL владеет transactional inventory model:
 - `stock_ledger` - immutable хронологический журнал проводок с unit cost.
 - `stock_recalculation_jobs` - очередь ретроспективного пересчета.
 - `stop_lists` - authoritative stop-list state с двусторонней синхронизацией.
-- `modifier_options.linked_catalog_item_id` - опциональная ссылка на складской catalog item.
 - `olap_stock_moves` - ClickHouse проекция, не PostgreSQL source table.
 
 Минимальная структура `stock_ledger`:
@@ -158,7 +157,9 @@ erDiagram
 
 На POS Edge modifier является только выбранной опцией с ценой: `modifier_option_id`, quantity, unit price и total price.
 
-Cloud справочник `ModifierOption` может иметь `linked_catalog_item_id`. POS Edge не знает и не применяет эту связь. Если связь есть, Inventory Worker при обработке продажи генерирует отдельное списание linked catalog item. Если связи нет, modifier влияет только на цену и snapshots.
+Реализовано сейчас: POS Edge не знает и не применяет складскую связь modifier option, а Cloud PostgreSQL baseline не содержит `linked_catalog_item_id` в `cloud_modifier_options`. Inventory Worker безопасно трактует modifier links как пустые и списывает только основную позицию/рецепт.
+
+Запланировано далее: Cloud справочник `ModifierOption` получит authoritative `linked_catalog_item_id`, после чего Inventory Worker при обработке продажи будет генерировать отдельное списание linked catalog item. Если связи нет, modifier влияет только на цену и snapshots.
 
 ## Edge Outbox Event Contracts
 

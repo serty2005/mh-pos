@@ -240,6 +240,7 @@ PaymentCaptured
 CancellationRecorded
 RefundRecorded
 CheckCreated
+CheckClosed
 CheckReprinted
 OrderClosed
 AuthSessionStarted
@@ -253,10 +254,9 @@ Local-only POS Edge events that are not Edge -> Cloud operational contracts:
 StockDocumentPosted
 ```
 
-Целевой Cloud-centric inventory Edge -> Cloud catalog, запланировано далее:
+Дополнительный Cloud-centric inventory Edge -> Cloud catalog, запланировано далее:
 
 ```text
-CheckClosed
 KitchenTicketStatusChanged
 ItemServed
 StockReceiptCaptured
@@ -264,8 +264,6 @@ CatalogItemChangeSuggested
 RecipeChangeSuggested
 InventoryCountCaptured
 ProductionCompleted
-RefundRecorded
-CancellationRecorded
 StopListUpdated
 ```
 
@@ -446,6 +444,7 @@ Cloud worker не применяет `CatalogItemChangeSuggested`/`RecipeChangeS
 - Payloads `PaymentCaptured`, `CheckCreated`, `CancellationRecorded` и `RefundRecorded` включают backend-owned `business_date_local`, если он есть у source aggregate.
 - Precheck/check reprint использует immutable snapshot payload, включая selected modifiers с name, quantity, unit price и total price.
 - Payment ссылается на `precheck_id`, а не на legacy `check_id`.
+- `PaymentCaptured`, `CheckCreated` и `CheckClosed` используют в envelope текущую кассовую смену оплаты; исходная личная смена заказа остается в order payload и не переписывается.
 - `RefundRecorded`/`CancellationRecorded` payload содержит immutable operation snapshot with embedded check snapshot, selected modifiers and item scopes; Cloud raw/journal receipt не должен отбрасывать modifier data из snapshot payload. Текущий validation contract требует operation-level `inventory_disposition`; `items[].inventory_disposition` не является реализованным полем.
 
 Не реализовано сейчас:
