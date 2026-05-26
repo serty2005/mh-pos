@@ -13,6 +13,7 @@ import (
 	"pos-backend/internal/pos/domain/financial"
 	"pos-backend/internal/pos/domain/floor"
 	"pos-backend/internal/pos/domain/inventory"
+	"pos-backend/internal/pos/domain/kitchen"
 	"pos-backend/internal/pos/domain/menu"
 	"pos-backend/internal/pos/domain/order"
 	"pos-backend/internal/pos/domain/precheck"
@@ -135,6 +136,22 @@ const (
 	OrderLineActive    = order.OrderLineActive
 	OrderLineCancelled = order.OrderLineCancelled
 	OrderLineVoided    = order.OrderLineVoided
+)
+
+type KitchenTicketStatus = kitchen.TicketStatus
+type KitchenTicket = kitchen.Ticket
+type KitchenTicketListQuery = kitchen.TicketListQuery
+type KitchenTicketEvent = kitchen.TicketEvent
+
+const (
+	KitchenTicketNew        = kitchen.TicketNew
+	KitchenTicketAccepted   = kitchen.TicketAccepted
+	KitchenTicketInProgress = kitchen.TicketInProgress
+	KitchenTicketHold       = kitchen.TicketHold
+	KitchenTicketReady      = kitchen.TicketReady
+	KitchenTicketServed     = kitchen.TicketServed
+	KitchenTicketRecall     = kitchen.TicketRecall
+	KitchenTicketCancelled  = kitchen.TicketCancelled
 )
 
 type CheckStatus = check.CheckStatus
