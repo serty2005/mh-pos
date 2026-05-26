@@ -116,6 +116,55 @@ func TestExchangeReturnsItemAckAndNewerCloudPackage(t *testing.T) {
 	}
 }
 
+func TestExchangeAcksServedAndClosedInventoryEventsIdempotently(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+	served := sampleItemServedEnvelope(t)
+	closed := sampleCheckClosedEnvelope(t)
+
+	exchange := func() contracts.SyncExchangeResponse {
+		resp, err := service.Exchange(context.Background(), contracts.SyncExchangeRequest{
+			ProtocolVersion: contracts.SyncExchangeProtocolVersion,
+			NodeDeviceID:    "device-1",
+			RestaurantID:    "restaurant-1",
+			EdgeEvents: []contracts.SyncExchangeEdgeEvent{
+				{ClientItemID: "outbox-served", Payload: json.RawMessage(served)},
+				{ClientItemID: "outbox-closed", Payload: json.RawMessage(closed)},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	first := exchange()
+	replay := exchange()
+	if first.Status != contracts.SyncExchangeStatusAccepted || replay.Status != contracts.SyncExchangeStatusAccepted {
+		t.Fatalf("expected accepted exchanges, first=%+v replay=%+v", first, replay)
+	}
+	if len(first.EdgeAcks) != 2 || len(replay.EdgeAcks) != 2 {
+		t.Fatalf("expected per-item ACK for served and closed events, first=%+v replay=%+v", first.EdgeAcks, replay.EdgeAcks)
+	}
+	for i := range first.EdgeAcks {
+		if first.EdgeAcks[i].Status != contracts.BatchItemAccepted || replay.EdgeAcks[i].Status != contracts.BatchItemAccepted {
+			t.Fatalf("expected accepted item ACKs, first=%+v replay=%+v", first.EdgeAcks, replay.EdgeAcks)
+		}
+		if first.EdgeAcks[i].Ack == nil || replay.EdgeAcks[i].Ack == nil {
+			t.Fatalf("expected stable ACK payloads, first=%+v replay=%+v", first.EdgeAcks, replay.EdgeAcks)
+		}
+		if first.EdgeAcks[i].Ack.CloudReceiptID != replay.EdgeAcks[i].Ack.CloudReceiptID {
+			t.Fatalf("expected replay to reuse cloud receipt id for %s, first=%+v replay=%+v", first.EdgeAcks[i].ClientItemID, first.EdgeAcks[i].Ack, replay.EdgeAcks[i].Ack)
+		}
+	}
+	if got := repo.InventoryQueueCount(); got != 2 {
+		t.Fatalf("expected ItemServed and CheckClosed to enter inventory queue once each after replay, got %d", got)
+	}
+	if repo.Count() != 2 {
+		t.Fatalf("expected replay to keep two accepted receipts, got %d", repo.Count())
+	}
+}
+
 func TestExchangeLimitsCloudPackagesPerSession(t *testing.T) {
 	repo := memory.NewRepository()
 	service := app.NewServiceWithOptions(repo, fixedClock{}, app.Options{MaxCloudPackagesPerExchange: 2})
@@ -545,6 +594,41 @@ func sampleCheckClosedEnvelope(t *testing.T) []byte {
 					"unit_code":              "PC",
 					"required_for_inventory": true,
 				}},
+			},
+		},
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func sampleItemServedEnvelope(t *testing.T) []byte {
+	t.Helper()
+	body := map[string]any{
+		"version":        "1",
+		"event_id":       "018f0000-0000-7000-8000-0000000000a0",
+		"command_id":     "command-item-served-1",
+		"event_type":     string(contracts.EventItemServed),
+		"aggregate_type": "KitchenTicket",
+		"aggregate_id":   "ticket-1",
+		"restaurant_id":  "restaurant-1",
+		"device_id":      "device-1",
+		"node_device_id": "device-1",
+		"shift_id":       "shift-1",
+		"occurred_at":    "2026-05-05T08:55:00Z",
+		"payload": map[string]any{
+			"origin": "edge_device",
+			"data": map[string]any{
+				"served_event_id": "018f0000-0000-7000-8000-0000000000a0",
+				"order_id":        "order-1",
+				"order_line_id":   "line-1",
+				"catalog_item_id": "item-1",
+				"quantity":        "2.000",
+				"unit_code":       "PC",
+				"served_at":       "2026-05-05T08:55:00Z",
+				"station_id":      "kitchen-hot",
 			},
 		},
 	}

@@ -258,6 +258,59 @@ test('loading and error states are readable without raw backend details', async 
   await saveViewportScreenshot(page, testInfo, 'cashier-safe-error-state.png');
 });
 
+test('payment conflict shows localized safe business error without raw backend details', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await loginAsManager(page);
+  await ensureOperationsReady(page);
+  await openSection(page, 'Залы и столы');
+  await page.locator('.floor-table-tile').first().click();
+
+  await openSection(page, 'Заказы');
+  await cancelIssuedPrecheckIfPresent(page);
+
+  const createOrder = page.getByRole('button', { name: /Создать заказ/i }).last();
+  if (await createOrder.isVisible().catch(() => false)) {
+    await createOrder.click();
+  }
+  await expect(page.getByRole('region', { name: /Меню/i })).toBeVisible();
+  const lineCountBeforeAdd = await page.locator('.rail-line, .order-item-row').count();
+  const menuTile = page.locator('.menu-tile:not([disabled])').filter({ hasNotText: /Есть модификаторы/i }).first();
+  if (await menuTile.isVisible().catch(() => false)) {
+    await menuTile.click();
+    await expect.poll(() => page.locator('.rail-line, .order-item-row').count()).toBeGreaterThan(lineCountBeforeAdd);
+  }
+
+  await page.getByRole('button', { name: /Выпустить пречек/i }).click();
+  await expect(page.locator('.pos-order-rail')).toContainText('Пречек выпущен');
+  await page.route('**/api/v1/prechecks/*/payments', async (route) => {
+    await route.fulfill({
+      status: 409,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: {
+          code: 'CONFLICT',
+          message_key: 'errors.conflict',
+          correlation_id: 'payment-conflict-e2e',
+          details: {
+            raw_error: 'database is locked: SELECT * FROM payments; stack trace line 1',
+          },
+        },
+      }),
+    });
+  });
+
+  await page.getByRole('button', { name: /^Касса$/i }).click();
+  const paymentDialog = page.locator('.q-dialog').filter({ hasText: 'Оплата' });
+  await expect(paymentDialog).toBeVisible();
+  await paymentDialog.getByRole('button', { name: /Наличные/i }).click();
+
+  const errorDialog = page.locator('.q-dialog').filter({ hasText: 'Конфликт состояния' });
+  await expect(errorDialog).toBeVisible();
+  await expect(errorDialog).toContainText('Операция конфликтует с текущим состоянием заказа или смены.');
+  await expect(errorDialog).toContainText('Код для поддержки: payment-conflict-e2e');
+  await expectNoSensitiveText(page, ['database is locked', 'SELECT * FROM payments', 'stack trace']);
+});
+
 async function loginAsManager(page: Page) {
   await page.goto('/login');
   await expect(page.getByRole('heading', { name: /Вход по PIN/i })).toBeVisible();

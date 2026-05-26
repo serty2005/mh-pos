@@ -66,6 +66,11 @@ test.afterEach(async ({ page }) => {
 
 test('kitchen route performs a backend-backed KDS transition without fake runtime', async ({ page, request }) => {
   const line = await createKitchenTicket(request);
+  let ticketReads = 0;
+  await page.route('**/api/v1/kitchen/tickets**', async (route) => {
+    ticketReads += 1;
+    await route.continue();
+  });
 
   await loginAsKitchen(page);
   await page.goto('/pos/kitchen');
@@ -77,7 +82,15 @@ test('kitchen route performs a backend-backed KDS transition without fake runtim
   const ticketCard = page.locator('.kds-ticket').filter({ hasText: line.name }).first();
   await expect(ticketCard).toBeVisible();
   await ticketCard.getByRole('button', { name: /Принять/i }).click();
+  await expect.poll(() => ticketReads).toBeGreaterThanOrEqual(2);
   await expect(ticketCard.getByRole('button', { name: /Начать/i })).toBeVisible();
+  await ticketCard.getByRole('button', { name: /Начать/i }).click();
+  await expect(ticketCard.getByRole('button', { name: /Готово/i })).toBeVisible();
+  await ticketCard.getByRole('button', { name: /Готово/i }).click();
+  await expect(ticketCard.getByRole('button', { name: /Выдать/i })).toBeVisible();
+  await ticketCard.getByRole('button', { name: /Выдать/i }).click();
+  await expect(ticketCard).toContainText(/Для текущего статуса нет доступных переходов/i);
+  await expect(ticketCard.getByRole('button')).toHaveCount(0);
 
   await expect(page.locator('.kitchen-page')).not.toContainText(/нет routes для kitchen tickets/i);
   await expect(page.locator('.kitchen-page')).not.toContainText(/Только readiness/i);
