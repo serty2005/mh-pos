@@ -36,16 +36,17 @@ type BatchEventAck struct {
 }
 
 const (
-	MasterDataStreamRestaurants = "restaurants"
-	MasterDataStreamDevices     = "devices"
-	MasterDataStreamStaff       = "staff"
-	MasterDataStreamFloor       = "floor"
-	MasterDataStreamCatalog     = "catalog"
-	MasterDataStreamMenu        = "menu"
-	MasterDataStreamPricing     = "pricing_policy"
-	MasterDataStreamRecipes     = "recipes"
-	MasterDataStreamInventory   = "inventory_reference"
-	MasterDataStreamCurrencies  = "currencies"
+	MasterDataStreamRestaurants      = "restaurants"
+	MasterDataStreamDevices          = "devices"
+	MasterDataStreamStaff            = "staff"
+	MasterDataStreamFloor            = "floor"
+	MasterDataStreamCatalog          = "catalog"
+	MasterDataStreamMenu             = "menu"
+	MasterDataStreamPricing          = "pricing_policy"
+	MasterDataStreamRecipes          = "recipes"
+	MasterDataStreamInventory        = "inventory_reference"
+	MasterDataStreamCurrencies       = "currencies"
+	MasterDataStreamProposalFeedback = "proposal_feedback"
 )
 
 const (
@@ -75,7 +76,7 @@ type MasterDataPackage struct {
 
 func ValidateMasterDataStream(streamName string) error {
 	switch strings.TrimSpace(streamName) {
-	case MasterDataStreamRestaurants, MasterDataStreamDevices, MasterDataStreamStaff, MasterDataStreamFloor, MasterDataStreamCatalog, MasterDataStreamMenu, MasterDataStreamPricing, MasterDataStreamRecipes, MasterDataStreamInventory, MasterDataStreamCurrencies:
+	case MasterDataStreamRestaurants, MasterDataStreamDevices, MasterDataStreamStaff, MasterDataStreamFloor, MasterDataStreamCatalog, MasterDataStreamMenu, MasterDataStreamPricing, MasterDataStreamRecipes, MasterDataStreamInventory, MasterDataStreamCurrencies, MasterDataStreamProposalFeedback:
 		return nil
 	default:
 		return fmt.Errorf("%w: unsupported stream_name %q", ErrInvalidEnvelope, streamName)

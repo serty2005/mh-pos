@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -91,6 +93,14 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 		r.Post("/menu/items/{id}/archive", h.archiveMenuItem)
 		r.Post("/publications", h.publish)
 		r.Get("/published", h.getPublished)
+		r.Get("/catalog-suggestions", h.listCatalogSuggestions)
+		r.Post("/catalog-suggestions/{id}/approve", h.approveCatalogSuggestion)
+		r.Post("/catalog-suggestions/{id}/reject", h.rejectCatalogSuggestion)
+		r.Post("/catalog-suggestions/{id}/request-changes", h.requestChangesCatalogSuggestion)
+		r.Get("/recipe-suggestions", h.listRecipeSuggestions)
+		r.Post("/recipe-suggestions/{id}/approve", h.approveRecipeSuggestion)
+		r.Post("/recipe-suggestions/{id}/reject", h.rejectRecipeSuggestion)
+		r.Post("/recipe-suggestions/{id}/request-changes", h.requestChangesRecipeSuggestion)
 	})
 	r.Post("/restaurants", h.createRestaurant)
 	r.Get("/restaurants", h.listRestaurants)
@@ -664,6 +674,78 @@ func (h *Handler) getRestaurantPackage(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) getEdgeNodeSnapshot(w http.ResponseWriter, r *http.Request) {
 	v, err := h.service.GetCurrentPublishedPackage(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "node_device_id"))
 	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) listCatalogSuggestions(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListCatalogSuggestions(r.Context(), r.URL.Query().Get("restaurant_id"), r.URL.Query().Get("status"), intQuery(r, "limit", 50), intQuery(r, "offset", 0))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) approveCatalogSuggestion(w http.ResponseWriter, r *http.Request) {
+	var cmd app.SuggestionReviewCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.ApproveCatalogSuggestion(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) rejectCatalogSuggestion(w http.ResponseWriter, r *http.Request) {
+	var cmd app.SuggestionReviewCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.RejectCatalogSuggestion(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) requestChangesCatalogSuggestion(w http.ResponseWriter, r *http.Request) {
+	var cmd app.SuggestionReviewCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.RequestChangesCatalogSuggestion(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) listRecipeSuggestions(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListRecipeSuggestions(r.Context(), r.URL.Query().Get("restaurant_id"), r.URL.Query().Get("status"), intQuery(r, "limit", 50), intQuery(r, "offset", 0))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) approveRecipeSuggestion(w http.ResponseWriter, r *http.Request) {
+	var cmd app.SuggestionReviewCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.ApproveRecipeSuggestion(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) rejectRecipeSuggestion(w http.ResponseWriter, r *http.Request) {
+	var cmd app.SuggestionReviewCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.RejectRecipeSuggestion(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) requestChangesRecipeSuggestion(w http.ResponseWriter, r *http.Request) {
+	var cmd app.SuggestionReviewCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.RequestChangesRecipeSuggestion(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func intQuery(r *http.Request, key string, fallback int) int {
+	v, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get(key)))
+	if err != nil {
+		return fallback
+	}
+	return v
 }
 
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {

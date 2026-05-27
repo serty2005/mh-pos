@@ -410,6 +410,78 @@ type Publication struct {
 	UpdatedAt     time.Time       `json:"updated_at"`
 }
 
+// SuggestionStatus задает жизненный цикл Cloud review для kitchen proposals.
+type SuggestionStatus string
+
+const (
+	SuggestionStatusPending        SuggestionStatus = "pending"
+	SuggestionStatusApproved       SuggestionStatus = "approved"
+	SuggestionStatusRejected       SuggestionStatus = "rejected"
+	SuggestionStatusChangesRequest SuggestionStatus = "changes_requested"
+)
+
+// CatalogSuggestion хранит Cloud review карточку предложения номенклатуры от Edge кухни.
+type CatalogSuggestion struct {
+	ID                   string           `json:"id"`
+	SuggestionID         string           `json:"suggestion_id"`
+	RestaurantID         string           `json:"restaurant_id"`
+	CatalogItemID        string           `json:"catalog_item_id,omitempty"`
+	ProposalGroupID      string           `json:"proposal_group_id,omitempty"`
+	Action               string           `json:"action"`
+	Reason               string           `json:"reason,omitempty"`
+	Status               SuggestionStatus `json:"status"`
+	ReviewComment        string           `json:"review_comment,omitempty"`
+	ReviewedByEmployeeID string           `json:"reviewed_by_employee_id,omitempty"`
+	ReviewedAt           *time.Time       `json:"reviewed_at,omitempty"`
+	AppliedCatalogItemID string           `json:"applied_catalog_item_id,omitempty"`
+	SourceEventID        string           `json:"source_event_id,omitempty"`
+	SuggestedAt          time.Time        `json:"suggested_at"`
+	CloudReceivedAt      time.Time        `json:"cloud_received_at"`
+	PayloadJSON          json.RawMessage  `json:"payload_json"`
+	CreatedAt            time.Time        `json:"created_at"`
+	UpdatedAt            time.Time        `json:"updated_at"`
+}
+
+// RecipeSuggestion хранит Cloud review карточку предложения техкарты от Edge кухни.
+type RecipeSuggestion struct {
+	ID                       string           `json:"id"`
+	SuggestionID             string           `json:"suggestion_id"`
+	RestaurantID             string           `json:"restaurant_id"`
+	RecipeVersionID          string           `json:"recipe_version_id,omitempty"`
+	OwnerCatalogItemID       string           `json:"owner_catalog_item_id,omitempty"`
+	OwnerCatalogSuggestionID string           `json:"owner_catalog_suggestion_id,omitempty"`
+	ProposalGroupID          string           `json:"proposal_group_id,omitempty"`
+	Action                   string           `json:"action"`
+	Reason                   string           `json:"reason,omitempty"`
+	PrepTimeDeltaMinutes     int              `json:"prep_time_delta_minutes,omitempty"`
+	Status                   SuggestionStatus `json:"status"`
+	ReviewComment            string           `json:"review_comment,omitempty"`
+	ReviewedByEmployeeID     string           `json:"reviewed_by_employee_id,omitempty"`
+	ReviewedAt               *time.Time       `json:"reviewed_at,omitempty"`
+	SourceEventID            string           `json:"source_event_id,omitempty"`
+	SuggestedAt              time.Time        `json:"suggested_at"`
+	CloudReceivedAt          time.Time        `json:"cloud_received_at"`
+	PayloadJSON              json.RawMessage  `json:"payload_json"`
+	CreatedAt                time.Time        `json:"created_at"`
+	UpdatedAt                time.Time        `json:"updated_at"`
+}
+
+// RecipeSuggestionChange хранит строки diff для recipe suggestion.
+type RecipeSuggestionChange struct {
+	ID                 string          `json:"id"`
+	RecipeSuggestionID string          `json:"recipe_suggestion_id"`
+	LineID             string          `json:"line_id,omitempty"`
+	Action             string          `json:"action"`
+	FromCatalogItemID  string          `json:"from_catalog_item_id,omitempty"`
+	ToCatalogItemID    string          `json:"to_catalog_item_id,omitempty"`
+	Quantity           string          `json:"quantity,omitempty"`
+	UnitCode           string          `json:"unit_code,omitempty"`
+	LossPercent        string          `json:"loss_percent,omitempty"`
+	SortOrder          int             `json:"sort_order"`
+	PayloadJSON        json.RawMessage `json:"payload_json,omitempty"`
+	CreatedAt          time.Time       `json:"created_at"`
+}
+
 // PublishedState связывает публикацию с пакетом для внутренних проверок и будущих query API.
 type PublishedState struct {
 	Publication Publication      `json:"publication"`

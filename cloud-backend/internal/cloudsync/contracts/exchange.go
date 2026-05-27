@@ -137,7 +137,7 @@ func ValidateSyncExchangeRequest(v SyncExchangeRequest) error {
 
 func ValidateExchangeStream(streamName string) error {
 	switch strings.TrimSpace(streamName) {
-	case MasterDataStreamRestaurants, MasterDataStreamDevices, MasterDataStreamStaff, MasterDataStreamFloor, MasterDataStreamCatalog, MasterDataStreamMenu, MasterDataStreamPricing, MasterDataStreamRecipes, MasterDataStreamInventory:
+	case MasterDataStreamRestaurants, MasterDataStreamDevices, MasterDataStreamStaff, MasterDataStreamFloor, MasterDataStreamCatalog, MasterDataStreamMenu, MasterDataStreamPricing, MasterDataStreamRecipes, MasterDataStreamInventory, MasterDataStreamProposalFeedback:
 		return nil
 	default:
 		return fmt.Errorf("%w: unsupported exchange stream_name %q", ErrInvalidEnvelope, streamName)

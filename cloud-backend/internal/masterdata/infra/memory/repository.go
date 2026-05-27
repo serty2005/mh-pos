@@ -13,52 +13,58 @@ import (
 
 // Repository хранит Cloud master-data state в памяти для app/api tests.
 type Repository struct {
-	mu               sync.Mutex
-	restaurants      map[string]domain.Restaurant
-	roles            map[string]domain.Role
-	employees        map[string]domain.Employee
-	catalogItems     map[string]domain.CatalogItem
-	folders          map[string]domain.CatalogFolder
-	parameters       map[string]domain.FolderParameter
-	tags             map[string]domain.CatalogTag
-	itemTags         map[string]domain.CatalogItemTag
-	modifierGroups   map[string]domain.ModifierGroup
-	modifierOptions  map[string]domain.ModifierOption
-	modifierBindings map[string]domain.ModifierGroupBinding
-	pricingPolicies  map[string]domain.PricingPolicy
-	recipeItems      map[string]domain.RecipeItem
-	stopLists        map[string]domain.StopListEntry
-	categories       map[string]domain.Category
-	halls            map[string]domain.Hall
-	tables           map[string]domain.Table
-	menuItems        map[string]domain.MenuItem
-	publications     map[string][]domain.Publication
-	packages         map[string]app.StreamPackage
+	mu                      sync.Mutex
+	restaurants             map[string]domain.Restaurant
+	roles                   map[string]domain.Role
+	employees               map[string]domain.Employee
+	catalogItems            map[string]domain.CatalogItem
+	folders                 map[string]domain.CatalogFolder
+	parameters              map[string]domain.FolderParameter
+	tags                    map[string]domain.CatalogTag
+	itemTags                map[string]domain.CatalogItemTag
+	modifierGroups          map[string]domain.ModifierGroup
+	modifierOptions         map[string]domain.ModifierOption
+	modifierBindings        map[string]domain.ModifierGroupBinding
+	pricingPolicies         map[string]domain.PricingPolicy
+	recipeItems             map[string]domain.RecipeItem
+	stopLists               map[string]domain.StopListEntry
+	categories              map[string]domain.Category
+	halls                   map[string]domain.Hall
+	tables                  map[string]domain.Table
+	menuItems               map[string]domain.MenuItem
+	publications            map[string][]domain.Publication
+	packages                map[string]app.StreamPackage
+	catalogSuggestions      map[string]domain.CatalogSuggestion
+	recipeSuggestions       map[string]domain.RecipeSuggestion
+	recipeSuggestionChanges map[string][]domain.RecipeSuggestionChange
 }
 
 // NewRepository создает пустой in-memory repository.
 func NewRepository() *Repository {
 	return &Repository{
-		roles:            map[string]domain.Role{},
-		employees:        map[string]domain.Employee{},
-		catalogItems:     map[string]domain.CatalogItem{},
-		folders:          map[string]domain.CatalogFolder{},
-		parameters:       map[string]domain.FolderParameter{},
-		tags:             map[string]domain.CatalogTag{},
-		itemTags:         map[string]domain.CatalogItemTag{},
-		modifierGroups:   map[string]domain.ModifierGroup{},
-		modifierOptions:  map[string]domain.ModifierOption{},
-		modifierBindings: map[string]domain.ModifierGroupBinding{},
-		pricingPolicies:  map[string]domain.PricingPolicy{},
-		recipeItems:      map[string]domain.RecipeItem{},
-		stopLists:        map[string]domain.StopListEntry{},
-		categories:       map[string]domain.Category{},
-		halls:            map[string]domain.Hall{},
-		tables:           map[string]domain.Table{},
-		menuItems:        map[string]domain.MenuItem{},
-		publications:     map[string][]domain.Publication{},
-		packages:         map[string]app.StreamPackage{},
-		restaurants:      map[string]domain.Restaurant{},
+		roles:                   map[string]domain.Role{},
+		employees:               map[string]domain.Employee{},
+		catalogItems:            map[string]domain.CatalogItem{},
+		folders:                 map[string]domain.CatalogFolder{},
+		parameters:              map[string]domain.FolderParameter{},
+		tags:                    map[string]domain.CatalogTag{},
+		itemTags:                map[string]domain.CatalogItemTag{},
+		modifierGroups:          map[string]domain.ModifierGroup{},
+		modifierOptions:         map[string]domain.ModifierOption{},
+		modifierBindings:        map[string]domain.ModifierGroupBinding{},
+		pricingPolicies:         map[string]domain.PricingPolicy{},
+		recipeItems:             map[string]domain.RecipeItem{},
+		stopLists:               map[string]domain.StopListEntry{},
+		categories:              map[string]domain.Category{},
+		halls:                   map[string]domain.Hall{},
+		tables:                  map[string]domain.Table{},
+		menuItems:               map[string]domain.MenuItem{},
+		publications:            map[string][]domain.Publication{},
+		packages:                map[string]app.StreamPackage{},
+		restaurants:             map[string]domain.Restaurant{},
+		catalogSuggestions:      map[string]domain.CatalogSuggestion{},
+		recipeSuggestions:       map[string]domain.RecipeSuggestion{},
+		recipeSuggestionChanges: map[string][]domain.RecipeSuggestionChange{},
 	}
 }
 
@@ -785,6 +791,110 @@ func (r *Repository) GetPublication(_ context.Context, restaurantID, packageID s
 		}
 	}
 	return domain.Publication{}, domain.ErrNotFound
+}
+
+func (r *Repository) ListCatalogSuggestions(_ context.Context, restaurantID, status string, limit, offset int) ([]domain.CatalogSuggestion, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.CatalogSuggestion, 0)
+	for _, item := range r.catalogSuggestions {
+		if restaurantID != "" && item.RestaurantID != restaurantID {
+			continue
+		}
+		if status != "" && string(item.Status) != status {
+			continue
+		}
+		out = append(out, item)
+	}
+	if offset > len(out) {
+		return []domain.CatalogSuggestion{}, nil
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	end := offset + limit
+	if end > len(out) {
+		end = len(out)
+	}
+	return slices.Clone(out[offset:end]), nil
+}
+
+func (r *Repository) GetCatalogSuggestion(_ context.Context, id string) (domain.CatalogSuggestion, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.catalogSuggestions[strings.TrimSpace(id)]
+	if !ok {
+		return domain.CatalogSuggestion{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) UpdateCatalogSuggestion(_ context.Context, v domain.CatalogSuggestion) (domain.CatalogSuggestion, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.catalogSuggestions[v.ID]; !ok {
+		return domain.CatalogSuggestion{}, domain.ErrNotFound
+	}
+	r.catalogSuggestions[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) ListRecipeSuggestions(_ context.Context, restaurantID, status string, limit, offset int) ([]domain.RecipeSuggestion, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.RecipeSuggestion, 0)
+	for _, item := range r.recipeSuggestions {
+		if restaurantID != "" && item.RestaurantID != restaurantID {
+			continue
+		}
+		if status != "" && string(item.Status) != status {
+			continue
+		}
+		out = append(out, item)
+	}
+	if offset > len(out) {
+		return []domain.RecipeSuggestion{}, nil
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	end := offset + limit
+	if end > len(out) {
+		end = len(out)
+	}
+	return slices.Clone(out[offset:end]), nil
+}
+
+func (r *Repository) GetRecipeSuggestion(_ context.Context, id string) (domain.RecipeSuggestion, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.recipeSuggestions[strings.TrimSpace(id)]
+	if !ok {
+		return domain.RecipeSuggestion{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) UpdateRecipeSuggestion(_ context.Context, v domain.RecipeSuggestion) (domain.RecipeSuggestion, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.recipeSuggestions[v.ID]; !ok {
+		return domain.RecipeSuggestion{}, domain.ErrNotFound
+	}
+	r.recipeSuggestions[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) ListRecipeSuggestionChanges(_ context.Context, recipeSuggestionID string) ([]domain.RecipeSuggestionChange, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.recipeSuggestionChanges[strings.TrimSpace(recipeSuggestionID)]), nil
 }
 
 func (r *Repository) Package(streamName, nodeDeviceID string) (app.StreamPackage, bool) {

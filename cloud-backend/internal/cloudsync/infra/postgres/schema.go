@@ -343,6 +343,30 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Indexes:       []string{"cloud_master_data_publications_current"},
 		},
 		{
+			Table:         "cloud_catalog_suggestions",
+			RequiredBy:    "cloud kitchen proposal review queue catalog suggestions",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"id", "suggestion_id", "restaurant_id", "catalog_item_id", "proposal_group_id", "action", "reason", "status", "review_comment", "reviewed_by_employee_id", "reviewed_at", "applied_catalog_item_id", "source_event_id", "suggested_at", "cloud_received_at", "payload_json", "created_at", "updated_at"},
+		},
+		{
+			Table:         "cloud_recipe_suggestions",
+			RequiredBy:    "cloud kitchen proposal review queue recipe suggestions",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"id", "suggestion_id", "restaurant_id", "recipe_version_id", "owner_catalog_item_id", "owner_catalog_suggestion_id", "proposal_group_id", "action", "reason", "prep_time_delta_minutes", "status", "review_comment", "reviewed_by_employee_id", "reviewed_at", "source_event_id", "suggested_at", "cloud_received_at", "payload_json", "created_at", "updated_at"},
+		},
+		{
+			Table:         "cloud_recipe_suggestion_changes",
+			RequiredBy:    "cloud kitchen recipe proposal diff rows",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"id", "recipe_suggestion_id", "line_id", "action", "from_catalog_item_id", "to_catalog_item_id", "quantity", "unit_code", "loss_percent", "sort_order", "payload_json", "created_at"},
+		},
+		{
+			Table:         "cloud_suggestion_review_events",
+			RequiredBy:    "cloud kitchen proposal feedback stream source",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"id", "restaurant_id", "suggestion_kind", "suggestion_id", "status", "reviewed_by_employee_id", "review_comment", "reviewed_at", "created_at"},
+		},
+		{
 			Table:         "cloud_edge_nodes",
 			RequiredBy:    "cloud edge device provisioning",
 			MigrationFile: "001_init.sql",

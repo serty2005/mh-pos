@@ -75,7 +75,7 @@
 - Cloud не принимает POS operator session как security boundary.
 - Cloud не использует ClickHouse в текущем runtime, но ClickHouse является обязательным компонентом полного пилота.
 - Cloud пока не предоставляет pilot-ready CRUD/publication UI для recipes/stop-list; generic package storage/contracts уже принимают `recipes` и `inventory_reference`.
-- Cloud пока не предоставляет review/apply runtime для Edge-originated catalog/recipe proposals.
+- Реализовано сейчас: Cloud предоставляет review/apply runtime для Edge-originated `CatalogItemChangeSuggested`/`RecipeChangeSuggested` через маршруты `GET/approve/reject/request-changes` и применяет изменения только на approve с последующей публикацией.
 
 ## Runtime Modules
 
@@ -206,13 +206,15 @@ Master data under canonical namespace:
   - `GET /api/v1/master-data/inventory/stop-list`
   - `PATCH /api/v1/master-data/inventory/stop-list/{id}`
   - `POST /api/v1/master-data/inventory/stop-list/{id}/deactivate`
-- Запланировано до полного пилота:
-  - `GET /api/v1/master-data/recipe-change-suggestions`
-  - `POST /api/v1/master-data/recipe-change-suggestions/{id}/approve`
-  - `POST /api/v1/master-data/recipe-change-suggestions/{id}/reject`
+- Реализовано сейчас:
   - `GET /api/v1/master-data/catalog-suggestions`
   - `POST /api/v1/master-data/catalog-suggestions/{id}/approve`
   - `POST /api/v1/master-data/catalog-suggestions/{id}/reject`
+  - `POST /api/v1/master-data/catalog-suggestions/{id}/request-changes`
+  - `GET /api/v1/master-data/recipe-suggestions`
+  - `POST /api/v1/master-data/recipe-suggestions/{id}/approve`
+  - `POST /api/v1/master-data/recipe-suggestions/{id}/reject`
+  - `POST /api/v1/master-data/recipe-suggestions/{id}/request-changes`
 - `POST /api/v1/master-data/menu/categories`
 - `POST /api/v1/master-data/floor/halls`
 - `GET /api/v1/master-data/floor/halls`

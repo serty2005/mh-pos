@@ -52,7 +52,7 @@
 - pricing policies;
 - recipe items через `/api/v1/master-data/recipes/items`;
 - stop-list entries через `/api/v1/master-data/inventory/stop-list`;
-- readiness-only разделы `Очередь предложений`, `Готовность склада` и `OLAP exports`, которые показывают `запланировано далее` и contract gaps вместо CRUD-муляжа;
+- route-backed раздел `Очередь предложений` для Cloud review workflow (`catalog-suggestions`/`recipe-suggestions`) и readiness-only разделы `Готовность склада`/`OLAP exports`;
 - halls и tables;
 - menu items;
 - menu category create как command-only операция, потому что list/update routes не подтверждены;
@@ -65,8 +65,8 @@
 запланировано до полного пилота:
 
 - recipe editor уже имеет bounded route-backed строки recipe items; далее нужен сценарный editor версий/диффов поверх подтвержденных contracts;
-- recipe change review queue: diff по ingredients, quantities, units, loss percent, prep time delta и approve/reject actions;
-- catalog suggestion review queue: create/update proposal из Edge receipt flow, duplicate hints, linked receipt line и approve/reject actions;
+- recipe change review queue: route-backed approve/reject/request-changes для `recipe-suggestions`; расширенные diff surfaces остаются запланировано далее;
+- catalog suggestion review queue: route-backed approve/reject/request-changes для `catalog-suggestions`; duplicate hints и linked receipt line остаются запланировано далее;
 - stop-list panel уже имеет bounded route-backed rows; далее нужны conflict policy, review и publication readiness по отдельным contracts;
 - inventory operations workspace: stock receipts, inventory counts, production completion input, stock ledger/balances and costing/recalculation status;
 - ClickHouse/OLAP workspace: export health, retry/backfill controls and read-only OLAP endpoint previews;

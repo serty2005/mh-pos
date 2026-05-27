@@ -102,6 +102,13 @@ type Repository interface {
 	SavePublication(context.Context, domain.Publication, []StreamPackage) (domain.Publication, error)
 	GetCurrentPublication(context.Context, string) (domain.Publication, error)
 	GetPublication(context.Context, string, string) (domain.Publication, error)
+	ListCatalogSuggestions(context.Context, string, string, int, int) ([]domain.CatalogSuggestion, error)
+	GetCatalogSuggestion(context.Context, string) (domain.CatalogSuggestion, error)
+	UpdateCatalogSuggestion(context.Context, domain.CatalogSuggestion) (domain.CatalogSuggestion, error)
+	ListRecipeSuggestions(context.Context, string, string, int, int) ([]domain.RecipeSuggestion, error)
+	GetRecipeSuggestion(context.Context, string) (domain.RecipeSuggestion, error)
+	UpdateRecipeSuggestion(context.Context, domain.RecipeSuggestion) (domain.RecipeSuggestion, error)
+	ListRecipeSuggestionChanges(context.Context, string) ([]domain.RecipeSuggestionChange, error)
 }
 
 // IDGenerator задает источник идентификаторов для use cases и тестов.
@@ -445,6 +452,12 @@ type PublicationSummary struct {
 	PublishedBy   string         `json:"published_by"`
 	PackageSHA256 string         `json:"package_sha256"`
 	Counts        map[string]int `json:"counts"`
+}
+
+type SuggestionReviewCommand struct {
+	ReviewedByEmployeeID string `json:"reviewed_by_employee_id"`
+	ReviewComment        string `json:"review_comment,omitempty"`
+	PublishedBy          string `json:"published_by,omitempty"`
 }
 
 // StreamPackage описывает stream-specific package, сохраняемый для Edge import.
@@ -1786,6 +1799,80 @@ func (s *Service) GetPublishedPackage(ctx context.Context, restaurantID, package
 	return packageFromPublication(pub, nodeDeviceID)
 }
 
+func (s *Service) ListCatalogSuggestions(ctx context.Context, restaurantID, status string, limit, offset int) ([]domain.CatalogSuggestion, error) {
+	return s.repo.ListCatalogSuggestions(ctx, strings.TrimSpace(restaurantID), strings.TrimSpace(status), limit, offset)
+}
+
+func (s *Service) ListRecipeSuggestions(ctx context.Context, restaurantID, status string, limit, offset int) ([]domain.RecipeSuggestion, error) {
+	return s.repo.ListRecipeSuggestions(ctx, strings.TrimSpace(restaurantID), strings.TrimSpace(status), limit, offset)
+}
+
+func (s *Service) ApproveCatalogSuggestion(ctx context.Context, id string, cmd SuggestionReviewCommand) (domain.CatalogSuggestion, error) {
+	v, err := s.repo.GetCatalogSuggestion(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.CatalogSuggestion{}, err
+	}
+	now := s.clock.Now().UTC()
+	if err := s.applyCatalogSuggestion(ctx, &v, now); err != nil {
+		return domain.CatalogSuggestion{}, err
+	}
+	v.Status = domain.SuggestionStatusApproved
+	v.ReviewComment = strings.TrimSpace(cmd.ReviewComment)
+	v.ReviewedByEmployeeID = strings.TrimSpace(cmd.ReviewedByEmployeeID)
+	v.ReviewedAt = &now
+	v.UpdatedAt = now
+	stored, err := s.repo.UpdateCatalogSuggestion(ctx, v)
+	if err != nil {
+		return domain.CatalogSuggestion{}, err
+	}
+	_, err = s.Publish(ctx, PublishCommand{RestaurantID: v.RestaurantID, PublishedBy: firstNonEmpty(strings.TrimSpace(cmd.PublishedBy), firstNonEmpty(v.ReviewedByEmployeeID, "system"))})
+	if err != nil {
+		return domain.CatalogSuggestion{}, err
+	}
+	return stored, nil
+}
+
+func (s *Service) RejectCatalogSuggestion(ctx context.Context, id string, cmd SuggestionReviewCommand) (domain.CatalogSuggestion, error) {
+	return s.reviewCatalogSuggestion(ctx, id, cmd, domain.SuggestionStatusRejected)
+}
+
+func (s *Service) RequestChangesCatalogSuggestion(ctx context.Context, id string, cmd SuggestionReviewCommand) (domain.CatalogSuggestion, error) {
+	return s.reviewCatalogSuggestion(ctx, id, cmd, domain.SuggestionStatusChangesRequest)
+}
+
+func (s *Service) ApproveRecipeSuggestion(ctx context.Context, id string, cmd SuggestionReviewCommand) (domain.RecipeSuggestion, error) {
+	v, err := s.repo.GetRecipeSuggestion(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.RecipeSuggestion{}, err
+	}
+	now := s.clock.Now().UTC()
+	if err := s.applyRecipeSuggestion(ctx, &v, now); err != nil {
+		return domain.RecipeSuggestion{}, err
+	}
+	v.Status = domain.SuggestionStatusApproved
+	v.ReviewComment = strings.TrimSpace(cmd.ReviewComment)
+	v.ReviewedByEmployeeID = strings.TrimSpace(cmd.ReviewedByEmployeeID)
+	v.ReviewedAt = &now
+	v.UpdatedAt = now
+	stored, err := s.repo.UpdateRecipeSuggestion(ctx, v)
+	if err != nil {
+		return domain.RecipeSuggestion{}, err
+	}
+	_, err = s.Publish(ctx, PublishCommand{RestaurantID: v.RestaurantID, PublishedBy: firstNonEmpty(strings.TrimSpace(cmd.PublishedBy), firstNonEmpty(v.ReviewedByEmployeeID, "system"))})
+	if err != nil {
+		return domain.RecipeSuggestion{}, err
+	}
+	return stored, nil
+}
+
+func (s *Service) RejectRecipeSuggestion(ctx context.Context, id string, cmd SuggestionReviewCommand) (domain.RecipeSuggestion, error) {
+	return s.reviewRecipeSuggestion(ctx, id, cmd, domain.SuggestionStatusRejected)
+}
+
+func (s *Service) RequestChangesRecipeSuggestion(ctx context.Context, id string, cmd SuggestionReviewCommand) (domain.RecipeSuggestion, error) {
+	return s.reviewRecipeSuggestion(ctx, id, cmd, domain.SuggestionStatusChangesRequest)
+}
+
 func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID string, version int64, now time.Time) (domain.MasterDataPacket, map[string]int, []StreamPackage, error) {
 	restaurant, err := s.repo.GetRestaurant(ctx, restaurantID)
 	if err != nil && !errorsIsNotFound(err) {
@@ -1921,7 +2008,46 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
 	}
+	feedback, err := s.proposalFeedbackStream(ctx, restaurantID, packet.NodeDeviceID, packet.SyncMode, packet.CheckpointToken, packet.CloudVersion, packet.CloudUpdatedAt)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
+	streams = append(streams, feedback)
 	return packet, counts, streams, nil
+}
+
+func (s *Service) proposalFeedbackStream(ctx context.Context, restaurantID, nodeDeviceID, syncMode, checkpoint string, cloudVersion int64, updatedAt time.Time) (StreamPackage, error) {
+	catalog, err := s.repo.ListCatalogSuggestions(ctx, restaurantID, "", 200, 0)
+	if err != nil && !errorsIsNotFound(err) {
+		return StreamPackage{}, err
+	}
+	recipes, err := s.repo.ListRecipeSuggestions(ctx, restaurantID, "", 200, 0)
+	if err != nil && !errorsIsNotFound(err) {
+		return StreamPackage{}, err
+	}
+	body, err := json.Marshal(map[string]any{
+		"node_device_id":      nodeDeviceID,
+		"restaurant_id":       restaurantID,
+		"sync_mode":           syncMode,
+		"checkpoint_token":    checkpoint,
+		"cloud_version":       cloudVersion,
+		"cloud_updated_at":    updatedAt,
+		"catalog_suggestions": catalog,
+		"recipe_suggestions":  recipes,
+	})
+	if err != nil {
+		return StreamPackage{}, err
+	}
+	return StreamPackage{
+		StreamName:      "proposal_feedback",
+		NodeDeviceID:    nodeDeviceID,
+		RestaurantID:    restaurantID,
+		SyncMode:        syncMode,
+		CloudVersion:    cloudVersion,
+		CheckpointToken: checkpoint,
+		CloudUpdatedAt:  updatedAt,
+		PayloadJSON:     body,
+	}, nil
 }
 
 func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
@@ -2580,6 +2706,131 @@ func packageFromPublication(pub domain.Publication, nodeDeviceID string) (domain
 
 func errorsIsNotFound(err error) bool {
 	return errors.Is(err, domain.ErrNotFound)
+}
+
+func (s *Service) reviewCatalogSuggestion(ctx context.Context, id string, cmd SuggestionReviewCommand, status domain.SuggestionStatus) (domain.CatalogSuggestion, error) {
+	v, err := s.repo.GetCatalogSuggestion(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.CatalogSuggestion{}, err
+	}
+	now := s.clock.Now().UTC()
+	v.Status = status
+	v.ReviewComment = strings.TrimSpace(cmd.ReviewComment)
+	v.ReviewedByEmployeeID = strings.TrimSpace(cmd.ReviewedByEmployeeID)
+	v.ReviewedAt = &now
+	v.UpdatedAt = now
+	return s.repo.UpdateCatalogSuggestion(ctx, v)
+}
+
+func (s *Service) reviewRecipeSuggestion(ctx context.Context, id string, cmd SuggestionReviewCommand, status domain.SuggestionStatus) (domain.RecipeSuggestion, error) {
+	v, err := s.repo.GetRecipeSuggestion(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.RecipeSuggestion{}, err
+	}
+	now := s.clock.Now().UTC()
+	v.Status = status
+	v.ReviewComment = strings.TrimSpace(cmd.ReviewComment)
+	v.ReviewedByEmployeeID = strings.TrimSpace(cmd.ReviewedByEmployeeID)
+	v.ReviewedAt = &now
+	v.UpdatedAt = now
+	return s.repo.UpdateRecipeSuggestion(ctx, v)
+}
+
+func (s *Service) applyCatalogSuggestion(ctx context.Context, v *domain.CatalogSuggestion, now time.Time) error {
+	var payload map[string]any
+	_ = json.Unmarshal(v.PayloadJSON, &payload)
+	data, _ := payload["data"].(map[string]any)
+	action := strings.TrimSpace(v.Action)
+	if action == "" {
+		action = strings.TrimSpace(stringValue(data, "action"))
+	}
+	switch action {
+	case "create_item", "create_dish":
+		item := domain.CatalogItem{
+			ID:           firstNonEmpty(stringValue(data, "catalog_item_id"), s.ids.NewID()),
+			RestaurantID: v.RestaurantID,
+			Kind:         domain.CatalogItemDish,
+			Name:         firstNonEmpty(stringValue(data, "name"), "Suggested item"),
+			SKU:          firstNonEmpty(stringValue(data, "sku"), "SUGGESTED-"+v.SuggestionID),
+			BaseUnit:     firstNonEmpty(stringValue(data, "base_unit"), "portion"),
+			Status:       domain.StatusPublished,
+			CloudVersion: 1,
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		}
+		if kind := strings.TrimSpace(stringValue(data, "kind")); kind != "" {
+			item.Kind = domain.CatalogItemKind(kind)
+		}
+		created, err := s.repo.CreateCatalogItem(ctx, item)
+		if err != nil {
+			return err
+		}
+		v.AppliedCatalogItemID = created.ID
+	default:
+		targetID := firstNonEmpty(v.CatalogItemID, stringValue(data, "catalog_item_id"))
+		if strings.TrimSpace(targetID) == "" {
+			return fmt.Errorf("%w: catalog_item_id is required for update", domain.ErrInvalid)
+		}
+		item, err := s.repo.GetCatalogItem(ctx, targetID)
+		if err != nil {
+			return err
+		}
+		item.Name = firstNonEmpty(stringValue(data, "name"), item.Name)
+		item.SKU = firstNonEmpty(stringValue(data, "sku"), item.SKU)
+		item.BaseUnit = firstNonEmpty(stringValue(data, "base_unit"), item.BaseUnit)
+		item.UpdatedAt = now
+		item.CloudVersion++
+		if _, err := s.repo.UpdateCatalogItem(ctx, item); err != nil {
+			return err
+		}
+		v.AppliedCatalogItemID = item.ID
+	}
+	return nil
+}
+
+func (s *Service) applyRecipeSuggestion(ctx context.Context, v *domain.RecipeSuggestion, now time.Time) error {
+	var payload map[string]any
+	_ = json.Unmarshal(v.PayloadJSON, &payload)
+	data, _ := payload["data"].(map[string]any)
+	ownerID := strings.TrimSpace(firstNonEmpty(v.OwnerCatalogItemID, stringValue(data, "owner_catalog_item_id")))
+	if ownerID == "" {
+		return fmt.Errorf("%w: owner_catalog_item_id is required", domain.ErrInvalid)
+	}
+	changes, _ := s.repo.ListRecipeSuggestionChanges(ctx, v.ID)
+	for _, change := range changes {
+		if strings.TrimSpace(change.ToCatalogItemID) == "" {
+			continue
+		}
+		qty := int64(1)
+		if parsed, err := strconv.ParseInt(strings.TrimSpace(change.Quantity), 10, 64); err == nil && parsed > 0 {
+			qty = parsed
+		}
+		loss := int64(0)
+		if parsed, err := strconv.ParseInt(strings.TrimSpace(change.LossPercent), 10, 64); err == nil && parsed >= 0 {
+			loss = parsed
+		}
+		_, err := s.repo.CreateRecipeItem(ctx, domain.RecipeItem{
+			ID:                       s.ids.NewID(),
+			RestaurantID:             v.RestaurantID,
+			RecipeOwnerCatalogItemID: ownerID,
+			ComponentCatalogItemID:   change.ToCatalogItemID,
+			Quantity:                 qty,
+			Unit:                     firstNonEmpty(change.UnitCode, "unit"),
+			LossPercent:              loss,
+			CreatedAt:                now,
+			UpdatedAt:                now,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func stringValue(v map[string]any, key string) string {
+	raw, _ := v[key]
+	s, _ := raw.(string)
+	return strings.TrimSpace(s)
 }
 
 func firstNonEmpty(v, fallback string) string {

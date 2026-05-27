@@ -19,139 +19,17 @@
 Выполнена.
 
 **Итерация 2: POS Edge Kitchen Stock Events**
-
-```text
-Задача: реализовать POS Edge backend routes для кухонных складских событий.
-
-Сначала проверь текущие inventory/cloudsync contracts и существующие Cloud worker capabilities. Реализуй только Edge-side command/input слой, POS Edge не должен создавать stock_documents/stock_ledger.
-
-Нужно добавить routes:
-- POST /api/v1/kitchen/stock-receipts;
-- POST /api/v1/kitchen/inventory-counts;
-- POST /api/v1/kitchen/stock-write-offs;
-- POST /api/v1/kitchen/productions.
-
-Нужно обеспечить:
-- warehouse_id/default warehouse validation;
-- receipt supplier/counterparty, document date, line totals;
-- inventory count counted_quantity;
-- write-off reason;
-- production for semi_finished item;
-- outbox events StockReceiptCaptured, InventoryCountCaptured, StockWriteOffCaptured, ProductionCompleted;
-- idempotency by command_id;
-- RBAC permissions from spec;
-- no POS-side stock documents/moves/balances.
-
-Обязательно обнови:
-- docs/backend/KITCHEN-PROCESSES-SPEC.md;
-- docs/backend/POS-BACKEND-SPEC.md;
-- docs/backend/INVENTORY-COSTING-SPEC.md;
-- docs/backend/POS-ERROR-CATALOG.md;
-- docs/sync/edge-cloud-contracts-v1.md;
-- ROADMAP.md.
-
-Проверки:
-cd pos-backend && go mod tidy && go test ./...
-```
-**Итерация 2: POS Edge Kitchen Stock Events**
 Выполнена.
 
-**Итерация 3: POS Edge Catalog And Recipe Proposals**
-
-```text
-Задача: реализовать POS Edge backend для просмотра техкарт и создания предложений кухни.
-
-Сначала проверь текущие catalog, recipe_versions, recipe_lines, master sync и catalog item read APIs.
-
-Нужно реализовать:
-- GET /api/v1/kitchen/catalog/items/{catalog_item_id}/recipe;
-- POST /api/v1/kitchen/catalog-suggestions;
-- POST /api/v1/kitchen/recipe-suggestions;
-- GET /api/v1/kitchen/proposals.
-
-Нужно обеспечить:
-- полный каталог из POS Edge read model, не только меню;
-- recipe read с ingredient names из catalog_items;
-- CatalogItemChangeSuggested;
-- RecipeChangeSuggested;
-- proposal_group_id для нового блюда + техкарты;
-- prep_time_delta validation;
-- локальные proposal statuses;
-- Edge не применяет предложения к catalog/recipe до Cloud approve/publication.
-
-Обязательно обнови:
-- docs/backend/KITCHEN-PROCESSES-SPEC.md;
-- docs/backend/POS-BACKEND-SPEC.md;
-- docs/sync/edge-cloud-contracts-v1.md;
-- docs/sync/directional-sync-ownership.md;
-- docs/ui/POS-UI-RBAC.md;
-- ROADMAP.md.
-
-Проверки:
-cd pos-backend && go mod tidy && go test ./...
-```
 **Итерация 3: POS Edge Catalog And Recipe Proposals**
 Выполнена.
 
 **Итерация 4: Cloud Sync Contracts, ClickHouse Trail, Inventory Analyzer**
 
-```text
-Задача: расширить Cloud backend для новых kitchen/inventory/proposal events и ClickHouse kitchen event trail.
-
-Сначала проверь cloud-backend/internal/cloudsync, inventory worker, ClickHouse forwarder, migrations и docs. Не ломай существующий sync/exchange ACK path.
-
-Нужно обеспечить:
-- contracts validation для CatalogItemChangeSuggested, RecipeChangeSuggested, StockWriteOffCaptured;
-- расширенные поля ItemServed, StockReceiptCaptured, InventoryCountCaptured, ProductionCompleted, StopListUpdated;
-- все kitchen events попадают в PostgreSQL inbox/journal и ClickHouse raw_business_events;
-- proposal events не попадают в inventory_event_queue;
-- inventory events попадают в durable processing;
-- Cloud analyzer использует ClickHouse stream для latest effective ItemServed;
-- recalled served events не дают duplicate stock consumption;
-- warehouse sequence по restaurant_id + warehouse_id.
-
-Обязательно обнови:
-- docs/backend/CLOUD-BACKEND-SPEC.md;
-- docs/backend/INVENTORY-COSTING-SPEC.md;
-- docs/sync/edge-cloud-contracts-v1.md;
-- docs/sync/directional-sync-ownership.md;
-- SPECv1.3.md;
-- ROADMAP.md.
-
-Проверки:
-cd cloud-backend && go mod tidy && go test ./...
-```
+Выполнена.
 
 **Итерация 5: Cloud Proposal Review And Feedback**
-
-```text
-Задача: реализовать Cloud review/apply workflow для предложений кухни.
-
-Сначала проверь masterdata module, Cloud publications, Cloud -> Edge streams и Cloud UI contracts.
-
-Нужно реализовать:
-- cloud_catalog_suggestions;
-- cloud_recipe_suggestions;
-- cloud_recipe_suggestion_changes;
-- cloud_suggestion_review_events;
-- GET/approve/reject/request-changes routes для catalog suggestions;
-- GET/approve/reject/request-changes routes для recipe suggestions;
-- apply catalog suggestion only on manager approve;
-- apply recipe suggestion only on manager approve;
-- linked new dish + recipe proposal group transaction;
-- proposal_feedback Cloud -> Edge stream;
-- publication after approve/apply.
-
-Обязательно обнови:
-- docs/backend/CLOUD-BACKEND-SPEC.md;
-- docs/backend/KITCHEN-PROCESSES-SPEC.md;
-- docs/sync/edge-cloud-contracts-v1.md;
-- docs/ui/CLOUD-UI-SPEC.md;
-- ROADMAP.md.
-
-Проверки:
-cd cloud-backend && go mod tidy && go test ./...
-```
+Выполнена.
 
 **Итерация 6: pos-ui-g Kitchen Mode**
 

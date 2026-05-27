@@ -158,6 +158,9 @@ INSERT INTO cloud_operational_events(
 	if err := r.applyEventProjections(ctx, tx, receipt, ack.CloudReceiptID); err != nil {
 		return contracts.EventAck{}, err
 	}
+	if err := upsertSuggestionQueues(ctx, tx, receipt, ack.CloudReceiptID, receipt.CloudReceivedAt); err != nil {
+		return contracts.EventAck{}, err
+	}
 	if contracts.IsInventoryRelevantEventType(receipt.Envelope.EventType) {
 		if err := enqueueInventoryEvent(ctx, tx, receipt, ack.CloudReceiptID); err != nil {
 			return contracts.EventAck{}, err
@@ -167,6 +170,95 @@ INSERT INTO cloud_operational_events(
 		return contracts.EventAck{}, err
 	}
 	return ack, nil
+}
+
+func upsertSuggestionQueues(ctx context.Context, tx pgx.Tx, receipt app.EdgeEventReceipt, receiptID string, now time.Time) error {
+	switch receipt.Envelope.EventType {
+	case contracts.EventCatalogItemChangeSuggested:
+		var payload contracts.Payload[map[string]any]
+		if err := json.Unmarshal(receipt.Envelope.Payload, &payload); err != nil {
+			return fmt.Errorf("%w: invalid catalog suggestion payload", contracts.ErrInvalidEnvelope)
+		}
+		data := payload.Data
+		suggestionID := strings.TrimSpace(toString(data["suggestion_id"]))
+		if suggestionID == "" {
+			return nil
+		}
+		id := "catalog-suggestion-" + suggestionID
+		_, err := tx.Exec(ctx, `
+INSERT INTO cloud_catalog_suggestions(
+  id,suggestion_id,restaurant_id,catalog_item_id,proposal_group_id,action,reason,status,source_event_id,suggested_at,cloud_received_at,payload_json,created_at,updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',$8,$9,$10,$11::jsonb,$10,$10)
+ON CONFLICT (suggestion_id) DO NOTHING`,
+			id, suggestionID, strings.TrimSpace(toString(data["restaurant_id"])), nullableText(toString(data["catalog_item_id"])), nullableText(toString(data["proposal_group_id"])),
+			strings.TrimSpace(toString(data["action"])), strings.TrimSpace(toString(data["reason"])), receiptID, toTime(data["suggested_at"], now), now, string(receipt.Envelope.Payload))
+		return err
+	case contracts.EventRecipeChangeSuggested:
+		var payload contracts.Payload[map[string]any]
+		if err := json.Unmarshal(receipt.Envelope.Payload, &payload); err != nil {
+			return fmt.Errorf("%w: invalid recipe suggestion payload", contracts.ErrInvalidEnvelope)
+		}
+		data := payload.Data
+		suggestionID := strings.TrimSpace(toString(data["suggestion_id"]))
+		if suggestionID == "" {
+			return nil
+		}
+		id := "recipe-suggestion-" + suggestionID
+		var recipeSuggestionID string
+		if err := tx.QueryRow(ctx, `
+INSERT INTO cloud_recipe_suggestions(
+  id,suggestion_id,restaurant_id,recipe_version_id,owner_catalog_item_id,owner_catalog_suggestion_id,proposal_group_id,action,reason,prep_time_delta_minutes,status,source_event_id,suggested_at,cloud_received_at,payload_json,created_at,updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending',$11,$12,$13,$14::jsonb,$13,$13)
+ON CONFLICT (suggestion_id) DO UPDATE SET updated_at = EXCLUDED.updated_at
+RETURNING id`,
+			id, suggestionID, strings.TrimSpace(toString(data["restaurant_id"])), nullableText(toString(data["recipe_version_id"])), nullableText(toString(data["owner_catalog_item_id"])),
+			nullableText(toString(data["owner_catalog_suggestion_id"])), nullableText(toString(data["proposal_group_id"])), strings.TrimSpace(toString(data["action"])),
+			strings.TrimSpace(toString(data["reason"])), toInt(data["prep_time_delta_minutes"]), receiptID, toTime(data["suggested_at"], now), now, string(receipt.Envelope.Payload)).Scan(&recipeSuggestionID); err != nil {
+			return err
+		}
+		changes, _ := data["changes"].([]any)
+		for i, raw := range changes {
+			changeMap, _ := raw.(map[string]any)
+			changeID := fmt.Sprintf("%s-change-%d", recipeSuggestionID, i+1)
+			rawChange, _ := json.Marshal(changeMap)
+			if _, err := tx.Exec(ctx, `
+INSERT INTO cloud_recipe_suggestion_changes(
+  id,recipe_suggestion_id,line_id,action,from_catalog_item_id,to_catalog_item_id,quantity,unit_code,loss_percent,sort_order,payload_json,created_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12)
+ON CONFLICT (id) DO NOTHING`,
+				changeID, recipeSuggestionID, strings.TrimSpace(toString(changeMap["line_id"])), strings.TrimSpace(toString(changeMap["action"])),
+				strings.TrimSpace(toString(changeMap["from_catalog_item_id"])), strings.TrimSpace(toString(changeMap["to_catalog_item_id"])),
+				strings.TrimSpace(toString(changeMap["quantity"])), strings.TrimSpace(toString(changeMap["unit_code"])), strings.TrimSpace(toString(changeMap["loss_percent"])),
+				i, string(rawChange), now); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+func toString(v any) string {
+	s, _ := v.(string)
+	return s
+}
+func toInt(v any) int64 {
+	switch t := v.(type) {
+	case float64:
+		return int64(t)
+	case int64:
+		return t
+	}
+	return 0
+}
+func toTime(v any, fallback time.Time) time.Time {
+	s, _ := v.(string)
+	parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(s))
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
 
 func (r *Repository) RecordProblemEdgeEvent(ctx context.Context, item app.ProblemEdgeEvent) error {

@@ -731,6 +731,77 @@ CREATE INDEX IF NOT EXISTS cloud_master_data_publications_current
   ON cloud_master_data_publications(restaurant_id, version DESC)
   WHERE status = 'published';
 
+CREATE TABLE IF NOT EXISTS cloud_catalog_suggestions (
+  id TEXT PRIMARY KEY,
+  suggestion_id TEXT NOT NULL UNIQUE,
+  restaurant_id TEXT NOT NULL,
+  catalog_item_id TEXT,
+  proposal_group_id TEXT,
+  action TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL CHECK (status IN ('pending','approved','rejected','changes_requested')),
+  review_comment TEXT NOT NULL DEFAULT '',
+  reviewed_by_employee_id TEXT NOT NULL DEFAULT '',
+  reviewed_at TIMESTAMPTZ,
+  applied_catalog_item_id TEXT NOT NULL DEFAULT '',
+  source_event_id TEXT NOT NULL DEFAULT '',
+  suggested_at TIMESTAMPTZ NOT NULL,
+  cloud_received_at TIMESTAMPTZ NOT NULL,
+  payload_json JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cloud_recipe_suggestions (
+  id TEXT PRIMARY KEY,
+  suggestion_id TEXT NOT NULL UNIQUE,
+  restaurant_id TEXT NOT NULL,
+  recipe_version_id TEXT,
+  owner_catalog_item_id TEXT,
+  owner_catalog_suggestion_id TEXT,
+  proposal_group_id TEXT,
+  action TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  prep_time_delta_minutes BIGINT NOT NULL DEFAULT 0,
+  status TEXT NOT NULL CHECK (status IN ('pending','approved','rejected','changes_requested')),
+  review_comment TEXT NOT NULL DEFAULT '',
+  reviewed_by_employee_id TEXT NOT NULL DEFAULT '',
+  reviewed_at TIMESTAMPTZ,
+  source_event_id TEXT NOT NULL DEFAULT '',
+  suggested_at TIMESTAMPTZ NOT NULL,
+  cloud_received_at TIMESTAMPTZ NOT NULL,
+  payload_json JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cloud_recipe_suggestion_changes (
+  id TEXT PRIMARY KEY,
+  recipe_suggestion_id TEXT NOT NULL REFERENCES cloud_recipe_suggestions(id) ON DELETE CASCADE,
+  line_id TEXT NOT NULL DEFAULT '',
+  action TEXT NOT NULL,
+  from_catalog_item_id TEXT NOT NULL DEFAULT '',
+  to_catalog_item_id TEXT NOT NULL DEFAULT '',
+  quantity TEXT NOT NULL DEFAULT '',
+  unit_code TEXT NOT NULL DEFAULT '',
+  loss_percent TEXT NOT NULL DEFAULT '',
+  sort_order BIGINT NOT NULL DEFAULT 0,
+  payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cloud_suggestion_review_events (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL,
+  suggestion_kind TEXT NOT NULL CHECK (suggestion_kind IN ('catalog','recipe')),
+  suggestion_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending','approved','rejected','changes_requested')),
+  reviewed_by_employee_id TEXT NOT NULL DEFAULT '',
+  review_comment TEXT NOT NULL DEFAULT '',
+  reviewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL
+);
+
 -- === 005_master_data_restaurants_api.sql ===
 CREATE TABLE IF NOT EXISTS cloud_restaurants (
   id TEXT PRIMARY KEY,
@@ -922,7 +993,7 @@ ALTER TABLE cloud_master_data_packages
   DROP CONSTRAINT IF EXISTS cloud_master_data_packages_stream_name_check;
 
 ALTER TABLE cloud_master_data_packages
-  ADD CONSTRAINT cloud_master_data_packages_stream_name_check CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','currencies'));
+  ADD CONSTRAINT cloud_master_data_packages_stream_name_check CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','currencies','proposal_feedback'));
 
 -- === 008_catalog_v2_modifiers_pricing_policy.sql ===
 ALTER TABLE cloud_catalog_items
@@ -1062,7 +1133,7 @@ ALTER TABLE cloud_master_data_packages
   DROP CONSTRAINT IF EXISTS cloud_master_data_packages_stream_name_check;
 
 ALTER TABLE cloud_master_data_packages
-  ADD CONSTRAINT cloud_master_data_packages_stream_name_check CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','currencies'));
+  ADD CONSTRAINT cloud_master_data_packages_stream_name_check CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','currencies','proposal_feedback'));
 
 
 -- === 004_cloud_inventory_foundation.sql ===

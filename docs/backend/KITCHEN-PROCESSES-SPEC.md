@@ -1,6 +1,6 @@
 # Kitchen Processes Implementation Spec
 
-Статус: профильная спецификация кухонного контура. POS Edge order queue, ticket lifecycle, recipe read, local kitchen proposals и Edge-side kitchen stock input routes помечены как реализовано сейчас; Cloud proposal review/apply flows и Cloud-side `StockWriteOffCaptured` processing остаются запланировано далее.
+Статус: профильная спецификация кухонного контура. POS Edge order queue, ticket lifecycle, recipe read, local kitchen proposals, Edge-side kitchen stock input routes и Cloud proposal review/apply flows помечены как реализовано сейчас; Cloud-side `StockWriteOffCaptured` processing остается запланировано далее.
 
 Дата фиксации: 2026-05-27.
 
@@ -44,7 +44,7 @@
 
 Не реализовано сейчас:
 
-- Cloud receiver/review/apply очереди для `CatalogItemChangeSuggested` и `RecipeChangeSuggested`.
+- Cloud-side `StockWriteOffCaptured` receiver/worker processing.
 - Cloud-side receiver/worker для `StockWriteOffCaptured`.
 - Cloud -> Edge возврат статусов предложений, чтобы работник кухни видел результат рассмотрения.
 - Warehouse-aware последовательная обработка stock events по складам.
@@ -521,21 +521,19 @@ Proposal events сохраняются в Cloud raw/journal и proposal review t
 
 ### Proposal Review Tables
 
-Добавить:
+Реализовано сейчас:
 
 - `cloud_catalog_suggestions`;
 - `cloud_recipe_suggestions`;
 - `cloud_recipe_suggestion_changes`;
 - `cloud_suggestion_review_events`.
 
-Статусы:
+Статусы (реализовано сейчас):
 
 - `pending`;
 - `approved`;
 - `rejected`;
 - `changes_requested`;
-- `applied`;
-- `superseded`.
 
 Cloud routes:
 
@@ -559,7 +557,7 @@ Approve rules:
 
 ### Proposal Feedback Stream
 
-Добавить Cloud -> Edge stream:
+Реализовано сейчас Cloud -> Edge stream:
 
 ```text
 proposal_feedback

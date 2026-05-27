@@ -755,6 +755,130 @@ LIMIT 1`, strings.TrimSpace(restaurantID), strings.TrimSpace(packageID)))
 	return v, normalizeErr(err)
 }
 
+func (r *Repository) ListCatalogSuggestions(ctx context.Context, restaurantID, status string, limit, offset int) ([]domain.CatalogSuggestion, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT id,suggestion_id,restaurant_id,COALESCE(catalog_item_id,''),COALESCE(proposal_group_id,''),action,COALESCE(reason,''),status,
+       COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(applied_catalog_item_id,''),COALESCE(source_event_id,''),
+       suggested_at,cloud_received_at,payload_json,created_at,updated_at
+FROM cloud_catalog_suggestions
+WHERE ($1 = '' OR restaurant_id = $1) AND ($2 = '' OR status = $2)
+ORDER BY cloud_received_at DESC, id DESC
+LIMIT $3 OFFSET $4`, strings.TrimSpace(restaurantID), strings.TrimSpace(status), limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]domain.CatalogSuggestion, 0, limit)
+	for rows.Next() {
+		v, err := scanCatalogSuggestion(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) GetCatalogSuggestion(ctx context.Context, id string) (domain.CatalogSuggestion, error) {
+	v, err := scanCatalogSuggestion(r.pool.QueryRow(ctx, `
+SELECT id,suggestion_id,restaurant_id,COALESCE(catalog_item_id,''),COALESCE(proposal_group_id,''),action,COALESCE(reason,''),status,
+       COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(applied_catalog_item_id,''),COALESCE(source_event_id,''),
+       suggested_at,cloud_received_at,payload_json,created_at,updated_at
+FROM cloud_catalog_suggestions WHERE id = $1`, strings.TrimSpace(id)))
+	return v, normalizeErr(err)
+}
+
+func (r *Repository) UpdateCatalogSuggestion(ctx context.Context, v domain.CatalogSuggestion) (domain.CatalogSuggestion, error) {
+	out, err := scanCatalogSuggestion(r.pool.QueryRow(ctx, `
+UPDATE cloud_catalog_suggestions
+SET status=$2,review_comment=$3,reviewed_by_employee_id=$4,reviewed_at=$5,applied_catalog_item_id=$6,updated_at=$7
+WHERE id=$1
+RETURNING id,suggestion_id,restaurant_id,COALESCE(catalog_item_id,''),COALESCE(proposal_group_id,''),action,COALESCE(reason,''),status,
+       COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(applied_catalog_item_id,''),COALESCE(source_event_id,''),
+       suggested_at,cloud_received_at,payload_json,created_at,updated_at`,
+		v.ID, string(v.Status), nullableText(v.ReviewComment), nullableText(v.ReviewedByEmployeeID), v.ReviewedAt, nullableText(v.AppliedCatalogItemID), v.UpdatedAt))
+	return out, normalizeErr(err)
+}
+
+func (r *Repository) ListRecipeSuggestions(ctx context.Context, restaurantID, status string, limit, offset int) ([]domain.RecipeSuggestion, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT id,suggestion_id,restaurant_id,COALESCE(recipe_version_id,''),COALESCE(owner_catalog_item_id,''),COALESCE(owner_catalog_suggestion_id,''),
+       COALESCE(proposal_group_id,''),action,COALESCE(reason,''),prep_time_delta_minutes,status,COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),
+       reviewed_at,COALESCE(source_event_id,''),suggested_at,cloud_received_at,payload_json,created_at,updated_at
+FROM cloud_recipe_suggestions
+WHERE ($1 = '' OR restaurant_id = $1) AND ($2 = '' OR status = $2)
+ORDER BY cloud_received_at DESC, id DESC
+LIMIT $3 OFFSET $4`, strings.TrimSpace(restaurantID), strings.TrimSpace(status), limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]domain.RecipeSuggestion, 0, limit)
+	for rows.Next() {
+		v, err := scanRecipeSuggestion(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) GetRecipeSuggestion(ctx context.Context, id string) (domain.RecipeSuggestion, error) {
+	v, err := scanRecipeSuggestion(r.pool.QueryRow(ctx, `
+SELECT id,suggestion_id,restaurant_id,COALESCE(recipe_version_id,''),COALESCE(owner_catalog_item_id,''),COALESCE(owner_catalog_suggestion_id,''),
+       COALESCE(proposal_group_id,''),action,COALESCE(reason,''),prep_time_delta_minutes,status,COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),
+       reviewed_at,COALESCE(source_event_id,''),suggested_at,cloud_received_at,payload_json,created_at,updated_at
+FROM cloud_recipe_suggestions WHERE id = $1`, strings.TrimSpace(id)))
+	return v, normalizeErr(err)
+}
+
+func (r *Repository) UpdateRecipeSuggestion(ctx context.Context, v domain.RecipeSuggestion) (domain.RecipeSuggestion, error) {
+	out, err := scanRecipeSuggestion(r.pool.QueryRow(ctx, `
+UPDATE cloud_recipe_suggestions
+SET status=$2,review_comment=$3,reviewed_by_employee_id=$4,reviewed_at=$5,updated_at=$6
+WHERE id=$1
+RETURNING id,suggestion_id,restaurant_id,COALESCE(recipe_version_id,''),COALESCE(owner_catalog_item_id,''),COALESCE(owner_catalog_suggestion_id,''),
+       COALESCE(proposal_group_id,''),action,COALESCE(reason,''),prep_time_delta_minutes,status,COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),
+       reviewed_at,COALESCE(source_event_id,''),suggested_at,cloud_received_at,payload_json,created_at,updated_at`,
+		v.ID, string(v.Status), nullableText(v.ReviewComment), nullableText(v.ReviewedByEmployeeID), v.ReviewedAt, v.UpdatedAt))
+	return out, normalizeErr(err)
+}
+
+func (r *Repository) ListRecipeSuggestionChanges(ctx context.Context, recipeSuggestionID string) ([]domain.RecipeSuggestionChange, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT id,recipe_suggestion_id,COALESCE(line_id,''),action,COALESCE(from_catalog_item_id,''),COALESCE(to_catalog_item_id,''),
+       COALESCE(quantity,''),COALESCE(unit_code,''),COALESCE(loss_percent,''),sort_order,payload_json,created_at
+FROM cloud_recipe_suggestion_changes
+WHERE recipe_suggestion_id = $1
+ORDER BY sort_order, id`, strings.TrimSpace(recipeSuggestionID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]domain.RecipeSuggestionChange, 0)
+	for rows.Next() {
+		var v domain.RecipeSuggestionChange
+		if err := rows.Scan(&v.ID, &v.RecipeSuggestionID, &v.LineID, &v.Action, &v.FromCatalogItemID, &v.ToCatalogItemID, &v.Quantity, &v.UnitCode, &v.LossPercent, &v.SortOrder, &v.PayloadJSON, &v.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 func upsertKindFoundation(ctx context.Context, tx pgx.Tx, v domain.CatalogItem) error {
 	switch v.Kind {
 	case domain.CatalogItemDish:
@@ -934,6 +1058,22 @@ func scanPublication(row scanner) (domain.Publication, error) {
 	if json.Valid(v.PackageJSON) {
 		v.PackageJSON = append(json.RawMessage(nil), v.PackageJSON...)
 	}
+	return v, err
+}
+
+func scanCatalogSuggestion(row scanner) (domain.CatalogSuggestion, error) {
+	var v domain.CatalogSuggestion
+	var status string
+	err := row.Scan(&v.ID, &v.SuggestionID, &v.RestaurantID, &v.CatalogItemID, &v.ProposalGroupID, &v.Action, &v.Reason, &status, &v.ReviewComment, &v.ReviewedByEmployeeID, &v.ReviewedAt, &v.AppliedCatalogItemID, &v.SourceEventID, &v.SuggestedAt, &v.CloudReceivedAt, &v.PayloadJSON, &v.CreatedAt, &v.UpdatedAt)
+	v.Status = domain.SuggestionStatus(status)
+	return v, err
+}
+
+func scanRecipeSuggestion(row scanner) (domain.RecipeSuggestion, error) {
+	var v domain.RecipeSuggestion
+	var status string
+	err := row.Scan(&v.ID, &v.SuggestionID, &v.RestaurantID, &v.RecipeVersionID, &v.OwnerCatalogItemID, &v.OwnerCatalogSuggestionID, &v.ProposalGroupID, &v.Action, &v.Reason, &v.PrepTimeDeltaMinutes, &status, &v.ReviewComment, &v.ReviewedByEmployeeID, &v.ReviewedAt, &v.SourceEventID, &v.SuggestedAt, &v.CloudReceivedAt, &v.PayloadJSON, &v.CreatedAt, &v.UpdatedAt)
+	v.Status = domain.SuggestionStatus(status)
 	return v, err
 }
 

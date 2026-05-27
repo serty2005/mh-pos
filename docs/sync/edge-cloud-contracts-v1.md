@@ -307,7 +307,7 @@ Cancellation/refund sync behavior:
 
 Реализовано сейчас: POS Edge генерирует `CheckClosed` при создании final check после полной оплаты; payload строится из immutable `check.Snapshot` и передается внутри стандартного sync envelope в `payload.data`. POS Edge KDS lifecycle генерирует `KitchenTicketStatusChanged`, а `serve` дополнительно генерирует `ItemServed`. POS Edge kitchen stock input routes генерируют `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` как outbox envelopes без POS-side stock documents; replay того же stock `command_id` и event type возвращает сохраненный результат без нового envelope. POS Edge kitchen proposal routes генерируют `CatalogItemChangeSuggested` и `RecipeChangeSuggested`, сохраняют локальный `kitchen_proposals.status = pending_sync`, поддерживают `proposal_group_id` для связки нового блюда и техкарты и не мутируют master data до Cloud publication. Cloud receiver принимает `CheckClosed`, `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `StopListUpdated`; Cloud Inventory Worker создает stock documents/ledger rows для accepted receipt/count/write-off/production events и `SALE` rows по `ItemServed`.
 
-Запланировано до полного пилота для остальных inventory/proposal payloads, необходимых полному Cloud Inventory Engine и ClickHouse OLAP: Cloud review/apply для `CatalogItemChangeSuggested`/`RecipeChangeSuggested`, расширенные `RefundRecorded`/`CancellationRecorded` inventory effects и OLAP-проекции поверх `raw_business_events`. Все payloads передаются внутри стандартного sync envelope в `payload.data`.
+Запланировано до полного пилота для остальных inventory payloads, необходимых полному Cloud Inventory Engine и ClickHouse OLAP: расширенные `RefundRecorded`/`CancellationRecorded` inventory effects и OLAP-проекции поверх `raw_business_events`. Все payloads передаются внутри стандартного sync envelope в `payload.data`.
 
 `CheckClosed` является финальным batch-delta trigger:
 
@@ -387,7 +387,7 @@ Cancellation/refund sync behavior:
 
 Допустимые KDS statuses полного пилота: `new`, `accepted`, `in_progress`, `hold`, `ready`, `served`, `recall`, `cancelled`. Переход `served` должен сопровождаться `ItemServed`.
 
-`CatalogItemChangeSuggested` и `RecipeChangeSuggested` создаются POS Edge proposal routes и далее должны попадать в Cloud worker review/apply flow:
+`CatalogItemChangeSuggested` и `RecipeChangeSuggested` создаются POS Edge proposal routes и далее попадают в Cloud review/apply flow с таблицами `cloud_catalog_suggestions`/`cloud_recipe_suggestions` и feedback stream `proposal_feedback`:
 
 ```json
 {
