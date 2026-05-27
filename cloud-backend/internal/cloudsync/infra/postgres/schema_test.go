@@ -39,9 +39,9 @@ func TestRequiredSchemaIncludesCloudInventoryFoundationTables(t *testing.T) {
 		reqs[req.Table] = cols
 	}
 	for table, cols := range map[string][]string{
-		"inventory_event_queue":    {"id", "receipt_id", "restaurant_id", "device_id", "event_id", "event_type", "status", "attempts", "occurred_at", "created_at", "updated_at"},
-		"stock_documents":          {"id", "restaurant_id", "document_type", "source_event_id", "source_event_type", "business_date_local", "occurred_at", "created_at"},
-		"stock_ledger":             {"id", "restaurant_id", "stock_document_id", "source_event_id", "source_event_type", "catalog_item_id", "order_line_id", "movement_type", "quantity", "unit_code", "unit_cost_minor", "total_cost_minor", "costing_status", "occurred_at", "business_date_local", "created_at"},
+		"inventory_event_queue":    {"id", "receipt_id", "restaurant_id", "warehouse_id", "device_id", "event_id", "event_type", "status", "attempts", "occurred_at", "created_at", "updated_at"},
+		"stock_documents":          {"id", "restaurant_id", "warehouse_id", "document_type", "source_event_id", "source_event_type", "business_date_local", "occurred_at", "created_at"},
+		"stock_ledger":             {"id", "restaurant_id", "warehouse_id", "stock_document_id", "source_event_id", "source_event_type", "catalog_item_id", "order_line_id", "movement_type", "quantity", "unit_code", "unit_cost_minor", "total_cost_minor", "costing_status", "occurred_at", "business_date_local", "created_at"},
 		"stock_recalculation_jobs": {"id", "restaurant_id", "source_document_id", "status", "recalculate_from", "created_at", "updated_at"},
 		"stop_lists":               {"id", "restaurant_id", "catalog_item_id", "available_quantity", "source", "reason", "active", "cloud_version", "updated_at"},
 	} {
@@ -67,9 +67,9 @@ func TestRequiredSchemaIncludesCloudInventoryIndexes(t *testing.T) {
 		reqs[req.Table] = indexes
 	}
 	for table, indexes := range map[string][]string{
-		"inventory_event_queue": {"inventory_event_queue_status_retry", "inventory_event_queue_event_type"},
-		"stock_documents":       {"stock_documents_restaurant_occurred_at", "stock_documents_source_event_unique"},
-		"stock_ledger":          {"stock_ledger_restaurant_occurred_at", "stock_ledger_source_event", "stock_ledger_order_line_consumption"},
+		"inventory_event_queue": {"inventory_event_queue_status_retry", "inventory_event_queue_event_type", "inventory_event_queue_restaurant_warehouse_order"},
+		"stock_documents":       {"stock_documents_restaurant_occurred_at", "stock_documents_restaurant_warehouse_occurred_at", "stock_documents_source_event_unique"},
+		"stock_ledger":          {"stock_ledger_restaurant_occurred_at", "stock_ledger_restaurant_warehouse_occurred_at", "stock_ledger_source_event", "stock_ledger_order_line_consumption"},
 	} {
 		found, ok := reqs[table]
 		if !ok {

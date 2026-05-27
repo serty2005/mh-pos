@@ -341,6 +341,22 @@ func TestRunOnceCreatesProductionLedgerForSemiFinishedItem(t *testing.T) {
 	}
 }
 
+func TestRunOnceCreatesWasteLedgerFromStockWriteOff(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventStockWriteOffCaptured, stockWriteOffPayload(t))}}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 1 {
+		t.Fatalf("expected one stock document, got %+v", repo.documents)
+	}
+	doc := repo.documents[0]
+	if doc.Type != app.DocumentWaste || len(doc.Ledger) != 1 || doc.Ledger[0].MovementType != app.MovementOut {
+		t.Fatalf("unexpected write-off document: %+v", doc)
+	}
+}
+
 func TestRunOnceMapsRefundReturnAndCancellationWaste(t *testing.T) {
 	repo := &fakeRepo{events: []app.QueuedEvent{
 		sampleQueuedEvent(t, contracts.EventRefundRecorded, financialOperationPayload(t, "refund", "return_to_stock")),
@@ -520,6 +536,22 @@ func productionPayload(t *testing.T) json.RawMessage {
 		"semi_finished_catalog_item_id": "semi-1",
 		"quantity":                      "4.000",
 		"unit_code":                     "KG",
+	})
+}
+
+func stockWriteOffPayload(t *testing.T) json.RawMessage {
+	t.Helper()
+	return marshalPayload(t, map[string]any{
+		"write_off_id":        "writeoff-1",
+		"restaurant_id":       "restaurant-1",
+		"business_date_local": "2026-05-05",
+		"written_off_at":      "2026-05-05T09:00:00Z",
+		"reason_code":         "expired",
+		"items": []map[string]any{{
+			"catalog_item_id": "item-1",
+			"quantity":        "2.000",
+			"unit_code":       "KG",
+		}},
 	})
 }
 

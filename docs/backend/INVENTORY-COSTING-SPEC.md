@@ -336,7 +336,7 @@ erDiagram
 
 ### StockWriteOffCaptured
 
-Реализовано сейчас на POS Edge как input/outbox event. Cloud receiver и Inventory Worker для этого event остаются запланировано далее; POS Edge не создает `WASTE` document локально.
+Реализовано сейчас: POS Edge пишет input/outbox event, Cloud receiver валидирует payload, а Cloud Inventory Worker создает `WASTE` document/ledger. POS Edge не создает `WASTE` document локально.
 
 ```json
 {
@@ -431,7 +431,8 @@ erDiagram
 
 1. `ItemServed` создает Cloud `StockDocument` типа `SALE` и `stock_ledger` rows с `source_event_type = ItemServed` и `order_line_id`.
 2. Replay того же `ItemServed` идемпотентен через уникальность `stock_documents(source_event_id, source_event_type)`.
-3. При `CheckClosed` worker читает уже обработанные `ItemServed` quantities из `stock_ledger` по `restaurant_id` и `order_line_id`.
+3. При повторной подаче после `recall` Cloud учитывает effective quantity по `order_line_id` и не допускает duplicate consumption.
+4. При `CheckClosed` worker читает уже обработанные `ItemServed` quantities из `stock_ledger` по `restaurant_id` и `order_line_id`.
 4. Worker рассчитывает delta: `check_line_quantity - served_quantity`.
 5. Для delta больше нуля создается `StockDocument` типа `SALE`.
 6. Для delta равного нулю повторное списание не создается.

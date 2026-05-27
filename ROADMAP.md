@@ -149,7 +149,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - выполнено для Cloud worker: принятый `ItemServed` идемпотентно создает SALE ledger по `order_line_id`, а последующий `CheckClosed` пишет только unserved delta;
   - выполнено: Edge-side chef stock input routes для receipt/count/write-off/production валидируют warehouse, catalog item, receipt line totals, counted quantity, write-off reason и semi-finished production recipe, затем пишут outbox events без local stock documents;
   - выполнено: POS Edge recipe/proposal backend routes возвращают техкарту с ingredient names из полного `catalog_items`, сохраняют локальные `kitchen_proposals`, пишут `CatalogItemChangeSuggested`/`RecipeChangeSuggested`, поддерживают `proposal_group_id` для нового блюда + техкарты и валидируют prep time delta через `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES`;
-  - далее: Cloud-side `StockWriteOffCaptured` receiver/worker, Cloud review/apply для `CatalogItemChangeSuggested`/`RecipeChangeSuggested`, receipt line через catalog suggestion после Cloud resolution и kitchen UI формы поверх этих routes;
+  - выполнено: Cloud-side `StockWriteOffCaptured` receiver/worker, включая durable processing через `inventory_event_queue`;
+  - далее: Cloud review/apply для `CatalogItemChangeSuggested`/`RecipeChangeSuggested`, receipt line через catalog suggestion после Cloud resolution и kitchen UI формы поверх этих routes;
   - добавить kitchen stop-list edit flow и параметр `stop_list_conflict_policy` для порядка применения Cloud/Edge overlay.
 - POS-side authoritative financial/inventory logic:
   - POS Edge backend остается авторитетным для offline order/precheck/payment/check commands, financial operation ledger, pricing snapshot, idempotency, cash/session boundaries, stop-list sale blocking и KDS command validation;

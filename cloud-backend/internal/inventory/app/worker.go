@@ -58,6 +58,7 @@ type QueuedEvent struct {
 	ID           string
 	ReceiptID    string
 	RestaurantID string
+	WarehouseID  string
 	DeviceID     string
 	EventID      string
 	EventType    contracts.EventType
@@ -68,6 +69,7 @@ type QueuedEvent struct {
 type StockDocument struct {
 	ID                string
 	RestaurantID      string
+	WarehouseID       string
 	Type              DocumentType
 	SourceEventID     string
 	SourceEventType   string
@@ -80,6 +82,7 @@ type StockDocument struct {
 type StockLedgerEntry struct {
 	ID                string
 	RestaurantID      string
+	WarehouseID       string
 	StockDocumentID   string
 	SourceEventID     string
 	SourceEventType   string
@@ -157,6 +160,8 @@ func (w *Worker) documentFromEvent(ctx context.Context, event QueuedEvent, now t
 		return w.stockReceiptDocument(event, now)
 	case contracts.EventInventoryCountCaptured:
 		return w.inventoryCountDocument(event, now)
+	case contracts.EventStockWriteOffCaptured:
+		return w.stockWriteOffDocument(event, now)
 	case contracts.EventProductionCompleted:
 		return w.productionDocument(event, now)
 	case contracts.EventRefundRecorded, contracts.EventCancellationRecorded:
@@ -197,10 +202,17 @@ func (w *Worker) itemServedDocument(ctx context.Context, event QueuedEvent, now 
 	if err != nil {
 		return StockDocument{}, false, err
 	}
+	effectiveQuantity, err := w.effectiveServedQuantity(ctx, event.RestaurantID, payload.Data.OrderLineID, payload.Data.Quantity)
+	if err != nil {
+		return StockDocument{}, false, err
+	}
+	if effectiveQuantity == "" {
+		return StockDocument{}, false, nil
+	}
 	item := contracts.InventoryItem{
 		OrderLineID:   payload.Data.OrderLineID,
 		CatalogItemID: payload.Data.CatalogItemID,
-		Quantity:      payload.Data.Quantity,
+		Quantity:      effectiveQuantity,
 		UnitCode:      payload.Data.UnitCode,
 	}
 	items, err := w.expandRecipeItems(ctx, event.RestaurantID, []contracts.InventoryItem{item})
@@ -208,6 +220,14 @@ func (w *Worker) itemServedDocument(ctx context.Context, event QueuedEvent, now 
 		return StockDocument{}, false, err
 	}
 	return w.documentFromItems(event, now, DocumentSale, MovementOut, businessDate(event.OccurredAt), items, false)
+}
+
+func (w *Worker) stockWriteOffDocument(event QueuedEvent, now time.Time) (StockDocument, bool, error) {
+	payload, err := decode[contracts.StockWriteOffCaptured](event.Payload)
+	if err != nil {
+		return StockDocument{}, false, err
+	}
+	return w.documentFromItems(event, now, DocumentWaste, MovementOut, payload.Data.BusinessDateLocal, payload.Data.Items, false)
 }
 
 func (w *Worker) stockReceiptDocument(event QueuedEvent, now time.Time) (StockDocument, bool, error) {
@@ -289,6 +309,7 @@ func (w *Worker) documentFromItems(event QueuedEvent, now time.Time, typ Documen
 	document := StockDocument{
 		ID:                documentID,
 		RestaurantID:      event.RestaurantID,
+		WarehouseID:       event.WarehouseID,
 		Type:              typ,
 		SourceEventID:     event.EventID,
 		SourceEventType:   string(event.EventType),
@@ -309,6 +330,7 @@ func (w *Worker) documentFromItems(event QueuedEvent, now time.Time, typ Documen
 		document.Ledger = append(document.Ledger, StockLedgerEntry{
 			ID:                w.ids.NewID(),
 			RestaurantID:      event.RestaurantID,
+			WarehouseID:       event.WarehouseID,
 			StockDocumentID:   documentID,
 			SourceEventID:     event.EventID,
 			SourceEventType:   string(event.EventType),
@@ -388,6 +410,24 @@ func (w *Worker) checkClosedDeltaItems(ctx context.Context, restaurantID string,
 	return out, nil
 }
 
+func (w *Worker) effectiveServedQuantity(ctx context.Context, restaurantID, orderLineID, requested string) (string, error) {
+	if strings.TrimSpace(orderLineID) == "" {
+		if !positive(requested) {
+			return "", nil
+		}
+		return strings.TrimSpace(requested), nil
+	}
+	served, err := w.repo.ListServedOrderLineQuantities(ctx, restaurantID, []string{orderLineID})
+	if err != nil {
+		return "", err
+	}
+	delta, ok := subtractQuantity(requested, served[strings.TrimSpace(orderLineID)])
+	if !ok {
+		return "", nil
+	}
+	return delta, nil
+}
+
 func subtractQuantity(total, consumed string) (string, bool) {
 	totalValue, err := strconv.ParseFloat(strings.TrimSpace(total), 64)
 	if err != nil || totalValue <= 0 {
@@ -450,7 +490,7 @@ func (w *Worker) recipeToLedger(ctx context.Context, restaurantID, ownerID, base
 		if !positive(line.Quantity) || strings.TrimSpace(line.UnitCode) == "" {
 			return nil, fmt.Errorf("invalid recipe line for %s", ownerID)
 		}
-		entries = append(entries, StockLedgerEntry{ID: w.ids.NewID(), RestaurantID: event.RestaurantID, SourceEventID: event.EventID, SourceEventType: string(event.EventType), CatalogItemID: line.ComponentCatalogItemID, MovementType: MovementOut, Quantity: scaledQuantity(baseQty, line.Quantity), UnitCode: line.UnitCode, CostingStatus: "estimated", OccurredAt: event.OccurredAt, BusinessDateLocal: businessDateLocal, CreatedAt: now})
+		entries = append(entries, StockLedgerEntry{ID: w.ids.NewID(), RestaurantID: event.RestaurantID, WarehouseID: event.WarehouseID, SourceEventID: event.EventID, SourceEventType: string(event.EventType), CatalogItemID: line.ComponentCatalogItemID, MovementType: MovementOut, Quantity: scaledQuantity(baseQty, line.Quantity), UnitCode: line.UnitCode, CostingStatus: "estimated", OccurredAt: event.OccurredAt, BusinessDateLocal: businessDateLocal, CreatedAt: now})
 	}
 	return entries, nil
 }

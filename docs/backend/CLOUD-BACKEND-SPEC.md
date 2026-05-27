@@ -52,7 +52,7 @@
 - обработка `KitchenTicketStatusChanged`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested` и `StopListUpdated` как business events без synchronous apply в request path;
 - параметр `stop_list_conflict_policy` для порядка применения Cloud-authored stop-list и Edge overlay;
 - readiness API/UI signals для stop-list publication, Edge ACK и sync problem events;
-- поддержка `CheckClosed`/`ItemServed` как pilot inventory facts через текущий receiver и Inventory Worker;
+- поддержка `CheckClosed`/`ItemServed`/`StockWriteOffCaptured` как pilot inventory facts через текущий receiver и Inventory Worker;
 - full inventory engine для receipts, counts, production, consumption, refund/cancellation dispositions, balances, costing и retro recalculation;
 - реализовано сейчас: ClickHouse first slice: managed `raw_business_events`, async forwarder из PostgreSQL `inbox_events`, `processed_for_olap`, retry state, export checkpoint и bounded read-only metadata API;
 - запланировано далее: `olap_stock_moves`, retry/backfill operator controls, stock moves, sales aggregates, COGS/margin и kitchen timing API.

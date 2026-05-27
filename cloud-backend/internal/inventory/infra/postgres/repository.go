@@ -32,7 +32,15 @@ WITH picked AS (
   FROM inventory_event_queue
   WHERE status IN ('pending','failed')
     AND (next_retry_at IS NULL OR next_retry_at <= $1)
-  ORDER BY occurred_at, id
+    AND NOT EXISTS (
+      SELECT 1
+      FROM inventory_event_queue q2
+      WHERE q2.status = 'processing'
+        AND q2.id <> inventory_event_queue.id
+        AND q2.restaurant_id = inventory_event_queue.restaurant_id
+        AND COALESCE(q2.warehouse_id, '') = COALESCE(inventory_event_queue.warehouse_id, '')
+    )
+  ORDER BY restaurant_id, COALESCE(warehouse_id, ''), occurred_at, id
   LIMIT $2
   FOR UPDATE SKIP LOCKED
 )
@@ -40,7 +48,7 @@ UPDATE inventory_event_queue q
 SET status = 'processing', locked_at = $1, locked_by = $3, updated_at = $1
 FROM picked
 WHERE q.id = picked.id
-RETURNING q.id,q.receipt_id,q.restaurant_id,q.device_id,q.event_id,q.event_type,q.occurred_at,
+RETURNING q.id,q.receipt_id,q.restaurant_id,COALESCE(q.warehouse_id,''),q.device_id,q.event_id,q.event_type,q.occurred_at,
   (SELECT raw_payload FROM cloud_edge_event_raw_payloads raw WHERE raw.receipt_id = q.receipt_id)`,
 		cmd.Now, limit, strings.TrimSpace(cmd.LockedBy))
 	if err != nil {
@@ -53,7 +61,7 @@ RETURNING q.id,q.receipt_id,q.restaurant_id,q.device_id,q.event_id,q.event_type,
 		var event app.QueuedEvent
 		var eventType string
 		var raw []byte
-		if err := rows.Scan(&event.ID, &event.ReceiptID, &event.RestaurantID, &event.DeviceID, &event.EventID, &eventType, &event.OccurredAt, &raw); err != nil {
+		if err := rows.Scan(&event.ID, &event.ReceiptID, &event.RestaurantID, &event.WarehouseID, &event.DeviceID, &event.EventID, &eventType, &event.OccurredAt, &raw); err != nil {
 			return nil, err
 		}
 		var envelope contracts.SyncEnvelope
@@ -86,10 +94,11 @@ FOR UPDATE`, document.SourceEventID, document.SourceEventType).Scan(&existing)
 		return err
 	}
 	if _, err := tx.Exec(ctx, `
-INSERT INTO stock_documents(id,restaurant_id,document_type,source_event_id,source_event_type,business_date_local,occurred_at,created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+INSERT INTO stock_documents(id,restaurant_id,warehouse_id,document_type,source_event_id,source_event_type,business_date_local,occurred_at,created_at)
+VALUES ($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8,$9)`,
 		document.ID,
 		document.RestaurantID,
+		document.WarehouseID,
 		string(document.Type),
 		document.SourceEventID,
 		document.SourceEventType,
@@ -102,11 +111,12 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
 	for _, entry := range document.Ledger {
 		if _, err := tx.Exec(ctx, `
 INSERT INTO stock_ledger(
-  id,restaurant_id,stock_document_id,source_event_id,source_event_type,catalog_item_id,order_line_id,
+  id,restaurant_id,warehouse_id,stock_document_id,source_event_id,source_event_type,catalog_item_id,order_line_id,
   movement_type,quantity,unit_code,unit_cost_minor,total_cost_minor,costing_status,occurred_at,business_date_local,created_at
-) VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+) VALUES ($1,$2,NULLIF($3,''),$4,$5,$6,$7,NULLIF($8,''),$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
 			entry.ID,
 			entry.RestaurantID,
+			entry.WarehouseID,
 			document.ID,
 			entry.SourceEventID,
 			entry.SourceEventType,

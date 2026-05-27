@@ -35,8 +35,11 @@ const (
 	EventItemServed                 EventType = "ItemServed"
 	EventStockReceiptCaptured       EventType = "StockReceiptCaptured"
 	EventInventoryCountCaptured     EventType = "InventoryCountCaptured"
+	EventStockWriteOffCaptured      EventType = "StockWriteOffCaptured"
 	EventProductionCompleted        EventType = "ProductionCompleted"
 	EventStopListUpdated            EventType = "StopListUpdated"
+	EventCatalogItemChangeSuggested EventType = "CatalogItemChangeSuggested"
+	EventRecipeChangeSuggested      EventType = "RecipeChangeSuggested"
 	EventOrderClosed                EventType = "OrderClosed"
 	EventCashSessionOpened          EventType = "CashSessionOpened"
 	EventCashSessionClosed          EventType = "CashSessionClosed"
@@ -286,12 +289,14 @@ type ItemServed struct {
 	TicketID                string    `json:"ticket_id"`
 	ServeSequence           int       `json:"serve_sequence"`
 	SupersedesServedEventID string    `json:"supersedes_served_event_id,omitempty"`
+	RestaurantID            string    `json:"restaurant_id,omitempty"`
 	OrderID                 string    `json:"order_id"`
 	OrderLineID             string    `json:"order_line_id"`
 	CatalogItemID           string    `json:"catalog_item_id"`
 	Quantity                string    `json:"quantity"`
 	UnitCode                string    `json:"unit_code"`
 	ServedAt                time.Time `json:"served_at"`
+	ChangedByEmployeeID     string    `json:"changed_by_employee_id,omitempty"`
 	StationID               string    `json:"station_id,omitempty"`
 }
 
@@ -308,16 +313,32 @@ type KitchenTicketStatusChanged struct {
 type StockReceiptCaptured struct {
 	ReceiptID         string          `json:"receipt_id"`
 	RestaurantID      string          `json:"restaurant_id"`
+	WarehouseID       string          `json:"warehouse_id,omitempty"`
 	ReceivedAt        time.Time       `json:"received_at"`
 	BusinessDateLocal string          `json:"business_date_local"`
 	SupplierID        string          `json:"supplier_id,omitempty"`
+	SupplierName      string          `json:"supplier_name_snapshot,omitempty"`
+	DocumentNumber    string          `json:"document_number,omitempty"`
+	DocumentDate      string          `json:"document_date,omitempty"`
 	Items             []InventoryItem `json:"items"`
 }
 
 type InventoryCountCaptured struct {
 	CountID           string          `json:"count_id"`
 	RestaurantID      string          `json:"restaurant_id"`
+	WarehouseID       string          `json:"warehouse_id,omitempty"`
 	CountedAt         time.Time       `json:"counted_at"`
+	BusinessDateLocal string          `json:"business_date_local"`
+	Items             []InventoryItem `json:"items"`
+}
+
+type StockWriteOffCaptured struct {
+	WriteOffID        string          `json:"write_off_id"`
+	RestaurantID      string          `json:"restaurant_id"`
+	WarehouseID       string          `json:"warehouse_id,omitempty"`
+	ReasonCode        string          `json:"reason_code"`
+	ReasonText        string          `json:"reason_text,omitempty"`
+	WrittenOffAt      time.Time       `json:"written_off_at"`
 	BusinessDateLocal string          `json:"business_date_local"`
 	Items             []InventoryItem `json:"items"`
 }
@@ -325,6 +346,7 @@ type InventoryCountCaptured struct {
 type ProductionCompleted struct {
 	ProductionID              string    `json:"production_id"`
 	RestaurantID              string    `json:"restaurant_id"`
+	WarehouseID               string    `json:"warehouse_id,omitempty"`
 	SemiFinishedCatalogItemID string    `json:"semi_finished_catalog_item_id"`
 	Quantity                  string    `json:"quantity"`
 	UnitCode                  string    `json:"unit_code"`
@@ -335,12 +357,37 @@ type ProductionCompleted struct {
 type StopListUpdated struct {
 	StopListID        string    `json:"stop_list_id"`
 	RestaurantID      string    `json:"restaurant_id"`
+	WarehouseID       string    `json:"warehouse_id,omitempty"`
 	CatalogItemID     string    `json:"catalog_item_id"`
 	AvailableQuantity string    `json:"available_quantity,omitempty"`
 	Active            bool      `json:"active"`
+	ConflictPolicy    string    `json:"conflict_policy,omitempty"`
 	Source            string    `json:"source"`
 	Reason            string    `json:"reason,omitempty"`
 	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+type CatalogItemChangeSuggested struct {
+	SuggestionID      string    `json:"suggestion_id"`
+	RestaurantID      string    `json:"restaurant_id"`
+	CatalogItemID     string    `json:"catalog_item_id,omitempty"`
+	ProposalGroupID   string    `json:"proposal_group_id,omitempty"`
+	Action            string    `json:"action"`
+	Reason            string    `json:"reason,omitempty"`
+	SuggestedAt       time.Time `json:"suggested_at"`
+	BusinessDateLocal string    `json:"business_date_local,omitempty"`
+}
+
+type RecipeChangeSuggested struct {
+	SuggestionID       string    `json:"suggestion_id"`
+	RestaurantID       string    `json:"restaurant_id"`
+	RecipeVersionID    string    `json:"recipe_version_id,omitempty"`
+	OwnerCatalogItemID string    `json:"owner_catalog_item_id,omitempty"`
+	ProposalGroupID    string    `json:"proposal_group_id,omitempty"`
+	Action             string    `json:"action"`
+	Reason             string    `json:"reason,omitempty"`
+	SuggestedAt        time.Time `json:"suggested_at"`
+	BusinessDateLocal  string    `json:"business_date_local,omitempty"`
 }
 
 type CashSessionOpened struct {
@@ -520,10 +567,16 @@ func ValidateEventPayload(v SyncEnvelope) error {
 		return validateStockReceiptCapturedPayload(v)
 	case EventInventoryCountCaptured:
 		return validateInventoryCountCapturedPayload(v)
+	case EventStockWriteOffCaptured:
+		return validateStockWriteOffCapturedPayload(v)
 	case EventProductionCompleted:
 		return validateProductionCompletedPayload(v)
 	case EventStopListUpdated:
 		return validateStopListUpdatedPayload(v)
+	case EventCatalogItemChangeSuggested:
+		return validateCatalogItemChangeSuggestedPayload(v)
+	case EventRecipeChangeSuggested:
+		return validateRecipeChangeSuggestedPayload(v)
 	case EventOrderClosed:
 		return validatePayload[OrderClosed](v)
 	case EventCashSessionOpened:
@@ -735,6 +788,24 @@ func validateProductionCompletedPayload(v SyncEnvelope) error {
 	return nil
 }
 
+func validateStockWriteOffCapturedPayload(v SyncEnvelope) error {
+	payload, err := decodePayload[StockWriteOffCaptured](v)
+	if err != nil {
+		return err
+	}
+	data := payload.Data
+	if strings.TrimSpace(data.WriteOffID) == "" || strings.TrimSpace(data.RestaurantID) == "" || strings.TrimSpace(data.ReasonCode) == "" {
+		return fmt.Errorf("%w: stock write-off id, restaurant_id and reason_code are required", ErrInvalidEnvelope)
+	}
+	if err := validateBusinessDate(data.BusinessDateLocal, "stock write-off business_date_local"); err != nil {
+		return err
+	}
+	if data.WrittenOffAt.IsZero() {
+		return fmt.Errorf("%w: stock write-off written_off_at is required", ErrInvalidEnvelope)
+	}
+	return validateInventoryItems(data.Items, false)
+}
+
 func validateStopListUpdatedPayload(v SyncEnvelope) error {
 	payload, err := decodePayload[StopListUpdated](v)
 	if err != nil {
@@ -746,6 +817,30 @@ func validateStopListUpdatedPayload(v SyncEnvelope) error {
 	}
 	if strings.TrimSpace(data.AvailableQuantity) != "" && !nonNegativeDecimal(data.AvailableQuantity) {
 		return fmt.Errorf("%w: stop list available_quantity is invalid", ErrInvalidEnvelope)
+	}
+	return nil
+}
+
+func validateCatalogItemChangeSuggestedPayload(v SyncEnvelope) error {
+	payload, err := decodePayload[CatalogItemChangeSuggested](v)
+	if err != nil {
+		return err
+	}
+	data := payload.Data
+	if strings.TrimSpace(data.SuggestionID) == "" || strings.TrimSpace(data.RestaurantID) == "" || strings.TrimSpace(data.Action) == "" || data.SuggestedAt.IsZero() {
+		return fmt.Errorf("%w: catalog suggestion id, restaurant_id, action and suggested_at are required", ErrInvalidEnvelope)
+	}
+	return nil
+}
+
+func validateRecipeChangeSuggestedPayload(v SyncEnvelope) error {
+	payload, err := decodePayload[RecipeChangeSuggested](v)
+	if err != nil {
+		return err
+	}
+	data := payload.Data
+	if strings.TrimSpace(data.SuggestionID) == "" || strings.TrimSpace(data.RestaurantID) == "" || strings.TrimSpace(data.Action) == "" || data.SuggestedAt.IsZero() {
+		return fmt.Errorf("%w: recipe suggestion id, restaurant_id, action and suggested_at are required", ErrInvalidEnvelope)
 	}
 	return nil
 }
@@ -818,7 +913,7 @@ func validCurrency(v string) bool {
 
 func IsKnownEventType(v EventType) bool {
 	switch v {
-	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckReprinted, EventPrecheckCancelled, EventCheckCreated, EventCheckRefunded, EventCheckReprinted, EventPaymentCaptured, EventPaymentRefunded, EventCancellationRecorded, EventRefundRecorded, EventCheckClosed, EventKitchenTicketStatusChanged, EventItemServed, EventStockReceiptCaptured, EventInventoryCountCaptured, EventProductionCompleted, EventStopListUpdated, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
+	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckReprinted, EventPrecheckCancelled, EventCheckCreated, EventCheckRefunded, EventCheckReprinted, EventPaymentCaptured, EventPaymentRefunded, EventCancellationRecorded, EventRefundRecorded, EventCheckClosed, EventKitchenTicketStatusChanged, EventItemServed, EventStockReceiptCaptured, EventInventoryCountCaptured, EventStockWriteOffCaptured, EventProductionCompleted, EventStopListUpdated, EventCatalogItemChangeSuggested, EventRecipeChangeSuggested, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
 		return true
 	default:
 		return false
@@ -827,7 +922,7 @@ func IsKnownEventType(v EventType) bool {
 
 func IsInventoryRelevantEventType(v EventType) bool {
 	switch v {
-	case EventCheckClosed, EventItemServed, EventStockReceiptCaptured, EventInventoryCountCaptured, EventProductionCompleted, EventStopListUpdated, EventRefundRecorded, EventCancellationRecorded:
+	case EventCheckClosed, EventItemServed, EventStockReceiptCaptured, EventInventoryCountCaptured, EventStockWriteOffCaptured, EventProductionCompleted, EventStopListUpdated, EventRefundRecorded, EventCancellationRecorded:
 		return true
 	default:
 		return false

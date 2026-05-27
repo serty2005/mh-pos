@@ -637,14 +637,16 @@ ON CONFLICT (operation_id) DO NOTHING`,
 }
 
 func enqueueInventoryEvent(ctx context.Context, tx pgx.Tx, receipt app.EdgeEventReceipt, receiptID string) error {
+	warehouseID := inventoryWarehouseID(receipt.Envelope.Payload)
 	_, err := tx.Exec(ctx, `
 INSERT INTO inventory_event_queue(
-  id,receipt_id,restaurant_id,device_id,event_id,event_type,aggregate_type,aggregate_id,status,attempts,occurred_at,created_at,updated_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',0,$9,$10,$10)
+  id,receipt_id,restaurant_id,warehouse_id,device_id,event_id,event_type,aggregate_type,aggregate_id,status,attempts,occurred_at,created_at,updated_at
+) VALUES ($1,$2,$3,NULLIF($4,''),$5,$6,$7,$8,$9,'pending',0,$10,$11,$11)
 ON CONFLICT (receipt_id) DO NOTHING`,
 		receiptID,
 		receiptID,
 		strings.TrimSpace(*receipt.Envelope.RestaurantID),
+		warehouseID,
 		strings.TrimSpace(receipt.Envelope.DeviceID),
 		strings.TrimSpace(receipt.Envelope.EventID),
 		string(receipt.Envelope.EventType),
@@ -654,6 +656,16 @@ ON CONFLICT (receipt_id) DO NOTHING`,
 		receipt.CloudReceivedAt,
 	)
 	return err
+}
+
+func inventoryWarehouseID(payloadRaw json.RawMessage) string {
+	var payload map[string]any
+	if err := json.Unmarshal(payloadRaw, &payload); err != nil {
+		return ""
+	}
+	data, _ := payload["data"].(map[string]any)
+	warehouseID, _ := data["warehouse_id"].(string)
+	return strings.TrimSpace(warehouseID)
 }
 
 func enqueueExistingInboxEvent(ctx context.Context, tx pgx.Tx, receiptID string) error {

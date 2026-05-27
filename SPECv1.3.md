@@ -315,7 +315,7 @@ Inventory and costing logic:
 Не реализовано сейчас:
 
 - Edge manager/KDS stop-list edit flow и conflict policy для двустороннего Edge <-> Cloud stop-list sync;
-- Cloud-side `StockWriteOffCaptured` receiver/worker;
+- Cloud-side `StockWriteOffCaptured` receiver/worker реализовано сейчас;
 - Cloud review/apply для catalog proposals и recipe change proposals;
 - kitchen stop-list edit и stop-list conflict policy;
 - ClickHouse `olap_stock_moves` projection;

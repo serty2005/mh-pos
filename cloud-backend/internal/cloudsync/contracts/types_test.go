@@ -118,9 +118,24 @@ func TestValidateEnvelopeAcceptsTargetInventoryEvents(t *testing.T) {
 			payload:   json.RawMessage(`{"origin":"edge_device","data":{"production_id":"production-1","restaurant_id":"restaurant-1","semi_finished_catalog_item_id":"semi-1","quantity":"5.000","unit_code":"KG","completed_at":"2026-05-05T10:15:00Z","business_date_local":"2026-05-05"}}`),
 		},
 		{
+			name:      "stock write-off",
+			eventType: contracts.EventStockWriteOffCaptured,
+			payload:   json.RawMessage(`{"origin":"edge_device","data":{"write_off_id":"writeoff-1","restaurant_id":"restaurant-1","reason_code":"expired","written_off_at":"2026-05-05T11:00:00Z","business_date_local":"2026-05-05","items":[{"catalog_item_id":"item-1","quantity":"1.000","unit_code":"KG"}]}}`),
+		},
+		{
 			name:      "stop list updated",
 			eventType: contracts.EventStopListUpdated,
 			payload:   json.RawMessage(`{"origin":"edge_device","data":{"stop_list_id":"stop-1","restaurant_id":"restaurant-1","catalog_item_id":"item-1","available_quantity":"0.000","active":true,"source":"edge","reason":"ingredient_unavailable","updated_at":"2026-05-05T12:05:00Z"}}`),
+		},
+		{
+			name:      "catalog suggestion",
+			eventType: contracts.EventCatalogItemChangeSuggested,
+			payload:   json.RawMessage(`{"origin":"edge_device","data":{"suggestion_id":"catalog-suggest-1","restaurant_id":"restaurant-1","action":"create_item","reason":"new seasonal item","suggested_at":"2026-05-05T12:30:00Z"}}`),
+		},
+		{
+			name:      "recipe suggestion",
+			eventType: contracts.EventRecipeChangeSuggested,
+			payload:   json.RawMessage(`{"origin":"edge_device","data":{"suggestion_id":"recipe-suggest-1","restaurant_id":"restaurant-1","action":"update_recipe","reason":"faster prep","suggested_at":"2026-05-05T12:35:00Z"}}`),
 		},
 	}
 	for _, tt := range tests {
@@ -139,6 +154,12 @@ func TestKitchenStatusChangedIsOperationalOnlyAndItemServedIsInventoryRelevant(t
 	}
 	if !contracts.IsInventoryRelevantEventType(contracts.EventItemServed) {
 		t.Fatal("ItemServed must enter durable inventory_event_queue")
+	}
+	if contracts.IsInventoryRelevantEventType(contracts.EventCatalogItemChangeSuggested) {
+		t.Fatal("CatalogItemChangeSuggested must stay outside inventory_event_queue")
+	}
+	if contracts.IsInventoryRelevantEventType(contracts.EventRecipeChangeSuggested) {
+		t.Fatal("RecipeChangeSuggested must stay outside inventory_event_queue")
 	}
 }
 

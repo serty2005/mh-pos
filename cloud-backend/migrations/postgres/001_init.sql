@@ -31,8 +31,11 @@ CREATE TABLE IF NOT EXISTS cloud_edge_event_receipts (
     'ItemServed',
     'StockReceiptCaptured',
     'InventoryCountCaptured',
+    'StockWriteOffCaptured',
     'ProductionCompleted',
     'StopListUpdated',
+    'CatalogItemChangeSuggested',
+    'RecipeChangeSuggested',
     'OrderClosed',
     'CashSessionOpened',
     'CashSessionClosed',
@@ -320,8 +323,11 @@ CREATE TABLE IF NOT EXISTS cloud_edge_event_receipts (
     'ItemServed',
     'StockReceiptCaptured',
     'InventoryCountCaptured',
+    'StockWriteOffCaptured',
     'ProductionCompleted',
     'StopListUpdated',
+    'CatalogItemChangeSuggested',
+    'RecipeChangeSuggested',
     'OrderClosed',
     'CashSessionOpened',
     'CashSessionClosed',
@@ -892,8 +898,11 @@ ALTER TABLE cloud_edge_event_receipts
     'ItemServed',
     'StockReceiptCaptured',
     'InventoryCountCaptured',
+    'StockWriteOffCaptured',
     'ProductionCompleted',
     'StopListUpdated',
+    'CatalogItemChangeSuggested',
+    'RecipeChangeSuggested',
     'OrderClosed',
     'CashSessionOpened',
     'CashSessionClosed',
@@ -1061,6 +1070,7 @@ CREATE TABLE IF NOT EXISTS inventory_event_queue (
   id TEXT PRIMARY KEY,
   receipt_id TEXT NOT NULL UNIQUE REFERENCES cloud_edge_event_receipts(id) ON DELETE RESTRICT,
   restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  warehouse_id TEXT,
   device_id TEXT NOT NULL CHECK (device_id <> ''),
   event_id TEXT NOT NULL CHECK (event_id <> ''),
   event_type TEXT NOT NULL CHECK (event_type <> ''),
@@ -1084,9 +1094,13 @@ CREATE INDEX IF NOT EXISTS inventory_event_queue_status_retry
 CREATE INDEX IF NOT EXISTS inventory_event_queue_event_type
   ON inventory_event_queue(event_type, occurred_at, id);
 
+CREATE INDEX IF NOT EXISTS inventory_event_queue_restaurant_warehouse_order
+  ON inventory_event_queue(restaurant_id, warehouse_id, occurred_at, id);
+
 CREATE TABLE IF NOT EXISTS stock_documents (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  warehouse_id TEXT,
   document_type TEXT NOT NULL CHECK (document_type IN ('SALE','RETURN','WASTE','PRODUCTION','PURCHASE','ADJUSTMENT','TRANSFER','INVENTORY_COUNT')),
   source_event_id TEXT NOT NULL CHECK (source_event_id <> ''),
   source_event_type TEXT NOT NULL CHECK (source_event_type <> ''),
@@ -1098,12 +1112,16 @@ CREATE TABLE IF NOT EXISTS stock_documents (
 CREATE INDEX IF NOT EXISTS stock_documents_restaurant_occurred_at
   ON stock_documents(restaurant_id, occurred_at, id);
 
+CREATE INDEX IF NOT EXISTS stock_documents_restaurant_warehouse_occurred_at
+  ON stock_documents(restaurant_id, warehouse_id, occurred_at, id);
+
 CREATE UNIQUE INDEX IF NOT EXISTS stock_documents_source_event_unique
   ON stock_documents(source_event_id, source_event_type);
 
 CREATE TABLE IF NOT EXISTS stock_ledger (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  warehouse_id TEXT,
   stock_document_id TEXT NOT NULL REFERENCES stock_documents(id) ON DELETE RESTRICT,
   source_event_id TEXT NOT NULL CHECK (source_event_id <> ''),
   source_event_type TEXT NOT NULL CHECK (source_event_type <> ''),
@@ -1122,6 +1140,9 @@ CREATE TABLE IF NOT EXISTS stock_ledger (
 
 CREATE INDEX IF NOT EXISTS stock_ledger_restaurant_occurred_at
   ON stock_ledger(restaurant_id, occurred_at, id);
+
+CREATE INDEX IF NOT EXISTS stock_ledger_restaurant_warehouse_occurred_at
+  ON stock_ledger(restaurant_id, warehouse_id, occurred_at, id);
 
 CREATE INDEX IF NOT EXISTS stock_ledger_source_event
   ON stock_ledger(source_event_id, source_event_type);
