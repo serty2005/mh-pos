@@ -426,7 +426,7 @@ Modal оплаты показывает:
 - результат оплаты;
 - переход заказа/чека после полной оплаты согласно текущему backend flow: final check создается после полного покрытия precheck payments, затем доступно закрытие заказа и reprint check.
 
-Real PSP/payment terminal integration и fiscal adapter остаются `запланировано далее` как future backend contract.
+Real PSP/payment terminal integration и fiscal adapter остаются `запланировано далее` как целевой backend contract.
 
 ### Modal отмены пречека
 
@@ -446,7 +446,7 @@ Real PSP/payment terminal integration и fiscal adapter остаются `зап
 
 ### Ограничения текущего backend/UI для первого этапа
 
-Первый этап не должен обещать как рабочие функции: split bill, transfer/merge tables, произвольное добавление гостей/seat allocation без settings/API, ручные скидки, KDS lifecycle, полноценные отчеты, real PSP/payment terminal, fiscal adapter и delivery/channel runtime. Эти пункты можно держать в design/backlog только как `запланировано далее` или future backend contract.
+Первый этап не должен обещать как рабочие функции: split bill, transfer/merge tables, произвольное добавление гостей/seat allocation без settings/API, ручные скидки, KDS lifecycle, полноценные отчеты, real PSP/payment terminal, fiscal adapter и delivery/channel runtime. Эти пункты можно держать в design/backlog только как `запланировано далее` или как целевой backend contract.
 
 ## Разделы
 
@@ -577,7 +577,7 @@ Action rail 1/4:
 
 - только легкие operational summaries на основе current/recent shift, current cash session, closed orders и sync status.
 
-Запланировано далее / future backend contract:
+Запланировано далее / целевой backend contract:
 
 - Z/X reports, revenue by category, staff sales, tax reports, inventory/cost reports, Cloud analytics.
 
@@ -731,7 +731,7 @@ UI обязан использовать canonical permission ids из `pos-ui/s
 - пользователь всегда видит текущий заказ или выбранный объект;
 - частые операции доступны за 1-2 касания;
 - рискованные операции уходят в modal с явным подтверждением и RBAC;
-- будущие функции появляются как disabled/planned только в документах и backlog, не как активные кнопки без API;
+- будущие функции появляются как disabled/`запланировано далее` только в документах и backlog, не как активные кнопки без API;
 - интерфейс проектируется от смены ресторана: быстро выбрать стол, добавить блюда, выпустить пречек, принять оплату, закрыть/вернуть/перепечатать, сверить кассу.
 - primary workflow остается waiter-first: кассовые и менеджерские операции доступны по RBAC, но не диктуют основной маршрут.
 

@@ -2,13 +2,13 @@
 
 Статус: обязательный дизайн-контракт для POS UI, BackOffice UI и будущих экранов MyHoreca POS.
 
-Документ фиксирует не философию, а практические правила: как должны выглядеть и вести себя компоненты, состояния, темы, статусы и пользовательские сценарии. Он дополняет `design.md`, `docs/ui/POS-UX-GUIDELINES.md` и `docs/ui/POS-UI-AGENT-RULES.md`.
+Документ фиксирует не философию, а практические правила: как должны выглядеть и вести себя компоненты, состояния, темы, статусы и пользовательские сценарии. Он дополняет `design.md` и `docs/ui/POS-UX-GUIDELINES.md`.
 
 Если дизайн-правило конфликтует с фактическим backend/API/runtime, источником истины остаются код, тесты и backend specs. UI не должен показывать backend-неподдержанную функцию как активную.
 
 ## 1. Назначение
 
-`POS 2.0 Design System` нужен, чтобы несколько разработчиков, дизайнеров и UI-агентов создавали единый продукт, а не набор визуально разных экранов.
+`POS 2.0 Design System` нужен, чтобы несколько разработчиков и дизайнеров создавали единый продукт, а не набор визуально разных экранов.
 
 Design System отвечает на вопросы:
 
@@ -467,10 +467,10 @@ BackOffice использует:
 - voided;
 - requires modifiers;
 - unavailable / stop-list conflict;
-- planned: sent to kitchen;
-- planned: preparing;
-- planned: ready;
-- planned: served.
+- запланировано далее: sent to kitchen;
+- запланировано далее: preparing;
+- запланировано далее: ready;
+- запланировано далее: served.
 
 ### 13.3 Table status
 
@@ -483,7 +483,7 @@ BackOffice использует:
 - merged;
 - conflict.
 
-Statuses without backend contract must be documented as planned and not shown as active runtime actions.
+Статусы без backend-контракта документируются как `запланировано далее` и не показываются как активные runtime-действия.
 
 ### 13.4 Payment status
 
@@ -565,9 +565,9 @@ Modal required for:
 - manager override;
 - cash drawer event;
 - destructive confirmation;
-- future split bill;
-- future transfer table/order;
-- future PSP/fiscal problem resolution.
+- запланировано далее: split bill;
+- запланировано далее: transfer table/order;
+- запланировано далее: PSP/fiscal problem resolution.
 
 Rules:
 
@@ -651,7 +651,7 @@ Allowed customization:
 - device start section;
 - light/dark theme;
 - role-based visible sections;
-- future: restaurant/device profile presets.
+- запланировано далее: restaurant/device profile presets.
 
 Rules:
 
@@ -680,7 +680,7 @@ Rules:
 - Do not hide payment in deep navigation.
 - Do not use decorative animation in critical flows.
 - Do not use tiny destructive links.
-- Do not show future functions as active.
+- Не показывать функции со статусом `запланировано далее` как активные.
 - Do not rely on color only.
 - Do not leave payment/refund/precheck result ambiguous.
 - Do not put inventory/tax/reporting admin UI into order entry.

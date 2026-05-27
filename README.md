@@ -73,7 +73,7 @@
 - `docs/ui/POS-UI-SPEC.md` — фактический cashier UI contract.
 - `docs/architecture/DDD-CONTEXT-MAP.md` — bounded contexts и ownership boundaries.
 - `docs/adr/ADR-015-persistence-and-analytics-strategy.md` — решение по persistence/analytics strategy.
-- `AGENTS.md` — только правила работы агентов и процесса разработки.
+- `AGENTS.md` — основной источник правил работы агентов и процесса разработки; внутренние playbook-материалы хранятся в `docs/internal/agent/`.
 
 ## Локальный запуск
 

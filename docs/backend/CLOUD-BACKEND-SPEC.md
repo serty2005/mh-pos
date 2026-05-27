@@ -198,19 +198,21 @@ Master data under canonical namespace:
 - `POST /api/v1/master-data/pricing/policies`
 - `GET /api/v1/master-data/pricing/policies`
 - `PATCH /api/v1/master-data/pricing/policies/{id}`
+- Реализовано сейчас (route-backed aliases в текущем runtime):
+  - `POST /api/v1/master-data/recipes/items`
+  - `GET /api/v1/master-data/recipes/items`
+  - `PATCH /api/v1/master-data/recipes/items/{id}`
+  - `POST /api/v1/master-data/inventory/stop-list`
+  - `GET /api/v1/master-data/inventory/stop-list`
+  - `PATCH /api/v1/master-data/inventory/stop-list/{id}`
+  - `POST /api/v1/master-data/inventory/stop-list/{id}/deactivate`
 - Запланировано до полного пилота:
-  - `POST /api/v1/master-data/recipes`
-  - `GET /api/v1/master-data/recipes`
-  - `PATCH /api/v1/master-data/recipes/{id}`
   - `GET /api/v1/master-data/recipe-change-suggestions`
   - `POST /api/v1/master-data/recipe-change-suggestions/{id}/approve`
   - `POST /api/v1/master-data/recipe-change-suggestions/{id}/reject`
   - `GET /api/v1/master-data/catalog-suggestions`
   - `POST /api/v1/master-data/catalog-suggestions/{id}/approve`
   - `POST /api/v1/master-data/catalog-suggestions/{id}/reject`
-  - `POST /api/v1/master-data/stop-lists`
-  - `GET /api/v1/master-data/stop-lists`
-  - `PATCH /api/v1/master-data/stop-lists/{id}`
 - `POST /api/v1/master-data/menu/categories`
 - `POST /api/v1/master-data/floor/halls`
 - `GET /api/v1/master-data/floor/halls`

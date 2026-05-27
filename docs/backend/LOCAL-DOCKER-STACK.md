@@ -84,7 +84,7 @@ curl -fsS http://localhost:8080/health
 
 ## UI devbox для build/unit/e2e
 
-Собери devbox один раз; Chromium и системные зависимости Playwright устанавливаются в image build, а не при каждом запуске Codex:
+Собери devbox один раз; Chromium и системные зависимости Playwright устанавливаются в image build, а не при каждом запуске локального dev-окружения:
 
 ```bash
 docker compose -f docker-compose.local.yml --profile devbox build devbox
