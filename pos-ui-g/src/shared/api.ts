@@ -1,11 +1,16 @@
 import { z } from 'zod';
 
 import {
+  catalogItemSchema,
   cashDrawerEventSchema,
   cashSessionSchema,
   closedOrderSchema,
   financialOperationSchema,
   hallSchema,
+  kitchenOrderQueueResponseSchema,
+  kitchenProposalSchema,
+  kitchenRecipeSchema,
+  kitchenTicketSchema,
   menuItemSchema,
   orderLineSchema,
   orderSchema,
@@ -45,6 +50,7 @@ export type CashDrawerEventType = 'cash_in' | 'cash_out' | 'no_sale' | 'cash_cou
 export type InventoryDisposition = 'no_stock_effect' | 'return_to_stock' | 'write_off_waste' | 'manual_review';
 export type FinancialOperationKind = 'full' | 'partial';
 export type FinancialOperationItemScope = 'whole_check' | 'order_line' | 'modifier_line' | 'service_charge' | 'tip' | 'payment';
+export type KitchenTicketAction = 'accept' | 'start' | 'hold' | 'ready' | 'serve' | 'recall' | 'cancel';
 
 export type FinancialOperationItemPayload = {
   scope: FinancialOperationItemScope;
@@ -269,6 +275,7 @@ export function createApiClient(getAuth: () => AuthSnapshot, base = (viteEnv.env
     listHalls: () => request(`/halls?${new URLSearchParams({ restaurant_id: getAuth().restaurantId })}`, z.array(hallSchema)),
     listTables: (hallId: string) => request(`/tables?${new URLSearchParams({ restaurant_id: getAuth().restaurantId, hall_id: hallId })}`, z.array(tableSchema)),
     listMenuItems: () => request('/menu/items', z.array(menuItemSchema)),
+    listCatalogItems: () => request('/catalog/items', z.array(catalogItemSchema)),
     getCurrentOrderByTable: (tableId: string) => requestOptional(`/orders/current?${new URLSearchParams({ table_id: tableId })}`, orderSchema),
     listActiveOrdersByHall: (hallId: string) => request(`/orders/active?${new URLSearchParams({ hall_id: hallId })}`, z.array(orderSchema)),
     getOrder: (orderId: string) => request(`/orders/${encodeURIComponent(orderId)}`, orderSchema),
@@ -354,6 +361,59 @@ export function createApiClient(getAuth: () => AuthSnapshot, base = (viteEnv.env
       method: 'POST',
       body: JSON.stringify({}),
     }),
+    listKitchenOrderQueue: (query: { status?: string; station?: string; limit?: number; offset?: number } = {}) => {
+      const params = new URLSearchParams();
+      if (query.status) params.set('status', query.status);
+      if (query.station) params.set('station', query.station);
+      params.set('limit', String(query.limit ?? 50));
+      params.set('offset', String(query.offset ?? 0));
+      return request(`/kitchen/order-queue?${params}`, kitchenOrderQueueResponseSchema);
+    },
+    listKitchenTickets: (query: { status?: string; station?: string; limit?: number; offset?: number } = {}) => {
+      const params = new URLSearchParams();
+      if (query.status) params.set('status', query.status);
+      if (query.station) params.set('station', query.station);
+      params.set('limit', String(query.limit ?? 50));
+      params.set('offset', String(query.offset ?? 0));
+      return request(`/kitchen/tickets?${params}`, z.array(kitchenTicketSchema));
+    },
+    changeKitchenTicketStatus: (ticketId: string, action: KitchenTicketAction) => request(`/kitchen/tickets/${encodeURIComponent(ticketId)}/${action}`, kitchenTicketSchema, {
+      method: 'POST',
+      body: JSON.stringify({ command_id: nextCommandId(`kitchen-${action}`) }),
+    }),
+    submitKitchenStockReceipt: (payload: unknown) => request('/kitchen/stock-receipts', z.unknown(), {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+    submitKitchenInventoryCount: (payload: unknown) => request('/kitchen/inventory-counts', z.unknown(), {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+    submitKitchenWriteOff: (payload: unknown) => request('/kitchen/stock-write-offs', z.unknown(), {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+    submitKitchenProduction: (payload: unknown) => request('/kitchen/productions', z.unknown(), {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+    getKitchenRecipe: (catalogItemId: string) => request(`/kitchen/catalog/items/${encodeURIComponent(catalogItemId)}/recipe`, kitchenRecipeSchema),
+    submitCatalogSuggestion: (payload: unknown) => request('/kitchen/catalog-suggestions', z.unknown(), {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+    submitRecipeSuggestion: (payload: unknown) => request('/kitchen/recipe-suggestions', z.unknown(), {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+    listKitchenProposals: (query: { kind?: string; status?: string; limit?: number; offset?: number } = {}) => {
+      const params = new URLSearchParams();
+      if (query.kind) params.set('kind', query.kind);
+      if (query.status) params.set('status', query.status);
+      params.set('limit', String(query.limit ?? 50));
+      params.set('offset', String(query.offset ?? 0));
+      return request(`/kitchen/proposals?${params}`, z.array(kitchenProposalSchema));
+    },
   };
 }
 

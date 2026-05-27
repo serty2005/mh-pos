@@ -7,6 +7,7 @@ import { POSOrderSection } from './components/menu/POSOrderSection';
 import { POSActivitySection } from './components/activity/POSActivitySection';
 import { POSReportsSection } from './components/reports/POSReportsSection';
 import { POSCashSection } from './components/cash/POSCashSection';
+import { POSKitchenSection } from './components/kitchen/POSKitchenSection';
 import { t } from './shared/i18n';
 import { 
   Armchair, 
@@ -51,7 +52,7 @@ function POSAppShellContent() {
   const [isSideMenuOpen, setSideMenuOpen] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<string>('');
   const [currentMode, setCurrentMode] = useState<TerminalMode>('pos');
-  const [currentKdsSection, setCurrentKdsSection] = useState<'queue' | 'ready'>('queue');
+  const [currentKdsSection, setCurrentKdsSection] = useState<'orders' | 'stock' | 'kitchen'>('orders');
 
   // Clock snapshot runner
   useEffect(() => {
@@ -93,7 +94,7 @@ function POSAppShellContent() {
 
   const renderCurrentSection = () => {
     if (currentMode === 'kds') {
-      return <ModePlaceholder title={currentKdsSection === 'queue' ? t.modes.kdsQueue : t.modes.kdsReady} />;
+      return <POSKitchenSection section={currentKdsSection} />;
     }
     if (currentMode === 'waiter') {
       return <WaiterQrView waiterUrl={`${window.location.origin}/waiter`} />;
@@ -133,8 +134,9 @@ function POSAppShellContent() {
   ] as const;
 
   const kdsNavItems = [
-    { id: 'queue', label: t.modes.kdsQueue, icon: ChefHat },
-    { id: 'ready', label: t.modes.kdsReady, icon: ReceiptText },
+    { id: 'orders', label: t.kitchen.navOrders, icon: ReceiptText },
+    { id: 'stock', label: t.kitchen.navStock, icon: Truck },
+    { id: 'kitchen', label: t.kitchen.navKitchen, icon: ChefHat },
   ] as const;
 
   const renderBottomNavigation = () => {

@@ -40,7 +40,7 @@
 - Recipe read возвращает active recipe version, строки техкарты с названиями ингредиентов из `catalog_items` и локальные proposals по этой техкарте.
 - Catalog/recipe suggestion routes сохраняют `kitchen_proposals` со status `pending_sync`, пишут `CatalogItemChangeSuggested`/`RecipeChangeSuggested` в `local_event_log` и `pos_sync_outbox`, поддерживают replay по `command_id` и не мутируют `catalog_items`, `recipe_versions`, `recipe_lines`.
 - `RecipeChangeSuggested.prep_time_delta_minutes` валидируется POS Edge лимитом `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES` с default `120`.
-- `pos-ui-g` уже имеет отдельный terminal mode `kds`, но сейчас он показывает placeholder вместо backend-backed kitchen runtime.
+- `pos-ui-g` уже имеет отдельный terminal mode `kds` с backend-backed kitchen runtime: нижний quick access `Заказы`/`Склад`/`Кухня`, верхние вкладки внутри разделов, queue/ready order tiles, stock forms и kitchen proposals/recipe screens.
 
 Не реализовано сейчас:
 
@@ -67,7 +67,7 @@ POS Edge не создает `StockDocument`, `StockMove`, `StockLedger` и не
 Запланировано далее:
 
 - Cloud backend: новые sync event contracts, receiver validation, proposal review tables/routes, inventory worker для write-off и warehouse sequence.
-- POS UI `pos-ui-g`: полный kitchen mode с тремя нижними разделами и вкладками внутри рабочих экранов.
+- POS UI `pos-ui-g`: полный kitchen mode с тремя нижними разделами и вкладками внутри рабочих экранов реализован; дальнейшие шаги касаются UX-полировки, расширенных validation hints и e2e покрытия.
 - Cloud UI: manager review для catalog/recipe suggestions, approve/reject и публикация измененных справочников.
 - Документация и тесты по backend, sync, UI и smoke.
 

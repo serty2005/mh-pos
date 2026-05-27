@@ -215,6 +215,12 @@ Requirements:
 - `/pos/kitchen` должен расширяться только поверх подтвержденных backend routes;
 - `/pos/manager` остается вне POS UI runtime, если manager операции полностью покрыты Cloud UI;
 - kitchen UI читает kitchen tickets, показывает статусы `new`, `accepted`, `in_progress`, `hold`, `ready`, `served`, `recall`, `cancelled` и отправляет status actions, которые backend превращает в `KitchenTicketStatusChanged`/`ItemServed`;
+- `pos-ui-g` KDS mode реализован как production shell с нижним quick access только `Заказы`, `Склад`, `Кухня`; внутри разделов используются верхние вкладки:
+- `Заказы`: `Очередь`, `Готово к выдаче` с order tiles (время, статусы, блюда, actions);
+- `Склад`: формы `Приемка`, `Ревизия`, `Списание`, `Приготовление` с full catalog picker;
+- `Кухня`: `Техкарты`, `Предложения`, `Мои предложения`;
+- после kitchen action UI перечитывает backend и не держит оптимистичный статус как source of truth;
+- ошибки показываются безопасно через локализованные keys в `pos-ui-g/shared/i18n`;
 - kitchen UI дает повару сценарии приемки поставки, catalog suggestion, просмотра техкарты, `RecipeChangeSuggested` и редактирования stop-list через backend routes.
 
 ## POS Shell Visual Contract

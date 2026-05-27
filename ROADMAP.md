@@ -151,7 +151,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - выполнено: POS Edge recipe/proposal backend routes возвращают техкарту с ingredient names из полного `catalog_items`, сохраняют локальные `kitchen_proposals`, пишут `CatalogItemChangeSuggested`/`RecipeChangeSuggested`, поддерживают `proposal_group_id` для нового блюда + техкарты и валидируют prep time delta через `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES`;
   - выполнено: Cloud-side `StockWriteOffCaptured` receiver/worker, включая durable processing через `inventory_event_queue`;
   - выполнено: Cloud review/apply для `CatalogItemChangeSuggested`/`RecipeChangeSuggested` с `GET/approve/reject/request-changes`, apply только на approve и публикацией `proposal_feedback` вместе с `catalog`/`recipes`;
-  - далее: receipt line через catalog suggestion после Cloud resolution и kitchen UI формы поверх этих routes;
+  - выполнено: `pos-ui-g` kitchen mode использует backend routes для queue/ready order tiles, ticket actions, stock forms (`receipt/count/write-off/production`), full catalog picker, recipe view и локальные kitchen proposals/suggestions с безопасной локализацией ошибок;
   - добавить kitchen stop-list edit flow и параметр `stop_list_conflict_policy` для порядка применения Cloud/Edge overlay.
 - POS-side authoritative financial/inventory logic:
   - POS Edge backend остается авторитетным для offline order/precheck/payment/check commands, financial operation ledger, pricing snapshot, idempotency, cash/session boundaries, stop-list sale blocking и KDS command validation;

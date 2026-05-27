@@ -179,6 +179,73 @@ export const orderLineSchema = z.object({
   updated_at: z.string(),
 });
 
+export const kitchenTicketStatusSchema = z.enum(['new', 'accepted', 'in_progress', 'hold', 'ready', 'served', 'recall', 'cancelled']);
+export const kitchenOrderStatusSchema = z.enum(['queued', 'accepted', 'in_progress', 'partially_ready', 'ready', 'partially_served', 'served', 'cancelled', 'mixed']);
+
+export const kitchenTicketSchema = z.object({
+  id: z.string(),
+  order_id: z.string(),
+  order_line_id: z.string(),
+  table_name: z.string(),
+  name: z.string(),
+  quantity: z.number(),
+  unit_code: z.string(),
+  station_routing_key: z.string().optional().default(''),
+  course: optionalNullableString,
+  comment: optionalNullableString,
+  status: kitchenTicketStatusSchema,
+  created_at: z.string(),
+  updated_at: z.string(),
+}).passthrough();
+
+export const kitchenOrderQueueItemSchema = z.object({
+  order_id: z.string(),
+  edge_order_id: z.string().optional().default(''),
+  table_name: z.string().optional().default(''),
+  kitchen_order_status: kitchenOrderStatusSchema,
+  created_at: z.string(),
+  last_status_changed_at: z.string().optional().default(''),
+  elapsed_seconds: z.number().optional().default(0),
+  tickets: z.array(kitchenTicketSchema).optional().default([]),
+}).passthrough();
+
+export const kitchenOrderQueueResponseSchema = z.object({
+  orders: z.array(kitchenOrderQueueItemSchema),
+  limit: z.number().optional().default(50),
+  offset: z.number().optional().default(0),
+}).passthrough();
+
+export const catalogItemSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: z.string().optional(),
+  item_type: z.string().optional(),
+  active: z.boolean().optional(),
+}).passthrough();
+
+export const kitchenProposalSchema = z.object({
+  id: z.string(),
+  kind: z.string(),
+  status: z.string(),
+  payload: z.unknown().optional(),
+  created_at: z.string(),
+  updated_at: z.string().optional(),
+}).passthrough();
+
+export const kitchenRecipeSchema = z.object({
+  catalog_item_id: z.string().optional(),
+  recipe_version_id: z.string().optional(),
+  lines: z.array(z.object({
+    line_id: z.string().optional(),
+    catalog_item_id: z.string().optional(),
+    ingredient_name: z.string().optional(),
+    quantity: z.string().optional(),
+    unit_code: z.string().optional(),
+    loss_percent: z.string().optional(),
+  }).passthrough()).optional().default([]),
+  proposals: z.array(kitchenProposalSchema).optional().default([]),
+}).passthrough();
+
 export const pricingPolicySchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
@@ -480,3 +547,9 @@ export type BackendSyncStatus = z.infer<typeof syncStatusSchema>;
 export type BackendPricingCalculation = z.infer<typeof pricingCalculationSchema>;
 export type BackendStorageStatus = z.infer<typeof storageStatusSchema>;
 export type BackendTable = z.infer<typeof tableSchema>;
+export type BackendKitchenOrderQueueResponse = z.infer<typeof kitchenOrderQueueResponseSchema>;
+export type BackendKitchenOrderQueueItem = z.infer<typeof kitchenOrderQueueItemSchema>;
+export type BackendKitchenTicket = z.infer<typeof kitchenTicketSchema>;
+export type BackendCatalogItem = z.infer<typeof catalogItemSchema>;
+export type BackendKitchenRecipe = z.infer<typeof kitchenRecipeSchema>;
+export type BackendKitchenProposal = z.infer<typeof kitchenProposalSchema>;
