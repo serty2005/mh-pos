@@ -89,6 +89,7 @@ type ApplyMasterDataCommand struct {
 	RecipeVersions         []domain.RecipeVersion         `json:"recipe_versions,omitempty"`
 	RecipeLines            []domain.RecipeLine            `json:"recipe_lines,omitempty"`
 	StopListEntries        []domain.StopListEntry         `json:"stop_lists,omitempty"`
+	Warehouses             []domain.WarehouseReference    `json:"warehouses,omitempty"`
 }
 
 type ApplyMasterDataResult struct {
@@ -425,6 +426,15 @@ func (s *Service) applyStream(ctx context.Context, stream domain.MasterDataStrea
 		}
 		counts[string(stream)] = len(cmd.RecipeVersions) + len(cmd.RecipeLines)
 	case domain.MasterDataStreamInventory:
+		for i := range cmd.Warehouses {
+			v := normalizeWarehouseReference(cmd.Warehouses[i], cmd.RestaurantID, now)
+			if err := validateWarehouseReference(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterWarehouseReference(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
 		for i := range cmd.StopListEntries {
 			v := normalizeStopListEntry(cmd.StopListEntries[i], cmd.RestaurantID, now)
 			if err := validateStopListEntry(v); err != nil {
@@ -434,7 +444,7 @@ func (s *Service) applyStream(ctx context.Context, stream domain.MasterDataStrea
 				return err
 			}
 		}
-		counts[string(stream)] = len(cmd.StopListEntries)
+		counts[string(stream)] = len(cmd.Warehouses) + len(cmd.StopListEntries)
 	default:
 		return fmt.Errorf("%w: unsupported master data stream %q", domain.ErrInvalid, stream)
 	}
@@ -563,6 +573,11 @@ func validatePayload(cmd ApplyMasterDataCommand, streams []domain.MasterDataStre
 				}
 			}
 		case domain.MasterDataStreamInventory:
+			for i := range cmd.Warehouses {
+				if err := validateWarehouseReference(normalizeWarehouseReference(cmd.Warehouses[i], cmd.RestaurantID, now)); err != nil {
+					return err
+				}
+			}
 			for i := range cmd.StopListEntries {
 				if err := validateStopListEntry(normalizeStopListEntry(cmd.StopListEntries[i], cmd.RestaurantID, now)); err != nil {
 					return err
@@ -596,7 +611,7 @@ func payloadRowCount(cmd ApplyMasterDataCommand, streams []domain.MasterDataStre
 		case domain.MasterDataStreamRecipes:
 			total += len(cmd.RecipeVersions) + len(cmd.RecipeLines)
 		case domain.MasterDataStreamInventory:
-			total += len(cmd.StopListEntries)
+			total += len(cmd.Warehouses) + len(cmd.StopListEntries)
 		}
 	}
 	return total
@@ -687,7 +702,7 @@ func streamsToApply(cmd ApplyMasterDataCommand) ([]domain.MasterDataStream, erro
 	if len(cmd.RecipeVersions) > 0 || len(cmd.RecipeLines) > 0 {
 		streams = append(streams, domain.MasterDataStreamRecipes)
 	}
-	if len(cmd.StopListEntries) > 0 {
+	if len(cmd.Warehouses) > 0 || len(cmd.StopListEntries) > 0 {
 		streams = append(streams, domain.MasterDataStreamInventory)
 	}
 	if len(streams) == 0 {
@@ -970,6 +985,18 @@ func normalizeStopListEntry(v domain.StopListEntry, fallbackRestaurantID string,
 	return v
 }
 
+func normalizeWarehouseReference(v domain.WarehouseReference, fallbackRestaurantID string, now time.Time) domain.WarehouseReference {
+	v.ID = strings.TrimSpace(v.ID)
+	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
+	if v.RestaurantID == "" {
+		v.RestaurantID = strings.TrimSpace(fallbackRestaurantID)
+	}
+	v.Name = strings.TrimSpace(v.Name)
+	v.Kind = strings.TrimSpace(v.Kind)
+	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
+	return v
+}
+
 func defaultTime(v, fallback time.Time) time.Time {
 	if v.IsZero() {
 		return fallback
@@ -1229,6 +1256,13 @@ func validateStopListEntry(v domain.StopListEntry) error {
 	}
 	if v.AvailableQuantity != nil && *v.AvailableQuantity < 0 {
 		return fmt.Errorf("%w: stop-list available_quantity must be non-negative", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func validateWarehouseReference(v domain.WarehouseReference) error {
+	if v.ID == "" || v.RestaurantID == "" || v.Name == "" || v.Kind == "" {
+		return fmt.Errorf("%w: warehouse id, restaurant_id, name and kind are required", domain.ErrInvalid)
 	}
 	return nil
 }

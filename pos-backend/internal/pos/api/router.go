@@ -93,6 +93,10 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/kitchen/tickets/{id}/serve", h.serveKitchenTicket)
 		r.Post("/kitchen/tickets/{id}/recall", h.recallKitchenTicket)
 		r.Post("/kitchen/tickets/{id}/cancel", h.cancelKitchenTicket)
+		r.Post("/kitchen/stock-receipts", h.captureKitchenStockReceipt)
+		r.Post("/kitchen/inventory-counts", h.captureKitchenInventoryCount)
+		r.Post("/kitchen/stock-write-offs", h.captureKitchenStockWriteOff)
+		r.Post("/kitchen/productions", h.completeKitchenProduction)
 
 		r.Get("/checks/{id}", h.getCheck)
 		r.Get("/checks/{id}/financial-operations", h.listCheckFinancialOperations)
@@ -950,6 +954,50 @@ func (h *Handler) changeKitchenTicketStatus(w http.ResponseWriter, r *http.Reque
 	cmd.Action = action
 	v, err := h.service.ChangeKitchenTicketStatus(r.Context(), cmd)
 	writeOK(w, r, v, err)
+}
+
+func (h *Handler) captureKitchenStockReceipt(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CaptureStockReceiptCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.CaptureKitchenStockReceipt(r.Context(), cmd)
+	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) captureKitchenInventoryCount(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CaptureInventoryCountCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.CaptureKitchenInventoryCount(r.Context(), cmd)
+	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) captureKitchenStockWriteOff(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CaptureStockWriteOffCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.CaptureKitchenStockWriteOff(r.Context(), cmd)
+	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) completeKitchenProduction(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CompleteProductionCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.CompleteKitchenProduction(r.Context(), cmd)
+	writeCreated(w, r, v, err)
 }
 
 func readLimitOffset(w http.ResponseWriter, r *http.Request) (int, int, bool) {

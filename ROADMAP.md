@@ -113,12 +113,13 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Recipes/inventory:
   - целевой contract зафиксирован в `docs/backend/INVENTORY-COSTING-SPEC.md`;
   - Edge должен стать только генератором events и UI ввода, без stock documents/moves/balances/costing;
-  - выполнено: Edge SQLite schema содержит read-only `recipe_versions`, `recipe_lines` и `stop_lists`;
+  - выполнено: Edge SQLite schema содержит read-only `recipe_versions`, `recipe_lines`, `stop_lists` и `warehouse_reference`;
   - выполнено: Cloud Inventory Worker принимает через durable queue `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
   - выполнено: Cloud PostgreSQL baseline содержит `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`;
   - выполнено: worker пишет `stock_ledger` with `unit_cost_minor`, `total_cost_minor`, `costing_status` для нормализованных item payloads; retro recalculation jobs остаются следующим шагом;
   - выполнено: Cloud Inventory Worker дедуплицирует `ItemServed` replay и `CheckClosed` replay, а `CheckClosed` после обработанного `ItemServed` списывает только положительную unserved delta по `order_line_id`;
   - выполнено: POS Edge пишет `CheckClosed` outbox event из immutable `check.Snapshot` при final check после полной оплаты;
+  - выполнено: POS Edge kitchen stock input routes пишут `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` в `local_event_log`/`pos_sync_outbox` без POS-side stock documents/moves/balances/costing;
   - выполнено: POS Edge использует stop-list как единственный механизм блокировки продаж при add/increase order line; stock balance остается аналитическим и может быть отрицательным;
   - выполнено: минимальный HTTP-only smoke `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud recipes/stop-list publication -> Edge sync -> waiter order -> KDS served -> cashier final check -> `ItemServed`/`CheckClosed` -> Cloud `stock_ledger`.
 - Cancellation/refund/reprint hardening:
@@ -136,6 +137,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Stop-list sale blocking:
   - выполнено: POS Edge lookup active `stop_lists` для самого блюда и обязательных active recipe components при `AddOrderLine` и увеличении quantity;
   - выполнено: POS Edge ingest streams `recipes` и `inventory_reference`; Cloud generic package validation/storage принимает эти streams;
+  - выполнено: POS Edge применяет `warehouses` из `inventory_reference` в `warehouse_reference` и использует default warehouse для kitchen stock command validation;
   - выполнено: Cloud UI имеет bounded authoring для recipe items и stop-list entries по подтвержденным master-data routes;
   - добавить conflict policy, сценарный recipe version editor/review и publication readiness поверх этих данных;
   - стабилизировать regression-покрытие `pos_stop_list_sale_blocking` для Cloud publish/import контракта и offline blocking-инварианта.
@@ -145,7 +147,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - выполнено: status actions пишут `KitchenTicketStatusChanged`, а `serve` дополнительно пишет `ItemServed` в `local_event_log` и `pos_sync_outbox`; replay того же kitchen `command_id` идемпотентен, повторный `serve` новым `command_id` пишет новый `ItemServed` с `serve_sequence` и optional `supersedes_served_event_id`;
   - выполнено: `/pos/kitchen` читает backend tickets, показывает status columns/list, безопасные loading/error/empty/no-permission states и после action перечитывает backend truth без UI-authoritative статусов;
   - выполнено для Cloud worker: принятый `ItemServed` идемпотентно создает SALE ledger по `order_line_id`, а последующий `CheckClosed` пишет только unserved delta;
-  - добавить chef stock receipt flow: `StockReceiptCaptured` с выбором существующего catalog item или `CatalogItemChangeSuggested` для нового/измененного товара;
+  - выполнено: Edge-side chef stock input routes для receipt/count/write-off/production валидируют warehouse, catalog item, receipt line totals, counted quantity, write-off reason и semi-finished production recipe, затем пишут outbox events без local stock documents;
+  - далее: Cloud-side `StockWriteOffCaptured` receiver/worker, receipt line через `CatalogItemChangeSuggested` для нового/измененного товара и kitchen UI формы поверх этих routes;
   - добавить chef recipe proposal flow: просмотр техкарты и `RecipeChangeSuggested` с заменой ингредиента, количеством/единицей/потерями и prep time delta в пределах `recipe_suggestion_max_time_delta_minutes`;
   - добавить kitchen stop-list edit flow и параметр `stop_list_conflict_policy` для порядка применения Cloud/Edge overlay.
 - POS-side authoritative financial/inventory logic:
@@ -225,9 +228,9 @@ Roadmap фиксирует статусы, блокеры и следующий 
 
 - cashier flow из `Definition Of Ready For Cashier Pilot` остается зеленым;
 - Cloud UI позволяет настроить stop-list и recipes, опубликовать их и увидеть readiness Edge;
-- POS Edge применяет `recipes` и `inventory_reference` через managed sync и локально блокирует stop-listed sale offline по локальному `stop_lists`;
+- POS Edge применяет `recipes` и `inventory_reference` через managed sync, локально блокирует stop-listed sale offline по локальному `stop_lists` и валидирует kitchen stock commands по `warehouse_reference`;
 - waiter mobile UI проходит Playwright mobile flow без payment/refund authority;
-- kitchen UI должен проходить Playwright flow по backend-backed status lifecycle и `ItemServed`; receipt capture, recipe suggestion и stop-list edit остаются следующими сценариями после появления backend routes;
+- kitchen UI должен проходить Playwright flow по backend-backed status lifecycle и `ItemServed`; receipt/count/write-off/production UI forms, recipe suggestion и stop-list edit остаются следующими сценариями после backend route foundation;
 - Cloud worker создает review/proposal записи из `CatalogItemChangeSuggested` и `RecipeChangeSuggested`, а не применяет их без policy/manager review;
 - Cloud принимает `CheckClosed`/`ItemServed`, дедуплицирует replay и Cloud Inventory Worker пишет полный stock document/ledger/balance/costing state;
 - Cloud Inventory Engine покрывает stock receipt, inventory count, production, sale consumption, refund/cancellation disposition, recipe expansion, modifier linked consumption, negative-balance costing и retro recalculation DAG;

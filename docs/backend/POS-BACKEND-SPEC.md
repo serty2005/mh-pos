@@ -85,6 +85,10 @@
 - `POST /api/v1/kitchen/tickets/{id}/serve`
 - `POST /api/v1/kitchen/tickets/{id}/recall`
 - `POST /api/v1/kitchen/tickets/{id}/cancel`
+- `POST /api/v1/kitchen/stock-receipts`
+- `POST /api/v1/kitchen/inventory-counts`
+- `POST /api/v1/kitchen/stock-write-offs`
+- `POST /api/v1/kitchen/productions`
 - `POST /api/v1/payments/{id}/refund`
 - `POST /api/v1/cash-shifts/open`
 - `POST /api/v1/cash-shifts/{id}/close`
@@ -307,7 +311,7 @@ Pricing contract:
 - `restaurants` применяет Cloud-authored settings и `active`; опубликованный active restaurant сохраняется в Edge read model как active row.
 - `pricing_policy` применяет `tax_profiles`, `tax_rules`, `service_charge_rules` и automatic discount/surcharge `pricing_policies` с sync metadata.
 - `recipes` применяет `recipe_versions` и `recipe_lines` с sync metadata.
-- `inventory_reference` применяет `stop_lists` с sync metadata.
+- `inventory_reference` применяет `stop_lists` и `warehouses`/`warehouse_reference` с sync metadata.
 - Strict JSON decode отклоняет неизвестные request fields; unsupported stream names отклоняются до partial apply.
 
 Только основа:
@@ -335,15 +339,16 @@ Modifiers:
 Recipes/inventory:
 
 - Реализовано сейчас: POS Edge работает как генератор events и UI ввода; он не создает `StockDocument`, `StockMove`, stock balance или costing rows.
-- Реализовано сейчас: Edge SQLite содержит read-only `recipe_versions`, `recipe_lines` и `stop_lists`; legacy Edge-side stock tables удалены из целевого baseline.
+- Реализовано сейчас: Edge SQLite содержит read-only `recipe_versions`, `recipe_lines`, `stop_lists` и `warehouse_reference`; legacy Edge-side stock tables удалены из целевого baseline.
 - Реализовано сейчас: Cloud Inventory Worker обрабатывает `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated` через durable queue.
 - Реализовано сейчас: Cloud PostgreSQL хранит `inventory_event_queue`, `stock_documents`, `stock_ledger` with `unit_cost_minor`, `total_cost_minor` and `costing_status`; ClickHouse batch projection `olap_stock_moves` запланирована до полного пилота.
 - Реализовано сейчас: cancellation/refund ledger хранит явный `inventory_disposition`; POS runtime не мутирует local stock tables, потому что local stock tables удалены.
 - Реализовано сейчас: POS Edge recipe/stop-list ingest, локальная sale blocking проверка active stop-list для sellable catalog item и mandatory active recipe components. Проверка не читает stock balance и не создает stock documents/moves.
 - Реализовано сейчас: final check после полной оплаты пишет POS-generated `CheckClosed` outbox envelope из immutable `check.Snapshot`.
 - Реализовано сейчас: минимальный POS Edge KDS lifecycle foundation создает kitchen tickets из order lines, пишет `KitchenTicketStatusChanged`, а `serve` пишет `ItemServed`.
-- Не реализовано сейчас: chef receipt/catalog/recipe proposal flows, Edge manager/KDS stop-list edit flow, modifier linked catalog item stock consumption, retro costing DAG.
-- Запланировано до полного пилота: Cloud authoring/publication UI для recipes/stop-list, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `StopListUpdated` и расширение KDS за пределы ticket lifecycle foundation.
+- Реализовано сейчас: POS Edge kitchen stock input routes валидируют `warehouse_id`/default warehouse, существующие stock-capable catalog items, receipt supplier/document date/line totals, inventory count `counted_quantity`, write-off reason и production для active `semi_finished` с active recipe; routes пишут только `local_event_log`/`pos_sync_outbox`.
+- Не реализовано сейчас: catalog/recipe proposal flows, Edge manager/KDS stop-list edit flow, Cloud-side `StockWriteOffCaptured` receiver/worker, modifier linked catalog item stock consumption, retro costing DAG.
+- Запланировано до полного пилота: Cloud authoring/publication UI для recipes/stop-list, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `StopListUpdated`, Cloud-side write-off processing и расширение KDS за пределы ticket lifecycle foundation.
 - Профильный целевой contract: `docs/backend/INVENTORY-COSTING-SPEC.md`.
 
 ## Full Pilot Backend Delta
@@ -369,6 +374,10 @@ Recipes/inventory:
   - `POST /api/v1/kitchen/tickets/{id}/serve`;
   - `POST /api/v1/kitchen/tickets/{id}/recall`;
   - `POST /api/v1/kitchen/tickets/{id}/cancel`;
+  - `POST /api/v1/kitchen/stock-receipts`;
+  - `POST /api/v1/kitchen/inventory-counts`;
+  - `POST /api/v1/kitchen/stock-write-offs`;
+  - `POST /api/v1/kitchen/productions`;
   - `GET /api/v1/kitchen/order-queue` требует `pos.kitchen.view`, поддерживает `status` по вычисляемому `kitchen_order_status`, `station`, `limit`, `offset`, default/max limit `50/100`, grouped tickets по order и backend-side `elapsed_seconds`;
   - `GET /api/v1/kitchen/tickets` требует `pos.kitchen.view`, поддерживает `status`, `station`, `limit`, `offset`, default/max limit `50/100` и stable sort `created_at ASC, id ASC`;
   - status actions требуют `pos.kitchen.status.change`, принимают `command_id`, возвращают safe conflict для недопустимого перехода и не считают UI visibility security boundary;
@@ -376,8 +385,14 @@ Recipes/inventory:
   - tickets создаются из non-service order lines с переносом `order_line_id`, `catalog_item_id`, `menu_item_id`, `quantity`, `unit_code`, `station_routing_key`, `table_name`, `shift_id`, `device_id`, `restaurant_id`, а course/comment синхронизируются из order line details;
   - status actions пишут `KitchenTicketStatusChanged`, а served action дополнительно пишет `ItemServed` в `local_event_log` и `pos_sync_outbox`;
   - повторный цикл `served -> recall -> start -> ready -> serve` реализован; повторный `serve` с новым `command_id` пишет новый `ItemServed` с `ticket_id`, `serve_sequence` и optional `supersedes_served_event_id`.
-- Kitchen inventory/proposal API остается `запланировано далее` и не имеет текущих POS Edge routes:
-  - chef stock receipt capture / `StockReceiptCaptured`;
+- Kitchen stock input API реализовано сейчас:
+  - chef stock receipt capture / `StockReceiptCaptured` требует `pos.kitchen.stock.receipt`;
+  - inventory count / `InventoryCountCaptured` требует `pos.kitchen.stock.inventory_count`;
+  - stock write-off / `StockWriteOffCaptured` требует `pos.kitchen.stock.write_off`;
+  - production completed / `ProductionCompleted` требует `pos.kitchen.production.complete`;
+  - replay того же `command_id` для того же event type возвращает successful replay без второго outbox/local event;
+  - POS Edge не создает stock documents/moves/balances/costing rows.
+- Kitchen proposal API остается `запланировано далее`:
   - catalog item suggestions / `CatalogItemChangeSuggested`;
   - recipe read/change suggestions / `RecipeChangeSuggested`;
   - kitchen stop-list edit / Edge `StopListUpdated`.

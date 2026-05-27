@@ -83,6 +83,14 @@ type RecordCheckRefundCommand = appcheck.RecordCheckRefundCommand
 type ListKitchenTicketsCommand = appkitchen.ListTicketsCommand
 type ListKitchenOrderQueueCommand = appkitchen.ListOrderQueueCommand
 type ChangeKitchenTicketStatusCommand = appkitchen.ChangeTicketStatusCommand
+type CaptureStockReceiptCommand = appkitchen.CaptureStockReceiptCommand
+type StockReceiptLineCommand = appkitchen.StockReceiptLineCommand
+type CaptureInventoryCountCommand = appkitchen.CaptureInventoryCountCommand
+type InventoryCountLineCommand = appkitchen.InventoryCountLineCommand
+type CaptureStockWriteOffCommand = appkitchen.CaptureStockWriteOffCommand
+type StockWriteOffLineCommand = appkitchen.StockWriteOffLineCommand
+type CompleteProductionCommand = appkitchen.CompleteProductionCommand
+type StockCommandResult = appkitchen.StockCommandResult
 type CloseOrderCommand = apporder.CloseOrderCommand
 type OpenCashSessionCommand = appcash.OpenCashSessionCommand
 type CloseCashSessionCommand = appcash.CloseCashSessionCommand
@@ -517,6 +525,22 @@ func (s *Service) ListKitchenOrderQueue(ctx context.Context, cmd ListKitchenOrde
 
 func (s *Service) ChangeKitchenTicketStatus(ctx context.Context, cmd ChangeKitchenTicketStatusCommand) (*domain.KitchenTicket, error) {
 	return s.kitchen.ChangeTicketStatus(ctx, cmd)
+}
+
+func (s *Service) CaptureKitchenStockReceipt(ctx context.Context, cmd CaptureStockReceiptCommand) (StockCommandResult, error) {
+	return s.kitchen.CaptureStockReceipt(ctx, cmd)
+}
+
+func (s *Service) CaptureKitchenInventoryCount(ctx context.Context, cmd CaptureInventoryCountCommand) (StockCommandResult, error) {
+	return s.kitchen.CaptureInventoryCount(ctx, cmd)
+}
+
+func (s *Service) CaptureKitchenStockWriteOff(ctx context.Context, cmd CaptureStockWriteOffCommand) (StockCommandResult, error) {
+	return s.kitchen.CaptureStockWriteOff(ctx, cmd)
+}
+
+func (s *Service) CompleteKitchenProduction(ctx context.Context, cmd CompleteProductionCommand) (StockCommandResult, error) {
+	return s.kitchen.CompleteProduction(ctx, cmd)
 }
 
 func (s *Service) GetCurrentCashSession(ctx context.Context, deviceID string) (*domain.CashSession, error) {

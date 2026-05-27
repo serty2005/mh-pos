@@ -62,6 +62,7 @@ func TestPhase2FoundationTablesExist(t *testing.T) {
 		"recipe_versions",
 		"recipe_lines",
 		"stop_lists",
+		"warehouse_reference",
 	}
 	for _, table := range tables {
 		t.Run(table, func(t *testing.T) {
@@ -638,7 +639,7 @@ func TestRetrySafeOutboxSchemaColumnsAndConstraints(t *testing.T) {
 
 func TestCloudMasterDataSyncFoundationSchema(t *testing.T) {
 	db, ctx := newSchemaDB(t)
-	for _, table := range []string{"restaurants", "devices", "roles", "employees", "halls", "tables", "catalog_items", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "recipe_versions", "recipe_lines", "stop_lists"} {
+	for _, table := range []string{"restaurants", "devices", "roles", "employees", "halls", "tables", "catalog_items", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "recipe_versions", "recipe_lines", "stop_lists", "warehouse_reference"} {
 		columns := tableColumns(t, ctx, db, table)
 		for _, column := range []string{"cloud_version", "cloud_updated_at", "cloud_deleted_at", "last_synced_at"} {
 			if !columns[column] {
@@ -722,5 +723,21 @@ func TestStopListsFoundation(t *testing.T) {
 	}
 	if n != 2 {
 		t.Fatalf("expected 2 active stop-list rows, got %d", n)
+	}
+}
+
+func TestWarehouseReferenceFoundation(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	execSchema(t, ctx, db, `INSERT INTO warehouse_reference(id,restaurant_id,name,kind,is_default,active,cloud_version,updated_at) VALUES ('warehouse-main','restaurant-1','Main warehouse','kitchen',1,1,10,?)`, schemaTestTime)
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM warehouse_reference WHERE restaurant_id = 'restaurant-1' AND is_default = 1 AND active = 1`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected one default warehouse, got %d", n)
+	}
+	_, err := db.ExecContext(ctx, `INSERT INTO warehouse_reference(id,restaurant_id,name,kind,is_default,active,cloud_version,updated_at) VALUES ('warehouse-second','restaurant-1','Second warehouse','kitchen',1,1,11,?)`, schemaTestTime)
+	if err == nil {
+		t.Fatal("expected second active default warehouse to fail")
 	}
 }

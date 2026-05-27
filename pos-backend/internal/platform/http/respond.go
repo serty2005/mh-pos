@@ -118,6 +118,9 @@ func codeForError(err error, status int) string {
 	case errors.Is(err, domain.ErrNotFound):
 		return "NOT_FOUND"
 	case errors.Is(err, domain.ErrInvalid):
+		if code := kitchenValidationCode(err); code != "" {
+			return code
+		}
 		return "VALIDATION_FAILED"
 	case errors.Is(err, domain.ErrConflict) && containsErrorText(err, "pin must uniquely"):
 		return "DUPLICATE_PIN"
@@ -169,6 +172,18 @@ func messageKeyForCode(code, fallback string) string {
 		return "errors.conflict_duplicate_command"
 	case "SALE_STOP_LIST_CONFLICT":
 		return "errors.stopListConflict"
+	case "KITCHEN_WAREHOUSE_REQUIRED":
+		return "errors.kitchen.warehouseRequired"
+	case "KITCHEN_RECEIPT_LINE_ITEM_REQUIRED":
+		return "errors.kitchen.receiptLineItemRequired"
+	case "KITCHEN_RECEIPT_LINE_TOTAL_REQUIRED":
+		return "errors.kitchen.receiptLineTotalRequired"
+	case "KITCHEN_WRITE_OFF_REASON_REQUIRED":
+		return "errors.kitchen.writeOffReasonRequired"
+	case "KITCHEN_INVENTORY_COUNT_EMPTY":
+		return "errors.kitchen.inventoryCountEmpty"
+	case "KITCHEN_PRODUCTION_RECIPE_REQUIRED":
+		return "errors.kitchen.productionRecipeRequired"
 	case "VALIDATION_FAILED":
 		return "errors.validation"
 	case "NOT_FOUND":
@@ -177,6 +192,25 @@ func messageKeyForCode(code, fallback string) string {
 		return "errors.server"
 	default:
 		return fallback
+	}
+}
+
+func kitchenValidationCode(err error) string {
+	switch {
+	case containsErrorText(err, "kitchen warehouse required"):
+		return "KITCHEN_WAREHOUSE_REQUIRED"
+	case containsErrorText(err, "kitchen receipt line item required"):
+		return "KITCHEN_RECEIPT_LINE_ITEM_REQUIRED"
+	case containsErrorText(err, "kitchen receipt line total required"):
+		return "KITCHEN_RECEIPT_LINE_TOTAL_REQUIRED"
+	case containsErrorText(err, "kitchen write-off reason required"):
+		return "KITCHEN_WRITE_OFF_REASON_REQUIRED"
+	case containsErrorText(err, "kitchen inventory count empty"):
+		return "KITCHEN_INVENTORY_COUNT_EMPTY"
+	case containsErrorText(err, "kitchen production recipe required"):
+		return "KITCHEN_PRODUCTION_RECIPE_REQUIRED"
+	default:
+		return ""
 	}
 }
 

@@ -160,6 +160,29 @@ ON CONFLICT(restaurant_id,catalog_item_id) DO UPDATE SET
 	return normalizeErr(err)
 }
 
+func (r *Repository) UpsertMasterWarehouseReference(ctx context.Context, v *domain.WarehouseReference, meta domain.MasterRecordSyncMeta) error {
+	cloudVersion := v.CloudVersion
+	if cloudVersion == nil {
+		value := meta.CloudVersion
+		cloudVersion = &value
+	}
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO warehouse_reference(id,restaurant_id,name,kind,is_default,active,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at,updated_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET
+  restaurant_id = excluded.restaurant_id,
+  name = excluded.name,
+  kind = excluded.kind,
+  is_default = excluded.is_default,
+  active = excluded.active,
+  cloud_version = excluded.cloud_version,
+  cloud_updated_at = excluded.cloud_updated_at,
+  cloud_deleted_at = excluded.cloud_deleted_at,
+  last_synced_at = excluded.last_synced_at,
+  updated_at = excluded.updated_at`,
+		v.ID, v.RestaurantID, v.Name, v.Kind, boolInt(v.Default), boolInt(v.Active), nullableInt64(cloudVersion), nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt, dbTime(v.UpdatedAt))
+	return normalizeErr(err)
+}
+
 func (r *Repository) GetBlockingStopListEntry(ctx context.Context, restaurantID, catalogItemID string) (*domain.StopListEntry, error) {
 	var v domain.StopListEntry
 	var available sql.NullFloat64
@@ -176,6 +199,42 @@ LIMIT 1`, restaurantID, catalogItemID).Scan(&v.ID, &v.RestaurantID, &v.CatalogIt
 	}
 	v.AvailableQuantity = nullFloat64Ptr(available)
 	v.Reason = nullStringPtr(reason)
+	v.Active = active == 1
+	v.CloudVersion = nullInt64Ptr(cloudVersion)
+	v.CloudUpdatedAt = nullStringPtr(cloudUpdatedAt)
+	v.CloudDeletedAt = nullStringPtr(cloudDeletedAt)
+	if lastSyncedAt.Valid {
+		v.LastSyncedAt = lastSyncedAt.String
+	}
+	v.UpdatedAt = parseTime(updatedAt)
+	return &v, nil
+}
+
+func (r *Repository) GetWarehouseReference(ctx context.Context, restaurantID, id string) (*domain.WarehouseReference, error) {
+	return r.scanWarehouseReference(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,name,kind,is_default,active,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at,updated_at
+FROM warehouse_reference
+WHERE restaurant_id = ? AND id = ? AND active = 1 AND cloud_deleted_at IS NULL
+LIMIT 1`, restaurantID, id))
+}
+
+func (r *Repository) GetDefaultWarehouseReference(ctx context.Context, restaurantID string) (*domain.WarehouseReference, error) {
+	return r.scanWarehouseReference(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,name,kind,is_default,active,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at,updated_at
+FROM warehouse_reference
+WHERE restaurant_id = ? AND is_default = 1 AND active = 1 AND cloud_deleted_at IS NULL
+ORDER BY id
+LIMIT 1`, restaurantID))
+}
+
+func (r *Repository) scanWarehouseReference(row *sql.Row) (*domain.WarehouseReference, error) {
+	var v domain.WarehouseReference
+	var isDefault, active int
+	var cloudVersion sql.NullInt64
+	var cloudUpdatedAt, cloudDeletedAt, lastSyncedAt sql.NullString
+	var updatedAt string
+	if err := row.Scan(&v.ID, &v.RestaurantID, &v.Name, &v.Kind, &isDefault, &active, &cloudVersion, &cloudUpdatedAt, &cloudDeletedAt, &lastSyncedAt, &updatedAt); err != nil {
+		return nil, normalizeErr(err)
+	}
+	v.Default = isDefault == 1
 	v.Active = active == 1
 	v.CloudVersion = nullInt64Ptr(cloudVersion)
 	v.CloudUpdatedAt = nullStringPtr(cloudUpdatedAt)

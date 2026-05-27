@@ -45,6 +45,12 @@ Internal cause пишется только в structured backend log.
 | `ACTIVE_PRECHECK_CONFLICT` | 409 | `errors.conflict_active_precheck` | Для заказа уже есть активный precheck | Modal с предложением обновить заказ/precheck | no | WARN | Без raw domain error |
 | `DUPLICATE_COMMAND` | 409 | `errors.conflict_duplicate_command` | Повтор command id/idempotency conflict | Modal/notice, не auto-retry write command | no | WARN | Без raw payload |
 | `SALE_STOP_LIST_CONFLICT` | 409 | `errors.stopListConflict` | Позиция или обязательный recipe component находится в active stop-list | UI показывает localized business error и не рассчитывает availability на клиенте | no | WARN | Без stock/internal query details |
+| `KITCHEN_WAREHOUSE_REQUIRED` | 400 | `errors.kitchen.warehouseRequired` | Kitchen stock command не передал valid `warehouse_id`, и default warehouse отсутствует в локальном `warehouse_reference` | Показать blocking validation, предложить дождаться sync/admin setup | no | WARN | Не раскрывать raw inventory reference query |
+| `KITCHEN_RECEIPT_LINE_ITEM_REQUIRED` | 400 | `errors.kitchen.receiptLineItemRequired` | Receipt line не содержит поддержанный текущим contract `catalog_item_id` | Inline validation строки receipt | no | WARN | Не возвращать raw form payload |
+| `KITCHEN_RECEIPT_LINE_TOTAL_REQUIRED` | 400 | `errors.kitchen.receiptLineTotalRequired` | Receipt line не содержит положительный `line_total_minor` или содержит некорректную цену | Inline validation строки receipt | no | WARN | Не возвращать raw form payload |
+| `KITCHEN_WRITE_OFF_REASON_REQUIRED` | 400 | `errors.kitchen.writeOffReasonRequired` | Stock write-off не содержит reason/reason_code | Inline validation формы списания | no | WARN | Не возвращать raw form payload |
+| `KITCHEN_INVENTORY_COUNT_EMPTY` | 400 | `errors.kitchen.inventoryCountEmpty` | Inventory count отправлен без строк | Inline validation формы ревизии | no | WARN | Не возвращать raw form payload |
+| `KITCHEN_PRODUCTION_RECIPE_REQUIRED` | 400 | `errors.kitchen.productionRecipeRequired` | Production command выбран для заготовки без active recipe на Edge | Blocking validation, обновить recipes sync/reference | no | WARN | Не раскрывать raw recipe query details |
 | `RATE_LIMITED` | 429 | `errors.rateLimit` | Превышен лимит PIN login attempts | Notice/modal с рекомендацией подождать | yes, вручную | WARN | PIN не возвращается и не логируется |
 | `INTERNAL_ERROR` | 500 | `errors.server` | Неожиданная или инфраструктурная ошибка | Modal с generic текстом и support code | no для write, осторожно для read/status | ERROR | Stack trace и SQL details только в backend log |
 
@@ -54,6 +60,7 @@ Internal cause пишется только в structured backend log.
 - реализовано сейчас: `GET /api/v1/employee-shifts/current` при отсутствии открытой личной смены возвращает `200 null`, а не `404 NOT_FOUND`; это empty state, а не error contract.
 - реализовано сейчас: `POST /api/v1/prechecks/{id}/payments` возвращает `409 CONFLICT` / `errors.conflict` для state conflicts, включая отсутствие открытой кассовой смены, несовпадение ресторана кассовой смены с заказом, stale/inactive precheck, overpayment и уже созданный final check. Backend не возвращает raw internal reason в response; UI обязан показать безопасное бизнес-сообщение, обновить состояние заказа/precheck/check/current cash session и не повторять оплату автоматически.
 - реализовано сейчас: add/increase order line commands возвращают `409 SALE_STOP_LIST_CONFLICT` / `errors.stopListConflict`, если продаваемая позиция или обязательный recipe component находится в active локальном stop-list. Backend не возвращает stock balance, raw SQL или internal query details.
+- реализовано сейчас: kitchen stock input routes возвращают stable kitchen validation codes для отсутствующего склада, receipt line item/total, пустой ревизии, отсутствующей причины списания и production без active recipe. POS Edge не возвращает raw Go/SQL errors и не создает local stock documents при отказе.
 
 ## Поведение логирования
 

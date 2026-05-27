@@ -400,6 +400,7 @@ type RecipeVersionStatus = inventory.RecipeVersionStatus
 type RecipeVersion = inventory.RecipeVersion
 type RecipeLine = inventory.RecipeLine
 type StopListEntry = inventory.StopListEntry
+type WarehouseReference = inventory.WarehouseReference
 
 const (
 	RecipeVersionDraft    = inventory.RecipeVersionDraft

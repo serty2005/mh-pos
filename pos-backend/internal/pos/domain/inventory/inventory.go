@@ -57,3 +57,19 @@ type StopListEntry struct {
 	LastSyncedAt      string    `json:"last_synced_at,omitempty"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
+
+// WarehouseReference описывает Cloud-owned складской справочник, который Edge
+// использует только для валидации кухонных input-команд.
+type WarehouseReference struct {
+	ID             string    `json:"id"`
+	RestaurantID   string    `json:"restaurant_id"`
+	Name           string    `json:"name"`
+	Kind           string    `json:"kind"`
+	Default        bool      `json:"is_default"`
+	Active         bool      `json:"active"`
+	CloudVersion   *int64    `json:"cloud_version,omitempty"`
+	CloudUpdatedAt *string   `json:"cloud_updated_at,omitempty"`
+	CloudDeletedAt *string   `json:"cloud_deleted_at,omitempty"`
+	LastSyncedAt   string    `json:"last_synced_at,omitempty"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}

@@ -892,6 +892,23 @@ CREATE TABLE IF NOT EXISTS stop_lists (
 
 CREATE UNIQUE INDEX IF NOT EXISTS stop_lists_restaurant_item ON stop_lists(restaurant_id, catalog_item_id);
 
+CREATE TABLE IF NOT EXISTS warehouse_reference (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL,
+  name TEXT NOT NULL CHECK (name <> ''),
+  kind TEXT NOT NULL CHECK (kind <> ''),
+  is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0,1)),
+  active INTEGER NOT NULL CHECK (active IN (0,1)),
+  cloud_version INTEGER,
+  cloud_updated_at TEXT,
+  cloud_deleted_at TEXT,
+  last_synced_at TEXT,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS warehouse_reference_restaurant_active ON warehouse_reference(restaurant_id, active, id);
+CREATE UNIQUE INDEX IF NOT EXISTS warehouse_reference_one_default ON warehouse_reference(restaurant_id) WHERE is_default = 1 AND active = 1 AND cloud_deleted_at IS NULL;
+
 CREATE TABLE IF NOT EXISTS cloud_master_sync_state (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT CHECK (restaurant_id IS NULL OR restaurant_id <> ''),

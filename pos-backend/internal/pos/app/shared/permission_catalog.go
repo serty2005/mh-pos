@@ -45,8 +45,17 @@ const (
 	PermissionCheckView             PermissionID = "pos.check.view"
 	PermissionCheckReprint          PermissionID = "pos.check.reprint"
 	// Идентификаторы прав KDS runtime.
-	PermissionKitchenView         PermissionID = "pos.kitchen.view"
-	PermissionKitchenStatusChange PermissionID = "pos.kitchen.status.change"
+	PermissionKitchenView                PermissionID = "pos.kitchen.view"
+	PermissionKitchenStatusChange        PermissionID = "pos.kitchen.status.change"
+	PermissionKitchenCatalogView         PermissionID = "pos.kitchen.catalog.view"
+	PermissionKitchenRecipeView          PermissionID = "pos.kitchen.recipe.view"
+	PermissionKitchenRecipeSuggest       PermissionID = "pos.kitchen.recipe.suggest"
+	PermissionKitchenCatalogSuggest      PermissionID = "pos.kitchen.catalog.suggest"
+	PermissionKitchenStockReceipt        PermissionID = "pos.kitchen.stock.receipt"
+	PermissionKitchenStockInventoryCount PermissionID = "pos.kitchen.stock.inventory_count"
+	PermissionKitchenStockWriteOff       PermissionID = "pos.kitchen.stock.write_off"
+	PermissionKitchenProductionComplete  PermissionID = "pos.kitchen.production.complete"
+	PermissionKitchenStopListUpdate      PermissionID = "pos.kitchen.stop_list.update"
 	PermissionSyncView              PermissionID = "pos.sync.view"
 	// Идентификатор права manager/service sync operation.
 	PermissionSyncRetryFailed PermissionID = "pos.sync.retry_failed"
@@ -84,8 +93,17 @@ var knownPermissionIDs = map[PermissionID]struct{}{
 	PermissionPaymentRefund:            {},
 	PermissionCheckView:                {},
 	PermissionCheckReprint:             {},
-	PermissionKitchenView:              {},
-	PermissionKitchenStatusChange:      {},
+	PermissionKitchenView:                {},
+	PermissionKitchenStatusChange:        {},
+	PermissionKitchenCatalogView:         {},
+	PermissionKitchenRecipeView:          {},
+	PermissionKitchenRecipeSuggest:       {},
+	PermissionKitchenCatalogSuggest:      {},
+	PermissionKitchenStockReceipt:        {},
+	PermissionKitchenStockInventoryCount: {},
+	PermissionKitchenStockWriteOff:       {},
+	PermissionKitchenProductionComplete:  {},
+	PermissionKitchenStopListUpdate:      {},
 	PermissionSyncView:                 {},
 	PermissionSyncRetryFailed:          {},
 }
@@ -238,6 +256,14 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionEmployeeShiftViewCurrent,
 			PermissionKitchenView,
 			PermissionKitchenStatusChange,
+			PermissionKitchenCatalogView,
+			PermissionKitchenRecipeView,
+			PermissionKitchenRecipeSuggest,
+			PermissionKitchenCatalogSuggest,
+			PermissionKitchenStockReceipt,
+			PermissionKitchenStockInventoryCount,
+			PermissionKitchenStockWriteOff,
+			PermissionKitchenProductionComplete,
 		},
 	},
 	RoleSupportAdmin: {

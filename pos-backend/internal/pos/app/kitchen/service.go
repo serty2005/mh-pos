@@ -50,6 +50,84 @@ type ChangeTicketStatusCommand struct {
 	Action   string `json:"action"`
 }
 
+type StockReceiptLineCommand struct {
+	LineID              string `json:"line_id"`
+	CatalogItemID       string `json:"catalog_item_id,omitempty"`
+	CatalogSuggestionID string `json:"catalog_suggestion_id,omitempty"`
+	NameSnapshot        string `json:"name_snapshot"`
+	Quantity            string `json:"quantity"`
+	UnitCode            string `json:"unit_code"`
+	UnitCostMinor       int64  `json:"unit_cost_minor"`
+	LineTotalMinor      int64  `json:"line_total_minor"`
+	Currency            string `json:"currency"`
+}
+
+type CaptureStockReceiptCommand struct {
+	shared.CommandMeta
+	ReceiptID              string                    `json:"receipt_id"`
+	WarehouseID            string                    `json:"warehouse_id,omitempty"`
+	SupplierCounterpartyID string                    `json:"supplier_counterparty_id"`
+	SupplierNameSnapshot   string                    `json:"supplier_name_snapshot"`
+	DocumentNumber         string                    `json:"document_number"`
+	DocumentDate           string                    `json:"document_date"`
+	ReceivedAt             time.Time                 `json:"received_at"`
+	BusinessDateLocal      string                    `json:"business_date_local"`
+	Currency               string                    `json:"currency"`
+	Items                  []StockReceiptLineCommand `json:"items"`
+}
+
+type InventoryCountLineCommand struct {
+	LineID          string `json:"line_id"`
+	CatalogItemID   string `json:"catalog_item_id"`
+	CountedQuantity string `json:"counted_quantity"`
+	UnitCode        string `json:"unit_code"`
+}
+
+type CaptureInventoryCountCommand struct {
+	shared.CommandMeta
+	CountID           string                      `json:"count_id"`
+	WarehouseID       string                      `json:"warehouse_id,omitempty"`
+	CountedAt         time.Time                   `json:"counted_at"`
+	BusinessDateLocal string                      `json:"business_date_local"`
+	Items             []InventoryCountLineCommand `json:"items"`
+}
+
+type StockWriteOffLineCommand struct {
+	LineID        string `json:"line_id"`
+	CatalogItemID string `json:"catalog_item_id"`
+	Quantity      string `json:"quantity"`
+	UnitCode      string `json:"unit_code"`
+}
+
+type CaptureStockWriteOffCommand struct {
+	shared.CommandMeta
+	WriteOffID        string                     `json:"write_off_id"`
+	WarehouseID       string                     `json:"warehouse_id,omitempty"`
+	WrittenOffAt      time.Time                  `json:"written_off_at"`
+	BusinessDateLocal string                     `json:"business_date_local"`
+	ReasonCode        string                     `json:"reason_code"`
+	Reason            string                     `json:"reason"`
+	Items             []StockWriteOffLineCommand `json:"items"`
+}
+
+type CompleteProductionCommand struct {
+	shared.CommandMeta
+	ProductionID              string    `json:"production_id"`
+	WarehouseID               string    `json:"warehouse_id,omitempty"`
+	SemiFinishedCatalogItemID string    `json:"semi_finished_catalog_item_id"`
+	Quantity                  string    `json:"quantity"`
+	UnitCode                  string    `json:"unit_code"`
+	CompletedAt               time.Time `json:"completed_at"`
+	BusinessDateLocal         string    `json:"business_date_local"`
+}
+
+type StockCommandResult struct {
+	ID          string `json:"id"`
+	WarehouseID string `json:"warehouse_id"`
+	EventType   string `json:"event_type"`
+	Replayed    bool   `json:"replayed"`
+}
+
 func (s *Service) ListTickets(ctx context.Context, cmd ListTicketsCommand) ([]kitchendomain.Ticket, error) {
 	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
 	operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionKitchenView))
@@ -228,6 +306,392 @@ func (s *Service) ChangeTicketStatus(ctx context.Context, cmd ChangeTicketStatus
 		return nil, err
 	}
 	return ticket, nil
+}
+
+func (s *Service) CaptureStockReceipt(ctx context.Context, cmd CaptureStockReceiptCommand) (StockCommandResult, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
+	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+		return StockCommandResult{}, err
+	}
+	var out StockCommandResult
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionKitchenStockReceipt))
+		if err != nil {
+			return err
+		}
+		if _, ok, err := s.replayedStockCommand(ctx, cmd.CommandID, "StockReceiptCaptured"); err != nil || ok {
+			out = StockCommandResult{ID: strings.TrimSpace(cmd.ReceiptID), EventType: "StockReceiptCaptured", Replayed: ok}
+			return err
+		}
+		warehouseID, err := s.resolveWarehouseID(ctx, operator.Employee.RestaurantID, cmd.WarehouseID)
+		if err != nil {
+			return err
+		}
+		payload, receiptID, err := s.stockReceiptPayload(ctx, operator.Employee.RestaurantID, warehouseID, cmd)
+		if err != nil {
+			return err
+		}
+		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, operator.Employee.RestaurantID, "", "KitchenStockReceipt", receiptID, "StockReceiptCaptured", payload); err != nil {
+			return err
+		}
+		out = StockCommandResult{ID: receiptID, WarehouseID: warehouseID, EventType: "StockReceiptCaptured"}
+		return nil
+	})
+	return out, err
+}
+
+func (s *Service) CaptureInventoryCount(ctx context.Context, cmd CaptureInventoryCountCommand) (StockCommandResult, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
+	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+		return StockCommandResult{}, err
+	}
+	var out StockCommandResult
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionKitchenStockInventoryCount))
+		if err != nil {
+			return err
+		}
+		if _, ok, err := s.replayedStockCommand(ctx, cmd.CommandID, "InventoryCountCaptured"); err != nil || ok {
+			out = StockCommandResult{ID: strings.TrimSpace(cmd.CountID), EventType: "InventoryCountCaptured", Replayed: ok}
+			return err
+		}
+		warehouseID, err := s.resolveWarehouseID(ctx, operator.Employee.RestaurantID, cmd.WarehouseID)
+		if err != nil {
+			return err
+		}
+		payload, countID, err := s.inventoryCountPayload(ctx, operator.Employee.RestaurantID, warehouseID, cmd)
+		if err != nil {
+			return err
+		}
+		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, operator.Employee.RestaurantID, "", "KitchenInventoryCount", countID, "InventoryCountCaptured", payload); err != nil {
+			return err
+		}
+		out = StockCommandResult{ID: countID, WarehouseID: warehouseID, EventType: "InventoryCountCaptured"}
+		return nil
+	})
+	return out, err
+}
+
+func (s *Service) CaptureStockWriteOff(ctx context.Context, cmd CaptureStockWriteOffCommand) (StockCommandResult, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
+	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+		return StockCommandResult{}, err
+	}
+	var out StockCommandResult
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionKitchenStockWriteOff))
+		if err != nil {
+			return err
+		}
+		if _, ok, err := s.replayedStockCommand(ctx, cmd.CommandID, "StockWriteOffCaptured"); err != nil || ok {
+			out = StockCommandResult{ID: strings.TrimSpace(cmd.WriteOffID), EventType: "StockWriteOffCaptured", Replayed: ok}
+			return err
+		}
+		warehouseID, err := s.resolveWarehouseID(ctx, operator.Employee.RestaurantID, cmd.WarehouseID)
+		if err != nil {
+			return err
+		}
+		payload, writeOffID, err := s.stockWriteOffPayload(ctx, operator.Employee.RestaurantID, warehouseID, cmd)
+		if err != nil {
+			return err
+		}
+		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, operator.Employee.RestaurantID, "", "KitchenStockWriteOff", writeOffID, "StockWriteOffCaptured", payload); err != nil {
+			return err
+		}
+		out = StockCommandResult{ID: writeOffID, WarehouseID: warehouseID, EventType: "StockWriteOffCaptured"}
+		return nil
+	})
+	return out, err
+}
+
+func (s *Service) CompleteProduction(ctx context.Context, cmd CompleteProductionCommand) (StockCommandResult, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
+	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+		return StockCommandResult{}, err
+	}
+	var out StockCommandResult
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionKitchenProductionComplete))
+		if err != nil {
+			return err
+		}
+		if _, ok, err := s.replayedStockCommand(ctx, cmd.CommandID, "ProductionCompleted"); err != nil || ok {
+			out = StockCommandResult{ID: strings.TrimSpace(cmd.ProductionID), EventType: "ProductionCompleted", Replayed: ok}
+			return err
+		}
+		warehouseID, err := s.resolveWarehouseID(ctx, operator.Employee.RestaurantID, cmd.WarehouseID)
+		if err != nil {
+			return err
+		}
+		payload, productionID, err := s.productionPayload(ctx, operator.Employee.RestaurantID, warehouseID, cmd)
+		if err != nil {
+			return err
+		}
+		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, operator.Employee.RestaurantID, "", "KitchenProduction", productionID, "ProductionCompleted", payload); err != nil {
+			return err
+		}
+		out = StockCommandResult{ID: productionID, WarehouseID: warehouseID, EventType: "ProductionCompleted"}
+		return nil
+	})
+	return out, err
+}
+
+func (s *Service) replayedStockCommand(ctx context.Context, commandID, eventType string) (*domain.OutboxMessage, bool, error) {
+	commandID = strings.TrimSpace(commandID)
+	if commandID == "" {
+		return nil, false, fmt.Errorf("%w: command_id is required", domain.ErrInvalid)
+	}
+	msg, err := s.repo.GetOutboxByCommandID(ctx, commandID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if msg.CommandType != eventType {
+		return nil, false, fmt.Errorf("%w: %s", domain.ErrDuplicateCommand, commandID)
+	}
+	return msg, true, nil
+}
+
+func (s *Service) resolveWarehouseID(ctx context.Context, restaurantID, requestedWarehouseID string) (string, error) {
+	requestedWarehouseID = strings.TrimSpace(requestedWarehouseID)
+	if requestedWarehouseID != "" {
+		warehouse, err := s.repo.GetWarehouseReference(ctx, restaurantID, requestedWarehouseID)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return "", fmt.Errorf("%w: kitchen warehouse required", domain.ErrInvalid)
+			}
+			return "", err
+		}
+		return warehouse.ID, nil
+	}
+	warehouse, err := s.repo.GetDefaultWarehouseReference(ctx, restaurantID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return "", fmt.Errorf("%w: kitchen warehouse required", domain.ErrInvalid)
+		}
+		return "", err
+	}
+	return warehouse.ID, nil
+}
+
+func (s *Service) stockReceiptPayload(ctx context.Context, restaurantID, warehouseID string, cmd CaptureStockReceiptCommand) (any, string, error) {
+	receiptID := trimOrNewID(cmd.ReceiptID, s.ids)
+	if strings.TrimSpace(cmd.SupplierCounterpartyID) == "" && strings.TrimSpace(cmd.SupplierNameSnapshot) == "" {
+		return nil, "", fmt.Errorf("%w: receipt supplier is required", domain.ErrInvalid)
+	}
+	if !validBusinessDate(cmd.DocumentDate) || !validBusinessDate(cmd.BusinessDateLocal) || cmd.ReceivedAt.IsZero() {
+		return nil, "", fmt.Errorf("%w: receipt document_date, business_date_local and received_at are required", domain.ErrInvalid)
+	}
+	if strings.TrimSpace(cmd.Currency) == "" {
+		return nil, "", fmt.Errorf("%w: receipt currency is required", domain.ErrInvalid)
+	}
+	if len(cmd.Items) == 0 {
+		return nil, "", fmt.Errorf("%w: receipt items are required", domain.ErrInvalid)
+	}
+	items := make([]any, 0, len(cmd.Items))
+	for _, line := range cmd.Items {
+		lineID := trimOrNewID(line.LineID, s.ids)
+		catalogItemID := strings.TrimSpace(line.CatalogItemID)
+		catalogSuggestionID := strings.TrimSpace(line.CatalogSuggestionID)
+		if catalogItemID == "" {
+			return nil, "", fmt.Errorf("%w: kitchen receipt line item required", domain.ErrInvalid)
+		}
+		if err := s.ensureStockCatalogItem(ctx, catalogItemID); err != nil {
+			return nil, "", err
+		}
+		if !positiveDecimal(line.Quantity) || strings.TrimSpace(line.UnitCode) == "" {
+			return nil, "", fmt.Errorf("%w: receipt line quantity and unit_code are required", domain.ErrInvalid)
+		}
+		if line.UnitCostMinor < 0 || line.LineTotalMinor <= 0 {
+			return nil, "", fmt.Errorf("%w: kitchen receipt line total required", domain.ErrInvalid)
+		}
+		lineCurrency := strings.TrimSpace(line.Currency)
+		if lineCurrency == "" {
+			lineCurrency = strings.TrimSpace(cmd.Currency)
+		}
+		items = append(items, map[string]any{
+			"line_id":               lineID,
+			"catalog_item_id":       catalogItemID,
+			"catalog_suggestion_id": catalogSuggestionID,
+			"name_snapshot":         strings.TrimSpace(line.NameSnapshot),
+			"quantity":              strings.TrimSpace(line.Quantity),
+			"unit_code":             strings.TrimSpace(line.UnitCode),
+			"unit_cost_minor":       line.UnitCostMinor,
+			"line_total_minor":      line.LineTotalMinor,
+			"currency":              lineCurrency,
+		})
+	}
+	return map[string]any{
+		"receipt_id":               receiptID,
+		"restaurant_id":            restaurantID,
+		"warehouse_id":             warehouseID,
+		"supplier_id":              strings.TrimSpace(cmd.SupplierCounterpartyID),
+		"supplier_counterparty_id": strings.TrimSpace(cmd.SupplierCounterpartyID),
+		"supplier_name_snapshot":   strings.TrimSpace(cmd.SupplierNameSnapshot),
+		"document_number":          strings.TrimSpace(cmd.DocumentNumber),
+		"document_date":            strings.TrimSpace(cmd.DocumentDate),
+		"received_at":              cmd.ReceivedAt,
+		"business_date_local":      strings.TrimSpace(cmd.BusinessDateLocal),
+		"currency":                 strings.TrimSpace(cmd.Currency),
+		"items":                    items,
+	}, receiptID, nil
+}
+
+func (s *Service) inventoryCountPayload(ctx context.Context, restaurantID, warehouseID string, cmd CaptureInventoryCountCommand) (any, string, error) {
+	countID := trimOrNewID(cmd.CountID, s.ids)
+	if !validBusinessDate(cmd.BusinessDateLocal) || cmd.CountedAt.IsZero() {
+		return nil, "", fmt.Errorf("%w: inventory count business_date_local and counted_at are required", domain.ErrInvalid)
+	}
+	if len(cmd.Items) == 0 {
+		return nil, "", fmt.Errorf("%w: kitchen inventory count empty", domain.ErrInvalid)
+	}
+	items := make([]any, 0, len(cmd.Items))
+	for _, line := range cmd.Items {
+		if strings.TrimSpace(line.CatalogItemID) == "" || !positiveDecimal(line.CountedQuantity) || strings.TrimSpace(line.UnitCode) == "" {
+			return nil, "", fmt.Errorf("%w: inventory count line catalog_item_id, counted_quantity and unit_code are required", domain.ErrInvalid)
+		}
+		if err := s.ensureStockCatalogItem(ctx, line.CatalogItemID); err != nil {
+			return nil, "", err
+		}
+		items = append(items, map[string]any{
+			"line_id":          trimOrNewID(line.LineID, s.ids),
+			"catalog_item_id":  strings.TrimSpace(line.CatalogItemID),
+			"counted_quantity": strings.TrimSpace(line.CountedQuantity),
+			"unit_code":        strings.TrimSpace(line.UnitCode),
+		})
+	}
+	return map[string]any{
+		"count_id":            countID,
+		"restaurant_id":       restaurantID,
+		"warehouse_id":        warehouseID,
+		"counted_at":          cmd.CountedAt,
+		"business_date_local": strings.TrimSpace(cmd.BusinessDateLocal),
+		"items":               items,
+	}, countID, nil
+}
+
+func (s *Service) stockWriteOffPayload(ctx context.Context, restaurantID, warehouseID string, cmd CaptureStockWriteOffCommand) (any, string, error) {
+	writeOffID := trimOrNewID(cmd.WriteOffID, s.ids)
+	if !validBusinessDate(cmd.BusinessDateLocal) || cmd.WrittenOffAt.IsZero() {
+		return nil, "", fmt.Errorf("%w: write-off business_date_local and written_off_at are required", domain.ErrInvalid)
+	}
+	if strings.TrimSpace(cmd.Reason) == "" && strings.TrimSpace(cmd.ReasonCode) == "" {
+		return nil, "", fmt.Errorf("%w: kitchen write-off reason required", domain.ErrInvalid)
+	}
+	if len(cmd.Items) == 0 {
+		return nil, "", fmt.Errorf("%w: write-off items are required", domain.ErrInvalid)
+	}
+	items := make([]any, 0, len(cmd.Items))
+	for _, line := range cmd.Items {
+		if strings.TrimSpace(line.CatalogItemID) == "" || !positiveDecimal(line.Quantity) || strings.TrimSpace(line.UnitCode) == "" {
+			return nil, "", fmt.Errorf("%w: write-off line catalog_item_id, quantity and unit_code are required", domain.ErrInvalid)
+		}
+		if err := s.ensureStockCatalogItem(ctx, line.CatalogItemID); err != nil {
+			return nil, "", err
+		}
+		items = append(items, map[string]any{
+			"line_id":         trimOrNewID(line.LineID, s.ids),
+			"catalog_item_id": strings.TrimSpace(line.CatalogItemID),
+			"quantity":        strings.TrimSpace(line.Quantity),
+			"unit_code":       strings.TrimSpace(line.UnitCode),
+		})
+	}
+	return map[string]any{
+		"write_off_id":        writeOffID,
+		"restaurant_id":       restaurantID,
+		"warehouse_id":        warehouseID,
+		"written_off_at":      cmd.WrittenOffAt,
+		"business_date_local": strings.TrimSpace(cmd.BusinessDateLocal),
+		"reason_code":         strings.TrimSpace(cmd.ReasonCode),
+		"reason":              strings.TrimSpace(cmd.Reason),
+		"items":               items,
+	}, writeOffID, nil
+}
+
+func (s *Service) productionPayload(ctx context.Context, restaurantID, warehouseID string, cmd CompleteProductionCommand) (any, string, error) {
+	productionID := trimOrNewID(cmd.ProductionID, s.ids)
+	if strings.TrimSpace(cmd.SemiFinishedCatalogItemID) == "" || !positiveDecimal(cmd.Quantity) || strings.TrimSpace(cmd.UnitCode) == "" {
+		return nil, "", fmt.Errorf("%w: production semi_finished_catalog_item_id, quantity and unit_code are required", domain.ErrInvalid)
+	}
+	if !validBusinessDate(cmd.BusinessDateLocal) || cmd.CompletedAt.IsZero() {
+		return nil, "", fmt.Errorf("%w: production business_date_local and completed_at are required", domain.ErrInvalid)
+	}
+	item, err := s.repo.GetCatalogItem(ctx, strings.TrimSpace(cmd.SemiFinishedCatalogItemID))
+	if err != nil {
+		return nil, "", err
+	}
+	if item.Type != domain.CatalogItemSemiFinished || !item.Active {
+		return nil, "", fmt.Errorf("%w: production item must be active semi_finished catalog item", domain.ErrInvalid)
+	}
+	if _, err := s.repo.GetActiveRecipeVersionByCatalogItem(ctx, item.ID); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, "", fmt.Errorf("%w: kitchen production recipe required", domain.ErrInvalid)
+		}
+		return nil, "", err
+	}
+	return map[string]any{
+		"production_id":                 productionID,
+		"restaurant_id":                 restaurantID,
+		"warehouse_id":                  warehouseID,
+		"semi_finished_catalog_item_id": item.ID,
+		"quantity":                      strings.TrimSpace(cmd.Quantity),
+		"unit_code":                     strings.TrimSpace(cmd.UnitCode),
+		"completed_at":                  cmd.CompletedAt,
+		"business_date_local":           strings.TrimSpace(cmd.BusinessDateLocal),
+	}, productionID, nil
+}
+
+func (s *Service) ensureStockCatalogItem(ctx context.Context, catalogItemID string) error {
+	item, err := s.repo.GetCatalogItem(ctx, strings.TrimSpace(catalogItemID))
+	if err != nil {
+		return err
+	}
+	if !item.Active || item.Type == domain.CatalogItemService {
+		return fmt.Errorf("%w: stock event catalog item must be active stock-capable item", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func trimOrNewID(id string, ids idgen.Generator) string {
+	if id = strings.TrimSpace(id); id != "" {
+		return id
+	}
+	return ids.NewID()
+}
+
+func validBusinessDate(v string) bool {
+	v = strings.TrimSpace(v)
+	if len(v) != len("2006-01-02") {
+		return false
+	}
+	_, err := time.Parse("2006-01-02", v)
+	return err == nil
+}
+
+func positiveDecimal(v string) bool {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return false
+	}
+	seenDigit := false
+	seenPositive := false
+	seenDot := false
+	for _, r := range v {
+		switch {
+		case r >= '0' && r <= '9':
+			seenDigit = true
+			if r != '0' {
+				seenPositive = true
+			}
+		case r == '.' && !seenDot:
+			seenDot = true
+		default:
+			return false
+		}
+	}
+	return seenDigit && seenPositive
 }
 
 func validStatus(status kitchendomain.TicketStatus) bool {

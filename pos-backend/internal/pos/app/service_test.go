@@ -695,7 +695,7 @@ func insertClosedOrderFixture(t *testing.T, f *fixture, shiftID, deviceID, order
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
-	case "restaurants", "devices", "orders", "order_lines", "order_line_modifiers", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "kitchen_ticket_events", "manager_override_audit", "roles", "employees", "catalog_items", "catalog_folders", "catalog_tags", "catalog_item_tags", "modifier_groups", "modifier_options", "modifier_group_bindings", "menu_item_modifier_groups", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "pricing_policies", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_line_modifiers", "precheck_discounts", "precheck_surcharges", "precheck_taxes", "financial_operations", "financial_operation_items":
+	case "restaurants", "devices", "orders", "order_lines", "order_line_modifiers", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "kitchen_ticket_events", "manager_override_audit", "roles", "employees", "catalog_items", "catalog_folders", "catalog_tags", "catalog_item_tags", "modifier_groups", "modifier_options", "modifier_group_bindings", "menu_item_modifier_groups", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "pricing_policies", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "warehouse_reference", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_line_modifiers", "precheck_discounts", "precheck_surcharges", "precheck_taxes", "financial_operations", "financial_operation_items":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -709,7 +709,7 @@ func countRows(t *testing.T, f *fixture, table string) int {
 func countRowsWhere(t *testing.T, f *fixture, table, where string, args ...any) int {
 	t.Helper()
 	switch table {
-	case "orders", "checks", "financial_operations", "financial_operation_items", "pos_sync_outbox", "local_event_log":
+	case "orders", "checks", "financial_operations", "financial_operation_items", "pos_sync_outbox", "local_event_log", "warehouse_reference":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -793,6 +793,71 @@ func insertRecipe(t *testing.T, f *fixture, recipeID, ownerCatalogItemID, compon
 		recipeID, ownerCatalogItemID, 1, "Fixture recipe", string(domain.RecipeVersionActive), 1, "portion", 1, appshared.DBTime(fixedClock{}.Now()), appshared.DBTime(fixedClock{}.Now()), int64(1))
 	execTestSQL(t, f, `INSERT INTO recipe_lines(id,recipe_version_id,catalog_item_id,quantity,unit,loss_percent,created_at,updated_at,cloud_version) VALUES (?,?,?,?,?,?,?,?,?)`,
 		recipeID+"-line", recipeID, componentCatalogItemID, 100, "g", 0, appshared.DBTime(fixedClock{}.Now()), appshared.DBTime(fixedClock{}.Now()), int64(1))
+}
+
+func (f *fixture) kitchenMetaCommand(t *testing.T, commandID string) app.CommandMeta {
+	t.Helper()
+	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta:     seedMeta(f.device.ID),
+		Name:            "kitchen-" + commandID,
+		PermissionsJSON: appshared.RolePermissionsJSON(appshared.RoleKitchen),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	employee, err := f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{
+		CommandMeta:  seedMeta(f.device.ID),
+		RestaurantID: f.restaurant.ID,
+		RoleID:       role.ID,
+		Name:         "Kitchen " + commandID,
+		PINHash:      testPINHash(t, "3333", "kitchen-"+commandID),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{
+			CommandID:      "cmd-login-kitchen-" + commandID,
+			NodeDeviceID:   f.device.ID,
+			DeviceID:       f.device.ID,
+			ClientDeviceID: f.clientID,
+			Origin:         app.OriginEdgeDevice,
+		},
+		PIN: "3333",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := edgeMeta(f.device.ID)
+	meta.CommandID = commandID
+	meta.ClientDeviceID = f.clientID
+	meta.ActorEmployeeID = employee.ID
+	meta.SessionID = login.Session.ID
+	return meta
+}
+
+func applyDefaultWarehouse(t *testing.T, f *fixture) {
+	t.Helper()
+	_, err := f.service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:    app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		RestaurantID:   f.restaurant.ID,
+		StreamName:     domain.MasterDataStreamInventory,
+		SyncMode:       domain.SyncModeIncremental,
+		CloudVersion:   301,
+		CloudUpdatedAt: appshared.DBTime(fixedClock{}.Now()),
+		Warehouses: []domain.WarehouseReference{{
+			ID:           "warehouse-main",
+			RestaurantID: f.restaurant.ID,
+			Name:         "Main kitchen warehouse",
+			Kind:         "kitchen",
+			Default:      true,
+			Active:       true,
+			UpdatedAt:    fixedClock{}.Now(),
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertNoEdgeStockTables(t *testing.T, f *fixture) {
@@ -7432,6 +7497,150 @@ func TestApplyMasterDataRejectsUnsupportedStreamWithoutPartialWrite(t *testing.T
 	}
 	if rows := countRows(t, f, "tax_profiles"); rows != taxBefore {
 		t.Fatalf("expected unsupported stream not to write tax rows, before=%d after=%d", taxBefore, rows)
+	}
+}
+
+func TestKitchenStockCommandsWriteOutboxOnlyAndReplayByCommandID(t *testing.T) {
+	f := newFixture(t)
+	applyDefaultWarehouse(t, f)
+	meta := f.kitchenMetaCommand(t, "cmd-kitchen-receipt")
+	good, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: seedMeta(f.device.ID), Type: domain.CatalogItemGood, Name: "Potato", SKU: "POTATO-STOCK", BaseUnit: "KG"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	semi, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: seedMeta(f.device.ID), Type: domain.CatalogItemSemiFinished, Name: "Sauce base", SKU: "SAUCE-BASE", BaseUnit: "KG"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	insertRecipe(t, f, "recipe-sauce-base", semi.ID, good.ID)
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+
+	receipt, err := f.service.CaptureKitchenStockReceipt(f.ctx, app.CaptureStockReceiptCommand{
+		CommandMeta:             meta,
+		ReceiptID:               "receipt-1",
+		SupplierCounterpartyID:  "supplier-1",
+		SupplierNameSnapshot:    "Supplier",
+		DocumentNumber:          "UPD-1",
+		DocumentDate:            "2026-05-04",
+		ReceivedAt:              fixedClock{}.Now(),
+		BusinessDateLocal:       "2026-05-04",
+		Currency:                "RUB",
+		Items: []app.StockReceiptLineCommand{{
+			LineID:         "receipt-line-1",
+			CatalogItemID:  good.ID,
+			NameSnapshot:   "Potato",
+			Quantity:       "10.000",
+			UnitCode:       "KG",
+			UnitCostMinor:  6500,
+			LineTotalMinor: 65000,
+			Currency:       "RUB",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.WarehouseID != "warehouse-main" || receipt.EventType != "StockReceiptCaptured" || receipt.Replayed {
+		t.Fatalf("unexpected receipt result: %+v", receipt)
+	}
+	replayedReceipt, err := f.service.CaptureKitchenStockReceipt(f.ctx, app.CaptureStockReceiptCommand{CommandMeta: meta})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replayedReceipt.Replayed {
+		t.Fatalf("expected receipt replay, got %+v", replayedReceipt)
+	}
+	if outbox := countOutboxByType(t, f, "StockReceiptCaptured"); outbox != 1 {
+		t.Fatalf("expected one StockReceiptCaptured outbox row, got %d", outbox)
+	}
+
+	if _, err := f.service.CaptureKitchenInventoryCount(f.ctx, app.CaptureInventoryCountCommand{
+		CommandMeta:        f.kitchenMetaCommand(t, "cmd-kitchen-count"),
+		CountID:            "count-1",
+		CountedAt:          fixedClock{}.Now(),
+		BusinessDateLocal:  "2026-05-04",
+		Items: []app.InventoryCountLineCommand{{LineID: "count-line-1", CatalogItemID: good.ID, CountedQuantity: "3.250", UnitCode: "KG"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CaptureKitchenStockWriteOff(f.ctx, app.CaptureStockWriteOffCommand{
+		CommandMeta:        f.kitchenMetaCommand(t, "cmd-kitchen-write-off"),
+		WriteOffID:         "write-off-1",
+		WrittenOffAt:       fixedClock{}.Now(),
+		BusinessDateLocal:  "2026-05-04",
+		ReasonCode:         "spoilage",
+		Reason:             "expired",
+		Items: []app.StockWriteOffLineCommand{{LineID: "write-off-line-1", CatalogItemID: good.ID, Quantity: "1.500", UnitCode: "KG"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CompleteKitchenProduction(f.ctx, app.CompleteProductionCommand{
+		CommandMeta:               f.kitchenMetaCommand(t, "cmd-kitchen-production"),
+		ProductionID:              "production-1",
+		SemiFinishedCatalogItemID: semi.ID,
+		Quantity:                  "5.000",
+		UnitCode:                  "KG",
+		CompletedAt:               fixedClock{}.Now(),
+		BusinessDateLocal:         "2026-05-04",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, eventType := range []string{"InventoryCountCaptured", "StockWriteOffCaptured", "ProductionCompleted"} {
+		if got := countOutboxByType(t, f, eventType); got != 1 {
+			t.Fatalf("expected one %s outbox row, got %d", eventType, got)
+		}
+	}
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore+4 {
+		t.Fatalf("expected four kitchen stock outbox rows, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore+4 {
+		t.Fatalf("expected four kitchen stock local events, before=%d after=%d", eventsBefore, events)
+	}
+	assertNoEdgeStockTables(t, f)
+}
+
+func TestKitchenStockCommandsValidateWarehouseAndBusinessInputs(t *testing.T) {
+	f := newFixture(t)
+	good, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: seedMeta(f.device.ID), Type: domain.CatalogItemGood, Name: "Tomato", SKU: "TOMATO-STOCK", BaseUnit: "KG"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.CaptureKitchenInventoryCount(f.ctx, app.CaptureInventoryCountCommand{
+		CommandMeta:       f.kitchenMetaCommand(t, "cmd-count-no-warehouse"),
+		CountID:           "count-no-warehouse",
+		CountedAt:         fixedClock{}.Now(),
+		BusinessDateLocal: "2026-05-04",
+		Items:             []app.InventoryCountLineCommand{{LineID: "line-1", CatalogItemID: good.ID, CountedQuantity: "1.000", UnitCode: "KG"}},
+	})
+	if !errors.Is(err, domain.ErrInvalid) || !strings.Contains(err.Error(), "kitchen warehouse required") {
+		t.Fatalf("expected missing warehouse validation, got %v", err)
+	}
+	applyDefaultWarehouse(t, f)
+	_, err = f.service.CaptureKitchenStockWriteOff(f.ctx, app.CaptureStockWriteOffCommand{
+		CommandMeta:       f.kitchenMetaCommand(t, "cmd-write-off-no-reason"),
+		WriteOffID:        "write-off-no-reason",
+		WrittenOffAt:      fixedClock{}.Now(),
+		BusinessDateLocal: "2026-05-04",
+		Items:             []app.StockWriteOffLineCommand{{LineID: "line-1", CatalogItemID: good.ID, Quantity: "1.000", UnitCode: "KG"}},
+	})
+	if !errors.Is(err, domain.ErrInvalid) || !strings.Contains(err.Error(), "kitchen write-off reason required") {
+		t.Fatalf("expected write-off reason validation, got %v", err)
+	}
+	semi, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: seedMeta(f.device.ID), Type: domain.CatalogItemSemiFinished, Name: "No recipe prep", SKU: "NO-RECIPE", BaseUnit: "KG"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.CompleteKitchenProduction(f.ctx, app.CompleteProductionCommand{
+		CommandMeta:               f.kitchenMetaCommand(t, "cmd-production-no-recipe"),
+		ProductionID:              "production-no-recipe",
+		SemiFinishedCatalogItemID: semi.ID,
+		Quantity:                  "1.000",
+		UnitCode:                  "KG",
+		CompletedAt:               fixedClock{}.Now(),
+		BusinessDateLocal:         "2026-05-04",
+	})
+	if !errors.Is(err, domain.ErrInvalid) || !strings.Contains(err.Error(), "kitchen production recipe required") {
+		t.Fatalf("expected production recipe validation, got %v", err)
 	}
 }
 

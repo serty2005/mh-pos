@@ -16,5 +16,8 @@ type InventoryRepository interface {
 	UpsertMasterRecipeVersion(context.Context, *inventory.RecipeVersion, shared.MasterRecordSyncMeta) error
 	UpsertMasterRecipeLine(context.Context, *inventory.RecipeLine, shared.MasterRecordSyncMeta) error
 	UpsertMasterStopListEntry(context.Context, *inventory.StopListEntry, shared.MasterRecordSyncMeta) error
+	UpsertMasterWarehouseReference(context.Context, *inventory.WarehouseReference, shared.MasterRecordSyncMeta) error
 	GetBlockingStopListEntry(context.Context, string, string) (*inventory.StopListEntry, error)
+	GetWarehouseReference(context.Context, string, string) (*inventory.WarehouseReference, error)
+	GetDefaultWarehouseReference(context.Context, string) (*inventory.WarehouseReference, error)
 }
