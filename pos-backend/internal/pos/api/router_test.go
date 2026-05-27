@@ -331,7 +331,7 @@ func decodeAPIResponse[T any](t *testing.T, rr *httptest.ResponseRecorder) T {
 func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 	t.Helper()
 	switch table {
-	case "prechecks", "checks", "payments", "payment_attempts", "financial_operations", "financial_operation_items", "pos_sync_outbox", "local_event_log", "manager_override_audit", "auth_sessions", "halls", "tables", "catalog_items", "kitchen_tickets", "kitchen_ticket_events", "cloud_master_sync_state":
+	case "prechecks", "checks", "payments", "payment_attempts", "financial_operations", "financial_operation_items", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "auth_sessions", "halls", "tables", "catalog_items", "kitchen_tickets", "kitchen_ticket_events", "cloud_master_sync_state":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -340,6 +340,44 @@ func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 		t.Fatal(err)
 	}
 	return n
+}
+
+func countAPIRowsWhere(t *testing.T, f *apiFixture, table, where string, args ...any) int {
+	t.Helper()
+	switch table {
+	case "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log":
+	default:
+		t.Fatalf("unexpected filtered table %q", table)
+	}
+	var n int
+	if err := f.db.QueryRowContext(f.ctx, fmt.Sprintf("SELECT COUNT(1) FROM %s WHERE %s", table, where), args...).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func countAPIOutboxByType(t *testing.T, f *apiFixture, commandType string) int {
+	t.Helper()
+	return countAPIRowsWhere(t, f, "pos_sync_outbox", "command_type = ?", commandType)
+}
+
+func countAPILocalEventsByType(t *testing.T, f *apiFixture, eventType string) int {
+	t.Helper()
+	return countAPIRowsWhere(t, f, "local_event_log", "event_type = ?", eventType)
+}
+
+func assertDuplicateCommandAPIError(t *testing.T, rr *httptest.ResponseRecorder) {
+	t.Helper()
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected duplicate command 409, got %d: %s", rr.Code, rr.Body.String())
+	}
+	body := decodeAPIResponse[httpx.ErrorResponse](t, rr)
+	if body.Error.Code != "DUPLICATE_COMMAND" || body.Error.MessageKey != "errors.conflict_duplicate_command" {
+		t.Fatalf("expected duplicate command error contract, got %+v", body.Error)
+	}
+	if got := rr.Header().Get("X-Error-Code"); got != "DUPLICATE_COMMAND" {
+		t.Fatalf("expected X-Error-Code DUPLICATE_COMMAND, got %q", got)
+	}
 }
 
 func assertSafeConflictAPIError(t *testing.T, rr *httptest.ResponseRecorder, forbiddenSubstrings ...string) {
@@ -567,6 +605,303 @@ func TestCurrentShiftAPIReturnsAuthenticatedEmployeeOpenShift(t *testing.T) {
 	got := decodeAPIResponse[domain.Shift](t, rr)
 	if got.ID != shift.ID || got.OpenedByEmployeeID != f.employee.ID || got.Status != domain.ShiftOpen {
 		t.Fatalf("unexpected current shift: %+v", got)
+	}
+}
+
+func TestCashFlowAPIHappyPathPersistsStateAndEvents(t *testing.T) {
+	f := newAPIFixture(t)
+	if _, err := f.service.OpenShift(f.ctx, app.OpenShiftCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sessionsBefore := countAPIRows(t, f, "cash_sessions")
+	openedOutboxBefore := countAPIOutboxByType(t, f, "CashSessionOpened")
+	openedEventsBefore := countAPILocalEventsByType(t, f, "CashSessionOpened")
+
+	openBody := `{"command_id":"cmd-api-cash-open-happy","restaurant_id":"` + f.restaurant.ID + `","opened_by_employee_id":"` + f.employee.ID + `","opening_cash_amount":5000}`
+	openRR := f.postJSON(t, "/api/v1/cash-shifts/open", openBody)
+	if openRR.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for cash shift open, got %d: %s", openRR.Code, openRR.Body.String())
+	}
+	cashSession := decodeAPIResponse[domain.CashSession](t, openRR)
+	if cashSession.Status != domain.CashSessionOpen || cashSession.OpenedByEmployeeID != f.employee.ID {
+		t.Fatalf("unexpected opened cash session: %+v", cashSession)
+	}
+	if sessions := countAPIRows(t, f, "cash_sessions"); sessions != sessionsBefore+1 {
+		t.Fatalf("expected one cash session created, before=%d after=%d", sessionsBefore, sessions)
+	}
+	if openRows := countAPIRowsWhere(t, f, "cash_sessions", "id = ? AND status = 'open'", cashSession.ID); openRows != 1 {
+		t.Fatalf("expected persisted open cash session %s, got %d", cashSession.ID, openRows)
+	}
+	if outbox := countAPIOutboxByType(t, f, "CashSessionOpened"); outbox != openedOutboxBefore+1 {
+		t.Fatalf("expected one CashSessionOpened outbox row, before=%d after=%d", openedOutboxBefore, outbox)
+	}
+	if events := countAPILocalEventsByType(t, f, "CashSessionOpened"); events != openedEventsBefore+1 {
+		t.Fatalf("expected one CashSessionOpened local event, before=%d after=%d", openedEventsBefore, events)
+	}
+
+	currentRR := f.get(t, "/api/v1/cash-shifts/current")
+	if currentRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 for current cash shift, got %d: %s", currentRR.Code, currentRR.Body.String())
+	}
+	current := decodeAPIResponse[domain.CashSession](t, currentRR)
+	if current.ID != cashSession.ID || current.Status != domain.CashSessionOpen {
+		t.Fatalf("unexpected current cash session: %+v", current)
+	}
+
+	f.useManagerOperator(t)
+	drawerEventsBefore := countAPIRows(t, f, "cash_drawer_events")
+	drawerOutboxBefore := countAPIOutboxByType(t, f, "CashDrawerEventRecorded")
+	drawerLocalEventsBefore := countAPILocalEventsByType(t, f, "CashDrawerEventRecorded")
+	eventBody := `{"command_id":"cmd-api-cash-drawer-happy","cash_session_id":"` + cashSession.ID + `","created_by_employee_id":"` + f.employee.ID + `","event_type":"cash_in","amount":1200,"reason":"float_top_up"}`
+	eventRR := f.postJSON(t, "/api/v1/cash-drawer-events", eventBody)
+	if eventRR.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for cash drawer event, got %d: %s", eventRR.Code, eventRR.Body.String())
+	}
+	drawerEvent := decodeAPIResponse[domain.CashDrawerEvent](t, eventRR)
+	if drawerEvent.CashSessionID != cashSession.ID || drawerEvent.EventType != domain.CashDrawerCashIn || drawerEvent.Amount != 1200 {
+		t.Fatalf("unexpected cash drawer event: %+v", drawerEvent)
+	}
+	if events := countAPIRows(t, f, "cash_drawer_events"); events != drawerEventsBefore+1 {
+		t.Fatalf("expected one cash drawer event created, before=%d after=%d", drawerEventsBefore, events)
+	}
+	if outbox := countAPIOutboxByType(t, f, "CashDrawerEventRecorded"); outbox != drawerOutboxBefore+1 {
+		t.Fatalf("expected one CashDrawerEventRecorded outbox row, before=%d after=%d", drawerOutboxBefore, outbox)
+	}
+	if events := countAPILocalEventsByType(t, f, "CashDrawerEventRecorded"); events != drawerLocalEventsBefore+1 {
+		t.Fatalf("expected one CashDrawerEventRecorded local event, before=%d after=%d", drawerLocalEventsBefore, events)
+	}
+
+	closedOutboxBefore := countAPIOutboxByType(t, f, "CashSessionClosed")
+	closedEventsBefore := countAPILocalEventsByType(t, f, "CashSessionClosed")
+	closeBody := `{"command_id":"cmd-api-cash-close-happy","closed_by_employee_id":"` + f.employee.ID + `","closing_cash_amount":6200}`
+	closeRR := f.postJSON(t, "/api/v1/cash-shifts/"+cashSession.ID+"/close", closeBody)
+	if closeRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 for cash shift close, got %d: %s", closeRR.Code, closeRR.Body.String())
+	}
+	closed := decodeAPIResponse[domain.CashSession](t, closeRR)
+	if closed.ID != cashSession.ID || closed.Status != domain.CashSessionClosed || closed.ClosedByEmployeeID == nil || *closed.ClosedByEmployeeID != f.manager.ID {
+		t.Fatalf("unexpected closed cash session: %+v", closed)
+	}
+	if closedRows := countAPIRowsWhere(t, f, "cash_sessions", "id = ? AND status = 'closed'", cashSession.ID); closedRows != 1 {
+		t.Fatalf("expected persisted closed cash session %s, got %d", cashSession.ID, closedRows)
+	}
+	if openRows := countAPIRowsWhere(t, f, "cash_sessions", "id = ? AND status = 'open'", cashSession.ID); openRows != 0 {
+		t.Fatalf("expected no persisted open row for closed cash session %s, got %d", cashSession.ID, openRows)
+	}
+	if outbox := countAPIOutboxByType(t, f, "CashSessionClosed"); outbox != closedOutboxBefore+1 {
+		t.Fatalf("expected one CashSessionClosed outbox row, before=%d after=%d", closedOutboxBefore, outbox)
+	}
+	if events := countAPILocalEventsByType(t, f, "CashSessionClosed"); events != closedEventsBefore+1 {
+		t.Fatalf("expected one CashSessionClosed local event, before=%d after=%d", closedEventsBefore, events)
+	}
+}
+
+func TestCashShiftCloseAPIRequiresClosePermissionWithoutSideEffects(t *testing.T) {
+	f := newAPIFixture(t)
+	if _, err := f.service.OpenShift(f.ctx, app.OpenShiftCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cashSession := f.openCashSession(t)
+	outboxBefore := countAPIRows(t, f, "pos_sync_outbox")
+	eventsBefore := countAPIRows(t, f, "local_event_log")
+	closedOutboxBefore := countAPIOutboxByType(t, f, "CashSessionClosed")
+	closedEventsBefore := countAPILocalEventsByType(t, f, "CashSessionClosed")
+
+	body := `{"command_id":"cmd-api-cash-close-forbidden","closed_by_employee_id":"` + f.employee.ID + `","closing_cash_amount":0}`
+	rr := f.postJSON(t, "/api/v1/cash-shifts/"+cashSession.ID+"/close", body)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without cash close permission, got %d: %s", rr.Code, rr.Body.String())
+	}
+	errBody := decodeAPIResponse[httpx.ErrorResponse](t, rr)
+	if errBody.Error.Code != "PERMISSION_DENIED" || errBody.Error.MessageKey != "errors.permission" {
+		t.Fatalf("expected permission error contract, got %+v", errBody.Error)
+	}
+	if openRows := countAPIRowsWhere(t, f, "cash_sessions", "id = ? AND status = 'open'", cashSession.ID); openRows != 1 {
+		t.Fatalf("expected cash session to remain open, got %d open rows", openRows)
+	}
+	if outbox := countAPIRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected forbidden close to write no outbox rows, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countAPIRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected forbidden close to write no local events, before=%d after=%d", eventsBefore, events)
+	}
+	if outbox := countAPIOutboxByType(t, f, "CashSessionClosed"); outbox != closedOutboxBefore {
+		t.Fatalf("expected no CashSessionClosed outbox rows, before=%d after=%d", closedOutboxBefore, outbox)
+	}
+	if events := countAPILocalEventsByType(t, f, "CashSessionClosed"); events != closedEventsBefore {
+		t.Fatalf("expected no CashSessionClosed local events, before=%d after=%d", closedEventsBefore, events)
+	}
+}
+
+func TestCashShiftCurrentAPIRequiresViewCurrentPermission(t *testing.T) {
+	f := newAPIFixture(t)
+	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+		CommandMeta:     apiSeedMeta(f.device.ID),
+		Name:            "no-cash-current-view",
+		PermissionsJSON: `{}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinHash, err := appshared.HashPIN("8642", []byte("api-no-cash-current-salt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	employee, err := f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{CommandMeta: apiSeedMeta(f.device.ID), RestaurantID: f.restaurant.ID, RoleID: role.ID, Name: "No Current Cash", PINHash: pinHash})
+	if err != nil {
+		t.Fatal(err)
+	}
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-api-login-no-current-cash", NodeDeviceID: f.device.ID, DeviceID: f.device.ID, ClientDeviceID: f.clientID, Origin: app.OriginEdgeDevice},
+		PIN:         "8642",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.employee = employee
+	f.session = &login.Session
+
+	rr := f.get(t, "/api/v1/cash-shifts/current")
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without current cash view permission, got %d: %s", rr.Code, rr.Body.String())
+	}
+	body := decodeAPIResponse[httpx.ErrorResponse](t, rr)
+	if body.Error.Code != "PERMISSION_DENIED" || body.Error.MessageKey != "errors.permission" {
+		t.Fatalf("expected permission error contract, got %+v", body.Error)
+	}
+}
+
+func TestCashDrawerEventAPIRequiresRecordPermissionWithoutSideEffects(t *testing.T) {
+	f := newAPIFixture(t)
+	if _, err := f.service.OpenShift(f.ctx, app.OpenShiftCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cashSession := f.openCashSession(t)
+	drawerEventsBefore := countAPIRows(t, f, "cash_drawer_events")
+	outboxBefore := countAPIRows(t, f, "pos_sync_outbox")
+	localEventsBefore := countAPIRows(t, f, "local_event_log")
+	drawerOutboxBefore := countAPIOutboxByType(t, f, "CashDrawerEventRecorded")
+	drawerLocalEventsBefore := countAPILocalEventsByType(t, f, "CashDrawerEventRecorded")
+
+	body := `{"command_id":"cmd-api-cash-drawer-forbidden","cash_session_id":"` + cashSession.ID + `","created_by_employee_id":"` + f.employee.ID + `","event_type":"no_sale","amount":0}`
+	rr := f.postJSON(t, "/api/v1/cash-drawer-events", body)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without cash drawer permission, got %d: %s", rr.Code, rr.Body.String())
+	}
+	errBody := decodeAPIResponse[httpx.ErrorResponse](t, rr)
+	if errBody.Error.Code != "PERMISSION_DENIED" || errBody.Error.MessageKey != "errors.permission" {
+		t.Fatalf("expected permission error contract, got %+v", errBody.Error)
+	}
+	if rows := countAPIRows(t, f, "cash_drawer_events"); rows != drawerEventsBefore {
+		t.Fatalf("expected forbidden drawer event to write no cash drawer rows, before=%d after=%d", drawerEventsBefore, rows)
+	}
+	if outbox := countAPIRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected forbidden drawer event to write no outbox rows, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countAPIRows(t, f, "local_event_log"); events != localEventsBefore {
+		t.Fatalf("expected forbidden drawer event to write no local events, before=%d after=%d", localEventsBefore, events)
+	}
+	if outbox := countAPIOutboxByType(t, f, "CashDrawerEventRecorded"); outbox != drawerOutboxBefore {
+		t.Fatalf("expected no CashDrawerEventRecorded outbox rows, before=%d after=%d", drawerOutboxBefore, outbox)
+	}
+	if events := countAPILocalEventsByType(t, f, "CashDrawerEventRecorded"); events != drawerLocalEventsBefore {
+		t.Fatalf("expected no CashDrawerEventRecorded local events, before=%d after=%d", drawerLocalEventsBefore, events)
+	}
+}
+
+func TestCashShiftOpenAPIDuplicateCommandDoesNotCreateSecondSession(t *testing.T) {
+	f := newAPIFixture(t)
+	if _, err := f.service.OpenShift(f.ctx, app.OpenShiftCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"command_id":"cmd-api-cash-open-duplicate","restaurant_id":"` + f.restaurant.ID + `","opened_by_employee_id":"` + f.employee.ID + `","opening_cash_amount":0}`
+	opened := f.postJSON(t, "/api/v1/cash-shifts/open", body)
+	if opened.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for first open, got %d: %s", opened.Code, opened.Body.String())
+	}
+	sessionsBefore := countAPIRows(t, f, "cash_sessions")
+	outboxBefore := countAPIRows(t, f, "pos_sync_outbox")
+	eventsBefore := countAPIRows(t, f, "local_event_log")
+	openedOutboxBefore := countAPIOutboxByType(t, f, "CashSessionOpened")
+	openedEventsBefore := countAPILocalEventsByType(t, f, "CashSessionOpened")
+
+	duplicate := f.postJSON(t, "/api/v1/cash-shifts/open", body)
+	assertDuplicateCommandAPIError(t, duplicate)
+	if sessions := countAPIRows(t, f, "cash_sessions"); sessions != sessionsBefore {
+		t.Fatalf("expected duplicate open to write no second cash session, before=%d after=%d", sessionsBefore, sessions)
+	}
+	if outbox := countAPIRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected duplicate open to write no second outbox row, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countAPIRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected duplicate open to write no second local event, before=%d after=%d", eventsBefore, events)
+	}
+	if outbox := countAPIOutboxByType(t, f, "CashSessionOpened"); outbox != openedOutboxBefore {
+		t.Fatalf("expected no extra CashSessionOpened outbox rows, before=%d after=%d", openedOutboxBefore, outbox)
+	}
+	if events := countAPILocalEventsByType(t, f, "CashSessionOpened"); events != openedEventsBefore {
+		t.Fatalf("expected no extra CashSessionOpened local events, before=%d after=%d", openedEventsBefore, events)
+	}
+}
+
+func TestCashShiftCloseAPIDuplicateCommandDoesNotCreateSecondCloseEvent(t *testing.T) {
+	f := newAPIFixture(t)
+	if _, err := f.service.OpenShift(f.ctx, app.OpenShiftCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cashSession := f.openCashSession(t)
+	f.useManagerOperator(t)
+	body := `{"command_id":"cmd-api-cash-close-duplicate","closed_by_employee_id":"` + f.employee.ID + `","closing_cash_amount":0}`
+	closed := f.postJSON(t, "/api/v1/cash-shifts/"+cashSession.ID+"/close", body)
+	if closed.Code != http.StatusOK {
+		t.Fatalf("expected 200 for first close, got %d: %s", closed.Code, closed.Body.String())
+	}
+	outboxBefore := countAPIRows(t, f, "pos_sync_outbox")
+	eventsBefore := countAPIRows(t, f, "local_event_log")
+	closedOutboxBefore := countAPIOutboxByType(t, f, "CashSessionClosed")
+	closedEventsBefore := countAPILocalEventsByType(t, f, "CashSessionClosed")
+
+	duplicate := f.postJSON(t, "/api/v1/cash-shifts/"+cashSession.ID+"/close", body)
+	assertDuplicateCommandAPIError(t, duplicate)
+	if closedRows := countAPIRowsWhere(t, f, "cash_sessions", "id = ? AND status = 'closed'", cashSession.ID); closedRows != 1 {
+		t.Fatalf("expected cash session to remain closed, got %d closed rows", closedRows)
+	}
+	if outbox := countAPIRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected duplicate close to write no second outbox row, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countAPIRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected duplicate close to write no second local event, before=%d after=%d", eventsBefore, events)
+	}
+	if outbox := countAPIOutboxByType(t, f, "CashSessionClosed"); outbox != closedOutboxBefore {
+		t.Fatalf("expected no extra CashSessionClosed outbox rows, before=%d after=%d", closedOutboxBefore, outbox)
+	}
+	if events := countAPILocalEventsByType(t, f, "CashSessionClosed"); events != closedEventsBefore {
+		t.Fatalf("expected no extra CashSessionClosed local events, before=%d after=%d", closedEventsBefore, events)
 	}
 }
 
