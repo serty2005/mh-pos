@@ -19,14 +19,27 @@ import (
 )
 
 type Service struct {
-	repo  ports.Repository
-	tx    txmanager.Manager
-	ids   idgen.Generator
-	clock clock.Clock
+	repo    ports.Repository
+	tx      txmanager.Manager
+	ids     idgen.Generator
+	clock   clock.Clock
+	options Options
+}
+
+// Options задает runtime limits для Edge kitchen proposal validation.
+type Options struct {
+	RecipeSuggestionMaxPrepTimeDeltaMinutes int
 }
 
 func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock) *Service {
-	return &Service{repo: repo, tx: tx, ids: ids, clock: clock}
+	return NewServiceWithOptions(repo, tx, ids, clock, Options{})
+}
+
+func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, options Options) *Service {
+	if options.RecipeSuggestionMaxPrepTimeDeltaMinutes <= 0 {
+		options.RecipeSuggestionMaxPrepTimeDeltaMinutes = 120
+	}
+	return &Service{repo: repo, tx: tx, ids: ids, clock: clock, options: options}
 }
 
 type ListTicketsCommand struct {
@@ -129,6 +142,75 @@ type StockCommandResult struct {
 	Replayed    bool   `json:"replayed"`
 }
 
+type GetRecipeCommand struct {
+	shared.CommandMeta
+	CatalogItemID string `json:"catalog_item_id"`
+}
+
+type RecipeIngredientView struct {
+	LineID          string `json:"line_id"`
+	CatalogItemID   string `json:"catalog_item_id"`
+	CatalogItemName string `json:"catalog_item_name"`
+	Quantity        string `json:"quantity"`
+	UnitCode        string `json:"unit_code"`
+	LossPercent     string `json:"loss_percent"`
+	CloudVersion    int64  `json:"cloud_version,omitempty"`
+	CloudUpdatedAt  string `json:"cloud_updated_at,omitempty"`
+}
+
+type RecipeView struct {
+	CatalogItem   domain.CatalogItem       `json:"catalog_item"`
+	RecipeVersion domain.RecipeVersion     `json:"recipe_version"`
+	Ingredients   []RecipeIngredientView   `json:"ingredients"`
+	Proposals     []kitchendomain.Proposal `json:"proposals"`
+}
+
+type CreateCatalogSuggestionCommand struct {
+	shared.CommandMeta
+	SuggestionID       string                 `json:"suggestion_id,omitempty"`
+	ProposalGroupID    string                 `json:"proposal_group_id,omitempty"`
+	Action             string                 `json:"action"`
+	CatalogItemID      string                 `json:"catalog_item_id,omitempty"`
+	Kind               domain.CatalogItemType `json:"kind"`
+	Name               string                 `json:"name"`
+	SKU                string                 `json:"sku,omitempty"`
+	BaseUnit           string                 `json:"base_unit"`
+	KitchenType        string                 `json:"kitchen_type,omitempty"`
+	AccountingCategory string                 `json:"accounting_category,omitempty"`
+	Reason             string                 `json:"reason"`
+}
+
+type RecipeSuggestionChangeCommand struct {
+	LineID            string `json:"line_id,omitempty"`
+	Action            string `json:"action"`
+	FromCatalogItemID string `json:"from_catalog_item_id,omitempty"`
+	ToCatalogItemID   string `json:"to_catalog_item_id,omitempty"`
+	Quantity          string `json:"quantity,omitempty"`
+	UnitCode          string `json:"unit_code,omitempty"`
+	LossPercent       string `json:"loss_percent,omitempty"`
+}
+
+type CreateRecipeSuggestionCommand struct {
+	shared.CommandMeta
+	SuggestionID             string                          `json:"suggestion_id,omitempty"`
+	ProposalGroupID          string                          `json:"proposal_group_id,omitempty"`
+	RecipeVersionID          string                          `json:"recipe_version_id,omitempty"`
+	OwnerCatalogItemID       string                          `json:"owner_catalog_item_id,omitempty"`
+	OwnerCatalogSuggestionID string                          `json:"owner_catalog_suggestion_id,omitempty"`
+	Action                   string                          `json:"action"`
+	PrepTimeDeltaMinutes     int                             `json:"prep_time_delta_minutes,omitempty"`
+	Changes                  []RecipeSuggestionChangeCommand `json:"changes,omitempty"`
+	Reason                   string                          `json:"reason"`
+}
+
+type ListProposalsCommand struct {
+	shared.CommandMeta
+	Kind   kitchendomain.ProposalKind   `json:"kind,omitempty"`
+	Status kitchendomain.ProposalStatus `json:"status,omitempty"`
+	Limit  int                          `json:"limit,omitempty"`
+	Offset int                          `json:"offset,omitempty"`
+}
+
 func (s *Service) ListTickets(ctx context.Context, cmd ListTicketsCommand) ([]kitchendomain.Ticket, error) {
 	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
 	operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionKitchenView))
@@ -176,6 +258,227 @@ func (s *Service) ListOrderQueue(ctx context.Context, cmd ListOrderQueueCommand)
 		orders = orders[:limit]
 	}
 	return kitchendomain.OrderQueue{Orders: orders, Limit: limit, Offset: offset}, nil
+}
+
+func (s *Service) GetRecipe(ctx context.Context, cmd GetRecipeCommand) (RecipeView, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionKitchenRecipeView))
+	if err != nil {
+		return RecipeView{}, err
+	}
+	catalogItemID := strings.TrimSpace(cmd.CatalogItemID)
+	if catalogItemID == "" {
+		return RecipeView{}, fmt.Errorf("%w: catalog_item_id is required", domain.ErrInvalid)
+	}
+	item, err := s.repo.GetCatalogItem(ctx, catalogItemID)
+	if err != nil {
+		return RecipeView{}, err
+	}
+	if !item.Active || (item.Type != domain.CatalogItemDish && item.Type != domain.CatalogItemSemiFinished) {
+		return RecipeView{}, fmt.Errorf("%w: kitchen recipe not found", domain.ErrNotFound)
+	}
+	recipe, err := s.repo.GetActiveRecipeVersionByCatalogItem(ctx, item.ID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return RecipeView{}, fmt.Errorf("%w: kitchen recipe not found", domain.ErrNotFound)
+		}
+		return RecipeView{}, err
+	}
+	lines, err := s.repo.ListRecipeLines(ctx, recipe.ID)
+	if err != nil {
+		return RecipeView{}, err
+	}
+	ingredients := make([]RecipeIngredientView, 0, len(lines))
+	for _, line := range lines {
+		ingredient, err := s.repo.GetCatalogItem(ctx, line.CatalogItemID)
+		if err != nil {
+			return RecipeView{}, err
+		}
+		ingredients = append(ingredients, RecipeIngredientView{
+			LineID:          line.ID,
+			CatalogItemID:   line.CatalogItemID,
+			CatalogItemName: ingredient.Name,
+			Quantity:        fmt.Sprintf("%d", line.Quantity),
+			UnitCode:        line.Unit,
+			LossPercent:     fmt.Sprintf("%d", line.LossPercent),
+			CloudVersion:    line.CloudVersion,
+			CloudUpdatedAt:  stringValue(line.CloudUpdatedAt),
+		})
+	}
+	proposals, err := s.repo.ListKitchenProposals(ctx, kitchendomain.ProposalListQuery{
+		RestaurantID:       operator.Employee.RestaurantID,
+		Kind:               kitchendomain.ProposalKindRecipe,
+		OwnerCatalogItemID: item.ID,
+		RecipeVersionID:    recipe.ID,
+		Limit:              100,
+		IncludeTerminal:    true,
+	})
+	if err != nil {
+		return RecipeView{}, err
+	}
+	return RecipeView{CatalogItem: *item, RecipeVersion: *recipe, Ingredients: ingredients, Proposals: proposals}, nil
+}
+
+func (s *Service) CreateCatalogSuggestion(ctx context.Context, cmd CreateCatalogSuggestionCommand) (*kitchendomain.Proposal, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
+	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
+	var out *kitchendomain.Proposal
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionKitchenCatalogSuggest))
+		if err != nil {
+			return err
+		}
+		if replayed, ok, err := s.replayedProposalCommand(ctx, cmd.CommandID, "CatalogItemChangeSuggested"); err != nil || ok {
+			out = replayed
+			return err
+		}
+		if err := validateCatalogSuggestion(cmd); err != nil {
+			return err
+		}
+		if strings.TrimSpace(cmd.CatalogItemID) != "" {
+			if _, err := s.repo.GetCatalogItem(ctx, strings.TrimSpace(cmd.CatalogItemID)); err != nil {
+				return err
+			}
+		}
+		suggestionID := trimOrNewID(cmd.SuggestionID, s.ids)
+		now := s.clock.Now()
+		payload := map[string]any{
+			"suggestion_id":            suggestionID,
+			"proposal_group_id":        strings.TrimSpace(cmd.ProposalGroupID),
+			"restaurant_id":            operator.Employee.RestaurantID,
+			"action":                   strings.TrimSpace(cmd.Action),
+			"catalog_item_id":          strings.TrimSpace(cmd.CatalogItemID),
+			"kind":                     string(cmd.Kind),
+			"name":                     strings.TrimSpace(cmd.Name),
+			"sku":                      strings.TrimSpace(cmd.SKU),
+			"base_unit":                strings.TrimSpace(cmd.BaseUnit),
+			"kitchen_type":             strings.TrimSpace(cmd.KitchenType),
+			"accounting_category":      strings.TrimSpace(cmd.AccountingCategory),
+			"reason":                   strings.TrimSpace(cmd.Reason),
+			"suggested_by_employee_id": operator.Employee.ID,
+			"suggested_at":             now,
+		}
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		proposal := &kitchendomain.Proposal{
+			ID:                  suggestionID,
+			RestaurantID:        operator.Employee.RestaurantID,
+			ProposalGroupID:     strings.TrimSpace(cmd.ProposalGroupID),
+			Kind:                kitchendomain.ProposalKindCatalog,
+			Status:              kitchendomain.ProposalPendingSync,
+			Action:              strings.TrimSpace(cmd.Action),
+			OwnerCatalogItemID:  strings.TrimSpace(cmd.CatalogItemID),
+			Payload:             body,
+			OutboxCommandID:     strings.TrimSpace(cmd.CommandID),
+			OutboxEventType:     "CatalogItemChangeSuggested",
+			CreatedByEmployeeID: operator.Employee.ID,
+			CreatedAt:           now,
+			UpdatedAt:           now,
+		}
+		if err := s.repo.CreateKitchenProposal(ctx, proposal); err != nil {
+			return err
+		}
+		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, operator.Employee.RestaurantID, "", "KitchenProposal", proposal.ID, "CatalogItemChangeSuggested", payload); err != nil {
+			return err
+		}
+		out = proposal
+		return nil
+	})
+	return out, err
+}
+
+func (s *Service) CreateRecipeSuggestion(ctx context.Context, cmd CreateRecipeSuggestionCommand) (*kitchendomain.Proposal, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
+	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+		return nil, err
+	}
+	var out *kitchendomain.Proposal
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionKitchenRecipeSuggest))
+		if err != nil {
+			return err
+		}
+		if replayed, ok, err := s.replayedProposalCommand(ctx, cmd.CommandID, "RecipeChangeSuggested"); err != nil || ok {
+			out = replayed
+			return err
+		}
+		recipeVersionID, ownerCatalogItemID, err := s.validateRecipeSuggestion(ctx, cmd)
+		if err != nil {
+			return err
+		}
+		suggestionID := trimOrNewID(cmd.SuggestionID, s.ids)
+		now := s.clock.Now()
+		payload := map[string]any{
+			"suggestion_id":               suggestionID,
+			"proposal_group_id":           strings.TrimSpace(cmd.ProposalGroupID),
+			"restaurant_id":               operator.Employee.RestaurantID,
+			"recipe_version_id":           recipeVersionID,
+			"owner_catalog_item_id":       ownerCatalogItemID,
+			"owner_catalog_suggestion_id": strings.TrimSpace(cmd.OwnerCatalogSuggestionID),
+			"action":                      strings.TrimSpace(cmd.Action),
+			"prep_time_delta_minutes":     cmd.PrepTimeDeltaMinutes,
+			"changes":                     normalizedRecipeSuggestionChanges(cmd.Changes),
+			"reason":                      strings.TrimSpace(cmd.Reason),
+			"suggested_by_employee_id":    operator.Employee.ID,
+			"suggested_at":                now,
+		}
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		proposal := &kitchendomain.Proposal{
+			ID:                       suggestionID,
+			RestaurantID:             operator.Employee.RestaurantID,
+			ProposalGroupID:          strings.TrimSpace(cmd.ProposalGroupID),
+			Kind:                     kitchendomain.ProposalKindRecipe,
+			Status:                   kitchendomain.ProposalPendingSync,
+			Action:                   strings.TrimSpace(cmd.Action),
+			OwnerCatalogItemID:       ownerCatalogItemID,
+			OwnerCatalogSuggestionID: strings.TrimSpace(cmd.OwnerCatalogSuggestionID),
+			RecipeVersionID:          recipeVersionID,
+			Payload:                  body,
+			OutboxCommandID:          strings.TrimSpace(cmd.CommandID),
+			OutboxEventType:          "RecipeChangeSuggested",
+			CreatedByEmployeeID:      operator.Employee.ID,
+			CreatedAt:                now,
+			UpdatedAt:                now,
+		}
+		if err := s.repo.CreateKitchenProposal(ctx, proposal); err != nil {
+			return err
+		}
+		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, operator.Employee.RestaurantID, "", "KitchenProposal", proposal.ID, "RecipeChangeSuggested", payload); err != nil {
+			return err
+		}
+		out = proposal
+		return nil
+	})
+	return out, err
+}
+
+func (s *Service) ListProposals(ctx context.Context, cmd ListProposalsCommand) ([]kitchendomain.Proposal, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionKitchenView))
+	if err != nil {
+		return nil, err
+	}
+	if cmd.Kind != "" && !validProposalKind(cmd.Kind) {
+		return nil, fmt.Errorf("%w: unsupported kitchen proposal kind", domain.ErrInvalid)
+	}
+	if cmd.Status != "" && !validProposalStatus(cmd.Status) {
+		return nil, fmt.Errorf("%w: unsupported kitchen proposal status", domain.ErrInvalid)
+	}
+	return s.repo.ListKitchenProposals(ctx, kitchendomain.ProposalListQuery{
+		RestaurantID:    operator.Employee.RestaurantID,
+		Kind:            cmd.Kind,
+		Status:          cmd.Status,
+		Limit:           cmd.Limit,
+		Offset:          cmd.Offset,
+		IncludeTerminal: cmd.Status != "",
+	})
 }
 
 func (s *Service) ChangeTicketStatus(ctx context.Context, cmd ChangeTicketStatusCommand) (*kitchendomain.Ticket, error) {
@@ -474,6 +777,28 @@ func replayedStockCommandResult(msg *domain.OutboxMessage) StockCommandResult {
 	return out
 }
 
+func (s *Service) replayedProposalCommand(ctx context.Context, commandID, eventType string) (*kitchendomain.Proposal, bool, error) {
+	commandID = strings.TrimSpace(commandID)
+	if commandID == "" {
+		return nil, false, fmt.Errorf("%w: command_id is required", domain.ErrInvalid)
+	}
+	proposal, err := s.repo.GetKitchenProposalByCommandID(ctx, commandID)
+	if err == nil {
+		if proposal.OutboxEventType != eventType {
+			return nil, false, fmt.Errorf("%w: %s", domain.ErrDuplicateCommand, commandID)
+		}
+		proposal.Replayed = true
+		return proposal, true, nil
+	}
+	if err != nil && !errors.Is(err, domain.ErrNotFound) {
+		return nil, false, err
+	}
+	if err := shared.EnsureCommandNotProcessed(ctx, s.repo, commandID); err != nil {
+		return nil, false, err
+	}
+	return nil, false, nil
+}
+
 func (s *Service) resolveWarehouseID(ctx context.Context, restaurantID, requestedWarehouseID string) (string, error) {
 	requestedWarehouseID = strings.TrimSpace(requestedWarehouseID)
 	if requestedWarehouseID != "" {
@@ -674,11 +999,123 @@ func (s *Service) ensureStockCatalogItem(ctx context.Context, catalogItemID stri
 	return nil
 }
 
+func validateCatalogSuggestion(cmd CreateCatalogSuggestionCommand) error {
+	action := strings.TrimSpace(cmd.Action)
+	if !validCatalogSuggestionAction(action) {
+		return fmt.Errorf("%w: unsupported catalog suggestion action", domain.ErrInvalid)
+	}
+	if !validCatalogSuggestionKind(cmd.Kind) {
+		return fmt.Errorf("%w: unsupported catalog suggestion kind", domain.ErrInvalid)
+	}
+	if action == "create" && (strings.TrimSpace(cmd.Name) == "" || strings.TrimSpace(cmd.BaseUnit) == "") {
+		return fmt.Errorf("%w: catalog suggestion name and base_unit are required", domain.ErrInvalid)
+	}
+	if action != "create" && strings.TrimSpace(cmd.CatalogItemID) == "" {
+		return fmt.Errorf("%w: catalog_item_id is required for catalog suggestion update/archive", domain.ErrInvalid)
+	}
+	if strings.TrimSpace(cmd.Reason) == "" {
+		return fmt.Errorf("%w: catalog suggestion reason is required", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func (s *Service) validateRecipeSuggestion(ctx context.Context, cmd CreateRecipeSuggestionCommand) (string, string, error) {
+	action := strings.TrimSpace(cmd.Action)
+	if !validRecipeSuggestionAction(action) {
+		return "", "", fmt.Errorf("%w: unsupported recipe suggestion action", domain.ErrInvalid)
+	}
+	delta := cmd.PrepTimeDeltaMinutes
+	if delta < 0 {
+		delta = -delta
+	}
+	if delta > s.options.RecipeSuggestionMaxPrepTimeDeltaMinutes {
+		return "", "", fmt.Errorf("%w: kitchen recipe suggestion limit exceeded", domain.ErrInvalid)
+	}
+	ownerCatalogItemID := strings.TrimSpace(cmd.OwnerCatalogItemID)
+	recipeVersionID := strings.TrimSpace(cmd.RecipeVersionID)
+	if action == "create_recipe" {
+		if ownerCatalogItemID == "" && strings.TrimSpace(cmd.OwnerCatalogSuggestionID) == "" {
+			return "", "", fmt.Errorf("%w: owner_catalog_item_id or owner_catalog_suggestion_id is required", domain.ErrInvalid)
+		}
+		if ownerCatalogItemID != "" {
+			item, err := s.repo.GetCatalogItem(ctx, ownerCatalogItemID)
+			if err != nil {
+				return "", "", err
+			}
+			if !item.Active || (item.Type != domain.CatalogItemDish && item.Type != domain.CatalogItemSemiFinished) {
+				return "", "", fmt.Errorf("%w: recipe owner must be active dish or semi_finished item", domain.ErrInvalid)
+			}
+		}
+	} else {
+		if recipeVersionID == "" && ownerCatalogItemID == "" {
+			return "", "", fmt.Errorf("%w: recipe_version_id or owner_catalog_item_id is required", domain.ErrInvalid)
+		}
+	}
+	if recipeVersionID != "" {
+		recipe, err := s.repo.GetRecipeVersion(ctx, recipeVersionID)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return "", "", fmt.Errorf("%w: kitchen recipe not found", domain.ErrNotFound)
+			}
+			return "", "", err
+		}
+		if ownerCatalogItemID != "" && recipe.DishCatalogItemID != ownerCatalogItemID {
+			return "", "", fmt.Errorf("%w: recipe_version_id does not match owner_catalog_item_id", domain.ErrInvalid)
+		}
+		ownerCatalogItemID = recipe.DishCatalogItemID
+	}
+	if recipeVersionID == "" && ownerCatalogItemID != "" && action != "create_recipe" {
+		recipe, err := s.repo.GetActiveRecipeVersionByCatalogItem(ctx, ownerCatalogItemID)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return "", "", fmt.Errorf("%w: kitchen recipe not found", domain.ErrNotFound)
+			}
+			return "", "", err
+		}
+		recipeVersionID = recipe.ID
+	}
+	if action != "change_prep_time" && len(cmd.Changes) == 0 {
+		return "", "", fmt.Errorf("%w: recipe suggestion changes are required", domain.ErrInvalid)
+	}
+	for _, change := range cmd.Changes {
+		if !validRecipeSuggestionAction(strings.TrimSpace(change.Action)) {
+			return "", "", fmt.Errorf("%w: unsupported recipe suggestion change action", domain.ErrInvalid)
+		}
+	}
+	if strings.TrimSpace(cmd.Reason) == "" {
+		return "", "", fmt.Errorf("%w: recipe suggestion reason is required", domain.ErrInvalid)
+	}
+	return recipeVersionID, ownerCatalogItemID, nil
+}
+
+func normalizedRecipeSuggestionChanges(changes []RecipeSuggestionChangeCommand) []map[string]any {
+	out := make([]map[string]any, 0, len(changes))
+	for _, change := range changes {
+		out = append(out, map[string]any{
+			"line_id":              strings.TrimSpace(change.LineID),
+			"action":               strings.TrimSpace(change.Action),
+			"from_catalog_item_id": strings.TrimSpace(change.FromCatalogItemID),
+			"to_catalog_item_id":   strings.TrimSpace(change.ToCatalogItemID),
+			"quantity":             strings.TrimSpace(change.Quantity),
+			"unit_code":            strings.TrimSpace(change.UnitCode),
+			"loss_percent":         strings.TrimSpace(change.LossPercent),
+		})
+	}
+	return out
+}
+
 func trimOrNewID(id string, ids idgen.Generator) string {
 	if id = strings.TrimSpace(id); id != "" {
 		return id
 	}
 	return ids.NewID()
+}
+
+func stringValue(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
 }
 
 func validBusinessDate(v string) bool {
@@ -712,6 +1149,51 @@ func positiveDecimal(v string) bool {
 		}
 	}
 	return seenDigit && seenPositive
+}
+
+func validCatalogSuggestionAction(action string) bool {
+	switch strings.TrimSpace(action) {
+	case "create", "update", "archive":
+		return true
+	default:
+		return false
+	}
+}
+
+func validCatalogSuggestionKind(kind domain.CatalogItemType) bool {
+	switch kind {
+	case domain.CatalogItemDish, domain.CatalogItemGood, domain.CatalogItemSemiFinished, domain.CatalogItemService:
+		return true
+	default:
+		return false
+	}
+}
+
+func validRecipeSuggestionAction(action string) bool {
+	switch strings.TrimSpace(action) {
+	case "create_recipe", "update_recipe", "replace_ingredient", "add_ingredient", "remove_ingredient", "change_quantity", "change_loss_percent", "change_prep_time":
+		return true
+	default:
+		return false
+	}
+}
+
+func validProposalKind(kind kitchendomain.ProposalKind) bool {
+	switch kind {
+	case kitchendomain.ProposalKindCatalog, kitchendomain.ProposalKindRecipe:
+		return true
+	default:
+		return false
+	}
+}
+
+func validProposalStatus(status kitchendomain.ProposalStatus) bool {
+	switch status {
+	case kitchendomain.ProposalDraft, kitchendomain.ProposalPendingSync, kitchendomain.ProposalSynced, kitchendomain.ProposalApproved, kitchendomain.ProposalRejected, kitchendomain.ProposalChangesRequested, kitchendomain.ProposalFailed:
+		return true
+	default:
+		return false
+	}
 }
 
 func validStatus(status kitchendomain.TicketStatus) bool {

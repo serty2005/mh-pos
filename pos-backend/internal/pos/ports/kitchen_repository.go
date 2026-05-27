@@ -17,4 +17,7 @@ type KitchenRepository interface {
 	GetKitchenTicketEventByCommandID(context.Context, string) (*kitchen.TicketEvent, error)
 	GetLatestKitchenServedEvent(context.Context, string) (*kitchen.TicketEvent, error)
 	CountKitchenServedEvents(context.Context, string) (int, error)
+	CreateKitchenProposal(context.Context, *kitchen.Proposal) error
+	GetKitchenProposalByCommandID(context.Context, string) (*kitchen.Proposal, error)
+	ListKitchenProposals(context.Context, kitchen.ProposalListQuery) ([]kitchen.Proposal, error)
 }

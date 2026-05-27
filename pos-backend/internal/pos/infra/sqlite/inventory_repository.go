@@ -42,6 +42,30 @@ func (r *Repository) ListRecipeVersions(ctx context.Context) ([]domain.RecipeVer
 	return out, rows.Err()
 }
 
+func (r *Repository) GetRecipeVersion(ctx context.Context, id string) (*domain.RecipeVersion, error) {
+	var v domain.RecipeVersion
+	var status, created, updated string
+	var active int
+	var cloudUpdatedAt, cloudDeletedAt, lastSyncedAt sql.NullString
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,dish_catalog_item_id,version,name,status,yield_quantity,yield_unit,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at
+FROM recipe_versions
+WHERE id = ? AND cloud_deleted_at IS NULL
+LIMIT 1`, id).Scan(&v.ID, &v.DishCatalogItemID, &v.Version, &v.Name, &status, &v.YieldQuantity, &v.YieldUnit, &active, &created, &updated, &v.CloudVersion, &cloudUpdatedAt, &cloudDeletedAt, &lastSyncedAt)
+	if err != nil {
+		return nil, normalizeErr(err)
+	}
+	v.Status = domain.RecipeVersionStatus(status)
+	v.Active = active == 1
+	v.CreatedAt = parseTime(created)
+	v.UpdatedAt = parseTime(updated)
+	v.CloudUpdatedAt = nullStringPtr(cloudUpdatedAt)
+	v.CloudDeletedAt = nullStringPtr(cloudDeletedAt)
+	if lastSyncedAt.Valid {
+		v.LastSyncedAt = lastSyncedAt.String
+	}
+	return &v, nil
+}
+
 func (r *Repository) GetActiveRecipeVersionByCatalogItem(ctx context.Context, catalogItemID string) (*domain.RecipeVersion, error) {
 	var v domain.RecipeVersion
 	var status, created, updated string

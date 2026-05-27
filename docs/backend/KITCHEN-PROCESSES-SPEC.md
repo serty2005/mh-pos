@@ -1,6 +1,6 @@
 # Kitchen Processes Implementation Spec
 
-Статус: профильная спецификация кухонного контура. POS Edge order queue, ticket lifecycle и Edge-side kitchen stock input routes помечены как реализовано сейчас; proposal/recipe review flows и Cloud-side `StockWriteOffCaptured` processing остаются запланировано далее.
+Статус: профильная спецификация кухонного контура. POS Edge order queue, ticket lifecycle, recipe read, local kitchen proposals и Edge-side kitchen stock input routes помечены как реализовано сейчас; Cloud proposal review/apply flows и Cloud-side `StockWriteOffCaptured` processing остаются запланировано далее.
 
 Дата фиксации: 2026-05-27.
 
@@ -36,13 +36,16 @@
 - POS Edge уже предоставляет `POST /api/v1/kitchen/stock-receipts`, `POST /api/v1/kitchen/inventory-counts`, `POST /api/v1/kitchen/stock-write-offs`, `POST /api/v1/kitchen/productions`.
 - Эти kitchen stock routes пишут только immutable local event/outbox envelopes `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`; POS Edge не создает `stock_documents`, `stock_moves`, `stock_ledger`, `stock_balances`.
 - Replay того же stock `command_id` для того же event type возвращает сохраненный `id`, `warehouse_id`, `event_type` и `replayed = true` без второго `local_event_log`/outbox event.
+- POS Edge уже предоставляет `GET /api/v1/kitchen/catalog/items/{catalog_item_id}/recipe`, `POST /api/v1/kitchen/catalog-suggestions`, `POST /api/v1/kitchen/recipe-suggestions`, `GET /api/v1/kitchen/proposals`.
+- Recipe read возвращает active recipe version, строки техкарты с названиями ингредиентов из `catalog_items` и локальные proposals по этой техкарте.
+- Catalog/recipe suggestion routes сохраняют `kitchen_proposals` со status `pending_sync`, пишут `CatalogItemChangeSuggested`/`RecipeChangeSuggested` в `local_event_log` и `pos_sync_outbox`, поддерживают replay по `command_id` и не мутируют `catalog_items`, `recipe_versions`, `recipe_lines`.
+- `RecipeChangeSuggested.prep_time_delta_minutes` валидируется POS Edge лимитом `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES` с default `120`.
 - `pos-ui-g` уже имеет отдельный terminal mode `kds`, но сейчас он показывает placeholder вместо backend-backed kitchen runtime.
 
 Не реализовано сейчас:
 
-- POS Edge routes для просмотра техкарты и отправки proposal events.
-- Event types `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `StockWriteOffCaptured` в Go sync contract.
-- Cloud review/apply очереди для catalog и recipe suggestions.
+- Cloud receiver/review/apply очереди для `CatalogItemChangeSuggested` и `RecipeChangeSuggested`.
+- Cloud-side receiver/worker для `StockWriteOffCaptured`.
 - Cloud -> Edge возврат статусов предложений, чтобы работник кухни видел результат рассмотрения.
 - Warehouse-aware последовательная обработка stock events по складам.
 - Kitchen UI в `pos-ui-g` поверх реальных backend routes.
@@ -59,11 +62,10 @@ POS Edge не создает `StockDocument`, `StockMove`, `StockLedger` и не
 
 Реализовано сейчас:
 
-- POS Edge backend: kitchen stock command/input layer, warehouse validation, RBAC and outbox events for receipt, count, write-off and production.
+- POS Edge backend: kitchen stock command/input layer, warehouse validation, recipe read, local catalog/recipe proposal status read model, RBAC and outbox events for receipt, count, write-off, production, catalog suggestions and recipe suggestions.
 
 Запланировано далее:
 
-- POS Edge backend: recipe read/proposal application service and local draft/proposal tables.
 - Cloud backend: новые sync event contracts, receiver validation, proposal review tables/routes, inventory worker для write-off и warehouse sequence.
 - POS UI `pos-ui-g`: полный kitchen mode с тремя нижними разделами и вкладками внутри рабочих экранов.
 - Cloud UI: manager review для catalog/recipe suggestions, approve/reject и публикация измененных справочников.
@@ -268,14 +270,14 @@ Payload:
 
 Правила:
 
-- `prep_time_delta_minutes` проверяется POS Edge конфигом `recipe_suggestion_max_time_delta_minutes`;
+- `prep_time_delta_minutes` проверяется POS Edge конфигом `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES`;
 - для `create_recipe` допускается `owner_catalog_suggestion_id`, если блюдо еще не принято в Cloud catalog;
 - Edge сохраняет локальный proposal status `pending_sync`, затем обновляет его по Cloud -> Edge proposal feedback stream;
 - Edge не меняет `recipe_versions` и `recipe_lines` до следующей Cloud publication после manager approve.
 
 ### Catalog Suggestions
 
-Реализовать:
+Реализовано сейчас:
 
 ```text
 POST /api/v1/kitchen/catalog-suggestions
@@ -310,7 +312,7 @@ Cloud создает единый review item "новое блюдо с техк
 
 ### Stock Receipt
 
-Реализовать:
+Реализовано сейчас:
 
 ```text
 POST /api/v1/kitchen/stock-receipts
@@ -450,9 +452,12 @@ Cloud создает `stock_documents.document_type = PRODUCTION`: приход 
 
 - `warehouse_reference` - Cloud -> Edge read model складов: `id`, `restaurant_id`, `name`, `kind`, `is_default`, `active`, sync metadata.
 
-Запланировано далее:
+Реализовано сейчас:
 
 - `kitchen_proposals` - локальные предложения catalog/recipe с status `draft`, `pending_sync`, `synced`, `approved`, `rejected`, `changes_requested`, `failed`.
+
+Запланировано далее:
+
 - `kitchen_stock_receipt_drafts` и `kitchen_stock_receipt_lines` - локальные draft только до отправки; после успешной отправки immutable snapshot остается в outbox/local event.
 - `kitchen_inventory_count_drafts` и lines.
 - `kitchen_write_off_drafts` и lines.
@@ -468,13 +473,15 @@ Cloud создает `stock_documents.document_type = PRODUCTION`: приход 
 
 ## Sync Event Contracts
 
-Добавить в `cloud-backend/internal/cloudsync/contracts/types.go` и POS generated payloads:
+Реализовано сейчас на POS Edge generated payloads:
 
 ```text
 CatalogItemChangeSuggested
 RecipeChangeSuggested
 StockWriteOffCaptured
 ```
+
+Запланировано далее для Cloud receiver/review/apply runtime: Cloud-side typed validation и review queues для `CatalogItemChangeSuggested`/`RecipeChangeSuggested`, а также Cloud-side worker processing для `StockWriteOffCaptured`.
 
 Расширить существующие:
 
@@ -692,11 +699,13 @@ UI не меняет статус оптимистично. После action UI
 - `KITCHEN_INVENTORY_COUNT_EMPTY`;
 - `KITCHEN_PRODUCTION_RECIPE_REQUIRED`.
 
-Запланировано далее для recipe/proposal routes:
+Реализовано сейчас для recipe/proposal routes:
 
-- `KITCHEN_TICKET_TRANSITION_INVALID`;
 - `KITCHEN_RECIPE_NOT_FOUND`;
 - `KITCHEN_RECIPE_SUGGESTION_LIMIT_EXCEEDED`;
+
+Запланировано далее для Cloud proposal review feedback routes:
+
 - `KITCHEN_PROPOSAL_NOT_FOUND`;
 - `KITCHEN_PROPOSAL_ALREADY_REVIEWED`.
 

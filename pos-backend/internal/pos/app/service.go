@@ -91,6 +91,12 @@ type CaptureStockWriteOffCommand = appkitchen.CaptureStockWriteOffCommand
 type StockWriteOffLineCommand = appkitchen.StockWriteOffLineCommand
 type CompleteProductionCommand = appkitchen.CompleteProductionCommand
 type StockCommandResult = appkitchen.StockCommandResult
+type GetKitchenRecipeCommand = appkitchen.GetRecipeCommand
+type KitchenRecipeView = appkitchen.RecipeView
+type CreateKitchenCatalogSuggestionCommand = appkitchen.CreateCatalogSuggestionCommand
+type CreateKitchenRecipeSuggestionCommand = appkitchen.CreateRecipeSuggestionCommand
+type KitchenRecipeSuggestionChangeCommand = appkitchen.RecipeSuggestionChangeCommand
+type ListKitchenProposalsCommand = appkitchen.ListProposalsCommand
 type CloseOrderCommand = apporder.CloseOrderCommand
 type OpenCashSessionCommand = appcash.OpenCashSessionCommand
 type CloseCashSessionCommand = appcash.CloseCashSessionCommand
@@ -156,12 +162,13 @@ type Service struct {
 
 // ServiceOptions задает runtime hooks верхнего POS application service.
 type ServiceOptions struct {
-	MasterDataBackupBeforeFullSnapshot MasterDataBackupFunc
-	CloudProvisioningURL               string
-	LicenseServerURL                   string
-	CloudProvisioningClient            appprovisioning.CloudClient
-	LicenseProvisioningClient          appprovisioning.LicenseClient
-	StorageArchiveDir                  string
+	MasterDataBackupBeforeFullSnapshot      MasterDataBackupFunc
+	CloudProvisioningURL                    string
+	LicenseServerURL                        string
+	CloudProvisioningClient                 appprovisioning.CloudClient
+	LicenseProvisioningClient               appprovisioning.LicenseClient
+	StorageArchiveDir                       string
+	RecipeSuggestionMaxPrepTimeDeltaMinutes int
 }
 
 func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock) *Service {
@@ -187,8 +194,10 @@ func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idge
 		pricing:     pricingSvc,
 		prechecks:   appprecheck.NewService(repo, tx, ids, clock, pricingSvc),
 		checks:      appcheck.NewService(repo, tx, ids, clock),
-		kitchen:     appkitchen.NewService(repo, tx, ids, clock),
-		cash:        appcash.NewService(repo, tx, ids, clock),
+		kitchen: appkitchen.NewServiceWithOptions(repo, tx, ids, clock, appkitchen.Options{
+			RecipeSuggestionMaxPrepTimeDeltaMinutes: options.RecipeSuggestionMaxPrepTimeDeltaMinutes,
+		}),
+		cash: appcash.NewService(repo, tx, ids, clock),
 		masterSync: appmastersync.NewServiceWithOptions(repo, tx, ids, clock, appmastersync.Options{
 			BackupBeforeFullSnapshot: options.MasterDataBackupBeforeFullSnapshot,
 		}),
@@ -541,6 +550,22 @@ func (s *Service) CaptureKitchenStockWriteOff(ctx context.Context, cmd CaptureSt
 
 func (s *Service) CompleteKitchenProduction(ctx context.Context, cmd CompleteProductionCommand) (StockCommandResult, error) {
 	return s.kitchen.CompleteProduction(ctx, cmd)
+}
+
+func (s *Service) GetKitchenRecipe(ctx context.Context, cmd GetKitchenRecipeCommand) (KitchenRecipeView, error) {
+	return s.kitchen.GetRecipe(ctx, cmd)
+}
+
+func (s *Service) CreateKitchenCatalogSuggestion(ctx context.Context, cmd CreateKitchenCatalogSuggestionCommand) (*domain.KitchenProposal, error) {
+	return s.kitchen.CreateCatalogSuggestion(ctx, cmd)
+}
+
+func (s *Service) CreateKitchenRecipeSuggestion(ctx context.Context, cmd CreateKitchenRecipeSuggestionCommand) (*domain.KitchenProposal, error) {
+	return s.kitchen.CreateRecipeSuggestion(ctx, cmd)
+}
+
+func (s *Service) ListKitchenProposals(ctx context.Context, cmd ListKitchenProposalsCommand) ([]domain.KitchenProposal, error) {
+	return s.kitchen.ListProposals(ctx, cmd)
 }
 
 func (s *Service) GetCurrentCashSession(ctx context.Context, deviceID string) (*domain.CashSession, error) {

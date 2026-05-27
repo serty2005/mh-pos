@@ -15,8 +15,8 @@
 | Catalog folder/tag | Cloud | No | Cloud -> Edge via `catalog` | реализовано сейчас |
 | Modifier group/option | Cloud | No | Cloud -> Edge via `catalog` | реализовано сейчас |
 | Recipe reference | Cloud | Edge read-only | Cloud -> Edge `recipes` | реализовано сейчас: `recipe_versions`/`recipe_lines` ingest для KDS UI и stop-list checks |
-| Recipe change proposal | Cloud review queue | Edge creates suggestion only | Edge -> Cloud `RecipeChangeSuggested` | запланировано до полного пилота |
-| Catalog change proposal | Cloud review queue | Edge creates suggestion only | Edge -> Cloud `CatalogItemChangeSuggested` | запланировано до полного пилота |
+| Recipe change proposal | Cloud review queue | Edge creates suggestion only | Edge -> Cloud `RecipeChangeSuggested` | реализовано сейчас на POS Edge; Cloud review/apply запланировано далее |
+| Catalog change proposal | Cloud review queue | Edge creates suggestion only | Edge -> Cloud `CatalogItemChangeSuggested` | реализовано сейчас на POS Edge; Cloud review/apply запланировано далее |
 | Stop-list | Cloud + Edge kitchen/manager input | Edge runtime reads local overlay; Edge edit flow запланирован | Cloud -> Edge `inventory_reference` сейчас; Edge -> Cloud `StopListUpdated` запланировано | реализовано сейчас: sale blocking по local `stop_lists`; conflict policy запланирован далее |
 | Employee shift | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Cash session/drawer event | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
@@ -28,7 +28,7 @@
 | Tax/pricing policy reference | Cloud | Edge read model only | `pricing_policy` Cloud -> Edge stream for `tax_profiles`, `tax_rules`, `service_charge_rules`, `pricing_policies` | реализовано сейчас |
 | Operational order adjustments | Edge | Yes while order is open | runtime-команды; будущие policy ids могут ограничивать допустимые варианты | реализовано сейчас |
 | Stock document/move/ledger | Cloud Inventory Worker | No | Edge business events -> Cloud worker | реализовано сейчас for normalized item payloads; Edge-side stock document service был pre-pilot legacy и удален |
-| Kitchen ticket/status | POS Edge/KDS | Yes | Edge -> Cloud `KitchenTicketStatusChanged`/`ItemServed` | реализовано сейчас для ticket lifecycle; receipt/proposal/stop-list edit flows запланированы далее |
+| Kitchen ticket/status | POS Edge/KDS | Yes | Edge -> Cloud `KitchenTicketStatusChanged`/`ItemServed` | реализовано сейчас для ticket lifecycle; receipt/proposal Edge input flows реализованы сейчас; stop-list edit flow запланирован далее |
 
 ## Текущий Cloud -> Edge Ingest
 

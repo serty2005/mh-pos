@@ -115,6 +115,8 @@ func codeForError(err error, status int) string {
 		return "PERMISSION_DENIED"
 	case errors.Is(err, domain.ErrForbidden):
 		return "FORBIDDEN"
+	case errors.Is(err, domain.ErrNotFound) && containsErrorText(err, "kitchen recipe not found"):
+		return "KITCHEN_RECIPE_NOT_FOUND"
 	case errors.Is(err, domain.ErrNotFound):
 		return "NOT_FOUND"
 	case errors.Is(err, domain.ErrInvalid):
@@ -184,6 +186,10 @@ func messageKeyForCode(code, fallback string) string {
 		return "errors.kitchen.inventoryCountEmpty"
 	case "KITCHEN_PRODUCTION_RECIPE_REQUIRED":
 		return "errors.kitchen.productionRecipeRequired"
+	case "KITCHEN_RECIPE_NOT_FOUND":
+		return "errors.kitchen.recipeNotFound"
+	case "KITCHEN_RECIPE_SUGGESTION_LIMIT_EXCEEDED":
+		return "errors.kitchen.recipeSuggestionLimitExceeded"
 	case "VALIDATION_FAILED":
 		return "errors.validation"
 	case "NOT_FOUND":
@@ -209,6 +215,8 @@ func kitchenValidationCode(err error) string {
 		return "KITCHEN_INVENTORY_COUNT_EMPTY"
 	case containsErrorText(err, "kitchen production recipe required"):
 		return "KITCHEN_PRODUCTION_RECIPE_REQUIRED"
+	case containsErrorText(err, "kitchen recipe suggestion limit exceeded"):
+		return "KITCHEN_RECIPE_SUGGESTION_LIMIT_EXCEEDED"
 	default:
 		return ""
 	}

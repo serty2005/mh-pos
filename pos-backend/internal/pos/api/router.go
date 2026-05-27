@@ -86,6 +86,8 @@ func NewRouter(service *app.Service) http.Handler {
 
 		r.Get("/kitchen/order-queue", h.listKitchenOrderQueue)
 		r.Get("/kitchen/tickets", h.listKitchenTickets)
+		r.Get("/kitchen/catalog/items/{catalog_item_id}/recipe", h.getKitchenRecipe)
+		r.Get("/kitchen/proposals", h.listKitchenProposals)
 		r.Post("/kitchen/tickets/{id}/accept", h.acceptKitchenTicket)
 		r.Post("/kitchen/tickets/{id}/start", h.startKitchenTicket)
 		r.Post("/kitchen/tickets/{id}/hold", h.holdKitchenTicket)
@@ -93,6 +95,8 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/kitchen/tickets/{id}/serve", h.serveKitchenTicket)
 		r.Post("/kitchen/tickets/{id}/recall", h.recallKitchenTicket)
 		r.Post("/kitchen/tickets/{id}/cancel", h.cancelKitchenTicket)
+		r.Post("/kitchen/catalog-suggestions", h.createKitchenCatalogSuggestion)
+		r.Post("/kitchen/recipe-suggestions", h.createKitchenRecipeSuggestion)
 		r.Post("/kitchen/stock-receipts", h.captureKitchenStockReceipt)
 		r.Post("/kitchen/inventory-counts", h.captureKitchenInventoryCount)
 		r.Post("/kitchen/stock-write-offs", h.captureKitchenStockWriteOff)
@@ -913,6 +917,30 @@ func (h *Handler) listKitchenOrderQueue(w http.ResponseWriter, r *http.Request) 
 	writeOK(w, r, v, err)
 }
 
+func (h *Handler) getKitchenRecipe(w http.ResponseWriter, r *http.Request) {
+	var cmd app.GetKitchenRecipeCommand
+	setRequestMeta(&cmd.CommandMeta, r)
+	cmd.CatalogItemID = chi.URLParam(r, "catalog_item_id")
+	v, err := h.service.GetKitchenRecipe(r.Context(), cmd)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) listKitchenProposals(w http.ResponseWriter, r *http.Request) {
+	limit, offset, ok := readLimitOffset(w, r)
+	if !ok {
+		return
+	}
+	cmd := app.ListKitchenProposalsCommand{
+		Kind:   domain.KitchenProposalKind(r.URL.Query().Get("kind")),
+		Status: domain.KitchenProposalStatus(r.URL.Query().Get("status")),
+		Limit:  limit,
+		Offset: offset,
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.ListKitchenProposals(r.Context(), cmd)
+	writeOK(w, r, v, err)
+}
+
 func (h *Handler) acceptKitchenTicket(w http.ResponseWriter, r *http.Request) {
 	h.changeKitchenTicketStatus(w, r, "accept")
 }
@@ -954,6 +982,28 @@ func (h *Handler) changeKitchenTicketStatus(w http.ResponseWriter, r *http.Reque
 	cmd.Action = action
 	v, err := h.service.ChangeKitchenTicketStatus(r.Context(), cmd)
 	writeOK(w, r, v, err)
+}
+
+func (h *Handler) createKitchenCatalogSuggestion(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateKitchenCatalogSuggestionCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.CreateKitchenCatalogSuggestion(r.Context(), cmd)
+	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) createKitchenRecipeSuggestion(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateKitchenRecipeSuggestionCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.CreateKitchenRecipeSuggestion(r.Context(), cmd)
+	writeCreated(w, r, v, err)
 }
 
 func (h *Handler) captureKitchenStockReceipt(w http.ResponseWriter, r *http.Request) {

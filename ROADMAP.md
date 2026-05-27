@@ -148,8 +148,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - выполнено: `/pos/kitchen` читает backend tickets, показывает status columns/list, безопасные loading/error/empty/no-permission states и после action перечитывает backend truth без UI-authoritative статусов;
   - выполнено для Cloud worker: принятый `ItemServed` идемпотентно создает SALE ledger по `order_line_id`, а последующий `CheckClosed` пишет только unserved delta;
   - выполнено: Edge-side chef stock input routes для receipt/count/write-off/production валидируют warehouse, catalog item, receipt line totals, counted quantity, write-off reason и semi-finished production recipe, затем пишут outbox events без local stock documents;
-  - далее: Cloud-side `StockWriteOffCaptured` receiver/worker, receipt line через `CatalogItemChangeSuggested` для нового/измененного товара и kitchen UI формы поверх этих routes;
-  - добавить chef recipe proposal flow: просмотр техкарты и `RecipeChangeSuggested` с заменой ингредиента, количеством/единицей/потерями и prep time delta в пределах `recipe_suggestion_max_time_delta_minutes`;
+  - выполнено: POS Edge recipe/proposal backend routes возвращают техкарту с ingredient names из полного `catalog_items`, сохраняют локальные `kitchen_proposals`, пишут `CatalogItemChangeSuggested`/`RecipeChangeSuggested`, поддерживают `proposal_group_id` для нового блюда + техкарты и валидируют prep time delta через `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES`;
+  - далее: Cloud-side `StockWriteOffCaptured` receiver/worker, Cloud review/apply для `CatalogItemChangeSuggested`/`RecipeChangeSuggested`, receipt line через catalog suggestion после Cloud resolution и kitchen UI формы поверх этих routes;
   - добавить kitchen stop-list edit flow и параметр `stop_list_conflict_policy` для порядка применения Cloud/Edge overlay.
 - POS-side authoritative financial/inventory logic:
   - POS Edge backend остается авторитетным для offline order/precheck/payment/check commands, financial operation ledger, pricing snapshot, idempotency, cash/session boundaries, stop-list sale blocking и KDS command validation;
@@ -230,7 +230,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Cloud UI позволяет настроить stop-list и recipes, опубликовать их и увидеть readiness Edge;
 - POS Edge применяет `recipes` и `inventory_reference` через managed sync, локально блокирует stop-listed sale offline по локальному `stop_lists` и валидирует kitchen stock commands по `warehouse_reference`;
 - waiter mobile UI проходит Playwright mobile flow без payment/refund authority;
-- kitchen UI должен проходить Playwright flow по backend-backed status lifecycle и `ItemServed`; receipt/count/write-off/production UI forms, recipe suggestion и stop-list edit остаются следующими сценариями после backend route foundation;
+- kitchen UI должен проходить Playwright flow по backend-backed status lifecycle и `ItemServed`; receipt/count/write-off/production UI forms, recipe suggestion UI и stop-list edit остаются следующими сценариями после backend route foundation;
 - Cloud worker создает review/proposal записи из `CatalogItemChangeSuggested` и `RecipeChangeSuggested`, а не применяет их без policy/manager review;
 - Cloud принимает `CheckClosed`/`ItemServed`, дедуплицирует replay и Cloud Inventory Worker пишет полный stock document/ledger/balance/costing state;
 - Cloud Inventory Engine покрывает stock receipt, inventory count, production, sale consumption, refund/cancellation disposition, recipe expansion, modifier linked consumption, negative-balance costing и retro recalculation DAG;

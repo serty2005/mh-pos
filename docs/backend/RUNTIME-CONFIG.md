@@ -18,7 +18,8 @@
   "POS_SQLITE_PATH": "data/pos-edge.db",
   "POS_SQLITE_ARCHIVE_DIR": "data/archives",
   "POS_SYNC_SENDER_ENABLED": true,
-  "POS_SYNC_SENDER_BATCH_SIZE": 25
+  "POS_SYNC_SENDER_BATCH_SIZE": 25,
+  "POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES": 120
 }
 ```
 
@@ -43,6 +44,8 @@
 Реализовано сейчас: loader находится в общем локальном Go module `shared/platform` (`module mh-pos-platform`) и подключается сервисами через `replace`.
 
 Реализовано сейчас: POS Edge storage archive export использует `POS_SQLITE_ARCHIVE_DIR`. Если значение не задано, entrypoint выбирает `archives` рядом с active SQLite data directory из `POS_SQLITE_PATH`; сам export не пишет файлы внутрь `.db` file и не запускает destructive apply. Физическое удаление и `VACUUM` выполняются только отдельным `POST /api/v1/storage/archive/apply-plan` после verified archive и runtime safety gate.
+
+Реализовано сейчас: `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES` задает положительный integer limit для `RecipeChangeSuggested.prep_time_delta_minutes`. Если ключ отсутствует или некорректен, POS Edge использует default `120`.
 
 Вне текущего объема: горячая перезагрузка runtime-конфига без рестарта процесса и хранение secrets в зашифрованном vault.
 

@@ -347,8 +347,9 @@ Recipes/inventory:
 - Реализовано сейчас: final check после полной оплаты пишет POS-generated `CheckClosed` outbox envelope из immutable `check.Snapshot`.
 - Реализовано сейчас: минимальный POS Edge KDS lifecycle foundation создает kitchen tickets из order lines, пишет `KitchenTicketStatusChanged`, а `serve` пишет `ItemServed`.
 - Реализовано сейчас: POS Edge kitchen stock input routes валидируют `warehouse_id`/default warehouse, существующие stock-capable catalog items, receipt supplier/document date/line totals, inventory count `counted_quantity`, write-off reason и production для active `semi_finished` с active recipe; routes пишут только `local_event_log`/`pos_sync_outbox`.
-- Не реализовано сейчас: catalog/recipe proposal flows, Edge manager/KDS stop-list edit flow, Cloud-side `StockWriteOffCaptured` receiver/worker, modifier linked catalog item stock consumption, retro costing DAG.
-- Запланировано до полного пилота: Cloud authoring/publication UI для recipes/stop-list, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `StopListUpdated`, Cloud-side write-off processing и расширение KDS за пределы ticket lifecycle foundation.
+- Реализовано сейчас: POS Edge kitchen recipe/proposal routes читают active recipe из `recipe_versions`/`recipe_lines`, добавляют ingredient names из полного `catalog_items`, сохраняют локальные `kitchen_proposals`, пишут `CatalogItemChangeSuggested`/`RecipeChangeSuggested` и не применяют предложения к catalog/recipe read model до Cloud publication.
+- Не реализовано сейчас: Edge manager/KDS stop-list edit flow, Cloud-side proposal review/apply, Cloud-side `StockWriteOffCaptured` receiver/worker, modifier linked catalog item stock consumption, retro costing DAG.
+- Запланировано до полного пилота: Cloud authoring/publication UI для recipes/stop-list, Cloud review/apply для `CatalogItemChangeSuggested`/`RecipeChangeSuggested`, `StopListUpdated`, Cloud-side write-off processing и расширение KDS за пределы ticket lifecycle foundation.
 - Профильный целевой contract: `docs/backend/INVENTORY-COSTING-SPEC.md`.
 
 ## Full Pilot Backend Delta
@@ -378,6 +379,10 @@ Recipes/inventory:
   - `POST /api/v1/kitchen/inventory-counts`;
   - `POST /api/v1/kitchen/stock-write-offs`;
   - `POST /api/v1/kitchen/productions`;
+  - `GET /api/v1/kitchen/catalog/items/{catalog_item_id}/recipe`;
+  - `POST /api/v1/kitchen/catalog-suggestions`;
+  - `POST /api/v1/kitchen/recipe-suggestions`;
+  - `GET /api/v1/kitchen/proposals`;
   - `GET /api/v1/kitchen/order-queue` требует `pos.kitchen.view`, поддерживает `status` по вычисляемому `kitchen_order_status`, `station`, `limit`, `offset`, default/max limit `50/100`, grouped tickets по order и backend-side `elapsed_seconds`;
   - `GET /api/v1/kitchen/tickets` требует `pos.kitchen.view`, поддерживает `status`, `station`, `limit`, `offset`, default/max limit `50/100` и stable sort `created_at ASC, id ASC`;
   - status actions требуют `pos.kitchen.status.change`, принимают `command_id`, возвращают safe conflict для недопустимого перехода и не считают UI visibility security boundary;
@@ -392,10 +397,14 @@ Recipes/inventory:
   - production completed / `ProductionCompleted` требует `pos.kitchen.production.complete`;
   - replay того же `command_id` для того же event type возвращает успешный replay с сохраненными `id`, `warehouse_id`, `event_type`, `replayed = true` без второго outbox/local event;
   - POS Edge не создает stock documents/moves/balances/costing rows.
-- Kitchen proposal API остается `запланировано далее`:
-  - catalog item suggestions / `CatalogItemChangeSuggested`;
-  - recipe read/change suggestions / `RecipeChangeSuggested`;
-  - kitchen stop-list edit / Edge `StopListUpdated`.
+- Kitchen proposal API реализовано сейчас:
+  - `GET /api/v1/kitchen/catalog/items/{catalog_item_id}/recipe` требует `pos.kitchen.recipe.view`, возвращает active recipe version, строки ингредиентов с названиями из полного `catalog_items`, sync metadata и локальные proposals по техкарте;
+  - `POST /api/v1/kitchen/catalog-suggestions` требует `pos.kitchen.catalog.suggest`, сохраняет `kitchen_proposals.status = pending_sync` и пишет `CatalogItemChangeSuggested`;
+  - `POST /api/v1/kitchen/recipe-suggestions` требует `pos.kitchen.recipe.suggest`, поддерживает `proposal_group_id` для связки нового блюда и техкарты, валидирует `prep_time_delta_minutes` по `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES` и пишет `RecipeChangeSuggested`;
+  - `GET /api/v1/kitchen/proposals` требует `pos.kitchen.view`, фильтрует по `kind`, `status`, `limit`, `offset`;
+  - replay того же proposal `command_id` для того же event type возвращает сохраненное proposal с `replayed = true`;
+  - предложения не мутируют `catalog_items`, `recipe_versions` или `recipe_lines`; Edge применяет Cloud-approved changes только через последующую Cloud -> Edge publication.
+- Kitchen stop-list edit / Edge `StopListUpdated` остается запланировано далее.
 - Inventory facts:
   - реализовано сейчас: final check creation writes current financial events and additional `CheckClosed` inventory event;
   - `CheckClosed` payload includes order line id, catalog item id, quantity, unit code and `required_for_inventory`;

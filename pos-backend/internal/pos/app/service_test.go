@@ -695,7 +695,7 @@ func insertClosedOrderFixture(t *testing.T, f *fixture, shiftID, deviceID, order
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
-	case "restaurants", "devices", "orders", "order_lines", "order_line_modifiers", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "kitchen_ticket_events", "manager_override_audit", "roles", "employees", "catalog_items", "catalog_folders", "catalog_tags", "catalog_item_tags", "modifier_groups", "modifier_options", "modifier_group_bindings", "menu_item_modifier_groups", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "pricing_policies", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "warehouse_reference", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_line_modifiers", "precheck_discounts", "precheck_surcharges", "precheck_taxes", "financial_operations", "financial_operation_items":
+	case "restaurants", "devices", "orders", "order_lines", "order_line_modifiers", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "kitchen_ticket_events", "kitchen_proposals", "manager_override_audit", "roles", "employees", "catalog_items", "catalog_folders", "catalog_tags", "catalog_item_tags", "modifier_groups", "modifier_options", "modifier_group_bindings", "menu_item_modifier_groups", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "pricing_policies", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "warehouse_reference", "recipe_versions", "recipe_lines", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_line_modifiers", "precheck_discounts", "precheck_surcharges", "precheck_taxes", "financial_operations", "financial_operation_items":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -709,7 +709,7 @@ func countRows(t *testing.T, f *fixture, table string) int {
 func countRowsWhere(t *testing.T, f *fixture, table, where string, args ...any) int {
 	t.Helper()
 	switch table {
-	case "orders", "checks", "financial_operations", "financial_operation_items", "pos_sync_outbox", "local_event_log", "warehouse_reference":
+	case "orders", "checks", "financial_operations", "financial_operation_items", "pos_sync_outbox", "local_event_log", "warehouse_reference", "kitchen_proposals":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -880,6 +880,15 @@ func floatPtr(v float64) *float64 {
 func containsString(values []string, needle string) bool {
 	for _, value := range values {
 		if value == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func catalogContains(items []domain.CatalogItem, id string) bool {
+	for _, item := range items {
+		if item.ID == id {
 			return true
 		}
 	}
@@ -7517,15 +7526,15 @@ func TestKitchenStockCommandsWriteOutboxOnlyAndReplayByCommandID(t *testing.T) {
 	eventsBefore := countRows(t, f, "local_event_log")
 
 	receipt, err := f.service.CaptureKitchenStockReceipt(f.ctx, app.CaptureStockReceiptCommand{
-		CommandMeta:             meta,
-		ReceiptID:               "receipt-1",
-		SupplierCounterpartyID:  "supplier-1",
-		SupplierNameSnapshot:    "Supplier",
-		DocumentNumber:          "UPD-1",
-		DocumentDate:            "2026-05-04",
-		ReceivedAt:              fixedClock{}.Now(),
-		BusinessDateLocal:       "2026-05-04",
-		Currency:                "RUB",
+		CommandMeta:            meta,
+		ReceiptID:              "receipt-1",
+		SupplierCounterpartyID: "supplier-1",
+		SupplierNameSnapshot:   "Supplier",
+		DocumentNumber:         "UPD-1",
+		DocumentDate:           "2026-05-04",
+		ReceivedAt:             fixedClock{}.Now(),
+		BusinessDateLocal:      "2026-05-04",
+		Currency:               "RUB",
 		Items: []app.StockReceiptLineCommand{{
 			LineID:         "receipt-line-1",
 			CatalogItemID:  good.ID,
@@ -7555,22 +7564,22 @@ func TestKitchenStockCommandsWriteOutboxOnlyAndReplayByCommandID(t *testing.T) {
 	}
 
 	if _, err := f.service.CaptureKitchenInventoryCount(f.ctx, app.CaptureInventoryCountCommand{
-		CommandMeta:        f.kitchenMetaCommand(t, "cmd-kitchen-count"),
-		CountID:            "count-1",
-		CountedAt:          fixedClock{}.Now(),
-		BusinessDateLocal:  "2026-05-04",
-		Items: []app.InventoryCountLineCommand{{LineID: "count-line-1", CatalogItemID: good.ID, CountedQuantity: "3.250", UnitCode: "KG"}},
+		CommandMeta:       f.kitchenMetaCommand(t, "cmd-kitchen-count"),
+		CountID:           "count-1",
+		CountedAt:         fixedClock{}.Now(),
+		BusinessDateLocal: "2026-05-04",
+		Items:             []app.InventoryCountLineCommand{{LineID: "count-line-1", CatalogItemID: good.ID, CountedQuantity: "3.250", UnitCode: "KG"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.service.CaptureKitchenStockWriteOff(f.ctx, app.CaptureStockWriteOffCommand{
-		CommandMeta:        f.kitchenMetaCommand(t, "cmd-kitchen-write-off"),
-		WriteOffID:         "write-off-1",
-		WrittenOffAt:       fixedClock{}.Now(),
-		BusinessDateLocal:  "2026-05-04",
-		ReasonCode:         "spoilage",
-		Reason:             "expired",
-		Items: []app.StockWriteOffLineCommand{{LineID: "write-off-line-1", CatalogItemID: good.ID, Quantity: "1.500", UnitCode: "KG"}},
+		CommandMeta:       f.kitchenMetaCommand(t, "cmd-kitchen-write-off"),
+		WriteOffID:        "write-off-1",
+		WrittenOffAt:      fixedClock{}.Now(),
+		BusinessDateLocal: "2026-05-04",
+		ReasonCode:        "spoilage",
+		Reason:            "expired",
+		Items:             []app.StockWriteOffLineCommand{{LineID: "write-off-line-1", CatalogItemID: good.ID, Quantity: "1.500", UnitCode: "KG"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -7641,6 +7650,136 @@ func TestKitchenStockCommandsValidateWarehouseAndBusinessInputs(t *testing.T) {
 	})
 	if !errors.Is(err, domain.ErrInvalid) || !strings.Contains(err.Error(), "kitchen production recipe required") {
 		t.Fatalf("expected production recipe validation, got %v", err)
+	}
+}
+
+func TestKitchenRecipeReadAndProposalEventsDoNotMutateCloudReadModels(t *testing.T) {
+	f := newFixture(t)
+	dish, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: seedMeta(f.device.ID), Type: domain.CatalogItemDish, Name: "Soup recipe owner", SKU: "SOUP-RECIPE", BaseUnit: "portion"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	good, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: seedMeta(f.device.ID), Type: domain.CatalogItemGood, Name: "Carrot", SKU: "CARROT-RECIPE", BaseUnit: "G"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceItem, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: seedMeta(f.device.ID), Type: domain.CatalogItemService, Name: "Corkage", SKU: "CORKAGE-RECIPE", BaseUnit: "service"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	insertRecipe(t, f, "recipe-soup-read", dish.ID, good.ID)
+	meta := f.kitchenMetaCommand(t, "cmd-kitchen-recipe-read")
+
+	catalog, err := f.service.ListCatalogItems(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !catalogContains(catalog, good.ID) || !catalogContains(catalog, serviceItem.ID) {
+		t.Fatalf("expected full catalog read model to include non-menu good/service items: %+v", catalog)
+	}
+	view, err := f.service.GetKitchenRecipe(f.ctx, app.GetKitchenRecipeCommand{CommandMeta: meta, CatalogItemID: dish.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.RecipeVersion.ID != "recipe-soup-read" || len(view.Ingredients) != 1 || view.Ingredients[0].CatalogItemName != "Carrot" {
+		t.Fatalf("unexpected recipe view: %+v", view)
+	}
+
+	catalogBefore := countRows(t, f, "catalog_items")
+	recipesBefore := countRows(t, f, "recipe_versions")
+	linesBefore := countRows(t, f, "recipe_lines")
+	eventsBefore := countRows(t, f, "local_event_log")
+	catalogSuggestionMeta := meta
+	catalogSuggestionMeta.CommandID = "cmd-kitchen-catalog-suggestion"
+	catalogSuggestion, err := f.service.CreateKitchenCatalogSuggestion(f.ctx, app.CreateKitchenCatalogSuggestionCommand{
+		CommandMeta:     catalogSuggestionMeta,
+		SuggestionID:    "catalog-suggestion-basil",
+		ProposalGroupID: "proposal-group-new-dish",
+		Action:          "create",
+		Kind:            domain.CatalogItemDish,
+		Name:            "Basil soup",
+		BaseUnit:        "portion",
+		KitchenType:     "hot",
+		Reason:          "seasonal dish",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalogSuggestion.Status != domain.KitchenProposalPendingSync || catalogSuggestion.Kind != domain.KitchenProposalKindCatalog {
+		t.Fatalf("unexpected catalog proposal: %+v", catalogSuggestion)
+	}
+	replayedCatalogSuggestion, err := f.service.CreateKitchenCatalogSuggestion(f.ctx, app.CreateKitchenCatalogSuggestionCommand{CommandMeta: catalogSuggestionMeta})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replayedCatalogSuggestion.Replayed || replayedCatalogSuggestion.ID != catalogSuggestion.ID {
+		t.Fatalf("expected catalog suggestion replay, got %+v", replayedCatalogSuggestion)
+	}
+
+	recipeSuggestionMeta := meta
+	recipeSuggestionMeta.CommandID = "cmd-kitchen-recipe-suggestion"
+	recipeSuggestion, err := f.service.CreateKitchenRecipeSuggestion(f.ctx, app.CreateKitchenRecipeSuggestionCommand{
+		CommandMeta:              recipeSuggestionMeta,
+		SuggestionID:             "recipe-suggestion-basil",
+		ProposalGroupID:          catalogSuggestion.ProposalGroupID,
+		OwnerCatalogSuggestionID: catalogSuggestion.ID,
+		Action:                   "create_recipe",
+		PrepTimeDeltaMinutes:     5,
+		Changes: []app.KitchenRecipeSuggestionChangeCommand{{
+			Action:          "add_ingredient",
+			ToCatalogItemID: good.ID,
+			Quantity:        "0.120",
+			UnitCode:        "KG",
+			LossPercent:     "3.00",
+		}},
+		Reason: "new seasonal dish",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recipeSuggestion.Status != domain.KitchenProposalPendingSync || recipeSuggestion.ProposalGroupID != catalogSuggestion.ProposalGroupID || recipeSuggestion.OwnerCatalogSuggestionID != catalogSuggestion.ID {
+		t.Fatalf("unexpected recipe proposal: %+v", recipeSuggestion)
+	}
+	if got := countOutboxByType(t, f, "CatalogItemChangeSuggested"); got != 1 {
+		t.Fatalf("expected one catalog suggestion outbox row, got %d", got)
+	}
+	if got := countOutboxByType(t, f, "RecipeChangeSuggested"); got != 1 {
+		t.Fatalf("expected one recipe suggestion outbox row, got %d", got)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore+2 {
+		t.Fatalf("expected two proposal local events, before=%d after=%d", eventsBefore, events)
+	}
+	if catalogAfter := countRows(t, f, "catalog_items"); catalogAfter != catalogBefore {
+		t.Fatalf("expected proposals not to mutate catalog_items, before=%d after=%d", catalogBefore, catalogAfter)
+	}
+	if recipesAfter := countRows(t, f, "recipe_versions"); recipesAfter != recipesBefore {
+		t.Fatalf("expected proposals not to mutate recipe_versions, before=%d after=%d", recipesBefore, recipesAfter)
+	}
+	if linesAfter := countRows(t, f, "recipe_lines"); linesAfter != linesBefore {
+		t.Fatalf("expected proposals not to mutate recipe_lines, before=%d after=%d", linesBefore, linesAfter)
+	}
+	listMeta := meta
+	listMeta.CommandID = "cmd-kitchen-list-proposals"
+	proposals, err := f.service.ListKitchenProposals(f.ctx, app.ListKitchenProposalsCommand{CommandMeta: listMeta, Kind: domain.KitchenProposalKindRecipe, Status: domain.KitchenProposalPendingSync})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(proposals) != 1 || proposals[0].ID != recipeSuggestion.ID {
+		t.Fatalf("unexpected recipe proposal list: %+v", proposals)
+	}
+
+	deltaMeta := meta
+	deltaMeta.CommandID = "cmd-kitchen-recipe-delta-too-large"
+	_, err = f.service.CreateKitchenRecipeSuggestion(f.ctx, app.CreateKitchenRecipeSuggestionCommand{
+		CommandMeta:          deltaMeta,
+		RecipeVersionID:      view.RecipeVersion.ID,
+		OwnerCatalogItemID:   dish.ID,
+		Action:               "change_prep_time",
+		PrepTimeDeltaMinutes: 999,
+		Reason:               "too large",
+	})
+	if !errors.Is(err, domain.ErrInvalid) || !strings.Contains(err.Error(), "kitchen recipe suggestion limit exceeded") {
+		t.Fatalf("expected prep time delta validation, got %v", err)
 	}
 }
 

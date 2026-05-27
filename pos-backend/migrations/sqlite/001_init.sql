@@ -425,6 +425,30 @@ CREATE TABLE IF NOT EXISTS kitchen_ticket_events (
 CREATE INDEX IF NOT EXISTS kitchen_ticket_events_ticket_created_at ON kitchen_ticket_events(ticket_id, created_at);
 CREATE INDEX IF NOT EXISTS kitchen_ticket_events_command_id ON kitchen_ticket_events(command_id);
 
+CREATE TABLE IF NOT EXISTS kitchen_proposals (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  proposal_group_id TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL CHECK (kind IN ('catalog','recipe')),
+  status TEXT NOT NULL CHECK (status IN ('draft','pending_sync','synced','approved','rejected','changes_requested','failed')),
+  action TEXT NOT NULL CHECK (action <> ''),
+  owner_catalog_item_id TEXT NOT NULL DEFAULT '',
+  owner_catalog_suggestion_id TEXT NOT NULL DEFAULT '',
+  recipe_version_id TEXT NOT NULL DEFAULT '',
+  payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+  outbox_command_id TEXT NOT NULL UNIQUE CHECK (outbox_command_id <> ''),
+  outbox_event_type TEXT NOT NULL CHECK (outbox_event_type IN ('CatalogItemChangeSuggested','RecipeChangeSuggested')),
+  created_by_employee_id TEXT NOT NULL REFERENCES employees(id),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  cloud_version INTEGER,
+  cloud_updated_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS kitchen_proposals_restaurant_kind_status ON kitchen_proposals(restaurant_id, kind, status, created_at);
+CREATE INDEX IF NOT EXISTS kitchen_proposals_group ON kitchen_proposals(proposal_group_id);
+CREATE INDEX IF NOT EXISTS kitchen_proposals_owner_recipe ON kitchen_proposals(owner_catalog_item_id, recipe_version_id);
+
 CREATE TABLE IF NOT EXISTS checks (
   id TEXT PRIMARY KEY,
   order_id TEXT NOT NULL UNIQUE REFERENCES orders(id),

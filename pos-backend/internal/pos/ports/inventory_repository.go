@@ -10,6 +10,7 @@ import (
 type InventoryRepository interface {
 	CreateRecipeVersion(context.Context, *inventory.RecipeVersion) error
 	ListRecipeVersions(context.Context) ([]inventory.RecipeVersion, error)
+	GetRecipeVersion(context.Context, string) (*inventory.RecipeVersion, error)
 	GetActiveRecipeVersionByCatalogItem(context.Context, string) (*inventory.RecipeVersion, error)
 	CreateRecipeLine(context.Context, *inventory.RecipeLine) error
 	ListRecipeLines(context.Context, string) ([]inventory.RecipeLine, error)

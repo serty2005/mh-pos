@@ -90,6 +90,8 @@ cd pos-backend && go mod tidy && go test ./...
 Проверки:
 cd pos-backend && go mod tidy && go test ./...
 ```
+**Итерация 3: POS Edge Catalog And Recipe Proposals**
+Выполнена.
 
 **Итерация 4: Cloud Sync Contracts, ClickHouse Trail, Inventory Analyzer**
 

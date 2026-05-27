@@ -24,7 +24,7 @@
 - сохранить текущий cashier runtime как базовый поток;
 - stop-list sale blocking на POS Edge с Cloud authoring/publication и offline локальной проверкой уже подтвержден в `pos_stop_list_sale_blocking`;
 - расширять mobile-first waiter runtime без payment/refund authority по умолчанию только по подтвержденным backend contracts;
-- расширить KDS lifecycle за пределы минимального ticket foundation: cooking events, приемку поставки, catalog proposals, recipe change proposals и stop-list edit;
+- расширить KDS lifecycle за пределы минимального ticket foundation: cooking events, UI для приемки поставки/catalog proposals/recipe change proposals и stop-list edit;
 - зафиксировать POS Edge backend как авторитетный runtime для financial/order/KDS command validation и stop-list sale blocking; POS UI не становится авторитетным слоем;
 - добавить Cloud manager flow для recipes, stop-list, catalog/recipe proposal review, inventory operations, publication readiness и sync/problem observability;
 - добавить полный Cloud-owned складской движок: stock receipts, inventory counts, production, sale consumption, refund/cancellation dispositions, recipe expansion, balances, costing и retro recalculation DAG;
@@ -197,7 +197,7 @@
 
 - Поддерживать `docs/backend/CLOUD-BACKEND-SPEC.md` как профильный документ Cloud Backend при каждом изменении Cloud routes, payloads, sync/provisioning contracts или schema.
 - Публичный Cloud reporting API/UI для detailed financial operation projection.
-- До полного пилота: расширение KDS за пределы ticket lifecycle foundation, chef receipt/catalog/recipe proposal flows, полный Cloud Inventory Engine, `olap_stock_moves`, агрегированные OLAP API и `full_pilot` smoke.
+- До полного пилота: UI для chef receipt/catalog/recipe proposal flows, Cloud review/apply для предложений, полный Cloud Inventory Engine, `olap_stock_moves`, агрегированные OLAP API и `full_pilot` smoke.
 - После полного пилота: hardware bump-bar integrations, kitchen printer orchestration, rich BI dashboards, ERP/accounting integrations и внешние delivery/payment/fiscal контуры.
 - Data-preserving migrations после первого реального внедрения.
 - Production auth/RBAC perimeter для Cloud/License API.

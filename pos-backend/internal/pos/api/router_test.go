@@ -331,7 +331,7 @@ func decodeAPIResponse[T any](t *testing.T, rr *httptest.ResponseRecorder) T {
 func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 	t.Helper()
 	switch table {
-	case "prechecks", "checks", "payments", "payment_attempts", "financial_operations", "financial_operation_items", "shifts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "auth_sessions", "halls", "tables", "catalog_items", "kitchen_tickets", "kitchen_ticket_events", "cloud_master_sync_state":
+	case "prechecks", "checks", "payments", "payment_attempts", "financial_operations", "financial_operation_items", "shifts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "auth_sessions", "halls", "tables", "catalog_items", "kitchen_tickets", "kitchen_ticket_events", "kitchen_proposals", "cloud_master_sync_state":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -345,7 +345,7 @@ func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 func countAPIRowsWhere(t *testing.T, f *apiFixture, table, where string, args ...any) int {
 	t.Helper()
 	switch table {
-	case "shifts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log":
+	case "shifts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "kitchen_proposals":
 	default:
 		t.Fatalf("unexpected filtered table %q", table)
 	}
@@ -1591,6 +1591,84 @@ func TestKitchenOrderQueuePublicAPIAndRBAC(t *testing.T) {
 	}
 	if body.Orders[0].OrderID != order.ID || body.Orders[0].EdgeOrderID != order.EdgeOrderID || body.Orders[0].TableName != "A1" || body.Orders[0].KitchenOrderStatus != domain.KitchenOrderQueued || len(body.Orders[0].Tickets) != 1 || body.Orders[0].ElapsedSeconds < 0 {
 		t.Fatalf("unexpected grouped kitchen order: %+v", body.Orders[0])
+	}
+}
+
+func TestKitchenRecipeAndProposalRoutesPublicAPI(t *testing.T) {
+	f := newAPIFixture(t)
+	dish, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: apiSeedMeta(f.device.ID), Type: domain.CatalogItemDish, Name: "API Soup", SKU: "API-SOUP-RECIPE", BaseUnit: "portion"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	good, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: apiSeedMeta(f.device.ID), Type: domain.CatalogItemGood, Name: "API Carrot", SKU: "API-CARROT-RECIPE", BaseUnit: "G"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := appshared.DBTime(time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC))
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO recipe_versions(id,dish_catalog_item_id,version,name,status,yield_quantity,yield_unit,active,created_at,updated_at,cloud_version) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		"api-recipe-soup", dish.ID, 1, "API Soup recipe", string(domain.RecipeVersionActive), 1, "portion", 1, now, now, int64(7)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO recipe_lines(id,recipe_version_id,catalog_item_id,quantity,unit,loss_percent,created_at,updated_at,cloud_version) VALUES (?,?,?,?,?,?,?,?,?)`,
+		"api-recipe-line-carrot", "api-recipe-soup", good.ID, 100, "g", 0, now, now, int64(8)); err != nil {
+		t.Fatal(err)
+	}
+
+	rr := f.get(t, "/api/v1/kitchen/catalog/items/"+dish.ID+"/recipe")
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without kitchen recipe permission, got %d: %s", rr.Code, rr.Body.String())
+	}
+	f.useKitchenOperator(t)
+	rr = f.get(t, "/api/v1/kitchen/catalog/items/"+dish.ID+"/recipe")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var recipeBody struct {
+		RecipeVersion domain.RecipeVersion `json:"recipe_version"`
+		Ingredients   []struct {
+			CatalogItemID   string `json:"catalog_item_id"`
+			CatalogItemName string `json:"catalog_item_name"`
+		} `json:"ingredients"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &recipeBody); err != nil {
+		t.Fatal(err)
+	}
+	if recipeBody.RecipeVersion.ID != "api-recipe-soup" || len(recipeBody.Ingredients) != 1 || recipeBody.Ingredients[0].CatalogItemID != good.ID || recipeBody.Ingredients[0].CatalogItemName != "API Carrot" {
+		t.Fatalf("unexpected recipe response: %+v", recipeBody)
+	}
+
+	catalogBody := `{"command_id":"cmd-api-catalog-suggestion","suggestion_id":"api-catalog-suggestion","proposal_group_id":"api-proposal-group","action":"create","kind":"dish","name":"API Basil Soup","base_unit":"portion","kitchen_type":"hot","reason":"seasonal"}`
+	rr = f.postJSON(t, "/api/v1/kitchen/catalog-suggestions", catalogBody)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	catalogProposal := decodeAPIResponse[domain.KitchenProposal](t, rr)
+	if catalogProposal.ID != "api-catalog-suggestion" || catalogProposal.Status != domain.KitchenProposalPendingSync || catalogProposal.Kind != domain.KitchenProposalKindCatalog {
+		t.Fatalf("unexpected catalog proposal: %+v", catalogProposal)
+	}
+
+	recipeBodyJSON := `{"command_id":"cmd-api-recipe-suggestion","suggestion_id":"api-recipe-suggestion","proposal_group_id":"api-proposal-group","owner_catalog_suggestion_id":"api-catalog-suggestion","action":"create_recipe","prep_time_delta_minutes":5,"changes":[{"action":"add_ingredient","to_catalog_item_id":"` + good.ID + `","quantity":"0.120","unit_code":"KG","loss_percent":"3.00"}],"reason":"new dish"}`
+	rr = f.postJSON(t, "/api/v1/kitchen/recipe-suggestions", recipeBodyJSON)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	recipeProposal := decodeAPIResponse[domain.KitchenProposal](t, rr)
+	if recipeProposal.ID != "api-recipe-suggestion" || recipeProposal.ProposalGroupID != catalogProposal.ProposalGroupID || recipeProposal.OwnerCatalogSuggestionID != catalogProposal.ID {
+		t.Fatalf("unexpected recipe proposal: %+v", recipeProposal)
+	}
+	rr = f.get(t, "/api/v1/kitchen/proposals?kind=recipe&status=pending_sync")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	proposals := decodeAPIResponse[[]domain.KitchenProposal](t, rr)
+	if len(proposals) != 1 || proposals[0].ID != recipeProposal.ID {
+		t.Fatalf("unexpected proposal list: %+v", proposals)
+	}
+	if got := countAPIOutboxByType(t, f, "CatalogItemChangeSuggested"); got != 1 {
+		t.Fatalf("expected CatalogItemChangeSuggested outbox row, got %d", got)
+	}
+	if got := countAPIOutboxByType(t, f, "RecipeChangeSuggested"); got != 1 {
+		t.Fatalf("expected RecipeChangeSuggested outbox row, got %d", got)
 	}
 }
 

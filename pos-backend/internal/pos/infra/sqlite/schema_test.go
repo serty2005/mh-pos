@@ -138,7 +138,7 @@ func TestPrecheckFoundationTableExists(t *testing.T) {
 
 func TestKitchenFoundationTablesExist(t *testing.T) {
 	db, ctx := newSchemaDB(t)
-	tables := []string{"kitchen_tickets", "kitchen_ticket_events"}
+	tables := []string{"kitchen_tickets", "kitchen_ticket_events", "kitchen_proposals"}
 	for _, table := range tables {
 		t.Run(table, func(t *testing.T) {
 			var n int
@@ -181,6 +181,9 @@ func TestKitchenTicketConstraintsAndIndexes(t *testing.T) {
 		"kitchen_tickets_order_id",
 		"kitchen_ticket_events_ticket_created_at",
 		"kitchen_ticket_events_command_id",
+		"kitchen_proposals_restaurant_kind_status",
+		"kitchen_proposals_group",
+		"kitchen_proposals_owner_recipe",
 	}
 	for _, index := range indexes {
 		var n int

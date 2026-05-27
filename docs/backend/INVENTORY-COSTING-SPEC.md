@@ -290,7 +290,7 @@ erDiagram
 
 ### RecipeChangeSuggested
 
-`RecipeChangeSuggested` фиксирует участие повара в правке техкарты. Edge не применяет правку локально; Cloud worker создает recipe change proposal с diff, проверяет предел `recipe_suggestion_max_time_delta_minutes` и ждет manager approve/apply.
+`RecipeChangeSuggested` фиксирует участие повара в правке техкарты. Edge не применяет правку локально; POS Edge проверяет предел `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES`, а Cloud worker создает recipe change proposal с diff и ждет manager approve/apply.
 
 ```json
 {
