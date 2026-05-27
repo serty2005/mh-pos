@@ -886,6 +886,8 @@ func archiveRowHasRequiredIdentity(row domainstorage.ArchiveExportRow) bool {
 		"orders":                    {"id"},
 		"order_lines":               {"id", "order_id"},
 		"order_line_modifiers":      {"id", "order_line_id"},
+		"kitchen_tickets":           {"id", "order_id", "order_line_id"},
+		"kitchen_ticket_events":     {"id", "ticket_id", "order_line_id"},
 		"order_line_discounts":      {"id", "order_id"},
 		"order_surcharges":          {"id", "order_id"},
 		"prechecks":                 {"id", "order_id"},
@@ -996,6 +998,10 @@ func archiveCountsFromTableCounts(tableCounts map[string]int) domainstorage.Arch
 			counts.OrderLines += n
 		case "order_line_modifiers":
 			counts.OrderLineModifiers += n
+		case "kitchen_tickets":
+			counts.KitchenTickets += n
+		case "kitchen_ticket_events":
+			counts.KitchenTicketEvents += n
 		case "order_line_discounts":
 			counts.OrderLineDiscounts += n
 		case "order_surcharges":

@@ -1,6 +1,6 @@
 # Kitchen Processes Implementation Spec
 
-Статус: проектная спецификация для следующей реализации кухонного контура. Runtime code этим документом не меняется.
+Статус: профильная спецификация кухонного контура. POS Edge order queue и ticket lifecycle помечены как реализовано сейчас; расширенные stock/proposal/recipe flows остаются запланировано далее.
 
 Дата фиксации: 2026-05-27.
 
@@ -23,8 +23,11 @@
 Реализовано сейчас:
 
 - POS Edge уже имеет таблицы `kitchen_tickets` и `kitchen_ticket_events`.
-- POS Edge уже создает kitchen ticket на активную order line и поддерживает lifecycle `new -> accepted -> in_progress -> ready -> served` с ветками `hold`, `recall`, `cancelled`.
+- POS Edge уже создает kitchen ticket на активную order line и поддерживает lifecycle `new -> accepted -> in_progress -> ready -> served` с ветками `hold`, `recall`, `cancelled`, включая повторный цикл `served -> recall -> start -> ready -> serve`.
+- POS Edge уже предоставляет `GET /api/v1/kitchen/order-queue` с grouped order read model и вычисляемым `kitchen_order_status`.
 - `POST /api/v1/kitchen/tickets/{id}/{action}` уже пишет `KitchenTicketStatusChanged`; action `serve` дополнительно пишет `ItemServed`.
+- Replay того же kitchen `command_id` идемпотентно возвращает текущее состояние ticket без второго `kitchen_ticket_events`/outbox event.
+- Повторная подача после `recall` с новым `command_id` пишет новый `ItemServed` с `ticket_id`, `serve_sequence` и optional `supersedes_served_event_id`.
 - Cloud sync contract уже принимает `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `StopListUpdated`, `RefundRecorded`, `CancellationRecorded`.
 - Cloud Inventory Worker уже создает `stock_documents` и `stock_ledger` для `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, stock-effect `RefundRecorded`/`CancellationRecorded`; `StopListUpdated` пока не создает stock movement.
 - Cloud -> Edge ingest уже поддерживает streams `catalog`, `menu`, `recipes`, `inventory_reference`; POS Edge SQLite уже содержит `catalog_items`, `recipe_versions`, `recipe_lines`, `stop_lists`.
@@ -130,11 +133,11 @@ Edge не применяет recipe proposal локально. До Cloud approv
 
 ## POS Edge Backend API
 
-Все mutating routes требуют `command_id`, operator session, `node_device_id`, `client_device_id`, `session_id` и проходят idempotency через текущий `EnsureCommandNotProcessed`.
+Все mutating routes требуют `command_id`, operator session, `node_device_id`, `client_device_id`, `session_id`. Kitchen status actions сначала проверяют replay в `kitchen_ticket_events`: повтор того же `command_id` для того же ticket/action возвращает успешный идемпотентный ответ без новых событий; reuse `command_id` для другой команды остается safe conflict через общий outbox/idempotency guard.
 
 ### Kitchen Queue
 
-Реализовать:
+Реализовано сейчас:
 
 ```text
 GET /api/v1/kitchen/order-queue?status=&station=&limit=&offset=
@@ -188,6 +191,8 @@ POST /api/v1/kitchen/tickets/{ticket_id}/cancel
 - сортировка: oldest active order first по самому раннему active ticket `created_at`, затем `order_id`;
 - `served` и `cancelled` по умолчанию скрываются из active queue, но доступны фильтром;
 - timestamps рассчитываются backend-side, UI не делает authoritative timing.
+- `status` у `order-queue` фильтрует вычисляемый `kitchen_order_status`, а `station` фильтрует `station_routing_key`.
+- `GET /api/v1/kitchen/order-queue` требует `pos.kitchen.view`; ticket status actions требуют `pos.kitchen.status.change`.
 
 ### Full Catalog For Kitchen
 

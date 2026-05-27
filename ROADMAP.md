@@ -140,9 +140,9 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - добавить conflict policy, сценарный recipe version editor/review и publication readiness поверх этих данных;
   - стабилизировать regression-покрытие `pos_stop_list_sale_blocking` для Cloud publish/import контракта и offline blocking-инварианта.
 - Advanced KDS/kitchen lifecycle:
-  - выполнено: POS Edge создает `kitchen_tickets` из order lines, предоставляет `GET /api/v1/kitchen/tickets` и status endpoints `accept/start/hold/ready/serve/recall/cancel`;
-  - выполнено: lifecycle `new -> accepted -> in_progress -> ready -> served` поддерживает ветки `hold`, `recall`, `cancelled`; backend проверяет `pos.kitchen.view` / `pos.kitchen.status.change`;
-  - выполнено: status actions пишут `KitchenTicketStatusChanged`, а `serve` дополнительно пишет `ItemServed` в `local_event_log` и `pos_sync_outbox`;
+  - выполнено: POS Edge создает `kitchen_tickets` из order lines, предоставляет `GET /api/v1/kitchen/order-queue`, `GET /api/v1/kitchen/tickets` и status endpoints `accept/start/hold/ready/serve/recall/cancel`;
+  - выполнено: lifecycle `new -> accepted -> in_progress -> ready -> served` поддерживает ветки `hold`, `recall`, `cancelled` и повторный цикл `served -> recall -> start -> ready -> serve`; backend проверяет `pos.kitchen.view` / `pos.kitchen.status.change`;
+  - выполнено: status actions пишут `KitchenTicketStatusChanged`, а `serve` дополнительно пишет `ItemServed` в `local_event_log` и `pos_sync_outbox`; replay того же kitchen `command_id` идемпотентен, повторный `serve` новым `command_id` пишет новый `ItemServed` с `serve_sequence` и optional `supersedes_served_event_id`;
   - выполнено: `/pos/kitchen` читает backend tickets, показывает status columns/list, безопасные loading/error/empty/no-permission states и после action перечитывает backend truth без UI-authoritative статусов;
   - выполнено для Cloud worker: принятый `ItemServed` идемпотентно создает SALE ledger по `order_line_id`, а последующий `CheckClosed` пишет только unserved delta;
   - добавить chef stock receipt flow: `StockReceiptCaptured` с выбором существующего catalog item или `CatalogItemChangeSuggested` для нового/измененного товара;

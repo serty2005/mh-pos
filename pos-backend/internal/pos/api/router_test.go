@@ -1543,6 +1543,8 @@ func TestKitchenTicketsLifecycleThroughPublicAPI(t *testing.T) {
 		EventType string `json:"event_type"`
 		Payload   struct {
 			Data struct {
+				TicketID      string `json:"ticket_id"`
+				ServeSequence int    `json:"serve_sequence"`
 				OrderLineID   string `json:"order_line_id"`
 				CatalogItemID string `json:"catalog_item_id"`
 				Quantity      string `json:"quantity"`
@@ -1552,8 +1554,43 @@ func TestKitchenTicketsLifecycleThroughPublicAPI(t *testing.T) {
 	if err := json.Unmarshal([]byte(servedPayload), &envelope); err != nil {
 		t.Fatal(err)
 	}
-	if envelope.EventType != "ItemServed" || envelope.Payload.Data.OrderLineID != tickets[0].OrderLineID || envelope.Payload.Data.CatalogItemID != tickets[0].CatalogItemID || envelope.Payload.Data.Quantity != "2.000" {
+	if envelope.EventType != "ItemServed" || envelope.Payload.Data.TicketID != ticketID || envelope.Payload.Data.ServeSequence != 1 || envelope.Payload.Data.OrderLineID != tickets[0].OrderLineID || envelope.Payload.Data.CatalogItemID != tickets[0].CatalogItemID || envelope.Payload.Data.Quantity != "2.000" {
 		t.Fatalf("unexpected ItemServed envelope: %+v", envelope)
+	}
+}
+
+func TestKitchenOrderQueuePublicAPIAndRBAC(t *testing.T) {
+	f := newAPIFixture(t)
+	order := f.createOrderWithLine(t)
+	rr := f.get(t, "/api/v1/kitchen/order-queue")
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without kitchen permission, got %d: %s", rr.Code, rr.Body.String())
+	}
+	f.useKitchenOperator(t)
+	ok := f.get(t, "/api/v1/kitchen/order-queue?limit=20&offset=0")
+	if ok.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", ok.Code, ok.Body.String())
+	}
+	var body struct {
+		Orders []struct {
+			OrderID            string                    `json:"order_id"`
+			EdgeOrderID        string                    `json:"edge_order_id"`
+			TableName          string                    `json:"table_name"`
+			KitchenOrderStatus domain.KitchenOrderStatus `json:"kitchen_order_status"`
+			Tickets            []domain.KitchenTicket    `json:"tickets"`
+			ElapsedSeconds     int64                     `json:"elapsed_seconds"`
+		} `json:"orders"`
+		Limit  int `json:"limit"`
+		Offset int `json:"offset"`
+	}
+	if err := json.Unmarshal(ok.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Limit != 20 || body.Offset != 0 || len(body.Orders) != 1 {
+		t.Fatalf("unexpected queue response page: %+v", body)
+	}
+	if body.Orders[0].OrderID != order.ID || body.Orders[0].EdgeOrderID != order.EdgeOrderID || body.Orders[0].TableName != "A1" || body.Orders[0].KitchenOrderStatus != domain.KitchenOrderQueued || len(body.Orders[0].Tickets) != 1 || body.Orders[0].ElapsedSeconds < 0 {
+		t.Fatalf("unexpected grouped kitchen order: %+v", body.Orders[0])
 	}
 }
 
@@ -1583,8 +1620,12 @@ func TestKitchenTicketInvalidTransitionAndReplayAreRejectedSafely(t *testing.T) 
 	eventsBefore := countAPIRows(t, f, "kitchen_ticket_events")
 	outboxBefore := countAPIRows(t, f, "pos_sync_outbox")
 	replay := f.postJSON(t, "/api/v1/kitchen/tickets/"+ticket.ID+"/accept", body)
-	if replay.Code != http.StatusConflict {
-		t.Fatalf("expected 409, got %d: %s", replay.Code, replay.Body.String())
+	if replay.Code != http.StatusOK {
+		t.Fatalf("expected idempotent 200, got %d: %s", replay.Code, replay.Body.String())
+	}
+	replayed := decodeAPIResponse[domain.KitchenTicket](t, replay)
+	if replayed.ID != ticket.ID || replayed.Status != domain.KitchenTicketAccepted {
+		t.Fatalf("unexpected replayed ticket: %+v", replayed)
 	}
 	if events := countAPIRows(t, f, "kitchen_ticket_events"); events != eventsBefore {
 		t.Fatalf("expected replay to write no second kitchen event, before=%d after=%d", eventsBefore, events)

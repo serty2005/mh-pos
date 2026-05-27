@@ -622,6 +622,8 @@ func sampleItemServedEnvelope(t *testing.T) []byte {
 			"origin": "edge_device",
 			"data": map[string]any{
 				"served_event_id": "018f0000-0000-7000-8000-0000000000a0",
+				"ticket_id":       "ticket-1",
+				"serve_sequence":  1,
 				"order_id":        "order-1",
 				"order_line_id":   "line-1",
 				"catalog_item_id": "item-1",

@@ -464,6 +464,8 @@ func itemServedPayload(t *testing.T, orderLineID, catalogItemID, quantity string
 	t.Helper()
 	return marshalPayload(t, map[string]any{
 		"served_event_id": "served-event-1",
+		"ticket_id":       "ticket-1",
+		"serve_sequence":  1,
 		"order_id":        "order-1",
 		"order_line_id":   orderLineID,
 		"catalog_item_id": catalogItemID,

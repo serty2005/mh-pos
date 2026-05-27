@@ -335,6 +335,9 @@ Cancellation/refund sync behavior:
 ```json
 {
   "served_event_id": "018f0000-0000-7000-8000-000000000101",
+  "ticket_id": "018f0000-0000-7000-8000-000000000102",
+  "serve_sequence": 1,
+  "supersedes_served_event_id": null,
   "order_id": "018f0000-0000-7000-8000-000000000002",
   "order_line_id": "018f0000-0000-7000-8000-000000000010",
   "catalog_item_id": "018f0000-0000-7000-8000-000000000020",
@@ -348,6 +351,8 @@ Cancellation/refund sync behavior:
 
 - `ItemServed` пишет `stock_ledger` movement для конкретного `order_line_id`;
 - replay того же `ItemServed` не создает второй stock document;
+- POS Edge повтор того же kitchen `command_id` для `serve` не создает второй `ItemServed`;
+- повторная подача после `served -> recall -> start -> ready` приходит новым `ItemServed` с увеличенным `serve_sequence` и ссылкой `supersedes_served_event_id` на предыдущий served fact;
 - `CheckClosed` после уже обработанного `ItemServed` списывает только положительную unserved delta;
 - replay того же `CheckClosed` не создает второй stock document.
 

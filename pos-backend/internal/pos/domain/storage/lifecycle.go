@@ -107,6 +107,8 @@ type ArchiveExportCounts struct {
 	ClosedOrders            int `json:"closed_orders"`
 	OrderLines              int `json:"order_lines"`
 	OrderLineModifiers      int `json:"order_line_modifiers"`
+	KitchenTickets          int `json:"kitchen_tickets"`
+	KitchenTicketEvents     int `json:"kitchen_ticket_events"`
 	OrderLineDiscounts      int `json:"order_line_discounts"`
 	OrderSurcharges         int `json:"order_surcharges"`
 	Prechecks               int `json:"prechecks"`

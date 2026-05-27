@@ -76,6 +76,15 @@
 - `POST /api/v1/checks/{id}/refunds`
 - `GET /api/v1/checks/{id}/financial-operations`
 - `GET /api/v1/financial-operations`
+- `GET /api/v1/kitchen/order-queue`
+- `GET /api/v1/kitchen/tickets`
+- `POST /api/v1/kitchen/tickets/{id}/accept`
+- `POST /api/v1/kitchen/tickets/{id}/start`
+- `POST /api/v1/kitchen/tickets/{id}/hold`
+- `POST /api/v1/kitchen/tickets/{id}/ready`
+- `POST /api/v1/kitchen/tickets/{id}/serve`
+- `POST /api/v1/kitchen/tickets/{id}/recall`
+- `POST /api/v1/kitchen/tickets/{id}/cancel`
 - `POST /api/v1/payments/{id}/refund`
 - `POST /api/v1/cash-shifts/open`
 - `POST /api/v1/cash-shifts/{id}/close`
@@ -163,7 +172,7 @@ Operational activity/sync read contract:
 - Реализовано сейчас: `POST /api/v1/storage/retention/dry-run` принимает `cutoff_business_date_local` в формате `YYYY-MM-DD`, отклоняет будущий cutoff и считает документы с `checks.business_date_local < cutoff`, которые могли бы войти в будущую archive/retention policy.
 - Реализовано сейчас: `POST /api/v1/storage/archive/export-plan` принимает `cutoff_business_date_local` и optional `mode = manifest_only`, отклоняет будущий cutoff, считает тот же closed-order candidate set по `checks.business_date_local < cutoff` и возвращает deterministic manifest без записи archive files и без изменения runtime tables.
 - Archive export-plan response возвращает `mode = manifest_only`, `result_mode = plan_only`, `destructive_apply_supported = false`, `blocked = true`, `block_reasons`, `archive_set`, protected flags для ledger/snapshots/local events/outbox, active/open blockers (`active_orders`, `open_shifts`, `open_cash_sessions`), blocking outbox count и manifest `format_version = storage-archive-manifest-v1` с restaurant id, business-date range, cutoff и stable table list.
-- Реализовано сейчас: `POST /api/v1/storage/archive/export` принимает `cutoff_business_date_local` в формате `YYYY-MM-DD` и `reason`, отбирает только closed orders с `checks.business_date_local < cutoff`, создает typed JSONL archive и JSON manifest в `POS_SQLITE_ARCHIVE_DIR` или default archive directory рядом с SQLite data directory.
+- Реализовано сейчас: `POST /api/v1/storage/archive/export` принимает `cutoff_business_date_local` в формате `YYYY-MM-DD` и `reason`, отбирает только closed orders с `checks.business_date_local < cutoff`, включая связанные `kitchen_tickets`/`kitchen_ticket_events`, создает typed JSONL archive и JSON manifest в `POS_SQLITE_ARCHIVE_DIR` или default archive directory рядом с SQLite data directory.
 - Archive export response возвращает `mode = export_only`, `result_mode = export_only`, `destructive_apply_supported = true`, `runtime_rows_deleted = false`, `archive_id`, `archive_path`, `manifest_path`, archive `sha256`, counts, business-date min/max, source node/device metadata если она есть в runtime, `blocked`, `block_reasons`, `financial_ledger_protected`, `immutable_snapshots_protected` и `export_created`.
 - Реализовано сейчас: `POST /api/v1/storage/archive/verify` принимает `archive_id` или `manifest_path`/`archive_path`; endpoint проверяет, что пути находятся внутри configured archive dir, читает manifest и JSONL streaming-способом, проверяет `version = pos_storage_archive_export_v1`, SHA-256, counts manifest vs JSONL, required identity fields, business-date range/cutoff consistency, `runtime_rows_deleted = false`, snapshot payload в `prechecks`/`checks` и summary-only payload policy для `local_event_log`/`pos_sync_outbox`. Response возвращает `valid`, `errors`, counts, business-date range, tables и verification flags; active runtime tables не читаются и не мутируются.
 - Реализовано сейчас: `POST /api/v1/storage/archive/read-plan` принимает `archive_id` или `manifest_path`/`archive_path`, optional filters `business_date_local`, `order_id`, `check_id`, `limit`, `offset`; перед preview выполняет ту же archive verification. Response возвращает `result_mode = read_plan_only`, bounded `archived_closed_orders`, default `limit=50`, max `limit=100`, `runtime_restored = false`, `runtime_rows_deleted = false`, summary counts/tables/business-date range и verification flags без sync/event payload JSON.
@@ -351,6 +360,7 @@ Recipes/inventory:
   - POS UI не считает authoritative totals и не принимает финансовые/складские решения;
   - POS Edge не создает stock documents, stock ledger, costing rows или ClickHouse rows.
 - Advanced Kitchen API реализовано сейчас в минимальном объеме:
+  - `GET /api/v1/kitchen/order-queue`;
   - `GET /api/v1/kitchen/tickets`;
   - `POST /api/v1/kitchen/tickets/{id}/accept`;
   - `POST /api/v1/kitchen/tickets/{id}/start`;
@@ -359,10 +369,13 @@ Recipes/inventory:
   - `POST /api/v1/kitchen/tickets/{id}/serve`;
   - `POST /api/v1/kitchen/tickets/{id}/recall`;
   - `POST /api/v1/kitchen/tickets/{id}/cancel`;
-  - `GET /api/v1/kitchen/tickets` требует `pos.kitchen.view`, поддерживает `status`, `limit`, `offset`, default/max limit `50/100` и stable sort `created_at ASC, id ASC`;
+  - `GET /api/v1/kitchen/order-queue` требует `pos.kitchen.view`, поддерживает `status` по вычисляемому `kitchen_order_status`, `station`, `limit`, `offset`, default/max limit `50/100`, grouped tickets по order и backend-side `elapsed_seconds`;
+  - `GET /api/v1/kitchen/tickets` требует `pos.kitchen.view`, поддерживает `status`, `station`, `limit`, `offset`, default/max limit `50/100` и stable sort `created_at ASC, id ASC`;
   - status actions требуют `pos.kitchen.status.change`, принимают `command_id`, возвращают safe conflict для недопустимого перехода и не считают UI visibility security boundary;
+  - replay того же kitchen `command_id` для того же ticket/action возвращает успешный идемпотентный ответ без второго ticket event/outbox event; reuse `command_id` для другой команды остается conflict;
   - tickets создаются из non-service order lines с переносом `order_line_id`, `catalog_item_id`, `menu_item_id`, `quantity`, `unit_code`, `station_routing_key`, `table_name`, `shift_id`, `device_id`, `restaurant_id`, а course/comment синхронизируются из order line details;
-  - status actions пишут `KitchenTicketStatusChanged`, а served action дополнительно пишет `ItemServed` в `local_event_log` и `pos_sync_outbox`.
+  - status actions пишут `KitchenTicketStatusChanged`, а served action дополнительно пишет `ItemServed` в `local_event_log` и `pos_sync_outbox`;
+  - повторный цикл `served -> recall -> start -> ready -> serve` реализован; повторный `serve` с новым `command_id` пишет новый `ItemServed` с `ticket_id`, `serve_sequence` и optional `supersedes_served_event_id`.
 - Kitchen inventory/proposal API остается `запланировано далее` и не имеет текущих POS Edge routes:
   - chef stock receipt capture / `StockReceiptCaptured`;
   - catalog item suggestions / `CatalogItemChangeSuggested`;

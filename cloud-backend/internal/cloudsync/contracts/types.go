@@ -14,36 +14,36 @@ const EnvelopeVersion = "1"
 type EventType string
 
 const (
-	EventShiftOpened              EventType = "ShiftOpened"
-	EventShiftClosed              EventType = "ShiftClosed"
-	EventOrderCreated             EventType = "OrderCreated"
-	EventOrderLineAdded           EventType = "OrderLineAdded"
-	EventOrderLineQuantityChanged EventType = "OrderLineQuantityChanged"
-	EventOrderLineVoided          EventType = "OrderLineVoided"
-	EventPrecheckIssued           EventType = "PrecheckIssued"
-	EventPrecheckReprinted        EventType = "PrecheckReprinted"
-	EventPrecheckCancelled        EventType = "PrecheckCancelled"
-	EventCheckCreated             EventType = "CheckCreated"
-	EventCheckRefunded            EventType = "CheckRefunded"
-	EventCheckReprinted           EventType = "CheckReprinted"
-	EventPaymentCaptured          EventType = "PaymentCaptured"
-	EventPaymentRefunded          EventType = "PaymentRefunded"
-	EventCancellationRecorded     EventType = "CancellationRecorded"
-	EventRefundRecorded           EventType = "RefundRecorded"
-	EventCheckClosed              EventType = "CheckClosed"
+	EventShiftOpened                EventType = "ShiftOpened"
+	EventShiftClosed                EventType = "ShiftClosed"
+	EventOrderCreated               EventType = "OrderCreated"
+	EventOrderLineAdded             EventType = "OrderLineAdded"
+	EventOrderLineQuantityChanged   EventType = "OrderLineQuantityChanged"
+	EventOrderLineVoided            EventType = "OrderLineVoided"
+	EventPrecheckIssued             EventType = "PrecheckIssued"
+	EventPrecheckReprinted          EventType = "PrecheckReprinted"
+	EventPrecheckCancelled          EventType = "PrecheckCancelled"
+	EventCheckCreated               EventType = "CheckCreated"
+	EventCheckRefunded              EventType = "CheckRefunded"
+	EventCheckReprinted             EventType = "CheckReprinted"
+	EventPaymentCaptured            EventType = "PaymentCaptured"
+	EventPaymentRefunded            EventType = "PaymentRefunded"
+	EventCancellationRecorded       EventType = "CancellationRecorded"
+	EventRefundRecorded             EventType = "RefundRecorded"
+	EventCheckClosed                EventType = "CheckClosed"
 	EventKitchenTicketStatusChanged EventType = "KitchenTicketStatusChanged"
-	EventItemServed               EventType = "ItemServed"
-	EventStockReceiptCaptured     EventType = "StockReceiptCaptured"
-	EventInventoryCountCaptured   EventType = "InventoryCountCaptured"
-	EventProductionCompleted      EventType = "ProductionCompleted"
-	EventStopListUpdated          EventType = "StopListUpdated"
-	EventOrderClosed              EventType = "OrderClosed"
-	EventCashSessionOpened        EventType = "CashSessionOpened"
-	EventCashSessionClosed        EventType = "CashSessionClosed"
-	EventCashDrawerEventRecorded  EventType = "CashDrawerEventRecorded"
-	EventAuthSessionStarted       EventType = "AuthSessionStarted"
-	EventAuthSessionRevoked       EventType = "AuthSessionRevoked"
-	EventDeviceRegistered         EventType = "DeviceRegistered"
+	EventItemServed                 EventType = "ItemServed"
+	EventStockReceiptCaptured       EventType = "StockReceiptCaptured"
+	EventInventoryCountCaptured     EventType = "InventoryCountCaptured"
+	EventProductionCompleted        EventType = "ProductionCompleted"
+	EventStopListUpdated            EventType = "StopListUpdated"
+	EventOrderClosed                EventType = "OrderClosed"
+	EventCashSessionOpened          EventType = "CashSessionOpened"
+	EventCashSessionClosed          EventType = "CashSessionClosed"
+	EventCashDrawerEventRecorded    EventType = "CashDrawerEventRecorded"
+	EventAuthSessionStarted         EventType = "AuthSessionStarted"
+	EventAuthSessionRevoked         EventType = "AuthSessionRevoked"
+	EventDeviceRegistered           EventType = "DeviceRegistered"
 )
 
 var (
@@ -282,14 +282,17 @@ type CheckClosed struct {
 }
 
 type ItemServed struct {
-	ServedEventID string    `json:"served_event_id"`
-	OrderID       string    `json:"order_id"`
-	OrderLineID   string    `json:"order_line_id"`
-	CatalogItemID string    `json:"catalog_item_id"`
-	Quantity      string    `json:"quantity"`
-	UnitCode      string    `json:"unit_code"`
-	ServedAt      time.Time `json:"served_at"`
-	StationID     string    `json:"station_id,omitempty"`
+	ServedEventID           string    `json:"served_event_id"`
+	TicketID                string    `json:"ticket_id"`
+	ServeSequence           int       `json:"serve_sequence"`
+	SupersedesServedEventID string    `json:"supersedes_served_event_id,omitempty"`
+	OrderID                 string    `json:"order_id"`
+	OrderLineID             string    `json:"order_line_id"`
+	CatalogItemID           string    `json:"catalog_item_id"`
+	Quantity                string    `json:"quantity"`
+	UnitCode                string    `json:"unit_code"`
+	ServedAt                time.Time `json:"served_at"`
+	StationID               string    `json:"station_id,omitempty"`
 }
 
 type KitchenTicketStatusChanged struct {
@@ -657,8 +660,11 @@ func validateItemServedPayload(v SyncEnvelope) error {
 		return err
 	}
 	data := payload.Data
-	if strings.TrimSpace(data.ServedEventID) == "" || strings.TrimSpace(data.OrderID) == "" || strings.TrimSpace(data.OrderLineID) == "" || strings.TrimSpace(data.CatalogItemID) == "" {
+	if strings.TrimSpace(data.ServedEventID) == "" || strings.TrimSpace(data.TicketID) == "" || strings.TrimSpace(data.OrderID) == "" || strings.TrimSpace(data.OrderLineID) == "" || strings.TrimSpace(data.CatalogItemID) == "" {
 		return fmt.Errorf("%w: item served ids are required", ErrInvalidEnvelope)
+	}
+	if data.ServeSequence <= 0 {
+		return fmt.Errorf("%w: item served serve_sequence must be positive", ErrInvalidEnvelope)
 	}
 	if !positiveDecimal(data.Quantity) || strings.TrimSpace(data.UnitCode) == "" || data.ServedAt.IsZero() {
 		return fmt.Errorf("%w: item served quantity, unit_code and served_at are required", ErrInvalidEnvelope)

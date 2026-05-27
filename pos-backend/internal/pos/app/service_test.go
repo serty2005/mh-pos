@@ -7248,6 +7248,166 @@ func TestKitchenTicketTransitionMatrixAndEvents(t *testing.T) {
 	}
 }
 
+func TestKitchenOrderQueueGroupsOrdersAndComputesStatus(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	firstOrder, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMetaCommand("cmd-kds-queue-order-1"), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMetaCommand("cmd-kds-queue-line-1a"), OrderID: firstOrder.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMetaCommand("cmd-kds-queue-line-1b"), OrderID: firstOrder.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	secondOrder, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMetaCommand("cmd-kds-queue-order-2"), TableID: f.table.ID, TableName: "A2", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMetaCommand("cmd-kds-queue-line-2a"), OrderID: secondOrder.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	meta := f.useKitchenOperator(t)
+	tickets, err := f.repo.ListKitchenTickets(f.ctx, domain.KitchenTicketListQuery{RestaurantID: f.restaurant.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var firstTicketIDs []string
+	var secondTicketID string
+	for _, ticket := range tickets {
+		switch ticket.OrderID {
+		case firstOrder.ID:
+			firstTicketIDs = append(firstTicketIDs, ticket.ID)
+		case secondOrder.ID:
+			secondTicketID = ticket.ID
+		}
+	}
+	if len(firstTicketIDs) != 2 || secondTicketID == "" {
+		t.Fatalf("expected tickets grouped by order, got %+v", tickets)
+	}
+	for i, ticketID := range firstTicketIDs {
+		readyMeta := meta
+		readyMeta.CommandID = fmt.Sprintf("cmd-kds-queue-ready-%d", i)
+		for _, action := range []string{"accept", "start", "ready"} {
+			stepMeta := readyMeta
+			stepMeta.CommandID += "-" + action
+			if _, err := f.service.ChangeKitchenTicketStatus(f.ctx, app.ChangeKitchenTicketStatusCommand{CommandMeta: stepMeta, TicketID: ticketID, Action: action}); err != nil {
+				t.Fatalf("prepare first order ticket %s action %s: %v", ticketID, action, err)
+			}
+		}
+	}
+	for _, action := range []string{"accept", "start", "ready", "serve"} {
+		stepMeta := meta
+		stepMeta.CommandID = "cmd-kds-queue-second-" + action
+		if _, err := f.service.ChangeKitchenTicketStatus(f.ctx, app.ChangeKitchenTicketStatusCommand{CommandMeta: stepMeta, TicketID: secondTicketID, Action: action}); err != nil {
+			t.Fatalf("prepare second order action %s: %v", action, err)
+		}
+	}
+
+	queue, err := f.service.ListKitchenOrderQueue(f.ctx, app.ListKitchenOrderQueueCommand{CommandMeta: meta, Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(queue.Orders) != 1 || queue.Orders[0].OrderID != firstOrder.ID {
+		t.Fatalf("expected default active queue to hide served order, got %+v", queue.Orders)
+	}
+	if queue.Orders[0].KitchenOrderStatus != domain.KitchenOrderReady || len(queue.Orders[0].Tickets) != 2 || queue.Orders[0].EdgeOrderID != firstOrder.EdgeOrderID || queue.Orders[0].ElapsedSeconds < 0 {
+		t.Fatalf("unexpected ready grouped order: %+v", queue.Orders[0])
+	}
+
+	servedQueue, err := f.service.ListKitchenOrderQueue(f.ctx, app.ListKitchenOrderQueueCommand{CommandMeta: meta, Status: domain.KitchenOrderServed, Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(servedQueue.Orders) != 1 || servedQueue.Orders[0].OrderID != secondOrder.ID || servedQueue.Orders[0].KitchenOrderStatus != domain.KitchenOrderServed {
+		t.Fatalf("expected served filter to return served order, got %+v", servedQueue.Orders)
+	}
+}
+
+func TestKitchenTicketReplayAndRepeatedServeSequence(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMetaCommand("cmd-kds-repeat-order"), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMetaCommand("cmd-kds-repeat-line"), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	tickets, err := f.repo.ListKitchenTickets(f.ctx, domain.KitchenTicketListQuery{RestaurantID: f.restaurant.ID, Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticketID := tickets[0].ID
+	meta := f.useKitchenOperator(t)
+	for _, action := range []string{"accept", "start", "ready"} {
+		stepMeta := meta
+		stepMeta.CommandID = "cmd-kds-repeat-first-" + action
+		if _, err := f.service.ChangeKitchenTicketStatus(f.ctx, app.ChangeKitchenTicketStatusCommand{CommandMeta: stepMeta, TicketID: ticketID, Action: action}); err != nil {
+			t.Fatalf("prepare first serve action %s: %v", action, err)
+		}
+	}
+	serveMeta := meta
+	serveMeta.CommandID = "cmd-kds-repeat-serve"
+	if _, err := f.service.ChangeKitchenTicketStatus(f.ctx, app.ChangeKitchenTicketStatusCommand{CommandMeta: serveMeta, TicketID: ticketID, Action: "serve"}); err != nil {
+		t.Fatal(err)
+	}
+	eventsBefore := countRows(t, f, "kitchen_ticket_events")
+	outboxBefore := countOutboxByType(t, f, "ItemServed")
+	replayed, err := f.service.ChangeKitchenTicketStatus(f.ctx, app.ChangeKitchenTicketStatusCommand{CommandMeta: serveMeta, TicketID: ticketID, Action: "serve"})
+	if err != nil {
+		t.Fatalf("expected kitchen command replay to be idempotent, got %v", err)
+	}
+	if replayed.Status != domain.KitchenTicketServed {
+		t.Fatalf("expected replay to return served ticket, got %+v", replayed)
+	}
+	if events := countRows(t, f, "kitchen_ticket_events"); events != eventsBefore {
+		t.Fatalf("expected replay to write no second ticket event, before=%d after=%d", eventsBefore, events)
+	}
+	if outbox := countOutboxByType(t, f, "ItemServed"); outbox != outboxBefore {
+		t.Fatalf("expected replay to write no second ItemServed, before=%d after=%d", outboxBefore, outbox)
+	}
+	for _, action := range []string{"recall", "start", "ready", "serve"} {
+		stepMeta := meta
+		stepMeta.CommandID = "cmd-kds-repeat-second-" + action
+		if _, err := f.service.ChangeKitchenTicketStatus(f.ctx, app.ChangeKitchenTicketStatusCommand{CommandMeta: stepMeta, TicketID: ticketID, Action: action}); err != nil {
+			t.Fatalf("repeat cycle action %s: %v", action, err)
+		}
+	}
+
+	rows, err := f.db.QueryContext(f.ctx, `SELECT payload_json FROM pos_sync_outbox WHERE command_type = 'ItemServed' AND aggregate_id = ? ORDER BY sequence_no`, ticketID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var payloads []map[string]any
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			t.Fatal(err)
+		}
+		var envelope domain.SyncEnvelope
+		if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		payload := envelope.Payload.(map[string]any)["data"].(map[string]any)
+		payloads = append(payloads, payload)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(payloads) != 2 {
+		t.Fatalf("expected two effective serve facts after repeated serve, got %+v", payloads)
+	}
+	if payloads[0]["ticket_id"] != ticketID || payloads[0]["serve_sequence"] != float64(1) || payloads[0]["supersedes_served_event_id"] != nil {
+		t.Fatalf("unexpected first ItemServed payload: %+v", payloads[0])
+	}
+	if payloads[1]["ticket_id"] != ticketID || payloads[1]["serve_sequence"] != float64(2) || payloads[1]["supersedes_served_event_id"] != payloads[0]["served_event_id"] {
+		t.Fatalf("unexpected second ItemServed payload: %+v", payloads[1])
+	}
+}
+
 func TestApplyMasterDataRejectsUnsupportedStreamWithoutPartialWrite(t *testing.T) {
 	f := newFixture(t)
 	stateBefore := countRows(t, f, "cloud_master_sync_state")

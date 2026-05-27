@@ -186,6 +186,8 @@ func (r *Repository) BuildStorageArchiveExportScope(ctx context.Context, cutoffB
 		{name: "orders", query: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT o.* FROM orders o JOIN eligible_orders eo ON eo.id = o.id ORDER BY o.closed_at, o.id`},
 		{name: "order_lines", query: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT ol.* FROM order_lines ol JOIN eligible_orders eo ON eo.id = ol.order_id ORDER BY ol.order_id, ol.id`},
 		{name: "order_line_modifiers", query: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT olm.* FROM order_line_modifiers olm JOIN order_lines ol ON ol.id = olm.order_line_id JOIN eligible_orders eo ON eo.id = ol.order_id ORDER BY ol.order_id, olm.id`},
+		{name: "kitchen_tickets", query: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT kt.* FROM kitchen_tickets kt JOIN eligible_orders eo ON eo.id = kt.order_id ORDER BY kt.order_id, kt.created_at, kt.id`},
+		{name: "kitchen_ticket_events", query: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT kte.* FROM kitchen_ticket_events kte JOIN kitchen_tickets kt ON kt.id = kte.ticket_id JOIN eligible_orders eo ON eo.id = kt.order_id ORDER BY kte.ticket_id, kte.created_at, kte.id`},
 		{name: "order_line_discounts", query: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT old.* FROM order_line_discounts old JOIN eligible_orders eo ON eo.id = old.order_id ORDER BY old.order_id, old.application_index, old.id`},
 		{name: "order_surcharges", query: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT os.* FROM order_surcharges os JOIN eligible_orders eo ON eo.id = os.order_id ORDER BY os.order_id, os.application_index, os.id`},
 		{name: "prechecks", query: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT p.* FROM prechecks p JOIN eligible_orders eo ON eo.id = p.order_id ORDER BY p.order_id, p.version, p.id`},
@@ -483,6 +485,8 @@ func (r *Repository) archiveEligibleCounts(ctx context.Context, cutoffBusinessDa
 		{&counts.ClosedOrders, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM eligible_orders`},
 		{&counts.OrderLines, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM order_lines ol JOIN eligible_orders eo ON eo.id = ol.order_id`},
 		{&counts.OrderLineModifiers, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM order_line_modifiers olm JOIN order_lines ol ON ol.id = olm.order_line_id JOIN eligible_orders eo ON eo.id = ol.order_id`},
+		{&counts.KitchenTickets, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM kitchen_tickets kt JOIN eligible_orders eo ON eo.id = kt.order_id`},
+		{&counts.KitchenTicketEvents, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM kitchen_ticket_events kte JOIN kitchen_tickets kt ON kt.id = kte.ticket_id JOIN eligible_orders eo ON eo.id = kt.order_id`},
 		{&counts.OrderLineDiscounts, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM order_line_discounts old JOIN eligible_orders eo ON eo.id = old.order_id`},
 		{&counts.OrderSurcharges, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM order_surcharges os JOIN eligible_orders eo ON eo.id = os.order_id`},
 		{&counts.Prechecks, `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `) SELECT COUNT(1) FROM prechecks p JOIN eligible_orders eo ON eo.id = p.order_id`},
@@ -517,6 +521,8 @@ func archiveCountsTotalRows(counts storage.ArchiveExportCounts) int {
 	return counts.ClosedOrders +
 		counts.OrderLines +
 		counts.OrderLineModifiers +
+		counts.KitchenTickets +
+		counts.KitchenTicketEvents +
 		counts.OrderLineDiscounts +
 		counts.OrderSurcharges +
 		counts.Prechecks +
@@ -558,6 +564,7 @@ eligible_refs AS (
   UNION ALL SELECT 'Precheck', p.id FROM prechecks p JOIN eligible_orders eo ON eo.id = p.order_id
   UNION ALL SELECT 'Payment', pay.id FROM payments pay JOIN prechecks p ON p.id = pay.precheck_id JOIN eligible_orders eo ON eo.id = p.order_id
   UNION ALL SELECT 'FinancialOperation', fo.id FROM financial_operations fo JOIN checks c ON c.id = fo.check_id JOIN eligible_orders eo ON eo.id = c.order_id
+  UNION ALL SELECT 'KitchenTicket', kt.id FROM kitchen_tickets kt JOIN eligible_orders eo ON eo.id = kt.order_id
 )`
 
 const archiveLocalEventsSQL = `WITH ` + eligibleArchiveRefsSQL + `
@@ -828,6 +835,13 @@ WHERE order_line_id IN (
   FROM order_lines ol
   JOIN eligible_orders eo ON eo.id = ol.order_id
 )`, args: scopeArgs},
+		{sql: `DELETE FROM kitchen_ticket_events
+WHERE ticket_id IN (
+  SELECT kt.id
+  FROM kitchen_tickets kt
+  JOIN _tmp_eligible_order_ids eo ON eo.id = kt.order_id
+)`},
+		{sql: `DELETE FROM kitchen_tickets WHERE order_id IN (SELECT id FROM _tmp_eligible_order_ids)`},
 		{sql: `WITH eligible_orders AS (` + eligibleOrdersForArchiveSQL + `)
 DELETE FROM order_line_discounts
 WHERE order_id IN (SELECT id FROM eligible_orders)`, args: scopeArgs},
@@ -938,6 +952,10 @@ func addArchiveCount(counts *storage.ArchiveExportCounts, table string, n int) {
 		counts.OrderLines += n
 	case "order_line_modifiers":
 		counts.OrderLineModifiers += n
+	case "kitchen_tickets":
+		counts.KitchenTickets += n
+	case "kitchen_ticket_events":
+		counts.KitchenTicketEvents += n
 	case "order_line_discounts":
 		counts.OrderLineDiscounts += n
 	case "order_surcharges":

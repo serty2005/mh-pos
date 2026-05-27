@@ -95,7 +95,7 @@ func TestValidateEnvelopeAcceptsTargetInventoryEvents(t *testing.T) {
 		{
 			name:      "item served",
 			eventType: contracts.EventItemServed,
-			payload:   json.RawMessage(`{"origin":"edge_device","data":{"served_event_id":"served-1","order_id":"order-1","order_line_id":"line-1","catalog_item_id":"item-1","quantity":"1.000","unit_code":"PC","served_at":"2026-05-05T09:00:00Z","station_id":"kitchen-hot"}}`),
+			payload:   json.RawMessage(`{"origin":"edge_device","data":{"served_event_id":"served-1","ticket_id":"ticket-1","serve_sequence":1,"order_id":"order-1","order_line_id":"line-1","catalog_item_id":"item-1","quantity":"1.000","unit_code":"PC","served_at":"2026-05-05T09:00:00Z","station_id":"kitchen-hot"}}`),
 		},
 		{
 			name:      "kitchen status changed",

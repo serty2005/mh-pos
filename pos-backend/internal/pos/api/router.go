@@ -84,6 +84,7 @@ func NewRouter(service *app.Service) http.Handler {
 
 		r.Get("/financial-operations", h.listFinancialOperations)
 
+		r.Get("/kitchen/order-queue", h.listKitchenOrderQueue)
 		r.Get("/kitchen/tickets", h.listKitchenTickets)
 		r.Post("/kitchen/tickets/{id}/accept", h.acceptKitchenTicket)
 		r.Post("/kitchen/tickets/{id}/start", h.startKitchenTicket)
@@ -881,12 +882,30 @@ func (h *Handler) listKitchenTickets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cmd := app.ListKitchenTicketsCommand{
-		Status: domain.KitchenTicketStatus(r.URL.Query().Get("status")),
-		Limit:  limit,
-		Offset: offset,
+		Status:  domain.KitchenTicketStatus(r.URL.Query().Get("status")),
+		Station: r.URL.Query().Get("station"),
+		Limit:   limit,
+		Offset:  offset,
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.ListKitchenTickets(r.Context(), cmd)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) listKitchenOrderQueue(w http.ResponseWriter, r *http.Request) {
+	limit, offset, ok := readLimitOffset(w, r)
+	if !ok {
+		return
+	}
+	query := r.URL.Query()
+	cmd := app.ListKitchenOrderQueueCommand{
+		Status:  domain.KitchenOrderStatus(query.Get("status")),
+		Station: query.Get("station"),
+		Limit:   limit,
+		Offset:  offset,
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.ListKitchenOrderQueue(r.Context(), cmd)
 	writeOK(w, r, v, err)
 }
 

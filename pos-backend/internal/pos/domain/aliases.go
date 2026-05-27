@@ -139,19 +139,33 @@ const (
 )
 
 type KitchenTicketStatus = kitchen.TicketStatus
+type KitchenOrderStatus = kitchen.OrderStatus
 type KitchenTicket = kitchen.Ticket
+type KitchenOrderTicket = kitchen.OrderTicket
 type KitchenTicketListQuery = kitchen.TicketListQuery
+type KitchenOrderQueueQuery = kitchen.OrderQueueQuery
+type KitchenOrderQueue = kitchen.OrderQueue
+type KitchenOrder = kitchen.Order
 type KitchenTicketEvent = kitchen.TicketEvent
 
 const (
-	KitchenTicketNew        = kitchen.TicketNew
-	KitchenTicketAccepted   = kitchen.TicketAccepted
-	KitchenTicketInProgress = kitchen.TicketInProgress
-	KitchenTicketHold       = kitchen.TicketHold
-	KitchenTicketReady      = kitchen.TicketReady
-	KitchenTicketServed     = kitchen.TicketServed
-	KitchenTicketRecall     = kitchen.TicketRecall
-	KitchenTicketCancelled  = kitchen.TicketCancelled
+	KitchenTicketNew            = kitchen.TicketNew
+	KitchenTicketAccepted       = kitchen.TicketAccepted
+	KitchenTicketInProgress     = kitchen.TicketInProgress
+	KitchenTicketHold           = kitchen.TicketHold
+	KitchenTicketReady          = kitchen.TicketReady
+	KitchenTicketServed         = kitchen.TicketServed
+	KitchenTicketRecall         = kitchen.TicketRecall
+	KitchenTicketCancelled      = kitchen.TicketCancelled
+	KitchenOrderQueued          = kitchen.OrderQueued
+	KitchenOrderAccepted        = kitchen.OrderAccepted
+	KitchenOrderInProgress      = kitchen.OrderInProgress
+	KitchenOrderPartiallyReady  = kitchen.OrderPartiallyReady
+	KitchenOrderReady           = kitchen.OrderReady
+	KitchenOrderPartiallyServed = kitchen.OrderPartiallyServed
+	KitchenOrderServed          = kitchen.OrderServed
+	KitchenOrderCancelled       = kitchen.OrderCancelled
+	KitchenOrderMixed           = kitchen.OrderMixed
 )
 
 type CheckStatus = check.CheckStatus

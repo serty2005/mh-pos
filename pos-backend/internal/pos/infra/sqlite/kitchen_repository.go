@@ -26,6 +26,10 @@ func (r *Repository) ListKitchenTickets(ctx context.Context, query kitchen.Ticke
 		where = append(where, "kt.status = ?")
 		args = append(args, string(query.Status))
 	}
+	if strings.TrimSpace(query.Station) != "" {
+		where = append(where, "kt.station_routing_key = ?")
+		args = append(args, strings.TrimSpace(query.Station))
+	}
 	limit := query.Limit
 	if limit <= 0 || limit > 100 {
 		limit = 50
@@ -43,6 +47,29 @@ func (r *Repository) ListKitchenTickets(ctx context.Context, query kitchen.Ticke
 	var out []kitchen.Ticket
 	for rows.Next() {
 		v, err := scanKitchenTicketRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *v)
+	}
+	return out, normalizeErr(rows.Err())
+}
+
+func (r *Repository) ListKitchenOrderQueueTickets(ctx context.Context, query kitchen.OrderQueueQuery) ([]kitchen.OrderTicket, error) {
+	where := []string{"kt.restaurant_id = ?"}
+	args := []any{strings.TrimSpace(query.RestaurantID)}
+	if strings.TrimSpace(query.Station) != "" {
+		where = append(where, "kt.station_routing_key = ?")
+		args = append(args, strings.TrimSpace(query.Station))
+	}
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT kt.id,kt.restaurant_id,kt.device_id,kt.shift_id,kt.order_id,kt.order_line_id,kt.table_name,kt.menu_item_id,kt.catalog_item_id,kt.name,kt.quantity,kt.unit_code,kt.station_routing_key,kt.course,kt.comment,kt.status,kt.created_at,kt.updated_at,o.edge_order_id FROM kitchen_tickets kt JOIN orders o ON o.id = kt.order_id WHERE `+strings.Join(where, " AND ")+` ORDER BY kt.created_at ASC, kt.id ASC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []kitchen.OrderTicket
+	for rows.Next() {
+		v, err := scanKitchenOrderTicketRows(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -79,8 +106,26 @@ func (r *Repository) CreateKitchenTicketEvent(ctx context.Context, v *kitchen.Ti
 	return normalizeErr(err)
 }
 
+func (r *Repository) GetKitchenTicketEventByCommandID(ctx context.Context, commandID string) (*kitchen.TicketEvent, error) {
+	return scanKitchenTicketEvent(r.queryer(ctx).QueryRowContext(ctx, kitchenTicketEventSelectSQL()+` WHERE command_id = ? ORDER BY created_at LIMIT 1`, strings.TrimSpace(commandID)))
+}
+
+func (r *Repository) GetLatestKitchenServedEvent(ctx context.Context, ticketID string) (*kitchen.TicketEvent, error) {
+	return scanKitchenTicketEvent(r.queryer(ctx).QueryRowContext(ctx, kitchenTicketEventSelectSQL()+` WHERE ticket_id = ? AND to_status = ? ORDER BY occurred_at DESC, created_at DESC, id DESC LIMIT 1`, strings.TrimSpace(ticketID), string(kitchen.TicketServed)))
+}
+
+func (r *Repository) CountKitchenServedEvents(ctx context.Context, ticketID string) (int, error) {
+	var n int
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT COUNT(1) FROM kitchen_ticket_events WHERE ticket_id = ? AND to_status = ?`, strings.TrimSpace(ticketID), string(kitchen.TicketServed)).Scan(&n)
+	return n, normalizeErr(err)
+}
+
 func kitchenTicketSelectSQL() string {
 	return `SELECT kt.id,kt.restaurant_id,kt.device_id,kt.shift_id,kt.order_id,kt.order_line_id,kt.table_name,kt.menu_item_id,kt.catalog_item_id,kt.name,kt.quantity,kt.unit_code,kt.station_routing_key,kt.course,kt.comment,kt.status,kt.created_at,kt.updated_at FROM kitchen_tickets kt`
+}
+
+func kitchenTicketEventSelectSQL() string {
+	return `SELECT id,ticket_id,order_line_id,from_status,to_status,command_id,actor_employee_id,occurred_at,created_at FROM kitchen_ticket_events`
 }
 
 func scanKitchenTicket(row scanner) (*kitchen.Ticket, error) {
@@ -99,5 +144,37 @@ func scanKitchenTicketRows(row scanner) (*kitchen.Ticket, error) {
 	v.Status = kitchen.TicketStatus(status)
 	v.CreatedAt = parseTime(created)
 	v.UpdatedAt = parseTime(updated)
+	return &v, nil
+}
+
+func scanKitchenOrderTicketRows(row scanner) (*kitchen.OrderTicket, error) {
+	var v kitchen.OrderTicket
+	var status, created, updated string
+	var course, comment sql.NullString
+	if err := row.Scan(&v.ID, &v.RestaurantID, &v.DeviceID, &v.ShiftID, &v.OrderID, &v.OrderLineID, &v.TableName, &v.MenuItemID, &v.CatalogItemID, &v.Name, &v.Quantity, &v.UnitCode, &v.StationRoutingKey, &course, &comment, &status, &created, &updated, &v.EdgeOrderID); err != nil {
+		return nil, normalizeErr(err)
+	}
+	v.Course = stringPtr(course)
+	v.Comment = stringPtr(comment)
+	v.Status = kitchen.TicketStatus(status)
+	v.CreatedAt = parseTime(created)
+	v.UpdatedAt = parseTime(updated)
+	return &v, nil
+}
+
+func scanKitchenTicketEvent(row scanner) (*kitchen.TicketEvent, error) {
+	var v kitchen.TicketEvent
+	var fromStatus, toStatus, occurred, created string
+	var actorID sql.NullString
+	if err := row.Scan(&v.ID, &v.TicketID, &v.OrderLineID, &fromStatus, &toStatus, &v.CommandID, &actorID, &occurred, &created); err != nil {
+		return nil, normalizeErr(err)
+	}
+	v.FromStatus = kitchen.TicketStatus(fromStatus)
+	v.ToStatus = kitchen.TicketStatus(toStatus)
+	if actorID.Valid {
+		v.ActorEmployeeID = actorID.String
+	}
+	v.OccurredAt = parseTime(occurred)
+	v.CreatedAt = parseTime(created)
 	return &v, nil
 }

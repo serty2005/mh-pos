@@ -81,6 +81,7 @@ type FinancialOperationItemCommand = appcheck.FinancialOperationItemCommand
 type RecordCheckCancellationCommand = appcheck.RecordCheckCancellationCommand
 type RecordCheckRefundCommand = appcheck.RecordCheckRefundCommand
 type ListKitchenTicketsCommand = appkitchen.ListTicketsCommand
+type ListKitchenOrderQueueCommand = appkitchen.ListOrderQueueCommand
 type ChangeKitchenTicketStatusCommand = appkitchen.ChangeTicketStatusCommand
 type CloseOrderCommand = apporder.CloseOrderCommand
 type OpenCashSessionCommand = appcash.OpenCashSessionCommand
@@ -508,6 +509,10 @@ func (s *Service) ReprintCheck(ctx context.Context, cmd ReprintCheckCommand) (*d
 
 func (s *Service) ListKitchenTickets(ctx context.Context, cmd ListKitchenTicketsCommand) ([]domain.KitchenTicket, error) {
 	return s.kitchen.ListTickets(ctx, cmd)
+}
+
+func (s *Service) ListKitchenOrderQueue(ctx context.Context, cmd ListKitchenOrderQueueCommand) (domain.KitchenOrderQueue, error) {
+	return s.kitchen.ListOrderQueue(ctx, cmd)
 }
 
 func (s *Service) ChangeKitchenTicketStatus(ctx context.Context, cmd ChangeKitchenTicketStatusCommand) (*domain.KitchenTicket, error) {
