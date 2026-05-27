@@ -489,6 +489,160 @@ func (f *fixture) closeCashSessionAndShift(t *testing.T, shift *domain.Shift, ca
 	}
 }
 
+func TestCloseCashSessionRequiresClosePermissionAndLeavesNoSideEffects(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	cashSession := f.openCashSession(t)
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+	closedOutboxBefore := countOutboxByType(t, f, "CashSessionClosed")
+	closedEventsBefore := countLocalEventsByType(t, f, "CashSessionClosed")
+
+	_, err := f.service.CloseCashSession(f.ctx, app.CloseCashSessionCommand{
+		CommandMeta:        f.edgeMetaCommand("cmd-close-cash-cashier-denied"),
+		ID:                 cashSession.ID,
+		ClosedByEmployeeID: f.employee.ID,
+		ClosingCashAmount:  1000,
+	})
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden for cashier cash session close, got %v", err)
+	}
+
+	persisted, err := f.repo.GetCashSession(f.ctx, cashSession.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Status != domain.CashSessionOpen {
+		t.Fatalf("expected cash session to stay open, got %s", persisted.Status)
+	}
+	assertCashSessionCloseEventCounts(t, f, outboxBefore, eventsBefore, closedOutboxBefore, closedEventsBefore)
+}
+
+func TestCloseCashSessionByManagerPersistsClosureAndWritesSingleEvent(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	cashSession := f.openCashSession(t)
+
+	closed, err := f.service.CloseCashSession(f.ctx, app.CloseCashSessionCommand{
+		CommandMeta:        f.managerEdgeMetaCommand(t, "cmd-close-cash-manager-success"),
+		ID:                 cashSession.ID,
+		ClosedByEmployeeID: f.manager.ID,
+		ClosingCashAmount:  12345,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed.Status != domain.CashSessionClosed {
+		t.Fatalf("expected returned session to be closed, got %s", closed.Status)
+	}
+
+	persisted, err := f.repo.GetCashSession(f.ctx, cashSession.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Status != domain.CashSessionClosed {
+		t.Fatalf("expected persisted session to be closed, got %s", persisted.Status)
+	}
+	if persisted.ClosedByEmployeeID == nil || *persisted.ClosedByEmployeeID != f.manager.ID {
+		t.Fatalf("expected closed_by_employee_id %s, got %v", f.manager.ID, persisted.ClosedByEmployeeID)
+	}
+	if persisted.ClosingCashAmount == nil || *persisted.ClosingCashAmount != 12345 {
+		t.Fatalf("expected closing_cash_amount 12345, got %v", persisted.ClosingCashAmount)
+	}
+	if persisted.ClosedAt == nil {
+		t.Fatal("expected closed_at to be persisted")
+	}
+	if outbox := countOutboxByType(t, f, "CashSessionClosed"); outbox != 1 {
+		t.Fatalf("expected one CashSessionClosed outbox row, got %d", outbox)
+	}
+	if events := countLocalEventsByType(t, f, "CashSessionClosed"); events != 1 {
+		t.Fatalf("expected one CashSessionClosed local event, got %d", events)
+	}
+	assertOutboxShift(t, f, "CashSessionClosed", cashSession.ID, cashSession.ShiftID)
+}
+
+func TestCloseCashSessionDuplicateCommandIsRejectedWithoutSecondEvent(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	cashSession := f.openCashSession(t)
+	cmd := app.CloseCashSessionCommand{
+		CommandMeta:        f.managerEdgeMetaCommand(t, "cmd-close-cash-duplicate"),
+		ID:                 cashSession.ID,
+		ClosedByEmployeeID: f.manager.ID,
+		ClosingCashAmount:  5000,
+	}
+	if _, err := f.service.CloseCashSession(f.ctx, cmd); err != nil {
+		t.Fatal(err)
+	}
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+	closedOutboxBefore := countOutboxByType(t, f, "CashSessionClosed")
+	closedEventsBefore := countLocalEventsByType(t, f, "CashSessionClosed")
+
+	if _, err := f.service.CloseCashSession(f.ctx, cmd); !errors.Is(err, domain.ErrDuplicateCommand) {
+		t.Fatalf("expected duplicate command, got %v", err)
+	}
+	assertCashSessionCloseEventCounts(t, f, outboxBefore, eventsBefore, closedOutboxBefore, closedEventsBefore)
+}
+
+func TestCloseCashSessionRejectsEdgeActorMismatchWithoutSideEffects(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	cashSession := f.openCashSession(t)
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+	closedOutboxBefore := countOutboxByType(t, f, "CashSessionClosed")
+	closedEventsBefore := countLocalEventsByType(t, f, "CashSessionClosed")
+
+	_, err := f.service.CloseCashSession(f.ctx, app.CloseCashSessionCommand{
+		CommandMeta:        f.managerEdgeMetaCommand(t, "cmd-close-cash-actor-mismatch"),
+		ID:                 cashSession.ID,
+		ClosedByEmployeeID: f.employee.ID,
+		ClosingCashAmount:  1000,
+	})
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden for actor mismatch, got %v", err)
+	}
+
+	persisted, err := f.repo.GetCashSession(f.ctx, cashSession.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Status != domain.CashSessionOpen {
+		t.Fatalf("expected cash session to stay open, got %s", persisted.Status)
+	}
+	assertCashSessionCloseEventCounts(t, f, outboxBefore, eventsBefore, closedOutboxBefore, closedEventsBefore)
+}
+
+func TestCloseCashSessionAlreadyClosedConflictsWithoutNewEvents(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	cashSession := f.openCashSession(t)
+	if _, err := f.service.CloseCashSession(f.ctx, app.CloseCashSessionCommand{
+		CommandMeta:        f.managerEdgeMetaCommand(t, "cmd-close-cash-first"),
+		ID:                 cashSession.ID,
+		ClosedByEmployeeID: f.manager.ID,
+		ClosingCashAmount:  1000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	outboxBefore := countRows(t, f, "pos_sync_outbox")
+	eventsBefore := countRows(t, f, "local_event_log")
+	closedOutboxBefore := countOutboxByType(t, f, "CashSessionClosed")
+	closedEventsBefore := countLocalEventsByType(t, f, "CashSessionClosed")
+
+	_, err := f.service.CloseCashSession(f.ctx, app.CloseCashSessionCommand{
+		CommandMeta:        f.managerEdgeMetaCommand(t, "cmd-close-cash-already-closed"),
+		ID:                 cashSession.ID,
+		ClosedByEmployeeID: f.manager.ID,
+		ClosingCashAmount:  1000,
+	})
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected conflict for already closed cash session, got %v", err)
+	}
+	assertCashSessionCloseEventCounts(t, f, outboxBefore, eventsBefore, closedOutboxBefore, closedEventsBefore)
+}
+
 func (f *fixture) createPaidOrder(t *testing.T) (*domain.Order, *domain.Check) {
 	t.Helper()
 	f.openShift(t)
@@ -569,6 +723,27 @@ func countRowsWhere(t *testing.T, f *fixture, table, where string, args ...any) 
 func countOutboxByType(t *testing.T, f *fixture, commandType string) int {
 	t.Helper()
 	return countRowsWhere(t, f, "pos_sync_outbox", "command_type = ?", commandType)
+}
+
+func countLocalEventsByType(t *testing.T, f *fixture, eventType string) int {
+	t.Helper()
+	return countRowsWhere(t, f, "local_event_log", "event_type = ?", eventType)
+}
+
+func assertCashSessionCloseEventCounts(t *testing.T, f *fixture, outboxBefore, eventsBefore, closedOutboxBefore, closedEventsBefore int) {
+	t.Helper()
+	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected no new outbox rows, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected no new local events, before=%d after=%d", eventsBefore, events)
+	}
+	if outbox := countOutboxByType(t, f, "CashSessionClosed"); outbox != closedOutboxBefore {
+		t.Fatalf("expected no new CashSessionClosed outbox rows, before=%d after=%d", closedOutboxBefore, outbox)
+	}
+	if events := countLocalEventsByType(t, f, "CashSessionClosed"); events != closedEventsBefore {
+		t.Fatalf("expected no new CashSessionClosed local events, before=%d after=%d", closedEventsBefore, events)
+	}
 }
 
 func assertOutboxShift(t *testing.T, f *fixture, commandType, aggregateID, shiftID string) {
