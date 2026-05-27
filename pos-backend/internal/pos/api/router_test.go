@@ -331,7 +331,7 @@ func decodeAPIResponse[T any](t *testing.T, rr *httptest.ResponseRecorder) T {
 func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 	t.Helper()
 	switch table {
-	case "prechecks", "checks", "payments", "payment_attempts", "financial_operations", "financial_operation_items", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "auth_sessions", "halls", "tables", "catalog_items", "kitchen_tickets", "kitchen_ticket_events", "cloud_master_sync_state":
+	case "prechecks", "checks", "payments", "payment_attempts", "financial_operations", "financial_operation_items", "shifts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "auth_sessions", "halls", "tables", "catalog_items", "kitchen_tickets", "kitchen_ticket_events", "cloud_master_sync_state":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -345,7 +345,7 @@ func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 func countAPIRowsWhere(t *testing.T, f *apiFixture, table, where string, args ...any) int {
 	t.Helper()
 	switch table {
-	case "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log":
+	case "shifts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log":
 	default:
 		t.Fatalf("unexpected filtered table %q", table)
 	}
@@ -605,6 +605,232 @@ func TestCurrentShiftAPIReturnsAuthenticatedEmployeeOpenShift(t *testing.T) {
 	got := decodeAPIResponse[domain.Shift](t, rr)
 	if got.ID != shift.ID || got.OpenedByEmployeeID != f.employee.ID || got.Status != domain.ShiftOpen {
 		t.Fatalf("unexpected current shift: %+v", got)
+	}
+}
+
+func TestEmployeeShiftAPIHappyPathPersistsStateAndEvents(t *testing.T) {
+	f := newAPIFixture(t)
+	shiftsBefore := countAPIRows(t, f, "shifts")
+	openedOutboxBefore := countAPIOutboxByType(t, f, "ShiftOpened")
+	openedEventsBefore := countAPILocalEventsByType(t, f, "ShiftOpened")
+
+	openBody := `{"command_id":"cmd-api-shift-open-happy","restaurant_id":"` + f.restaurant.ID + `","opened_by_employee_id":"` + f.employee.ID + `"}`
+	openRR := f.postJSON(t, "/api/v1/employee-shifts/open", openBody)
+	if openRR.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for employee shift open, got %d: %s", openRR.Code, openRR.Body.String())
+	}
+	shift := decodeAPIResponse[domain.Shift](t, openRR)
+	if shift.Status != domain.ShiftOpen || shift.RestaurantID != f.restaurant.ID || shift.DeviceID != f.device.ID || shift.OpenedByEmployeeID != f.employee.ID {
+		t.Fatalf("unexpected opened shift: %+v", shift)
+	}
+	if shifts := countAPIRows(t, f, "shifts"); shifts != shiftsBefore+1 {
+		t.Fatalf("expected one shift created, before=%d after=%d", shiftsBefore, shifts)
+	}
+	if openRows := countAPIRowsWhere(t, f, "shifts", "id = ? AND status = 'open'", shift.ID); openRows != 1 {
+		t.Fatalf("expected persisted open shift %s, got %d", shift.ID, openRows)
+	}
+	if outbox := countAPIOutboxByType(t, f, "ShiftOpened"); outbox != openedOutboxBefore+1 {
+		t.Fatalf("expected one ShiftOpened outbox row, before=%d after=%d", openedOutboxBefore, outbox)
+	}
+	if events := countAPILocalEventsByType(t, f, "ShiftOpened"); events != openedEventsBefore+1 {
+		t.Fatalf("expected one ShiftOpened local event, before=%d after=%d", openedEventsBefore, events)
+	}
+
+	currentRR := f.get(t, "/api/v1/employee-shifts/current?node_device_id="+f.device.ID)
+	if currentRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 for current employee shift, got %d: %s", currentRR.Code, currentRR.Body.String())
+	}
+	current := decodeAPIResponse[domain.Shift](t, currentRR)
+	if current.ID != shift.ID || current.Status != domain.ShiftOpen || current.OpenedByEmployeeID != f.employee.ID {
+		t.Fatalf("unexpected current shift: %+v", current)
+	}
+
+	recentRR := f.get(t, "/api/v1/employee-shifts/recent?limit=5")
+	if recentRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 for recent employee shifts, got %d: %s", recentRR.Code, recentRR.Body.String())
+	}
+	recent := decodeAPIResponse[[]domain.Shift](t, recentRR)
+	if len(recent) != 1 || recent[0].ID != shift.ID || recent[0].Status != domain.ShiftOpen {
+		t.Fatalf("unexpected recent shifts: %+v", recent)
+	}
+
+	closedOutboxBefore := countAPIOutboxByType(t, f, "ShiftClosed")
+	closedEventsBefore := countAPILocalEventsByType(t, f, "ShiftClosed")
+	closeBody := `{"command_id":"cmd-api-shift-close-happy","closed_by_employee_id":"` + f.employee.ID + `"}`
+	closeRR := f.postJSON(t, "/api/v1/employee-shifts/"+shift.ID+"/close", closeBody)
+	if closeRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 for employee shift close, got %d: %s", closeRR.Code, closeRR.Body.String())
+	}
+	closed := decodeAPIResponse[domain.Shift](t, closeRR)
+	if closed.ID != shift.ID || closed.Status != domain.ShiftClosed || closed.ClosedByEmployeeID == nil || *closed.ClosedByEmployeeID != f.employee.ID {
+		t.Fatalf("unexpected closed shift: %+v", closed)
+	}
+	if closedRows := countAPIRowsWhere(t, f, "shifts", "id = ? AND status = 'closed'", shift.ID); closedRows != 1 {
+		t.Fatalf("expected persisted closed shift %s, got %d", shift.ID, closedRows)
+	}
+	if openRows := countAPIRowsWhere(t, f, "shifts", "id = ? AND status = 'open'", shift.ID); openRows != 0 {
+		t.Fatalf("expected no persisted open row for closed shift %s, got %d", shift.ID, openRows)
+	}
+	if outbox := countAPIOutboxByType(t, f, "ShiftClosed"); outbox != closedOutboxBefore+1 {
+		t.Fatalf("expected one ShiftClosed outbox row, before=%d after=%d", closedOutboxBefore, outbox)
+	}
+	if events := countAPILocalEventsByType(t, f, "ShiftClosed"); events != closedEventsBefore+1 {
+		t.Fatalf("expected one ShiftClosed local event, before=%d after=%d", closedEventsBefore, events)
+	}
+}
+
+func TestEmployeeShiftOpenAPIDuplicateCommandDoesNotCreateSecondShift(t *testing.T) {
+	f := newAPIFixture(t)
+	body := `{"command_id":"cmd-api-shift-open-duplicate","restaurant_id":"` + f.restaurant.ID + `","opened_by_employee_id":"` + f.employee.ID + `"}`
+	opened := f.postJSON(t, "/api/v1/employee-shifts/open", body)
+	if opened.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for first open, got %d: %s", opened.Code, opened.Body.String())
+	}
+	shiftsBefore := countAPIRows(t, f, "shifts")
+	outboxBefore := countAPIRows(t, f, "pos_sync_outbox")
+	eventsBefore := countAPIRows(t, f, "local_event_log")
+	openedOutboxBefore := countAPIOutboxByType(t, f, "ShiftOpened")
+	openedEventsBefore := countAPILocalEventsByType(t, f, "ShiftOpened")
+
+	duplicate := f.postJSON(t, "/api/v1/employee-shifts/open", body)
+	assertDuplicateCommandAPIError(t, duplicate)
+	if shifts := countAPIRows(t, f, "shifts"); shifts != shiftsBefore {
+		t.Fatalf("expected duplicate open to write no second shift, before=%d after=%d", shiftsBefore, shifts)
+	}
+	if outbox := countAPIRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected duplicate open to write no second outbox row, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countAPIRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected duplicate open to write no second local event, before=%d after=%d", eventsBefore, events)
+	}
+	if outbox := countAPIOutboxByType(t, f, "ShiftOpened"); outbox != openedOutboxBefore {
+		t.Fatalf("expected no extra ShiftOpened outbox rows, before=%d after=%d", openedOutboxBefore, outbox)
+	}
+	if events := countAPILocalEventsByType(t, f, "ShiftOpened"); events != openedEventsBefore {
+		t.Fatalf("expected no extra ShiftOpened local events, before=%d after=%d", openedEventsBefore, events)
+	}
+}
+
+func TestEmployeeShiftCloseAPIRequiresClosePermissionWithoutSideEffects(t *testing.T) {
+	f := newAPIFixture(t)
+	shift, err := f.service.OpenShift(f.ctx, app.OpenShiftCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.useKitchenOperator(t)
+	outboxBefore := countAPIRows(t, f, "pos_sync_outbox")
+	eventsBefore := countAPIRows(t, f, "local_event_log")
+	closedOutboxBefore := countAPIOutboxByType(t, f, "ShiftClosed")
+	closedEventsBefore := countAPILocalEventsByType(t, f, "ShiftClosed")
+
+	body := `{"command_id":"cmd-api-shift-close-forbidden","closed_by_employee_id":"` + f.employee.ID + `"}`
+	rr := f.postJSON(t, "/api/v1/employee-shifts/"+shift.ID+"/close", body)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without shift close permission, got %d: %s", rr.Code, rr.Body.String())
+	}
+	errBody := decodeAPIResponse[httpx.ErrorResponse](t, rr)
+	if errBody.Error.Code != "PERMISSION_DENIED" || errBody.Error.MessageKey != "errors.permission" {
+		t.Fatalf("expected permission error contract, got %+v", errBody.Error)
+	}
+	if openRows := countAPIRowsWhere(t, f, "shifts", "id = ? AND status = 'open'", shift.ID); openRows != 1 {
+		t.Fatalf("expected shift to remain open, got %d open rows", openRows)
+	}
+	if outbox := countAPIRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected forbidden close to write no outbox rows, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countAPIRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected forbidden close to write no local events, before=%d after=%d", eventsBefore, events)
+	}
+	if outbox := countAPIOutboxByType(t, f, "ShiftClosed"); outbox != closedOutboxBefore {
+		t.Fatalf("expected no ShiftClosed outbox rows, before=%d after=%d", closedOutboxBefore, outbox)
+	}
+	if events := countAPILocalEventsByType(t, f, "ShiftClosed"); events != closedEventsBefore {
+		t.Fatalf("expected no ShiftClosed local events, before=%d after=%d", closedEventsBefore, events)
+	}
+}
+
+func TestEmployeeShiftCloseAPIRejectsOpenCashSessionWithoutSideEffects(t *testing.T) {
+	f := newAPIFixture(t)
+	shift, err := f.service.OpenShift(f.ctx, app.OpenShiftCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.openCashSession(t)
+	outboxBefore := countAPIRows(t, f, "pos_sync_outbox")
+	eventsBefore := countAPIRows(t, f, "local_event_log")
+	closedOutboxBefore := countAPIOutboxByType(t, f, "ShiftClosed")
+	closedEventsBefore := countAPILocalEventsByType(t, f, "ShiftClosed")
+
+	body := `{"command_id":"cmd-api-shift-close-open-cash","closed_by_employee_id":"` + f.employee.ID + `"}`
+	rr := f.postJSON(t, "/api/v1/employee-shifts/"+shift.ID+"/close", body)
+	assertSafeConflictAPIError(t, rr, "открытая кассовая смена")
+	if openRows := countAPIRowsWhere(t, f, "shifts", "id = ? AND status = 'open'", shift.ID); openRows != 1 {
+		t.Fatalf("expected shift to remain open, got %d open rows", openRows)
+	}
+	if outbox := countAPIRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected cash-session conflict to write no outbox rows, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countAPIRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected cash-session conflict to write no local events, before=%d after=%d", eventsBefore, events)
+	}
+	if outbox := countAPIOutboxByType(t, f, "ShiftClosed"); outbox != closedOutboxBefore {
+		t.Fatalf("expected no ShiftClosed outbox rows, before=%d after=%d", closedOutboxBefore, outbox)
+	}
+	if events := countAPILocalEventsByType(t, f, "ShiftClosed"); events != closedEventsBefore {
+		t.Fatalf("expected no ShiftClosed local events, before=%d after=%d", closedEventsBefore, events)
+	}
+}
+
+func TestEmployeeShiftCloseAPIRejectsEdgeActorMismatchWithoutSideEffects(t *testing.T) {
+	f := newAPIFixture(t)
+	shift, err := f.service.OpenShift(f.ctx, app.OpenShiftCommand{
+		CommandMeta:        f.edgeMeta(),
+		RestaurantID:       f.restaurant.ID,
+		OpenedByEmployeeID: f.employee.ID,
+		OpeningCashAmount:  0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.useManagerOperator(t)
+	outboxBefore := countAPIRows(t, f, "pos_sync_outbox")
+	eventsBefore := countAPIRows(t, f, "local_event_log")
+	closedOutboxBefore := countAPIOutboxByType(t, f, "ShiftClosed")
+	closedEventsBefore := countAPILocalEventsByType(t, f, "ShiftClosed")
+
+	body := `{"command_id":"cmd-api-shift-close-actor-mismatch","closed_by_employee_id":"` + f.employee.ID + `"}`
+	rr := f.postJSON(t, "/api/v1/employee-shifts/"+shift.ID+"/close", body)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for shift close actor mismatch, got %d: %s", rr.Code, rr.Body.String())
+	}
+	errBody := decodeAPIResponse[httpx.ErrorResponse](t, rr)
+	if errBody.Error.Code != "FORBIDDEN" || errBody.Error.MessageKey != "errors.permission" {
+		t.Fatalf("expected forbidden error contract, got %+v", errBody.Error)
+	}
+	if openRows := countAPIRowsWhere(t, f, "shifts", "id = ? AND status = 'open'", shift.ID); openRows != 1 {
+		t.Fatalf("expected shift to remain open, got %d open rows", openRows)
+	}
+	if outbox := countAPIRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
+		t.Fatalf("expected actor mismatch to write no outbox rows, before=%d after=%d", outboxBefore, outbox)
+	}
+	if events := countAPIRows(t, f, "local_event_log"); events != eventsBefore {
+		t.Fatalf("expected actor mismatch to write no local events, before=%d after=%d", eventsBefore, events)
+	}
+	if outbox := countAPIOutboxByType(t, f, "ShiftClosed"); outbox != closedOutboxBefore {
+		t.Fatalf("expected no ShiftClosed outbox rows, before=%d after=%d", closedOutboxBefore, outbox)
+	}
+	if events := countAPILocalEventsByType(t, f, "ShiftClosed"); events != closedEventsBefore {
+		t.Fatalf("expected no ShiftClosed local events, before=%d after=%d", closedEventsBefore, events)
 	}
 }
 
