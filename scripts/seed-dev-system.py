@@ -127,11 +127,6 @@ PERMISSIONS = {
         "pos.sync.view",
         "pos.sync.retry_failed",
     ],
-    "kitchen": [
-        "pos.employee_shift.view_current",
-        "pos.kitchen.view",
-        "pos.kitchen.status.change",
-    ],
     "support_admin": [
         "pos.sync.view",
         "pos.sync.retry_failed",
@@ -239,7 +234,6 @@ def build_seed_dataset(suffix):
             {"ref": "senior_cashier", "name": "Senior Cashier", "profile": "senior_cashier"},
             {"ref": "waiter", "name": "Waiter", "profile": "waiter"},
             {"ref": "manager", "name": "Manager", "profile": "manager"},
-            {"ref": "kitchen", "name": "Kitchen Display", "profile": "kitchen"},
             {"ref": "support", "name": "Support Admin", "profile": "support_admin"},
         ],
         "employees": [
@@ -247,7 +241,6 @@ def build_seed_dataset(suffix):
             {"role_ref": "manager", "name": "Demo Manager", "pin_name": "manager_pin", "pin": "2222"},
             {"role_ref": "waiter", "name": "Demo Waiter", "pin_name": "waiter_pin", "pin": "3333"},
             {"role_ref": "senior_cashier", "name": "Demo Senior Cashier", "pin_name": "senior_cashier_pin", "pin": "4444"},
-            {"role_ref": "kitchen", "name": "Demo Kitchen", "pin_name": "kitchen_pin", "pin": "5555"},
             {"role_ref": "support", "name": "Demo Support", "pin_name": "support_pin", "pin": "9999"},
         ],
         "catalog_folders": [
@@ -762,7 +755,15 @@ def run_minimal_flow_smoke(
         expected_status=(201,),
         headers=waiter_headers,
     )
-    kitchen_headers = login_pos(pos_client, node_device_id, client_device_id, pins["kitchen_pin"])
+    kitchen_pin = (
+        pins.get("kitchen_pin")
+        or pins.get("manager_pin")
+        or pins.get("senior_cashier_pin")
+        or pins.get("cashier_pin")
+    )
+    if not kitchen_pin:
+        raise RuntimeError("minimal flow requires kitchen_pin or manager/senior_cashier/cashier pin for kitchen actions")
+    kitchen_headers = login_pos(pos_client, node_device_id, client_device_id, kitchen_pin)
     kitchen_ticket = mark_kitchen_ticket_served(pos_client, line["id"], kitchen_headers)
     item_served = wait_for_cloud_event(
         cloud_client,

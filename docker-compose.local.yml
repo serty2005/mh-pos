@@ -22,14 +22,14 @@ services:
     environment:
       CLICKHOUSE_DB: mh_pos_cloud
       CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_PASSWORD: clickhouse
     ports:
       - "${CLOUD_CLICKHOUSE_HOST_PORT:-8123}:8123"
       - "${CLOUD_CLICKHOUSE_NATIVE_HOST_PORT:-9000}:9000"
     volumes:
       - cloud_clickhouse_data:/var/lib/clickhouse
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8123/ping | grep -q Ok"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping | grep -q Ok"]
       interval: 5s
       timeout: 3s
       retries: 20
