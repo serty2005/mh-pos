@@ -390,7 +390,7 @@ Recipes/inventory:
   - inventory count / `InventoryCountCaptured` требует `pos.kitchen.stock.inventory_count`;
   - stock write-off / `StockWriteOffCaptured` требует `pos.kitchen.stock.write_off`;
   - production completed / `ProductionCompleted` требует `pos.kitchen.production.complete`;
-  - replay того же `command_id` для того же event type возвращает successful replay без второго outbox/local event;
+  - replay того же `command_id` для того же event type возвращает успешный replay с сохраненными `id`, `warehouse_id`, `event_type`, `replayed = true` без второго outbox/local event;
   - POS Edge не создает stock documents/moves/balances/costing rows.
 - Kitchen proposal API остается `запланировано далее`:
   - catalog item suggestions / `CatalogItemChangeSuggested`;

@@ -61,6 +61,7 @@ Internal cause пишется только в structured backend log.
 - реализовано сейчас: `POST /api/v1/prechecks/{id}/payments` возвращает `409 CONFLICT` / `errors.conflict` для state conflicts, включая отсутствие открытой кассовой смены, несовпадение ресторана кассовой смены с заказом, stale/inactive precheck, overpayment и уже созданный final check. Backend не возвращает raw internal reason в response; UI обязан показать безопасное бизнес-сообщение, обновить состояние заказа/precheck/check/current cash session и не повторять оплату автоматически.
 - реализовано сейчас: add/increase order line commands возвращают `409 SALE_STOP_LIST_CONFLICT` / `errors.stopListConflict`, если продаваемая позиция или обязательный recipe component находится в active локальном stop-list. Backend не возвращает stock balance, raw SQL или internal query details.
 - реализовано сейчас: kitchen stock input routes возвращают stable kitchen validation codes для отсутствующего склада, receipt line item/total, пустой ревизии, отсутствующей причины списания и production без active recipe. POS Edge не возвращает raw Go/SQL errors и не создает local stock documents при отказе.
+- реализовано сейчас: kitchen stock replay того же `command_id` и event type не возвращает `DUPLICATE_COMMAND`; backend возвращает сохраненный успешный replay без повторной записи событий. `DUPLICATE_COMMAND` остается для reuse того же `command_id` под другую команду/event type.
 
 ## Поведение логирования
 

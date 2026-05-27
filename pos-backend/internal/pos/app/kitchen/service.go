@@ -2,6 +2,7 @@ package kitchen
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -319,8 +320,8 @@ func (s *Service) CaptureStockReceipt(ctx context.Context, cmd CaptureStockRecei
 		if err != nil {
 			return err
 		}
-		if _, ok, err := s.replayedStockCommand(ctx, cmd.CommandID, "StockReceiptCaptured"); err != nil || ok {
-			out = StockCommandResult{ID: strings.TrimSpace(cmd.ReceiptID), EventType: "StockReceiptCaptured", Replayed: ok}
+		if replayed, ok, err := s.replayedStockCommand(ctx, cmd.CommandID, "StockReceiptCaptured"); err != nil || ok {
+			out = replayed
 			return err
 		}
 		warehouseID, err := s.resolveWarehouseID(ctx, operator.Employee.RestaurantID, cmd.WarehouseID)
@@ -351,8 +352,8 @@ func (s *Service) CaptureInventoryCount(ctx context.Context, cmd CaptureInventor
 		if err != nil {
 			return err
 		}
-		if _, ok, err := s.replayedStockCommand(ctx, cmd.CommandID, "InventoryCountCaptured"); err != nil || ok {
-			out = StockCommandResult{ID: strings.TrimSpace(cmd.CountID), EventType: "InventoryCountCaptured", Replayed: ok}
+		if replayed, ok, err := s.replayedStockCommand(ctx, cmd.CommandID, "InventoryCountCaptured"); err != nil || ok {
+			out = replayed
 			return err
 		}
 		warehouseID, err := s.resolveWarehouseID(ctx, operator.Employee.RestaurantID, cmd.WarehouseID)
@@ -383,8 +384,8 @@ func (s *Service) CaptureStockWriteOff(ctx context.Context, cmd CaptureStockWrit
 		if err != nil {
 			return err
 		}
-		if _, ok, err := s.replayedStockCommand(ctx, cmd.CommandID, "StockWriteOffCaptured"); err != nil || ok {
-			out = StockCommandResult{ID: strings.TrimSpace(cmd.WriteOffID), EventType: "StockWriteOffCaptured", Replayed: ok}
+		if replayed, ok, err := s.replayedStockCommand(ctx, cmd.CommandID, "StockWriteOffCaptured"); err != nil || ok {
+			out = replayed
 			return err
 		}
 		warehouseID, err := s.resolveWarehouseID(ctx, operator.Employee.RestaurantID, cmd.WarehouseID)
@@ -415,8 +416,8 @@ func (s *Service) CompleteProduction(ctx context.Context, cmd CompleteProduction
 		if err != nil {
 			return err
 		}
-		if _, ok, err := s.replayedStockCommand(ctx, cmd.CommandID, "ProductionCompleted"); err != nil || ok {
-			out = StockCommandResult{ID: strings.TrimSpace(cmd.ProductionID), EventType: "ProductionCompleted", Replayed: ok}
+		if replayed, ok, err := s.replayedStockCommand(ctx, cmd.CommandID, "ProductionCompleted"); err != nil || ok {
+			out = replayed
 			return err
 		}
 		warehouseID, err := s.resolveWarehouseID(ctx, operator.Employee.RestaurantID, cmd.WarehouseID)
@@ -436,22 +437,41 @@ func (s *Service) CompleteProduction(ctx context.Context, cmd CompleteProduction
 	return out, err
 }
 
-func (s *Service) replayedStockCommand(ctx context.Context, commandID, eventType string) (*domain.OutboxMessage, bool, error) {
+func (s *Service) replayedStockCommand(ctx context.Context, commandID, eventType string) (StockCommandResult, bool, error) {
 	commandID = strings.TrimSpace(commandID)
 	if commandID == "" {
-		return nil, false, fmt.Errorf("%w: command_id is required", domain.ErrInvalid)
+		return StockCommandResult{}, false, fmt.Errorf("%w: command_id is required", domain.ErrInvalid)
 	}
 	msg, err := s.repo.GetOutboxByCommandID(ctx, commandID)
 	if errors.Is(err, domain.ErrNotFound) {
-		return nil, false, nil
+		return StockCommandResult{}, false, nil
 	}
 	if err != nil {
-		return nil, false, err
+		return StockCommandResult{}, false, err
 	}
 	if msg.CommandType != eventType {
-		return nil, false, fmt.Errorf("%w: %s", domain.ErrDuplicateCommand, commandID)
+		return StockCommandResult{}, false, fmt.Errorf("%w: %s", domain.ErrDuplicateCommand, commandID)
 	}
-	return msg, true, nil
+	return replayedStockCommandResult(msg), true, nil
+}
+
+func replayedStockCommandResult(msg *domain.OutboxMessage) StockCommandResult {
+	out := StockCommandResult{
+		ID:        strings.TrimSpace(msg.AggregateID),
+		EventType: strings.TrimSpace(msg.CommandType),
+		Replayed:  true,
+	}
+	var envelope struct {
+		Payload struct {
+			Data map[string]any `json:"data"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal([]byte(msg.PayloadJSON), &envelope); err == nil {
+		if warehouseID, ok := envelope.Payload.Data["warehouse_id"].(string); ok {
+			out.WarehouseID = strings.TrimSpace(warehouseID)
+		}
+	}
+	return out
 }
 
 func (s *Service) resolveWarehouseID(ctx context.Context, restaurantID, requestedWarehouseID string) (string, error) {

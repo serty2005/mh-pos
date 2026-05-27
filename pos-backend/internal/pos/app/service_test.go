@@ -7547,7 +7547,7 @@ func TestKitchenStockCommandsWriteOutboxOnlyAndReplayByCommandID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !replayedReceipt.Replayed {
+	if !replayedReceipt.Replayed || replayedReceipt.ID != receipt.ID || replayedReceipt.WarehouseID != receipt.WarehouseID || replayedReceipt.EventType != receipt.EventType {
 		t.Fatalf("expected receipt replay, got %+v", replayedReceipt)
 	}
 	if outbox := countOutboxByType(t, f, "StockReceiptCaptured"); outbox != 1 {

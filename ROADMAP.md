@@ -119,7 +119,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - выполнено: worker пишет `stock_ledger` with `unit_cost_minor`, `total_cost_minor`, `costing_status` для нормализованных item payloads; retro recalculation jobs остаются следующим шагом;
   - выполнено: Cloud Inventory Worker дедуплицирует `ItemServed` replay и `CheckClosed` replay, а `CheckClosed` после обработанного `ItemServed` списывает только положительную unserved delta по `order_line_id`;
   - выполнено: POS Edge пишет `CheckClosed` outbox event из immutable `check.Snapshot` при final check после полной оплаты;
-  - выполнено: POS Edge kitchen stock input routes пишут `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` в `local_event_log`/`pos_sync_outbox` без POS-side stock documents/moves/balances/costing;
+  - выполнено: POS Edge kitchen stock input routes пишут `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` в `local_event_log`/`pos_sync_outbox` без POS-side stock documents/moves/balances/costing; replay того же stock `command_id` возвращает сохраненный результат без повторной записи событий;
   - выполнено: POS Edge использует stop-list как единственный механизм блокировки продаж при add/increase order line; stock balance остается аналитическим и может быть отрицательным;
   - выполнено: минимальный HTTP-only smoke `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud recipes/stop-list publication -> Edge sync -> waiter order -> KDS served -> cashier final check -> `ItemServed`/`CheckClosed` -> Cloud `stock_ledger`.
 - Cancellation/refund/reprint hardening:

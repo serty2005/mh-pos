@@ -35,6 +35,7 @@
 - POS Edge уже применяет `warehouse_reference` из `inventory_reference` и использует default warehouse для kitchen stock command validation.
 - POS Edge уже предоставляет `POST /api/v1/kitchen/stock-receipts`, `POST /api/v1/kitchen/inventory-counts`, `POST /api/v1/kitchen/stock-write-offs`, `POST /api/v1/kitchen/productions`.
 - Эти kitchen stock routes пишут только immutable local event/outbox envelopes `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`; POS Edge не создает `stock_documents`, `stock_moves`, `stock_ledger`, `stock_balances`.
+- Replay того же stock `command_id` для того же event type возвращает сохраненный `id`, `warehouse_id`, `event_type` и `replayed = true` без второго `local_event_log`/outbox event.
 - `pos-ui-g` уже имеет отдельный terminal mode `kds`, но сейчас он показывает placeholder вместо backend-backed kitchen runtime.
 
 Не реализовано сейчас:
@@ -140,7 +141,7 @@ Edge не применяет recipe proposal локально. До Cloud approv
 
 ## POS Edge Backend API
 
-Все mutating routes требуют `command_id`, operator session, `node_device_id`, `client_device_id`, `session_id`. Kitchen status actions сначала проверяют replay в `kitchen_ticket_events`: повтор того же `command_id` для того же ticket/action возвращает успешный идемпотентный ответ без новых событий; reuse `command_id` для другой команды остается safe conflict через общий outbox/idempotency guard.
+Все mutating routes требуют `command_id`, operator session, `node_device_id`, `client_device_id`, `session_id`. Kitchen status actions сначала проверяют replay в `kitchen_ticket_events`: повтор того же `command_id` для того же ticket/action возвращает успешный идемпотентный ответ без новых событий; reuse `command_id` для другой команды остается safe conflict через общий outbox/idempotency guard. Kitchen stock commands проверяют replay через `pos_sync_outbox`: повтор того же `command_id` и event type возвращает сохраненный результат без повторной записи local/outbox events.
 
 ### Kitchen Queue
 
