@@ -53,7 +53,8 @@
 Проверки:
 cd pos-backend && go mod tidy && go test ./...
 ```
-
+**Итерация 2: POS Edge Kitchen Stock Events**
+выполнено
 **Итерация 3: POS Edge Catalog And Recipe Proposals**
 
 ```text
