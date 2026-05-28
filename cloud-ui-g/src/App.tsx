@@ -4,65 +4,60 @@ import MenuPanel from './components/MenuPanel';
 import Sidebar from './components/Sidebar';
 import StaffPanel from './components/StaffPanel';
 import SyncPanel from './components/SyncPanel';
-import { t } from './i18n';
-import { restaurantsSchema, type ProbeResult } from './types';
+import { apiBase } from './shared/api/client';
+import { listRestaurants } from './shared/api/endpoints';
+import { useI18n } from './shared/i18n/I18nProvider';
+import EmptyState from './shared/ui/EmptyState';
+import LoadingSkeleton from './shared/ui/LoadingSkeleton';
+import SafeErrorBanner from './shared/ui/SafeErrorBanner';
+import { formatCount, formatIsoDateTime } from './shared/utils/format';
 
-const apiBase = (import.meta.env.VITE_CLOUD_API_BASE ?? 'http://localhost:8090/api/v1').replace(/\/$/, '');
+type ProbeStatus = 'loading' | 'ready' | 'blocked';
+
+type ProbeState = {
+  status: ProbeStatus;
+  checkedAt: string;
+  route: string;
+  restaurantCount: number;
+  error: unknown;
+};
+
 const probeRoute = '/restaurants';
 
 function nowIso() {
   return new Date().toISOString();
 }
 
-function blockedResult(errorMessageKey: ProbeResult['errorMessageKey']): ProbeResult {
-  return {
-    status: 'blocked',
-    checkedAt: nowIso(),
-    route: probeRoute,
-    restaurantCount: 0,
-    errorMessageKey,
-  };
-}
-
 export default function App() {
-  const [probe, setProbe] = useState<ProbeResult>({
+  const { t } = useI18n();
+  const [probe, setProbe] = useState<ProbeState>({
     status: 'loading',
     checkedAt: nowIso(),
     route: probeRoute,
     restaurantCount: 0,
+    error: null,
   });
 
   const checkRoute = useCallback(async () => {
-    setProbe((prev) => ({ ...prev, status: 'loading', checkedAt: nowIso(), errorMessageKey: undefined }));
+    setProbe((prev) => ({ ...prev, status: 'loading', checkedAt: nowIso(), error: null }));
 
     try {
-      const response = await fetch(`${apiBase}${probeRoute}`, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        setProbe(blockedResult('errors.unavailable'));
-        return;
-      }
-
-      const payload: unknown = await response.json();
-      const restaurants = restaurantsSchema.safeParse(payload);
-      if (!restaurants.success) {
-        setProbe(blockedResult('errors.invalidResponse'));
-        return;
-      }
-
+      const restaurants = await listRestaurants();
       setProbe({
         status: 'ready',
         checkedAt: nowIso(),
         route: probeRoute,
-        restaurantCount: restaurants.data.length,
+        restaurantCount: restaurants.length,
+        error: null,
       });
-    } catch {
-      setProbe(blockedResult('errors.unavailable'));
+    } catch (error) {
+      setProbe({
+        status: 'blocked',
+        checkedAt: nowIso(),
+        route: probeRoute,
+        restaurantCount: 0,
+        error,
+      });
     }
   }, []);
 
@@ -94,9 +89,14 @@ export default function App() {
           <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
             <p className="font-medium text-slate-900">{t('readiness.title')}</p>
             <p className="mt-1 text-slate-600">{t('readiness.description')}</p>
-            <p className="mt-3">{t('readiness.lastCheck')}: {probe.checkedAt}</p>
-            <p className="mt-1">restaurants: {probe.restaurantCount}</p>
-            {probe.errorMessageKey ? <p className="mt-1 text-rose-600">{t(probe.errorMessageKey)}</p> : null}
+            <p className="mt-3">
+              {t('readiness.lastCheck')}: {formatIsoDateTime(probe.checkedAt)}
+            </p>
+            <p className="mt-1">restaurants: {formatCount(probe.restaurantCount)}</p>
+
+            {probe.status === 'loading' ? <div className="mt-3"><LoadingSkeleton /></div> : null}
+            {probe.error ? <div className="mt-3"><SafeErrorBanner error={probe.error} /></div> : null}
+
             <button
               type="button"
               onClick={() => void checkRoute()}
@@ -113,9 +113,8 @@ export default function App() {
             <SyncPanel title={t('sections.sync')} description={t('sections.blocked')} />
           </div>
 
-          <div className="mt-6 rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
-            <p className="font-medium text-slate-900">{t('readiness.emptyTitle')}</p>
-            <p className="mt-1">{t('readiness.emptyBody')}</p>
+          <div className="mt-6">
+            <EmptyState title={t('readiness.emptyTitle')} description={t('readiness.emptyBody')} />
           </div>
         </section>
       </div>
