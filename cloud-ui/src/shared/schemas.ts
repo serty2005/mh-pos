@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const lifecycleStatusSchema = z.enum(['draft', 'published', 'archived']);
 export const restaurantStatusSchema = z.enum(['active', 'archived']);
 export const employeeStatusSchema = z.enum(['active', 'suspended', 'archived']);
+export const suggestionStatusSchema = z.enum(['pending', 'approved', 'rejected', 'changes_requested']);
 
 export const restaurantSchema = z.object({
   id: z.string(),
@@ -300,6 +301,50 @@ export const edgeEventSchema = z.object({
   raw_payload_sha256_hex: z.string(),
 });
 
+export const catalogSuggestionSchema = z.object({
+  id: z.string(),
+  suggestion_id: z.string(),
+  restaurant_id: z.string(),
+  catalog_item_id: z.string().optional().default(''),
+  proposal_group_id: z.string().optional().default(''),
+  action: z.string(),
+  reason: z.string().optional().default(''),
+  status: suggestionStatusSchema,
+  review_comment: z.string().optional().default(''),
+  reviewed_by_employee_id: z.string().optional().default(''),
+  reviewed_at: z.string().optional(),
+  applied_catalog_item_id: z.string().optional().default(''),
+  source_event_id: z.string().optional().default(''),
+  suggested_at: z.string(),
+  cloud_received_at: z.string(),
+  payload_json: z.unknown().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const recipeSuggestionSchema = z.object({
+  id: z.string(),
+  suggestion_id: z.string(),
+  restaurant_id: z.string(),
+  recipe_version_id: z.string().optional().default(''),
+  owner_catalog_item_id: z.string().optional().default(''),
+  owner_catalog_suggestion_id: z.string().optional().default(''),
+  proposal_group_id: z.string().optional().default(''),
+  action: z.string(),
+  reason: z.string().optional().default(''),
+  prep_time_delta_minutes: z.number().optional().default(0),
+  status: suggestionStatusSchema,
+  review_comment: z.string().optional().default(''),
+  reviewed_by_employee_id: z.string().optional().default(''),
+  reviewed_at: z.string().optional(),
+  source_event_id: z.string().optional().default(''),
+  suggested_at: z.string(),
+  cloud_received_at: z.string(),
+  payload_json: z.unknown().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
 export const publicationSummarySchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
@@ -331,6 +376,8 @@ export type RestaurantTable = z.infer<typeof tableSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;
 export type Category = z.infer<typeof categorySchema>;
 export type EdgeEvent = z.infer<typeof edgeEventSchema>;
+export type CatalogSuggestion = z.infer<typeof catalogSuggestionSchema>;
+export type RecipeSuggestion = z.infer<typeof recipeSuggestionSchema>;
 export type PublicationSummary = z.infer<typeof publicationSummarySchema>;
 export type UnassignedEdgeNode = z.infer<typeof unassignedEdgeNodeSchema>;
 export type AssignDeviceResult = z.infer<typeof assignDeviceResultSchema>;

@@ -106,7 +106,8 @@ Recipes/Inventory:
 - реализовано сейчас: Edge emits immutable business events, Cloud Inventory Worker computes stock documents and ledger for normalized item payloads;
 - реализовано сейчас: POS Edge enforces local stop-list sale blocking from `recipes`/`inventory_reference` read models without Edge stock documents/moves;
 - реализовано сейчас: `CheckClosed` является финальным batch trigger; POS Edge KDS `serve` генерирует `ItemServed`, а Cloud receiver/worker принимают его и дедуплицируют с `CheckClosed`;
-- запланировано до полного пилота: `ProductionCompleted`, chef stock receipt, catalog proposals and recipe change proposals feed Cloud Inventory Worker/review queues; auto-production split expands unavailable semi-finished quantity to raw ingredients;
+- реализовано сейчас: `ProductionCompleted`, chef stock receipt, catalog proposals and recipe change proposals feed Cloud Inventory Worker/review queues;
+- запланировано до полного пилота: auto-production split expands unavailable semi-finished quantity to raw ingredients;
 - реализовано сейчас: `stock_ledger.unit_cost_minor` stores event-time fallback cost; last-known cost and DAG-based retro recalculation запланированы до полного пилота;
 - UOM остается string-based; separate UOM reference with `code`, `name`, `short_name` and translations запланирована далее только при расширении inventory runtime.
 

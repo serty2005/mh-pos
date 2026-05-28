@@ -295,7 +295,7 @@ Boundary rules:
 - Modifier на Edge остается ценовой опцией `modifier_option_id`; Cloud-only `ModifierOption.linked_catalog_item_id` приводит к отдельному списанию только в Inventory Worker.
 - `CheckClosed` является финальным batch trigger для заказа; Worker делает delta consumption после сверки с уже обработанными KDS событиями `ItemServed`.
 - `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted` и `ItemServed` являются Edge/KDS input events, а не Edge stock documents.
-- `KitchenTicketStatusChanged` является operational-only Edge/KDS event без Cloud Inventory Worker проводки. `CatalogItemChangeSuggested` и `RecipeChangeSuggested` реализованы сейчас на POS Edge как proposal events с локальным статусом `pending_sync`; Cloud review/apply и Edge-side `StopListUpdated` остаются `запланировано далее` для review/proposal/audit flows.
+- `KitchenTicketStatusChanged` является operational-only Edge/KDS event без Cloud Inventory Worker проводки. `CatalogItemChangeSuggested` и `RecipeChangeSuggested` реализованы сейчас на POS Edge как proposal events с локальным статусом `pending_sync`; Cloud review/apply реализован сейчас через manager approve/reject/request-changes routes, а Edge-side `StopListUpdated` остается `запланировано далее` для stop-list audit flow.
 - `RefundRecorded` и `CancellationRecorded` должны передавать operation-level `inventory_disposition`: `return_to_stock`, `write_off_waste`, `manual_review` или `no_stock_effect`. Текущий payload не содержит отдельного `items[].inventory_disposition`.
 
 Inventory and costing logic:
@@ -316,7 +316,6 @@ Inventory and costing logic:
 
 - Edge manager/KDS stop-list edit flow и conflict policy для двустороннего Edge <-> Cloud stop-list sync;
 - Cloud-side `StockWriteOffCaptured` receiver/worker реализовано сейчас;
-- Cloud review/apply для catalog proposals и recipe change proposals;
 - kitchen stop-list edit и stop-list conflict policy;
 - ClickHouse `olap_stock_moves` projection;
 - recipe expansion, semi-finished auto-production split и retro costing DAG.

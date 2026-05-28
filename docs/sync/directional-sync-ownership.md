@@ -15,8 +15,8 @@
 | Catalog folder/tag | Cloud | No | Cloud -> Edge via `catalog` | реализовано сейчас |
 | Modifier group/option | Cloud | No | Cloud -> Edge via `catalog` | реализовано сейчас |
 | Recipe reference | Cloud | Edge read-only | Cloud -> Edge `recipes` | реализовано сейчас: `recipe_versions`/`recipe_lines` ingest для KDS UI и stop-list checks |
-| Recipe change proposal | Cloud review queue | Edge creates suggestion only | Edge -> Cloud `RecipeChangeSuggested` | реализовано сейчас на POS Edge; Cloud review/apply запланировано далее |
-| Catalog change proposal | Cloud review queue | Edge creates suggestion only | Edge -> Cloud `CatalogItemChangeSuggested` | реализовано сейчас на POS Edge; Cloud review/apply запланировано далее |
+| Recipe change proposal | Cloud review queue | Edge creates suggestion only | Edge -> Cloud `RecipeChangeSuggested` | реализовано сейчас на POS Edge и Cloud review/apply |
+| Catalog change proposal | Cloud review queue | Edge creates suggestion only | Edge -> Cloud `CatalogItemChangeSuggested` | реализовано сейчас на POS Edge и Cloud review/apply |
 | Stop-list | Cloud + Edge kitchen/manager input | Edge runtime reads local overlay; Edge edit flow запланирован | Cloud -> Edge `inventory_reference` сейчас; Edge -> Cloud `StopListUpdated` запланировано | реализовано сейчас: sale blocking по local `stop_lists`; conflict policy запланирован далее |
 | Employee shift | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Cash session/drawer event | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |

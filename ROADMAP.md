@@ -164,8 +164,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - waiter role видит floor/menu/order/precheck actions и не получает payment/refund/cash drawer controls без payment permissions;
   - Playwright mobile viewport spec добавлен для создания заказа, модификаторов, выпуска precheck и отсутствия payment/refund/cash drawer controls; локальный запуск требует demo bootstrap.
 - Manager pilot operations:
-  - выполнено: Cloud UI содержит stop-list/recipe authoring и readiness-only surfaces для proposal review, inventory operations/costing и OLAP exports без CRUD-муляжа;
-  - Cloud UI должен довести readiness-only surfaces до runtime только после появления подтвержденных Cloud backend routes;
+  - выполнено: Cloud UI содержит stop-list/recipe authoring и route-backed manager review surfaces для `CatalogItemChangeSuggested`/`RecipeChangeSuggested`: списки catalog/recipe suggestions, detail/diff view, approve/reject/request-changes, linked new dish + recipe group display, safe error handling и publication/readiness signal после approve;
+  - Cloud UI должен довести readiness-only surfaces для inventory operations/costing и OLAP exports до runtime только после появления подтвержденных Cloud backend routes;
   - launch readiness учитывает restaurant, staff, floor, catalog, menu, modifiers, pricing, stop-list review, publication и known Edge node.
 - Full pilot smoke:
   - выполнено сейчас: минимальный runtime smoke без ClickHouse проходит Cloud setup -> seed publication -> Edge sync -> waiter order/precheck -> KDS served -> cashier payment/final check -> Cloud inventory ledger;

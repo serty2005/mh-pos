@@ -198,6 +198,13 @@ p {
   align-items: start;
 }
 
+.proposal-review-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(260px, 0.8fr) minmax(360px, 1.15fr);
+  gap: 12px;
+  align-items: start;
+}
+
 .cloud-panel {
   min-width: 0;
   display: grid;
@@ -309,9 +316,25 @@ p {
 }
 
 .cloud-status.archived,
-.cloud-status.suspended {
+.cloud-status.suspended,
+.cloud-status.rejected {
   color: #7a2e20;
   background: #f9e7df;
+}
+
+.cloud-status.pending {
+  color: #705011;
+  background: #fff4d6;
+}
+
+.cloud-status.approved {
+  color: #195544;
+  background: #e6f2ec;
+}
+
+.cloud-status.changes_requested {
+  color: #5a4634;
+  background: #efe8dd;
 }
 
 .cloud-form-actions,
@@ -621,6 +644,146 @@ button:focus-visible,
   gap: 10px;
 }
 
+.proposal-list-panel {
+  min-height: 520px;
+  align-content: start;
+}
+
+.proposal-detail-panel {
+  position: sticky;
+  top: 72px;
+  align-content: start;
+}
+
+.proposal-list,
+.recipe-change-list,
+.proposal-review-form,
+.proposal-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.proposal-row {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  min-height: 96px;
+  padding: 12px;
+  color: #344039;
+  background: #fbfcfa;
+  border: 1px solid #e4e8e5;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.proposal-row:hover,
+.proposal-row.selected {
+  border-color: #8aa898;
+  background: #f2f6f1;
+}
+
+.proposal-row strong {
+  color: #202124;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.proposal-row small,
+.proposal-group-chip {
+  color: #66706b;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.proposal-group-chip {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 8px;
+  background: #edf1ee;
+  border-radius: 8px;
+}
+
+.proposal-linked-group {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  color: #344039;
+  background: #f7f8f5;
+  border: 1px solid #e4e8e5;
+  border-radius: 8px;
+}
+
+.proposal-linked-group span {
+  color: #66706b;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.proposal-facts,
+.proposal-diff-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.proposal-facts > div,
+.proposal-diff-grid > div,
+.recipe-change-row {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  background: #fbfcfa;
+  border: 1px solid #e4e8e5;
+  border-radius: 8px;
+}
+
+.proposal-facts dt,
+.proposal-diff-grid span,
+.recipe-change-row small {
+  color: #66706b;
+  font-size: 12px;
+}
+
+.proposal-facts dd,
+.proposal-diff-grid strong,
+.recipe-change-row strong {
+  margin: 0;
+  color: #202124;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  overflow-wrap: anywhere;
+}
+
+.proposal-diff {
+  display: grid;
+  gap: 10px;
+}
+
+.proposal-diff h3 {
+  margin: 0;
+  color: #202124;
+  font-size: 15px;
+}
+
+.proposal-change-action {
+  width: max-content;
+  min-height: 22px;
+  padding: 0 8px;
+  color: #40534b;
+  background: #edf1ee;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.publication-signal {
+  color: #344039;
+}
+
 .edge-event-card-list {
   display: none;
   gap: 10px;
@@ -802,11 +965,13 @@ button:focus-visible,
   .cloud-workspace,
   .cloud-publication-grid,
   .cloud-scenario-grid,
-  .cloud-edge-grid {
+  .cloud-edge-grid,
+  .proposal-review-grid {
     grid-template-columns: 1fr;
   }
 
-  .cloud-form-panel {
+  .cloud-form-panel,
+  .proposal-detail-panel {
     position: static;
   }
 }
@@ -842,7 +1007,9 @@ button:focus-visible,
   .onboarding-check,
   .permission-grid,
   .inline-action.horizontal,
-  .cloud-state-grid {
+  .cloud-state-grid,
+  .proposal-facts,
+  .proposal-diff-grid {
     grid-template-columns: 1fr;
   }
 

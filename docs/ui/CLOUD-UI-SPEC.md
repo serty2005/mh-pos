@@ -16,13 +16,13 @@
 4. Явная публикация master data package для Edge.
 5. Передача опубликованного snapshot на Edge, где далее формируются заказ и продажа.
 6. Manager-facing recipes и stop-list authoring по подтвержденным Cloud master-data routes.
-7. Readiness-only поверхности для proposal review, inventory operations/costing и OLAP exports без неподтвержденных команд.
+7. Route-backed manager review для catalog/recipe suggestions и readiness-only поверхности для inventory operations/costing и OLAP exports без неподтвержденных команд.
 
 запланировано далее:
 
 - вывести связи `catalog item -> menu item -> modifier bindings -> pricing policies` как единый сценарий подготовки продажи;
 - показывать версии опубликованного пакета и состояние доставки на Edge, когда backend подтвердит такой контракт.
-- до полного пилота превратить readiness-only manager surfaces для catalog/recipe proposal review, inventory operations, costing status, ClickHouse export readiness и OLAP API diagnostics в runtime только после появления подтвержденных Cloud backend routes;
+- до полного пилота превратить readiness-only manager surfaces для inventory operations, costing status, ClickHouse export readiness и OLAP API diagnostics в runtime только после появления подтвержденных Cloud backend routes;
 
 вне текущего объема:
 
@@ -52,7 +52,7 @@
 - pricing policies;
 - recipe items через `/api/v1/master-data/recipes/items`;
 - stop-list entries через `/api/v1/master-data/inventory/stop-list`;
-- route-backed раздел `Очередь предложений` для Cloud review workflow (`catalog-suggestions`/`recipe-suggestions`) и readiness-only разделы `Готовность склада`/`OLAP exports`;
+- route-backed раздел `Очередь предложений` для Cloud review workflow (`catalog-suggestions`/`recipe-suggestions`) со списками catalog/recipe suggestions, detail/diff view, approve/reject/request-changes actions, linked new dish + recipe group display и publication/readiness signal после approve; разделы `Готовность склада`/`OLAP exports` остаются readiness-only;
 - halls и tables;
 - menu items;
 - menu category create как command-only операция, потому что list/update routes не подтверждены;
@@ -64,9 +64,8 @@
 
 запланировано до полного пилота:
 
-- recipe editor уже имеет bounded route-backed строки recipe items; далее нужен сценарный editor версий/диффов поверх подтвержденных contracts;
-- recipe change review queue: route-backed approve/reject/request-changes для `recipe-suggestions`; расширенные diff surfaces остаются запланировано далее;
-- catalog suggestion review queue: route-backed approve/reject/request-changes для `catalog-suggestions`; duplicate hints и linked receipt line остаются запланировано далее;
+- recipe editor уже имеет bounded route-backed строки recipe items; далее нужен сценарный editor версий поверх подтвержденных contracts;
+- duplicate hints и linked receipt line для catalog suggestion review остаются запланировано далее;
 - stop-list panel уже имеет bounded route-backed rows; далее нужны conflict policy, review и publication readiness по отдельным contracts;
 - inventory operations workspace: stock receipts, inventory counts, production completion input, stock ledger/balances and costing/recalculation status;
 - ClickHouse/OLAP workspace: export health, retry/backfill controls and read-only OLAP endpoint previews;
@@ -107,6 +106,8 @@
 - command-only разделы не показывают неподтвержденную таблицу;
 - Cloud UI показывает безопасные локализованные ошибки возле активного failed step с recovery action: retry, select restaurant или open related section; message key, support code, correlation id и безопасные details выводятся без raw payload, а подозрительные `payload`/`token`/`PIN`/`SQL`/`stack` details редактируются в UI;
 - раздел входящих Edge events выводит event metadata и checksum, но не показывает raw payload, sensitive request dumps или payload-derived финансовые details;
+- раздел `Очередь предложений` не выводит raw `payload_json`: detail/diff строится только по whitelist полям catalog proposal (`kind`, `name`, `sku`, `base_unit`, `kitchen_type`, `accounting_category`) и recipe proposal changes (`action`, `from_catalog_item_id`, `to_catalog_item_id`, `quantity`, `unit_code`, `loss_percent`); PIN/token/secret/request dump не отображаются;
+- approve/reject/request-changes формы отправляют только `reviewed_by_employee_id`, optional `review_comment` и optional `published_by`; после approve UI перечитывает `publication-state`, потому что apply/publish выполняет backend;
 - UX ориентиры полного пилота зафиксированы в `docs/ui/PILOT-UX-MARKET-REVIEW.md`; business workflows не должны требовать ручного ввода UUID/raw JSON для обычного менеджерского сценария;
 - пользовательские тексты идут через `vue-i18n`.
 
@@ -117,6 +118,25 @@
 - `cloud-backend/internal/provisioning/api/router.go` для Edge-device provisioning;
 - `cloud-backend/internal/masterdata/api/router.go` для master data и публикации;
 - `cloud-backend/internal/cloudsync/api/router.go` для безопасного списка входящих Edge events.
+
+Реализовано сейчас для `Очередь предложений`:
+
+- `GET /api/v1/master-data/catalog-suggestions?restaurant_id=&status=&limit=&offset=`;
+- `GET /api/v1/master-data/recipe-suggestions?restaurant_id=&status=&limit=&offset=`;
+- `POST /api/v1/master-data/catalog-suggestions/{id}/approve|reject|request-changes`;
+- `POST /api/v1/master-data/recipe-suggestions/{id}/approve|reject|request-changes`.
+
+Review command body:
+
+```json
+{
+  "reviewed_by_employee_id": "manager-1",
+  "review_comment": "approved",
+  "published_by": "cloud-ui"
+}
+```
+
+`review_comment` и `published_by` optional; `published_by` используется backend approve flow для публикации master data. UI не вызывает неподтвержденных detail endpoints для suggestions.
 
 Для entities без подтвержденного `GET list` route UI показывает форму команды и поясняет, что list route не подтвержден.
 

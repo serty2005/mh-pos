@@ -4,6 +4,7 @@ import {
   catalogFolderSchema,
   catalogItemSchema,
   catalogItemTagSchema,
+  catalogSuggestionSchema,
   catalogTagSchema,
   categorySchema,
   employeeSchema,
@@ -16,6 +17,7 @@ import {
   modifierOptionSchema,
   pricingPolicySchema,
   recipeItemSchema,
+  recipeSuggestionSchema,
   assignDeviceResultSchema,
   assignmentStatusSchema,
   pairingCodeResultSchema,
@@ -30,6 +32,7 @@ import {
   type CatalogFolder,
   type CatalogItem,
   type CatalogItemTag,
+  type CatalogSuggestion,
   type CatalogTag,
   type Category,
   type Employee,
@@ -43,6 +46,7 @@ import {
   type PairingCodeResult,
   type PricingPolicy,
   type RecipeItem,
+  type RecipeSuggestion,
   type PublicationSummary,
   type Restaurant,
   type RestaurantTable,
@@ -63,6 +67,12 @@ export type ApiErrorOptions = {
   details?: Record<string, string>;
   correlationId?: string;
   retryable?: boolean;
+};
+
+export type SuggestionReviewPayload = {
+  reviewed_by_employee_id: string;
+  review_comment?: string;
+  published_by?: string;
 };
 
 export class ApiError extends Error {
@@ -219,6 +229,15 @@ function categoryForStatus(status: number): ApiErrorCategory {
 
 function query(restaurantId: string) {
   return `restaurant_id=${encodeURIComponent(restaurantId)}`;
+}
+
+function suggestionQuery(restaurantId: string, status: string, limit: number, offset: number) {
+  const params = new URLSearchParams();
+  if (restaurantId) params.set('restaurant_id', restaurantId);
+  if (status) params.set('status', status);
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  return params.toString();
 }
 
 function post<T>(path: string, schema: z.ZodType<T>, payload: Payload) {
@@ -411,6 +430,38 @@ export function createRecipeItem(payload: Payload) {
 
 export function updateRecipeItem(id: string, payload: Payload) {
   return patch(`/master-data/recipes/items/${encodeURIComponent(id)}`, recipeItemSchema, payload);
+}
+
+export function listCatalogSuggestions(restaurantId: string, status = 'pending', limit = 100, offset = 0): Promise<CatalogSuggestion[]> {
+  return request(`/master-data/catalog-suggestions?${suggestionQuery(restaurantId, status, limit, offset)}`, z.array(catalogSuggestionSchema));
+}
+
+export function approveCatalogSuggestion(id: string, payload: SuggestionReviewPayload): Promise<CatalogSuggestion> {
+  return post(`/master-data/catalog-suggestions/${encodeURIComponent(id)}/approve`, catalogSuggestionSchema, payload);
+}
+
+export function rejectCatalogSuggestion(id: string, payload: SuggestionReviewPayload): Promise<CatalogSuggestion> {
+  return post(`/master-data/catalog-suggestions/${encodeURIComponent(id)}/reject`, catalogSuggestionSchema, payload);
+}
+
+export function requestChangesCatalogSuggestion(id: string, payload: SuggestionReviewPayload): Promise<CatalogSuggestion> {
+  return post(`/master-data/catalog-suggestions/${encodeURIComponent(id)}/request-changes`, catalogSuggestionSchema, payload);
+}
+
+export function listRecipeSuggestions(restaurantId: string, status = 'pending', limit = 100, offset = 0): Promise<RecipeSuggestion[]> {
+  return request(`/master-data/recipe-suggestions?${suggestionQuery(restaurantId, status, limit, offset)}`, z.array(recipeSuggestionSchema));
+}
+
+export function approveRecipeSuggestion(id: string, payload: SuggestionReviewPayload): Promise<RecipeSuggestion> {
+  return post(`/master-data/recipe-suggestions/${encodeURIComponent(id)}/approve`, recipeSuggestionSchema, payload);
+}
+
+export function rejectRecipeSuggestion(id: string, payload: SuggestionReviewPayload): Promise<RecipeSuggestion> {
+  return post(`/master-data/recipe-suggestions/${encodeURIComponent(id)}/reject`, recipeSuggestionSchema, payload);
+}
+
+export function requestChangesRecipeSuggestion(id: string, payload: SuggestionReviewPayload): Promise<RecipeSuggestion> {
+  return post(`/master-data/recipe-suggestions/${encodeURIComponent(id)}/request-changes`, recipeSuggestionSchema, payload);
 }
 
 export function listStopListEntries(restaurantId: string): Promise<StopListEntry[]> {

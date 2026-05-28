@@ -207,14 +207,15 @@ Master data under canonical namespace:
   - `PATCH /api/v1/master-data/inventory/stop-list/{id}`
   - `POST /api/v1/master-data/inventory/stop-list/{id}/deactivate`
 - Реализовано сейчас:
-  - `GET /api/v1/master-data/catalog-suggestions`
+  - `GET /api/v1/master-data/catalog-suggestions?restaurant_id=&status=&limit=&offset=`
   - `POST /api/v1/master-data/catalog-suggestions/{id}/approve`
   - `POST /api/v1/master-data/catalog-suggestions/{id}/reject`
   - `POST /api/v1/master-data/catalog-suggestions/{id}/request-changes`
-  - `GET /api/v1/master-data/recipe-suggestions`
+  - `GET /api/v1/master-data/recipe-suggestions?restaurant_id=&status=&limit=&offset=`
   - `POST /api/v1/master-data/recipe-suggestions/{id}/approve`
   - `POST /api/v1/master-data/recipe-suggestions/{id}/reject`
   - `POST /api/v1/master-data/recipe-suggestions/{id}/request-changes`
+  - Review command body для approve/reject/request-changes: `reviewed_by_employee_id`, optional `review_comment`, optional `published_by`; approve применяет suggestion и создает новую master-data publication, reject/request-changes меняют только review status/comment metadata.
 - `POST /api/v1/master-data/menu/categories`
 - `POST /api/v1/master-data/floor/halls`
 - `GET /api/v1/master-data/floor/halls`
@@ -526,12 +527,12 @@ Schema verification:
 
 - Cloud Inventory Worker создает stock documents and stock ledger из accepted normalized item events.
 - `GET /api/v1/inventory/stock-ledger` возвращает bounded read-only rows из Cloud-owned `stock_ledger` для smoke/операционной проверки `CheckClosed`/`ItemServed` processing; endpoint не раскрывает raw sync payload и не является OLAP API.
+- `CatalogItemChangeSuggested` создает Cloud review item; upsert в catalog выполняется только после manager approve текущими `catalog-suggestions` routes.
+- `RecipeChangeSuggested` создает Cloud review item с diff по ingredients, quantities, units, loss percent и prep time; published recipe не меняется до approve/apply текущими `recipe-suggestions` routes.
 
 Запланировано до полного пилота:
 
 - Cloud authoring/publication workflow для stop-list/recipes становится штатным источником sale-blocking availability overlay; POS Edge runtime уже блокирует продажи по локальному `stop_lists`.
-- `CatalogItemChangeSuggested` создает Cloud review item; upsert в catalog разрешен только при policy `auto_apply_catalog_suggestions = true` или после manager approve.
-- `RecipeChangeSuggested` создает Cloud review item с diff по ingredients, quantities, units, loss percent и prep time; published recipe не меняется до approve/apply.
 - `StockReceiptCaptured` создает Cloud-owned receipt document и может ссылаться на pending catalog suggestion, если товар еще не утвержден.
 - `KitchenTicketStatusChanged` и `ItemServed` используются для kitchen timing и inventory deduplication, но не меняют finalized checks.
 - ClickHouse `raw_business_events` реализовано сейчас как бессрочный архив business events.

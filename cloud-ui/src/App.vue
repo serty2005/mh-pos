@@ -20,7 +20,7 @@
     <launch-readiness-panel v-if="activeKey === 'launchPlan'" :ctx="cloudCtx" />
     <edge-device-panel v-else-if="activeKey === 'edgeDevices'" :ctx="cloudCtx" />
     <edge-events-panel v-else-if="activeKey === 'edgeEvents'" :ctx="cloudCtx" />
-    <proposal-review-queue v-else-if="activeKey === 'proposalReview'" />
+    <proposal-review-queue v-else-if="activeKey === 'proposalReview'" :ctx="cloudCtx" />
     <inventory-readiness-panel v-else-if="activeKey === 'inventoryReadiness'" />
     <olap-export-readiness-panel v-else-if="activeKey === 'olapExports'" />
     <section v-else-if="activeKey !== 'restaurants' && !selectedRestaurantId" class="empty-state wide">
@@ -46,6 +46,8 @@ import ProposalReviewQueue from './components/cloud/ProposalReviewQueue.vue';
 import ResourceWorkspace from './components/cloud/ResourceWorkspace.vue';
 import {
   activateEmployee,
+  approveCatalogSuggestion,
+  approveRecipeSuggestion,
   archiveCatalogFolder,
   archiveCatalogItem,
   archiveEmployee,
@@ -79,6 +81,7 @@ import {
   getPublicationState,
   listCatalogFolders,
   listCatalogItems,
+  listCatalogSuggestions,
   listCatalogTags,
   listEmployees,
   listEdgeEvents,
@@ -90,12 +93,17 @@ import {
   listModifierOptions,
   listPricingPolicies,
   listRecipeItems,
+  listRecipeSuggestions,
   listRestaurants,
   listRoles,
   listStopListEntries,
   listTables,
   listUnassignedDevices,
   publishMasterData,
+  rejectCatalogSuggestion,
+  rejectRecipeSuggestion,
+  requestChangesCatalogSuggestion,
+  requestChangesRecipeSuggestion,
   rotateEmployeePIN,
   suspendEmployee,
   updateCatalogFolder,
@@ -117,7 +125,7 @@ import {
   upsertStopListEntry,
   ApiError,
 } from './shared/api';
-import type { AssignmentStatus, EdgeEvent, PairingCodeResult, PublicationSummary, Restaurant, UnassignedEdgeNode } from './shared/schemas';
+import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, UnassignedEdgeNode } from './shared/schemas';
 
 type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
 type ResourceKey =
@@ -223,6 +231,9 @@ const restaurants = ref<Restaurant[]>([]);
 const publication = ref<PublicationSummary | null>(null);
 const edgeDevices = ref<UnassignedEdgeNode[]>([]);
 const edgeEvents = ref<EdgeEvent[]>([]);
+const catalogSuggestions = ref<CatalogSuggestion[]>([]);
+const recipeSuggestions = ref<RecipeSuggestion[]>([]);
+const proposalStatusFilter = ref('pending');
 const selectedEdgeNodeId = ref('');
 const assignmentResult = ref<{ status: string; snapshot_url: string } | null>(null);
 const assignmentStatus = ref<AssignmentStatus | null>(null);
@@ -672,7 +683,7 @@ const filteredRows = computed(() => {
 });
 const selectedRestaurant = computed(() => restaurants.value.find((item) => item.id === selectedRestaurantId.value));
 const restaurantOptions = computed(() => restaurants.value.map((item) => ({ label: item.name, value: item.id })));
-const activeLoading = computed(() => isLoading(activeKey.value));
+const activeLoading = computed(() => activeKey.value === 'proposalReview' ? isLoading('proposal-review') : isLoading(activeKey.value));
 const canCreateActive = computed(() => Boolean(activeConfig.value?.create && (activeKey.value === 'restaurants' || selectedRestaurantId.value)));
 const canSubmitActive = computed(() => Boolean(activeConfig.value?.create && mode.value === 'create') || Boolean(activeConfig.value?.update && mode.value === 'edit'));
 const publicationCounts = computed(() => Object.entries(publication.value?.counts ?? {}).sort(([a], [b]) => a.localeCompare(b)));
@@ -767,6 +778,9 @@ const cloudCtx = {
   successKey,
   publication,
   edgeEvents,
+  catalogSuggestions,
+  recipeSuggestions,
+  proposalStatusFilter,
   selectedEdgeNodeId,
   assignmentResult,
   assignmentStatus,
@@ -815,6 +829,8 @@ const cloudCtx = {
   loadSelectedAssignmentStatus,
   generateSelectedPairingCode,
   loadEdgeEvents,
+  loadProposalReview,
+  reviewProposalSuggestion,
   publishSelectedRestaurant,
   isLoading,
   formatCell,
@@ -834,6 +850,7 @@ watch(selectedRestaurantId, async () => {
   if (activeKey.value === 'publications' || activeKey.value === 'launchPlan') await loadPublication();
   if (activeKey.value === 'edgeDevices' || activeKey.value === 'launchPlan') await loadEdgeDevices();
   if (activeKey.value === 'edgeEvents') await loadEdgeEvents();
+  if (activeKey.value === 'proposalReview') await loadProposalReview();
   resetSelection();
 });
 
@@ -844,6 +861,7 @@ watch(activeKey, async () => {
   if (activeKey.value === 'publications') await loadPublication();
   if (activeKey.value === 'edgeDevices') await loadEdgeDevices();
   if (activeKey.value === 'edgeEvents') await loadEdgeEvents();
+  if (activeKey.value === 'proposalReview') await loadProposalReview();
   if (activeKey.value === 'launchPlan') {
     await Promise.all([loadPublication(), loadEdgeDevices()]);
   }
@@ -876,6 +894,7 @@ function navCount(key: ResourceKey) {
   if (key === 'launchPlan') return launchSteps.length;
   if (key === 'edgeDevices') return edgeDevices.value.length;
   if (key === 'edgeEvents') return edgeEvents.value.length;
+  if (key === 'proposalReview') return catalogSuggestions.value.length + recipeSuggestions.value.length;
   if (key === 'restaurants') return restaurants.value.length;
   if (key === 'publications') return publication.value ? publication.value.version : '-';
   if (key === 'itemTags' || key === 'categories') return '+';
@@ -1040,14 +1059,37 @@ async function loadScopedResource(key: ScopedResourceKey) {
 async function loadPublication() {
   if (!selectedRestaurantId.value) return;
   await withLoading('publication', async () => {
-    publication.value = await getPublicationState(selectedRestaurantId.value);
+    await fetchPublication();
   });
+}
+
+async function loadProposalReview() {
+  if (!selectedRestaurantId.value) return;
+  await withLoading('proposal-review', async () => {
+    await fetchProposalReview();
+  });
+}
+
+async function fetchPublication() {
+  publication.value = await getPublicationState(selectedRestaurantId.value);
+}
+
+async function fetchProposalReview() {
+  const restaurantId = selectedRestaurantId.value;
+  const status = proposalStatusFilter.value;
+  const [catalog, recipes] = await Promise.all([
+    listCatalogSuggestions(restaurantId, status, 100, 0),
+    listRecipeSuggestions(restaurantId, status, 100, 0),
+  ]);
+  catalogSuggestions.value = catalog;
+  recipeSuggestions.value = recipes;
 }
 
 async function reloadActive() {
   if (activeKey.value === 'launchPlan') return;
   if (activeKey.value === 'edgeDevices') return loadEdgeDevices();
   if (activeKey.value === 'edgeEvents') return loadEdgeEvents();
+  if (activeKey.value === 'proposalReview') return loadProposalReview();
   if (activeKey.value === 'restaurants') return loadRestaurants();
   if (activeKey.value === 'publications') return loadPublication();
   if (activeKey.value === 'itemTags' || activeKey.value === 'categories') return;
@@ -1227,6 +1269,29 @@ async function generateSelectedPairingCode() {
     selectedEdgeNodeId.value = pairingResult.value.node_device_id;
     publishForm.node_device_id = pairingResult.value.node_device_id;
     successKey.value = 'cloud.messages.pairingGenerated';
+  });
+}
+
+async function reviewProposalSuggestion(
+  kind: 'catalog' | 'recipe',
+  id: string,
+  action: 'approve' | 'reject' | 'request_changes',
+  payload: { reviewed_by_employee_id: string; review_comment?: string; published_by?: string },
+) {
+  await withLoading(`proposal-${action}`, async () => {
+    if (kind === 'catalog' && action === 'approve') await approveCatalogSuggestion(id, payload);
+    if (kind === 'catalog' && action === 'reject') await rejectCatalogSuggestion(id, payload);
+    if (kind === 'catalog' && action === 'request_changes') await requestChangesCatalogSuggestion(id, payload);
+    if (kind === 'recipe' && action === 'approve') await approveRecipeSuggestion(id, payload);
+    if (kind === 'recipe' && action === 'reject') await rejectRecipeSuggestion(id, payload);
+    if (kind === 'recipe' && action === 'request_changes') await requestChangesRecipeSuggestion(id, payload);
+    await fetchProposalReview();
+    if (action === 'approve') await fetchPublication();
+    successKey.value = action === 'approve'
+      ? 'cloud.messages.suggestionApproved'
+      : action === 'reject'
+        ? 'cloud.messages.suggestionRejected'
+        : 'cloud.messages.suggestionChangesRequested';
   });
 }
 
