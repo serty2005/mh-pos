@@ -32,34 +32,7 @@
 Выполнена.
 
 **Итерация 6: pos-ui-g Kitchen Mode**
-
-```text
-Задача: реализовать настоящий kitchen mode в pos-ui-g вместо placeholder.
-
-Сначала проверь pos-ui-g/src/App.tsx, POSContext, shared/api, schemas, i18n, shared/ui и текущий дизайн. Не работай в legacy pos-ui, если задача явно про pos-ui-g.
-
-Нужно реализовать:
-- нижний quick access только с тремя разделами: Заказы, Склад, Кухня;
-- верхние вкладки внутри разделов;
-- Заказы: очередь и готовые к выдаче;
-- Склад: приемка, ревизия, списание, приготовление;
-- Кухня: техкарты, предложения, мои предложения;
-- order tile с временем, статусами, блюдами и actions;
-- no optimistic status truth, после action перечитать backend;
-- full catalog picker;
-- safe localized errors через pos-ui-g i18n;
-- формы receipt/count/write-off/production/proposals.
-
-Обязательно обнови:
-- docs/ui/POS-UI-SPEC.md;
-- docs/backend/KITCHEN-PROCESSES-SPEC.md, если UI contract уточнился;
-- docs/ui/POS-UI-RBAC.md;
-- ROADMAP.md.
-
-Проверки:
-cd pos-ui-g && npm install && npm run build
-При возможности добавить/запустить Playwright или component tests для kitchen flow.
-```
+Выполнена.
 
 **Итерация 7: Cloud UI Manager Review**
 

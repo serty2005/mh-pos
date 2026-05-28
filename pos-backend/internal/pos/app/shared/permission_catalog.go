@@ -254,6 +254,7 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 		Name: RoleKitchen,
 		Permissions: []PermissionID{
 			PermissionEmployeeShiftViewCurrent,
+			PermissionCatalogView,
 			PermissionKitchenView,
 			PermissionKitchenStatusChange,
 			PermissionKitchenCatalogView,

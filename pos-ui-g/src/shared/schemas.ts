@@ -218,8 +218,13 @@ export const kitchenOrderQueueResponseSchema = z.object({
 export const catalogItemSchema = z.object({
   id: z.string(),
   name: z.string(),
+  type: z.string().optional(),
   kind: z.string().optional(),
   item_type: z.string().optional(),
+  sku: z.string().optional(),
+  base_unit: z.string().optional(),
+  kitchen_type: z.string().optional(),
+  accounting_category: z.string().optional(),
   active: z.boolean().optional(),
 }).passthrough();
 
@@ -227,22 +232,43 @@ export const kitchenProposalSchema = z.object({
   id: z.string(),
   kind: z.string(),
   status: z.string(),
+  action: z.string().optional().default(''),
+  owner_catalog_item_id: z.string().optional().default(''),
+  owner_catalog_suggestion_id: z.string().optional().default(''),
+  recipe_version_id: z.string().optional().default(''),
+  outbox_event_type: z.string().optional().default(''),
   payload: z.unknown().optional(),
   created_at: z.string(),
   updated_at: z.string().optional(),
 }).passthrough();
 
+export const kitchenRecipeIngredientSchema = z.object({
+  line_id: z.string().optional(),
+  catalog_item_id: z.string().optional(),
+  catalog_item_name: z.string().optional(),
+  ingredient_name: z.string().optional(),
+  quantity: z.string().optional(),
+  unit_code: z.string().optional(),
+  loss_percent: z.string().optional(),
+  cloud_version: z.number().optional(),
+  cloud_updated_at: z.string().optional(),
+}).passthrough();
+
 export const kitchenRecipeSchema = z.object({
   catalog_item_id: z.string().optional(),
+  catalog_item: catalogItemSchema.optional(),
   recipe_version_id: z.string().optional(),
-  lines: z.array(z.object({
-    line_id: z.string().optional(),
-    catalog_item_id: z.string().optional(),
-    ingredient_name: z.string().optional(),
-    quantity: z.string().optional(),
-    unit_code: z.string().optional(),
-    loss_percent: z.string().optional(),
-  }).passthrough()).optional().default([]),
+  recipe_version: z.object({
+    id: z.string().optional(),
+    dish_catalog_item_id: z.string().optional(),
+    yield_qty: z.number().optional(),
+    yield_unit: z.string().optional(),
+    active: z.boolean().optional(),
+    cloud_version: z.number().optional(),
+    cloud_updated_at: z.string().optional(),
+  }).passthrough().optional(),
+  ingredients: z.array(kitchenRecipeIngredientSchema).optional().default([]),
+  lines: z.array(kitchenRecipeIngredientSchema).optional().default([]),
   proposals: z.array(kitchenProposalSchema).optional().default([]),
 }).passthrough();
 

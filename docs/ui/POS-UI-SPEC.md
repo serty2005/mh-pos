@@ -63,14 +63,16 @@ Waiter mobile UI in `pos-ui/src/pages/WaiterPage.vue` и `pos-ui/src/pages/pos/u
 - viewport `390x844` держит compact sticky context/authority dock, touch-friendly table/menu/order rows и sticky topbar без payment/refund/cash drawer controls;
 - empty/loading/error/no-permission states идут через `vue-i18n` и reusable primitives из `pos-ui/src/shared/ui`.
 
-KDS route реализовано сейчас как минимальный backend-backed runtime:
+`pos-ui-g` KDS mode реализовано сейчас как backend-backed kitchen runtime:
 
-- route `/pos/kitchen` читает tickets через `GET /api/v1/kitchen/tickets` и показывает статусы `new`, `accepted`, `in_progress`, `hold`, `ready`, `served`, `recall`, `cancelled`;
-- route `/pos/kitchen` показывает runtime boundary strip: KDS runtime активен, lifecycle-команды доступны только при `pos.kitchen.status.change`, backend остается authoritative;
+- terminal mode `kds` в `pos-ui-g/src/App.tsx` использует нижний quick access только с разделами `Заказы`, `Склад`, `Кухня`;
+- раздел `Заказы` читает `GET /api/v1/kitchen/order-queue`, показывает `Очередь` и `Готово к выдаче`, order tiles с elapsed time, временем создания/последнего изменения, backend `kitchen_order_status`, блюдами и допустимыми ticket actions;
 - active buttons отображаются только для допустимых backend transitions `accept`, `start`, `hold`, `ready`, `serve`, `recall`, `cancel`;
-- после status action UI не подменяет truth оптимистично, а перечитывает tickets из backend;
-- loading/error/empty/no-permission states идут через shared UI primitives и i18n;
-- hardware bump-bar/printer orchestration не описывается как реализованное.
+- после status action UI не подменяет truth оптимистично, а перечитывает `GET /api/v1/kitchen/order-queue`;
+- раздел `Склад` использует full catalog picker поверх `GET /api/v1/catalog/items` и формы `Приемка`, `Ревизия`, `Списание`, `Приготовление`;
+- раздел `Кухня` показывает `Техкарты`, `Предложения`, `Мои предложения`, читает recipe response с `catalog_item`, `recipe_version`, `ingredients` и отправляет `CatalogItemChangeSuggested`/`RecipeChangeSuggested`;
+- loading/error/empty/no-permission states идут через `pos-ui-g/src/shared/ui` и `pos-ui-g/src/shared/i18n`;
+- hardware bump-bar/printer orchestration и stop-list edit не описываются как реализованные.
 
 ## Runtime Error And Empty-State Handling
 
@@ -198,7 +200,7 @@ Requirements:
 
 - `/pos` and `/pos/cashier` load the current cashier pilot terminal.
 - `/pos/waiter` loads the current waiter mobile order/precheck runtime without payment/refund/cash drawer authority.
-- `/pos/kitchen` loads the minimal backend-backed KDS ticket lifecycle runtime.
+- `pos-ui-g` kitchen mode loads the backend-backed KDS, stock input and proposal runtime.
 - Код cashier terminal разделен на composable для runtime/API state и presentation components для POS shell, floor, menu grid, order rail, payment/actions modals и utility panels.
 - Bottom quick access bar и скрываемое side menu являются основным navigation shell для POS runtime.
 - Раздел `order` / `Заказы` является основным рабочим экраном: search/category tabs + dish/service grid + current order panel + payment/actions modal поверх текущего заказа.
@@ -209,11 +211,8 @@ Requirements:
 - Разделов `delivery` и `settings` в текущем cashier shell нет; delivery/channel runtime и backoffice/settings surfaces остаются вне POS cashier UI до отдельного backend/API контракта.
 - Основные route components загружаются через lazy imports/code splitting, чтобы снизить нагрузку на initial bundle.
 
-Запланировано до полного пилота:
+Реализовано сейчас для `pos-ui-g` kitchen mode:
 
-- `/pos/waiter` должен расширяться только в пределах подтвержденных backend contracts; он остается единственным mobile layout полного пилота, остальные modes не получают мобильные варианты;
-- `/pos/kitchen` должен расширяться только поверх подтвержденных backend routes;
-- `/pos/manager` остается вне POS UI runtime, если manager операции полностью покрыты Cloud UI;
 - kitchen UI читает kitchen tickets, показывает статусы `new`, `accepted`, `in_progress`, `hold`, `ready`, `served`, `recall`, `cancelled` и отправляет status actions, которые backend превращает в `KitchenTicketStatusChanged`/`ItemServed`;
 - `pos-ui-g` KDS mode реализован как production shell с нижним quick access только `Заказы`, `Склад`, `Кухня`; внутри разделов используются верхние вкладки:
 - `Заказы`: `Очередь`, `Готово к выдаче` с order tiles (время, статусы, блюда, actions);
@@ -221,7 +220,14 @@ Requirements:
 - `Кухня`: `Техкарты`, `Предложения`, `Мои предложения`;
 - после kitchen action UI перечитывает backend и не держит оптимистичный статус как source of truth;
 - ошибки показываются безопасно через локализованные keys в `pos-ui-g/shared/i18n`;
-- kitchen UI дает повару сценарии приемки поставки, catalog suggestion, просмотра техкарты, `RecipeChangeSuggested` и редактирования stop-list через backend routes.
+- kitchen UI дает повару сценарии приемки поставки, ревизии, списания, приготовления, catalog suggestion, просмотра техкарты и `RecipeChangeSuggested` через backend routes.
+
+Запланировано далее:
+
+- `/pos/waiter` должен расширяться только в пределах подтвержденных backend contracts; он остается единственным mobile layout полного пилота, остальные modes не получают мобильные варианты;
+- `/pos/manager` остается вне POS UI runtime, если manager операции полностью покрыты Cloud UI;
+- `/pos/kitchen` / `pos-ui-g` должен расширяться только поверх подтвержденных backend routes;
+- kitchen stop-list view/edit flow и sync pending indicator для отдельных stock/proposal commands.
 
 ## POS Shell Visual Contract
 
@@ -242,7 +248,7 @@ Requirements:
 Вне текущего объема:
 
 - `/pos/manager` является route shell, пока manager operations покрываются Cloud UI.
-- `/pos/kitchen` не покрывает receipt capture, recipe suggestion, stop-list edit, bump-bar/printer orchestration и rich KDS analytics.
+- `/pos/kitchen` не покрывает stop-list edit, bump-bar/printer orchestration и rich KDS analytics.
 
 ## Вне Текущего Объема
 
@@ -261,11 +267,11 @@ Requirements:
 Запланировано до полного пилота:
 
 - waiter mobile viewport `390x844`: login, table selection, active order creation, menu/modifier selection, quantity change, void line, issue/reprint precheck, no payment controls by default;
-- kitchen route: backend-backed ticket list/status lifecycle works with safe localized error handling and no UI-authoritative status decisions;
-- запланировано далее: receipt capture, recipe suggestion, stop-list edit, sync pending indicator, bump-bar/printer orchestration and rich KDS analytics;
+- kitchen route: backend-backed order queue/status lifecycle, stock forms, recipe view and proposal forms work with safe localized error handling and no UI-authoritative status decisions;
+- запланировано далее: stop-list edit, sync pending indicator, bump-bar/printer orchestration and rich KDS analytics;
 - cashier/KDS/manager routes are checked at desktop/tablet widths only; mobile acceptance belongs to waiter route;
 - cashier regression: current cashier flow remains unchanged and still passes payment/refund/sync e2e tests;
-- all new labels, empty states, errors and dialog text are added through `vue-i18n`.
+- all new labels, empty states, errors and dialog text are added through the active UI locale layer (`vue-i18n` in legacy Vue UI, `pos-ui-g/src/shared/i18n` in React UI).
 
 ## Выбор скидок и надбавок по policy
 

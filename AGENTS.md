@@ -208,3 +208,4 @@ rg "implemented now|planned next|out of scope|Current status|Business rules|Arch
 - что запланировано далее;
 - что вне текущего объема;
 - затрагивался ли runtime code.
+- по задаче всегда давать краткий и полный комментарии о выполненых работах

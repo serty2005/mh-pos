@@ -72,6 +72,9 @@ func TestCanonicalRoleProfiles(t *testing.T) {
 	if !shared.HasPermission(kitchenPermissions, string(shared.PermissionKitchenView)) || !shared.HasPermission(kitchenPermissions, string(shared.PermissionKitchenStatusChange)) {
 		t.Fatal("expected kitchen role to view tickets and change KDS statuses")
 	}
+	if !shared.HasPermission(kitchenPermissions, string(shared.PermissionCatalogView)) {
+		t.Fatal("expected kitchen role to read full catalog for stock and recipe forms")
+	}
 	if shared.HasAnyPermission(kitchenPermissions, shared.PermissionPaymentCash, shared.PermissionPaymentRefund) {
 		t.Fatal("expected kitchen role payment authority to stay out of scope")
 	}

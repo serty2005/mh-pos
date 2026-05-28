@@ -230,6 +230,38 @@ GET /api/v1/kitchen/proposals?kind=&status=&limit=&offset=
 
 `POST /kitchen/recipe-suggestions` пишет outbox event `RecipeChangeSuggested`.
 
+`GET /kitchen/catalog/items/{catalog_item_id}/recipe` возвращает backend read model, который `pos-ui-g` читает без compatibility-подмены:
+
+```json
+{
+  "catalog_item": {
+    "id": "dish-1",
+    "type": "dish",
+    "name": "Суп дня",
+    "base_unit": "portion",
+    "active": true
+  },
+  "recipe_version": {
+    "id": "recipe-1",
+    "dish_catalog_item_id": "dish-1",
+    "yield_qty": 1,
+    "yield_unit": "portion",
+    "active": true
+  },
+  "ingredients": [
+    {
+      "line_id": "line-1",
+      "catalog_item_id": "good-1",
+      "catalog_item_name": "Морковь",
+      "quantity": "120",
+      "unit_code": "G",
+      "loss_percent": "3"
+    }
+  ],
+  "proposals": []
+}
+```
+
 Payload:
 
 ```json
@@ -597,6 +629,7 @@ POS Edge применяет stream только к локальным `kitchen_p
 ```text
 pos.kitchen.view
 pos.kitchen.status.change
+pos.catalog.view
 pos.kitchen.catalog.view
 pos.kitchen.recipe.view
 pos.kitchen.recipe.suggest
@@ -611,6 +644,7 @@ pos.kitchen.stop_list.update
 Роль `kitchen` получает:
 
 - `pos.employee_shift.view_current`;
+- `pos.catalog.view`;
 - `pos.kitchen.view`;
 - `pos.kitchen.status.change`;
 - `pos.kitchen.catalog.view`;
@@ -626,11 +660,11 @@ pos.kitchen.stop_list.update
 
 ## pos-ui-g Kitchen Mode
 
-Реализовать настоящий `currentMode === 'kds'` вместо placeholder.
+Реализовано сейчас: `currentMode === 'kds'` в `pos-ui-g` является backend-backed kitchen mode, а не placeholder.
 
-Основной экран: очередь заказов.
+Основной экран при входе: очередь заказов.
 
-Нижний quick access внутри kitchen mode должен содержать минимальный набор разделов:
+Нижний quick access внутри kitchen mode содержит минимальный набор разделов:
 
 - `orders` - заказы;
 - `stock` - склад;
@@ -645,15 +679,16 @@ pos.kitchen.stop_list.update
 
 Раздел `stock`:
 
-- `receipts` - приемка товара;
-- `inventory` - ревизия;
-- `write_off` - списание;
+- `receipt` - приемка товара;
+- `count` - ревизия;
+- `writeoff` - списание;
 - `production` - заготовки;
 
 Раздел `kitchen`:
 
-- `recipes` - техкарты и предложения;
-- `proposals` - мои предложения и статусы.
+- `recipes` - техкарты;
+- `suggestions` - catalog/recipe предложения;
+- `my_proposals` - мои предложения и статусы.
 
 ### Queue UI
 
@@ -683,7 +718,7 @@ UI не меняет статус оптимистично. После action UI
 - ввод количества и цены сохраняет decimal strings / integer minor units без float totals в UI;
 - supplier/counterparty, document date и line total обязательны для receipt;
 - reason обязателен для write-off;
-- при новом товаре пользователь создает proposal из формы, затем использует его в receipt line;
+- связка receipt line с pending `catalog_suggestion_id` остается запланировано далее; текущий UI использует существующий `catalog_item_id`, как требует текущий Edge/Cloud stock contract;
 - все пользовательские labels/errors идут через `pos-ui-g/src/shared/i18n`.
 
 ## Error Contract
