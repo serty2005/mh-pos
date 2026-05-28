@@ -254,8 +254,7 @@ cloud-ui-g/
 
 ### Итерация 5: Edge Provisioning И Поток Синхронизации
 
-```markdown
-```
+Выполнена
 
 ### Итерация 6: Catalog Workspace Полного Объема
 
