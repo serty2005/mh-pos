@@ -515,6 +515,7 @@ type MasterDataPacket struct {
 	RecipeVersions         []EdgeRecipeVersion         `json:"recipe_versions,omitempty"`
 	RecipeLines            []EdgeRecipeLine            `json:"recipe_lines,omitempty"`
 	StopLists              []EdgeStopListEntry         `json:"stop_lists,omitempty"`
+	Warehouses             []EdgeWarehouseReference    `json:"warehouses,omitempty"`
 }
 
 // EdgeRestaurant является projection ресторана в существующий POS Edge restaurants stream.
@@ -735,6 +736,17 @@ type EdgeStopListEntry struct {
 	Reason            string    `json:"reason,omitempty"`
 	Active            bool      `json:"active"`
 	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+// EdgeWarehouseReference является projection Cloud-owned склада для POS Edge inventory_reference stream.
+type EdgeWarehouseReference struct {
+	ID           string    `json:"id"`
+	RestaurantID string    `json:"restaurant_id"`
+	Name         string    `json:"name"`
+	Kind         string    `json:"kind"`
+	Default      bool      `json:"is_default"`
+	Active       bool      `json:"active"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // ValidateEmployeeStatus проверяет допустимое lifecycle состояние сотрудника.

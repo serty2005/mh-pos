@@ -18,6 +18,7 @@
 | Recipe change proposal | Cloud review queue | Edge creates suggestion only | Edge -> Cloud `RecipeChangeSuggested` | реализовано сейчас на POS Edge и Cloud review/apply |
 | Catalog change proposal | Cloud review queue | Edge creates suggestion only | Edge -> Cloud `CatalogItemChangeSuggested` | реализовано сейчас на POS Edge и Cloud review/apply |
 | Stop-list | Cloud + Edge kitchen/manager input | Edge runtime reads local overlay; Edge edit flow запланирован | Cloud -> Edge `inventory_reference` сейчас; Edge -> Cloud `StopListUpdated` запланировано | реализовано сейчас: sale blocking по local `stop_lists`; conflict policy запланирован далее |
+| Warehouse reference | Cloud | Edge read-only | Cloud -> Edge `inventory_reference` | реализовано сейчас: local seed publication передает default `warehouse-main`, POS Edge валидирует kitchen stock commands по `warehouse_reference` |
 | Employee shift | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Cash session/drawer event | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
 | Order/order line | Edge | Yes | Edge -> Cloud operational events | реализовано сейчас |
@@ -46,7 +47,7 @@
 
 `catalog` payload включает catalog folders/tags/services и modifier groups/options/bindings/effective links; `menu` payload включает menu items. Menu categories остаются отдельным понятием и не заменяют catalog folders.
 `pricing_policy` включает tax/service-charge reference tables и automatic discount/surcharge policies; manual override runtime остается backend RBAC-controlled action.
-`recipes` включает `recipe_versions` и `recipe_lines`; `inventory_reference` включает `stop_lists`.
+`recipes` включает `recipe_versions` и `recipe_lines`; `inventory_reference` включает `stop_lists` и Cloud-owned `warehouses`.
 
 Запланировано до полного пилота:
 
@@ -118,6 +119,7 @@ Edge Outbox
 - advanced KDS должен генерировать `KitchenTicketStatusChanged`, `ItemServed` и cooking events;
 - kitchen receipt/proposal flows должны генерировать `StockReceiptCaptured`, `CatalogItemChangeSuggested` и `RecipeChangeSuggested`;
 - Cloud receiver/worker должен сохранить идемпотентность replay и дедупликацию `ItemServed` с `CheckClosed`;
+- реализовано сейчас: если superseding `ItemServed` уже принят Cloud до обработки очереди, Cloud Inventory Worker пропускает superseded served fact; компенсирующий пересчет уже обработанного served fact остается запланированным далее;
 - stop-list changes должны синхронизироваться без raw sensitive payload в UI/API diagnostics.
 - полный Cloud Inventory Engine должен обработать receipts, counts, production, sale consumption, refund/cancellation dispositions, balances и costing/recalculation state.
 

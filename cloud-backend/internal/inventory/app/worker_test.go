@@ -35,6 +35,7 @@ type fakeRepo struct {
 	failed              map[string]string
 	recipes             map[string][]app.RecipeLine
 	modifierOptionLinks map[string]string
+	supersededServedIDs map[string]bool
 }
 
 func (f *fakeRepo) ClaimPending(context.Context, app.ClaimCommand) ([]app.QueuedEvent, error) {
@@ -96,6 +97,10 @@ func (f *fakeRepo) ListServedOrderLineQuantities(_ context.Context, _ string, or
 		out[id] = fmt.Sprintf("%.3f", qty)
 	}
 	return out, nil
+}
+
+func (f *fakeRepo) HasSupersedingServedEvent(_ context.Context, _ string, _ string, servedEventID string) (bool, error) {
+	return f.supersededServedIDs[strings.TrimSpace(servedEventID)], nil
 }
 
 func (f *fakeRepo) MarkFailed(_ context.Context, queueID, reason string, _ time.Time) error {
@@ -190,6 +195,32 @@ func TestRunOnceSkipsDuplicateItemServedReplay(t *testing.T) {
 	}
 	if len(repo.documents) != 1 {
 		t.Fatalf("expected replay to keep one document, got %+v", repo.documents)
+	}
+	if len(repo.processed) != 2 {
+		t.Fatalf("expected both queue rows processed, got %+v", repo.processed)
+	}
+}
+
+func TestRunOnceSkipsSupersededItemServedWhenRecallServeAgainArrived(t *testing.T) {
+	repo := &fakeRepo{
+		events: []app.QueuedEvent{
+			queuedEvent(t, "queue-1", "018f0000-0000-7000-8000-0000000000a1", contracts.EventItemServed, itemServedPayloadWithServedEventID(t, "served-event-1", "", 1, "line-1", "item-1", "1.000")),
+			queuedEvent(t, "queue-2", "018f0000-0000-7000-8000-0000000000a2", contracts.EventItemServed, itemServedPayloadWithServedEventID(t, "served-event-2", "served-event-1", 2, "line-1", "item-1", "1.000")),
+		},
+		supersededServedIDs: map[string]bool{"served-event-1": true},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{
+		"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101",
+	}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 1 {
+		t.Fatalf("expected only latest effective ItemServed document, got %+v", repo.documents)
+	}
+	if repo.documents[0].SourceEventID != "018f0000-0000-7000-8000-0000000000a2" {
+		t.Fatalf("expected latest served event to own stock document, got %+v", repo.documents[0])
 	}
 	if len(repo.processed) != 2 {
 		t.Fatalf("expected both queue rows processed, got %+v", repo.processed)
@@ -437,6 +468,9 @@ func (f *failingRepo) ListModifierOptionLinks(context.Context, string, []string)
 func (f *failingRepo) ListServedOrderLineQuantities(context.Context, string, []string) (map[string]string, error) {
 	return nil, f.err
 }
+func (f *failingRepo) HasSupersedingServedEvent(context.Context, string, string, string) (bool, error) {
+	return false, f.err
+}
 
 type fixedClock struct{}
 
@@ -478,10 +512,15 @@ func checkClosedPayload(t *testing.T, items []map[string]any) json.RawMessage {
 
 func itemServedPayload(t *testing.T, orderLineID, catalogItemID, quantity string) json.RawMessage {
 	t.Helper()
-	return marshalPayload(t, map[string]any{
-		"served_event_id": "served-event-1",
+	return itemServedPayloadWithServedEventID(t, "served-event-1", "", 1, orderLineID, catalogItemID, quantity)
+}
+
+func itemServedPayloadWithServedEventID(t *testing.T, servedEventID, supersedesServedEventID string, serveSequence int, orderLineID, catalogItemID, quantity string) json.RawMessage {
+	t.Helper()
+	payload := map[string]any{
+		"served_event_id": servedEventID,
 		"ticket_id":       "ticket-1",
-		"serve_sequence":  1,
+		"serve_sequence":  serveSequence,
 		"order_id":        "order-1",
 		"order_line_id":   orderLineID,
 		"catalog_item_id": catalogItemID,
@@ -489,7 +528,11 @@ func itemServedPayload(t *testing.T, orderLineID, catalogItemID, quantity string
 		"unit_code":       "PC",
 		"served_at":       "2026-05-05T08:50:00Z",
 		"station_id":      "kitchen-hot",
-	})
+	}
+	if strings.TrimSpace(supersedesServedEventID) != "" {
+		payload["supersedes_served_event_id"] = supersedesServedEventID
+	}
+	return marshalPayload(t, payload)
 }
 
 func stockReceiptPayload(t *testing.T) json.RawMessage {

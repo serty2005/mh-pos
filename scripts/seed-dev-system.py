@@ -92,6 +92,23 @@ PERMISSIONS = {
         "pos.precheck.reprint",
         "pos.check.view",
     ],
+    "kitchen": [
+        "pos.employee_shift.open",
+        "pos.employee_shift.close",
+        "pos.employee_shift.view_current",
+        "pos.employee_shift.recent",
+        "pos.catalog.view",
+        "pos.kitchen.view",
+        "pos.kitchen.status.change",
+        "pos.kitchen.catalog.view",
+        "pos.kitchen.recipe.view",
+        "pos.kitchen.recipe.suggest",
+        "pos.kitchen.catalog.suggest",
+        "pos.kitchen.stock.receipt",
+        "pos.kitchen.stock.inventory_count",
+        "pos.kitchen.stock.write_off",
+        "pos.kitchen.production.complete",
+    ],
     "manager": [
         "pos.employee_shift.open",
         "pos.employee_shift.close",
@@ -233,6 +250,7 @@ def build_seed_dataset(suffix):
             {"ref": "cashier", "name": "Cashier", "profile": "cashier"},
             {"ref": "senior_cashier", "name": "Senior Cashier", "profile": "senior_cashier"},
             {"ref": "waiter", "name": "Waiter", "profile": "waiter"},
+            {"ref": "kitchen", "name": "Kitchen", "profile": "kitchen"},
             {"ref": "manager", "name": "Manager", "profile": "manager"},
             {"ref": "support", "name": "Support Admin", "profile": "support_admin"},
         ],
@@ -241,6 +259,7 @@ def build_seed_dataset(suffix):
             {"role_ref": "manager", "name": "Demo Manager", "pin_name": "manager_pin", "pin": "2222"},
             {"role_ref": "waiter", "name": "Demo Waiter", "pin_name": "waiter_pin", "pin": "3333"},
             {"role_ref": "senior_cashier", "name": "Demo Senior Cashier", "pin_name": "senior_cashier_pin", "pin": "4444"},
+            {"role_ref": "kitchen", "name": "Demo Kitchen", "pin_name": "kitchen_pin", "pin": "5555"},
             {"role_ref": "support", "name": "Demo Support", "pin_name": "support_pin", "pin": "9999"},
         ],
         "catalog_folders": [
@@ -297,6 +316,7 @@ def build_seed_dataset(suffix):
         "recipes": [
             {"owner_ref": "soup", "component_ref": "sirloin", "quantity": 120, "unit": "g", "loss_percent": 5},
             {"owner_ref": "soup", "component_ref": "sauce", "quantity": 30, "unit": "g", "loss_percent": 0},
+            {"owner_ref": "sauce", "component_ref": "sirloin", "quantity": 10, "unit": "g", "loss_percent": 0},
         ],
         "stop_list": [
             {"catalog_ref": "sold_out_dessert", "available_quantity": 0, "reason": "Demo sold out item", "active": True},
@@ -318,6 +338,7 @@ def seed_full_system(
     wait_seconds=90,
     interval_seconds=2,
     run_minimal_flow=False,
+    run_kitchen_process_smoke=False,
 ):
     suffix = suffix or command_suffix()
     health = {
@@ -652,6 +673,20 @@ def seed_full_system(
             wait_seconds=wait_seconds,
             interval_seconds=interval_seconds,
         )
+    if run_kitchen_process_smoke:
+        summary["kitchen_process_smoke"] = run_kitchen_process_smoke_flow(
+            cloud_client,
+            pos_client,
+            restaurant_id=restaurant_id,
+            node_device_id=node_device_id,
+            client_device_id=client_device_id,
+            pins=pins,
+            table_ids=table_ids,
+            menu_refs=menu_ids,
+            catalog_refs=catalog_ids,
+            wait_seconds=wait_seconds,
+            interval_seconds=interval_seconds,
+        )
     return summary
 
 
@@ -855,6 +890,332 @@ def run_minimal_flow_smoke(
     }
 
 
+def run_kitchen_process_smoke_flow(
+    cloud_client,
+    pos_client,
+    restaurant_id,
+    node_device_id,
+    client_device_id,
+    pins,
+    table_ids,
+    menu_refs,
+    catalog_refs,
+    wait_seconds,
+    interval_seconds,
+):
+    waiter_headers = login_pos(pos_client, node_device_id, client_device_id, pins["waiter_pin"])
+    kitchen_headers = login_pos(pos_client, node_device_id, client_device_id, pins["kitchen_pin"])
+    ensure_employee_shift(pos_client, restaurant_id, waiter_headers, "kitchen-smoke-waiter")
+    ensure_employee_shift(pos_client, restaurant_id, kitchen_headers, "kitchen-smoke-kitchen")
+
+    menu_items = request(pos_client, "GET", f"{API_PREFIX}/menu/items", expected_status=(200,), headers=waiter_headers)
+    catalog_items = request(pos_client, "GET", f"{API_PREFIX}/catalog/items", expected_status=(200,), headers=kitchen_headers)
+    smoke_menu_id = menu_refs.get("soup") or first_menu_item_id(menu_items, excluded_id=menu_refs.get("sold_out_dessert", ""))
+    smoke_menu_item = find_by_id(menu_items, smoke_menu_id)
+    if not smoke_menu_id or not smoke_menu_item:
+        raise RuntimeError("kitchen process smoke requires seeded soup menu item")
+    soup_catalog_id = catalog_refs.get("soup") or smoke_menu_item.get("catalog_item_id", "")
+    sirloin_catalog_id = catalog_refs.get("sirloin", "")
+    sauce_catalog_id = catalog_refs.get("sauce", "")
+    if not soup_catalog_id or not sirloin_catalog_id or not sauce_catalog_id:
+        raise RuntimeError("kitchen process smoke requires soup, sirloin and sauce catalog ids")
+    recipe = request(pos_client, "GET", f"{API_PREFIX}/kitchen/catalog/items/{soup_catalog_id}/recipe", expected_status=(200,), headers=kitchen_headers)
+    if not recipe.get("recipe_version", {}).get("id") or not recipe.get("ingredients"):
+        raise RuntimeError(f"POS Edge did not expose synced recipe for soup: {recipe}")
+    if not table_ids:
+        raise RuntimeError("kitchen process smoke requires at least one table")
+
+    order = request(
+        pos_client,
+        "POST",
+        f"{API_PREFIX}/orders",
+        {
+            "command_id": f"cmd-kitchen-smoke-{command_suffix()}-waiter-order",
+            "restaurant_id": restaurant_id,
+            "table_id": table_ids[0],
+            "table_name": "Kitchen Smoke",
+            "guest_count": 1,
+        },
+        expected_status=(201,),
+        headers=waiter_headers,
+    )
+    line = request(
+        pos_client,
+        "POST",
+        f"{API_PREFIX}/orders/{order['id']}/lines",
+        {
+            "command_id": f"cmd-kitchen-smoke-{command_suffix()}-waiter-line",
+            "menu_item_id": smoke_menu_id,
+            "quantity": 1,
+            "selected_modifiers": selected_required_modifiers(smoke_menu_item),
+        },
+        expected_status=(201,),
+        headers=waiter_headers,
+    )
+    queue = wait_for_kitchen_order_tile(pos_client, line["id"], kitchen_headers, wait_seconds, interval_seconds)
+    ticket = queue["ticket"]
+    first_served_ticket = run_kitchen_actions(pos_client, ticket, ("accept", "start", "ready", "serve"), kitchen_headers, "kitchen-smoke-first")
+    recalled_ticket = run_kitchen_actions(pos_client, first_served_ticket, ("recall", "start", "ready", "serve"), kitchen_headers, "kitchen-smoke-recall")
+    if recalled_ticket.get("status") != "served":
+        raise RuntimeError(f"KDS recall/serve-again did not finish in served status: {recalled_ticket}")
+
+    served_events = wait_for_cloud_events(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        event_type="ItemServed",
+        aggregate_id=ticket["id"],
+        min_count=2,
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
+    status_events = wait_for_cloud_events(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        event_type="KitchenTicketStatusChanged",
+        aggregate_id=ticket["id"],
+        min_count=8,
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
+    latest_served_event = served_events[0]
+    latest_served_ledger = wait_for_inventory_ledger(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        source_event_type="ItemServed",
+        source_event_id=latest_served_event["event_id"],
+        order_line_id=line["id"],
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
+    olap_item_served = wait_for_olap_events(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        event_type="ItemServed",
+        event_ids={item["event_id"] for item in served_events[:2]},
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
+    olap_status = wait_for_olap_events(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        event_type="KitchenTicketStatusChanged",
+        event_ids={item["event_id"] for item in status_events[:2]},
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
+
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    stock_commands = [
+        (
+            "receipt",
+            "StockReceiptCaptured",
+            f"{API_PREFIX}/kitchen/stock-receipts",
+            {
+                "command_id": f"cmd-kitchen-smoke-{command_suffix()}-receipt",
+                "receipt_id": "receipt-1",
+                "warehouse_id": "warehouse-main",
+                "supplier_counterparty_id": "supplier-demo",
+                "supplier_name_snapshot": "Demo Supplier",
+                "document_number": f"SMOKE-{command_suffix()}",
+                "document_date": today,
+                "received_at": now_iso,
+                "business_date_local": today,
+                "currency": "RUB",
+                "items": [{
+                    "line_id": f"receipt-line-{command_suffix()}",
+                    "catalog_item_id": sirloin_catalog_id,
+                    "name_snapshot": "Beef Sirloin",
+                    "quantity": "10.000",
+                    "unit_code": "g",
+                    "unit_cost_minor": 10,
+                    "line_total_minor": 100,
+                    "currency": "RUB",
+                }],
+            },
+        ),
+        (
+            "count",
+            "InventoryCountCaptured",
+            f"{API_PREFIX}/kitchen/inventory-counts",
+            {
+                "command_id": f"cmd-kitchen-smoke-{command_suffix()}-count",
+                "count_id": "count-1",
+                "warehouse_id": "warehouse-main",
+                "counted_at": now_iso,
+                "business_date_local": today,
+                "items": [{
+                    "line_id": f"count-line-{command_suffix()}",
+                    "catalog_item_id": sirloin_catalog_id,
+                    "counted_quantity": "7.500",
+                    "unit_code": "g",
+                }],
+            },
+        ),
+        (
+            "write_off",
+            "StockWriteOffCaptured",
+            f"{API_PREFIX}/kitchen/stock-write-offs",
+            {
+                "command_id": f"cmd-kitchen-smoke-{command_suffix()}-writeoff",
+                "write_off_id": "writeoff-1",
+                "warehouse_id": "warehouse-main",
+                "written_off_at": now_iso,
+                "business_date_local": today,
+                "reason_code": "spoilage",
+                "reason": "smoke spoilage",
+                "items": [{
+                    "line_id": f"writeoff-line-{command_suffix()}",
+                    "catalog_item_id": sirloin_catalog_id,
+                    "quantity": "1.000",
+                    "unit_code": "g",
+                }],
+            },
+        ),
+        (
+            "production",
+            "ProductionCompleted",
+            f"{API_PREFIX}/kitchen/productions",
+            {
+                "command_id": f"cmd-kitchen-smoke-{command_suffix()}-production",
+                "production_id": "production-1",
+                "warehouse_id": "warehouse-main",
+                "semi_finished_catalog_item_id": sauce_catalog_id,
+                "quantity": "2.000",
+                "unit_code": "g",
+                "completed_at": now_iso,
+                "business_date_local": today,
+            },
+        ),
+    ]
+    stock_results = {}
+    for name, event_type, path, body in stock_commands:
+        captured = request(pos_client, "POST", path, body, expected_status=(201,), headers=kitchen_headers)
+        cloud_event = wait_for_cloud_event(
+            cloud_client,
+            restaurant_id=restaurant_id,
+            event_type=event_type,
+            aggregate_id=captured["id"],
+            wait_seconds=wait_seconds,
+            interval_seconds=interval_seconds,
+        )
+        ledger = wait_for_inventory_ledger(
+            cloud_client,
+            restaurant_id=restaurant_id,
+            source_event_type=event_type,
+            source_event_id=cloud_event["event_id"],
+            order_line_id="",
+            wait_seconds=wait_seconds,
+            interval_seconds=interval_seconds,
+        )
+        stock_results[name] = {
+            "id": captured["id"],
+            "warehouse_id": captured.get("warehouse_id", ""),
+            "event_type": event_type,
+            "cloud_event_id": cloud_event["event_id"],
+            "ledger_entry_count": len(ledger),
+        }
+
+    proposal_group_id = f"proposal-group-{command_suffix()}"
+    catalog_suggestion = request(
+        pos_client,
+        "POST",
+        f"{API_PREFIX}/kitchen/catalog-suggestions",
+        {
+            "command_id": f"cmd-kitchen-smoke-{command_suffix()}-catalog-suggestion",
+            "suggestion_id": f"catalog-suggestion-{command_suffix()}",
+            "proposal_group_id": proposal_group_id,
+            "action": "create_item",
+            "kind": "good",
+            "name": f"Smoke Herb {command_suffix()}",
+            "sku": system_sku("good", "Smoke Herb", command_suffix()),
+            "base_unit": "g",
+            "kitchen_type": "hot",
+            "accounting_category": "good",
+            "reason": "smoke catalog proposal",
+        },
+        expected_status=(201,),
+        headers=kitchen_headers,
+    )
+    recipe_suggestion = request(
+        pos_client,
+        "POST",
+        f"{API_PREFIX}/kitchen/recipe-suggestions",
+        {
+            "command_id": f"cmd-kitchen-smoke-{command_suffix()}-recipe-suggestion",
+            "suggestion_id": f"recipe-suggestion-{command_suffix()}",
+            "proposal_group_id": proposal_group_id,
+            "recipe_version_id": recipe["recipe_version"]["id"],
+            "owner_catalog_item_id": soup_catalog_id,
+            "action": "update_recipe",
+            "prep_time_delta_minutes": 1,
+            "reason": "smoke recipe proposal",
+            "changes": [{
+                "action": "add_line",
+                "to_catalog_item_id": sirloin_catalog_id,
+                "quantity": "1",
+                "unit_code": "g",
+                "loss_percent": "0",
+            }],
+        },
+        expected_status=(201,),
+        headers=kitchen_headers,
+    )
+    cloud_catalog_suggestion = wait_for_cloud_suggestion(
+        cloud_client, "catalog", restaurant_id, catalog_suggestion["id"], wait_seconds, interval_seconds
+    )
+    cloud_recipe_suggestion = wait_for_cloud_suggestion(
+        cloud_client, "recipe", restaurant_id, recipe_suggestion["id"], wait_seconds, interval_seconds
+    )
+    review_body = {
+        "reviewed_by_employee_id": "seed-dev-system-manager",
+        "review_comment": "approved by kitchen process smoke",
+        "published_by": "seed-dev-system-smoke",
+    }
+    approved_catalog = request(
+        cloud_client,
+        "POST",
+        f"{API_PREFIX}/master-data/catalog-suggestions/{cloud_catalog_suggestion['id']}/approve",
+        review_body,
+        expected_status=(200,),
+    )
+    approved_recipe = request(
+        cloud_client,
+        "POST",
+        f"{API_PREFIX}/master-data/recipe-suggestions/{cloud_recipe_suggestion['id']}/approve",
+        review_body,
+        expected_status=(200,),
+    )
+    wait_for_edge_proposal_status(pos_client, "catalog", catalog_suggestion["id"], "approved", kitchen_headers, wait_seconds, interval_seconds)
+    wait_for_edge_proposal_status(pos_client, "recipe", recipe_suggestion["id"], "approved", kitchen_headers, wait_seconds, interval_seconds)
+    updated_catalog_items = wait_for_catalog_item_count(pos_client, len(catalog_items) + 1, kitchen_headers, wait_seconds, interval_seconds)
+    updated_recipe = request(pos_client, "GET", f"{API_PREFIX}/kitchen/catalog/items/{soup_catalog_id}/recipe", expected_status=(200,), headers=kitchen_headers)
+
+    return {
+        "edge_catalog_item_count_before": len(catalog_items),
+        "edge_catalog_item_count_after": len(updated_catalog_items),
+        "recipe_line_count_before": len(recipe.get("ingredients", [])),
+        "recipe_line_count_after": len(updated_recipe.get("ingredients", [])),
+        "order_id": order["id"],
+        "order_line_id": line["id"],
+        "kitchen_order_status": queue["order"].get("kitchen_order_status", ""),
+        "kitchen_ticket_id": ticket["id"],
+        "item_served_event_ids": [item["event_id"] for item in served_events[:2]],
+        "latest_item_served_event_id": latest_served_event["event_id"],
+        "latest_item_served_ledger_entry_count": len(latest_served_ledger),
+        "kitchen_status_event_count": len(status_events),
+        "olap_item_served_event_count": len(olap_item_served),
+        "olap_status_event_count": len(olap_status),
+        "stock": stock_results,
+        "catalog_suggestion_id": catalog_suggestion["id"],
+        "recipe_suggestion_id": recipe_suggestion["id"],
+        "cloud_catalog_suggestion_id": cloud_catalog_suggestion["id"],
+        "cloud_recipe_suggestion_id": cloud_recipe_suggestion["id"],
+        "approved_catalog_status": approved_catalog.get("status", ""),
+        "approved_recipe_status": approved_recipe.get("status", ""),
+    }
+
+
 def mark_kitchen_ticket_served(pos_client, order_line_id, headers):
     tickets = request(
         pos_client,
@@ -974,7 +1335,45 @@ def first_menu_item_id(items, excluded_id=""):
     return ""
 
 
+def wait_for_kitchen_order_tile(pos_client, order_line_id, headers, wait_seconds, interval_seconds):
+    deadline = time.monotonic() + max(1, wait_seconds)
+    while True:
+        queue = request(
+            pos_client,
+            "GET",
+            f"{API_PREFIX}/kitchen/order-queue",
+            expected_status=(200,),
+            query={"limit": 100, "offset": 0},
+            headers=headers,
+        )
+        for order in queue.get("orders", []):
+            for ticket in order.get("tickets", []):
+                if ticket.get("order_line_id") == order_line_id:
+                    return {"order": order, "ticket": ticket}
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"kitchen order tile not found for order line {order_line_id}")
+        time.sleep(max(0, interval_seconds))
+
+
+def run_kitchen_actions(pos_client, ticket, actions, headers, prefix):
+    current = dict(ticket)
+    for action in actions:
+        current = request(
+            pos_client,
+            "POST",
+            f"{API_PREFIX}/kitchen/tickets/{current['id']}/{action}",
+            {"command_id": f"cmd-{prefix}-{command_suffix()}-{action}"},
+            expected_status=(200,),
+            headers=headers,
+        )
+    return current
+
+
 def wait_for_cloud_event(cloud_client, restaurant_id, event_type, aggregate_id, wait_seconds, interval_seconds):
+    return wait_for_cloud_events(cloud_client, restaurant_id, event_type, aggregate_id, 1, wait_seconds, interval_seconds)[0]
+
+
+def wait_for_cloud_events(cloud_client, restaurant_id, event_type, aggregate_id, min_count, wait_seconds, interval_seconds):
     deadline = time.monotonic() + max(1, wait_seconds)
     while True:
         items = request(
@@ -984,11 +1383,32 @@ def wait_for_cloud_event(cloud_client, restaurant_id, event_type, aggregate_id, 
             expected_status=(200,),
             query={"restaurant_id": restaurant_id, "event_type": event_type, "limit": 50},
         )
-        for item in items:
-            if item.get("aggregate_id") == aggregate_id:
-                return item
+        matched = [item for item in items if item.get("aggregate_id") == aggregate_id]
+        if len(matched) >= min_count:
+            return matched
         if time.monotonic() >= deadline:
-            raise RuntimeError(f"Cloud did not receive {event_type} for aggregate {aggregate_id} before timeout")
+            raise RuntimeError(f"Cloud did not receive {min_count} {event_type} events for aggregate {aggregate_id} before timeout")
+        time.sleep(max(0, interval_seconds))
+
+
+def wait_for_olap_events(cloud_client, restaurant_id, event_type, event_ids, wait_seconds, interval_seconds):
+    wanted = {item for item in event_ids if item}
+    if not wanted:
+        raise RuntimeError(f"OLAP wait requires event ids for {event_type}")
+    deadline = time.monotonic() + max(1, wait_seconds)
+    while True:
+        items = request(
+            cloud_client,
+            "GET",
+            f"{API_PREFIX}/olap/raw-business-events",
+            expected_status=(200,),
+            query={"restaurant_id": restaurant_id, "event_type": event_type, "limit": 200},
+        )
+        matched = [item for item in items if item.get("event_id") in wanted]
+        if {item.get("event_id") for item in matched} >= wanted:
+            return matched
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"ClickHouse raw_business_events did not expose {event_type} ids {sorted(wanted)} before timeout")
         time.sleep(max(0, interval_seconds))
 
 
@@ -1006,6 +1426,60 @@ def wait_for_inventory_ledger(cloud_client, restaurant_id, source_event_type, so
             return items
         if time.monotonic() >= deadline:
             raise RuntimeError(f"Cloud inventory ledger did not receive {source_event_type} ledger rows for order line {order_line_id}")
+        time.sleep(max(0, interval_seconds))
+
+
+def wait_for_cloud_suggestion(cloud_client, kind, restaurant_id, suggestion_id, wait_seconds, interval_seconds):
+    path = {
+        "catalog": f"{API_PREFIX}/master-data/catalog-suggestions",
+        "recipe": f"{API_PREFIX}/master-data/recipe-suggestions",
+    }[kind]
+    deadline = time.monotonic() + max(1, wait_seconds)
+    while True:
+        items = request(
+            cloud_client,
+            "GET",
+            path,
+            expected_status=(200,),
+            query={"restaurant_id": restaurant_id, "status": "pending", "limit": 100, "offset": 0},
+        )
+        for item in items:
+            item_suggestion_id = item.get("suggestion_id", "")
+            if item_suggestion_id == suggestion_id or item.get("id") == suggestion_id or suggestion_id.startswith(item_suggestion_id + "-"):
+                return item
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"Cloud did not expose pending {kind} suggestion {suggestion_id} before timeout")
+        time.sleep(max(0, interval_seconds))
+
+
+def wait_for_edge_proposal_status(pos_client, kind, proposal_id, status, headers, wait_seconds, interval_seconds):
+    deadline = time.monotonic() + max(1, wait_seconds)
+    while True:
+        items = request(
+            pos_client,
+            "GET",
+            f"{API_PREFIX}/kitchen/proposals",
+            expected_status=(200,),
+            query={"kind": kind, "limit": 100, "offset": 0},
+            headers=headers,
+        )
+        for item in items:
+            item_id = item.get("id", "")
+            if (item_id == proposal_id or proposal_id.startswith(item_id + "-")) and item.get("status") == status:
+                return item
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"POS Edge proposal {proposal_id} did not reach status {status} before timeout")
+        time.sleep(max(0, interval_seconds))
+
+
+def wait_for_catalog_item_count(pos_client, minimum_count, headers, wait_seconds, interval_seconds):
+    deadline = time.monotonic() + max(1, wait_seconds)
+    while True:
+        items = request(pos_client, "GET", f"{API_PREFIX}/catalog/items", expected_status=(200,), headers=headers)
+        if len(items) >= minimum_count:
+            return items
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"POS Edge catalog item count did not reach {minimum_count} before timeout")
         time.sleep(max(0, interval_seconds))
 
 
@@ -1046,6 +1520,7 @@ def parse_args(argv=None):
     parser.add_argument("--wait-seconds", type=int, default=90)
     parser.add_argument("--interval-seconds", type=float, default=2)
     parser.add_argument("--run-minimal-flow", action="store_true", help="Run Cloud publication -> Edge sync -> waiter order -> cashier check -> Cloud inventory ledger smoke.")
+    parser.add_argument("--run-kitchen-process-smoke", action="store_true", help="Run full kitchen process smoke: KDS recall, ClickHouse trail, stock events, proposals and feedback.")
     return parser.parse_args(argv)
 
 
@@ -1061,6 +1536,7 @@ def main(argv=None):
         wait_seconds=args.wait_seconds,
         interval_seconds=args.interval_seconds,
         run_minimal_flow=args.run_minimal_flow,
+        run_kitchen_process_smoke=args.run_kitchen_process_smoke,
     )
     write_summary(args.output, summary)
     print(json.dumps(summary, ensure_ascii=False, indent=2))

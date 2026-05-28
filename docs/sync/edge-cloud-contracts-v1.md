@@ -194,14 +194,14 @@ Request body shape currently supported by POS Edge:
 - `restaurants` применяет Cloud-authored настройки ресторана и `active`; опубликованный active restaurant должен попадать в Edge read model как `active = true`.
 - `pricing_policy` применяет Cloud-authored `tax_profiles`, `tax_rules`, `service_charge_rules` и automatic discount/surcharge `pricing_policies` в Edge read-model tables с sync metadata.
 - `recipes` применяет `recipe_versions` и `recipe_lines`.
-- `inventory_reference` применяет active/inactive `stop_lists` overlay rows и Cloud-owned `warehouses` в локальную `warehouse_reference` read model.
+- `inventory_reference` применяет active/inactive `stop_lists` overlay rows и Cloud-owned `warehouses` в локальную `warehouse_reference` read model; local Docker seed publication содержит default `warehouse-main`.
 - Unsupported JSON fields отклоняются strict decode; неизвестные stream names не применяются.
 
 Только основа:
 
 - Cloud schema и publication workflow реально публикуют `recipes`/`inventory_reference` в `cloud_master_data_packages` как часть одного детерминированного publication snapshot.
-- `scripts/seed-dev-system.py` создает recipe/stop-list examples и публикует их в Edge; runtime sale-blocking проверяется профильными POS backend tests.
-- Smoke suite `pos_stop_list_sale_blocking` покрывает Cloud authoring -> publication -> Edge import -> блокировку продажи в POS runtime.
+- `scripts/seed-dev-system.py` создает recipe/stop-list examples и default warehouse, публикует их в Edge; runtime sale-blocking проверяется профильными POS backend tests и `--run-minimal-flow`.
+- `scripts/seed-dev-system.py --run-kitchen-process-smoke` покрывает Cloud publication -> Edge import -> KDS lifecycle/recall -> stock/proposal events -> Cloud ledger/ClickHouse/proposal feedback.
 
 ## Edge -> Cloud Operational Events
 
@@ -364,10 +364,11 @@ Cancellation/refund sync behavior:
 - replay того же `ItemServed` не создает второй stock document;
 - POS Edge повтор того же kitchen `command_id` для `serve` не создает второй `ItemServed`;
 - повторная подача после `served -> recall -> start -> ready` приходит новым `ItemServed` с увеличенным `serve_sequence` и ссылкой `supersedes_served_event_id` на предыдущий served fact;
+- Cloud Inventory Worker пропускает superseded served fact, если superseding `ItemServed` уже принят Cloud до обработки очереди;
 - `CheckClosed` после уже обработанного `ItemServed` списывает только положительную unserved delta;
 - replay того же `CheckClosed` не создает второй stock document.
 
-Запланировано далее: ClickHouse export, balances, recipe expansion и полный costing engine. Cloud proposal review/apply реализован сейчас через `catalog-suggestions`/`recipe-suggestions` approve/reject/request-changes routes.
+Запланировано далее: компенсирующий пересчет уже обработанного served fact после recall, balances, modifier linked recipe expansion и полный costing engine. Cloud proposal review/apply и ClickHouse `raw_business_events` export реализованы сейчас.
 
 `KitchenTicketStatusChanged` фиксирует advanced KDS lifecycle без прямой складской проводки:
 
@@ -467,16 +468,16 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 Не реализовано сейчас:
 
 - Edge-origin stop-list edit sync/conflict policy;
-- Cloud receiver/worker для `StockWriteOffCaptured`;
-- recipe expansion, modifier linked catalog item consumption и retro costing DAG;
-- ClickHouse forwarder/projection export and bounded OLAP API;
+- компенсирующий пересчет уже обработанного served fact после recall;
+- modifier linked catalog item consumption и retro costing DAG;
+- ClickHouse `olap_stock_moves` projection export and aggregate bounded OLAP API;
 - PSP/fiscal event streams.
 
 Запланировано до полного пилота:
 
 - advanced KDS расширяется cooking events поверх уже реализованных `KitchenTicketStatusChanged`/`ItemServed`;
 - stop-list changes синхронизируются через Cloud -> Edge packages и, если включен Edge manager input, через `StopListUpdated`;
-- Cloud Inventory Worker расширяется до полного receipts, counts, production, refund/cancellation dispositions, balances and costing engine;
+- Cloud Inventory Worker расширяется до balances and costing engine;
 - Реализовано сейчас: ClickHouse pipeline экспортирует `raw_business_events`, а `GET /api/v1/olap/raw-business-events` читает bounded metadata без raw payload.
 - Запланировано далее: `olap_stock_moves` и bounded aggregates.
 
@@ -485,11 +486,10 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 Запланировано до полного пилота:
 
 - Cloud-authored pricing/tax UI и полный publication workflow поверх generic `pricing_policy` package storage/apply;
-- Cloud authoring workflow для `recipes`/`inventory_reference` package generation;
-- `CheckClosed`/`KitchenTicketStatusChanged`/`ItemServed` pilot inventory and KDS facts;
-- full inventory event catalog and Cloud Inventory Engine;
+- Cloud authoring workflow polish для `recipes`/`inventory_reference` package generation;
+- full Cloud Inventory Engine для balances/costing/recalculation;
 - ClickHouse `raw_business_events`, retry/export state and bounded event metadata API реализованы сейчас; `olap_stock_moves`, public backfill controls and aggregate OLAP API запланированы далее;
-- stop-list sale blocking smoke через offline Edge.
+- stop-list sale blocking smoke через offline Edge реализован сейчас в минимальном seed smoke.
 
 После полного пилота:
 

@@ -71,6 +71,7 @@ Waiter mobile UI in `pos-ui/src/pages/WaiterPage.vue` и `pos-ui/src/pages/pos/u
 - после status action UI не подменяет truth оптимистично, а перечитывает `GET /api/v1/kitchen/order-queue`;
 - раздел `Склад` использует full catalog picker поверх `GET /api/v1/catalog/items` и формы `Приемка`, `Ревизия`, `Списание`, `Приготовление`;
 - раздел `Кухня` показывает `Техкарты`, `Предложения`, `Мои предложения`, читает recipe response с `catalog_item`, `recipe_version`, `ingredients` и отправляет `CatalogItemChangeSuggested`/`RecipeChangeSuggested`;
+- `Мои предложения` получает Cloud approve/reject/request-changes через `proposal_feedback` после sync и не применяет master-data локально без publication;
 - loading/error/empty/no-permission states идут через `pos-ui-g/src/shared/ui` и `pos-ui-g/src/shared/i18n`;
 - hardware bump-bar/printer orchestration и stop-list edit не описываются как реализованные.
 
@@ -221,6 +222,7 @@ Requirements:
 - после kitchen action UI перечитывает backend и не держит оптимистичный статус как source of truth;
 - ошибки показываются безопасно через локализованные keys в `pos-ui-g/shared/i18n`;
 - kitchen UI дает повару сценарии приемки поставки, ревизии, списания, приготовления, catalog suggestion, просмотра техкарты и `RecipeChangeSuggested` через backend routes.
+- профильный smoke `scripts/seed-dev-system.py --run-kitchen-process-smoke` проверяет UI-backed backend surface для KDS lifecycle, recall/serve-again, stock forms и proposal feedback через HTTP routes.
 
 Запланировано далее:
 

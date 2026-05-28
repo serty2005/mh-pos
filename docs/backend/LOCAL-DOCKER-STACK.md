@@ -193,6 +193,19 @@ python3 scripts/seed-dev-system.py \
 
 Реализовано сейчас: флаг `--run-minimal-flow` после seed/pairing выполняет HTTP-only сценарий `Cloud recipes/stop-list publication -> Edge sync -> waiter order -> KDS served -> cashier final check -> ItemServed/CheckClosed -> Cloud inventory ledger`. Сценарий проверяет stop-list rejection для demo sold-out item, создает заказ официантом, проводит KDS ticket через `accept/start/ready/serve`, выпускает precheck, закрывает его оплатой кассира, ожидает `ItemServed` и `CheckClosed` в Cloud safe event log, проверяет `stock_ledger` для `ItemServed` и отсутствие duplicate `CheckClosed` delta по тому же `order_line_id`.
 
+Полный kitchen/process smoke для поднятого stack:
+
+```bash
+python3 scripts/seed-dev-system.py \
+  --cloud-base http://localhost:8090 \
+  --pos-base http://localhost:8080 \
+  --license-base http://localhost:8095 \
+  --output scripts/.seed-dev-system-summary.json \
+  --run-kitchen-process-smoke
+```
+
+Реализовано сейчас: флаг `--run-kitchen-process-smoke` после seed/pairing проверяет Cloud publication для `catalog`/`menu`/`recipes`/`inventory_reference` включая default warehouse `warehouse-main`, Edge sync полного каталога и техкарт, waiter order с блюдом, KDS order tile, `accept/start/ready/serve`, `recall/start/ready/serve`, прием `KitchenTicketStatusChanged`/`ItemServed` в Cloud, наличие kitchen event trail в ClickHouse `raw_business_events`, Cloud `stock_ledger` для `StockReceiptCaptured`/`InventoryCountCaptured`/`StockWriteOffCaptured`/`ProductionCompleted`, создание catalog/recipe suggestions на Edge, Cloud manager approve и возврат `proposal_feedback` на Edge.
+
 Seed-вход содержит только пользовательские данные: названия, имена, PIN, цены, количества, места и наборы прав. ID, `node_device_id`, generated SKU и остальные технические значения берутся из backend responses или генерируются системно. `scripts/.seed-dev-system-summary.json` содержит локальные demo credentials и добавлен в `.gitignore`; не коммить этот файл.
 
 Повторный запуск рассчитан на чистые backend volumes. Если POS Edge уже находится в `paired`, скрипт завершится fail-fast: для нового полного seed нужно пересоздать локальные Docker volumes через `docker compose -f docker-compose.local.yml down -v` и поднять stack заново.

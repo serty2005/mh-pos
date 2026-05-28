@@ -16,7 +16,7 @@
 
 Не обнаружено сейчас:
 
-- Подтвержденного runtime для delivery, настоящего платежного процессинга, фискального адаптера, `olap_stock_moves` projection и расширенных KDS flows за пределами ticket lifecycle foundation.
+- Подтвержденного runtime для delivery, настоящего платежного процессинга, фискального адаптера, `olap_stock_moves` projection, kitchen stop-list edit и расширенных cooking events за пределами ticket lifecycle foundation.
 - Публичного Cloud HTTP/API интерфейса отчетов по детальной проекции финансовых операций. Сервисная и repository-основа есть, публичный reporting surface остается запланированным далее.
 
 Цель полной пилотной реализации:
@@ -24,12 +24,12 @@
 - сохранить текущий cashier runtime как базовый поток;
 - stop-list sale blocking на POS Edge с Cloud authoring/publication и offline локальной проверкой уже подтвержден в `pos_stop_list_sale_blocking`;
 - расширять mobile-first waiter runtime без payment/refund authority по умолчанию только по подтвержденным backend contracts;
-- расширить KDS lifecycle за пределы минимального ticket foundation: cooking events, UI для приемки поставки/catalog proposals/recipe change proposals и stop-list edit;
+- расширить KDS lifecycle за пределы текущего backend-backed ticket/stock/proposal foundation: cooking events, station priority, kitchen stop-list edit и operator analytics;
 - зафиксировать POS Edge backend как авторитетный runtime для financial/order/KDS command validation и stop-list sale blocking; POS UI не становится авторитетным слоем;
 - добавить Cloud manager flow для recipes, stop-list, catalog/recipe proposal review, inventory operations, publication readiness и sync/problem observability;
 - добавить полный Cloud-owned складской движок: stock receipts, inventory counts, production, sale consumption, refund/cancellation dispositions, recipe expansion, balances, costing и retro recalculation DAG;
 - расширить ClickHouse runtime от первого `raw_business_events` slice до `olap_stock_moves`, агрегатов и observability/backfill controls;
-- закрыть полный smoke path Cloud setup -> Edge sync -> waiter order -> kitchen served -> cashier payment/check -> Cloud inventory ledger -> ClickHouse export -> bounded OLAP API.
+- поддерживать полный smoke path Cloud setup -> Edge sync -> waiter order -> kitchen served/recall/serve-again -> Cloud inventory ledger -> ClickHouse export -> bounded OLAP API, сейчас покрытый `scripts/seed-dev-system.py --run-kitchen-process-smoke` для kitchen/process без cashier payment/check.
 
 ## POS Edge Backend
 
@@ -50,7 +50,8 @@
 - Append-only ledger финансовых операций: `CancellationRecorded` и `RefundRecorded` для полных и частичных операций, без мутации уже финализированных payment/precheck/check.
 - Compatibility route `POST /api/v1/payments/{id}/refund`, который записывает refund operation по payment allocation, но не возвращает оплату или чек в изменяемое состояние.
 - Ограниченные read endpoints для закрытых заказов, financial operations, outbox и local events.
-- Минимальный KDS ticket lifecycle: `kitchen_tickets` создаются из non-service order lines, `GET /api/v1/kitchen/tickets` поддерживает bounded read/status filter, status actions `accept/start/hold/ready/serve/recall/cancel` проверяют `pos.kitchen.status.change`, пишут `KitchenTicketStatusChanged`, а `serve` дополнительно пишет `ItemServed`.
+- Backend-backed KDS ticket lifecycle: `kitchen_tickets` создаются из non-service order lines, `GET /api/v1/kitchen/order-queue` и `GET /api/v1/kitchen/tickets` поддерживают bounded read/status filter, status actions `accept/start/hold/ready/serve/recall/cancel` проверяют `pos.kitchen.status.change`, пишут `KitchenTicketStatusChanged`, а `serve` дополнительно пишет `ItemServed`; повторная подача после recall пишет новый `ItemServed` с `serve_sequence` и `supersedes_served_event_id`.
+- Kitchen stock/proposal backend: POS Edge принимает receipt/count/write-off/production, recipe read, catalog/recipe suggestions и proposal feedback read model без создания Edge-side stock documents.
 - Локальный lifecycle SQLite: status, retention dry-run, archive export plan, export-only JSONL archive, read-plan, lookup preview, apply-plan и apply-readiness с поддержкой destructive apply (физическое удаление закрытых orders/checks/financial_operations и связанных при verified JSONL + чистый scoped outbox + отсутствие открытых operational boundaries для cutoff периода) и последующий VACUUM compaction БД.
 - Cloud -> Edge master-data ingest для `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
 - Sync sender через authenticated `sync/exchange`, item-level ACK, retry/reclaim/backoff и безопасную обработку неподдержанных направлений.
@@ -71,7 +72,8 @@
 - `sync/exchange` проверяет bearer `node_token`, assigned restaurant и device status.
 - Idempotent receipt для Edge events, raw payload checksum, event type stats и coarse shift finance projection.
 - Bounded read-only Cloud inventory ledger endpoint `GET /api/v1/inventory/stock-ledger` для проверки обработанных Cloud Inventory Worker строк без raw sync payload.
-- `ItemServed` попадает в durable `inventory_event_queue` и Cloud Inventory Worker создает sale ledger идемпотентно по source event; `KitchenTicketStatusChanged` принимается как operational-only event и не ставится в inventory queue.
+- `ItemServed` попадает в durable `inventory_event_queue` и Cloud Inventory Worker создает sale ledger идемпотентно по source event; superseded served fact пропускается, если superseding `ItemServed` уже принят до обработки очереди; `KitchenTicketStatusChanged` принимается как operational-only event и не ставится в inventory queue.
+- `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` принимаются Cloud receiver и превращаются Cloud Inventory Worker в stock documents/ledger rows.
 - Детальная PostgreSQL projection для current `CancellationRecorded` и `RefundRecorded`; legacy `PaymentRefunded`/`CheckRefunded` принимаются, но не наполняют detailed operation projection.
 - Безопасный список входящих Edge events для Cloud UI без raw payload.
 - PostgreSQL `inbox_events` как transactional delivery queue для accepted Edge events; Cloud API отвечает после PostgreSQL commit и не пишет в ClickHouse в request path.
@@ -123,7 +125,7 @@
 
 - UI для скидок/надбавок/налоговых профилей в кассовом терминале.
 - UI для modifier/service/tip scopes в financial operation ledger.
-- Складские операции в POS UI, kitchen receipt/proposal/stop-list edit actions, доставка, PSP/fiscal device screens.
+- Kitchen stop-list edit actions, доставка, PSP/fiscal device screens и Cloud-owned складские документы в POS UI.
 
 ## Cloud UI
 
@@ -135,7 +137,7 @@
 - Генерация pairing code и назначение Edge-device ресторану.
 - Просмотр безопасного списка входящих Edge events без raw payload, включая card/list fallback на narrow screens с metadata/checksum вместо raw event payload; resource lists на narrow screens показывают status label в карточке и не раскрывают raw payload.
 - Cloud-owned recipes и stop-list authoring через подтвержденные master-data routes.
-- Readiness-only manager surfaces для catalog/recipe proposal review, inventory operations/costing и OLAP exports без имитации отсутствующих Cloud routes.
+- Route-backed manager surfaces для catalog/recipe proposal review: списки, detail/diff, approve/reject/request-changes и publication/feedback после approve; inventory operations/costing и OLAP exports остаются readiness-only без имитации отсутствующих Cloud routes.
 - Локализованные сообщения, safe error details, no raw payload / PIN / token display; Cloud create/rotate PIN поля используют password input, а списки сотрудников показывают только `pin_configured` и credential version.
 
 Вне текущего объема:
@@ -170,6 +172,7 @@
 - Единственный Python seed script использует HTTP API и не делает прямых записей в PostgreSQL/SQLite.
 - `scripts/seed-dev-system.py` проверяет health Cloud/POS/License, создает полный Cloud-owned seed dataset, публикует master data, выполняет license pairing POS Edge и проверяет базовый POS read model.
 - `scripts/seed-dev-system.py --run-minimal-flow` выполняет минимальный HTTP-only smoke: Cloud recipes/stop-list publication, Edge sync, waiter order/precheck, KDS served, cashier payment/final check, прием `ItemServed`/`CheckClosed` в Cloud, появление строк Cloud `stock_ledger` по `ItemServed` и отсутствие duplicate `CheckClosed` delta для того же `order_line_id`.
+- `scripts/seed-dev-system.py --run-kitchen-process-smoke` выполняет профильный kitchen/process smoke: Cloud seed publication для catalog/menu/recipes/inventory_reference, Edge sync, waiter order, kitchen order tile, `accept/start/ready/serve`, `recall/start/ready/serve`, ClickHouse `raw_business_events`, Cloud stock ledger для receipt/count/write-off/production, catalog/recipe suggestions, Cloud manager approve и Edge proposal feedback.
 - PowerShell/Bash wrappers и прежние onboarding flows удалены; в `scripts` остается один пользовательский Python seed script.
 - HTTP слой скриптов игнорирует proxy для localhost/loopback, чтобы не ломать Docker published ports.
 
@@ -197,7 +200,7 @@
 
 - Поддерживать `docs/backend/CLOUD-BACKEND-SPEC.md` как профильный документ Cloud Backend при каждом изменении Cloud routes, payloads, sync/provisioning contracts или schema.
 - Публичный Cloud reporting API/UI для detailed financial operation projection.
-- До полного пилота: UI для chef receipt/catalog/recipe proposal flows, Cloud review/apply для предложений, полный Cloud Inventory Engine, `olap_stock_moves`, агрегированные OLAP API и `full_pilot` smoke.
+- До полного пилота: kitchen stop-list edit, компенсирующий пересчет уже обработанного served fact после recall, полный Cloud Inventory Engine, `olap_stock_moves`, агрегированные OLAP API и fault-injection/reconnect smoke.
 - После полного пилота: hardware bump-bar integrations, kitchen printer orchestration, rich BI dashboards, ERP/accounting integrations и внешние delivery/payment/fiscal контуры.
 - Data-preserving migrations после первого реального внедрения.
 - Production auth/RBAC perimeter для Cloud/License API.

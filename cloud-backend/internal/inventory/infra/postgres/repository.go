@@ -251,3 +251,23 @@ GROUP BY order_line_id`, strings.TrimSpace(restaurantID), orderLineIDs, string(c
 	}
 	return out, rows.Err()
 }
+
+func (r *Repository) HasSupersedingServedEvent(ctx context.Context, restaurantID, orderLineID, servedEventID string) (bool, error) {
+	restaurantID = strings.TrimSpace(restaurantID)
+	orderLineID = strings.TrimSpace(orderLineID)
+	servedEventID = strings.TrimSpace(servedEventID)
+	if restaurantID == "" || orderLineID == "" || servedEventID == "" {
+		return false, nil
+	}
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+SELECT EXISTS (
+  SELECT 1
+  FROM inbox_events
+  WHERE restaurant_id = $1
+    AND event_type = $2
+    AND raw_payload->'payload'->'data'->>'order_line_id' = $3
+    AND raw_payload->'payload'->'data'->>'supersedes_served_event_id' = $4
+)`, restaurantID, string(contracts.EventItemServed), orderLineID, servedEventID).Scan(&exists)
+	return exists, err
+}

@@ -67,7 +67,7 @@
 - recipe editor уже имеет bounded route-backed строки recipe items; далее нужен сценарный editor версий поверх подтвержденных contracts;
 - duplicate hints и linked receipt line для catalog suggestion review остаются запланировано далее;
 - stop-list panel уже имеет bounded route-backed rows; далее нужны conflict policy, review и publication readiness по отдельным contracts;
-- inventory operations workspace: stock receipts, inventory counts, production completion input, stock ledger/balances and costing/recalculation status;
+- inventory operations workspace: stock ledger/balances and costing/recalculation status; Edge-side stock receipts, inventory counts, write-offs and production input are covered by `pos-ui-g` kitchen mode and Cloud ledger read endpoints;
 - ClickHouse/OLAP workspace: export health, retry/backfill controls and read-only OLAP endpoint previews;
 - launch readiness должен учитывать stop-list review и публикацию streams `recipes`/`stop_lists`;
 - publication panel должен показывать latest package version, target Edge node и статус доставки/ACK, когда backend contract готов;
@@ -140,11 +140,11 @@ Review command body:
 
 Для entities без подтвержденного `GET list` route UI показывает форму команды и поясняет, что list route не подтвержден.
 
-запланировано до полного пилота: после добавления Cloud backend routes API client должен покрыть `recipes`, `stop-lists`, inventory operations, costing/recalculation status, ClickHouse export status и OLAP read endpoints; UI не должен вызывать неподтвержденные endpoints до появления backend contract.
+запланировано до полного пилота: после добавления Cloud backend routes API client должен покрыть costing/recalculation status, ClickHouse export status, aggregate OLAP read endpoints и inventory balance views; UI не должен вызывать неподтвержденные endpoints до появления backend contract.
 
 ## Runtime Code
 
-реализовано сейчас: runtime backend code изменялся для безопасного `GET /api/v1/sync/edge-events` и выравнивания accepted Edge event types со schema baseline.
+реализовано сейчас: runtime backend code изменялся для безопасного `GET /api/v1/sync/edge-events`, proposal review/apply, ClickHouse `raw_business_events`, kitchen stock events и выравнивания accepted Edge event types со schema baseline.
 
 реализовано сейчас: `cloud-ui/src/App.vue` оставляет orchestration/state/config, а presentation layer вынесен в `cloud-ui/src/components/cloud/*`.
 

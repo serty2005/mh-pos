@@ -46,6 +46,7 @@ type Repository interface {
 	ListActiveRecipeLines(context.Context, string, string) ([]RecipeLine, error)
 	ListModifierOptionLinks(context.Context, string, []string) (map[string]string, error)
 	ListServedOrderLineQuantities(context.Context, string, []string) (map[string]string, error)
+	HasSupersedingServedEvent(context.Context, string, string, string) (bool, error)
 }
 
 type ClaimCommand struct {
@@ -201,6 +202,15 @@ func (w *Worker) itemServedDocument(ctx context.Context, event QueuedEvent, now 
 	payload, err := decode[contracts.ItemServed](event.Payload)
 	if err != nil {
 		return StockDocument{}, false, err
+	}
+	if strings.TrimSpace(payload.Data.ServedEventID) != "" {
+		superseded, err := w.repo.HasSupersedingServedEvent(ctx, event.RestaurantID, payload.Data.OrderLineID, payload.Data.ServedEventID)
+		if err != nil {
+			return StockDocument{}, false, err
+		}
+		if superseded {
+			return StockDocument{}, false, nil
+		}
 	}
 	effectiveQuantity, err := w.effectiveServedQuantity(ctx, event.RestaurantID, payload.Data.OrderLineID, payload.Data.Quantity)
 	if err != nil {

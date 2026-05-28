@@ -54,7 +54,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - POS Edge outbox/local event foundation for cashier operational events.
 - `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud financial operation events. `PaymentRefunded` and `CheckRefunded` remain accepted legacy operational event types for older payloads.
 - Cloud receiver валидирует current `RefundRecorded`/`CancellationRecorded` payload fields, включая совпадение payload `restaurant_id`/`device_id` с envelope, precheck id и reason, stores raw/journal rows idempotently, updates event-type stats plus coarse shift finance refund counters for refunds and maintains detailed `cloud_projection_financial_operations` for current financial operations. Legacy `PaymentRefunded`/`CheckRefunded` remain inbound-compatible but do not populate the detailed operation projection.
-- Python 3 local seed runner `scripts/seed-dev-system.py` создает полный Cloud-owned dataset, публикует packages для POS Edge streams, выполняет license pairing и проверяет базовый POS read model; флаг `--run-minimal-flow` выполняет минимальный waiter order -> KDS served -> cashier final check -> `ItemServed`/`CheckClosed` -> Cloud inventory ledger smoke без destructive storage actions.
+- Python 3 local seed runner `scripts/seed-dev-system.py` создает полный Cloud-owned dataset, публикует packages для POS Edge streams, выполняет license pairing и проверяет базовый POS read model; флаг `--run-minimal-flow` выполняет минимальный waiter order -> KDS served -> cashier final check -> `ItemServed`/`CheckClosed` -> Cloud inventory ledger smoke, а `--run-kitchen-process-smoke` выполняет полный kitchen/process smoke без destructive storage actions.
 - DDD context map exists in `docs/architecture/DDD-CONTEXT-MAP.md`.
 
 ### Persistence Policy
@@ -114,14 +114,15 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - целевой contract зафиксирован в `docs/backend/INVENTORY-COSTING-SPEC.md`;
   - Edge должен стать только генератором events и UI ввода, без stock documents/moves/balances/costing;
   - выполнено: Edge SQLite schema содержит read-only `recipe_versions`, `recipe_lines`, `stop_lists` и `warehouse_reference`;
-  - выполнено: Cloud Inventory Worker принимает через durable queue `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
+  - выполнено: Cloud Inventory Worker принимает через durable queue `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
   - выполнено: Cloud PostgreSQL baseline содержит `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`;
   - выполнено: worker пишет `stock_ledger` with `unit_cost_minor`, `total_cost_minor`, `costing_status` для нормализованных item payloads; retro recalculation jobs остаются следующим шагом;
   - выполнено: Cloud Inventory Worker дедуплицирует `ItemServed` replay и `CheckClosed` replay, а `CheckClosed` после обработанного `ItemServed` списывает только положительную unserved delta по `order_line_id`;
   - выполнено: POS Edge пишет `CheckClosed` outbox event из immutable `check.Snapshot` при final check после полной оплаты;
   - выполнено: POS Edge kitchen stock input routes пишут `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` в `local_event_log`/`pos_sync_outbox` без POS-side stock documents/moves/balances/costing; replay того же stock `command_id` возвращает сохраненный результат без повторной записи событий;
   - выполнено: POS Edge использует stop-list как единственный механизм блокировки продаж при add/increase order line; stock balance остается аналитическим и может быть отрицательным;
-  - выполнено: минимальный HTTP-only smoke `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud recipes/stop-list publication -> Edge sync -> waiter order -> KDS served -> cashier final check -> `ItemServed`/`CheckClosed` -> Cloud `stock_ledger`.
+  - выполнено: минимальный HTTP-only smoke `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud recipes/stop-list publication -> Edge sync -> waiter order -> KDS served -> cashier final check -> `ItemServed`/`CheckClosed` -> Cloud `stock_ledger`;
+  - выполнено: полный kitchen/process smoke `scripts/seed-dev-system.py --run-kitchen-process-smoke` проверяет Cloud seed publication для catalog/menu/recipes/inventory_reference, Edge sync, waiter order, KDS tile, `accept/start/ready/serve`, `recall/start/ready/serve`, ClickHouse `raw_business_events`, stock receipt/count/write-off/production ledger rows, catalog/recipe suggestions, manager approve и Edge proposal feedback.
 - Cancellation/refund/reprint hardening:
   - backend ledger, immutable snapshots, no-over-cancel/no-over-refund/no-over-line-amount tests, current `CancellationRecorded`/`RefundRecorded` sync contracts, idempotent Cloud raw/journal receipt checks, coarse Cloud refund counters and detailed Cloud financial operation projection реализованы;
   - cashier UI full whole-check и partial `order_line`/quantity cancellation/refund через ledger endpoints реализован с выбором inventory disposition; compatibility refund по captured payment оставлен отдельным fallback;
@@ -146,7 +147,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - выполнено: lifecycle `new -> accepted -> in_progress -> ready -> served` поддерживает ветки `hold`, `recall`, `cancelled` и повторный цикл `served -> recall -> start -> ready -> serve`; backend проверяет `pos.kitchen.view` / `pos.kitchen.status.change`;
   - выполнено: status actions пишут `KitchenTicketStatusChanged`, а `serve` дополнительно пишет `ItemServed` в `local_event_log` и `pos_sync_outbox`; replay того же kitchen `command_id` идемпотентен, повторный `serve` новым `command_id` пишет новый `ItemServed` с `serve_sequence` и optional `supersedes_served_event_id`;
   - выполнено: `pos-ui-g` kitchen mode читает backend order queue, показывает queue/ready order tiles, безопасные loading/error/empty/no-permission states и после action перечитывает backend truth без UI-authoritative статусов;
-  - выполнено для Cloud worker: принятый `ItemServed` идемпотентно создает SALE ledger по `order_line_id`, а последующий `CheckClosed` пишет только unserved delta;
+  - выполнено для Cloud worker: принятый `ItemServed` идемпотентно создает SALE ledger по `order_line_id`, последующий `CheckClosed` пишет только unserved delta, а superseded `ItemServed` пропускается, если superseding served fact уже принят в Cloud до обработки очереди;
   - выполнено: Edge-side chef stock input routes для receipt/count/write-off/production валидируют warehouse, catalog item, receipt line totals, counted quantity, write-off reason и semi-finished production recipe, затем пишут outbox events без local stock documents;
   - выполнено: canonical kitchen role получает `pos.catalog.view`, чтобы `pos-ui-g` full catalog picker мог читать `GET /api/v1/catalog/items` без расширения финансовых или cashier полномочий;
   - выполнено: POS Edge recipe/proposal backend routes возвращают техкарту с ingredient names из полного `catalog_items`, сохраняют локальные `kitchen_proposals`, пишут `CatalogItemChangeSuggested`/`RecipeChangeSuggested`, поддерживают `proposal_group_id` для нового блюда + техкарты и валидируют prep time delta через `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES`;
@@ -168,8 +169,9 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - Cloud UI должен довести readiness-only surfaces для inventory operations/costing и OLAP exports до runtime только после появления подтвержденных Cloud backend routes;
   - launch readiness учитывает restaurant, staff, floor, catalog, menu, modifiers, pricing, stop-list review, publication и known Edge node.
 - Full pilot smoke:
-  - выполнено сейчас: минимальный runtime smoke без ClickHouse проходит Cloud setup -> seed publication -> Edge sync -> waiter order/precheck -> KDS served -> cashier payment/final check -> Cloud inventory ledger;
-  - запланировано далее: полный runtime e2e с reconnect/outbox ACK, ClickHouse export, `olap_stock_moves` и агрегированные OLAP API reads.
+  - выполнено сейчас: минимальный runtime smoke проходит Cloud setup -> seed publication -> Edge sync -> waiter order/precheck -> KDS served -> cashier payment/final check -> Cloud inventory ledger;
+  - выполнено сейчас: kitchen/process smoke проверяет KDS recall/serve-again, ClickHouse event trail, Cloud stock ledger для kitchen stock events и proposal approve/feedback;
+  - запланировано далее: reconnect/outbox ACK fault-injection, `olap_stock_moves` и агрегированные OLAP API reads.
 - Full Inventory Engine:
   - реализовать stock receipts, inventory counts, production, sale consumption, refund/cancellation stock disposition, recipe expansion, modifier linked consumption, balances и costing state;
   - реализовать retro recalculation DAG для документов задним числом и отрицательных остатков;
@@ -238,7 +240,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Cloud принимает `CheckClosed`/`ItemServed`, дедуплицирует replay и Cloud Inventory Worker пишет полный stock document/ledger/balance/costing state;
 - Cloud Inventory Engine покрывает stock receipt, inventory count, production, sale consumption, refund/cancellation disposition, recipe expansion, modifier linked consumption, negative-balance costing и retro recalculation DAG;
 - ClickHouse runtime поднят как обязательный Cloud component: `raw_business_events`, `olap_stock_moves`, async forwarder, retry/backfill, export checkpoints и bounded OLAP API проходят smoke;
-- `scripts/seed-dev-system.py` создает full-pilot seed dataset без ручной правки данных; runtime full-pilot smoke остается запланированным отдельным e2e покрытием.
+- `scripts/seed-dev-system.py` создает full-pilot seed dataset без ручной правки данных; `--run-kitchen-process-smoke` является текущим профильным smoke для kitchen/process контура.
 - все новые routes, payloads, UI flows, RBAC, DB schema, sync events, error keys и seed/e2e paths отражены в профильных docs.
 
 ## Pricing/tax pilot readiness

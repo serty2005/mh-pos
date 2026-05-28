@@ -1982,6 +1982,7 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 		RecipeVersions:         recipeVersions,
 		RecipeLines:            recipeLines,
 		StopLists:              edgeStopLists(stopLists),
+		Warehouses:             edgeDefaultWarehouses(restaurantID, now),
 	}
 	counts := map[string]int{
 		"restaurants":               len(packet.Restaurants),
@@ -2003,6 +2004,7 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 		"recipe_versions":           len(packet.RecipeVersions),
 		"recipe_lines":              len(packet.RecipeLines),
 		"stop_lists":                len(packet.StopLists),
+		"warehouses":                len(packet.Warehouses),
 	}
 	streams, err := streamPackages(packet)
 	if err != nil {
@@ -2136,6 +2138,7 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 		CloudVersion    int64                      `json:"cloud_version"`
 		CloudUpdatedAt  time.Time                  `json:"cloud_updated_at"`
 		StopLists       []domain.EdgeStopListEntry `json:"stop_lists"`
+		Warehouses      []domain.EdgeWarehouseReference `json:"warehouses"`
 	}
 	build := func(stream string, payload any) (StreamPackage, error) {
 		body, err := json.Marshal(payload)
@@ -2181,7 +2184,7 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	inventory, err := build("inventory_reference", inventoryPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, StopLists: packet.StopLists})
+	inventory, err := build("inventory_reference", inventoryPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, StopLists: packet.StopLists, Warehouses: packet.Warehouses})
 	if err != nil {
 		return nil, err
 	}
@@ -2420,6 +2423,18 @@ func edgeStopLists(items []domain.StopListEntry) []domain.EdgeStopListEntry {
 		out = append(out, domain.EdgeStopListEntry{ID: item.ID, RestaurantID: item.RestaurantID, CatalogItemID: item.CatalogItemID, AvailableQuantity: item.AvailableQuantity, Source: source, Reason: item.Reason, Active: item.Active, UpdatedAt: item.UpdatedAt})
 	}
 	return out
+}
+
+func edgeDefaultWarehouses(restaurantID string, now time.Time) []domain.EdgeWarehouseReference {
+	return []domain.EdgeWarehouseReference{{
+		ID:           "warehouse-main",
+		RestaurantID: restaurantID,
+		Name:         "Main Kitchen Warehouse",
+		Kind:         "kitchen",
+		Default:      true,
+		Active:       true,
+		UpdatedAt:    now,
+	}}
 }
 
 func edgeMenuItems(items []domain.MenuItem) []domain.EdgeMenuItem {

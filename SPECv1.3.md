@@ -50,13 +50,13 @@
 - cashier runtime остается обязательным базовым потоком и не расширяется фискализацией/PSP-интеграцией до отдельного решения;
 - manager runtime должен позволять через Cloud UI подготовить ресторан, роли, сотрудников, зал/столы, catalog/menu/modifiers/pricing, recipes и stop-list, опубликовать master-data и увидеть readiness/sync состояние Edge;
 - waiter runtime должен расширяться как mobile-first POS UI route для выбора стола, создания/изменения заказа, выбора модификаторов, выпуска и повторной печати precheck без права оплаты, если роль не имеет cashier payment permissions;
-- advanced KDS runtime уже поддерживает минимальный ticket lifecycle `new -> accepted -> in_progress -> ready -> served` с ветками `hold`, `recall` и `cancelled`; POS Edge backend для receipt/proposal/recipe input реализован сейчас, а UI forms, расширения по станциям/приоритету, cooking events и stop-list edit flow остаются `запланировано далее`;
-- kitchen worker должен уметь принять поставку на Edge, выбрать существующие товары или создать предложение нового catalog item; Cloud worker превращает такие события в review/proposal или в upsert только по явной policy;
-- kitchen worker должен видеть техкарту и отправлять `RecipeChangeSuggested` с заменой ингредиента, правкой количества/единицы/потерь и изменением prep time в пределах параметра `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES`; правка не применяется на Edge и не меняет Cloud recipe до review/apply шага;
+- advanced KDS runtime уже поддерживает ticket lifecycle `new -> accepted -> in_progress -> ready -> served` с ветками `hold`, `recall` и `cancelled`; POS Edge backend и `pos-ui-g` для receipt/count/write-off/production, recipe read и catalog/recipe proposal input реализованы сейчас, а расширения по станциям/приоритету, cooking events и stop-list edit flow остаются `запланировано далее`;
+- kitchen worker может принять поставку/ревизию/списание/заготовку на Edge и создать предложение нового catalog item; Cloud worker превращает stock events в Cloud-owned documents/ledger, а catalog/recipe proposals применяет только после manager approve;
+- kitchen worker может видеть техкарту и отправлять `RecipeChangeSuggested` с заменой ингредиента, правкой количества/единицы/потерь и изменением prep time в пределах параметра `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES`; правка не применяется на Edge и не меняет Cloud recipe до review/apply шага;
 - kitchen worker должен видеть и редактировать stop-list; конфликт Cloud/Edge изменений разрешается параметром `stop_list_conflict_policy`, а один catalog item может быть добавлен Cloud-стороной и одновременно ограничен/исключен Edge-стороной через active overlay и `available_quantity`;
 - waiter runtime должен быть единственным mobile layout в POS UI: mobile-first route `/pos/waiter` для залов, заказов и ограниченной аналитики; cashier/KDS/manager modes не получают отдельные mobile variants в полном пилоте;
 - stop-list является единственным механизмом runtime-блокировки продаж: POS Edge должен локально блокировать блюдо или обязательный recipe component из active stop-list даже offline;
-- `CheckClosed` и `ItemServed` являются текущими inventory facts: Cloud принимает их через `sync/exchange`, дедуплицирует и передает Cloud Inventory Worker; `KitchenTicketStatusChanged` остается operational-only event без складской проводки;
+- `CheckClosed` и `ItemServed` являются текущими inventory facts: Cloud принимает их через `sync/exchange`, дедуплицирует и передает Cloud Inventory Worker; при наличии уже принятого superseding `ItemServed` для той же order line Worker пропускает superseded served fact, а `KitchenTicketStatusChanged` остается operational-only event без складской проводки;
 - Cloud Inventory Engine должен закрыть полный пилотный складской контур: recipes, stop-list, stock receipts, inventory counts, production, consumption, cancellation/refund dispositions, stock ledger, stock documents, stock balances и costing/recalculation state;
 - ClickHouse runtime должен хранить `raw_business_events` и OLAP projections, а Cloud API должен отдавать bounded OLAP/read-only ручки для продаж, склада, себестоимости и kitchen speed analytics.
 
@@ -315,18 +315,17 @@ Inventory and costing logic:
 Не реализовано сейчас:
 
 - Edge manager/KDS stop-list edit flow и conflict policy для двустороннего Edge <-> Cloud stop-list sync;
-- Cloud-side `StockWriteOffCaptured` receiver/worker реализовано сейчас;
 - kitchen stop-list edit и stop-list conflict policy;
 - ClickHouse `olap_stock_moves` projection;
 - recipe expansion, semi-finished auto-production split и retro costing DAG.
-- ClickHouse runtime API для OLAP queries.
+- компенсирующий пересчет, если первый `ItemServed` уже был обработан складским Worker до прихода последующего `served -> recall -> ... -> serve`;
 
 Запланировано до полного пилота:
 
 - Cloud authoring/UI для recipes и stop-list поверх уже поддержанного package contract/storage;
-- smoke для Cloud package -> Edge sync -> offline sale blocking;
-- полный pilot smoke с `CheckClosed`, `KitchenTicketStatusChanged`/`ItemServed`, reconnect/outbox ACK и Cloud inventory ledger без double consumption;
-- `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested` и `StopListUpdated` как Edge -> Cloud events с Cloud worker review/apply flow;
+- smoke для Cloud package -> Edge sync -> offline sale blocking реализован сейчас в `scripts/seed-dev-system.py --run-minimal-flow`;
+- полный kitchen/process smoke для Cloud seed, Edge sync, KDS recall/serve-again, ClickHouse trail, stock events, proposal approve и Edge feedback реализован сейчас в `scripts/seed-dev-system.py --run-kitchen-process-smoke`;
+- `StopListUpdated` как Edge -> Cloud edit/audit flow;
 - full inventory engine: recipe expansion, modifier linked catalog item consumption, production, purchase/receipt input, inventory count adjustments, refund/cancellation stock dispositions, balances, costing status и retro recalculation DAG;
 - реализовано сейчас: ClickHouse first slice с managed schema `raw_business_events`, async forwarder `inbox_events -> raw_business_events`, export state, retry state и bounded metadata API;
 - запланировано далее: `olap_stock_moves`, backfill controls и агрегированные bounded Cloud OLAP API;

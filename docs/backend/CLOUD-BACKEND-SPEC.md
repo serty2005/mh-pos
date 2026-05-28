@@ -44,18 +44,21 @@
 - production auth/RBAC perimeter для Cloud API;
 - публичный Cloud reporting UI beyond pilot OLAP API;
 
-Запланировано до полного пилота:
+Реализовано сейчас:
 
 - Cloud authoring/publication workflow для streams `recipes` и `inventory_reference` поверх Cloud authority tables;
-- projection update для `StopListUpdated` из Edge/Cloud без raw payload exposure;
 - review/apply очереди для `CatalogItemChangeSuggested` и `RecipeChangeSuggested`, созданных kitchen worker на Edge;
-- обработка `KitchenTicketStatusChanged`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested` и `StopListUpdated` как business events без synchronous apply в request path;
+- обработка `KitchenTicketStatusChanged`, `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested` и `StopListUpdated` как business events без synchronous apply в request path;
+- поддержка `CheckClosed`/`ItemServed`/`StockWriteOffCaptured` как pilot inventory facts через текущий receiver и Inventory Worker;
+- ClickHouse first slice: managed `raw_business_events`, async forwarder из PostgreSQL `inbox_events`, `processed_for_olap`, retry state, export checkpoint и bounded read-only metadata API.
+
+Запланировано до полного пилота:
+
+- projection update для `StopListUpdated` из Edge/Cloud без raw payload exposure;
 - параметр `stop_list_conflict_policy` для порядка применения Cloud-authored stop-list и Edge overlay;
 - readiness API/UI signals для stop-list publication, Edge ACK и sync problem events;
-- поддержка `CheckClosed`/`ItemServed`/`StockWriteOffCaptured` как pilot inventory facts через текущий receiver и Inventory Worker;
 - full inventory engine для receipts, counts, production, consumption, refund/cancellation dispositions, balances, costing и retro recalculation;
-- реализовано сейчас: ClickHouse first slice: managed `raw_business_events`, async forwarder из PostgreSQL `inbox_events`, `processed_for_olap`, retry state, export checkpoint и bounded read-only metadata API;
-- запланировано далее: `olap_stock_moves`, retry/backfill operator controls, stock moves, sales aggregates, COGS/margin и kitchen timing API.
+- `olap_stock_moves`, retry/backfill operator controls, stock moves, sales aggregates, COGS/margin и kitchen timing API.
 
 ## Назначение
 
@@ -73,8 +76,8 @@
 - Cloud не выполняет cashier runtime commands: заказы, предчеки, оплаты и чеки создаются на POS Edge.
 - Cloud не является платежным процессором и не выполняет fiscalization.
 - Cloud не принимает POS operator session как security boundary.
-- Cloud не использует ClickHouse в текущем runtime, но ClickHouse является обязательным компонентом полного пилота.
-- Cloud пока не предоставляет pilot-ready CRUD/publication UI для recipes/stop-list; generic package storage/contracts уже принимают `recipes` и `inventory_reference`.
+- Cloud использует ClickHouse для async immutable `raw_business_events` archive, но не делает synchronous dual-write в request path.
+- Cloud предоставляет pilot-ready CRUD/publication UI для recipes/stop-list в текущем bounded объеме; расширенный recipe editor/readiness polish остается запланированным далее.
 - Реализовано сейчас: Cloud предоставляет review/apply runtime для Edge-originated `CatalogItemChangeSuggested`/`RecipeChangeSuggested` через маршруты `GET/approve/reject/request-changes` и применяет изменения только на approve с последующей публикацией.
 
 ## Runtime Modules
@@ -380,7 +383,7 @@ Publication DTO правила:
 - `modifier_bindings[]` передает `id`, `restaurant_id`, `modifier_group_id`, `target_type`, `target_id`, `sort_order`, `active`.
 - `pricing_policy` stream передает `tax_profiles`, `tax_rules`, `service_charge_rules`, `pricing_policies`, когда соответствующий package сохранен/опубликован.
 - `recipes` stream передает `recipe_versions` и `recipe_lines`, когда соответствующий package сохранен/опубликован.
-- `inventory_reference` stream передает `stop_lists`, когда соответствующий package сохранен/опубликован.
+- `inventory_reference` stream передает `stop_lists` и Cloud-owned default `warehouses` (`warehouse-main` в local seed), когда соответствующий package сохранен/опубликован.
 
 Не реализовано сейчас:
 
@@ -533,8 +536,9 @@ Schema verification:
 Запланировано до полного пилота:
 
 - Cloud authoring/publication workflow для stop-list/recipes становится штатным источником sale-blocking availability overlay; POS Edge runtime уже блокирует продажи по локальному `stop_lists`.
-- `StockReceiptCaptured` создает Cloud-owned receipt document и может ссылаться на pending catalog suggestion, если товар еще не утвержден.
+- `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` создают Cloud-owned stock documents/ledger rows; receipt line с pending catalog suggestion остается запланировано далее.
 - `KitchenTicketStatusChanged` и `ItemServed` используются для kitchen timing и inventory deduplication, но не меняют finalized checks.
+- Если Cloud уже принял superseding `ItemServed` для той же order line до обработки очереди, Inventory Worker пропускает superseded served fact; компенсирующий пересчет уже обработанного served fact остается запланированным далее.
 - ClickHouse `raw_business_events` реализовано сейчас как бессрочный архив business events.
 - Async Batch Forwarder переносит accepted events из PostgreSQL `inbox_events` в ClickHouse и после successful export выставляет `processed_for_olap = true`.
 - Recipe expansion, modifier linked catalog item consumption, stock balances and retro costing DAG становятся частью Cloud Inventory Engine.
