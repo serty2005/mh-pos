@@ -8,40 +8,7 @@
 }
 
 :root {
-  /* Sophisticated Luxury Light / Gold Theme */
-  --pos-bg: #0A0A0A; /* We default to ultra dark since user requested Sophisticated Dark */
-  --pos-surface: #0F0F0F;
-  --pos-surface-raised: #141414;
-  --pos-border: #2A2620;
-  --pos-border-strong: #C5A059;
-  --pos-text-primary: #E0D7C6;
-  --pos-text-secondary: #C5A059;
-  --pos-text-muted: #7A7060;
-  --pos-text-disabled: #4A4338;
-  
-  --pos-action-primary: #C5A059;
-  --pos-action-primary-hover: #D4B574;
-  --pos-action-secondary: #1F1F1F;
-  --pos-action-secondary-hover: #2A2620;
-  
-  --pos-status-success: #C5A059;
-  --pos-status-warning: #B38F4D;
-  --pos-status-danger: #D9534F;
-  --pos-status-info: #8C99A8;
-  
-  --pos-sync-pending: #C5A059;
-  --pos-sync-error: #D9534F;
-  --pos-payment-fiscal: #C5A059;
-  --pos-payment-non-fiscal: #837255;
-  --pos-selected-table: #C5A059;
-  --pos-selected-order: #1F1F1F;
-  --pos-focus-ring: #C5A059;
-  
-  --pos-bottom-nav-height: 64px;
-}
-
-:root.dark {
-  /* Sophisticated Dark Theme */
+  /* Default boot palette: current dark Noir Gold before React restores settings. */
   --pos-bg: #0A0A0A;
   --pos-surface: #0F0F0F;
   --pos-surface-raised: #141414;
@@ -69,6 +36,258 @@
   --pos-selected-table: #C5A059;
   --pos-selected-order: #1F1F1F;
   --pos-focus-ring: #C5A059;
+
+  --pos-bottom-nav-height: 64px;
+  color-scheme: dark;
+}
+
+:root:not(.dark),
+:root[data-theme-scheme='noir-gold']:not(.dark) {
+  --pos-bg: #F4EFE5;
+  --pos-surface: #FFF9EF;
+  --pos-surface-raised: #FFFDF8;
+  --pos-border: #E4D2AE;
+  --pos-border-strong: #B18430;
+  --pos-text-primary: #201A12;
+  --pos-text-secondary: #8A6520;
+  --pos-text-muted: #9A8A72;
+  --pos-text-disabled: #C8B99E;
+  
+  --pos-action-primary: #B18430;
+  --pos-action-primary-hover: #9B7024;
+  --pos-action-secondary: #EFE2C8;
+  --pos-action-secondary-hover: #E4D2AE;
+  
+  --pos-status-success: #8A6520;
+  --pos-status-warning: #B38F4D;
+  --pos-status-danger: #C7473F;
+  --pos-status-info: #5A738B;
+  
+  --pos-sync-pending: #B18430;
+  --pos-sync-error: #C7473F;
+  --pos-payment-fiscal: #B18430;
+  --pos-payment-non-fiscal: #9A8A72;
+  --pos-selected-table: #B18430;
+  --pos-selected-order: #EFE2C8;
+  --pos-focus-ring: #B18430;
+  color-scheme: light;
+}
+
+:root[data-theme-scheme='noir-gold'].dark {
+  --pos-bg: #0A0A0A;
+  --pos-surface: #0F0F0F;
+  --pos-surface-raised: #141414;
+  --pos-border: #2A2620;
+  --pos-border-strong: #C5A059;
+  --pos-text-primary: #E0D7C6;
+  --pos-text-secondary: #C5A059;
+  --pos-text-muted: #7A7060;
+  --pos-text-disabled: #4A4338;
+  
+  --pos-action-primary: #C5A059;
+  --pos-action-primary-hover: #D4B574;
+  --pos-action-secondary: #1F1F1F;
+  --pos-action-secondary-hover: #2A2620;
+  
+  --pos-status-success: #C5A059;
+  --pos-status-warning: #B38F4D;
+  --pos-status-danger: #D9534F;
+  --pos-status-info: #8C99A8;
+  
+  --pos-sync-pending: #C5A059;
+  --pos-sync-error: #D9534F;
+  --pos-payment-fiscal: #C5A059;
+  --pos-payment-non-fiscal: #837255;
+  --pos-selected-table: #C5A059;
+  --pos-selected-order: #1F1F1F;
+  --pos-focus-ring: #C5A059;
+  color-scheme: dark;
+}
+
+:root[data-theme-scheme='sage-brass']:not(.dark) {
+  --pos-bg: #F3F1E7;
+  --pos-surface: #FBFAF3;
+  --pos-surface-raised: #FFFDF5;
+  --pos-border: #D5D0B9;
+  --pos-border-strong: #6A8B67;
+  --pos-text-primary: #172018;
+  --pos-text-secondary: #49644F;
+  --pos-text-muted: #6D786D;
+  --pos-text-disabled: #AEB8A9;
+  
+  --pos-action-primary: #6A8B67;
+  --pos-action-primary-hover: #557154;
+  --pos-action-secondary: #E8ECDD;
+  --pos-action-secondary-hover: #DDE7D9;
+  
+  --pos-status-success: #557154;
+  --pos-status-warning: #8D7434;
+  --pos-status-danger: #B45045;
+  --pos-status-info: #5E7E8E;
+  
+  --pos-sync-pending: #8D7434;
+  --pos-sync-error: #B45045;
+  --pos-payment-fiscal: #6A8B67;
+  --pos-payment-non-fiscal: #8D7434;
+  --pos-selected-table: #6A8B67;
+  --pos-selected-order: #E8ECDD;
+  --pos-focus-ring: #6A8B67;
+  color-scheme: light;
+}
+
+:root[data-theme-scheme='sage-brass'].dark {
+  --pos-bg: #101613;
+  --pos-surface: #151E19;
+  --pos-surface-raised: #17221C;
+  --pos-border: #314238;
+  --pos-border-strong: #BFA76A;
+  --pos-text-primary: #E6E3D4;
+  --pos-text-secondary: #BFA76A;
+  --pos-text-muted: #7E8A79;
+  --pos-text-disabled: #4D5A50;
+  
+  --pos-action-primary: #BFA76A;
+  --pos-action-primary-hover: #D3BD7E;
+  --pos-action-secondary: #1D2A22;
+  --pos-action-secondary-hover: #223129;
+  
+  --pos-status-success: #BFA76A;
+  --pos-status-warning: #C48D52;
+  --pos-status-danger: #D45D54;
+  --pos-status-info: #7DA6B8;
+  
+  --pos-sync-pending: #BFA76A;
+  --pos-sync-error: #D45D54;
+  --pos-payment-fiscal: #BFA76A;
+  --pos-payment-non-fiscal: #7E8A79;
+  --pos-selected-table: #BFA76A;
+  --pos-selected-order: #1D2A22;
+  --pos-focus-ring: #BFA76A;
+  color-scheme: dark;
+}
+
+:root[data-theme-scheme='terracotta-graphite']:not(.dark) {
+  --pos-bg: #F7EEE7;
+  --pos-surface: #FFF8F3;
+  --pos-surface-raised: #FFFCF9;
+  --pos-border: #E6CABB;
+  --pos-border-strong: #C85F36;
+  --pos-text-primary: #231816;
+  --pos-text-secondary: #A84F2D;
+  --pos-text-muted: #8C7061;
+  --pos-text-disabled: #C5AA9B;
+  
+  --pos-action-primary: #C85F36;
+  --pos-action-primary-hover: #A94D2B;
+  --pos-action-secondary: #F3DFD4;
+  --pos-action-secondary-hover: #F0D8C8;
+  
+  --pos-status-success: #6E7D43;
+  --pos-status-warning: #C85F36;
+  --pos-status-danger: #B43F35;
+  --pos-status-info: #556D7F;
+  
+  --pos-sync-pending: #C85F36;
+  --pos-sync-error: #B43F35;
+  --pos-payment-fiscal: #C85F36;
+  --pos-payment-non-fiscal: #8C7061;
+  --pos-selected-table: #C85F36;
+  --pos-selected-order: #F3DFD4;
+  --pos-focus-ring: #C85F36;
+  color-scheme: light;
+}
+
+:root[data-theme-scheme='terracotta-graphite'].dark {
+  --pos-bg: #161312;
+  --pos-surface: #1D1917;
+  --pos-surface-raised: #211C1A;
+  --pos-border: #3B2A25;
+  --pos-border-strong: #E08A5B;
+  --pos-text-primary: #F0DED0;
+  --pos-text-secondary: #E08A5B;
+  --pos-text-muted: #9C7B69;
+  --pos-text-disabled: #5E4940;
+  
+  --pos-action-primary: #E08A5B;
+  --pos-action-primary-hover: #F09B70;
+  --pos-action-secondary: #2A1C18;
+  --pos-action-secondary-hover: #2D221E;
+  
+  --pos-status-success: #B5A35E;
+  --pos-status-warning: #E08A5B;
+  --pos-status-danger: #DC6256;
+  --pos-status-info: #8BA0AE;
+  
+  --pos-sync-pending: #E08A5B;
+  --pos-sync-error: #DC6256;
+  --pos-payment-fiscal: #E08A5B;
+  --pos-payment-non-fiscal: #9C7B69;
+  --pos-selected-table: #E08A5B;
+  --pos-selected-order: #2A1C18;
+  --pos-focus-ring: #E08A5B;
+  color-scheme: dark;
+}
+
+:root[data-theme-scheme='baltic-blue']:not(.dark) {
+  --pos-bg: #ECF4F7;
+  --pos-surface: #F9FCFD;
+  --pos-surface-raised: #FFFFFF;
+  --pos-border: #C7DCE3;
+  --pos-border-strong: #227B91;
+  --pos-text-primary: #10202A;
+  --pos-text-secondary: #1D6274;
+  --pos-text-muted: #6C8189;
+  --pos-text-disabled: #A3B5BC;
+  
+  --pos-action-primary: #227B91;
+  --pos-action-primary-hover: #1B6679;
+  --pos-action-secondary: #DDEDF2;
+  --pos-action-secondary-hover: #D4EAF0;
+  
+  --pos-status-success: #4B7D67;
+  --pos-status-warning: #A9792F;
+  --pos-status-danger: #B94A44;
+  --pos-status-info: #227B91;
+  
+  --pos-sync-pending: #A9792F;
+  --pos-sync-error: #B94A44;
+  --pos-payment-fiscal: #227B91;
+  --pos-payment-non-fiscal: #6C8189;
+  --pos-selected-table: #227B91;
+  --pos-selected-order: #DDEDF2;
+  --pos-focus-ring: #227B91;
+  color-scheme: light;
+}
+
+:root[data-theme-scheme='baltic-blue'].dark {
+  --pos-bg: #09131A;
+  --pos-surface: #0E1B24;
+  --pos-surface-raised: #11222D;
+  --pos-border: #244052;
+  --pos-border-strong: #6CB7C9;
+  --pos-text-primary: #DDEAF0;
+  --pos-text-secondary: #6CB7C9;
+  --pos-text-muted: #78909B;
+  --pos-text-disabled: #465D68;
+  
+  --pos-action-primary: #6CB7C9;
+  --pos-action-primary-hover: #83CADB;
+  --pos-action-secondary: #102433;
+  --pos-action-secondary-hover: #183445;
+  
+  --pos-status-success: #7CB59D;
+  --pos-status-warning: #C79B55;
+  --pos-status-danger: #D85E5A;
+  --pos-status-info: #6CB7C9;
+  
+  --pos-sync-pending: #C79B55;
+  --pos-sync-error: #D85E5A;
+  --pos-payment-fiscal: #6CB7C9;
+  --pos-payment-non-fiscal: #78909B;
+  --pos-selected-table: #6CB7C9;
+  --pos-selected-order: #102433;
+  --pos-focus-ring: #6CB7C9;
+  color-scheme: dark;
 }
 
 /* Custom Scrollbar Patterns for Restaurant POS Devices */

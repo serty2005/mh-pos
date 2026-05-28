@@ -48,6 +48,16 @@ import {
   Table,
 } from '../types';
 import { activeIssuedPrecheck, paymentChange } from './posContextHelpers';
+import {
+  applyPOSTheme,
+  defaultThemeSettings,
+  posThemeSchemes,
+  readStoredThemeSettings,
+  writeStoredThemeSettings,
+  type POSThemeMode,
+  type POSThemeScheme,
+  type POSThemeSchemeId,
+} from './theme';
 
 type LogEvent = { id: string; time: string; msg: string; type: 'info' | 'warn' | 'success' };
 
@@ -59,8 +69,12 @@ interface POSContextType {
   setCurrentSection: (section: POSSection) => void;
   activeHallId: string;
   setActiveHallId: (id: string) => void;
-  theme: 'light' | 'dark';
+  theme: POSThemeMode;
+  themeScheme: POSThemeSchemeId;
+  themeSchemes: POSThemeScheme[];
   toggleTheme: () => void;
+  setThemeMode: (mode: POSThemeMode) => void;
+  setThemeScheme: (scheme: POSThemeSchemeId) => void;
   isPinLocked: boolean;
   setPinLocked: (locked: boolean) => void;
   currentOperator: EmployeeShift | null;
@@ -135,9 +149,17 @@ function initialAuth(): AuthSnapshot {
 export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentSection, setCurrentSection] = useState<POSSection>('floor');
   const [activeHallId, setActiveHallIdState] = useState<string>('');
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [themeSettings, setThemeSettings] = useState(() => {
+    if (typeof window === 'undefined') return defaultThemeSettings;
+    return readStoredThemeSettings();
+  });
   const [isPinLocked, setPinLocked] = useState<boolean>(true);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+
+  useEffect(() => {
+    applyPOSTheme(themeSettings);
+    writeStoredThemeSettings(themeSettings);
+  }, [themeSettings]);
 
   const [auth, setAuthState] = useState<AuthSnapshot>(() => initialAuth());
   const authRef = useRef<AuthSnapshot>(auth);
@@ -760,11 +782,18 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [addLogEvent, api, handleError, refreshActivity]);
 
   const toggleTheme = useCallback(() => {
-    setTheme((prev) => {
-      const next = prev === 'light' ? 'dark' : 'light';
-      document.documentElement.classList.toggle('dark', next === 'dark');
-      return next;
-    });
+    setThemeSettings((prev) => ({
+      ...prev,
+      mode: prev.mode === 'light' ? 'dark' : 'light',
+    }));
+  }, []);
+
+  const setThemeMode = useCallback((mode: POSThemeMode) => {
+    setThemeSettings((prev) => ({ ...prev, mode }));
+  }, []);
+
+  const setThemeScheme = useCallback((scheme: POSThemeSchemeId) => {
+    setThemeSettings((prev) => ({ ...prev, scheme }));
   }, []);
 
   const value = useMemo<POSContextType>(() => ({
@@ -772,8 +801,12 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentSection,
     activeHallId,
     setActiveHallId,
-    theme,
+    theme: themeSettings.mode,
+    themeScheme: themeSettings.scheme,
+    themeSchemes: posThemeSchemes,
     toggleTheme,
+    setThemeMode,
+    setThemeScheme,
     isPinLocked,
     setPinLocked,
     currentOperator,
@@ -877,8 +910,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncStatusDto,
     syncRevision,
     tables,
-    theme,
+    themeSettings,
     toggleTheme,
+    setThemeMode,
+    setThemeScheme,
     updateCommentAndCourse,
     issuePrecheck,
   ]);

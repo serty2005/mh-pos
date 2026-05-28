@@ -84,6 +84,18 @@ export const t = {
     terminalOnlineTitle: 'Терминал подключен к Cloud',
     terminalOfflineTitle: 'Автономный режим',
   },
+  theme: {
+    title: 'Оформление',
+    modeLight: 'Светлая',
+    modeDark: 'Темная',
+    schemeTitle: 'Цветовая схема',
+    schemes: {
+      'noir-gold': 'Noir Gold',
+      'sage-brass': 'Sage Brass',
+      'terracotta-graphite': 'Terracotta',
+      'baltic-blue': 'Baltic Blue',
+    },
+  },
   menu: {
     notInStopList: 'Не в стоп-листе',
     stopList: 'Стоп-лист',
@@ -135,6 +147,7 @@ export const t = {
     orderLocked: 'Заказ заблокирован, так как выпущен пречек. Изменение позиций запрещено.',
     conflict: 'Конфликт операции. Пожалуйста, обновите состояние смены/заказа.',
     paymentFailed: 'Ошибка проведения платежа. Проверьте кассовый баланс.',
+    unknown: 'Не удалось выполнить операцию. Повторите попытку или обратитесь к администратору.',
   },
   blocks: {
     shiftRequired: 'Смена не открыта',

@@ -18,6 +18,7 @@ import {
   Lock, 
   Sun, 
   Moon, 
+  Palette,
   Menu, 
   X, 
   ShieldAlert,
@@ -37,7 +38,10 @@ function POSAppShellContent() {
     currentSection,
     setCurrentSection,
     theme,
-    toggleTheme,
+    themeScheme,
+    themeSchemes,
+    setThemeMode,
+    setThemeScheme,
     currentOperator,
     logout,
     activeOrders,
@@ -237,7 +241,7 @@ function POSAppShellContent() {
           )}
         </div>
 
-        {/* Right tools (Sync, Lock, Time, Light/Dark) */}
+        {/* Right tools (Sync, Lock, Time) */}
         <div className="flex items-center gap-3 font-mono text-xs select-none shrink-0">
           
           {/* UTC Clock */}
@@ -253,16 +257,6 @@ function POSAppShellContent() {
           >
             {syncStatus === 'online' ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
           </div>
-
-          {/* Theme Switcher Toggle */}
-          <button
-            id="theme-toggler-btn"
-            onClick={toggleTheme}
-            className="w-10 h-10 border border-[var(--pos-border)] hover:bg-[var(--pos-border)] flex items-center justify-center cursor-pointer rounded-none outline-none text-[var(--pos-text-secondary)]"
-            aria-label="Toggle Theme"
-          >
-            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-          </button>
 
           {/* Lock Screen */}
           <button
@@ -352,6 +346,81 @@ function POSAppShellContent() {
                     </button>
                   );
                 })}
+              </div>
+
+              <div className="mx-6 mb-4 border border-[var(--pos-border)] bg-[var(--pos-surface-raised)]/45">
+                <div className="px-4 py-3 border-b border-[var(--pos-border)] flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Palette className="w-4 h-4 text-[var(--pos-text-secondary)] shrink-0" />
+                    <span className="font-mono text-[10px] font-black uppercase tracking-widest text-[var(--pos-text-secondary)]">
+                      {t.theme.title}
+                    </span>
+                  </div>
+                  <div className="flex border border-[var(--pos-border)] bg-[var(--pos-surface)]">
+                    <button
+                      id="drawer-theme-dark-btn"
+                      type="button"
+                      onClick={() => setThemeMode('dark')}
+                      className={`h-8 px-2.5 flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+                        theme === 'dark'
+                          ? 'bg-[var(--pos-action-primary)] text-[var(--pos-surface)]'
+                          : 'text-[var(--pos-text-muted)] hover:text-[var(--pos-text-primary)]'
+                      }`}
+                      aria-pressed={theme === 'dark'}
+                    >
+                      <Moon className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">{t.theme.modeDark}</span>
+                    </button>
+                    <button
+                      id="drawer-theme-light-btn"
+                      type="button"
+                      onClick={() => setThemeMode('light')}
+                      className={`h-8 px-2.5 flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+                        theme === 'light'
+                          ? 'bg-[var(--pos-action-primary)] text-[var(--pos-surface)]'
+                          : 'text-[var(--pos-text-muted)] hover:text-[var(--pos-text-primary)]'
+                      }`}
+                      aria-pressed={theme === 'light'}
+                    >
+                      <Sun className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">{t.theme.modeLight}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-3">
+                  <div className="font-mono text-[9px] text-[var(--pos-text-muted)] uppercase tracking-widest mb-2">
+                    {t.theme.schemeTitle}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {themeSchemes.map((scheme) => {
+                      const isActive = themeScheme === scheme.id;
+                      return (
+                        <button
+                          key={scheme.id}
+                          id={`drawer-theme-scheme-${scheme.id}`}
+                          type="button"
+                          onClick={() => setThemeScheme(scheme.id)}
+                          className={`h-10 px-2 border flex items-center gap-2 text-left cursor-pointer transition-colors ${
+                            isActive
+                              ? 'border-[var(--pos-action-primary)] bg-[var(--pos-action-secondary)] text-[var(--pos-text-primary)]'
+                              : 'border-[var(--pos-border)] bg-[var(--pos-surface)] text-[var(--pos-text-muted)] hover:text-[var(--pos-text-primary)] hover:border-[var(--pos-border-strong)]'
+                          }`}
+                          aria-pressed={isActive}
+                        >
+                          <span
+                            className="w-3 h-3 shrink-0 border border-white/30"
+                            style={{ backgroundColor: scheme.accent }}
+                            aria-hidden="true"
+                          />
+                          <span className="font-mono text-[9px] font-bold uppercase tracking-wider truncate">
+                            {t.theme.schemes[scheme.id]}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
 
