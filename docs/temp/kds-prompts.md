@@ -35,30 +35,9 @@
 Выполнена.
 
 **Итерация 7: Cloud UI Manager Review**
+Выполнена.
 
-```text
-Задача: реализовать Cloud UI surfaces для manager review catalog/recipe suggestions.
 
-Сначала проверь cloud-ui текущую архитектуру, API clients, schemas, i18n и CLOUD-UI-SPEC. UI не должен имитировать отсутствующие backend routes.
-
-Нужно реализовать:
-- список catalog suggestions;
-- список recipe suggestions;
-- detail/diff view;
-- approve/reject/request changes;
-- linked new dish + recipe group display;
-- safe error handling;
-- no raw payload/PIN/token display;
-- publication/readiness signal after approve.
-
-Обязательно обнови:
-- docs/ui/CLOUD-UI-SPEC.md;
-- docs/backend/CLOUD-BACKEND-SPEC.md, если API contract уточнился;
-- ROADMAP.md.
-
-Проверки:
-cd cloud-ui && npm install && npm run build
-```
 
 **Итерация 8: End-To-End Smoke And Documentation Alignment**
 
