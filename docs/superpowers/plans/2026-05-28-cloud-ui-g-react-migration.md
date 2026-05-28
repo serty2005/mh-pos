@@ -242,87 +242,12 @@ cloud-ui-g/
 
 ### Итерация 2: API Client, Schemas, Safe Errors, I18n
 
-```markdown
-## Задача
-Построй foundation для реального Cloud API: fetch client, zod schemas, typed endpoints, safe error rendering и i18n. Никаких моков.
-
-## Файлы
-- Create: `cloud-ui-g/src/shared/api/client.ts`
-- Create: `cloud-ui-g/src/shared/api/errors.ts`
-- Create: `cloud-ui-g/src/shared/api/schemas.ts`
-- Create: `cloud-ui-g/src/shared/api/endpoints.ts`
-- Create: `cloud-ui-g/src/shared/api/types.ts`
-- Create: `cloud-ui-g/src/shared/i18n/I18nProvider.tsx`
-- Create: `cloud-ui-g/src/shared/i18n/ru.ts`
-- Create: `cloud-ui-g/src/shared/i18n/keys.ts`
-- Create: `cloud-ui-g/src/shared/ui/SafeErrorBanner.tsx`
-- Create: `cloud-ui-g/src/shared/ui/LoadingSkeleton.tsx`
-- Create: `cloud-ui-g/src/shared/ui/EmptyState.tsx`
-- Create: `cloud-ui-g/src/shared/utils/format.ts`
-- Modify: `cloud-ui-g/src/main.tsx`
-- Modify: `cloud-ui-g/src/App.tsx`
-
-## Источники
-- Перенеси schema coverage из `cloud-ui/src/shared/schemas.ts`.
-- Перенеси error contract идею из `cloud-ui/src/shared/api.ts`.
-- Все русские строки положи в `src/shared/i18n/ru.ts`.
-
-## Требования
-- `apiBase` = `import.meta.env.VITE_CLOUD_API_BASE ?? defaultApiBase()`.
-- `defaultApiBase()` возвращает `http://localhost:8090/api/v1`, а для `host.docker.internal` - `http://host.docker.internal:8090/api/v1`.
-- Fetch timeout 15 секунд через `AbortController`.
-- Ошибки backend приводить к `ApiError` с `status`, `code`, `messageKey`, `category`, `details`, `correlationId`, `retryable`.
-- `SafeErrorBanner` редактирует details по ключам/значениям `payload|token|secret|pin|password|credential|sql|stack`.
-- UI не показывает raw `Error.message`, если это не safe message key.
-- Не используй React context для часто меняющихся таблиц; context только для i18n/static app config.
-
-## Проверки
-- `cd cloud-ui-g && npm run lint`
-- `cd cloud-ui-g && npm run build`
-- Вручную проверить `rg -n "[А-Яа-я]" cloud-ui-g/src --glob "*.tsx"`: русские строки допустимы только если это импорт/ключ из locale, не прямой UI text.
-```
+Выполнена
 
 ### Итерация 3: App Shell, Навигация, Restaurant Scope
 
 ```markdown
-## Задача
-Пересобери shell прототипа в рабочий менеджерский backoffice с навигацией по всем разделам и выбранным рестораном.
 
-## Файлы
-- Create: `cloud-ui-g/src/app/CloudManagerApp.tsx`
-- Create: `cloud-ui-g/src/app/navigation.ts`
-- Create: `cloud-ui-g/src/app/routes.ts`
-- Create: `cloud-ui-g/src/features/restaurants/useRestaurants.ts`
-- Create: `cloud-ui-g/src/features/restaurants/RestaurantSelector.tsx`
-- Modify: `cloud-ui-g/src/App.tsx`
-- Modify: `cloud-ui-g/src/components/Sidebar.tsx` or replace with `src/app/Sidebar.tsx`
-
-## Разделы навигации
-- Dashboard
-- Restaurants
-- Edge & Sync
-- Catalog
-- Menu
-- Modifiers
-- Pricing & Taxes
-- Staff & Permissions
-- Floor
-- Publications
-- Inventory
-- Reports
-
-## Требования
-- Navigation state может быть simple client route state, без React Router dependency, если dependency не нужна.
-- Первый экран: dashboard/launch readiness, не landing page.
-- Restaurant selector загружает `GET /restaurants`.
-- Restaurant-scoped sections disabled до выбора ресторана; показывают action открыть/создать ресторан.
-- Активный пункт навигации визуально отличим.
-- Layout responsive: sidebar collapses/scrolls on narrow screens, content не уходит за viewport.
-- Нет карточек внутри карточек; панели и repeated items могут быть card-like, page sections нет.
-
-## Проверки
-- `cd cloud-ui-g && npm run build`
-- Запусти dev server и проверь, что первый meaningful screen не blank.
 ```
 
 ### Итерация 4: Restaurants, Settings, Launch Readiness, Publication
