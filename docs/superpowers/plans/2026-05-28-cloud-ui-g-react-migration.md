@@ -238,40 +238,7 @@ cloud-ui-g/
 
 ### Итерация 1: Очистить Google AI Studio И Зафиксировать React Baseline
 
-```markdown
-## Задача
-Очисти `cloud-ui-g` от всех Google/Gemini/AI Studio следов и подготовь его как production React/Vite приложение MyHoReCa Cloud Manager.
-
-## Файлы
-- Modify: `cloud-ui-g/package.json`
-- Modify: `cloud-ui-g/vite.config.ts`
-- Modify: `cloud-ui-g/index.html`
-- Modify: `cloud-ui-g/README.md`
-- Modify: `cloud-ui-g/.env.example`
-- Modify: `cloud-ui-g/src/index.css`
-- Modify: `cloud-ui-g/src/App.tsx`
-- Modify: `cloud-ui-g/src/types.ts`
-- Modify: `cloud-ui-g/src/components/*.tsx`
-- Delete: `cloud-ui-g/metadata.json`
-- Delete or stop using: `cloud-ui-g/src/data/mockData.ts`
-
-## Обязательные правки
-- Удали dependency `@google/genai`.
-- Удали Google AI Studio README banner, Gemini env docs, `GEMINI_API_KEY`, Google title.
-- Удали Google Fonts import из CSS. Используй system font stack или локальные CSS vars без внешнего запроса.
-- Удали license/SPDX headers, оставшиеся от AI Studio генерации, если они не являются license policy проекта.
-- Переименуй package в `myhoreca-cloud-ui-react`.
-- Dev server должен слушать `5174`, host `0.0.0.0`.
-- `.env.example` должен содержать только `VITE_CLOUD_API_BASE=http://localhost:8090/api/v1`.
-- Удали simulated sale/force sync mock logic из `App.tsx`; временно покажи shell с route-backed empty state.
-- Добавь `zod` dependency для typed response validation.
-
-## Проверки
-- `cd cloud-ui-g && npm install`
-- `cd cloud-ui-g && npm run lint`
-- `cd cloud-ui-g && npm run build`
-- `rg -n -i "google|gemini|genai|gstatic|fonts.googleapis|AI Studio|GEMINI_API_KEY|metadata" cloud-ui-g` должен не находить runtime/source упоминаний.
-```
+Выполнена
 
 ### Итерация 2: API Client, Schemas, Safe Errors, I18n
 

@@ -1,6 +1,0 @@
-{
-  "name": "MyHoreca RMS Manager",
-  "description": "Менеджерская панель RMS-POS для управления меню, персоналом, аналитики продаж и синхронизации терминалов в реальном времени.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

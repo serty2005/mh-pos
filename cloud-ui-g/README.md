@@ -1,20 +1,14 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# MyHoReCa Cloud UI (React/Vite)
 
-# Run and deploy your AI Studio app
+React/Vite фронтенд для MyHoReCa Cloud Manager.
 
-This contains everything you need to run your app locally.
+## Запуск локально
 
-View your app in AI Studio: https://ai.studio/apps/c5da85dd-c71e-4b70-9d9f-c5b6d43f7cac
-
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
+1. Установить зависимости:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
+2. При необходимости переопределить API base в `.env.local`:
+   `VITE_CLOUD_API_BASE=http://localhost:8090/api/v1`
+3. Запустить dev-сервер:
    `npm run dev`
+
+Dev URL: `http://localhost:5174`
