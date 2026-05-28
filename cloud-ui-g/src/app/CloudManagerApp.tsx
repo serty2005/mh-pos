@@ -8,6 +8,10 @@ import { useRestaurants } from '../features/restaurants/useRestaurants';
 import { apiBase } from '../shared/api/client';
 import { useI18n } from '../shared/i18n/I18nProvider';
 import EmptyState from '../shared/ui/EmptyState';
+import RestaurantsPage from '../features/restaurants/RestaurantsPage';
+import DashboardPage from '../features/dashboard/DashboardPage';
+import PublicationPanel from '../features/publications/PublicationPanel';
+import EdgeSyncPage from '../features/edge/EdgeSyncPage';
 
 export default function CloudManagerApp() {
   const { t } = useI18n();
@@ -117,26 +121,25 @@ export default function CloudManagerApp() {
           ) : null}
 
           {activeRouteId === 'dashboard' ? (
-            <section className="rounded-2xl border border-slate-200 bg-white p-6">
-              <h3 className="text-base font-semibold text-slate-900">{t('dashboard.title')}</h3>
-              <p className="mt-1 text-sm text-slate-600">{t('dashboard.readinessDescription')}</p>
-              <p className="mt-4 text-sm text-slate-700">
-                {t('dashboard.selectedRestaurant')}: {selectedRestaurant?.name ?? t('restaurants.notSelected')}
-              </p>
-            </section>
+            <DashboardPage restaurantId={selectedRestaurantId} />
           ) : null}
 
           {activeRouteId === 'restaurants' ? (
-            <section className="rounded-2xl border border-slate-200 bg-white p-6">
-              <h3 className="text-base font-semibold text-slate-900">{t('restaurants.pageTitle')}</h3>
-              <p className="mt-1 text-sm text-slate-600">{t('restaurants.pageDescription')}</p>
-              <p className="mt-4 text-sm text-slate-700">
-                {t('restaurants.count')}: {restaurants.length}
-              </p>
-            </section>
+            <RestaurantsPage
+              restaurants={restaurants}
+              onReload={reload}
+            />
           ) : null}
 
-          {activeRouteId !== 'dashboard' && activeRouteId !== 'restaurants' && isRestaurantSelected ? (
+          {activeRouteId === 'publications' && isRestaurantSelected ? (
+            <PublicationPanel restaurantId={selectedRestaurantId} canPublish={isRestaurantSelected} />
+          ) : null}
+
+          {activeRouteId === 'edge-sync' && isRestaurantSelected ? (
+            <EdgeSyncPage restaurantId={selectedRestaurantId} />
+          ) : null}
+
+          {activeRouteId !== 'dashboard' && activeRouteId !== 'restaurants' && activeRouteId !== 'publications' && activeRouteId !== 'edge-sync' && isRestaurantSelected ? (
             <section className="rounded-2xl border border-slate-200 bg-white p-6">
               <h3 className="text-base font-semibold text-slate-900">{t(activeItem.labelKey)}</h3>
               <p className="mt-1 text-sm text-slate-600">{t('sections.blocked')}</p>
