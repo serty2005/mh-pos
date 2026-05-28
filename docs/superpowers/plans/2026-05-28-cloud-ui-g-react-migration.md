@@ -246,82 +246,15 @@ cloud-ui-g/
 
 ### Итерация 3: App Shell, Навигация, Restaurant Scope
 
-```markdown
-
-```
+Выполнена.
 
 ### Итерация 4: Restaurants, Settings, Launch Readiness, Publication
 
-```markdown
-## Задача
-Реализуй route-backed создание/редактирование ресторанов, настройки учетного дня и launch readiness с публикацией master-data.
-
-## Файлы
-- Create: `cloud-ui-g/src/features/restaurants/RestaurantsPage.tsx`
-- Create: `cloud-ui-g/src/features/restaurants/RestaurantForm.tsx`
-- Create: `cloud-ui-g/src/features/dashboard/DashboardPage.tsx`
-- Create: `cloud-ui-g/src/features/dashboard/LaunchReadinessPanel.tsx`
-- Create: `cloud-ui-g/src/features/publications/PublicationPanel.tsx`
-- Create: `cloud-ui-g/src/features/publications/usePublication.ts`
-- Modify: `cloud-ui-g/src/shared/api/endpoints.ts`
-- Modify: `cloud-ui-g/src/shared/i18n/ru.ts`
-
-## API
-- `GET/POST/PATCH /restaurants`
-- `POST /restaurants/{id}/archive`
-- `GET /restaurants/{id}/master-data/publication-state`
-- `POST /restaurants/{id}/master-data/publish`
-
-## Требования
-- Form fields: `name`, `timezone`, `currency`, `business_day_mode`, `business_day_boundary_local_time`, `status`.
-- Defaults: `timezone=Europe/Moscow`, `currency=RUB`, `business_day_mode=standard`, `business_day_boundary_local_time=04:00`.
-- `publication-state` может вернуть `200 null`; UI показывает empty state, не error.
-- Readiness считает: restaurant selected, roles/employees, halls/tables, catalog items, menu items, modifiers/pricing, Edge assigned, publication exists.
-- После успешных master-data mutations можно запускать auto-publish только если это уже поведение явно включено в UI setting; по умолчанию ручная публикация остается operator checkpoint.
-
-## Проверки
-- Создать ресторан через UI.
-- Изменить настройки ресторана.
-- Открыть publication empty state без console error.
-- Выполнить ручную публикацию после наличия хотя бы базовых справочников.
-```
+Выполнена
 
 ### Итерация 5: Edge Provisioning И Поток Синхронизации
 
 ```markdown
-## Задача
-Реализуй первичную привязку POS Edge устройства к ресторану и безопасный просмотр входящих sync events.
-
-## Файлы
-- Create: `cloud-ui-g/src/features/edge/EdgeSyncPage.tsx`
-- Create: `cloud-ui-g/src/features/edge/UnassignedDevicesPanel.tsx`
-- Create: `cloud-ui-g/src/features/edge/PairingCodePanel.tsx`
-- Create: `cloud-ui-g/src/features/edge/EdgeEventsPanel.tsx`
-- Create: `cloud-ui-g/src/features/edge/useEdgeDevices.ts`
-- Create: `cloud-ui-g/src/features/edge/useEdgeEvents.ts`
-- Modify: `cloud-ui-g/src/shared/api/schemas.ts`
-- Modify: `cloud-ui-g/src/shared/api/endpoints.ts`
-- Modify: `cloud-ui-g/src/shared/i18n/ru.ts`
-
-## API
-- `GET /devices/unassigned`
-- `POST /restaurants/{restaurant_id}/devices/{node_device_id}/assign`
-- `GET /devices/{node_device_id}/assignment-status`
-- `POST /restaurants/{restaurant_id}/devices/generate-pairing-code`
-- `GET /sync/edge-events`
-
-## Требования
-- Показывать pending/assigned/rejected/expired device statuses.
-- Assignment требует выбранного ресторана и выбранного device.
-- Pairing code plain value показывается только сразу после успешного response; не сохранять в localStorage/sessionStorage.
-- Edge events показывают только metadata: receipt id, event type, device id, aggregate, occurred/cloud received dates, payload hash.
-- Не показывать raw payload и не делать simulated sync wave из прототипа.
-- Refresh controls должны иметь loading state и retry safe error.
-
-## Проверки
-- Empty state без devices.
-- Pairing code generation с выбранным рестораном.
-- Edge events list не раскрывает raw payload.
 ```
 
 ### Итерация 6: Catalog Workspace Полного Объема

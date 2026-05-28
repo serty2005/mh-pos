@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const lifecycleStatusSchema = z.enum(['draft', 'published', 'archived']);
 export const restaurantStatusSchema = z.enum(['active', 'archived']);
 export const employeeStatusSchema = z.enum(['active', 'suspended', 'archived']);
+export const edgeDeviceStatusSchema = z.enum(['pending', 'assigned', 'rejected', 'expired']);
 
 export const restaurantSchema = z.object({
   id: z.string(),
@@ -251,7 +252,7 @@ export const unassignedEdgeNodeSchema = z.object({
   claimed_cloud_url: z.string(),
   display_name: z.string(),
   app_version: z.string(),
-  status: z.enum(['pending', 'assigned', 'rejected', 'expired']),
+  status: edgeDeviceStatusSchema,
   first_seen_at: z.string(),
   last_seen_at: z.string(),
   assigned_restaurant_id: z.string().optional().default(''),
@@ -263,13 +264,13 @@ export const unassignedEdgeNodeSchema = z.object({
 export const assignDeviceResultSchema = z.object({
   node_device_id: z.string(),
   restaurant_id: z.string(),
-  status: z.string(),
+  status: edgeDeviceStatusSchema,
   snapshot_url: z.string(),
 });
 
 export const assignmentStatusSchema = z.object({
   node_device_id: z.string(),
-  status: z.string(),
+  status: edgeDeviceStatusSchema,
   restaurant_id: z.string().optional().default(''),
   cloud_url: z.string().optional().default(''),
   snapshot_url: z.string().optional().default(''),
