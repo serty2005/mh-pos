@@ -409,7 +409,7 @@ License Code:
 
 - `assign` и `generate-pairing-code` требуют active restaurant.
 - Node token хранится в Cloud как hash/verifier, а не как plaintext.
-- `assignment-status` после assigned может выдать credentials для Edge provisioning; UI не должен показывать token.
+- `assignment-status` после assigned выдает credentials для Edge provisioning только если token еще не был выдан. Повторная проверка статуса не ротирует существующий `credentials_hash` и не возвращает plaintext token.
 - License Server недоступен: Cloud возвращает `503 LICENSE_SERVER_UNAVAILABLE`.
 
 Вне текущего объема:
@@ -425,6 +425,7 @@ License Code:
 - `POST /api/v1/sync/exchange` является приоритетным Cloud-Edge циклом.
 - Endpoint требует `Authorization: Bearer <node_token>`.
 - Cloud проверяет token hash, node device id, restaurant id и status `assigned`.
+- `401 SYNC_UNAUTHORIZED` означает отсутствующий/пустой Bearer token, неизвестный node, не assigned/revoked node, пустой Cloud credentials hash или несовпадение hash. Несовпадение restaurant id возвращается как forbidden, а не unauthorized.
 - Legacy receive endpoints остаются совместимыми: `POST /sync/edge-events`, `POST /sync/edge-events/batch`.
 - Один envelope ограничен 2 MiB; batch/exchange body ограничен 8 MiB; batch содержит от 1 до 100 items.
 - Duplicate replay возвращает стабильный ACK и не создает второй receipt.

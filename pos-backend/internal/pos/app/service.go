@@ -701,16 +701,25 @@ func (s *Service) recordSyncExchangePackageProblem(ctx context.Context, pkg doma
 		stream = domain.MasterDataStream("unknown")
 	}
 	nodeDeviceID := strings.TrimSpace(pkgNodeDeviceID(pkg))
+	lastCloudVersion := int64(0)
+	checkpoint := ""
+	var cloudUpdatedAtPtr *string
 	if isSyncExchangeStream(stream) && nodeDeviceID != "" {
-		if current, err := s.repo.GetMasterDataSyncState(ctx, nodeDeviceID, stream); err == nil && current.LastCloudVersion > pkg.CloudVersion {
-			return
+		if current, err := s.repo.GetMasterDataSyncState(ctx, nodeDeviceID, stream); err == nil {
+			if current.LastCloudVersion > pkg.CloudVersion {
+				return
+			}
+			lastCloudVersion = current.LastCloudVersion
+			if current.CheckpointToken != nil {
+				checkpoint = *current.CheckpointToken
+			}
+			cloudUpdatedAtPtr = current.LastCloudUpdatedAt
 		}
 	}
 	reason := strings.TrimSpace(cause.Error())
 	if reason == "" {
 		reason = "cloud package apply failed"
 	}
-	checkpoint := strings.TrimSpace(pkg.CheckpointToken)
 	var checkpointPtr *string
 	if checkpoint != "" {
 		checkpointPtr = &checkpoint
@@ -720,10 +729,16 @@ func (s *Service) recordSyncExchangePackageProblem(ctx context.Context, pkg doma
 	if restaurantID != "" {
 		restaurantPtr = &restaurantID
 	}
-	cloudUpdatedAt := strings.TrimSpace(pkg.CloudUpdatedAt)
-	var cloudUpdatedAtPtr *string
-	if cloudUpdatedAt != "" {
-		cloudUpdatedAtPtr = &cloudUpdatedAt
+	if cloudUpdatedAtPtr == nil {
+		cloudUpdatedAt := strings.TrimSpace(pkg.CloudUpdatedAt)
+		if cloudUpdatedAt != "" {
+			cloudUpdatedAtPtr = &cloudUpdatedAt
+		}
+	}
+	if lastCloudVersion == 0 && checkpointPtr == nil {
+		// Метаданные ошибочного пакета остаются в last_error; объявляемый
+		// exchange checkpoint не должен уходить дальше последнего успешного apply.
+		cloudUpdatedAtPtr = nil
 	}
 	state := domain.MasterDataSyncState{
 		ID:                 s.ids.NewID(),
@@ -733,7 +748,7 @@ func (s *Service) recordSyncExchangePackageProblem(ctx context.Context, pkg doma
 		Direction:          domain.SyncDirectionCloudToEdge,
 		SyncMode:           domain.SyncMode(strings.TrimSpace(pkg.SyncMode)),
 		CheckpointToken:    checkpointPtr,
-		LastCloudVersion:   pkg.CloudVersion,
+		LastCloudVersion:   lastCloudVersion,
 		LastCloudUpdatedAt: cloudUpdatedAtPtr,
 		Status:             "failed",
 		LastError:          &reason,

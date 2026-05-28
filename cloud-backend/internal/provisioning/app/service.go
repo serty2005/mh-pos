@@ -141,18 +141,16 @@ func (s *Service) AssignDevice(ctx context.Context, restaurantID, nodeDeviceID s
 		return AssignDeviceResult{}, err
 	}
 	now := s.clock.Now().UTC()
-	token := newSecret("node")
 	node, err := s.repo.UpsertEdgeNode(ctx, domain.EdgeNode{
-		ID:              s.ids.NewID(),
-		RestaurantID:    restaurantID,
-		NodeDeviceID:    nodeDeviceID,
-		DisplayName:     "POS Edge Node",
-		Status:          domain.EdgeNodeAssigned,
-		CredentialsHash: secretHash(token),
-		LastSeenAt:      &now,
-		AssignedAt:      &now,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:           s.ids.NewID(),
+		RestaurantID: restaurantID,
+		NodeDeviceID: nodeDeviceID,
+		DisplayName:  "POS Edge Node",
+		Status:       domain.EdgeNodeAssigned,
+		LastSeenAt:   &now,
+		AssignedAt:   &now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	})
 	if err != nil {
 		return AssignDeviceResult{}, err
@@ -173,6 +171,16 @@ func (s *Service) AssignmentStatus(ctx context.Context, nodeDeviceID string) (As
 	if node.Status != domain.EdgeNodeAssigned {
 		return AssignmentStatus{NodeDeviceID: nodeDeviceID, Status: string(node.Status)}, nil
 	}
+	status := AssignmentStatus{
+		NodeDeviceID: node.NodeDeviceID,
+		Status:       string(node.Status),
+		RestaurantID: node.RestaurantID,
+		CloudURL:     s.cloudURL,
+		SnapshotURL:  snapshotURL(node.RestaurantID, node.NodeDeviceID),
+	}
+	if strings.TrimSpace(node.CredentialsHash) != "" {
+		return status, nil
+	}
 	token := newSecret("node")
 	now := s.clock.Now().UTC()
 	node.CredentialsHash = secretHash(token)
@@ -181,14 +189,8 @@ func (s *Service) AssignmentStatus(ctx context.Context, nodeDeviceID string) (As
 	if _, err := s.repo.UpsertEdgeNode(ctx, node); err != nil {
 		return AssignmentStatus{}, err
 	}
-	return AssignmentStatus{
-		NodeDeviceID: node.NodeDeviceID,
-		Status:       string(node.Status),
-		RestaurantID: node.RestaurantID,
-		CloudURL:     s.cloudURL,
-		SnapshotURL:  snapshotURL(node.RestaurantID, node.NodeDeviceID),
-		Credentials:  &domain.Credentials{Type: "node_token", Token: token},
-	}, nil
+	status.Credentials = &domain.Credentials{Type: "node_token", Token: token}
+	return status, nil
 }
 
 func (s *Service) GeneratePairingCode(ctx context.Context, restaurantID string, cmd GeneratePairingCodeCommand) (GeneratePairingCodeResult, error) {

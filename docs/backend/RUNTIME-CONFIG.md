@@ -60,6 +60,7 @@
 - `POS_SYNC_SENDER_CLOUD_PACKAGE_BURST_THRESHOLD` включает немедленный следующий Cloud pull после bounded Cloud -> Edge response, если Cloud вернул не меньше указанного числа packages.
 - `POS_SYNC_SENDER_CLOUD_PULL_INTERVAL` ограничивает пустой authenticated exchange без Edge outbox; если local outbox содержит sendable rows, exchange выполняется на ближайшем worker tick и не ждет этот interval.
 - `node_token` хранится в local Edge provisioning state после Cloud/License provisioning и не выводится в HTTP responses или structured logs.
+- Повторный Cloud `assignment-status` не должен ротировать уже выданный `node_token`; иначе POS Edge продолжит отправлять сохраненный token и получит `401 SYNC_UNAUTHORIZED`.
 - `CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE` ограничивает число Cloud -> Edge packages в одном `sync/exchange` response. Остальные changed streams передаются следующими exchange-сессиями после применения предыдущей порции на Edge.
 
 Вне текущего объема:

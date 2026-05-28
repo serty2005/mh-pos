@@ -60,9 +60,10 @@
 - Sync sender работает по строгому poll interval. При достижении `POS_SYNC_SENDER_EMERGENCY_PENDING_THRESHOLD` для pending Edge -> Cloud outbox rows следующая итерация выполняется немедленно, чтобы backlog не ждал штатного таймера.
 - Cloud ограничивает Cloud -> Edge выдачу `CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE`; Edge забирает оставшиеся changed streams последовательными exchange-сессиями после применения предыдущей порции.
 - Cloud package apply и commit соответствующего stream checkpoint выполняются существующей transaction boundary `mastersync.Service`.
-- Если отдельный Cloud package не проходит локальный apply, Edge фиксирует проблемный stream в `cloud_master_sync_state` со статусом `failed`, продолжает применять остальные packages и не блокирует accepted Edge -> Cloud ACK.
+- Если отдельный Cloud package не проходит локальный apply, Edge фиксирует проблемный stream в `cloud_master_sync_state` со статусом `failed`, продолжает применять остальные packages и не блокирует accepted Edge -> Cloud ACK. Ошибочный package не становится новым stream checkpoint; Edge продолжает объявлять последний успешно примененный checkpoint.
 - Если transport/auth exchange не завершился успешно, Edge не помечает outbox rows как `sent`; retry повторяет exchange, а Cloud idempotency возвращает стабильный ACK для уже принятого event.
 - После successful pairing/assignment POS Edge не выполняет повторный Cloud device registration/snapshot provisioning loop; фоновая maintenance только регистрирует not configured node или poll-ит `pending_admin_approval`.
+- Повторный Cloud assignment-status для уже выданного `node_token` не ротирует token hash, чтобы внешние проверки статуса не приводили к `401 SYNC_UNAUTHORIZED` на последующих `sync/exchange`.
 - Пустой exchange без Edge outbox throttled отдельным Cloud pull interval, а появившиеся Edge outbox events отправляются в ближайший worker tick без ожидания этого throttling interval.
 - Cloud UI после успешного CRUD Cloud-owned master data автоматически создает новый published package через canonical publication API. Поэтому роль, сотрудник или PIN, созданные оператором в Cloud UI после pairing, попадают на Edge в ближайший Cloud -> Edge exchange. Ручная публикация остается реализована сейчас как явный operator checkpoint.
 

@@ -6587,6 +6587,71 @@ func TestApplySyncExchangeCloudPackagesQuarantinesBadPackageAndAppliesRest(t *te
 	}
 }
 
+func TestFailedSyncExchangePackageDoesNotAdvanceAdvertisedCheckpoint(t *testing.T) {
+	f := newFixture(t)
+	now := fixedClock{}.Now()
+	if err := f.repo.UpsertEdgeProvisioningState(f.ctx, &domain.EdgeProvisioningState{
+		ID:               "local",
+		NodeDeviceID:     f.device.ID,
+		RestaurantID:     f.restaurant.ID,
+		Status:           domain.ProvisioningPaired,
+		CredentialsType:  "node_token",
+		CredentialsToken: "node-token",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.ApplySyncExchangeCloudPackages(f.ctx, []domain.CloudPackage{
+		{
+			StreamName:      string(domain.MasterDataStreamCatalog),
+			NodeDeviceID:    f.device.ID,
+			RestaurantID:    f.restaurant.ID,
+			SyncMode:        string(domain.SyncModeIncremental),
+			CloudVersion:    10,
+			CheckpointToken: "catalog:10",
+			PayloadJSON: json.RawMessage(`{
+				"catalog_items":[{"id":"catalog-good-10","type":"dish","name":"Good","sku":"GOOD-10","base_unit":"pc","active":true}]
+			}`),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.ApplySyncExchangeCloudPackages(f.ctx, []domain.CloudPackage{
+		{
+			StreamName:      string(domain.MasterDataStreamCatalog),
+			NodeDeviceID:    f.device.ID,
+			RestaurantID:    f.restaurant.ID,
+			SyncMode:        string(domain.SyncModeIncremental),
+			CloudVersion:    11,
+			CheckpointToken: "catalog:11",
+			PayloadJSON: json.RawMessage(`{
+				"catalog_items":[{"id":"catalog-bad-11","type":"dish","name":"Broken","base_unit":"pc","active":true}]
+			}`),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := f.service.GetSyncExchangeState(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalog *domain.SyncExchangeStreamRequest
+	for i := range state.Streams {
+		if state.Streams[i].StreamName == string(domain.MasterDataStreamCatalog) {
+			catalog = &state.Streams[i]
+			break
+		}
+	}
+	if catalog == nil {
+		t.Fatalf("expected catalog stream in exchange state: %+v", state.Streams)
+	}
+	if catalog.LastCloudVersion != 10 || catalog.CheckpointToken != "catalog:10" {
+		t.Fatalf("failed package must not advance advertised checkpoint, got version=%d checkpoint=%q", catalog.LastCloudVersion, catalog.CheckpointToken)
+	}
+}
+
 func TestApplyMasterDataFullPackageAppliesMenuItemsBeforeModifierLinks(t *testing.T) {
 	f := newFixture(t)
 	payload := []byte(`{

@@ -104,6 +104,7 @@ Response:
 - POS Edge worker выполняет строгий periodic cycle без random jitter. Если pending Edge -> Cloud backlog достигает configured high-watermark, worker запускает следующую итерацию без ожидания poll interval.
 - Cloud ограничивает число `cloud_packages` в одном `sync/exchange` response настройкой `CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE`; большие Cloud -> Edge изменения передаются несколькими последовательными exchange-сессиями.
 - Если POS Edge получил bounded Cloud -> Edge response с числом packages не меньше `POS_SYNC_SENDER_CLOUD_PACKAGE_BURST_THRESHOLD`, следующий Cloud pull выполняется без ожидания `POS_SYNC_SENDER_CLOUD_PULL_INTERVAL`.
+- `node_token` выдается POS Edge один раз в provisioning/assignment flow. Повторный `assignment-status` для уже выданного token не ротирует `credentials_hash`, иначе локальный Edge token становится недействительным и `sync/exchange` получает `401 SYNC_UNAUTHORIZED`.
 - `event_id` для всех Edge POS/KDS business events должен быть UUIDv7.
 - Поддерживаемые exchange streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`, `recipes`, `inventory_reference`.
 - ACK statuses: `accepted`, `rejected`, `retryable`; rejected/retryable items возвращают стабильный `error_code` и `message_key`.
@@ -112,7 +113,7 @@ Response:
 - Edge revision больше Cloud revision отклоняет весь request как `409 SYNC_REVISION_AHEAD` до приема Edge events.
 - Равная revision с другим checkpoint отклоняет весь request как `409 SYNC_CHECKPOINT_CONFLICT` до приема Edge events.
 - POS Edge применяет `cloud_packages` через существующий `mastersync.Service`; stream data и `cloud_master_sync_state` фиксируются одной SQLite transaction boundary.
-- POS Edge применяет каждый Cloud package только после полного приема HTTP response и successful JSON decode. Ошибочный package извлекается из текущей порции, фиксируется как `cloud_master_sync_state.status = "failed"` с `last_error`, не ломает применение остальных packages и не блокирует Edge -> Cloud ACK.
+- POS Edge применяет каждый Cloud package только после полного приема HTTP response и успешного JSON decode. Ошибочный package извлекается из текущей порции, фиксируется как `cloud_master_sync_state.status = "failed"` с `last_error`, не ломает применение остальных packages и не блокирует Edge -> Cloud ACK. Ошибочный package не продвигает объявляемые `last_cloud_version`/`checkpoint_token`: следующий exchange должен снова объявлять последний успешно примененный checkpoint, чтобы Cloud мог повторно выдать пакет.
 - Если весь Cloud exchange request не принят транспортно или авторизационно, Edge outbox ACK не коммитится как `sent`; следующий exchange безопасно повторяет Edge events через Cloud idempotency.
 
 ## Cloud -> Edge Master Data Ingest
