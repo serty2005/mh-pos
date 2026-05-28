@@ -2,7 +2,11 @@ import { z } from 'zod';
 import { request, requestOptional } from './client';
 import {
   catalogItemSchema,
+  catalogFolderSchema,
+  catalogItemTagSchema,
+  catalogTagSchema,
   employeeSchema,
+  folderParameterSchema,
   hallSchema,
   menuItemSchema,
   modifierBindingSchema,
@@ -21,9 +25,13 @@ import {
   type AssignmentStatus,
   type AssignDeviceResult,
   type CatalogItem,
+  type CatalogFolder,
+  type CatalogItemTag,
+  type CatalogTag,
   type Employee,
   type EdgeEvent,
   type Hall,
+  type FolderParameter,
   type MenuItem,
   type ModifierBinding,
   type ModifierGroup,
@@ -81,6 +89,62 @@ export function listCatalogItems(restaurantId: string): Promise<CatalogItem[]> {
 
 export function listMenuItems(restaurantId: string): Promise<MenuItem[]> {
   return request(`/master-data/menu/items?${query(restaurantId)}`, z.array(menuItemSchema));
+}
+
+export function createCatalogItem(payload: Payload): Promise<CatalogItem> {
+  return post('/master-data/catalog/items', catalogItemSchema, payload);
+}
+
+export function updateCatalogItem(id: string, payload: Payload): Promise<CatalogItem> {
+  return patch(`/master-data/catalog/items/${encodeURIComponent(id)}`, catalogItemSchema, payload);
+}
+
+export function archiveCatalogItem(id: string): Promise<CatalogItem> {
+  return post(`/master-data/catalog/items/${encodeURIComponent(id)}/archive`, catalogItemSchema, {});
+}
+
+export function listCatalogFolders(restaurantId: string): Promise<CatalogFolder[]> {
+  return request(`/master-data/catalog/folders?${query(restaurantId)}`, z.array(catalogFolderSchema));
+}
+
+export function createCatalogFolder(payload: Payload): Promise<CatalogFolder> {
+  return post('/master-data/catalog/folders', catalogFolderSchema, payload);
+}
+
+export function updateCatalogFolder(id: string, payload: Payload): Promise<CatalogFolder> {
+  return patch(`/master-data/catalog/folders/${encodeURIComponent(id)}`, catalogFolderSchema, payload);
+}
+
+export function archiveCatalogFolder(id: string): Promise<CatalogFolder> {
+  return post(`/master-data/catalog/folders/${encodeURIComponent(id)}/archive`, catalogFolderSchema, {});
+}
+
+export function listFolderParameters(restaurantId: string): Promise<FolderParameter[]> {
+  return request(`/master-data/catalog/folder-parameters?${query(restaurantId)}`, z.array(folderParameterSchema));
+}
+
+export function createFolderParameter(payload: Payload): Promise<FolderParameter> {
+  return post('/master-data/catalog/folder-parameters', folderParameterSchema, payload);
+}
+
+export function updateFolderParameter(id: string, payload: Payload): Promise<FolderParameter> {
+  return patch(`/master-data/catalog/folder-parameters/${encodeURIComponent(id)}`, folderParameterSchema, payload);
+}
+
+export function listCatalogTags(restaurantId: string): Promise<CatalogTag[]> {
+  return request(`/master-data/catalog/tags?${query(restaurantId)}`, z.array(catalogTagSchema));
+}
+
+export function createCatalogTag(payload: Payload): Promise<CatalogTag> {
+  return post('/master-data/catalog/tags', catalogTagSchema, payload);
+}
+
+export function updateCatalogTag(id: string, payload: Payload): Promise<CatalogTag> {
+  return patch(`/master-data/catalog/tags/${encodeURIComponent(id)}`, catalogTagSchema, payload);
+}
+
+export function assignCatalogItemTag(payload: Payload): Promise<CatalogItemTag> {
+  return post('/master-data/catalog/item-tags', catalogItemTagSchema, payload);
 }
 
 export function listModifierGroups(restaurantId: string): Promise<ModifierGroup[]> {

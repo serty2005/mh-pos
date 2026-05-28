@@ -12,6 +12,7 @@ import RestaurantsPage from '../features/restaurants/RestaurantsPage';
 import DashboardPage from '../features/dashboard/DashboardPage';
 import PublicationPanel from '../features/publications/PublicationPanel';
 import EdgeSyncPage from '../features/edge/EdgeSyncPage';
+import CatalogPage from '../features/catalog/CatalogPage';
 
 export default function CloudManagerApp() {
   const { t } = useI18n();
@@ -139,7 +140,11 @@ export default function CloudManagerApp() {
             <EdgeSyncPage restaurantId={selectedRestaurantId} />
           ) : null}
 
-          {activeRouteId !== 'dashboard' && activeRouteId !== 'restaurants' && activeRouteId !== 'publications' && activeRouteId !== 'edge-sync' && isRestaurantSelected ? (
+          {activeRouteId === 'catalog' && isRestaurantSelected ? (
+            <CatalogPage restaurantId={selectedRestaurantId} />
+          ) : null}
+
+          {activeRouteId !== 'dashboard' && activeRouteId !== 'restaurants' && activeRouteId !== 'publications' && activeRouteId !== 'edge-sync' && activeRouteId !== 'catalog' && isRestaurantSelected ? (
             <section className="rounded-2xl border border-slate-200 bg-white p-6">
               <h3 className="text-base font-semibold text-slate-900">{t(activeItem.labelKey)}</h3>
               <p className="mt-1 text-sm text-slate-600">{t('sections.blocked')}</p>

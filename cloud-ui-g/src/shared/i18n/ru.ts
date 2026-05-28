@@ -132,6 +132,108 @@ export const ru = {
       payloadHash: 'Payload SHA256',
     },
   },
+  catalog: {
+    pageTitle: 'Управление каталогом',
+    pageDescription: 'CRUD операции выполняются только через подтвержденные route: items, folders, folder-parameters, tags и item-tags command.',
+    readiness: 'Состояние route',
+    blockedTitle: 'Раздел временно недоступен',
+    blockedDescription: 'Проверьте доступность master-data routes и повторите загрузку.',
+    kinds: {
+      dish: 'Блюдо',
+      good: 'Товар',
+      semi_finished: 'Полуфабрикат',
+      service: 'Услуга',
+    },
+    statuses: {
+      draft: 'Черновик',
+      published: 'Опубликовано',
+      archived: 'Архивировано',
+    },
+    shared: {
+      edit: 'Редактировать',
+      save: 'Сохранить',
+      cancel: 'Отменить',
+      archive: 'Архивировать',
+      archiveConfirm: 'Подтвердите архивирование записи.',
+      noFolder: 'Без папки',
+    },
+    items: {
+      title: 'Catalog items',
+      listTitle: 'Список items',
+      empty: 'Элементы каталога не найдены.',
+      actions: {
+        create: 'Создать item',
+      },
+      fields: {
+        name: 'Название',
+        sku: 'SKU',
+        kind: 'Тип',
+        status: 'Статус',
+        baseUnit: 'Единица учета',
+        folder: 'Папка',
+        kitchenType: 'Kitchen type',
+        accountingCategory: 'Accounting category',
+      },
+    },
+    folders: {
+      title: 'Catalog folders',
+      listTitle: 'Список папок',
+      empty: 'Папки не найдены.',
+      actions: {
+        create: 'Создать папку',
+      },
+      fields: {
+        name: 'Название',
+        parent: 'Родительская папка',
+        root: 'Корневой уровень',
+        sortOrder: 'Порядок сортировки',
+        status: 'Статус',
+      },
+    },
+    parameters: {
+      title: 'Folder parameters',
+      listTitle: 'Параметры папок',
+      empty: 'Параметры папок не найдены.',
+      actions: {
+        create: 'Создать параметр',
+      },
+      fields: {
+        folder: 'Папка',
+        selectFolder: 'Выберите папку',
+        key: 'Ключ параметра',
+        valueType: 'Тип значения',
+        valueJson: 'Значение JSON',
+        status: 'Статус',
+      },
+    },
+    tags: {
+      title: 'Catalog tags',
+      listTitle: 'Список тегов',
+      empty: 'Теги не найдены.',
+      actions: {
+        create: 'Создать тег',
+      },
+      fields: {
+        name: 'Название',
+        code: 'Код',
+        status: 'Статус',
+      },
+    },
+    itemTags: {
+      title: 'Item tags command',
+      commandOnly: 'У этого ресурса нет list route. Доступна только команда назначения тега на item.',
+      success: 'Команда выполнена успешно.',
+      actions: {
+        assign: 'Назначить тег',
+      },
+      fields: {
+        item: 'Catalog item',
+        tag: 'Tag',
+        selectItem: 'Выберите item',
+        selectTag: 'Выберите tag',
+      },
+    },
+  },
   sections: {
     blocked: 'Раздел доступен после выбора ресторана и подтвержденных backend контрактов.',
   },
