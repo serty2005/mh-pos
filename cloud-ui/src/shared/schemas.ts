@@ -195,6 +195,46 @@ export const stopListEntrySchema = z.object({
   updated_at: z.string(),
 });
 
+export const stopListReadinessSchema = z.object({
+  restaurant_id: z.string(),
+  node_device_id: z.string().optional().default(''),
+  default_conflict_policy: z.string(),
+  projection_mode: z.string(),
+  active_stop_list_entries: z.number(),
+  total_stop_list_entries: z.number(),
+  latest_publication: z.object({
+    version: z.number(),
+    cloud_version: z.number(),
+    published_at: z.string(),
+    published_by: z.string(),
+    package_sha256: z.string(),
+  }).optional(),
+  latest_inventory_package: z.object({
+    stream_name: z.string(),
+    cloud_version: z.number(),
+    checkpoint_token: z.string().optional().default(''),
+    cloud_updated_at: z.string().nullable().optional(),
+    updated_at: z.string(),
+  }).optional(),
+  latest_stop_list_edge_ack: z.object({
+    status: z.string(),
+    event_id: z.string(),
+    command_id: z.string(),
+    device_id: z.string(),
+    cloud_received_at: z.string(),
+  }).optional(),
+  problem_events: z.object({
+    total: z.number(),
+    latest_created_at: z.string().nullable().optional(),
+    by_error_code: z.array(z.object({
+      error_code: z.string(),
+      count: z.number(),
+    })),
+  }),
+  package_ack_status: z.string(),
+  package_ack_status_reason_key: z.string(),
+});
+
 export const hallSchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
@@ -371,6 +411,7 @@ export type ModifierBinding = z.infer<typeof modifierBindingSchema>;
 export type PricingPolicy = z.infer<typeof pricingPolicySchema>;
 export type RecipeItem = z.infer<typeof recipeItemSchema>;
 export type StopListEntry = z.infer<typeof stopListEntrySchema>;
+export type StopListReadiness = z.infer<typeof stopListReadinessSchema>;
 export type Hall = z.infer<typeof hallSchema>;
 export type RestaurantTable = z.infer<typeof tableSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;

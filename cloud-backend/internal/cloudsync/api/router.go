@@ -53,6 +53,7 @@ func NewRouterWithProvisioningAndOLAP(service *app.Service, provisioningService 
 	r.Get("/health", h.health)
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/sync/edge-events", h.listEdgeEvents)
+		r.Get("/sync/readiness/stop-list", h.stopListReadiness)
 		r.Get("/inventory/stock-ledger", h.listInventoryLedger)
 		r.Post("/sync/edge-events", h.receiveEdgeEvent)
 		r.Post("/sync/edge-events/batch", h.receiveEdgeEventBatch)
@@ -170,6 +171,22 @@ func (h *Handler) listEdgeEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) stopListReadiness(w http.ResponseWriter, r *http.Request) {
+	out, err := h.service.GetStopListReadiness(r.Context(), app.StopListReadinessFilter{
+		RestaurantID: r.URL.Query().Get("restaurant_id"),
+		NodeDeviceID: r.URL.Query().Get("node_device_id"),
+	})
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, contracts.ErrInvalidEnvelope) {
+			status = http.StatusBadRequest
+		}
+		writeError(w, status, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (h *Handler) listInventoryLedger(w http.ResponseWriter, r *http.Request) {

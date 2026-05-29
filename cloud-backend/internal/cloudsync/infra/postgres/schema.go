@@ -332,6 +332,13 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Indexes:       []string{"stock_recalculation_jobs_restaurant_status"},
 		},
 		{
+			Table:         "cloud_projection_stop_list_updates",
+			RequiredBy:    "async StopListUpdated projection without raw payload exposure",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"source_event_id", "queue_id", "restaurant_id", "device_id", "stop_list_id", "warehouse_id", "catalog_item_id", "available_quantity", "active", "conflict_policy", "source", "reason", "projection_action", "updated_at", "occurred_at", "projected_at", "created_at"},
+			Indexes:       []string{"cloud_projection_stop_list_updates_restaurant_updated", "cloud_projection_stop_list_updates_action"},
+		},
+		{
 			Table:         "stop_lists",
 			RequiredBy:    "cloud authoritative stop-list state for sale blocking",
 			MigrationFile: "001_init.sql",

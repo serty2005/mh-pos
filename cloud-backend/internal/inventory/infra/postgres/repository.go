@@ -138,6 +138,83 @@ INSERT INTO stock_ledger(
 	return tx.Commit(ctx)
 }
 
+func (r *Repository) ApplyStopListUpdate(ctx context.Context, cmd app.StopListProjectionCommand) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	action := stopListProjectionAction(cmd.ConflictPolicy)
+	var quantity any
+	if strings.TrimSpace(cmd.AvailableQuantity) != "" {
+		quantity = strings.TrimSpace(cmd.AvailableQuantity)
+	}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO cloud_projection_stop_list_updates(
+  source_event_id,queue_id,restaurant_id,device_id,stop_list_id,warehouse_id,catalog_item_id,
+  available_quantity,active,conflict_policy,source,reason,projection_action,updated_at,occurred_at,projected_at
+) VALUES (
+  $1,$2,$3,$4,$5,NULLIF($6,''),$7,
+  $8,$9,$10,$11,NULLIF($12,''),$13,$14,$15,$16
+)
+ON CONFLICT (source_event_id) DO NOTHING`,
+		strings.TrimSpace(cmd.SourceEventID),
+		strings.TrimSpace(cmd.QueueID),
+		strings.TrimSpace(cmd.RestaurantID),
+		strings.TrimSpace(cmd.DeviceID),
+		strings.TrimSpace(cmd.StopListID),
+		strings.TrimSpace(cmd.WarehouseID),
+		strings.TrimSpace(cmd.CatalogItemID),
+		quantity,
+		cmd.Active,
+		string(cmd.ConflictPolicy),
+		strings.TrimSpace(cmd.Source),
+		strings.TrimSpace(cmd.Reason),
+		action,
+		cmd.UpdatedAt,
+		cmd.OccurredAt,
+		cmd.ProjectedAt,
+	); err != nil {
+		return err
+	}
+	if cmd.ConflictPolicy == contracts.StopListConflictPolicyEdgeOverlayUntilNextPublication {
+		if _, err := tx.Exec(ctx, `
+INSERT INTO stop_lists(id,restaurant_id,catalog_item_id,available_quantity,source,reason,active,cloud_version,updated_at)
+VALUES ($1,$2,$3,$4,'edge_overlay',NULLIF($5,''),$6,NULL,$7)
+ON CONFLICT (restaurant_id, catalog_item_id) DO UPDATE SET
+  id = EXCLUDED.id,
+  available_quantity = EXCLUDED.available_quantity,
+  source = EXCLUDED.source,
+  reason = EXCLUDED.reason,
+  active = EXCLUDED.active,
+  cloud_version = NULL,
+  updated_at = EXCLUDED.updated_at`,
+			strings.TrimSpace(cmd.StopListID),
+			strings.TrimSpace(cmd.RestaurantID),
+			strings.TrimSpace(cmd.CatalogItemID),
+			quantity,
+			strings.TrimSpace(cmd.Reason),
+			cmd.Active,
+			cmd.UpdatedAt,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func stopListProjectionAction(policy contracts.StopListConflictPolicy) string {
+	switch policy {
+	case contracts.StopListConflictPolicyCloudWins:
+		return "ignored_cloud_wins"
+	case contracts.StopListConflictPolicyEdgeOverlayUntilNextPublication:
+		return "applied_edge_overlay"
+	default:
+		return "requires_manager_review"
+	}
+}
+
 func (r *Repository) MarkProcessed(ctx context.Context, queueID string, now time.Time) error {
 	_, err := r.pool.Exec(ctx, `
 UPDATE inventory_event_queue

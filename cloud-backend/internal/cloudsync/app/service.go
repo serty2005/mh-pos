@@ -19,6 +19,7 @@ type Repository interface {
 	ReceiveEdgeEvent(context.Context, EdgeEventReceipt) (contracts.EventAck, error)
 	RecordProblemEdgeEvent(context.Context, ProblemEdgeEvent) error
 	ListEdgeEvents(context.Context, EdgeEventListFilter) ([]contracts.EdgeEventView, error)
+	GetStopListReadiness(context.Context, StopListReadinessFilter) (StopListReadiness, error)
 	ListFinancialOperations(context.Context, FinancialOperationProjectionFilter) ([]contracts.FinancialOperationProjection, error)
 	ListInventoryLedger(context.Context, InventoryLedgerFilter) ([]contracts.InventoryLedgerEntry, error)
 	UpsertMasterDataPackage(context.Context, contracts.MasterDataPackage) (contracts.MasterDataPackage, error)
@@ -53,6 +54,62 @@ type EdgeEventListFilter struct {
 	DeviceID     string
 	EventType    string
 	Limit        int
+}
+
+// StopListReadinessFilter задает restaurant/node scope для safe readiness summary.
+type StopListReadinessFilter struct {
+	RestaurantID string
+	NodeDeviceID string
+}
+
+type StopListReadiness struct {
+	RestaurantID              string                        `json:"restaurant_id"`
+	NodeDeviceID              string                        `json:"node_device_id,omitempty"`
+	DefaultConflictPolicy     string                        `json:"default_conflict_policy"`
+	ProjectionMode            string                        `json:"projection_mode"`
+	ActiveStopListEntries     int64                         `json:"active_stop_list_entries"`
+	TotalStopListEntries      int64                         `json:"total_stop_list_entries"`
+	LatestPublication         *StopListPublicationReadiness `json:"latest_publication,omitempty"`
+	LatestInventoryPackage    *StopListPackageReadiness     `json:"latest_inventory_package,omitempty"`
+	LatestStopListEdgeAck     *StopListEdgeAckReadiness     `json:"latest_stop_list_edge_ack,omitempty"`
+	ProblemEvents             SyncProblemSummary            `json:"problem_events"`
+	PackageAckStatus          string                        `json:"package_ack_status"`
+	PackageAckStatusReasonKey string                        `json:"package_ack_status_reason_key"`
+}
+
+type StopListPublicationReadiness struct {
+	Version       int64     `json:"version"`
+	CloudVersion  int64     `json:"cloud_version"`
+	PublishedAt   time.Time `json:"published_at"`
+	PublishedBy   string    `json:"published_by"`
+	PackageSHA256 string    `json:"package_sha256"`
+}
+
+type StopListPackageReadiness struct {
+	StreamName      string     `json:"stream_name"`
+	CloudVersion    int64      `json:"cloud_version"`
+	CheckpointToken string     `json:"checkpoint_token,omitempty"`
+	CloudUpdatedAt  *time.Time `json:"cloud_updated_at,omitempty"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+type StopListEdgeAckReadiness struct {
+	Status          string    `json:"status"`
+	EventID         string    `json:"event_id"`
+	CommandID       string    `json:"command_id"`
+	DeviceID        string    `json:"device_id"`
+	CloudReceivedAt time.Time `json:"cloud_received_at"`
+}
+
+type SyncProblemSummary struct {
+	Total          int64                    `json:"total"`
+	LatestCreatedAt *time.Time              `json:"latest_created_at,omitempty"`
+	ByErrorCode    []SyncProblemCodeSummary `json:"by_error_code"`
+}
+
+type SyncProblemCodeSummary struct {
+	ErrorCode string `json:"error_code"`
+	Count     int64  `json:"count"`
 }
 
 // FinancialOperationProjectionFilter задает bounded Cloud read model query для current ledger events.
@@ -137,6 +194,25 @@ func (s *Service) ListEdgeEvents(ctx context.Context, filter EdgeEventListFilter
 		filter.Limit = 50
 	}
 	return s.repo.ListEdgeEvents(ctx, filter)
+}
+
+func (s *Service) GetStopListReadiness(ctx context.Context, filter StopListReadinessFilter) (StopListReadiness, error) {
+	filter.RestaurantID = strings.TrimSpace(filter.RestaurantID)
+	filter.NodeDeviceID = strings.TrimSpace(filter.NodeDeviceID)
+	if filter.RestaurantID == "" {
+		return StopListReadiness{}, fmt.Errorf("%w: restaurant_id is required", contracts.ErrInvalidEnvelope)
+	}
+	out, err := s.repo.GetStopListReadiness(ctx, filter)
+	if err != nil {
+		return StopListReadiness{}, err
+	}
+	out.RestaurantID = filter.RestaurantID
+	out.NodeDeviceID = filter.NodeDeviceID
+	out.DefaultConflictPolicy = string(contracts.DefaultStopListConflictPolicy)
+	out.ProjectionMode = "async_inventory_worker"
+	out.PackageAckStatus = "not_supported"
+	out.PackageAckStatusReasonKey = "readiness.stopList.packageAckNotSupported"
+	return out, nil
 }
 
 // ListFinancialOperations возвращает detailed Cloud projection для CancellationRecorded/RefundRecorded.

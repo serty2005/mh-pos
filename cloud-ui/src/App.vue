@@ -21,7 +21,7 @@
     <edge-device-panel v-else-if="activeKey === 'edgeDevices'" :ctx="cloudCtx" />
     <edge-events-panel v-else-if="activeKey === 'edgeEvents'" :ctx="cloudCtx" />
     <proposal-review-queue v-else-if="activeKey === 'proposalReview'" :ctx="cloudCtx" />
-    <inventory-readiness-panel v-else-if="activeKey === 'inventoryReadiness'" />
+    <inventory-readiness-panel v-else-if="activeKey === 'inventoryReadiness'" :ctx="cloudCtx" />
     <olap-export-readiness-panel v-else-if="activeKey === 'olapExports'" />
     <section v-else-if="activeKey !== 'restaurants' && !selectedRestaurantId" class="empty-state wide">
       {{ t('cloud.empty.selectRestaurant') }}
@@ -79,6 +79,7 @@ import {
   generatePairingCode,
   getAssignmentStatus,
   getPublicationState,
+  getStopListReadiness,
   listCatalogFolders,
   listCatalogItems,
   listCatalogSuggestions,
@@ -125,7 +126,7 @@ import {
   upsertStopListEntry,
   ApiError,
 } from './shared/api';
-import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, UnassignedEdgeNode } from './shared/schemas';
+import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, StopListReadiness, UnassignedEdgeNode } from './shared/schemas';
 
 type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
 type ResourceKey =
@@ -229,6 +230,7 @@ const successKey = ref('');
 const loading = ref<string[]>([]);
 const restaurants = ref<Restaurant[]>([]);
 const publication = ref<PublicationSummary | null>(null);
+const stopListReadiness = ref<StopListReadiness | null>(null);
 const edgeDevices = ref<UnassignedEdgeNode[]>([]);
 const edgeEvents = ref<EdgeEvent[]>([]);
 const catalogSuggestions = ref<CatalogSuggestion[]>([]);
@@ -777,6 +779,7 @@ const cloudCtx = {
   errorCorrelationId,
   successKey,
   publication,
+  stopListReadiness,
   edgeEvents,
   catalogSuggestions,
   recipeSuggestions,
@@ -818,6 +821,7 @@ const cloudCtx = {
   selectOptions,
   isSelectDisabled,
   loadPublication,
+  loadStopListReadiness,
   reloadActive,
   submitForm,
   archiveSelected,
@@ -851,6 +855,7 @@ watch(selectedRestaurantId, async () => {
   if (activeKey.value === 'edgeDevices' || activeKey.value === 'launchPlan') await loadEdgeDevices();
   if (activeKey.value === 'edgeEvents') await loadEdgeEvents();
   if (activeKey.value === 'proposalReview') await loadProposalReview();
+  if (activeKey.value === 'inventoryReadiness') await loadStopListReadiness();
   resetSelection();
 });
 
@@ -862,6 +867,7 @@ watch(activeKey, async () => {
   if (activeKey.value === 'edgeDevices') await loadEdgeDevices();
   if (activeKey.value === 'edgeEvents') await loadEdgeEvents();
   if (activeKey.value === 'proposalReview') await loadProposalReview();
+  if (activeKey.value === 'inventoryReadiness') await loadStopListReadiness();
   if (activeKey.value === 'launchPlan') {
     await Promise.all([loadPublication(), loadEdgeDevices()]);
   }
@@ -1063,6 +1069,13 @@ async function loadPublication() {
   });
 }
 
+async function loadStopListReadiness() {
+  if (!selectedRestaurantId.value) return;
+  await withLoading('inventory-readiness', async () => {
+    stopListReadiness.value = await getStopListReadiness(selectedRestaurantId.value, publishForm.node_device_id.trim());
+  });
+}
+
 async function loadProposalReview() {
   if (!selectedRestaurantId.value) return;
   await withLoading('proposal-review', async () => {
@@ -1090,6 +1103,7 @@ async function reloadActive() {
   if (activeKey.value === 'edgeDevices') return loadEdgeDevices();
   if (activeKey.value === 'edgeEvents') return loadEdgeEvents();
   if (activeKey.value === 'proposalReview') return loadProposalReview();
+  if (activeKey.value === 'inventoryReadiness') return loadStopListReadiness();
   if (activeKey.value === 'restaurants') return loadRestaurants();
   if (activeKey.value === 'publications') return loadPublication();
   if (activeKey.value === 'itemTags' || activeKey.value === 'categories') return;

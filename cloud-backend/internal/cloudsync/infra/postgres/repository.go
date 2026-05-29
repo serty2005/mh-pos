@@ -352,6 +352,93 @@ LIMIT $4`, filter.RestaurantID, filter.DeviceID, filter.EventType, limit)
 	return out, rows.Err()
 }
 
+func (r *Repository) GetStopListReadiness(ctx context.Context, filter app.StopListReadinessFilter) (app.StopListReadiness, error) {
+	out := app.StopListReadiness{
+		RestaurantID: filter.RestaurantID,
+		NodeDeviceID: filter.NodeDeviceID,
+		ProblemEvents: app.SyncProblemSummary{
+			ByErrorCode: []app.SyncProblemCodeSummary{},
+		},
+	}
+	if err := r.pool.QueryRow(ctx, `
+SELECT COUNT(1), COALESCE(SUM(CASE WHEN active THEN 1 ELSE 0 END),0)
+FROM stop_lists
+WHERE restaurant_id = $1`, filter.RestaurantID).Scan(&out.TotalStopListEntries, &out.ActiveStopListEntries); err != nil {
+		return app.StopListReadiness{}, err
+	}
+
+	var pub app.StopListPublicationReadiness
+	err := r.pool.QueryRow(ctx, `
+SELECT version,cloud_version,published_at,published_by,package_sha256
+FROM cloud_master_data_publications
+WHERE restaurant_id = $1 AND status = 'published'
+ORDER BY version DESC
+LIMIT 1`, filter.RestaurantID).Scan(&pub.Version, &pub.CloudVersion, &pub.PublishedAt, &pub.PublishedBy, &pub.PackageSHA256)
+	if err == nil {
+		out.LatestPublication = &pub
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return app.StopListReadiness{}, err
+	}
+
+	var pkg app.StopListPackageReadiness
+	var cloudUpdatedAt *time.Time
+	err = r.pool.QueryRow(ctx, `
+SELECT stream_name,cloud_version,COALESCE(checkpoint_token,''),cloud_updated_at,updated_at
+FROM cloud_master_data_packages
+WHERE stream_name = $1
+  AND ($2 = '' OR node_device_id IN ($2, ''))
+  AND ($3 = '' OR restaurant_id = $3 OR restaurant_id IS NULL)
+ORDER BY CASE WHEN node_device_id = $2 THEN 0 ELSE 1 END, updated_at DESC
+LIMIT 1`, contracts.MasterDataStreamInventory, filter.NodeDeviceID, filter.RestaurantID).Scan(&pkg.StreamName, &pkg.CloudVersion, &pkg.CheckpointToken, &cloudUpdatedAt, &pkg.UpdatedAt)
+	if err == nil {
+		pkg.CloudUpdatedAt = cloudUpdatedAt
+		out.LatestInventoryPackage = &pkg
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return app.StopListReadiness{}, err
+	}
+
+	var ack app.StopListEdgeAckReadiness
+	err = r.pool.QueryRow(ctx, `
+SELECT event_id,command_id,device_id,cloud_received_at
+FROM cloud_edge_event_receipts
+WHERE restaurant_id = $1 AND event_type = $2
+ORDER BY cloud_received_at DESC, id DESC
+LIMIT 1`, filter.RestaurantID, string(contracts.EventStopListUpdated)).Scan(&ack.EventID, &ack.CommandID, &ack.DeviceID, &ack.CloudReceivedAt)
+	if err == nil {
+		ack.Status = "accepted"
+		out.LatestStopListEdgeAck = &ack
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return app.StopListReadiness{}, err
+	}
+
+	var latestProblemAt *time.Time
+	if err := r.pool.QueryRow(ctx, `
+SELECT COUNT(1), MAX(created_at)
+FROM cloud_sync_problem_events
+WHERE ($1 = '' OR restaurant_id = $1)`, filter.RestaurantID).Scan(&out.ProblemEvents.Total, &latestProblemAt); err != nil {
+		return app.StopListReadiness{}, err
+	}
+	out.ProblemEvents.LatestCreatedAt = latestProblemAt
+	rows, err := r.pool.Query(ctx, `
+SELECT error_code, COUNT(1)
+FROM cloud_sync_problem_events
+WHERE ($1 = '' OR restaurant_id = $1)
+GROUP BY error_code
+ORDER BY error_code`, filter.RestaurantID)
+	if err != nil {
+		return app.StopListReadiness{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var item app.SyncProblemCodeSummary
+		if err := rows.Scan(&item.ErrorCode, &item.Count); err != nil {
+			return app.StopListReadiness{}, err
+		}
+		out.ProblemEvents.ByErrorCode = append(out.ProblemEvents.ByErrorCode, item)
+	}
+	return out, rows.Err()
+}
+
 // ListFinancialOperations читает detailed financial operation projection без raw payload.
 func (r *Repository) ListFinancialOperations(ctx context.Context, filter app.FinancialOperationProjectionFilter) ([]contracts.FinancialOperationProjection, error) {
 	limit := filter.Limit

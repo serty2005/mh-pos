@@ -52,7 +52,7 @@
 - pricing policies;
 - recipe items через `/api/v1/master-data/recipes/items`;
 - stop-list entries через `/api/v1/master-data/inventory/stop-list`;
-- route-backed раздел `Очередь предложений` для Cloud review workflow (`catalog-suggestions`/`recipe-suggestions`) со списками catalog/recipe suggestions, detail/diff view, approve/reject/request-changes actions, linked new dish + recipe group display и publication/readiness signal после approve; разделы `Готовность склада`/`OLAP exports` остаются readiness-only, хотя backend уже имеет bounded `GET /api/v1/olap/stock-moves` без UI-превью в текущем scope;
+- route-backed раздел `Очередь предложений` для Cloud review workflow (`catalog-suggestions`/`recipe-suggestions`) со списками catalog/recipe suggestions, detail/diff view, approve/reject/request-changes actions, linked new dish + recipe group display и publication/readiness signal после approve; раздел `Готовность склада` читает `GET /api/v1/sync/readiness/stop-list` для safe stop-list/publication/Edge ACK/sync problem summary; OLAP exports остается readiness-only, хотя backend уже имеет bounded `GET /api/v1/olap/stock-moves` без UI-превью в текущем scope;
 - halls и tables;
 - menu items;
 - menu category create как command-only операция, потому что list/update routes не подтверждены;
@@ -66,11 +66,11 @@
 
 - recipe editor уже имеет bounded route-backed строки recipe items; далее нужен сценарный editor версий поверх подтвержденных contracts;
 - duplicate hints и linked receipt line для catalog suggestion review остаются запланировано далее;
-- stop-list panel уже имеет bounded route-backed rows; далее нужны conflict policy, review и publication readiness по отдельным contracts;
+- stop-list panel уже имеет bounded route-backed rows; `Готовность склада` показывает default conflict policy, async projection mode, publication/package metadata, latest Edge ACK metadata и sync problem counters без raw payload; полноценный manager review для Edge overlay остается запланирован далее;
 - inventory operations workspace: stock ledger/balances and costing/recalculation status; Edge-side stock receipts, inventory counts, write-offs and production input are covered by `pos-ui-g` kitchen mode and Cloud ledger read endpoints;
 - ClickHouse/OLAP workspace: backend уже имеет read-only export status, bounded stock moves и stock move summary; UI runtime preview, retry/backfill mutation controls и richer analytics остаются запланировано далее;
 - launch readiness должен учитывать stop-list review и публикацию streams `recipes`/`stop_lists`;
-- publication panel должен показывать latest package version, target Edge node и статус доставки/ACK, когда backend contract готов;
+- publication panel показывает latest package version и target Edge node; latest known Edge ACK для stop-list отображается в readiness summary, package delivery ACK как отдельный contract остается запланирован далее;
 - Edge events/problem events panel должен показывать accepted/rejected/retryable metadata без raw payload.
 
 вне текущего объема полного пилота:
@@ -144,7 +144,7 @@ Review command body:
 
 ## Runtime Code
 
-реализовано сейчас: runtime backend code изменялся для безопасного `GET /api/v1/sync/edge-events`, proposal review/apply, ClickHouse `raw_business_events`, kitchen stock events и выравнивания accepted Edge event types со schema baseline.
+реализовано сейчас: runtime backend code изменялся для безопасного `GET /api/v1/sync/edge-events`, `GET /api/v1/sync/readiness/stop-list`, proposal review/apply, ClickHouse `raw_business_events`, kitchen stock events, `StopListUpdated` projection/conflict policy и выравнивания accepted Edge event types со schema baseline.
 
 реализовано сейчас: `cloud-ui/src/App.vue` оставляет orchestration/state/config, а presentation layer вынесен в `cloud-ui/src/components/cloud/*`.
 

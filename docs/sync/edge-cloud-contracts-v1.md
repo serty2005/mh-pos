@@ -234,6 +234,7 @@ Cloud Inventory Worker
 - `GET /api/v1/olap/export-status?stream=raw_business_events|stock_moves` читает checkpoint/retry состояние из PostgreSQL без raw payload и без запуска retry/backfill mutation.
 - `POST /api/v1/olap/export-retry` реализован как support-only mutation для снятия retry/backoff state: `command_id` UUIDv7, `stream=raw_business_events|stock_moves`, `mode=retry_failed|resume_from_checkpoint`, `reason`; response не содержит raw payload или reason и не запускает synchronous ClickHouse write.
 - `GET /api/v1/olap/stock-move-summary` читает первый bounded aggregate из ClickHouse `olap_stock_moves` с группировкой `business_date|catalog_item|warehouse`; endpoint не раскрывает raw sync payload и не является COGS/margin расчетом.
+- `GET /api/v1/sync/readiness/stop-list?restaurant_id=&node_device_id=` возвращает stop-list publication/package readiness, последний known accepted `StopListUpdated` ACK metadata и sync problem counters без raw payload.
 - Synchronous dual-write в PostgreSQL и ClickHouse запрещен.
 
 Текущий POS Edge emitted catalog в domain boundary включает:
@@ -316,7 +317,7 @@ Cancellation/refund sync behavior:
 
 ### Inventory Event Payloads Target
 
-Реализовано сейчас: POS Edge генерирует `CheckClosed` при создании final check после полной оплаты; payload строится из immutable `check.Snapshot` и передается внутри стандартного sync envelope в `payload.data`. POS Edge KDS lifecycle генерирует `KitchenTicketStatusChanged`, а `serve` дополнительно генерирует `ItemServed`. POS Edge kitchen stock input routes генерируют `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` как outbox envelopes без POS-side stock documents; replay того же stock `command_id` и event type возвращает сохраненный результат без нового envelope. POS Edge kitchen proposal routes генерируют `CatalogItemChangeSuggested` и `RecipeChangeSuggested`, сохраняют локальный `kitchen_proposals.status = pending_sync`, поддерживают `proposal_group_id` для связки нового блюда и техкарты и не мутируют master data до Cloud publication. Cloud receiver принимает `CheckClosed`, `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `StopListUpdated`; Cloud Inventory Worker создает stock documents/ledger rows для accepted receipt/count/write-off/production events и `SALE` rows по `ItemServed`. `StopListUpdated` сейчас валидируется и сохраняется как accepted event/raw audit input без projection update; Edge-origin stop-list edit/conflict policy остается запланировано далее.
+Реализовано сейчас: POS Edge генерирует `CheckClosed` при создании final check после полной оплаты; payload строится из immutable `check.Snapshot` и передается внутри стандартного sync envelope в `payload.data`. POS Edge KDS lifecycle генерирует `KitchenTicketStatusChanged`, а `serve` дополнительно генерирует `ItemServed`. POS Edge kitchen stock input routes генерируют `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` как outbox envelopes без POS-side stock documents; replay того же stock `command_id` и event type возвращает сохраненный результат без нового envelope. POS Edge kitchen proposal routes генерируют `CatalogItemChangeSuggested` и `RecipeChangeSuggested`, сохраняют локальный `kitchen_proposals.status = pending_sync`, поддерживают `proposal_group_id` для связки нового блюда и техкарты и не мутируют master data до Cloud publication. Cloud receiver принимает `CheckClosed`, `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `StopListUpdated`; Cloud Inventory Worker создает stock documents/ledger rows для accepted receipt/count/write-off/production events и `SALE` rows по `ItemServed`. `StopListUpdated` валидируется, сохраняется как accepted event/raw audit input, попадает в durable `inventory_event_queue` и обрабатывается worker-ом в `cloud_projection_stop_list_updates` без raw payload exposure.
 
 Запланировано до полного пилота для остальных inventory payloads, необходимых полному Cloud Inventory Engine и ClickHouse OLAP: расширенные `RefundRecorded`/`CancellationRecorded` inventory effects и OLAP-проекции поверх `raw_business_events`. Все payloads передаются внутри стандартного sync envelope в `payload.data`.
 
@@ -448,7 +449,7 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 }
 ```
 
-`StopListUpdated` payload зарезервирован для Edge-origin stop-list edit/audit flow; реализовано сейчас только Cloud receiver validation/acceptance без применения overlay conflict policy:
+`StopListUpdated` payload зарезервирован для Edge-origin stop-list edit/audit flow. Реализовано сейчас: Cloud receiver validation/acceptance, async worker projection без raw payload и минимальный `stop_list_conflict_policy`:
 
 ```json
 {
@@ -458,11 +459,13 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
   "available_quantity": "0.000",
   "active": true,
   "source": "edge",
-  "conflict_policy": "most_restrictive",
+  "conflict_policy": "edge_overlay_until_next_publication",
   "reason": "ingredient_unavailable",
   "updated_at": "2026-05-19T12:05:00Z"
 }
 ```
+
+Поддержанные значения `conflict_policy`: `cloud_wins`, `edge_overlay_until_next_publication`, `edge_overlay_requires_manager_review`. Если поле не передано, применяется default `edge_overlay_requires_manager_review`. Только `edge_overlay_until_next_publication` обновляет bounded `stop_lists` overlay; остальные режимы фиксируются в safe projection для дальнейшего manager review и не раскрывают raw payload наружу.
 
 ## Financial Payload Boundaries
 
@@ -477,7 +480,7 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 
 Не реализовано сейчас:
 
-- Edge-origin stop-list edit sync/conflict policy;
+- Edge-origin stop-list edit UI и полноценный manager review workflow для `edge_overlay_requires_manager_review`;
 - компенсирующий пересчет уже обработанного served fact после recall;
 - modifier linked catalog item consumption и retro costing DAG;
 - sales/kitchen/costing aggregate OLAP API, production-grade backfill jobs и OLAP operator UI;
@@ -486,7 +489,7 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 Запланировано до полного пилота:
 
 - advanced KDS расширяется cooking events поверх уже реализованных `KitchenTicketStatusChanged`/`ItemServed`;
-- stop-list changes синхронизируются через Cloud -> Edge packages и, если включен Edge manager input, через `StopListUpdated`;
+- stop-list changes синхронизируются через Cloud -> Edge packages и, если включен Edge manager input, через `StopListUpdated`; bounded projection/conflict policy реализованы сейчас, UI edit/review остается запланирован далее;
 - Cloud Inventory Worker расширяется до balances and costing engine;
 - Реализовано сейчас: ClickHouse pipeline экспортирует `raw_business_events`, а `GET /api/v1/olap/raw-business-events` читает bounded metadata без raw payload.
 - Реализовано сейчас: ClickHouse pipeline экспортирует первый bounded `olap_stock_moves` read model из `stock_ledger`, а `GET /api/v1/olap/stock-moves` читает его без raw payload.

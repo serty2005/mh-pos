@@ -38,4 +38,22 @@
 Выполнена.
 
 **Итерация 8: End-To-End Smoke And Documentation Alignment**
-В работе. Кодовый blocker `seed_full_system(..., run_kitchen_process_smoke=...)` в текущей ветке не воспроизводится: сигнатура принимает параметр, summary пишет отдельные `minimal_flow` и `kitchen_process_smoke`, а Python регрессионные тесты покрывают этот путь. Полный Docker smoke в текущей проверке не подтвержден из-за окружения: buildx plugin остается требованием локального Docker CLI/Compose, а port blocker локализован через host-port overrides в `docker-compose.local.yml` для `5432`/`8123`/`9000`/`8090`/`8080`/`8095`.
+Выполнена для runtime/script/docs scope. `scripts/seed-dev-system.py --run-kitchen-process-smoke` присутствует, summary пишет отдельные `minimal_flow` и `kitchen_process_smoke`, а Python регрессионные тесты покрывают этот путь. Полный Docker smoke в текущей локальной проверке остается не подтвержден из-за окружения: buildx plugin является требованием Docker CLI/Compose, port blocker локализован через host-port overrides в `docker-compose.local.yml` для `5432`/`8123`/`9000`/`8090`/`8080`/`8095`.
+
+**Итерация 9: ClickHouse raw_business_events**
+Выполнена. `raw_business_events` реализован как managed bounded metadata read без raw payload exposure.
+
+**Итерация 10: Stock ledger to OLAP stock moves**
+Выполнена. `stock_ledger -> olap_stock_moves` реализован async bounded slice, `GET /api/v1/olap/stock-moves` читает bounded rows без raw sync payload.
+
+**Итерация 11: OLAP export status and retry**
+Выполнена. `GET /api/v1/olap/export-status?stream=raw_business_events|stock_moves` реализован read-only, `POST /api/v1/olap/export-retry` реализован как support-only control для `retry_failed|resume_from_checkpoint`.
+
+**Итерация 12: sync/exchange ACK regression**
+Выполнена. POS syncsender regression покрывает temporary `sync/exchange` failure, retry того же outbox item, item-level ACK и прекращение повторной отправки после ACK.
+
+**Итерация 13: Stock move summary**
+Выполнена. `GET /api/v1/olap/stock-move-summary` реализован как первый bounded aggregate по `olap_stock_moves`.
+
+**Итерация 14: Stop-List Projection Conflict Policy + Readiness Signals**
+Выполнена в bounded объеме. `StopListUpdated` валидируется Cloud receiver-ом, обрабатывается Cloud Inventory Worker через durable queue в safe projection без raw payload, `stop_list_conflict_policy` поддерживает `cloud_wins`, `edge_overlay_until_next_publication`, `edge_overlay_requires_manager_review`, а `GET /api/v1/sync/readiness/stop-list` дает safe readiness по publication/package, latest Edge ACK metadata и sync problem counters. Полноценный Edge stop-list edit UI и manager review workflow остаются запланированы далее.

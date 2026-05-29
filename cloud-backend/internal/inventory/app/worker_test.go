@@ -31,6 +31,7 @@ func (f *fixedIDs) NewID() string {
 type fakeRepo struct {
 	events              []app.QueuedEvent
 	documents           []app.StockDocument
+	stopListUpdates     []app.StopListProjectionCommand
 	processed           []string
 	failed              map[string]string
 	recipes             map[string][]app.RecipeLine
@@ -51,6 +52,16 @@ func (f *fakeRepo) CreateStockDocument(_ context.Context, document app.StockDocu
 		}
 	}
 	f.documents = append(f.documents, document)
+	return nil
+}
+
+func (f *fakeRepo) ApplyStopListUpdate(_ context.Context, cmd app.StopListProjectionCommand) error {
+	for _, existing := range f.stopListUpdates {
+		if existing.SourceEventID == cmd.SourceEventID {
+			return nil
+		}
+	}
+	f.stopListUpdates = append(f.stopListUpdates, cmd)
 	return nil
 }
 
@@ -412,6 +423,46 @@ func TestRunOnceMapsRefundReturnAndCancellationWaste(t *testing.T) {
 	}
 }
 
+func TestRunOnceProjectsStopListUpdatedWithoutStockDocument(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventStopListUpdated, stopListUpdatedPayload(t, "edge_overlay_until_next_publication"))}}
+	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 0 {
+		t.Fatalf("StopListUpdated must not create stock document, got %+v", repo.documents)
+	}
+	if len(repo.stopListUpdates) != 1 {
+		t.Fatalf("expected one stop-list projection command, got %+v", repo.stopListUpdates)
+	}
+	got := repo.stopListUpdates[0]
+	if got.SourceEventID != "018f0000-0000-7000-8000-0000000000a1" || got.CatalogItemID != "item-1" || got.AvailableQuantity != "0.000" {
+		t.Fatalf("unexpected stop-list projection: %+v", got)
+	}
+	if got.ConflictPolicy != contracts.StopListConflictPolicyEdgeOverlayUntilNextPublication {
+		t.Fatalf("unexpected conflict policy: %+v", got)
+	}
+	if len(repo.processed) != 1 || repo.processed[0] != "queue-1" {
+		t.Fatalf("expected queue row processed, got %+v", repo.processed)
+	}
+}
+
+func TestRunOnceDefaultsStopListPolicyToManagerReview(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventStopListUpdated, stopListUpdatedPayload(t, ""))}}
+	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.stopListUpdates) != 1 {
+		t.Fatalf("expected one stop-list projection command, got %+v", repo.stopListUpdates)
+	}
+	if repo.stopListUpdates[0].ConflictPolicy != contracts.DefaultStopListConflictPolicy {
+		t.Fatalf("expected default manager-review policy, got %+v", repo.stopListUpdates[0])
+	}
+}
+
 func TestRunOnceNoStockEffectIsProcessedWithoutDocument(t *testing.T) {
 	repo := &fakeRepo{events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventRefundRecorded, financialOperationPayload(t, "refund", "no_stock_effect"))}}
 	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
@@ -455,6 +506,9 @@ func (f *failingRepo) ClaimPending(context.Context, app.ClaimCommand) ([]app.Que
 	return nil, f.err
 }
 func (f *failingRepo) CreateStockDocument(context.Context, app.StockDocument) error {
+	return f.err
+}
+func (f *failingRepo) ApplyStopListUpdate(context.Context, app.StopListProjectionCommand) error {
 	return f.err
 }
 func (f *failingRepo) MarkProcessed(context.Context, string, time.Time) error      { return f.err }
@@ -596,6 +650,24 @@ func stockWriteOffPayload(t *testing.T) json.RawMessage {
 			"unit_code":       "KG",
 		}},
 	})
+}
+
+func stopListUpdatedPayload(t *testing.T, policy string) json.RawMessage {
+	t.Helper()
+	data := map[string]any{
+		"stop_list_id":       "stop-1",
+		"restaurant_id":      "restaurant-1",
+		"catalog_item_id":    "item-1",
+		"available_quantity": "0.000",
+		"active":             true,
+		"source":             "edge",
+		"reason":             "ingredient_unavailable",
+		"updated_at":         "2026-05-05T12:05:00Z",
+	}
+	if strings.TrimSpace(policy) != "" {
+		data["conflict_policy"] = policy
+	}
+	return marshalPayload(t, data)
 }
 
 func financialOperationPayload(t *testing.T, operationType, disposition string) json.RawMessage {

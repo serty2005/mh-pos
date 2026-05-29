@@ -24,6 +24,7 @@ import {
   publicationSummarySchema,
   restaurantSchema,
   roleSchema,
+  stopListReadinessSchema,
   stopListEntrySchema,
   tableSchema,
   unassignedEdgeNodeSchema,
@@ -51,6 +52,7 @@ import {
   type Restaurant,
   type RestaurantTable,
   type Role,
+  type StopListReadiness,
   type StopListEntry,
   type UnassignedEdgeNode,
 } from './schemas';
@@ -466,6 +468,13 @@ export function requestChangesRecipeSuggestion(id: string, payload: SuggestionRe
 
 export function listStopListEntries(restaurantId: string): Promise<StopListEntry[]> {
   return request(`/master-data/inventory/stop-list?${query(restaurantId)}`, z.array(stopListEntrySchema));
+}
+
+export function getStopListReadiness(restaurantId: string, nodeDeviceId = ''): Promise<StopListReadiness> {
+  const params = new URLSearchParams();
+  params.set('restaurant_id', restaurantId);
+  if (nodeDeviceId) params.set('node_device_id', nodeDeviceId);
+  return request(`/sync/readiness/stop-list?${params.toString()}`, stopListReadinessSchema);
 }
 
 export function upsertStopListEntry(payload: Payload) {

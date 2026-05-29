@@ -183,6 +183,62 @@ func (r *Repository) ListEdgeEvents(_ context.Context, filter app.EdgeEventListF
 	return out, nil
 }
 
+func (r *Repository) GetStopListReadiness(_ context.Context, filter app.StopListReadinessFilter) (app.StopListReadiness, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	out := app.StopListReadiness{
+		RestaurantID: filter.RestaurantID,
+		NodeDeviceID: filter.NodeDeviceID,
+		ProblemEvents: app.SyncProblemSummary{
+			ByErrorCode: []app.SyncProblemCodeSummary{},
+		},
+	}
+	for _, stored := range r.events {
+		view := stored.view
+		if view.RestaurantID != filter.RestaurantID || view.EventType != string(contracts.EventStopListUpdated) {
+			continue
+		}
+		if out.LatestStopListEdgeAck == nil || view.CloudReceivedAt.After(out.LatestStopListEdgeAck.CloudReceivedAt) {
+			out.LatestStopListEdgeAck = &app.StopListEdgeAckReadiness{
+				Status:          "accepted",
+				EventID:         view.EventID,
+				CommandID:       view.CommandID,
+				DeviceID:        view.DeviceID,
+				CloudReceivedAt: view.CloudReceivedAt,
+			}
+		}
+	}
+	if pkg, ok := r.masterDataByKey[masterDataKey(contracts.MasterDataStreamInventory, filter.NodeDeviceID)]; ok && pkg.RestaurantID == filter.RestaurantID {
+		out.LatestInventoryPackage = &app.StopListPackageReadiness{
+			StreamName:      pkg.StreamName,
+			CloudVersion:    pkg.CloudVersion,
+			CheckpointToken: pkg.CheckpointToken,
+			CloudUpdatedAt:  pkg.CloudUpdatedAt,
+			UpdatedAt:       pkg.UpdatedAt,
+		}
+	}
+	codes := map[string]int64{}
+	for _, item := range r.problemEdgeEvents {
+		if filter.RestaurantID != "" && item.RestaurantID != "" && item.RestaurantID != filter.RestaurantID {
+			continue
+		}
+		out.ProblemEvents.Total++
+		if out.ProblemEvents.LatestCreatedAt == nil || item.CreatedAt.After(*out.ProblemEvents.LatestCreatedAt) {
+			t := item.CreatedAt
+			out.ProblemEvents.LatestCreatedAt = &t
+		}
+		codes[item.ErrorCode]++
+	}
+	for code, count := range codes {
+		out.ProblemEvents.ByErrorCode = append(out.ProblemEvents.ByErrorCode, app.SyncProblemCodeSummary{ErrorCode: code, Count: count})
+	}
+	slices.SortFunc(out.ProblemEvents.ByErrorCode, func(a, b app.SyncProblemCodeSummary) int {
+		return strings.Compare(a.ErrorCode, b.ErrorCode)
+	})
+	return out, nil
+}
+
 // ListFinancialOperations возвращает current financial operation projection с bounded pagination.
 func (r *Repository) ListFinancialOperations(_ context.Context, filter app.FinancialOperationProjectionFilter) ([]contracts.FinancialOperationProjection, error) {
 	r.mu.Lock()

@@ -41,6 +41,7 @@ type RecipeLine struct {
 type Repository interface {
 	ClaimPending(context.Context, ClaimCommand) ([]QueuedEvent, error)
 	CreateStockDocument(context.Context, StockDocument) error
+	ApplyStopListUpdate(context.Context, StopListProjectionCommand) error
 	MarkProcessed(context.Context, string, time.Time) error
 	MarkFailed(context.Context, string, string, time.Time) error
 	ListActiveRecipeLines(context.Context, string, string) ([]RecipeLine, error)
@@ -98,6 +99,25 @@ type StockLedgerEntry struct {
 	OccurredAt        time.Time
 	BusinessDateLocal string
 	CreatedAt         time.Time
+}
+
+// StopListProjectionCommand переносит StopListUpdated в безопасную projection без raw payload.
+type StopListProjectionCommand struct {
+	SourceEventID      string
+	QueueID            string
+	RestaurantID       string
+	DeviceID           string
+	StopListID         string
+	WarehouseID        string
+	CatalogItemID      string
+	AvailableQuantity string
+	Active             bool
+	ConflictPolicy     contracts.StopListConflictPolicy
+	Source             string
+	Reason             string
+	UpdatedAt          time.Time
+	OccurredAt         time.Time
+	ProjectedAt        time.Time
 }
 
 type Config struct {
@@ -168,10 +188,42 @@ func (w *Worker) documentFromEvent(ctx context.Context, event QueuedEvent, now t
 	case contracts.EventRefundRecorded, contracts.EventCancellationRecorded:
 		return w.financialOperationDocument(event, now)
 	case contracts.EventStopListUpdated:
-		return StockDocument{}, false, nil
+		return StockDocument{}, false, w.applyStopListUpdated(ctx, event, now)
 	default:
 		return StockDocument{}, false, fmt.Errorf("unsupported inventory event_type %s", event.EventType)
 	}
+}
+
+func (w *Worker) applyStopListUpdated(ctx context.Context, event QueuedEvent, now time.Time) error {
+	payload, err := decode[contracts.StopListUpdated](event.Payload)
+	if err != nil {
+		return err
+	}
+	data := payload.Data
+	if strings.TrimSpace(data.RestaurantID) != strings.TrimSpace(event.RestaurantID) {
+		return fmt.Errorf("stop-list restaurant mismatch")
+	}
+	policy := contracts.NormalizeStopListConflictPolicy(data.ConflictPolicy)
+	if policy == "" {
+		return fmt.Errorf("invalid stop-list conflict policy")
+	}
+	return w.repo.ApplyStopListUpdate(ctx, StopListProjectionCommand{
+		SourceEventID:      strings.TrimSpace(event.EventID),
+		QueueID:            strings.TrimSpace(event.ID),
+		RestaurantID:       strings.TrimSpace(data.RestaurantID),
+		DeviceID:           strings.TrimSpace(event.DeviceID),
+		StopListID:         strings.TrimSpace(data.StopListID),
+		WarehouseID:        strings.TrimSpace(data.WarehouseID),
+		CatalogItemID:      strings.TrimSpace(data.CatalogItemID),
+		AvailableQuantity: strings.TrimSpace(data.AvailableQuantity),
+		Active:             data.Active,
+		ConflictPolicy:     policy,
+		Source:             strings.TrimSpace(data.Source),
+		Reason:             strings.TrimSpace(data.Reason),
+		UpdatedAt:          data.UpdatedAt.UTC(),
+		OccurredAt:         event.OccurredAt.UTC(),
+		ProjectedAt:        now,
+	})
 }
 
 func (w *Worker) checkClosedDocument(ctx context.Context, event QueuedEvent, now time.Time) (StockDocument, bool, error) {

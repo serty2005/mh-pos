@@ -186,6 +186,39 @@ func TestProvisioningMasterDataPutAndGet(t *testing.T) {
 	}
 }
 
+func TestStopListReadinessRouteDoesNotExposeRawPayload(t *testing.T) {
+	repo := memory.NewRepository()
+	router := api.NewRouter(app.NewService(repo, fixedClock{}))
+	raw := []byte(`{
+	  "version":"1",
+	  "event_id":"018f0000-0000-7000-8000-0000000000b1",
+	  "command_id":"command-stop-list-1",
+	  "event_type":"StopListUpdated",
+	  "aggregate_type":"StopList",
+	  "aggregate_id":"stop-1",
+	  "restaurant_id":"restaurant-1",
+	  "device_id":"device-1",
+	  "node_device_id":"device-1",
+	  "occurred_at":"2026-05-05T12:05:00Z",
+	  "payload":{"origin":"edge_device","data":{"stop_list_id":"stop-1","restaurant_id":"restaurant-1","catalog_item_id":"item-1","available_quantity":"0.000","active":true,"conflict_policy":"edge_overlay_until_next_publication","source":"edge","reason":"ingredient_unavailable","updated_at":"2026-05-05T12:05:00Z"}}
+	}`)
+	postEnvelope(t, router, raw)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/readiness/stop-list?restaurant_id=restaurant-1&node_device_id=device-1", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 readiness, got %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "raw_payload") || strings.Contains(body, "ingredient_unavailable") {
+		t.Fatalf("readiness response must not expose raw payload: %s", body)
+	}
+	if !strings.Contains(body, "edge_overlay_requires_manager_review") || !strings.Contains(body, "async_inventory_worker") {
+		t.Fatalf("readiness response missing contract metadata: %s", body)
+	}
+}
+
 func TestProvisioningCurrenciesPutAndGet(t *testing.T) {
 	repo := memory.NewRepository()
 	router := api.NewRouter(app.NewService(repo, fixedClock{}))

@@ -1254,6 +1254,32 @@ CREATE TABLE IF NOT EXISTS stock_recalculation_jobs (
 CREATE INDEX IF NOT EXISTS stock_recalculation_jobs_restaurant_status
   ON stock_recalculation_jobs(restaurant_id, status, recalculate_from);
 
+CREATE TABLE IF NOT EXISTS cloud_projection_stop_list_updates (
+  source_event_id TEXT PRIMARY KEY CHECK (source_event_id <> ''),
+  queue_id TEXT NOT NULL CHECK (queue_id <> ''),
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  device_id TEXT NOT NULL CHECK (device_id <> ''),
+  stop_list_id TEXT NOT NULL CHECK (stop_list_id <> ''),
+  warehouse_id TEXT,
+  catalog_item_id TEXT NOT NULL CHECK (catalog_item_id <> ''),
+  available_quantity NUMERIC(14,3),
+  active BOOLEAN NOT NULL,
+  conflict_policy TEXT NOT NULL CHECK (conflict_policy IN ('cloud_wins','edge_overlay_until_next_publication','edge_overlay_requires_manager_review')),
+  source TEXT NOT NULL CHECK (source <> ''),
+  reason TEXT,
+  projection_action TEXT NOT NULL CHECK (projection_action IN ('applied_edge_overlay','ignored_cloud_wins','requires_manager_review')),
+  updated_at TIMESTAMPTZ NOT NULL,
+  occurred_at TIMESTAMPTZ NOT NULL,
+  projected_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS cloud_projection_stop_list_updates_restaurant_updated
+  ON cloud_projection_stop_list_updates(restaurant_id, updated_at DESC, source_event_id);
+
+CREATE INDEX IF NOT EXISTS cloud_projection_stop_list_updates_action
+  ON cloud_projection_stop_list_updates(projection_action, projected_at DESC);
+
 CREATE TABLE IF NOT EXISTS stop_lists (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),

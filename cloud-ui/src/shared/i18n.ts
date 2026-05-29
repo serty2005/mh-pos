@@ -317,7 +317,16 @@ export const i18n = createI18n({
             },
           },
           inventory: {
-            copy: 'Inventory worker и durable queue существуют на backend-стороне, но manager UI для документов, пересчета и ручного review пока не подтвержден routes.',
+            copy: 'Backend показывает safe readiness по stop-list publication, последнему Edge ACK и sync problem events без raw payload.',
+            signals: {
+              edgeAck: 'Последний Edge ACK',
+              packageAck: 'ACK package',
+              policy: 'Default policy',
+              projection: 'Projection',
+              publication: 'Публикация',
+              stopLists: 'Активно / всего',
+              syncProblems: 'Sync problems',
+            },
             gaps: {
               documents: 'Нет read endpoints для stock documents и movement ledger.',
               costing: 'Нет безопасного API для просмотра costing/recalculation state.',

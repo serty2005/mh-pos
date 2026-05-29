@@ -367,6 +367,28 @@ type StopListUpdated struct {
 	UpdatedAt         time.Time `json:"updated_at"`
 }
 
+type StopListConflictPolicy string
+
+const (
+	StopListConflictPolicyCloudWins                         StopListConflictPolicy = "cloud_wins"
+	StopListConflictPolicyEdgeOverlayUntilNextPublication   StopListConflictPolicy = "edge_overlay_until_next_publication"
+	StopListConflictPolicyEdgeOverlayRequiresManagerReview  StopListConflictPolicy = "edge_overlay_requires_manager_review"
+	DefaultStopListConflictPolicy                           StopListConflictPolicy = StopListConflictPolicyEdgeOverlayRequiresManagerReview
+)
+
+func NormalizeStopListConflictPolicy(value string) StopListConflictPolicy {
+	switch StopListConflictPolicy(strings.TrimSpace(value)) {
+	case StopListConflictPolicyCloudWins:
+		return StopListConflictPolicyCloudWins
+	case StopListConflictPolicyEdgeOverlayUntilNextPublication:
+		return StopListConflictPolicyEdgeOverlayUntilNextPublication
+	case StopListConflictPolicyEdgeOverlayRequiresManagerReview, "":
+		return StopListConflictPolicyEdgeOverlayRequiresManagerReview
+	default:
+		return ""
+	}
+}
+
 type CatalogItemChangeSuggested struct {
 	SuggestionID      string    `json:"suggestion_id"`
 	RestaurantID      string    `json:"restaurant_id"`
@@ -817,6 +839,9 @@ func validateStopListUpdatedPayload(v SyncEnvelope) error {
 	}
 	if strings.TrimSpace(data.AvailableQuantity) != "" && !nonNegativeDecimal(data.AvailableQuantity) {
 		return fmt.Errorf("%w: stop list available_quantity is invalid", ErrInvalidEnvelope)
+	}
+	if NormalizeStopListConflictPolicy(data.ConflictPolicy) == "" {
+		return fmt.Errorf("%w: stop list conflict_policy is invalid", ErrInvalidEnvelope)
 	}
 	return nil
 }

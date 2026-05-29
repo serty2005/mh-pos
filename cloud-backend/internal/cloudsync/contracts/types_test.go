@@ -128,6 +128,11 @@ func TestValidateEnvelopeAcceptsTargetInventoryEvents(t *testing.T) {
 			payload:   json.RawMessage(`{"origin":"edge_device","data":{"stop_list_id":"stop-1","restaurant_id":"restaurant-1","catalog_item_id":"item-1","available_quantity":"0.000","active":true,"source":"edge","reason":"ingredient_unavailable","updated_at":"2026-05-05T12:05:00Z"}}`),
 		},
 		{
+			name:      "stop list updated with explicit conflict policy",
+			eventType: contracts.EventStopListUpdated,
+			payload:   json.RawMessage(`{"origin":"edge_device","data":{"stop_list_id":"stop-1","restaurant_id":"restaurant-1","catalog_item_id":"item-1","available_quantity":"0.000","active":true,"source":"edge","reason":"ingredient_unavailable","conflict_policy":"edge_overlay_until_next_publication","updated_at":"2026-05-05T12:05:00Z"}}`),
+		},
+		{
 			name:      "catalog suggestion",
 			eventType: contracts.EventCatalogItemChangeSuggested,
 			payload:   json.RawMessage(`{"origin":"edge_device","data":{"suggestion_id":"catalog-suggest-1","restaurant_id":"restaurant-1","action":"create_item","reason":"new seasonal item","suggested_at":"2026-05-05T12:30:00Z"}}`),
@@ -168,6 +173,14 @@ func TestValidateEnvelopeRejectsInvalidTargetInventoryPayload(t *testing.T) {
 	err := contracts.ValidateEnvelope(envelope)
 	if !errors.Is(err, contracts.ErrInvalidEnvelope) {
 		t.Fatalf("expected invalid inventory payload, got %v", err)
+	}
+}
+
+func TestValidateEnvelopeRejectsInvalidStopListConflictPolicy(t *testing.T) {
+	envelope := validInventoryEnvelope(t, contracts.EventStopListUpdated, json.RawMessage(`{"origin":"edge_device","data":{"stop_list_id":"stop-1","restaurant_id":"restaurant-1","catalog_item_id":"item-1","active":true,"source":"edge","conflict_policy":"last_event_wins","updated_at":"2026-05-05T12:05:00Z"}}`))
+	err := contracts.ValidateEnvelope(envelope)
+	if !errors.Is(err, contracts.ErrInvalidEnvelope) {
+		t.Fatalf("expected invalid stop-list policy, got %v", err)
 	}
 }
 

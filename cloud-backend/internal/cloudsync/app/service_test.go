@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -326,6 +327,68 @@ func TestReceiveInventoryEventEnqueuesOnceOnReplay(t *testing.T) {
 	}
 }
 
+func TestReceiveStopListUpdatedEnqueuesOnceOnReplay(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+	raw := sampleStopListUpdatedEnvelope(t)
+
+	first, err := service.Receive(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.Receive(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatalf("expected stable ack on StopListUpdated replay\nfirst=%+v\nsecond=%+v", first, second)
+	}
+	if got := repo.InventoryQueueCount(); got != 1 {
+		t.Fatalf("expected StopListUpdated to enter inventory queue once after replay, got %d", got)
+	}
+}
+
+func TestStopListReadinessExposesSafeSignalsOnly(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+	raw := sampleStopListUpdatedEnvelope(t)
+
+	if _, err := service.Receive(context.Background(), raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpsertMasterDataPackage(context.Background(), contracts.MasterDataPackage{
+		StreamName:      contracts.MasterDataStreamInventory,
+		NodeDeviceID:    "device-1",
+		RestaurantID:    "restaurant-1",
+		SyncMode:        contracts.SyncModeIncremental,
+		CloudVersion:    9,
+		CheckpointToken: "inventory_reference:9",
+		PayloadJSON:     json.RawMessage(`{"stop_lists":[]}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	readiness, err := service.GetStopListReadiness(context.Background(), app.StopListReadinessFilter{RestaurantID: "restaurant-1", NodeDeviceID: "device-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readiness.DefaultConflictPolicy != string(contracts.DefaultStopListConflictPolicy) || readiness.ProjectionMode != "async_inventory_worker" {
+		t.Fatalf("unexpected readiness policy metadata: %+v", readiness)
+	}
+	if readiness.LatestStopListEdgeAck == nil || readiness.LatestStopListEdgeAck.EventID != "018f0000-0000-7000-8000-0000000000b1" {
+		t.Fatalf("expected latest StopListUpdated ACK metadata, got %+v", readiness.LatestStopListEdgeAck)
+	}
+	if readiness.LatestInventoryPackage == nil || readiness.LatestInventoryPackage.CloudVersion != 9 {
+		t.Fatalf("expected inventory_reference package signal, got %+v", readiness.LatestInventoryPackage)
+	}
+	marshaled, err := json.Marshal(readiness)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(marshaled), "raw_payload") || strings.Contains(string(marshaled), "ingredient_unavailable") {
+		t.Fatalf("readiness must not expose raw payload fields: %s", marshaled)
+	}
+}
+
 func TestReceiveCancellationRecordedReplaysIdempotentlyAndKeepsCurrentEventStats(t *testing.T) {
 	repo := memory.NewRepository()
 	service := app.NewService(repo, fixedClock{})
@@ -631,6 +694,41 @@ func sampleItemServedEnvelope(t *testing.T) []byte {
 				"unit_code":       "PC",
 				"served_at":       "2026-05-05T08:55:00Z",
 				"station_id":      "kitchen-hot",
+			},
+		},
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func sampleStopListUpdatedEnvelope(t *testing.T) []byte {
+	t.Helper()
+	body := map[string]any{
+		"version":        "1",
+		"event_id":       "018f0000-0000-7000-8000-0000000000b1",
+		"command_id":     "command-stop-list-1",
+		"event_type":     string(contracts.EventStopListUpdated),
+		"aggregate_type": "StopList",
+		"aggregate_id":   "stop-1",
+		"restaurant_id":  "restaurant-1",
+		"device_id":      "device-1",
+		"node_device_id": "device-1",
+		"occurred_at":    "2026-05-05T12:05:00Z",
+		"payload": map[string]any{
+			"origin": "edge_device",
+			"data": map[string]any{
+				"stop_list_id":       "stop-1",
+				"restaurant_id":      "restaurant-1",
+				"catalog_item_id":    "item-1",
+				"available_quantity": "0.000",
+				"active":             true,
+				"conflict_policy":    string(contracts.StopListConflictPolicyEdgeOverlayUntilNextPublication),
+				"source":             "edge",
+				"reason":             "ingredient_unavailable",
+				"updated_at":         "2026-05-05T12:05:00Z",
 			},
 		},
 	}
