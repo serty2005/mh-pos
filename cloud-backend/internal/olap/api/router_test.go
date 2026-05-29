@@ -59,9 +59,92 @@ func TestListStockMovesReturnsSafeProjectionWithoutRawPayload(t *testing.T) {
 	}
 }
 
+func TestListStockMoveSummaryReturnsBoundedAggregateWithoutRawPayload(t *testing.T) {
+	repo := &repo{
+		summaries: []app.StockMoveSummary{{
+			GroupBy:        "catalog_item",
+			GroupKey:       "item-1",
+			CatalogItemID:  "item-1",
+			MoveCount:      2,
+			InQuantity:     "3.000",
+			OutQuantity:    "1.000",
+			NetQuantity:    "2.000",
+			TotalCostMinor: 1200,
+		}},
+	}
+	router := chi.NewRouter()
+	api.RegisterRoutes(router, app.NewService(repo))
+
+	req := httptest.NewRequest(http.MethodGet, "/olap/stock-move-summary?restaurant_id=rest-1&group_by=catalog_item&limit=500", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "payload") || strings.Contains(rec.Body.String(), "COGS") {
+		t.Fatalf("stock summary response must not expose raw payload or costing BI labels: %s", rec.Body.String())
+	}
+	var items []app.StockMoveSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].GroupKey != "item-1" {
+		t.Fatalf("unexpected stock summary response: %+v", items)
+	}
+	if repo.summaryFilter.Limit != 50 || repo.summaryFilter.GroupBy != "catalog_item" {
+		t.Fatalf("expected bounded summary route filter, got %+v", repo.summaryFilter)
+	}
+}
+
+func TestGetExportStatusReturnsSafeState(t *testing.T) {
+	repo := &repo{status: app.ExportStatus{Stream: "raw_business_events", PendingCount: 3, FailedCount: 1, LastError: "clickhouse down"}}
+	router := chi.NewRouter()
+	api.RegisterRoutes(router, app.NewServiceWithExportStatus(repo, repo))
+
+	req := httptest.NewRequest(http.MethodGet, "/olap/export-status?stream=raw_business_events", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "payload") {
+		t.Fatalf("export status response must not expose raw payload: %s", rec.Body.String())
+	}
+	var status app.ExportStatus
+	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Stream != "raw_business_events" || status.PendingCount != 3 || repo.statusStream != "raw_business_events" {
+		t.Fatalf("unexpected status response=%+v stream=%q", status, repo.statusStream)
+	}
+}
+
+func TestListStockMoveSummaryEmptyStateReturnsEmptyArray(t *testing.T) {
+	repo := &repo{}
+	router := chi.NewRouter()
+	api.RegisterRoutes(router, app.NewService(repo))
+
+	req := httptest.NewRequest(http.MethodGet, "/olap/stock-move-summary?group_by=business_date", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Fatalf("expected empty array, got %s", rec.Body.String())
+	}
+}
+
 type repo struct {
-	stockMoves  []app.StockMove
-	stockFilter app.StockMoveFilter
+	stockMoves    []app.StockMove
+	summaries     []app.StockMoveSummary
+	status        app.ExportStatus
+	stockFilter   app.StockMoveFilter
+	summaryFilter app.StockMoveSummaryFilter
+	statusStream  string
 }
 
 func (r *repo) ListRawBusinessEvents(context.Context, app.RawBusinessEventFilter) ([]app.RawBusinessEvent, error) {
@@ -71,4 +154,17 @@ func (r *repo) ListRawBusinessEvents(context.Context, app.RawBusinessEventFilter
 func (r *repo) ListStockMoves(_ context.Context, filter app.StockMoveFilter) ([]app.StockMove, error) {
 	r.stockFilter = filter
 	return r.stockMoves, nil
+}
+
+func (r *repo) ListStockMoveSummary(_ context.Context, filter app.StockMoveSummaryFilter) ([]app.StockMoveSummary, error) {
+	r.summaryFilter = filter
+	return r.summaries, nil
+}
+
+func (r *repo) GetExportStatus(_ context.Context, stream string, _ time.Time) (app.ExportStatus, error) {
+	r.statusStream = stream
+	if r.status.Stream == "" {
+		r.status.Stream = stream
+	}
+	return r.status, nil
 }

@@ -322,6 +322,130 @@ func (r *Repository) ListStockMoves(ctx context.Context, filter app.StockMoveFil
 	return rows, scanner.Err()
 }
 
+func (r *Repository) ListStockMoveSummary(ctx context.Context, filter app.StockMoveSummaryFilter) ([]app.StockMoveSummary, error) {
+	groupKeyExpr := "toString(business_date_local)"
+	businessDateExpr := "toString(business_date_local)"
+	catalogItemExpr := "''"
+	warehouseExpr := "''"
+	groupByExpr := "business_date_local"
+	orderExpr := "business_date_local DESC, group_key DESC"
+	switch filter.GroupBy {
+	case "catalog_item":
+		groupKeyExpr = "catalog_item_id"
+		businessDateExpr = "''"
+		catalogItemExpr = "catalog_item_id"
+		groupByExpr = "catalog_item_id"
+		orderExpr = "catalog_item_id ASC"
+	case "warehouse":
+		groupKeyExpr = "warehouse_id"
+		businessDateExpr = "''"
+		warehouseExpr = "warehouse_id"
+		groupByExpr = "warehouse_id"
+		orderExpr = "warehouse_id ASC"
+	}
+
+	query := strings.Builder{}
+	query.WriteString("SELECT ")
+	query.WriteString(quote(filter.GroupBy))
+	query.WriteString(" AS group_by, ")
+	query.WriteString(groupKeyExpr)
+	query.WriteString(" AS group_key, ")
+	query.WriteString(businessDateExpr)
+	query.WriteString(" AS business_date_local, ")
+	query.WriteString(catalogItemExpr)
+	query.WriteString(" AS catalog_item_id, ")
+	query.WriteString(warehouseExpr)
+	query.WriteString(" AS warehouse_id, count() AS move_count, ")
+	query.WriteString("toString(sumIf(toDecimal64OrZero(quantity, 3), movement_type = 'IN')) AS in_quantity, ")
+	query.WriteString("toString(sumIf(toDecimal64OrZero(quantity, 3), movement_type = 'OUT')) AS out_quantity, ")
+	query.WriteString("toString(sumIf(toDecimal64OrZero(quantity, 3), movement_type = 'IN') - sumIf(toDecimal64OrZero(quantity, 3), movement_type = 'OUT')) AS net_quantity, ")
+	query.WriteString("sum(total_cost_minor) AS total_cost_minor, min(occurred_at) AS first_occurred_at, max(occurred_at) AS last_occurred_at FROM ")
+	query.WriteString(ident(r.database))
+	query.WriteString(".olap_stock_moves FINAL WHERE 1=1")
+	if filter.RestaurantID != "" {
+		query.WriteString(" AND restaurant_id = ")
+		query.WriteString(quote(filter.RestaurantID))
+	}
+	if filter.BusinessDateFrom != "" {
+		query.WriteString(" AND business_date_local >= toDate(")
+		query.WriteString(quote(filter.BusinessDateFrom))
+		query.WriteString(")")
+	}
+	if filter.BusinessDateTo != "" {
+		query.WriteString(" AND business_date_local <= toDate(")
+		query.WriteString(quote(filter.BusinessDateTo))
+		query.WriteString(")")
+	}
+	if filter.CatalogItemID != "" {
+		query.WriteString(" AND catalog_item_id = ")
+		query.WriteString(quote(filter.CatalogItemID))
+	}
+	if filter.WarehouseID != "" {
+		query.WriteString(" AND warehouse_id = ")
+		query.WriteString(quote(filter.WarehouseID))
+	}
+	if filter.SourceEventType != "" {
+		query.WriteString(" AND source_event_type = ")
+		query.WriteString(quote(filter.SourceEventType))
+	}
+	query.WriteString(" GROUP BY ")
+	query.WriteString(groupByExpr)
+	query.WriteString(" ORDER BY ")
+	query.WriteString(orderExpr)
+	query.WriteString(fmt.Sprintf(" LIMIT %d OFFSET %d FORMAT JSONEachRow", filter.Limit, filter.Offset))
+
+	respBody, err := r.query(ctx, query.String())
+	if err != nil {
+		return nil, err
+	}
+	defer respBody.Close()
+
+	rows := make([]app.StockMoveSummary, 0, filter.Limit)
+	scanner := bufio.NewScanner(respBody)
+	for scanner.Scan() {
+		var row struct {
+			GroupBy           string `json:"group_by"`
+			GroupKey          string `json:"group_key"`
+			BusinessDateLocal string `json:"business_date_local"`
+			CatalogItemID     string `json:"catalog_item_id"`
+			WarehouseID       string `json:"warehouse_id"`
+			MoveCount         int64  `json:"move_count"`
+			InQuantity        string `json:"in_quantity"`
+			OutQuantity       string `json:"out_quantity"`
+			NetQuantity       string `json:"net_quantity"`
+			TotalCostMinor    int64  `json:"total_cost_minor"`
+			FirstOccurredAt   string `json:"first_occurred_at"`
+			LastOccurredAt    string `json:"last_occurred_at"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
+			return nil, err
+		}
+		firstOccurredAt, err := parseCHTime(row.FirstOccurredAt)
+		if err != nil {
+			return nil, err
+		}
+		lastOccurredAt, err := parseCHTime(row.LastOccurredAt)
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, app.StockMoveSummary{
+			GroupBy:           row.GroupBy,
+			GroupKey:          row.GroupKey,
+			BusinessDateLocal: row.BusinessDateLocal,
+			CatalogItemID:     row.CatalogItemID,
+			WarehouseID:       row.WarehouseID,
+			MoveCount:         row.MoveCount,
+			InQuantity:        row.InQuantity,
+			OutQuantity:       row.OutQuantity,
+			NetQuantity:       row.NetQuantity,
+			TotalCostMinor:    row.TotalCostMinor,
+			FirstOccurredAt:   &firstOccurredAt,
+			LastOccurredAt:    &lastOccurredAt,
+		})
+	}
+	return rows, scanner.Err()
+}
+
 func (r *Repository) exec(ctx context.Context, query string) error {
 	return r.post(ctx, query)
 }

@@ -21,6 +21,77 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
+func (r *Repository) GetExportStatus(ctx context.Context, stream string, now time.Time) (app.ExportStatus, error) {
+	status := app.ExportStatus{Stream: stream}
+	checkpointID := "raw_business_events"
+	if stream == "stock_moves" {
+		checkpointID = "olap_stock_moves"
+	}
+	if err := r.loadCheckpoint(ctx, checkpointID, now, &status); err != nil {
+		return app.ExportStatus{}, err
+	}
+	switch stream {
+	case "raw_business_events":
+		err := r.pool.QueryRow(ctx, `
+SELECT
+  COUNT(*) FILTER (WHERE processed_for_olap = false AND olap_export_status = 'pending'),
+  COUNT(*) FILTER (WHERE processed_for_olap = false AND olap_export_status = 'processing'),
+  COUNT(*) FILTER (WHERE processed_for_olap = false AND olap_export_status = 'failed')
+FROM inbox_events`).Scan(&status.PendingCount, &status.ProcessingCount, &status.FailedCount)
+		return status, err
+	case "stock_moves":
+		if err := r.pool.QueryRow(ctx, `
+SELECT COUNT(*)
+FROM stock_ledger
+WHERE ($1 = '' OR id > $1)`, status.LastCheckpoint).Scan(&status.PendingCount); err != nil {
+			return app.ExportStatus{}, err
+		}
+		if status.LastError != "" {
+			status.FailedCount = status.ConsecutiveFailures
+		}
+		return status, nil
+	default:
+		return app.ExportStatus{}, app.ErrOLAPUnavailable
+	}
+}
+
+func (r *Repository) loadCheckpoint(ctx context.Context, checkpointID string, now time.Time, status *app.ExportStatus) error {
+	var lastExportedAt *time.Time
+	var nextRetryAt *time.Time
+	var updatedAt *time.Time
+	err := r.pool.QueryRow(ctx, `
+SELECT COALESCE(last_exported_inbox_id, ''),
+       COALESCE(last_exported_event_id, ''),
+       last_exported_at,
+       COALESCE(last_error, ''),
+       consecutive_failures,
+       next_retry_at,
+       updated_at
+FROM olap_export_checkpoints
+WHERE id = $1`, checkpointID).Scan(
+		&status.LastCheckpoint,
+		&status.LastExportedID,
+		&lastExportedAt,
+		&status.LastError,
+		&status.ConsecutiveFailures,
+		&nextRetryAt,
+		&updatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	status.LastExportedAt = lastExportedAt
+	status.NextRetryAt = nextRetryAt
+	status.CheckpointUpdatedAt = updatedAt
+	if nextRetryAt != nil && nextRetryAt.After(now) {
+		status.RetryBlocked = true
+	}
+	return nil
+}
+
 func (r *Repository) ClaimPending(ctx context.Context, cmd app.ClaimCommand) ([]app.InboxEvent, error) {
 	if cmd.Limit <= 0 {
 		cmd.Limit = 1000

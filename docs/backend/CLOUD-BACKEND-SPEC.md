@@ -50,7 +50,7 @@
 - review/apply очереди для `CatalogItemChangeSuggested` и `RecipeChangeSuggested`, созданных kitchen worker на Edge;
 - обработка `KitchenTicketStatusChanged`, `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested` и `StopListUpdated` как business events без synchronous apply в request path;
 - поддержка `CheckClosed`/`ItemServed`/`StockWriteOffCaptured` как pilot inventory facts через текущий receiver и Inventory Worker;
-- ClickHouse first slices: managed `raw_business_events`, async forwarder из PostgreSQL `inbox_events`, `processed_for_olap`, retry state, export checkpoint и bounded read-only metadata API; managed `olap_stock_moves`, async export из PostgreSQL `stock_ledger` и bounded stock moves API.
+- ClickHouse first slices: managed `raw_business_events`, async forwarder из PostgreSQL `inbox_events`, `processed_for_olap`, retry state, export checkpoint и bounded read-only metadata API; managed `olap_stock_moves`, async export из PostgreSQL `stock_ledger`, bounded stock moves API, read-only export status и первый bounded stock movement summary.
 
 Запланировано до полного пилота:
 
@@ -58,7 +58,7 @@
 - параметр `stop_list_conflict_policy` для порядка применения Cloud-authored stop-list и Edge overlay;
 - readiness API/UI signals для stop-list publication, Edge ACK и sync problem events;
 - full inventory engine для receipts, counts, production, consumption, refund/cancellation dispositions, balances, costing и retro recalculation;
-- retry/backfill operator controls, sales aggregates, COGS/margin и kitchen timing API.
+- mutating retry/backfill operator controls, sales aggregates, COGS/margin и kitchen timing API.
 
 ## Назначение
 
@@ -147,6 +147,8 @@ OLAP read model:
 
 - `GET /api/v1/olap/raw-business-events?restaurant_id=&event_type=&occurred_from=&occurred_to=&limit=&offset=` — bounded ClickHouse metadata view без raw payload.
 - `GET /api/v1/olap/stock-moves?restaurant_id=&business_date_from=&business_date_to=&catalog_item_id=&warehouse_id=&source_event_type=&limit=&offset=` — bounded ClickHouse stock movement view из `olap_stock_moves` без raw sync payload.
+- `GET /api/v1/olap/export-status?stream=raw_business_events|stock_moves` — read-only PostgreSQL checkpoint/retry status без raw payload и без mutation/backfill side effects.
+- `GET /api/v1/olap/stock-move-summary?restaurant_id=&business_date_from=&business_date_to=&catalog_item_id=&warehouse_id=&source_event_type=&group_by=business_date|catalog_item|warehouse&limit=&offset=` — bounded ClickHouse aggregate по `olap_stock_moves`; не является COGS/margin API.
 
 Generic Cloud -> Edge package storage:
 
@@ -537,6 +539,8 @@ Schema verification:
 - `GET /api/v1/inventory/stock-ledger` возвращает bounded read-only rows из Cloud-owned `stock_ledger` для smoke/операционной проверки `CheckClosed`/`ItemServed` processing; endpoint не раскрывает raw sync payload и не является OLAP API.
 - OLAP Stock Moves Forwarder асинхронно экспортирует новые `stock_ledger` rows в ClickHouse `olap_stock_moves` по checkpoint `olap_export_checkpoints.id = 'olap_stock_moves'`; retry state хранится в той же checkpoint table через `last_error`, `consecutive_failures` и `next_retry_at`.
 - `GET /api/v1/olap/stock-moves` возвращает bounded read-only rows из ClickHouse `olap_stock_moves` с фильтрами `restaurant_id`, business date range, `catalog_item_id`, `warehouse_id`, `source_event_type`, `limit`, `offset`; response не содержит raw payload.
+- `GET /api/v1/olap/export-status` реализовано сейчас как read-only observability над `olap_export_checkpoints`, `inbox_events` и `stock_ledger`: response содержит stream, checkpoint, last exported id/time, counters, last error metadata, consecutive failures, next retry и retry_blocked без raw payload.
+- `GET /api/v1/olap/stock-move-summary` реализовано сейчас как первый bounded агрегированный ClickHouse read: фильтры совпадают с stock moves, `group_by` ограничен `business_date`, `catalog_item`, `warehouse`, ordering deterministic, response содержит quantities/cost totals без COGS/margin wording.
 - `CatalogItemChangeSuggested` создает Cloud review item; upsert в catalog выполняется только после manager approve текущими `catalog-suggestions` routes.
 - `RecipeChangeSuggested` создает Cloud review item с diff по ingredients, quantities, units, loss percent и prep time; published recipe не меняется до approve/apply текущими `recipe-suggestions` routes.
 
@@ -550,7 +554,7 @@ Schema verification:
 - Async Batch Forwarder переносит accepted events из PostgreSQL `inbox_events` в ClickHouse и после successful export выставляет `processed_for_olap = true`.
 - ClickHouse `olap_stock_moves` реализовано сейчас как первый bounded read model для складских движений; он не является source of truth и наполняется только async export из PostgreSQL `stock_ledger`.
 - Recipe expansion, modifier linked catalog item consumption, stock balances and retro costing DAG становятся частью Cloud Inventory Engine.
-- `GET /api/v1/olap/raw-business-events` и `GET /api/v1/olap/stock-moves` реализованы сейчас как bounded read-only endpoints без raw payload; агрегированные ClickHouse projections запланированы далее.
+- `GET /api/v1/olap/raw-business-events`, `GET /api/v1/olap/stock-moves`, `GET /api/v1/olap/export-status` и `GET /api/v1/olap/stock-move-summary` реализованы сейчас как bounded/read-only endpoints без raw payload; sales/kitchen/costing-dependent projections запланированы далее.
 
 Вне текущего объема:
 
@@ -587,7 +591,7 @@ Schema verification:
 ## Запланировано далее
 
 - Production authorization and tenant perimeter для Cloud API.
-- До полного пилота: recipes/stop-list authoring UI, deterministic publication from Cloud authority tables, Edge-origin stop-list sync/conflict policy, full recipe/costing inventory engine, агрегированные OLAP API, backfill controls и readiness/observability UI.
+- До полного пилота: recipes/stop-list authoring UI, deterministic publication from Cloud authority tables, Edge-origin stop-list sync/conflict policy, full recipe/costing inventory engine, sales/kitchen/costing OLAP API, mutating backfill controls и readiness/observability UI.
 - После полного пилота: Public Cloud reporting UI beyond pilot OLAP API.
 - Data-preserving PostgreSQL migrations после первого реального внедрения.
 - Cloud UI сценарий налогов/service-charge rules, если пилот требует централизованное управление.

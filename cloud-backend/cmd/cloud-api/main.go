@@ -86,6 +86,7 @@ func run() error {
 	var olapForwarder *olapapp.Forwarder
 	var olapStockMoveForwarder *olapapp.StockMoveForwarder
 	if clickHouseURL != "" {
+		olapPostgresRepo := olappg.NewRepository(pool)
 		clickHouseRepo := olapch.NewRepository(olapch.Config{
 			URL:      clickHouseURL,
 			Database: clickHouseDatabase,
@@ -95,14 +96,14 @@ func run() error {
 		if err := clickHouseRepo.Migrate(ctx); err != nil {
 			return err
 		}
-		olapService = olapapp.NewService(clickHouseRepo)
-		olapForwarder = olapapp.NewForwarder(olappg.NewRepository(pool), clickHouseRepo, clock.SystemClock{}, olapapp.ForwarderConfig{
+		olapService = olapapp.NewServiceWithExportStatus(clickHouseRepo, olapPostgresRepo)
+		olapForwarder = olapapp.NewForwarder(olapPostgresRepo, clickHouseRepo, clock.SystemClock{}, olapapp.ForwarderConfig{
 			WorkerID:      cfg.Get("CLOUD_OLAP_FORWARDER_ID", "cloud-olap-forwarder"),
 			BatchSize:     cfg.Int("CLOUD_OLAP_FORWARDER_BATCH_SIZE", 1000),
 			RetryDelay:    time.Duration(cfg.Int("CLOUD_OLAP_FORWARDER_RETRY_SECONDS", 60)) * time.Second,
 			ProcessingTTL: time.Duration(cfg.Int("CLOUD_OLAP_FORWARDER_PROCESSING_TTL_SECONDS", 300)) * time.Second,
 		})
-		olapStockMoveForwarder = olapapp.NewStockMoveForwarder(olappg.NewRepository(pool), clickHouseRepo, clock.SystemClock{}, olapapp.ForwarderConfig{
+		olapStockMoveForwarder = olapapp.NewStockMoveForwarder(olapPostgresRepo, clickHouseRepo, clock.SystemClock{}, olapapp.ForwarderConfig{
 			WorkerID:      cfg.Get("CLOUD_OLAP_STOCK_MOVES_FORWARDER_ID", "cloud-olap-stock-moves-forwarder"),
 			BatchSize:     cfg.Int("CLOUD_OLAP_STOCK_MOVES_FORWARDER_BATCH_SIZE", 1000),
 			RetryDelay:    time.Duration(cfg.Int("CLOUD_OLAP_STOCK_MOVES_FORWARDER_RETRY_SECONDS", 60)) * time.Second,

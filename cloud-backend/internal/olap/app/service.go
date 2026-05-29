@@ -57,6 +57,22 @@ type StockMove struct {
 	LedgerCreatedAt   time.Time `json:"ledger_created_at"`
 }
 
+// StockMoveSummary описывает агрегированное чтение складских движений из ClickHouse без raw payload.
+type StockMoveSummary struct {
+	GroupBy           string     `json:"group_by"`
+	GroupKey          string     `json:"group_key"`
+	BusinessDateLocal string     `json:"business_date_local,omitempty"`
+	CatalogItemID     string     `json:"catalog_item_id,omitempty"`
+	WarehouseID       string     `json:"warehouse_id,omitempty"`
+	MoveCount         int64      `json:"move_count"`
+	InQuantity        string     `json:"in_quantity"`
+	OutQuantity       string     `json:"out_quantity"`
+	NetQuantity       string     `json:"net_quantity"`
+	TotalCostMinor    int64      `json:"total_cost_minor"`
+	FirstOccurredAt   *time.Time `json:"first_occurred_at,omitempty"`
+	LastOccurredAt    *time.Time `json:"last_occurred_at,omitempty"`
+}
+
 // StockMoveFilter задает bounded read-only выборку из ClickHouse stock moves projection.
 type StockMoveFilter struct {
 	RestaurantID     string
@@ -69,6 +85,35 @@ type StockMoveFilter struct {
 	Offset           int
 }
 
+// StockMoveSummaryFilter задает bounded агрегированное чтение из ClickHouse stock moves projection.
+type StockMoveSummaryFilter struct {
+	RestaurantID     string
+	BusinessDateFrom string
+	BusinessDateTo   string
+	CatalogItemID    string
+	WarehouseID      string
+	SourceEventType  string
+	GroupBy          string
+	Limit            int
+	Offset           int
+}
+
+// ExportStatus описывает безопасное состояние async OLAP export без raw payload.
+type ExportStatus struct {
+	Stream              string     `json:"stream"`
+	LastCheckpoint      string     `json:"last_checkpoint,omitempty"`
+	LastExportedID      string     `json:"last_exported_id,omitempty"`
+	LastExportedAt      *time.Time `json:"last_exported_at,omitempty"`
+	PendingCount        int64      `json:"pending_count"`
+	ProcessingCount     int64      `json:"processing_count"`
+	FailedCount         int64      `json:"failed_count"`
+	LastError           string     `json:"last_error,omitempty"`
+	ConsecutiveFailures int64      `json:"consecutive_failures"`
+	NextRetryAt         *time.Time `json:"next_retry_at,omitempty"`
+	RetryBlocked        bool       `json:"retry_blocked"`
+	CheckpointUpdatedAt *time.Time `json:"checkpoint_updated_at,omitempty"`
+}
+
 // RawBusinessEventRepository читает ClickHouse event archive без участия transactional command path.
 type RawBusinessEventRepository interface {
 	ListRawBusinessEvents(context.Context, RawBusinessEventFilter) ([]RawBusinessEvent, error)
@@ -79,19 +124,36 @@ type StockMoveRepository interface {
 	ListStockMoves(context.Context, StockMoveFilter) ([]StockMove, error)
 }
 
+// StockMoveSummaryRepository читает агрегированные складские показатели из ClickHouse read model.
+type StockMoveSummaryRepository interface {
+	ListStockMoveSummary(context.Context, StockMoveSummaryFilter) ([]StockMoveSummary, error)
+}
+
+// ExportStatusRepository читает PostgreSQL checkpoint/retry состояние OLAP export.
+type ExportStatusRepository interface {
+	GetExportStatus(context.Context, string, time.Time) (ExportStatus, error)
+}
+
 type Repository interface {
 	RawBusinessEventRepository
 	StockMoveRepository
+	StockMoveSummaryRepository
 }
 
 // Service валидирует OLAP read API и делегирует bounded чтение ClickHouse repository.
 type Service struct {
-	repo Repository
+	repo             Repository
+	exportStatusRepo ExportStatusRepository
 }
 
 // NewService создает read-only OLAP service.
 func NewService(repo Repository) *Service {
 	return &Service{repo: repo}
+}
+
+// NewServiceWithExportStatus создает OLAP service с read-only observability по PostgreSQL checkpoint state.
+func NewServiceWithExportStatus(repo Repository, exportStatusRepo ExportStatusRepository) *Service {
+	return &Service{repo: repo, exportStatusRepo: exportStatusRepo}
 }
 
 // ListRawBusinessEvents возвращает bounded metadata view без раскрытия raw payload.
@@ -140,6 +202,58 @@ func (s *Service) ListStockMoves(ctx context.Context, filter StockMoveFilter) ([
 		return nil, fmt.Errorf("%w: offset must be non-negative", contracts.ErrInvalidEnvelope)
 	}
 	return s.repo.ListStockMoves(ctx, filter)
+}
+
+// ListStockMoveSummary возвращает bounded агрегат складских движений из ClickHouse.
+func (s *Service) ListStockMoveSummary(ctx context.Context, filter StockMoveSummaryFilter) ([]StockMoveSummary, error) {
+	if s == nil || s.repo == nil {
+		return nil, ErrOLAPUnavailable
+	}
+	filter.RestaurantID = strings.TrimSpace(filter.RestaurantID)
+	filter.BusinessDateFrom = strings.TrimSpace(filter.BusinessDateFrom)
+	filter.BusinessDateTo = strings.TrimSpace(filter.BusinessDateTo)
+	filter.CatalogItemID = strings.TrimSpace(filter.CatalogItemID)
+	filter.WarehouseID = strings.TrimSpace(filter.WarehouseID)
+	filter.SourceEventType = strings.TrimSpace(filter.SourceEventType)
+	filter.GroupBy = strings.TrimSpace(filter.GroupBy)
+	if filter.GroupBy == "" {
+		filter.GroupBy = "business_date"
+	}
+	switch filter.GroupBy {
+	case "business_date", "catalog_item", "warehouse":
+	default:
+		return nil, fmt.Errorf("%w: group_by must be business_date, catalog_item or warehouse", contracts.ErrInvalidEnvelope)
+	}
+	if err := validateBusinessDate(filter.BusinessDateFrom, "business_date_from"); err != nil {
+		return nil, err
+	}
+	if err := validateBusinessDate(filter.BusinessDateTo, "business_date_to"); err != nil {
+		return nil, err
+	}
+	if filter.BusinessDateFrom != "" && filter.BusinessDateTo != "" && filter.BusinessDateFrom > filter.BusinessDateTo {
+		return nil, fmt.Errorf("%w: business_date_from must be before business_date_to", contracts.ErrInvalidEnvelope)
+	}
+	if filter.Limit <= 0 || filter.Limit > 200 {
+		filter.Limit = 50
+	}
+	if filter.Offset < 0 {
+		return nil, fmt.Errorf("%w: offset must be non-negative", contracts.ErrInvalidEnvelope)
+	}
+	return s.repo.ListStockMoveSummary(ctx, filter)
+}
+
+// GetExportStatus возвращает bounded operator-facing состояние async OLAP export.
+func (s *Service) GetExportStatus(ctx context.Context, stream string) (ExportStatus, error) {
+	if s == nil || s.exportStatusRepo == nil {
+		return ExportStatus{}, ErrOLAPUnavailable
+	}
+	stream = strings.TrimSpace(stream)
+	switch stream {
+	case "raw_business_events", "stock_moves":
+	default:
+		return ExportStatus{}, fmt.Errorf("%w: stream must be raw_business_events or stock_moves", contracts.ErrInvalidEnvelope)
+	}
+	return s.exportStatusRepo.GetExportStatus(ctx, stream, time.Now().UTC())
 }
 
 func validateBusinessDate(value, name string) error {

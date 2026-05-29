@@ -37,6 +37,11 @@ Docker-oriented JSON-конфиги лежат рядом с сервисами:
 
 ```text
 CLOUD_POSTGRES_HOST_PORT=5432
+CLOUD_CLICKHOUSE_HOST_PORT=8123
+CLOUD_CLICKHOUSE_NATIVE_HOST_PORT=9000
+CLOUD_API_HOST_PORT=8090
+POS_EDGE_HOST_PORT=8080
+LICENSE_API_HOST_PORT=8095
 CLOUD_POSTGRES_DSN=postgres://postgres:postgres@cloud-postgres:5432/mh_pos_cloud?sslmode=disable
 CLOUD_PUBLIC_URL=http://cloud-api:8090
 LICENSE_SERVER_URL=http://license-api:8095
@@ -67,12 +72,21 @@ VITE_CLOUD_API_BASE=http://cloud-api:8090/api/v1
 docker compose -f docker-compose.local.yml up --build -d
 ```
 
-Если локальный `5432` уже занят другой PostgreSQL-инстанцией, можно поменять только host binding, не меняя внутренний DSN между контейнерами:
+Если локальные `5432`, `8123`, `9000`, `8090`, `8080` или `8095` уже заняты, можно поменять только host binding, не меняя внутренние DSN/URLs между контейнерами:
 
 ```bash
 CLOUD_POSTGRES_HOST_PORT=55432 \
+CLOUD_CLICKHOUSE_HOST_PORT=18123 \
+CLOUD_CLICKHOUSE_NATIVE_HOST_PORT=19000 \
+CLOUD_API_HOST_PORT=18090 \
+POS_EDGE_HOST_PORT=18080 \
+LICENSE_API_HOST_PORT=18095 \
 docker compose -f docker-compose.local.yml up --build -d
 ```
+
+При таком override health/seed с host machine нужно вызывать по новым host ports, например `http://localhost:18090`, `http://localhost:18080`, `http://localhost:18095`. Внутри Docker network остаются service DNS `cloud-api:8090`, `pos-edge:8080`, `license-api:8095`, `cloud-postgres:5432` и `cloud-clickhouse:8123`.
+
+Если `docker compose ... up --build` останавливается на сообщении про отсутствующий buildx plugin, это blocker локального Docker CLI/Compose окружения, а не runtime code. Исправление: установить/включить Docker buildx plugin для используемого Docker CLI или собрать/запустить stack в окружении Docker Desktop/Compose, где `docker buildx version` проходит. `docker compose -f docker-compose.local.yml up -d` без `--build` является fallback только если нужные images уже были успешно собраны ранее.
 
 Проверка health endpoints:
 

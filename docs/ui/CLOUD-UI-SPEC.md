@@ -68,7 +68,7 @@
 - duplicate hints и linked receipt line для catalog suggestion review остаются запланировано далее;
 - stop-list panel уже имеет bounded route-backed rows; далее нужны conflict policy, review и publication readiness по отдельным contracts;
 - inventory operations workspace: stock ledger/balances and costing/recalculation status; Edge-side stock receipts, inventory counts, write-offs and production input are covered by `pos-ui-g` kitchen mode and Cloud ledger read endpoints;
-- ClickHouse/OLAP workspace: export health, retry/backfill controls and read-only OLAP endpoint previews; bounded stock moves backend read существует, но UI runtime preview остается запланировано далее;
+- ClickHouse/OLAP workspace: backend уже имеет read-only export status, bounded stock moves и stock move summary; UI runtime preview, retry/backfill mutation controls и richer analytics остаются запланировано далее;
 - launch readiness должен учитывать stop-list review и публикацию streams `recipes`/`stop_lists`;
 - publication panel должен показывать latest package version, target Edge node и статус доставки/ACK, когда backend contract готов;
 - Edge events/problem events panel должен показывать accepted/rejected/retryable metadata без raw payload.
@@ -140,7 +140,7 @@ Review command body:
 
 Для entities без подтвержденного `GET list` route UI показывает форму команды и поясняет, что list route не подтвержден.
 
-запланировано до полного пилота: API client должен покрыть costing/recalculation status, ClickHouse export status, aggregate OLAP read endpoints, `olap_stock_moves` preview и inventory balance views; UI не должен вызывать неподтвержденные endpoints до появления backend contract.
+запланировано до полного пилота: API client должен покрыть costing/recalculation status, подтвержденные ClickHouse export status/stock move summary/`olap_stock_moves` preview endpoints и inventory balance views; UI не должен вызывать неподтвержденные mutating retry/backfill или BI endpoints до появления backend contract.
 
 ## Runtime Code
 
