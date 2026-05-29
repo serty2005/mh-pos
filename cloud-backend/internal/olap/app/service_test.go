@@ -119,11 +119,76 @@ func TestGetExportStatusRequiresKnownStream(t *testing.T) {
 	}
 }
 
+func TestRequestExportRetryValidatesCommandAndIsIdempotent(t *testing.T) {
+	repo := &rawRepo{retryResult: app.ExportRetryResult{
+		CommandID:        "018f0000-0000-7000-8000-000000000111",
+		Stream:           "stock_moves",
+		Mode:             "retry_failed",
+		Accepted:         true,
+		CheckpointBefore: "ledger-10",
+		PendingCount:     2,
+		FailedCount:      0,
+	}}
+	service := app.NewServiceWithControls(repo, repo, repo)
+
+	result, err := service.RequestExportRetry(context.Background(), app.ExportRetryCommand{
+		CommandID: "018f0000-0000-7000-8000-000000000111",
+		Stream:    " stock_moves ",
+		Mode:      " retry_failed ",
+		Reason:    " operator requested retry ",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Stream != "stock_moves" || result.CheckpointBefore != "ledger-10" || repo.retryCommand.Reason != "operator requested retry" {
+		t.Fatalf("unexpected retry result=%+v command=%+v", result, repo.retryCommand)
+	}
+	replay, err := service.RequestExportRetry(context.Background(), app.ExportRetryCommand{
+		CommandID: "018f0000-0000-7000-8000-000000000111",
+		Stream:    "stock_moves",
+		Mode:      "retry_failed",
+		Reason:    "operator requested retry",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replay.AlreadyProcessed || replay.CommandID != result.CommandID {
+		t.Fatalf("expected idempotent replay result, got %+v", replay)
+	}
+	if _, err := service.RequestExportRetry(context.Background(), app.ExportRetryCommand{
+		CommandID: "not-a-uuid",
+		Stream:    "stock_moves",
+		Mode:      "retry_failed",
+		Reason:    "operator requested retry",
+	}); err == nil {
+		t.Fatal("expected invalid command_id error")
+	}
+	if _, err := service.RequestExportRetry(context.Background(), app.ExportRetryCommand{
+		CommandID: "018f0000-0000-7000-8000-000000000112",
+		Stream:    "payloads",
+		Mode:      "retry_failed",
+		Reason:    "operator requested retry",
+	}); err == nil {
+		t.Fatal("expected invalid stream error")
+	}
+	if _, err := service.RequestExportRetry(context.Background(), app.ExportRetryCommand{
+		CommandID: "018f0000-0000-7000-8000-000000000113",
+		Stream:    "stock_moves",
+		Mode:      "full_backfill",
+		Reason:    "operator requested retry",
+	}); err == nil {
+		t.Fatal("expected invalid mode error")
+	}
+}
+
 type rawRepo struct {
 	filter        app.RawBusinessEventFilter
 	stockFilter   app.StockMoveFilter
 	summaryFilter app.StockMoveSummaryFilter
 	statusStream  string
+	retryCommand  app.ExportRetryCommand
+	retryResult   app.ExportRetryResult
+	retryCalls    int
 }
 
 func (r *rawRepo) ListRawBusinessEvents(_ context.Context, filter app.RawBusinessEventFilter) ([]app.RawBusinessEvent, error) {
@@ -144,4 +209,22 @@ func (r *rawRepo) ListStockMoveSummary(_ context.Context, filter app.StockMoveSu
 func (r *rawRepo) GetExportStatus(_ context.Context, stream string, _ time.Time) (app.ExportStatus, error) {
 	r.statusStream = stream
 	return app.ExportStatus{Stream: stream}, nil
+}
+
+func (r *rawRepo) RequestExportRetry(_ context.Context, cmd app.ExportRetryCommand, now time.Time) (app.ExportRetryResult, error) {
+	r.retryCommand = cmd
+	r.retryCalls++
+	if r.retryResult.CommandID == "" {
+		r.retryResult = app.ExportRetryResult{
+			CommandID:        cmd.CommandID,
+			Stream:           cmd.Stream,
+			Mode:             cmd.Mode,
+			Accepted:         true,
+			RetryRequestedAt: now,
+		}
+	}
+	if r.retryCalls > 1 && r.retryResult.CommandID == cmd.CommandID && r.retryResult.Stream == cmd.Stream && r.retryResult.Mode == cmd.Mode {
+		r.retryResult.AlreadyProcessed = true
+	}
+	return r.retryResult, nil
 }

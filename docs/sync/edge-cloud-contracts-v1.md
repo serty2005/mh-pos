@@ -115,6 +115,7 @@ Response:
 - POS Edge применяет `cloud_packages` через существующий `mastersync.Service`; stream data и `cloud_master_sync_state` фиксируются одной SQLite transaction boundary.
 - POS Edge применяет каждый Cloud package только после полного приема HTTP response и успешного JSON decode. Ошибочный package извлекается из текущей порции, фиксируется как `cloud_master_sync_state.status = "failed"` с `last_error`, не ломает применение остальных packages и не блокирует Edge -> Cloud ACK. Ошибочный package не продвигает объявляемые `last_cloud_version`/`checkpoint_token`: следующий exchange должен снова объявлять последний успешно примененный checkpoint, чтобы Cloud мог повторно выдать пакет.
 - Если весь Cloud exchange request не принят транспортно или авторизационно, Edge outbox ACK не коммитится как `sent`; следующий exchange безопасно повторяет Edge events через Cloud idempotency.
+- Реализовано сейчас: POS sender regression покрывает temporary exchange failure, retryable outbox state, повторную отправку того же item до item-level ACK и прекращение pending resend после успешного ACK.
 
 ## Cloud -> Edge Master Data Ingest
 
@@ -231,6 +232,7 @@ Cloud Inventory Worker
 - Реализовано сейчас: отдельный async forwarder экспортирует новые PostgreSQL `stock_ledger` rows в ClickHouse `olap_stock_moves` без synchronous dual-write в HTTP request path.
 - `GET /api/v1/olap/stock-moves` читает bounded stock movement projection из ClickHouse по `restaurant_id`, business date range, `catalog_item_id`, `warehouse_id`, `source_event_type`, `limit`, `offset` и не раскрывает raw sync payload.
 - `GET /api/v1/olap/export-status?stream=raw_business_events|stock_moves` читает checkpoint/retry состояние из PostgreSQL без raw payload и без запуска retry/backfill mutation.
+- `POST /api/v1/olap/export-retry` реализован как support-only mutation для снятия retry/backoff state: `command_id` UUIDv7, `stream=raw_business_events|stock_moves`, `mode=retry_failed|resume_from_checkpoint`, `reason`; response не содержит raw payload или reason и не запускает synchronous ClickHouse write.
 - `GET /api/v1/olap/stock-move-summary` читает первый bounded aggregate из ClickHouse `olap_stock_moves` с группировкой `business_date|catalog_item|warehouse`; endpoint не раскрывает raw sync payload и не является COGS/margin расчетом.
 - Synchronous dual-write в PostgreSQL и ClickHouse запрещен.
 
@@ -478,7 +480,7 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 - Edge-origin stop-list edit sync/conflict policy;
 - компенсирующий пересчет уже обработанного served fact после recall;
 - modifier linked catalog item consumption и retro costing DAG;
-- sales/kitchen/costing aggregate OLAP API, public mutating backfill controls и production-grade OLAP operator UI;
+- sales/kitchen/costing aggregate OLAP API, production-grade backfill jobs и OLAP operator UI;
 - PSP/fiscal event streams.
 
 Запланировано до полного пилота:
@@ -489,7 +491,8 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 - Реализовано сейчас: ClickHouse pipeline экспортирует `raw_business_events`, а `GET /api/v1/olap/raw-business-events` читает bounded metadata без raw payload.
 - Реализовано сейчас: ClickHouse pipeline экспортирует первый bounded `olap_stock_moves` read model из `stock_ledger`, а `GET /api/v1/olap/stock-moves` читает его без raw payload.
 - Реализовано сейчас: read-only export status и bounded stock movement summary.
-- Запланировано далее: sales/kitchen/costing aggregates и mutating retry/backfill controls.
+- Реализовано сейчас: минимальный support-only `POST /api/v1/olap/export-retry` снимает retry/backoff state без raw payload и без ClickHouse write в request path.
+- Запланировано далее: sales/kitchen/costing aggregates и production-grade backfill/operator UI.
 
 ## Запланированные Границы
 
@@ -498,7 +501,7 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 - Cloud-authored pricing/tax UI и полный publication workflow поверх generic `pricing_policy` package storage/apply;
 - Cloud authoring workflow polish для `recipes`/`inventory_reference` package generation;
 - full Cloud Inventory Engine для balances/costing/recalculation;
-- ClickHouse `raw_business_events`, `olap_stock_moves`, retry/export state, bounded event/stock movement APIs, read-only export status и stock movement summary реализованы сейчас; public mutating backfill controls and sales/kitchen/costing OLAP API запланированы далее;
+- ClickHouse `raw_business_events`, `olap_stock_moves`, retry/export state, bounded event/stock movement APIs, read-only export status, минимальный support-only export retry control и stock movement summary реализованы сейчас; production-grade backfill UI/jobs and sales/kitchen/costing OLAP API запланированы далее;
 - stop-list sale blocking smoke через offline Edge реализован сейчас в минимальном seed smoke.
 
 После полного пилота:

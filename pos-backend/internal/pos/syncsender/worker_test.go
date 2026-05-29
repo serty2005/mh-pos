@@ -126,6 +126,53 @@ func (s fakeBatchSender) SendBatch(context.Context, []domain.OutboxMessage) ([]B
 	return append([]BatchSendResult(nil), s.results...), nil
 }
 
+type statefulOutboxService struct {
+	fakeOutboxService
+	pending []domain.OutboxMessage
+	sentSet map[string]bool
+}
+
+func (s *statefulOutboxService) ClaimPendingOutbox(context.Context, app.ClaimPendingOutboxCommand) ([]domain.OutboxMessage, error) {
+	out := make([]domain.OutboxMessage, 0, len(s.pending))
+	for _, msg := range s.pending {
+		if s.sentSet[msg.ID] {
+			continue
+		}
+		out = append(out, msg)
+	}
+	return out, nil
+}
+
+func (s *statefulOutboxService) MarkOutboxSent(_ context.Context, id string) error {
+	if s.sentSet == nil {
+		s.sentSet = map[string]bool{}
+	}
+	s.sentSet[id] = true
+	s.sent = append(s.sent, id)
+	return nil
+}
+
+type faultInjectExchangeSender struct {
+	requests []SyncExchangeRequest
+	failOnce bool
+}
+
+func (s *faultInjectExchangeSender) Send(context.Context, domain.OutboxMessage) error {
+	return nil
+}
+
+func (s *faultInjectExchangeSender) Exchange(_ context.Context, req SyncExchangeRequest) (SyncExchangeResponse, error) {
+	s.requests = append(s.requests, req)
+	if s.failOnce {
+		s.failOnce = false
+		return SyncExchangeResponse{}, errors.New("temporary cloud outage")
+	}
+	return SyncExchangeResponse{
+		Status:   SyncExchangeStatusAccepted,
+		EdgeAcks: []BatchSendResult{{OutboxID: "outbox-reconnect-1", Status: BatchSendAccepted}},
+	}, nil
+}
+
 func TestRunOnceSuspendsWrongDirectionMessageAndContinues(t *testing.T) {
 	service := &fakeOutboxService{claimed: []domain.OutboxMessage{
 		{ID: "outbox-config", SequenceNo: 1, Origin: domain.OriginSystemSeed, CommandType: "RestaurantCreated"},
@@ -141,6 +188,52 @@ func TestRunOnceSuspendsWrongDirectionMessageAndContinues(t *testing.T) {
 	}
 	if len(service.sent) != 1 || service.sent[0] != "outbox-order" {
 		t.Fatalf("expected operational message to be sent, got %v", service.sent)
+	}
+}
+
+func TestRunOnceRetriesExchangeFailureThenAppliesItemAckOnce(t *testing.T) {
+	service := &statefulOutboxService{
+		pending: []domain.OutboxMessage{{
+			ID:            "outbox-reconnect-1",
+			SequenceNo:    1,
+			Origin:        domain.OriginEdgeDevice,
+			SyncDirection: domain.SyncDirectionEdgeToCloud,
+			CommandType:   "OrderCreated",
+			PayloadJSON:   `{"event_id":"018f0000-0000-7000-8000-000000000301"}`,
+		}},
+		sentSet: map[string]bool{},
+	}
+	sender := &faultInjectExchangeSender{failOnce: true}
+	worker := NewWorker(service, sender, Config{WorkerID: "worker-test", PollInterval: time.Hour}, nil)
+
+	if err := worker.RunOnce(context.Background()); err == nil {
+		t.Fatal("expected temporary exchange failure")
+	}
+	if len(service.retryable) != 1 || service.retryable[0] != "outbox-reconnect-1" {
+		t.Fatalf("expected outbox marked retryable after temporary failure, got %+v", service.retryable)
+	}
+	if len(service.sent) != 0 {
+		t.Fatalf("outbox must not be marked sent before ACK, got %+v", service.sent)
+	}
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(service.sent) != 1 || service.sent[0] != "outbox-reconnect-1" {
+		t.Fatalf("expected outbox marked sent after item-level ACK, got %+v", service.sent)
+	}
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(sender.requests) != 3 {
+		t.Fatalf("expected retry request, ACK request and empty no-pending pull, got %d requests", len(sender.requests))
+	}
+	if len(sender.requests[0].EdgeEvents) != 1 || len(sender.requests[1].EdgeEvents) != 1 || len(sender.requests[2].EdgeEvents) != 0 {
+		t.Fatalf("expected outbox event to stop sending after ACK, got %+v", sender.requests)
+	}
+	if len(service.sent) != 1 {
+		t.Fatalf("sent outbox must not be marked repeatedly after ACK, got %+v", service.sent)
 	}
 }
 

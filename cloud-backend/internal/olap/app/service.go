@@ -114,6 +114,27 @@ type ExportStatus struct {
 	CheckpointUpdatedAt *time.Time `json:"checkpoint_updated_at,omitempty"`
 }
 
+// ExportRetryCommand описывает support-only команду снятия OLAP retry/backoff state без записи business rows.
+type ExportRetryCommand struct {
+	CommandID string `json:"command_id"`
+	Stream    string `json:"stream"`
+	Mode      string `json:"mode"`
+	Reason    string `json:"reason"`
+}
+
+// ExportRetryResult возвращает безопасный результат control-команды без raw payload.
+type ExportRetryResult struct {
+	CommandID          string    `json:"command_id"`
+	Stream             string    `json:"stream"`
+	Mode               string    `json:"mode"`
+	Accepted           bool      `json:"accepted"`
+	CheckpointBefore   string    `json:"checkpoint_before,omitempty"`
+	RetryRequestedAt   time.Time `json:"retry_requested_at"`
+	PendingCount       int64     `json:"pending_count"`
+	FailedCount        int64     `json:"failed_count"`
+	AlreadyProcessed   bool      `json:"already_processed,omitempty"`
+}
+
 // RawBusinessEventRepository читает ClickHouse event archive без участия transactional command path.
 type RawBusinessEventRepository interface {
 	ListRawBusinessEvents(context.Context, RawBusinessEventFilter) ([]RawBusinessEvent, error)
@@ -134,6 +155,11 @@ type ExportStatusRepository interface {
 	GetExportStatus(context.Context, string, time.Time) (ExportStatus, error)
 }
 
+// ExportRetryRepository применяет support-only retry/backfill control state в PostgreSQL.
+type ExportRetryRepository interface {
+	RequestExportRetry(context.Context, ExportRetryCommand, time.Time) (ExportRetryResult, error)
+}
+
 type Repository interface {
 	RawBusinessEventRepository
 	StockMoveRepository
@@ -144,6 +170,7 @@ type Repository interface {
 type Service struct {
 	repo             Repository
 	exportStatusRepo ExportStatusRepository
+	exportRetryRepo  ExportRetryRepository
 }
 
 // NewService создает read-only OLAP service.
@@ -154,6 +181,11 @@ func NewService(repo Repository) *Service {
 // NewServiceWithExportStatus создает OLAP service с read-only observability по PostgreSQL checkpoint state.
 func NewServiceWithExportStatus(repo Repository, exportStatusRepo ExportStatusRepository) *Service {
 	return &Service{repo: repo, exportStatusRepo: exportStatusRepo}
+}
+
+// NewServiceWithControls создает OLAP service с read-only observability и support-only retry controls.
+func NewServiceWithControls(repo Repository, exportStatusRepo ExportStatusRepository, exportRetryRepo ExportRetryRepository) *Service {
+	return &Service{repo: repo, exportStatusRepo: exportStatusRepo, exportRetryRepo: exportRetryRepo}
 }
 
 // ListRawBusinessEvents возвращает bounded metadata view без раскрытия raw payload.
@@ -256,6 +288,37 @@ func (s *Service) GetExportStatus(ctx context.Context, stream string) (ExportSta
 	return s.exportStatusRepo.GetExportStatus(ctx, stream, time.Now().UTC())
 }
 
+// RequestExportRetry снимает retry/backoff state для async OLAP export без синхронной записи в ClickHouse.
+func (s *Service) RequestExportRetry(ctx context.Context, cmd ExportRetryCommand) (ExportRetryResult, error) {
+	if s == nil || s.exportRetryRepo == nil {
+		return ExportRetryResult{}, ErrOLAPUnavailable
+	}
+	cmd.CommandID = strings.TrimSpace(cmd.CommandID)
+	cmd.Stream = strings.TrimSpace(cmd.Stream)
+	cmd.Mode = strings.TrimSpace(cmd.Mode)
+	cmd.Reason = strings.TrimSpace(cmd.Reason)
+	if !isUUIDv7(cmd.CommandID) {
+		return ExportRetryResult{}, fmt.Errorf("%w: command_id must be uuidv7", contracts.ErrInvalidEnvelope)
+	}
+	switch cmd.Stream {
+	case "raw_business_events", "stock_moves":
+	default:
+		return ExportRetryResult{}, fmt.Errorf("%w: stream must be raw_business_events or stock_moves", contracts.ErrInvalidEnvelope)
+	}
+	switch cmd.Mode {
+	case "retry_failed", "resume_from_checkpoint":
+	default:
+		return ExportRetryResult{}, fmt.Errorf("%w: mode must be retry_failed or resume_from_checkpoint", contracts.ErrInvalidEnvelope)
+	}
+	if cmd.Reason == "" {
+		return ExportRetryResult{}, fmt.Errorf("%w: reason is required", contracts.ErrInvalidEnvelope)
+	}
+	if len(cmd.Reason) > 500 {
+		return ExportRetryResult{}, fmt.Errorf("%w: reason must be 500 characters or less", contracts.ErrInvalidEnvelope)
+	}
+	return s.exportRetryRepo.RequestExportRetry(ctx, cmd, time.Now().UTC())
+}
+
 func validateBusinessDate(value, name string) error {
 	if strings.TrimSpace(value) == "" {
 		return nil
@@ -264,4 +327,27 @@ func validateBusinessDate(value, name string) error {
 		return fmt.Errorf("%w: %s must be YYYY-MM-DD", contracts.ErrInvalidEnvelope, name)
 	}
 	return nil
+}
+
+func isUUIDv7(v string) bool {
+	if len(v) != 36 {
+		return false
+	}
+	for i, r := range v {
+		switch i {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return false
+			}
+		default:
+			if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
+				return false
+			}
+		}
+	}
+	if v[14] != '7' {
+		return false
+	}
+	variant := v[19]
+	return variant == '8' || variant == '9' || variant == 'a' || variant == 'A' || variant == 'b' || variant == 'B'
 }

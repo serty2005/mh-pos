@@ -1,7 +1,9 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -23,6 +25,7 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 	}
 	h := &Handler{service: service}
 	r.Get("/olap/export-status", h.getExportStatus)
+	r.Post("/olap/export-retry", h.requestExportRetry)
 	r.Get("/olap/raw-business-events", h.listRawBusinessEvents)
 	r.Get("/olap/stock-moves", h.listStockMoves)
 	r.Get("/olap/stock-move-summary", h.listStockMoveSummary)
@@ -35,6 +38,33 @@ func (h *Handler) getExportStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, status)
+}
+
+func (h *Handler) requestExportRetry(w http.ResponseWriter, r *http.Request) {
+	var cmd app.ExportRetryCommand
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32*1024))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cmd); err != nil {
+		httpx.Error(w, fmt.Errorf("%w: invalid export retry request", contracts.ErrInvalidEnvelope), r)
+		return
+	}
+	result, err := h.service.RequestExportRetry(r.Context(), cmd)
+	if err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	slog.InfoContext(r.Context(), "olap export retry command accepted",
+		"operation", "olap.export_control",
+		"action", "export_retry",
+		"result", "accepted",
+		"command_id", result.CommandID,
+		"stream", result.Stream,
+		"mode", result.Mode,
+		"already_processed", result.AlreadyProcessed,
+		"pending_count", result.PendingCount,
+		"failed_count", result.FailedCount,
+	)
+	httpx.JSON(w, http.StatusAccepted, result)
 }
 
 func (h *Handler) listRawBusinessEvents(w http.ResponseWriter, r *http.Request) {

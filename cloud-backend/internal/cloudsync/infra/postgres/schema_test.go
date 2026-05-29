@@ -130,12 +130,20 @@ func TestRequiredSchemaIncludesOlapInboxAndCheckpointTables(t *testing.T) {
 			t.Fatalf("expected %s index in schema verification contract", index)
 		}
 	}
-	for _, column := range []string{"id", "last_exported_inbox_id", "last_exported_event_id", "last_exported_at", "last_error", "consecutive_failures", "next_retry_at", "updated_at"} {
-		if !reqs["olap_export_checkpoints"][column] {
-			t.Fatalf("expected olap_export_checkpoints.%s in schema verification contract", column)
+		for _, column := range []string{"id", "last_exported_inbox_id", "last_exported_event_id", "last_exported_at", "last_error", "consecutive_failures", "next_retry_at", "updated_at"} {
+			if !reqs["olap_export_checkpoints"][column] {
+				t.Fatalf("expected olap_export_checkpoints.%s in schema verification contract", column)
+			}
+		}
+		for _, column := range []string{"command_id", "stream", "mode", "reason", "accepted", "checkpoint_before", "retry_requested_at", "pending_count", "failed_count", "created_at"} {
+			if !reqs["olap_export_retry_commands"][column] {
+				t.Fatalf("expected olap_export_retry_commands.%s in schema verification contract", column)
+			}
+		}
+		if !indexes["olap_export_retry_commands"]["olap_export_retry_commands_stream_created"] {
+			t.Fatal("expected olap_export_retry_commands_stream_created index in schema verification contract")
 		}
 	}
-}
 
 func TestCloudInventoryConstraintsRejectInvalidValues(t *testing.T) {
 	ctx := context.Background()

@@ -124,6 +124,22 @@ CREATE TABLE IF NOT EXISTS olap_export_checkpoints (
 ALTER TABLE olap_export_checkpoints
   ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ;
 
+CREATE TABLE IF NOT EXISTS olap_export_retry_commands (
+  command_id TEXT PRIMARY KEY CHECK (command_id <> ''),
+  stream TEXT NOT NULL CHECK (stream IN ('raw_business_events','stock_moves')),
+  mode TEXT NOT NULL CHECK (mode IN ('retry_failed','resume_from_checkpoint')),
+  reason TEXT NOT NULL CHECK (reason <> ''),
+  accepted BOOLEAN NOT NULL DEFAULT true,
+  checkpoint_before TEXT NOT NULL DEFAULT '',
+  retry_requested_at TIMESTAMPTZ NOT NULL,
+  pending_count BIGINT NOT NULL DEFAULT 0 CHECK (pending_count >= 0),
+  failed_count BIGINT NOT NULL DEFAULT 0 CHECK (failed_count >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS olap_export_retry_commands_stream_created
+  ON olap_export_retry_commands(stream, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS cloud_sync_problem_events (
   id TEXT PRIMARY KEY,
   direction TEXT NOT NULL CHECK (direction IN ('edge_to_cloud','cloud_to_edge')),

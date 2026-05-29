@@ -121,6 +121,39 @@ func TestGetExportStatusReturnsSafeState(t *testing.T) {
 	}
 }
 
+func TestPostExportRetryReturnsAcceptedSafeResult(t *testing.T) {
+	repo := &repo{retryResult: app.ExportRetryResult{
+		CommandID:        "018f0000-0000-7000-8000-000000000211",
+		Stream:           "raw_business_events",
+		Mode:             "retry_failed",
+		Accepted:         true,
+		CheckpointBefore: "receipt-10",
+		PendingCount:     4,
+		FailedCount:      0,
+	}}
+	router := chi.NewRouter()
+	api.RegisterRoutes(router, app.NewServiceWithControls(repo, repo, repo))
+
+	body := `{"command_id":"018f0000-0000-7000-8000-000000000211","stream":"raw_business_events","mode":"retry_failed","reason":"operator retry after ClickHouse outage"}`
+	req := httptest.NewRequest(http.MethodPost, "/olap/export-retry", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "payload") || strings.Contains(rec.Body.String(), "operator retry") {
+		t.Fatalf("export retry response must not expose raw payload or operator reason: %s", rec.Body.String())
+	}
+	var result app.ExportRetryResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.CommandID != repo.retryCommand.CommandID || result.PendingCount != 4 || result.FailedCount != 0 {
+		t.Fatalf("unexpected retry result=%+v command=%+v", result, repo.retryCommand)
+	}
+}
+
 func TestListStockMoveSummaryEmptyStateReturnsEmptyArray(t *testing.T) {
 	repo := &repo{}
 	router := chi.NewRouter()
@@ -142,9 +175,11 @@ type repo struct {
 	stockMoves    []app.StockMove
 	summaries     []app.StockMoveSummary
 	status        app.ExportStatus
+	retryResult   app.ExportRetryResult
 	stockFilter   app.StockMoveFilter
 	summaryFilter app.StockMoveSummaryFilter
 	statusStream  string
+	retryCommand  app.ExportRetryCommand
 }
 
 func (r *repo) ListRawBusinessEvents(context.Context, app.RawBusinessEventFilter) ([]app.RawBusinessEvent, error) {
@@ -167,4 +202,18 @@ func (r *repo) GetExportStatus(_ context.Context, stream string, _ time.Time) (a
 		r.status.Stream = stream
 	}
 	return r.status, nil
+}
+
+func (r *repo) RequestExportRetry(_ context.Context, cmd app.ExportRetryCommand, now time.Time) (app.ExportRetryResult, error) {
+	r.retryCommand = cmd
+	if r.retryResult.CommandID == "" {
+		r.retryResult = app.ExportRetryResult{
+			CommandID:        cmd.CommandID,
+			Stream:           cmd.Stream,
+			Mode:             cmd.Mode,
+			Accepted:         true,
+			RetryRequestedAt: now,
+		}
+	}
+	return r.retryResult, nil
 }

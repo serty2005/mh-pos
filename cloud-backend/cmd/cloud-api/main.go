@@ -96,7 +96,7 @@ func run() error {
 		if err := clickHouseRepo.Migrate(ctx); err != nil {
 			return err
 		}
-		olapService = olapapp.NewServiceWithExportStatus(clickHouseRepo, olapPostgresRepo)
+		olapService = olapapp.NewServiceWithControls(clickHouseRepo, olapPostgresRepo, olapPostgresRepo)
 		olapForwarder = olapapp.NewForwarder(olapPostgresRepo, clickHouseRepo, clock.SystemClock{}, olapapp.ForwarderConfig{
 			WorkerID:      cfg.Get("CLOUD_OLAP_FORWARDER_ID", "cloud-olap-forwarder"),
 			BatchSize:     cfg.Int("CLOUD_OLAP_FORWARDER_BATCH_SIZE", 1000),

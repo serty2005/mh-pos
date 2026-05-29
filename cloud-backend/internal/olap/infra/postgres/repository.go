@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"cloud-backend/internal/cloudsync/contracts"
 	"cloud-backend/internal/olap/app"
 )
 
@@ -304,9 +305,162 @@ VALUES ('olap_stock_moves','', $1, 1, $2, $3)
 ON CONFLICT (id) DO UPDATE SET
   last_error = EXCLUDED.last_error,
   consecutive_failures = olap_export_checkpoints.consecutive_failures + 1,
-  next_retry_at = EXCLUDED.next_retry_at,
-  updated_at = EXCLUDED.updated_at`, reason, nextRetry, now)
+	next_retry_at = EXCLUDED.next_retry_at,
+	updated_at = EXCLUDED.updated_at`, reason, nextRetry, now)
 	return err
+}
+
+func (r *Repository) RequestExportRetry(ctx context.Context, cmd app.ExportRetryCommand, now time.Time) (app.ExportRetryResult, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return app.ExportRetryResult{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	existing, err := scanExportRetryResult(tx.QueryRow(ctx, `
+SELECT command_id,stream,mode,reason,accepted,checkpoint_before,retry_requested_at,pending_count,failed_count
+FROM olap_export_retry_commands
+WHERE command_id = $1
+FOR UPDATE`, cmd.CommandID))
+	if err == nil {
+		if existing.Stream != cmd.Stream || existing.Mode != cmd.Mode || existing.reason != cmd.Reason {
+			return app.ExportRetryResult{}, contracts.ErrPayloadConflict
+		}
+		existing.AlreadyProcessed = true
+		if err := tx.Commit(ctx); err != nil {
+			return app.ExportRetryResult{}, err
+		}
+		return existing.ExportRetryResult, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return app.ExportRetryResult{}, err
+	}
+
+	checkpointID := checkpointIDForStream(cmd.Stream)
+	checkpointBefore, err := lockCheckpoint(ctx, tx, checkpointID)
+	if err != nil {
+		return app.ExportRetryResult{}, err
+	}
+	if err := applyExportRetry(ctx, tx, cmd, checkpointID, now); err != nil {
+		return app.ExportRetryResult{}, err
+	}
+	pendingCount, failedCount, err := exportCounters(ctx, tx, cmd.Stream, checkpointBefore)
+	if err != nil {
+		return app.ExportRetryResult{}, err
+	}
+	result := app.ExportRetryResult{
+		CommandID:          cmd.CommandID,
+		Stream:             cmd.Stream,
+		Mode:               cmd.Mode,
+		Accepted:           true,
+		CheckpointBefore:   checkpointBefore,
+		RetryRequestedAt:   now,
+		PendingCount:       pendingCount,
+		FailedCount:        failedCount,
+	}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO olap_export_retry_commands(
+  command_id,stream,mode,reason,accepted,checkpoint_before,retry_requested_at,pending_count,failed_count,created_at
+) VALUES ($1,$2,$3,$4,true,$5,$6,$7,$8,$6)`,
+		cmd.CommandID, cmd.Stream, cmd.Mode, cmd.Reason, checkpointBefore, now, pendingCount, failedCount); err != nil {
+		return app.ExportRetryResult{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return app.ExportRetryResult{}, err
+	}
+	return result, nil
+}
+
+type storedExportRetryResult struct {
+	app.ExportRetryResult
+	reason string
+}
+
+func scanExportRetryResult(row pgx.Row) (storedExportRetryResult, error) {
+	var out storedExportRetryResult
+	err := row.Scan(
+		&out.CommandID,
+		&out.Stream,
+		&out.Mode,
+		&out.reason,
+		&out.Accepted,
+		&out.CheckpointBefore,
+		&out.RetryRequestedAt,
+		&out.PendingCount,
+		&out.FailedCount,
+	)
+	return out, err
+}
+
+func checkpointIDForStream(stream string) string {
+	if stream == "stock_moves" {
+		return "olap_stock_moves"
+	}
+	return "raw_business_events"
+}
+
+func lockCheckpoint(ctx context.Context, tx pgx.Tx, checkpointID string) (string, error) {
+	var checkpoint string
+	err := tx.QueryRow(ctx, `
+SELECT COALESCE(last_exported_inbox_id, '')
+FROM olap_export_checkpoints
+WHERE id = $1
+FOR UPDATE`, checkpointID).Scan(&checkpoint)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return checkpoint, err
+}
+
+func applyExportRetry(ctx context.Context, tx pgx.Tx, cmd app.ExportRetryCommand, checkpointID string, now time.Time) error {
+	if cmd.Stream == "raw_business_events" {
+		statuses := []string{"failed"}
+		if cmd.Mode == "resume_from_checkpoint" {
+			statuses = []string{"failed", "processing"}
+		}
+		if _, err := tx.Exec(ctx, `
+UPDATE inbox_events
+SET olap_export_status = 'pending',
+    olap_next_retry_at = NULL,
+    olap_locked_at = NULL,
+    olap_locked_by = NULL,
+    olap_last_error = NULL,
+    updated_at = $2
+WHERE processed_for_olap = false
+  AND olap_export_status = ANY($1)`, statuses, now); err != nil {
+			return err
+		}
+	}
+	_, err := tx.Exec(ctx, `
+INSERT INTO olap_export_checkpoints(id,worker_id,last_error,consecutive_failures,next_retry_at,updated_at)
+VALUES ($1,'','',0,NULL,$2)
+ON CONFLICT (id) DO UPDATE SET
+  last_error = '',
+  consecutive_failures = 0,
+  next_retry_at = NULL,
+  updated_at = EXCLUDED.updated_at`, checkpointID, now)
+	return err
+}
+
+func exportCounters(ctx context.Context, tx pgx.Tx, stream, checkpointBefore string) (int64, int64, error) {
+	var pendingCount, failedCount int64
+	switch stream {
+	case "raw_business_events":
+		err := tx.QueryRow(ctx, `
+SELECT
+  COUNT(*) FILTER (WHERE processed_for_olap = false AND olap_export_status = 'pending'),
+  COUNT(*) FILTER (WHERE processed_for_olap = false AND olap_export_status = 'failed')
+FROM inbox_events`).Scan(&pendingCount, &failedCount)
+		return pendingCount, failedCount, err
+	case "stock_moves":
+		err := tx.QueryRow(ctx, `
+SELECT COUNT(*)
+FROM stock_ledger
+WHERE ($1 = '' OR id > $1)`, checkpointBefore).Scan(&pendingCount)
+		return pendingCount, 0, err
+	default:
+		return 0, 0, app.ErrOLAPUnavailable
+	}
 }
 
 func eventIDs(events []app.InboxEvent) []string {

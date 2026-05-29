@@ -171,8 +171,8 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Full pilot smoke:
   - выполнено сейчас: минимальный runtime smoke проходит Cloud setup -> seed publication -> Edge sync -> waiter order/precheck -> KDS served -> cashier payment/final check -> Cloud inventory ledger;
   - выполнено сейчас: kitchen/process smoke проверяет KDS recall/serve-again, ClickHouse event trail, Cloud stock ledger и bounded `olap_stock_moves` read для kitchen stock events, proposal approve/feedback;
-  - заблокировано/локализовано в текущей локальной проверке: полный Docker smoke не был подтвержден из-за окружения; `docker-compose.local.yml` поддерживает host-port overrides для `5432`/`8123`/`9000`/`8090`/`8080`/`8095`, а buildx blocker остается требованием Docker CLI/Compose окружения;
-  - запланировано далее: reconnect/outbox ACK fault-injection и mutating backfill/retry controls.
+	  - выполнено: POS syncsender regression покрывает temporary `sync/exchange` failure, retry того же outbox item, item-level ACK и прекращение повторной отправки после ACK;
+	  - заблокировано/локализовано в текущей локальной проверке: полный Docker smoke не был подтвержден из-за окружения; `docker-compose.local.yml` поддерживает host-port overrides для `5432`/`8123`/`9000`/`8090`/`8080`/`8095`, а buildx blocker остается требованием Docker CLI/Compose окружения.
 - Full Inventory Engine:
   - реализовать stock receipts, inventory counts, production, sale consumption, refund/cancellation stock disposition, recipe expansion, modifier linked consumption, balances и costing state;
   - реализовать retro recalculation DAG для документов задним числом и отрицательных остатков;
@@ -181,10 +181,11 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - выполнено: ClickHouse добавлен в local Cloud runtime component с managed `raw_business_events`;
   - выполнено: async forwarder `inbox_events -> raw_business_events`, retry state, `processed_for_olap` и checkpoint storage;
   - выполнено: bounded metadata API `GET /api/v1/olap/raw-business-events` без raw payload;
-  - выполнено: первый bounded stock moves slice `stock_ledger -> olap_stock_moves` через async forwarder с checkpoint/retry state и `GET /api/v1/olap/stock-moves` без raw payload;
-  - выполнено: read-only `GET /api/v1/olap/export-status?stream=raw_business_events|stock_moves` для checkpoint/retry counters без raw payload;
-  - выполнено: первый bounded агрегат `GET /api/v1/olap/stock-move-summary` по `olap_stock_moves` с группировкой `business_date|catalog_item|warehouse`;
-  - далее: mutating backfill/retry controls, sales/kitchen aggregates и costing-dependent COGS/margin после появления достоверной cost basis.
+	  - выполнено: первый bounded stock moves slice `stock_ledger -> olap_stock_moves` через async forwarder с checkpoint/retry state и `GET /api/v1/olap/stock-moves` без raw payload;
+	  - выполнено: read-only `GET /api/v1/olap/export-status?stream=raw_business_events|stock_moves` для checkpoint/retry counters без raw payload;
+	  - выполнено: первый bounded агрегат `GET /api/v1/olap/stock-move-summary` по `olap_stock_moves` с группировкой `business_date|catalog_item|warehouse`;
+	  - выполнено: минимальный support-only `POST /api/v1/olap/export-retry` для `retry_failed|resume_from_checkpoint` по `raw_business_events|stock_moves` с идемпотентностью по UUIDv7 `command_id`, без raw payload и без synchronous ClickHouse dual-write;
+	  - далее: production-grade backfill jobs/operator UI, sales/kitchen aggregates и costing-dependent COGS/margin после появления достоверной cost basis.
 
 ## Далее
 
@@ -242,7 +243,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 - Cloud worker создает review/proposal записи из `CatalogItemChangeSuggested` и `RecipeChangeSuggested`, а не применяет их без policy/manager review;
 - Cloud принимает `CheckClosed`/`ItemServed`, дедуплицирует replay и Cloud Inventory Worker пишет полный stock document/ledger/balance/costing state;
 - Cloud Inventory Engine покрывает stock receipt, inventory count, production, sale consumption, refund/cancellation disposition, recipe expansion, modifier linked consumption, negative-balance costing и retro recalculation DAG;
-- ClickHouse runtime поднят как обязательный Cloud component: `raw_business_events`, `olap_stock_moves`, async forwarder, retry/backfill, export checkpoints и bounded OLAP API проходят smoke;
+- ClickHouse runtime поднят как обязательный Cloud component: `raw_business_events`, `olap_stock_moves`, async forwarder, retry/export checkpoints, минимальный support-only retry control и bounded OLAP API проходят smoke;
 - `scripts/seed-dev-system.py` создает full-pilot seed dataset без ручной правки данных; `--run-kitchen-process-smoke` является текущим профильным smoke для kitchen/process контура.
 - все новые routes, payloads, UI flows, RBAC, DB schema, sync events, error keys и seed/e2e paths отражены в профильных docs.
 

@@ -57,17 +57,27 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 				"inbox_events_event_unique", "inbox_events_olap_pending", "inbox_events_restaurant_received", "inbox_events_event_type_received",
 			},
 		},
-		{
-			Table:         "olap_export_checkpoints",
-			RequiredBy:    "ClickHouse async forwarder checkpoint and retry observability",
-			MigrationFile: "001_init.sql",
-			Columns: []string{
+			{
+				Table:         "olap_export_checkpoints",
+				RequiredBy:    "ClickHouse async forwarder checkpoint and retry observability",
+				MigrationFile: "001_init.sql",
+				Columns: []string{
 				"id", "worker_id", "last_exported_inbox_id", "last_exported_event_id", "last_exported_at",
-				"last_error", "consecutive_failures", "next_retry_at", "updated_at",
+					"last_error", "consecutive_failures", "next_retry_at", "updated_at",
+				},
 			},
-		},
-		{
-			Table:         "cloud_sync_problem_events",
+			{
+				Table:         "olap_export_retry_commands",
+				RequiredBy:    "support-only OLAP retry/backfill idempotency command log",
+				MigrationFile: "001_init.sql",
+				Columns: []string{
+					"command_id", "stream", "mode", "reason", "accepted", "checkpoint_before",
+					"retry_requested_at", "pending_count", "failed_count", "created_at",
+				},
+				Indexes: []string{"olap_export_retry_commands_stream_created"},
+			},
+			{
+				Table:         "cloud_sync_problem_events",
 			RequiredBy:    "cloudsync postgres repository problem item quarantine",
 			MigrationFile: "001_init.sql",
 			Columns: []string{
