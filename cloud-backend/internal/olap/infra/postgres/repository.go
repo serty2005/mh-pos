@@ -3,9 +3,11 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"cloud-backend/internal/olap/app"
@@ -144,6 +146,95 @@ ON CONFLICT (id) DO UPDATE SET
   last_error = EXCLUDED.last_error,
   consecutive_failures = olap_export_checkpoints.consecutive_failures + 1,
   updated_at = EXCLUDED.updated_at`, reason, now)
+	return err
+}
+
+func (r *Repository) ClaimPendingStockMoves(ctx context.Context, cmd app.ClaimCommand) ([]app.StockMove, error) {
+	if cmd.Limit <= 0 {
+		cmd.Limit = 1000
+	}
+	var lastLedgerID string
+	var retryBlocked bool
+	err := r.pool.QueryRow(ctx, `
+SELECT COALESCE(last_exported_inbox_id, ''), COALESCE(next_retry_at > $1, false)
+FROM olap_export_checkpoints
+WHERE id = 'olap_stock_moves'`, cmd.Now).Scan(&lastLedgerID, &retryBlocked)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+	if retryBlocked {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT id,restaurant_id,COALESCE(warehouse_id,''),stock_document_id,source_event_id,source_event_type,
+       catalog_item_id,COALESCE(order_line_id,''),movement_type,quantity::text,unit_code,
+       unit_cost_minor,total_cost_minor,costing_status,occurred_at,business_date_local::text,created_at
+FROM stock_ledger
+WHERE ($1 = '' OR id > $1)
+ORDER BY id
+LIMIT $2`, lastLedgerID, cmd.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	moves := make([]app.StockMove, 0, cmd.Limit)
+	for rows.Next() {
+		var move app.StockMove
+		if err := rows.Scan(
+			&move.LedgerEntryID,
+			&move.RestaurantID,
+			&move.WarehouseID,
+			&move.StockDocumentID,
+			&move.SourceEventID,
+			&move.SourceEventType,
+			&move.CatalogItemID,
+			&move.OrderLineID,
+			&move.MovementType,
+			&move.Quantity,
+			&move.UnitCode,
+			&move.UnitCostMinor,
+			&move.TotalCostMinor,
+			&move.CostingStatus,
+			&move.OccurredAt,
+			&move.BusinessDateLocal,
+			&move.LedgerCreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		moves = append(moves, move)
+	}
+	return moves, rows.Err()
+}
+
+func (r *Repository) MarkStockMovesProcessed(ctx context.Context, moves []app.StockMove, now time.Time) error {
+	if len(moves) == 0 {
+		return nil
+	}
+	last := moves[len(moves)-1]
+	_, err := r.pool.Exec(ctx, `
+INSERT INTO olap_export_checkpoints(id,worker_id,last_exported_inbox_id,last_exported_event_id,last_exported_at,last_error,consecutive_failures,next_retry_at,updated_at)
+VALUES ('olap_stock_moves','', $1, $2, $3, '', 0, NULL, $3)
+ON CONFLICT (id) DO UPDATE SET
+  last_exported_inbox_id = EXCLUDED.last_exported_inbox_id,
+  last_exported_event_id = EXCLUDED.last_exported_event_id,
+  last_exported_at = EXCLUDED.last_exported_at,
+  last_error = '',
+  consecutive_failures = 0,
+  next_retry_at = NULL,
+  updated_at = EXCLUDED.updated_at`, last.LedgerEntryID, last.SourceEventID, now)
+	return err
+}
+
+func (r *Repository) MarkStockMovesFailed(ctx context.Context, _ []app.StockMove, reason string, nextRetry, now time.Time) error {
+	_, err := r.pool.Exec(ctx, `
+INSERT INTO olap_export_checkpoints(id,worker_id,last_error,consecutive_failures,next_retry_at,updated_at)
+VALUES ('olap_stock_moves','', $1, 1, $2, $3)
+ON CONFLICT (id) DO UPDATE SET
+  last_error = EXCLUDED.last_error,
+  consecutive_failures = olap_export_checkpoints.consecutive_failures + 1,
+  next_retry_at = EXCLUDED.next_retry_at,
+  updated_at = EXCLUDED.updated_at`, reason, nextRetry, now)
 	return err
 }
 

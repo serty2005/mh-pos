@@ -126,8 +126,8 @@ Edge Outbox
 Запланировано до полного пилота:
 
 - Реализовано сейчас: ClickHouse получает immutable `raw_business_events` из Cloud PostgreSQL `inbox_events`.
-- Запланировано далее: ClickHouse получает `olap_stock_moves` projection из Cloud inventory data.
-- Реализовано сейчас: Cloud OLAP API читает bounded `raw_business_events` metadata из ClickHouse и не участвует в transactional command validation; bounded aggregates запланированы далее.
+- Реализовано сейчас: ClickHouse получает `olap_stock_moves` projection из Cloud `stock_ledger` через async forwarder.
+- Реализовано сейчас: Cloud OLAP API читает bounded `raw_business_events` metadata и bounded `olap_stock_moves` из ClickHouse; эти endpoints не участвуют в transactional command validation, а bounded aggregates запланированы далее.
 
 Запланировано далее:
 

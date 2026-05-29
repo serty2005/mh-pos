@@ -170,8 +170,9 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - launch readiness учитывает restaurant, staff, floor, catalog, menu, modifiers, pricing, stop-list review, publication и known Edge node.
 - Full pilot smoke:
   - выполнено сейчас: минимальный runtime smoke проходит Cloud setup -> seed publication -> Edge sync -> waiter order/precheck -> KDS served -> cashier payment/final check -> Cloud inventory ledger;
-  - выполнено сейчас: kitchen/process smoke проверяет KDS recall/serve-again, ClickHouse event trail, Cloud stock ledger для kitchen stock events и proposal approve/feedback;
-  - запланировано далее: reconnect/outbox ACK fault-injection, `olap_stock_moves` и агрегированные OLAP API reads.
+  - выполнено сейчас: kitchen/process smoke проверяет KDS recall/serve-again, ClickHouse event trail, Cloud stock ledger и bounded `olap_stock_moves` read для kitchen stock events, proposal approve/feedback;
+  - заблокировано в текущей локальной проверке: полный Docker smoke не был подтвержден, потому что `docker compose -f docker-compose.local.yml up --build -d` завис на этапе сборки после предупреждения про отсутствующий buildx plugin, а резервный запуск без rebuild уперся в занятый host port `127.0.0.1:5432`;
+  - запланировано далее: reconnect/outbox ACK fault-injection, backfill controls и агрегированные OLAP API reads.
 - Full Inventory Engine:
   - реализовать stock receipts, inventory counts, production, sale consumption, refund/cancellation stock disposition, recipe expansion, modifier linked consumption, balances и costing state;
   - реализовать retro recalculation DAG для документов задним числом и отрицательных остатков;
@@ -180,8 +181,9 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - выполнено: ClickHouse добавлен в local Cloud runtime component с managed `raw_business_events`;
   - выполнено: async forwarder `inbox_events -> raw_business_events`, retry state, `processed_for_olap` и checkpoint storage;
   - выполнено: bounded metadata API `GET /api/v1/olap/raw-business-events` без raw payload;
-  - далее: projection export `stock_ledger -> olap_stock_moves`, backfill controls и агрегированные OLAP API;
-  - добавить bounded read-only Cloud API для OLAP: event archive, stock moves, COGS/margin, sales aggregates и kitchen timing.
+  - выполнено: первый bounded stock moves slice `stock_ledger -> olap_stock_moves` через async forwarder с checkpoint/retry state и `GET /api/v1/olap/stock-moves` без raw payload;
+  - далее: backfill controls и агрегированные OLAP API;
+  - добавить bounded read-only Cloud API для COGS/margin, sales aggregates и kitchen timing после появления достоверной себестоимости и нужных projection данных.
 
 ## Далее
 

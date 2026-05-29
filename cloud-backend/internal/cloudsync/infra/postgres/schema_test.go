@@ -130,7 +130,7 @@ func TestRequiredSchemaIncludesOlapInboxAndCheckpointTables(t *testing.T) {
 			t.Fatalf("expected %s index in schema verification contract", index)
 		}
 	}
-	for _, column := range []string{"id", "last_exported_inbox_id", "last_exported_event_id", "last_exported_at", "last_error", "consecutive_failures", "updated_at"} {
+	for _, column := range []string{"id", "last_exported_inbox_id", "last_exported_event_id", "last_exported_at", "last_error", "consecutive_failures", "next_retry_at", "updated_at"} {
 		if !reqs["olap_export_checkpoints"][column] {
 			t.Fatalf("expected olap_export_checkpoints.%s in schema verification contract", column)
 		}

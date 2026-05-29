@@ -987,6 +987,14 @@ def run_kitchen_process_smoke_flow(
         wait_seconds=wait_seconds,
         interval_seconds=interval_seconds,
     )
+    latest_served_olap_stock_moves = wait_for_olap_stock_moves(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        source_event_type="ItemServed",
+        source_event_id=latest_served_event["event_id"],
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
     olap_item_served = wait_for_olap_events(
         cloud_client,
         restaurant_id=restaurant_id,
@@ -1108,12 +1116,21 @@ def run_kitchen_process_smoke_flow(
             wait_seconds=wait_seconds,
             interval_seconds=interval_seconds,
         )
+        olap_stock_moves = wait_for_olap_stock_moves(
+            cloud_client,
+            restaurant_id=restaurant_id,
+            source_event_type=event_type,
+            source_event_id=cloud_event["event_id"],
+            wait_seconds=wait_seconds,
+            interval_seconds=interval_seconds,
+        )
         stock_results[name] = {
             "id": captured["id"],
             "warehouse_id": captured.get("warehouse_id", ""),
             "event_type": event_type,
             "cloud_event_id": cloud_event["event_id"],
             "ledger_entry_count": len(ledger),
+            "olap_stock_move_count": len(olap_stock_moves),
         }
 
     proposal_group_id = f"proposal-group-{command_suffix()}"
@@ -1203,6 +1220,7 @@ def run_kitchen_process_smoke_flow(
         "item_served_event_ids": [item["event_id"] for item in served_events[:2]],
         "latest_item_served_event_id": latest_served_event["event_id"],
         "latest_item_served_ledger_entry_count": len(latest_served_ledger),
+        "latest_item_served_olap_stock_move_count": len(latest_served_olap_stock_moves),
         "kitchen_status_event_count": len(status_events),
         "olap_item_served_event_count": len(olap_item_served),
         "olap_status_event_count": len(olap_status),
@@ -1429,6 +1447,25 @@ def wait_for_inventory_ledger(cloud_client, restaurant_id, source_event_type, so
         time.sleep(max(0, interval_seconds))
 
 
+def wait_for_olap_stock_moves(cloud_client, restaurant_id, source_event_type, source_event_id, wait_seconds, interval_seconds):
+    deadline = time.monotonic() + max(1, wait_seconds)
+    while True:
+        items = list_olap_stock_moves(
+            cloud_client,
+            restaurant_id=restaurant_id,
+            source_event_type=source_event_type,
+        )
+        matched = [item for item in items if item.get("source_event_id") == source_event_id]
+        if matched:
+            raw = json.dumps(matched, ensure_ascii=False)
+            if "payload" in raw:
+                raise RuntimeError("OLAP stock moves response exposed raw payload")
+            return matched
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"ClickHouse olap_stock_moves did not expose {source_event_type} move for event {source_event_id}")
+        time.sleep(max(0, interval_seconds))
+
+
 def wait_for_cloud_suggestion(cloud_client, kind, restaurant_id, suggestion_id, wait_seconds, interval_seconds):
     path = {
         "catalog": f"{API_PREFIX}/master-data/catalog-suggestions",
@@ -1494,6 +1531,20 @@ def list_inventory_ledger(cloud_client, restaurant_id, source_event_type, source
             "source_event_type": source_event_type,
             "source_event_id": source_event_id,
             "order_line_id": order_line_id,
+            "limit": 50,
+        },
+    )
+
+
+def list_olap_stock_moves(cloud_client, restaurant_id, source_event_type):
+    return request(
+        cloud_client,
+        "GET",
+        f"{API_PREFIX}/olap/stock-moves",
+        expected_status=(200,),
+        query={
+            "restaurant_id": restaurant_id,
+            "source_event_type": source_event_type,
             "limit": 50,
         },
     )

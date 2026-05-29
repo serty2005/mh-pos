@@ -1,4 +1,7 @@
 import importlib.util
+import contextlib
+import io
+import json
 import pathlib
 import unittest
 
@@ -44,13 +47,23 @@ class FakeClient:
         if path == "/api/v1/master-data/catalog/tags":
             return {"id": f"tag-{self.counter}"}
         if path == "/api/v1/master-data/catalog/items":
-            return {"id": f"catalog-{self.counter}"}
+            catalog_ids = {
+                "Tom Yum Soup": "catalog-soup",
+                "Beef Sirloin": "catalog-sirloin",
+                "House Sauce": "catalog-sauce",
+                "Sold Out Cheesecake": "catalog-stopped",
+            }
+            return {"id": catalog_ids.get(body.get("name"), f"catalog-{self.counter}")}
         if path == "/api/v1/master-data/catalog/item-tags":
             return {"id": f"item-tag-{self.counter}"}
         if path == "/api/v1/master-data/menu/categories":
             return {"id": f"category-{self.counter}"}
         if path == "/api/v1/master-data/menu/items":
-            return {"id": f"menu-{self.counter}"}
+            menu_ids = {
+                "Tom Yum Soup": "menu-soup",
+                "Sold Out Cheesecake": "menu-stopped",
+            }
+            return {"id": menu_ids.get(body.get("name"), f"menu-{self.counter}")}
         if path == "/api/v1/master-data/modifiers/groups":
             return {"id": f"modifier-group-{self.counter}"}
         if path == "/api/v1/master-data/modifiers/options":
@@ -172,6 +185,13 @@ class FakeClient:
             if "event_type=KitchenTicketStatusChanged" in path:
                 return [{"event_id": "event-kds-status-0"}, {"event_id": "event-kds-status-1"}]
             return []
+        if path.startswith("/api/v1/olap/stock-moves"):
+            if "source_event_type=ItemServed" in path:
+                return [{"ledger_entry_id": "olap-ledger-1", "source_event_id": "event-item-served-2", "source_event_type": "ItemServed"}]
+            for event_type in ("StockReceiptCaptured", "InventoryCountCaptured", "StockWriteOffCaptured", "ProductionCompleted"):
+                if f"source_event_type={event_type}" in path:
+                    return [{"ledger_entry_id": f"olap-ledger-{event_type}", "source_event_id": f"event-{event_type}", "source_event_type": event_type}]
+            return []
         if path.startswith("/api/v1/inventory/stock-ledger"):
             if "source_event_type=CheckClosed" in path:
                 return []
@@ -242,6 +262,30 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertTrue(dataset["recipes"])
         self.assertTrue(dataset["stop_list"])
 
+    def test_seed_dataset_contains_kitchen_role_pin_and_smoke_permissions(self):
+        module = load_seed_module()
+
+        dataset = module.build_seed_dataset("unit")
+        kitchen_role = next(role for role in dataset["roles"] if role["ref"] == "kitchen")
+        kitchen_employee = next(employee for employee in dataset["employees"] if employee["pin_name"] == "kitchen_pin")
+        permissions = json.loads(module.permissions_json(kitchen_role["profile"]))
+
+        self.assertEqual(kitchen_employee["role_ref"], "kitchen")
+        for permission in (
+            "pos.catalog.view",
+            "pos.kitchen.view",
+            "pos.kitchen.status.change",
+            "pos.kitchen.catalog.view",
+            "pos.kitchen.recipe.view",
+            "pos.kitchen.recipe.suggest",
+            "pos.kitchen.catalog.suggest",
+            "pos.kitchen.stock.receipt",
+            "pos.kitchen.stock.inventory_count",
+            "pos.kitchen.stock.write_off",
+            "pos.kitchen.production.complete",
+        ):
+            self.assertTrue(permissions.get(permission), f"missing kitchen smoke permission {permission}")
+
     def test_seed_full_system_generates_pairing_after_all_master_data(self):
         module = load_seed_module()
         cloud = FakeClient("cloud")
@@ -268,6 +312,40 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertIn("waiter_pin", summary["pins"])
         self.assertIn("kitchen_pin", summary["pins"])
         self.assertIn("support_pin", summary["pins"])
+
+    def test_main_runs_both_smoke_flags_and_writes_separate_summary_sections(self):
+        module = load_seed_module()
+        cloud = FakeClient("cloud")
+        cloud.full_smoke = True
+        pos = FakeClient("pos")
+        license_client = FakeClient("license")
+        clients = {
+            "http://cloud.local": cloud,
+            "http://pos.local": pos,
+            "http://license.local": license_client,
+        }
+        module.JsonClient = lambda base_url: clients[base_url]
+
+        with contextlib.redirect_stdout(io.StringIO()) as stdout:
+            exit_code = module.main([
+                "--cloud-base", "http://cloud.local",
+                "--pos-base", "http://pos.local",
+                "--license-base", "http://license.local",
+                "--client-device-id", "unit-client",
+                "--suffix", "unit",
+                "--wait-seconds", "1",
+                "--interval-seconds", "0",
+                "--output", "",
+                "--run-minimal-flow",
+                "--run-kitchen-process-smoke",
+            ])
+        summary = json.loads(stdout.getvalue())
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("minimal_flow", summary)
+        self.assertIn("kitchen_process_smoke", summary)
+        self.assertEqual(summary["minimal_flow"]["check_id"], "check-1")
+        self.assertEqual(summary["kitchen_process_smoke"]["kitchen_ticket_id"], "ticket-line-soup")
 
     def test_minimal_flow_smoke_runs_waiter_to_cloud_inventory_ledger(self):
         module = load_seed_module()
@@ -302,6 +380,29 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertTrue(any("source_event_type=ItemServed" in path for path in cloud_paths))
         self.assertTrue(any("source_event_type=CheckClosed" in path for path in cloud_paths))
 
+    def test_minimal_flow_smoke_does_not_require_kitchen_pin(self):
+        module = load_seed_module()
+        cloud = FakeClient("cloud")
+        pos = FakeClient("pos")
+
+        result = module.run_minimal_flow_smoke(
+            cloud,
+            pos,
+            restaurant_id="restaurant-1",
+            node_device_id="edge-node-from-pos",
+            client_device_id="unit-client",
+            pins={"waiter_pin": "3333", "cashier_pin": "1111"},
+            table_ids=["table-1"],
+            menu_refs={"soup": "menu-soup", "sold_out_dessert": "menu-stopped"},
+            catalog_refs={"sirloin": "catalog-sirloin", "sauce": "catalog-sauce"},
+            wait_seconds=1,
+            interval_seconds=0,
+        )
+
+        self.assertEqual(result["check_id"], "check-1")
+        login_pins = [body["pin"] for _, path, body, _ in pos.calls if path == "/api/v1/auth/pin-login"]
+        self.assertIn("1111", login_pins)
+
     def test_kitchen_process_smoke_covers_kds_stock_olap_and_proposals(self):
         module = load_seed_module()
         cloud = FakeClient("cloud")
@@ -326,10 +427,32 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertEqual(result["latest_item_served_event_id"], "event-item-served-2")
         self.assertEqual(result["olap_item_served_event_count"], 2)
         self.assertEqual(result["olap_status_event_count"], 2)
+        self.assertGreaterEqual(result["latest_item_served_olap_stock_move_count"], 1)
         self.assertEqual(set(result["stock"].keys()), {"receipt", "count", "write_off", "production"})
+        self.assertTrue(all(item["olap_stock_move_count"] >= 1 for item in result["stock"].values()))
         self.assertEqual(result["approved_catalog_status"], "approved")
         self.assertEqual(result["approved_recipe_status"], "approved")
         self.assertGreaterEqual(result["edge_catalog_item_count_after"], result["edge_catalog_item_count_before"] + 1)
+        pos_paths = [path for _, path, _, _ in pos.calls]
+        cloud_paths = [path for _, path, _, _ in cloud.calls]
+        self.assertIn("/api/v1/kitchen/order-queue?limit=100&offset=0", pos_paths)
+        for action in ("accept", "start", "ready", "serve", "recall"):
+            self.assertIn(f"/api/v1/kitchen/tickets/ticket-line-soup/{action}", pos_paths)
+        for path in (
+            "/api/v1/kitchen/stock-receipts",
+            "/api/v1/kitchen/inventory-counts",
+            "/api/v1/kitchen/stock-write-offs",
+            "/api/v1/kitchen/productions",
+            "/api/v1/kitchen/catalog-suggestions",
+            "/api/v1/kitchen/recipe-suggestions",
+            "/api/v1/kitchen/proposals?kind=catalog&limit=100&offset=0",
+            "/api/v1/kitchen/proposals?kind=recipe&limit=100&offset=0",
+        ):
+            self.assertIn(path, pos_paths)
+        self.assertTrue(any(path.startswith("/api/v1/olap/raw-business-events?") for path in cloud_paths))
+        self.assertTrue(any(path.startswith("/api/v1/olap/stock-moves?") for path in cloud_paths))
+        self.assertTrue(any(path.startswith("/api/v1/inventory/stock-ledger?") for path in cloud_paths))
+        self.assertTrue(any(path.endswith("/approve") for path in cloud_paths))
 
 
 if __name__ == "__main__":

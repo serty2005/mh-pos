@@ -217,6 +217,10 @@ Edge Outbox
   -> Cloud API (PostgreSQL inbox_events)
   -> Async Batch Forwarder
   -> ClickHouse raw_business_events
+Cloud Inventory Worker
+  -> PostgreSQL stock_ledger
+  -> Async Stock Moves Forwarder
+  -> ClickHouse olap_stock_moves
 ```
 
 - Реализовано сейчас: Cloud API принимает Edge outbox batch, сохраняет accepted events в PostgreSQL `inbox_events` и отвечает без synchronous ClickHouse write.
@@ -224,6 +228,8 @@ Edge Outbox
 - После successful export event в PostgreSQL помечается `processed_for_olap = true`; retry/checkpoint state хранится в `inbox_events` и `olap_export_checkpoints`.
 - `processed_for_olap = true` events старше 3 месяцев можно удалить из PostgreSQL.
 - ClickHouse `raw_business_events` хранит все business events бессрочно.
+- Реализовано сейчас: отдельный async forwarder экспортирует новые PostgreSQL `stock_ledger` rows в ClickHouse `olap_stock_moves` без synchronous dual-write в HTTP request path.
+- `GET /api/v1/olap/stock-moves` читает bounded stock movement projection из ClickHouse по `restaurant_id`, business date range, `catalog_item_id`, `warehouse_id`, `source_event_type`, `limit`, `offset` и не раскрывает raw sync payload.
 - Synchronous dual-write в PostgreSQL и ClickHouse запрещен.
 
 Текущий POS Edge emitted catalog в domain boundary включает:
@@ -470,7 +476,7 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 - Edge-origin stop-list edit sync/conflict policy;
 - компенсирующий пересчет уже обработанного served fact после recall;
 - modifier linked catalog item consumption и retro costing DAG;
-- ClickHouse `olap_stock_moves` projection export and aggregate bounded OLAP API;
+- aggregate bounded OLAP API, public backfill controls и production-grade OLAP operator UI;
 - PSP/fiscal event streams.
 
 Запланировано до полного пилота:
@@ -479,7 +485,8 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 - stop-list changes синхронизируются через Cloud -> Edge packages и, если включен Edge manager input, через `StopListUpdated`;
 - Cloud Inventory Worker расширяется до balances and costing engine;
 - Реализовано сейчас: ClickHouse pipeline экспортирует `raw_business_events`, а `GET /api/v1/olap/raw-business-events` читает bounded metadata без raw payload.
-- Запланировано далее: `olap_stock_moves` и bounded aggregates.
+- Реализовано сейчас: ClickHouse pipeline экспортирует первый bounded `olap_stock_moves` read model из `stock_ledger`, а `GET /api/v1/olap/stock-moves` читает его без raw payload.
+- Запланировано далее: bounded aggregates.
 
 ## Запланированные Границы
 
@@ -488,7 +495,7 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 - Cloud-authored pricing/tax UI и полный publication workflow поверх generic `pricing_policy` package storage/apply;
 - Cloud authoring workflow polish для `recipes`/`inventory_reference` package generation;
 - full Cloud Inventory Engine для balances/costing/recalculation;
-- ClickHouse `raw_business_events`, retry/export state and bounded event metadata API реализованы сейчас; `olap_stock_moves`, public backfill controls and aggregate OLAP API запланированы далее;
+- ClickHouse `raw_business_events`, `olap_stock_moves`, retry/export state and bounded event/stock movement APIs реализованы сейчас; public backfill controls and aggregate OLAP API запланированы далее;
 - stop-list sale blocking smoke через offline Edge реализован сейчас в минимальном seed smoke.
 
 После полного пилота:

@@ -52,7 +52,7 @@
 - pricing policies;
 - recipe items через `/api/v1/master-data/recipes/items`;
 - stop-list entries через `/api/v1/master-data/inventory/stop-list`;
-- route-backed раздел `Очередь предложений` для Cloud review workflow (`catalog-suggestions`/`recipe-suggestions`) со списками catalog/recipe suggestions, detail/diff view, approve/reject/request-changes actions, linked new dish + recipe group display и publication/readiness signal после approve; разделы `Готовность склада`/`OLAP exports` остаются readiness-only;
+- route-backed раздел `Очередь предложений` для Cloud review workflow (`catalog-suggestions`/`recipe-suggestions`) со списками catalog/recipe suggestions, detail/diff view, approve/reject/request-changes actions, linked new dish + recipe group display и publication/readiness signal после approve; разделы `Готовность склада`/`OLAP exports` остаются readiness-only, хотя backend уже имеет bounded `GET /api/v1/olap/stock-moves` без UI-превью в текущем scope;
 - halls и tables;
 - menu items;
 - menu category create как command-only операция, потому что list/update routes не подтверждены;
@@ -68,7 +68,7 @@
 - duplicate hints и linked receipt line для catalog suggestion review остаются запланировано далее;
 - stop-list panel уже имеет bounded route-backed rows; далее нужны conflict policy, review и publication readiness по отдельным contracts;
 - inventory operations workspace: stock ledger/balances and costing/recalculation status; Edge-side stock receipts, inventory counts, write-offs and production input are covered by `pos-ui-g` kitchen mode and Cloud ledger read endpoints;
-- ClickHouse/OLAP workspace: export health, retry/backfill controls and read-only OLAP endpoint previews;
+- ClickHouse/OLAP workspace: export health, retry/backfill controls and read-only OLAP endpoint previews; bounded stock moves backend read существует, но UI runtime preview остается запланировано далее;
 - launch readiness должен учитывать stop-list review и публикацию streams `recipes`/`stop_lists`;
 - publication panel должен показывать latest package version, target Edge node и статус доставки/ACK, когда backend contract готов;
 - Edge events/problem events panel должен показывать accepted/rejected/retryable metadata без raw payload.
@@ -140,7 +140,7 @@ Review command body:
 
 Для entities без подтвержденного `GET list` route UI показывает форму команды и поясняет, что list route не подтвержден.
 
-запланировано до полного пилота: после добавления Cloud backend routes API client должен покрыть costing/recalculation status, ClickHouse export status, aggregate OLAP read endpoints и inventory balance views; UI не должен вызывать неподтвержденные endpoints до появления backend contract.
+запланировано до полного пилота: API client должен покрыть costing/recalculation status, ClickHouse export status, aggregate OLAP read endpoints, `olap_stock_moves` preview и inventory balance views; UI не должен вызывать неподтвержденные endpoints до появления backend contract.
 
 ## Runtime Code
 

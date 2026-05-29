@@ -204,7 +204,23 @@ python3 scripts/seed-dev-system.py \
   --run-kitchen-process-smoke
 ```
 
-Реализовано сейчас: флаг `--run-kitchen-process-smoke` после seed/pairing проверяет Cloud publication для `catalog`/`menu`/`recipes`/`inventory_reference` включая default warehouse `warehouse-main`, Edge sync полного каталога и техкарт, waiter order с блюдом, KDS order tile, `accept/start/ready/serve`, `recall/start/ready/serve`, прием `KitchenTicketStatusChanged`/`ItemServed` в Cloud, наличие kitchen event trail в ClickHouse `raw_business_events`, Cloud `stock_ledger` для `StockReceiptCaptured`/`InventoryCountCaptured`/`StockWriteOffCaptured`/`ProductionCompleted`, создание catalog/recipe suggestions на Edge, Cloud manager approve и возврат `proposal_feedback` на Edge.
+Реализовано сейчас: флаг `--run-kitchen-process-smoke` после seed/pairing проверяет Cloud publication для `catalog`/`menu`/`recipes`/`inventory_reference` включая default warehouse `warehouse-main`, Edge sync полного каталога и техкарт, waiter order с блюдом, KDS order tile, `accept/start/ready/serve`, `recall/start/ready/serve`, прием `KitchenTicketStatusChanged`/`ItemServed` в Cloud, наличие kitchen event trail в ClickHouse `raw_business_events`, Cloud `stock_ledger` и bounded ClickHouse `olap_stock_moves` read для `ItemServed`/`StockReceiptCaptured`/`InventoryCountCaptured`/`StockWriteOffCaptured`/`ProductionCompleted`, создание catalog/recipe suggestions на Edge, Cloud manager approve и возврат `proposal_feedback` на Edge.
+
+Полный профильный запуск обеих smoke-веток требует чистого POS Edge pairing state, поэтому перед ним выполняется reset volumes:
+
+```bash
+docker compose -f docker-compose.local.yml down -v
+docker compose -f docker-compose.local.yml up --build -d
+python3 scripts/seed-dev-system.py \
+  --cloud-base http://localhost:8090 \
+  --pos-base http://localhost:8080 \
+  --license-base http://localhost:8095 \
+  --output scripts/.seed-dev-system-summary.json \
+  --run-minimal-flow \
+  --run-kitchen-process-smoke
+```
+
+Если включены оба флага, итоговый JSON содержит независимые секции `minimal_flow` и `kitchen_process_smoke`. Минимальная ветка может использовать резервный PIN с KDS authority для подачи блюда, а полный kitchen/process smoke должен использовать опубликованную kitchen role/PIN `5555`, чтобы проверить фактические backend RBAC и Cloud маршруты.
 
 Seed-вход содержит только пользовательские данные: названия, имена, PIN, цены, количества, места и наборы прав. ID, `node_device_id`, generated SKU и остальные технические значения берутся из backend responses или генерируются системно. `scripts/.seed-dev-system-summary.json` содержит локальные demo credentials и добавлен в `.gitignore`; не коммить этот файл.
 

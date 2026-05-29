@@ -63,7 +63,7 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			MigrationFile: "001_init.sql",
 			Columns: []string{
 				"id", "worker_id", "last_exported_inbox_id", "last_exported_event_id", "last_exported_at",
-				"last_error", "consecutive_failures", "updated_at",
+				"last_error", "consecutive_failures", "next_retry_at", "updated_at",
 			},
 		},
 		{

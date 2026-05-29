@@ -117,8 +117,12 @@ CREATE TABLE IF NOT EXISTS olap_export_checkpoints (
   last_exported_at TIMESTAMPTZ,
   last_error TEXT NOT NULL DEFAULT '',
   consecutive_failures BIGINT NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
+  next_retry_at TIMESTAMPTZ,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE olap_export_checkpoints
+  ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS cloud_sync_problem_events (
   id TEXT PRIMARY KEY,

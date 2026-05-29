@@ -84,6 +84,7 @@ func run() error {
 
 	var olapService *olapapp.Service
 	var olapForwarder *olapapp.Forwarder
+	var olapStockMoveForwarder *olapapp.StockMoveForwarder
 	if clickHouseURL != "" {
 		clickHouseRepo := olapch.NewRepository(olapch.Config{
 			URL:      clickHouseURL,
@@ -100,6 +101,12 @@ func run() error {
 			BatchSize:     cfg.Int("CLOUD_OLAP_FORWARDER_BATCH_SIZE", 1000),
 			RetryDelay:    time.Duration(cfg.Int("CLOUD_OLAP_FORWARDER_RETRY_SECONDS", 60)) * time.Second,
 			ProcessingTTL: time.Duration(cfg.Int("CLOUD_OLAP_FORWARDER_PROCESSING_TTL_SECONDS", 300)) * time.Second,
+		})
+		olapStockMoveForwarder = olapapp.NewStockMoveForwarder(olappg.NewRepository(pool), clickHouseRepo, clock.SystemClock{}, olapapp.ForwarderConfig{
+			WorkerID:      cfg.Get("CLOUD_OLAP_STOCK_MOVES_FORWARDER_ID", "cloud-olap-stock-moves-forwarder"),
+			BatchSize:     cfg.Int("CLOUD_OLAP_STOCK_MOVES_FORWARDER_BATCH_SIZE", 1000),
+			RetryDelay:    time.Duration(cfg.Int("CLOUD_OLAP_STOCK_MOVES_FORWARDER_RETRY_SECONDS", 60)) * time.Second,
+			ProcessingTTL: time.Duration(cfg.Int("CLOUD_OLAP_STOCK_MOVES_FORWARDER_PROCESSING_TTL_SECONDS", 300)) * time.Second,
 		})
 	}
 
@@ -136,6 +143,9 @@ func run() error {
 	if olapForwarder != nil {
 		go runOLAPForwarder(workerCtx, olapForwarder, time.Duration(cfg.Int("CLOUD_OLAP_FORWARDER_INTERVAL_SECONDS", 5))*time.Second)
 	}
+	if olapStockMoveForwarder != nil {
+		go runOLAPStockMoveForwarder(workerCtx, olapStockMoveForwarder, time.Duration(cfg.Int("CLOUD_OLAP_STOCK_MOVES_FORWARDER_INTERVAL_SECONDS", 5))*time.Second)
+	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
@@ -170,6 +180,24 @@ func runOLAPForwarder(ctx context.Context, worker *olapapp.Forwarder, interval t
 	for {
 		if err := worker.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("cloud olap forwarder failed", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func runOLAPStockMoveForwarder(ctx context.Context, worker *olapapp.StockMoveForwarder, interval time.Duration) {
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if err := worker.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("cloud olap stock moves forwarder failed", "error", err)
 		}
 		select {
 		case <-ctx.Done():

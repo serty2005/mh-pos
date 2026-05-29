@@ -653,6 +653,8 @@ pos.kitchen.stop_list.update
 - `pos.kitchen.stock.write_off`;
 - `pos.kitchen.production.complete`.
 
+Для локального seed/smoke kitchen role дополнительно публикуется с `pos.employee_shift.open`, `pos.employee_shift.close` и `pos.employee_shift.recent`, чтобы `scripts/seed-dev-system.py --run-kitchen-process-smoke` мог открыть персональную смену оператора кухни через POS Edge HTTP API. Чтение proposal status выполняется через `GET /api/v1/kitchen/proposals` под `pos.kitchen.view`; отдельного permission ID для чтения proposal status сейчас нет.
+
 `pos.kitchen.stop_list.update` выдать только manager/kitchen-lead профилю, если владелец пилота разрешает Edge-side stop-list input.
 
 ## pos-ui-g Kitchen Mode
@@ -819,7 +821,7 @@ Playwright smoke:
 - kitchen submits inventory count, write-off and production;
 - Cloud receives events and creates expected stock ledger rows for stock events.
 
-Реализовано сейчас как HTTP профильный smoke: `scripts/seed-dev-system.py --run-kitchen-process-smoke` покрывает перечисленный kitchen/process сценарий без browser automation.
+Реализовано сейчас как HTTP профильный smoke: `scripts/seed-dev-system.py --run-kitchen-process-smoke` покрывает перечисленный kitchen/process сценарий без browser automation. Если вместе включены `--run-minimal-flow` и `--run-kitchen-process-smoke`, итоговый JSON содержит отдельные секции `minimal_flow` и `kitchen_process_smoke`; kitchen/process ветка должна идти под kitchen PIN, а не под manager PIN.
 
 ## Документация После Реализации
 

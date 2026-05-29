@@ -30,6 +30,7 @@
 - `scripts/seed-dev-system.py` является единственным локальным Python seed script: он создает полный Cloud-owned dataset, публикует master data, выполняет license pairing POS Edge и проверяет базовый POS read model.
 - Runtime cashier/refund/stop-list сценарии проверяются профильными backend/UI тестами и минимальным HTTP smoke; seed script не выполняет destructive storage actions.
 - `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud recipes/stop-list publication -> Edge sync -> waiter order -> KDS served -> cashier payment/final check -> `ItemServed`/`CheckClosed` -> Cloud inventory ledger, включая stop-list rejection для demo sold-out item и отсутствие double consumption по тому же `order_line_id`.
+- `scripts/seed-dev-system.py --run-kitchen-process-smoke` проверяет профильный kitchen/process path через backend/Cloud routes: Cloud publication для catalog/menu/recipes/inventory_reference, Edge sync, waiter order, KDS `accept/start/ready/serve`, `recall/start/ready/serve`, ClickHouse `raw_business_events`, Cloud stock ledger для kitchen stock events, catalog/recipe suggestions, Cloud approve и Edge proposal feedback.
 - Playwright spec `payments-refunds.spec.ts` проверяет оплату по `precheck_id`, immutable finalized payment/check, refund после закрытия исходных personal/cash shifts с ledger read и запрет cancellation после закрытия исходной смены.
 - Cloud -> Edge master-data ingest в POS Edge runtime поддерживает потоки `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`, `recipes`, `inventory_reference`.
 - POS Edge backend локально блокирует продажу при добавлении order line и при увеличении quantity, если продаваемый `catalog_item_id` или обязательный компонент active recipe version находится в active `stop_lists` с `available_quantity = 0` или `NULL`; stock balance для sale blocking не используется.
@@ -37,16 +38,16 @@
 - Cloud publication snapshot для POS Edge публикуется как typed ingest DTO: `modifier_groups[]` сохраняет `required`, `min_count`, `max_count`, `active`, а `menu_item_modifier_groups[]` остается link-only без rich/UI fields. Единый seed flow отправляет опубликованный Cloud snapshot на POS Edge без PowerShell field stripping.
 - Inventory runtime переведен на Cloud-centric cutover: POS Edge больше не содержит manual stock document service и SQLite tables `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`; исторически этот pre-pilot Edge-side метод использовался как foundation и удален при переходе.
 - Cloud принимает inventory events через sync receiver, кладет их в durable `inventory_event_queue`, а Cloud Inventory Worker пишет Cloud-owned `stock_documents` и `stock_ledger` для нормализованных item payloads. Cloud package contracts/storage принимают `recipes` и `inventory_reference`; Cloud UI уже имеет manager-facing authoring для recipe items и stop-list по подтвержденным master-data routes. Proposal review, inventory operations/costing и OLAP exports в UI пока показаны как readiness-only surfaces без имитации отсутствующих endpoints.
-- ClickHouse first slice реализован в Cloud Backend: PostgreSQL `inbox_events`, managed `raw_business_events`, async forwarder без synchronous dual-write в request path, retry/checkpoint state и bounded metadata API `GET /api/v1/olap/raw-business-events`.
+- ClickHouse first slices реализованы в Cloud Backend: PostgreSQL `inbox_events`, managed `raw_business_events`, async forwarder без synchronous dual-write в request path, retry/checkpoint state и bounded metadata API `GET /api/v1/olap/raw-business-events`; отдельный async export `stock_ledger -> olap_stock_moves` и bounded API `GET /api/v1/olap/stock-moves` без raw payload.
 
 Вне текущего runtime:
 
 - automatic recipe expansion / stock consumption engine;
 - recipe-expanded stock return/write-off from financial operations beyond normalized item payloads;
-- Cloud proposal review, inventory operations/costing UI, `olap_stock_moves` и агрегированные OLAP API;
+- Cloud proposal review, inventory operations/costing UI, backfill controls и агрегированные OLAP API;
 - PSP refund smoke и fiscal integration;
 - operator-facing storage/archive/retention UI, archive restore в active SQLite и ручной destructive retention flow вне подтвержденного backend archive apply contract;
-- chef stock receipt/catalog/recipe proposal flows, kitchen stop-list edit, bump-bar/printer orchestration и rich KDS analytics;
+- kitchen stop-list edit, bump-bar/printer orchestration и rich KDS analytics;
 - fiscal shift/business day сущности как отдельные runtime aggregates;
 - real payment processor module, PSP webhooks и fiscal adapter;
 - production-grade ClickHouse backfill/retention controls beyond first `raw_business_events` slice;
@@ -105,6 +106,22 @@ python3 scripts/seed-dev-system.py \
 `scripts/seed-dev-system.py` является единственным пользовательским скриптом в `scripts`. Он создает полный набор текущих Cloud-owned справочников через HTTP API: ресторан, роли, сотрудников с PIN, залы и столы, catalog folders/parameters/tags/items, menu categories/items, modifier groups/options/bindings, pricing policies, recipe items и stop-list examples. После создания и публикации всех сущностей скрипт генерирует license pairing code для POS Edge, выполняет `pair-via-license`, проверяет POS read model и выводит `restaurant_id`, `node_device_id`, pairing code и все PIN-коды для проверки ролей.
 
 Минимальный сквозной smoke запускается тем же скриптом с флагом `--run-minimal-flow`: он проверяет `Cloud recipes/stop-list publication -> Edge sync -> waiter order -> KDS served -> cashier final check -> ItemServed/CheckClosed -> Cloud inventory ledger` через HTTP API без прямых записей в PostgreSQL/SQLite.
+
+Полный профильный smoke запускается на чистых backend volumes и может включать обе ветки в одном запуске:
+
+```bash
+docker compose -f docker-compose.local.yml down -v
+docker compose -f docker-compose.local.yml up --build -d
+python3 scripts/seed-dev-system.py \
+  --cloud-base http://localhost:8090 \
+  --pos-base http://localhost:8080 \
+  --license-base http://localhost:8095 \
+  --output scripts/.seed-dev-system-summary.json \
+  --run-minimal-flow \
+  --run-kitchen-process-smoke
+```
+
+При включении обоих флагов summary содержит отдельные секции `minimal_flow` и `kitchen_process_smoke`. Полный kitchen/process smoke использует kitchen PIN `5555` и проверяет backend/Cloud routes для KDS lifecycle, stock events, OLAP trail, proposal approve и Edge feedback; manager/cashier резервный PIN допустим только для минимального smoke.
 
 Seed-вход содержит только пользовательские данные: названия, имена, PIN, цены, количества, места и права. `restaurant_id`, `role_id`, `employee_id`, `catalog_item_id`, `menu_item_id`, `node_device_id`, generated SKU и остальные технические значения берутся из backend responses или генерируются системой скрипта как производные значения.
 

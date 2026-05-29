@@ -23,6 +23,7 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 	}
 	h := &Handler{service: service}
 	r.Get("/olap/raw-business-events", h.listRawBusinessEvents)
+	r.Get("/olap/stock-moves", h.listStockMoves)
 }
 
 func (h *Handler) listRawBusinessEvents(w http.ResponseWriter, r *http.Request) {
@@ -49,6 +50,32 @@ func (h *Handler) listRawBusinessEvents(w http.ResponseWriter, r *http.Request) 
 		OccurredTo:   occurredTo,
 		Limit:        limit,
 		Offset:       offset,
+	})
+	if err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) listStockMoves(w http.ResponseWriter, r *http.Request) {
+	limit, ok := intQuery(w, r, "limit", 50)
+	if !ok {
+		return
+	}
+	offset, ok := intQuery(w, r, "offset", 0)
+	if !ok {
+		return
+	}
+	items, err := h.service.ListStockMoves(r.Context(), app.StockMoveFilter{
+		RestaurantID:     r.URL.Query().Get("restaurant_id"),
+		BusinessDateFrom: r.URL.Query().Get("business_date_from"),
+		BusinessDateTo:   r.URL.Query().Get("business_date_to"),
+		CatalogItemID:    r.URL.Query().Get("catalog_item_id"),
+		WarehouseID:      r.URL.Query().Get("warehouse_id"),
+		SourceEventType:  r.URL.Query().Get("source_event_type"),
+		Limit:            limit,
+		Offset:           offset,
 	})
 	if err != nil {
 		httpx.Error(w, err, r)

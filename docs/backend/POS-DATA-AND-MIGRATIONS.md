@@ -135,7 +135,7 @@ Managed SQL files, реализовано сейчас:
 - Cloud Inventory Worker пишет документы и ledger из нормализованных item payloads.
 - `modifier_options` получает optional `linked_catalog_item_id`; POS Edge не применяет это поле в order/pricing runtime.
 - ClickHouse `raw_business_events` наполняется только Async Batch Forwarder из PostgreSQL `inbox_events` и является бессрочным архивом business events.
-- Запланировано далее: ClickHouse `olap_stock_moves` наполняется только batch projection из PostgreSQL/ClickHouse event data и не является transactional source of truth.
+- Реализовано сейчас: ClickHouse `olap_stock_moves` наполняется async projection из PostgreSQL `stock_ledger` и не является transactional source of truth.
 
 ## ClickHouse Immutable Event Store
 
@@ -329,8 +329,7 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 - `ProductionCompleted` создает `PRODUCTION`: приход заготовки и расход сырья.
 - semi-finished fallback expansion.
 - costing recalculation.
-- ClickHouse `olap_stock_moves`.
-- Cloud OLAP API читает ClickHouse projections и не участвует в transactional command validation.
+- агрегированные Cloud OLAP API поверх ClickHouse projections.
 
 Вне текущего runtime:
 

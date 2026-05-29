@@ -50,7 +50,7 @@ func (r *Repository) Migrate(ctx context.Context) error {
 	if err := r.exec(ctx, fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS %s`, ident(r.database))); err != nil {
 		return err
 	}
-	return r.exec(ctx, fmt.Sprintf(`
+	if err := r.exec(ctx, fmt.Sprintf(`
 CREATE TABLE IF NOT EXISTS %s.raw_business_events (
   event_id String,
   tenant_id String,
@@ -65,7 +65,32 @@ CREATE TABLE IF NOT EXISTS %s.raw_business_events (
   exported_at DateTime64(3, 'UTC')
 ) ENGINE = ReplacingMergeTree(exported_at)
 PARTITION BY toYYYYMM(occurred_at)
-ORDER BY (tenant_id, event_type, event_id)`, ident(r.database)))
+ORDER BY (tenant_id, event_type, event_id)`, ident(r.database))); err != nil {
+		return err
+	}
+	return r.exec(ctx, fmt.Sprintf(`
+CREATE TABLE IF NOT EXISTS %s.olap_stock_moves (
+  ledger_entry_id String,
+  restaurant_id String,
+  warehouse_id String,
+  stock_document_id String,
+  source_event_id String,
+  source_event_type LowCardinality(String),
+  catalog_item_id String,
+  order_line_id String,
+  movement_type LowCardinality(String),
+  quantity String,
+  unit_code LowCardinality(String),
+  unit_cost_minor Int64,
+  total_cost_minor Int64,
+  costing_status LowCardinality(String),
+  occurred_at DateTime64(3, 'UTC'),
+  business_date_local Date,
+  ledger_created_at DateTime64(3, 'UTC'),
+  exported_at DateTime64(3, 'UTC')
+) ENGINE = ReplacingMergeTree(exported_at)
+PARTITION BY toYYYYMM(occurred_at)
+ORDER BY (restaurant_id, business_date_local, catalog_item_id, warehouse_id, ledger_entry_id)`, ident(r.database)))
 }
 
 func (r *Repository) InsertRawBusinessEvents(ctx context.Context, events []app.InboxEvent, exportedAt time.Time) error {
@@ -88,6 +113,41 @@ func (r *Repository) InsertRawBusinessEvents(ctx context.Context, events []app.I
 			"raw_payload_sha256_hex": event.RawPayloadSHA256Hex,
 			"payload":                string(event.RawPayload),
 			"exported_at":            chTime(exportedAt),
+		}
+		if err := enc.Encode(row); err != nil {
+			return err
+		}
+	}
+	return r.post(ctx, body.String())
+}
+
+func (r *Repository) InsertStockMoves(ctx context.Context, moves []app.StockMove, exportedAt time.Time) error {
+	if len(moves) == 0 {
+		return nil
+	}
+	var body bytes.Buffer
+	body.WriteString(fmt.Sprintf("INSERT INTO %s.olap_stock_moves FORMAT JSONEachRow\n", ident(r.database)))
+	enc := json.NewEncoder(&body)
+	for _, move := range moves {
+		row := map[string]any{
+			"ledger_entry_id":     move.LedgerEntryID,
+			"restaurant_id":       move.RestaurantID,
+			"warehouse_id":        move.WarehouseID,
+			"stock_document_id":   move.StockDocumentID,
+			"source_event_id":     move.SourceEventID,
+			"source_event_type":   move.SourceEventType,
+			"catalog_item_id":     move.CatalogItemID,
+			"order_line_id":       move.OrderLineID,
+			"movement_type":       move.MovementType,
+			"quantity":            move.Quantity,
+			"unit_code":           move.UnitCode,
+			"unit_cost_minor":     move.UnitCostMinor,
+			"total_cost_minor":    move.TotalCostMinor,
+			"costing_status":      move.CostingStatus,
+			"occurred_at":         chTime(move.OccurredAt),
+			"business_date_local": move.BusinessDateLocal,
+			"ledger_created_at":   chTime(move.LedgerCreatedAt),
+			"exported_at":         chTime(exportedAt),
 		}
 		if err := enc.Encode(row); err != nil {
 			return err
@@ -162,6 +222,101 @@ func (r *Repository) ListRawBusinessEvents(ctx context.Context, filter app.RawBu
 			OccurredAt:          occurredAt,
 			CloudReceivedAt:     receivedAt,
 			RawPayloadSHA256Hex: row.RawPayloadSHA256Hex,
+		})
+	}
+	return rows, scanner.Err()
+}
+
+func (r *Repository) ListStockMoves(ctx context.Context, filter app.StockMoveFilter) ([]app.StockMove, error) {
+	query := strings.Builder{}
+	query.WriteString("SELECT ledger_entry_id,restaurant_id,warehouse_id,stock_document_id,source_event_id,source_event_type,catalog_item_id,order_line_id,movement_type,quantity,unit_code,unit_cost_minor,total_cost_minor,costing_status,occurred_at,toString(business_date_local) AS business_date_local,ledger_created_at FROM ")
+	query.WriteString(ident(r.database))
+	query.WriteString(".olap_stock_moves FINAL WHERE 1=1")
+	if filter.RestaurantID != "" {
+		query.WriteString(" AND restaurant_id = ")
+		query.WriteString(quote(filter.RestaurantID))
+	}
+	if filter.BusinessDateFrom != "" {
+		query.WriteString(" AND business_date_local >= toDate(")
+		query.WriteString(quote(filter.BusinessDateFrom))
+		query.WriteString(")")
+	}
+	if filter.BusinessDateTo != "" {
+		query.WriteString(" AND business_date_local <= toDate(")
+		query.WriteString(quote(filter.BusinessDateTo))
+		query.WriteString(")")
+	}
+	if filter.CatalogItemID != "" {
+		query.WriteString(" AND catalog_item_id = ")
+		query.WriteString(quote(filter.CatalogItemID))
+	}
+	if filter.WarehouseID != "" {
+		query.WriteString(" AND warehouse_id = ")
+		query.WriteString(quote(filter.WarehouseID))
+	}
+	if filter.SourceEventType != "" {
+		query.WriteString(" AND source_event_type = ")
+		query.WriteString(quote(filter.SourceEventType))
+	}
+	query.WriteString(fmt.Sprintf(" ORDER BY business_date_local DESC, occurred_at DESC, ledger_entry_id DESC LIMIT %d OFFSET %d FORMAT JSONEachRow", filter.Limit, filter.Offset))
+
+	respBody, err := r.query(ctx, query.String())
+	if err != nil {
+		return nil, err
+	}
+	defer respBody.Close()
+
+	rows := make([]app.StockMove, 0, filter.Limit)
+	scanner := bufio.NewScanner(respBody)
+	for scanner.Scan() {
+		var row struct {
+			LedgerEntryID     string `json:"ledger_entry_id"`
+			RestaurantID      string `json:"restaurant_id"`
+			WarehouseID       string `json:"warehouse_id"`
+			StockDocumentID   string `json:"stock_document_id"`
+			SourceEventID     string `json:"source_event_id"`
+			SourceEventType   string `json:"source_event_type"`
+			CatalogItemID     string `json:"catalog_item_id"`
+			OrderLineID       string `json:"order_line_id"`
+			MovementType      string `json:"movement_type"`
+			Quantity          string `json:"quantity"`
+			UnitCode          string `json:"unit_code"`
+			UnitCostMinor     int64  `json:"unit_cost_minor"`
+			TotalCostMinor    int64  `json:"total_cost_minor"`
+			CostingStatus     string `json:"costing_status"`
+			OccurredAt        string `json:"occurred_at"`
+			BusinessDateLocal string `json:"business_date_local"`
+			LedgerCreatedAt   string `json:"ledger_created_at"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
+			return nil, err
+		}
+		occurredAt, err := parseCHTime(row.OccurredAt)
+		if err != nil {
+			return nil, err
+		}
+		createdAt, err := parseCHTime(row.LedgerCreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, app.StockMove{
+			LedgerEntryID:     row.LedgerEntryID,
+			RestaurantID:      row.RestaurantID,
+			WarehouseID:       row.WarehouseID,
+			StockDocumentID:   row.StockDocumentID,
+			SourceEventID:     row.SourceEventID,
+			SourceEventType:   row.SourceEventType,
+			CatalogItemID:     row.CatalogItemID,
+			OrderLineID:       row.OrderLineID,
+			MovementType:      row.MovementType,
+			Quantity:          row.Quantity,
+			UnitCode:          row.UnitCode,
+			UnitCostMinor:     row.UnitCostMinor,
+			TotalCostMinor:    row.TotalCostMinor,
+			CostingStatus:     row.CostingStatus,
+			OccurredAt:        occurredAt,
+			BusinessDateLocal: row.BusinessDateLocal,
+			LedgerCreatedAt:   createdAt,
 		})
 	}
 	return rows, scanner.Err()

@@ -38,4 +38,4 @@
 Выполнена.
 
 **Итерация 8: End-To-End Smoke And Documentation Alignment**
-Выполнена.
+В работе. Кодовый blocker `seed_full_system(..., run_kitchen_process_smoke=...)` в текущей ветке не воспроизводится: сигнатура принимает параметр, summary пишет отдельные `minimal_flow` и `kitchen_process_smoke`, а Python регрессионные тесты проходят. Полный Docker smoke не подтвержден в текущем окружении: `docker compose -f docker-compose.local.yml up --build -d` завис после предупреждения `Docker Compose requires buildx plugin to be installed`, резервный запуск `docker compose -f docker-compose.local.yml up -d` остановился на `Bind for 127.0.0.1:5432 failed: port is already allocated`.
