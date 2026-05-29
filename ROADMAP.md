@@ -69,7 +69,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
 Не выполнено и не должно считаться завершенным:
 
 - `sqlc` rollout как текущий persistence implementation.
-- ClickHouse projection pipeline beyond `raw_business_events`.
+- Промышленные ClickHouse backfill/operator jobs и OLAP projections шире первого bounded `olap_stock_moves` slice.
 
 ## Только Основа
 

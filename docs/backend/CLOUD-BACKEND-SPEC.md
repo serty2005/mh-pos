@@ -48,7 +48,7 @@
 
 - Cloud authoring/publication workflow для streams `recipes` и `inventory_reference` поверх Cloud authority tables;
 - review/apply очереди для `CatalogItemChangeSuggested` и `RecipeChangeSuggested`, созданных kitchen worker на Edge;
-- обработка `KitchenTicketStatusChanged`, `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested` и `StopListUpdated` как business events без synchronous apply в request path;
+- обработка `KitchenTicketStatusChanged`, `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested` как business events без synchronous apply в request path; `StopListUpdated` принимается как валидный event type/raw audit input, но Edge-origin stop-list projection/conflict policy остается запланировано далее;
 - поддержка `CheckClosed`/`ItemServed`/`StockWriteOffCaptured` как pilot inventory facts через текущий receiver и Inventory Worker;
 - ClickHouse first slices: managed `raw_business_events`, async forwarder из PostgreSQL `inbox_events`, `processed_for_olap`, retry state, export checkpoint и bounded read-only metadata API; managed `olap_stock_moves`, async export из PostgreSQL `stock_ledger`, bounded stock moves API, read-only export status, минимальный support-only export retry control и первый bounded stock movement summary.
 

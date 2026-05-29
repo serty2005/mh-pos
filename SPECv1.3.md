@@ -328,7 +328,8 @@ Inventory and costing logic:
 - full inventory engine: recipe expansion, modifier linked catalog item consumption, production, purchase/receipt input, inventory count adjustments, refund/cancellation stock dispositions, balances, costing status и retro recalculation DAG;
 - реализовано сейчас: ClickHouse first slice с managed schema `raw_business_events`, async forwarder `inbox_events -> raw_business_events`, export state, retry state и bounded metadata API;
 - реализовано сейчас: первый ClickHouse stock moves slice с managed schema `olap_stock_moves`, async forwarder `stock_ledger -> olap_stock_moves`, checkpoint/retry state и bounded API `GET /api/v1/olap/stock-moves` без raw payload;
-- запланировано далее: backfill controls и агрегированные bounded Cloud OLAP API;
+- реализовано сейчас: read-only `GET /api/v1/olap/export-status?stream=raw_business_events|stock_moves`, первый bounded агрегат `GET /api/v1/olap/stock-move-summary` по `olap_stock_moves` и минимальный support-only `POST /api/v1/olap/export-retry` для `retry_failed|resume_from_checkpoint` без raw payload и без synchronous ClickHouse dual-write;
+- запланировано далее: промышленные backfill jobs/operator UI, sales/kitchen aggregates и costing-dependent COGS/margin;
 - smoke-проверка offline waiter order flow, reconnect, Cloud inventory ledger, ClickHouse export и OLAP read endpoints из `CheckClosed`/`ItemServed`.
 
 ## Payment Processor And Fiscal Boundary
@@ -366,14 +367,14 @@ Inventory and costing logic:
 - Реализовано сейчас: Async Batch Forwarder экспортирует `inbox_events` bounded batch от 1 до 100 000 rows в ClickHouse `raw_business_events`.
 - ClickHouse `raw_business_events` хранит all business events бессрочно и является source of truth для historical business event trail.
 - PostgreSQL остается transactional source of truth для текущего operational state.
-- Реализовано сейчас: Cloud OLAP API читает bounded `raw_business_events` metadata и bounded `olap_stock_moves` без raw payload; агрегированные projections/read models запланированы далее. Transactional command validation остается в PostgreSQL/runtime services.
+- Реализовано сейчас: Cloud OLAP API читает bounded `raw_business_events` metadata, bounded `olap_stock_moves`, read-only export status и первый bounded `stock-move-summary` aggregate без raw payload. Transactional command validation остается в PostgreSQL/runtime services.
 - `processed_for_olap = true` rows старше 3 месяцев можно удалять из PostgreSQL `inbox_events`.
 - Synchronous dual-write в PostgreSQL и ClickHouse запрещен.
 
 Запланировано до полного пилота:
 
 - ClickHouse добавляется как immutable business event archive and OLAP/reporting accelerator, но не как transactional source of truth и не часть POS transaction path.
-- Реализовано сейчас: Cloud OLAP API exposes bounded read-only metadata endpoint for event archive and bounded stock moves endpoint. Запланировано далее: COGS/margin, sales aggregates and kitchen timing.
+- Реализовано сейчас: Cloud OLAP API отдает bounded read-only metadata endpoint для event archive, bounded stock moves endpoint, stock move summary и минимальный support-only export retry control. Запланировано далее: COGS/margin, sales aggregates, kitchen timing и промышленные backfill/operator jobs.
 
 Запланировано далее:
 
