@@ -77,7 +77,7 @@
 - Cloud не принимает POS operator session как security boundary.
 - Cloud использует ClickHouse для async immutable `raw_business_events` archive, но не делает synchronous dual-write в request path.
 - Cloud предоставляет pilot-ready CRUD/publication UI для recipes/stop-list в текущем bounded объеме; расширенный recipe editor/readiness polish остается запланированным далее.
-- Реализовано сейчас: Cloud предоставляет review/apply runtime для Edge-originated `CatalogItemChangeSuggested`/`RecipeChangeSuggested` через маршруты `GET/approve/reject/request-changes` и применяет изменения только на approve с последующей публикацией.
+- Реализовано сейчас: Cloud предоставляет review/apply runtime для Edge-originated `CatalogItemChangeSuggested`/`RecipeChangeSuggested` и `StopListUpdated` через маршруты `GET/approve/reject/request-changes`; apply выполняется только на approve с последующей публикацией и без прямой мутации Edge runtime.
 
 ## Runtime Modules
 
@@ -227,6 +227,13 @@ Master data under canonical namespace:
   - `POST /api/v1/master-data/recipe-suggestions/{id}/reject`
   - `POST /api/v1/master-data/recipe-suggestions/{id}/request-changes`
   - Review command body для approve/reject/request-changes: `reviewed_by_employee_id`, optional `review_comment`, optional `published_by`; approve применяет suggestion и создает новую master-data publication, reject/request-changes меняют только review status/comment metadata.
+- Реализовано сейчас для Edge-origin stop-list review:
+  - `GET /api/v1/manager/stop-list-updates?restaurant_id=&status=&limit=&offset=`
+  - `GET /api/v1/manager/stop-list-updates/{id}`
+  - `POST /api/v1/manager/stop-list-updates/{id}/approve`
+  - `POST /api/v1/manager/stop-list-updates/{id}/reject`
+  - `POST /api/v1/manager/stop-list-updates/{id}/request-changes`
+  - Stop-list review DTO содержит только safe projection fields из `cloud_projection_stop_list_updates`; raw Edge payload не отдается. Approve пишет Cloud-owned `stop_lists` row и публикацию, reject/request-changes меняют только review audit state.
 - `POST /api/v1/master-data/menu/categories`
 - `POST /api/v1/master-data/floor/halls`
 - `GET /api/v1/master-data/floor/halls`
@@ -546,7 +553,8 @@ Schema verification:
 - `GET /api/v1/olap/stock-move-summary` реализовано сейчас как первый bounded агрегированный ClickHouse read: фильтры совпадают с stock moves, `group_by` ограничен `business_date`, `catalog_item`, `warehouse`, ordering deterministic, response содержит quantities/cost totals без COGS/margin wording.
 - `CatalogItemChangeSuggested` создает Cloud review item; upsert в catalog выполняется только после manager approve текущими `catalog-suggestions` routes.
 - `RecipeChangeSuggested` создает Cloud review item с diff по ingredients, quantities, units, loss percent и prep time; published recipe не меняется до approve/apply текущими `recipe-suggestions` routes.
-- `StopListUpdated` обрабатывается асинхронно через `inventory_event_queue`: worker пишет `cloud_projection_stop_list_updates` без raw payload. `edge_overlay_until_next_publication` обновляет bounded `stop_lists` overlay, `cloud_wins` не перетирает Cloud-owned row, `edge_overlay_requires_manager_review` фиксирует безопасную projection для последующего review.
+- `StopListUpdated` обрабатывается асинхронно через `inventory_event_queue`: worker пишет `cloud_projection_stop_list_updates` без raw payload. `edge_overlay_until_next_publication` обновляет bounded `stop_lists` overlay, `cloud_wins` не перетирает Cloud-owned row, `edge_overlay_requires_manager_review` фиксирует безопасную projection для bounded manager review.
+- Bounded manager review для `edge_overlay_requires_manager_review` реализован сейчас: list/detail имеют stable bounded paging, decisions идемпотентны, invalid transition возвращает conflict, approve применяет изменение только через Cloud-owned `stop_lists` + publication, reject/request-changes не меняют runtime stop-list authority.
 - `GET /api/v1/sync/readiness/stop-list` реализовано сейчас как safe readiness summary: publication/package metadata, latest accepted `StopListUpdated` ACK metadata и агрегат `cloud_sync_problem_events` по кодам ошибок без raw payload.
 
 Запланировано до полного пилота:
@@ -560,7 +568,7 @@ Schema verification:
 - ClickHouse `olap_stock_moves` реализовано сейчас как первый bounded read model для складских движений; он не является source of truth и наполняется только async export из PostgreSQL `stock_ledger`.
 - Recipe expansion, modifier linked catalog item consumption, stock balances and retro costing DAG становятся частью Cloud Inventory Engine.
 - `GET /api/v1/olap/raw-business-events`, `GET /api/v1/olap/stock-moves`, `GET /api/v1/olap/export-status` и `GET /api/v1/olap/stock-move-summary` реализованы сейчас как bounded/read-only endpoints без raw payload; sales/kitchen/costing-dependent projections запланированы далее.
-- Полноценный manager review flow для Edge-origin stop-list изменений остается запланирован далее; текущий `edge_overlay_requires_manager_review` только фиксирует безопасную projection.
+- Расширенный manager review workflow для Edge-origin stop-list изменений остается запланирован далее; текущий runtime уже имеет bounded review/apply без raw payload, но без production-grade task assignment/escalation.
 
 Вне текущего объема:
 
@@ -572,6 +580,7 @@ Schema verification:
 
 - Cloud UI использует Cloud Backend routes для launch readiness, Edge-device flow, master data, publication и safe Edge events list.
 - Cloud UI читает `GET /api/v1/sync/readiness/stop-list` в inventory readiness panel и показывает только counts/status/checkpoint/ACK metadata без raw sync payload.
+- Cloud UI читает bounded `GET /api/v1/manager/stop-list-updates` и вызывает approve/reject/request-changes для safe Edge-origin stop-list review; raw Edge payload не рендерится.
 - Cloud UI не использует POS session, POS Edge runtime endpoints или cashier stores.
 - Cloud UI не показывает raw payloads, PIN material, token material или sensitive request dumps.
 - Cloud UI работает в local pilot perimeter через CORS origins `5174`.
@@ -600,7 +609,7 @@ Schema verification:
 ## Запланировано далее
 
 - Production authorization and tenant perimeter для Cloud API.
-- До полного пилота: full Edge-origin stop-list manager review flow, full recipe/costing inventory engine, sales/kitchen/costing OLAP API, production-grade OLAP backfill jobs/operator UI и расширенная observability UI.
+- До полного пилота: расширить bounded Edge-origin stop-list manager review до production workflow, full recipe/costing inventory engine, sales/kitchen/costing OLAP API, production-grade OLAP backfill jobs/operator UI и расширенная observability UI.
 - После полного пилота: Public Cloud reporting UI beyond pilot OLAP API.
 - Data-preserving PostgreSQL migrations после первого реального внедрения.
 - Cloud UI сценарий налогов/service-charge rules, если пилот требует централизованное управление.

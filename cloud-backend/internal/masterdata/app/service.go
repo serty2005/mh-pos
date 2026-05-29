@@ -109,6 +109,9 @@ type Repository interface {
 	GetRecipeSuggestion(context.Context, string) (domain.RecipeSuggestion, error)
 	UpdateRecipeSuggestion(context.Context, domain.RecipeSuggestion) (domain.RecipeSuggestion, error)
 	ListRecipeSuggestionChanges(context.Context, string) ([]domain.RecipeSuggestionChange, error)
+	ListStopListUpdateReviews(context.Context, string, string, int, int) ([]domain.StopListUpdateReview, error)
+	GetStopListUpdateReview(context.Context, string) (domain.StopListUpdateReview, error)
+	UpdateStopListUpdateReview(context.Context, domain.StopListUpdateReview) (domain.StopListUpdateReview, error)
 }
 
 // IDGenerator задает источник идентификаторов для use cases и тестов.
@@ -1807,6 +1810,14 @@ func (s *Service) ListRecipeSuggestions(ctx context.Context, restaurantID, statu
 	return s.repo.ListRecipeSuggestions(ctx, strings.TrimSpace(restaurantID), strings.TrimSpace(status), limit, offset)
 }
 
+func (s *Service) ListStopListUpdateReviews(ctx context.Context, restaurantID, status string, limit, offset int) ([]domain.StopListUpdateReview, error) {
+	return s.repo.ListStopListUpdateReviews(ctx, strings.TrimSpace(restaurantID), strings.TrimSpace(status), limit, offset)
+}
+
+func (s *Service) GetStopListUpdateReview(ctx context.Context, id string) (domain.StopListUpdateReview, error) {
+	return s.repo.GetStopListUpdateReview(ctx, strings.TrimSpace(id))
+}
+
 func (s *Service) ApproveCatalogSuggestion(ctx context.Context, id string, cmd SuggestionReviewCommand) (domain.CatalogSuggestion, error) {
 	v, err := s.repo.GetCatalogSuggestion(ctx, strings.TrimSpace(id))
 	if err != nil {
@@ -1871,6 +1882,59 @@ func (s *Service) RejectRecipeSuggestion(ctx context.Context, id string, cmd Sug
 
 func (s *Service) RequestChangesRecipeSuggestion(ctx context.Context, id string, cmd SuggestionReviewCommand) (domain.RecipeSuggestion, error) {
 	return s.reviewRecipeSuggestion(ctx, id, cmd, domain.SuggestionStatusChangesRequest)
+}
+
+func (s *Service) ApproveStopListUpdateReview(ctx context.Context, id string, cmd SuggestionReviewCommand) (domain.StopListUpdateReview, error) {
+	v, err := s.repo.GetStopListUpdateReview(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.StopListUpdateReview{}, err
+	}
+	if v.Status == domain.SuggestionStatusApproved {
+		return v, nil
+	}
+	if v.Status != domain.SuggestionStatusPending {
+		return domain.StopListUpdateReview{}, fmt.Errorf("%w: stop-list update is already reviewed", domain.ErrConflict)
+	}
+	now := s.clock.Now().UTC()
+	stopListID := strings.TrimSpace(v.StopListID)
+	if stopListID == "" {
+		stopListID = s.ids.NewID()
+	}
+	entry, err := s.repo.UpsertStopListEntry(ctx, domain.StopListEntry{
+		ID:                stopListID,
+		RestaurantID:      v.RestaurantID,
+		CatalogItemID:     v.CatalogItemID,
+		AvailableQuantity: v.AvailableQuantity,
+		Source:            "edge_review",
+		Reason:            v.Reason,
+		Active:            v.Active,
+		UpdatedAt:         now,
+	})
+	if err != nil {
+		return domain.StopListUpdateReview{}, err
+	}
+	v.Status = domain.SuggestionStatusApproved
+	v.ReviewComment = strings.TrimSpace(cmd.ReviewComment)
+	v.ReviewedByEmployeeID = strings.TrimSpace(cmd.ReviewedByEmployeeID)
+	v.ReviewedAt = &now
+	v.AppliedStopListID = entry.ID
+	stored, err := s.repo.UpdateStopListUpdateReview(ctx, v)
+	if err != nil {
+		return domain.StopListUpdateReview{}, err
+	}
+	_, err = s.Publish(ctx, PublishCommand{RestaurantID: v.RestaurantID, PublishedBy: firstNonEmpty(strings.TrimSpace(cmd.PublishedBy), firstNonEmpty(v.ReviewedByEmployeeID, "system"))})
+	if err != nil {
+		return domain.StopListUpdateReview{}, err
+	}
+	return stored, nil
+}
+
+func (s *Service) RejectStopListUpdateReview(ctx context.Context, id string, cmd SuggestionReviewCommand) (domain.StopListUpdateReview, error) {
+	return s.reviewStopListUpdate(ctx, id, cmd, domain.SuggestionStatusRejected)
+}
+
+func (s *Service) RequestChangesStopListUpdateReview(ctx context.Context, id string, cmd SuggestionReviewCommand) (domain.StopListUpdateReview, error) {
+	return s.reviewStopListUpdate(ctx, id, cmd, domain.SuggestionStatusChangesRequest)
 }
 
 func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID string, version int64, now time.Time) (domain.MasterDataPacket, map[string]int, []StreamPackage, error) {
@@ -2131,13 +2195,13 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 		RecipeLines     []domain.EdgeRecipeLine    `json:"recipe_lines"`
 	}
 	type inventoryPayload struct {
-		NodeDeviceID    string                     `json:"node_device_id,omitempty"`
-		RestaurantID    string                     `json:"restaurant_id"`
-		SyncMode        string                     `json:"sync_mode"`
-		CheckpointToken string                     `json:"checkpoint_token,omitempty"`
-		CloudVersion    int64                      `json:"cloud_version"`
-		CloudUpdatedAt  time.Time                  `json:"cloud_updated_at"`
-		StopLists       []domain.EdgeStopListEntry `json:"stop_lists"`
+		NodeDeviceID    string                          `json:"node_device_id,omitempty"`
+		RestaurantID    string                          `json:"restaurant_id"`
+		SyncMode        string                          `json:"sync_mode"`
+		CheckpointToken string                          `json:"checkpoint_token,omitempty"`
+		CloudVersion    int64                           `json:"cloud_version"`
+		CloudUpdatedAt  time.Time                       `json:"cloud_updated_at"`
+		StopLists       []domain.EdgeStopListEntry      `json:"stop_lists"`
 		Warehouses      []domain.EdgeWarehouseReference `json:"warehouses"`
 	}
 	build := func(stream string, payload any) (StreamPackage, error) {
@@ -2749,6 +2813,25 @@ func (s *Service) reviewRecipeSuggestion(ctx context.Context, id string, cmd Sug
 	v.ReviewedAt = &now
 	v.UpdatedAt = now
 	return s.repo.UpdateRecipeSuggestion(ctx, v)
+}
+
+func (s *Service) reviewStopListUpdate(ctx context.Context, id string, cmd SuggestionReviewCommand, status domain.SuggestionStatus) (domain.StopListUpdateReview, error) {
+	v, err := s.repo.GetStopListUpdateReview(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.StopListUpdateReview{}, err
+	}
+	if v.Status == status {
+		return v, nil
+	}
+	if v.Status != domain.SuggestionStatusPending {
+		return domain.StopListUpdateReview{}, fmt.Errorf("%w: stop-list update is already reviewed", domain.ErrConflict)
+	}
+	now := s.clock.Now().UTC()
+	v.Status = status
+	v.ReviewComment = strings.TrimSpace(cmd.ReviewComment)
+	v.ReviewedByEmployeeID = strings.TrimSpace(cmd.ReviewedByEmployeeID)
+	v.ReviewedAt = &now
+	return s.repo.UpdateStopListUpdateReview(ctx, v)
 }
 
 func (s *Service) applyCatalogSuggestion(ctx context.Context, v *domain.CatalogSuggestion, now time.Time) error {

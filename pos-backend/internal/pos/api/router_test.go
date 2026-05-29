@@ -1672,6 +1672,55 @@ func TestKitchenRecipeAndProposalRoutesPublicAPI(t *testing.T) {
 	}
 }
 
+func TestKitchenStopListUpdateRouteWritesLocalOverlayAndOutboxIdempotently(t *testing.T) {
+	f := newAPIFixture(t)
+	f.useKitchenOperator(t)
+	now := appshared.DBTime(time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC))
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO warehouse_reference(id,restaurant_id,name,kind,is_default,active,updated_at) VALUES ('api-warehouse-main',?,?,?,?,?,?)`, f.restaurant.ID, "Main", "kitchen", 1, 1, now); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"command_id":"cmd-api-stop-list-update","stop_list_id":"api-stop-soup","catalog_item_id":"` + f.menuItem.CatalogItemID + `","available_quantity":0,"active":true,"reason":"sold out"}`
+	rr := f.postJSON(t, "/api/v1/kitchen/stop-list-updates", body)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	result := decodeAPIResponse[app.StockCommandResult](t, rr)
+	if result.ID != "api-stop-soup" || result.EventType != "StopListUpdated" || result.Replayed {
+		t.Fatalf("unexpected stop-list result: %+v", result)
+	}
+	if got := countAPIOutboxByType(t, f, "StopListUpdated"); got != 1 {
+		t.Fatalf("expected StopListUpdated outbox row, got %d", got)
+	}
+	if got := countAPILocalEventsByType(t, f, "StopListUpdated"); got != 1 {
+		t.Fatalf("expected StopListUpdated local event, got %d", got)
+	}
+	var source string
+	var active int
+	var available float64
+	if err := f.db.QueryRowContext(f.ctx, `SELECT source,active,available_quantity FROM stop_lists WHERE restaurant_id = ? AND catalog_item_id = ?`, f.restaurant.ID, f.menuItem.CatalogItemID).Scan(&source, &active, &available); err != nil {
+		t.Fatal(err)
+	}
+	if source != "edge_overlay_requires_manager_review" || active != 1 || available != 0 {
+		t.Fatalf("unexpected local stop-list overlay: source=%s active=%d available=%f", source, active, available)
+	}
+
+	rr = f.postJSON(t, "/api/v1/kitchen/stop-list-updates", body)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected replay 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	replayed := decodeAPIResponse[app.StockCommandResult](t, rr)
+	if !replayed.Replayed || replayed.EventType != "StopListUpdated" {
+		t.Fatalf("expected idempotent replay result, got %+v", replayed)
+	}
+	if got := countAPIOutboxByType(t, f, "StopListUpdated"); got != 1 {
+		t.Fatalf("replay must not create duplicate outbox row, got %d", got)
+	}
+	if got := countAPILocalEventsByType(t, f, "StopListUpdated"); got != 1 {
+		t.Fatalf("replay must not create duplicate local event, got %d", got)
+	}
+}
+
 func TestKitchenTicketInvalidTransitionAndReplayAreRejectedSafely(t *testing.T) {
 	f := newAPIFixture(t)
 	f.createOrderWithLine(t)

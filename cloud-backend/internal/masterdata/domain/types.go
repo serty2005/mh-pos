@@ -372,6 +372,31 @@ type StopListEntry struct {
 	UpdatedAt         time.Time `json:"updated_at"`
 }
 
+// StopListUpdateReview хранит безопасную карточку Cloud review для Edge-origin StopListUpdated без raw payload.
+type StopListUpdateReview struct {
+	ID                   string           `json:"id"`
+	RestaurantID         string           `json:"restaurant_id"`
+	DeviceID             string           `json:"device_id"`
+	StopListID           string           `json:"stop_list_id"`
+	WarehouseID          string           `json:"warehouse_id,omitempty"`
+	CatalogItemID        string           `json:"catalog_item_id"`
+	AvailableQuantity    *float64         `json:"available_quantity,omitempty"`
+	Active               bool             `json:"active"`
+	ConflictPolicy       string           `json:"conflict_policy"`
+	Source               string           `json:"source"`
+	Reason               string           `json:"reason,omitempty"`
+	ProjectionAction     string           `json:"projection_action"`
+	Status               SuggestionStatus `json:"status"`
+	ReviewComment        string           `json:"review_comment,omitempty"`
+	ReviewedByEmployeeID string           `json:"reviewed_by_employee_id,omitempty"`
+	ReviewedAt           *time.Time       `json:"reviewed_at,omitempty"`
+	AppliedStopListID    string           `json:"applied_stop_list_id,omitempty"`
+	UpdatedAt            time.Time        `json:"updated_at"`
+	OccurredAt           time.Time        `json:"occurred_at"`
+	ProjectedAt          time.Time        `json:"projected_at"`
+	CreatedAt            time.Time        `json:"created_at"`
+}
+
 // MenuItem описывает продаваемую позицию меню с lifecycle и основой routing/availability.
 type MenuItem struct {
 	ID                string          `json:"id"`

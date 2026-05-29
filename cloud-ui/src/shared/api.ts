@@ -18,6 +18,7 @@ import {
   pricingPolicySchema,
   recipeItemSchema,
   recipeSuggestionSchema,
+  stopListUpdateReviewSchema,
   assignDeviceResultSchema,
   assignmentStatusSchema,
   pairingCodeResultSchema,
@@ -48,6 +49,7 @@ import {
   type PricingPolicy,
   type RecipeItem,
   type RecipeSuggestion,
+  type StopListUpdateReview,
   type PublicationSummary,
   type Restaurant,
   type RestaurantTable,
@@ -464,6 +466,22 @@ export function rejectRecipeSuggestion(id: string, payload: SuggestionReviewPayl
 
 export function requestChangesRecipeSuggestion(id: string, payload: SuggestionReviewPayload): Promise<RecipeSuggestion> {
   return post(`/master-data/recipe-suggestions/${encodeURIComponent(id)}/request-changes`, recipeSuggestionSchema, payload);
+}
+
+export function listStopListUpdateReviews(restaurantId: string, status = 'pending', limit = 100, offset = 0): Promise<StopListUpdateReview[]> {
+  return request(`/manager/stop-list-updates?${suggestionQuery(restaurantId, status, limit, offset)}`, z.array(stopListUpdateReviewSchema));
+}
+
+export function approveStopListUpdateReview(id: string, payload: SuggestionReviewPayload): Promise<StopListUpdateReview> {
+  return post(`/manager/stop-list-updates/${encodeURIComponent(id)}/approve`, stopListUpdateReviewSchema, payload);
+}
+
+export function rejectStopListUpdateReview(id: string, payload: SuggestionReviewPayload): Promise<StopListUpdateReview> {
+  return post(`/manager/stop-list-updates/${encodeURIComponent(id)}/reject`, stopListUpdateReviewSchema, payload);
+}
+
+export function requestChangesStopListUpdateReview(id: string, payload: SuggestionReviewPayload): Promise<StopListUpdateReview> {
+  return post(`/manager/stop-list-updates/${encodeURIComponent(id)}/request-changes`, stopListUpdateReviewSchema, payload);
 }
 
 export function listStopListEntries(restaurantId: string): Promise<StopListEntry[]> {

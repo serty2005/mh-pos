@@ -57,27 +57,27 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 				"inbox_events_event_unique", "inbox_events_olap_pending", "inbox_events_restaurant_received", "inbox_events_event_type_received",
 			},
 		},
-			{
-				Table:         "olap_export_checkpoints",
-				RequiredBy:    "ClickHouse async forwarder checkpoint and retry observability",
-				MigrationFile: "001_init.sql",
-				Columns: []string{
+		{
+			Table:         "olap_export_checkpoints",
+			RequiredBy:    "ClickHouse async forwarder checkpoint and retry observability",
+			MigrationFile: "001_init.sql",
+			Columns: []string{
 				"id", "worker_id", "last_exported_inbox_id", "last_exported_event_id", "last_exported_at",
-					"last_error", "consecutive_failures", "next_retry_at", "updated_at",
-				},
+				"last_error", "consecutive_failures", "next_retry_at", "updated_at",
 			},
-			{
-				Table:         "olap_export_retry_commands",
-				RequiredBy:    "support-only OLAP retry/backfill idempotency command log",
-				MigrationFile: "001_init.sql",
-				Columns: []string{
-					"command_id", "stream", "mode", "reason", "accepted", "checkpoint_before",
-					"retry_requested_at", "pending_count", "failed_count", "created_at",
-				},
-				Indexes: []string{"olap_export_retry_commands_stream_created"},
+		},
+		{
+			Table:         "olap_export_retry_commands",
+			RequiredBy:    "support-only OLAP retry/backfill idempotency command log",
+			MigrationFile: "001_init.sql",
+			Columns: []string{
+				"command_id", "stream", "mode", "reason", "accepted", "checkpoint_before",
+				"retry_requested_at", "pending_count", "failed_count", "created_at",
 			},
-			{
-				Table:         "cloud_sync_problem_events",
+			Indexes: []string{"olap_export_retry_commands_stream_created"},
+		},
+		{
+			Table:         "cloud_sync_problem_events",
 			RequiredBy:    "cloudsync postgres repository problem item quarantine",
 			MigrationFile: "001_init.sql",
 			Columns: []string{
@@ -335,7 +335,7 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Table:         "cloud_projection_stop_list_updates",
 			RequiredBy:    "async StopListUpdated projection without raw payload exposure",
 			MigrationFile: "001_init.sql",
-			Columns:       []string{"source_event_id", "queue_id", "restaurant_id", "device_id", "stop_list_id", "warehouse_id", "catalog_item_id", "available_quantity", "active", "conflict_policy", "source", "reason", "projection_action", "updated_at", "occurred_at", "projected_at", "created_at"},
+			Columns:       []string{"source_event_id", "queue_id", "restaurant_id", "device_id", "stop_list_id", "warehouse_id", "catalog_item_id", "available_quantity", "active", "conflict_policy", "source", "reason", "projection_action", "review_status", "review_comment", "reviewed_by_employee_id", "reviewed_at", "applied_stop_list_id", "updated_at", "occurred_at", "projected_at", "created_at"},
 			Indexes:       []string{"cloud_projection_stop_list_updates_restaurant_updated", "cloud_projection_stop_list_updates_action"},
 		},
 		{

@@ -46,6 +46,7 @@ import ProposalReviewQueue from './components/cloud/ProposalReviewQueue.vue';
 import ResourceWorkspace from './components/cloud/ResourceWorkspace.vue';
 import {
   activateEmployee,
+  approveStopListUpdateReview,
   approveCatalogSuggestion,
   approveRecipeSuggestion,
   archiveCatalogFolder,
@@ -98,6 +99,7 @@ import {
   listRestaurants,
   listRoles,
   listStopListEntries,
+  listStopListUpdateReviews,
   listTables,
   listUnassignedDevices,
   publishMasterData,
@@ -105,7 +107,9 @@ import {
   rejectRecipeSuggestion,
   requestChangesCatalogSuggestion,
   requestChangesRecipeSuggestion,
+  requestChangesStopListUpdateReview,
   rotateEmployeePIN,
+  rejectStopListUpdateReview,
   suspendEmployee,
   updateCatalogFolder,
   updateCatalogItem,
@@ -126,7 +130,7 @@ import {
   upsertStopListEntry,
   ApiError,
 } from './shared/api';
-import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, StopListReadiness, UnassignedEdgeNode } from './shared/schemas';
+import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
 
 type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
 type ResourceKey =
@@ -235,6 +239,7 @@ const edgeDevices = ref<UnassignedEdgeNode[]>([]);
 const edgeEvents = ref<EdgeEvent[]>([]);
 const catalogSuggestions = ref<CatalogSuggestion[]>([]);
 const recipeSuggestions = ref<RecipeSuggestion[]>([]);
+const stopListUpdateReviews = ref<StopListUpdateReview[]>([]);
 const proposalStatusFilter = ref('pending');
 const selectedEdgeNodeId = ref('');
 const assignmentResult = ref<{ status: string; snapshot_url: string } | null>(null);
@@ -783,6 +788,7 @@ const cloudCtx = {
   edgeEvents,
   catalogSuggestions,
   recipeSuggestions,
+  stopListUpdateReviews,
   proposalStatusFilter,
   selectedEdgeNodeId,
   assignmentResult,
@@ -1090,12 +1096,14 @@ async function fetchPublication() {
 async function fetchProposalReview() {
   const restaurantId = selectedRestaurantId.value;
   const status = proposalStatusFilter.value;
-  const [catalog, recipes] = await Promise.all([
+  const [catalog, recipes, stopListUpdates] = await Promise.all([
     listCatalogSuggestions(restaurantId, status, 100, 0),
     listRecipeSuggestions(restaurantId, status, 100, 0),
+    listStopListUpdateReviews(restaurantId, status, 100, 0),
   ]);
   catalogSuggestions.value = catalog;
   recipeSuggestions.value = recipes;
+  stopListUpdateReviews.value = stopListUpdates;
 }
 
 async function reloadActive() {
@@ -1287,7 +1295,7 @@ async function generateSelectedPairingCode() {
 }
 
 async function reviewProposalSuggestion(
-  kind: 'catalog' | 'recipe',
+  kind: 'catalog' | 'recipe' | 'stop_list',
   id: string,
   action: 'approve' | 'reject' | 'request_changes',
   payload: { reviewed_by_employee_id: string; review_comment?: string; published_by?: string },
@@ -1299,6 +1307,9 @@ async function reviewProposalSuggestion(
     if (kind === 'recipe' && action === 'approve') await approveRecipeSuggestion(id, payload);
     if (kind === 'recipe' && action === 'reject') await rejectRecipeSuggestion(id, payload);
     if (kind === 'recipe' && action === 'request_changes') await requestChangesRecipeSuggestion(id, payload);
+    if (kind === 'stop_list' && action === 'approve') await approveStopListUpdateReview(id, payload);
+    if (kind === 'stop_list' && action === 'reject') await rejectStopListUpdateReview(id, payload);
+    if (kind === 'stop_list' && action === 'request_changes') await requestChangesStopListUpdateReview(id, payload);
     await fetchProposalReview();
     if (action === 'approve') await fetchPublication();
     successKey.value = action === 'approve'

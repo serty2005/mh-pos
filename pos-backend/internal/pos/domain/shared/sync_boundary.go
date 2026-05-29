@@ -80,6 +80,7 @@ func IsEdgeToCloudOperationalEvent(eventType string) bool {
 		"InventoryCountCaptured",
 		"StockWriteOffCaptured",
 		"ProductionCompleted",
+		"StopListUpdated",
 		"CatalogItemChangeSuggested",
 		"RecipeChangeSuggested",
 		"OrderClosed",

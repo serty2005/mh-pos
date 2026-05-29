@@ -102,6 +102,13 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 		r.Post("/recipe-suggestions/{id}/reject", h.rejectRecipeSuggestion)
 		r.Post("/recipe-suggestions/{id}/request-changes", h.requestChangesRecipeSuggestion)
 	})
+	r.Route("/manager", func(r chi.Router) {
+		r.Get("/stop-list-updates", h.listStopListUpdateReviews)
+		r.Get("/stop-list-updates/{id}", h.getStopListUpdateReview)
+		r.Post("/stop-list-updates/{id}/approve", h.approveStopListUpdateReview)
+		r.Post("/stop-list-updates/{id}/reject", h.rejectStopListUpdateReview)
+		r.Post("/stop-list-updates/{id}/request-changes", h.requestChangesStopListUpdateReview)
+	})
 	r.Post("/restaurants", h.createRestaurant)
 	r.Get("/restaurants", h.listRestaurants)
 	r.Get("/restaurants/{id}", h.getRestaurant)
@@ -737,6 +744,43 @@ func (h *Handler) requestChangesRecipeSuggestion(w http.ResponseWriter, r *http.
 		return
 	}
 	v, err := h.service.RequestChangesRecipeSuggestion(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) listStopListUpdateReviews(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListStopListUpdateReviews(r.Context(), r.URL.Query().Get("restaurant_id"), r.URL.Query().Get("status"), intQuery(r, "limit", 50), intQuery(r, "offset", 0))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) getStopListUpdateReview(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetStopListUpdateReview(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) approveStopListUpdateReview(w http.ResponseWriter, r *http.Request) {
+	var cmd app.SuggestionReviewCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.ApproveStopListUpdateReview(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) rejectStopListUpdateReview(w http.ResponseWriter, r *http.Request) {
+	var cmd app.SuggestionReviewCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.RejectStopListUpdateReview(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) requestChangesStopListUpdateReview(w http.ResponseWriter, r *http.Request) {
+	var cmd app.SuggestionReviewCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.RequestChangesStopListUpdateReview(r.Context(), chi.URLParam(r, "id"), cmd)
 	write(w, http.StatusOK, v, err)
 }
 

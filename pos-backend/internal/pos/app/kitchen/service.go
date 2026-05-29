@@ -135,6 +135,16 @@ type CompleteProductionCommand struct {
 	BusinessDateLocal         string    `json:"business_date_local"`
 }
 
+type UpdateStopListCommand struct {
+	shared.CommandMeta
+	StopListID        string   `json:"stop_list_id,omitempty"`
+	WarehouseID       string   `json:"warehouse_id,omitempty"`
+	CatalogItemID     string   `json:"catalog_item_id"`
+	AvailableQuantity *float64 `json:"available_quantity,omitempty"`
+	Active            bool     `json:"active"`
+	Reason            string   `json:"reason,omitempty"`
+}
+
 type StockCommandResult struct {
 	ID          string `json:"id"`
 	WarehouseID string `json:"warehouse_id"`
@@ -740,6 +750,74 @@ func (s *Service) CompleteProduction(ctx context.Context, cmd CompleteProduction
 	return out, err
 }
 
+func (s *Service) UpdateStopList(ctx context.Context, cmd UpdateStopListCommand) (StockCommandResult, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
+	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
+		return StockCommandResult{}, err
+	}
+	var out StockCommandResult
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionKitchenStopListUpdate))
+		if err != nil {
+			return err
+		}
+		if replayed, ok, err := s.replayedStockCommand(ctx, cmd.CommandID, "StopListUpdated"); err != nil || ok {
+			out = replayed
+			return err
+		}
+		if strings.TrimSpace(cmd.CatalogItemID) == "" {
+			return fmt.Errorf("%w: catalog_item_id is required", domain.ErrInvalid)
+		}
+		if cmd.AvailableQuantity != nil && *cmd.AvailableQuantity < 0 {
+			return fmt.Errorf("%w: available_quantity must be non-negative", domain.ErrInvalid)
+		}
+		if _, err := s.repo.GetCatalogItem(ctx, strings.TrimSpace(cmd.CatalogItemID)); err != nil {
+			return err
+		}
+		warehouseID, err := s.resolveWarehouseID(ctx, operator.Employee.RestaurantID, cmd.WarehouseID)
+		if err != nil {
+			return err
+		}
+		now := s.clock.Now()
+		stopListID := trimOrNewID(cmd.StopListID, s.ids)
+		reason := strings.TrimSpace(cmd.Reason)
+		entry := &domain.StopListEntry{
+			ID:                stopListID,
+			RestaurantID:      operator.Employee.RestaurantID,
+			CatalogItemID:     strings.TrimSpace(cmd.CatalogItemID),
+			AvailableQuantity: cmd.AvailableQuantity,
+			Source:            "edge_overlay_requires_manager_review",
+			Reason:            stringPtr(reason),
+			Active:            cmd.Active,
+			UpdatedAt:         now,
+		}
+		if err := s.repo.UpsertLocalStopListEntry(ctx, entry); err != nil {
+			return err
+		}
+		payload := map[string]any{
+			"stop_list_id":           stopListID,
+			"restaurant_id":          operator.Employee.RestaurantID,
+			"warehouse_id":           warehouseID,
+			"catalog_item_id":        strings.TrimSpace(cmd.CatalogItemID),
+			"active":                 cmd.Active,
+			"conflict_policy":        "edge_overlay_requires_manager_review",
+			"source":                 "edge",
+			"reason":                 reason,
+			"updated_at":             now,
+			"updated_by_employee_id": operator.Employee.ID,
+		}
+		if cmd.AvailableQuantity != nil {
+			payload["available_quantity"] = fmt.Sprintf("%.3f", *cmd.AvailableQuantity)
+		}
+		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, operator.Employee.RestaurantID, "", "StopList", stopListID, "StopListUpdated", payload); err != nil {
+			return err
+		}
+		out = StockCommandResult{ID: stopListID, WarehouseID: warehouseID, EventType: "StopListUpdated"}
+		return nil
+	})
+	return out, err
+}
+
 func (s *Service) replayedStockCommand(ctx context.Context, commandID, eventType string) (StockCommandResult, bool, error) {
 	commandID = strings.TrimSpace(commandID)
 	if commandID == "" {
@@ -1116,6 +1194,13 @@ func stringValue(v *string) string {
 		return ""
 	}
 	return *v
+}
+
+func stringPtr(value string) *string {
+	if value = strings.TrimSpace(value); value != "" {
+		return &value
+	}
+	return nil
 }
 
 func validBusinessDate(v string) bool {

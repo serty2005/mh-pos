@@ -879,6 +879,60 @@ ORDER BY sort_order, id`, strings.TrimSpace(recipeSuggestionID))
 	return out, rows.Err()
 }
 
+func (r *Repository) ListStopListUpdateReviews(ctx context.Context, restaurantID, status string, limit, offset int) ([]domain.StopListUpdateReview, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT source_event_id,restaurant_id,device_id,stop_list_id,COALESCE(warehouse_id,''),catalog_item_id,available_quantity::float8,
+       active,conflict_policy,source,COALESCE(reason,''),projection_action,review_status,COALESCE(review_comment,''),
+       COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(applied_stop_list_id,''),updated_at,occurred_at,projected_at,created_at
+FROM cloud_projection_stop_list_updates
+WHERE projection_action = 'requires_manager_review'
+  AND ($1 = '' OR restaurant_id = $1)
+  AND ($2 = '' OR review_status = $2)
+ORDER BY projected_at DESC, source_event_id DESC
+LIMIT $3 OFFSET $4`, strings.TrimSpace(restaurantID), strings.TrimSpace(status), limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]domain.StopListUpdateReview, 0, limit)
+	for rows.Next() {
+		v, err := scanStopListUpdateReview(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) GetStopListUpdateReview(ctx context.Context, id string) (domain.StopListUpdateReview, error) {
+	v, err := scanStopListUpdateReview(r.pool.QueryRow(ctx, `
+SELECT source_event_id,restaurant_id,device_id,stop_list_id,COALESCE(warehouse_id,''),catalog_item_id,available_quantity::float8,
+       active,conflict_policy,source,COALESCE(reason,''),projection_action,review_status,COALESCE(review_comment,''),
+       COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(applied_stop_list_id,''),updated_at,occurred_at,projected_at,created_at
+FROM cloud_projection_stop_list_updates
+WHERE source_event_id = $1 AND projection_action = 'requires_manager_review'`, strings.TrimSpace(id)))
+	return v, normalizeErr(err)
+}
+
+func (r *Repository) UpdateStopListUpdateReview(ctx context.Context, v domain.StopListUpdateReview) (domain.StopListUpdateReview, error) {
+	out, err := scanStopListUpdateReview(r.pool.QueryRow(ctx, `
+UPDATE cloud_projection_stop_list_updates
+SET review_status=$2,review_comment=$3,reviewed_by_employee_id=$4,reviewed_at=$5,applied_stop_list_id=$6
+WHERE source_event_id=$1
+RETURNING source_event_id,restaurant_id,device_id,stop_list_id,COALESCE(warehouse_id,''),catalog_item_id,available_quantity::float8,
+       active,conflict_policy,source,COALESCE(reason,''),projection_action,review_status,COALESCE(review_comment,''),
+       COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(applied_stop_list_id,''),updated_at,occurred_at,projected_at,created_at`,
+		strings.TrimSpace(v.ID), string(v.Status), nullableText(v.ReviewComment), nullableText(v.ReviewedByEmployeeID), v.ReviewedAt, nullableText(v.AppliedStopListID)))
+	return out, normalizeErr(err)
+}
+
 func upsertKindFoundation(ctx context.Context, tx pgx.Tx, v domain.CatalogItem) error {
 	switch v.Kind {
 	case domain.CatalogItemDish:
@@ -1015,6 +1069,22 @@ func scanStopListEntry(row scanner) (domain.StopListEntry, error) {
 	if cloudVersion.Valid {
 		v.CloudVersion = &cloudVersion.Int64
 	}
+	return v, err
+}
+
+func scanStopListUpdateReview(row scanner) (domain.StopListUpdateReview, error) {
+	var v domain.StopListUpdateReview
+	var available sql.NullFloat64
+	var status string
+	err := row.Scan(
+		&v.ID, &v.RestaurantID, &v.DeviceID, &v.StopListID, &v.WarehouseID, &v.CatalogItemID, &available,
+		&v.Active, &v.ConflictPolicy, &v.Source, &v.Reason, &v.ProjectionAction, &status, &v.ReviewComment,
+		&v.ReviewedByEmployeeID, &v.ReviewedAt, &v.AppliedStopListID, &v.UpdatedAt, &v.OccurredAt, &v.ProjectedAt, &v.CreatedAt,
+	)
+	if available.Valid {
+		v.AvailableQuantity = &available.Float64
+	}
+	v.Status = domain.SuggestionStatus(status)
 	return v, err
 }
 

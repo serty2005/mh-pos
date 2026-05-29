@@ -37,6 +37,7 @@ type Repository struct {
 	catalogSuggestions      map[string]domain.CatalogSuggestion
 	recipeSuggestions       map[string]domain.RecipeSuggestion
 	recipeSuggestionChanges map[string][]domain.RecipeSuggestionChange
+	stopListUpdates         map[string]domain.StopListUpdateReview
 }
 
 // NewRepository создает пустой in-memory repository.
@@ -65,6 +66,7 @@ func NewRepository() *Repository {
 		catalogSuggestions:      map[string]domain.CatalogSuggestion{},
 		recipeSuggestions:       map[string]domain.RecipeSuggestion{},
 		recipeSuggestionChanges: map[string][]domain.RecipeSuggestionChange{},
+		stopListUpdates:         map[string]domain.StopListUpdateReview{},
 	}
 }
 
@@ -895,6 +897,71 @@ func (r *Repository) ListRecipeSuggestionChanges(_ context.Context, recipeSugges
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return slices.Clone(r.recipeSuggestionChanges[strings.TrimSpace(recipeSuggestionID)]), nil
+}
+
+func (r *Repository) ListStopListUpdateReviews(_ context.Context, restaurantID, status string, limit, offset int) ([]domain.StopListUpdateReview, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.StopListUpdateReview, 0)
+	for _, item := range r.stopListUpdates {
+		if item.ProjectionAction != "requires_manager_review" {
+			continue
+		}
+		if restaurantID != "" && item.RestaurantID != restaurantID {
+			continue
+		}
+		if status != "" && string(item.Status) != status {
+			continue
+		}
+		out = append(out, item)
+	}
+	slices.SortFunc(out, func(a, b domain.StopListUpdateReview) int {
+		if cmp := b.ProjectedAt.Compare(a.ProjectedAt); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(b.ID, a.ID)
+	})
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset > len(out) {
+		return []domain.StopListUpdateReview{}, nil
+	}
+	end := offset + limit
+	if end > len(out) {
+		end = len(out)
+	}
+	return slices.Clone(out[offset:end]), nil
+}
+
+func (r *Repository) GetStopListUpdateReview(_ context.Context, id string) (domain.StopListUpdateReview, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.stopListUpdates[strings.TrimSpace(id)]
+	if !ok || v.ProjectionAction != "requires_manager_review" {
+		return domain.StopListUpdateReview{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) UpdateStopListUpdateReview(_ context.Context, v domain.StopListUpdateReview) (domain.StopListUpdateReview, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.stopListUpdates[v.ID]; !ok {
+		return domain.StopListUpdateReview{}, domain.ErrNotFound
+	}
+	r.stopListUpdates[v.ID] = v
+	return v, nil
+}
+
+// SeedStopListUpdateReview добавляет safe projection row для service/API tests.
+func (r *Repository) SeedStopListUpdateReview(v domain.StopListUpdateReview) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.stopListUpdates[v.ID] = v
 }
 
 func (r *Repository) Package(streamName, nodeDeviceID string) (app.StreamPackage, bool) {

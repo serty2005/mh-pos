@@ -14,6 +14,7 @@ import (
 
 	"cloud-backend/internal/masterdata/api"
 	"cloud-backend/internal/masterdata/app"
+	"cloud-backend/internal/masterdata/domain"
 	"cloud-backend/internal/masterdata/infra/memory"
 )
 
@@ -170,13 +171,66 @@ func TestProductionRestaurantPublishAndSnapshotEndpoints(t *testing.T) {
 	}
 }
 
+func TestStopListUpdateReviewRoutesDoNotExposeRawPayload(t *testing.T) {
+	router, repo := newRouterWithRepo()
+	now := fixedClock{}.Now()
+	repo.SeedStopListUpdateReview(domain.StopListUpdateReview{
+		ID:               "event-stop-api-1",
+		RestaurantID:     "restaurant-1",
+		DeviceID:         "edge-1",
+		StopListID:       "stop-api-1",
+		CatalogItemID:    "dish-1",
+		Active:           true,
+		ConflictPolicy:   "edge_overlay_requires_manager_review",
+		Source:           "edge",
+		Reason:           "sold out",
+		ProjectionAction: "requires_manager_review",
+		Status:           domain.SuggestionStatusPending,
+		UpdatedAt:        now,
+		OccurredAt:       now.Add(-time.Minute),
+		ProjectedAt:      now,
+		CreatedAt:        now,
+	})
+
+	list := httptest.NewRecorder()
+	router.ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/api/v1/manager/stop-list-updates?restaurant_id=restaurant-1&status=pending", nil))
+	if list.Code != http.StatusOK {
+		t.Fatalf("expected list 200, got %d: %s", list.Code, list.Body.String())
+	}
+	if !strings.Contains(list.Body.String(), "event-stop-api-1") || strings.Contains(list.Body.String(), "payload_json") || strings.Contains(list.Body.String(), "raw_payload") {
+		t.Fatalf("list must expose safe DTO only, got %s", list.Body.String())
+	}
+	detail := httptest.NewRecorder()
+	router.ServeHTTP(detail, httptest.NewRequest(http.MethodGet, "/api/v1/manager/stop-list-updates/event-stop-api-1", nil))
+	if detail.Code != http.StatusOK {
+		t.Fatalf("expected detail 200, got %d: %s", detail.Code, detail.Body.String())
+	}
+	rejected := post(t, router, "/api/v1/manager/stop-list-updates/event-stop-api-1/reject", `{"reviewed_by_employee_id":"manager-1","review_comment":"not approved"}`)
+	if rejected.Code != http.StatusOK {
+		t.Fatalf("expected reject 200, got %d: %s", rejected.Code, rejected.Body.String())
+	}
+	replayed := post(t, router, "/api/v1/manager/stop-list-updates/event-stop-api-1/reject", `{"reviewed_by_employee_id":"manager-1"}`)
+	if replayed.Code != http.StatusOK {
+		t.Fatalf("expected idempotent reject 200, got %d: %s", replayed.Code, replayed.Body.String())
+	}
+	if strings.Contains(replayed.Body.String(), "payload_json") || strings.Contains(replayed.Body.String(), "raw_payload") {
+		t.Fatalf("review response leaked raw payload field: %s", replayed.Body.String())
+	}
+}
+
 func newRouter() http.Handler {
+	router, _ := newRouterWithRepo()
+	return router
+}
+
+func newRouterWithRepo() (http.Handler, *memory.Repository) {
 	r := chi.NewRouter()
-	service := app.NewService(memory.NewRepository(), fixedClock{}, &fixedIDs{})
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{}, &fixedIDs{})
 	r.Route("/api/v1", func(r chi.Router) {
 		api.RegisterRoutes(r, service)
 	})
-	return r
+	return r, repo
 }
 
 func post(t *testing.T, h http.Handler, path, body string) *httptest.ResponseRecorder {

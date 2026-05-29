@@ -184,6 +184,24 @@ ON CONFLICT(restaurant_id,catalog_item_id) DO UPDATE SET
 	return normalizeErr(err)
 }
 
+func (r *Repository) UpsertLocalStopListEntry(ctx context.Context, v *domain.StopListEntry) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO stop_lists(id,restaurant_id,catalog_item_id,available_quantity,source,reason,active,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at,updated_at)
+VALUES (?,?,?,?,?,?,?,NULL,NULL,NULL,'',?)
+ON CONFLICT(restaurant_id,catalog_item_id) DO UPDATE SET
+  id = excluded.id,
+  available_quantity = excluded.available_quantity,
+  source = excluded.source,
+  reason = excluded.reason,
+  active = excluded.active,
+  cloud_version = NULL,
+  cloud_updated_at = NULL,
+  cloud_deleted_at = NULL,
+  last_synced_at = '',
+  updated_at = excluded.updated_at`,
+		v.ID, v.RestaurantID, v.CatalogItemID, nullableFloat64(v.AvailableQuantity), v.Source, nullableString(v.Reason), boolInt(v.Active), dbTime(v.UpdatedAt))
+	return normalizeErr(err)
+}
+
 func (r *Repository) UpsertMasterWarehouseReference(ctx context.Context, v *domain.WarehouseReference, meta domain.MasterRecordSyncMeta) error {
 	cloudVersion := v.CloudVersion
 	if cloudVersion == nil {

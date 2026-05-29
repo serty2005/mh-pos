@@ -101,6 +101,7 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Post("/kitchen/inventory-counts", h.captureKitchenInventoryCount)
 		r.Post("/kitchen/stock-write-offs", h.captureKitchenStockWriteOff)
 		r.Post("/kitchen/productions", h.completeKitchenProduction)
+		r.Post("/kitchen/stop-list-updates", h.updateKitchenStopList)
 
 		r.Get("/checks/{id}", h.getCheck)
 		r.Get("/checks/{id}/financial-operations", h.listCheckFinancialOperations)
@@ -1047,6 +1048,17 @@ func (h *Handler) completeKitchenProduction(w http.ResponseWriter, r *http.Reque
 	}
 	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.CompleteKitchenProduction(r.Context(), cmd)
+	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) updateKitchenStopList(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdateStopListCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.UpdateKitchenStopList(r.Context(), cmd)
 	writeCreated(w, r, v, err)
 }
 

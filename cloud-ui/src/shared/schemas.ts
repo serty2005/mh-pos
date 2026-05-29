@@ -385,6 +385,30 @@ export const recipeSuggestionSchema = z.object({
   updated_at: z.string(),
 });
 
+export const stopListUpdateReviewSchema = z.object({
+  id: z.string(),
+  restaurant_id: z.string(),
+  device_id: z.string(),
+  stop_list_id: z.string(),
+  warehouse_id: z.string().optional().default(''),
+  catalog_item_id: z.string(),
+  available_quantity: z.number().nullable().optional(),
+  active: z.boolean(),
+  conflict_policy: z.string(),
+  source: z.string(),
+  reason: z.string().optional().default(''),
+  projection_action: z.string(),
+  status: suggestionStatusSchema,
+  review_comment: z.string().optional().default(''),
+  reviewed_by_employee_id: z.string().optional().default(''),
+  reviewed_at: z.string().optional(),
+  applied_stop_list_id: z.string().optional().default(''),
+  updated_at: z.string(),
+  occurred_at: z.string(),
+  projected_at: z.string(),
+  created_at: z.string(),
+});
+
 export const publicationSummarySchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
@@ -419,6 +443,7 @@ export type Category = z.infer<typeof categorySchema>;
 export type EdgeEvent = z.infer<typeof edgeEventSchema>;
 export type CatalogSuggestion = z.infer<typeof catalogSuggestionSchema>;
 export type RecipeSuggestion = z.infer<typeof recipeSuggestionSchema>;
+export type StopListUpdateReview = z.infer<typeof stopListUpdateReviewSchema>;
 export type PublicationSummary = z.infer<typeof publicationSummarySchema>;
 export type UnassignedEdgeNode = z.infer<typeof unassignedEdgeNodeSchema>;
 export type AssignDeviceResult = z.infer<typeof assignDeviceResultSchema>;

@@ -73,11 +73,41 @@
       </div>
     </div>
 
+    <div class="cloud-panel proposal-list-panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">{{ t('cloud.proposals.stopListTitle') }}</p>
+          <h2>{{ t('cloud.proposals.stopListQueue') }}</h2>
+        </div>
+      </div>
+
+      <div v-if="!ctx.selectedRestaurantId.value" class="empty-state wide">{{ t('cloud.empty.selectRestaurant') }}</div>
+      <div v-else-if="ctx.isLoading('proposal-review')" class="cloud-skeleton-list">
+        <q-skeleton v-for="index in 4" :key="index" class="skeleton-row" />
+      </div>
+      <div v-else-if="stopListRows.length === 0" class="empty-state">{{ t('cloud.proposals.emptyStopList') }}</div>
+      <div v-else class="proposal-list">
+        <button
+          v-for="item in stopListRows"
+          :key="item.key"
+          type="button"
+          class="proposal-row"
+          :class="{ selected: selectedKey === item.key }"
+          @click="selectedKey = item.key"
+        >
+          <span class="cloud-status" :class="item.status">{{ suggestionStatus(item.status) }}</span>
+          <strong>{{ item.title }}</strong>
+          <small>{{ item.subtitle }}</small>
+          <span v-if="item.groupLabel" class="proposal-group-chip">{{ item.groupLabel }}</span>
+        </button>
+      </div>
+    </div>
+
     <aside class="cloud-panel proposal-detail-panel">
       <div v-if="!selected" class="empty-state wide">{{ t('cloud.proposals.selectPrompt') }}</div>
       <template v-else>
         <div class="section-head stacked">
-          <p class="eyebrow">{{ selected.kind === 'catalog' ? t('cloud.proposals.catalogTitle') : t('cloud.proposals.recipeTitle') }}</p>
+          <p class="eyebrow">{{ selected.kindLabel }}</p>
           <h2>{{ selected.title }}</h2>
           <span class="cloud-status" :class="selected.status">{{ suggestionStatus(selected.status) }}</span>
         </div>
@@ -102,13 +132,19 @@
               <strong>{{ row.value }}</strong>
             </div>
           </div>
-          <div v-else class="recipe-change-list">
+          <div v-else-if="selected.kind === 'recipe'" class="recipe-change-list">
             <div v-for="change in recipeChangeRows(selected.raw)" :key="change.key" class="recipe-change-row">
               <span class="proposal-change-action">{{ change.action }}</span>
               <strong>{{ change.target }}</strong>
               <small>{{ change.meta }}</small>
             </div>
             <div v-if="recipeChangeRows(selected.raw).length === 0" class="empty-state">{{ t('cloud.proposals.noRecipeChanges') }}</div>
+          </div>
+          <div v-else class="proposal-diff-grid">
+            <div v-for="row in stopListDiffRows(selected.raw)" :key="row.key">
+              <span>{{ row.label }}</span>
+              <strong>{{ row.value }}</strong>
+            </div>
           </div>
         </section>
 
@@ -165,10 +201,10 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import CloudSafeErrorBanner from './CloudSafeErrorBanner.vue';
-import type { CatalogSuggestion, RecipeSuggestion } from '../../shared/schemas';
+import type { CatalogSuggestion, RecipeSuggestion, StopListUpdateReview } from '../../shared/schemas';
 
 type ReviewAction = 'approve' | 'reject' | 'request_changes';
-type ProposalKind = 'catalog' | 'recipe';
+type ProposalKind = 'catalog' | 'recipe' | 'stop_list';
 type PayloadRecord = Record<string, unknown>;
 
 type ProposalRow = {
@@ -182,7 +218,7 @@ type ProposalRow = {
   subtitle: string;
   groupLabel: string;
   facts: { label: string; value: string }[];
-  raw: CatalogSuggestion | RecipeSuggestion;
+  raw: CatalogSuggestion | RecipeSuggestion | StopListUpdateReview;
 };
 
 const props = defineProps<{
@@ -203,7 +239,8 @@ const statusOptions = ['pending', 'approved', 'rejected', 'changes_requested'].m
 
 const catalogRows = computed(() => props.ctx.catalogSuggestions.value.map((item: CatalogSuggestion) => toCatalogRow(item)));
 const recipeRows = computed(() => props.ctx.recipeSuggestions.value.map((item: RecipeSuggestion) => toRecipeRow(item)));
-const allRows = computed(() => [...catalogRows.value, ...recipeRows.value]);
+const stopListRows = computed(() => props.ctx.stopListUpdateReviews.value.map((item: StopListUpdateReview) => toStopListRow(item)));
+const allRows = computed(() => [...catalogRows.value, ...recipeRows.value, ...stopListRows.value]);
 const selected = computed(() => allRows.value.find((item) => item.key === selectedKey.value) ?? allRows.value[0] ?? null);
 const linkedGroup = computed(() => {
   if (!selected.value?.groupId) return [];
@@ -265,6 +302,31 @@ function toRecipeRow(item: RecipeSuggestion): ProposalRow {
   };
 }
 
+function toStopListRow(item: StopListUpdateReview): ProposalRow {
+  return {
+    key: `stop_list:${item.id}`,
+    kind: 'stop_list',
+    kindLabel: t('cloud.proposals.stopListTitle'),
+    id: item.id,
+    status: item.status,
+    groupId: '',
+    title: `${t('cloud.fields.catalog_item_id')}: ${shortId(item.catalog_item_id)}`,
+    subtitle: `${item.active ? t('cloud.proposals.stopListActivate') : t('cloud.proposals.stopListDeactivate')} · ${props.ctx.formatDate(item.projected_at)}`,
+    groupLabel: `${t('cloud.fields.device_id')}: ${shortId(item.device_id)}`,
+    facts: [
+      { label: t('cloud.fields.source_event_id'), value: safeValue(item.id) },
+      { label: t('cloud.fields.device_id'), value: safeValue(item.device_id) },
+      { label: t('cloud.fields.stop_list_id'), value: safeValue(item.stop_list_id) },
+      { label: t('cloud.fields.catalog_item_id'), value: safeValue(item.catalog_item_id) },
+      { label: t('cloud.fields.conflict_policy'), value: safeValue(item.conflict_policy) },
+      { label: t('cloud.fields.projection_action'), value: safeValue(item.projection_action) },
+      { label: t('cloud.fields.reason'), value: safeValue(item.reason) },
+      { label: t('cloud.fields.projected_at'), value: props.ctx.formatDate(item.projected_at) },
+    ],
+    raw: item,
+  };
+}
+
 function commonFacts(item: CatalogSuggestion | RecipeSuggestion, data: PayloadRecord, extra: [string, string][]) {
   return [
     { label: t('cloud.fields.suggestion_id'), value: safeValue(item.suggestion_id) },
@@ -311,6 +373,22 @@ function recipeChangeRows(item: CatalogSuggestion | RecipeSuggestion) {
         meta: meta || t('cloud.proposals.noRecipeChangeMeta'),
       };
     });
+}
+
+function stopListDiffRows(item: CatalogSuggestion | RecipeSuggestion | StopListUpdateReview) {
+  if (!('projection_action' in item)) return [];
+  return [
+    ['active', item.active ? t('common.yes') : t('common.no')],
+    ['available_quantity', item.available_quantity === null || item.available_quantity === undefined ? '-' : String(item.available_quantity)],
+    ['source', item.source],
+    ['warehouse_id', item.warehouse_id],
+    ['applied_stop_list_id', item.applied_stop_list_id],
+    ['updated_at', props.ctx.formatDate(item.updated_at)],
+  ].map(([key, value]) => ({
+    key,
+    label: t(`cloud.fields.${key}`),
+    value: safeValue(String(value ?? '')),
+  }));
 }
 
 async function submitReview(action: ReviewAction) {

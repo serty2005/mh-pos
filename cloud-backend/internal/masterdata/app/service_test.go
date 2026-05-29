@@ -441,6 +441,127 @@ func TestPublicationVersioningIsMonotonic(t *testing.T) {
 	}
 }
 
+func TestStopListUpdateReviewApprovePublishesCloudAuthorityWithoutRawPayload(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	now := fixedClock{}.Now()
+	quantity := 0.0
+	repo.SeedStopListUpdateReview(domain.StopListUpdateReview{
+		ID:                "event-stop-1",
+		RestaurantID:      "restaurant-1",
+		DeviceID:          "edge-1",
+		StopListID:        "edge-stop-1",
+		CatalogItemID:     "dish-1",
+		AvailableQuantity: &quantity,
+		Active:            true,
+		ConflictPolicy:    "edge_overlay_requires_manager_review",
+		Source:            "edge",
+		Reason:            "sold out",
+		ProjectionAction:  "requires_manager_review",
+		Status:            domain.SuggestionStatusPending,
+		UpdatedAt:         now,
+		OccurredAt:        now.Add(-time.Minute),
+		ProjectedAt:       now,
+		CreatedAt:         now,
+	})
+
+	items, err := service.ListStopListUpdateReviews(ctx, "restaurant-1", "pending", 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(items)
+	if len(items) != 1 || strings.Contains(string(body), "raw_payload") || strings.Contains(string(body), "payload_json") {
+		t.Fatalf("expected one safe stop-list review row without raw payload, got %s", body)
+	}
+	approved, err := service.ApproveStopListUpdateReview(ctx, "event-stop-1", app.SuggestionReviewCommand{ReviewedByEmployeeID: "manager-1", PublishedBy: "cloud-ui"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approved.Status != domain.SuggestionStatusApproved || approved.AppliedStopListID != "edge-stop-1" {
+		t.Fatalf("unexpected approved row: %+v", approved)
+	}
+	if _, err := service.ApproveStopListUpdateReview(ctx, "event-stop-1", app.SuggestionReviewCommand{ReviewedByEmployeeID: "manager-1"}); err != nil {
+		t.Fatalf("approve must be idempotent, got %v", err)
+	}
+	stopLists, err := repo.ListStopListEntries(ctx, "restaurant-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stopLists) != 1 || stopLists[0].CatalogItemID != "dish-1" || stopLists[0].Source != "edge_review" || !stopLists[0].Active {
+		t.Fatalf("expected approved Edge update to become Cloud authority stop-list, got %+v", stopLists)
+	}
+	pub, err := repo.GetCurrentPublication(ctx, "restaurant-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pub.Version != 1 {
+		t.Fatalf("expected approval to publish new package, got %+v", pub)
+	}
+}
+
+func TestStopListUpdateReviewRejectRequestChangesAndInvalidTransition(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	now := fixedClock{}.Now()
+	repo.SeedStopListUpdateReview(domain.StopListUpdateReview{
+		ID:               "event-stop-2",
+		RestaurantID:     "restaurant-1",
+		DeviceID:         "edge-1",
+		StopListID:       "edge-stop-2",
+		CatalogItemID:    "dish-2",
+		Active:           true,
+		ConflictPolicy:   "edge_overlay_requires_manager_review",
+		Source:           "edge",
+		ProjectionAction: "requires_manager_review",
+		Status:           domain.SuggestionStatusPending,
+		UpdatedAt:        now,
+		OccurredAt:       now,
+		ProjectedAt:      now,
+		CreatedAt:        now,
+	})
+
+	rejected, err := service.RejectStopListUpdateReview(ctx, "event-stop-2", app.SuggestionReviewCommand{ReviewedByEmployeeID: "manager-1", ReviewComment: "not approved"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejected.Status != domain.SuggestionStatusRejected {
+		t.Fatalf("expected rejected status, got %+v", rejected)
+	}
+	if _, err := service.RejectStopListUpdateReview(ctx, "event-stop-2", app.SuggestionReviewCommand{ReviewedByEmployeeID: "manager-1"}); err != nil {
+		t.Fatalf("reject must be idempotent, got %v", err)
+	}
+	if _, err := service.ApproveStopListUpdateReview(ctx, "event-stop-2", app.SuggestionReviewCommand{ReviewedByEmployeeID: "manager-1"}); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected invalid transition conflict, got %v", err)
+	}
+	if stopLists, err := repo.ListStopListEntries(ctx, "restaurant-1"); err != nil || len(stopLists) != 0 {
+		t.Fatalf("reject must not mutate Cloud authority, rows=%+v err=%v", stopLists, err)
+	}
+
+	repo.SeedStopListUpdateReview(domain.StopListUpdateReview{
+		ID:               "event-stop-3",
+		RestaurantID:     "restaurant-1",
+		DeviceID:         "edge-1",
+		StopListID:       "edge-stop-3",
+		CatalogItemID:    "dish-3",
+		Active:           false,
+		ConflictPolicy:   "edge_overlay_requires_manager_review",
+		Source:           "edge",
+		ProjectionAction: "requires_manager_review",
+		Status:           domain.SuggestionStatusPending,
+		UpdatedAt:        now,
+		OccurredAt:       now,
+		ProjectedAt:      now.Add(time.Second),
+		CreatedAt:        now,
+	})
+	changes, err := service.RequestChangesStopListUpdateReview(ctx, "event-stop-3", app.SuggestionReviewCommand{ReviewedByEmployeeID: "manager-1", ReviewComment: "clarify reason"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changes.Status != domain.SuggestionStatusChangesRequest || changes.ReviewComment != "clarify reason" {
+		t.Fatalf("unexpected request changes row: %+v", changes)
+	}
+}
+
 func newService() (*app.Service, *memory.Repository) {
 	repo := memory.NewRepository()
 	return app.NewService(repo, fixedClock{}, &fixedIDs{}), repo
