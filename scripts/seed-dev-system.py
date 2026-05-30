@@ -1132,6 +1132,18 @@ def run_kitchen_process_smoke_flow(
             "ledger_entry_count": len(ledger),
             "olap_stock_move_count": len(olap_stock_moves),
         }
+    stock_balances = list_inventory_stock_balances(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        warehouse_id="warehouse-main",
+        business_date_to=today,
+    )
+    raw_stock_balances = json.dumps(stock_balances, ensure_ascii=False)
+    if "payload" in raw_stock_balances or "raw_payload" in raw_stock_balances:
+        raise RuntimeError("Cloud stock balances response exposed raw payload")
+    balance_item_ids = {item.get("catalog_item_id") for item in stock_balances}
+    if sirloin_catalog_id not in balance_item_ids:
+        raise RuntimeError("Cloud stock balances did not expose kitchen stock receipt/count/write-off item")
 
     proposal_group_id = f"proposal-group-{command_suffix()}"
     catalog_suggestion = request(
@@ -1225,6 +1237,7 @@ def run_kitchen_process_smoke_flow(
         "olap_item_served_event_count": len(olap_item_served),
         "olap_status_event_count": len(olap_status),
         "stock": stock_results,
+        "stock_balance_count": len(stock_balances),
         "catalog_suggestion_id": catalog_suggestion["id"],
         "recipe_suggestion_id": recipe_suggestion["id"],
         "cloud_catalog_suggestion_id": cloud_catalog_suggestion["id"],
@@ -1533,6 +1546,28 @@ def list_inventory_ledger(cloud_client, restaurant_id, source_event_type, source
             "order_line_id": order_line_id,
             "limit": 50,
         },
+    )
+
+
+def list_inventory_stock_balances(cloud_client, restaurant_id, warehouse_id="", catalog_item_id="", business_date_to="", costing_status=""):
+    query = {
+        "restaurant_id": restaurant_id,
+        "limit": 50,
+    }
+    if warehouse_id:
+        query["warehouse_id"] = warehouse_id
+    if catalog_item_id:
+        query["catalog_item_id"] = catalog_item_id
+    if business_date_to:
+        query["business_date_to"] = business_date_to
+    if costing_status:
+        query["costing_status"] = costing_status
+    return request(
+        cloud_client,
+        "GET",
+        f"{API_PREFIX}/inventory/stock-balances",
+        expected_status=(200,),
+        query=query,
     )
 
 

@@ -84,6 +84,7 @@ import {
   getAssignmentStatus,
   getPublicationState,
   getStopListReadiness,
+  listInventoryStockBalances,
   listCatalogFolders,
   listCatalogItems,
   listCatalogSuggestions,
@@ -134,7 +135,7 @@ import {
   upsertStopListEntry,
   ApiError,
 } from './shared/api';
-import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
+import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, InventoryStockBalance, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
 import type { RecipeVersionView } from './shared/schemas';
 
 type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'recipeVersions' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
@@ -240,6 +241,7 @@ const loading = ref<string[]>([]);
 const restaurants = ref<Restaurant[]>([]);
 const publication = ref<PublicationSummary | null>(null);
 const stopListReadiness = ref<StopListReadiness | null>(null);
+const inventoryStockBalances = ref<InventoryStockBalance[]>([]);
 const edgeDevices = ref<UnassignedEdgeNode[]>([]);
 const edgeEvents = ref<EdgeEvent[]>([]);
 const recipeVersions = ref<RecipeVersionView[]>([]);
@@ -792,6 +794,7 @@ const cloudCtx = {
   successKey,
   publication,
   stopListReadiness,
+  inventoryStockBalances,
   edgeEvents,
   recipeVersions,
   catalogSuggestions,
@@ -837,6 +840,7 @@ const cloudCtx = {
   isSelectDisabled,
   loadPublication,
   loadStopListReadiness,
+  loadInventoryStockBalances,
   reloadActive,
   submitForm,
   archiveSelected,
@@ -1093,6 +1097,14 @@ async function loadStopListReadiness() {
   if (!selectedRestaurantId.value) return;
   await withLoading('inventory-readiness', async () => {
     stopListReadiness.value = await getStopListReadiness(selectedRestaurantId.value, publishForm.node_device_id.trim());
+    inventoryStockBalances.value = await listInventoryStockBalances(selectedRestaurantId.value, { limit: 50, offset: 0 });
+  });
+}
+
+async function loadInventoryStockBalances(filters: { warehouseId?: string; catalogItemId?: string; businessDateTo?: string; costingStatus?: string } = {}) {
+  if (!selectedRestaurantId.value) return;
+  await withLoading('inventory-readiness', async () => {
+    inventoryStockBalances.value = await listInventoryStockBalances(selectedRestaurantId.value, { ...filters, limit: 50, offset: 0 });
   });
 }
 

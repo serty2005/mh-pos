@@ -22,6 +22,7 @@ type Repository interface {
 	GetStopListReadiness(context.Context, StopListReadinessFilter) (StopListReadiness, error)
 	ListFinancialOperations(context.Context, FinancialOperationProjectionFilter) ([]contracts.FinancialOperationProjection, error)
 	ListInventoryLedger(context.Context, InventoryLedgerFilter) ([]contracts.InventoryLedgerEntry, error)
+	ListInventoryStockBalances(context.Context, InventoryStockBalanceFilter) ([]contracts.InventoryStockBalance, error)
 	UpsertMasterDataPackage(context.Context, contracts.MasterDataPackage) (contracts.MasterDataPackage, error)
 	GetMasterDataPackage(context.Context, string, string) (contracts.MasterDataPackage, error)
 	AuthenticateNodeToken(context.Context, string, string, string) error
@@ -132,6 +133,17 @@ type InventoryLedgerFilter struct {
 	SourceEventID   string
 	OrderLineID     string
 	CatalogItemID   string
+	Limit           int
+	Offset          int
+}
+
+// InventoryStockBalanceFilter задает bounded aggregate query поверх Cloud-owned stock ledger.
+type InventoryStockBalanceFilter struct {
+	RestaurantID    string
+	WarehouseID     string
+	CatalogItemID   string
+	BusinessDateTo string
+	CostingStatus   string
 	Limit           int
 	Offset          int
 }
@@ -261,6 +273,33 @@ func (s *Service) ListInventoryLedger(ctx context.Context, filter InventoryLedge
 		return nil, fmt.Errorf("%w: offset must be non-negative", contracts.ErrInvalidEnvelope)
 	}
 	return s.repo.ListInventoryLedger(ctx, filter)
+}
+
+// ListInventoryStockBalances возвращает аналитические остатки из Cloud stock_ledger без raw event payload.
+func (s *Service) ListInventoryStockBalances(ctx context.Context, filter InventoryStockBalanceFilter) ([]contracts.InventoryStockBalance, error) {
+	filter.RestaurantID = strings.TrimSpace(filter.RestaurantID)
+	filter.WarehouseID = strings.TrimSpace(filter.WarehouseID)
+	filter.CatalogItemID = strings.TrimSpace(filter.CatalogItemID)
+	filter.BusinessDateTo = strings.TrimSpace(filter.BusinessDateTo)
+	filter.CostingStatus = strings.TrimSpace(filter.CostingStatus)
+	if filter.RestaurantID == "" {
+		return nil, fmt.Errorf("%w: restaurant_id is required", contracts.ErrInvalidEnvelope)
+	}
+	if err := validateBusinessDateFilter(filter.BusinessDateTo, "business_date_to"); err != nil {
+		return nil, err
+	}
+	switch filter.CostingStatus {
+	case "", "final", "estimated", "needs_recalculation", "mixed", "unknown":
+	default:
+		return nil, fmt.Errorf("%w: costing_status must be final, estimated, needs_recalculation, mixed or unknown", contracts.ErrInvalidEnvelope)
+	}
+	if filter.Limit <= 0 || filter.Limit > 200 {
+		filter.Limit = 50
+	}
+	if filter.Offset < 0 {
+		return nil, fmt.Errorf("%w: offset must be non-negative", contracts.ErrInvalidEnvelope)
+	}
+	return s.repo.ListInventoryStockBalances(ctx, filter)
 }
 
 // ReceiveBatch принимает batch SyncEnvelope и возвращает item-level ACK decisions.

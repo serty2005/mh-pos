@@ -949,6 +949,36 @@ button:focus-visible,
   line-height: 1.45;
 }
 
+.inventory-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr)) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 0 10px;
+  background: #eef3f0;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.status-pill[data-status='needs_recalculation'],
+.status-pill[data-status='mixed'] {
+  background: #fff1d8;
+  color: #8a4b0f;
+}
+
+.status-pill[data-status='final'] {
+  background: #e5f4eb;
+  color: #1f6f5b;
+}
+
 .recipe-version-grid {
   display: grid;
   grid-template-columns: minmax(320px, 0.8fr) minmax(420px, 1.2fr);
@@ -1020,6 +1050,7 @@ button:focus-visible,
   .cloud-publication-grid,
   .cloud-scenario-grid,
   .cloud-edge-grid,
+  .inventory-filter-grid,
   .recipe-version-grid,
   .proposal-review-grid {
     grid-template-columns: 1fr;

@@ -218,7 +218,7 @@ python3 scripts/seed-dev-system.py \
   --run-kitchen-process-smoke
 ```
 
-Реализовано сейчас: флаг `--run-kitchen-process-smoke` после seed/pairing проверяет Cloud publication для `catalog`/`menu`/`recipes`/`inventory_reference` включая default warehouse `warehouse-main`, Edge sync полного каталога и техкарт, waiter order с блюдом, KDS order tile, `accept/start/ready/serve`, `recall/start/ready/serve`, прием `KitchenTicketStatusChanged`/`ItemServed` в Cloud, наличие kitchen event trail в ClickHouse `raw_business_events`, Cloud `stock_ledger` и bounded ClickHouse `olap_stock_moves` read для `ItemServed`/`StockReceiptCaptured`/`InventoryCountCaptured`/`StockWriteOffCaptured`/`ProductionCompleted`, создание catalog/recipe suggestions на Edge, Cloud manager approve и возврат `proposal_feedback` на Edge.
+Реализовано сейчас: флаг `--run-kitchen-process-smoke` после seed/pairing проверяет Cloud publication для `catalog`/`menu`/`recipes`/`inventory_reference` включая default warehouse `warehouse-main`, Edge sync полного каталога и техкарт, waiter order с блюдом, KDS order tile, `accept/start/ready/serve`, `recall/start/ready/serve`, прием `KitchenTicketStatusChanged`/`ItemServed` в Cloud, наличие kitchen event trail в ClickHouse `raw_business_events`, Cloud `stock_ledger`, bounded Cloud `stock-balances` read без raw payload и bounded ClickHouse `olap_stock_moves` read для `ItemServed`/`StockReceiptCaptured`/`InventoryCountCaptured`/`StockWriteOffCaptured`/`ProductionCompleted`, создание catalog/recipe suggestions на Edge, Cloud manager approve и возврат `proposal_feedback` на Edge.
 
 Полный профильный запуск обеих smoke-веток требует чистого POS Edge pairing state, поэтому перед ним выполняется reset volumes:
 

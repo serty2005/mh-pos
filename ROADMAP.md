@@ -179,9 +179,10 @@ Roadmap фиксирует статусы, блокеры и следующий 
 	  - выполнено: POS syncsender regression покрывает temporary `sync/exchange` failure, retry того же outbox item, item-level ACK и прекращение повторной отправки после ACK;
 	  - заблокировано/локализовано в текущей локальной проверке: полный Docker smoke не был подтвержден из-за окружения; `docker-compose.local.yml` поддерживает host-port overrides для `5432`/`8123`/`9000`/`8090`/`8080`/`8095`, а buildx blocker остается требованием Docker CLI/Compose окружения.
 - Full Inventory Engine:
-  - реализовать stock receipts, inventory counts, production, sale consumption, refund/cancellation stock disposition, recipe expansion, modifier linked consumption, balances и costing state;
+  - выполнено: bounded Cloud read model `GET /api/v1/inventory/stock-balances` поверх PostgreSQL `stock_ledger` с aggregate costing status, отрицательными остатками и no raw payload/COGS/margin exposure;
+  - реализовать materialized balances, production-grade stock receipts/counts/production state, sale consumption, refund/cancellation stock disposition, recipe expansion, modifier linked consumption и full costing state;
   - реализовать retro recalculation DAG для документов задним числом и отрицательных остатков;
-  - добавить Cloud UI/API для ручного ввода складских документов и просмотра balances/costing status.
+  - добавить Cloud UI/API для ручного ввода складских документов и full costing/recalculation status; текущий Cloud UI показывает только bounded balances/costing status visibility.
 - ClickHouse OLAP:
   - выполнено: ClickHouse добавлен в local Cloud runtime component с managed `raw_business_events`;
   - выполнено: async forwarder `inbox_events -> raw_business_events`, retry state, `processed_for_olap` и checkpoint storage;

@@ -82,6 +82,7 @@ type Payload[T any] struct {
 type InventoryLedgerEntry struct {
 	ID                string    `json:"id"`
 	RestaurantID      string    `json:"restaurant_id"`
+	WarehouseID       string    `json:"warehouse_id,omitempty"`
 	StockDocumentID   string    `json:"stock_document_id"`
 	SourceEventID     string    `json:"source_event_id"`
 	SourceEventType   string    `json:"source_event_type"`
@@ -96,6 +97,19 @@ type InventoryLedgerEntry struct {
 	OccurredAt        time.Time `json:"occurred_at"`
 	BusinessDateLocal string    `json:"business_date_local"`
 	CreatedAt         time.Time `json:"created_at"`
+}
+
+// InventoryStockBalance описывает bounded Cloud-owned balance read model поверх stock_ledger.
+type InventoryStockBalance struct {
+	RestaurantID       string    `json:"restaurant_id"`
+	WarehouseID        string    `json:"warehouse_id,omitempty"`
+	CatalogItemID      string    `json:"catalog_item_id"`
+	QuantityOnHand     string    `json:"quantity_on_hand"`
+	UnitCode           string    `json:"unit_code"`
+	CostingStatus      string    `json:"costing_status"`
+	NeedsRecalculation bool      `json:"needs_recalculation"`
+	LastMovementAt     time.Time `json:"last_movement_at"`
+	BusinessDateTo     string    `json:"business_date_to"`
 }
 
 type ShiftOpened struct {

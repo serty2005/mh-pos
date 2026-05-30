@@ -11,6 +11,7 @@ import {
   edgeEventSchema,
   folderParameterSchema,
   hallSchema,
+  inventoryStockBalanceSchema,
   menuItemSchema,
   modifierBindingSchema,
   modifierGroupSchema,
@@ -42,6 +43,7 @@ import {
   type EdgeEvent,
   type FolderParameter,
   type Hall,
+  type InventoryStockBalance,
   type MenuItem,
   type ModifierBinding,
   type ModifierGroup,
@@ -513,6 +515,21 @@ export function getStopListReadiness(restaurantId: string, nodeDeviceId = ''): P
   params.set('restaurant_id', restaurantId);
   if (nodeDeviceId) params.set('node_device_id', nodeDeviceId);
   return request(`/sync/readiness/stop-list?${params.toString()}`, stopListReadinessSchema);
+}
+
+export function listInventoryStockBalances(
+  restaurantId: string,
+  filters: { warehouseId?: string; catalogItemId?: string; businessDateTo?: string; costingStatus?: string; limit?: number; offset?: number } = {},
+): Promise<InventoryStockBalance[]> {
+  const params = new URLSearchParams();
+  params.set('restaurant_id', restaurantId);
+  if (filters.warehouseId) params.set('warehouse_id', filters.warehouseId);
+  if (filters.catalogItemId) params.set('catalog_item_id', filters.catalogItemId);
+  if (filters.businessDateTo) params.set('business_date_to', filters.businessDateTo);
+  if (filters.costingStatus) params.set('costing_status', filters.costingStatus);
+  params.set('limit', String(filters.limit ?? 50));
+  params.set('offset', String(filters.offset ?? 0));
+  return request(`/inventory/stock-balances?${params.toString()}`, z.array(inventoryStockBalanceSchema));
 }
 
 export function upsertStopListEntry(payload: Payload) {

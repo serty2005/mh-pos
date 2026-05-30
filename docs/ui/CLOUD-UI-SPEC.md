@@ -68,7 +68,8 @@
 - recipe editor имеет bounded route-backed строки recipe items и реализовано сейчас сценарный editor версий: просмотр текущих версий, draft form с компонентной строкой, save draft / submit, review выполняется в существующей очереди предложений;
 - duplicate hints и linked receipt line для catalog suggestion review остаются запланировано далее;
 - stop-list panel уже имеет bounded route-backed rows; `Готовность склада` показывает default conflict policy, async projection mode, publication/package metadata, latest Edge ACK metadata и sync problem counters без raw payload; Cloud review queue показывает safe Edge-origin stop-list update summary/diff и approve/reject/request-changes без raw payload. Production-grade assignment/escalation workflow остается запланирован далее;
-- inventory operations workspace: stock ledger/balances and costing/recalculation status; Edge-side stock receipts, inventory counts, write-offs and production input are covered by `pos-ui-g` kitchen mode and Cloud ledger read endpoints;
+- реализовано сейчас: inventory readiness surface показывает route-backed `stock-balances` table из Cloud backend с фильтрами `warehouse_id`, `catalog_item_id`, `business_date_to`, `costing_status`, aggregate costing status и readiness signals stop-list без raw payload. Edge-side stock receipts, inventory counts, write-offs and production input are covered by `pos-ui-g` kitchen mode and Cloud ledger/balance read endpoints;
+- запланировано далее: stock documents table, full costing/recalculation operator workflow и inventory runtime actions в Cloud UI;
 - ClickHouse/OLAP workspace: backend уже имеет read-only export status, bounded stock moves и stock move summary; UI runtime preview, retry/backfill mutation controls и richer analytics остаются запланировано далее;
 - launch readiness должен учитывать stop-list review и публикацию streams `recipes`/`stop_lists`;
 - publication panel показывает latest package version и target Edge node; latest known Edge ACK для stop-list отображается в readiness summary, package delivery ACK как отдельный contract остается запланирован далее;
@@ -144,7 +145,7 @@ Review command body:
 
 Для entities без подтвержденного `GET list` route UI показывает форму команды и поясняет, что list route не подтвержден.
 
-запланировано до полного пилота: API client должен покрыть costing/recalculation status, подтвержденные ClickHouse export status/stock move summary/`olap_stock_moves` preview endpoints и inventory balance views; UI не должен вызывать неподтвержденные mutating retry/backfill или BI endpoints до появления backend contract.
+реализовано сейчас: API client покрывает bounded inventory balance view `GET /api/v1/inventory/stock-balances` и stop-list readiness. Запланировано до полного пилота: API client должен покрыть full costing/recalculation status, подтвержденные ClickHouse export status/stock move summary/`olap_stock_moves` preview endpoints и production-grade operator flows; UI не должен вызывать неподтвержденные mutating retry/backfill или BI endpoints до появления backend contract.
 
 ## Runtime Code
 

@@ -142,6 +142,7 @@ Sync receiver:
 Inventory read model:
 
 - `GET /api/v1/inventory/stock-ledger?restaurant_id=&source_event_type=&source_event_id=&order_line_id=&catalog_item_id=&limit=&offset=` — bounded read-only view of Cloud-owned `stock_ledger` без raw Edge payload.
+- `GET /api/v1/inventory/stock-balances?restaurant_id=&warehouse_id=&catalog_item_id=&business_date_to=&costing_status=&limit=&offset=` — bounded Cloud-owned aggregate поверх PostgreSQL `stock_ledger`; response содержит `quantity_on_hand`, `unit_code`, aggregate `costing_status`, `needs_recalculation`, `last_movement_at`, `business_date_to` без raw Edge payload, COGS или margin.
 
 	OLAP read model:
 
@@ -549,6 +550,7 @@ Schema verification:
 
 - Cloud Inventory Worker создает stock documents and stock ledger из accepted normalized item events.
 - `GET /api/v1/inventory/stock-ledger` возвращает bounded read-only rows из Cloud-owned `stock_ledger` для smoke/операционной проверки `CheckClosed`/`ItemServed` processing; endpoint не раскрывает raw sync payload и не является OLAP API.
+- `GET /api/v1/inventory/stock-balances` реализовано сейчас как bounded read-only balance view поверх Cloud-owned PostgreSQL `stock_ledger`: отрицательные остатки допустимы, sale blocking не использует stock balance, aggregate costing status ограничен `final`, `estimated`, `needs_recalculation`, `mixed`, `unknown`.
 - OLAP Stock Moves Forwarder асинхронно экспортирует новые `stock_ledger` rows в ClickHouse `olap_stock_moves` по checkpoint `olap_export_checkpoints.id = 'olap_stock_moves'`; retry state хранится в той же checkpoint table через `last_error`, `consecutive_failures` и `next_retry_at`.
 - `GET /api/v1/olap/stock-moves` возвращает bounded read-only rows из ClickHouse `olap_stock_moves` с фильтрами `restaurant_id`, business date range, `catalog_item_id`, `warehouse_id`, `source_event_type`, `limit`, `offset`; response не содержит raw payload.
 - `GET /api/v1/olap/export-status` реализовано сейчас как read-only observability над `olap_export_checkpoints`, `inbox_events` и `stock_ledger`: response содержит stream, checkpoint, last exported id/time, counters, last error metadata, consecutive failures, next retry и retry_blocked без raw payload.
@@ -569,7 +571,7 @@ Schema verification:
 - ClickHouse `raw_business_events` реализовано сейчас как бессрочный архив business events.
 - Async Batch Forwarder переносит accepted events из PostgreSQL `inbox_events` в ClickHouse и после successful export выставляет `processed_for_olap = true`.
 - ClickHouse `olap_stock_moves` реализовано сейчас как первый bounded read model для складских движений; он не является source of truth и наполняется только async export из PostgreSQL `stock_ledger`.
-- Recipe expansion, modifier linked catalog item consumption, stock balances and retro costing DAG становятся частью Cloud Inventory Engine.
+- Полный materialized balance engine, recipe expansion, modifier linked catalog item consumption и retro costing DAG становятся частью Cloud Inventory Engine; bounded `stock-balances` read из `stock_ledger` реализован сейчас.
 - `GET /api/v1/olap/raw-business-events`, `GET /api/v1/olap/stock-moves`, `GET /api/v1/olap/export-status` и `GET /api/v1/olap/stock-move-summary` реализованы сейчас как bounded/read-only endpoints без raw payload; sales/kitchen/costing-dependent projections запланированы далее.
 - Расширенный manager review workflow для Edge-origin stop-list изменений остается запланирован далее; текущий runtime уже имеет bounded review/apply без raw payload, но без production-grade task assignment/escalation.
 

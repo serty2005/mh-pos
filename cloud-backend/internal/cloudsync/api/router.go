@@ -55,6 +55,7 @@ func NewRouterWithProvisioningAndOLAP(service *app.Service, provisioningService 
 		r.Get("/sync/edge-events", h.listEdgeEvents)
 		r.Get("/sync/readiness/stop-list", h.stopListReadiness)
 		r.Get("/inventory/stock-ledger", h.listInventoryLedger)
+		r.Get("/inventory/stock-balances", h.listInventoryStockBalances)
 		r.Post("/sync/edge-events", h.receiveEdgeEvent)
 		r.Post("/sync/edge-events/batch", h.receiveEdgeEventBatch)
 		r.Post("/sync/exchange", h.exchange)
@@ -214,6 +215,45 @@ func (h *Handler) listInventoryLedger(w http.ResponseWriter, r *http.Request) {
 		SourceEventID:   r.URL.Query().Get("source_event_id"),
 		OrderLineID:     r.URL.Query().Get("order_line_id"),
 		CatalogItemID:   r.URL.Query().Get("catalog_item_id"),
+		Limit:           limit,
+		Offset:          offset,
+	})
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, contracts.ErrInvalidEnvelope) {
+			status = http.StatusBadRequest
+		}
+		writeError(w, status, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) listInventoryStockBalances(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("%w: limit must be a number", contracts.ErrInvalidEnvelope))
+			return
+		}
+		limit = parsed
+	}
+	offset := 0
+	if raw := r.URL.Query().Get("offset"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("%w: offset must be a number", contracts.ErrInvalidEnvelope))
+			return
+		}
+		offset = parsed
+	}
+	items, err := h.service.ListInventoryStockBalances(r.Context(), app.InventoryStockBalanceFilter{
+		RestaurantID:    r.URL.Query().Get("restaurant_id"),
+		WarehouseID:     r.URL.Query().Get("warehouse_id"),
+		CatalogItemID:   r.URL.Query().Get("catalog_item_id"),
+		BusinessDateTo:  r.URL.Query().Get("business_date_to"),
+		CostingStatus:   r.URL.Query().Get("costing_status"),
 		Limit:           limit,
 		Offset:          offset,
 	})

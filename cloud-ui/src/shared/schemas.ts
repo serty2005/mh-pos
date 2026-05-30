@@ -270,6 +270,18 @@ export const stopListReadinessSchema = z.object({
   package_ack_status_reason_key: z.string(),
 });
 
+export const inventoryStockBalanceSchema = z.object({
+  restaurant_id: z.string(),
+  warehouse_id: z.string().optional().default(''),
+  catalog_item_id: z.string(),
+  quantity_on_hand: z.string(),
+  unit_code: z.string(),
+  costing_status: z.enum(['final', 'estimated', 'needs_recalculation', 'mixed', 'unknown']),
+  needs_recalculation: z.boolean(),
+  last_movement_at: z.string(),
+  business_date_to: z.string(),
+});
+
 export const hallSchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
@@ -472,6 +484,7 @@ export type RecipeItem = z.infer<typeof recipeItemSchema>;
 export type RecipeVersionView = z.infer<typeof recipeVersionViewSchema>;
 export type StopListEntry = z.infer<typeof stopListEntrySchema>;
 export type StopListReadiness = z.infer<typeof stopListReadinessSchema>;
+export type InventoryStockBalance = z.infer<typeof inventoryStockBalanceSchema>;
 export type Hall = z.infer<typeof hallSchema>;
 export type RestaurantTable = z.infer<typeof tableSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;

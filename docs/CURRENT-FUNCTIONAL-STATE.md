@@ -1,6 +1,6 @@
 ﻿# Текущее функциональное состояние проекта
 
-Статус: реализовано сейчас по коду, тестам и документации на 2026-05-29; цель полного пилота зафиксирована отдельно и не считается текущим runtime.
+Статус: реализовано сейчас по коду, тестам и документации на 2026-05-30; цель полного пилота зафиксирована отдельно и не считается текущим runtime.
 
 Этот документ является сводной картой фактического состояния репозитория. Он не заменяет профильные спецификации: архитектурные инварианты остаются в `SPECv1.3.md`, backend-контракты - в `docs/backend/*`, контракты интерфейсов - в `docs/ui/*`, синхронизация - в `docs/sync/*`.
 
@@ -27,7 +27,7 @@
 - расширить KDS lifecycle за пределы текущего backend-backed ticket/stock/proposal/stop-list foundation: cooking events, station priority и operator analytics;
 - зафиксировать POS Edge backend как авторитетный runtime для financial/order/KDS command validation и stop-list sale blocking; POS UI не становится авторитетным слоем;
 - добавить Cloud manager flow для production-grade recipe lifecycle polish, stop-list escalation polish, inventory operations, publication readiness и sync/problem observability;
-- добавить полный Cloud-owned складской движок: stock receipts, inventory counts, production, sale consumption, refund/cancellation dispositions, recipe expansion, balances, costing и retro recalculation DAG;
+- добавить полный Cloud-owned складской движок: materialized balances, production-grade stock receipts/counts/production state, sale consumption, refund/cancellation dispositions, recipe expansion, full costing lifecycle и retro recalculation DAG;
 - расширить ClickHouse runtime от первого bounded `olap_stock_moves` summary и минимального retry control до sales/kitchen/costing aggregates и production-grade backfill jobs;
 - поддерживать полный smoke path Cloud setup -> Edge sync -> waiter order -> kitchen served/recall/serve-again -> Cloud inventory ledger -> ClickHouse export -> bounded OLAP API, сейчас покрытый `scripts/seed-dev-system.py --run-kitchen-process-smoke` для kitchen/process без cashier payment/check.
 
@@ -72,6 +72,7 @@
 - `sync/exchange` проверяет bearer `node_token`, assigned restaurant и device status.
 - Idempotent receipt для Edge events, raw payload checksum, event type stats и coarse shift finance projection.
 - Bounded read-only Cloud inventory ledger endpoint `GET /api/v1/inventory/stock-ledger` для проверки обработанных Cloud Inventory Worker строк без raw sync payload.
+- Bounded read-only Cloud inventory balances endpoint `GET /api/v1/inventory/stock-balances` поверх PostgreSQL `stock_ledger`: фильтры по ресторану/складу/товару/business date/costing status, отрицательные остатки допустимы, aggregate `costing_status` виден без raw payload, COGS или margin.
 - `ItemServed` попадает в durable `inventory_event_queue` и Cloud Inventory Worker создает sale ledger идемпотентно по source event; superseded served fact пропускается, если superseding `ItemServed` уже принят до обработки очереди; `KitchenTicketStatusChanged` принимается как operational-only event и не ставится в inventory queue.
 - `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` принимаются Cloud receiver и превращаются Cloud Inventory Worker в stock documents/ledger rows.
 - `StopListUpdated` принимается Cloud receiver-ом, ставится в durable `inventory_event_queue` и обрабатывается Cloud Inventory Worker в `cloud_projection_stop_list_updates` без raw payload; минимальный `stop_list_conflict_policy` поддерживает `cloud_wins`, `edge_overlay_until_next_publication`, `edge_overlay_requires_manager_review`, default `edge_overlay_requires_manager_review`.
@@ -95,7 +96,7 @@
 
 - Production auth/RBAC perimeter для Cloud API.
 - Публичный Cloud reporting API/UI по financial operation projection.
-- Cost/sales/kitchen агрегаты, production-grade backfill jobs/operator UI и full inventory costing.
+- Cost/sales/kitchen агрегаты, production-grade backfill jobs/operator UI, materialized inventory balance engine и full inventory costing.
 - Recipe expansion, semi-finished auto-production split и retro costing DAG.
 
 ## License Server
@@ -144,7 +145,7 @@
 - Генерация pairing code и назначение Edge-device ресторану.
 - Просмотр безопасного списка входящих Edge events без raw payload, включая card/list fallback на narrow screens с metadata/checksum вместо raw event payload; resource lists на narrow screens показывают status label в карточке и не раскрывают raw payload.
 - Cloud-owned recipes и stop-list authoring через подтвержденные master-data routes; реализовано сейчас также bounded сценарный editor версий техкарт с draft, submit в `RecipeChangeSuggested`, approve/apply через Cloud authority и publication package.
-- Route-backed manager surfaces для catalog/recipe proposal review и Edge-origin stop-list update review: списки, detail/diff, approve/reject/request-changes и publication/feedback после approve; recipe version editor отправляет draft в эту же review queue; stop-list readiness panel читает backend summary по publication/Edge ACK/sync problem counters; inventory documents/costing и OLAP exports остаются readiness-only без имитации отсутствующих Cloud routes.
+- Route-backed manager surfaces для catalog/recipe proposal review и Edge-origin stop-list update review: списки, detail/diff, approve/reject/request-changes и publication/feedback после approve; recipe version editor отправляет draft в эту же review queue; inventory readiness panel читает backend summary по publication/Edge ACK/sync problem counters и runtime таблицу `stock-balances`; stock documents, full costing engine и OLAP exports остаются без имитации отсутствующих Cloud routes.
 - Локализованные сообщения, safe error details, no raw payload / PIN / token display; Cloud create/rotate PIN поля используют password input, а списки сотрудников показывают только `pin_configured` и credential version.
 
 Вне текущего объема:

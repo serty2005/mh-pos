@@ -392,3 +392,126 @@ func TestListInventoryLedgerReturnsBoundedReadOnlyLedger(t *testing.T) {
 		t.Fatalf("ledger response must not expose raw payload: %s", rec.Body.String())
 	}
 }
+
+func TestListInventoryStockBalancesAggregatesLedgerSafely(t *testing.T) {
+	repo := memory.NewRepository()
+	occurred := time.Date(2026, 5, 5, 9, 0, 0, 0, time.UTC)
+	repo.AddInventoryLedgerForTest(
+		contracts.InventoryLedgerEntry{
+			ID:                "ledger-in",
+			RestaurantID:      "restaurant-1",
+			WarehouseID:       "warehouse-main",
+			StockDocumentID:   "stock-doc-in",
+			SourceEventID:     "event-receipt",
+			SourceEventType:   string(contracts.EventStockReceiptCaptured),
+			CatalogItemID:     "component-1",
+			MovementType:      "IN",
+			Quantity:          "1.000",
+			UnitCode:          "PC",
+			CostingStatus:     "estimated",
+			OccurredAt:        occurred,
+			BusinessDateLocal: "2026-05-05",
+			CreatedAt:         occurred,
+		},
+		contracts.InventoryLedgerEntry{
+			ID:                "ledger-out",
+			RestaurantID:      "restaurant-1",
+			WarehouseID:       "warehouse-main",
+			StockDocumentID:   "stock-doc-out",
+			SourceEventID:     "event-sale",
+			SourceEventType:   string(contracts.EventItemServed),
+			CatalogItemID:     "component-1",
+			MovementType:      "OUT",
+			Quantity:          "3.000",
+			UnitCode:          "PC",
+			CostingStatus:     "needs_recalculation",
+			OccurredAt:        occurred.Add(time.Hour),
+			BusinessDateLocal: "2026-05-05",
+			CreatedAt:         occurred.Add(time.Hour),
+		},
+		contracts.InventoryLedgerEntry{
+			ID:                "ledger-other",
+			RestaurantID:      "restaurant-2",
+			WarehouseID:       "warehouse-main",
+			StockDocumentID:   "stock-doc-other",
+			SourceEventID:     "event-other",
+			SourceEventType:   string(contracts.EventStockReceiptCaptured),
+			CatalogItemID:     "component-1",
+			MovementType:      "IN",
+			Quantity:          "10.000",
+			UnitCode:          "PC",
+			CostingStatus:     "final",
+			OccurredAt:        occurred,
+			BusinessDateLocal: "2026-05-05",
+			CreatedAt:         occurred,
+		},
+	)
+	router := api.NewRouter(app.NewService(repo, fixedClock{}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/inventory/stock-balances?restaurant_id=restaurant-1&warehouse_id=warehouse-main&catalog_item_id=component-1&limit=10", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var items []contracts.InventoryStockBalance
+	if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected one balance, got %+v", items)
+	}
+	if items[0].QuantityOnHand != "-2.000" || items[0].CostingStatus != "mixed" || !items[0].NeedsRecalculation {
+		t.Fatalf("unexpected balance aggregate: %+v", items[0])
+	}
+	body := rec.Body.String()
+	for _, forbidden := range []string{"payload", "raw", "COGS", "margin"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("balance response must not expose %s: %s", forbidden, body)
+		}
+	}
+}
+
+func TestListInventoryStockBalancesSupportsBoundsEmptyStateAndStatusFilter(t *testing.T) {
+	repo := memory.NewRepository()
+	occurred := time.Date(2026, 5, 5, 9, 0, 0, 0, time.UTC)
+	repo.AddInventoryLedgerForTest(
+		contracts.InventoryLedgerEntry{ID: "ledger-1", RestaurantID: "restaurant-1", WarehouseID: "warehouse-main", StockDocumentID: "doc-1", SourceEventID: "event-1", SourceEventType: string(contracts.EventStockReceiptCaptured), CatalogItemID: "item-1", MovementType: "IN", Quantity: "1.000", UnitCode: "PC", CostingStatus: "estimated", OccurredAt: occurred, BusinessDateLocal: "2026-05-05", CreatedAt: occurred},
+		contracts.InventoryLedgerEntry{ID: "ledger-2", RestaurantID: "restaurant-1", WarehouseID: "warehouse-main", StockDocumentID: "doc-2", SourceEventID: "event-2", SourceEventType: string(contracts.EventStockReceiptCaptured), CatalogItemID: "item-2", MovementType: "IN", Quantity: "1.000", UnitCode: "PC", CostingStatus: "final", OccurredAt: occurred, BusinessDateLocal: "2026-05-05", CreatedAt: occurred},
+	)
+	router := api.NewRouter(app.NewService(repo, fixedClock{}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/inventory/stock-balances?restaurant_id=restaurant-1&costing_status=estimated&limit=1&offset=0", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var items []contracts.InventoryStockBalance
+	if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].CatalogItemID != "item-1" || items[0].CostingStatus != "estimated" {
+		t.Fatalf("unexpected filtered balance: %+v", items)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/inventory/stock-balances?restaurant_id=restaurant-1&catalog_item_id=missing", nil)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for empty state, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected empty balance list, got %+v", items)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/inventory/stock-balances", nil)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing restaurant_id, got %d: %s", rec.Code, rec.Body.String())
+	}
+}

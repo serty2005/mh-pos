@@ -341,6 +341,129 @@ func (r *Repository) ListInventoryLedger(_ context.Context, filter app.Inventory
 	return out, nil
 }
 
+// ListInventoryStockBalances агрегирует memory ledger rows для API tests.
+func (r *Repository) ListInventoryStockBalances(_ context.Context, filter app.InventoryStockBalanceFilter) ([]contracts.InventoryStockBalance, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	limit := filter.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	type aggregate struct {
+		balance             contracts.InventoryStockBalance
+		quantity            float64
+		normalizedStatuses  map[string]bool
+		needsRecalculation  bool
+	}
+	aggregates := map[string]*aggregate{}
+	for _, item := range r.inventoryLedger {
+		if filter.RestaurantID != "" && item.RestaurantID != filter.RestaurantID {
+			continue
+		}
+		warehouseID := strings.TrimSpace(item.WarehouseID)
+		if filter.WarehouseID != "" && warehouseID != filter.WarehouseID {
+			continue
+		}
+		if filter.CatalogItemID != "" && item.CatalogItemID != filter.CatalogItemID {
+			continue
+		}
+		if filter.BusinessDateTo != "" && item.BusinessDateLocal > filter.BusinessDateTo {
+			continue
+		}
+		key := strings.Join([]string{item.RestaurantID, warehouseID, item.CatalogItemID, item.UnitCode}, "|")
+		current := aggregates[key]
+		if current == nil {
+			current = &aggregate{
+				balance: contracts.InventoryStockBalance{
+					RestaurantID:  item.RestaurantID,
+					WarehouseID:   warehouseID,
+					CatalogItemID: item.CatalogItemID,
+					UnitCode:      item.UnitCode,
+				},
+				normalizedStatuses: map[string]bool{},
+			}
+			aggregates[key] = current
+		}
+		qty, _ := strconv.ParseFloat(strings.TrimSpace(item.Quantity), 64)
+		if item.MovementType == "OUT" {
+			qty = -qty
+		}
+		current.quantity += qty
+		status := normalizeBalanceCostingStatus(item.CostingStatus)
+		current.normalizedStatuses[status] = true
+		if item.CostingStatus == "needs_recalculation" {
+			current.needsRecalculation = true
+		}
+		if item.OccurredAt.After(current.balance.LastMovementAt) {
+			current.balance.LastMovementAt = item.OccurredAt
+		}
+		if item.BusinessDateLocal > current.balance.BusinessDateTo {
+			current.balance.BusinessDateTo = item.BusinessDateLocal
+		}
+	}
+	out := make([]contracts.InventoryStockBalance, 0, min(limit, len(aggregates)))
+	for _, current := range aggregates {
+		current.balance.QuantityOnHand = strconv.FormatFloat(current.quantity, 'f', 3, 64)
+		current.balance.CostingStatus = aggregateBalanceCostingStatus(current.normalizedStatuses)
+		current.balance.NeedsRecalculation = current.needsRecalculation
+		if filter.CostingStatus != "" && current.balance.CostingStatus != filter.CostingStatus {
+			continue
+		}
+		out = append(out, current.balance)
+	}
+	slices.SortFunc(out, func(a, b contracts.InventoryStockBalance) int {
+		if cmp := strings.Compare(a.RestaurantID, b.RestaurantID); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(a.WarehouseID, b.WarehouseID); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(a.CatalogItemID, b.CatalogItemID); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.UnitCode, b.UnitCode)
+	})
+	if offset >= len(out) {
+		return []contracts.InventoryStockBalance{}, nil
+	}
+	out = out[offset:]
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func normalizeBalanceCostingStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case "final", "recalculated":
+		return "final"
+	case "estimated":
+		return "estimated"
+	case "needs_recalculation":
+		return "needs_recalculation"
+	default:
+		return "unknown"
+	}
+}
+
+func aggregateBalanceCostingStatus(statuses map[string]bool) string {
+	if len(statuses) == 0 {
+		return "unknown"
+	}
+	if len(statuses) > 1 {
+		return "mixed"
+	}
+	for status := range statuses {
+		return status
+	}
+	return "unknown"
+}
+
 func (r *Repository) UpsertMasterDataPackage(_ context.Context, v contracts.MasterDataPackage) (contracts.MasterDataPackage, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

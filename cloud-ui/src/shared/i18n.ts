@@ -16,6 +16,7 @@ export const i18n = createI18n({
       },
       common: {
         empty: 'Нет данных',
+        loading: 'Загрузка данных...',
         no: 'Нет',
         yes: 'Да',
       },
@@ -337,7 +338,30 @@ export const i18n = createI18n({
             },
           },
           inventory: {
-            copy: 'Backend показывает safe readiness по stop-list publication, последнему Edge ACK и sync problem events без raw payload.',
+            status: 'реализовано сейчас',
+            copy: 'Cloud backend показывает аналитические остатки из stock ledger, costing status и safe readiness по stop-list publication без raw payload.',
+            emptyBalances: 'Остатки по выбранным фильтрам не найдены.',
+            filters: {
+              businessDateTo: 'Business date до',
+              catalogItem: 'Catalog item ID',
+              costingStatus: 'Costing status',
+              warehouse: 'Warehouse ID',
+            },
+            columns: {
+              catalogItem: 'Catalog item',
+              costingStatus: 'Costing status',
+              lastMovement: 'Последнее движение',
+              quantity: 'Остаток',
+              warehouse: 'Warehouse',
+            },
+            costingStatuses: {
+              all: 'Все',
+              estimated: 'estimated',
+              final: 'final',
+              mixed: 'mixed',
+              needs_recalculation: 'needs_recalculation',
+              unknown: 'unknown',
+            },
             signals: {
               edgeAck: 'Последний Edge ACK',
               packageAck: 'ACK package',
@@ -348,8 +372,9 @@ export const i18n = createI18n({
               syncProblems: 'Sync problems',
             },
             gaps: {
-              documents: 'Нет read endpoints для stock documents и movement ledger.',
-              costing: 'Нет безопасного API для просмотра costing/recalculation state.',
+              stockDocuments: 'Stock documents остаются без отдельного manager table endpoint.',
+              costingEngine: 'Полный costing engine, COGS, margin и retro recalculation DAG не реализованы.',
+              saleBlocking: 'Stock balance является аналитическим и не блокирует продажи.',
               review: 'Нет manager review queue для manual_review inventory disposition.',
             },
           },

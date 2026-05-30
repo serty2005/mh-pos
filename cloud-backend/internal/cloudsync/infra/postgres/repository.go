@@ -532,7 +532,7 @@ func (r *Repository) ListInventoryLedger(ctx context.Context, filter app.Invento
 		offset = 0
 	}
 	rows, err := r.pool.Query(ctx, `
-SELECT id,restaurant_id,stock_document_id,source_event_id,source_event_type,catalog_item_id,
+SELECT id,restaurant_id,COALESCE(warehouse_id,''),stock_document_id,source_event_id,source_event_type,catalog_item_id,
        COALESCE(order_line_id,''),movement_type,quantity::text,unit_code,unit_cost_minor,total_cost_minor,
        costing_status,occurred_at,business_date_local::text,created_at
 FROM stock_ledger
@@ -562,6 +562,7 @@ LIMIT $6 OFFSET $7`,
 		if err := rows.Scan(
 			&v.ID,
 			&v.RestaurantID,
+			&v.WarehouseID,
 			&v.StockDocumentID,
 			&v.SourceEventID,
 			&v.SourceEventType,
@@ -576,6 +577,94 @@ LIMIT $6 OFFSET $7`,
 			&v.OccurredAt,
 			&v.BusinessDateLocal,
 			&v.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// ListInventoryStockBalances агрегирует Cloud-owned stock ledger в bounded balance view.
+func (r *Repository) ListInventoryStockBalances(ctx context.Context, filter app.InventoryStockBalanceFilter) ([]contracts.InventoryStockBalance, error) {
+	limit := filter.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := r.pool.Query(ctx, `
+WITH scoped AS (
+  SELECT restaurant_id,
+         COALESCE(warehouse_id, '') AS warehouse_id,
+         catalog_item_id,
+         unit_code,
+         CASE WHEN movement_type = 'IN' THEN quantity ELSE -quantity END AS signed_quantity,
+         CASE
+           WHEN costing_status = 'recalculated' THEN 'final'
+           WHEN costing_status = 'failed' THEN 'unknown'
+           ELSE costing_status
+         END AS normalized_costing_status,
+         costing_status,
+         occurred_at,
+         business_date_local
+  FROM stock_ledger
+  WHERE restaurant_id = $1
+    AND ($2 = '' OR COALESCE(warehouse_id, '') = $2)
+    AND ($3 = '' OR catalog_item_id = $3)
+    AND ($4 = '' OR business_date_local <= $4::date)
+),
+grouped AS (
+  SELECT restaurant_id,
+         warehouse_id,
+         catalog_item_id,
+         unit_code,
+         SUM(signed_quantity)::text AS quantity_on_hand,
+         CASE
+           WHEN COUNT(DISTINCT normalized_costing_status) = 0 THEN 'unknown'
+           WHEN COUNT(DISTINCT normalized_costing_status) = 1 THEN MIN(normalized_costing_status)
+           ELSE 'mixed'
+         END AS costing_status,
+         BOOL_OR(costing_status = 'needs_recalculation') AS needs_recalculation,
+         MAX(occurred_at) AS last_movement_at,
+         MAX(business_date_local)::text AS business_date_to
+  FROM scoped
+  GROUP BY restaurant_id, warehouse_id, catalog_item_id, unit_code
+)
+SELECT restaurant_id,warehouse_id,catalog_item_id,quantity_on_hand,unit_code,costing_status,
+       needs_recalculation,last_movement_at,business_date_to
+FROM grouped
+WHERE ($5 = '' OR costing_status = $5)
+ORDER BY restaurant_id ASC, warehouse_id ASC, catalog_item_id ASC, unit_code ASC
+LIMIT $6 OFFSET $7`,
+		filter.RestaurantID,
+		filter.WarehouseID,
+		filter.CatalogItemID,
+		filter.BusinessDateTo,
+		filter.CostingStatus,
+		limit,
+		offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]contracts.InventoryStockBalance, 0, limit)
+	for rows.Next() {
+		var v contracts.InventoryStockBalance
+		if err := rows.Scan(
+			&v.RestaurantID,
+			&v.WarehouseID,
+			&v.CatalogItemID,
+			&v.QuantityOnHand,
+			&v.UnitCode,
+			&v.CostingStatus,
+			&v.NeedsRecalculation,
+			&v.LastMovementAt,
+			&v.BusinessDateTo,
 		); err != nil {
 			return nil, err
 		}
