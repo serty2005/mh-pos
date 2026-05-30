@@ -88,6 +88,7 @@ func NewRouter(service *app.Service) http.Handler {
 		r.Get("/kitchen/tickets", h.listKitchenTickets)
 		r.Get("/kitchen/catalog/items/{catalog_item_id}/recipe", h.getKitchenRecipe)
 		r.Get("/kitchen/proposals", h.listKitchenProposals)
+		r.Get("/kitchen/stop-list", h.listKitchenStopListState)
 		r.Post("/kitchen/tickets/{id}/accept", h.acceptKitchenTicket)
 		r.Post("/kitchen/tickets/{id}/start", h.startKitchenTicket)
 		r.Post("/kitchen/tickets/{id}/hold", h.holdKitchenTicket)
@@ -1060,6 +1061,13 @@ func (h *Handler) updateKitchenStopList(w http.ResponseWriter, r *http.Request) 
 	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.UpdateKitchenStopList(r.Context(), cmd)
 	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) listKitchenStopListState(w http.ResponseWriter, r *http.Request) {
+	var cmd app.ListStopListStateCommand
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.ListKitchenStopListState(r.Context(), cmd)
+	writeOK(w, r, v, err)
 }
 
 func readLimitOffset(w http.ResponseWriter, r *http.Request) (int, int, bool) {

@@ -20,14 +20,16 @@ import type {
   BackendKitchenOrderQueueItem,
   BackendKitchenProposal,
   BackendKitchenRecipe,
+  BackendKitchenStopListState,
   BackendKitchenTicket,
 } from '../../shared/schemas';
 
 type KitchenBottomSection = 'orders' | 'stock' | 'kitchen';
 type OrdersTab = 'queue' | 'ready';
 type StockTab = 'receipt' | 'count' | 'writeoff' | 'production';
-type KitchenTab = 'recipes' | 'suggestions' | 'my_proposals';
+type KitchenTab = 'recipes' | 'suggestions' | 'stop_list' | 'my_proposals';
 type CatalogKindFilter = 'all' | 'dish' | 'good' | 'semi_finished' | 'service';
+type StopListAction = 'stop' | 'resume';
 type RecipeSuggestionAction =
   | 'change_prep_time'
   | 'add_ingredient'
@@ -71,6 +73,12 @@ type RecipeSuggestionState = {
   reason: string;
 };
 
+type StopListFormState = {
+  itemId: string;
+  action: StopListAction;
+  reason: string;
+};
+
 const orderActions: Record<string, KitchenTicketAction[]> = {
   new: ['accept', 'cancel'],
   accepted: ['start', 'hold', 'cancel'],
@@ -92,6 +100,7 @@ const recipeSuggestionActions: RecipeSuggestionAction[] = [
   'change_quantity',
   'change_loss_percent',
 ];
+const stopListActions: StopListAction[] = ['stop', 'resume'];
 
 function todayLocalDate() {
   return new Date().toISOString().slice(0, 10);
@@ -201,6 +210,14 @@ function recipeActionLabel(action: RecipeSuggestionAction) {
   return t.kitchen.recipeActions[action];
 }
 
+function stopListActionLabel(action: StopListAction) {
+  return t.kitchen.stopListActions[action];
+}
+
+function stopListSyncLabel(state: string) {
+  return t.kitchen.stopListSync[state as keyof typeof t.kitchen.stopListSync] ?? state;
+}
+
 function safeNumber(value: string) {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -244,6 +261,7 @@ export function POSKitchenSection({ section }: { section: KitchenBottomSection }
   const [catalog, setCatalog] = useState<BackendCatalogItem[]>([]);
   const [recipe, setRecipe] = useState<BackendKitchenRecipe | null>(null);
   const [proposals, setProposals] = useState<BackendKitchenProposal[]>([]);
+  const [stopList, setStopList] = useState<BackendKitchenStopListState[]>([]);
   const [recipeItemId, setRecipeItemId] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -271,11 +289,25 @@ export function POSKitchenSection({ section }: { section: KitchenBottomSection }
     prepTimeDeltaMinutes: '0',
     reason: '',
   });
+  const [stopListForm, setStopListForm] = useState<StopListFormState>({
+    itemId: '',
+    action: 'stop',
+    reason: '',
+  });
 
   const selectedStockItem = useMemo(
     () => catalog.find((item) => item.id === stockForm.itemId),
     [catalog, stockForm.itemId],
   );
+  const selectedStopListItem = useMemo(
+    () => catalog.find((item) => item.id === stopListForm.itemId),
+    [catalog, stopListForm.itemId],
+  );
+  const stopListByCatalogItem = useMemo(() => {
+    const map = new Map<string, BackendKitchenStopListState>();
+    stopList.forEach((item) => map.set(item.catalog_item_id, item));
+    return map;
+  }, [stopList]);
 
   const activeCatalog = useMemo(() => catalog.filter((item) => item.active !== false), [catalog]);
   const stockCatalog = useMemo(
@@ -288,6 +320,10 @@ export function POSKitchenSection({ section }: { section: KitchenBottomSection }
   );
   const ingredientCatalog = useMemo(
     () => activeCatalog.filter((item) => ['good', 'semi_finished'].includes(catalogKind(item))),
+    [activeCatalog],
+  );
+  const stopListCatalog = useMemo(
+    () => activeCatalog.filter((item) => catalogKind(item) !== 'service'),
     [activeCatalog],
   );
 
@@ -322,6 +358,11 @@ export function POSKitchenSection({ section }: { section: KitchenBottomSection }
     setProposals(items);
   };
 
+  const loadStopList = async () => {
+    const items = await api.listKitchenStopList();
+    setStopList(items);
+  };
+
   const runSafe = async (fn: () => Promise<void>, showSuccess = false) => {
     setSafeError('');
     setSuccessMessage('');
@@ -340,7 +381,7 @@ export function POSKitchenSection({ section }: { section: KitchenBottomSection }
     setSafeError('');
     setLoading(true);
     try {
-      await Promise.all([loadOrders(), loadCatalog(), loadProposals()]);
+      await Promise.all([loadOrders(), loadCatalog(), loadProposals(), loadStopList()]);
     } catch (error) {
       setSafeError(localizedError(error));
     } finally {
@@ -362,6 +403,10 @@ export function POSKitchenSection({ section }: { section: KitchenBottomSection }
 
   const updateRecipeSuggestion = (patch: Partial<RecipeSuggestionState>) => {
     setRecipeSuggestion((current) => ({ ...current, ...patch }));
+  };
+
+  const updateStopListForm = (patch: Partial<StopListFormState>) => {
+    setStopListForm((current) => ({ ...current, ...patch }));
   };
 
   const selectStockItem = (itemId: string) => {
@@ -518,6 +563,20 @@ export function POSKitchenSection({ section }: { section: KitchenBottomSection }
     setRecipe(nextRecipe);
   }, true);
 
+  const submitStopListUpdate = () => runSafe(async () => {
+    if (!stopListForm.itemId || !stopListForm.reason.trim()) throw new Error('validation');
+    const existing = stopListByCatalogItem.get(stopListForm.itemId);
+    await api.submitKitchenStopListUpdate({
+      stop_list_id: existing?.id,
+      catalog_item_id: stopListForm.itemId,
+      available_quantity: stopListForm.action === 'stop' ? 0 : undefined,
+      active: stopListForm.action === 'stop',
+      reason: stopListForm.reason.trim(),
+    });
+    setStopListForm({ itemId: '', action: 'stop', reason: '' });
+    await Promise.all([loadStopList(), loadCatalog()]);
+  }, true);
+
   const sectionTitle = section === 'orders' ? t.kitchen.navOrders : section === 'stock' ? t.kitchen.navStock : t.kitchen.navKitchen;
 
   return (
@@ -620,6 +679,7 @@ export function POSKitchenSection({ section }: { section: KitchenBottomSection }
             items={[
               { id: 'recipes', label: t.kitchen.tabRecipes },
               { id: 'suggestions', label: t.kitchen.tabSuggestions },
+              { id: 'stop_list', label: t.kitchen.tabStopList, count: stopList.filter((item) => item.active).length },
               { id: 'my_proposals', label: t.kitchen.tabMyProposals, count: proposals.length },
             ]}
           />
@@ -648,6 +708,18 @@ export function POSKitchenSection({ section }: { section: KitchenBottomSection }
                   onSubmit={() => void submitCatalogSuggestion()}
                 />
               </div>
+            )}
+
+            {kitchenTab === 'stop_list' && (
+              <StopListWorkspace
+                catalog={stopListCatalog}
+                stopList={stopList}
+                selectedItem={selectedStopListItem}
+                form={stopListForm}
+                busy={busy}
+                onChange={updateStopListForm}
+                onSubmit={() => void submitStopListUpdate()}
+              />
             )}
 
             {kitchenTab === 'my_proposals' && (
@@ -1103,6 +1175,120 @@ function CatalogSuggestionForm({
         <PosButton fullWidth variant="primary" disabled={busy} icon={<Send className="w-4 h-4" />}>{t.kitchen.submit}</PosButton>
       </div>
     </form>
+  );
+}
+
+function StopListWorkspace({
+  catalog,
+  stopList,
+  selectedItem,
+  form,
+  busy,
+  onChange,
+  onSubmit,
+}: {
+  catalog: BackendCatalogItem[];
+  stopList: BackendKitchenStopListState[];
+  selectedItem?: BackendCatalogItem;
+  form: StopListFormState;
+  busy: boolean;
+  onChange: (patch: Partial<StopListFormState>) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="border border-[var(--pos-border)] bg-[var(--pos-surface)] min-h-[420px] flex flex-col">
+        <div className="p-4 border-b border-[var(--pos-border)]">
+          <h3 className="font-mono text-sm font-black uppercase tracking-widest text-[var(--pos-text-primary)]">{t.kitchen.stopListCurrent}</h3>
+          <p className="mt-1 text-xs text-[var(--pos-text-secondary)]">{t.kitchen.stopListSyncCopy}</p>
+        </div>
+        <div className="flex-1 min-h-0 overflow-auto pos-scrollbar-thin divide-y divide-[var(--pos-border)]">
+          {stopList.length === 0 ? (
+            <PosEmptyState title={t.kitchen.stopListEmpty} description={t.kitchen.stopListSyncCopy} icon={<AlertTriangle className="w-10 h-10" />} />
+          ) : stopList.map((entry) => {
+            const catalogItem = catalog.find((item) => item.id === entry.catalog_item_id);
+            return (
+              <article key={entry.id} className="p-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
+                <div className="min-w-0">
+                  <div className="font-sans text-sm font-semibold text-[var(--pos-text-primary)] break-words">
+                    {catalogItem?.name || entry.catalog_item_id}
+                  </div>
+                  <div className="mt-1 font-mono text-[10px] uppercase tracking-wider text-[var(--pos-text-muted)]">
+                    {entry.active ? t.kitchen.stopListActive : t.kitchen.stopListInactive}
+                    {typeof entry.available_quantity === 'number' ? ` · ${t.kitchen.stopListQty} ${entry.available_quantity}` : ''}
+                  </div>
+                  {entry.reason && <div className="mt-2 text-xs text-[var(--pos-text-secondary)] break-words">{entry.reason}</div>}
+                </div>
+                <SyncStatePill state={entry.sync_state} status={entry.outbox_status} attempts={entry.outbox_attempts} />
+              </article>
+            );
+          })}
+        </div>
+      </div>
+      <StopListForm
+        catalog={catalog}
+        selectedItem={selectedItem}
+        form={form}
+        busy={busy}
+        onChange={onChange}
+        onSubmit={onSubmit}
+      />
+    </div>
+  );
+}
+
+function StopListForm({
+  catalog,
+  selectedItem,
+  form,
+  busy,
+  onChange,
+  onSubmit,
+}: {
+  catalog: BackendCatalogItem[];
+  selectedItem?: BackendCatalogItem;
+  form: StopListFormState;
+  busy: boolean;
+  onChange: (patch: Partial<StopListFormState>) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <form className="border border-[var(--pos-border)] bg-[var(--pos-surface)] p-4" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
+      <h3 className="font-mono text-sm font-black uppercase tracking-widest text-[var(--pos-text-primary)] mb-4">{t.kitchen.stopListEdit}</h3>
+      <PosFormRow id="stop-list-item" label={t.kitchen.selectCatalogItem}>
+        <select id="stop-list-item" className={inputClassName} value={form.itemId} onChange={(event) => onChange({ itemId: event.target.value })}>
+          <option value="">{t.kitchen.selectCatalogItem}</option>
+          {catalog.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+      </PosFormRow>
+      <div className="mb-4 border border-[var(--pos-border)] bg-[var(--pos-surface-raised)] p-3">
+        <div className="font-mono text-[10px] uppercase tracking-widest text-[var(--pos-text-muted)]">{t.kitchen.selectedItem}</div>
+        <div className="mt-1 font-sans text-sm font-semibold text-[var(--pos-text-primary)]">{selectedItem?.name || t.kitchen.selectCatalogItem}</div>
+      </div>
+      <PosFormRow id="stop-list-action" label={t.kitchen.stopListAction}>
+        <select id="stop-list-action" className={inputClassName} value={form.action} onChange={(event) => onChange({ action: event.target.value as StopListAction })}>
+          {stopListActions.map((action) => <option key={action} value={action}>{stopListActionLabel(action)}</option>)}
+        </select>
+      </PosFormRow>
+      <PosFormRow id="stop-list-reason" label={t.kitchen.reason}>
+        <textarea id="stop-list-reason" rows={4} className={textareaClassName} value={form.reason} onChange={(event) => onChange({ reason: event.target.value })} />
+      </PosFormRow>
+      <PosButton fullWidth variant={form.action === 'stop' ? 'danger' : 'primary'} disabled={busy || !form.itemId} icon={<Send className="w-4 h-4" />}>{t.kitchen.submitStopList}</PosButton>
+    </form>
+  );
+}
+
+function SyncStatePill({ state, status, attempts }: { state: string; status?: string; attempts?: number }) {
+  const tone = state === 'problem'
+    ? 'border-[var(--pos-status-danger)] text-[var(--pos-status-danger)]'
+    : state === 'acknowledged' || state === 'cloud_authority'
+      ? 'border-[var(--pos-status-success)] text-[var(--pos-status-success)]'
+      : 'border-[var(--pos-sync-pending)] text-[var(--pos-sync-pending)]';
+  return (
+    <div className={`self-start border px-2 py-1 font-mono text-[10px] uppercase tracking-wider ${tone}`}>
+      <div>{stopListSyncLabel(state)}</div>
+      {status && <div className="mt-0.5 text-[9px] opacity-80">{status}{attempts ? ` · ${attempts}` : ''}</div>}
+    </div>
   );
 }
 

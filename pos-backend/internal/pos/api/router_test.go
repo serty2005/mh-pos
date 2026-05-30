@@ -1719,6 +1719,22 @@ func TestKitchenStopListUpdateRouteWritesLocalOverlayAndOutboxIdempotently(t *te
 	if got := countAPILocalEventsByType(t, f, "StopListUpdated"); got != 1 {
 		t.Fatalf("replay must not create duplicate local event, got %d", got)
 	}
+
+	stateRR := f.get(t, "/api/v1/kitchen/stop-list")
+	if stateRR.Code != http.StatusOK {
+		t.Fatalf("expected stop-list state 200, got %d: %s", stateRR.Code, stateRR.Body.String())
+	}
+	stateBody := stateRR.Body.String()
+	if strings.Contains(stateBody, "payload_json") || strings.Contains(stateBody, "last_error") {
+		t.Fatalf("stop-list state must not expose raw outbox payload or error body: %s", stateBody)
+	}
+	states := decodeAPIResponse[[]app.StopListState](t, stateRR)
+	if len(states) != 1 || states[0].ID != "api-stop-soup" || states[0].CatalogItemID != f.menuItem.CatalogItemID {
+		t.Fatalf("unexpected stop-list state response: %+v", states)
+	}
+	if states[0].SyncState != "pending" || states[0].OutboxStatus != "pending" || states[0].OutboxCommandID != "cmd-api-stop-list-update" {
+		t.Fatalf("expected pending safe outbox metadata, got %+v", states[0])
+	}
 }
 
 func TestKitchenTicketInvalidTransitionAndReplayAreRejectedSafely(t *testing.T) {

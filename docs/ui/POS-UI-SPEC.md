@@ -70,10 +70,11 @@ Waiter mobile UI in `pos-ui/src/pages/WaiterPage.vue` и `pos-ui/src/pages/pos/u
 - active buttons отображаются только для допустимых backend transitions `accept`, `start`, `hold`, `ready`, `serve`, `recall`, `cancel`;
 - после status action UI не подменяет truth оптимистично, а перечитывает `GET /api/v1/kitchen/order-queue`;
 - раздел `Склад` использует full catalog picker поверх `GET /api/v1/catalog/items` и формы `Приемка`, `Ревизия`, `Списание`, `Приготовление`;
-- раздел `Кухня` показывает `Техкарты`, `Предложения`, `Мои предложения`, читает recipe response с `catalog_item`, `recipe_version`, `ingredients` и отправляет `CatalogItemChangeSuggested`/`RecipeChangeSuggested`;
+- раздел `Кухня` показывает `Техкарты`, `Предложения`, `Стоп-лист`, `Мои предложения`, читает recipe response с `catalog_item`, `recipe_version`, `ingredients`, отправляет `CatalogItemChangeSuggested`/`RecipeChangeSuggested` и отправляет stop-list update commands через `POST /api/v1/kitchen/stop-list-updates`;
+- вкладка `Стоп-лист` читает `GET /api/v1/kitchen/stop-list`, показывает только safe local overlay и outbox metadata (`sync_state`, `outbox_status`, `command_id`, attempts) без raw `payload_json`/`last_error`, а sale blocking остается backend-authoritative;
 - `Мои предложения` получает Cloud approve/reject/request-changes через `proposal_feedback` после sync и не применяет master-data локально без publication;
 - loading/error/empty/no-permission states идут через `pos-ui-g/src/shared/ui` и `pos-ui-g/src/shared/i18n`;
-- hardware bump-bar/printer orchestration и stop-list edit не описываются как реализованные.
+- hardware bump-bar/printer orchestration и rich KDS analytics не описываются как реализованные.
 
 ## Runtime Error And Empty-State Handling
 
@@ -229,7 +230,7 @@ Requirements:
 - `/pos/waiter` должен расширяться только в пределах подтвержденных backend contracts; он остается единственным mobile layout полного пилота, остальные modes не получают мобильные варианты;
 - `/pos/manager` остается вне POS UI runtime, если manager операции полностью покрыты Cloud UI;
 - `/pos/kitchen` / `pos-ui-g` должен расширяться только поверх подтвержденных backend routes;
-- kitchen stop-list view/edit UI поверх backend `POST /api/v1/kitchen/stop-list-updates` и sync pending indicator для отдельных stock/proposal/stop-list commands.
+- расширенный production workflow polish для stop-list beyond минимальной backend-backed формы и sync indicator.
 
 ## POS Shell Visual Contract
 
@@ -250,7 +251,7 @@ Requirements:
 Вне текущего объема:
 
 - `/pos/manager` является route shell, пока manager operations покрываются Cloud UI.
-- `/pos/kitchen` не покрывает stop-list edit UI, bump-bar/printer orchestration и rich KDS analytics.
+- `/pos/kitchen` не покрывает bump-bar/printer orchestration и rich KDS analytics.
 
 ## Вне Текущего Объема
 
@@ -270,7 +271,7 @@ Requirements:
 
 - waiter mobile viewport `390x844`: login, table selection, active order creation, menu/modifier selection, quantity change, void line, issue/reprint precheck, no payment controls by default;
 - kitchen route: backend-backed order queue/status lifecycle, stock forms, recipe view and proposal forms work with safe localized error handling and no UI-authoritative status decisions;
-- запланировано далее: stop-list edit UI поверх backend route, sync pending indicator, bump-bar/printer orchestration and rich KDS analytics;
+- запланировано далее: bump-bar/printer orchestration and rich KDS analytics;
 - cashier/KDS/manager routes are checked at desktop/tablet widths only; mobile acceptance belongs to waiter route;
 - cashier regression: current cashier flow remains unchanged and still passes payment/refund/sync e2e tests;
 - all new labels, empty states, errors and dialog text are added through the active UI locale layer (`vue-i18n` in legacy Vue UI, `pos-ui-g/src/shared/i18n` in React UI).

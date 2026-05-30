@@ -145,11 +145,32 @@ type UpdateStopListCommand struct {
 	Reason            string   `json:"reason,omitempty"`
 }
 
+type ListStopListStateCommand struct {
+	shared.CommandMeta
+}
+
 type StockCommandResult struct {
 	ID          string `json:"id"`
 	WarehouseID string `json:"warehouse_id"`
 	EventType   string `json:"event_type"`
 	Replayed    bool   `json:"replayed"`
+}
+
+type StopListState struct {
+	ID                string     `json:"id"`
+	CatalogItemID     string     `json:"catalog_item_id"`
+	AvailableQuantity *float64   `json:"available_quantity,omitempty"`
+	Source            string     `json:"source"`
+	Reason            *string    `json:"reason,omitempty"`
+	Active            bool       `json:"active"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+	SyncState         string     `json:"sync_state"`
+	OutboxCommandID   string     `json:"outbox_command_id,omitempty"`
+	OutboxStatus      string     `json:"outbox_status,omitempty"`
+	OutboxSequenceNo  int64      `json:"outbox_sequence_no,omitempty"`
+	OutboxAttempts    int        `json:"outbox_attempts,omitempty"`
+	SentAt            *time.Time `json:"sent_at,omitempty"`
+	NextRetryAt       *time.Time `json:"next_retry_at,omitempty"`
 }
 
 type GetRecipeCommand struct {
@@ -818,6 +839,58 @@ func (s *Service) UpdateStopList(ctx context.Context, cmd UpdateStopListCommand)
 	return out, err
 }
 
+func (s *Service) ListStopListState(ctx context.Context, cmd ListStopListStateCommand) ([]StopListState, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionKitchenStopListView))
+	if err != nil {
+		return nil, err
+	}
+	entries, err := s.repo.ListStopListEntries(ctx, operator.Employee.RestaurantID)
+	if err != nil {
+		return nil, err
+	}
+	outboxRows, err := s.repo.ListOutboxByCommandType(ctx, "StopListUpdated", 500)
+	if err != nil {
+		return nil, err
+	}
+	latestByStopListID := map[string]domain.OutboxMessage{}
+	for _, msg := range outboxRows {
+		if msg.AggregateType != "StopList" || msg.CommandType != "StopListUpdated" {
+			continue
+		}
+		if current, ok := latestByStopListID[msg.AggregateID]; !ok || msg.SequenceNo > current.SequenceNo {
+			latestByStopListID[msg.AggregateID] = msg
+		}
+	}
+	out := make([]StopListState, 0, len(entries))
+	for _, entry := range entries {
+		state := StopListState{
+			ID:                entry.ID,
+			CatalogItemID:     entry.CatalogItemID,
+			AvailableQuantity: entry.AvailableQuantity,
+			Source:            entry.Source,
+			Reason:            entry.Reason,
+			Active:            entry.Active,
+			UpdatedAt:         entry.UpdatedAt,
+			SyncState:         "cloud_authority",
+		}
+		if strings.HasPrefix(entry.Source, "edge_") {
+			state.SyncState = "unknown"
+		}
+		if msg, ok := latestByStopListID[entry.ID]; ok {
+			state.OutboxCommandID = msg.CommandID
+			state.OutboxStatus = string(msg.Status)
+			state.OutboxSequenceNo = msg.SequenceNo
+			state.OutboxAttempts = msg.Attempts
+			state.SentAt = msg.SentAt
+			state.NextRetryAt = msg.NextRetryAt
+			state.SyncState = stopListSyncState(msg.Status)
+		}
+		out = append(out, state)
+	}
+	return out, nil
+}
+
 func (s *Service) replayedStockCommand(ctx context.Context, commandID, eventType string) (StockCommandResult, bool, error) {
 	commandID = strings.TrimSpace(commandID)
 	if commandID == "" {
@@ -834,6 +907,19 @@ func (s *Service) replayedStockCommand(ctx context.Context, commandID, eventType
 		return StockCommandResult{}, false, fmt.Errorf("%w: %s", domain.ErrDuplicateCommand, commandID)
 	}
 	return replayedStockCommandResult(msg), true, nil
+}
+
+func stopListSyncState(status domain.OutboxStatus) string {
+	switch status {
+	case domain.OutboxSent:
+		return "acknowledged"
+	case domain.OutboxFailed, domain.OutboxSuspended:
+		return "problem"
+	case domain.OutboxPending, domain.OutboxProcessing:
+		return "pending"
+	default:
+		return "unknown"
+	}
 }
 
 func replayedStockCommandResult(msg *domain.OutboxMessage) StockCommandResult {

@@ -55,6 +55,7 @@ const (
 	PermissionKitchenStockInventoryCount PermissionID = "pos.kitchen.stock.inventory_count"
 	PermissionKitchenStockWriteOff       PermissionID = "pos.kitchen.stock.write_off"
 	PermissionKitchenProductionComplete  PermissionID = "pos.kitchen.production.complete"
+	PermissionKitchenStopListView        PermissionID = "pos.kitchen.stop_list.view"
 	PermissionKitchenStopListUpdate      PermissionID = "pos.kitchen.stop_list.update"
 	PermissionSyncView                   PermissionID = "pos.sync.view"
 	// Идентификатор права manager/service sync operation.
@@ -103,6 +104,7 @@ var knownPermissionIDs = map[PermissionID]struct{}{
 	PermissionKitchenStockInventoryCount: {},
 	PermissionKitchenStockWriteOff:       {},
 	PermissionKitchenProductionComplete:  {},
+	PermissionKitchenStopListView:        {},
 	PermissionKitchenStopListUpdate:      {},
 	PermissionSyncView:                   {},
 	PermissionSyncRetryFailed:            {},
@@ -265,6 +267,7 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionKitchenStockInventoryCount,
 			PermissionKitchenStockWriteOff,
 			PermissionKitchenProductionComplete,
+			PermissionKitchenStopListView,
 			PermissionKitchenStopListUpdate,
 		},
 	},

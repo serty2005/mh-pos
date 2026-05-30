@@ -91,7 +91,9 @@ type CaptureStockWriteOffCommand = appkitchen.CaptureStockWriteOffCommand
 type StockWriteOffLineCommand = appkitchen.StockWriteOffLineCommand
 type CompleteProductionCommand = appkitchen.CompleteProductionCommand
 type UpdateStopListCommand = appkitchen.UpdateStopListCommand
+type ListStopListStateCommand = appkitchen.ListStopListStateCommand
 type StockCommandResult = appkitchen.StockCommandResult
+type StopListState = appkitchen.StopListState
 type GetKitchenRecipeCommand = appkitchen.GetRecipeCommand
 type KitchenRecipeView = appkitchen.RecipeView
 type CreateKitchenCatalogSuggestionCommand = appkitchen.CreateCatalogSuggestionCommand
@@ -555,6 +557,10 @@ func (s *Service) CompleteKitchenProduction(ctx context.Context, cmd CompletePro
 
 func (s *Service) UpdateKitchenStopList(ctx context.Context, cmd UpdateStopListCommand) (StockCommandResult, error) {
 	return s.kitchen.UpdateStopList(ctx, cmd)
+}
+
+func (s *Service) ListKitchenStopListState(ctx context.Context, cmd ListStopListStateCommand) ([]StopListState, error) {
+	return s.kitchen.ListStopListState(ctx, cmd)
 }
 
 func (s *Service) GetKitchenRecipe(ctx context.Context, cmd GetKitchenRecipeCommand) (KitchenRecipeView, error) {

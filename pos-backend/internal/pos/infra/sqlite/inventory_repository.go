@@ -202,6 +202,26 @@ ON CONFLICT(restaurant_id,catalog_item_id) DO UPDATE SET
 	return normalizeErr(err)
 }
 
+func (r *Repository) ListStopListEntries(ctx context.Context, restaurantID string) ([]domain.StopListEntry, error) {
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,restaurant_id,catalog_item_id,available_quantity,source,reason,active,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at,updated_at
+FROM stop_lists
+WHERE restaurant_id = ? AND cloud_deleted_at IS NULL
+ORDER BY updated_at DESC, catalog_item_id, id`, restaurantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.StopListEntry
+	for rows.Next() {
+		v, err := scanStopListEntry(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *v)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) UpsertMasterWarehouseReference(ctx context.Context, v *domain.WarehouseReference, meta domain.MasterRecordSyncMeta) error {
 	cloudVersion := v.CloudVersion
 	if cloudVersion == nil {
@@ -226,17 +246,20 @@ ON CONFLICT(id) DO UPDATE SET
 }
 
 func (r *Repository) GetBlockingStopListEntry(ctx context.Context, restaurantID, catalogItemID string) (*domain.StopListEntry, error) {
+	return scanStopListEntry(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,catalog_item_id,available_quantity,source,reason,active,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at,updated_at
+FROM stop_lists
+WHERE restaurant_id = ? AND catalog_item_id = ? AND active = 1 AND cloud_deleted_at IS NULL AND (available_quantity IS NULL OR available_quantity <= 0)
+LIMIT 1`, restaurantID, catalogItemID))
+}
+
+func scanStopListEntry(row interface{ Scan(...any) error }) (*domain.StopListEntry, error) {
 	var v domain.StopListEntry
 	var available sql.NullFloat64
 	var reason, cloudUpdatedAt, cloudDeletedAt, lastSyncedAt sql.NullString
 	var cloudVersion sql.NullInt64
 	var active int
 	var updatedAt string
-	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,catalog_item_id,available_quantity,source,reason,active,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at,updated_at
-FROM stop_lists
-WHERE restaurant_id = ? AND catalog_item_id = ? AND active = 1 AND cloud_deleted_at IS NULL AND (available_quantity IS NULL OR available_quantity <= 0)
-LIMIT 1`, restaurantID, catalogItemID).Scan(&v.ID, &v.RestaurantID, &v.CatalogItemID, &available, &v.Source, &reason, &active, &cloudVersion, &cloudUpdatedAt, &cloudDeletedAt, &lastSyncedAt, &updatedAt)
-	if err != nil {
+	if err := row.Scan(&v.ID, &v.RestaurantID, &v.CatalogItemID, &available, &v.Source, &reason, &active, &cloudVersion, &cloudUpdatedAt, &cloudDeletedAt, &lastSyncedAt, &updatedAt); err != nil {
 		return nil, normalizeErr(err)
 	}
 	v.AvailableQuantity = nullFloat64Ptr(available)

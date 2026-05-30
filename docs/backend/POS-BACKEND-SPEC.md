@@ -348,8 +348,8 @@ Recipes/inventory:
 - Реализовано сейчас: минимальный POS Edge KDS lifecycle foundation создает kitchen tickets из order lines, пишет `KitchenTicketStatusChanged`, а `serve` пишет `ItemServed`.
 - Реализовано сейчас: POS Edge kitchen stock input routes валидируют `warehouse_id`/default warehouse, существующие stock-capable catalog items, receipt supplier/document date/line totals, inventory count `counted_quantity`, write-off reason и production для active `semi_finished` с active recipe; routes пишут только `local_event_log`/`pos_sync_outbox`.
 - Реализовано сейчас: POS Edge kitchen recipe/proposal routes читают active recipe из `recipe_versions`/`recipe_lines`, добавляют ingredient names из полного `catalog_items`, сохраняют локальные `kitchen_proposals`, пишут `CatalogItemChangeSuggested`/`RecipeChangeSuggested` и не применяют предложения к catalog/recipe read model до Cloud publication.
-- Не реализовано сейчас: Edge manager/KDS stop-list edit flow, modifier linked catalog item stock consumption, компенсирующий пересчет уже обработанного served fact после recall, retro costing DAG.
-- Запланировано до полного пилота: Cloud authoring/publication UI polish для recipes/stop-list, `StopListUpdated` edit/audit flow и расширение KDS за пределы ticket lifecycle foundation.
+- Не реализовано сейчас: modifier linked catalog item stock consumption, компенсирующий пересчет уже обработанного served fact после recall, retro costing DAG.
+- Запланировано до полного пилота: Cloud authoring/publication UI polish для recipes/stop-list, production workflow polish для `StopListUpdated` review и расширение KDS за пределы ticket lifecycle foundation.
 - Профильный целевой contract: `docs/backend/INVENTORY-COSTING-SPEC.md`.
 
 ## Full Pilot Backend Delta
@@ -383,6 +383,8 @@ Recipes/inventory:
   - `POST /api/v1/kitchen/catalog-suggestions`;
   - `POST /api/v1/kitchen/recipe-suggestions`;
   - `GET /api/v1/kitchen/proposals`;
+  - `GET /api/v1/kitchen/stop-list`;
+  - `POST /api/v1/kitchen/stop-list-updates`;
   - `GET /api/v1/kitchen/order-queue` требует `pos.kitchen.view`, поддерживает `status` по вычисляемому `kitchen_order_status`, `station`, `limit`, `offset`, default/max limit `50/100`, grouped tickets по order и backend-side `elapsed_seconds`;
   - `GET /api/v1/kitchen/tickets` требует `pos.kitchen.view`, поддерживает `status`, `station`, `limit`, `offset`, default/max limit `50/100` и stable sort `created_at ASC, id ASC`;
   - status actions требуют `pos.kitchen.status.change`, принимают `command_id`, возвращают safe conflict для недопустимого перехода и не считают UI visibility security boundary;
@@ -405,7 +407,12 @@ Recipes/inventory:
   - replay того же proposal `command_id` для того же event type возвращает сохраненное proposal с `replayed = true`;
   - предложения не мутируют `catalog_items`, `recipe_versions` или `recipe_lines`; Edge применяет Cloud-approved changes только через последующую Cloud -> Edge publication;
   - `proposal_feedback` stream обновляет локальные `kitchen_proposals` после Cloud approve/reject/request-changes и не мутирует catalog/recipe read model напрямую.
-- Kitchen stop-list edit / Edge `StopListUpdated` остается запланировано далее.
+- Kitchen stop-list API реализовано сейчас:
+  - `GET /api/v1/kitchen/stop-list` требует `pos.kitchen.stop_list.view`, возвращает safe DTO по локальному `stop_lists` overlay и последнему `StopListUpdated` outbox status без `payload_json` и без raw `last_error`;
+  - `POST /api/v1/kitchen/stop-list-updates` требует `pos.kitchen.stop_list.update`, принимает `command_id`, optional `stop_list_id`, optional `warehouse_id`, `catalog_item_id`, optional non-negative `available_quantity`, `active`, `reason`;
+  - command валидирует actor/session/device meta, catalog item и warehouse/default warehouse, пишет local overlay source `edge_overlay_requires_manager_review` и `StopListUpdated` в `local_event_log`/`pos_sync_outbox`;
+  - replay того же `command_id` для `StopListUpdated` возвращает сохраненный `id`, `warehouse_id`, `event_type`, `replayed = true` без второго outbox/local event;
+  - UI sync indicator использует только backend `sync_state`/`outbox_status`: `pending`, `acknowledged`, `problem`, `cloud_authority`, `unknown`; sale blocking остается backend-owned check на `stop_lists`, а POS UI не принимает authoritative sale decisions.
 
 Профильный smoke:
 

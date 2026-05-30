@@ -444,7 +444,7 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 }
 ```
 
-`StopListUpdated` payload используется для Edge-origin backend stop-list edit/audit flow. Реализовано сейчас: POS Edge kitchen backend command, Cloud receiver validation/acceptance, async worker projection без raw payload, минимальный `stop_list_conflict_policy` и bounded Cloud manager review:
+`StopListUpdated` payload используется для Edge-origin backend stop-list edit/audit flow. Реализовано сейчас: POS Edge kitchen backend command, safe POS Edge stop-list state read для UI pending/ack/problem indicator, Cloud receiver validation/acceptance, async worker projection без raw payload, минимальный `stop_list_conflict_policy` и bounded Cloud manager review:
 
 ```json
 {
@@ -475,7 +475,7 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 
 Не реализовано сейчас:
 
-- Edge-origin stop-list edit UI и production-grade manager review workflow для `edge_overlay_requires_manager_review`;
+- production-grade manager review workflow для `edge_overlay_requires_manager_review`;
 - компенсирующий пересчет уже обработанного served fact после recall;
 - modifier linked catalog item consumption и retro costing DAG;
 - sales/kitchen/costing aggregate OLAP API, production-grade backfill jobs и OLAP operator UI;

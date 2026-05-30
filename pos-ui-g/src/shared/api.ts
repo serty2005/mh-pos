@@ -10,6 +10,7 @@ import {
   kitchenOrderQueueResponseSchema,
   kitchenProposalSchema,
   kitchenRecipeSchema,
+  kitchenStopListStateSchema,
   kitchenTicketSchema,
   menuItemSchema,
   orderLineSchema,
@@ -51,6 +52,15 @@ export type InventoryDisposition = 'no_stock_effect' | 'return_to_stock' | 'writ
 export type FinancialOperationKind = 'full' | 'partial';
 export type FinancialOperationItemScope = 'whole_check' | 'order_line' | 'modifier_line' | 'service_charge' | 'tip' | 'payment';
 export type KitchenTicketAction = 'accept' | 'start' | 'hold' | 'ready' | 'serve' | 'recall' | 'cancel';
+export type KitchenStopListUpdatePayload = {
+  command_id?: string;
+  stop_list_id?: string;
+  warehouse_id?: string;
+  catalog_item_id: string;
+  available_quantity?: number;
+  active: boolean;
+  reason?: string;
+};
 
 export type FinancialOperationItemPayload = {
   scope: FinancialOperationItemScope;
@@ -396,6 +406,14 @@ export function createApiClient(getAuth: () => AuthSnapshot, base = (viteEnv.env
     submitKitchenProduction: (payload: unknown) => request('/kitchen/productions', z.unknown(), {
       method: 'POST',
       body: JSON.stringify(payload),
+    }),
+    listKitchenStopList: () => request('/kitchen/stop-list', z.array(kitchenStopListStateSchema)),
+    submitKitchenStopListUpdate: (payload: KitchenStopListUpdatePayload) => request('/kitchen/stop-list-updates', z.unknown(), {
+      method: 'POST',
+      body: JSON.stringify({
+        ...payload,
+        command_id: payload.command_id ?? nextCommandId('stop-list-update'),
+      }),
     }),
     getKitchenRecipe: (catalogItemId: string) => request(`/kitchen/catalog/items/${encodeURIComponent(catalogItemId)}/recipe`, kitchenRecipeSchema),
     submitCatalogSuggestion: (payload: unknown) => request('/kitchen/catalog-suggestions', z.unknown(), {

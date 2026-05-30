@@ -16,7 +16,7 @@
 
 Не обнаружено сейчас:
 
-- Подтвержденного runtime для delivery, настоящего платежного процессинга, фискального адаптера, агрегированных OLAP reads, kitchen stop-list edit UI и расширенных cooking events за пределами ticket lifecycle foundation.
+- Подтвержденного runtime для delivery, настоящего платежного процессинга, фискального адаптера, sales/kitchen/costing OLAP reads и расширенных cooking events за пределами ticket lifecycle foundation.
 - Публичного Cloud HTTP/API интерфейса отчетов по детальной проекции финансовых операций. Сервисная и repository-основа есть, публичный reporting surface остается запланированным далее.
 
 Цель полной пилотной реализации:
@@ -24,7 +24,7 @@
 - сохранить текущий cashier runtime как базовый поток;
 - stop-list sale blocking на POS Edge с Cloud authoring/publication и offline локальной проверкой уже подтвержден в `pos_stop_list_sale_blocking`;
 - расширять mobile-first waiter runtime без payment/refund authority по умолчанию только по подтвержденным backend contracts;
-- расширить KDS lifecycle за пределы текущего backend-backed ticket/stock/proposal/stop-list foundation: cooking events, station priority, kitchen stop-list edit UI и operator analytics;
+- расширить KDS lifecycle за пределы текущего backend-backed ticket/stock/proposal/stop-list foundation: cooking events, station priority и operator analytics;
 - зафиксировать POS Edge backend как авторитетный runtime для financial/order/KDS command validation и stop-list sale blocking; POS UI не становится авторитетным слоем;
 - добавить Cloud manager flow для recipes, stop-list, catalog/recipe proposal review, inventory operations, publication readiness и sync/problem observability;
 - добавить полный Cloud-owned складской движок: stock receipts, inventory counts, production, sale consumption, refund/cancellation dispositions, recipe expansion, balances, costing и retro recalculation DAG;
@@ -51,7 +51,7 @@
 - Compatibility route `POST /api/v1/payments/{id}/refund`, который записывает refund operation по payment allocation, но не возвращает оплату или чек в изменяемое состояние.
 - Ограниченные read endpoints для закрытых заказов, financial operations, outbox и local events.
 - Backend-backed KDS ticket lifecycle: `kitchen_tickets` создаются из non-service order lines, `GET /api/v1/kitchen/order-queue` и `GET /api/v1/kitchen/tickets` поддерживают bounded read/status filter, status actions `accept/start/hold/ready/serve/recall/cancel` проверяют `pos.kitchen.status.change`, пишут `KitchenTicketStatusChanged`, а `serve` дополнительно пишет `ItemServed`; повторная подача после recall пишет новый `ItemServed` с `serve_sequence` и `supersedes_served_event_id`.
-- Kitchen stock/proposal/stop-list backend: POS Edge принимает receipt/count/write-off/production, recipe read, catalog/recipe suggestions, stop-list update commands и proposal feedback read model без создания Edge-side stock documents.
+- Kitchen stock/proposal/stop-list runtime: POS Edge принимает receipt/count/write-off/production, recipe read, catalog/recipe suggestions, stop-list update commands, safe stop-list state read для UI indicator и proposal feedback read model без создания Edge-side stock documents.
 - Локальный lifecycle SQLite: status, retention dry-run, archive export plan, export-only JSONL archive, read-plan, lookup preview, apply-plan и apply-readiness с поддержкой destructive apply (физическое удаление закрытых orders/checks/financial_operations и связанных при verified JSONL + чистый scoped outbox + отсутствие открытых operational boundaries для cutoff периода) и последующий VACUUM compaction БД.
 - Cloud -> Edge master-data ingest для `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
 - Sync sender через authenticated `sync/exchange`, item-level ACK, retry/reclaim/backoff и безопасную обработку неподдержанных направлений.
@@ -125,14 +125,14 @@
 - Нормализация безопасных API-ошибок и optional empty states; пользовательский текст идет через `vue-i18n`, а dialog/inline banners показывают безопасный support code (`correlation_id` или stable `error_code`) без raw backend details.
 - `/pos/waiter` как mobile-first order/precheck runtime: выбор зала/стола, активные заказы, создание заказа, меню/поиск, добавление строк с модификаторами, изменение quantity, void line, issue/reprint precheck без payment/refund/cash drawer controls по умолчанию; active issued precheck/locked order визуально блокирует add/change/void actions.
 - `/pos/waiter` дополнительно стабилизирован под viewport `390x844`: sticky compact context dock для текущего стола/заказа/статуса и границ полномочий, sticky topbar, lock badge на заблокированном меню, touch-friendly table/menu/order rows и scrollable modifier dialog layout без добавления financial authority.
-- `/pos/kitchen` как минимальный backend-backed KDS runtime: экран читает `GET /api/v1/kitchen/tickets`, показывает tickets по статусам `new/accepted/in_progress/hold/ready/recall/served/cancelled`, отправляет только подтвержденные backend status actions и перечитывает tickets после ответа backend.
+- `/pos/kitchen` как backend-backed KDS runtime: экран читает kitchen queue/tickets, показывает tickets по статусам `new/accepted/in_progress/hold/ready/recall/served/cancelled`, отправляет только подтвержденные backend status actions и перечитывает tickets после ответа backend; `pos-ui-g` kitchen mode также показывает stop-list edit form поверх `POST /api/v1/kitchen/stop-list-updates` и sync indicator из safe `GET /api/v1/kitchen/stop-list` DTO.
 - POS shared UI layer шире используется в cashier/readiness surfaces: loading/error/empty/no-permission states и menu skeleton cards переведены на `PosBanner`, `PosEmptyState` и `PosSkeleton`, top/context actions используют shared button/context primitives, а passive backlog/readiness states используют `PosReadinessCard`.
 
 Вне текущего объема:
 
 - UI для скидок/надбавок/налоговых профилей в кассовом терминале.
 - UI для modifier/service/tip scopes в financial operation ledger.
-- Kitchen stop-list edit UI actions, доставка, PSP/fiscal device screens и Cloud-owned складские документы в POS UI.
+- доставка, PSP/fiscal device screens и Cloud-owned складские документы в POS UI.
 
 ## Cloud UI
 
@@ -208,7 +208,7 @@
 
 - Поддерживать `docs/backend/CLOUD-BACKEND-SPEC.md` как профильный документ Cloud Backend при каждом изменении Cloud routes, payloads, sync/provisioning contracts или schema.
 - Публичный Cloud reporting API/UI для detailed financial operation projection.
-- До полного пилота: kitchen stop-list edit UI, компенсирующий пересчет уже обработанного served fact после recall, полный Cloud Inventory Engine, sales/kitchen/costing OLAP API и production-grade OLAP backfill/operator UI.
+- До полного пилота: компенсирующий пересчет уже обработанного served fact после recall, полный Cloud Inventory Engine, sales/kitchen/costing OLAP API и production-grade OLAP backfill/operator UI.
 - После полного пилота: hardware bump-bar integrations, kitchen printer orchestration, rich BI dashboards, ERP/accounting integrations и внешние delivery/payment/fiscal контуры.
 - Data-preserving migrations после первого реального внедрения.
 - Production auth/RBAC perimeter для Cloud/License API.

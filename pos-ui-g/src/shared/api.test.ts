@@ -181,6 +181,55 @@ describe('POS API client', () => {
     });
   });
 
+  it('uses backend-backed kitchen stop-list read and update endpoints without raw payload state', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([{
+        id: 'stop-1',
+        catalog_item_id: 'dish-1',
+        available_quantity: 0,
+        source: 'edge_overlay_requires_manager_review',
+        reason: 'sold out',
+        active: true,
+        updated_at: '2026-05-30T10:00:00Z',
+        sync_state: 'pending',
+        outbox_command_id: 'cmd-stop-1',
+        outbox_status: 'pending',
+        outbox_sequence_no: 7,
+        outbox_attempts: 0,
+      }]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'stop-1',
+        warehouse_id: 'warehouse-main',
+        event_type: 'StopListUpdated',
+        replayed: false,
+      }), { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const api = createApiClient(() => auth, 'http://pos.local/api/v1');
+    await expect(api.listKitchenStopList()).resolves.toMatchObject([
+      { id: 'stop-1', sync_state: 'pending', outbox_status: 'pending' },
+    ]);
+    await api.submitKitchenStopListUpdate({
+      command_id: 'cmd-stop-ui',
+      stop_list_id: 'stop-1',
+      catalog_item_id: 'dish-1',
+      available_quantity: 0,
+      active: true,
+      reason: 'sold out',
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe('http://pos.local/api/v1/kitchen/stop-list');
+    expect(fetchMock.mock.calls[1][0]).toBe('http://pos.local/api/v1/kitchen/stop-list-updates');
+    expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).toEqual({
+      command_id: 'cmd-stop-ui',
+      stop_list_id: 'stop-1',
+      catalog_item_id: 'dish-1',
+      available_quantity: 0,
+      active: true,
+      reason: 'sold out',
+    });
+  });
+
   it('uses provisioning endpoints for cloud registration and license pairing', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({

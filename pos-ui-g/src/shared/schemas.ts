@@ -272,6 +272,23 @@ export const kitchenRecipeSchema = z.object({
   proposals: z.array(kitchenProposalSchema).optional().default([]),
 }).passthrough();
 
+export const kitchenStopListStateSchema = z.object({
+  id: z.string(),
+  catalog_item_id: z.string(),
+  available_quantity: z.number().optional(),
+  source: z.string().optional().default(''),
+  reason: optionalNullableString,
+  active: z.boolean(),
+  updated_at: z.string(),
+  sync_state: z.enum(['pending', 'acknowledged', 'problem', 'cloud_authority', 'unknown']).optional().default('unknown'),
+  outbox_command_id: z.string().optional().default(''),
+  outbox_status: z.enum(['pending', 'processing', 'sent', 'failed', 'suspended']).optional(),
+  outbox_sequence_no: z.number().optional(),
+  outbox_attempts: z.number().optional().default(0),
+  sent_at: z.string().optional(),
+  next_retry_at: z.string().optional(),
+}).passthrough();
+
 export const pricingPolicySchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
@@ -579,3 +596,4 @@ export type BackendKitchenTicket = z.infer<typeof kitchenTicketSchema>;
 export type BackendCatalogItem = z.infer<typeof catalogItemSchema>;
 export type BackendKitchenRecipe = z.infer<typeof kitchenRecipeSchema>;
 export type BackendKitchenProposal = z.infer<typeof kitchenProposalSchema>;
+export type BackendKitchenStopListState = z.infer<typeof kitchenStopListStateSchema>;

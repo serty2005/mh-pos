@@ -43,12 +43,13 @@ describe('POSKitchenSection', () => {
     expect(html).toContain('tab-production');
   });
 
-  it('renders recipe and proposal tabs', async () => {
+  it('renders recipe, stop-list and proposal tabs', async () => {
     const { POSKitchenSection } = await import('./POSKitchenSection');
     const html = renderToStaticMarkup(<POSKitchenSection section="kitchen" />);
 
     expect(html).toContain('tab-recipes');
     expect(html).toContain('tab-suggestions');
+    expect(html).toContain('tab-stop_list');
     expect(html).toContain('tab-my_proposals');
     expect(html).toContain(t.kitchen.loadRecipe);
   });

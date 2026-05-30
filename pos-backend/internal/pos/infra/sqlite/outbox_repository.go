@@ -56,6 +56,26 @@ func (r *Repository) ListOutbox(ctx context.Context, limit int) ([]domain.Outbox
 	return out, rows.Err()
 }
 
+func (r *Repository) ListOutboxByCommandType(ctx context.Context, commandType string, limit int) ([]domain.OutboxMessage, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := r.queryer(ctx).QueryContext(ctx, outboxSelectColumns+` FROM pos_sync_outbox WHERE command_type = ? ORDER BY sequence_no DESC LIMIT ?`, commandType, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.OutboxMessage
+	for rows.Next() {
+		v, err := scanOutboxRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *v)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) GetSyncStatus(ctx context.Context) (domain.SyncStatus, error) {
 	var status domain.SyncStatus
 	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT status, COUNT(1) FROM pos_sync_outbox WHERE sync_direction = 'edge_to_cloud' GROUP BY status`)

@@ -11,6 +11,7 @@ type OutboxRepository interface {
 	GetOutboxByID(context.Context, string) (*shared.OutboxMessage, error)
 	GetOutboxByCommandID(context.Context, string) (*shared.OutboxMessage, error)
 	ListOutbox(context.Context, int) ([]shared.OutboxMessage, error)
+	ListOutboxByCommandType(context.Context, string, int) ([]shared.OutboxMessage, error)
 	GetSyncStatus(context.Context) (shared.SyncStatus, error)
 	RetryFailedOutbox(context.Context, string) (int, error)
 	ClaimPendingOutbox(context.Context, int, string, string) ([]shared.OutboxMessage, error)
