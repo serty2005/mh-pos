@@ -731,6 +731,68 @@ GET /api/v1/inventory/stock-balances?restaurant_id=&warehouse_id=&catalog_item_i
 - `sqlc` adoption, если после стабилизации схемы это уменьшит риск persistence layer.
 - Full accounting/ERP integrations.
 
+## Payments / PSP / Fiscalization
+
+### До полного пилота / pilot-hardening
+
+- Уточнить целевую payment architecture:
+  - offline/локальный cashier payment flow остается текущим pilot runtime;
+  - real PSP integration не должна ломать existing cash/terminal/manual payment flow;
+  - payment status, refund status и fiscal status должны быть разделены в модели.
+- Зафиксировать contract для payment provider abstraction:
+  - authorization;
+  - capture;
+  - cancel/void;
+  - refund;
+  - partial refund;
+  - provider reference;
+  - idempotency key;
+  - retry/error states.
+- Зафиксировать contract для fiscalization abstraction:
+  - fiscal receipt request;
+  - fiscal receipt status;
+  - fiscal refund/correction receipt;
+  - fiscal device/provider response;
+  - retry/error states;
+  - связь с immutable check/precheck/payment/refund operation.
+- Зафиксировать payment/fiscalization orchestration как policy-driven workflow, а не один жесткий порядок:
+  - порядок операций задается fiscal/payment policy для страны, ресторана, провайдера и типа оплаты;
+  - offline/локальный cashier payment flow остается текущим pilot runtime;
+  - real PSP integration не должна ломать existing cash/terminal/manual payment flow;
+  - payment status, refund status и fiscal status должны быть разделены в модели;
+  - fiscal document может создаваться до оплаты, после оплаты или как часть provider-specific двухфазного сценария;
+  - payment operation должна уметь ссылаться на fiscal document;
+  - fiscal document должен уметь ссылаться на payment/refund operation, если платеж уже известен;
+  - допускается состояние, где fiscal receipt создан, а payment еще pending/failed;
+  - допускается состояние, где payment captured, а fiscalization pending/failed;
+  - такие расхождения должны попадать в reconciliation queue / operator review, а не ломать immutable check/payment history.
+- Согласовать варианты sequencing по policy:
+  - fiscal receipt before payment — например для сценариев, где фискальный чек должен быть создан до или во время приема оплаты;
+  - payment before fiscal receipt — например для провайдеров, где сначала подтверждается платеж, затем печатается/регистрируется чек;
+  - fiscal receipt and payment in one provider flow — например integrated terminal/fiscal device;
+  - refund before fiscal correction receipt;
+  - fiscal correction receipt before refund;
+  - cancellation before fiscalization;
+  - cancellation after fiscalization;
+  - shift close boundaries;
+  - offline fallback and reconciliation.
+- Добавить в документацию явные статусы:
+  - `payment_status`;
+  - `refund_status`;
+  - `fiscal_status`;
+  - `fiscal_receipt_id`;
+  - `provider_payment_id`;
+  - `provider_refund_id`.
+
+### После полного пилота
+
+- Real PSP authorization/capture/refund flow.
+- Fiscal adapter/fiscalization integrations.
+- Fiscal device integrations.
+- Provider-specific terminal integrations.
+- Fiscal reporting/export integrations.
+
+
 ---
 
 # Вне текущего объема
