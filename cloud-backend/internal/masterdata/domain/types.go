@@ -359,6 +359,48 @@ type RecipeItem struct {
 	UpdatedAt                time.Time `json:"updated_at"`
 }
 
+// RecipeVersionStatus задает Cloud lifecycle версии техкарты до публикации на Edge.
+type RecipeVersionStatus string
+
+const (
+	RecipeVersionStatusDraft         RecipeVersionStatus = "draft"
+	RecipeVersionStatusReviewPending RecipeVersionStatus = "review_pending"
+	RecipeVersionStatusActive        RecipeVersionStatus = "active"
+	RecipeVersionStatusArchived      RecipeVersionStatus = "archived"
+)
+
+// RecipeVersion описывает Cloud-owned версию техкарты; POS Edge получает только опубликованную read model.
+type RecipeVersion struct {
+	ID                    string              `json:"id"`
+	RestaurantID          string              `json:"restaurant_id"`
+	OwnerCatalogItemID    string              `json:"owner_catalog_item_id"`
+	Version               int                 `json:"version"`
+	Name                  string              `json:"name"`
+	Status                RecipeVersionStatus `json:"status"`
+	YieldQuantity         int64               `json:"yield_quantity"`
+	YieldUnit             string              `json:"yield_unit"`
+	CreatedByEmployeeID   string              `json:"created_by_employee_id,omitempty"`
+	SubmittedByEmployeeID string              `json:"submitted_by_employee_id,omitempty"`
+	ApprovedByEmployeeID  string              `json:"approved_by_employee_id,omitempty"`
+	CreatedAt             time.Time           `json:"created_at"`
+	UpdatedAt             time.Time           `json:"updated_at"`
+	SubmittedAt           *time.Time          `json:"submitted_at,omitempty"`
+	ApprovedAt            *time.Time          `json:"approved_at,omitempty"`
+}
+
+// RecipeLine описывает строку Cloud-owned версии техкарты.
+type RecipeLine struct {
+	ID                       string    `json:"id"`
+	RecipeVersionID          string    `json:"recipe_version_id"`
+	ComponentCatalogItemID   string    `json:"component_catalog_item_id"`
+	Quantity                 int64     `json:"quantity"`
+	Unit                     string    `json:"unit"`
+	LossPercent              int64     `json:"loss_percent"`
+	SortOrder                int       `json:"sort_order"`
+	CreatedAt                time.Time `json:"created_at"`
+	UpdatedAt                time.Time `json:"updated_at"`
+}
+
 // StopListEntry описывает Cloud-owned состояние stop-list, публикуемое на Edge для offline sale blocking.
 type StopListEntry struct {
 	ID                string    `json:"id"`

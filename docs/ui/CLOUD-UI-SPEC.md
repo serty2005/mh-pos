@@ -51,6 +51,7 @@
 - modifier groups, options и bindings;
 - pricing policies;
 - recipe items через `/api/v1/master-data/recipes/items`;
+- сценарный editor версий техкарт через `/api/v1/master-data/recipes/versions`, `/api/v1/master-data/recipes/versions/drafts`, `/api/v1/master-data/recipes/versions/{id}/submit`;
 - stop-list entries через `/api/v1/master-data/inventory/stop-list`;
 - route-backed раздел `Очередь предложений` для Cloud review workflow (`catalog-suggestions`/`recipe-suggestions`/`manager/stop-list-updates`) со списками catalog/recipe suggestions и Edge-origin stop-list updates, detail/diff view, approve/reject/request-changes actions, linked new dish + recipe group display и publication/readiness signal после approve; раздел `Готовность склада` читает `GET /api/v1/sync/readiness/stop-list` для safe stop-list/publication/Edge ACK/sync problem summary; OLAP exports остается readiness-only, хотя backend уже имеет bounded `GET /api/v1/olap/stock-moves` без UI-превью в текущем scope;
 - halls и tables;
@@ -64,7 +65,7 @@
 
 запланировано до полного пилота:
 
-- recipe editor уже имеет bounded route-backed строки recipe items; далее нужен сценарный editor версий поверх подтвержденных contracts;
+- recipe editor имеет bounded route-backed строки recipe items и реализовано сейчас сценарный editor версий: просмотр текущих версий, draft form с компонентной строкой, save draft / submit, review выполняется в существующей очереди предложений;
 - duplicate hints и linked receipt line для catalog suggestion review остаются запланировано далее;
 - stop-list panel уже имеет bounded route-backed rows; `Готовность склада` показывает default conflict policy, async projection mode, publication/package metadata, latest Edge ACK metadata и sync problem counters без raw payload; Cloud review queue показывает safe Edge-origin stop-list update summary/diff и approve/reject/request-changes без raw payload. Production-grade assignment/escalation workflow остается запланирован далее;
 - inventory operations workspace: stock ledger/balances and costing/recalculation status; Edge-side stock receipts, inventory counts, write-offs and production input are covered by `pos-ui-g` kitchen mode and Cloud ledger read endpoints;
@@ -125,6 +126,9 @@
 - `GET /api/v1/master-data/recipe-suggestions?restaurant_id=&status=&limit=&offset=`;
 - `POST /api/v1/master-data/catalog-suggestions/{id}/approve|reject|request-changes`;
 - `POST /api/v1/master-data/recipe-suggestions/{id}/approve|reject|request-changes`.
+- `GET /api/v1/master-data/recipes/versions?restaurant_id=&owner_catalog_item_id=&status=&limit=&offset=`;
+- `POST /api/v1/master-data/recipes/versions/drafts`;
+- `POST /api/v1/master-data/recipes/versions/{id}/submit`.
 
 Review command body:
 

@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"cloud-backend/internal/masterdata/app"
 	"cloud-backend/internal/masterdata/domain"
@@ -27,6 +29,8 @@ type Repository struct {
 	modifierBindings        map[string]domain.ModifierGroupBinding
 	pricingPolicies         map[string]domain.PricingPolicy
 	recipeItems             map[string]domain.RecipeItem
+	recipeVersions          map[string]domain.RecipeVersion
+	recipeLines             map[string][]domain.RecipeLine
 	stopLists               map[string]domain.StopListEntry
 	categories              map[string]domain.Category
 	halls                   map[string]domain.Hall
@@ -55,6 +59,8 @@ func NewRepository() *Repository {
 		modifierBindings:        map[string]domain.ModifierGroupBinding{},
 		pricingPolicies:         map[string]domain.PricingPolicy{},
 		recipeItems:             map[string]domain.RecipeItem{},
+		recipeVersions:          map[string]domain.RecipeVersion{},
+		recipeLines:             map[string][]domain.RecipeLine{},
 		stopLists:               map[string]domain.StopListEntry{},
 		categories:              map[string]domain.Category{},
 		halls:                   map[string]domain.Hall{},
@@ -574,6 +580,116 @@ func (r *Repository) ListRecipeItems(_ context.Context, restaurantID string) ([]
 		}
 	}
 	return out, nil
+}
+
+func (r *Repository) CreateRecipeVersion(_ context.Context, v domain.RecipeVersion, lines []domain.RecipeLine) (domain.RecipeVersion, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.recipeVersions[v.ID]; ok {
+		return domain.RecipeVersion{}, domain.ErrConflict
+	}
+	r.recipeVersions[v.ID] = v
+	r.recipeLines[v.ID] = slices.Clone(lines)
+	return v, nil
+}
+
+func (r *Repository) UpdateRecipeVersion(_ context.Context, v domain.RecipeVersion) (domain.RecipeVersion, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.recipeVersions[v.ID]; !ok {
+		return domain.RecipeVersion{}, domain.ErrNotFound
+	}
+	r.recipeVersions[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) GetRecipeVersion(_ context.Context, id string) (domain.RecipeVersion, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.recipeVersions[strings.TrimSpace(id)]
+	if !ok {
+		return domain.RecipeVersion{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) ListRecipeVersions(_ context.Context, restaurantID, ownerCatalogItemID, status string, limit, offset int) ([]domain.RecipeVersion, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.RecipeVersion
+	for _, item := range r.recipeVersions {
+		if restaurantID != "" && item.RestaurantID != strings.TrimSpace(restaurantID) {
+			continue
+		}
+		if ownerCatalogItemID != "" && item.OwnerCatalogItemID != strings.TrimSpace(ownerCatalogItemID) {
+			continue
+		}
+		if status != "" && string(item.Status) != strings.TrimSpace(status) {
+			continue
+		}
+		out = append(out, item)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].OwnerCatalogItemID == out[j].OwnerCatalogItemID {
+			return out[i].Version > out[j].Version
+		}
+		return out[i].OwnerCatalogItemID < out[j].OwnerCatalogItemID
+	})
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset > len(out) {
+		return []domain.RecipeVersion{}, nil
+	}
+	end := offset + limit
+	if end > len(out) {
+		end = len(out)
+	}
+	return slices.Clone(out[offset:end]), nil
+}
+
+func (r *Repository) ListRecipeLines(_ context.Context, recipeVersionID string) ([]domain.RecipeLine, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.recipeLines[strings.TrimSpace(recipeVersionID)]), nil
+}
+
+func (r *Repository) SubmitRecipeSuggestion(_ context.Context, v domain.RecipeSuggestion, changes []domain.RecipeSuggestionChange) (domain.RecipeSuggestion, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, existing := range r.recipeSuggestions {
+		if existing.SuggestionID == v.SuggestionID {
+			return existing, nil
+		}
+	}
+	r.recipeSuggestions[v.ID] = v
+	r.recipeSuggestionChanges[v.ID] = slices.Clone(changes)
+	return v, nil
+}
+
+func (r *Repository) ActivateRecipeVersion(_ context.Context, versionID, approvedBy string, now time.Time) (domain.RecipeVersion, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	target, ok := r.recipeVersions[strings.TrimSpace(versionID)]
+	if !ok {
+		return domain.RecipeVersion{}, domain.ErrNotFound
+	}
+	for id, item := range r.recipeVersions {
+		if item.RestaurantID == target.RestaurantID && item.OwnerCatalogItemID == target.OwnerCatalogItemID && item.Status == domain.RecipeVersionStatusActive {
+			item.Status = domain.RecipeVersionStatusArchived
+			item.UpdatedAt = now
+			r.recipeVersions[id] = item
+		}
+	}
+	target.Status = domain.RecipeVersionStatusActive
+	target.ApprovedByEmployeeID = strings.TrimSpace(approvedBy)
+	target.ApprovedAt = &now
+	target.UpdatedAt = now
+	r.recipeVersions[target.ID] = target
+	return target, nil
 }
 
 func (r *Repository) UpsertStopListEntry(_ context.Context, v domain.StopListEntry) (domain.StopListEntry, error) {

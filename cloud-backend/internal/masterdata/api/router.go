@@ -70,6 +70,9 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 		r.Post("/pricing/policies", h.createPricingPolicy)
 		r.Get("/pricing/policies", h.listPricingPolicies)
 		r.Patch("/pricing/policies/{id}", h.updatePricingPolicy)
+		r.Post("/recipes/versions/drafts", h.createRecipeVersionDraft)
+		r.Get("/recipes/versions", h.listRecipeVersions)
+		r.Post("/recipes/versions/{id}/submit", h.submitRecipeVersion)
 		r.Post("/recipes/items", h.createRecipeItem)
 		r.Get("/recipes/items", h.listRecipeItems)
 		r.Patch("/recipes/items/{id}", h.updateRecipeItem)
@@ -497,6 +500,36 @@ func (h *Handler) createRecipeItem(w http.ResponseWriter, r *http.Request) {
 	}
 	v, err := h.service.CreateRecipeItem(r.Context(), cmd)
 	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) createRecipeVersionDraft(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateRecipeVersionDraftCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.CreateRecipeVersionDraft(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) listRecipeVersions(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListRecipeVersions(
+		r.Context(),
+		r.URL.Query().Get("restaurant_id"),
+		r.URL.Query().Get("owner_catalog_item_id"),
+		r.URL.Query().Get("status"),
+		intQuery(r, "limit", 50),
+		intQuery(r, "offset", 0),
+	)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) submitRecipeVersion(w http.ResponseWriter, r *http.Request) {
+	var cmd app.SubmitRecipeVersionCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.SubmitRecipeVersion(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
 }
 
 func (h *Handler) listRecipeItems(w http.ResponseWriter, r *http.Request) {

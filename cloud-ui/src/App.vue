@@ -20,6 +20,7 @@
     <launch-readiness-panel v-if="activeKey === 'launchPlan'" :ctx="cloudCtx" />
     <edge-device-panel v-else-if="activeKey === 'edgeDevices'" :ctx="cloudCtx" />
     <edge-events-panel v-else-if="activeKey === 'edgeEvents'" :ctx="cloudCtx" />
+    <recipe-version-editor-panel v-else-if="activeKey === 'recipeVersions'" :ctx="cloudCtx" />
     <proposal-review-queue v-else-if="activeKey === 'proposalReview'" :ctx="cloudCtx" />
     <inventory-readiness-panel v-else-if="activeKey === 'inventoryReadiness'" :ctx="cloudCtx" />
     <olap-export-readiness-panel v-else-if="activeKey === 'olapExports'" />
@@ -43,6 +44,7 @@ import LaunchReadinessPanel from './components/cloud/LaunchReadinessPanel.vue';
 import OlapExportReadinessPanel from './components/cloud/OlapExportReadinessPanel.vue';
 import PublicationPanel from './components/cloud/PublicationPanel.vue';
 import ProposalReviewQueue from './components/cloud/ProposalReviewQueue.vue';
+import RecipeVersionEditorPanel from './components/cloud/RecipeVersionEditorPanel.vue';
 import ResourceWorkspace from './components/cloud/ResourceWorkspace.vue';
 import {
   activateEmployee,
@@ -73,6 +75,7 @@ import {
   createModifierOption,
   createPricingPolicy,
   createRecipeItem,
+  createRecipeVersionDraft as createRecipeVersionDraftApi,
   createRestaurant,
   createRole,
   createTable,
@@ -95,6 +98,7 @@ import {
   listModifierOptions,
   listPricingPolicies,
   listRecipeItems,
+  listRecipeVersions,
   listRecipeSuggestions,
   listRestaurants,
   listRoles,
@@ -131,8 +135,9 @@ import {
   ApiError,
 } from './shared/api';
 import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
+import type { RecipeVersionView } from './shared/schemas';
 
-type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
+type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'recipeVersions' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
 type ResourceKey =
   | ScenarioKey
   | 'restaurants'
@@ -237,6 +242,7 @@ const publication = ref<PublicationSummary | null>(null);
 const stopListReadiness = ref<StopListReadiness | null>(null);
 const edgeDevices = ref<UnassignedEdgeNode[]>([]);
 const edgeEvents = ref<EdgeEvent[]>([]);
+const recipeVersions = ref<RecipeVersionView[]>([]);
 const catalogSuggestions = ref<CatalogSuggestion[]>([]);
 const recipeSuggestions = ref<RecipeSuggestion[]>([]);
 const stopListUpdateReviews = ref<StopListUpdateReview[]>([]);
@@ -652,6 +658,7 @@ const scenarioNav = [
   { key: 'launchPlan' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.launchPlan', descriptionKey: 'cloud.descriptions.launchPlan' },
   { key: 'edgeDevices' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.edgeDevices', descriptionKey: 'cloud.descriptions.edgeDevices' },
   { key: 'edgeEvents' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.edgeEvents', descriptionKey: 'cloud.descriptions.edgeEvents' },
+  { key: 'recipeVersions' as ResourceKey, groupKey: 'cloud.groups.inventory', titleKey: 'cloud.resources.recipeVersions', descriptionKey: 'cloud.descriptions.recipeVersions' },
   { key: 'proposalReview' as ResourceKey, groupKey: 'cloud.groups.inventory', titleKey: 'cloud.resources.proposalReview', descriptionKey: 'cloud.descriptions.proposalReview' },
   { key: 'inventoryReadiness' as ResourceKey, groupKey: 'cloud.groups.inventory', titleKey: 'cloud.resources.inventoryReadiness', descriptionKey: 'cloud.descriptions.inventoryReadiness' },
   { key: 'olapExports' as ResourceKey, groupKey: 'cloud.groups.publication', titleKey: 'cloud.resources.olapExports', descriptionKey: 'cloud.descriptions.olapExports' },
@@ -680,7 +687,7 @@ const visibleFields = computed(() => (activeConfig.value?.fields ?? []).filter((
 const permissionFields = computed(() => visibleFields.value.filter((item) => item.type === 'permissionMatrix'));
 const currentRows = computed<Row[]>(() => {
   if (activeKey.value === 'restaurants') return restaurants.value as unknown as Row[];
-  if (activeKey.value === 'launchPlan' || activeKey.value === 'edgeDevices' || activeKey.value === 'edgeEvents' || activeKey.value === 'proposalReview' || activeKey.value === 'inventoryReadiness' || activeKey.value === 'olapExports' || activeKey.value === 'publications' || activeKey.value === 'itemTags' || activeKey.value === 'categories') return [];
+  if (activeKey.value === 'launchPlan' || activeKey.value === 'edgeDevices' || activeKey.value === 'edgeEvents' || activeKey.value === 'recipeVersions' || activeKey.value === 'proposalReview' || activeKey.value === 'inventoryReadiness' || activeKey.value === 'olapExports' || activeKey.value === 'publications' || activeKey.value === 'itemTags' || activeKey.value === 'categories') return [];
   return scopedRows[activeKey.value as ScopedResourceKey];
 });
 const filteredRows = computed(() => {
@@ -786,6 +793,7 @@ const cloudCtx = {
   publication,
   stopListReadiness,
   edgeEvents,
+  recipeVersions,
   catalogSuggestions,
   recipeSuggestions,
   stopListUpdateReviews,
@@ -797,6 +805,7 @@ const cloudCtx = {
   publishForm,
   pairingForm,
   form,
+  scopedRows,
   permissionGroups,
   navGroups,
   restaurantOptions,
@@ -839,6 +848,8 @@ const cloudCtx = {
   loadSelectedAssignmentStatus,
   generateSelectedPairingCode,
   loadEdgeEvents,
+  loadRecipeVersions,
+  createRecipeVersionDraft,
   loadProposalReview,
   reviewProposalSuggestion,
   publishSelectedRestaurant,
@@ -860,6 +871,7 @@ watch(selectedRestaurantId, async () => {
   if (activeKey.value === 'publications' || activeKey.value === 'launchPlan') await loadPublication();
   if (activeKey.value === 'edgeDevices' || activeKey.value === 'launchPlan') await loadEdgeDevices();
   if (activeKey.value === 'edgeEvents') await loadEdgeEvents();
+  if (activeKey.value === 'recipeVersions') await loadRecipeVersions();
   if (activeKey.value === 'proposalReview') await loadProposalReview();
   if (activeKey.value === 'inventoryReadiness') await loadStopListReadiness();
   resetSelection();
@@ -872,6 +884,7 @@ watch(activeKey, async () => {
   if (activeKey.value === 'publications') await loadPublication();
   if (activeKey.value === 'edgeDevices') await loadEdgeDevices();
   if (activeKey.value === 'edgeEvents') await loadEdgeEvents();
+  if (activeKey.value === 'recipeVersions') await loadRecipeVersions();
   if (activeKey.value === 'proposalReview') await loadProposalReview();
   if (activeKey.value === 'inventoryReadiness') await loadStopListReadiness();
   if (activeKey.value === 'launchPlan') {
@@ -899,13 +912,14 @@ function setActive(key: ResourceKey) {
 }
 
 function isScopedResourceKey(key: ResourceKey): key is ScopedResourceKey {
-  return !['launchPlan', 'edgeDevices', 'edgeEvents', 'proposalReview', 'inventoryReadiness', 'olapExports', 'restaurants', 'publications', 'itemTags', 'categories'].includes(key);
+  return !['launchPlan', 'edgeDevices', 'edgeEvents', 'recipeVersions', 'proposalReview', 'inventoryReadiness', 'olapExports', 'restaurants', 'publications', 'itemTags', 'categories'].includes(key);
 }
 
 function navCount(key: ResourceKey) {
   if (key === 'launchPlan') return launchSteps.length;
   if (key === 'edgeDevices') return edgeDevices.value.length;
   if (key === 'edgeEvents') return edgeEvents.value.length;
+  if (key === 'recipeVersions') return recipeVersions.value.length;
   if (key === 'proposalReview') return catalogSuggestions.value.length + recipeSuggestions.value.length;
   if (key === 'restaurants') return restaurants.value.length;
   if (key === 'publications') return publication.value ? publication.value.version : '-';
@@ -1089,6 +1103,21 @@ async function loadProposalReview() {
   });
 }
 
+async function loadRecipeVersions() {
+  if (!selectedRestaurantId.value) return;
+  await withLoading('recipeVersions', async () => {
+    recipeVersions.value = await listRecipeVersions(selectedRestaurantId.value, '', '', 100, 0);
+  });
+}
+
+async function createRecipeVersionDraft(payload: Record<string, unknown>) {
+  await withLoading('recipe-version-submit', async () => {
+    await createRecipeVersionDraftApi(payload);
+    await Promise.all([loadRecipeVersions(), fetchProposalReview(), fetchPublication().catch(() => undefined)]);
+    successKey.value = 'cloud.messages.saved';
+  });
+}
+
 async function fetchPublication() {
   publication.value = await getPublicationState(selectedRestaurantId.value);
 }
@@ -1110,6 +1139,7 @@ async function reloadActive() {
   if (activeKey.value === 'launchPlan') return;
   if (activeKey.value === 'edgeDevices') return loadEdgeDevices();
   if (activeKey.value === 'edgeEvents') return loadEdgeEvents();
+  if (activeKey.value === 'recipeVersions') return loadRecipeVersions();
   if (activeKey.value === 'proposalReview') return loadProposalReview();
   if (activeKey.value === 'inventoryReadiness') return loadStopListReadiness();
   if (activeKey.value === 'restaurants') return loadRestaurants();

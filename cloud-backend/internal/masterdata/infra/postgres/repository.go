@@ -506,6 +506,174 @@ func (r *Repository) ListRecipeItems(ctx context.Context, restaurantID string) (
 	return out, rows.Err()
 }
 
+func (r *Repository) CreateRecipeVersion(ctx context.Context, v domain.RecipeVersion, lines []domain.RecipeLine) (domain.RecipeVersion, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return domain.RecipeVersion{}, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	out, err := scanRecipeVersion(tx.QueryRow(ctx, `
+INSERT INTO cloud_recipe_versions(id,restaurant_id,owner_catalog_item_id,version,name,status,yield_quantity,yield_unit,created_by_employee_id,submitted_by_employee_id,approved_by_employee_id,submitted_at,approved_at,created_at,updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+RETURNING id,restaurant_id,owner_catalog_item_id,version,name,status,yield_quantity,yield_unit,COALESCE(created_by_employee_id,''),COALESCE(submitted_by_employee_id,''),COALESCE(approved_by_employee_id,''),submitted_at,approved_at,created_at,updated_at`,
+		v.ID, v.RestaurantID, v.OwnerCatalogItemID, v.Version, v.Name, string(v.Status), v.YieldQuantity, v.YieldUnit, nullableText(v.CreatedByEmployeeID), nullableText(v.SubmittedByEmployeeID), nullableText(v.ApprovedByEmployeeID), v.SubmittedAt, v.ApprovedAt, v.CreatedAt, v.UpdatedAt))
+	if err != nil {
+		return domain.RecipeVersion{}, normalizeErr(err)
+	}
+	for _, line := range lines {
+		if _, err := tx.Exec(ctx, `
+INSERT INTO cloud_recipe_lines(id,recipe_version_id,component_catalog_item_id,quantity,unit,loss_percent,sort_order,created_at,updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+			line.ID, line.RecipeVersionID, line.ComponentCatalogItemID, line.Quantity, line.Unit, line.LossPercent, line.SortOrder, line.CreatedAt, line.UpdatedAt); err != nil {
+			return domain.RecipeVersion{}, normalizeErr(err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.RecipeVersion{}, err
+	}
+	return out, nil
+}
+
+func (r *Repository) UpdateRecipeVersion(ctx context.Context, v domain.RecipeVersion) (domain.RecipeVersion, error) {
+	out, err := scanRecipeVersion(r.pool.QueryRow(ctx, `
+UPDATE cloud_recipe_versions
+SET status=$2,name=$3,yield_quantity=$4,yield_unit=$5,submitted_by_employee_id=$6,approved_by_employee_id=$7,submitted_at=$8,approved_at=$9,updated_at=$10
+WHERE id=$1
+RETURNING id,restaurant_id,owner_catalog_item_id,version,name,status,yield_quantity,yield_unit,COALESCE(created_by_employee_id,''),COALESCE(submitted_by_employee_id,''),COALESCE(approved_by_employee_id,''),submitted_at,approved_at,created_at,updated_at`,
+		v.ID, string(v.Status), v.Name, v.YieldQuantity, v.YieldUnit, nullableText(v.SubmittedByEmployeeID), nullableText(v.ApprovedByEmployeeID), v.SubmittedAt, v.ApprovedAt, v.UpdatedAt))
+	return out, normalizeErr(err)
+}
+
+func (r *Repository) GetRecipeVersion(ctx context.Context, id string) (domain.RecipeVersion, error) {
+	v, err := scanRecipeVersion(r.pool.QueryRow(ctx, `
+SELECT id,restaurant_id,owner_catalog_item_id,version,name,status,yield_quantity,yield_unit,COALESCE(created_by_employee_id,''),COALESCE(submitted_by_employee_id,''),COALESCE(approved_by_employee_id,''),submitted_at,approved_at,created_at,updated_at
+FROM cloud_recipe_versions WHERE id=$1`, strings.TrimSpace(id)))
+	return v, normalizeErr(err)
+}
+
+func (r *Repository) ListRecipeVersions(ctx context.Context, restaurantID, ownerCatalogItemID, status string, limit, offset int) ([]domain.RecipeVersion, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT id,restaurant_id,owner_catalog_item_id,version,name,status,yield_quantity,yield_unit,COALESCE(created_by_employee_id,''),COALESCE(submitted_by_employee_id,''),COALESCE(approved_by_employee_id,''),submitted_at,approved_at,created_at,updated_at
+FROM cloud_recipe_versions
+WHERE ($1 = '' OR restaurant_id = $1)
+  AND ($2 = '' OR owner_catalog_item_id = $2)
+  AND ($3 = '' OR status = $3)
+ORDER BY owner_catalog_item_id, version DESC, id
+LIMIT $4 OFFSET $5`, strings.TrimSpace(restaurantID), strings.TrimSpace(ownerCatalogItemID), strings.TrimSpace(status), limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]domain.RecipeVersion, 0, limit)
+	for rows.Next() {
+		v, err := scanRecipeVersion(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) ListRecipeLines(ctx context.Context, recipeVersionID string) ([]domain.RecipeLine, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT id,recipe_version_id,component_catalog_item_id,quantity,unit,loss_percent,sort_order,created_at,updated_at
+FROM cloud_recipe_lines
+WHERE recipe_version_id=$1
+ORDER BY sort_order,id`, strings.TrimSpace(recipeVersionID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.RecipeLine
+	for rows.Next() {
+		v, err := scanRecipeLine(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) SubmitRecipeSuggestion(ctx context.Context, v domain.RecipeSuggestion, changes []domain.RecipeSuggestionChange) (domain.RecipeSuggestion, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return domain.RecipeSuggestion{}, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	out, err := scanRecipeSuggestion(tx.QueryRow(ctx, `
+INSERT INTO cloud_recipe_suggestions(
+  id,suggestion_id,restaurant_id,recipe_version_id,owner_catalog_item_id,owner_catalog_suggestion_id,proposal_group_id,action,reason,prep_time_delta_minutes,status,source_event_id,suggested_at,cloud_received_at,payload_json,created_at,updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17)
+ON CONFLICT (suggestion_id) DO UPDATE SET updated_at = EXCLUDED.updated_at
+RETURNING id,suggestion_id,restaurant_id,COALESCE(recipe_version_id,''),COALESCE(owner_catalog_item_id,''),COALESCE(owner_catalog_suggestion_id,''),
+       COALESCE(proposal_group_id,''),action,COALESCE(reason,''),prep_time_delta_minutes,status,COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),
+       reviewed_at,COALESCE(source_event_id,''),suggested_at,cloud_received_at,payload_json,created_at,updated_at`,
+		v.ID, v.SuggestionID, v.RestaurantID, nullableText(v.RecipeVersionID), nullableText(v.OwnerCatalogItemID), nullableText(v.OwnerCatalogSuggestionID), nullableText(v.ProposalGroupID), v.Action, v.Reason, v.PrepTimeDeltaMinutes, string(v.Status), nullableText(v.SourceEventID), v.SuggestedAt, v.CloudReceivedAt, string(v.PayloadJSON), v.CreatedAt, v.UpdatedAt))
+	if err != nil {
+		return domain.RecipeSuggestion{}, normalizeErr(err)
+	}
+	for _, change := range changes {
+		raw := change.PayloadJSON
+		if len(raw) == 0 {
+			raw = json.RawMessage(`{}`)
+		}
+		if _, err := tx.Exec(ctx, `
+INSERT INTO cloud_recipe_suggestion_changes(
+  id,recipe_suggestion_id,line_id,action,from_catalog_item_id,to_catalog_item_id,quantity,unit_code,loss_percent,sort_order,payload_json,created_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12)
+ON CONFLICT (id) DO NOTHING`,
+			change.ID, out.ID, change.LineID, change.Action, change.FromCatalogItemID, change.ToCatalogItemID, change.Quantity, change.UnitCode, change.LossPercent, change.SortOrder, string(raw), change.CreatedAt); err != nil {
+			return domain.RecipeSuggestion{}, normalizeErr(err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.RecipeSuggestion{}, err
+	}
+	return out, nil
+}
+
+func (r *Repository) ActivateRecipeVersion(ctx context.Context, versionID, approvedBy string, now time.Time) (domain.RecipeVersion, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return domain.RecipeVersion{}, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	target, err := scanRecipeVersion(tx.QueryRow(ctx, `
+SELECT id,restaurant_id,owner_catalog_item_id,version,name,status,yield_quantity,yield_unit,COALESCE(created_by_employee_id,''),COALESCE(submitted_by_employee_id,''),COALESCE(approved_by_employee_id,''),submitted_at,approved_at,created_at,updated_at
+FROM cloud_recipe_versions WHERE id=$1`, strings.TrimSpace(versionID)))
+	if err != nil {
+		return domain.RecipeVersion{}, normalizeErr(err)
+	}
+	if _, err := tx.Exec(ctx, `
+UPDATE cloud_recipe_versions
+SET status='archived',updated_at=$3
+WHERE restaurant_id=$1 AND owner_catalog_item_id=$2 AND status='active' AND id <> $4`,
+		target.RestaurantID, target.OwnerCatalogItemID, now, target.ID); err != nil {
+		return domain.RecipeVersion{}, err
+	}
+	out, err := scanRecipeVersion(tx.QueryRow(ctx, `
+UPDATE cloud_recipe_versions
+SET status='active',approved_by_employee_id=$2,approved_at=$3,updated_at=$3
+WHERE id=$1
+RETURNING id,restaurant_id,owner_catalog_item_id,version,name,status,yield_quantity,yield_unit,COALESCE(created_by_employee_id,''),COALESCE(submitted_by_employee_id,''),COALESCE(approved_by_employee_id,''),submitted_at,approved_at,created_at,updated_at`,
+		target.ID, nullableText(approvedBy), now))
+	if err != nil {
+		return domain.RecipeVersion{}, normalizeErr(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.RecipeVersion{}, err
+	}
+	return out, nil
+}
+
 func (r *Repository) UpsertStopListEntry(ctx context.Context, v domain.StopListEntry) (domain.StopListEntry, error) {
 	out, err := scanStopListEntry(r.pool.QueryRow(ctx, `
 INSERT INTO stop_lists(id,restaurant_id,catalog_item_id,available_quantity,source,reason,active,cloud_version,updated_at)
@@ -1055,6 +1223,20 @@ func scanPricingPolicy(row scanner) (domain.PricingPolicy, error) {
 func scanRecipeItem(row scanner) (domain.RecipeItem, error) {
 	var v domain.RecipeItem
 	err := row.Scan(&v.ID, &v.RestaurantID, &v.RecipeOwnerCatalogItemID, &v.ComponentCatalogItemID, &v.Quantity, &v.Unit, &v.LossPercent, &v.CreatedAt, &v.UpdatedAt)
+	return v, err
+}
+
+func scanRecipeVersion(row scanner) (domain.RecipeVersion, error) {
+	var v domain.RecipeVersion
+	var status string
+	err := row.Scan(&v.ID, &v.RestaurantID, &v.OwnerCatalogItemID, &v.Version, &v.Name, &status, &v.YieldQuantity, &v.YieldUnit, &v.CreatedByEmployeeID, &v.SubmittedByEmployeeID, &v.ApprovedByEmployeeID, &v.SubmittedAt, &v.ApprovedAt, &v.CreatedAt, &v.UpdatedAt)
+	v.Status = domain.RecipeVersionStatus(status)
+	return v, err
+}
+
+func scanRecipeLine(row scanner) (domain.RecipeLine, error) {
+	var v domain.RecipeLine
+	err := row.Scan(&v.ID, &v.RecipeVersionID, &v.ComponentCatalogItemID, &v.Quantity, &v.Unit, &v.LossPercent, &v.SortOrder, &v.CreatedAt, &v.UpdatedAt)
 	return v, err
 }
 

@@ -17,6 +17,7 @@ import {
   modifierOptionSchema,
   pricingPolicySchema,
   recipeItemSchema,
+  recipeVersionViewSchema,
   recipeSuggestionSchema,
   stopListUpdateReviewSchema,
   assignDeviceResultSchema,
@@ -48,6 +49,7 @@ import {
   type PairingCodeResult,
   type PricingPolicy,
   type RecipeItem,
+  type RecipeVersionView,
   type RecipeSuggestion,
   type StopListUpdateReview,
   type PublicationSummary,
@@ -434,6 +436,24 @@ export function createRecipeItem(payload: Payload) {
 
 export function updateRecipeItem(id: string, payload: Payload) {
   return patch(`/master-data/recipes/items/${encodeURIComponent(id)}`, recipeItemSchema, payload);
+}
+
+export function listRecipeVersions(restaurantId: string, ownerCatalogItemId = '', status = '', limit = 50, offset = 0): Promise<RecipeVersionView[]> {
+  const params = new URLSearchParams();
+  params.set('restaurant_id', restaurantId);
+  if (ownerCatalogItemId) params.set('owner_catalog_item_id', ownerCatalogItemId);
+  if (status) params.set('status', status);
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  return request(`/master-data/recipes/versions?${params.toString()}`, z.array(recipeVersionViewSchema));
+}
+
+export function createRecipeVersionDraft(payload: Payload): Promise<RecipeVersionView> {
+  return post('/master-data/recipes/versions/drafts', recipeVersionViewSchema, payload);
+}
+
+export function submitRecipeVersion(id: string, payload: Payload): Promise<RecipeSuggestion> {
+  return post(`/master-data/recipes/versions/${encodeURIComponent(id)}/submit`, recipeSuggestionSchema, payload);
 }
 
 export function listCatalogSuggestions(restaurantId: string, status = 'pending', limit = 100, offset = 0): Promise<CatalogSuggestion[]> {

@@ -188,16 +188,16 @@ func (r *Repository) UpsertLocalStopListEntry(ctx context.Context, v *domain.Sto
 	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO stop_lists(id,restaurant_id,catalog_item_id,available_quantity,source,reason,active,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at,updated_at)
 VALUES (?,?,?,?,?,?,?,NULL,NULL,NULL,'',?)
 ON CONFLICT(restaurant_id,catalog_item_id) DO UPDATE SET
-  id = excluded.id,
-  available_quantity = excluded.available_quantity,
-  source = excluded.source,
-  reason = excluded.reason,
-  active = excluded.active,
-  cloud_version = NULL,
-  cloud_updated_at = NULL,
-  cloud_deleted_at = NULL,
-  last_synced_at = '',
-  updated_at = excluded.updated_at`,
+  id = CASE WHEN stop_lists.active = 1 AND stop_lists.cloud_version IS NOT NULL AND excluded.active = 0 THEN stop_lists.id ELSE excluded.id END,
+  available_quantity = CASE WHEN stop_lists.active = 1 AND stop_lists.cloud_version IS NOT NULL AND excluded.active = 0 THEN stop_lists.available_quantity ELSE excluded.available_quantity END,
+  source = CASE WHEN stop_lists.active = 1 AND stop_lists.cloud_version IS NOT NULL AND excluded.active = 0 THEN stop_lists.source ELSE excluded.source END,
+  reason = CASE WHEN stop_lists.active = 1 AND stop_lists.cloud_version IS NOT NULL AND excluded.active = 0 THEN stop_lists.reason ELSE excluded.reason END,
+  active = CASE WHEN stop_lists.active = 1 AND stop_lists.cloud_version IS NOT NULL AND excluded.active = 0 THEN stop_lists.active ELSE excluded.active END,
+  cloud_version = CASE WHEN stop_lists.active = 1 AND stop_lists.cloud_version IS NOT NULL AND excluded.active = 0 THEN stop_lists.cloud_version ELSE NULL END,
+  cloud_updated_at = CASE WHEN stop_lists.active = 1 AND stop_lists.cloud_version IS NOT NULL AND excluded.active = 0 THEN stop_lists.cloud_updated_at ELSE NULL END,
+  cloud_deleted_at = CASE WHEN stop_lists.active = 1 AND stop_lists.cloud_version IS NOT NULL AND excluded.active = 0 THEN stop_lists.cloud_deleted_at ELSE NULL END,
+  last_synced_at = CASE WHEN stop_lists.active = 1 AND stop_lists.cloud_version IS NOT NULL AND excluded.active = 0 THEN stop_lists.last_synced_at ELSE '' END,
+  updated_at = CASE WHEN stop_lists.active = 1 AND stop_lists.cloud_version IS NOT NULL AND excluded.active = 0 THEN stop_lists.updated_at ELSE excluded.updated_at END`,
 		v.ID, v.RestaurantID, v.CatalogItemID, nullableFloat64(v.AvailableQuantity), v.Source, nullableString(v.Reason), boolInt(v.Active), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }

@@ -183,6 +183,41 @@ export const recipeItemSchema = z.object({
   updated_at: z.string(),
 });
 
+export const recipeVersionLineSchema = z.object({
+  id: z.string(),
+  recipe_version_id: z.string(),
+  component_catalog_item_id: z.string(),
+  quantity: z.number(),
+  unit: z.string(),
+  loss_percent: z.number(),
+  sort_order: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const recipeVersionSchema = z.object({
+  id: z.string(),
+  restaurant_id: z.string(),
+  owner_catalog_item_id: z.string(),
+  version: z.number(),
+  name: z.string(),
+  status: z.enum(['draft', 'review_pending', 'active', 'archived']),
+  yield_quantity: z.number(),
+  yield_unit: z.string(),
+  created_by_employee_id: z.string().optional().default(''),
+  submitted_by_employee_id: z.string().optional().default(''),
+  approved_by_employee_id: z.string().optional().default(''),
+  created_at: z.string(),
+  updated_at: z.string(),
+  submitted_at: z.string().optional(),
+  approved_at: z.string().optional(),
+});
+
+export const recipeVersionViewSchema = z.object({
+  version: recipeVersionSchema,
+  lines: z.array(recipeVersionLineSchema),
+});
+
 export const stopListEntrySchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
@@ -434,6 +469,7 @@ export type ModifierOption = z.infer<typeof modifierOptionSchema>;
 export type ModifierBinding = z.infer<typeof modifierBindingSchema>;
 export type PricingPolicy = z.infer<typeof pricingPolicySchema>;
 export type RecipeItem = z.infer<typeof recipeItemSchema>;
+export type RecipeVersionView = z.infer<typeof recipeVersionViewSchema>;
 export type StopListEntry = z.infer<typeof stopListEntrySchema>;
 export type StopListReadiness = z.infer<typeof stopListReadinessSchema>;
 export type Hall = z.infer<typeof hallSchema>;

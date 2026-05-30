@@ -142,9 +142,9 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - выполнено: POS Edge lookup active `stop_lists` для самого блюда и обязательных active recipe components при `AddOrderLine` и увеличении quantity;
   - выполнено: POS Edge ingest streams `recipes` и `inventory_reference`; Cloud generic package validation/storage принимает эти streams;
   - выполнено: POS Edge применяет `warehouses` из `inventory_reference` в `warehouse_reference` и использует default warehouse для kitchen stock command validation;
-  - выполнено: Cloud UI имеет bounded authoring для recipe items и stop-list entries по подтвержденным master-data routes;
+  - выполнено: Cloud UI имеет bounded authoring для recipe items, сценарный editor версий техкарт и stop-list entries по подтвержденным master-data routes;
   - выполнено: минимальный `stop_list_conflict_policy`, bounded Edge-origin stop-list manager review flow и safe readiness API/UI signals для stop-list publication, Edge ACK metadata и sync problem counters;
-  - добавить сценарный recipe version editor/review и расширенный stop-list review polish поверх этих данных;
+  - выполнено: сценарный Cloud-owned recipe version editor/review добавил draft versions, submit в `RecipeChangeSuggested`, approve/apply через Cloud authority/publication path и read-only Edge publication; расширенный stop-list review polish остается далее;
   - стабилизировать regression-покрытие `pos_stop_list_sale_blocking` для Cloud publish/import контракта и offline blocking-инварианта.
 - Advanced KDS/kitchen lifecycle:
   - выполнено: POS Edge создает `kitchen_tickets` из order lines, предоставляет `GET /api/v1/kitchen/order-queue`, `GET /api/v1/kitchen/tickets` и status endpoints `accept/start/hold/ready/serve/recall/cancel`;
@@ -157,6 +157,7 @@ Roadmap фиксирует статусы, блокеры и следующий 
   - выполнено: POS Edge recipe/proposal backend routes возвращают техкарту с ingredient names из полного `catalog_items`, сохраняют локальные `kitchen_proposals`, пишут `CatalogItemChangeSuggested`/`RecipeChangeSuggested`, поддерживают `proposal_group_id` для нового блюда + техкарты и валидируют prep time delta через `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES`;
   - выполнено: Cloud-side `StockWriteOffCaptured` receiver/worker, включая durable processing через `inventory_event_queue`;
   - выполнено: Cloud review/apply для `CatalogItemChangeSuggested`/`RecipeChangeSuggested` с `GET/approve/reject/request-changes`, apply только на approve и публикацией `proposal_feedback` вместе с `catalog`/`recipes`;
+  - выполнено: POS Edge regression закрепляет, что Cloud-imported active stop-list для компонента активной техкарты не обходится локальным inactive Edge overlay;
   - выполнено: `pos-ui-g` kitchen mode использует backend routes для queue/ready order tiles, ticket actions, stock forms (`receipt/count/write-off/production`), full catalog picker, recipe view и локальные kitchen proposals/suggestions с безопасной локализацией ошибок;
   - выполнено: POS Edge backend route `POST /api/v1/kitchen/stop-list-updates` пишет локальный overlay и `StopListUpdated` в `local_event_log`/`pos_sync_outbox` идемпотентно по `command_id`; `GET /api/v1/kitchen/stop-list` возвращает safe local overlay + outbox status DTO без raw payload; `pos-ui-g` KDS kitchen tab имеет stop-list edit form и pending/ack/problem indicator поверх backend state.
 - POS-side authoritative financial/inventory logic:

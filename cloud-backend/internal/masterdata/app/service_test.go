@@ -408,6 +408,110 @@ func TestPublicationIncludesRecipesAndStopListPackages(t *testing.T) {
 	assertPOSEdgeRecipesAndInventoryReferencePackage(t, recipesPackage.PayloadJSON, inventoryPackage.PayloadJSON, restaurant.ID, dish.ID, component.ID)
 }
 
+func TestRecipeVersionDraftSubmitApprovePublishesActiveVersion(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	restaurant, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "Recipe Lab", Timezone: "Europe/Moscow", Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dish, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: restaurant.ID, Kind: domain.CatalogItemDish, Name: "Soup", SKU: "SOUP-DRAFT", BaseUnit: "portion"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	component, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: restaurant.ID, Kind: domain.CatalogItemGood, Name: "Potato", SKU: "POTATO-DRAFT", BaseUnit: "g"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	published := domain.StatusPublished
+	if _, err := service.UpdateCatalogItem(ctx, dish.ID, app.UpdateCatalogItemCommand{Status: &published}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpdateCatalogItem(ctx, component.ID, app.UpdateCatalogItemCommand{Status: &published}); err != nil {
+		t.Fatal(err)
+	}
+
+	draft, err := service.CreateRecipeVersionDraft(ctx, app.CreateRecipeVersionDraftCommand{
+		RestaurantID:        restaurant.ID,
+		OwnerCatalogItemID:  dish.ID,
+		Name:                "Soup pilot v1",
+		YieldQuantity:       1,
+		YieldUnit:           "portion",
+		CreatedByEmployeeID: "manager-1",
+		SubmitForReview:     true,
+		Reason:              "pilot recipe",
+		Lines: []app.RecipeVersionLineCommand{{
+			ComponentCatalogItemID: component.ID,
+			Quantity:               120,
+			Unit:                   "g",
+			LossPercent:            3,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.Version.Status != domain.RecipeVersionStatusReviewPending || len(draft.Lines) != 1 {
+		t.Fatalf("expected submitted draft with one line, got %+v", draft)
+	}
+	suggestions, err := service.ListRecipeSuggestions(ctx, restaurant.ID, "pending", 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(suggestions) != 1 || suggestions[0].RecipeVersionID != draft.Version.ID {
+		t.Fatalf("expected pending recipe version suggestion, got %+v", suggestions)
+	}
+	approved, err := service.ApproveRecipeSuggestion(ctx, suggestions[0].ID, app.SuggestionReviewCommand{ReviewedByEmployeeID: "manager-1", PublishedBy: "cloud-ui"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approved.Status != domain.SuggestionStatusApproved {
+		t.Fatalf("expected approved suggestion, got %+v", approved)
+	}
+	versions, err := service.ListRecipeVersions(ctx, restaurant.ID, dish.ID, "active", 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != 1 || versions[0].Version.ID != draft.Version.ID {
+		t.Fatalf("expected approved draft to become active version, got %+v", versions)
+	}
+	pub, err := repo.GetCurrentPublication(ctx, restaurant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var packet posEdgeMasterDataCommand
+	if err := json.Unmarshal(pub.PackageJSON, &packet); err != nil {
+		t.Fatal(err)
+	}
+	if len(packet.RecipeVersions) != 1 || len(packet.RecipeLines) != 1 || packet.RecipeVersions[0].ID != draft.Version.ID {
+		t.Fatalf("expected publication to use versioned recipe authority, versions=%+v lines=%+v", packet.RecipeVersions, packet.RecipeLines)
+	}
+}
+
+func TestRecipeVersionDraftRejectsInvalidLine(t *testing.T) {
+	service, _ := newService()
+	ctx := context.Background()
+	restaurant, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "Recipe Lab", Timezone: "Europe/Moscow", Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dish, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: restaurant.ID, Kind: domain.CatalogItemDish, Name: "Soup", SKU: "SOUP-INVALID", BaseUnit: "portion"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.CreateRecipeVersionDraft(ctx, app.CreateRecipeVersionDraftCommand{
+		RestaurantID:       restaurant.ID,
+		OwnerCatalogItemID: dish.ID,
+		Lines: []app.RecipeVersionLineCommand{{
+			ComponentCatalogItemID: dish.ID,
+			Quantity:               0,
+			Unit:                   "",
+		}},
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected invalid recipe line, got %v", err)
+	}
+}
+
 func TestCatalogActiveSKUCanBeReusedAfterArchive(t *testing.T) {
 	service, _ := newService()
 	ctx := context.Background()

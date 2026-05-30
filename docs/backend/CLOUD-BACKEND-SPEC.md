@@ -76,7 +76,7 @@
 - Cloud не является платежным процессором и не выполняет fiscalization.
 - Cloud не принимает POS operator session как security boundary.
 - Cloud использует ClickHouse для async immutable `raw_business_events` archive, но не делает synchronous dual-write в request path.
-- Cloud предоставляет pilot-ready CRUD/publication UI для recipes/stop-list в текущем bounded объеме; расширенный recipe editor/readiness polish остается запланированным далее.
+- Cloud предоставляет pilot-ready CRUD/publication UI для recipes/stop-list в текущем bounded объеме; реализовано сейчас добавлен сценарный editor версий техкарт с draft, submit в review и approve/apply через Cloud-owned publication path. Production-grade lifecycle polish остается запланированным далее.
 - Реализовано сейчас: Cloud предоставляет review/apply runtime для Edge-originated `CatalogItemChangeSuggested`/`RecipeChangeSuggested` и `StopListUpdated` через маршруты `GET/approve/reject/request-changes`; apply выполняется только на approve с последующей публикацией и без прямой мутации Edge runtime.
 
 ## Runtime Modules
@@ -213,6 +213,9 @@ Master data under canonical namespace:
   - `POST /api/v1/master-data/recipes/items`
   - `GET /api/v1/master-data/recipes/items`
   - `PATCH /api/v1/master-data/recipes/items/{id}`
+  - `GET /api/v1/master-data/recipes/versions?restaurant_id=&owner_catalog_item_id=&status=&limit=&offset=`
+  - `POST /api/v1/master-data/recipes/versions/drafts`
+  - `POST /api/v1/master-data/recipes/versions/{id}/submit`
   - `POST /api/v1/master-data/inventory/stop-list`
   - `GET /api/v1/master-data/inventory/stop-list`
   - `PATCH /api/v1/master-data/inventory/stop-list/{id}`
@@ -525,7 +528,7 @@ Managed SQL file, реализовано сейчас:
 - Projections: `cloud_projection_event_type_stats`, `cloud_projection_shift_finance`, `cloud_projection_financial_operations`.
 - Master-data packages: `cloud_master_data_packages`.
 - Currency reference: `cloud_currency_reference`.
-- Master data: `cloud_restaurants`, `cloud_roles`, `cloud_employees`, `cloud_categories`, `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_services`, `cloud_catalog_folders`, `cloud_catalog_folder_parameters`, `cloud_catalog_tags`, `cloud_catalog_item_tags`, `cloud_recipe_items`, `cloud_modifier_groups`, `cloud_modifier_options`, `cloud_modifier_group_bindings`, `cloud_pricing_policies`, `cloud_menu_items`, `cloud_menu_item_modifier_groups`, `cloud_menu_location_assignments`, `cloud_master_data_publications`.
+- Master data: `cloud_restaurants`, `cloud_roles`, `cloud_employees`, `cloud_categories`, `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_services`, `cloud_catalog_folders`, `cloud_catalog_folder_parameters`, `cloud_catalog_tags`, `cloud_catalog_item_tags`, `cloud_recipe_items`, `cloud_recipe_versions`, `cloud_recipe_lines`, `cloud_modifier_groups`, `cloud_modifier_options`, `cloud_modifier_group_bindings`, `cloud_pricing_policies`, `cloud_menu_items`, `cloud_menu_item_modifier_groups`, `cloud_menu_location_assignments`, `cloud_master_data_publications`.
 - Provisioning: `cloud_edge_nodes`, `cloud_unassigned_edge_nodes`, `cloud_pairing_codes`.
 - Inventory runtime: `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`.
 - OLAP control state: `olap_export_checkpoints`, `olap_export_retry_commands`.
@@ -552,7 +555,7 @@ Schema verification:
 - `POST /api/v1/olap/export-retry` реализовано сейчас как минимальный support-only mutating control: идемпотентность хранится в `olap_export_retry_commands`, `retry_failed` переводит failed `inbox_events` обратно в pending для `raw_business_events`, `resume_from_checkpoint` дополнительно снимает processing locks, а для `stock_moves` снимается checkpoint backoff; endpoint не сбрасывает checkpoint вручную и не пишет ClickHouse business rows.
 - `GET /api/v1/olap/stock-move-summary` реализовано сейчас как первый bounded агрегированный ClickHouse read: фильтры совпадают с stock moves, `group_by` ограничен `business_date`, `catalog_item`, `warehouse`, ordering deterministic, response содержит quantities/cost totals без COGS/margin wording.
 - `CatalogItemChangeSuggested` создает Cloud review item; upsert в catalog выполняется только после manager approve текущими `catalog-suggestions` routes.
-- `RecipeChangeSuggested` создает Cloud review item с diff по ingredients, quantities, units, loss percent и prep time; published recipe не меняется до approve/apply текущими `recipe-suggestions` routes.
+- `RecipeChangeSuggested` создает Cloud review item с diff по ingredients, quantities, units, loss percent и prep time; published recipe не меняется до approve/apply текущими `recipe-suggestions` routes. Реализовано сейчас: Cloud-authored recipe version draft при submit создает pending `RecipeChangeSuggested` с `action = publish_recipe_version`; approve активирует draft version, архивирует предыдущую active version для owner item и публикует `recipes` package.
 - `StopListUpdated` обрабатывается асинхронно через `inventory_event_queue`: worker пишет `cloud_projection_stop_list_updates` без raw payload. `edge_overlay_until_next_publication` обновляет bounded `stop_lists` overlay, `cloud_wins` не перетирает Cloud-owned row, `edge_overlay_requires_manager_review` фиксирует безопасную projection для bounded manager review.
 - Bounded manager review для `edge_overlay_requires_manager_review` реализован сейчас: list/detail имеют stable bounded paging, decisions идемпотентны, invalid transition возвращает conflict, approve применяет изменение только через Cloud-owned `stop_lists` + publication, reject/request-changes не меняют runtime stop-list authority.
 - `GET /api/v1/sync/readiness/stop-list` реализовано сейчас как safe readiness summary: publication/package metadata, latest accepted `StopListUpdated` ACK metadata и агрегат `cloud_sync_problem_events` по кодам ошибок без raw payload.

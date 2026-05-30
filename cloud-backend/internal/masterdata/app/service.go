@@ -81,6 +81,13 @@ type Repository interface {
 	UpdateRecipeItem(context.Context, domain.RecipeItem) (domain.RecipeItem, error)
 	GetRecipeItem(context.Context, string) (domain.RecipeItem, error)
 	ListRecipeItems(context.Context, string) ([]domain.RecipeItem, error)
+	CreateRecipeVersion(context.Context, domain.RecipeVersion, []domain.RecipeLine) (domain.RecipeVersion, error)
+	UpdateRecipeVersion(context.Context, domain.RecipeVersion) (domain.RecipeVersion, error)
+	GetRecipeVersion(context.Context, string) (domain.RecipeVersion, error)
+	ListRecipeVersions(context.Context, string, string, string, int, int) ([]domain.RecipeVersion, error)
+	ListRecipeLines(context.Context, string) ([]domain.RecipeLine, error)
+	SubmitRecipeSuggestion(context.Context, domain.RecipeSuggestion, []domain.RecipeSuggestionChange) (domain.RecipeSuggestion, error)
+	ActivateRecipeVersion(context.Context, string, string, time.Time) (domain.RecipeVersion, error)
 	UpsertStopListEntry(context.Context, domain.StopListEntry) (domain.StopListEntry, error)
 	GetStopListEntry(context.Context, string) (domain.StopListEntry, error)
 	ListStopListEntries(context.Context, string) ([]domain.StopListEntry, error)
@@ -350,6 +357,39 @@ type UpdatePricingPolicyCommand struct {
 	Manual             *bool                   `json:"manual,omitempty"`
 	RequiresPermission *string                 `json:"requires_permission,omitempty"`
 	Status             *domain.LifecycleStatus `json:"status,omitempty"`
+}
+
+// RecipeVersionLineCommand описывает строку draft версии техкарты в Cloud authoring API.
+type RecipeVersionLineCommand struct {
+	ComponentCatalogItemID string `json:"component_catalog_item_id"`
+	Quantity               int64  `json:"quantity"`
+	Unit                   string `json:"unit"`
+	LossPercent            int64  `json:"loss_percent"`
+}
+
+// CreateRecipeVersionDraftCommand создает Cloud draft версии техкарты без мутаций POS Edge.
+type CreateRecipeVersionDraftCommand struct {
+	RestaurantID        string                     `json:"restaurant_id"`
+	OwnerCatalogItemID  string                     `json:"owner_catalog_item_id"`
+	Name                string                     `json:"name"`
+	YieldQuantity       int64                      `json:"yield_quantity"`
+	YieldUnit           string                     `json:"yield_unit"`
+	Lines               []RecipeVersionLineCommand `json:"lines"`
+	CreatedByEmployeeID string                     `json:"created_by_employee_id,omitempty"`
+	SubmitForReview     bool                       `json:"submit_for_review,omitempty"`
+	Reason              string                     `json:"reason,omitempty"`
+}
+
+// SubmitRecipeVersionCommand отправляет draft техкарты в существующий review/apply flow.
+type SubmitRecipeVersionCommand struct {
+	SubmittedByEmployeeID string `json:"submitted_by_employee_id"`
+	Reason                string `json:"reason,omitempty"`
+}
+
+// RecipeVersionView возвращает версию техкарты вместе со строками.
+type RecipeVersionView struct {
+	Version domain.RecipeVersion `json:"version"`
+	Lines   []domain.RecipeLine  `json:"lines"`
 }
 
 // CreateRecipeItemCommand описывает минимальную Cloud-owned строку рецепта для публикации read-only Edge recipe.
@@ -1305,6 +1345,180 @@ func (s *Service) ListRecipeItems(ctx context.Context, restaurantID string) ([]d
 	return s.repo.ListRecipeItems(ctx, strings.TrimSpace(restaurantID))
 }
 
+// CreateRecipeVersionDraft создает новую draft version и опционально отправляет ее в manager review.
+func (s *Service) CreateRecipeVersionDraft(ctx context.Context, cmd CreateRecipeVersionDraftCommand) (RecipeVersionView, error) {
+	restaurantID := strings.TrimSpace(cmd.RestaurantID)
+	ownerID := strings.TrimSpace(cmd.OwnerCatalogItemID)
+	name := strings.TrimSpace(cmd.Name)
+	yieldUnit := strings.TrimSpace(cmd.YieldUnit)
+	if name == "" {
+		name = ownerID + " recipe"
+	}
+	if cmd.YieldQuantity <= 0 {
+		cmd.YieldQuantity = 1
+	}
+	if yieldUnit == "" {
+		yieldUnit = "portion"
+	}
+	lines, err := s.validateRecipeVersionLines(ctx, restaurantID, ownerID, cmd.Lines)
+	if err != nil {
+		return RecipeVersionView{}, err
+	}
+	if err := s.ensureRestaurantActive(ctx, restaurantID); err != nil {
+		return RecipeVersionView{}, err
+	}
+	if err := s.ensureCatalogItemKind(ctx, restaurantID, ownerID, domain.CatalogItemDish, domain.CatalogItemSemiFinished); err != nil {
+		return RecipeVersionView{}, err
+	}
+	existing, err := s.repo.ListRecipeVersions(ctx, restaurantID, ownerID, "", 200, 0)
+	if err != nil {
+		return RecipeVersionView{}, err
+	}
+	versionNo := 1
+	for _, item := range existing {
+		if item.Version >= versionNo {
+			versionNo = item.Version + 1
+		}
+	}
+	now := s.clock.Now().UTC()
+	version := domain.RecipeVersion{
+		ID:                  s.ids.NewID(),
+		RestaurantID:        restaurantID,
+		OwnerCatalogItemID:  ownerID,
+		Version:             versionNo,
+		Name:                name,
+		Status:              domain.RecipeVersionStatusDraft,
+		YieldQuantity:       cmd.YieldQuantity,
+		YieldUnit:           yieldUnit,
+		CreatedByEmployeeID: strings.TrimSpace(cmd.CreatedByEmployeeID),
+		CreatedAt:           now,
+		UpdatedAt:           now,
+	}
+	for i := range lines {
+		lines[i].ID = s.ids.NewID()
+		lines[i].RecipeVersionID = version.ID
+		lines[i].SortOrder = i + 1
+		lines[i].CreatedAt = now
+		lines[i].UpdatedAt = now
+	}
+	stored, err := s.repo.CreateRecipeVersion(ctx, version, lines)
+	if err != nil {
+		return RecipeVersionView{}, err
+	}
+	if cmd.SubmitForReview {
+		if _, err := s.SubmitRecipeVersion(ctx, stored.ID, SubmitRecipeVersionCommand{SubmittedByEmployeeID: strings.TrimSpace(cmd.CreatedByEmployeeID), Reason: cmd.Reason}); err != nil {
+			return RecipeVersionView{}, err
+		}
+		stored, err = s.repo.GetRecipeVersion(ctx, stored.ID)
+		if err != nil {
+			return RecipeVersionView{}, err
+		}
+	}
+	storedLines, err := s.repo.ListRecipeLines(ctx, stored.ID)
+	if err != nil {
+		return RecipeVersionView{}, err
+	}
+	return RecipeVersionView{Version: stored, Lines: storedLines}, nil
+}
+
+// ListRecipeVersions возвращает bounded список Cloud recipe versions.
+func (s *Service) ListRecipeVersions(ctx context.Context, restaurantID, ownerCatalogItemID, status string, limit, offset int) ([]RecipeVersionView, error) {
+	versions, err := s.repo.ListRecipeVersions(ctx, strings.TrimSpace(restaurantID), strings.TrimSpace(ownerCatalogItemID), strings.TrimSpace(status), limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]RecipeVersionView, 0, len(versions))
+	for _, version := range versions {
+		lines, err := s.repo.ListRecipeLines(ctx, version.ID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, RecipeVersionView{Version: version, Lines: lines})
+	}
+	return out, nil
+}
+
+// SubmitRecipeVersion отправляет draft в существующую RecipeChangeSuggested review queue.
+func (s *Service) SubmitRecipeVersion(ctx context.Context, id string, cmd SubmitRecipeVersionCommand) (domain.RecipeSuggestion, error) {
+	version, err := s.repo.GetRecipeVersion(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.RecipeSuggestion{}, err
+	}
+	if version.Status == domain.RecipeVersionStatusActive {
+		return domain.RecipeSuggestion{}, fmt.Errorf("%w: active recipe version is already published", domain.ErrConflict)
+	}
+	if version.Status == domain.RecipeVersionStatusArchived {
+		return domain.RecipeSuggestion{}, fmt.Errorf("%w: archived recipe version cannot be submitted", domain.ErrConflict)
+	}
+	lines, err := s.repo.ListRecipeLines(ctx, version.ID)
+	if err != nil {
+		return domain.RecipeSuggestion{}, err
+	}
+	if len(lines) == 0 {
+		return domain.RecipeSuggestion{}, fmt.Errorf("%w: recipe draft requires at least one line", domain.ErrInvalid)
+	}
+	now := s.clock.Now().UTC()
+	suggestionID := "recipe-version-" + version.ID
+	payload, err := json.Marshal(map[string]any{
+		"data": map[string]any{
+			"suggestion_id":          suggestionID,
+			"restaurant_id":          version.RestaurantID,
+			"recipe_version_id":      version.ID,
+			"owner_catalog_item_id":  version.OwnerCatalogItemID,
+			"action":                 "publish_recipe_version",
+			"reason":                 strings.TrimSpace(cmd.Reason),
+			"suggested_by_employee_id": strings.TrimSpace(cmd.SubmittedByEmployeeID),
+			"suggested_at":           now,
+			"changes":                recipeVersionChangesPayload(lines),
+		},
+	})
+	if err != nil {
+		return domain.RecipeSuggestion{}, err
+	}
+	changes := make([]domain.RecipeSuggestionChange, 0, len(lines))
+	for i, line := range lines {
+		changes = append(changes, domain.RecipeSuggestionChange{
+			ID:                 fmt.Sprintf("%s-change-%d", suggestionID, i+1),
+			RecipeSuggestionID: "recipe-suggestion-" + suggestionID,
+			LineID:             line.ID,
+			Action:             "add_ingredient",
+			ToCatalogItemID:    line.ComponentCatalogItemID,
+			Quantity:           strconv.FormatInt(line.Quantity, 10),
+			UnitCode:           line.Unit,
+			LossPercent:        strconv.FormatInt(line.LossPercent, 10),
+			SortOrder:          line.SortOrder,
+			CreatedAt:          now,
+		})
+	}
+	suggestion := domain.RecipeSuggestion{
+		ID:                 "recipe-suggestion-" + suggestionID,
+		SuggestionID:       suggestionID,
+		RestaurantID:       version.RestaurantID,
+		RecipeVersionID:    version.ID,
+		OwnerCatalogItemID: version.OwnerCatalogItemID,
+		Action:             "publish_recipe_version",
+		Reason:             strings.TrimSpace(cmd.Reason),
+		Status:             domain.SuggestionStatusPending,
+		SuggestedAt:        now,
+		CloudReceivedAt:    now,
+		PayloadJSON:        payload,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	stored, err := s.repo.SubmitRecipeSuggestion(ctx, suggestion, changes)
+	if err != nil {
+		return domain.RecipeSuggestion{}, err
+	}
+	version.Status = domain.RecipeVersionStatusReviewPending
+	version.SubmittedByEmployeeID = strings.TrimSpace(cmd.SubmittedByEmployeeID)
+	version.SubmittedAt = &now
+	version.UpdatedAt = now
+	if _, updateErr := s.repo.UpdateRecipeVersion(ctx, version); updateErr != nil {
+		return domain.RecipeSuggestion{}, updateErr
+	}
+	return stored, nil
+}
+
 // UpdateRecipeItem изменяет recipe component без создания Edge-side stock documents.
 func (s *Service) UpdateRecipeItem(ctx context.Context, id string, cmd UpdateRecipeItemCommand) (domain.RecipeItem, error) {
 	item, err := s.repo.GetRecipeItem(ctx, strings.TrimSpace(id))
@@ -1857,14 +2071,14 @@ func (s *Service) ApproveRecipeSuggestion(ctx context.Context, id string, cmd Su
 		return domain.RecipeSuggestion{}, err
 	}
 	now := s.clock.Now().UTC()
-	if err := s.applyRecipeSuggestion(ctx, &v, now); err != nil {
-		return domain.RecipeSuggestion{}, err
-	}
 	v.Status = domain.SuggestionStatusApproved
 	v.ReviewComment = strings.TrimSpace(cmd.ReviewComment)
 	v.ReviewedByEmployeeID = strings.TrimSpace(cmd.ReviewedByEmployeeID)
 	v.ReviewedAt = &now
 	v.UpdatedAt = now
+	if err := s.applyRecipeSuggestion(ctx, &v, now); err != nil {
+		return domain.RecipeSuggestion{}, err
+	}
 	stored, err := s.repo.UpdateRecipeSuggestion(ctx, v)
 	if err != nil {
 		return domain.RecipeSuggestion{}, err
@@ -2002,6 +2216,18 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
 	}
+	recipeAuthorityVersions, err := s.repo.ListRecipeVersions(ctx, restaurantID, "", "", 500, 0)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
+	recipeAuthorityLines := map[string][]domain.RecipeLine{}
+	for _, version := range recipeAuthorityVersions {
+		lines, err := s.repo.ListRecipeLines(ctx, version.ID)
+		if err != nil {
+			return domain.MasterDataPacket{}, nil, nil, err
+		}
+		recipeAuthorityLines[version.ID] = lines
+	}
 	stopLists, err := s.repo.ListStopListEntries(ctx, restaurantID)
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
@@ -2014,7 +2240,24 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 	sortTables(tables)
 	sortRecipeItems(recipeItems)
 	sortStopLists(stopLists)
-	recipeVersions, recipeLines := edgeRecipes(recipeItems, catalogItems)
+	recipeVersions, recipeLines := edgeRecipeVersions(recipeAuthorityVersions, recipeAuthorityLines)
+	versionedOwners := map[string]struct{}{}
+	for _, version := range recipeVersions {
+		versionedOwners[version.DishCatalogItemID] = struct{}{}
+	}
+	legacyRecipeItems := make([]domain.RecipeItem, 0, len(recipeItems))
+	for _, item := range recipeItems {
+		if _, ok := versionedOwners[item.RecipeOwnerCatalogItemID]; !ok {
+			legacyRecipeItems = append(legacyRecipeItems, item)
+		}
+	}
+	legacyVersions, legacyLines := edgeRecipes(legacyRecipeItems, catalogItems)
+	if len(legacyVersions) > 0 {
+		recipeVersions = append(recipeVersions, legacyVersions...)
+		recipeLines = append(recipeLines, legacyLines...)
+	}
+	sort.SliceStable(recipeVersions, func(i, j int) bool { return recipeVersions[i].ID < recipeVersions[j].ID })
+	sort.SliceStable(recipeLines, func(i, j int) bool { return recipeLines[i].ID < recipeLines[j].ID })
 
 	restaurants := []domain.Restaurant{}
 	if restaurant.ID != "" && restaurant.Status == domain.RestaurantActive {
@@ -2477,6 +2720,48 @@ func edgeRecipes(items []domain.RecipeItem, catalogItems []domain.CatalogItem) (
 	return versions, lines
 }
 
+func edgeRecipeVersions(items []domain.RecipeVersion, linesByVersion map[string][]domain.RecipeLine) ([]domain.EdgeRecipeVersion, []domain.EdgeRecipeLine) {
+	versions := make([]domain.EdgeRecipeVersion, 0, len(items))
+	lines := make([]domain.EdgeRecipeLine, 0)
+	for _, item := range items {
+		if item.Status != domain.RecipeVersionStatusActive && item.Status != domain.RecipeVersionStatusArchived {
+			continue
+		}
+		active := item.Status == domain.RecipeVersionStatusActive
+		status := "archived"
+		if active {
+			status = "active"
+		}
+		versions = append(versions, domain.EdgeRecipeVersion{
+			ID:                item.ID,
+			DishCatalogItemID: item.OwnerCatalogItemID,
+			Version:           item.Version,
+			Name:              item.Name,
+			Status:            status,
+			YieldQuantity:     item.YieldQuantity,
+			YieldUnit:         item.YieldUnit,
+			Active:            active,
+			CreatedAt:         item.CreatedAt,
+			UpdatedAt:         item.UpdatedAt,
+		})
+		for _, line := range linesByVersion[item.ID] {
+			lines = append(lines, domain.EdgeRecipeLine{
+				ID:              line.ID,
+				RecipeVersionID: item.ID,
+				CatalogItemID:   line.ComponentCatalogItemID,
+				Quantity:        line.Quantity,
+				Unit:            line.Unit,
+				LossPercent:     int(line.LossPercent),
+				CreatedAt:       line.CreatedAt,
+				UpdatedAt:       line.UpdatedAt,
+			})
+		}
+	}
+	sort.SliceStable(versions, func(i, j int) bool { return versions[i].ID < versions[j].ID })
+	sort.SliceStable(lines, func(i, j int) bool { return lines[i].ID < lines[j].ID })
+	return versions, lines
+}
+
 func edgeStopLists(items []domain.StopListEntry) []domain.EdgeStopListEntry {
 	out := make([]domain.EdgeStopListEntry, 0, len(items))
 	for _, item := range items {
@@ -2890,6 +3175,18 @@ func (s *Service) applyRecipeSuggestion(ctx context.Context, v *domain.RecipeSug
 	var payload map[string]any
 	_ = json.Unmarshal(v.PayloadJSON, &payload)
 	data, _ := payload["data"].(map[string]any)
+	if strings.TrimSpace(v.Action) == "publish_recipe_version" || strings.TrimSpace(stringValue(data, "action")) == "publish_recipe_version" {
+		versionID := strings.TrimSpace(firstNonEmpty(v.RecipeVersionID, stringValue(data, "recipe_version_id")))
+		if versionID == "" {
+			return fmt.Errorf("%w: recipe_version_id is required", domain.ErrInvalid)
+		}
+		approved, err := s.repo.ActivateRecipeVersion(ctx, versionID, strings.TrimSpace(v.ReviewedByEmployeeID), now)
+		if err != nil {
+			return err
+		}
+		v.OwnerCatalogItemID = approved.OwnerCatalogItemID
+		return nil
+	}
 	ownerID := strings.TrimSpace(firstNonEmpty(v.OwnerCatalogItemID, stringValue(data, "owner_catalog_item_id")))
 	if ownerID == "" {
 		return fmt.Errorf("%w: owner_catalog_item_id is required", domain.ErrInvalid)
@@ -2923,6 +3220,51 @@ func (s *Service) applyRecipeSuggestion(ctx context.Context, v *domain.RecipeSug
 		}
 	}
 	return nil
+}
+
+func (s *Service) validateRecipeVersionLines(ctx context.Context, restaurantID, ownerID string, lines []RecipeVersionLineCommand) ([]domain.RecipeLine, error) {
+	if strings.TrimSpace(restaurantID) == "" || strings.TrimSpace(ownerID) == "" {
+		return nil, fmt.Errorf("%w: restaurant_id and owner_catalog_item_id are required", domain.ErrInvalid)
+	}
+	if len(lines) == 0 {
+		return nil, fmt.Errorf("%w: recipe version requires at least one line", domain.ErrInvalid)
+	}
+	seen := map[string]struct{}{}
+	out := make([]domain.RecipeLine, 0, len(lines))
+	for _, line := range lines {
+		componentID := strings.TrimSpace(line.ComponentCatalogItemID)
+		unit := strings.TrimSpace(line.Unit)
+		if componentID == "" || line.Quantity <= 0 || unit == "" || line.LossPercent < 0 || line.LossPercent > 100 {
+			return nil, fmt.Errorf("%w: recipe line requires component, positive quantity, unit and loss_percent 0..100", domain.ErrInvalid)
+		}
+		if componentID == strings.TrimSpace(ownerID) {
+			return nil, fmt.Errorf("%w: recipe component cannot equal owner item", domain.ErrInvalid)
+		}
+		if _, ok := seen[componentID]; ok {
+			return nil, fmt.Errorf("%w: duplicate recipe component", domain.ErrInvalid)
+		}
+		seen[componentID] = struct{}{}
+		if err := s.ensureCatalogItemKind(ctx, restaurantID, componentID, domain.CatalogItemGood, domain.CatalogItemSemiFinished); err != nil {
+			return nil, err
+		}
+		out = append(out, domain.RecipeLine{ComponentCatalogItemID: componentID, Quantity: line.Quantity, Unit: unit, LossPercent: line.LossPercent})
+	}
+	return out, nil
+}
+
+func recipeVersionChangesPayload(lines []domain.RecipeLine) []map[string]any {
+	out := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
+		out = append(out, map[string]any{
+			"line_id":            line.ID,
+			"action":             "add_ingredient",
+			"to_catalog_item_id": line.ComponentCatalogItemID,
+			"quantity":           strconv.FormatInt(line.Quantity, 10),
+			"unit_code":          line.Unit,
+			"loss_percent":       strconv.FormatInt(line.LossPercent, 10),
+		})
+	}
+	return out
 }
 
 func stringValue(v map[string]any, key string) string {

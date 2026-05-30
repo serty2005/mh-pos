@@ -8107,6 +8107,87 @@ func TestCloudRecipesStopListPackagesIngestAndBlockOfflineSale(t *testing.T) {
 	assertNoEdgeStockTables(t, f)
 }
 
+func TestCloudStopListBlockSurvivesLocalResumeOverlay(t *testing.T) {
+	f := newFixture(t)
+	component, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: seedMeta(f.device.ID), Type: domain.CatalogItemGood, Name: "Cloud Potato", SKU: "CLOUD-POTATO-OVERLAY", BaseUnit: "g"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cloudUpdatedAt := appshared.DBTime(fixedClock{}.Now())
+	if _, err := f.service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:    app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		RestaurantID:   f.restaurant.ID,
+		StreamName:     domain.MasterDataStreamRecipes,
+		SyncMode:       domain.SyncModeIncremental,
+		CloudVersion:   301,
+		CloudUpdatedAt: cloudUpdatedAt,
+		RecipeVersions: []domain.RecipeVersion{{
+			ID:                "recipe-cloud-overlay-soup",
+			DishCatalogItemID: f.menuItem.CatalogItemID,
+			Version:           1,
+			Name:              "Soup recipe",
+			Status:            domain.RecipeVersionActive,
+			YieldQuantity:     1,
+			YieldUnit:         "portion",
+			Active:            true,
+		}},
+		RecipeLines: []domain.RecipeLine{{
+			ID:              "recipe-cloud-overlay-line-potato",
+			RecipeVersionID: "recipe-cloud-overlay-soup",
+			CatalogItemID:   component.ID,
+			Quantity:        100,
+			Unit:            "g",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:    app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		RestaurantID:   f.restaurant.ID,
+		StreamName:     domain.MasterDataStreamInventory,
+		SyncMode:       domain.SyncModeIncremental,
+		CloudVersion:   302,
+		CloudUpdatedAt: cloudUpdatedAt,
+		StopListEntries: []domain.StopListEntry{{
+			ID:            "stop-cloud-overlay-potato",
+			RestaurantID:  f.restaurant.ID,
+			CatalogItemID: component.ID,
+			Source:        "cloud",
+			Active:        true,
+			UpdatedAt:     fixedClock{}.Now(),
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.repo.UpsertLocalStopListEntry(f.ctx, &domain.StopListEntry{
+		ID:            "stop-edge-resume-potato",
+		RestaurantID:  f.restaurant.ID,
+		CatalogItemID: component.ID,
+		Source:        "edge",
+		Active:        false,
+		UpdatedAt:     fixedClock{}.Now().Add(time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stop, err := f.repo.GetBlockingStopListEntry(f.ctx, f.restaurant.ID, component.ID)
+	if err != nil {
+		t.Fatalf("expected Cloud imported active stop-list to remain blocking after local resume overlay: %v", err)
+	}
+	if stop.ID != "stop-cloud-overlay-potato" || stop.Source != "cloud" {
+		t.Fatalf("expected local inactive overlay not to replace Cloud authority block, got %+v", stop)
+	}
+
+	f.openShift(t)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMetaCommand("cmd-cloud-overlay-create-order"), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMetaCommand("cmd-cloud-overlay-add-soup"), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1})
+	if !errors.Is(err, domain.ErrSaleUnavailable) || !strings.Contains(err.Error(), "recipe component") {
+		t.Fatalf("expected Cloud stop-list block to survive local overlay, got %v", err)
+	}
+}
+
 func TestKeyWritesCreateLocalEventsAndMatchingOutboxEnvelopes(t *testing.T) {
 	f := newFixture(t)
 	shift := f.openShift(t)

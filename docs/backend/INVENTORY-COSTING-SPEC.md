@@ -139,7 +139,7 @@ erDiagram
 
 `StopList` блокирует продажу независимо от аналитического stock balance. Запись может относиться к `dish`, `good` или `semi_finished`.
 
-Статус: реализовано сейчас для POS Edge local sale blocking, Cloud -> Edge streams `recipes`/`inventory_reference`, POS Edge backend `StopListUpdated` command, async `StopListUpdated` projection, минимального `stop_list_conflict_policy` и bounded Cloud manager review. Полноценный Edge manager/KDS edit UI и production-grade review workflow остаются запланированы далее.
+Статус: реализовано сейчас для POS Edge local sale blocking, Cloud -> Edge streams `recipes`/`inventory_reference`, POS Edge backend `StopListUpdated` command, async `StopListUpdated` projection, минимального `stop_list_conflict_policy`, bounded Cloud manager review и сценарного Cloud recipe version draft/review. Production-grade review workflow остается запланирован далее.
 
 Правила POS Edge при добавлении позиции:
 
@@ -149,7 +149,7 @@ erDiagram
 4. Если блюдо или хотя бы один обязательный компонент имеет активную запись с `available_quantity = 0`, отклонить добавление позиции.
 5. Если stop-list отсутствует или `available_quantity > 0`, продажа разрешена. Stock balance при этом не проверяется.
 
-Реализовано сейчас: проверка выполняется в POS Edge backend при добавлении строки заказа и при увеличении quantity. Проверяется прямой `catalog_item_id` и строки активной recipe version; selected modifiers не разворачиваются в складские позиции, потому что текущая Edge модель modifier option не содержит authoritative linked catalog item.
+Реализовано сейчас: проверка выполняется в POS Edge backend при добавлении строки заказа и при увеличении quantity. Проверяется прямой `catalog_item_id` и строки активной recipe version; Cloud-imported active stop-list для recipe component не снимается локальным inactive Edge overlay. Selected modifiers не разворачиваются в складские позиции, потому что текущая Edge модель modifier option не содержит authoritative linked catalog item.
 
 Реализовано сейчас: минимальный smoke `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud authoring/publication рецептов и stop-list, Edge sync, waiter order/precheck, KDS served, cashier final check, прием `ItemServed`/`CheckClosed` в Cloud, появление строк `stock_ledger` по `ItemServed` и отсутствие duplicate `CheckClosed` delta через bounded Cloud read endpoint. Профильный smoke `scripts/seed-dev-system.py --run-kitchen-process-smoke` дополнительно проверяет KDS recall/serve-again, ClickHouse `raw_business_events`, kitchen receipt/count/write-off/production ledger rows, bounded `olap_stock_moves` read и proposal approve/feedback.
 
@@ -292,7 +292,7 @@ erDiagram
 
 ### RecipeChangeSuggested
 
-`RecipeChangeSuggested` фиксирует участие повара в правке техкарты. Edge не применяет правку локально; POS Edge проверяет предел `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES`, а Cloud worker создает recipe change proposal с diff и ждет manager approve/apply.
+`RecipeChangeSuggested` фиксирует участие повара или Cloud draft editor в правке техкарты. Edge не применяет правку локально; POS Edge проверяет предел `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES`, а Cloud worker создает recipe change proposal с diff и ждет manager approve/apply. Для Cloud-authored draft `action = publish_recipe_version`; approve активирует Cloud-owned version и публикует read-only Edge `recipe_versions`/`recipe_lines`.
 
 ```json
 {

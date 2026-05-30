@@ -248,6 +248,20 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Columns:       []string{"id", "restaurant_id", "recipe_owner_catalog_item_id", "component_catalog_item_id", "quantity", "unit", "loss_percent", "created_at", "updated_at"},
 		},
 		{
+			Table:         "cloud_recipe_versions",
+			RequiredBy:    "cloud scenario recipe version editor/review",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"id", "restaurant_id", "owner_catalog_item_id", "version", "name", "status", "yield_quantity", "yield_unit", "created_by_employee_id", "submitted_by_employee_id", "approved_by_employee_id", "submitted_at", "approved_at", "created_at", "updated_at"},
+			Indexes:       []string{"cloud_recipe_versions_owner_status", "cloud_recipe_versions_one_active"},
+		},
+		{
+			Table:         "cloud_recipe_lines",
+			RequiredBy:    "cloud scenario recipe version editor lines",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"id", "recipe_version_id", "component_catalog_item_id", "quantity", "unit", "loss_percent", "sort_order", "created_at", "updated_at"},
+			Indexes:       []string{"cloud_recipe_lines_version_order"},
+		},
+		{
 			Table:         "cloud_modifier_groups",
 			RequiredBy:    "cloud menu modifier group foundation",
 			MigrationFile: "001_init.sql",

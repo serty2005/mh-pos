@@ -200,7 +200,7 @@ Request body shape currently supported by POS Edge:
 
 Только основа:
 
-- Cloud schema и publication workflow реально публикуют `recipes`/`inventory_reference` в `cloud_master_data_packages` как часть одного детерминированного publication snapshot.
+- Cloud schema и publication workflow реально публикуют `recipes`/`inventory_reference` в `cloud_master_data_packages` как часть одного детерминированного publication snapshot. Реализовано сейчас: Cloud-authored recipe version draft после approve становится active authority version и попадает в `recipes` package; draft/review rows не публикуются на Edge.
 - `scripts/seed-dev-system.py` создает recipe/stop-list examples и default warehouse, публикует их в Edge; runtime sale-blocking проверяется профильными POS backend tests и `--run-minimal-flow`.
 - `scripts/seed-dev-system.py --run-kitchen-process-smoke` покрывает Cloud publication -> Edge import -> KDS lifecycle/recall -> stock/proposal events -> Cloud ledger/ClickHouse/proposal feedback.
 
@@ -460,7 +460,7 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 }
 ```
 
-Поддержанные значения `conflict_policy`: `cloud_wins`, `edge_overlay_until_next_publication`, `edge_overlay_requires_manager_review`. Если поле не передано, применяется default `edge_overlay_requires_manager_review`. Только `edge_overlay_until_next_publication` обновляет bounded `stop_lists` overlay автоматически; остальные режимы фиксируются в safe projection для manager review и не раскрывают raw payload наружу. Bounded Cloud review endpoints `GET /api/v1/manager/stop-list-updates`, detail и `approve/reject/request-changes` отдают safe summary/diff only; approve применяет изменение через Cloud-owned stop-list authority/publication path, reject/request-changes не мутируют runtime authority.
+Поддержанные значения `conflict_policy`: `cloud_wins`, `edge_overlay_until_next_publication`, `edge_overlay_requires_manager_review`. Если поле не передано, применяется default `edge_overlay_requires_manager_review`. Только `edge_overlay_until_next_publication` обновляет bounded `stop_lists` overlay автоматически; остальные режимы фиксируются в safe projection для manager review и не раскрывают raw payload наружу. Bounded Cloud review endpoints `GET /api/v1/manager/stop-list-updates`, detail и `approve/reject/request-changes` отдают safe summary/diff only; approve применяет изменение через Cloud-owned stop-list authority/publication path, reject/request-changes не мутируют runtime authority. POS Edge sale blocking invariant не разрешает локальному inactive overlay снять Cloud-imported active stop-list block для самого item или компонента активной техкарты.
 
 ## Financial Payload Boundaries
 

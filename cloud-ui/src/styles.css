@@ -949,6 +949,60 @@ button:focus-visible,
   line-height: 1.45;
 }
 
+.recipe-version-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.8fr) minmax(420px, 1.2fr);
+  gap: 16px;
+}
+
+.recipe-version-form {
+  display: grid;
+  gap: 12px;
+}
+
+.recipe-version-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.recipe-version-list {
+  display: grid;
+  gap: 10px;
+}
+
+.recipe-version-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.9fr) minmax(220px, 1.1fr);
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid #e4e8e5;
+  border-radius: 8px;
+}
+
+.recipe-version-row > div,
+.recipe-version-row dl {
+  display: grid;
+  gap: 6px;
+}
+
+.recipe-version-row dl {
+  margin: 0;
+}
+
+.recipe-version-row dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #edf0ee;
+  padding-bottom: 6px;
+}
+
+.recipe-version-row dt,
+.recipe-version-row dd {
+  margin: 0;
+}
+
 @media (max-width: 1120px) {
   .cloud-page {
     grid-template-columns: 1fr;
@@ -966,6 +1020,7 @@ button:focus-visible,
   .cloud-publication-grid,
   .cloud-scenario-grid,
   .cloud-edge-grid,
+  .recipe-version-grid,
   .proposal-review-grid {
     grid-template-columns: 1fr;
   }
@@ -1008,6 +1063,8 @@ button:focus-visible,
   .permission-grid,
   .inline-action.horizontal,
   .cloud-state-grid,
+  .recipe-version-form-row,
+  .recipe-version-row,
   .proposal-facts,
   .proposal-diff-grid {
     grid-template-columns: 1fr;

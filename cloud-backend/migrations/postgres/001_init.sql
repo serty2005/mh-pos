@@ -632,6 +632,48 @@ CREATE TABLE IF NOT EXISTS cloud_recipe_items (
   UNIQUE (recipe_owner_catalog_item_id, component_catalog_item_id)
 );
 
+CREATE TABLE IF NOT EXISTS cloud_recipe_versions (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  owner_catalog_item_id TEXT NOT NULL REFERENCES cloud_catalog_items(id),
+  version BIGINT NOT NULL CHECK (version > 0),
+  name TEXT NOT NULL CHECK (name <> ''),
+  status TEXT NOT NULL CHECK (status IN ('draft','review_pending','active','archived')),
+  yield_quantity BIGINT NOT NULL DEFAULT 1 CHECK (yield_quantity > 0),
+  yield_unit TEXT NOT NULL CHECK (yield_unit <> ''),
+  created_by_employee_id TEXT,
+  submitted_by_employee_id TEXT,
+  approved_by_employee_id TEXT,
+  submitted_at TIMESTAMPTZ,
+  approved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  UNIQUE (restaurant_id, owner_catalog_item_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS cloud_recipe_versions_owner_status
+  ON cloud_recipe_versions(restaurant_id, owner_catalog_item_id, status, version DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS cloud_recipe_versions_one_active
+  ON cloud_recipe_versions(restaurant_id, owner_catalog_item_id)
+  WHERE status = 'active';
+
+CREATE TABLE IF NOT EXISTS cloud_recipe_lines (
+  id TEXT PRIMARY KEY,
+  recipe_version_id TEXT NOT NULL REFERENCES cloud_recipe_versions(id) ON DELETE CASCADE,
+  component_catalog_item_id TEXT NOT NULL REFERENCES cloud_catalog_items(id),
+  quantity BIGINT NOT NULL CHECK (quantity > 0),
+  unit TEXT NOT NULL CHECK (unit <> ''),
+  loss_percent BIGINT NOT NULL DEFAULT 0 CHECK (loss_percent >= 0 AND loss_percent <= 100),
+  sort_order BIGINT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  UNIQUE (recipe_version_id, component_catalog_item_id)
+);
+
+CREATE INDEX IF NOT EXISTS cloud_recipe_lines_version_order
+  ON cloud_recipe_lines(recipe_version_id, sort_order, id);
+
 CREATE TABLE IF NOT EXISTS cloud_modifier_groups (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),

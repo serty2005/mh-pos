@@ -26,7 +26,7 @@
 - расширять mobile-first waiter runtime без payment/refund authority по умолчанию только по подтвержденным backend contracts;
 - расширить KDS lifecycle за пределы текущего backend-backed ticket/stock/proposal/stop-list foundation: cooking events, station priority и operator analytics;
 - зафиксировать POS Edge backend как авторитетный runtime для financial/order/KDS command validation и stop-list sale blocking; POS UI не становится авторитетным слоем;
-- добавить Cloud manager flow для recipes, stop-list, catalog/recipe proposal review, inventory operations, publication readiness и sync/problem observability;
+- добавить Cloud manager flow для production-grade recipe lifecycle polish, stop-list escalation polish, inventory operations, publication readiness и sync/problem observability;
 - добавить полный Cloud-owned складской движок: stock receipts, inventory counts, production, sale consumption, refund/cancellation dispositions, recipe expansion, balances, costing и retro recalculation DAG;
 - расширить ClickHouse runtime от первого bounded `olap_stock_moves` summary и минимального retry control до sales/kitchen/costing aggregates и production-grade backfill jobs;
 - поддерживать полный smoke path Cloud setup -> Edge sync -> waiter order -> kitchen served/recall/serve-again -> Cloud inventory ledger -> ClickHouse export -> bounded OLAP API, сейчас покрытый `scripts/seed-dev-system.py --run-kitchen-process-smoke` для kitchen/process без cashier payment/check.
@@ -143,8 +143,8 @@
 - Управление ресторанами, ролями, сотрудниками, каталогом, папками, тегами, модификаторами, policies, залами, столами, menu items и публикациями по подтвержденным Cloud routes.
 - Генерация pairing code и назначение Edge-device ресторану.
 - Просмотр безопасного списка входящих Edge events без raw payload, включая card/list fallback на narrow screens с metadata/checksum вместо raw event payload; resource lists на narrow screens показывают status label в карточке и не раскрывают raw payload.
-- Cloud-owned recipes и stop-list authoring через подтвержденные master-data routes.
-- Route-backed manager surfaces для catalog/recipe proposal review и Edge-origin stop-list update review: списки, detail/diff, approve/reject/request-changes и publication/feedback после approve; stop-list readiness panel читает backend summary по publication/Edge ACK/sync problem counters; inventory documents/costing и OLAP exports остаются readiness-only без имитации отсутствующих Cloud routes.
+- Cloud-owned recipes и stop-list authoring через подтвержденные master-data routes; реализовано сейчас также bounded сценарный editor версий техкарт с draft, submit в `RecipeChangeSuggested`, approve/apply через Cloud authority и publication package.
+- Route-backed manager surfaces для catalog/recipe proposal review и Edge-origin stop-list update review: списки, detail/diff, approve/reject/request-changes и publication/feedback после approve; recipe version editor отправляет draft в эту же review queue; stop-list readiness panel читает backend summary по publication/Edge ACK/sync problem counters; inventory documents/costing и OLAP exports остаются readiness-only без имитации отсутствующих Cloud routes.
 - Локализованные сообщения, safe error details, no raw payload / PIN / token display; Cloud create/rotate PIN поля используют password input, а списки сотрудников показывают только `pin_configured` и credential version.
 
 Вне текущего объема:
