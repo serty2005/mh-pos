@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { getStopListReadiness, listInventoryStockBalances } from './api';
+import { getStopListReadiness, listInventoryStockBalances, listInventoryStockLedger } from './api';
 
 const stopListReadinessResponse = {
   restaurant_id: 'restaurant-1',
@@ -25,6 +25,26 @@ const inventoryStockBalanceResponse = [{
   needs_recalculation: false,
   last_movement_at: '2026-05-30T10:00:00Z',
   business_date_to: '2026-05-30',
+}];
+
+const inventoryStockLedgerResponse = [{
+  id: 'ledger-entry-1',
+  restaurant_id: 'restaurant-1',
+  warehouse_id: 'warehouse-1',
+  stock_document_id: 'stock-document-1',
+  source_event_id: 'source-event-1',
+  source_event_type: 'OrderLineServed',
+  catalog_item_id: 'catalog-item-1',
+  order_line_id: 'order-line-1',
+  movement_type: 'sale',
+  quantity: '-2.000',
+  unit_code: 'kg',
+  unit_cost_minor: 125,
+  total_cost_minor: -250,
+  costing_status: 'estimated',
+  occurred_at: '2026-05-30T10:00:00Z',
+  business_date_local: '2026-05-30',
+  created_at: '2026-05-30T10:01:00Z',
 }];
 
 function stubJsonFetch(payload: unknown) {
@@ -113,6 +133,39 @@ describe('cloud api inventory readiness contract', () => {
     expect(url.searchParams.has('catalog_item_id')).toBe(false);
     expect(url.searchParams.has('business_date_to')).toBe(false);
     expect(url.searchParams.has('costing_status')).toBe(false);
+    expect(url.searchParams.get('limit')).toBe('50');
+    expect(url.searchParams.get('offset')).toBe('0');
+  });
+
+  it('maps inventory stock ledger filters to supported read-only query params', async () => {
+    const fetchMock = stubJsonFetch(inventoryStockLedgerResponse);
+
+    await listInventoryStockLedger('restaurant-1', {
+      catalogItemId: 'catalog-item-1',
+      sourceEventType: 'OrderLineServed',
+      sourceEventId: 'source-event-1',
+      orderLineId: 'order-line-1',
+      limit: 25,
+      offset: 10,
+    });
+
+    const url = requestedUrl(fetchMock);
+    expect(url.pathname).toBe('/api/v1/inventory/stock-ledger');
+    expect(url.searchParams.get('restaurant_id')).toBe('restaurant-1');
+    expect(url.searchParams.get('catalog_item_id')).toBe('catalog-item-1');
+    expect(url.searchParams.get('source_event_type')).toBe('OrderLineServed');
+    expect(url.searchParams.get('source_event_id')).toBe('source-event-1');
+    expect(url.searchParams.get('order_line_id')).toBe('order-line-1');
+    expect(url.searchParams.get('limit')).toBe('25');
+    expect(url.searchParams.get('offset')).toBe('10');
+  });
+
+  it('uses default limit and offset for inventory stock ledger', async () => {
+    const fetchMock = stubJsonFetch(inventoryStockLedgerResponse);
+
+    await listInventoryStockLedger('restaurant-1');
+
+    const url = requestedUrl(fetchMock);
     expect(url.searchParams.get('limit')).toBe('50');
     expect(url.searchParams.get('offset')).toBe('0');
   });

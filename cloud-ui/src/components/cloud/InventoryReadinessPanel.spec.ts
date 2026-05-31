@@ -104,6 +104,27 @@ function createCtx(overrides: Record<string, unknown> = {}) {
         business_date_to: '2026-05-30',
       },
     ]),
+    inventoryStockLedger: ref([
+      {
+        id: 'ledger-entry-1',
+        restaurant_id: 'restaurant-1',
+        warehouse_id: 'warehouse-1',
+        stock_document_id: 'stock-document-1',
+        source_event_id: 'source-event-1',
+        source_event_type: 'OrderLineServed',
+        catalog_item_id: 'catalog-item-1',
+        order_line_id: 'order-line-1',
+        movement_type: 'sale',
+        quantity: '-2.000',
+        unit_code: 'kg',
+        unit_cost_minor: 125,
+        total_cost_minor: -250,
+        costing_status: 'estimated',
+        occurred_at: '2026-05-30T10:05:00Z',
+        business_date_local: '2026-05-30',
+        created_at: '2026-05-30T10:06:00Z',
+      },
+    ]),
     scopedRows: {
       catalogItems: [{ id: 'catalog-item-1', name: 'Milk' }],
       stopLists: [{ warehouse_id: 'warehouse-1' }],
@@ -112,6 +133,7 @@ function createCtx(overrides: Record<string, unknown> = {}) {
     formatDate: (value: string) => `fmt:${value}`,
     loadStopListReadiness: vi.fn().mockResolvedValue(undefined),
     loadInventoryStockBalances: vi.fn().mockResolvedValue(undefined),
+    loadInventoryStockLedger: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -157,6 +179,7 @@ describe('InventoryReadinessPanel', () => {
   it('renders empty state when inventory stock balances are empty', () => {
     const wrapper = mountPanel(createCtx({
       inventoryStockBalances: ref([]),
+      inventoryStockLedger: ref([]),
     }));
 
     expect(wrapper.find('table.cloud-table').exists()).toBe(false);
@@ -188,6 +211,38 @@ describe('InventoryReadinessPanel', () => {
       catalogItemId: 'catalog-item-1',
       businessDateTo: '2026-05-30',
       costingStatus: 'final',
+    });
+  });
+
+  it('renders inventory stock ledger preview from ctx.inventoryStockLedger', () => {
+    const wrapper = mountPanel();
+
+    expect(wrapper.text()).toContain('cloud.readiness.inventory.ledger.title');
+    expect(wrapper.text()).toContain('OrderLineServed');
+    expect(wrapper.text()).toContain('Milk (safe:catalog-item-1)');
+    expect(wrapper.text()).toContain('-2.000 kg');
+    expect(wrapper.text()).toContain('estimated');
+    expect(wrapper.text()).toContain('-250');
+    expect(wrapper.text()).toContain('fmt:2026-05-30T10:05:00Z');
+  });
+
+  it('passes inventory stock ledger filters with camelCase contract', async () => {
+    const ctx = createCtx();
+    const wrapper = mountPanel(ctx);
+
+    await wrapper.find('[data-label="cloud.readiness.inventory.ledger.filters.catalogItem"] select').setValue('catalog-item-1');
+    await wrapper.find('[data-label="cloud.readiness.inventory.ledger.filters.sourceEventType"] input').setValue('OrderLineServed');
+    await wrapper.find('[data-label="cloud.readiness.inventory.ledger.filters.sourceEventId"] input').setValue('source-event-1');
+    await wrapper.find('[data-label="cloud.readiness.inventory.ledger.filters.orderLineId"] input').setValue('order-line-1');
+    const buttons = wrapper.findAll('button');
+    expect(buttons.length).toBeGreaterThan(1);
+    await buttons[buttons.length - 1].trigger('click');
+
+    expect(ctx.loadInventoryStockLedger).toHaveBeenCalledWith({
+      catalogItemId: 'catalog-item-1',
+      sourceEventType: 'OrderLineServed',
+      sourceEventId: 'source-event-1',
+      orderLineId: 'order-line-1',
     });
   });
 });

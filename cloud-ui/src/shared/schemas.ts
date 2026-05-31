@@ -282,6 +282,26 @@ export const inventoryStockBalanceSchema = z.object({
   business_date_to: z.string(),
 });
 
+export const inventoryStockLedgerEntrySchema = z.object({
+  id: z.string(),
+  restaurant_id: z.string(),
+  warehouse_id: z.string().optional().default(''),
+  stock_document_id: z.string(),
+  source_event_id: z.string(),
+  source_event_type: z.string(),
+  catalog_item_id: z.string(),
+  order_line_id: z.string().optional().default(''),
+  movement_type: z.string(),
+  quantity: z.string(),
+  unit_code: z.string(),
+  unit_cost_minor: z.number(),
+  total_cost_minor: z.number(),
+  costing_status: z.string(),
+  occurred_at: z.string(),
+  business_date_local: z.string(),
+  created_at: z.string(),
+});
+
 export const olapExportStatusSchema = z.object({
   stream: z.enum(['raw_business_events', 'stock_moves']),
   last_checkpoint: z.string().optional().default(''),
@@ -585,6 +605,7 @@ export type RecipeVersionView = z.infer<typeof recipeVersionViewSchema>;
 export type StopListEntry = z.infer<typeof stopListEntrySchema>;
 export type StopListReadiness = z.infer<typeof stopListReadinessSchema>;
 export type InventoryStockBalance = z.infer<typeof inventoryStockBalanceSchema>;
+export type InventoryStockLedgerEntry = z.infer<typeof inventoryStockLedgerEntrySchema>;
 export type OlapExportStatus = z.infer<typeof olapExportStatusSchema>;
 export type OlapStockMove = z.infer<typeof olapStockMoveSchema>;
 export type OlapStockMoveSummary = z.infer<typeof olapStockMoveSummarySchema>;

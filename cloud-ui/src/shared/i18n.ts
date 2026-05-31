@@ -417,7 +417,7 @@ export const i18n = createI18n({
           },
           inventory: {
             status: 'реализовано сейчас',
-            copy: 'Cloud backend показывает аналитические остатки из stock ledger, costing status и safe readiness по stop-list publication без raw payload.',
+            copy: 'Cloud backend показывает аналитические остатки, bounded stock ledger preview, costing status и safe readiness по stop-list publication без raw payload.',
             emptyBalances: 'Остатки по выбранным фильтрам не найдены.',
             filters: {
               businessDateTo: 'Business date до',
@@ -431,6 +431,26 @@ export const i18n = createI18n({
               lastMovement: 'Последнее движение',
               quantity: 'Остаток',
               warehouse: 'Warehouse',
+            },
+            ledger: {
+              eyebrow: 'Read-only preview',
+              title: 'Stock ledger',
+              copy: 'Первые 50 движений из Cloud inventory ledger по подтвержденному read-only route. UI не показывает raw payload и не выполняет складские команды.',
+              empty: 'По выбранным фильтрам движения stock ledger не найдены.',
+              filters: {
+                catalogItem: 'Catalog item',
+                orderLineId: 'Order line ID',
+                sourceEventId: 'Source event ID',
+                sourceEventType: 'Source event type',
+              },
+              columns: {
+                cost: 'Cost minor',
+              },
+              signals: {
+                bounded: 'limit=50, offset=0',
+                noRawPayload: 'Без raw payload',
+                readOnly: 'Read-only inventory ledger',
+              },
             },
             costingStatuses: {
               all: 'Все',

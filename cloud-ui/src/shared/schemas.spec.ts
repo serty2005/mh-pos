@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { inventoryStockBalanceSchema, stopListReadinessSchema } from './schemas';
+import { inventoryStockBalanceSchema, inventoryStockLedgerEntrySchema, stopListReadinessSchema } from './schemas';
 
 describe('cloud schemas inventory readiness contract', () => {
   it('accepts stop-list readiness response and defaults optional fields', () => {
@@ -62,5 +62,28 @@ describe('cloud schemas inventory readiness contract', () => {
     });
 
     expect(parsed.success).toBe(false);
+  });
+
+  it('accepts inventory stock ledger entry and defaults optional ids', () => {
+    const parsed = inventoryStockLedgerEntrySchema.parse({
+      id: 'ledger-entry-1',
+      restaurant_id: 'restaurant-1',
+      stock_document_id: 'stock-document-1',
+      source_event_id: 'source-event-1',
+      source_event_type: 'OrderLineServed',
+      catalog_item_id: 'catalog-item-1',
+      movement_type: 'sale',
+      quantity: '-2.000',
+      unit_code: 'kg',
+      unit_cost_minor: 125,
+      total_cost_minor: -250,
+      costing_status: 'estimated',
+      occurred_at: '2026-05-30T10:00:00Z',
+      business_date_local: '2026-05-30',
+      created_at: '2026-05-30T10:01:00Z',
+    });
+
+    expect(parsed.warehouse_id).toBe('');
+    expect(parsed.order_line_id).toBe('');
   });
 });

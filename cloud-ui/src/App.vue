@@ -91,6 +91,7 @@ import {
   getStopListReadiness,
   listFinancialOperations,
   listInventoryStockBalances,
+  listInventoryStockLedger,
   listOlapStockMoveSummary,
   listOlapStockMoves,
   listSalesKitchenSummary,
@@ -144,7 +145,7 @@ import {
   upsertStopListEntry,
   ApiError,
 } from './shared/api';
-import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, FinancialOperationReportItem, InventoryStockBalance, OlapExportStatus, OlapStockMove, OlapStockMoveSummary, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, SalesKitchenSummaryGroupBy, SalesKitchenSummaryItem, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
+import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, FinancialOperationReportItem, InventoryStockBalance, InventoryStockLedgerEntry, OlapExportStatus, OlapStockMove, OlapStockMoveSummary, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, SalesKitchenSummaryGroupBy, SalesKitchenSummaryItem, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
 import type { RecipeVersionView } from './shared/schemas';
 
 type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'financialOperations' | 'salesKitchenSummary' | 'recipeVersions' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
@@ -251,6 +252,7 @@ const restaurants = ref<Restaurant[]>([]);
 const publication = ref<PublicationSummary | null>(null);
 const stopListReadiness = ref<StopListReadiness | null>(null);
 const inventoryStockBalances = ref<InventoryStockBalance[]>([]);
+const inventoryStockLedger = ref<InventoryStockLedgerEntry[]>([]);
 const olapExportStatuses = ref<OlapExportStatus[]>([]);
 const olapStockMoves = ref<OlapStockMove[]>([]);
 const olapStockMoveSummary = ref<OlapStockMoveSummary[]>([]);
@@ -826,6 +828,7 @@ const cloudCtx = {
   publication,
   stopListReadiness,
   inventoryStockBalances,
+  inventoryStockLedger,
   olapExportStatuses,
   olapStockMoves,
   olapStockMoveSummary,
@@ -880,6 +883,7 @@ const cloudCtx = {
   loadPublication,
   loadStopListReadiness,
   loadInventoryStockBalances,
+  loadInventoryStockLedger,
   loadOlapOperatorSurface,
   loadFinancialOperations,
   loadSalesKitchenSummary,
@@ -1147,8 +1151,14 @@ async function loadPublication() {
 async function loadStopListReadiness() {
   if (!selectedRestaurantId.value) return;
   await withLoading('inventory-readiness', async () => {
-    stopListReadiness.value = await getStopListReadiness(selectedRestaurantId.value, publishForm.node_device_id.trim());
-    inventoryStockBalances.value = await listInventoryStockBalances(selectedRestaurantId.value, { limit: 50, offset: 0 });
+    const [readiness, balances, ledger] = await Promise.all([
+      getStopListReadiness(selectedRestaurantId.value, publishForm.node_device_id.trim()),
+      listInventoryStockBalances(selectedRestaurantId.value, { limit: 50, offset: 0 }),
+      listInventoryStockLedger(selectedRestaurantId.value, { limit: 50, offset: 0 }),
+    ]);
+    stopListReadiness.value = readiness;
+    inventoryStockBalances.value = balances;
+    inventoryStockLedger.value = ledger;
   });
 }
 
@@ -1156,6 +1166,16 @@ async function loadInventoryStockBalances(filters: { warehouseId?: string; catal
   if (!selectedRestaurantId.value) return;
   await withLoading('inventory-readiness', async () => {
     inventoryStockBalances.value = await listInventoryStockBalances(selectedRestaurantId.value, { ...filters, limit: 50, offset: 0 });
+  });
+}
+
+async function loadInventoryStockLedger(filters: { sourceEventType?: string; sourceEventId?: string; orderLineId?: string; catalogItemId?: string } = {}) {
+  if (!selectedRestaurantId.value) {
+    inventoryStockLedger.value = [];
+    return;
+  }
+  await withLoading('inventory-stock-ledger', async () => {
+    inventoryStockLedger.value = await listInventoryStockLedger(selectedRestaurantId.value, { ...filters, limit: 50, offset: 0 });
   });
 }
 

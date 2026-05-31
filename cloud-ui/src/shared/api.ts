@@ -13,6 +13,7 @@ import {
   folderParameterSchema,
   hallSchema,
   inventoryStockBalanceSchema,
+  inventoryStockLedgerEntrySchema,
   menuItemSchema,
   modifierBindingSchema,
   modifierGroupSchema,
@@ -50,6 +51,7 @@ import {
   type FolderParameter,
   type Hall,
   type InventoryStockBalance,
+  type InventoryStockLedgerEntry,
   type MenuItem,
   type ModifierBinding,
   type ModifierGroup,
@@ -553,6 +555,21 @@ export function listInventoryStockBalances(
   params.set('limit', String(filters.limit ?? 50));
   params.set('offset', String(filters.offset ?? 0));
   return request(`/inventory/stock-balances?${params.toString()}`, z.array(inventoryStockBalanceSchema));
+}
+
+export function listInventoryStockLedger(
+  restaurantId: string,
+  filters: { sourceEventType?: string; sourceEventId?: string; orderLineId?: string; catalogItemId?: string; limit?: number; offset?: number } = {},
+): Promise<InventoryStockLedgerEntry[]> {
+  const params = new URLSearchParams();
+  params.set('restaurant_id', restaurantId);
+  if (filters.sourceEventType) params.set('source_event_type', filters.sourceEventType);
+  if (filters.sourceEventId) params.set('source_event_id', filters.sourceEventId);
+  if (filters.orderLineId) params.set('order_line_id', filters.orderLineId);
+  if (filters.catalogItemId) params.set('catalog_item_id', filters.catalogItemId);
+  params.set('limit', String(filters.limit ?? 50));
+  params.set('offset', String(filters.offset ?? 0));
+  return request(`/inventory/stock-ledger?${params.toString()}`, z.array(inventoryStockLedgerEntrySchema));
 }
 
 export function getOlapExportStatus(stream: OlapStream): Promise<OlapExportStatus> {

@@ -247,7 +247,7 @@
 - Managed SQL files and startup migration/verification policy.
 - ADR-015 accepted for persistence and analytics strategy.
 - ClickHouse добавлен как обязательный Cloud runtime component для bounded analytics slices.
-- Cloud UI реализовано сейчас читает bounded inventory/OLAP operator slices: `stock-balances`, OLAP export status, `olap_stock_moves` preview и `stock-move-summary`.
+- Cloud UI реализовано сейчас читает bounded inventory/OLAP operator slices: `stock-balances`, `stock-ledger`, OLAP export status, `olap_stock_moves` preview и `stock-move-summary`.
 
 Не выполнено и не должно считаться завершенным:
 
@@ -583,7 +583,7 @@
 
 Запланировано далее:
 
-- Runtime surfaces для inventory operations/costing за пределами текущего read-only `stock-balances` после появления подтвержденных Cloud backend routes.
+- Runtime surfaces для inventory operations/costing за пределами текущих read-only `stock-balances` и `stock-ledger` после появления подтвержденных Cloud backend routes.
 - Изменяющие surfaces для OLAP exports/operator controls только после production-grade backend jobs; текущий Cloud UI остается read-only для export status, stock moves, stock move summary и `sales-kitchen-summary`.
 
 ## Full pilot smoke
@@ -628,8 +628,8 @@
 
 - Cloud PostgreSQL baseline содержит inventory schema foundation.
 - Worker пишет pilot `stock_ledger` rows with costing fields.
-- Bounded Cloud inventory ledger endpoint существует для проверки обработанных worker rows.
-- `GET /api/v1/inventory/stock-balances` подтвержден по runtime-коду и тестам как bounded Cloud-owned balance read model поверх PostgreSQL `stock_ledger`; route объявлен в `cloud-backend/internal/cloudsync/api/router.go`, реализован в service/repository слое и покрыт API tests на агрегацию, границы выдачи, фильтр статуса, пустой результат и safe no-raw-payload response.
+- Bounded Cloud inventory ledger endpoint существует для проверки обработанных worker rows; Cloud UI показывает первые 50 строк как read-only preview без raw payload и складских команд.
+- `GET /api/v1/inventory/stock-balances` подтвержден по runtime-коду и тестам как bounded Cloud-owned balance read model поверх PostgreSQL `stock_ledger`; route объявлен в `cloud-backend/internal/cloudsync/api/router.go`, реализован в service/repository слое, покрыт API tests на агрегацию, границы выдачи, фильтр статуса, пустой результат и safe no-raw-payload response, а Cloud UI показывает bounded balances/costing status table.
 
 Запланировано далее:
 
@@ -642,7 +642,6 @@
 - Full costing state.
 - Retro recalculation DAG для документов задним числом и отрицательных остатков.
 - Cloud UI/API для ручного ввода складских документов.
-- Cloud UI/API для просмотра balances/costing status.
 - Full costing/recalculation status.
 - COGS/margin только после появления достоверной cost basis.
 
@@ -662,6 +661,7 @@
 
 ```text
 GET /api/v1/inventory/stock-balances?restaurant_id=&warehouse_id=&catalog_item_id=&business_date_to=&costing_status=&limit=&offset=
+GET /api/v1/inventory/stock-ledger?restaurant_id=&source_event_type=&source_event_id=&order_line_id=&catalog_item_id=&limit=&offset=
 ```
 
 Правила:
