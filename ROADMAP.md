@@ -623,11 +623,10 @@
 - Cloud PostgreSQL baseline содержит inventory schema foundation.
 - Worker пишет pilot `stock_ledger` rows with costing fields.
 - Bounded Cloud inventory ledger endpoint существует для проверки обработанных worker rows.
-- В старой версии был пункт: `GET /api/v1/inventory/stock-balances` как выполненный bounded read model. В текущей сверке этот route не подтвержден поиском по репозиторию, поэтому он не должен считаться выполненным без дополнительной проверки кода.
+- `GET /api/v1/inventory/stock-balances` подтвержден по runtime-коду и тестам как bounded Cloud-owned balance read model поверх PostgreSQL `stock_ledger`; route объявлен в `cloud-backend/internal/cloudsync/api/router.go`, реализован в service/repository слое и покрыт API tests на агрегацию, границы выдачи, фильтр статуса, пустой результат и safe no-raw-payload response.
 
 Запланировано далее:
 
-- Bounded Cloud read model / API для stock balances поверх PostgreSQL `stock_ledger`, если не будет подтверждено, что он уже реализован.
 - Materialized balances.
 - Production-grade stock receipts/counts/production state.
 - Sale consumption.
@@ -647,12 +646,11 @@
 
 Цель bounded slice:
 
-- подтвердить, есть ли фактический route `GET /api/v1/inventory/stock-balances`;
-- если route отсутствует — реализовать bounded Cloud-owned inventory balances read endpoint/read model поверх `stock_ledger`;
+- использовать уже подтвержденный route `GET /api/v1/inventory/stock-balances` как текущий bounded Cloud-owned inventory balances read endpoint поверх `stock_ledger`;
 - показать costing status visibility без COGS/margin;
 - не делать full retro recalculation DAG;
 - не переносить stock balances/costing authority на POS Edge;
-- обновить Cloud UI inventory/costing surface только после подтвержденного backend route.
+- расширять Cloud UI inventory/costing surface только поверх подтвержденных backend routes; текущая bounded `stock-balances` table уже route-backed, full costing/recalculation operator workflow остается `запланировано далее`.
 
 Ожидаемый минимальный contract:
 
