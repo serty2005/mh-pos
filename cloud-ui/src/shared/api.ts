@@ -9,6 +9,7 @@ import {
   categorySchema,
   employeeSchema,
   edgeEventSchema,
+  financialOperationReportItemSchema,
   folderParameterSchema,
   hallSchema,
   inventoryStockBalanceSchema,
@@ -41,6 +42,7 @@ import {
   type Category,
   type Employee,
   type EdgeEvent,
+  type FinancialOperationReportItem,
   type FolderParameter,
   type Hall,
   type InventoryStockBalance,
@@ -530,6 +532,23 @@ export function listInventoryStockBalances(
   params.set('limit', String(filters.limit ?? 50));
   params.set('offset', String(filters.offset ?? 0));
   return request(`/inventory/stock-balances?${params.toString()}`, z.array(inventoryStockBalanceSchema));
+}
+
+export function listFinancialOperations(
+  restaurantId: string,
+  filters: { businessDateFrom?: string; businessDateTo?: string; operationType?: string; shiftId?: string; originalShiftId?: string; checkId?: string; limit?: number; offset?: number } = {},
+): Promise<FinancialOperationReportItem[]> {
+  const params = new URLSearchParams();
+  params.set('restaurant_id', restaurantId);
+  if (filters.businessDateFrom) params.set('business_date_from', filters.businessDateFrom);
+  if (filters.businessDateTo) params.set('business_date_to', filters.businessDateTo);
+  if (filters.operationType) params.set('operation_type', filters.operationType);
+  if (filters.shiftId) params.set('shift_id', filters.shiftId);
+  if (filters.originalShiftId) params.set('original_shift_id', filters.originalShiftId);
+  if (filters.checkId) params.set('check_id', filters.checkId);
+  params.set('limit', String(filters.limit ?? 50));
+  params.set('offset', String(filters.offset ?? 0));
+  return request(`/reporting/financial-operations?${params.toString()}`, z.array(financialOperationReportItemSchema));
 }
 
 export function upsertStopListEntry(payload: Payload) {

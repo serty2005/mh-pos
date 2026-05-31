@@ -956,6 +956,29 @@ button:focus-visible,
   align-items: start;
 }
 
+.financial-operations-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr)) repeat(3, minmax(140px, 1fr)) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.cloud-signal-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cloud-signal-row span {
+  min-height: 24px;
+  padding: 4px 10px;
+  color: #40534b;
+  background: #edf1ee;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -1051,6 +1074,7 @@ button:focus-visible,
   .cloud-scenario-grid,
   .cloud-edge-grid,
   .inventory-filter-grid,
+  .financial-operations-filter-grid,
   .recipe-version-grid,
   .proposal-review-grid {
     grid-template-columns: 1fr;

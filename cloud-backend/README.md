@@ -259,7 +259,7 @@ go test ./...
 - Cloud stores raw payloads and operational journal rows idempotently for current and legacy events.
 - `cloud_projection_shift_finance` tracks coarse refund counters/totals from `RefundRecorded` and legacy refund events.
 - `cloud_projection_financial_operations` stores detailed current `CancellationRecorded`/`RefundRecorded` operation projection with operation/check/shift/date/type/disposition/reason/snapshot metadata; legacy refund events do not populate this primary ledger projection.
-- Public Cloud reporting HTTP/UI for this projection is planned next and is not part of current sync receiver API.
+- `GET /api/v1/reporting/financial-operations` exposes a bounded read-only reporting view over this projection with restaurant/date/type/shift/original shift/check filters, `limit`/`offset`, checksum metadata and no raw sync payload or snapshot JSON.
 
 ## Pricing policy publication
 

@@ -42,7 +42,7 @@
 Вне текущего объема:
 
 - production auth/RBAC perimeter для Cloud API;
-- публичный Cloud reporting UI beyond pilot OLAP API;
+- rich BI/reporting UI beyond pilot financial operations and OLAP API;
 
 Реализовано сейчас:
 
@@ -508,11 +508,10 @@ Inbound compatibility:
 - Cloud обновляет event-type stats.
 - Для refunds Cloud обновляет coarse shift finance refund counters.
 - Cloud поддерживает service/repository read model `cloud_projection_financial_operations`.
+- Cloud предоставляет bounded read-only HTTP reporting endpoint `GET /api/v1/reporting/financial-operations?restaurant_id=&business_date_from=&business_date_to=&operation_type=&shift_id=&original_shift_id=&check_id=&limit=&offset=` поверх `cloud_projection_financial_operations`; endpoint возвращает operation/check/shift/date/type/disposition/reason metadata и `raw_payload_sha256_hex`, но не возвращает raw sync payload или snapshot JSON.
 
 Вне текущего объема:
 
-- Публичный HTTP reporting endpoint для `cloud_projection_financial_operations`.
-- Cloud UI reporting screen.
 - PSP refund execution.
 - Fiscal correction documents.
 - Automatic inventory movement based on `inventory_disposition`.
@@ -615,7 +614,7 @@ Schema verification:
 
 - Production authorization and tenant perimeter для Cloud API.
 - До полного пилота: расширить bounded Edge-origin stop-list manager review до production workflow, full recipe/costing inventory engine, sales/kitchen/costing OLAP API, production-grade OLAP backfill jobs/operator UI и расширенная observability UI.
-- После полного пилота: Public Cloud reporting UI beyond pilot OLAP API.
+- После полного пилота: rich BI/reporting UI beyond pilot financial operations and OLAP API.
 - Data-preserving PostgreSQL migrations после первого реального внедрения.
 - Cloud UI сценарий налогов/service-charge rules, если пилот требует централизованное управление.
 

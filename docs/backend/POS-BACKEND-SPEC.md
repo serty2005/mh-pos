@@ -259,7 +259,7 @@ Pricing contract:
 - Operation snapshot embeds immutable check snapshot and operation items.
 - Inventory disposition is explicit: `no_stock_effect`, `return_to_stock`, `write_off_waste`, `manual_review`; financial operation does not mutate stock tables.
 - Текущие POS Edge events: `CancellationRecorded` и `RefundRecorded`. New refund runtime не emit legacy `PaymentRefunded`/`CheckRefunded`; эти names остаются только Cloud-accepted legacy sync event types.
-- Cloud receiver валидирует current financial operation payload fields, включая совпадение payload `restaurant_id`/`device_id` с envelope, `precheck_id`, `reason` и immutable snapshot, stores raw/journal envelopes and event-type stats, and maintains detailed `cloud_projection_financial_operations` for current `CancellationRecorded`/`RefundRecorded`; public Cloud reporting HTTP/UI остается запланирован далее.
+- Cloud receiver валидирует current financial operation payload fields, включая совпадение payload `restaurant_id`/`device_id` с envelope, `precheck_id`, `reason` и immutable snapshot, stores raw/journal envelopes and event-type stats, and maintains detailed `cloud_projection_financial_operations` for current `CancellationRecorded`/`RefundRecorded`; Cloud reporting читает эту projection через bounded `GET /api/v1/reporting/financial-operations` без raw sync payload и без Cloud cashier commands.
 
 Не реализовано сейчас:
 

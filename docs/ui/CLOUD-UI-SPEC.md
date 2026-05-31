@@ -17,6 +17,7 @@
 5. Передача опубликованного snapshot на Edge, где далее формируются заказ и продажа.
 6. Manager-facing recipes и stop-list authoring по подтвержденным Cloud master-data routes.
 7. Route-backed manager review для catalog/recipe suggestions и Edge-origin stop-list updates, readiness-only поверхности для inventory operations/costing и OLAP exports без неподтвержденных команд.
+8. Read-only Cloud reporting по detailed financial operation projection для `CancellationRecorded`/`RefundRecorded`.
 
 запланировано далее:
 
@@ -61,6 +62,7 @@
 - опубликованный snapshot для Edge использует backend Cloud -> POS Edge ingest DTO: top-level modifier groups/options/bindings передаются отдельно от link-only `menu_item_modifier_groups`, без rich/UI projection fields внутри `menu_items`;
 - `GET /api/v1/restaurants/{id}/master-data/publication-state` возвращает `200 null` до первой публикации выбранного ресторана; Cloud UI трактует это как empty state панели публикации, а не как ошибку browser console;
 - отдельный раздел `События от Edge`, который читает `GET /api/v1/sync/edge-events` и показывает только безопасные receipt metadata/checksum без raw payload; на narrow screens таблица заменяется card/list fallback с теми же безопасными полями;
+- отдельный read-only раздел `Финансовые операции`, который читает `GET /api/v1/reporting/financial-operations` с фильтрами business date from/to, operation type, shift, original shift и check; UI показывает projection metadata/checksum без raw sync payload, snapshot JSON, PIN/token/request dump и без cashier mutations;
 - resource lists на narrow screens переходят с широких таблиц на карточки, где статус выводится тем же safe status label, а не raw payload или POS runtime detail.
 
 запланировано до полного пилота:
@@ -108,6 +110,7 @@
 - command-only разделы не показывают неподтвержденную таблицу;
 - Cloud UI показывает безопасные локализованные ошибки возле активного failed step с recovery action: retry, select restaurant или open related section; message key, support code, correlation id и безопасные details выводятся без raw payload, а подозрительные `payload`/`token`/`PIN`/`SQL`/`stack` details редактируются в UI;
 - раздел входящих Edge events выводит event metadata и checksum, но не показывает raw payload, sensitive request dumps или payload-derived финансовые details;
+- раздел финансовых операций выводит только read-only projection fields из Cloud reporting route; он не вызывает POS Edge endpoints, не создает Cloud cashier commands и не рассчитывает COGS/margin;
 - раздел `Очередь предложений` не выводит raw `payload_json`: detail/diff строится только по whitelist полям catalog proposal (`kind`, `name`, `sku`, `base_unit`, `kitchen_type`, `accounting_category`) и recipe proposal changes (`action`, `from_catalog_item_id`, `to_catalog_item_id`, `quantity`, `unit_code`, `loss_percent`); PIN/token/secret/request dump не отображаются;
 - approve/reject/request-changes формы отправляют только `reviewed_by_employee_id`, optional `review_comment` и optional `published_by`; после approve UI перечитывает `publication-state`, потому что apply/publish выполняет backend;
 - UX ориентиры полного пилота зафиксированы в `docs/ui/PILOT-UX-MARKET-REVIEW.md`; business workflows не должны требовать ручного ввода UUID/raw JSON для обычного менеджерского сценария;
@@ -119,7 +122,13 @@
 
 - `cloud-backend/internal/provisioning/api/router.go` для Edge-device provisioning;
 - `cloud-backend/internal/masterdata/api/router.go` для master data и публикации;
-- `cloud-backend/internal/cloudsync/api/router.go` для безопасного списка входящих Edge events.
+- `cloud-backend/internal/cloudsync/api/router.go` для безопасного списка входящих Edge events, stop-list readiness, inventory balances и Cloud financial reporting.
+
+Реализовано сейчас для financial reporting:
+
+- `GET /api/v1/reporting/financial-operations?restaurant_id=&business_date_from=&business_date_to=&operation_type=&shift_id=&original_shift_id=&check_id=&limit=&offset=`;
+- response schema валидируется в `cloud-ui/src/shared/schemas.ts` и не содержит raw sync payload или snapshot JSON;
+- UI surface находится в `cloud-ui/src/components/cloud/FinancialOperationsPanel.vue`.
 
 Реализовано сейчас для `Очередь предложений`:
 

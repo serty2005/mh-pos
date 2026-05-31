@@ -218,6 +218,7 @@
   - precheck id;
   - reason.
 - Cloud receiver idempotently stores raw/journal rows, updates event-type stats, coarse shift finance refund counters and detailed `cloud_projection_financial_operations`.
+- Cloud reporting `GET /api/v1/reporting/financial-operations` и Cloud UI read-only surface поверх `cloud_projection_financial_operations` реализованы сейчас с фильтрами restaurant/date/type/shift/original shift/check, `limit`/`offset` и без raw sync payload.
 - Legacy `PaymentRefunded`/`CheckRefunded` принимаются, но не наполняют detailed operation projection.
 - `POST /api/v1/sync/edge-events`.
 - Batch receive.
@@ -401,6 +402,7 @@
 - Idempotent Cloud raw/journal receipt checks.
 - Coarse Cloud refund counters.
 - Detailed Cloud financial operation projection.
+- Bounded Cloud reporting API/UI для detailed financial operation projection.
 - Cashier UI full whole-check and partial `order_line`/quantity cancellation/refund through ledger endpoints.
 - Inventory disposition selection.
 - Compatibility refund по captured payment оставлен отдельным fallback.
@@ -711,7 +713,6 @@ GET /api/v1/inventory/stock-balances?restaurant_id=&warehouse_id=&catalog_item_i
 - Расширять demo seed dataset вместе с новыми Cloud-owned справочниками, publication streams и POS read flows, чтобы ручной наглядный тест не отставал от runtime.
 - Сверить RBAC matrix с фактическим UI и backend permissions.
 - Проверить migration/backup behavior на старой SQLite DB.
-- Публичный Cloud reporting API/UI поверх `cloud_projection_financial_operations`, если пилоту потребуется Cloud-side financial reporting beyond service/repository layer.
 - Продолжить destructive apply/delete/compaction policy для больших локальных SQLite БД закрытых заказов поверх текущего status/dry-run/manifest-only export-plan/export-only/verify/read-plan/lookup/apply-plan foundation.
 
 ---

@@ -17,7 +17,6 @@
 Не обнаружено сейчас:
 
 - Подтвержденного runtime для delivery, настоящего платежного процессинга, фискального адаптера, sales/kitchen/costing OLAP reads и расширенных cooking events за пределами ticket lifecycle foundation.
-- Публичного Cloud HTTP/API интерфейса отчетов по детальной проекции финансовых операций. Сервисная и repository-основа есть, публичный reporting surface остается запланированным далее.
 
 Цель полной пилотной реализации:
 
@@ -79,6 +78,7 @@
 - Bounded Cloud manager review для Edge-origin stop-list updates реализован через `GET /api/v1/manager/stop-list-updates`, detail и `approve/reject/request-changes`: API отдает только safe summary/diff, approve применяет изменение через Cloud-owned authority/publication path, reject/request-changes не мутируют runtime stop-list authority.
 - `GET /api/v1/sync/readiness/stop-list` возвращает safe readiness по stop-list publication/package, latest accepted Edge ACK metadata и sync problem counters без raw payload.
 - Детальная PostgreSQL projection для current `CancellationRecorded` и `RefundRecorded`; legacy `PaymentRefunded`/`CheckRefunded` принимаются, но не наполняют detailed operation projection.
+- Bounded read-only Cloud reporting endpoint `GET /api/v1/reporting/financial-operations` читает detailed financial operation projection с фильтрами restaurant/date/type/shift/original shift/check, `limit`/`offset`, без raw sync payload, snapshot JSON и cashier mutations.
 - Безопасный список входящих Edge events для Cloud UI без raw payload.
 - PostgreSQL `inbox_events` как transactional delivery queue для accepted Edge events; Cloud API отвечает после PostgreSQL commit и не пишет в ClickHouse в request path.
 - ClickHouse managed schema для `raw_business_events`, async forwarder `inbox_events -> raw_business_events`, `processed_for_olap`, retry/backoff state и checkpoint table `olap_export_checkpoints`.
@@ -95,7 +95,6 @@
 Вне текущего объема:
 
 - Production auth/RBAC perimeter для Cloud API.
-- Публичный Cloud reporting API/UI по financial operation projection.
 - Cost/sales/kitchen агрегаты, production-grade backfill jobs/operator UI, materialized inventory balance engine и full inventory costing.
 - Recipe expansion, semi-finished auto-production split и retro costing DAG.
 
@@ -144,6 +143,7 @@
 - Управление ресторанами, ролями, сотрудниками, каталогом, папками, тегами, модификаторами, policies, залами, столами, menu items и публикациями по подтвержденным Cloud routes.
 - Генерация pairing code и назначение Edge-device ресторану.
 - Просмотр безопасного списка входящих Edge events без raw payload, включая card/list fallback на narrow screens с metadata/checksum вместо raw event payload; resource lists на narrow screens показывают status label в карточке и не раскрывают raw payload.
+- Read-only раздел финансовых операций читает `GET /api/v1/reporting/financial-operations` и показывает projection `CancellationRecorded`/`RefundRecorded` с фильтрами по restaurant/date/type/shift/original shift/check без raw payload, PIN/token/request dump и без Cloud cashier commands.
 - Cloud-owned recipes и stop-list authoring через подтвержденные master-data routes; реализовано сейчас также bounded сценарный editor версий техкарт с draft, submit в `RecipeChangeSuggested`, approve/apply через Cloud authority и publication package.
 - Route-backed manager surfaces для catalog/recipe proposal review и Edge-origin stop-list update review: списки, detail/diff, approve/reject/request-changes и publication/feedback после approve; recipe version editor отправляет draft в эту же review queue; inventory readiness panel читает backend summary по publication/Edge ACK/sync problem counters и runtime таблицу `stock-balances`; stock documents, full costing engine и OLAP exports остаются без имитации отсутствующих Cloud routes.
 - Локализованные сообщения, safe error details, no raw payload / PIN / token display; Cloud create/rotate PIN поля используют password input, а списки сотрудников показывают только `pin_configured` и credential version.
@@ -208,7 +208,6 @@
 ## Запланировано далее
 
 - Поддерживать `docs/backend/CLOUD-BACKEND-SPEC.md` как профильный документ Cloud Backend при каждом изменении Cloud routes, payloads, sync/provisioning contracts или schema.
-- Публичный Cloud reporting API/UI для detailed financial operation projection.
 - До полного пилота: компенсирующий пересчет уже обработанного served fact после recall, полный Cloud Inventory Engine, sales/kitchen/costing OLAP API и production-grade OLAP backfill/operator UI.
 - После полного пилота: hardware bump-bar integrations, kitchen printer orchestration, rich BI dashboards, ERP/accounting integrations и внешние delivery/payment/fiscal контуры.
 - Data-preserving migrations после первого реального внедрения.

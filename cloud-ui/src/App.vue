@@ -20,6 +20,7 @@
     <launch-readiness-panel v-if="activeKey === 'launchPlan'" :ctx="cloudCtx" />
     <edge-device-panel v-else-if="activeKey === 'edgeDevices'" :ctx="cloudCtx" />
     <edge-events-panel v-else-if="activeKey === 'edgeEvents'" :ctx="cloudCtx" />
+    <financial-operations-panel v-else-if="activeKey === 'financialOperations'" :ctx="cloudCtx" />
     <recipe-version-editor-panel v-else-if="activeKey === 'recipeVersions'" :ctx="cloudCtx" />
     <proposal-review-queue v-else-if="activeKey === 'proposalReview'" :ctx="cloudCtx" />
     <inventory-readiness-panel v-else-if="activeKey === 'inventoryReadiness'" :ctx="cloudCtx" />
@@ -39,6 +40,7 @@ import { useI18n } from 'vue-i18n';
 import CloudShell from './components/cloud/CloudShell.vue';
 import EdgeDevicePanel from './components/cloud/EdgeDevicePanel.vue';
 import EdgeEventsPanel from './components/cloud/EdgeEventsPanel.vue';
+import FinancialOperationsPanel from './components/cloud/FinancialOperationsPanel.vue';
 import InventoryReadinessPanel from './components/cloud/InventoryReadinessPanel.vue';
 import LaunchReadinessPanel from './components/cloud/LaunchReadinessPanel.vue';
 import OlapExportReadinessPanel from './components/cloud/OlapExportReadinessPanel.vue';
@@ -84,6 +86,7 @@ import {
   getAssignmentStatus,
   getPublicationState,
   getStopListReadiness,
+  listFinancialOperations,
   listInventoryStockBalances,
   listCatalogFolders,
   listCatalogItems,
@@ -135,10 +138,10 @@ import {
   upsertStopListEntry,
   ApiError,
 } from './shared/api';
-import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, InventoryStockBalance, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
+import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, FinancialOperationReportItem, InventoryStockBalance, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
 import type { RecipeVersionView } from './shared/schemas';
 
-type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'recipeVersions' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
+type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'financialOperations' | 'recipeVersions' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
 type ResourceKey =
   | ScenarioKey
   | 'restaurants'
@@ -242,6 +245,7 @@ const restaurants = ref<Restaurant[]>([]);
 const publication = ref<PublicationSummary | null>(null);
 const stopListReadiness = ref<StopListReadiness | null>(null);
 const inventoryStockBalances = ref<InventoryStockBalance[]>([]);
+const financialOperations = ref<FinancialOperationReportItem[]>([]);
 const edgeDevices = ref<UnassignedEdgeNode[]>([]);
 const edgeEvents = ref<EdgeEvent[]>([]);
 const recipeVersions = ref<RecipeVersionView[]>([]);
@@ -255,6 +259,7 @@ const assignmentStatus = ref<AssignmentStatus | null>(null);
 const pairingResult = ref<PairingCodeResult | null>(null);
 const publishForm = reactive({ published_by: '', node_device_id: '' });
 const pairingForm = reactive({ display_name: '', expires_in_minutes: 30 });
+const financialOperationFilters = reactive({ businessDateFrom: '', businessDateTo: '', operationType: '', shiftId: '', originalShiftId: '', checkId: '' });
 const form = reactive<Row>({});
 
 const permissionGroups: PermissionGroup[] = [
@@ -660,6 +665,7 @@ const scenarioNav = [
   { key: 'launchPlan' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.launchPlan', descriptionKey: 'cloud.descriptions.launchPlan' },
   { key: 'edgeDevices' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.edgeDevices', descriptionKey: 'cloud.descriptions.edgeDevices' },
   { key: 'edgeEvents' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.edgeEvents', descriptionKey: 'cloud.descriptions.edgeEvents' },
+  { key: 'financialOperations' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.financialOperations', descriptionKey: 'cloud.descriptions.financialOperations' },
   { key: 'recipeVersions' as ResourceKey, groupKey: 'cloud.groups.inventory', titleKey: 'cloud.resources.recipeVersions', descriptionKey: 'cloud.descriptions.recipeVersions' },
   { key: 'proposalReview' as ResourceKey, groupKey: 'cloud.groups.inventory', titleKey: 'cloud.resources.proposalReview', descriptionKey: 'cloud.descriptions.proposalReview' },
   { key: 'inventoryReadiness' as ResourceKey, groupKey: 'cloud.groups.inventory', titleKey: 'cloud.resources.inventoryReadiness', descriptionKey: 'cloud.descriptions.inventoryReadiness' },
@@ -689,7 +695,7 @@ const visibleFields = computed(() => (activeConfig.value?.fields ?? []).filter((
 const permissionFields = computed(() => visibleFields.value.filter((item) => item.type === 'permissionMatrix'));
 const currentRows = computed<Row[]>(() => {
   if (activeKey.value === 'restaurants') return restaurants.value as unknown as Row[];
-  if (activeKey.value === 'launchPlan' || activeKey.value === 'edgeDevices' || activeKey.value === 'edgeEvents' || activeKey.value === 'recipeVersions' || activeKey.value === 'proposalReview' || activeKey.value === 'inventoryReadiness' || activeKey.value === 'olapExports' || activeKey.value === 'publications' || activeKey.value === 'itemTags' || activeKey.value === 'categories') return [];
+  if (activeKey.value === 'launchPlan' || activeKey.value === 'edgeDevices' || activeKey.value === 'edgeEvents' || activeKey.value === 'financialOperations' || activeKey.value === 'recipeVersions' || activeKey.value === 'proposalReview' || activeKey.value === 'inventoryReadiness' || activeKey.value === 'olapExports' || activeKey.value === 'publications' || activeKey.value === 'itemTags' || activeKey.value === 'categories') return [];
   return scopedRows[activeKey.value as ScopedResourceKey];
 });
 const filteredRows = computed(() => {
@@ -795,6 +801,7 @@ const cloudCtx = {
   publication,
   stopListReadiness,
   inventoryStockBalances,
+  financialOperations,
   edgeEvents,
   recipeVersions,
   catalogSuggestions,
@@ -807,6 +814,7 @@ const cloudCtx = {
   pairingResult,
   publishForm,
   pairingForm,
+  financialOperationFilters,
   form,
   scopedRows,
   permissionGroups,
@@ -841,6 +849,7 @@ const cloudCtx = {
   loadPublication,
   loadStopListReadiness,
   loadInventoryStockBalances,
+  loadFinancialOperations,
   reloadActive,
   submitForm,
   archiveSelected,
@@ -875,6 +884,7 @@ watch(selectedRestaurantId, async () => {
   if (activeKey.value === 'publications' || activeKey.value === 'launchPlan') await loadPublication();
   if (activeKey.value === 'edgeDevices' || activeKey.value === 'launchPlan') await loadEdgeDevices();
   if (activeKey.value === 'edgeEvents') await loadEdgeEvents();
+  if (activeKey.value === 'financialOperations') await loadFinancialOperations();
   if (activeKey.value === 'recipeVersions') await loadRecipeVersions();
   if (activeKey.value === 'proposalReview') await loadProposalReview();
   if (activeKey.value === 'inventoryReadiness') await loadStopListReadiness();
@@ -888,6 +898,7 @@ watch(activeKey, async () => {
   if (activeKey.value === 'publications') await loadPublication();
   if (activeKey.value === 'edgeDevices') await loadEdgeDevices();
   if (activeKey.value === 'edgeEvents') await loadEdgeEvents();
+  if (activeKey.value === 'financialOperations') await loadFinancialOperations();
   if (activeKey.value === 'recipeVersions') await loadRecipeVersions();
   if (activeKey.value === 'proposalReview') await loadProposalReview();
   if (activeKey.value === 'inventoryReadiness') await loadStopListReadiness();
@@ -916,13 +927,14 @@ function setActive(key: ResourceKey) {
 }
 
 function isScopedResourceKey(key: ResourceKey): key is ScopedResourceKey {
-  return !['launchPlan', 'edgeDevices', 'edgeEvents', 'recipeVersions', 'proposalReview', 'inventoryReadiness', 'olapExports', 'restaurants', 'publications', 'itemTags', 'categories'].includes(key);
+  return !['launchPlan', 'edgeDevices', 'edgeEvents', 'financialOperations', 'recipeVersions', 'proposalReview', 'inventoryReadiness', 'olapExports', 'restaurants', 'publications', 'itemTags', 'categories'].includes(key);
 }
 
 function navCount(key: ResourceKey) {
   if (key === 'launchPlan') return launchSteps.length;
   if (key === 'edgeDevices') return edgeDevices.value.length;
   if (key === 'edgeEvents') return edgeEvents.value.length;
+  if (key === 'financialOperations') return financialOperations.value.length;
   if (key === 'recipeVersions') return recipeVersions.value.length;
   if (key === 'proposalReview') return catalogSuggestions.value.length + recipeSuggestions.value.length;
   if (key === 'restaurants') return restaurants.value.length;
@@ -1151,6 +1163,7 @@ async function reloadActive() {
   if (activeKey.value === 'launchPlan') return;
   if (activeKey.value === 'edgeDevices') return loadEdgeDevices();
   if (activeKey.value === 'edgeEvents') return loadEdgeEvents();
+  if (activeKey.value === 'financialOperations') return loadFinancialOperations();
   if (activeKey.value === 'recipeVersions') return loadRecipeVersions();
   if (activeKey.value === 'proposalReview') return loadProposalReview();
   if (activeKey.value === 'inventoryReadiness') return loadStopListReadiness();
@@ -1290,6 +1303,16 @@ async function rotateSelectedEmployeePIN() {
 async function loadEdgeEvents() {
   await withLoading('edge-events', async () => {
     edgeEvents.value = await listEdgeEvents(selectedRestaurantId.value, 50);
+  });
+}
+
+async function loadFinancialOperations() {
+  if (!selectedRestaurantId.value) {
+    financialOperations.value = [];
+    return;
+  }
+  await withLoading('financial-operations', async () => {
+    financialOperations.value = await listFinancialOperations(selectedRestaurantId.value, { ...financialOperationFilters, limit: 50, offset: 0 });
   });
 }
 

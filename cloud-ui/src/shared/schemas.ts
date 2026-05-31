@@ -282,6 +282,36 @@ export const inventoryStockBalanceSchema = z.object({
   business_date_to: z.string(),
 });
 
+export const financialOperationReportItemSchema = z.object({
+  operation_id: z.string(),
+  edge_operation_id: z.string(),
+  event_id: z.string(),
+  receipt_id: z.string(),
+  restaurant_id: z.string(),
+  device_id: z.string(),
+  node_device_id: z.string().optional(),
+  client_device_id: z.string().optional(),
+  actor_employee_id: z.string().optional(),
+  session_id: z.string().optional(),
+  shift_id: z.string(),
+  original_shift_id: z.string(),
+  check_id: z.string(),
+  precheck_id: z.string(),
+  operation_type: z.enum(['cancellation', 'refund']),
+  operation_kind: z.string(),
+  amount: z.number(),
+  currency: z.string(),
+  business_date_local: z.string(),
+  inventory_disposition: z.string(),
+  reason: z.string(),
+  created_by_employee_id: z.string().optional().default(''),
+  approved_by_employee_id: z.string().optional(),
+  operation_created_at: z.string(),
+  occurred_at: z.string(),
+  cloud_received_at: z.string(),
+  raw_payload_sha256_hex: z.string(),
+});
+
 export const hallSchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
@@ -485,6 +515,7 @@ export type RecipeVersionView = z.infer<typeof recipeVersionViewSchema>;
 export type StopListEntry = z.infer<typeof stopListEntrySchema>;
 export type StopListReadiness = z.infer<typeof stopListReadinessSchema>;
 export type InventoryStockBalance = z.infer<typeof inventoryStockBalanceSchema>;
+export type FinancialOperationReportItem = z.infer<typeof financialOperationReportItemSchema>;
 export type Hall = z.infer<typeof hallSchema>;
 export type RestaurantTable = z.infer<typeof tableSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;

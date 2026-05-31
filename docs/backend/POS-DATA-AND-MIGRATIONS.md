@@ -244,14 +244,12 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 - Cashier UI whole-check и partial `order_line`/quantity cancellation/refund использует те же ledger endpoints, отправляет явный `inventory_disposition` и не требует schema changes или mutable status columns у finalized payments/checks. Line/quantity UI опирается на immutable check/precheck snapshot и пишет `financial_operation_items` со scope `order_line`; modifier/service/tip UI не реализован сейчас.
 - Storage archive export сохраняет `financial_operations`, `financial_operation_items` и immutable snapshots как protected data в JSONL artifact без пересчета или мутации source rows.
 
-- Реализовано сейчас в Cloud: `cloud_projection_financial_operations` хранит текущие projections для `CancellationRecorded`/`RefundRecorded` из raw/journal receipt с operation/check/precheck/shift/date/type/disposition/reason/snapshot metadata. Текущая validation financial operation payload требует совпадение payload `restaurant_id`/`device_id` с envelope, `precheck_id`, `reason` и immutable snapshot. Legacy `PaymentRefunded`/`CheckRefunded` не заполняют эту detailed projection.
+- Реализовано сейчас в Cloud: `cloud_projection_financial_operations` хранит текущие projections для `CancellationRecorded`/`RefundRecorded` из raw/journal receipt с operation/check/precheck/shift/date/type/disposition/reason/snapshot metadata. Текущая validation financial operation payload требует совпадение payload `restaurant_id`/`device_id` с envelope, `precheck_id`, `reason` и immutable snapshot. Legacy `PaymentRefunded`/`CheckRefunded` не заполняют эту detailed projection. Bounded `GET /api/v1/reporting/financial-operations` читает projection без raw sync payload и без snapshot JSON.
 
 Не реализовано сейчас:
 
-- public Cloud HTTP reporting API/UI over financial operation projection;
 - fiscal/correction document storage;
 - automatic inventory stock moves from `inventory_disposition`.
-- physical local delete/compaction policy для закрытых заказов.
 
 ## POS Edge Local Storage Lifecycle
 

@@ -336,6 +336,40 @@ func TestListEdgeEventsReturnsSafeIncomingEventLog(t *testing.T) {
 	}
 }
 
+func TestListFinancialOperationsReturnsSafeReportingProjection(t *testing.T) {
+	repo := memory.NewRepository()
+	router := api.NewRouter(app.NewService(repo, fixedClock{}))
+	postEnvelope(t, router, sampleFinancialOperationEnvelope(t, contracts.EventRefundRecorded, "018f0000-0000-7000-8000-0000000000f2", "command-refund-api-1", "financial-operation-api-1", "refund", 2500, "shift-refund-api-1", "2026-05-06"))
+	postEnvelope(t, router, sampleFinancialOperationEnvelope(t, contracts.EventCancellationRecorded, "018f0000-0000-7000-8000-0000000000c2", "command-cancel-api-1", "financial-operation-api-2", "cancellation", 1000, "shift-cancel-api-1", "2026-05-07"))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reporting/financial-operations?restaurant_id=restaurant-1&business_date_from=2026-05-06&business_date_to=2026-05-06&operation_type=refund&shift_id=shift-refund-api-1&original_shift_id=shift-sale-1&check_id=check-1&limit=10&offset=0", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var items []contracts.FinancialOperationProjection
+	if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].OperationID != "financial-operation-api-1" || items[0].OperationType != "refund" || items[0].Amount != 2500 {
+		t.Fatalf("unexpected financial operation report: %+v", items)
+	}
+	body := rec.Body.String()
+	for _, forbidden := range []string{"snapshot", "document_type", "PIN", "token"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("financial operations report must not expose %s: %s", forbidden, body)
+		}
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/reporting/financial-operations?business_date_from=2026-05-08&business_date_to=2026-05-06", nil)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid date range, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestListInventoryLedgerReturnsBoundedReadOnlyLedger(t *testing.T) {
 	repo := memory.NewRepository()
 	occurred := time.Date(2026, 5, 5, 9, 0, 0, 0, time.UTC)
@@ -514,4 +548,53 @@ func TestListInventoryStockBalancesSupportsBoundsEmptyStateAndStatusFilter(t *te
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for missing restaurant_id, got %d: %s", rec.Code, rec.Body.String())
 	}
+}
+
+func sampleFinancialOperationEnvelope(t *testing.T, eventType contracts.EventType, eventID, commandID, operationID, operationType string, amount int64, shiftID, businessDate string) []byte {
+	t.Helper()
+	body := map[string]any{
+		"version":           "1",
+		"event_id":          eventID,
+		"command_id":        commandID,
+		"event_type":        string(eventType),
+		"aggregate_type":    "FinancialOperation",
+		"aggregate_id":      operationID,
+		"restaurant_id":     "restaurant-1",
+		"device_id":         "device-1",
+		"node_device_id":    "device-1",
+		"client_device_id":  "client-1",
+		"actor_employee_id": "manager-1",
+		"session_id":        "session-1",
+		"shift_id":          shiftID,
+		"occurred_at":       businessDate + "T09:00:00Z",
+		"payload": map[string]any{
+			"origin": "edge_device",
+			"data": map[string]any{
+				"id":                     operationID,
+				"edge_operation_id":      "edge-" + operationID,
+				"restaurant_id":          "restaurant-1",
+				"device_id":              "device-1",
+				"shift_id":               shiftID,
+				"original_shift_id":      "shift-sale-1",
+				"check_id":               "check-1",
+				"precheck_id":            "precheck-1",
+				"operation_type":         operationType,
+				"operation_kind":         "full",
+				"status":                 "recorded",
+				"amount":                 amount,
+				"currency":               "RUB",
+				"business_date_local":    businessDate,
+				"inventory_disposition":  "no_stock_effect",
+				"reason":                 "guest return",
+				"created_by_employee_id": "manager-1",
+				"snapshot":               map[string]any{"document_type": "financial_operation", "check_id": "check-1"},
+				"created_at":             businessDate + "T09:00:00Z",
+			},
+		},
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }

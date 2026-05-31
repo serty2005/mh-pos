@@ -30,6 +30,36 @@ type Handler struct {
 	service *app.Service
 }
 
+type financialOperationReportItem struct {
+	OperationID          string    `json:"operation_id"`
+	EdgeOperationID      string    `json:"edge_operation_id"`
+	EventID              string    `json:"event_id"`
+	ReceiptID            string    `json:"receipt_id"`
+	RestaurantID         string    `json:"restaurant_id"`
+	DeviceID             string    `json:"device_id"`
+	NodeDeviceID         *string   `json:"node_device_id,omitempty"`
+	ClientDeviceID       *string   `json:"client_device_id,omitempty"`
+	ActorEmployeeID      *string   `json:"actor_employee_id,omitempty"`
+	SessionID            *string   `json:"session_id,omitempty"`
+	ShiftID              string    `json:"shift_id"`
+	OriginalShiftID      string    `json:"original_shift_id"`
+	CheckID              string    `json:"check_id"`
+	PrecheckID           string    `json:"precheck_id"`
+	OperationType        string    `json:"operation_type"`
+	OperationKind        string    `json:"operation_kind"`
+	Amount               int64     `json:"amount"`
+	Currency             string    `json:"currency"`
+	BusinessDateLocal    string    `json:"business_date_local"`
+	InventoryDisposition string    `json:"inventory_disposition"`
+	Reason               string    `json:"reason"`
+	CreatedByEmployeeID  string    `json:"created_by_employee_id,omitempty"`
+	ApprovedByEmployeeID *string   `json:"approved_by_employee_id,omitempty"`
+	OperationCreatedAt   time.Time `json:"operation_created_at"`
+	OccurredAt           time.Time `json:"occurred_at"`
+	CloudReceivedAt      time.Time `json:"cloud_received_at"`
+	RawPayloadSHA256Hex  string    `json:"raw_payload_sha256_hex"`
+}
+
 func NewRouter(service *app.Service, masterServices ...*masterapp.Service) http.Handler {
 	return NewRouterWithProvisioning(service, nil, masterServices...)
 }
@@ -54,6 +84,7 @@ func NewRouterWithProvisioningAndOLAP(service *app.Service, provisioningService 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/sync/edge-events", h.listEdgeEvents)
 		r.Get("/sync/readiness/stop-list", h.stopListReadiness)
+		r.Get("/reporting/financial-operations", h.listFinancialOperations)
 		r.Get("/inventory/stock-ledger", h.listInventoryLedger)
 		r.Get("/inventory/stock-balances", h.listInventoryStockBalances)
 		r.Post("/sync/edge-events", h.receiveEdgeEvent)
@@ -190,6 +221,79 @@ func (h *Handler) stopListReadiness(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+func (h *Handler) listFinancialOperations(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("%w: limit must be a number", contracts.ErrInvalidEnvelope))
+			return
+		}
+		limit = parsed
+	}
+	offset := 0
+	if raw := r.URL.Query().Get("offset"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("%w: offset must be a number", contracts.ErrInvalidEnvelope))
+			return
+		}
+		offset = parsed
+	}
+	items, err := h.service.ListFinancialOperations(r.Context(), app.FinancialOperationProjectionFilter{
+		RestaurantID:     r.URL.Query().Get("restaurant_id"),
+		BusinessDateFrom: r.URL.Query().Get("business_date_from"),
+		BusinessDateTo:   r.URL.Query().Get("business_date_to"),
+		OperationType:    r.URL.Query().Get("operation_type"),
+		ShiftID:          r.URL.Query().Get("shift_id"),
+		OriginalShiftID:  r.URL.Query().Get("original_shift_id"),
+		CheckID:          r.URL.Query().Get("check_id"),
+		Limit:            limit,
+		Offset:           offset,
+	})
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, contracts.ErrInvalidEnvelope) {
+			status = http.StatusBadRequest
+		}
+		writeError(w, status, err)
+		return
+	}
+	out := make([]financialOperationReportItem, 0, len(items))
+	for _, item := range items {
+		out = append(out, financialOperationReportItem{
+			OperationID:          item.OperationID,
+			EdgeOperationID:      item.EdgeOperationID,
+			EventID:              item.EventID,
+			ReceiptID:            item.ReceiptID,
+			RestaurantID:         item.RestaurantID,
+			DeviceID:             item.DeviceID,
+			NodeDeviceID:         item.NodeDeviceID,
+			ClientDeviceID:       item.ClientDeviceID,
+			ActorEmployeeID:      item.ActorEmployeeID,
+			SessionID:            item.SessionID,
+			ShiftID:              item.ShiftID,
+			OriginalShiftID:      item.OriginalShiftID,
+			CheckID:              item.CheckID,
+			PrecheckID:           item.PrecheckID,
+			OperationType:        item.OperationType,
+			OperationKind:        item.OperationKind,
+			Amount:               item.Amount,
+			Currency:             item.Currency,
+			BusinessDateLocal:    item.BusinessDateLocal,
+			InventoryDisposition: item.InventoryDisposition,
+			Reason:               item.Reason,
+			CreatedByEmployeeID:  item.CreatedByEmployeeID,
+			ApprovedByEmployeeID: item.ApprovedByEmployeeID,
+			OperationCreatedAt:   item.OperationCreatedAt,
+			OccurredAt:           item.OccurredAt,
+			CloudReceivedAt:      item.CloudReceivedAt,
+			RawPayloadSHA256Hex:  item.RawPayloadSHA256Hex,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (h *Handler) listInventoryLedger(w http.ResponseWriter, r *http.Request) {
 	limit := 50
 	if raw := r.URL.Query().Get("limit"); raw != "" {
@@ -249,13 +353,13 @@ func (h *Handler) listInventoryStockBalances(w http.ResponseWriter, r *http.Requ
 		offset = parsed
 	}
 	items, err := h.service.ListInventoryStockBalances(r.Context(), app.InventoryStockBalanceFilter{
-		RestaurantID:    r.URL.Query().Get("restaurant_id"),
-		WarehouseID:     r.URL.Query().Get("warehouse_id"),
-		CatalogItemID:   r.URL.Query().Get("catalog_item_id"),
-		BusinessDateTo:  r.URL.Query().Get("business_date_to"),
-		CostingStatus:   r.URL.Query().Get("costing_status"),
-		Limit:           limit,
-		Offset:          offset,
+		RestaurantID:   r.URL.Query().Get("restaurant_id"),
+		WarehouseID:    r.URL.Query().Get("warehouse_id"),
+		CatalogItemID:  r.URL.Query().Get("catalog_item_id"),
+		BusinessDateTo: r.URL.Query().Get("business_date_to"),
+		CostingStatus:  r.URL.Query().Get("costing_status"),
+		Limit:          limit,
+		Offset:         offset,
 	})
 	if err != nil {
 		status := http.StatusInternalServerError
