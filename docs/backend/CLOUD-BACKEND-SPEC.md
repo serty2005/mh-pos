@@ -52,12 +52,12 @@
 - `stop_list_conflict_policy` для `StopListUpdated`: `cloud_wins`, `edge_overlay_until_next_publication`, `edge_overlay_requires_manager_review`; default `edge_overlay_requires_manager_review`;
 - safe readiness API/UI signal для stop-list publication, последнего известного Edge ACK metadata и sync problem counters без raw payload;
 - поддержка `CheckClosed`/`ItemServed`/`StockWriteOffCaptured` как pilot inventory facts через текущий receiver и Inventory Worker;
-- ClickHouse first slices: managed `raw_business_events`, async forwarder из PostgreSQL `inbox_events`, `processed_for_olap`, retry state, export checkpoint и bounded read-only metadata API; managed `olap_stock_moves`, async export из PostgreSQL `stock_ledger`, bounded stock moves API, read-only export status, минимальный support-only export retry control и первый bounded stock movement summary.
+- ClickHouse first slices: managed `raw_business_events`, async forwarder из PostgreSQL `inbox_events`, `processed_for_olap`, retry state, export checkpoint и bounded read-only metadata API; managed `olap_stock_moves`, async export из PostgreSQL `stock_ledger`, bounded stock moves API, read-only export status, минимальный support-only export retry control, первый bounded stock movement summary и первый bounded sales/kitchen summary.
 
 Запланировано до полного пилота:
 
 - full inventory engine для receipts, counts, production, consumption, refund/cancellation dispositions, balances, costing и retro recalculation;
-- production-grade backfill jobs/operator UI, sales aggregates, COGS/margin и kitchen timing API.
+- production-grade backfill jobs/operator UI, richer sales aggregates, COGS/margin и production-grade kitchen timing API beyond first bounded sales/kitchen summary.
 
 ## Назначение
 
@@ -151,6 +151,7 @@ Inventory read model:
 - `GET /api/v1/olap/export-status?stream=raw_business_events|stock_moves` — read-only PostgreSQL checkpoint/retry status без raw payload и без mutation/backfill side effects.
 - `POST /api/v1/olap/export-retry` — support-only control для `stream=raw_business_events|stock_moves` и `mode=retry_failed|resume_from_checkpoint`; request требует UUIDv7 `command_id` и operator reason, response не содержит raw payload/reason, mutation меняет только PostgreSQL retry/backoff control state и command log.
 - `GET /api/v1/olap/stock-move-summary?restaurant_id=&business_date_from=&business_date_to=&catalog_item_id=&warehouse_id=&source_event_type=&group_by=business_date|catalog_item|warehouse&limit=&offset=` — bounded ClickHouse aggregate по `olap_stock_moves`; не является COGS/margin API.
+- `GET /api/v1/olap/sales-kitchen-summary?restaurant_id=&business_date_from=&business_date_to=&group_by=business_date|event_type|source_event_type|catalog_item&limit=&offset=` — bounded read-only aggregate по `raw_business_events` и `olap_stock_moves`; response не содержит raw payload/hash, не является BI dashboard, COGS/margin или cashier command API.
 
 Generic Cloud -> Edge package storage:
 
@@ -556,6 +557,7 @@ Schema verification:
 - `GET /api/v1/olap/export-status` реализовано сейчас как read-only observability над `olap_export_checkpoints`, `inbox_events` и `stock_ledger`: response содержит stream, checkpoint, last exported id/time, counters, last error metadata, consecutive failures, next retry и retry_blocked без raw payload.
 - `POST /api/v1/olap/export-retry` реализовано сейчас как минимальный support-only mutating control: идемпотентность хранится в `olap_export_retry_commands`, `retry_failed` переводит failed `inbox_events` обратно в pending для `raw_business_events`, `resume_from_checkpoint` дополнительно снимает processing locks, а для `stock_moves` снимается checkpoint backoff; endpoint не сбрасывает checkpoint вручную и не пишет ClickHouse business rows.
 - `GET /api/v1/olap/stock-move-summary` реализовано сейчас как первый bounded агрегированный ClickHouse read: фильтры совпадают с stock moves, `group_by` ограничен `business_date`, `catalog_item`, `warehouse`, ordering deterministic, response содержит quantities/cost totals без COGS/margin wording.
+- `GET /api/v1/olap/sales-kitchen-summary` реализовано сейчас как первый bounded sales/kitchen aggregate: фильтры `restaurant_id`, `business_date_from`, `business_date_to`, `limit`, `offset`, `group_by=business_date|event_type|source_event_type|catalog_item`; endpoint читает существующие `raw_business_events` и `olap_stock_moves`, не выбирает raw payload, не добавляет новые ClickHouse tables/materialized views и не пишет ClickHouse из request path.
 - `CatalogItemChangeSuggested` создает Cloud review item; upsert в catalog выполняется только после manager approve текущими `catalog-suggestions` routes.
 - `RecipeChangeSuggested` создает Cloud review item с diff по ingredients, quantities, units, loss percent и prep time; published recipe не меняется до approve/apply текущими `recipe-suggestions` routes. Реализовано сейчас: Cloud-authored recipe version draft при submit создает pending `RecipeChangeSuggested` с `action = publish_recipe_version`; approve активирует draft version, архивирует предыдущую active version для owner item и публикует `recipes` package.
 - `StopListUpdated` обрабатывается асинхронно через `inventory_event_queue`: worker пишет `cloud_projection_stop_list_updates` без raw payload. `edge_overlay_until_next_publication` обновляет bounded `stop_lists` overlay, `cloud_wins` не перетирает Cloud-owned row, `edge_overlay_requires_manager_review` фиксирует безопасную projection для bounded manager review.
@@ -568,14 +570,14 @@ Schema verification:
 - ClickHouse `raw_business_events` реализовано сейчас как бессрочный архив business events.
 - Async Batch Forwarder переносит accepted events из PostgreSQL `inbox_events` в ClickHouse и после successful export выставляет `processed_for_olap = true`.
 - ClickHouse `olap_stock_moves` реализовано сейчас как первый bounded read model для складских движений; он не является source of truth и наполняется только async export из PostgreSQL `stock_ledger`.
-- `GET /api/v1/olap/raw-business-events`, `GET /api/v1/olap/stock-moves`, `GET /api/v1/olap/export-status` и `GET /api/v1/olap/stock-move-summary` реализованы сейчас как bounded/read-only endpoints без raw payload.
+- `GET /api/v1/olap/raw-business-events`, `GET /api/v1/olap/stock-moves`, `GET /api/v1/olap/export-status`, `GET /api/v1/olap/stock-move-summary` и `GET /api/v1/olap/sales-kitchen-summary` реализованы сейчас как bounded/read-only endpoints без raw payload.
 
 Запланировано до полного пилота:
 
 - Cloud authoring/publication workflow для stop-list/recipes становится штатным источником sale-blocking availability overlay; POS Edge runtime уже блокирует продажи по локальному `stop_lists`.
 - Receipt line с pending catalog suggestion остается запланировано далее.
 - Полный materialized balance engine, recipe expansion, modifier linked catalog item consumption и retro costing DAG становятся частью Cloud Inventory Engine; bounded `stock-balances` read из `stock_ledger` реализован сейчас.
-- Sales/kitchen/costing-dependent projections запланированы далее.
+- Расширенные sales/kitchen/costing-dependent projections beyond first bounded sales/kitchen summary запланированы далее.
 - Расширенный manager review workflow для Edge-origin stop-list изменений остается запланирован далее; текущий runtime уже имеет bounded review/apply без raw payload, но без production-grade task assignment/escalation.
 
 Вне текущего объема:
@@ -611,13 +613,13 @@ Schema verification:
 - Cloud master-data API tests: employee responses without PIN material, publication summary, `200 null` before first publication, production publication/snapshot endpoints.
 - Cloud master-data service tests: restaurant CRUD, employee lifecycle, PIN uniqueness, permission validation, catalog/menu publication shape, service/semi-finished kinds, lifecycle status preservation, pricing policy validation.
 - Cloud PostgreSQL tests: migration ordering, checksum behavior, runtime version policy, schema repair, schema verification errors.
-- Cloud OLAP tests: bounded read validation, read-only export status, export-retry validation/API no-payload contract, stock move summary grouping and forwarder retry behavior.
+- Cloud OLAP tests: bounded read validation, read-only export status, export-retry validation/API no-payload contract, stock move summary and sales-kitchen summary grouping and forwarder retry behavior.
 - Cloud schema tests: currency reference, inventory foundation, `cloud_projection_stop_list_updates`, financial operation projection, OLAP checkpoint/retry command tables.
 
 ## Запланировано далее
 
 - Production authorization and tenant perimeter для Cloud API.
-- До полного пилота: расширить bounded Edge-origin stop-list manager review до production workflow, full recipe/costing inventory engine, sales/kitchen/costing OLAP API, production-grade OLAP backfill jobs/operator UI и расширенная observability UI.
+- До полного пилота: расширить bounded Edge-origin stop-list manager review до production workflow, full recipe/costing inventory engine, richer sales/kitchen/costing OLAP API beyond first bounded endpoint, production-grade OLAP backfill jobs/operator UI и расширенная observability UI.
 - После полного пилота: rich BI/reporting UI beyond pilot financial operations and OLAP API.
 - Data-preserving PostgreSQL migrations после первого реального внедрения.
 - Cloud UI сценарий налогов/service-charge rules, если пилот требует централизованное управление.

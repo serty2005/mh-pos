@@ -29,6 +29,7 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 	r.Get("/olap/raw-business-events", h.listRawBusinessEvents)
 	r.Get("/olap/stock-moves", h.listStockMoves)
 	r.Get("/olap/stock-move-summary", h.listStockMoveSummary)
+	r.Get("/olap/sales-kitchen-summary", h.listSalesKitchenSummary)
 }
 
 func (h *Handler) getExportStatus(w http.ResponseWriter, r *http.Request) {
@@ -141,6 +142,30 @@ func (h *Handler) listStockMoveSummary(w http.ResponseWriter, r *http.Request) {
 		CatalogItemID:    r.URL.Query().Get("catalog_item_id"),
 		WarehouseID:      r.URL.Query().Get("warehouse_id"),
 		SourceEventType:  r.URL.Query().Get("source_event_type"),
+		GroupBy:          r.URL.Query().Get("group_by"),
+		Limit:            limit,
+		Offset:           offset,
+	})
+	if err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) listSalesKitchenSummary(w http.ResponseWriter, r *http.Request) {
+	limit, ok := intQuery(w, r, "limit", 50)
+	if !ok {
+		return
+	}
+	offset, ok := intQuery(w, r, "offset", 0)
+	if !ok {
+		return
+	}
+	items, err := h.service.ListSalesKitchenSummary(r.Context(), app.SalesKitchenSummaryFilter{
+		RestaurantID:     r.URL.Query().Get("restaurant_id"),
+		BusinessDateFrom: r.URL.Query().Get("business_date_from"),
+		BusinessDateTo:   r.URL.Query().Get("business_date_to"),
 		GroupBy:          r.URL.Query().Get("group_by"),
 		Limit:            limit,
 		Offset:           offset,

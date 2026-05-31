@@ -104,6 +104,44 @@ func TestListStockMoveSummaryRejectsInvalidGroupBy(t *testing.T) {
 	}
 }
 
+func TestListSalesKitchenSummaryAppliesFiltersGroupingAndBoundedLimit(t *testing.T) {
+	repo := &rawRepo{}
+	service := app.NewService(repo)
+
+	if _, err := service.ListSalesKitchenSummary(context.Background(), app.SalesKitchenSummaryFilter{
+		RestaurantID:     " rest-1 ",
+		BusinessDateFrom: "2026-05-01",
+		BusinessDateTo:   "2026-05-29",
+		GroupBy:          " source_event_type ",
+		Limit:            1000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if repo.salesKitchenFilter.Limit != 50 {
+		t.Fatalf("expected oversized limit to fall back to 50, got %d", repo.salesKitchenFilter.Limit)
+	}
+	if repo.salesKitchenFilter.GroupBy != "source_event_type" || repo.salesKitchenFilter.RestaurantID != "rest-1" {
+		t.Fatalf("expected trimmed sales/kitchen filters, got %+v", repo.salesKitchenFilter)
+	}
+}
+
+func TestListSalesKitchenSummaryRejectsInvalidFilters(t *testing.T) {
+	repo := &rawRepo{}
+	service := app.NewService(repo)
+
+	tests := []app.SalesKitchenSummaryFilter{
+		{GroupBy: "margin"},
+		{BusinessDateFrom: "2026-05-XX"},
+		{BusinessDateFrom: "2026-05-29", BusinessDateTo: "2026-05-01"},
+		{Offset: -1},
+	}
+	for _, tt := range tests {
+		if _, err := service.ListSalesKitchenSummary(context.Background(), tt); err == nil {
+			t.Fatalf("expected invalid filter error for %+v", tt)
+		}
+	}
+}
+
 func TestGetExportStatusRequiresKnownStream(t *testing.T) {
 	repo := &rawRepo{}
 	service := app.NewServiceWithExportStatus(repo, repo)
@@ -182,13 +220,14 @@ func TestRequestExportRetryValidatesCommandAndIsIdempotent(t *testing.T) {
 }
 
 type rawRepo struct {
-	filter        app.RawBusinessEventFilter
-	stockFilter   app.StockMoveFilter
-	summaryFilter app.StockMoveSummaryFilter
-	statusStream  string
-	retryCommand  app.ExportRetryCommand
-	retryResult   app.ExportRetryResult
-	retryCalls    int
+	filter             app.RawBusinessEventFilter
+	stockFilter        app.StockMoveFilter
+	summaryFilter      app.StockMoveSummaryFilter
+	salesKitchenFilter app.SalesKitchenSummaryFilter
+	statusStream       string
+	retryCommand       app.ExportRetryCommand
+	retryResult        app.ExportRetryResult
+	retryCalls         int
 }
 
 func (r *rawRepo) ListRawBusinessEvents(_ context.Context, filter app.RawBusinessEventFilter) ([]app.RawBusinessEvent, error) {
@@ -203,6 +242,11 @@ func (r *rawRepo) ListStockMoves(_ context.Context, filter app.StockMoveFilter) 
 
 func (r *rawRepo) ListStockMoveSummary(_ context.Context, filter app.StockMoveSummaryFilter) ([]app.StockMoveSummary, error) {
 	r.summaryFilter = filter
+	return nil, nil
+}
+
+func (r *rawRepo) ListSalesKitchenSummary(_ context.Context, filter app.SalesKitchenSummaryFilter) ([]app.SalesKitchenSummary, error) {
+	r.salesKitchenFilter = filter
 	return nil, nil
 }
 

@@ -234,6 +234,7 @@ Cloud Inventory Worker
 - `GET /api/v1/olap/export-status?stream=raw_business_events|stock_moves` читает checkpoint/retry состояние из PostgreSQL без raw payload и без запуска retry/backfill mutation.
 - `POST /api/v1/olap/export-retry` реализован как support-only mutation для снятия retry/backoff state: `command_id` UUIDv7, `stream=raw_business_events|stock_moves`, `mode=retry_failed|resume_from_checkpoint`, `reason`; response не содержит raw payload или reason и не запускает synchronous ClickHouse write.
 - `GET /api/v1/olap/stock-move-summary` читает первый bounded aggregate из ClickHouse `olap_stock_moves` с группировкой `business_date|catalog_item|warehouse`; endpoint не раскрывает raw sync payload и не является COGS/margin расчетом.
+- `GET /api/v1/olap/sales-kitchen-summary` читает первый bounded sales/kitchen aggregate из ClickHouse `raw_business_events` и `olap_stock_moves` с группировкой `business_date|event_type|source_event_type|catalog_item`; endpoint не раскрывает raw sync payload/hash, не является BI dashboard, COGS/margin расчетом или cashier command API.
 - `GET /api/v1/sync/readiness/stop-list?restaurant_id=&node_device_id=` возвращает stop-list publication/package readiness, последний known accepted `StopListUpdated` ACK metadata и sync problem counters без raw payload.
 - Synchronous dual-write в PostgreSQL и ClickHouse запрещен.
 
@@ -478,7 +479,7 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 
 - production-grade manager review workflow для `edge_overlay_requires_manager_review`;
 - modifier linked catalog item consumption и retro costing DAG;
-- sales/kitchen/costing aggregate OLAP API, production-grade backfill jobs и OLAP operator UI;
+- richer sales/kitchen/costing aggregate OLAP API beyond first bounded endpoint, production-grade backfill jobs и OLAP operator UI;
 - PSP/fiscal event streams.
 
 Запланировано до полного пилота:
@@ -488,9 +489,9 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 - Cloud Inventory Worker расширяется до balances and costing engine;
 - Реализовано сейчас: ClickHouse pipeline экспортирует `raw_business_events`, а `GET /api/v1/olap/raw-business-events` читает bounded metadata без raw payload.
 - Реализовано сейчас: ClickHouse pipeline экспортирует первый bounded `olap_stock_moves` read model из `stock_ledger`, а `GET /api/v1/olap/stock-moves` читает его без raw payload.
-- Реализовано сейчас: read-only export status и bounded stock movement summary.
+- Реализовано сейчас: read-only export status, bounded stock movement summary и bounded sales-kitchen summary.
 - Реализовано сейчас: минимальный support-only `POST /api/v1/olap/export-retry` снимает retry/backoff state без raw payload и без ClickHouse write в request path.
-- Запланировано далее: sales/kitchen/costing aggregates и production-grade backfill/operator UI.
+- Запланировано далее: richer sales/kitchen/costing aggregates и production-grade backfill/operator UI.
 
 ## Запланированные Границы
 
@@ -499,7 +500,7 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 - Cloud-authored pricing/tax UI и полный publication workflow поверх generic `pricing_policy` package storage/apply;
 - Cloud authoring workflow polish для `recipes`/`inventory_reference` package generation;
 - full Cloud Inventory Engine для balances/costing/recalculation;
-- ClickHouse `raw_business_events`, `olap_stock_moves`, retry/export state, bounded event/stock movement APIs, read-only export status, минимальный support-only export retry control и stock movement summary реализованы сейчас; production-grade backfill UI/jobs and sales/kitchen/costing OLAP API запланированы далее;
+- ClickHouse `raw_business_events`, `olap_stock_moves`, retry/export state, bounded event/stock movement APIs, read-only export status, минимальный support-only export retry control, stock movement summary и sales-kitchen summary реализованы сейчас; production-grade backfill UI/jobs and richer sales/kitchen/costing OLAP API запланированы далее;
 - stop-list sale blocking smoke через offline Edge реализован сейчас в минимальном seed smoke.
 
 После полного пилота:

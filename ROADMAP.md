@@ -255,7 +255,8 @@
 - OLAP projections шире текущих bounded:
   - `raw_business_events`;
   - `olap_stock_moves`;
-  - `stock-move-summary`.
+  - `stock-move-summary`;
+  - `sales-kitchen-summary`.
 
 ## Только Основа
 
@@ -688,6 +689,12 @@ GET /api/v1/inventory/stock-balances?restaurant_id=&warehouse_id=&catalog_item_i
   - `business_date`;
   - `catalog_item`;
   - `warehouse`.
+- Первый bounded sales/kitchen агрегат `GET /api/v1/olap/sales-kitchen-summary` поверх `raw_business_events` и `olap_stock_moves` с группировкой:
+  - `business_date`;
+  - `event_type`;
+  - `source_event_type`;
+  - `catalog_item`.
+  Endpoint read-only, bounded, не раскрывает raw payload, не является BI dashboard и не считает COGS/margin.
 - Минимальный support-only `POST /api/v1/olap/export-retry`:
   - `retry_failed`;
   - `resume_from_checkpoint`;
@@ -699,8 +706,8 @@ GET /api/v1/inventory/stock-balances?restaurant_id=&warehouse_id=&catalog_item_i
 Далее:
 
 - Production-grade backfill jobs/operator UI.
-- Sales aggregates.
-- Kitchen aggregates / kitchen timing API.
+- Расширенные sales/kitchen aggregates beyond first bounded endpoint.
+- Production-grade kitchen timing API.
 - Costing-dependent COGS/margin после появления достоверной cost basis.
 
 ---

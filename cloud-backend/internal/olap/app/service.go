@@ -73,6 +73,26 @@ type StockMoveSummary struct {
 	LastOccurredAt    *time.Time `json:"last_occurred_at,omitempty"`
 }
 
+// SalesKitchenSummary описывает первый bounded агрегат продаж/кухни без raw payload и COGS/margin.
+type SalesKitchenSummary struct {
+	GroupBy           string     `json:"group_by"`
+	GroupKey          string     `json:"group_key"`
+	BusinessDateLocal string     `json:"business_date_local,omitempty"`
+	EventType         string     `json:"event_type,omitempty"`
+	SourceEventType   string     `json:"source_event_type,omitempty"`
+	CatalogItemID     string     `json:"catalog_item_id,omitempty"`
+	EventCount        int64      `json:"event_count"`
+	StockMoveCount    int64      `json:"stock_move_count"`
+	SaleEventCount    int64      `json:"sale_event_count"`
+	KitchenEventCount int64      `json:"kitchen_event_count"`
+	OutQuantity       string     `json:"out_quantity"`
+	InQuantity        string     `json:"in_quantity"`
+	NetQuantity       string     `json:"net_quantity"`
+	TotalCostMinor    int64      `json:"total_cost_minor"`
+	FirstOccurredAt   *time.Time `json:"first_occurred_at,omitempty"`
+	LastOccurredAt    *time.Time `json:"last_occurred_at,omitempty"`
+}
+
 // StockMoveFilter задает bounded read-only выборку из ClickHouse stock moves projection.
 type StockMoveFilter struct {
 	RestaurantID     string
@@ -93,6 +113,16 @@ type StockMoveSummaryFilter struct {
 	CatalogItemID    string
 	WarehouseID      string
 	SourceEventType  string
+	GroupBy          string
+	Limit            int
+	Offset           int
+}
+
+// SalesKitchenSummaryFilter задает bounded read-only агрегат поверх raw events и stock moves.
+type SalesKitchenSummaryFilter struct {
+	RestaurantID     string
+	BusinessDateFrom string
+	BusinessDateTo   string
 	GroupBy          string
 	Limit            int
 	Offset           int
@@ -150,6 +180,11 @@ type StockMoveSummaryRepository interface {
 	ListStockMoveSummary(context.Context, StockMoveSummaryFilter) ([]StockMoveSummary, error)
 }
 
+// SalesKitchenSummaryRepository читает первый sales/kitchen агрегат из async OLAP datasets.
+type SalesKitchenSummaryRepository interface {
+	ListSalesKitchenSummary(context.Context, SalesKitchenSummaryFilter) ([]SalesKitchenSummary, error)
+}
+
 // ExportStatusRepository читает PostgreSQL checkpoint/retry состояние OLAP export.
 type ExportStatusRepository interface {
 	GetExportStatus(context.Context, string, time.Time) (ExportStatus, error)
@@ -164,6 +199,7 @@ type Repository interface {
 	RawBusinessEventRepository
 	StockMoveRepository
 	StockMoveSummaryRepository
+	SalesKitchenSummaryRepository
 }
 
 // Service валидирует OLAP read API и делегирует bounded чтение ClickHouse repository.
@@ -272,6 +308,41 @@ func (s *Service) ListStockMoveSummary(ctx context.Context, filter StockMoveSumm
 		return nil, fmt.Errorf("%w: offset must be non-negative", contracts.ErrInvalidEnvelope)
 	}
 	return s.repo.ListStockMoveSummary(ctx, filter)
+}
+
+// ListSalesKitchenSummary возвращает bounded read-only sales/kitchen aggregate без raw payload.
+func (s *Service) ListSalesKitchenSummary(ctx context.Context, filter SalesKitchenSummaryFilter) ([]SalesKitchenSummary, error) {
+	if s == nil || s.repo == nil {
+		return nil, ErrOLAPUnavailable
+	}
+	filter.RestaurantID = strings.TrimSpace(filter.RestaurantID)
+	filter.BusinessDateFrom = strings.TrimSpace(filter.BusinessDateFrom)
+	filter.BusinessDateTo = strings.TrimSpace(filter.BusinessDateTo)
+	filter.GroupBy = strings.TrimSpace(filter.GroupBy)
+	if filter.GroupBy == "" {
+		filter.GroupBy = "business_date"
+	}
+	switch filter.GroupBy {
+	case "business_date", "event_type", "source_event_type", "catalog_item":
+	default:
+		return nil, fmt.Errorf("%w: group_by must be business_date, event_type, source_event_type or catalog_item", contracts.ErrInvalidEnvelope)
+	}
+	if err := validateBusinessDate(filter.BusinessDateFrom, "business_date_from"); err != nil {
+		return nil, err
+	}
+	if err := validateBusinessDate(filter.BusinessDateTo, "business_date_to"); err != nil {
+		return nil, err
+	}
+	if filter.BusinessDateFrom != "" && filter.BusinessDateTo != "" && filter.BusinessDateFrom > filter.BusinessDateTo {
+		return nil, fmt.Errorf("%w: business_date_from must be before business_date_to", contracts.ErrInvalidEnvelope)
+	}
+	if filter.Limit <= 0 || filter.Limit > 200 {
+		filter.Limit = 50
+	}
+	if filter.Offset < 0 {
+		return nil, fmt.Errorf("%w: offset must be non-negative", contracts.ErrInvalidEnvelope)
+	}
+	return s.repo.ListSalesKitchenSummary(ctx, filter)
 }
 
 // GetExportStatus возвращает bounded operator-facing состояние async OLAP export.

@@ -15,6 +15,11 @@ import (
 	"cloud-backend/internal/olap/app"
 )
 
+const (
+	salesKitchenSaleEventTypesSQL    = "('CheckCreated','CheckClosed','PaymentCaptured','CancellationRecorded','RefundRecorded')"
+	salesKitchenKitchenEventTypesSQL = "('KitchenTicketStatusChanged','ItemServed','StockReceiptCaptured','InventoryCountCaptured','StockWriteOffCaptured','ProductionCompleted','CatalogItemChangeSuggested','RecipeChangeSuggested','StopListUpdated')"
+)
+
 type Config struct {
 	URL      string
 	Database string
@@ -447,6 +452,207 @@ func (r *Repository) ListStockMoveSummary(ctx context.Context, filter app.StockM
 	return rows, scanner.Err()
 }
 
+func (r *Repository) ListSalesKitchenSummary(ctx context.Context, filter app.SalesKitchenSummaryFilter) ([]app.SalesKitchenSummary, error) {
+	parts := make([]string, 0, 2)
+	if filter.GroupBy != "catalog_item" {
+		parts = append(parts, r.salesKitchenRawSummaryQuery(filter))
+	}
+	parts = append(parts, r.salesKitchenStockSummaryQuery(filter))
+
+	orderExpr := "group_key ASC"
+	if filter.GroupBy == "business_date" {
+		orderExpr = "group_key DESC"
+	}
+
+	query := strings.Builder{}
+	query.WriteString("SELECT group_by, group_key, max(business_date_local) AS business_date_local, ")
+	query.WriteString("max(event_type) AS event_type, max(source_event_type) AS source_event_type, max(catalog_item_id) AS catalog_item_id, ")
+	query.WriteString("sum(event_count) AS event_count, sum(stock_move_count) AS stock_move_count, ")
+	query.WriteString("sum(sale_event_count) AS sale_event_count, sum(kitchen_event_count) AS kitchen_event_count, ")
+	query.WriteString("toString(sum(in_quantity)) AS in_quantity, toString(sum(out_quantity)) AS out_quantity, ")
+	query.WriteString("toString(sum(in_quantity) - sum(out_quantity)) AS net_quantity, sum(total_cost_minor) AS total_cost_minor, ")
+	query.WriteString("min(first_occurred_at) AS first_occurred_at, max(last_occurred_at) AS last_occurred_at FROM (")
+	query.WriteString(strings.Join(parts, " UNION ALL "))
+	query.WriteString(") GROUP BY group_by, group_key ORDER BY ")
+	query.WriteString(orderExpr)
+	query.WriteString(fmt.Sprintf(" LIMIT %d OFFSET %d FORMAT JSONEachRow", filter.Limit, filter.Offset))
+
+	respBody, err := r.query(ctx, query.String())
+	if err != nil {
+		return nil, err
+	}
+	defer respBody.Close()
+
+	rows := make([]app.SalesKitchenSummary, 0, filter.Limit)
+	scanner := bufio.NewScanner(respBody)
+	for scanner.Scan() {
+		var row struct {
+			GroupBy           string  `json:"group_by"`
+			GroupKey          string  `json:"group_key"`
+			BusinessDateLocal string  `json:"business_date_local"`
+			EventType         string  `json:"event_type"`
+			SourceEventType   string  `json:"source_event_type"`
+			CatalogItemID     string  `json:"catalog_item_id"`
+			EventCount        chInt64 `json:"event_count"`
+			StockMoveCount    chInt64 `json:"stock_move_count"`
+			SaleEventCount    chInt64 `json:"sale_event_count"`
+			KitchenEventCount chInt64 `json:"kitchen_event_count"`
+			OutQuantity       string  `json:"out_quantity"`
+			InQuantity        string  `json:"in_quantity"`
+			NetQuantity       string  `json:"net_quantity"`
+			TotalCostMinor    chInt64 `json:"total_cost_minor"`
+			FirstOccurredAt   string  `json:"first_occurred_at"`
+			LastOccurredAt    string  `json:"last_occurred_at"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
+			return nil, err
+		}
+		firstOccurredAt, err := parseOptionalCHTime(row.FirstOccurredAt)
+		if err != nil {
+			return nil, err
+		}
+		lastOccurredAt, err := parseOptionalCHTime(row.LastOccurredAt)
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, app.SalesKitchenSummary{
+			GroupBy:           row.GroupBy,
+			GroupKey:          row.GroupKey,
+			BusinessDateLocal: row.BusinessDateLocal,
+			EventType:         row.EventType,
+			SourceEventType:   row.SourceEventType,
+			CatalogItemID:     row.CatalogItemID,
+			EventCount:        int64(row.EventCount),
+			StockMoveCount:    int64(row.StockMoveCount),
+			SaleEventCount:    int64(row.SaleEventCount),
+			KitchenEventCount: int64(row.KitchenEventCount),
+			OutQuantity:       row.OutQuantity,
+			InQuantity:        row.InQuantity,
+			NetQuantity:       row.NetQuantity,
+			TotalCostMinor:    int64(row.TotalCostMinor),
+			FirstOccurredAt:   firstOccurredAt,
+			LastOccurredAt:    lastOccurredAt,
+		})
+	}
+	return rows, scanner.Err()
+}
+
+func (r *Repository) salesKitchenRawSummaryQuery(filter app.SalesKitchenSummaryFilter) string {
+	groupKeyExpr, businessDateExpr, eventTypeExpr, sourceEventTypeExpr, groupByExpr := salesKitchenRawGroupExpressions(filter.GroupBy)
+	query := strings.Builder{}
+	query.WriteString("SELECT ")
+	query.WriteString(quote(filter.GroupBy))
+	query.WriteString(" AS group_by, ")
+	query.WriteString(groupKeyExpr)
+	query.WriteString(" AS group_key, ")
+	query.WriteString(businessDateExpr)
+	query.WriteString(" AS business_date_local, ")
+	query.WriteString(eventTypeExpr)
+	query.WriteString(" AS event_type, ")
+	query.WriteString(sourceEventTypeExpr)
+	query.WriteString(" AS source_event_type, '' AS catalog_item_id, ")
+	query.WriteString("toInt64(count()) AS event_count, toInt64(0) AS stock_move_count, ")
+	query.WriteString("toInt64(countIf(event_type IN ")
+	query.WriteString(salesKitchenSaleEventTypesSQL)
+	query.WriteString(")) AS sale_event_count, toInt64(countIf(event_type IN ")
+	query.WriteString(salesKitchenKitchenEventTypesSQL)
+	query.WriteString(")) AS kitchen_event_count, ")
+	query.WriteString("toDecimal64(0, 3) AS in_quantity, toDecimal64(0, 3) AS out_quantity, toInt64(0) AS total_cost_minor, ")
+	query.WriteString("min(occurred_at) AS first_occurred_at, max(occurred_at) AS last_occurred_at FROM ")
+	query.WriteString(ident(r.database))
+	query.WriteString(".raw_business_events FINAL WHERE 1=1")
+	appendSalesKitchenRawFilters(&query, filter)
+	query.WriteString(" GROUP BY ")
+	query.WriteString(groupByExpr)
+	return query.String()
+}
+
+func (r *Repository) salesKitchenStockSummaryQuery(filter app.SalesKitchenSummaryFilter) string {
+	groupKeyExpr, businessDateExpr, eventTypeExpr, sourceEventTypeExpr, catalogItemExpr, groupByExpr := salesKitchenStockGroupExpressions(filter.GroupBy)
+	query := strings.Builder{}
+	query.WriteString("SELECT ")
+	query.WriteString(quote(filter.GroupBy))
+	query.WriteString(" AS group_by, ")
+	query.WriteString(groupKeyExpr)
+	query.WriteString(" AS group_key, ")
+	query.WriteString(businessDateExpr)
+	query.WriteString(" AS business_date_local, ")
+	query.WriteString(eventTypeExpr)
+	query.WriteString(" AS event_type, ")
+	query.WriteString(sourceEventTypeExpr)
+	query.WriteString(" AS source_event_type, ")
+	query.WriteString(catalogItemExpr)
+	query.WriteString(" AS catalog_item_id, ")
+	query.WriteString("toInt64(0) AS event_count, toInt64(count()) AS stock_move_count, toInt64(0) AS sale_event_count, toInt64(0) AS kitchen_event_count, ")
+	query.WriteString("sumIf(toDecimal64OrZero(quantity, 3), movement_type = 'IN') AS in_quantity, ")
+	query.WriteString("sumIf(toDecimal64OrZero(quantity, 3), movement_type = 'OUT') AS out_quantity, ")
+	query.WriteString("sum(total_cost_minor) AS total_cost_minor, min(occurred_at) AS first_occurred_at, max(occurred_at) AS last_occurred_at FROM ")
+	query.WriteString(ident(r.database))
+	query.WriteString(".olap_stock_moves FINAL WHERE 1=1")
+	appendSalesKitchenStockFilters(&query, filter)
+	query.WriteString(" GROUP BY ")
+	query.WriteString(groupByExpr)
+	return query.String()
+}
+
+func salesKitchenRawGroupExpressions(groupBy string) (groupKeyExpr, businessDateExpr, eventTypeExpr, sourceEventTypeExpr, groupByExpr string) {
+	switch groupBy {
+	case "event_type":
+		return "event_type", "''", "event_type", "''", "event_type"
+	case "source_event_type":
+		return "event_type", "''", "''", "event_type", "event_type"
+	default:
+		return "toString(toDate(occurred_at))", "toString(toDate(occurred_at))", "''", "''", "toDate(occurred_at)"
+	}
+}
+
+func salesKitchenStockGroupExpressions(groupBy string) (groupKeyExpr, businessDateExpr, eventTypeExpr, sourceEventTypeExpr, catalogItemExpr, groupByExpr string) {
+	switch groupBy {
+	case "event_type":
+		return "source_event_type", "''", "source_event_type", "''", "''", "source_event_type"
+	case "source_event_type":
+		return "source_event_type", "''", "''", "source_event_type", "''", "source_event_type"
+	case "catalog_item":
+		return "catalog_item_id", "''", "''", "''", "catalog_item_id", "catalog_item_id"
+	default:
+		return "toString(business_date_local)", "toString(business_date_local)", "''", "''", "''", "business_date_local"
+	}
+}
+
+func appendSalesKitchenRawFilters(query *strings.Builder, filter app.SalesKitchenSummaryFilter) {
+	if filter.RestaurantID != "" {
+		query.WriteString(" AND restaurant_id = ")
+		query.WriteString(quote(filter.RestaurantID))
+	}
+	if filter.BusinessDateFrom != "" {
+		query.WriteString(" AND toDate(occurred_at) >= toDate(")
+		query.WriteString(quote(filter.BusinessDateFrom))
+		query.WriteString(")")
+	}
+	if filter.BusinessDateTo != "" {
+		query.WriteString(" AND toDate(occurred_at) <= toDate(")
+		query.WriteString(quote(filter.BusinessDateTo))
+		query.WriteString(")")
+	}
+}
+
+func appendSalesKitchenStockFilters(query *strings.Builder, filter app.SalesKitchenSummaryFilter) {
+	if filter.RestaurantID != "" {
+		query.WriteString(" AND restaurant_id = ")
+		query.WriteString(quote(filter.RestaurantID))
+	}
+	if filter.BusinessDateFrom != "" {
+		query.WriteString(" AND business_date_local >= toDate(")
+		query.WriteString(quote(filter.BusinessDateFrom))
+		query.WriteString(")")
+	}
+	if filter.BusinessDateTo != "" {
+		query.WriteString(" AND business_date_local <= toDate(")
+		query.WriteString(quote(filter.BusinessDateTo))
+		query.WriteString(")")
+	}
+}
+
 func (r *Repository) exec(ctx context.Context, query string) error {
 	return r.post(ctx, query)
 }
@@ -529,6 +735,17 @@ func parseCHTime(value string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("invalid ClickHouse timestamp %q", value)
+}
+
+func parseOptionalCHTime(value string) (*time.Time, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	parsed, err := parseCHTime(value)
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
 }
 
 type chInt64 int64

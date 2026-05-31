@@ -116,19 +116,19 @@ Edge Outbox
 - Если superseding `ItemServed` уже принят Cloud до обработки очереди, Cloud Inventory Worker пропускает superseded served fact; если старый served fact уже обработан, superseding `ItemServed` пишет append-only `ItemServedCompensation` return ledger перед новой sale ledger;
 - ClickHouse получает immutable `raw_business_events` из Cloud PostgreSQL `inbox_events`.
 - ClickHouse получает `olap_stock_moves` projection из Cloud `stock_ledger` через async forwarder.
-- Cloud OLAP API читает bounded `raw_business_events` metadata, bounded `olap_stock_moves`, read-only export status и первый bounded `stock-move-summary` aggregate из ClickHouse; эти endpoints не участвуют в transactional command validation.
+- Cloud OLAP API читает bounded `raw_business_events` metadata, bounded `olap_stock_moves`, read-only export status, первый bounded `stock-move-summary` aggregate и первый bounded `sales-kitchen-summary` aggregate из ClickHouse; эти endpoints не участвуют в transactional command validation.
 - Минимальный support-only `POST /api/v1/olap/export-retry` снимает retry/backoff state в PostgreSQL без raw payload и без synchronous ClickHouse write в request path.
 - `stock_balances` остаются аналитической проекцией и не блокируют продажи;
 
 Требуется до полного пилота:
 
-- cooking start/hold/ready timing aggregates поверх текущих `KitchenTicketStatusChanged`;
+- production-grade cooking start/hold/ready timing aggregates поверх текущих `KitchenTicketStatusChanged`;
 - production-grade backfill/retry jobs для ClickHouse projections;
 - costing/recalculation state до production-grade engine.
 
 Запланировано до полного пилота:
 
-- sales/kitchen aggregates и costing-dependent COGS/margin.
+- richer sales/kitchen aggregates beyond first bounded endpoint и costing-dependent COGS/margin.
 
 Запланировано далее:
 

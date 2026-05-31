@@ -103,6 +103,7 @@ Managed SQL files, реализовано сейчас:
 - `inbox_events` имеет processing flag `processed_for_olap`, retry state, lock metadata и last error.
 - Async Batch Forwarder читает `inbox_events`, собирает bounded batch от 1 до 100 000 rows и экспортирует их в ClickHouse.
 - После successful export worker помечает события как `processed_for_olap = true` и обновляет `olap_export_checkpoints`.
+- Bounded `GET /api/v1/olap/sales-kitchen-summary` читает существующие ClickHouse `raw_business_events` и `olap_stock_moves` query-level aggregate без новой таблицы/materialized view, без raw payload и без synchronous ClickHouse write в request path.
 
 `001_init.sql` provides foundation for:
 
@@ -326,7 +327,7 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 
 - semi-finished fallback expansion.
 - costing recalculation.
-- sales/kitchen/costing OLAP aggregates beyond current stock movement summary.
+- richer sales/kitchen/costing OLAP aggregates beyond current stock movement summary and first sales-kitchen summary.
 
 Вне текущего runtime:
 
