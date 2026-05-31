@@ -26,6 +26,9 @@ const (
 
 	MovementIn  MovementType = "IN"
 	MovementOut MovementType = "OUT"
+
+	// SourceEventItemServedCompensation помечает сторно уже обработанного ItemServed при recall/serve-again.
+	SourceEventItemServedCompensation = "ItemServedCompensation"
 )
 
 type IDGenerator interface {
@@ -103,21 +106,21 @@ type StockLedgerEntry struct {
 
 // StopListProjectionCommand переносит StopListUpdated в безопасную projection без raw payload.
 type StopListProjectionCommand struct {
-	SourceEventID      string
-	QueueID            string
-	RestaurantID       string
-	DeviceID           string
-	StopListID         string
-	WarehouseID        string
-	CatalogItemID      string
+	SourceEventID     string
+	QueueID           string
+	RestaurantID      string
+	DeviceID          string
+	StopListID        string
+	WarehouseID       string
+	CatalogItemID     string
 	AvailableQuantity string
-	Active             bool
-	ConflictPolicy     contracts.StopListConflictPolicy
-	Source             string
-	Reason             string
-	UpdatedAt          time.Time
-	OccurredAt         time.Time
-	ProjectedAt        time.Time
+	Active            bool
+	ConflictPolicy    contracts.StopListConflictPolicy
+	Source            string
+	Reason            string
+	UpdatedAt         time.Time
+	OccurredAt        time.Time
+	ProjectedAt       time.Time
 }
 
 type Config struct {
@@ -164,34 +167,52 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 }
 
 func (w *Worker) processEvent(ctx context.Context, event QueuedEvent, now time.Time) error {
-	document, ok, err := w.documentFromEvent(ctx, event, now)
-	if err != nil || !ok {
+	documents, err := w.documentsFromEvent(ctx, event, now)
+	if err != nil {
 		return err
 	}
-	return w.repo.CreateStockDocument(ctx, document)
+	for _, document := range documents {
+		if err := w.repo.CreateStockDocument(ctx, document); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func (w *Worker) documentFromEvent(ctx context.Context, event QueuedEvent, now time.Time) (StockDocument, bool, error) {
+func (w *Worker) documentsFromEvent(ctx context.Context, event QueuedEvent, now time.Time) ([]StockDocument, error) {
 	switch event.EventType {
 	case contracts.EventCheckClosed:
-		return w.checkClosedDocument(ctx, event, now)
+		doc, ok, err := w.checkClosedDocument(ctx, event, now)
+		return singleDocument(doc, ok, err)
 	case contracts.EventItemServed:
-		return w.itemServedDocument(ctx, event, now)
+		return w.itemServedDocuments(ctx, event, now)
 	case contracts.EventStockReceiptCaptured:
-		return w.stockReceiptDocument(event, now)
+		doc, ok, err := w.stockReceiptDocument(event, now)
+		return singleDocument(doc, ok, err)
 	case contracts.EventInventoryCountCaptured:
-		return w.inventoryCountDocument(event, now)
+		doc, ok, err := w.inventoryCountDocument(event, now)
+		return singleDocument(doc, ok, err)
 	case contracts.EventStockWriteOffCaptured:
-		return w.stockWriteOffDocument(event, now)
+		doc, ok, err := w.stockWriteOffDocument(event, now)
+		return singleDocument(doc, ok, err)
 	case contracts.EventProductionCompleted:
-		return w.productionDocument(event, now)
+		doc, ok, err := w.productionDocument(event, now)
+		return singleDocument(doc, ok, err)
 	case contracts.EventRefundRecorded, contracts.EventCancellationRecorded:
-		return w.financialOperationDocument(event, now)
+		doc, ok, err := w.financialOperationDocument(event, now)
+		return singleDocument(doc, ok, err)
 	case contracts.EventStopListUpdated:
-		return StockDocument{}, false, w.applyStopListUpdated(ctx, event, now)
+		return nil, w.applyStopListUpdated(ctx, event, now)
 	default:
-		return StockDocument{}, false, fmt.Errorf("unsupported inventory event_type %s", event.EventType)
+		return nil, fmt.Errorf("unsupported inventory event_type %s", event.EventType)
 	}
+}
+
+func singleDocument(document StockDocument, ok bool, err error) ([]StockDocument, error) {
+	if err != nil || !ok {
+		return nil, err
+	}
+	return []StockDocument{document}, nil
 }
 
 func (w *Worker) applyStopListUpdated(ctx context.Context, event QueuedEvent, now time.Time) error {
@@ -208,21 +229,21 @@ func (w *Worker) applyStopListUpdated(ctx context.Context, event QueuedEvent, no
 		return fmt.Errorf("invalid stop-list conflict policy")
 	}
 	return w.repo.ApplyStopListUpdate(ctx, StopListProjectionCommand{
-		SourceEventID:      strings.TrimSpace(event.EventID),
-		QueueID:            strings.TrimSpace(event.ID),
-		RestaurantID:       strings.TrimSpace(data.RestaurantID),
-		DeviceID:           strings.TrimSpace(event.DeviceID),
-		StopListID:         strings.TrimSpace(data.StopListID),
-		WarehouseID:        strings.TrimSpace(data.WarehouseID),
-		CatalogItemID:      strings.TrimSpace(data.CatalogItemID),
+		SourceEventID:     strings.TrimSpace(event.EventID),
+		QueueID:           strings.TrimSpace(event.ID),
+		RestaurantID:      strings.TrimSpace(data.RestaurantID),
+		DeviceID:          strings.TrimSpace(event.DeviceID),
+		StopListID:        strings.TrimSpace(data.StopListID),
+		WarehouseID:       strings.TrimSpace(data.WarehouseID),
+		CatalogItemID:     strings.TrimSpace(data.CatalogItemID),
 		AvailableQuantity: strings.TrimSpace(data.AvailableQuantity),
-		Active:             data.Active,
-		ConflictPolicy:     policy,
-		Source:             strings.TrimSpace(data.Source),
-		Reason:             strings.TrimSpace(data.Reason),
-		UpdatedAt:          data.UpdatedAt.UTC(),
-		OccurredAt:         event.OccurredAt.UTC(),
-		ProjectedAt:        now,
+		Active:            data.Active,
+		ConflictPolicy:    policy,
+		Source:            strings.TrimSpace(data.Source),
+		Reason:            strings.TrimSpace(data.Reason),
+		UpdatedAt:         data.UpdatedAt.UTC(),
+		OccurredAt:        event.OccurredAt.UTC(),
+		ProjectedAt:       now,
 	})
 }
 
@@ -250,38 +271,83 @@ func (w *Worker) checkClosedDocument(ctx context.Context, event QueuedEvent, now
 	return w.documentFromItems(event, now, DocumentSale, MovementOut, payload.Data.BusinessDateLocal, items, false)
 }
 
-func (w *Worker) itemServedDocument(ctx context.Context, event QueuedEvent, now time.Time) (StockDocument, bool, error) {
+func (w *Worker) itemServedDocuments(ctx context.Context, event QueuedEvent, now time.Time) ([]StockDocument, error) {
 	payload, err := decode[contracts.ItemServed](event.Payload)
 	if err != nil {
-		return StockDocument{}, false, err
+		return nil, err
 	}
-	if strings.TrimSpace(payload.Data.ServedEventID) != "" {
-		superseded, err := w.repo.HasSupersedingServedEvent(ctx, event.RestaurantID, payload.Data.OrderLineID, payload.Data.ServedEventID)
+	servedEventID := strings.TrimSpace(payload.Data.ServedEventID)
+	orderLineID := strings.TrimSpace(payload.Data.OrderLineID)
+	if servedEventID != "" {
+		superseded, err := w.repo.HasSupersedingServedEvent(ctx, event.RestaurantID, orderLineID, servedEventID)
 		if err != nil {
-			return StockDocument{}, false, err
+			return nil, err
 		}
 		if superseded {
-			return StockDocument{}, false, nil
+			return nil, nil
 		}
+	}
+	item := contracts.InventoryItem{
+		OrderLineID:   orderLineID,
+		CatalogItemID: strings.TrimSpace(payload.Data.CatalogItemID),
+		Quantity:      strings.TrimSpace(payload.Data.Quantity),
+		UnitCode:      strings.TrimSpace(payload.Data.UnitCode),
+	}
+	if strings.TrimSpace(payload.Data.SupersedesServedEventID) != "" {
+		return w.supersedingItemServedDocuments(ctx, event, now, item)
 	}
 	effectiveQuantity, err := w.effectiveServedQuantity(ctx, event.RestaurantID, payload.Data.OrderLineID, payload.Data.Quantity)
 	if err != nil {
-		return StockDocument{}, false, err
+		return nil, err
 	}
 	if effectiveQuantity == "" {
-		return StockDocument{}, false, nil
+		return nil, nil
 	}
-	item := contracts.InventoryItem{
-		OrderLineID:   payload.Data.OrderLineID,
-		CatalogItemID: payload.Data.CatalogItemID,
-		Quantity:      effectiveQuantity,
-		UnitCode:      payload.Data.UnitCode,
+	item.Quantity = effectiveQuantity
+	items, err := w.expandRecipeItems(ctx, event.RestaurantID, []contracts.InventoryItem{item})
+	if err != nil {
+		return nil, err
+	}
+	doc, ok, err := w.documentFromItems(event, now, DocumentSale, MovementOut, businessDate(event.OccurredAt), items, false)
+	return singleDocument(doc, ok, err)
+}
+
+func (w *Worker) supersedingItemServedDocuments(ctx context.Context, event QueuedEvent, now time.Time, item contracts.InventoryItem) ([]StockDocument, error) {
+	documents := make([]StockDocument, 0, 2)
+	servedQuantity, err := w.servedOrderLineQuantity(ctx, event.RestaurantID, item.OrderLineID)
+	if err != nil {
+		return nil, err
+	}
+	if positive(servedQuantity) {
+		compensationItem := item
+		compensationItem.Quantity = servedQuantity
+		compensationItems, err := w.expandRecipeItems(ctx, event.RestaurantID, []contracts.InventoryItem{compensationItem})
+		if err != nil {
+			return nil, err
+		}
+		doc, ok, err := w.documentFromItemsWithSourceType(event, now, DocumentReturn, MovementIn, businessDate(event.OccurredAt), compensationItems, false, SourceEventItemServedCompensation)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			documents = append(documents, doc)
+		}
+	}
+	if !positive(item.Quantity) {
+		return documents, nil
 	}
 	items, err := w.expandRecipeItems(ctx, event.RestaurantID, []contracts.InventoryItem{item})
 	if err != nil {
-		return StockDocument{}, false, err
+		return nil, err
 	}
-	return w.documentFromItems(event, now, DocumentSale, MovementOut, businessDate(event.OccurredAt), items, false)
+	doc, ok, err := w.documentFromItems(event, now, DocumentSale, MovementOut, businessDate(event.OccurredAt), items, false)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		documents = append(documents, doc)
+	}
+	return documents, nil
 }
 
 func (w *Worker) stockWriteOffDocument(event QueuedEvent, now time.Time) (StockDocument, bool, error) {
@@ -367,14 +433,19 @@ func (w *Worker) financialOperationDocument(event QueuedEvent, now time.Time) (S
 }
 
 func (w *Worker) documentFromItems(event QueuedEvent, now time.Time, typ DocumentType, movement MovementType, businessDateLocal string, items []contracts.InventoryItem, useCountedQuantity bool) (StockDocument, bool, error) {
+	return w.documentFromItemsWithSourceType(event, now, typ, movement, businessDateLocal, items, useCountedQuantity, string(event.EventType))
+}
+
+func (w *Worker) documentFromItemsWithSourceType(event QueuedEvent, now time.Time, typ DocumentType, movement MovementType, businessDateLocal string, items []contracts.InventoryItem, useCountedQuantity bool, sourceEventType string) (StockDocument, bool, error) {
 	documentID := w.ids.NewID()
+	sourceEventType = strings.TrimSpace(sourceEventType)
 	document := StockDocument{
 		ID:                documentID,
 		RestaurantID:      event.RestaurantID,
 		WarehouseID:       event.WarehouseID,
 		Type:              typ,
 		SourceEventID:     event.EventID,
-		SourceEventType:   string(event.EventType),
+		SourceEventType:   sourceEventType,
 		BusinessDateLocal: strings.TrimSpace(businessDateLocal),
 		OccurredAt:        event.OccurredAt,
 		CreatedAt:         now,
@@ -395,7 +466,7 @@ func (w *Worker) documentFromItems(event QueuedEvent, now time.Time, typ Documen
 			WarehouseID:       event.WarehouseID,
 			StockDocumentID:   documentID,
 			SourceEventID:     event.EventID,
-			SourceEventType:   string(event.EventType),
+			SourceEventType:   sourceEventType,
 			CatalogItemID:     strings.TrimSpace(item.CatalogItemID),
 			OrderLineID:       strings.TrimSpace(item.OrderLineID),
 			MovementType:      movement,
@@ -488,6 +559,18 @@ func (w *Worker) effectiveServedQuantity(ctx context.Context, restaurantID, orde
 		return "", nil
 	}
 	return delta, nil
+}
+
+func (w *Worker) servedOrderLineQuantity(ctx context.Context, restaurantID, orderLineID string) (string, error) {
+	orderLineID = strings.TrimSpace(orderLineID)
+	if orderLineID == "" {
+		return "", nil
+	}
+	served, err := w.repo.ListServedOrderLineQuantities(ctx, restaurantID, []string{orderLineID})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(served[orderLineID]), nil
 }
 
 func subtractQuantity(total, consumed string) (string, bool) {

@@ -119,7 +119,7 @@ Edge Outbox
 - advanced KDS должен генерировать `KitchenTicketStatusChanged`, `ItemServed` и cooking events;
 - kitchen receipt/proposal flows должны генерировать `StockReceiptCaptured`, `CatalogItemChangeSuggested` и `RecipeChangeSuggested`;
 - Cloud receiver/worker должен сохранить идемпотентность replay и дедупликацию `ItemServed` с `CheckClosed`;
-- реализовано сейчас: если superseding `ItemServed` уже принят Cloud до обработки очереди, Cloud Inventory Worker пропускает superseded served fact; компенсирующий пересчет уже обработанного served fact остается запланированным далее;
+- реализовано сейчас: если superseding `ItemServed` уже принят Cloud до обработки очереди, Cloud Inventory Worker пропускает superseded served fact; если старый served fact уже обработан, superseding `ItemServed` пишет append-only `ItemServedCompensation` return ledger перед новой sale ledger;
 - stop-list changes должны синхронизироваться без raw sensitive payload в UI/API diagnostics.
 - полный Cloud Inventory Engine должен обработать receipts, counts, production, sale consumption, refund/cancellation dispositions, balances и costing/recalculation state.
 

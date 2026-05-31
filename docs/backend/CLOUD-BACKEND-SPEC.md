@@ -566,7 +566,8 @@ Schema verification:
 - Cloud authoring/publication workflow для stop-list/recipes становится штатным источником sale-blocking availability overlay; POS Edge runtime уже блокирует продажи по локальному `stop_lists`.
 - `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` создают Cloud-owned stock documents/ledger rows; receipt line с pending catalog suggestion остается запланировано далее.
 - `KitchenTicketStatusChanged` и `ItemServed` используются для kitchen timing и inventory deduplication, но не меняют finalized checks.
-- Если Cloud уже принял superseding `ItemServed` для той же order line до обработки очереди, Inventory Worker пропускает superseded served fact; компенсирующий пересчет уже обработанного served fact остается запланированным далее.
+- Если Cloud уже принял superseding `ItemServed` для той же order line до обработки очереди, Inventory Worker пропускает superseded served fact.
+- Если старый `ItemServed` уже создал stock document до recall/serve-again, superseding `ItemServed` создает append-only `RETURN/IN` compensation document с `source_event_type = ItemServedCompensation`, затем новый `SALE/OUT` document. Replay защищен unique `(source_event_id, source_event_type)`, raw Edge payload в read APIs не раскрывается.
 - ClickHouse `raw_business_events` реализовано сейчас как бессрочный архив business events.
 - Async Batch Forwarder переносит accepted events из PostgreSQL `inbox_events` в ClickHouse и после successful export выставляет `processed_for_olap = true`.
 - ClickHouse `olap_stock_moves` реализовано сейчас как первый bounded read model для складских движений; он не является source of truth и наполняется только async export из PostgreSQL `stock_ledger`.

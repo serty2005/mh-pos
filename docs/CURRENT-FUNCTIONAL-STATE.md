@@ -72,7 +72,7 @@
 - Idempotent receipt для Edge events, raw payload checksum, event type stats и coarse shift finance projection.
 - Bounded read-only Cloud inventory ledger endpoint `GET /api/v1/inventory/stock-ledger` для проверки обработанных Cloud Inventory Worker строк без raw sync payload.
 - Bounded read-only Cloud inventory balances endpoint `GET /api/v1/inventory/stock-balances` поверх PostgreSQL `stock_ledger`: фильтры по ресторану/складу/товару/business date/costing status, отрицательные остатки допустимы, aggregate `costing_status` виден без raw payload, COGS или margin.
-- `ItemServed` попадает в durable `inventory_event_queue` и Cloud Inventory Worker создает sale ledger идемпотентно по source event; superseded served fact пропускается, если superseding `ItemServed` уже принят до обработки очереди; `KitchenTicketStatusChanged` принимается как operational-only event и не ставится в inventory queue.
+- `ItemServed` попадает в durable `inventory_event_queue` и Cloud Inventory Worker создает sale ledger идемпотентно по source event; superseded served fact пропускается, если superseding `ItemServed` уже принят до обработки очереди; если старый served fact уже обработан, superseding `ItemServed` пишет append-only `ItemServedCompensation` return ledger и затем новый sale ledger; `KitchenTicketStatusChanged` принимается как operational-only event и не ставится в inventory queue.
 - `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` принимаются Cloud receiver и превращаются Cloud Inventory Worker в stock documents/ledger rows.
 - `StopListUpdated` принимается Cloud receiver-ом, ставится в durable `inventory_event_queue` и обрабатывается Cloud Inventory Worker в `cloud_projection_stop_list_updates` без raw payload; минимальный `stop_list_conflict_policy` поддерживает `cloud_wins`, `edge_overlay_until_next_publication`, `edge_overlay_requires_manager_review`, default `edge_overlay_requires_manager_review`.
 - Bounded Cloud manager review для Edge-origin stop-list updates реализован через `GET /api/v1/manager/stop-list-updates`, detail и `approve/reject/request-changes`: API отдает только safe summary/diff, approve применяет изменение через Cloud-owned authority/publication path, reject/request-changes не мутируют runtime stop-list authority.
@@ -208,7 +208,7 @@
 ## Запланировано далее
 
 - Поддерживать `docs/backend/CLOUD-BACKEND-SPEC.md` как профильный документ Cloud Backend при каждом изменении Cloud routes, payloads, sync/provisioning contracts или schema.
-- До полного пилота: компенсирующий пересчет уже обработанного served fact после recall, полный Cloud Inventory Engine, sales/kitchen/costing OLAP API и production-grade OLAP backfill/operator UI.
+- До полного пилота: полный Cloud Inventory Engine, sales/kitchen/costing OLAP API и production-grade OLAP backfill/operator UI.
 - После полного пилота: hardware bump-bar integrations, kitchen printer orchestration, rich BI dashboards, ERP/accounting integrations и внешние delivery/payment/fiscal контуры.
 - Data-preserving migrations после первого реального внедрения.
 - Production auth/RBAC perimeter для Cloud/License API.

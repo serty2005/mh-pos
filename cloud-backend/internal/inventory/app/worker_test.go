@@ -96,11 +96,16 @@ func (f *fakeRepo) ListServedOrderLineQuantities(_ context.Context, _ string, or
 	for _, document := range f.documents {
 		for _, entry := range document.Ledger {
 			orderLineID := strings.TrimSpace(entry.OrderLineID)
-			if !wanted[orderLineID] || entry.SourceEventType != string(contracts.EventItemServed) || entry.MovementType != app.MovementOut {
+			if !wanted[orderLineID] {
 				continue
 			}
 			qty, _ := strconv.ParseFloat(strings.TrimSpace(entry.Quantity), 64)
-			totals[orderLineID] += qty
+			switch {
+			case entry.SourceEventType == string(contracts.EventItemServed) && entry.MovementType == app.MovementOut:
+				totals[orderLineID] += qty
+			case entry.SourceEventType == app.SourceEventItemServedCompensation && entry.MovementType == app.MovementIn:
+				totals[orderLineID] -= qty
+			}
 		}
 	}
 	out := map[string]string{}
@@ -235,6 +240,81 @@ func TestRunOnceSkipsSupersededItemServedWhenRecallServeAgainArrived(t *testing.
 	}
 	if len(repo.processed) != 2 {
 		t.Fatalf("expected both queue rows processed, got %+v", repo.processed)
+	}
+}
+
+func TestRunOnceCompensatesAlreadyProcessedItemServedOnRecallServeAgain(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{
+		queuedEvent(t, "queue-1", "018f0000-0000-7000-8000-0000000000a1", contracts.EventItemServed, itemServedPayloadWithServedEventID(t, "served-event-1", "", 1, "line-1", "item-1", "1.000")),
+		queuedEvent(t, "queue-2", "018f0000-0000-7000-8000-0000000000a2", contracts.EventItemServed, itemServedPayloadWithServedEventID(t, "served-event-2", "served-event-1", 2, "line-1", "item-1", "1.000")),
+		queuedEvent(t, "queue-3", "018f0000-0000-7000-8000-0000000000a3", contracts.EventCheckClosed, checkClosedPayload(t, []map[string]any{{
+			"order_line_id":          "line-1",
+			"catalog_item_id":        "item-1",
+			"quantity":               "2.000",
+			"unit_code":              "PC",
+			"required_for_inventory": true,
+		}})),
+	}}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{
+		"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101",
+		"018f0000-0000-7000-8000-00000000d002", "018f0000-0000-7000-8000-00000000d102",
+		"018f0000-0000-7000-8000-00000000d003", "018f0000-0000-7000-8000-00000000d103",
+		"018f0000-0000-7000-8000-00000000d004", "018f0000-0000-7000-8000-00000000d104",
+	}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 4 {
+		t.Fatalf("expected old serve, compensation, new serve and CheckClosed delta documents, got %+v", repo.documents)
+	}
+	if repo.documents[1].Type != app.DocumentReturn || repo.documents[1].SourceEventType != app.SourceEventItemServedCompensation {
+		t.Fatalf("expected append-only compensation document, got %+v", repo.documents[1])
+	}
+	compensation := repo.documents[1].Ledger[0]
+	if compensation.MovementType != app.MovementIn || compensation.Quantity != "1.000" || compensation.OrderLineID != "line-1" {
+		t.Fatalf("unexpected compensation ledger entry: %+v", compensation)
+	}
+	newServe := repo.documents[2].Ledger[0]
+	if repo.documents[2].SourceEventID != "018f0000-0000-7000-8000-0000000000a2" || newServe.MovementType != app.MovementOut || newServe.Quantity != "1.000" {
+		t.Fatalf("unexpected replacement serve document: %+v", repo.documents[2])
+	}
+	checkClosedDelta := repo.documents[3].Ledger[0]
+	if checkClosedDelta.MovementType != app.MovementOut || checkClosedDelta.Quantity != "1.000" {
+		t.Fatalf("expected CheckClosed to consume only unserved delta after compensation, got %+v", checkClosedDelta)
+	}
+}
+
+func TestRunOnceCompensatingItemServedReplayIsIdempotent(t *testing.T) {
+	supersedingPayload := itemServedPayloadWithServedEventID(t, "served-event-2", "served-event-1", 2, "line-1", "item-1", "1.000")
+	repo := &fakeRepo{events: []app.QueuedEvent{
+		queuedEvent(t, "queue-1", "018f0000-0000-7000-8000-0000000000a1", contracts.EventItemServed, itemServedPayloadWithServedEventID(t, "served-event-1", "", 1, "line-1", "item-1", "1.000")),
+		queuedEvent(t, "queue-2", "018f0000-0000-7000-8000-0000000000a2", contracts.EventItemServed, supersedingPayload),
+		queuedEvent(t, "queue-3", "018f0000-0000-7000-8000-0000000000a2", contracts.EventItemServed, supersedingPayload),
+	}}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{
+		"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101",
+		"018f0000-0000-7000-8000-00000000d002", "018f0000-0000-7000-8000-00000000d102",
+		"018f0000-0000-7000-8000-00000000d003", "018f0000-0000-7000-8000-00000000d103",
+		"018f0000-0000-7000-8000-00000000d004", "018f0000-0000-7000-8000-00000000d104",
+		"018f0000-0000-7000-8000-00000000d005", "018f0000-0000-7000-8000-00000000d105",
+	}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 3 {
+		t.Fatalf("expected replay to keep old serve, one compensation and one replacement serve, got %+v", repo.documents)
+	}
+	countBySourceType := map[string]int{}
+	for _, document := range repo.documents {
+		countBySourceType[document.SourceEventType]++
+	}
+	if countBySourceType[app.SourceEventItemServedCompensation] != 1 || countBySourceType[string(contracts.EventItemServed)] != 2 {
+		t.Fatalf("unexpected document source types after replay: %+v", countBySourceType)
+	}
+	if len(repo.processed) != 3 {
+		t.Fatalf("expected all queue rows processed, got %+v", repo.processed)
 	}
 }
 

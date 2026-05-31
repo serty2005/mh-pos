@@ -44,7 +44,6 @@
 
 Не реализовано сейчас:
 
-- Компенсирующий пересчет уже обработанного `ItemServed`, если recall/serve-again пришел после создания первого stock document.
 - Edge-side stop-list edit/conflict policy.
 
 ## Архитектурные Решения
@@ -615,7 +614,7 @@ POS Edge применяет stream только к локальным `kitchen_p
 - порядок применения: `occurred_at ASC`, затем `created_at ASC`, затем `event_id ASC`;
 - replay accepted event не создает новый document из-за unique `(source_event_id, source_event_type)`.
 
-Для кухонных событий ClickHouse `raw_business_events` хранит event trail. Реализовано сейчас: перед созданием складского документа Worker пропускает superseded `ItemServed`, если superseding served fact уже принят Cloud до обработки очереди. Запланировано далее: компенсирующий пересчет, если первый served fact уже успел создать stock document до recall/serve-again.
+Для кухонных событий ClickHouse `raw_business_events` хранит event trail. Реализовано сейчас: перед созданием складского документа Worker пропускает superseded `ItemServed`, если superseding served fact уже принят Cloud до обработки очереди. Если первый served fact уже успел создать stock document до recall/serve-again, superseding `ItemServed` пишет append-only компенсационный `RETURN/IN` document с `source_event_type = ItemServedCompensation`, затем новый `SALE/OUT` document по последней подаче. `CheckClosed` после такой компенсации считает только положительную unserved delta.
 
 Если POS Edge еще не получил Cloud warehouse reference, backend использует default warehouse из локального `inventory_reference`; если его нет, mutating kitchen stock routes возвращают safe validation error `KITCHEN_WAREHOUSE_REQUIRED`.
 
@@ -855,5 +854,4 @@ Playwright smoke:
 - default warehouse model: один Cloud-authored default kitchen warehouse на ресторан или несколько складов уже в первом шаге;
 - может ли обычная роль `kitchen` менять stop-list, или это только manager/kitchen-lead;
 - нужен ли partial `serve` для части количества одной order line, или вся kitchen ticket quantity считается served целиком;
-- нужен ли отдельный compensating stock document при `served -> recall`, или достаточно delayed/effective consumption на основании последнего `ItemServed`;
 - нужно ли Cloud auto-apply для catalog suggestions, или только ручной approve manager.

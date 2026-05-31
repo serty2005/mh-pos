@@ -56,7 +56,7 @@
 - kitchen worker должен видеть и редактировать stop-list; конфликт Cloud/Edge изменений разрешается параметром `stop_list_conflict_policy`, а один catalog item может быть добавлен Cloud-стороной и одновременно ограничен/исключен Edge-стороной через active overlay и `available_quantity`;
 - waiter runtime должен быть единственным mobile layout в POS UI: mobile-first route `/pos/waiter` для залов, заказов и ограниченной аналитики; cashier/KDS/manager modes не получают отдельные mobile variants в полном пилоте;
 - stop-list является единственным механизмом runtime-блокировки продаж: POS Edge должен локально блокировать блюдо или обязательный recipe component из active stop-list даже offline;
-- `CheckClosed` и `ItemServed` являются текущими inventory facts: Cloud принимает их через `sync/exchange`, дедуплицирует и передает Cloud Inventory Worker; при наличии уже принятого superseding `ItemServed` для той же order line Worker пропускает superseded served fact, а `KitchenTicketStatusChanged` остается operational-only event без складской проводки;
+- `CheckClosed` и `ItemServed` являются текущими inventory facts: Cloud принимает их через `sync/exchange`, дедуплицирует и передает Cloud Inventory Worker; при наличии уже принятого superseding `ItemServed` для той же order line Worker пропускает superseded served fact, а если старый served fact уже обработан, пишет append-only `ItemServedCompensation` return ledger перед новой подачей; `KitchenTicketStatusChanged` остается operational-only event без складской проводки;
 - Cloud Inventory Engine должен закрыть полный пилотный складской контур: recipes, stop-list, stock receipts, inventory counts, production, consumption, cancellation/refund dispositions, stock ledger, stock documents, stock balances и costing/recalculation state;
 - ClickHouse runtime должен хранить `raw_business_events` и OLAP projections, а Cloud API должен отдавать bounded OLAP/read-only ручки для продаж, склада, себестоимости и kitchen speed analytics.
 
@@ -316,7 +316,6 @@ Inventory and costing logic:
 
 - production-grade assignment/escalation для Edge-origin stop-list review и расширенный stop-list UX за пределами bounded KDS form;
 - recipe expansion, semi-finished auto-production split и retro costing DAG.
-- компенсирующий пересчет, если первый `ItemServed` уже был обработан складским Worker до прихода последующего `served -> recall -> ... -> serve`;
 
 Запланировано до полного пилота:
 

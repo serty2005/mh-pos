@@ -348,7 +348,8 @@ Recipes/inventory:
 - Реализовано сейчас: минимальный POS Edge KDS lifecycle foundation создает kitchen tickets из order lines, пишет `KitchenTicketStatusChanged`, а `serve` пишет `ItemServed`.
 - Реализовано сейчас: POS Edge kitchen stock input routes валидируют `warehouse_id`/default warehouse, существующие stock-capable catalog items, receipt supplier/document date/line totals, inventory count `counted_quantity`, write-off reason и production для active `semi_finished` с active recipe; routes пишут только `local_event_log`/`pos_sync_outbox`.
 - Реализовано сейчас: POS Edge kitchen recipe/proposal routes читают active recipe из `recipe_versions`/`recipe_lines`, добавляют ingredient names из полного `catalog_items`, сохраняют локальные `kitchen_proposals`, пишут `CatalogItemChangeSuggested`/`RecipeChangeSuggested` и не применяют предложения к catalog/recipe read model до Cloud publication.
-- Не реализовано сейчас: modifier linked catalog item stock consumption, компенсирующий пересчет уже обработанного served fact после recall, retro costing DAG.
+- Реализовано сейчас: Cloud Inventory Worker компенсирует уже обработанный `ItemServed` после `served -> recall -> ... -> serve` append-only `ItemServedCompensation` document и затем пишет новый `ItemServed` sale document.
+- Не реализовано сейчас: modifier linked catalog item stock consumption, retro costing DAG.
 - Запланировано до полного пилота: Cloud authoring/publication UI polish для recipes/stop-list, production workflow polish для `StopListUpdated` review и расширение KDS за пределы ticket lifecycle foundation.
 - Профильный целевой contract: `docs/backend/INVENTORY-COSTING-SPEC.md`.
 

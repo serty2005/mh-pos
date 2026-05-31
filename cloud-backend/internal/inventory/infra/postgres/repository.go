@@ -306,13 +306,17 @@ func (r *Repository) ListServedOrderLineQuantities(ctx context.Context, restaura
 		return map[string]string{}, nil
 	}
 	rows, err := r.pool.Query(ctx, `
-SELECT order_line_id, SUM(quantity)::text
+SELECT order_line_id,
+       SUM(CASE
+         WHEN source_event_type = $3 AND movement_type = 'OUT' THEN quantity
+         WHEN source_event_type = $4 AND movement_type = 'IN' THEN -quantity
+         ELSE 0
+       END)::text
 FROM stock_ledger
 WHERE restaurant_id = $1
   AND order_line_id = ANY($2)
-  AND source_event_type = $3
-  AND movement_type = 'OUT'
-GROUP BY order_line_id`, strings.TrimSpace(restaurantID), orderLineIDs, string(contracts.EventItemServed))
+  AND source_event_type IN ($3, $4)
+GROUP BY order_line_id`, strings.TrimSpace(restaurantID), orderLineIDs, string(contracts.EventItemServed), app.SourceEventItemServedCompensation)
 	if err != nil {
 		return nil, err
 	}

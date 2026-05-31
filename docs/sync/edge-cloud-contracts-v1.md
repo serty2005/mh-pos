@@ -371,10 +371,11 @@ Cancellation/refund sync behavior:
 - POS Edge повтор того же kitchen `command_id` для `serve` не создает второй `ItemServed`;
 - повторная подача после `served -> recall -> start -> ready` приходит новым `ItemServed` с увеличенным `serve_sequence` и ссылкой `supersedes_served_event_id` на предыдущий served fact;
 - Cloud Inventory Worker пропускает superseded served fact, если superseding `ItemServed` уже принят Cloud до обработки очереди;
+- если старый served fact уже обработан, superseding `ItemServed` пишет append-only compensation document `source_event_type = ItemServedCompensation` с `RETURN/IN`, затем новый `SALE/OUT` document;
 - `CheckClosed` после уже обработанного `ItemServed` списывает только положительную unserved delta;
 - replay того же `CheckClosed` не создает второй stock document.
 
-Запланировано далее: компенсирующий пересчет уже обработанного served fact после recall, balances, modifier linked recipe expansion и полный costing engine. Cloud proposal review/apply и ClickHouse `raw_business_events` export реализованы сейчас.
+Запланировано далее: modifier linked recipe expansion и полный costing engine. Bounded balances, Cloud proposal review/apply и ClickHouse `raw_business_events` export реализованы сейчас.
 
 `KitchenTicketStatusChanged` фиксирует advanced KDS lifecycle без прямой складской проводки:
 
@@ -476,7 +477,6 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 Не реализовано сейчас:
 
 - production-grade manager review workflow для `edge_overlay_requires_manager_review`;
-- компенсирующий пересчет уже обработанного served fact после recall;
 - modifier linked catalog item consumption и retro costing DAG;
 - sales/kitchen/costing aggregate OLAP API, production-grade backfill jobs и OLAP operator UI;
 - PSP/fiscal event streams.

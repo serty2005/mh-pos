@@ -473,6 +473,7 @@
 - Принятый `ItemServed` в Cloud Worker идемпотентно создает SALE ledger по `order_line_id`.
 - Последующий `CheckClosed` пишет только unserved delta.
 - Superseded `ItemServed` пропускается, если superseding served fact уже принят Cloud до обработки очереди.
+- Если старый `ItemServed` уже обработан до recall/serve-again, superseding `ItemServed` пишет append-only `ItemServedCompensation` `RETURN/IN`, затем новый `SALE/OUT`.
 - Edge-side chef stock input routes для receipt/count/write-off/production:
   - валидируют warehouse;
   - валидируют catalog item;
