@@ -144,11 +144,7 @@ import {
   upsertStopListEntry,
   ApiError,
 } from './shared/api';
-<<<<<<< HEAD
-import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, FinancialOperationReportItem, InventoryStockBalance, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, SalesKitchenSummaryGroupBy, SalesKitchenSummaryItem, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
-=======
-import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, FinancialOperationReportItem, InventoryStockBalance, OlapExportStatus, OlapStockMove, OlapStockMoveSummary, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, SalesKitchenSummaryItem, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
->>>>>>> decca4fee2a80fc56a430d86d548f4e14a3311a4
+import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, FinancialOperationReportItem, InventoryStockBalance, OlapExportStatus, OlapStockMove, OlapStockMoveSummary, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, SalesKitchenSummaryGroupBy, SalesKitchenSummaryItem, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
 import type { RecipeVersionView } from './shared/schemas';
 
 type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'financialOperations' | 'salesKitchenSummary' | 'recipeVersions' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
@@ -274,10 +270,7 @@ const pairingResult = ref<PairingCodeResult | null>(null);
 const publishForm = reactive({ published_by: '', node_device_id: '' });
 const pairingForm = reactive({ display_name: '', expires_in_minutes: 30 });
 const financialOperationFilters = reactive({ businessDateFrom: '', businessDateTo: '', operationType: '', shiftId: '', originalShiftId: '', checkId: '' });
-<<<<<<< HEAD
 const salesKitchenSummaryFilters = reactive<{ businessDateFrom: string; businessDateTo: string; groupBy: SalesKitchenSummaryGroupBy }>({ businessDateFrom: '', businessDateTo: '', groupBy: 'business_date' });
-=======
-const salesKitchenSummaryFilters = reactive({ businessDateFrom: '', businessDateTo: '', groupBy: 'business_date' });
 const olapFilters = reactive({
   businessDateFrom: '',
   businessDateTo: '',
@@ -286,7 +279,6 @@ const olapFilters = reactive({
   sourceEventType: '',
   groupBy: 'business_date' as 'business_date' | 'catalog_item' | 'warehouse',
 });
->>>>>>> decca4fee2a80fc56a430d86d548f4e14a3311a4
 const form = reactive<Row>({});
 
 const permissionGroups: PermissionGroup[] = [
