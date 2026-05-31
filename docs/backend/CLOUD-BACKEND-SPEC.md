@@ -509,12 +509,13 @@ Inbound compatibility:
 - Для refunds Cloud обновляет coarse shift finance refund counters.
 - Cloud поддерживает service/repository read model `cloud_projection_financial_operations`.
 - Cloud предоставляет bounded read-only HTTP reporting endpoint `GET /api/v1/reporting/financial-operations?restaurant_id=&business_date_from=&business_date_to=&operation_type=&shift_id=&original_shift_id=&check_id=&limit=&offset=` поверх `cloud_projection_financial_operations`; endpoint возвращает operation/check/shift/date/type/disposition/reason metadata и `raw_payload_sha256_hex`, но не возвращает raw sync payload или snapshot JSON.
+- `RefundRecorded` и `CancellationRecorded` являются inventory-relevant events. Cloud Inventory Worker обрабатывает operation-level `inventory_disposition`: `return_to_stock` создает `RETURN/IN`, `write_off_waste` создает `WASTE/OUT`, `no_stock_effect` не создает складское движение, `manual_review` переводит queue item в failure для операторского разбора. Для автоматического движения нужны нормализованные `items`.
 
 Вне текущего объема:
 
 - PSP refund execution.
 - Fiscal correction documents.
-- Automatic inventory movement based on `inventory_disposition`.
+- per-line mixed `inventory_disposition` в одном financial operation payload.
 
 ## PostgreSQL Data Contract
 

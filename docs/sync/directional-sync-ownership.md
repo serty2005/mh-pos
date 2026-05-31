@@ -112,24 +112,23 @@ Edge Outbox
 - POS Edge генерирует `CheckClosed` при создании final check после полной оплаты; событие строится из immutable `check.Snapshot`;
 - Edge/KDS events `CheckClosed`, `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
 - Cloud Inventory Worker создает `stock_documents` и `stock_ledger` из accepted events;
+- Cloud receiver/worker сохраняет идемпотентность replay и дедупликацию `ItemServed` с `CheckClosed`;
+- Если superseding `ItemServed` уже принят Cloud до обработки очереди, Cloud Inventory Worker пропускает superseded served fact; если старый served fact уже обработан, superseding `ItemServed` пишет append-only `ItemServedCompensation` return ledger перед новой sale ledger;
+- ClickHouse получает immutable `raw_business_events` из Cloud PostgreSQL `inbox_events`.
+- ClickHouse получает `olap_stock_moves` projection из Cloud `stock_ledger` через async forwarder.
+- Cloud OLAP API читает bounded `raw_business_events` metadata, bounded `olap_stock_moves`, read-only export status и первый bounded `stock-move-summary` aggregate из ClickHouse; эти endpoints не участвуют в transactional command validation.
+- Минимальный support-only `POST /api/v1/olap/export-retry` снимает retry/backoff state в PostgreSQL без raw payload и без synchronous ClickHouse write в request path.
 - `stock_balances` остаются аналитической проекцией и не блокируют продажи;
 
 Требуется до полного пилота:
 
-- advanced KDS должен генерировать `KitchenTicketStatusChanged`, `ItemServed` и cooking events;
-- kitchen receipt/proposal flows должны генерировать `StockReceiptCaptured`, `CatalogItemChangeSuggested` и `RecipeChangeSuggested`;
-- Cloud receiver/worker должен сохранить идемпотентность replay и дедупликацию `ItemServed` с `CheckClosed`;
-- реализовано сейчас: если superseding `ItemServed` уже принят Cloud до обработки очереди, Cloud Inventory Worker пропускает superseded served fact; если старый served fact уже обработан, superseding `ItemServed` пишет append-only `ItemServedCompensation` return ledger перед новой sale ledger;
-- stop-list changes должны синхронизироваться без raw sensitive payload в UI/API diagnostics.
-- полный Cloud Inventory Engine должен обработать receipts, counts, production, sale consumption, refund/cancellation dispositions, balances и costing/recalculation state.
+- cooking start/hold/ready timing aggregates поверх текущих `KitchenTicketStatusChanged`;
+- production-grade backfill/retry jobs для ClickHouse projections;
+- costing/recalculation state до production-grade engine.
 
 Запланировано до полного пилота:
 
-- Реализовано сейчас: ClickHouse получает immutable `raw_business_events` из Cloud PostgreSQL `inbox_events`.
-- Реализовано сейчас: ClickHouse получает `olap_stock_moves` projection из Cloud `stock_ledger` через async forwarder.
-- Реализовано сейчас: Cloud OLAP API читает bounded `raw_business_events` metadata, bounded `olap_stock_moves`, read-only export status и первый bounded `stock-move-summary` aggregate из ClickHouse; эти endpoints не участвуют в transactional command validation.
-- Реализовано сейчас: минимальный support-only `POST /api/v1/olap/export-retry` снимает retry/backoff state в PostgreSQL без raw payload и без synchronous ClickHouse write в request path.
-- Запланировано далее: промышленные backfill/operator jobs, sales/kitchen aggregates и costing-dependent COGS/margin.
+- sales/kitchen aggregates и costing-dependent COGS/margin.
 
 Запланировано далее:
 

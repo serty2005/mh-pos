@@ -378,7 +378,7 @@ erDiagram
 
 ### RefundRecorded / CancellationRecorded
 
-`RefundRecorded` и `CancellationRecorded` должны передавать disposition на уровне каждой возвращаемой строки.
+`RefundRecorded` и `CancellationRecorded` в текущем Cloud Worker используют operation-level `inventory_disposition`; `items` нужны как нормализованные строки для складского движения. Mixed-disposition сценарий должен быть разложен до однородных операций до попадания в worker.
 
 ```json
 {
@@ -386,27 +386,28 @@ erDiagram
   "operation_type": "refund",
   "check_id": "018f0000-0000-7000-8000-000000000001",
   "business_date_local": "2026-05-19",
+  "inventory_disposition": "return_to_stock",
   "recorded_at": "2026-05-19T14:00:00Z",
   "items": [
     {
       "order_line_id": "018f0000-0000-7000-8000-000000000010",
       "catalog_item_id": "018f0000-0000-7000-8000-000000000020",
       "quantity": "1.000",
-      "inventory_disposition": "return_to_stock",
+      "unit_code": "PC",
       "reason": "sealed_item_returned"
     },
     {
       "order_line_id": "018f0000-0000-7000-8000-000000000011",
       "catalog_item_id": "018f0000-0000-7000-8000-000000000021",
       "quantity": "1.000",
-      "inventory_disposition": "write_off_waste",
+      "unit_code": "PC",
       "reason": "guest_returned_open_food"
     }
   ]
 }
 ```
 
-Допустимые `inventory_disposition`: `return_to_stock`, `write_off_waste`, `no_stock_effect`.
+Допустимые operation-level `inventory_disposition`: `return_to_stock`, `write_off_waste`, `no_stock_effect`, `manual_review`.
 
 ### StopListUpdated
 
@@ -435,11 +436,12 @@ erDiagram
 1. `ItemServed` создает Cloud `StockDocument` типа `SALE` и `stock_ledger` rows с `source_event_type = ItemServed` и `order_line_id`.
 2. Replay того же `ItemServed` идемпотентен через уникальность `stock_documents(source_event_id, source_event_type)`.
 3. При повторной подаче после `recall` POS Edge отправляет новый `ItemServed` с `supersedes_served_event_id`; Cloud Worker пропускает superseded served fact, если superseding served fact уже есть в Cloud inbox до обработки очереди.
-4. При `CheckClosed` worker читает уже обработанные `ItemServed` quantities из `stock_ledger` по `restaurant_id` и `order_line_id`.
-5. Worker рассчитывает delta: `check_line_quantity - served_quantity`.
-6. Для delta больше нуля создается `StockDocument` типа `SALE`.
-7. Для delta равного нулю повторное списание не создается.
-8. Replay того же `CheckClosed` идемпотентен через тот же `source_event_id/source_event_type` guard.
+4. Если superseded `ItemServed` уже materialized в `stock_ledger`, новый superseding `ItemServed` создает append-only `ItemServedCompensation` `RETURN/IN`, затем новый `ItemServed` `SALE/OUT`; replay защищен уникальностью `stock_documents(source_event_id, source_event_type)`.
+5. При `CheckClosed` worker читает уже обработанные effective `ItemServed` quantities из `stock_ledger` по `restaurant_id` и `order_line_id`, учитывая `ItemServedCompensation`.
+6. Worker рассчитывает delta: `check_line_quantity - served_quantity`.
+7. Для delta больше нуля создается `StockDocument` типа `SALE`.
+8. Для delta равного нулю повторное списание не создается.
+9. Replay того же `CheckClosed` идемпотентен через тот же `source_event_id/source_event_type` guard.
 
 Запланировано далее:
 
@@ -485,13 +487,14 @@ erDiagram
 
 ## Refund And Cancellation Inventory Disposition
 
-При возврате или отмене менеджер принимает решение по каждой строке:
+При возврате или отмене менеджер выбирает operation-level disposition для текущей операции:
 
 - `return_to_stock` - Worker создает возвратное движение `IN`.
 - `write_off_waste` - Worker создает документ порчи/утиля `WASTE`.
 - `no_stock_effect` - Worker не создает складского движения.
+- `manual_review` - Worker не создает автоматическое движение и оставляет queue item в failure state для ручного разбора.
 
-Whole-check операции должны быть нормализованы до массива строк из immutable check snapshot до передачи в Inventory Worker. Нельзя использовать один общий disposition для всех строк, если оператор выбрал разные решения по позициям.
+Whole-check операции должны быть нормализованы до массива строк из immutable check snapshot до передачи в Inventory Worker. Если оператор выбрал разные решения по позициям, текущий backend slice требует разложить это в однородные операции или отдельную нормализацию до worker.
 
 ## Implementation Notes
 

@@ -605,6 +605,21 @@ func TestRunOnceNoStockEffectIsProcessedWithoutDocument(t *testing.T) {
 	}
 }
 
+func TestRunOnceManualReviewDispositionFailsWithoutStockDocument(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventRefundRecorded, financialOperationPayload(t, "refund", "manual_review"))}}
+	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 0 {
+		t.Fatalf("expected no document for manual review disposition, got %+v", repo.documents)
+	}
+	if reason := repo.failed["queue-1"]; !strings.Contains(reason, "manual_review") {
+		t.Fatalf("expected manual_review queue failure, got %+v", repo.failed)
+	}
+}
+
 func TestRunOnceMarksWholeCheckStockEffectWithoutItemsFailed(t *testing.T) {
 	repo := &fakeRepo{events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventRefundRecorded, financialOperationPayloadWithoutItems(t, "refund", "return_to_stock"))}}
 	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})

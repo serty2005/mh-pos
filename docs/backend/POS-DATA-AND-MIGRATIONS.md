@@ -245,11 +245,12 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 - Storage archive export сохраняет `financial_operations`, `financial_operation_items` и immutable snapshots как protected data в JSONL artifact без пересчета или мутации source rows.
 
 - Реализовано сейчас в Cloud: `cloud_projection_financial_operations` хранит текущие projections для `CancellationRecorded`/`RefundRecorded` из raw/journal receipt с operation/check/precheck/shift/date/type/disposition/reason/snapshot metadata. Текущая validation financial operation payload требует совпадение payload `restaurant_id`/`device_id` с envelope, `precheck_id`, `reason` и immutable snapshot. Legacy `PaymentRefunded`/`CheckRefunded` не заполняют эту detailed projection. Bounded `GET /api/v1/reporting/financial-operations` читает projection без raw sync payload и без snapshot JSON.
+- Реализовано сейчас в Cloud Inventory Worker: `RefundRecorded`/`CancellationRecorded` с нормализованными `items` и operation-level `inventory_disposition` создают append-only stock movements: `return_to_stock` -> `RETURN/IN`, `write_off_waste` -> `WASTE/OUT`, `no_stock_effect` -> без складского движения, `manual_review` -> failure queue item для ручного разбора. POS Edge не мутирует локальные stock tables и не меняет finalized payment/precheck/check.
 
 Не реализовано сейчас:
 
 - fiscal/correction document storage;
-- automatic inventory stock moves from `inventory_disposition`.
+- per-line mixed `inventory_disposition` внутри одного financial operation payload.
 
 ## POS Edge Local Storage Lifecycle
 
@@ -318,22 +319,19 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 - Edge inventory mutation tables удалены из целевой SQLite схемы.
 - Cloud Inventory Worker создает Cloud-owned stock documents and `stock_ledger` from Edge/KDS business events.
 - `CheckClosed` запускает batch delta consumption после сверки с `ItemServed`.
-- `RefundRecorded` и `CancellationRecorded` должны содержать operation-level `inventory_disposition`; отдельный `items[].inventory_disposition` в текущем payload не реализован.
+- `RefundRecorded` и `CancellationRecorded` содержат operation-level `inventory_disposition`; отдельный `items[].inventory_disposition` в текущем payload не используется worker для mixed-disposition операций.
 - UOM reference model with separate code/display fields remains запланировано далее.
 
 Запланировано далее:
 
-- `StopListUpdated` Edge edit flow и conflict policy для двустороннего Edge <-> Cloud overlay.
-- `ProductionCompleted` создает `PRODUCTION`: приход заготовки и расход сырья.
 - semi-finished fallback expansion.
 - costing recalculation.
-- агрегированные Cloud OLAP API поверх ClickHouse projections.
+- sales/kitchen/costing OLAP aggregates beyond current stock movement summary.
 
 Вне текущего runtime:
 
 - automatic recipe consumption after check;
-- automatic return-to-stock/write-off after cancellation/refund;
-- kitchen receipt/proposal/stop-list edit flows beyond `KitchenTicketStatusChanged`/`ItemServed`.
+- mixed-disposition financial operations без нормализации в несколько событий или строк текущего контракта.
 
 ## Migration Safety
 
