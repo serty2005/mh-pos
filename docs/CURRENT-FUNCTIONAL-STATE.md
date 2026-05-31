@@ -146,14 +146,14 @@
 - Просмотр безопасного списка входящих Edge events без raw payload, включая card/list fallback на narrow screens с metadata/checksum вместо raw event payload; resource lists на narrow screens показывают status label в карточке и не раскрывают raw payload.
 - Read-only раздел финансовых операций читает `GET /api/v1/reporting/financial-operations` и показывает projection `CancellationRecorded`/`RefundRecorded` с фильтрами по restaurant/date/type/shift/original shift/check без raw payload, PIN/token/request dump и без Cloud cashier commands.
 - Cloud-owned recipes и stop-list authoring через подтвержденные master-data routes; реализовано сейчас также bounded сценарный editor версий техкарт с draft, submit в `RecipeChangeSuggested`, approve/apply через Cloud authority и publication package.
-- Route-backed manager surfaces для catalog/recipe proposal review и Edge-origin stop-list update review: списки, detail/diff, approve/reject/request-changes и publication/feedback после approve; recipe version editor отправляет draft в эту же review queue; inventory readiness panel читает backend summary по publication/Edge ACK/sync problem counters и runtime таблицу `stock-balances`; stock documents, full costing engine и OLAP exports остаются без имитации отсутствующих Cloud routes.
+- Route-backed manager surfaces для catalog/recipe proposal review и Edge-origin stop-list update review: списки, detail/diff, approve/reject/request-changes и publication/feedback после approve; recipe version editor отправляет draft в эту же review queue; inventory readiness panel читает backend summary по publication/Edge ACK/sync problem counters и runtime таблицу `stock-balances`; `Sales/kitchen summary` читает bounded `GET /api/v1/olap/sales-kitchen-summary` как минимальный read-only table/card preview с фильтрами business date range, `group_by` и refresh; stock documents, full costing engine, OLAP export/status preview, retry/backfill controls и richer analytics остаются без имитации отсутствующих Cloud UI flows.
 - Локализованные сообщения, safe error details, no raw payload / PIN / token display; Cloud create/rotate PIN поля используют password input, а списки сотрудников показывают только `pin_configured` и credential version.
 
 Вне текущего объема:
 
 - Cashier runtime в Cloud UI.
 - Cloud auth/RBAC UI.
-- KDS runtime screens, PSP, fiscalization, delivery и cashier runtime в Cloud UI; inventory runtime actions и OLAP exports должны появиться в Cloud UI только после подтвержденных backend contracts.
+- KDS runtime screens, PSP, fiscalization, delivery и cashier runtime в Cloud UI; inventory runtime actions, OLAP exports/retry/backfill controls, BI dashboards, charts и COGS/margin аналитика остаются вне текущего объема Cloud UI.
 
 ## Данные и миграции
 

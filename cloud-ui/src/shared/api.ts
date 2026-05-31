@@ -20,6 +20,7 @@ import {
   pricingPolicySchema,
   recipeItemSchema,
   recipeVersionViewSchema,
+  salesKitchenSummaryItemSchema,
   recipeSuggestionSchema,
   stopListUpdateReviewSchema,
   assignDeviceResultSchema,
@@ -54,6 +55,7 @@ import {
   type PricingPolicy,
   type RecipeItem,
   type RecipeVersionView,
+  type SalesKitchenSummaryItem,
   type RecipeSuggestion,
   type StopListUpdateReview,
   type PublicationSummary,
@@ -549,6 +551,20 @@ export function listFinancialOperations(
   params.set('limit', String(filters.limit ?? 50));
   params.set('offset', String(filters.offset ?? 0));
   return request(`/reporting/financial-operations?${params.toString()}`, z.array(financialOperationReportItemSchema));
+}
+
+export function listSalesKitchenSummary(
+  restaurantId: string,
+  filters: { businessDateFrom?: string; businessDateTo?: string; groupBy?: string; limit?: number; offset?: number } = {},
+): Promise<SalesKitchenSummaryItem[]> {
+  const params = new URLSearchParams();
+  params.set('restaurant_id', restaurantId);
+  if (filters.businessDateFrom) params.set('business_date_from', filters.businessDateFrom);
+  if (filters.businessDateTo) params.set('business_date_to', filters.businessDateTo);
+  if (filters.groupBy) params.set('group_by', filters.groupBy);
+  params.set('limit', String(filters.limit ?? 50));
+  params.set('offset', String(filters.offset ?? 0));
+  return request(`/olap/sales-kitchen-summary?${params.toString()}`, z.array(salesKitchenSummaryItemSchema));
 }
 
 export function upsertStopListEntry(payload: Payload) {

@@ -18,12 +18,13 @@
 6. Manager-facing recipes и stop-list authoring по подтвержденным Cloud master-data routes.
 7. Route-backed manager review для catalog/recipe suggestions и Edge-origin stop-list updates, readiness-only поверхности для inventory operations/costing и OLAP exports без неподтвержденных команд.
 8. Read-only Cloud reporting по detailed financial operation projection для `CancellationRecorded`/`RefundRecorded`.
+9. Минимальный read-only preview bounded OLAP агрегата `sales-kitchen-summary`.
 
 запланировано далее:
 
 - вывести связи `catalog item -> menu item -> modifier bindings -> pricing policies` как единый сценарий подготовки продажи;
 - показывать версии опубликованного пакета и состояние доставки на Edge, когда backend подтвердит такой контракт.
-- до полного пилота превратить readiness-only manager surfaces для inventory operations, costing status, ClickHouse export readiness и OLAP API diagnostics в runtime только после появления подтвержденных Cloud backend routes;
+- до полного пилота превратить readiness-only manager surfaces для inventory operations, costing status, ClickHouse export readiness и OLAP API diagnostics в runtime только после появления подтвержденных Cloud backend routes; для `sales-kitchen-summary` реализован только bounded table preview без BI dashboard;
 
 вне текущего объема:
 
@@ -54,7 +55,7 @@
 - recipe items через `/api/v1/master-data/recipes/items`;
 - сценарный editor версий техкарт через `/api/v1/master-data/recipes/versions`, `/api/v1/master-data/recipes/versions/drafts`, `/api/v1/master-data/recipes/versions/{id}/submit`;
 - stop-list entries через `/api/v1/master-data/inventory/stop-list`;
-- route-backed раздел `Очередь предложений` для Cloud review workflow (`catalog-suggestions`/`recipe-suggestions`/`manager/stop-list-updates`) со списками catalog/recipe suggestions и Edge-origin stop-list updates, detail/diff view, approve/reject/request-changes actions, linked new dish + recipe group display и publication/readiness signal после approve; раздел `Готовность склада` читает `GET /api/v1/sync/readiness/stop-list` для safe stop-list/publication/Edge ACK/sync problem summary; OLAP exports остается readiness-only, хотя backend уже имеет bounded `GET /api/v1/olap/stock-moves`, `GET /api/v1/olap/stock-move-summary` и `GET /api/v1/olap/sales-kitchen-summary` без UI-превью в текущем scope;
+- route-backed раздел `Очередь предложений` для Cloud review workflow (`catalog-suggestions`/`recipe-suggestions`/`manager/stop-list-updates`) со списками catalog/recipe suggestions и Edge-origin stop-list updates, detail/diff view, approve/reject/request-changes actions, linked new dish + recipe group display и publication/readiness signal после approve; раздел `Готовность склада` читает `GET /api/v1/sync/readiness/stop-list` для safe stop-list/publication/Edge ACK/sync problem summary; OLAP exports остается readiness-only, а `Sales/kitchen summary` читает bounded `GET /api/v1/olap/sales-kitchen-summary` как минимальный table preview без raw payload;
 - halls и tables;
 - menu items;
 - menu category create как command-only операция, потому что list/update routes не подтверждены;
@@ -63,6 +64,7 @@
 - `GET /api/v1/restaurants/{id}/master-data/publication-state` возвращает `200 null` до первой публикации выбранного ресторана; Cloud UI трактует это как empty state панели публикации, а не как ошибку browser console;
 - отдельный раздел `События от Edge`, который читает `GET /api/v1/sync/edge-events` и показывает только безопасные receipt metadata/checksum без raw payload; на narrow screens таблица заменяется card/list fallback с теми же безопасными полями;
 - отдельный read-only раздел `Финансовые операции`, который читает `GET /api/v1/reporting/financial-operations` с фильтрами business date from/to, operation type, shift, original shift и check; UI показывает projection metadata/checksum без raw sync payload, snapshot JSON, PIN/token/request dump и без cashier mutations;
+- отдельный read-only раздел `Sales/kitchen summary`, который читает `GET /api/v1/olap/sales-kitchen-summary` с `restaurant_id`, `business_date_from`, `business_date_to`, `group_by`, `limit=50` и `offset=0`; UI показывает bounded table/card preview по безопасным aggregate fields (`group_by`, `group_key`, optional business date/event/source event/catalog item, counts, quantities, total movement minor amount и first/last timestamps) без raw payload, snapshot JSON, retry/backfill controls, графиков, BI dashboard и COGS/margin расчетов;
 - resource lists на narrow screens переходят с широких таблиц на карточки, где статус выводится тем же safe status label, а не raw payload или POS runtime detail.
 
 запланировано до полного пилота:
@@ -72,7 +74,7 @@
 - stop-list panel уже имеет bounded route-backed rows; `Готовность склада` показывает default conflict policy, async projection mode, publication/package metadata, latest Edge ACK metadata и sync problem counters без raw payload; Cloud review queue показывает safe Edge-origin stop-list update summary/diff и approve/reject/request-changes без raw payload. Production-grade assignment/escalation workflow остается запланирован далее;
 - реализовано сейчас: inventory readiness surface показывает route-backed `stock-balances` table из Cloud backend с фильтрами `warehouse_id`, `catalog_item_id`, `business_date_to`, `costing_status`, aggregate costing status и readiness signals stop-list без raw payload. Edge-side stock receipts, inventory counts, write-offs and production input are covered by `pos-ui-g` kitchen mode and Cloud ledger/balance read endpoints;
 - запланировано далее: stock documents table, full costing/recalculation operator workflow и inventory runtime actions в Cloud UI;
-- ClickHouse/OLAP workspace: backend уже имеет read-only export status, bounded stock moves, stock move summary и sales-kitchen summary; Cloud UI остается readiness-only без runtime preview, retry/backfill mutation controls и richer analytics в текущем scope;
+- ClickHouse/OLAP workspace: backend уже имеет read-only export status, bounded stock moves, stock move summary и sales-kitchen summary; Cloud UI реализовано сейчас показывает только минимальный read-only `sales-kitchen-summary` preview, а OLAP exports/status, stock moves, stock move summary, retry/backfill mutation controls и richer analytics остаются вне runtime preview в текущем scope;
 - launch readiness должен учитывать stop-list review и публикацию streams `recipes`/`stop_lists`;
 - publication panel показывает latest package version и target Edge node; latest known Edge ACK для stop-list отображается в readiness summary, package delivery ACK как отдельный contract остается запланирован далее;
 - Edge events/problem events panel должен показывать accepted/rejected/retryable metadata без raw payload.
@@ -111,6 +113,7 @@
 - Cloud UI показывает безопасные локализованные ошибки возле активного failed step с recovery action: retry, select restaurant или open related section; message key, support code, correlation id и безопасные details выводятся без raw payload, а подозрительные `payload`/`token`/`PIN`/`SQL`/`stack` details редактируются в UI;
 - раздел входящих Edge events выводит event metadata и checksum, но не показывает raw payload, sensitive request dumps или payload-derived финансовые details;
 - раздел финансовых операций выводит только read-only projection fields из Cloud reporting route; он не вызывает POS Edge endpoints, не создает Cloud cashier commands и не рассчитывает COGS/margin;
+- раздел `Sales/kitchen summary` выводит только безопасные aggregate fields из bounded Cloud OLAP route; он не вызывает POS Edge endpoints, не создает cashier commands, не показывает raw payload/request dump/snapshot JSON и не строит BI dashboard, charts, COGS или margin;
 - раздел `Очередь предложений` не выводит raw `payload_json`: detail/diff строится только по whitelist полям catalog proposal (`kind`, `name`, `sku`, `base_unit`, `kitchen_type`, `accounting_category`) и recipe proposal changes (`action`, `from_catalog_item_id`, `to_catalog_item_id`, `quantity`, `unit_code`, `loss_percent`); PIN/token/secret/request dump не отображаются;
 - approve/reject/request-changes формы отправляют только `reviewed_by_employee_id`, optional `review_comment` и optional `published_by`; после approve UI перечитывает `publication-state`, потому что apply/publish выполняет backend;
 - UX ориентиры полного пилота зафиксированы в `docs/ui/PILOT-UX-MARKET-REVIEW.md`; business workflows не должны требовать ручного ввода UUID/raw JSON для обычного менеджерского сценария;
@@ -154,7 +157,7 @@ Review command body:
 
 Для entities без подтвержденного `GET list` route UI показывает форму команды и поясняет, что list route не подтвержден.
 
-реализовано сейчас: API client покрывает bounded inventory balance view `GET /api/v1/inventory/stock-balances` и stop-list readiness. Запланировано до полного пилота: API client должен покрыть full costing/recalculation status, подтвержденные ClickHouse export status/stock move summary/`olap_stock_moves` preview endpoints и production-grade operator flows; UI не должен вызывать неподтвержденные mutating retry/backfill или BI endpoints до появления backend contract.
+реализовано сейчас: API client покрывает bounded inventory balance view `GET /api/v1/inventory/stock-balances`, stop-list readiness и минимальный bounded preview `GET /api/v1/olap/sales-kitchen-summary`. Запланировано до полного пилота: API client должен покрыть full costing/recalculation status, подтвержденные ClickHouse export status/stock move summary/`olap_stock_moves` preview endpoints и production-grade operator flows; UI не должен вызывать неподтвержденные mutating retry/backfill или BI endpoints до появления backend contract.
 
 ## Runtime Code
 

@@ -312,6 +312,25 @@ export const financialOperationReportItemSchema = z.object({
   raw_payload_sha256_hex: z.string(),
 });
 
+export const salesKitchenSummaryItemSchema = z.object({
+  group_by: z.enum(['business_date', 'event_type', 'source_event_type', 'catalog_item']),
+  group_key: z.string(),
+  business_date_local: z.string().optional().default(''),
+  event_type: z.string().optional().default(''),
+  source_event_type: z.string().optional().default(''),
+  catalog_item_id: z.string().optional().default(''),
+  event_count: z.number(),
+  stock_move_count: z.number(),
+  sale_event_count: z.number(),
+  kitchen_event_count: z.number(),
+  out_quantity: z.string(),
+  in_quantity: z.string(),
+  net_quantity: z.string(),
+  total_cost_minor: z.number(),
+  first_occurred_at: z.string().optional().default(''),
+  last_occurred_at: z.string().optional().default(''),
+});
+
 export const hallSchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
@@ -516,6 +535,7 @@ export type StopListEntry = z.infer<typeof stopListEntrySchema>;
 export type StopListReadiness = z.infer<typeof stopListReadinessSchema>;
 export type InventoryStockBalance = z.infer<typeof inventoryStockBalanceSchema>;
 export type FinancialOperationReportItem = z.infer<typeof financialOperationReportItemSchema>;
+export type SalesKitchenSummaryItem = z.infer<typeof salesKitchenSummaryItemSchema>;
 export type Hall = z.infer<typeof hallSchema>;
 export type RestaurantTable = z.infer<typeof tableSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;
