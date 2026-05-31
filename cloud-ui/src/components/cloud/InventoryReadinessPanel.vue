@@ -181,6 +181,7 @@ const gaps = [
   'cloud.readiness.inventory.gaps.review',
 ];
 async function refreshBalances() {
+  await props.ctx.loadStopListReadiness();
   await props.ctx.loadInventoryStockBalances({
     warehouseId: String(filters.warehouseId ?? '').trim(),
     catalogItemId: String(filters.catalogItemId ?? '').trim(),
