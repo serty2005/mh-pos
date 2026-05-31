@@ -1,4 +1,7 @@
 export const t = {
+  app: {
+    title: 'MyHoreca POS',
+  },
   common: {
     loading: 'Загрузка...',
     empty: 'Пусто',

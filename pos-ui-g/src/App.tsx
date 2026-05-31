@@ -30,7 +30,7 @@ import {
   QrCode,
   Monitor
 } from 'lucide-react';
-import { PosButton, PosIconButton, PosSelectableChip } from './shared/ui';
+import { PosBottomNav, PosButton, PosIconButton, PosSelectableChip } from './shared/ui';
 import type { POSSection } from './types';
 
 function POSAppShellContent() {
@@ -157,38 +157,26 @@ function POSAppShellContent() {
 
   const renderBottomNavigation = () => {
     if (currentMode === 'pos') {
-      return navItems.map((item) => {
-        const isActive = currentSection === item.id;
-        const Icon = item.icon;
-        return (
-          <ShellNavButton
-            key={item.id}
-            id={`nav-${item.id}`}
-            label={item.label}
-            icon={Icon}
-            active={isActive}
-            onClick={() => handleSectionSelect(item.id)}
-          />
-        );
-      });
+      return (
+        <PosBottomNav
+          items={[...navItems]}
+          activeId={currentSection}
+          idPrefix="nav"
+          onChange={(id) => handleSectionSelect(id as POSSection)}
+        />
+      );
     }
 
     if (currentMode === 'kds') {
-      return kdsNavItems.map((item) => {
-        const isActive = currentKdsSection === item.id;
-        const Icon = item.icon;
-        return (
-          <ShellNavButton
-            key={item.id}
-            id={`nav-kds-${item.id}`}
-            label={item.label}
-            icon={Icon}
-            active={isActive}
-            horizontal
-            onClick={() => setCurrentKdsSection(item.id)}
-          />
-        );
-      });
+      return (
+        <PosBottomNav
+          items={[...kdsNavItems]}
+          activeId={currentKdsSection}
+          idPrefix="nav-kds"
+          horizontal
+          onChange={(id) => setCurrentKdsSection(id as 'orders' | 'stock' | 'kitchen')}
+        />
+      );
     }
 
     return (
@@ -217,7 +205,7 @@ function POSAppShellContent() {
             icon={<Menu className="w-5 h-5" />}
           />
           
-          <h1 className="text-sm md:text-lg font-sans font-semibold tracking-normal text-[var(--pos-text-secondary)] mr-1 shrink-0">MyHoreca POS</h1>
+          <h1 className="text-sm md:text-lg font-sans font-semibold tracking-normal text-[var(--pos-text-secondary)] mr-1 shrink-0">{t.app.title}</h1>
           <div className="h-6 w-px bg-[var(--pos-border)] hidden sm:block"></div>
           
           <div className="hidden sm:flex flex-col">
@@ -284,9 +272,7 @@ function POSAppShellContent() {
 
       {/* 3. Bottom quick access navigation bar */}
       <footer className="h-14 border-t border-[var(--pos-border)] bg-[var(--pos-surface)] flex items-center justify-between select-none shrink-0 select-none">
-        <div className="flex w-full divide-x divide-[var(--pos-border)] h-full overflow-hidden">
-          {renderBottomNavigation()}
-        </div>
+        {renderBottomNavigation()}
       </footer>
 
       {/* 4. Collapsible side section menu drawers overlay */}
@@ -458,41 +444,6 @@ function POSAppShellContent() {
 type TerminalMode = 'pos' | 'kds' | 'waiter' | 'delivery';
 
 type ShellIcon = React.ComponentType<{ className?: string }>;
-interface ShellNavButtonProps {
-  id: string;
-  label: string;
-  icon: ShellIcon;
-  active: boolean;
-  horizontal?: boolean;
-  onClick: () => void;
-  key?: React.Key;
-}
-
-function ShellNavButton({
-  id,
-  label,
-  icon: Icon,
-  active,
-  horizontal = false,
-  onClick,
-}: ShellNavButtonProps) {
-  return (
-    <button
-      id={id}
-      type="button"
-      onClick={onClick}
-      className={`flex-1 h-full font-mono text-center flex ${horizontal ? 'flex-row' : 'flex-col md:flex-row'} items-center justify-center gap-1.5 border-t-2 select-none whitespace-nowrap cursor-pointer transition-colors ${
-        active
-          ? 'bg-[var(--pos-surface-raised)] border-t-[var(--pos-action-primary)] text-[var(--pos-text-primary)] font-black'
-          : 'bg-transparent border-t-transparent text-[var(--pos-text-muted)] hover:text-[var(--pos-text-primary)]'
-      }`}
-    >
-      <Icon className={`w-4 h-4 md:w-5 md:h-5 shrink-0 ${active ? 'text-[var(--pos-text-primary)]' : 'text-[var(--pos-text-muted)]'}`} />
-      <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest">{label}</span>
-    </button>
-  );
-}
-
 interface ShellDrawerButtonProps {
   id: string;
   label: string;

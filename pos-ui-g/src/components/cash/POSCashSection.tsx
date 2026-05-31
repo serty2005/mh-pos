@@ -9,7 +9,8 @@ import {
   PosActionRail,
   PosFormRow,
   PosBanner,
-  PosStatusBadge
+  PosInlineStatusBadge,
+  PosRailHeader
 } from '../../shared/ui';
 import { 
   CashDrawerEventDialog 
@@ -230,9 +231,9 @@ export const POSCashSection: React.FC = () => {
                 <div key={evt.id} id={`drawer-log-item-${evt.id}`} className="p-3 flex items-center justify-between text-xs hover:bg-[var(--pos-surface-raised)]/30 transition-colors">
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
-                      <PosStatusBadge variant={evt.type === 'in' ? 'success' : 'danger'}>
+                      <PosInlineStatusBadge variant={evt.type === 'in' ? 'success' : 'danger'}>
                         {evt.type === 'in' ? t.cash.drawerIn : t.cash.drawerOut}
-                      </PosStatusBadge>
+                      </PosInlineStatusBadge>
                       <span className="font-sans font-semibold text-[var(--pos-text-secondary)]">
                         {evt.reason}
                       </span>
@@ -256,11 +257,7 @@ export const POSCashSection: React.FC = () => {
       {/* 1/4 Column actions and diagnostics list panel */}
       <div className="w-full lg:w-[320px] shrink-0">
         <PosActionRail className="h-full">
-          <div className="h-14 border-b border-[var(--pos-border)] px-4 flex items-center justify-between bg-[var(--pos-surface-raised)] select-none shrink-0">
-            <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--pos-text-secondary)]">
-              {t.cash.tools}
-            </span>
-          </div>
+          <PosRailHeader title={t.cash.tools} />
 
           {/* Call register cash event */}
           <div className="p-4 border-b border-[var(--pos-border)] bg-[var(--pos-surface-raised)]/10 select-none space-y-3">

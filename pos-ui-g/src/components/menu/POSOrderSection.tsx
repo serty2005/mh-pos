@@ -11,7 +11,11 @@ import {
   PosStatusStrip,
   PosDialog,
   PosIconButton,
+  PosInlineStatusBadge,
+  PosRailHeader,
   PosSearchInput,
+  PosSegmentedControl,
+  PosSelectableTile,
   PosSelectableChip
 } from '../../shared/ui';
 import { 
@@ -184,22 +188,14 @@ export const POSOrderSection: React.FC = () => {
         <div className="border-b border-[var(--pos-border)] bg-[var(--pos-surface)] p-3 md:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
           
           {/* Swaps */}
-          <div className="flex gap-1.5 overflow-x-auto pos-scrollbar-thin pb-1 sm:pb-0">
-            {categories.map((cat) => {
-              const active = cat.id === activeCategory;
-              return (
-                <PosSelectableChip
-                  key={cat.id}
-                  id={`cat-chip-${cat.id}`}
-                  active={active}
-                  onClick={() => handleCategoryChange(cat.id)}
-                  className="px-6 font-extrabold"
-                >
-                  {cat.label}
-                </PosSelectableChip>
-              );
-            })}
-          </div>
+          <PosSegmentedControl
+            items={categories}
+            activeId={activeCategory}
+            onChange={handleCategoryChange}
+            idPrefix="cat-chip"
+            className="pb-1 sm:pb-0"
+            itemClassName="px-6 font-extrabold"
+          />
 
           {/* Search Bar Input */}
           <PosSearchInput
@@ -263,7 +259,7 @@ export const POSOrderSection: React.FC = () => {
                 const hasModifiers = item.modifierGroups && item.modifierGroups.length > 0;
                 
                 return (
-                  <button
+                  <PosSelectableTile
                     key={item.id}
                     id={`menu-tile-${item.id}`}
                     onClick={() => handleItemTileClick(item)}
@@ -284,22 +280,22 @@ export const POSOrderSection: React.FC = () => {
                         {item.price} ₽
                       </span>
                       {hasModifiers && isAvailable && (
-                        <span className="font-mono text-[9px] uppercase font-bold tracking-widest text-[var(--pos-text-muted)] border border-[var(--pos-border)] px-1 relative bg-[var(--pos-surface)] shrink-0">
+                        <PosInlineStatusBadge variant="neutral" className="text-[9px] px-1 py-0 relative bg-[var(--pos-surface)] shrink-0">
                           {t.menu.modifierShort}
-                        </span>
+                        </PosInlineStatusBadge>
                       )}
                       {!isAvailable && (
-                        <span className="font-mono text-[8px] uppercase font-mono px-1 border border-red-500 text-red-500 font-bold shrink-0 bg-white">
+                        <PosInlineStatusBadge variant="danger" className="text-[8px] px-1 py-0 shrink-0 bg-white">
                           ×
-                        </span>
+                        </PosInlineStatusBadge>
                       )}
                       {item.stopListActive && !item.stopListBlocked && item.stopListAvailableQuantity !== undefined && (
-                        <span className="font-mono text-[8px] uppercase px-1 border border-amber-500 text-amber-600 font-bold shrink-0 bg-white">
+                        <PosInlineStatusBadge variant="warning" className="text-[8px] px-1 py-0 shrink-0 bg-white">
                           {t.menu.stopListQty}: {item.stopListAvailableQuantity}
-                        </span>
+                        </PosInlineStatusBadge>
                       )}
                     </div>
-                  </button>
+                  </PosSelectableTile>
                 );
               })}
             </div>
@@ -312,16 +308,14 @@ export const POSOrderSection: React.FC = () => {
         <PosActionRail className="h-full">
           
           {/* Header descriptor */}
-          <div className="h-14 border-b border-[var(--pos-border)] px-4 flex items-center justify-between bg-[var(--pos-surface-raised)] select-none shrink-0">
-            <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--pos-text-secondary)]">
-              {currentOrder ? `${currentOrder.tableName} (${t.common.order} #${currentOrder.shortId})` : t.menu.currentOrder}
-            </span>
-            {currentOrder?.status === 'precheck_issued' && (
-              <span className="font-mono bg-[var(--pos-status-warning)] text-zinc-950 font-bold text-[9px] uppercase px-1.5 py-0.5 animate-pulse">
+          <PosRailHeader
+            title={currentOrder ? `${currentOrder.tableName} (${t.common.order} #${currentOrder.shortId})` : t.menu.currentOrder}
+            badge={currentOrder?.status === 'precheck_issued' ? (
+              <PosInlineStatusBadge variant="warning" className="text-[9px] px-1.5 py-0.5 animate-pulse bg-[var(--pos-status-warning)] text-zinc-950">
                 {t.status.locked}
-              </span>
-            )}
-          </div>
+              </PosInlineStatusBadge>
+            ) : undefined}
+          />
 
           {/* Lines iterator */}
           <div className="flex-1 pos-scrollarea-y pos-scrollbar-thin overflow-y-auto">
@@ -653,17 +647,18 @@ function PricingPolicyDialog({
             {policies.map((policy) => {
               const active = policy.id === selectedPolicyId;
               return (
-                <button
+                <PosSelectableTile
                   key={policy.id}
                   type="button"
                   onClick={() => onPolicyChange(policy.id)}
+                  active={active}
                   className={`p-3 border text-left rounded-none ${active ? 'bg-[var(--pos-action-primary)] text-[var(--pos-surface)] border-[var(--pos-action-primary)]' : 'bg-[var(--pos-surface)] border-[var(--pos-border)] text-[var(--pos-text-primary)]'}`}
                 >
                   <span className="font-sans text-sm font-bold block">{policy.name}</span>
                   <span className="font-mono text-[10px] uppercase opacity-80">
                     {policy.kind === 'discount' ? t.pricing.discount : t.pricing.surcharge} · {policy.scope === 'line' ? t.pricing.lineScope : t.pricing.orderScope} · {policy.amountKind === 'percentage' ? `${policy.valueBasisPoints / 100}%` : `${policy.amount} ₽`}
                   </span>
-                </button>
+                </PosSelectableTile>
               );
             })}
           </div>

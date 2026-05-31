@@ -175,6 +175,104 @@ export const PosSearchInput: React.FC<PosSearchInputProps> = ({
   );
 };
 
+interface PosBottomNavItem {
+  id: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  badge?: string | number;
+  disabled?: boolean;
+}
+
+interface PosBottomNavProps {
+  items: PosBottomNavItem[];
+  activeId: string;
+  onChange: (id: string) => void;
+  idPrefix?: string;
+  horizontal?: boolean;
+  className?: string;
+}
+
+export const PosBottomNav: React.FC<PosBottomNavProps> = ({
+  items,
+  activeId,
+  onChange,
+  idPrefix = 'nav',
+  horizontal = false,
+  className = '',
+}) => {
+  return (
+    <div className={`flex w-full divide-x divide-[var(--pos-border)] h-full overflow-hidden ${className}`}>
+      {items.map((item) => {
+        const active = item.id === activeId;
+        const Icon = item.icon;
+        return (
+          <button
+            key={item.id}
+            id={`${idPrefix}-${item.id}`}
+            type="button"
+            disabled={item.disabled}
+            onClick={() => onChange(item.id)}
+            className={`flex-1 h-full font-mono text-center flex ${horizontal ? 'flex-row' : 'flex-col md:flex-row'} items-center justify-center gap-1.5 border-t-2 select-none whitespace-nowrap cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+              active
+                ? 'bg-[var(--pos-surface-raised)] border-t-[var(--pos-action-primary)] text-[var(--pos-text-primary)] font-black'
+                : 'bg-transparent border-t-transparent text-[var(--pos-text-muted)] hover:text-[var(--pos-text-primary)]'
+            }`}
+          >
+            <Icon className={`w-4 h-4 md:w-5 md:h-5 shrink-0 ${active ? 'text-[var(--pos-text-primary)]' : 'text-[var(--pos-text-muted)]'}`} />
+            <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest">{item.label}</span>
+            {item.badge !== undefined && (
+              <span className="ml-1 text-[8px] border border-amber-500 text-amber-600 px-1 uppercase">
+                {item.badge}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+interface PosSegmentedControlItem {
+  id: string;
+  label: React.ReactNode;
+  disabled?: boolean;
+}
+
+interface PosSegmentedControlProps {
+  items: PosSegmentedControlItem[];
+  activeId: string;
+  onChange: (id: string) => void;
+  idPrefix?: string;
+  className?: string;
+  itemClassName?: string;
+}
+
+export const PosSegmentedControl: React.FC<PosSegmentedControlProps> = ({
+  items,
+  activeId,
+  onChange,
+  idPrefix = 'segment',
+  className = '',
+  itemClassName = '',
+}) => {
+  return (
+    <div className={`flex gap-1.5 overflow-x-auto pos-scrollbar-thin ${className}`}>
+      {items.map((item) => (
+        <PosSelectableChip
+          key={item.id}
+          id={`${idPrefix}-${item.id}`}
+          active={item.id === activeId}
+          disabled={item.disabled}
+          onClick={() => onChange(item.id)}
+          className={itemClassName}
+        >
+          {item.label}
+        </PosSelectableChip>
+      ))}
+    </div>
+  );
+};
+
 interface PosStatusBadgeProps {
   children: React.ReactNode;
   variant?: 'success' | 'warning' | 'danger' | 'neutral' | 'info';
@@ -198,6 +296,90 @@ export const PosStatusBadge: React.FC<PosStatusBadgeProps> = ({
     <span className={`px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase rounded-none ${styles[variant]} ${className}`}>
       {children}
     </span>
+  );
+};
+
+interface PosInlineStatusBadgeProps {
+  children: React.ReactNode;
+  variant?: 'success' | 'warning' | 'danger' | 'neutral' | 'info';
+  className?: string;
+}
+
+export const PosInlineStatusBadge: React.FC<PosInlineStatusBadgeProps> = ({
+  children,
+  variant = 'neutral',
+  className = '',
+}) => {
+  const styles = {
+    success: 'border-[var(--pos-status-success)] text-[var(--pos-status-success)] bg-emerald-50/10',
+    warning: 'border-[var(--pos-status-warning)] text-amber-700 dark:text-amber-300 bg-amber-50/10',
+    danger: 'border-[var(--pos-status-danger)] text-[var(--pos-status-danger)] bg-red-50/10',
+    neutral: 'border-[var(--pos-border)] text-[var(--pos-text-secondary)] bg-[var(--pos-action-secondary)]',
+    info: 'border-[var(--pos-status-info)] text-[var(--pos-status-info)] bg-blue-50/10',
+  };
+
+  return (
+    <span className={`inline-flex items-center border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider rounded-none ${styles[variant]} ${className}`}>
+      {children}
+    </span>
+  );
+};
+
+interface PosSelectableTileProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  active?: boolean;
+  title?: React.ReactNode;
+  subtitle?: React.ReactNode;
+  value?: React.ReactNode;
+  status?: React.ReactNode;
+  statusVariant?: 'success' | 'warning' | 'danger' | 'neutral' | 'info';
+  leading?: React.ReactNode;
+  trailing?: React.ReactNode;
+  children?: React.ReactNode;
+}
+
+export const PosSelectableTile: React.FC<PosSelectableTileProps> = ({
+  active = false,
+  disabled = false,
+  title,
+  subtitle,
+  value,
+  status,
+  statusVariant = 'neutral',
+  leading,
+  trailing,
+  children,
+  className = '',
+  ...props
+}) => {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      disabled={disabled}
+      className={`w-full text-left border rounded-none cursor-pointer select-none transition-all focus:ring-2 focus:ring-[var(--pos-focus-ring)] outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
+        active
+          ? 'bg-[var(--pos-selected-order)] border-l-4 border-l-[var(--pos-action-primary)] border-[var(--pos-border)] text-[var(--pos-text-primary)]'
+          : 'bg-[var(--pos-surface)] border-[var(--pos-border)] text-[var(--pos-text-primary)] hover:bg-[var(--pos-surface-raised)] hover:border-[var(--pos-border-strong)]'
+      } ${className}`}
+      {...props}
+    >
+      {children ?? (
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            {leading && <span className="shrink-0">{leading}</span>}
+            <div className="min-w-0">
+              {title && <span className="font-sans text-sm font-semibold text-[var(--pos-text-primary)] truncate block">{title}</span>}
+              {subtitle && <span className="font-mono text-[10px] text-[var(--pos-text-muted)] uppercase tracking-wider truncate block mt-0.5">{subtitle}</span>}
+            </div>
+          </div>
+          <div className="shrink-0 flex items-center gap-2">
+            {value && <span className="font-mono text-sm font-bold text-[var(--pos-text-primary)]">{value}</span>}
+            {status && <PosInlineStatusBadge variant={statusVariant}>{status}</PosInlineStatusBadge>}
+            {trailing}
+          </div>
+        </div>
+      )}
+    </button>
   );
 };
 
@@ -306,6 +488,32 @@ export const PosSectionHeader: React.FC<PosSectionHeaderProps> = ({
         )}
       </div>
       {actions && <div className="flex gap-2 shrink-0">{actions}</div>}
+    </div>
+  );
+};
+
+interface PosRailHeaderProps {
+  title: React.ReactNode;
+  badge?: React.ReactNode;
+  actions?: React.ReactNode;
+  className?: string;
+}
+
+export const PosRailHeader: React.FC<PosRailHeaderProps> = ({
+  title,
+  badge,
+  actions,
+  className = '',
+}) => {
+  return (
+    <div className={`h-14 border-b border-[var(--pos-border)] px-4 flex items-center justify-between bg-[var(--pos-surface-raised)] select-none shrink-0 ${className}`}>
+      <div className="min-w-0 flex items-center gap-2">
+        <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--pos-text-secondary)] truncate">
+          {title}
+        </span>
+        {badge && <span className="shrink-0">{badge}</span>}
+      </div>
+      {actions && <div className="shrink-0 flex items-center gap-2">{actions}</div>}
     </div>
   );
 };

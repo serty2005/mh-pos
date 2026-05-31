@@ -7,7 +7,9 @@ import {
   PosEmptyState, 
   PosQuantityStepper, 
   PosActionRail,
-  PosStatusBadge,
+  PosInlineStatusBadge,
+  PosRailHeader,
+  PosSelectableTile,
   PosTabs
 } from '../../shared/ui';
 import { Armchair, Users, Plus, ReceiptText } from 'lucide-react';
@@ -92,7 +94,7 @@ export const POSFloorSection: React.FC = () => {
                 const isActiveOrder = table.status === 'occupied';
                 
                 return (
-                  <button
+                  <PosSelectableTile
                     key={table.id}
                     id={`table-card-${table.id}`}
                     onClick={() => handleTableClick(table.id)}
@@ -134,7 +136,7 @@ export const POSFloorSection: React.FC = () => {
                         </span>
                       )}
                     </div>
-                  </button>
+                  </PosSelectableTile>
                 );
               })}
             </div>
@@ -143,12 +145,9 @@ export const POSFloorSection: React.FC = () => {
       </div>
 
       {/* 1/4 Column Right Rail: Active Orders list view */}
-      <div className="w-full lg:w-[320px] border-t lg:border-t-0 border-l border-[var(--pos-border)] bg-[var(--pos-surface)] flex flex-col min-h-0 select-none shrink-0">
-        <div className="h-14 border-b border-[var(--pos-border)] px-4 flex items-center bg-[var(--pos-surface-raised)] select-none shrink-0">
-          <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--pos-text-secondary)]">
-            {t.floor.activeOrders} ({activeOrders.length})
-          </span>
-        </div>
+      <div className="w-full lg:w-[320px] shrink-0">
+        <PosActionRail className="h-full border-t lg:border-t-0">
+        <PosRailHeader title={`${t.floor.activeOrders} (${activeOrders.length})`} />
 
         <div className="flex-1 pos-scrollarea-y pos-scrollbar-thin overflow-y-auto">
           {activeOrders.length === 0 ? (
@@ -159,7 +158,7 @@ export const POSFloorSection: React.FC = () => {
           ) : (
             <div className="divide-y divide-[var(--pos-border)]">
               {activeOrders.map((ord) => (
-                <button
+                <PosSelectableTile
                   key={ord.id}
                   id={`active-order-item-${ord.id}`}
                   onClick={() => ord.tableId && handleActiveOrderClick(ord.tableId)}
@@ -175,15 +174,16 @@ export const POSFloorSection: React.FC = () => {
                   </div>
                   <div className="flex items-center justify-between font-mono text-[10px] text-[var(--pos-text-muted)]">
                     <span>{ord.openedAt} • {ord.lines.length} {t.floor.positionsShort}</span>
-                    <PosStatusBadge variant={ord.status === 'precheck_issued' ? 'warning' : 'info'}>
+                    <PosInlineStatusBadge variant={ord.status === 'precheck_issued' ? 'warning' : 'info'}>
                       {ord.status === 'precheck_issued' ? t.status.precheck_issued : t.status.open}
-                    </PosStatusBadge>
+                    </PosInlineStatusBadge>
                   </div>
-                </button>
+                </PosSelectableTile>
               ))}
             </div>
           )}
         </div>
+        </PosActionRail>
       </div>
 
       {/* Guests guest count numeric picker Modal dialog */}

@@ -12,9 +12,9 @@ import {
 } from 'lucide-react';
 
 import { usePOS } from '../../context/POSContext';
-import { ApiError, createApiClient, type KitchenTicketAction } from '../../shared/api';
+import { createApiClient, type KitchenTicketAction } from '../../shared/api';
 import { t } from '../../shared/i18n';
-import { PosBanner, PosButton, PosEmptyState, PosFormRow, PosSectionHeader, PosSkeleton, PosTabs } from '../../shared/ui';
+import { PosBanner, PosButton, PosEmptyState, PosFormRow, PosInlineStatusBadge, PosSearchInput, PosSectionHeader, PosSelectableTile, PosSkeleton, PosTabs } from '../../shared/ui';
 import type {
   BackendCatalogItem,
   BackendKitchenOrderQueueItem,
@@ -23,61 +23,45 @@ import type {
   BackendKitchenStopListState,
   BackendKitchenTicket,
 } from '../../shared/schemas';
+import {
+  actionLabel,
+  activeOrderStatuses,
+  catalogKind,
+  catalogKindLabel,
+  catalogKinds,
+  catalogUnit,
+  createInitialStockForm,
+  createRecipeChange,
+  formatDateTime,
+  formatMinutes,
+  getRecipeIngredients,
+  isPositiveDecimal,
+  localizedError,
+  orderStatusLabel,
+  proposalKindLabel,
+  proposalStatusLabel,
+  readyOrderStatuses,
+  recipeActionLabel,
+  recipeSuggestionActions,
+  safeNumber,
+  selectedRecipeVersionId,
+  stopListActionLabel,
+  stopListActions,
+  stopListSyncLabel,
+  ticketStatusLabel,
+  type CatalogKindFilter,
+  type CatalogSuggestionState,
+  type RecipeSuggestionAction,
+  type RecipeSuggestionState,
+  type StockFormState,
+  type StopListAction,
+  type StopListFormState,
+} from './kitchenHelpers';
 
 type KitchenBottomSection = 'orders' | 'stock' | 'kitchen';
 type OrdersTab = 'queue' | 'ready';
 type StockTab = 'receipt' | 'count' | 'writeoff' | 'production';
 type KitchenTab = 'recipes' | 'suggestions' | 'stop_list' | 'my_proposals';
-type CatalogKindFilter = 'all' | 'dish' | 'good' | 'semi_finished' | 'service';
-type StopListAction = 'stop' | 'resume';
-type RecipeSuggestionAction =
-  | 'change_prep_time'
-  | 'add_ingredient'
-  | 'remove_ingredient'
-  | 'replace_ingredient'
-  | 'change_quantity'
-  | 'change_loss_percent';
-
-type StockFormState = {
-  itemId: string;
-  quantity: string;
-  unitCode: string;
-  supplierName: string;
-  documentNumber: string;
-  documentDate: string;
-  businessDate: string;
-  unitCostMinor: string;
-  lineTotalMinor: string;
-  reasonCode: string;
-  reason: string;
-};
-
-type CatalogSuggestionState = {
-  kind: 'dish' | 'good' | 'semi_finished' | 'service';
-  name: string;
-  sku: string;
-  baseUnit: string;
-  kitchenType: string;
-  accountingCategory: string;
-  reason: string;
-};
-
-type RecipeSuggestionState = {
-  action: RecipeSuggestionAction;
-  lineId: string;
-  ingredientItemId: string;
-  quantity: string;
-  unitCode: string;
-  lossPercent: string;
-  prepTimeDeltaMinutes: string;
-  reason: string;
-};
-
-type StopListFormState = {
-  itemId: string;
-  action: StopListAction;
-  reason: string;
-};
 
 const orderActions: Record<string, KitchenTicketAction[]> = {
   new: ['accept', 'cancel'],
@@ -88,167 +72,6 @@ const orderActions: Record<string, KitchenTicketAction[]> = {
   served: ['recall'],
   recall: ['start', 'cancel'],
 };
-
-const activeOrderStatuses = ['queued', 'accepted', 'in_progress', 'partially_ready', 'mixed'];
-const readyOrderStatuses = ['ready', 'partially_ready', 'partially_served'];
-const catalogKinds: CatalogKindFilter[] = ['all', 'dish', 'good', 'semi_finished', 'service'];
-const recipeSuggestionActions: RecipeSuggestionAction[] = [
-  'change_prep_time',
-  'add_ingredient',
-  'remove_ingredient',
-  'replace_ingredient',
-  'change_quantity',
-  'change_loss_percent',
-];
-const stopListActions: StopListAction[] = ['stop', 'resume'];
-
-function todayLocalDate() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function createInitialStockForm(): StockFormState {
-  const today = todayLocalDate();
-  return {
-    itemId: '',
-    quantity: '1.000',
-    unitCode: 'KG',
-    supplierName: '',
-    documentNumber: '',
-    documentDate: today,
-    businessDate: today,
-    unitCostMinor: '0',
-    lineTotalMinor: '0',
-    reasonCode: 'manual',
-    reason: '',
-  };
-}
-
-function catalogKind(item: BackendCatalogItem) {
-  return (item.type || item.kind || item.item_type || '').toLowerCase();
-}
-
-function catalogUnit(item: BackendCatalogItem | undefined, fallback = 'KG') {
-  return item?.base_unit || fallback;
-}
-
-function catalogKindLabel(kind: string) {
-  switch (kind) {
-    case 'dish':
-      return t.kitchen.itemKindDish;
-    case 'good':
-      return t.kitchen.itemKindGood;
-    case 'semi_finished':
-      return t.kitchen.itemKindSemiFinished;
-    case 'service':
-      return t.kitchen.itemKindService;
-    default:
-      return kind || t.common.none;
-  }
-}
-
-function localizedError(error: unknown) {
-  if (error instanceof Error && error.message === 'validation') return t.errors.validation;
-  if (!(error instanceof ApiError)) return t.errors.unknown;
-  switch (error.messageKey) {
-    case 'errors.validation':
-      return t.errors.validation;
-    case 'errors.permission':
-      return t.errors.noPermission;
-    case 'errors.not_found':
-      return t.errors.notFound;
-    case 'errors.conflict':
-      return t.errors.conflict;
-    case 'errors.rateLimit':
-      return t.errors.rateLimit;
-    case 'errors.server':
-      return t.errors.server;
-    case 'errors.session.required':
-      return t.errors.sessionRequired;
-    case 'errors.network.unavailable':
-      return t.errors.networkUnavailable;
-    case 'errors.network.timeout':
-      return t.errors.networkTimeout;
-    case 'errors.response.invalid':
-      return t.errors.invalidResponse;
-    default:
-      return t.errors.unknown;
-  }
-}
-
-function formatMinutes(seconds: number) {
-  return `${Math.max(0, Math.floor(seconds / 60))} ${t.kitchen.minutes}`;
-}
-
-function formatDateTime(value = '') {
-  if (!value) return t.common.none;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-}
-
-function proposalStatusLabel(status: string) {
-  return t.kitchen.proposalStatus[status as keyof typeof t.kitchen.proposalStatus] ?? status;
-}
-
-function proposalKindLabel(kind: string) {
-  return t.kitchen.proposalKind[kind as keyof typeof t.kitchen.proposalKind] ?? kind;
-}
-
-function ticketStatusLabel(status: string) {
-  return t.kitchen.ticketStatus[status as keyof typeof t.kitchen.ticketStatus] ?? status;
-}
-
-function orderStatusLabel(status: string) {
-  return t.kitchen.orderStatus[status as keyof typeof t.kitchen.orderStatus] ?? status;
-}
-
-function actionLabel(action: KitchenTicketAction) {
-  return t.kitchen.actions[action];
-}
-
-function recipeActionLabel(action: RecipeSuggestionAction) {
-  return t.kitchen.recipeActions[action];
-}
-
-function stopListActionLabel(action: StopListAction) {
-  return t.kitchen.stopListActions[action];
-}
-
-function stopListSyncLabel(state: string) {
-  return t.kitchen.stopListSync[state as keyof typeof t.kitchen.stopListSync] ?? state;
-}
-
-function safeNumber(value: string) {
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function isPositiveDecimal(value: string) {
-  return Number.parseFloat(value) > 0;
-}
-
-function getRecipeIngredients(recipe: BackendKitchenRecipe | null) {
-  if (!recipe) return [];
-  return recipe.ingredients.length > 0 ? recipe.ingredients : recipe.lines;
-}
-
-function selectedRecipeVersionId(recipe: BackendKitchenRecipe | null) {
-  return recipe?.recipe_version_id || recipe?.recipe_version?.id || '';
-}
-
-function createRecipeChange(state: RecipeSuggestionState) {
-  if (state.action === 'change_prep_time') return [];
-  const change: Record<string, string> = { action: state.action };
-  if (state.lineId) change.line_id = state.lineId;
-  if (state.ingredientItemId) {
-    if (state.action === 'replace_ingredient') change.to_catalog_item_id = state.ingredientItemId;
-    if (state.action === 'add_ingredient') change.to_catalog_item_id = state.ingredientItemId;
-  }
-  if (state.quantity) change.quantity = state.quantity;
-  if (state.unitCode) change.unit_code = state.unitCode;
-  if (state.lossPercent) change.loss_percent = state.lossPercent;
-  return [change];
-}
 
 export function POSKitchenSection({ section }: { section: KitchenBottomSection }) {
   const { authSnapshot } = usePOS();
@@ -752,9 +575,9 @@ function OrderTile({
             {order.table_name || order.edge_order_id || order.order_id || t.kitchen.tableFallback}
           </h3>
         </div>
-        <span className="shrink-0 border border-[var(--pos-border-strong)] px-2 py-1 font-mono text-[10px] font-bold uppercase text-[var(--pos-text-secondary)]">
+        <PosInlineStatusBadge variant="neutral" className="shrink-0">
           {orderStatusLabel(order.kitchen_order_status)}
-        </span>
+        </PosInlineStatusBadge>
       </div>
 
       <div className="grid grid-cols-3 border-b border-[var(--pos-border)] divide-x divide-[var(--pos-border)]">
@@ -811,9 +634,9 @@ function TicketRow({
             <div className="mt-1 text-xs text-[var(--pos-text-secondary)] break-words">{ticket.comment}</div>
           )}
         </div>
-        <span className="shrink-0 bg-[var(--pos-action-secondary)] border border-[var(--pos-border)] px-2 py-1 font-mono text-[10px] font-bold uppercase text-[var(--pos-text-secondary)]">
+        <PosInlineStatusBadge variant="neutral" className="shrink-0">
           {ticketStatusLabel(ticket.status)}
-        </span>
+        </PosInlineStatusBadge>
       </div>
       {actions.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -854,15 +677,13 @@ function CatalogPicker({
   return (
     <div className="border border-[var(--pos-border)] bg-[var(--pos-surface)] min-h-[420px] flex flex-col">
       <div className="p-4 border-b border-[var(--pos-border)] grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-        <label className="relative block">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--pos-text-muted)]" />
-          <input
-            className="h-12 w-full border border-[var(--pos-border)] bg-[var(--pos-surface-raised)] pl-10 pr-3 text-sm outline-none focus:ring-2 focus:ring-[var(--pos-focus-ring)]"
-            value={search}
-            onChange={(event) => onSearch(event.target.value)}
-            placeholder={t.kitchen.searchCatalog}
-          />
-        </label>
+        <PosSearchInput
+          id="kitchen-catalog-search-input"
+          value={search}
+          onChange={onSearch}
+          placeholder={t.kitchen.searchCatalog}
+          clearLabel={t.common.clearSearch}
+        />
         <select
           className="h-12 border border-[var(--pos-border)] bg-[var(--pos-surface-raised)] px-3 text-sm outline-none focus:ring-2 focus:ring-[var(--pos-focus-ring)]"
           value={filter}
@@ -879,9 +700,9 @@ function CatalogPicker({
         ) : filteredItems.map((item) => {
           const active = selectedId === item.id;
           return (
-            <button
+            <PosSelectableTile
               key={item.id}
-              type="button"
+              active={active}
               className={`w-full p-3 text-left grid gap-1 cursor-pointer transition-colors ${
                 active ? 'bg-[var(--pos-action-secondary)] text-[var(--pos-text-primary)]' : 'hover:bg-[var(--pos-surface-raised)]'
               }`}
@@ -891,7 +712,7 @@ function CatalogPicker({
               <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--pos-text-muted)]">
                 {catalogKindLabel(catalogKind(item))} · {item.base_unit || t.common.none}{item.sku ? ` · ${item.sku}` : ''}
               </span>
-            </button>
+            </PosSelectableTile>
           );
         })}
       </div>
@@ -1036,9 +857,9 @@ function RecipeWorkspace({
                 <div className="font-mono text-[10px] uppercase tracking-widest text-[var(--pos-text-muted)]">{t.kitchen.pendingProposals}</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {recipe.proposals.map((proposal) => (
-                    <span key={proposal.id} className="border border-[var(--pos-border)] px-2 py-1 font-mono text-[10px] uppercase text-[var(--pos-text-secondary)]">
+                    <PosInlineStatusBadge key={proposal.id} variant="neutral">
                       {proposalStatusLabel(proposal.status)}
-                    </span>
+                    </PosInlineStatusBadge>
                   ))}
                 </div>
               </div>
@@ -1311,9 +1132,9 @@ function ProposalList({ proposals }: { proposals: BackendKitchenProposal[] }) {
               <div className="font-mono text-[10px] uppercase tracking-widest text-[var(--pos-text-muted)]">{proposalKindLabel(proposal.kind)}</div>
               <h3 className="font-sans text-sm font-bold text-[var(--pos-text-primary)]">{proposal.action || proposal.outbox_event_type}</h3>
             </div>
-            <span className="border border-[var(--pos-border)] bg-[var(--pos-action-secondary)] px-2 py-1 font-mono text-[10px] uppercase text-[var(--pos-text-secondary)]">
+            <PosInlineStatusBadge variant="neutral">
               {proposalStatusLabel(proposal.status)}
-            </span>
+            </PosInlineStatusBadge>
           </div>
           <div className="font-mono text-[10px] uppercase tracking-wider text-[var(--pos-text-muted)]">
             {formatDateTime(proposal.created_at)}

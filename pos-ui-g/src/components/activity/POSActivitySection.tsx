@@ -7,8 +7,10 @@ import {
   PosPagination, 
   PosActionRail,
   PosDataRow,
+  PosInlineStatusBadge,
+  PosRailHeader,
   PosSearchInput,
-  PosStatusBadge
+  PosSelectableTile
 } from '../../shared/ui';
 import { 
   RefundDialog 
@@ -133,10 +135,10 @@ export const POSActivitySection: React.FC = () => {
                 const isSelected = check.id === selectedCheckId;
                 
                 return (
-                  <button
+                  <PosSelectableTile
                     key={check.id}
                     id={`activity-check-row-${check.id}`}
-                    type="button"
+                    active={isSelected}
                     onClick={() => setSelectedCheckId(check.id)}
                     className={`w-full text-left p-4 hover:bg-[var(--pos-surface-raised)]/50 select-none transition-colors border-none flex items-center justify-between gap-4 cursor-pointer
                       ${isSelected ? 'bg-[var(--pos-selected-order)] border-l-4 border-l-[var(--pos-action-primary)]' : ''}`}
@@ -146,9 +148,9 @@ export const POSActivitySection: React.FC = () => {
                         <span className="font-mono text-sm font-bold text-[var(--pos-text-primary)]">
                           {check.tableName || t.activity.noTable} • {t.activity.check} #{check.shortId}
                         </span>
-                        <PosStatusBadge variant={getStatusVariant(check.status)}>
+                        <PosInlineStatusBadge variant={getStatusVariant(check.status)}>
                           {getStatusLabel(check.status)}
-                        </PosStatusBadge>
+                        </PosInlineStatusBadge>
                       </div>
                       <span className="font-sans text-xs text-[var(--pos-text-muted)] truncate">
                         {t.activity.cashier}: {check.operator} • {check.closedAt}
@@ -163,7 +165,7 @@ export const POSActivitySection: React.FC = () => {
                         {check.paymentMethod === 'cash' ? t.modals.paymentMethodCash : t.modals.paymentMethodCard}
                       </span>
                     </div>
-                  </button>
+                  </PosSelectableTile>
                 );
               })}
             </div>
@@ -189,11 +191,7 @@ export const POSActivitySection: React.FC = () => {
       {/* 1/4 Column Check Detail Panel */}
       <div className="w-full lg:w-[320px] shrink-0">
         <PosActionRail className="h-full">
-          <div className="h-14 border-b border-[var(--pos-border)] px-4 flex items-center justify-between bg-[var(--pos-surface-raised)] select-none shrink-0">
-            <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--pos-text-secondary)]">
-              {t.activity.checkDetails}
-            </span>
-          </div>
+          <PosRailHeader title={t.activity.checkDetails} />
 
           <div className="flex-1 pos-scrollarea-y pos-scrollbar-thin overflow-y-auto">
             {!selectedCheck ? (
