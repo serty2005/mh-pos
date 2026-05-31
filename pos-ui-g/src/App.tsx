@@ -30,7 +30,7 @@ import {
   QrCode,
   Monitor
 } from 'lucide-react';
-import { PosButton } from './shared/ui';
+import { PosButton, PosIconButton, PosSelectableChip } from './shared/ui';
 import type { POSSection } from './types';
 
 function POSAppShellContent() {
@@ -92,8 +92,20 @@ function POSAppShellContent() {
 
   const getActiveTableDescriptor = (): string => {
     if (!selectedTableId) return '';
-    const table = tables.find(t => t.id === selectedTableId);
-    return table ? `Стол ${table.number}` : '';
+    const table = tables.find((item) => item.id === selectedTableId);
+    return table ? `${t.common.table} ${table.number}` : '';
+  };
+
+  const getOperatorRoleLabel = (): string => {
+    switch (currentOperator?.role) {
+      case 'manager':
+        return t.shell.roleManager;
+      case 'cashier':
+        return t.shell.roleCashier;
+      case 'waiter':
+      default:
+        return t.shell.roleWaiter;
+    }
   };
 
   const renderCurrentSection = () => {
@@ -149,19 +161,14 @@ function POSAppShellContent() {
         const isActive = currentSection === item.id;
         const Icon = item.icon;
         return (
-          <button
+          <ShellNavButton
             key={item.id}
             id={`nav-${item.id}`}
+            label={item.label}
+            icon={Icon}
+            active={isActive}
             onClick={() => handleSectionSelect(item.id)}
-            className={`flex-1 h-full font-mono text-center flex flex-col md:flex-row items-center justify-center gap-1.5 border-t-2 select-none whitespace-nowrap cursor-pointer transition-colors
-              ${isActive 
-                ? 'bg-[var(--pos-surface-raised)] border-t-[var(--pos-action-primary)] text-[var(--pos-text-primary)] font-black' 
-                : 'bg-transparent border-t-transparent text-[var(--pos-text-muted)] hover:text-[var(--pos-text-primary)]'
-              }`}
-          >
-            <Icon className={`w-4 h-4 md:w-5 md:h-5 shrink-0 ${isActive ? 'text-[var(--pos-text-primary)]' : 'text-[var(--pos-text-muted)]'}`} />
-            <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest">{item.label}</span>
-          </button>
+          />
         );
       });
     }
@@ -171,17 +178,15 @@ function POSAppShellContent() {
         const isActive = currentKdsSection === item.id;
         const Icon = item.icon;
         return (
-          <button
+          <ShellNavButton
             key={item.id}
             id={`nav-kds-${item.id}`}
+            label={item.label}
+            icon={Icon}
+            active={isActive}
+            horizontal
             onClick={() => setCurrentKdsSection(item.id)}
-            className={`flex-1 h-full font-mono text-center flex items-center justify-center gap-2 border-t-2 select-none cursor-pointer transition-colors ${
-              isActive ? 'bg-[var(--pos-surface-raised)] border-t-[var(--pos-action-primary)] text-[var(--pos-text-primary)] font-black' : 'border-t-transparent text-[var(--pos-text-muted)]'
-            }`}
-          >
-            <Icon className="w-5 h-5 shrink-0" />
-            <span className="text-xs font-bold uppercase tracking-widest">{item.label}</span>
-          </button>
+          />
         );
       });
     }
@@ -205,24 +210,22 @@ function POSAppShellContent() {
         
         {/* Left operator info */}
         <div className="flex items-center gap-3">
-          <button 
+          <PosIconButton
             id="sidemenu-trigger-btn"
             onClick={() => setSideMenuOpen(true)}
-            className="w-10 h-10 border border-[var(--pos-border)] flex items-center justify-center bg-[var(--pos-surface-raised)] hover:bg-[var(--pos-border)] cursor-pointer rounded-none active:bg-[var(--pos-border-strong)]"
-            aria-label="Toggle Side Menu"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
+            label={t.shell.openMenu}
+            icon={<Menu className="w-5 h-5" />}
+          />
           
           <h1 className="text-sm md:text-lg font-sans font-semibold tracking-normal text-[var(--pos-text-secondary)] mr-1 shrink-0">MyHoreca POS</h1>
           <div className="h-6 w-px bg-[var(--pos-border)] hidden sm:block"></div>
           
           <div className="hidden sm:flex flex-col">
             <span className="font-mono text-[9px] font-bold text-[var(--pos-text-muted)] uppercase tracking-widest leading-none">
-              {currentOperator?.role === 'manager' ? 'Администратор' : currentOperator?.role === 'cashier' ? 'Кассир' : 'Официант'}
+              {getOperatorRoleLabel()}
             </span>
             <span className="font-sans text-xs font-bold text-[var(--pos-text-secondary)] mt-0.5 leading-tight">
-              {currentOperator ? currentOperator.employeeName.split(' ')[0] : 'Сотрудник'}
+              {currentOperator ? currentOperator.employeeName.split(' ')[0] : t.shell.employeeFallback}
             </span>
           </div>
         </div>
@@ -236,7 +239,7 @@ function POSAppShellContent() {
           )}
           {activeOrders.length > 0 && (
             <div className="hidden md:flex items-center gap-1 bg-[var(--pos-action-secondary)] border border-[var(--pos-border)] px-3 py-1 text-[var(--pos-text-secondary)] font-semibold uppercase tracking-wider">
-              <span>Заказы: {activeOrders.length}</span>
+              <span>{t.shell.orders}: {activeOrders.length}</span>
             </div>
           )}
         </div>
@@ -259,14 +262,16 @@ function POSAppShellContent() {
           </div>
 
           {/* Lock Screen */}
-          <button
+          <PosButton
             id="lock-terminal-btn"
             onClick={logout}
-            className="h-10 px-4 border border-[var(--pos-status-danger)] bg-red-500/10 hover:bg-red-500 hover:text-white text-[var(--pos-status-danger)] flex items-center gap-1.5 font-bold cursor-pointer uppercase text-[10px] tracking-wider transition-colors rounded-none"
+            variant="danger"
+            size="sm"
+            className="h-10 text-[10px]"
+            icon={<Lock className="w-3.5 h-3.5 shrink-0" />}
           >
-            <Lock className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden sm:inline">Замок</span>
-          </button>
+            <span className="hidden sm:inline">{t.shell.lock}</span>
+          </PosButton>
 
         </div>
 
@@ -306,22 +311,21 @@ function POSAppShellContent() {
                   </div>
                   <div className="min-w-0">
                     <h4 className="font-sans text-xs md:text-sm font-bold text-[var(--pos-text-primary)] leading-tight truncate">
-                      {currentOperator ? currentOperator.employeeName : 'Гость'}
+                      {currentOperator ? currentOperator.employeeName : t.shell.guest}
                     </h4>
                     <span className="font-mono text-[9px] font-bold text-[var(--pos-text-muted)] uppercase tracking-wider leading-none mt-1 block">
-                      Смена: {currentOperator ? currentOperator.id : 'Закрыта'}
+                      {t.shell.shift}: {currentOperator ? currentOperator.id : t.status.closed}
                     </span>
                   </div>
                 </div>
 
-                <button 
+                <PosIconButton
                   id="close-drawer-btn"
                   onClick={() => setSideMenuOpen(false)}
-                  className="w-8 h-8 hover:bg-[var(--pos-border)] border border-[var(--pos-border)] flex items-center justify-center cursor-pointer rounded-none"
-                  aria-label="Close"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                  size="sm"
+                  label={t.common.close}
+                  icon={<X className="w-4 h-4" />}
+                />
               </div>
 
               {/* Mode navigator options */}
@@ -330,20 +334,15 @@ function POSAppShellContent() {
                   const isActive = currentMode === item.id;
                   const Icon = item.icon;
                   return (
-                    <button
+                    <ShellDrawerButton
                       key={item.id}
                       id={`drawer-mode-${item.id}`}
+                      label={item.label}
+                      icon={Icon}
+                      active={isActive}
+                      badge={'badge' in item ? item.badge : undefined}
                       onClick={() => handleModeSelect(item.id)}
-                      className={`w-full h-12 px-6 flex items-center gap-4 text-left font-mono font-semibold transition-colors border-none cursor-pointer
-                        ${isActive 
-                          ? 'bg-[var(--pos-action-secondary)] text-[var(--pos-text-primary)] font-bold border-l-4 border-l-[var(--pos-action-primary)]' 
-                          : 'bg-transparent text-[var(--pos-text-secondary)] hover:bg-[var(--pos-surface-raised)]'
-                        }`}
-                    >
-                      <Icon className="w-4.5 h-4.5 shrink-0" />
-                      <span className="text-xs uppercase tracking-wider">{item.label}</span>
-                      {'badge' in item && item.badge && <span className="ml-auto text-[8px] border border-amber-500 text-amber-600 px-1 uppercase">{item.badge}</span>}
-                    </button>
+                    />
                   );
                 })}
               </div>
@@ -357,34 +356,24 @@ function POSAppShellContent() {
                     </span>
                   </div>
                   <div className="flex border border-[var(--pos-border)] bg-[var(--pos-surface)]">
-                    <button
+                    <PosSelectableChip
                       id="drawer-theme-dark-btn"
-                      type="button"
+                      active={theme === 'dark'}
                       onClick={() => setThemeMode('dark')}
-                      className={`h-8 px-2.5 flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider cursor-pointer transition-colors ${
-                        theme === 'dark'
-                          ? 'bg-[var(--pos-action-primary)] text-[var(--pos-surface)]'
-                          : 'text-[var(--pos-text-muted)] hover:text-[var(--pos-text-primary)]'
-                      }`}
-                      aria-pressed={theme === 'dark'}
+                      className="h-8 px-2.5 flex items-center gap-1.5 text-[10px] border-0"
                     >
                       <Moon className="w-3.5 h-3.5" />
                       <span className="hidden sm:inline">{t.theme.modeDark}</span>
-                    </button>
-                    <button
+                    </PosSelectableChip>
+                    <PosSelectableChip
                       id="drawer-theme-light-btn"
-                      type="button"
+                      active={theme === 'light'}
                       onClick={() => setThemeMode('light')}
-                      className={`h-8 px-2.5 flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider cursor-pointer transition-colors ${
-                        theme === 'light'
-                          ? 'bg-[var(--pos-action-primary)] text-[var(--pos-surface)]'
-                          : 'text-[var(--pos-text-muted)] hover:text-[var(--pos-text-primary)]'
-                      }`}
-                      aria-pressed={theme === 'light'}
+                      className="h-8 px-2.5 flex items-center gap-1.5 text-[10px] border-0"
                     >
                       <Sun className="w-3.5 h-3.5" />
                       <span className="hidden sm:inline">{t.theme.modeLight}</span>
-                    </button>
+                    </PosSelectableChip>
                   </div>
                 </div>
 
@@ -396,17 +385,12 @@ function POSAppShellContent() {
                     {themeSchemes.map((scheme) => {
                       const isActive = themeScheme === scheme.id;
                       return (
-                        <button
+                        <PosSelectableChip
                           key={scheme.id}
                           id={`drawer-theme-scheme-${scheme.id}`}
-                          type="button"
+                          active={isActive}
                           onClick={() => setThemeScheme(scheme.id)}
-                          className={`h-10 px-2 border flex items-center gap-2 text-left cursor-pointer transition-colors ${
-                            isActive
-                              ? 'border-[var(--pos-action-primary)] bg-[var(--pos-action-secondary)] text-[var(--pos-text-primary)]'
-                              : 'border-[var(--pos-border)] bg-[var(--pos-surface)] text-[var(--pos-text-muted)] hover:text-[var(--pos-text-primary)] hover:border-[var(--pos-border-strong)]'
-                          }`}
-                          aria-pressed={isActive}
+                          className="h-10 px-2 flex items-center gap-2 text-left justify-start"
                         >
                           <span
                             className="w-3 h-3 shrink-0 border border-white/30"
@@ -416,7 +400,7 @@ function POSAppShellContent() {
                           <span className="font-mono text-[9px] font-bold uppercase tracking-wider truncate">
                             {t.theme.schemes[scheme.id]}
                           </span>
-                        </button>
+                        </PosSelectableChip>
                       );
                     })}
                   </div>
@@ -438,7 +422,7 @@ function POSAppShellContent() {
               {/* Mini Diagnostic strip */}
               <div className="space-y-1.5 font-mono text-[9px] text-[var(--pos-text-muted)] uppercase tracking-widest leading-none select-none">
                 <div className="font-bold text-[var(--pos-text-secondary)]">{t.modes.serviceData}</div>
-                <div>{t.modes.cloudRevision}: {syncRevision || 'н/д'}</div>
+                <div>{t.modes.cloudRevision}: {syncRevision || t.common.notAvailable}</div>
                 <div>{t.modes.edgeDbVersion}: {appVersion}</div>
                 <div>{t.modes.eventBuffer}: {outboxCount}</div>
                 <div className="flex items-center gap-1 mt-1 font-bold">
@@ -472,6 +456,78 @@ function POSAppShellContent() {
 }
 
 type TerminalMode = 'pos' | 'kds' | 'waiter' | 'delivery';
+
+type ShellIcon = React.ComponentType<{ className?: string }>;
+interface ShellNavButtonProps {
+  id: string;
+  label: string;
+  icon: ShellIcon;
+  active: boolean;
+  horizontal?: boolean;
+  onClick: () => void;
+  key?: React.Key;
+}
+
+function ShellNavButton({
+  id,
+  label,
+  icon: Icon,
+  active,
+  horizontal = false,
+  onClick,
+}: ShellNavButtonProps) {
+  return (
+    <button
+      id={id}
+      type="button"
+      onClick={onClick}
+      className={`flex-1 h-full font-mono text-center flex ${horizontal ? 'flex-row' : 'flex-col md:flex-row'} items-center justify-center gap-1.5 border-t-2 select-none whitespace-nowrap cursor-pointer transition-colors ${
+        active
+          ? 'bg-[var(--pos-surface-raised)] border-t-[var(--pos-action-primary)] text-[var(--pos-text-primary)] font-black'
+          : 'bg-transparent border-t-transparent text-[var(--pos-text-muted)] hover:text-[var(--pos-text-primary)]'
+      }`}
+    >
+      <Icon className={`w-4 h-4 md:w-5 md:h-5 shrink-0 ${active ? 'text-[var(--pos-text-primary)]' : 'text-[var(--pos-text-muted)]'}`} />
+      <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest">{label}</span>
+    </button>
+  );
+}
+
+interface ShellDrawerButtonProps {
+  id: string;
+  label: string;
+  icon: ShellIcon;
+  active: boolean;
+  badge?: string;
+  onClick: () => void;
+  key?: React.Key;
+}
+
+function ShellDrawerButton({
+  id,
+  label,
+  icon: Icon,
+  active,
+  badge,
+  onClick,
+}: ShellDrawerButtonProps) {
+  return (
+    <button
+      id={id}
+      type="button"
+      onClick={onClick}
+      className={`w-full h-12 px-6 flex items-center gap-4 text-left font-mono font-semibold transition-colors border-none cursor-pointer ${
+        active
+          ? 'bg-[var(--pos-action-secondary)] text-[var(--pos-text-primary)] font-bold border-l-4 border-l-[var(--pos-action-primary)]'
+          : 'bg-transparent text-[var(--pos-text-secondary)] hover:bg-[var(--pos-surface-raised)]'
+      }`}
+    >
+      <Icon className="w-4.5 h-4.5 shrink-0" />
+      <span className="text-xs uppercase tracking-wider">{label}</span>
+      {badge && <span className="ml-auto text-[8px] border border-amber-500 text-amber-600 px-1 uppercase">{badge}</span>}
+    </button>
+  );
+}
 
 function ModePlaceholder({ title, tone = 'neutral' }: { title: string; tone?: 'neutral' | 'warning' }) {
   return (

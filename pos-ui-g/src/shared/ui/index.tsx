@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, Plus, Search, X } from 'lucide-react';
 
 // PosButton component for direct touch-first targets
 interface PosButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -48,6 +48,156 @@ export const PosButton: React.FC<PosButtonProps> = ({
       {icon && <span className="mr-2 inline-flex items-center">{icon}</span>}
       {children}
     </button>
+  );
+};
+
+interface PosIconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  icon: React.ReactNode;
+  label: string;
+  variant?: 'neutral' | 'danger' | 'ghost';
+  size?: 'sm' | 'md';
+}
+
+export const PosIconButton: React.FC<PosIconButtonProps> = ({
+  icon,
+  label,
+  variant = 'neutral',
+  size = 'md',
+  className = '',
+  ...props
+}) => {
+  const variantStyles = {
+    neutral: 'border-[var(--pos-border)] bg-[var(--pos-surface-raised)] text-[var(--pos-text-primary)] hover:bg-[var(--pos-border)]',
+    danger: 'border-[var(--pos-status-danger)] bg-red-500/10 text-[var(--pos-status-danger)] hover:bg-red-500 hover:text-white',
+    ghost: 'border-transparent bg-transparent text-[var(--pos-text-muted)] hover:text-[var(--pos-text-primary)] hover:bg-[var(--pos-surface-raised)]',
+  };
+  const sizeStyles = {
+    sm: 'w-8 h-8',
+    md: 'w-10 h-10',
+  };
+
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className={`inline-flex items-center justify-center border rounded-none cursor-pointer select-none transition-colors outline-none focus:ring-2 focus:ring-[var(--pos-focus-ring)] disabled:opacity-40 disabled:cursor-not-allowed ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
+      {...props}
+    >
+      {icon}
+    </button>
+  );
+};
+
+interface PosSelectableChipProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  active?: boolean;
+  fullWidth?: boolean;
+  tone?: 'default' | 'danger';
+}
+
+export const PosSelectableChip: React.FC<PosSelectableChipProps> = ({
+  active = false,
+  fullWidth = false,
+  tone = 'default',
+  className = '',
+  children,
+  ...props
+}) => {
+  const activeStyle = tone === 'danger'
+    ? 'bg-[var(--pos-status-danger)] border-[var(--pos-status-danger)] text-[var(--pos-surface)]'
+    : 'bg-[var(--pos-action-primary)] border-[var(--pos-action-primary)] text-[var(--pos-surface)]';
+  const widthStyle = fullWidth ? 'w-full' : '';
+
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      className={`h-11 px-4 border font-mono text-xs uppercase font-bold rounded-none cursor-pointer select-none transition-all outline-none focus:ring-2 focus:ring-[var(--pos-focus-ring)] disabled:opacity-40 disabled:cursor-not-allowed ${widthStyle} ${
+        active
+          ? activeStyle
+          : 'bg-[var(--pos-surface)] text-[var(--pos-text-secondary)] border-[var(--pos-border)] hover:bg-[var(--pos-surface-raised)] hover:text-[var(--pos-text-primary)]'
+      } ${className}`}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+};
+
+interface PosSearchInputProps {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  clearLabel: string;
+  className?: string;
+  onClear?: () => void;
+}
+
+export const PosSearchInput: React.FC<PosSearchInputProps> = ({
+  id,
+  value,
+  onChange,
+  placeholder,
+  clearLabel,
+  className = '',
+  onClear,
+}) => {
+  const handleClear = () => {
+    onChange('');
+    onClear?.();
+  };
+
+  return (
+    <div className={`relative w-full ${className}`}>
+      <span className="absolute inset-y-0 left-3 flex items-center text-[var(--pos-text-muted)] pointer-events-none">
+        <Search className="w-4 h-4" />
+      </span>
+      <input
+        id={id}
+        type="text"
+        placeholder={placeholder}
+        className="w-full h-11 pl-10 pr-10 border border-[var(--pos-border)] bg-[var(--pos-surface)] text-[var(--pos-text-primary)] font-sans text-xs focus:outline-none focus:border-[var(--pos-border-strong)] rounded-none"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {value && (
+        <PosIconButton
+          variant="ghost"
+          size="sm"
+          label={clearLabel}
+          onClick={handleClear}
+          className="absolute inset-y-1 right-1 h-9 w-9"
+          icon={<X className="w-3.5 h-3.5" />}
+        />
+      )}
+    </div>
+  );
+};
+
+interface PosStatusBadgeProps {
+  children: React.ReactNode;
+  variant?: 'success' | 'warning' | 'danger' | 'neutral' | 'info';
+  className?: string;
+}
+
+export const PosStatusBadge: React.FC<PosStatusBadgeProps> = ({
+  children,
+  variant = 'neutral',
+  className = '',
+}) => {
+  const styles = {
+    success: 'bg-emerald-500 text-white',
+    warning: 'bg-amber-500 text-zinc-950',
+    danger: 'bg-red-500 text-white',
+    neutral: 'bg-neutral-600 text-white',
+    info: 'bg-[var(--pos-status-info)] text-white',
+  };
+
+  return (
+    <span className={`px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase rounded-none ${styles[variant]} ${className}`}>
+      {children}
+    </span>
   );
 };
 
@@ -107,12 +257,12 @@ export const PosDialog: React.FC<PosDialogProps> = ({
         {/* Header */}
         <div className="px-6 py-4 border-b border-[var(--pos-border)] flex items-center justify-between shrink-0 bg-[var(--pos-surface-raised)]">
           <h3 className="font-mono text-base font-bold tracking-wider uppercase">{title}</h3>
-          <button 
-            className="w-10 h-10 border border-[var(--pos-border)] hover:bg-[var(--pos-border)] flex items-center justify-center font-mono text-lg font-bold cursor-pointer rounded-none"
+          <PosIconButton
+            label={title}
+            variant="neutral"
             onClick={onClose}
-          >
-            ×
-          </button>
+            icon={<X className="w-4 h-4" />}
+          />
         </div>
 
         {/* Scrollable Body */}
@@ -172,21 +322,24 @@ interface PosTabsProps {
   items: PosTabItem[];
   activeId: string;
   onChange: (id: string) => void;
+  idPrefix?: string;
 }
 
 export const PosTabs: React.FC<PosTabsProps> = ({
+  id,
   items,
   activeId,
-  onChange
+  onChange,
+  idPrefix = 'tab'
 }) => {
   return (
-    <div className="flex border-b border-[var(--pos-border)] bg-[var(--pos-surface)] pos-scrollarea-x pos-scrollbar-thin max-w-full">
+    <div id={id} className="flex border-b border-[var(--pos-border)] bg-[var(--pos-surface)] pos-scrollarea-x pos-scrollbar-thin max-w-full">
       {items.map((item) => {
         const isActive = item.id === activeId;
         return (
           <button
             key={item.id}
-            id={`tab-${item.id}`}
+            id={`${idPrefix}-${item.id}`}
             onClick={() => onChange(item.id)}
             className={`h-14 px-6 font-mono text-xs uppercase tracking-widest font-bold border-r border-[var(--pos-border)] select-none cursor-pointer transition-all shrink-0 relative
               ${isActive 
@@ -336,20 +489,20 @@ export const PosPagination: React.FC<PosPaginationProps> = ({
     <div className="flex items-center justify-between py-2 px-4 border border-[var(--pos-border)] bg-[var(--pos-surface)] select-none">
       <span className="font-mono text-xs font-bold uppercase text-[var(--pos-text-secondary)]">{label}</span>
       <div className="flex gap-1">
-        <button
+        <PosIconButton
           onClick={onPrev}
           disabled={isFirstPage}
-          className="w-10 h-10 border border-[var(--pos-border)] flex items-center justify-center bg-[var(--pos-surface)] hover:bg-[var(--pos-bg)] cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed rounded-none"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-        <button
+          label="prev"
+          variant="neutral"
+          icon={<ChevronLeft className="w-4 h-4" />}
+        />
+        <PosIconButton
           onClick={onNext}
           disabled={isLastPage}
-          className="w-10 h-10 border border-[var(--pos-border)] flex items-center justify-center bg-[var(--pos-surface)] hover:bg-[var(--pos-bg)] cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed rounded-none"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
+          label="next"
+          variant="neutral"
+          icon={<ChevronRight className="w-4 h-4" />}
+        />
       </div>
     </div>
   );

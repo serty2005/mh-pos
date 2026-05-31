@@ -170,7 +170,7 @@ Relevant permissions:
 
 Requirements:
 
-- User-visible labels, dialogs, validation messages, notifications and empty states go through `vue-i18n`.
+- User-visible labels, dialogs, validation messages, notifications and empty states go through the active UI locale layer: `vue-i18n` in legacy Vue UI and `pos-ui-g/src/shared/i18n` in React UI.
 - Russian UI strings belong in locale definitions, not scattered hardcoded source code.
 - Error display must not expose raw Go errors, SQL errors, stack traces, request dumps, PINs, tokens or sensitive payloads.
 
@@ -178,8 +178,9 @@ Requirements:
 
 Реализовано сейчас:
 
-- Cashier POS UI имеет внутренний reusable presentation layer в `pos-ui/src/shared/ui`.
-- Первый слой primitives/composites включает `PosButton`, `PosContextButton`, `PosDialog`, `PosSectionHeader`, `PosTabs`, `PosPagination`, `PosQuantityStepper`, `PosBanner`, `PosEmptyState`, `PosStatusStrip`, `PosMetricCard`, `PosActionRail`, `PosPanel`, `PosDataRow`, `PosFormRow`, `PosReadinessCard` и `PosSkeleton`.
+- Cashier POS UI имеет внутренний reusable presentation layer в `pos-ui/src/shared/ui`; React/Vite shell `pos-ui-g` имеет параллельный lightweight layer в `pos-ui-g/src/shared/ui`.
+- Первый слой primitives/composites включает legacy Vue primitives (`PosButton`, `PosContextButton`, `PosDialog`, `PosSectionHeader`, `PosTabs`, `PosPagination`, `PosQuantityStepper`, `PosBanner`, `PosEmptyState`, `PosStatusStrip`, `PosMetricCard`, `PosActionRail`, `PosPanel`, `PosDataRow`, `PosFormRow`, `PosReadinessCard`, `PosSkeleton`) и React `pos-ui-g` primitives (`PosButton`, `PosIconButton`, `PosContextButton`, `PosDialog`, `PosSectionHeader`, `PosTabs`, `PosSelectableChip`, `PosSearchInput`, `PosPagination`, `PosQuantityStepper`, `PosBanner`, `PosEmptyState`, `PosStatusBadge`, `PosStatusStrip`, `PosMetricCard`, `PosActionRail`, `PosDataRow`, `PosFormRow`, `PosSkeleton`).
+- В `pos-ui-g` реализовано сейчас: shell navigation/icon controls, floor hall tabs, order category/search/filter controls, action-dialog course/modifier selectors и activity search/status badges используют shared primitives. Table/menu tiles, check/order rows и отдельные financial dialogs могут оставаться локальными, когда layout или тестовые IDs завязаны на сценарий.
 - Эти компоненты являются dumb/presentational: они принимают labels, variant/state props и callbacks, но не получают `terminal` и не владеют cashier business logic.
 - `PosPage`, `WaiterPage`, `KitchenPage`, `PosMenuGrid`, `PosOrderRail`, `PosFloorSection`, `PosActivitySection`, `PosCashSection`, `PosReportsSection`, `PosPaymentDialog`, `PosActionsDialog`, `ModifierSelectionDialog`, `RefundDialog`, `PrecheckCancelDialog`, `CashDrawerDialog`, `SyncDrawer` и `ClosedOrdersDrawer` уже используют часть этого слоя для повторяющихся кнопок, tabs/chips, dialog shell, section header, action rail, panels, data rows, status/metric/readiness cards, empty/error/loading states, menu skeleton cards и quantity steppers.
 - `pos-ui/src/styles.css` содержит общий POS scrollbar contract через `.pos-scrollarea`, `.pos-scrollarea-y`, `.pos-scrollarea-x` и `.pos-scrollbar-thin`: thin scrollbar, semantic colors, touch-friendly overflow и отсутствие неуправляемого горизонтального скролла в основных cashier surfaces.

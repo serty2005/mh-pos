@@ -6,7 +6,9 @@ import {
   PosEmptyState, 
   PosPagination, 
   PosActionRail,
-  PosDataRow
+  PosDataRow,
+  PosSearchInput,
+  PosStatusBadge
 } from '../../shared/ui';
 import { 
   RefundDialog 
@@ -65,17 +67,17 @@ export const POSActivitySection: React.FC = () => {
     }
   };
 
-  const getStatusBadge = (status: ClosedOrder['status']) => {
+  const getStatusVariant = (status: ClosedOrder['status']): 'success' | 'warning' | 'danger' | 'neutral' => {
     switch (status) {
       case 'refunded':
-        return 'bg-red-500 text-white';
+        return 'danger';
       case 'partially_refunded':
-        return 'bg-amber-500 text-zinc-950';
+        return 'warning';
       case 'cancelled':
-        return 'bg-neutral-600 text-white';
+        return 'neutral';
       case 'closed':
       default:
-        return 'bg-emerald-500 text-white';
+        return 'success';
     }
   };
 
@@ -97,36 +99,32 @@ export const POSActivitySection: React.FC = () => {
         
         {/* Search Bar Subheader */}
         <div className="border-b border-[var(--pos-border)] bg-[var(--pos-surface)] p-3 md:p-4 flex justify-between items-center shrink-0">
-          <div className="relative w-full sm:w-[320px]">
-            <span className="absolute inset-y-0 left-3 flex items-center text-[var(--pos-text-muted)] pointer-events-none">
-              <Search className="w-4 h-4" />
-            </span>
-            <input
-              id="activity-search-input"
-              type="text"
-              placeholder="Поиск чека по номеру, столу или кассиру..."
-              className="w-full h-11 pl-10 pr-4 border border-[var(--pos-border)] bg-[var(--pos-surface)] text-[var(--pos-text-primary)] font-sans text-xs focus:outline-none focus:border-[var(--pos-border-strong)] rounded-none"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setPage(1); // Reset page on query change
-              }}
-            />
-          </div>
+          <PosSearchInput
+            id="activity-search-input"
+            value={searchQuery}
+            onChange={(value) => {
+              setSearchQuery(value);
+              setPage(1);
+            }}
+            onClear={() => setPage(1)}
+            placeholder={t.activity.searchPlaceholder}
+            clearLabel={t.common.clearSearch}
+            className="sm:w-[320px]"
+          />
         </div>
 
         {/* Closed Checks List container */}
         <div className="flex-1 p-6 pos-scrollarea-y pos-scrollbar-thin overflow-y-auto">
           {closedOrders.length === 0 ? (
             <PosEmptyState
-              title="Чековая книга пуста"
-              description="Здесь будут отображаться фискальные чеки после полной оплаты заказов на кассовом терминале."
+              title={t.activity.emptyChecksTitle}
+              description={t.activity.emptyChecksDesc}
               icon={<ReceiptText className="w-12 h-12" />}
             />
           ) : paginatedChecks.length === 0 ? (
             <PosEmptyState
-              title="Ничего не найдено"
-              description="Измените параметры поиска чеков."
+              title={t.activity.noSearchResultsTitle}
+              description={t.activity.noSearchResultsDesc}
               icon={<Search className="w-12 h-12" />}
             />
           ) : (
@@ -146,14 +144,14 @@ export const POSActivitySection: React.FC = () => {
                     <div className="flex flex-col gap-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-sm font-bold text-[var(--pos-text-primary)]">
-                          {check.tableName || 'Без стола'} • Чек #{check.shortId}
+                          {check.tableName || t.activity.noTable} • {t.activity.check} #{check.shortId}
                         </span>
-                        <span className={`px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase ${getStatusBadge(check.status)}`}>
+                        <PosStatusBadge variant={getStatusVariant(check.status)}>
                           {getStatusLabel(check.status)}
-                        </span>
+                        </PosStatusBadge>
                       </div>
                       <span className="font-sans text-xs text-[var(--pos-text-muted)] truncate">
-                        Кассир: {check.operator} • {check.closedAt}
+                        {t.activity.cashier}: {check.operator} • {check.closedAt}
                       </span>
                     </div>
 
@@ -162,7 +160,7 @@ export const POSActivitySection: React.FC = () => {
                         {check.total} ₽
                       </span>
                       <span className="font-mono text-[9px] text-[var(--pos-text-muted)] uppercase">
-                        {check.paymentMethod === 'cash' ? 'наличные' : 'карта'}
+                        {check.paymentMethod === 'cash' ? t.modals.paymentMethodCash : t.modals.paymentMethodCard}
                       </span>
                     </div>
                   </button>
@@ -181,7 +179,7 @@ export const POSActivitySection: React.FC = () => {
               isLastPage={page === totalPages}
               onPrev={() => setPage(p => Math.max(1, p - 1))}
               onNext={() => setPage(p => Math.min(totalPages, p + 1))}
-              label={`Заказы c ${(page-1)*itemsPerPage+1} по ${Math.min(filteredChecks.length, page*itemsPerPage)} из ${filteredChecks.length}`}
+              label={`${t.activity.pageLabelPrefix} ${(page-1)*itemsPerPage+1} ${t.activity.pageLabelMiddle} ${Math.min(filteredChecks.length, page*itemsPerPage)} ${t.activity.pageLabelSuffix} ${filteredChecks.length}`}
             />
           </div>
         )}
@@ -193,7 +191,7 @@ export const POSActivitySection: React.FC = () => {
         <PosActionRail className="h-full">
           <div className="h-14 border-b border-[var(--pos-border)] px-4 flex items-center justify-between bg-[var(--pos-surface-raised)] select-none shrink-0">
             <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--pos-text-secondary)]">
-              Детали закрытого чека
+              {t.activity.checkDetails}
             </span>
           </div>
 
@@ -201,20 +199,20 @@ export const POSActivitySection: React.FC = () => {
             {!selectedCheck ? (
               <div className="p-8 text-center text-[var(--pos-text-muted)] h-full flex flex-col items-center justify-center">
                 <FileText className="w-8 h-8 opacity-40 mb-2 shrink-0 animate-pulse" />
-                <span className="font-sans text-xs">Выберите чек из списка слева для просмотра операций</span>
+                <span className="font-sans text-xs">{t.activity.selectCheckHint}</span>
               </div>
             ) : (
               <div className="divide-y divide-[var(--pos-border)] select-none">
                 
                 {/* Meta details */}
                 <div className="p-4 space-y-2 bg-[var(--pos-surface-raised)]/10">
-                  <PosDataRow title="ID Чека" value={selectedCheck.shortId} />
-                  <PosDataRow title="Дата закрытия" value={selectedCheck.closedAt.split(',')[0]} />
-                  <PosDataRow title="Время" value={selectedCheck.closedAt.split(',')[1] || ''} />
-                  <PosDataRow title="Тип оплаты" value={selectedCheck.paymentMethod === 'cash' ? 'Наличные' : 'Карта'} />
+                  <PosDataRow title={t.activity.checkId} value={selectedCheck.shortId} />
+                  <PosDataRow title={t.activity.closedDate} value={selectedCheck.closedAt.split(',')[0]} />
+                  <PosDataRow title={t.common.time} value={selectedCheck.closedAt.split(',')[1] || ''} />
+                  <PosDataRow title={t.activity.paymentType} value={selectedCheck.paymentMethod === 'cash' ? t.modals.paymentMethodCash : t.modals.paymentMethodCard} />
                   {selectedCheck.refundReason && (
                     <div className="p-3 bg-red-50 dark:bg-red-950/10 border border-red-200 dark:border-red-900 border-l-4 border-l-red-500">
-                      <span className="font-mono text-[9px] uppercase font-bold text-[var(--pos-status-danger)] block">Причина возврата/отмены:</span>
+                      <span className="font-mono text-[9px] uppercase font-bold text-[var(--pos-status-danger)] block">{t.activity.refundReason}:</span>
                       <span className="font-sans text-xs text-red-800 dark:text-red-200 mt-0.5 block">"{selectedCheck.refundReason}"</span>
                     </div>
                   )}
@@ -222,7 +220,7 @@ export const POSActivitySection: React.FC = () => {
 
                 {/* Ordered Items rows */}
                 <div className="p-4 space-y-3">
-                  <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)] block">Позиции чека</span>
+                  <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)] block">{t.activity.checkLines}</span>
                   <div className="space-y-2">
                     {selectedCheck.lines.map((line) => (
                       <div key={line.id} className="flex justify-between text-xs text-[var(--pos-text-secondary)]">
@@ -240,7 +238,7 @@ export const POSActivitySection: React.FC = () => {
 
                 {/* Financial Ledger Operations timeline */}
                 <div className="p-4 space-y-3">
-                  <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)] block">Журнал финансовых операций</span>
+                  <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)] block">{t.activity.financialLog}</span>
                   <div className="space-y-4">
                     {selectedCheck.operations.map((op) => (
                       <div key={op.id} className="relative pl-4 border-l border-[var(--pos-border-strong)] flex flex-col gap-0.5">
@@ -252,7 +250,7 @@ export const POSActivitySection: React.FC = () => {
                           <span className="font-mono text-[10px] font-black text-[var(--pos-text-muted)]">{op.amount} ₽</span>
                         </div>
                         <span className="font-sans text-[10px] text-[var(--pos-text-muted)]">
-                          Выполнил: {op.employee} • {op.timestamp}
+                          {t.activity.performedBy}: {op.employee} • {op.timestamp}
                         </span>
                         {op.reason && (
                           <span className="font-sans text-[10px] text-[var(--pos-text-secondary)] font-medium italic">
@@ -273,7 +271,7 @@ export const POSActivitySection: React.FC = () => {
             <div className="p-3 bg-red-50 dark:bg-neutral-900 border-t border-[var(--pos-border)]">
               <div className="flex items-start gap-2 text-red-800 dark:text-red-250 font-sans text-xs p-1 select-none">
                 <ShieldAlert className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                <span>Официанты не имеют полномочий на фискальный возврат и списание средств ККМ.</span>
+                <span>{t.activity.waiterRefundBlocked}</span>
               </div>
             </div>
           )}
@@ -288,7 +286,7 @@ export const POSActivitySection: React.FC = () => {
                 onClick={() => reprintCheck(selectedCheck.id)}
                 icon={<Printer className="w-4 h-4" />}
               >
-                Печать
+                {t.activity.print}
               </PosButton>
 
               <PosButton
@@ -300,7 +298,7 @@ export const POSActivitySection: React.FC = () => {
                 disabled={currentOperator?.role === 'waiter' || !cashSession || selectedCheck.status === 'refunded'}
                 icon={<RefreshCw className="w-4 h-4 animate-spin-slow" />}
               >
-                Возврат
+                {t.activity.refund}
               </PosButton>
             </div>
           )}

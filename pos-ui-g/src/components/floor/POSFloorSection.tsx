@@ -6,7 +6,9 @@ import {
   PosDialog, 
   PosEmptyState, 
   PosQuantityStepper, 
-  PosActionRail
+  PosActionRail,
+  PosStatusBadge,
+  PosTabs
 } from '../../shared/ui';
 import { Armchair, Users, Plus, ReceiptText } from 'lucide-react';
 
@@ -68,32 +70,20 @@ export const POSFloorSection: React.FC = () => {
       <div className="flex-1 flex flex-col min-h-0">
         
         {/* Hall Tabs Header */}
-        <div className="flex border-b border-[var(--pos-border)] bg-[var(--pos-surface)] overflow-x-auto pos-scrollbar-thin shrink-0 select-none">
-          {halls.map((hall) => {
-            const isActive = hall.id === activeHallId;
-            return (
-              <button
-                key={hall.id}
-                id={`hall-tab-${hall.id}`}
-                onClick={() => setActiveHallId(hall.id)}
-                className={`h-14 px-6 font-mono text-xs uppercase tracking-widest font-bold border-r border-[var(--pos-border)] cursor-pointer transition-all shrink-0
-                  ${isActive 
-                    ? 'bg-[var(--pos-surface-raised)] text-[var(--pos-text-primary)] border-b-2 border-b-[var(--pos-action-primary)]' 
-                    : 'bg-transparent text-[var(--pos-text-muted)] hover:text-[var(--pos-text-primary)]'
-                  }`}
-              >
-                {hall.name}
-              </button>
-            );
-          })}
-        </div>
+        <PosTabs
+          id="hall-tabs"
+          idPrefix="hall-tab"
+          items={halls.map((hall) => ({ id: hall.id, label: hall.name }))}
+          activeId={activeHallId}
+          onChange={setActiveHallId}
+        />
 
         {/* Tables Matrix */}
         <div className="flex-1 p-6 overflow-y-auto pos-scrollarea-y pos-scrollbar-thin">
           {currentHallTables.length === 0 ? (
             <PosEmptyState
-              title="Нет столов"
-              description="В выбранном зале не настроены столы в Master-Data."
+              title={t.floor.noTablesTitle}
+              description={t.floor.noTablesDesc}
               icon={<Armchair className="w-12 h-12" />}
             />
           ) : (
@@ -115,7 +105,7 @@ export const POSFloorSection: React.FC = () => {
                     {/* Table Name and Guests Icon */}
                     <div className="flex items-start justify-between w-full">
                       <span className="font-mono text-base font-bold uppercase tracking-tight">
-                        Стол {table.number}
+                        {t.common.table} {table.number}
                       </span>
                       {isActiveOrder && table.guestsCount ? (
                         <div className="flex items-center gap-1 font-mono text-xs opacity-75">
@@ -135,7 +125,7 @@ export const POSFloorSection: React.FC = () => {
                             {table.activeOrderSum || 0} ₽
                           </span>
                           <span className="font-sans text-[10px] uppercase tracking-wider opacity-60 truncate">
-                            {table.waiter?.split(' ')[0] || 'Иван'}
+                            {table.waiter?.split(' ')[0] || t.floor.waiterFallback}
                           </span>
                         </>
                       ) : (
@@ -156,7 +146,7 @@ export const POSFloorSection: React.FC = () => {
       <div className="w-full lg:w-[320px] border-t lg:border-t-0 border-l border-[var(--pos-border)] bg-[var(--pos-surface)] flex flex-col min-h-0 select-none shrink-0">
         <div className="h-14 border-b border-[var(--pos-border)] px-4 flex items-center bg-[var(--pos-surface-raised)] select-none shrink-0">
           <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--pos-text-secondary)]">
-            Активные заказы ККМ ({activeOrders.length})
+            {t.floor.activeOrders} ({activeOrders.length})
           </span>
         </div>
 
@@ -164,7 +154,7 @@ export const POSFloorSection: React.FC = () => {
           {activeOrders.length === 0 ? (
             <div className="p-8 text-center text-[var(--pos-text-muted)] flex flex-col items-center justify-center h-full">
               <ReceiptText className="w-8 h-8 opacity-40 mb-2 shrink-0" />
-              <span className="font-sans text-xs font-medium">Нет активных заказов</span>
+              <span className="font-sans text-xs font-medium">{t.floor.noActiveOrders}</span>
             </div>
           ) : (
             <div className="divide-y divide-[var(--pos-border)]">
@@ -177,20 +167,17 @@ export const POSFloorSection: React.FC = () => {
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-xs font-bold text-[var(--pos-text-primary)]">
-                      {ord.tableName || `Заказ #${ord.shortId}`}
+                      {ord.tableName || `${t.common.order} #${ord.shortId}`}
                     </span>
                     <span className="font-mono text-xs font-black text-[var(--pos-status-success)]">
                       {ord.total} ₽
                     </span>
                   </div>
                   <div className="flex items-center justify-between font-mono text-[10px] text-[var(--pos-text-muted)]">
-                    <span>{ord.openedAt} • {ord.lines.length} поз.</span>
-                    <span className={`px-1 rounded-none text-[9px] uppercase font-bold text-[var(--pos-surface)]
-                      ${ord.status === 'precheck_issued' 
-                        ? 'bg-[var(--pos-status-warning)]' 
-                        : 'bg-[var(--pos-status-info)]'}`}>
-                      {ord.status === 'precheck_issued' ? 'ПРЕЧЕК' : 'ОТКРЫТ'}
-                    </span>
+                    <span>{ord.openedAt} • {ord.lines.length} {t.floor.positionsShort}</span>
+                    <PosStatusBadge variant={ord.status === 'precheck_issued' ? 'warning' : 'info'}>
+                      {ord.status === 'precheck_issued' ? t.status.precheck_issued : t.status.open}
+                    </PosStatusBadge>
                   </div>
                 </button>
               ))}
@@ -203,7 +190,7 @@ export const POSFloorSection: React.FC = () => {
       <PosDialog
         isOpen={isGuestModalOpen}
         onClose={() => setGuestModalOpen(false)}
-        title="Новый заказ"
+        title={t.floor.newOrderTitle}
         footer={
           <>
             <PosButton variant="secondary" size="sm" onClick={() => setGuestModalOpen(false)}>
@@ -216,14 +203,14 @@ export const POSFloorSection: React.FC = () => {
               onClick={handleCreateOrderSubmit}
               icon={<Plus className="w-4 h-4" />}
             >
-              Добавить заказ
+              {t.floor.addOrder}
             </PosButton>
           </>
         }
       >
         <div className="flex flex-col items-center justify-center py-4">
           <span className="font-sans text-sm font-semibold text-[var(--pos-text-secondary)] mb-4 text-center">
-            Выберите количество гостей на открываемый стол
+            {t.floor.selectGuests}
           </span>
 
           <PosQuantityStepper
@@ -236,7 +223,7 @@ export const POSFloorSection: React.FC = () => {
           
           <div className="flex items-center gap-1 text-[var(--pos-text-muted)] font-mono text-[10px] uppercase tracking-wider mt-6">
             <Armchair className="w-3 md:w-4 h-3 md:h-4" />
-            <span>Официант: {currentOperator?.employeeName || 'Не авторизован'}</span>
+            <span>{t.floor.waiter}: {currentOperator?.employeeName || t.floor.notAuthorized}</span>
           </div>
         </div>
       </PosDialog>

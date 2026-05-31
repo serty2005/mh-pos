@@ -9,7 +9,10 @@ import {
   PosBanner,
   PosActionRail,
   PosStatusStrip,
-  PosDialog
+  PosDialog,
+  PosIconButton,
+  PosSearchInput,
+  PosSelectableChip
 } from '../../shared/ui';
 import { 
   ModifierSelectionDialog 
@@ -29,7 +32,6 @@ import {
   Utensils, 
   Printer, 
   Banknote, 
-  X,
   Lock,
   MessageSquare,
   BadgePercent
@@ -186,56 +188,35 @@ export const POSOrderSection: React.FC = () => {
             {categories.map((cat) => {
               const active = cat.id === activeCategory;
               return (
-                <button
+                <PosSelectableChip
                   key={cat.id}
                   id={`cat-chip-${cat.id}`}
+                  active={active}
                   onClick={() => handleCategoryChange(cat.id)}
-                  className={`h-11 px-6 font-mono text-xs uppercase font-extrabold cursor-pointer select-none transition-all rounded-none border
-                    ${active 
-                      ? 'bg-[var(--pos-action-primary)] text-[var(--pos-surface)] border-[var(--pos-action-primary)] font-black' 
-                      : 'bg-[var(--pos-surface)] text-[var(--pos-text-secondary)] border-[var(--pos-border)] hover:bg-[var(--pos-bg)]'
-                    }`}
+                  className="px-6 font-extrabold"
                 >
                   {cat.label}
-                </button>
+                </PosSelectableChip>
               );
             })}
           </div>
 
           {/* Search Bar Input */}
-          <div className="relative w-full sm:w-[240px] shrink-0">
-            <span className="absolute inset-y-0 left-3 flex items-center text-[var(--pos-text-muted)] pointer-events-none">
-              <Search className="w-4 h-4" />
-            </span>
-            <input
-              id="dish-search-input"
-              type="text"
-              placeholder={t.common.search}
-              className="w-full h-11 pl-10 pr-4 border border-[var(--pos-border)] bg-[var(--pos-surface)] text-[var(--pos-text-primary)] font-sans text-xs focus:outline-none focus:border-[var(--pos-border-strong)] rounded-none"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {searchQuery && (
-              <button 
-                type="button" 
-                onClick={() => setSearchQuery('')}
-                className="absolute inset-y-0 right-3 flex items-center text-[var(--pos-text-muted)] hover:text-[var(--pos-text-primary)] cursor-pointer outline-none border-none bg-none"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-          <button
-            type="button"
+          <PosSearchInput
+            id="dish-search-input"
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder={t.common.search}
+            clearLabel={t.common.clearSearch}
+            className="sm:w-[240px] shrink-0"
+          />
+          <PosSelectableChip
             onClick={() => setHideStopListed((value) => !value)}
-            className={`h-11 px-4 border font-mono text-[10px] uppercase font-extrabold shrink-0 rounded-none ${
-              hideStopListed
-                ? 'bg-[var(--pos-action-primary)] text-[var(--pos-surface)] border-[var(--pos-action-primary)]'
-                : 'bg-[var(--pos-surface)] text-[var(--pos-text-secondary)] border-[var(--pos-border)]'
-            }`}
+            active={hideStopListed}
+            className="text-[10px] font-extrabold shrink-0"
           >
             {t.menu.notInStopList}
-          </button>
+          </PosSelectableChip>
         </div>
 
         {/* Local warning panels if any alerts triggered */}
@@ -243,15 +224,15 @@ export const POSOrderSection: React.FC = () => {
           <div className="px-6 pt-4 shrink-0">
             <PosBanner
               type="danger"
-              message={`Позиция "${stopListAlertProduct}" находится в стоп-листе! Добавление заблокировано по остаткам кухни.`}
+              message={`${t.menu.stopListAlertPrefix} "${stopListAlertProduct}" ${t.menu.stopListAlertSuffix}`}
               action={
-                <button 
-                  type="button" 
+                <PosIconButton
                   onClick={() => setStopListAlertProduct(null)} 
-                  className="w-8 h-8 border border-red-200 outline-none text-red-800 hover:bg-red-100 flex items-center justify-center cursor-pointer rounded-none"
-                >
-                  ×
-                </button>
+                  variant="ghost"
+                  size="sm"
+                  label={t.common.close}
+                  icon={<span className="font-mono text-base leading-none">×</span>}
+                />
               }
             />
           </div>
@@ -271,8 +252,8 @@ export const POSOrderSection: React.FC = () => {
             <PosSkeleton type="grid" />
           ) : filteredItems.length === 0 ? (
             <PosEmptyState
-              title="Ничего не найдено"
-              description="Позиции каталога не найдены или закрыты из-за отсутствия связи."
+              title={t.menu.noItemsTitle}
+              description={t.menu.noItemsDesc}
               icon={<Search className="w-12 h-12" />}
             />
           ) : (
@@ -304,7 +285,7 @@ export const POSOrderSection: React.FC = () => {
                       </span>
                       {hasModifiers && isAvailable && (
                         <span className="font-mono text-[9px] uppercase font-bold tracking-widest text-[var(--pos-text-muted)] border border-[var(--pos-border)] px-1 relative bg-[var(--pos-surface)] shrink-0">
-                          +Мод
+                          {t.menu.modifierShort}
                         </span>
                       )}
                       {!isAvailable && (
@@ -333,11 +314,11 @@ export const POSOrderSection: React.FC = () => {
           {/* Header descriptor */}
           <div className="h-14 border-b border-[var(--pos-border)] px-4 flex items-center justify-between bg-[var(--pos-surface-raised)] select-none shrink-0">
             <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--pos-text-secondary)]">
-              {currentOrder ? `${currentOrder.tableName} (Заказ #${currentOrder.shortId})` : 'Текущий заказ'}
+              {currentOrder ? `${currentOrder.tableName} (${t.common.order} #${currentOrder.shortId})` : t.menu.currentOrder}
             </span>
             {currentOrder?.status === 'precheck_issued' && (
               <span className="font-mono bg-[var(--pos-status-warning)] text-zinc-950 font-bold text-[9px] uppercase px-1.5 py-0.5 animate-pulse">
-                Locked
+                {t.status.locked}
               </span>
             )}
           </div>
@@ -347,12 +328,12 @@ export const POSOrderSection: React.FC = () => {
             {!currentOrder ? (
               <div className="p-8 text-center text-[var(--pos-text-muted)] h-full flex flex-col items-center justify-center">
                 <SlidersHorizontal className="w-8 h-8 opacity-35 mb-2 shrink-0" />
-                <span className="font-mono text-xs font-bold uppercase tracking-wider">Заказ пуст</span>
+                <span className="font-mono text-xs font-bold uppercase tracking-wider">{t.menu.orderEmpty}</span>
               </div>
             ) : currentOrder.lines.length === 0 ? (
               <div className="p-8 text-center text-[var(--pos-text-muted)] h-full flex flex-col items-center justify-center">
                 <Utensils className="w-8 h-8 opacity-35 mb-2 shrink-0 animate-pulse" />
-                <span className="font-sans text-xs">Добавьте блюда из меню слева</span>
+                <span className="font-sans text-xs">{t.menu.addDishesHint}</span>
               </div>
             ) : (
               <div className="divide-y divide-[var(--pos-border)]">
@@ -394,7 +375,7 @@ export const POSOrderSection: React.FC = () => {
                           {(line.comment || (line.course && line.course > 1)) && (
                             <div className="flex flex-wrap items-center gap-1.5 font-mono text-[9px] text-[var(--pos-status-info)] font-bold mt-1">
                               {line.course && line.course > 1 && (
-                                <span className="px-1 border border-blue-200 bg-blue-50/50 uppercase">Курс {line.course}</span>
+                                <span className="px-1 border border-blue-200 bg-blue-50/50 uppercase">{t.common.course} {line.course}</span>
                               )}
                               {line.comment && (
                                 <span className="flex items-center gap-1">
@@ -434,7 +415,7 @@ export const POSOrderSection: React.FC = () => {
               <div className="p-3 border border-amber-200 bg-amber-50/10 text-amber-500 rounded-none flex items-center gap-2 select-none">
                 <Lock className="w-4 h-4 shrink-0" />
                 <span className="font-mono text-[10px] font-bold uppercase tracking-wider leading-snug">
-                  Заблокировано выпущен пречек
+                  {t.menu.precheckLocked}
                 </span>
               </div>
             </div>
@@ -448,7 +429,7 @@ export const POSOrderSection: React.FC = () => {
                 <span>{currentOrder.subtotal} ₽</span>
               </div>
               <div className="flex justify-between items-baseline font-mono text-xs text-[var(--pos-text-muted)]">
-                <span>НДС (10%):</span>
+                <span>{t.common.tax} (10%):</span>
                 <span>{currentOrder.tax} ₽</span>
               </div>
               {(currentOrder.discount > 0 || pricingPolicies.length > 0) && (
@@ -482,7 +463,7 @@ export const POSOrderSection: React.FC = () => {
                     }}
                     disabled={currentOrder.lines.length === 0}
                   >
-                    Действия
+                    {t.common.actions}
                   </PosButton>
 
                   <PosButton
@@ -505,7 +486,7 @@ export const POSOrderSection: React.FC = () => {
                     disabled={currentOrder.lines.length === 0}
                     icon={<Printer className="w-4 h-4" />}
                   >
-                    Пречек
+                    {t.menu.precheck}
                   </PosButton>
                 </>
               ) : (
@@ -520,7 +501,7 @@ export const POSOrderSection: React.FC = () => {
                     disabled={currentOperator?.role === 'waiter'}
                     icon={<Banknote className="w-4 h-4" />}
                   >
-                    Касса
+                    {t.sections.cash}
                   </PosButton>
 
                   {/* Override locked cancel precheck trigger code */}
@@ -531,7 +512,7 @@ export const POSOrderSection: React.FC = () => {
                     onClick={() => setPrecheckCancelOpen(true)}
                     icon={<SlidersHorizontal className="w-4 h-4" />}
                   >
-                    Отмена
+                    {t.common.cancel}
                   </PosButton>
                 </>
               )}
@@ -608,14 +589,14 @@ export const POSOrderSection: React.FC = () => {
 function categoryLabel(id: string) {
   switch (id) {
     case 'dish':
-      return 'Меню';
+      return t.menu.categories.dish;
     case 'good':
-      return 'Товары';
+      return t.menu.categories.good;
     case 'semi_finished':
-      return 'Полуфабрикаты';
+      return t.menu.categories.semiFinished;
     case 'service':
     case 'services':
-      return 'Сервис';
+      return t.menu.categories.service;
     default:
       return id;
   }
@@ -665,7 +646,7 @@ function PricingPolicyDialog({
       }
     >
       {policies.length === 0 ? (
-        <PosEmptyState title={t.pricing.noPolicies} />
+        <PosEmptyState title={t.pricing.noPolicies} description={t.pricing.noPoliciesDesc} />
       ) : (
         <div className="space-y-5">
           <div className="grid grid-cols-1 gap-2">

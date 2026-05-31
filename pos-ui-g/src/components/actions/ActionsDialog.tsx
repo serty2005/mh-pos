@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MenuItem, ModifierGroup, OrderLine, SelectedModifier } from '../../types';
 import { t } from '../../shared/i18n';
-import { PosButton, PosDialog, PosFormRow } from '../../shared/ui';
+import { PosButton, PosDialog, PosFormRow, PosSelectableChip } from '../../shared/ui';
 import { Trash2, Check } from 'lucide-react';
 
 interface ActionsDialogProps {
@@ -93,18 +93,19 @@ export const ActionsDialog: React.FC<ActionsDialogProps> = ({
       footer={
         <div className="flex w-full justify-between items-center shrink-0">
           {/* Delete/Void Line Trigger */}
-          <button
+          <PosButton
             id="action-void-line-btn"
             type="button"
+            variant="danger"
+            size="sm"
             onClick={() => {
               onDeleteLine();
               onClose();
             }}
-            className="flex items-center gap-1.5 font-mono text-xs font-bold text-[var(--pos-status-danger)] bg-transparent hover:bg-red-50 dark:hover:bg-red-950/20 px-4 h-11 border border-transparent select-none cursor-pointer rounded-none"
+            icon={<Trash2 className="w-4 h-4 shrink-0" />}
           >
-            <Trash2 className="w-4 h-4 shrink-0" />
             <span>{t.modals.deleteLine}</span>
-          </button>
+          </PosButton>
 
           <div className="flex gap-2">
             <PosButton variant="secondary" size="sm" onClick={onClose}>
@@ -143,19 +144,15 @@ export const ActionsDialog: React.FC<ActionsDialogProps> = ({
             {[1, 2, 3].map((num) => {
               const active = course === num;
               return (
-                <button
+                <PosSelectableChip
                   key={num}
                   id={`course-btn-${num}`}
-                  type="button"
+                  active={active}
                   onClick={() => setCourse(num)}
-                  className={`h-[48px] font-mono text-xs uppercase font-bold border cursor-pointer select-none transition-all rounded-none
-                    ${active
-                      ? 'bg-[var(--pos-action-primary)] border-[var(--pos-action-primary)] text-[var(--pos-surface)]'
-                      : 'bg-[var(--pos-surface)] text-[var(--pos-text-primary)] border-[var(--pos-border)] hover:bg-[var(--pos-surface-raised)]'
-                    }`}
+                  className="h-12"
                 >
-                  {num}-й Курс
-                </button>
+                  {num} {t.common.course}
+                </PosSelectableChip>
               );
             })}
           </div>
@@ -197,19 +194,15 @@ export const ActionsDialog: React.FC<ActionsDialogProps> = ({
                     {group.options.map((option) => {
                       const isSelected = modifierSelections.some((selection) => selection.groupId === group.id && selection.optionId === option.id);
                       return (
-                        <button
+                        <PosSelectableChip
                           key={option.id}
-                          type="button"
+                          active={isSelected}
                           onClick={() => handleModifierToggle(group, option.id, option.name, option.price)}
-                          className={`h-11 px-3 border flex items-center justify-between text-left font-sans text-xs font-semibold rounded-none ${
-                            isSelected
-                              ? 'bg-[var(--pos-action-primary)] border-[var(--pos-action-primary)] text-[var(--pos-surface)]'
-                              : 'bg-[var(--pos-surface)] border-[var(--pos-border)] text-[var(--pos-text-primary)]'
-                          }`}
+                          className="px-3 flex items-center justify-between text-left font-sans normal-case tracking-normal"
                         >
                           <span className="truncate">{option.name}</span>
-                          <span className="font-mono font-bold shrink-0 ml-2">{option.price > 0 ? `+${option.price} ₽` : '0 ₽'}</span>
-                        </button>
+                          <span className="font-mono font-bold shrink-0 ml-2">{option.price > 0 ? `+${option.price} ${t.common.ruble}` : `0 ${t.common.ruble}`}</span>
+                        </PosSelectableChip>
                       );
                     })}
                   </div>

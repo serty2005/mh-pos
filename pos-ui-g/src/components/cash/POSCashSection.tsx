@@ -8,7 +8,8 @@ import {
   PosStatusStrip, 
   PosActionRail,
   PosFormRow,
-  PosBanner
+  PosBanner,
+  PosStatusBadge
 } from '../../shared/ui';
 import { 
   CashDrawerEventDialog 
@@ -51,7 +52,7 @@ export const POSCashSection: React.FC = () => {
     setSessionError(null);
     const floatVal = parseFloat(initialCash) || 0;
     if (floatVal < 0) {
-      setSessionError('Инвентарный размен на открытие кассы не может быть отрицательным.');
+      setSessionError(t.cash.initialCashNegative);
       return;
     }
 
@@ -80,7 +81,7 @@ export const POSCashSection: React.FC = () => {
         {syncStatus === 'offline' && (
           <PosBanner
             type="warning"
-            message="Внимание: терминал находится в автономном режиме работы. Платежи и смены сохраняются локально."
+            message={t.cash.offlineWarning}
           />
         )}
 
@@ -90,7 +91,7 @@ export const POSCashSection: React.FC = () => {
           <div className="border border-[var(--pos-border)] bg-[var(--pos-surface)] p-5 flex flex-col justify-between space-y-4">
             <div className="space-y-1">
               <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">
-                Шаг 1: Смена оператора
+                {t.cash.stepOperatorShift}
               </span>
               <h3 className="font-sans text-sm md:text-base font-bold text-[var(--pos-text-primary)]">
                 {t.cash.personalShiftStatus}
@@ -99,14 +100,14 @@ export const POSCashSection: React.FC = () => {
 
             <div className="space-y-2 py-2">
               <PosStatusStrip
-                title="Текущая сессия"
-                message={currentOperator ? currentOperator.employeeName : 'Личная смена не открыта'}
+                title={t.cash.currentSession}
+                message={currentOperator ? currentOperator.employeeName : t.cash.personalShiftClosed}
                 variant={currentOperator ? 'success' : 'danger'}
               />
               {currentOperator && (
                 <div className="font-mono text-[10px] text-[var(--pos-text-secondary)] space-y-0.5">
-                  <div>Смена открыта: <strong className="text-[var(--pos-text-primary)]">{currentOperator.openTime}</strong></div>
-                  <div>Роль RBAC: <strong className="text-[var(--pos-text-primary)] font-bold uppercase">{currentOperator.role}</strong></div>
+                  <div>{t.cash.shiftOpened}: <strong className="text-[var(--pos-text-primary)]">{currentOperator.openTime}</strong></div>
+                  <div>{t.cash.rbacRole}: <strong className="text-[var(--pos-text-primary)] font-bold uppercase">{currentOperator.role}</strong></div>
                 </div>
               )}
             </div>
@@ -138,7 +139,7 @@ export const POSCashSection: React.FC = () => {
           <div className="border border-[var(--pos-border)] bg-[var(--pos-surface)] p-5 flex flex-col justify-between space-y-4">
             <div className="space-y-1">
               <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">
-                Шаг 2: Кассовая ККМ смена
+                {t.cash.stepCashSession}
               </span>
               <h3 className="font-sans text-sm md:text-base font-bold text-[var(--pos-text-primary)]">
                 {t.cash.cashSessionStatus}
@@ -149,21 +150,21 @@ export const POSCashSection: React.FC = () => {
               {cashSession ? (
                 <>
                   <PosStatusStrip
-                    title="Кассовая сессия"
-                    message={`ОТКРЫТА • Баланс: ${cashSession.currentAmount} ₽`}
+                    title={t.cash.cashSession}
+                    message={`${t.cash.openedStatus} • ${t.cash.balance}: ${cashSession.currentAmount} ${t.common.ruble}`}
                     variant="success"
                   />
                   <div className="font-mono text-[10px] text-[var(--pos-text-secondary)] space-y-0.5 mt-2">
-                    <div>Открыл: <strong className="text-[var(--pos-text-primary)]">{cashSession.openedBy}</strong></div>
-                    <div>Время открытия: <strong className="text-[var(--pos-text-primary)]">{cashSession.openedAt}</strong></div>
-                    <div>Начальный размен: <strong className="text-[var(--pos-text-primary)]">{cashSession.initialAmount} ₽</strong></div>
+                    <div>{t.cash.openedBy}: <strong className="text-[var(--pos-text-primary)]">{cashSession.openedBy}</strong></div>
+                    <div>{t.cash.openedAt}: <strong className="text-[var(--pos-text-primary)]">{cashSession.openedAt}</strong></div>
+                    <div>{t.cash.initialCash}: <strong className="text-[var(--pos-text-primary)]">{cashSession.initialAmount} {t.common.ruble}</strong></div>
                   </div>
                 </>
               ) : (
                 <div className="space-y-3">
                   <div className="flex gap-2 items-end">
                     <PosFormRow
-                      label="Стартовый баланс кассы (Размен)"
+                      label={t.cash.initialCashLabel}
                       id="kkm-float-input"
                       error={sessionError || undefined}
                     >
@@ -214,14 +215,14 @@ export const POSCashSection: React.FC = () => {
           <div className="flex items-center gap-1.5 shrink-0">
             <Wallet className="w-4 h-4 text-[var(--pos-text-secondary)] shrink-0" />
             <h3 className="font-mono text-xs font-bold uppercase tracking-widest text-[var(--pos-text-secondary)]">
-              Журнал операций кассового ящика ({cashDrawerEvents.length})
+              {t.cash.drawerLedger} ({cashDrawerEvents.length})
             </h3>
           </div>
 
           {cashDrawerEvents.length === 0 ? (
             <div className="py-12 border border-dashed border-[var(--pos-border)] text-center text-xs text-[var(--pos-text-muted)] p-4 flex flex-col items-center justify-center">
               <Terminal className="w-6 h-6 opacity-30 mb-2 shrink-0 animate-pulse" />
-              <span>Движение наличных средств не фиксировалось за текущую смену.</span>
+              <span>{t.cash.noDrawerEvents}</span>
             </div>
           ) : (
             <div className="border border-[var(--pos-border)] divide-y divide-[var(--pos-border)] max-h-[300px] overflow-y-auto pos-scrollarea-y pos-scrollbar-thin">
@@ -229,15 +230,15 @@ export const POSCashSection: React.FC = () => {
                 <div key={evt.id} id={`drawer-log-item-${evt.id}`} className="p-3 flex items-center justify-between text-xs hover:bg-[var(--pos-surface-raised)]/30 transition-colors">
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
-                      <span className={`px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase ${evt.type === 'in' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                        {evt.type === 'in' ? 'Внесение' : 'Изъятие'}
-                      </span>
+                      <PosStatusBadge variant={evt.type === 'in' ? 'success' : 'danger'}>
+                        {evt.type === 'in' ? t.cash.drawerIn : t.cash.drawerOut}
+                      </PosStatusBadge>
                       <span className="font-sans font-semibold text-[var(--pos-text-secondary)]">
                         {evt.reason}
                       </span>
                     </div>
                     <div className="font-mono text-[9px] text-[var(--pos-text-muted)]">
-                      {evt.timestamp} • Оператор: {evt.operator}
+                      {evt.timestamp} • {t.common.operator}: {evt.operator}
                     </div>
                   </div>
 
@@ -257,14 +258,14 @@ export const POSCashSection: React.FC = () => {
         <PosActionRail className="h-full">
           <div className="h-14 border-b border-[var(--pos-border)] px-4 flex items-center justify-between bg-[var(--pos-surface-raised)] select-none shrink-0">
             <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--pos-text-secondary)]">
-              Инструменты кассы
+              {t.cash.tools}
             </span>
           </div>
 
           {/* Call register cash event */}
           <div className="p-4 border-b border-[var(--pos-border)] bg-[var(--pos-surface-raised)]/10 select-none space-y-3">
             <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)] block">
-              Внеочередные внесения/изъятия
+              {t.cash.extraDrawerEvents}
             </span>
             <PosButton
               id="cash-drawer-event-btn"
@@ -276,19 +277,19 @@ export const POSCashSection: React.FC = () => {
               disabled={currentOperator?.role === 'waiter' || !cashSession}
               icon={<ArrowUpRight className="w-4 h-4" />}
             >
-              Внести / Изъять Cash
+              {t.cash.recordDrawer}
             </PosButton>
           </div>
 
           {/* Sync status diagnostics */}
           <div className="p-4 border-b border-[var(--pos-border)] bg-[var(--pos-surface-raised)]/10 select-none space-y-3">
             <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)] block">
-              Синхронизация с backend
+              {t.cash.backendSync}
             </span>
             <div className="flex gap-2">
               <div className="h-10 flex-1 border border-[var(--pos-border)] bg-[var(--pos-surface)] px-3 flex items-center gap-2 font-mono text-[10px] font-bold uppercase text-[var(--pos-text-secondary)]">
                 {syncStatus === 'online' ? <Wifi className="w-4 h-4 text-emerald-500" /> : <WifiOff className="w-4 h-4 text-red-500" />}
-                <span>{syncStatus === 'online' ? 'Связь активна' : 'Есть проблемы sync'}</span>
+                <span>{syncStatus === 'online' ? t.cash.syncOnline : t.cash.syncProblem}</span>
               </div>
 
               <PosButton
@@ -300,7 +301,7 @@ export const POSCashSection: React.FC = () => {
                 disabled={outboxCount === 0 || syncStatus === 'offline'}
                 icon={<RefreshCw className="w-4 h-4" />}
               >
-                Сброс ({outboxCount})
+                {t.cash.flush} ({outboxCount})
               </PosButton>
             </div>
           </div>
@@ -308,7 +309,7 @@ export const POSCashSection: React.FC = () => {
           {/* Logger diagnostics console feed */}
           <div className="flex-1 p-4 flex flex-col min-h-0 select-none">
             <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)] block mb-2 shrink-0">
-              Логи консоли Edge-сервера
+              {t.cash.edgeLogs}
             </span>
             
             <div className="flex-1 border border-[var(--pos-border)] bg-gray-950 text-emerald-400 font-mono text-[10px] p-3 overflow-y-auto space-y-1.5 pos-scrollarea-y pos-scrollbar-thin max-h-[220px]">
