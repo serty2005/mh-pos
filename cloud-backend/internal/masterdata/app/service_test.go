@@ -700,6 +700,7 @@ type posEdgeMasterDataCommand struct {
 	RecipeVersions         []posEdgeRecipeVersion         `json:"recipe_versions,omitempty"`
 	RecipeLines            []posEdgeRecipeLine            `json:"recipe_lines,omitempty"`
 	StopLists              []posEdgeStopListEntry         `json:"stop_lists,omitempty"`
+	Warehouses             []posEdgeWarehouseReference    `json:"warehouses,omitempty"`
 }
 
 type posEdgeModifierGroup struct {
@@ -781,6 +782,16 @@ type posEdgeStopListEntry struct {
 	Reason            string   `json:"reason,omitempty"`
 	Active            bool     `json:"active"`
 	UpdatedAt         string   `json:"updated_at"`
+}
+
+type posEdgeWarehouseReference struct {
+	ID           string `json:"id"`
+	RestaurantID string `json:"restaurant_id"`
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
+	Default      bool   `json:"is_default"`
+	Active       bool   `json:"active"`
+	UpdatedAt    string `json:"updated_at"`
 }
 
 type posEdgeFolderParameter struct {
@@ -902,12 +913,16 @@ func assertPOSEdgeRecipesAndInventoryReferencePackage(t *testing.T, recipesBody,
 	if err := inventoryDecoder.Decode(&inventory); err != nil {
 		t.Fatalf("inventory_reference package must match POS Edge strict ingest shape: %v\npayload=%s", err, inventoryBody)
 	}
-	if inventory.RestaurantID != restaurantID || len(inventory.StopLists) != 1 {
+	if inventory.RestaurantID != restaurantID || len(inventory.StopLists) != 1 || len(inventory.Warehouses) != 1 {
 		t.Fatalf("unexpected inventory_reference package rows: %+v", inventory)
 	}
 	stop := inventory.StopLists[0]
 	if stop.RestaurantID != restaurantID || stop.CatalogItemID != componentCatalogItemID || stop.AvailableQuantity == nil || *stop.AvailableQuantity != 0 || stop.Source != "cloud" || !stop.Active {
 		t.Fatalf("unexpected stop-list projection: %+v", stop)
+	}
+	warehouse := inventory.Warehouses[0]
+	if warehouse.ID != "warehouse-main" || warehouse.RestaurantID != restaurantID || warehouse.Kind != "kitchen" || !warehouse.Default || !warehouse.Active {
+		t.Fatalf("unexpected warehouse projection: %+v", warehouse)
 	}
 }
 

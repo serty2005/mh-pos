@@ -111,8 +111,10 @@ type fixture struct {
 	device         *domain.Device
 	employee       *domain.Employee
 	manager        *domain.Employee
+	kitchen        *domain.Employee
 	session        *domain.AuthSession
 	managerSession *domain.AuthSession
+	kitchenSession *domain.AuthSession
 	hall           *domain.Hall
 	table          *domain.Table
 	menuItem       *domain.MenuItem
@@ -797,42 +799,47 @@ func insertRecipe(t *testing.T, f *fixture, recipeID, ownerCatalogItemID, compon
 
 func (f *fixture) kitchenMetaCommand(t *testing.T, commandID string) app.CommandMeta {
 	t.Helper()
-	role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
-		CommandMeta:     seedMeta(f.device.ID),
-		Name:            "kitchen-" + commandID,
-		PermissionsJSON: appshared.RolePermissionsJSON(appshared.RoleKitchen),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	employee, err := f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{
-		CommandMeta:  seedMeta(f.device.ID),
-		RestaurantID: f.restaurant.ID,
-		RoleID:       role.ID,
-		Name:         "Kitchen " + commandID,
-		PINHash:      testPINHash(t, "3333", "kitchen-"+commandID),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
-		CommandMeta: app.CommandMeta{
-			CommandID:      "cmd-login-kitchen-" + commandID,
-			NodeDeviceID:   f.device.ID,
-			DeviceID:       f.device.ID,
-			ClientDeviceID: f.clientID,
-			Origin:         app.OriginEdgeDevice,
-		},
-		PIN: "3333",
-	})
-	if err != nil {
-		t.Fatal(err)
+	if f.kitchen == nil || f.kitchenSession == nil {
+		const pin = "4301"
+		role, err := f.service.CreateRole(f.ctx, app.CreateRoleCommand{
+			CommandMeta:     seedMeta(f.device.ID),
+			Name:            "kitchen",
+			PermissionsJSON: appshared.RolePermissionsJSON(appshared.RoleKitchen),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		employee, err := f.service.CreateEmployee(f.ctx, app.CreateEmployeeCommand{
+			CommandMeta:  seedMeta(f.device.ID),
+			RestaurantID: f.restaurant.ID,
+			RoleID:       role.ID,
+			Name:         "Kitchen",
+			PINHash:      testPINHash(t, pin, "kitchen"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+			CommandMeta: app.CommandMeta{
+				CommandID:      "cmd-login-kitchen",
+				NodeDeviceID:   f.device.ID,
+				DeviceID:       f.device.ID,
+				ClientDeviceID: f.clientID,
+				Origin:         app.OriginEdgeDevice,
+			},
+			PIN: pin,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.kitchen = employee
+		f.kitchenSession = &login.Session
 	}
 	meta := edgeMeta(f.device.ID)
 	meta.CommandID = commandID
 	meta.ClientDeviceID = f.clientID
-	meta.ActorEmployeeID = employee.ID
-	meta.SessionID = login.Session.ID
+	meta.ActorEmployeeID = f.kitchen.ID
+	meta.SessionID = f.kitchenSession.ID
 	return meta
 }
 
