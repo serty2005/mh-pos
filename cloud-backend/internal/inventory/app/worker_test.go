@@ -285,6 +285,56 @@ func TestRunOnceCompensatesAlreadyProcessedItemServedOnRecallServeAgain(t *testi
 	}
 }
 
+func TestRunOnceRecallServeAgainKeepsSingleConsumptionForSameQuantity(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{
+		queuedEvent(t, "queue-1", "018f0000-0000-7000-8000-0000000000a1", contracts.EventItemServed, itemServedPayloadWithServedEventID(t, "served-event-1", "", 1, "line-1", "item-1", "1.000")),
+		queuedEvent(t, "queue-2", "018f0000-0000-7000-8000-0000000000a2", contracts.EventItemServed, itemServedPayloadWithServedEventID(t, "served-event-2", "served-event-1", 2, "line-1", "item-1", "1.000")),
+		queuedEvent(t, "queue-3", "018f0000-0000-7000-8000-0000000000a3", contracts.EventCheckClosed, checkClosedPayload(t, []map[string]any{{
+			"order_line_id":          "line-1",
+			"catalog_item_id":        "item-1",
+			"quantity":               "1.000",
+			"unit_code":              "PC",
+			"required_for_inventory": true,
+		}})),
+	}}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{
+		"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101",
+		"018f0000-0000-7000-8000-00000000d002", "018f0000-0000-7000-8000-00000000d102",
+		"018f0000-0000-7000-8000-00000000d003", "018f0000-0000-7000-8000-00000000d103",
+	}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 3 {
+		t.Fatalf("expected old serve, compensation and replacement serve only, got %+v", repo.documents)
+	}
+	var consumed float64
+	for _, document := range repo.documents {
+		if document.SourceEventType == string(contracts.EventCheckClosed) {
+			t.Fatalf("expected CheckClosed to skip fully served line after recall compensation, got %+v", document)
+		}
+		for _, entry := range document.Ledger {
+			if entry.OrderLineID != "line-1" {
+				continue
+			}
+			qty, err := strconv.ParseFloat(entry.Quantity, 64)
+			if err != nil {
+				t.Fatalf("parse ledger quantity %q: %v", entry.Quantity, err)
+			}
+			switch entry.MovementType {
+			case app.MovementOut:
+				consumed += qty
+			case app.MovementIn:
+				consumed -= qty
+			}
+		}
+	}
+	if fmt.Sprintf("%.3f", consumed) != "1.000" {
+		t.Fatalf("expected net single consumption after recall/serve-again, got %.3f from %+v", consumed, repo.documents)
+	}
+}
+
 func TestRunOnceCompensatingItemServedReplayIsIdempotent(t *testing.T) {
 	supersedingPayload := itemServedPayloadWithServedEventID(t, "served-event-2", "served-event-1", 2, "line-1", "item-1", "1.000")
 	repo := &fakeRepo{events: []app.QueuedEvent{

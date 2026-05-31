@@ -560,19 +560,21 @@ Schema verification:
 - `StopListUpdated` обрабатывается асинхронно через `inventory_event_queue`: worker пишет `cloud_projection_stop_list_updates` без raw payload. `edge_overlay_until_next_publication` обновляет bounded `stop_lists` overlay, `cloud_wins` не перетирает Cloud-owned row, `edge_overlay_requires_manager_review` фиксирует безопасную projection для bounded manager review.
 - Bounded manager review для `edge_overlay_requires_manager_review` реализован сейчас: list/detail имеют stable bounded paging, decisions идемпотентны, invalid transition возвращает conflict, approve применяет изменение только через Cloud-owned `stop_lists` + publication, reject/request-changes не меняют runtime stop-list authority.
 - `GET /api/v1/sync/readiness/stop-list` реализовано сейчас как safe readiness summary: publication/package metadata, latest accepted `StopListUpdated` ACK metadata и агрегат `cloud_sync_problem_events` по кодам ошибок без raw payload.
-
-Запланировано до полного пилота:
-
-- Cloud authoring/publication workflow для stop-list/recipes становится штатным источником sale-blocking availability overlay; POS Edge runtime уже блокирует продажи по локальному `stop_lists`.
-- `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` создают Cloud-owned stock documents/ledger rows; receipt line с pending catalog suggestion остается запланировано далее.
+- `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` создают Cloud-owned stock documents/ledger rows.
 - `KitchenTicketStatusChanged` и `ItemServed` используются для kitchen timing и inventory deduplication, но не меняют finalized checks.
 - Если Cloud уже принял superseding `ItemServed` для той же order line до обработки очереди, Inventory Worker пропускает superseded served fact.
 - Если старый `ItemServed` уже создал stock document до recall/serve-again, superseding `ItemServed` создает append-only `RETURN/IN` compensation document с `source_event_type = ItemServedCompensation`, затем новый `SALE/OUT` document. Replay защищен unique `(source_event_id, source_event_type)`, raw Edge payload в read APIs не раскрывается.
 - ClickHouse `raw_business_events` реализовано сейчас как бессрочный архив business events.
 - Async Batch Forwarder переносит accepted events из PostgreSQL `inbox_events` в ClickHouse и после successful export выставляет `processed_for_olap = true`.
 - ClickHouse `olap_stock_moves` реализовано сейчас как первый bounded read model для складских движений; он не является source of truth и наполняется только async export из PostgreSQL `stock_ledger`.
+- `GET /api/v1/olap/raw-business-events`, `GET /api/v1/olap/stock-moves`, `GET /api/v1/olap/export-status` и `GET /api/v1/olap/stock-move-summary` реализованы сейчас как bounded/read-only endpoints без raw payload.
+
+Запланировано до полного пилота:
+
+- Cloud authoring/publication workflow для stop-list/recipes становится штатным источником sale-blocking availability overlay; POS Edge runtime уже блокирует продажи по локальному `stop_lists`.
+- Receipt line с pending catalog suggestion остается запланировано далее.
 - Полный materialized balance engine, recipe expansion, modifier linked catalog item consumption и retro costing DAG становятся частью Cloud Inventory Engine; bounded `stock-balances` read из `stock_ledger` реализован сейчас.
-- `GET /api/v1/olap/raw-business-events`, `GET /api/v1/olap/stock-moves`, `GET /api/v1/olap/export-status` и `GET /api/v1/olap/stock-move-summary` реализованы сейчас как bounded/read-only endpoints без raw payload; sales/kitchen/costing-dependent projections запланированы далее.
+- Sales/kitchen/costing-dependent projections запланированы далее.
 - Расширенный manager review workflow для Edge-origin stop-list изменений остается запланирован далее; текущий runtime уже имеет bounded review/apply без raw payload, но без production-grade task assignment/escalation.
 
 Вне текущего объема:
