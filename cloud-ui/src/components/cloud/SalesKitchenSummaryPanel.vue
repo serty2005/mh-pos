@@ -57,7 +57,7 @@
               <tr v-for="item in ctx.salesKitchenSummaryRows.value" :key="`${item.group_by}:${item.group_key}`">
                 <td>
                   <span class="cloud-status published">{{ groupByLabel(item.group_by) }}</span>
-                  <small class="cloud-muted-cell">{{ ctx.formatCell('group_key', item.group_key) }}</small>
+                  <small class="cloud-muted-cell">{{ formatGroupKey(item.group_key) }}</small>
                 </td>
                 <td>{{ ctx.formatCell('business_date_local', item.business_date_local) }}</td>
                 <td>{{ ctx.formatCell('event_type', item.event_type) }}</td>
@@ -76,7 +76,7 @@
         <div class="edge-event-card-list" :aria-label="t('cloud.reporting.salesKitchen.title')">
           <article v-for="item in ctx.salesKitchenSummaryRows.value" :key="`${item.group_by}:${item.group_key}`" class="edge-event-card">
             <span class="cloud-status published">{{ groupByLabel(item.group_by) }}</span>
-            <strong>{{ ctx.formatCell('group_key', item.group_key) }}</strong>
+            <strong>{{ formatGroupKey(item.group_key) }}</strong>
             <small>{{ t('cloud.fields.business_date_local') }}: {{ ctx.formatCell('business_date_local', item.business_date_local) }}</small>
             <small>{{ t('cloud.reporting.salesKitchen.columns.events') }}: {{ eventCounts(item) }}</small>
             <small>{{ t('cloud.reporting.salesKitchen.columns.stockMoves') }}: {{ item.stock_move_count }}</small>
@@ -115,6 +115,10 @@ function groupByLabel(value: string) {
   if (value === 'source_event_type') return t('cloud.reporting.salesKitchen.groupBy.sourceEventType');
   if (value === 'catalog_item') return t('cloud.reporting.salesKitchen.groupBy.catalogItem');
   return value;
+}
+
+function formatGroupKey(value: string) {
+  return value.trim() || '-';
 }
 
 function eventCounts(item: SalesKitchenSummaryItem) {

@@ -833,6 +833,7 @@ button:focus-visible,
   color: #202124;
   font-family: "Consolas", "SFMono-Regular", monospace;
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .cloud-result-box,
@@ -991,6 +992,7 @@ button:focus-visible,
   margin-top: 4px;
   color: #66706b;
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .status-pill {

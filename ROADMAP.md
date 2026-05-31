@@ -578,11 +578,12 @@
   - publication;
   - known Edge node.
 - Cloud UI содержит route-backed recipe version editor.
+- Cloud UI содержит минимальный read-only preview `sales-kitchen-summary`: фильтры business date from/to и `group_by`, bounded запрос `limit=50&offset=0`, table/card вывод безопасных агрегированных полей без raw payload, графиков, BI dashboard, COGS/margin и retry/backfill controls.
 
 Запланировано далее:
 
 - Runtime surfaces для inventory operations/costing после появления подтвержденных Cloud backend routes.
-- Runtime surfaces для OLAP exports/operator controls только после production-grade backend jobs.
+- Runtime surfaces для OLAP exports/operator controls, stock moves previews и richer OLAP analytics только после подтвержденных backend/UI contracts и production-grade backend jobs.
 
 ## Full pilot smoke
 

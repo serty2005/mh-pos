@@ -54,7 +54,7 @@ Cloud UI должен стать менеджерским приложением
 - interactive selectors вместо UUID/raw JSON для связей catalog/menu/modifier/recipe/stop-list;
 - proposal queues: `CatalogItemChangeSuggested` and `RecipeChangeSuggested` показываются как review workflow с approve/reject, diff and source event metadata;
 - inventory workspace: stock receipts, counts, production, ledger/balances/costing status, recalculation status;
-- OLAP workspace: ClickHouse export health, retry/backfill state and read-only previews for sales, stock moves, COGS/margin and kitchen timing;
+- OLAP workspace: ClickHouse export health, retry/backfill state and read-only previews for sales/stock moves; COGS/margin and kitchen timing remain costing-dependent future analytics after reliable cost basis and backend/UI contracts;
 - sync observability: accepted/rejected/retryable event metadata, checksums and support codes без raw payload, PIN/token/secret values or sensitive request dumps.
 
 ## Design Code Requirements
