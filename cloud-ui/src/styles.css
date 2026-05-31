@@ -971,6 +971,32 @@ button:focus-visible,
   align-items: start;
 }
 
+.olap-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr)) repeat(4, minmax(150px, 1fr)) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.section-head.compact {
+  margin-top: 8px;
+}
+
+.section-head.compact h3 {
+  margin: 0;
+  color: #202124;
+  font-size: 18px;
+}
+
+.olap-status-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.olap-status-grid small {
+  color: #66706b;
+  overflow-wrap: anywhere;
+}
+
 .cloud-signal-row {
   display: flex;
   flex-wrap: wrap;
@@ -1092,6 +1118,7 @@ button:focus-visible,
   .inventory-filter-grid,
   .financial-operations-filter-grid,
   .sales-kitchen-filter-grid,
+  .olap-filter-grid,
   .recipe-version-grid,
   .proposal-review-grid {
     grid-template-columns: 1fr;

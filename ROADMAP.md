@@ -247,6 +247,7 @@
 - Managed SQL files and startup migration/verification policy.
 - ADR-015 accepted for persistence and analytics strategy.
 - ClickHouse добавлен как обязательный Cloud runtime component для bounded analytics slices.
+- Cloud UI реализовано сейчас читает bounded inventory/OLAP operator slices: `stock-balances`, OLAP export status, `olap_stock_moves` preview и `stock-move-summary`.
 
 Не выполнено и не должно считаться завершенным:
 
@@ -582,8 +583,8 @@
 
 Запланировано далее:
 
-- Runtime surfaces для inventory operations/costing после появления подтвержденных Cloud backend routes.
-- Runtime surfaces для OLAP exports/operator controls, stock moves previews и richer OLAP analytics только после подтвержденных backend/UI contracts и production-grade backend jobs.
+- Runtime surfaces для inventory operations/costing за пределами текущего read-only `stock-balances` после появления подтвержденных Cloud backend routes.
+- Изменяющие surfaces для OLAP exports/operator controls только после production-grade backend jobs; текущий Cloud UI остается read-only для export status, stock moves, stock move summary и `sales-kitchen-summary`.
 
 ## Full pilot smoke
 
@@ -703,10 +704,11 @@ GET /api/v1/inventory/stock-balances?restaurant_id=&warehouse_id=&catalog_item_i
   - idempotency по UUIDv7 `command_id`;
   - без raw payload;
   - без synchronous ClickHouse dual-write.
+- Cloud UI реализовано сейчас показывает read-only `export-status`, bounded `stock-moves` и `stock-move-summary`; support-only retry/backfill control не вызывается из UI.
 
 Далее:
 
-- Production-grade backfill jobs/operator UI.
+- Production-grade backfill jobs/operator UI для mutating OLAP controls.
 - Расширенные sales/kitchen aggregates beyond first bounded endpoint.
 - Production-grade kitchen timing API.
 - Costing-dependent COGS/margin после появления достоверной cost basis.

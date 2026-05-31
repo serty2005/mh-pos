@@ -16,7 +16,7 @@
 4. Явная публикация master data package для Edge.
 5. Передача опубликованного snapshot на Edge, где далее формируются заказ и продажа.
 6. Manager-facing recipes и stop-list authoring по подтвержденным Cloud master-data routes.
-7. Route-backed manager review для catalog/recipe suggestions и Edge-origin stop-list updates, readiness-only поверхности для inventory operations/costing и OLAP exports без неподтвержденных команд.
+7. Route-backed manager review для catalog/recipe suggestions и Edge-origin stop-list updates, bounded read-only поверхности для inventory balances и OLAP export/stock movement slices без неподтвержденных команд.
 8. Read-only Cloud reporting по detailed financial operation projection для `CancellationRecorded`/`RefundRecorded`.
 9. Минимальный read-only preview bounded OLAP агрегата `sales-kitchen-summary`.
 
@@ -24,7 +24,7 @@
 
 - вывести связи `catalog item -> menu item -> modifier bindings -> pricing policies` как единый сценарий подготовки продажи;
 - показывать версии опубликованного пакета и состояние доставки на Edge, когда backend подтвердит такой контракт.
-- до полного пилота превратить readiness-only manager surfaces для inventory operations, costing status, ClickHouse export readiness и OLAP API diagnostics в runtime только после появления подтвержденных Cloud backend routes; для `sales-kitchen-summary` реализован только bounded table preview без BI dashboard;
+- до полного пилота расширять manager surfaces для inventory operations, costing status, ClickHouse export readiness и OLAP API diagnostics только поверх подтвержденных Cloud backend routes; текущий UI уже читает bounded `stock-balances`, OLAP export status, stock moves, stock move summary и `sales-kitchen-summary` без mutating controls или BI dashboard;
 
 вне текущего объема:
 
@@ -55,7 +55,7 @@
 - recipe items через `/api/v1/master-data/recipes/items`;
 - сценарный editor версий техкарт через `/api/v1/master-data/recipes/versions`, `/api/v1/master-data/recipes/versions/drafts`, `/api/v1/master-data/recipes/versions/{id}/submit`;
 - stop-list entries через `/api/v1/master-data/inventory/stop-list`;
-- route-backed раздел `Очередь предложений` для Cloud review workflow (`catalog-suggestions`/`recipe-suggestions`/`manager/stop-list-updates`) со списками catalog/recipe suggestions и Edge-origin stop-list updates, detail/diff view, approve/reject/request-changes actions, linked new dish + recipe group display и publication/readiness signal после approve; раздел `Готовность склада` читает `GET /api/v1/sync/readiness/stop-list` для safe stop-list/publication/Edge ACK/sync problem summary; OLAP exports остается readiness-only, а `Sales/kitchen summary` читает bounded `GET /api/v1/olap/sales-kitchen-summary` как минимальный table preview без raw payload;
+- route-backed раздел `Очередь предложений` для Cloud review workflow (`catalog-suggestions`/`recipe-suggestions`/`manager/stop-list-updates`) со списками catalog/recipe suggestions и Edge-origin stop-list updates, detail/diff view, approve/reject/request-changes actions, linked new dish + recipe group display и publication/readiness signal после approve; раздел `Готовность склада` читает `GET /api/v1/sync/readiness/stop-list` для safe stop-list/publication/Edge ACK/sync problem summary; раздел `OLAP exports` читает `GET /api/v1/olap/export-status`, `GET /api/v1/olap/stock-moves` и `GET /api/v1/olap/stock-move-summary` как bounded read-only operator preview без retry/backfill mutation controls; раздел `Sales/kitchen summary` читает bounded `GET /api/v1/olap/sales-kitchen-summary` как минимальный table preview без raw payload;
 - halls и tables;
 - menu items;
 - menu category create как command-only операция, потому что list/update routes не подтверждены;
@@ -74,7 +74,7 @@
 - stop-list panel уже имеет bounded route-backed rows; `Готовность склада` показывает default conflict policy, async projection mode, publication/package metadata, latest Edge ACK metadata и sync problem counters без raw payload; Cloud review queue показывает safe Edge-origin stop-list update summary/diff и approve/reject/request-changes без raw payload. Production-grade assignment/escalation workflow остается запланирован далее;
 - реализовано сейчас: inventory readiness surface показывает route-backed `stock-balances` table из Cloud backend с фильтрами `warehouse_id`, `catalog_item_id`, `business_date_to`, `costing_status`, aggregate costing status и readiness signals stop-list без raw payload. Edge-side stock receipts, inventory counts, write-offs and production input are covered by `pos-ui-g` kitchen mode and Cloud ledger/balance read endpoints;
 - запланировано далее: stock documents table, full costing/recalculation operator workflow и inventory runtime actions в Cloud UI;
-- ClickHouse/OLAP workspace: backend уже имеет read-only export status, bounded stock moves, stock move summary и sales-kitchen summary; Cloud UI реализовано сейчас показывает только минимальный read-only `sales-kitchen-summary` preview, а OLAP exports/status, stock moves, stock move summary, retry/backfill mutation controls и richer analytics остаются вне runtime preview в текущем scope;
+- реализовано сейчас: ClickHouse/OLAP workspace показывает read-only export status для `raw_business_events` и `stock_moves`, bounded preview `olap_stock_moves`, stock move summary с группировкой `business_date`, `catalog_item`, `warehouse` и минимальный read-only `sales-kitchen-summary` preview. UI не вызывает `POST /api/v1/olap/export-retry`, не запускает backfill, не показывает COGS/margin расчеты и не является BI dashboard;
 - launch readiness должен учитывать stop-list review и публикацию streams `recipes`/`stop_lists`;
 - publication panel показывает latest package version и target Edge node; latest known Edge ACK для stop-list отображается в readiness summary, package delivery ACK как отдельный contract остается запланирован далее;
 - Edge events/problem events panel должен показывать accepted/rejected/retryable metadata без raw payload.
@@ -125,7 +125,8 @@
 
 - `cloud-backend/internal/provisioning/api/router.go` для Edge-device provisioning;
 - `cloud-backend/internal/masterdata/api/router.go` для master data и публикации;
-- `cloud-backend/internal/cloudsync/api/router.go` для безопасного списка входящих Edge events, stop-list readiness, inventory balances и Cloud financial reporting.
+- `cloud-backend/internal/cloudsync/api/router.go` для безопасного списка входящих Edge events, stop-list readiness, inventory balances и Cloud financial reporting;
+- `cloud-backend/internal/olap/api/router.go` для read-only OLAP export status, stock moves и stock move summary.
 
 Реализовано сейчас для financial reporting:
 
@@ -157,7 +158,7 @@ Review command body:
 
 Для entities без подтвержденного `GET list` route UI показывает форму команды и поясняет, что list route не подтвержден.
 
-реализовано сейчас: API client покрывает bounded inventory balance view `GET /api/v1/inventory/stock-balances`, stop-list readiness и минимальный bounded preview `GET /api/v1/olap/sales-kitchen-summary`. Запланировано до полного пилота: API client должен покрыть full costing/recalculation status, подтвержденные ClickHouse export status/stock move summary/`olap_stock_moves` preview endpoints и production-grade operator flows; UI не должен вызывать неподтвержденные mutating retry/backfill или BI endpoints до появления backend contract.
+реализовано сейчас: API client покрывает bounded inventory balance view `GET /api/v1/inventory/stock-balances`, stop-list readiness, `GET /api/v1/olap/export-status?stream=raw_business_events|stock_moves`, `GET /api/v1/olap/stock-moves`, `GET /api/v1/olap/stock-move-summary` и минимальный bounded preview `GET /api/v1/olap/sales-kitchen-summary`. Ответы валидируются через Zod, query формируется через bounded `limit/offset`, а UI не отображает raw payload fields. Запланировано до полного пилота: full costing/recalculation status, production-grade backfill/retry operator workflow и richer BI endpoints; UI не вызывает изменяющие retry/backfill controls в текущем scope.
 
 ## Runtime Code
 
