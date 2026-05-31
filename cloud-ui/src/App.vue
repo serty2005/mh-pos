@@ -25,7 +25,7 @@
     <recipe-version-editor-panel v-else-if="activeKey === 'recipeVersions'" :ctx="cloudCtx" />
     <proposal-review-queue v-else-if="activeKey === 'proposalReview'" :ctx="cloudCtx" />
     <inventory-readiness-panel v-else-if="activeKey === 'inventoryReadiness'" :ctx="cloudCtx" />
-    <olap-export-readiness-panel v-else-if="activeKey === 'olapExports'" />
+    <olap-export-readiness-panel v-else-if="activeKey === 'olapExports'" :ctx="cloudCtx" />
     <section v-else-if="activeKey !== 'restaurants' && !selectedRestaurantId" class="empty-state wide">
       {{ t('cloud.empty.selectRestaurant') }}
     </section>
@@ -86,10 +86,13 @@ import {
   deactivateStopListEntry,
   generatePairingCode,
   getAssignmentStatus,
+  getOlapExportStatus,
   getPublicationState,
   getStopListReadiness,
   listFinancialOperations,
   listInventoryStockBalances,
+  listOlapStockMoveSummary,
+  listOlapStockMoves,
   listSalesKitchenSummary,
   listCatalogFolders,
   listCatalogItems,
@@ -141,7 +144,11 @@ import {
   upsertStopListEntry,
   ApiError,
 } from './shared/api';
+<<<<<<< HEAD
 import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, FinancialOperationReportItem, InventoryStockBalance, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, SalesKitchenSummaryGroupBy, SalesKitchenSummaryItem, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
+=======
+import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, FinancialOperationReportItem, InventoryStockBalance, OlapExportStatus, OlapStockMove, OlapStockMoveSummary, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, SalesKitchenSummaryItem, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
+>>>>>>> decca4fee2a80fc56a430d86d548f4e14a3311a4
 import type { RecipeVersionView } from './shared/schemas';
 
 type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'financialOperations' | 'salesKitchenSummary' | 'recipeVersions' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
@@ -248,6 +255,9 @@ const restaurants = ref<Restaurant[]>([]);
 const publication = ref<PublicationSummary | null>(null);
 const stopListReadiness = ref<StopListReadiness | null>(null);
 const inventoryStockBalances = ref<InventoryStockBalance[]>([]);
+const olapExportStatuses = ref<OlapExportStatus[]>([]);
+const olapStockMoves = ref<OlapStockMove[]>([]);
+const olapStockMoveSummary = ref<OlapStockMoveSummary[]>([]);
 const financialOperations = ref<FinancialOperationReportItem[]>([]);
 const salesKitchenSummaryRows = ref<SalesKitchenSummaryItem[]>([]);
 const edgeDevices = ref<UnassignedEdgeNode[]>([]);
@@ -264,7 +274,19 @@ const pairingResult = ref<PairingCodeResult | null>(null);
 const publishForm = reactive({ published_by: '', node_device_id: '' });
 const pairingForm = reactive({ display_name: '', expires_in_minutes: 30 });
 const financialOperationFilters = reactive({ businessDateFrom: '', businessDateTo: '', operationType: '', shiftId: '', originalShiftId: '', checkId: '' });
+<<<<<<< HEAD
 const salesKitchenSummaryFilters = reactive<{ businessDateFrom: string; businessDateTo: string; groupBy: SalesKitchenSummaryGroupBy }>({ businessDateFrom: '', businessDateTo: '', groupBy: 'business_date' });
+=======
+const salesKitchenSummaryFilters = reactive({ businessDateFrom: '', businessDateTo: '', groupBy: 'business_date' });
+const olapFilters = reactive({
+  businessDateFrom: '',
+  businessDateTo: '',
+  catalogItemId: '',
+  warehouseId: '',
+  sourceEventType: '',
+  groupBy: 'business_date' as 'business_date' | 'catalog_item' | 'warehouse',
+});
+>>>>>>> decca4fee2a80fc56a430d86d548f4e14a3311a4
 const form = reactive<Row>({});
 
 const permissionGroups: PermissionGroup[] = [
@@ -812,6 +834,9 @@ const cloudCtx = {
   publication,
   stopListReadiness,
   inventoryStockBalances,
+  olapExportStatuses,
+  olapStockMoves,
+  olapStockMoveSummary,
   financialOperations,
   salesKitchenSummaryRows,
   edgeEvents,
@@ -828,6 +853,7 @@ const cloudCtx = {
   pairingForm,
   financialOperationFilters,
   salesKitchenSummaryFilters,
+  olapFilters,
   form,
   scopedRows,
   permissionGroups,
@@ -862,6 +888,7 @@ const cloudCtx = {
   loadPublication,
   loadStopListReadiness,
   loadInventoryStockBalances,
+  loadOlapOperatorSurface,
   loadFinancialOperations,
   loadSalesKitchenSummary,
   reloadActive,
@@ -900,6 +927,7 @@ watch(selectedRestaurantId, async () => {
   if (activeKey.value === 'edgeEvents') await loadEdgeEvents();
   if (activeKey.value === 'financialOperations') await loadFinancialOperations();
   if (activeKey.value === 'salesKitchenSummary') await loadSalesKitchenSummary();
+  if (activeKey.value === 'olapExports') await loadOlapOperatorSurface();
   if (activeKey.value === 'recipeVersions') await loadRecipeVersions();
   if (activeKey.value === 'proposalReview') await loadProposalReview();
   if (activeKey.value === 'inventoryReadiness') await loadStopListReadiness();
@@ -915,6 +943,7 @@ watch(activeKey, async () => {
   if (activeKey.value === 'edgeEvents') await loadEdgeEvents();
   if (activeKey.value === 'financialOperations') await loadFinancialOperations();
   if (activeKey.value === 'salesKitchenSummary') await loadSalesKitchenSummary();
+  if (activeKey.value === 'olapExports') await loadOlapOperatorSurface();
   if (activeKey.value === 'recipeVersions') await loadRecipeVersions();
   if (activeKey.value === 'proposalReview') await loadProposalReview();
   if (activeKey.value === 'inventoryReadiness') await loadStopListReadiness();
@@ -952,6 +981,7 @@ function navCount(key: ResourceKey) {
   if (key === 'edgeEvents') return edgeEvents.value.length;
   if (key === 'financialOperations') return financialOperations.value.length;
   if (key === 'salesKitchenSummary') return salesKitchenSummaryRows.value.length;
+  if (key === 'olapExports') return olapStockMoves.value.length + olapStockMoveSummary.value.length;
   if (key === 'recipeVersions') return recipeVersions.value.length;
   if (key === 'proposalReview') return catalogSuggestions.value.length + recipeSuggestions.value.length;
   if (key === 'restaurants') return restaurants.value.length;
@@ -1137,6 +1167,35 @@ async function loadInventoryStockBalances(filters: { warehouseId?: string; catal
   });
 }
 
+async function loadOlapOperatorSurface() {
+  if (!selectedRestaurantId.value) {
+    olapExportStatuses.value = [];
+    olapStockMoves.value = [];
+    olapStockMoveSummary.value = [];
+    return;
+  }
+  await withLoading('olap-operator', async () => {
+    const filters = {
+      businessDateFrom: String(olapFilters.businessDateFrom ?? '').trim(),
+      businessDateTo: String(olapFilters.businessDateTo ?? '').trim(),
+      catalogItemId: String(olapFilters.catalogItemId ?? '').trim(),
+      warehouseId: String(olapFilters.warehouseId ?? '').trim(),
+      sourceEventType: String(olapFilters.sourceEventType ?? '').trim(),
+      limit: 50,
+      offset: 0,
+    };
+    const [rawStatus, stockStatus, moves, summary] = await Promise.all([
+      getOlapExportStatus('raw_business_events'),
+      getOlapExportStatus('stock_moves'),
+      listOlapStockMoves(selectedRestaurantId.value, filters),
+      listOlapStockMoveSummary(selectedRestaurantId.value, { ...filters, groupBy: olapFilters.groupBy }),
+    ]);
+    olapExportStatuses.value = [rawStatus, stockStatus];
+    olapStockMoves.value = moves;
+    olapStockMoveSummary.value = summary;
+  });
+}
+
 async function loadProposalReview() {
   if (!selectedRestaurantId.value) return;
   await withLoading('proposal-review', async () => {
@@ -1182,6 +1241,7 @@ async function reloadActive() {
   if (activeKey.value === 'edgeEvents') return loadEdgeEvents();
   if (activeKey.value === 'financialOperations') return loadFinancialOperations();
   if (activeKey.value === 'salesKitchenSummary') return loadSalesKitchenSummary();
+  if (activeKey.value === 'olapExports') return loadOlapOperatorSurface();
   if (activeKey.value === 'recipeVersions') return loadRecipeVersions();
   if (activeKey.value === 'proposalReview') return loadProposalReview();
   if (activeKey.value === 'inventoryReadiness') return loadStopListReadiness();

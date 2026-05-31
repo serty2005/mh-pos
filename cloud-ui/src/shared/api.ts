@@ -17,6 +17,9 @@ import {
   modifierBindingSchema,
   modifierGroupSchema,
   modifierOptionSchema,
+  olapExportStatusSchema,
+  olapStockMoveSchema,
+  olapStockMoveSummarySchema,
   pricingPolicySchema,
   recipeItemSchema,
   recipeVersionViewSchema,
@@ -51,6 +54,9 @@ import {
   type ModifierBinding,
   type ModifierGroup,
   type ModifierOption,
+  type OlapExportStatus,
+  type OlapStockMove,
+  type OlapStockMoveSummary,
   type PairingCodeResult,
   type PricingPolicy,
   type RecipeItem,
@@ -69,6 +75,18 @@ import {
 } from './schemas';
 
 type Payload = Record<string, unknown>;
+type BoundedListFilters = { limit?: number; offset?: number };
+export type OlapStream = 'raw_business_events' | 'stock_moves';
+export type OlapStockMoveFilters = BoundedListFilters & {
+  businessDateFrom?: string;
+  businessDateTo?: string;
+  catalogItemId?: string;
+  warehouseId?: string;
+  sourceEventType?: string;
+};
+export type OlapStockMoveSummaryFilters = OlapStockMoveFilters & {
+  groupBy?: 'business_date' | 'catalog_item' | 'warehouse';
+};
 
 export type ApiErrorCategory = 'validation' | 'not_found' | 'conflict' | 'server' | 'network' | 'timeout' | 'unexpected';
 
@@ -535,6 +553,42 @@ export function listInventoryStockBalances(
   params.set('limit', String(filters.limit ?? 50));
   params.set('offset', String(filters.offset ?? 0));
   return request(`/inventory/stock-balances?${params.toString()}`, z.array(inventoryStockBalanceSchema));
+}
+
+export function getOlapExportStatus(stream: OlapStream): Promise<OlapExportStatus> {
+  const params = new URLSearchParams();
+  params.set('stream', stream);
+  return request(`/olap/export-status?${params.toString()}`, olapExportStatusSchema);
+}
+
+export function listOlapStockMoves(
+  restaurantId: string,
+  filters: OlapStockMoveFilters = {},
+): Promise<OlapStockMove[]> {
+  const params = olapStockMoveParams(restaurantId, filters);
+  return request(`/olap/stock-moves?${params.toString()}`, z.array(olapStockMoveSchema));
+}
+
+export function listOlapStockMoveSummary(
+  restaurantId: string,
+  filters: OlapStockMoveSummaryFilters = {},
+): Promise<OlapStockMoveSummary[]> {
+  const params = olapStockMoveParams(restaurantId, filters);
+  if (filters.groupBy) params.set('group_by', filters.groupBy);
+  return request(`/olap/stock-move-summary?${params.toString()}`, z.array(olapStockMoveSummarySchema));
+}
+
+function olapStockMoveParams(restaurantId: string, filters: OlapStockMoveFilters) {
+  const params = new URLSearchParams();
+  params.set('restaurant_id', restaurantId);
+  if (filters.businessDateFrom) params.set('business_date_from', filters.businessDateFrom);
+  if (filters.businessDateTo) params.set('business_date_to', filters.businessDateTo);
+  if (filters.catalogItemId) params.set('catalog_item_id', filters.catalogItemId);
+  if (filters.warehouseId) params.set('warehouse_id', filters.warehouseId);
+  if (filters.sourceEventType) params.set('source_event_type', filters.sourceEventType);
+  params.set('limit', String(filters.limit ?? 50));
+  params.set('offset', String(filters.offset ?? 0));
+  return params;
 }
 
 export function listFinancialOperations(

@@ -282,6 +282,55 @@ export const inventoryStockBalanceSchema = z.object({
   business_date_to: z.string(),
 });
 
+export const olapExportStatusSchema = z.object({
+  stream: z.enum(['raw_business_events', 'stock_moves']),
+  last_checkpoint: z.string().optional().default(''),
+  last_exported_id: z.string().optional().default(''),
+  last_exported_at: z.string().optional(),
+  pending_count: z.number(),
+  processing_count: z.number(),
+  failed_count: z.number(),
+  consecutive_failures: z.number(),
+  next_retry_at: z.string().optional(),
+  retry_blocked: z.boolean(),
+  checkpoint_updated_at: z.string().optional(),
+});
+
+export const olapStockMoveSchema = z.object({
+  ledger_entry_id: z.string(),
+  restaurant_id: z.string(),
+  warehouse_id: z.string().optional().default(''),
+  stock_document_id: z.string(),
+  source_event_id: z.string(),
+  source_event_type: z.string(),
+  catalog_item_id: z.string(),
+  order_line_id: z.string().optional().default(''),
+  movement_type: z.string(),
+  quantity: z.string(),
+  unit_code: z.string(),
+  unit_cost_minor: z.number(),
+  total_cost_minor: z.number(),
+  costing_status: z.string(),
+  occurred_at: z.string(),
+  business_date_local: z.string(),
+  ledger_created_at: z.string(),
+});
+
+export const olapStockMoveSummarySchema = z.object({
+  group_by: z.enum(['business_date', 'catalog_item', 'warehouse']),
+  group_key: z.string(),
+  business_date_local: z.string().optional().default(''),
+  catalog_item_id: z.string().optional().default(''),
+  warehouse_id: z.string().optional().default(''),
+  move_count: z.number(),
+  in_quantity: z.string(),
+  out_quantity: z.string(),
+  net_quantity: z.string(),
+  total_cost_minor: z.number(),
+  first_occurred_at: z.string().optional(),
+  last_occurred_at: z.string().optional(),
+});
+
 export const financialOperationReportItemSchema = z.object({
   operation_id: z.string(),
   edge_operation_id: z.string(),
@@ -536,6 +585,9 @@ export type RecipeVersionView = z.infer<typeof recipeVersionViewSchema>;
 export type StopListEntry = z.infer<typeof stopListEntrySchema>;
 export type StopListReadiness = z.infer<typeof stopListReadinessSchema>;
 export type InventoryStockBalance = z.infer<typeof inventoryStockBalanceSchema>;
+export type OlapExportStatus = z.infer<typeof olapExportStatusSchema>;
+export type OlapStockMove = z.infer<typeof olapStockMoveSchema>;
+export type OlapStockMoveSummary = z.infer<typeof olapStockMoveSummarySchema>;
 export type FinancialOperationReportItem = z.infer<typeof financialOperationReportItemSchema>;
 export type SalesKitchenSummaryGroupBy = z.infer<typeof salesKitchenSummaryGroupBySchema>;
 export type SalesKitchenSummaryItem = z.infer<typeof salesKitchenSummaryItemSchema>;

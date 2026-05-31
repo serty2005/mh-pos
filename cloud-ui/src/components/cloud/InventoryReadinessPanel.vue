@@ -7,13 +7,37 @@
     </div>
     <cloud-safe-error-banner :ctx="ctx" target="inventory-readiness" />
     <div class="inventory-filter-grid">
+      <q-select
+        v-if="warehouseOptions.length"
+        v-model="filters.warehouseId"
+        dense
+        outlined
+        emit-value
+        map-options
+        clearable
+        :options="warehouseOptions"
+        :label="t('cloud.readiness.inventory.filters.warehouse')"
+      />
       <q-input
+        v-else
         v-model="filters.warehouseId"
         dense
         outlined
         :label="t('cloud.readiness.inventory.filters.warehouse')"
       />
+      <q-select
+        v-if="catalogItemOptions.length"
+        v-model="filters.catalogItemId"
+        dense
+        outlined
+        emit-value
+        map-options
+        clearable
+        :options="catalogItemOptions"
+        :label="t('cloud.readiness.inventory.filters.catalogItem')"
+      />
       <q-input
+        v-else
         v-model="filters.catalogItemId"
         dense
         outlined
@@ -136,6 +160,20 @@ const costingStatusOptions = computed(() => [
   { label: t('cloud.readiness.inventory.costingStatuses.mixed'), value: 'mixed' },
   { label: t('cloud.readiness.inventory.costingStatuses.unknown'), value: 'unknown' },
 ]);
+const catalogItemOptions = computed(() => (props.ctx.scopedRows.catalogItems ?? []).map((item: Record<string, unknown>) => ({
+  label: `${String(item.name ?? item.sku ?? item.id)} (${props.ctx.safeOperationalValue(String(item.id ?? ''))})`,
+  value: String(item.id ?? ''),
+})));
+const warehouseOptions = computed(() => {
+  const ids = new Set<string>();
+  for (const item of props.ctx.scopedRows.stopLists ?? []) {
+    if (item.warehouse_id) ids.add(String(item.warehouse_id));
+  }
+  for (const item of props.ctx.inventoryStockBalances.value ?? []) {
+    if (item.warehouse_id) ids.add(String(item.warehouse_id));
+  }
+  return [...ids].map((id) => ({ label: props.ctx.safeOperationalValue(id), value: id }));
+});
 const gaps = [
   'cloud.readiness.inventory.gaps.stockDocuments',
   'cloud.readiness.inventory.gaps.costingEngine',
@@ -144,10 +182,10 @@ const gaps = [
 ];
 async function refreshBalances() {
   await props.ctx.loadInventoryStockBalances({
-    warehouseId: filters.warehouseId.trim(),
-    catalogItemId: filters.catalogItemId.trim(),
-    businessDateTo: filters.businessDateTo.trim(),
-    costingStatus: filters.costingStatus.trim(),
+    warehouseId: String(filters.warehouseId ?? '').trim(),
+    catalogItemId: String(filters.catalogItemId ?? '').trim(),
+    businessDateTo: String(filters.businessDateTo ?? '').trim(),
+    costingStatus: String(filters.costingStatus ?? '').trim(),
   });
 }
 const publicationLabel = computed(() => {
