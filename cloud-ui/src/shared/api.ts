@@ -55,6 +55,7 @@ import {
   type PricingPolicy,
   type RecipeItem,
   type RecipeVersionView,
+  type SalesKitchenSummaryGroupBy,
   type SalesKitchenSummaryItem,
   type RecipeSuggestion,
   type StopListUpdateReview,
@@ -555,7 +556,7 @@ export function listFinancialOperations(
 
 export function listSalesKitchenSummary(
   restaurantId: string,
-  filters: { businessDateFrom?: string; businessDateTo?: string; groupBy?: string; limit?: number; offset?: number } = {},
+  filters: { businessDateFrom?: string; businessDateTo?: string; groupBy?: SalesKitchenSummaryGroupBy; limit?: number; offset?: number } = {},
 ): Promise<SalesKitchenSummaryItem[]> {
   const params = new URLSearchParams();
   params.set('restaurant_id', restaurantId);

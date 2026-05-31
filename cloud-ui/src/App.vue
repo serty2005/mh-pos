@@ -141,7 +141,7 @@ import {
   upsertStopListEntry,
   ApiError,
 } from './shared/api';
-import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, FinancialOperationReportItem, InventoryStockBalance, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, SalesKitchenSummaryItem, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
+import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, FinancialOperationReportItem, InventoryStockBalance, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, SalesKitchenSummaryGroupBy, SalesKitchenSummaryItem, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
 import type { RecipeVersionView } from './shared/schemas';
 
 type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'financialOperations' | 'salesKitchenSummary' | 'recipeVersions' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
@@ -264,7 +264,7 @@ const pairingResult = ref<PairingCodeResult | null>(null);
 const publishForm = reactive({ published_by: '', node_device_id: '' });
 const pairingForm = reactive({ display_name: '', expires_in_minutes: 30 });
 const financialOperationFilters = reactive({ businessDateFrom: '', businessDateTo: '', operationType: '', shiftId: '', originalShiftId: '', checkId: '' });
-const salesKitchenSummaryFilters = reactive({ businessDateFrom: '', businessDateTo: '', groupBy: 'business_date' });
+const salesKitchenSummaryFilters = reactive<{ businessDateFrom: string; businessDateTo: string; groupBy: SalesKitchenSummaryGroupBy }>({ businessDateFrom: '', businessDateTo: '', groupBy: 'business_date' });
 const form = reactive<Row>({});
 
 const permissionGroups: PermissionGroup[] = [
@@ -1340,6 +1340,7 @@ async function loadSalesKitchenSummary() {
     return;
   }
   await withLoading('sales-kitchen-summary', async () => {
+    salesKitchenSummaryRows.value = [];
     salesKitchenSummaryRows.value = await listSalesKitchenSummary(selectedRestaurantId.value, { ...salesKitchenSummaryFilters, limit: 50, offset: 0 });
   });
 }

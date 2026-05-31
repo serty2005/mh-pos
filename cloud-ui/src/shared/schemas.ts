@@ -312,8 +312,10 @@ export const financialOperationReportItemSchema = z.object({
   raw_payload_sha256_hex: z.string(),
 });
 
+export const salesKitchenSummaryGroupBySchema = z.enum(['business_date', 'event_type', 'source_event_type', 'catalog_item']);
+
 export const salesKitchenSummaryItemSchema = z.object({
-  group_by: z.enum(['business_date', 'event_type', 'source_event_type', 'catalog_item']),
+  group_by: salesKitchenSummaryGroupBySchema,
   group_key: z.string(),
   business_date_local: z.string().optional().default(''),
   event_type: z.string().optional().default(''),
@@ -535,6 +537,7 @@ export type StopListEntry = z.infer<typeof stopListEntrySchema>;
 export type StopListReadiness = z.infer<typeof stopListReadinessSchema>;
 export type InventoryStockBalance = z.infer<typeof inventoryStockBalanceSchema>;
 export type FinancialOperationReportItem = z.infer<typeof financialOperationReportItemSchema>;
+export type SalesKitchenSummaryGroupBy = z.infer<typeof salesKitchenSummaryGroupBySchema>;
 export type SalesKitchenSummaryItem = z.infer<typeof salesKitchenSummaryItemSchema>;
 export type Hall = z.infer<typeof hallSchema>;
 export type RestaurantTable = z.infer<typeof tableSchema>;
