@@ -380,15 +380,16 @@ const (
 	SyncExchangeStatusAccepted  = shared.SyncExchangeStatusAccepted
 	SyncExchangeStatusPartial   = shared.SyncExchangeStatusPartial
 
-	MasterDataStreamRestaurants = shared.MasterDataStreamRestaurants
-	MasterDataStreamDevices     = shared.MasterDataStreamDevices
-	MasterDataStreamStaff       = shared.MasterDataStreamStaff
-	MasterDataStreamFloor       = shared.MasterDataStreamFloor
-	MasterDataStreamCatalog     = shared.MasterDataStreamCatalog
-	MasterDataStreamMenu        = shared.MasterDataStreamMenu
-	MasterDataStreamPricing     = shared.MasterDataStreamPricing
-	MasterDataStreamRecipes     = shared.MasterDataStreamRecipes
-	MasterDataStreamInventory   = shared.MasterDataStreamInventory
+	MasterDataStreamRestaurants      = shared.MasterDataStreamRestaurants
+	MasterDataStreamDevices          = shared.MasterDataStreamDevices
+	MasterDataStreamStaff            = shared.MasterDataStreamStaff
+	MasterDataStreamFloor            = shared.MasterDataStreamFloor
+	MasterDataStreamCatalog          = shared.MasterDataStreamCatalog
+	MasterDataStreamMenu             = shared.MasterDataStreamMenu
+	MasterDataStreamPricing          = shared.MasterDataStreamPricing
+	MasterDataStreamRecipes          = shared.MasterDataStreamRecipes
+	MasterDataStreamInventory        = shared.MasterDataStreamInventory
+	MasterDataStreamProposalFeedback = shared.MasterDataStreamProposalFeedback
 
 	SyncEnvelopeVersion = shared.SyncEnvelopeVersion
 )

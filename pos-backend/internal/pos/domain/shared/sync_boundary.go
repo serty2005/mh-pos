@@ -17,15 +17,16 @@ const (
 	SyncModeFullSnapshot SyncMode = "full_snapshot"
 	SyncModeIncremental  SyncMode = "incremental"
 
-	MasterDataStreamRestaurants MasterDataStream = "restaurants"
-	MasterDataStreamDevices     MasterDataStream = "devices"
-	MasterDataStreamStaff       MasterDataStream = "staff"
-	MasterDataStreamFloor       MasterDataStream = "floor"
-	MasterDataStreamCatalog     MasterDataStream = "catalog"
-	MasterDataStreamMenu        MasterDataStream = "menu"
-	MasterDataStreamPricing     MasterDataStream = "pricing_policy"
-	MasterDataStreamRecipes     MasterDataStream = "recipes"
-	MasterDataStreamInventory   MasterDataStream = "inventory_reference"
+	MasterDataStreamRestaurants      MasterDataStream = "restaurants"
+	MasterDataStreamDevices          MasterDataStream = "devices"
+	MasterDataStreamStaff            MasterDataStream = "staff"
+	MasterDataStreamFloor            MasterDataStream = "floor"
+	MasterDataStreamCatalog          MasterDataStream = "catalog"
+	MasterDataStreamMenu             MasterDataStream = "menu"
+	MasterDataStreamPricing          MasterDataStream = "pricing_policy"
+	MasterDataStreamRecipes          MasterDataStream = "recipes"
+	MasterDataStreamInventory        MasterDataStream = "inventory_reference"
+	MasterDataStreamProposalFeedback MasterDataStream = "proposal_feedback"
 )
 
 type MasterDataSyncState struct {

@@ -20,4 +20,5 @@ type KitchenRepository interface {
 	CreateKitchenProposal(context.Context, *kitchen.Proposal) error
 	GetKitchenProposalByCommandID(context.Context, string) (*kitchen.Proposal, error)
 	ListKitchenProposals(context.Context, kitchen.ProposalListQuery) ([]kitchen.Proposal, error)
+	ApplyKitchenProposalFeedback(context.Context, kitchen.ProposalKind, string, kitchen.ProposalStatus, int64, string, string) error
 }

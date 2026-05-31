@@ -13,6 +13,7 @@ import (
 	txmanager "pos-backend/internal/platform/tx"
 	"pos-backend/internal/pos/app/shared"
 	"pos-backend/internal/pos/domain"
+	"pos-backend/internal/pos/domain/kitchen"
 	"pos-backend/internal/pos/ports"
 )
 
@@ -90,6 +91,17 @@ type ApplyMasterDataCommand struct {
 	RecipeLines            []domain.RecipeLine            `json:"recipe_lines,omitempty"`
 	StopListEntries        []domain.StopListEntry         `json:"stop_lists,omitempty"`
 	Warehouses             []domain.WarehouseReference    `json:"warehouses,omitempty"`
+	CatalogSuggestions     []ProposalFeedback             `json:"catalog_suggestions,omitempty"`
+	RecipeSuggestions      []ProposalFeedback             `json:"recipe_suggestions,omitempty"`
+}
+
+// ProposalFeedback переносит Cloud review status для локальной kitchen proposal записи.
+type ProposalFeedback struct {
+	ID                   string `json:"id,omitempty"`
+	SuggestionID         string `json:"suggestion_id,omitempty"`
+	Status               string `json:"status"`
+	ReviewComment        string `json:"review_comment,omitempty"`
+	ReviewedByEmployeeID string `json:"reviewed_by_employee_id,omitempty"`
 }
 
 type ApplyMasterDataResult struct {
@@ -445,6 +457,14 @@ func (s *Service) applyStream(ctx context.Context, stream domain.MasterDataStrea
 			}
 		}
 		counts[string(stream)] = len(cmd.Warehouses) + len(cmd.StopListEntries)
+	case domain.MasterDataStreamProposalFeedback:
+		if err := s.applyProposalFeedback(ctx, kitchen.ProposalKindCatalog, cmd.CatalogSuggestions, cmd.CloudVersion, meta.CloudUpdatedAt, now); err != nil {
+			return err
+		}
+		if err := s.applyProposalFeedback(ctx, kitchen.ProposalKindRecipe, cmd.RecipeSuggestions, cmd.CloudVersion, meta.CloudUpdatedAt, now); err != nil {
+			return err
+		}
+		counts[string(stream)] = len(cmd.CatalogSuggestions) + len(cmd.RecipeSuggestions)
 	default:
 		return fmt.Errorf("%w: unsupported master data stream %q", domain.ErrInvalid, stream)
 	}
@@ -583,6 +603,13 @@ func validatePayload(cmd ApplyMasterDataCommand, streams []domain.MasterDataStre
 					return err
 				}
 			}
+		case domain.MasterDataStreamProposalFeedback:
+			if err := validateProposalFeedback(cmd.CatalogSuggestions); err != nil {
+				return err
+			}
+			if err := validateProposalFeedback(cmd.RecipeSuggestions); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("%w: unsupported master data stream %q", domain.ErrInvalid, stream)
 		}
@@ -612,6 +639,8 @@ func payloadRowCount(cmd ApplyMasterDataCommand, streams []domain.MasterDataStre
 			total += len(cmd.RecipeVersions) + len(cmd.RecipeLines)
 		case domain.MasterDataStreamInventory:
 			total += len(cmd.Warehouses) + len(cmd.StopListEntries)
+		case domain.MasterDataStreamProposalFeedback:
+			total += len(cmd.CatalogSuggestions) + len(cmd.RecipeSuggestions)
 		}
 	}
 	return total
@@ -705,6 +734,9 @@ func streamsToApply(cmd ApplyMasterDataCommand) ([]domain.MasterDataStream, erro
 	if len(cmd.Warehouses) > 0 || len(cmd.StopListEntries) > 0 {
 		streams = append(streams, domain.MasterDataStreamInventory)
 	}
+	if len(cmd.CatalogSuggestions) > 0 || len(cmd.RecipeSuggestions) > 0 {
+		streams = append(streams, domain.MasterDataStreamProposalFeedback)
+	}
 	if len(streams) == 0 {
 		return nil, fmt.Errorf("%w: at least one supported master data stream is required", domain.ErrInvalid)
 	}
@@ -721,10 +753,63 @@ func supportedStream(stream domain.MasterDataStream) bool {
 		domain.MasterDataStreamMenu,
 		domain.MasterDataStreamPricing,
 		domain.MasterDataStreamRecipes,
-		domain.MasterDataStreamInventory:
+		domain.MasterDataStreamInventory,
+		domain.MasterDataStreamProposalFeedback:
 		return true
 	default:
 		return false
+	}
+}
+
+func (s *Service) applyProposalFeedback(ctx context.Context, kind kitchen.ProposalKind, items []ProposalFeedback, cloudVersion int64, cloudUpdatedAt *string, now time.Time) error {
+	cloudUpdated := shared.DBTime(now)
+	if cloudUpdatedAt != nil && strings.TrimSpace(*cloudUpdatedAt) != "" {
+		cloudUpdated = strings.TrimSpace(*cloudUpdatedAt)
+	}
+	updatedAt := shared.DBTime(now)
+	for i := range items {
+		status, err := mapProposalFeedbackStatus(items[i].Status)
+		if err != nil {
+			return err
+		}
+		suggestionID := strings.TrimSpace(items[i].SuggestionID)
+		if suggestionID == "" {
+			suggestionID = strings.TrimSpace(items[i].ID)
+		}
+		if suggestionID == "" {
+			return fmt.Errorf("%w: proposal_feedback suggestion_id is required", domain.ErrInvalid)
+		}
+		if err := s.repo.ApplyKitchenProposalFeedback(ctx, kind, suggestionID, status, cloudVersion, cloudUpdated, updatedAt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateProposalFeedback(items []ProposalFeedback) error {
+	for i := range items {
+		if _, err := mapProposalFeedbackStatus(items[i].Status); err != nil {
+			return err
+		}
+		if strings.TrimSpace(items[i].SuggestionID) == "" && strings.TrimSpace(items[i].ID) == "" {
+			return fmt.Errorf("%w: proposal_feedback suggestion_id is required", domain.ErrInvalid)
+		}
+	}
+	return nil
+}
+
+func mapProposalFeedbackStatus(status string) (kitchen.ProposalStatus, error) {
+	switch strings.TrimSpace(status) {
+	case "pending":
+		return kitchen.ProposalSynced, nil
+	case string(kitchen.ProposalApproved):
+		return kitchen.ProposalApproved, nil
+	case string(kitchen.ProposalRejected):
+		return kitchen.ProposalRejected, nil
+	case string(kitchen.ProposalChangesRequested):
+		return kitchen.ProposalChangesRequested, nil
+	default:
+		return "", fmt.Errorf("%w: unsupported proposal_feedback status %q", domain.ErrInvalid, status)
 	}
 }
 

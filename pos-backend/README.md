@@ -94,7 +94,7 @@ $env:POS_SQLITE_PATH="data/pos-edge.db"
 $env:POS_SQLITE_MIGRATIONS_DIR="migrations/sqlite"
 $env:POS_SQLITE_BACKUP_DIR="data/backups"
 $env:POS_SQLITE_ARCHIVE_DIR="data/archives"
-$env:MH_POS_VERSION="0.1.4"
+$env:MH_POS_VERSION="0.1.5"
 $env:POS_SYNC_SENDER_ENABLED="true"
 $env:POS_CLOUD_SYNC_URL="http://localhost:8090" # можно также указать legacy sender endpoint .../api/v1/sync/edge-events
 $env:LICENSE_SERVER_URL="http://localhost:8095"
@@ -207,7 +207,7 @@ Cloud -> Edge master-data ingest endpoints:
 - `POST /api/v1/sync/master-data/snapshots`
 - `POST /api/v1/sync/master-data/{stream}`
 
-Реализовано сейчас: supported POS Edge ingest streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`, `recipes`, `inventory_reference`. Payload принимает `node_device_id`, `sync_mode` (`incremental` по умолчанию или явный `full_snapshot`), optional `full_snapshot_reason`, optional `checkpoint_token`, `cloud_version`, optional `cloud_updated_at` и stream arrays (`restaurants`, `devices`, `roles`, `employees`, `halls`, `tables`, `catalog_items`, `menu_items`, `tax_profiles`, `tax_rules`, `service_charge_rules`, `pricing_policies`, `recipe_versions`, `recipe_lines`, `stop_lists`). Explicit `full_snapshot` разрешен только для `terminal_restaurant_changed` или `node_role_changed`; ingest пишет master/reference tables и `cloud_master_sync_state` в одной транзакции и не создает Edge -> Cloud outbox rows. Unsupported streams и unknown JSON fields отклоняются до partial apply. В `sync/exchange` проблемный Cloud package фиксируется в `cloud_master_sync_state` со статусом `failed`, не ломает остальные packages в response и не блокирует item-level ACK для Edge -> Cloud событий.
+Реализовано сейчас: supported POS Edge ingest streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`, `recipes`, `inventory_reference`, `proposal_feedback`. Payload принимает `node_device_id`, `sync_mode` (`incremental` по умолчанию или явный `full_snapshot`), optional `full_snapshot_reason`, optional `checkpoint_token`, `cloud_version`, optional `cloud_updated_at` и stream arrays (`restaurants`, `devices`, `roles`, `employees`, `halls`, `tables`, `catalog_items`, `menu_items`, `tax_profiles`, `tax_rules`, `service_charge_rules`, `pricing_policies`, `recipe_versions`, `recipe_lines`, `stop_lists`, `warehouses`, `catalog_suggestions`, `recipe_suggestions`). Explicit `full_snapshot` разрешен только для `terminal_restaurant_changed` или `node_role_changed`; ingest пишет master/reference tables и `cloud_master_sync_state` в одной транзакции и не создает Edge -> Cloud outbox rows. `proposal_feedback` обновляет только локальные статусы `kitchen_proposals` по `suggestion_id`, не мутируя catalog/recipe read model напрямую. Unsupported streams и unknown JSON fields отклоняются до partial apply. В `sync/exchange` проблемный Cloud package фиксируется в `cloud_master_sync_state` со статусом `failed`, не ломает остальные packages в response и не блокирует item-level ACK для Edge -> Cloud событий.
 
 Cloud production delivery path:
 

@@ -12,6 +12,27 @@ import (
 	"cloud-backend/internal/olap/infra/clickhouse"
 )
 
+func TestListStockMovesAcceptsQuotedClickHouseInt64(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ledger_entry_id":"ledger-1","restaurant_id":"rest-1","warehouse_id":"warehouse-main","stock_document_id":"doc-1","source_event_id":"event-1","source_event_type":"ItemServed","catalog_item_id":"item-1","order_line_id":"line-1","movement_type":"OUT","quantity":"1.000","unit_code":"portion","unit_cost_minor":"125","total_cost_minor":"125","costing_status":"estimated","occurred_at":"2026-05-29 10:00:00.000","business_date_local":"2026-05-29","ledger_created_at":"2026-05-29 10:00:01.000"}` + "\n"))
+	}))
+	defer server.Close()
+
+	repo := clickhouse.NewRepository(clickhouse.Config{URL: server.URL, Database: "mh_pos_cloud"})
+	items, err := repo.ListStockMoves(context.Background(), app.StockMoveFilter{
+		RestaurantID:    "rest-1",
+		SourceEventType: "ItemServed",
+		Limit:           10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].UnitCostMinor != 125 || items[0].TotalCostMinor != 125 {
+		t.Fatalf("unexpected stock move rows: %+v", items)
+	}
+}
+
 func TestListStockMoveSummaryUsesFiltersGroupingAndStableLimit(t *testing.T) {
 	var query string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -21,7 +42,7 @@ func TestListStockMoveSummaryUsesFiltersGroupingAndStableLimit(t *testing.T) {
 		}
 		query = string(raw)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"group_by":"catalog_item","group_key":"item-1","business_date_local":"","catalog_item_id":"item-1","warehouse_id":"","move_count":2,"in_quantity":"3.000","out_quantity":"1.000","net_quantity":"2.000","total_cost_minor":1200,"first_occurred_at":"2026-05-29 10:00:00.000","last_occurred_at":"2026-05-29 11:00:00.000"}` + "\n"))
+		_, _ = w.Write([]byte(`{"group_by":"catalog_item","group_key":"item-1","business_date_local":"","catalog_item_id":"item-1","warehouse_id":"","move_count":"2","in_quantity":"3.000","out_quantity":"1.000","net_quantity":"2.000","total_cost_minor":"1200","first_occurred_at":"2026-05-29 10:00:00.000","last_occurred_at":"2026-05-29 11:00:00.000"}` + "\n"))
 	}))
 	defer server.Close()
 

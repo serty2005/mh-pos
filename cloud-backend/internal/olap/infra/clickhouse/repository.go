@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -270,23 +271,23 @@ func (r *Repository) ListStockMoves(ctx context.Context, filter app.StockMoveFil
 	scanner := bufio.NewScanner(respBody)
 	for scanner.Scan() {
 		var row struct {
-			LedgerEntryID     string `json:"ledger_entry_id"`
-			RestaurantID      string `json:"restaurant_id"`
-			WarehouseID       string `json:"warehouse_id"`
-			StockDocumentID   string `json:"stock_document_id"`
-			SourceEventID     string `json:"source_event_id"`
-			SourceEventType   string `json:"source_event_type"`
-			CatalogItemID     string `json:"catalog_item_id"`
-			OrderLineID       string `json:"order_line_id"`
-			MovementType      string `json:"movement_type"`
-			Quantity          string `json:"quantity"`
-			UnitCode          string `json:"unit_code"`
-			UnitCostMinor     int64  `json:"unit_cost_minor"`
-			TotalCostMinor    int64  `json:"total_cost_minor"`
-			CostingStatus     string `json:"costing_status"`
-			OccurredAt        string `json:"occurred_at"`
-			BusinessDateLocal string `json:"business_date_local"`
-			LedgerCreatedAt   string `json:"ledger_created_at"`
+			LedgerEntryID     string  `json:"ledger_entry_id"`
+			RestaurantID      string  `json:"restaurant_id"`
+			WarehouseID       string  `json:"warehouse_id"`
+			StockDocumentID   string  `json:"stock_document_id"`
+			SourceEventID     string  `json:"source_event_id"`
+			SourceEventType   string  `json:"source_event_type"`
+			CatalogItemID     string  `json:"catalog_item_id"`
+			OrderLineID       string  `json:"order_line_id"`
+			MovementType      string  `json:"movement_type"`
+			Quantity          string  `json:"quantity"`
+			UnitCode          string  `json:"unit_code"`
+			UnitCostMinor     chInt64 `json:"unit_cost_minor"`
+			TotalCostMinor    chInt64 `json:"total_cost_minor"`
+			CostingStatus     string  `json:"costing_status"`
+			OccurredAt        string  `json:"occurred_at"`
+			BusinessDateLocal string  `json:"business_date_local"`
+			LedgerCreatedAt   string  `json:"ledger_created_at"`
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
 			return nil, err
@@ -311,8 +312,8 @@ func (r *Repository) ListStockMoves(ctx context.Context, filter app.StockMoveFil
 			MovementType:      row.MovementType,
 			Quantity:          row.Quantity,
 			UnitCode:          row.UnitCode,
-			UnitCostMinor:     row.UnitCostMinor,
-			TotalCostMinor:    row.TotalCostMinor,
+			UnitCostMinor:     int64(row.UnitCostMinor),
+			TotalCostMinor:    int64(row.TotalCostMinor),
 			CostingStatus:     row.CostingStatus,
 			OccurredAt:        occurredAt,
 			BusinessDateLocal: row.BusinessDateLocal,
@@ -404,18 +405,18 @@ func (r *Repository) ListStockMoveSummary(ctx context.Context, filter app.StockM
 	scanner := bufio.NewScanner(respBody)
 	for scanner.Scan() {
 		var row struct {
-			GroupBy           string `json:"group_by"`
-			GroupKey          string `json:"group_key"`
-			BusinessDateLocal string `json:"business_date_local"`
-			CatalogItemID     string `json:"catalog_item_id"`
-			WarehouseID       string `json:"warehouse_id"`
-			MoveCount         int64  `json:"move_count"`
-			InQuantity        string `json:"in_quantity"`
-			OutQuantity       string `json:"out_quantity"`
-			NetQuantity       string `json:"net_quantity"`
-			TotalCostMinor    int64  `json:"total_cost_minor"`
-			FirstOccurredAt   string `json:"first_occurred_at"`
-			LastOccurredAt    string `json:"last_occurred_at"`
+			GroupBy           string  `json:"group_by"`
+			GroupKey          string  `json:"group_key"`
+			BusinessDateLocal string  `json:"business_date_local"`
+			CatalogItemID     string  `json:"catalog_item_id"`
+			WarehouseID       string  `json:"warehouse_id"`
+			MoveCount         chInt64 `json:"move_count"`
+			InQuantity        string  `json:"in_quantity"`
+			OutQuantity       string  `json:"out_quantity"`
+			NetQuantity       string  `json:"net_quantity"`
+			TotalCostMinor    chInt64 `json:"total_cost_minor"`
+			FirstOccurredAt   string  `json:"first_occurred_at"`
+			LastOccurredAt    string  `json:"last_occurred_at"`
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
 			return nil, err
@@ -434,11 +435,11 @@ func (r *Repository) ListStockMoveSummary(ctx context.Context, filter app.StockM
 			BusinessDateLocal: row.BusinessDateLocal,
 			CatalogItemID:     row.CatalogItemID,
 			WarehouseID:       row.WarehouseID,
-			MoveCount:         row.MoveCount,
+			MoveCount:         int64(row.MoveCount),
 			InQuantity:        row.InQuantity,
 			OutQuantity:       row.OutQuantity,
 			NetQuantity:       row.NetQuantity,
-			TotalCostMinor:    row.TotalCostMinor,
+			TotalCostMinor:    int64(row.TotalCostMinor),
 			FirstOccurredAt:   &firstOccurredAt,
 			LastOccurredAt:    &lastOccurredAt,
 		})
@@ -528,4 +529,27 @@ func parseCHTime(value string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("invalid ClickHouse timestamp %q", value)
+}
+
+type chInt64 int64
+
+func (v *chInt64) UnmarshalJSON(raw []byte) error {
+	value := strings.TrimSpace(string(raw))
+	if value == "" || value == "null" {
+		*v = 0
+		return nil
+	}
+	if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
+		unquoted, err := strconv.Unquote(value)
+		if err != nil {
+			return err
+		}
+		value = strings.TrimSpace(unquoted)
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return err
+	}
+	*v = chInt64(parsed)
+	return nil
 }

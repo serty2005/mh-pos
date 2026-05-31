@@ -8019,6 +8019,90 @@ func TestApplyMasterDataRecipesAndInventoryReferenceStreams(t *testing.T) {
 	}
 }
 
+func TestApplySyncExchangeProposalFeedbackUpdatesLocalKitchenProposals(t *testing.T) {
+	f := newFixture(t)
+	now := fixedClock{}.Now()
+	for _, proposal := range []domain.KitchenProposal{
+		{
+			ID:                  "catalog-suggestion-1",
+			RestaurantID:        f.restaurant.ID,
+			Kind:                domain.KitchenProposalKindCatalog,
+			Status:              domain.KitchenProposalPendingSync,
+			Action:              "create",
+			Payload:             json.RawMessage(`{"suggestion_id":"catalog-suggestion-1"}`),
+			OutboxCommandID:     "cmd-catalog-suggestion-1",
+			OutboxEventType:     "CatalogItemChangeSuggested",
+			CreatedByEmployeeID: f.employee.ID,
+			CreatedAt:           now,
+			UpdatedAt:           now,
+		},
+		{
+			ID:                  "recipe-suggestion-1",
+			RestaurantID:        f.restaurant.ID,
+			Kind:                domain.KitchenProposalKindRecipe,
+			Status:              domain.KitchenProposalPendingSync,
+			Action:              "add_ingredient",
+			Payload:             json.RawMessage(`{"suggestion_id":"recipe-suggestion-1"}`),
+			OutboxCommandID:     "cmd-recipe-suggestion-1",
+			OutboxEventType:     "RecipeChangeSuggested",
+			CreatedByEmployeeID: f.employee.ID,
+			CreatedAt:           now,
+			UpdatedAt:           now,
+		},
+	} {
+		proposal := proposal
+		if err := f.repo.CreateKitchenProposal(f.ctx, &proposal); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cloudUpdatedAt := appshared.DBTime(now)
+	err := f.service.ApplySyncExchangeCloudPackages(f.ctx, []domain.CloudPackage{{
+		StreamName:      string(domain.MasterDataStreamProposalFeedback),
+		NodeDeviceID:    f.device.ID,
+		RestaurantID:    f.restaurant.ID,
+		SyncMode:        string(domain.SyncModeIncremental),
+		CloudVersion:    303,
+		CheckpointToken: "master-data:" + f.restaurant.ID + ":303:proposal_feedback",
+		CloudUpdatedAt:  cloudUpdatedAt,
+		PayloadJSON: json.RawMessage(`{
+			"catalog_suggestions":[{"id":"cloud-row-1","suggestion_id":"catalog-suggestion-1","status":"approved","reviewed_by_employee_id":"manager-1"}],
+			"recipe_suggestions":[{"id":"cloud-row-2","suggestion_id":"recipe-suggestion-1","status":"changes_requested","review_comment":"need details"}]
+		}`),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposals, err := f.repo.ListKitchenProposals(f.ctx, domain.KitchenProposalListQuery{RestaurantID: f.restaurant.ID, IncludeTerminal: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	statuses := map[string]domain.KitchenProposalStatus{}
+	versions := map[string]int64{}
+	for _, proposal := range proposals {
+		statuses[proposal.ID] = proposal.Status
+		if proposal.CloudVersion != nil {
+			versions[proposal.ID] = *proposal.CloudVersion
+		}
+	}
+	if statuses["catalog-suggestion-1"] != domain.KitchenProposalApproved || statuses["recipe-suggestion-1"] != domain.KitchenProposalChangesRequested {
+		if state, stateErr := f.repo.GetMasterDataSyncState(f.ctx, f.device.ID, domain.MasterDataStreamProposalFeedback); stateErr == nil {
+			t.Fatalf("expected proposal feedback statuses, got %+v; sync state=%+v", statuses, state)
+		}
+		states, _ := f.repo.ListMasterDataSyncStates(f.ctx, f.device.ID)
+		t.Fatalf("expected proposal feedback statuses, got %+v; sync states=%+v", statuses, states)
+	}
+	if versions["catalog-suggestion-1"] != 303 || versions["recipe-suggestion-1"] != 303 {
+		t.Fatalf("expected cloud version on feedback rows, got %+v", versions)
+	}
+	state, err := f.repo.GetMasterDataSyncState(f.ctx, f.device.ID, domain.MasterDataStreamProposalFeedback)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.LastCloudVersion != 303 || state.Status != "applied" {
+		t.Fatalf("expected proposal_feedback sync state, got %+v", state)
+	}
+}
+
 func TestCloudRecipesStopListPackagesIngestAndBlockOfflineSale(t *testing.T) {
 	f := newFixture(t)
 	component, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: seedMeta(f.device.ID), Type: domain.CatalogItemGood, Name: "Cloud Potato", SKU: "CLOUD-POTATO", BaseUnit: "g"})

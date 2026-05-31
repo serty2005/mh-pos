@@ -1154,7 +1154,7 @@ def run_kitchen_process_smoke_flow(
             "command_id": f"cmd-kitchen-smoke-{command_suffix()}-catalog-suggestion",
             "suggestion_id": f"catalog-suggestion-{command_suffix()}",
             "proposal_group_id": proposal_group_id,
-            "action": "create_item",
+            "action": "create",
             "kind": "good",
             "name": f"Smoke Herb {command_suffix()}",
             "sku": system_sku("good", "Smoke Herb", command_suffix()),
@@ -1166,6 +1166,29 @@ def run_kitchen_process_smoke_flow(
         expected_status=(201,),
         headers=kitchen_headers,
     )
+    cloud_catalog_suggestion = wait_for_cloud_suggestion(
+        cloud_client, "catalog", restaurant_id, catalog_suggestion["id"], wait_seconds, interval_seconds
+    )
+    review_body = {
+        "reviewed_by_employee_id": "seed-dev-system-manager",
+        "review_comment": "approved by kitchen process smoke",
+        "published_by": "seed-dev-system-smoke",
+    }
+    approved_catalog = request(
+        cloud_client,
+        "POST",
+        f"{API_PREFIX}/master-data/catalog-suggestions/{cloud_catalog_suggestion['id']}/approve",
+        review_body,
+        expected_status=(200,),
+    )
+    approved_catalog_item_id = approved_catalog.get("applied_catalog_item_id", "")
+    if not approved_catalog_item_id:
+        raise RuntimeError(f"Cloud catalog approval did not return applied catalog item id: {approved_catalog}")
+    wait_for_edge_proposal_status(pos_client, "catalog", catalog_suggestion["id"], "approved", kitchen_headers, wait_seconds, interval_seconds)
+    updated_catalog_items = wait_for_catalog_item_count(pos_client, len(catalog_items) + 1, kitchen_headers, wait_seconds, interval_seconds)
+    if not any(item.get("id") == approved_catalog_item_id for item in updated_catalog_items):
+        raise RuntimeError(f"POS Edge did not sync approved catalog item {approved_catalog_item_id}")
+
     recipe_suggestion = request(
         pos_client,
         "POST",
@@ -1180,8 +1203,8 @@ def run_kitchen_process_smoke_flow(
             "prep_time_delta_minutes": 1,
             "reason": "smoke recipe proposal",
             "changes": [{
-                "action": "add_line",
-                "to_catalog_item_id": sirloin_catalog_id,
+                "action": "add_ingredient",
+                "to_catalog_item_id": approved_catalog_item_id,
                 "quantity": "1",
                 "unit_code": "g",
                 "loss_percent": "0",
@@ -1190,23 +1213,8 @@ def run_kitchen_process_smoke_flow(
         expected_status=(201,),
         headers=kitchen_headers,
     )
-    cloud_catalog_suggestion = wait_for_cloud_suggestion(
-        cloud_client, "catalog", restaurant_id, catalog_suggestion["id"], wait_seconds, interval_seconds
-    )
     cloud_recipe_suggestion = wait_for_cloud_suggestion(
         cloud_client, "recipe", restaurant_id, recipe_suggestion["id"], wait_seconds, interval_seconds
-    )
-    review_body = {
-        "reviewed_by_employee_id": "seed-dev-system-manager",
-        "review_comment": "approved by kitchen process smoke",
-        "published_by": "seed-dev-system-smoke",
-    }
-    approved_catalog = request(
-        cloud_client,
-        "POST",
-        f"{API_PREFIX}/master-data/catalog-suggestions/{cloud_catalog_suggestion['id']}/approve",
-        review_body,
-        expected_status=(200,),
     )
     approved_recipe = request(
         cloud_client,
@@ -1215,9 +1223,7 @@ def run_kitchen_process_smoke_flow(
         review_body,
         expected_status=(200,),
     )
-    wait_for_edge_proposal_status(pos_client, "catalog", catalog_suggestion["id"], "approved", kitchen_headers, wait_seconds, interval_seconds)
     wait_for_edge_proposal_status(pos_client, "recipe", recipe_suggestion["id"], "approved", kitchen_headers, wait_seconds, interval_seconds)
-    updated_catalog_items = wait_for_catalog_item_count(pos_client, len(catalog_items) + 1, kitchen_headers, wait_seconds, interval_seconds)
     updated_recipe = request(pos_client, "GET", f"{API_PREFIX}/kitchen/catalog/items/{soup_catalog_id}/recipe", expected_status=(200,), headers=kitchen_headers)
 
     return {
@@ -1510,9 +1516,9 @@ def wait_for_edge_proposal_status(pos_client, kind, proposal_id, status, headers
             "GET",
             f"{API_PREFIX}/kitchen/proposals",
             expected_status=(200,),
-            query={"kind": kind, "limit": 100, "offset": 0},
+            query={"kind": kind, "status": status, "limit": 100, "offset": 0},
             headers=headers,
-        )
+        ) or []
         for item in items:
             item_id = item.get("id", "")
             if (item_id == proposal_id or proposal_id.startswith(item_id + "-")) and item.get("status") == status:

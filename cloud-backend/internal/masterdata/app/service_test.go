@@ -120,6 +120,21 @@ func TestRoleRejectsUnknownPermissionID(t *testing.T) {
 	}
 }
 
+func TestRoleAcceptsKitchenPermissionIDs(t *testing.T) {
+	service, _ := newService()
+	role, err := service.CreateRole(context.Background(), app.CreateRoleCommand{
+		RestaurantID:    "restaurant-1",
+		Name:            "kitchen",
+		PermissionsJSON: `{"pos.kitchen.view":true,"pos.kitchen.status.change":true,"permissions":["pos.kitchen.stock.receipt","pos.kitchen.production.complete"]}`,
+	})
+	if err != nil {
+		t.Fatalf("expected kitchen permissions to be accepted, got %v", err)
+	}
+	if !strings.Contains(role.PermissionsJSON, "pos.kitchen.stock.receipt") {
+		t.Fatalf("expected kitchen permissions to be persisted, got %s", role.PermissionsJSON)
+	}
+}
+
 func TestDuplicateActivePINIsRejectedPerRestaurant(t *testing.T) {
 	service, _ := newService()
 	ctx := context.Background()
@@ -600,6 +615,50 @@ func TestStopListUpdateReviewApprovePublishesCloudAuthorityWithoutRawPayload(t *
 	}
 	if pub.Version != 1 {
 		t.Fatalf("expected approval to publish new package, got %+v", pub)
+	}
+}
+
+func TestCatalogSuggestionApproveAcceptsCurrentCreateAction(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	now := fixedClock{}.Now()
+	restaurant, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "Suggestion Lab", Timezone: "Europe/Moscow", Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := json.RawMessage(`{"data":{"action":"create","kind":"good","name":"Smoke Herb","sku":"SMOKE-HERB","base_unit":"g","kitchen_type":"hot","accounting_category":"good"}}`)
+	repo.SeedCatalogSuggestion(domain.CatalogSuggestion{
+		ID:              "catalog-suggestion-1",
+		SuggestionID:    "edge-catalog-suggestion-1",
+		RestaurantID:    restaurant.ID,
+		ProposalGroupID: "proposal-group-1",
+		Action:          "create",
+		Reason:          "smoke catalog proposal",
+		Status:          domain.SuggestionStatusPending,
+		SourceEventID:   "edge-event-1",
+		SuggestedAt:     now.Add(-time.Minute),
+		CloudReceivedAt: now,
+		PayloadJSON:     payload,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+
+	approved, err := service.ApproveCatalogSuggestion(ctx, "catalog-suggestion-1", app.SuggestionReviewCommand{ReviewedByEmployeeID: "manager-1", PublishedBy: "cloud-ui"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approved.Status != domain.SuggestionStatusApproved || approved.AppliedCatalogItemID == "" {
+		t.Fatalf("unexpected approved suggestion: %+v", approved)
+	}
+	items, err := repo.ListCatalogItems(ctx, restaurant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Kind != domain.CatalogItemGood || items[0].Name != "Smoke Herb" || items[0].KitchenType != "hot" {
+		t.Fatalf("expected current create action to create suggested catalog item, got %+v", items)
+	}
+	if _, err := repo.GetCurrentPublication(ctx, restaurant.ID); err != nil {
+		t.Fatalf("approval must publish updated package, got %v", err)
 	}
 }
 

@@ -117,6 +117,51 @@ func TestExchangeReturnsItemAckAndNewerCloudPackage(t *testing.T) {
 	}
 }
 
+func TestExchangeReturnsGenericPackageWhenItIsNewerThanNodePackage(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+	if err := repo.AuthorizeNodeForTest("device-1", "restaurant-1", "node-token"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpsertMasterDataPackage(context.Background(), contracts.MasterDataPackage{
+		StreamName:      contracts.MasterDataStreamProposalFeedback,
+		NodeDeviceID:    "device-1",
+		RestaurantID:    "restaurant-1",
+		SyncMode:        contracts.SyncModeIncremental,
+		CloudVersion:    1,
+		CheckpointToken: "proposal_feedback:1",
+		PayloadJSON:     json.RawMessage(`{"catalog_suggestions":[{"suggestion_id":"old","status":"pending"}]}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpsertMasterDataPackage(context.Background(), contracts.MasterDataPackage{
+		StreamName:      contracts.MasterDataStreamProposalFeedback,
+		RestaurantID:    "restaurant-1",
+		SyncMode:        contracts.SyncModeIncremental,
+		CloudVersion:    2,
+		CheckpointToken: "proposal_feedback:2",
+		PayloadJSON:     json.RawMessage(`{"catalog_suggestions":[{"suggestion_id":"new","status":"approved"}]}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := service.Exchange(context.Background(), contracts.SyncExchangeRequest{
+		ProtocolVersion: contracts.SyncExchangeProtocolVersion,
+		NodeDeviceID:    "device-1",
+		RestaurantID:    "restaurant-1",
+		Streams: []contracts.SyncExchangeStreamRequest{{
+			StreamName:       contracts.MasterDataStreamProposalFeedback,
+			LastCloudVersion: 1,
+			CheckpointToken:  "proposal_feedback:1",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.CloudPackages) != 1 || resp.CloudPackages[0].CloudVersion != 2 || resp.CloudPackages[0].NodeDeviceID != "device-1" {
+		t.Fatalf("expected newer generic proposal_feedback package for device, got %+v", resp.CloudPackages)
+	}
+}
+
 func TestExchangeAcksServedAndClosedInventoryEventsIdempotently(t *testing.T) {
 	repo := memory.NewRepository()
 	service := app.NewService(repo, fixedClock{})

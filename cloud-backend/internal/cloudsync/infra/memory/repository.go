@@ -355,10 +355,10 @@ func (r *Repository) ListInventoryStockBalances(_ context.Context, filter app.In
 		offset = 0
 	}
 	type aggregate struct {
-		balance             contracts.InventoryStockBalance
-		quantity            float64
-		normalizedStatuses  map[string]bool
-		needsRecalculation  bool
+		balance            contracts.InventoryStockBalance
+		quantity           float64
+		normalizedStatuses map[string]bool
+		needsRecalculation bool
 	}
 	aggregates := map[string]*aggregate{}
 	for _, item := range r.inventoryLedger {
@@ -485,11 +485,20 @@ func (r *Repository) UpsertMasterDataPackage(_ context.Context, v contracts.Mast
 func (r *Repository) GetMasterDataPackage(_ context.Context, streamName, nodeDeviceID string) (contracts.MasterDataPackage, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if v, ok := r.masterDataByKey[masterDataKey(streamName, nodeDeviceID)]; ok {
-		return copyMasterDataPackage(v), nil
+	var selected contracts.MasterDataPackage
+	found := false
+	for _, key := range []string{masterDataKey(streamName, nodeDeviceID), masterDataKey(streamName, "")} {
+		v, ok := r.masterDataByKey[key]
+		if !ok {
+			continue
+		}
+		if !found || v.CloudVersion > selected.CloudVersion || (v.CloudVersion == selected.CloudVersion && strings.TrimSpace(v.NodeDeviceID) == strings.TrimSpace(nodeDeviceID)) {
+			selected = v
+			found = true
+		}
 	}
-	if v, ok := r.masterDataByKey[masterDataKey(streamName, "")]; ok {
-		return copyMasterDataPackage(v), nil
+	if found {
+		return copyMasterDataPackage(selected), nil
 	}
 	return contracts.MasterDataPackage{}, contracts.ErrNotFound
 }

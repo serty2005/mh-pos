@@ -187,6 +187,12 @@ func (r *Repository) ListKitchenProposals(ctx context.Context, query kitchen.Pro
 	return out, normalizeErr(rows.Err())
 }
 
+func (r *Repository) ApplyKitchenProposalFeedback(ctx context.Context, kind kitchen.ProposalKind, suggestionID string, status kitchen.ProposalStatus, cloudVersion int64, cloudUpdatedAt, updatedAt string) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `UPDATE kitchen_proposals SET status = ?, cloud_version = ?, cloud_updated_at = ?, updated_at = ? WHERE id = ? AND kind = ?`,
+		string(status), cloudVersion, cloudUpdatedAt, updatedAt, strings.TrimSpace(suggestionID), string(kind))
+	return normalizeErr(err)
+}
+
 func kitchenTicketSelectSQL() string {
 	return `SELECT kt.id,kt.restaurant_id,kt.device_id,kt.shift_id,kt.order_id,kt.order_line_id,kt.table_name,kt.menu_item_id,kt.catalog_item_id,kt.name,kt.quantity,kt.unit_code,kt.station_routing_key,kt.course,kt.comment,kt.status,kt.created_at,kt.updated_at FROM kitchen_tickets kt`
 }

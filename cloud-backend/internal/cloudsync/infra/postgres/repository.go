@@ -732,7 +732,7 @@ func (r *Repository) GetMasterDataPackage(ctx context.Context, streamName, nodeD
 SELECT stream_name,node_device_id,COALESCE(restaurant_id,''),sync_mode,full_snapshot_reason,cloud_version,COALESCE(checkpoint_token,''),cloud_updated_at,payload_json,created_at,updated_at
 FROM cloud_master_data_packages
 WHERE stream_name = $1 AND node_device_id IN ($2, '')
-ORDER BY CASE WHEN node_device_id = $2 THEN 0 ELSE 1 END
+ORDER BY cloud_version DESC, CASE WHEN node_device_id = $2 THEN 0 ELSE 1 END
 LIMIT 1`, streamName, nodeDeviceID).Scan(
 		&out.StreamName,
 		&out.NodeDeviceID,

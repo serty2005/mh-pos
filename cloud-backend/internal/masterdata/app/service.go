@@ -1461,15 +1461,15 @@ func (s *Service) SubmitRecipeVersion(ctx context.Context, id string, cmd Submit
 	suggestionID := "recipe-version-" + version.ID
 	payload, err := json.Marshal(map[string]any{
 		"data": map[string]any{
-			"suggestion_id":          suggestionID,
-			"restaurant_id":          version.RestaurantID,
-			"recipe_version_id":      version.ID,
-			"owner_catalog_item_id":  version.OwnerCatalogItemID,
-			"action":                 "publish_recipe_version",
-			"reason":                 strings.TrimSpace(cmd.Reason),
+			"suggestion_id":            suggestionID,
+			"restaurant_id":            version.RestaurantID,
+			"recipe_version_id":        version.ID,
+			"owner_catalog_item_id":    version.OwnerCatalogItemID,
+			"action":                   "publish_recipe_version",
+			"reason":                   strings.TrimSpace(cmd.Reason),
 			"suggested_by_employee_id": strings.TrimSpace(cmd.SubmittedByEmployeeID),
-			"suggested_at":           now,
-			"changes":                recipeVersionChangesPayload(lines),
+			"suggested_at":             now,
+			"changes":                  recipeVersionChangesPayload(lines),
 		},
 	})
 	if err != nil {
@@ -3128,18 +3128,20 @@ func (s *Service) applyCatalogSuggestion(ctx context.Context, v *domain.CatalogS
 		action = strings.TrimSpace(stringValue(data, "action"))
 	}
 	switch action {
-	case "create_item", "create_dish":
+	case "create", "create_item", "create_dish":
 		item := domain.CatalogItem{
-			ID:           firstNonEmpty(stringValue(data, "catalog_item_id"), s.ids.NewID()),
-			RestaurantID: v.RestaurantID,
-			Kind:         domain.CatalogItemDish,
-			Name:         firstNonEmpty(stringValue(data, "name"), "Suggested item"),
-			SKU:          firstNonEmpty(stringValue(data, "sku"), "SUGGESTED-"+v.SuggestionID),
-			BaseUnit:     firstNonEmpty(stringValue(data, "base_unit"), "portion"),
-			Status:       domain.StatusPublished,
-			CloudVersion: 1,
-			CreatedAt:    now,
-			UpdatedAt:    now,
+			ID:                 firstNonEmpty(stringValue(data, "catalog_item_id"), s.ids.NewID()),
+			RestaurantID:       v.RestaurantID,
+			Kind:               domain.CatalogItemDish,
+			Name:               firstNonEmpty(stringValue(data, "name"), "Suggested item"),
+			SKU:                firstNonEmpty(stringValue(data, "sku"), "SUGGESTED-"+v.SuggestionID),
+			BaseUnit:           firstNonEmpty(stringValue(data, "base_unit"), "portion"),
+			KitchenType:        strings.TrimSpace(stringValue(data, "kitchen_type")),
+			AccountingCategory: strings.TrimSpace(stringValue(data, "accounting_category")),
+			Status:             domain.StatusPublished,
+			CloudVersion:       1,
+			CreatedAt:          now,
+			UpdatedAt:          now,
 		}
 		if kind := strings.TrimSpace(stringValue(data, "kind")); kind != "" {
 			item.Kind = domain.CatalogItemKind(kind)

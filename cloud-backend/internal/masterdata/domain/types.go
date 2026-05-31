@@ -390,15 +390,15 @@ type RecipeVersion struct {
 
 // RecipeLine описывает строку Cloud-owned версии техкарты.
 type RecipeLine struct {
-	ID                       string    `json:"id"`
-	RecipeVersionID          string    `json:"recipe_version_id"`
-	ComponentCatalogItemID   string    `json:"component_catalog_item_id"`
-	Quantity                 int64     `json:"quantity"`
-	Unit                     string    `json:"unit"`
-	LossPercent              int64     `json:"loss_percent"`
-	SortOrder                int       `json:"sort_order"`
-	CreatedAt                time.Time `json:"created_at"`
-	UpdatedAt                time.Time `json:"updated_at"`
+	ID                     string    `json:"id"`
+	RecipeVersionID        string    `json:"recipe_version_id"`
+	ComponentCatalogItemID string    `json:"component_catalog_item_id"`
+	Quantity               int64     `json:"quantity"`
+	Unit                   string    `json:"unit"`
+	LossPercent            int64     `json:"loss_percent"`
+	SortOrder              int       `json:"sort_order"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
 }
 
 // StopListEntry описывает Cloud-owned состояние stop-list, публикуемое на Edge для offline sale blocking.
@@ -922,37 +922,49 @@ func permissionsFromJSON(raw map[string]any) []string {
 }
 
 var knownPermissionIDs = map[string]struct{}{
-	"pos.employee_shift.open":         {},
-	"pos.employee_shift.close":        {},
-	"pos.employee_shift.view_current": {},
-	"pos.employee_shift.recent":       {},
-	"pos.cash_session.open":           {},
-	"pos.cash_session.close":          {},
-	"pos.cash_session.view_current":   {},
-	"pos.cash_drawer.record_event":    {},
-	"pos.catalog.view":                {},
-	"pos.floor.view":                  {},
-	"pos.menu.view":                   {},
-	"pos.order.create":                {},
-	"pos.order.view":                  {},
-	"pos.order.add_line":              {},
-	"pos.order.change_quantity":       {},
-	"pos.order.void_line":             {},
-	"pos.order.close":                 {},
-	"pos.pricing.view":                {},
-	"pos.pricing.discount.apply":      {},
-	"pos.pricing.surcharge.apply":     {},
-	"pos.precheck.issue":              {},
-	"pos.precheck.view":               {},
-	"pos.precheck.reprint":            {},
-	"pos.precheck.cancel.request":     {},
-	"pos.precheck.cancel":             {},
-	"pos.payment.cash":                {},
-	"pos.payment.card.manual":         {},
-	"pos.payment.other":               {},
-	"pos.payment.refund":              {},
-	"pos.check.view":                  {},
-	"pos.check.reprint":               {},
-	"pos.sync.view":                   {},
-	"pos.sync.retry_failed":           {},
+	"pos.employee_shift.open":           {},
+	"pos.employee_shift.close":          {},
+	"pos.employee_shift.view_current":   {},
+	"pos.employee_shift.recent":         {},
+	"pos.cash_session.open":             {},
+	"pos.cash_session.close":            {},
+	"pos.cash_session.view_current":     {},
+	"pos.cash_drawer.record_event":      {},
+	"pos.catalog.view":                  {},
+	"pos.floor.view":                    {},
+	"pos.menu.view":                     {},
+	"pos.order.create":                  {},
+	"pos.order.view":                    {},
+	"pos.order.add_line":                {},
+	"pos.order.change_quantity":         {},
+	"pos.order.void_line":               {},
+	"pos.order.close":                   {},
+	"pos.pricing.view":                  {},
+	"pos.pricing.discount.apply":        {},
+	"pos.pricing.surcharge.apply":       {},
+	"pos.precheck.issue":                {},
+	"pos.precheck.view":                 {},
+	"pos.precheck.reprint":              {},
+	"pos.precheck.cancel.request":       {},
+	"pos.precheck.cancel":               {},
+	"pos.payment.cash":                  {},
+	"pos.payment.card.manual":           {},
+	"pos.payment.other":                 {},
+	"pos.payment.refund":                {},
+	"pos.check.view":                    {},
+	"pos.check.reprint":                 {},
+	"pos.kitchen.view":                  {},
+	"pos.kitchen.status.change":         {},
+	"pos.kitchen.catalog.view":          {},
+	"pos.kitchen.recipe.view":           {},
+	"pos.kitchen.recipe.suggest":        {},
+	"pos.kitchen.catalog.suggest":       {},
+	"pos.kitchen.stock.receipt":         {},
+	"pos.kitchen.stock.inventory_count": {},
+	"pos.kitchen.stock.write_off":       {},
+	"pos.kitchen.production.complete":   {},
+	"pos.kitchen.stop_list.view":        {},
+	"pos.kitchen.stop_list.update":      {},
+	"pos.sync.view":                     {},
+	"pos.sync.retry_failed":             {},
 }

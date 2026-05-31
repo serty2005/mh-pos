@@ -960,6 +960,13 @@ func (r *Repository) UpdateCatalogSuggestion(_ context.Context, v domain.Catalog
 	return v, nil
 }
 
+// SeedCatalogSuggestion добавляет safe projection row для service/API tests.
+func (r *Repository) SeedCatalogSuggestion(v domain.CatalogSuggestion) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.catalogSuggestions[v.ID] = v
+}
+
 func (r *Repository) ListRecipeSuggestions(_ context.Context, restaurantID, status string, limit, offset int) ([]domain.RecipeSuggestion, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
