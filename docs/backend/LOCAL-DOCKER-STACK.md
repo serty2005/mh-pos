@@ -205,7 +205,7 @@ python3 scripts/seed-dev-system.py \
   --run-minimal-flow
 ```
 
-Реализовано сейчас: флаг `--run-minimal-flow` после seed/pairing выполняет HTTP-only сценарий `Cloud recipes/stop-list publication -> Edge sync -> waiter order -> KDS served -> cashier final check -> ItemServed/CheckClosed -> Cloud inventory ledger`. Сценарий проверяет stop-list rejection для demo sold-out item, создает заказ официантом, проводит KDS ticket через `accept/start/ready/serve`, выпускает precheck, закрывает его оплатой кассира, ожидает `ItemServed` и `CheckClosed` в Cloud safe event log, проверяет `stock_ledger` для `ItemServed` и отсутствие duplicate `CheckClosed` delta по тому же `order_line_id`.
+Реализовано сейчас: флаг `--run-minimal-flow` после seed/pairing выполняет HTTP-only сценарий `Cloud recipes/stop-list publication -> Edge sync -> waiter order/precheck -> KDS served -> cashier final check -> ItemServed/CheckClosed -> Cloud inventory ledger -> ClickHouse/OLAP bounded reads`. Сценарий проверяет stop-list rejection для demo sold-out item, создает заказ официантом, проводит KDS ticket через `accept/start/ready/serve`, выпускает precheck, закрывает его оплатой кассира, ожидает `ItemServed` и `CheckClosed` в Cloud safe event log, проверяет `stock_ledger` для `ItemServed`, отсутствие duplicate `CheckClosed` delta по тому же `order_line_id`, экспорт `ItemServed`/`CheckClosed` в ClickHouse `raw_business_events`, bounded `olap_stock_moves` для `ItemServed`, `stock-move-summary` и `sales-kitchen-summary` без raw payload.
 
 Полный kitchen/process smoke для поднятого stack:
 
@@ -234,7 +234,7 @@ python3 scripts/seed-dev-system.py \
   --run-kitchen-process-smoke
 ```
 
-Если включены оба флага, итоговый JSON содержит независимые секции `minimal_flow` и `kitchen_process_smoke`. Минимальная ветка может использовать резервный PIN с KDS authority для подачи блюда, а полный kitchen/process smoke должен использовать опубликованную kitchen role/PIN `5555`, чтобы проверить фактические backend RBAC и Cloud маршруты.
+Если включены оба флага, итоговый JSON содержит независимые секции `minimal_flow` и `kitchen_process_smoke`. Минимальная ветка подтверждает полный cashier/waiter/KDS/check/inventory/OLAP хвост и может использовать резервный PIN с KDS authority для подачи блюда, а полный kitchen/process smoke должен использовать опубликованную kitchen role/PIN `5555`, чтобы проверить фактические backend RBAC и Cloud маршруты.
 
 Seed-вход содержит только пользовательские данные: названия, имена, PIN, цены, количества, места и наборы прав. ID, `node_device_id`, generated SKU и остальные технические значения берутся из backend responses или генерируются системно. `scripts/.seed-dev-system-summary.json` содержит локальные demo credentials и добавлен в `.gitignore`; не коммить этот файл.
 

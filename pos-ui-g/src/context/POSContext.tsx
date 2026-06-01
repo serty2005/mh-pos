@@ -422,6 +422,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     void refreshCurrentPricing();
   }, [refreshCurrentPricing]);
 
+  useEffect(() => {
+    if (!isPinLocked && actor && !shift) {
+      setSelectedTableId(null);
+      setCurrentSection('cash');
+    }
+  }, [actor, isPinLocked, shift]);
+
   const activePrecheck = useMemo(() => activeIssuedPrecheck(prechecksDto), [prechecksDto]);
   const backendCurrentOrder = useMemo(
     () => activeOrdersDto.find((order) => order.table_id === selectedTableId) ?? null,

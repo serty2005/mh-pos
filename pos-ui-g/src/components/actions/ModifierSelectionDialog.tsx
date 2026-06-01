@@ -3,6 +3,11 @@ import { MenuItem, SelectedModifier, ModifierGroup } from '../../types';
 import { t } from '../../shared/i18n';
 import { PosButton, PosDialog } from '../../shared/ui';
 import { Check } from 'lucide-react';
+import {
+  initialSelectionsForMode,
+  modifierSelectionTotal,
+  toggleModifierSelection,
+} from './modifierSelection';
 
 interface ModifierSelectionDialogProps {
   isOpen: boolean;
@@ -23,65 +28,24 @@ export const ModifierSelectionDialog: React.FC<ModifierSelectionDialogProps> = (
 }) => {
   const [selections, setSelections] = useState<SelectedModifier[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const dialogMode = mode === 'edit' ? 'edit' : 'add';
+  const effectiveInitialSelections = dialogMode === 'edit' ? initialSelections : undefined;
 
   useEffect(() => {
     if (item) {
-      setSelections(initialSelections);
+      setSelections(initialSelectionsForMode(item, dialogMode, effectiveInitialSelections));
       setErrors({});
-      
-      // Auto-select standard default options for groups requiring exactly 1 choice
-      if (mode === 'add' && item.modifierGroups) {
-        const initialSelections: SelectedModifier[] = [];
-        item.modifierGroups.forEach(group => {
-          if (group.minRequired === 1 && group.options.length > 0) {
-            const first = group.options[0];
-            initialSelections.push({
-              groupId: group.id,
-              groupName: group.name,
-              optionId: first.id,
-              optionName: first.name,
-              price: first.price
-            });
-          }
-        });
-        setSelections(initialSelections);
-      }
     }
-  }, [initialSelections, item, isOpen, mode]);
+  }, [dialogMode, effectiveInitialSelections, item, isOpen]);
 
   if (!item || !item.modifierGroups) return null;
 
   const handleOptionToggle = (group: ModifierGroup, optionId: string, optionName: string, optionPrice: number) => {
-    setSelections(prev => {
-      const filteredGroup = prev.filter(sel => sel.groupId !== group.id);
-      const isCurrentlySelected = prev.some(sel => sel.optionId === optionId);
-
-      if (group.maxAllowed === 1) {
-        if (isCurrentlySelected && group.minRequired === 0) {
-          return filteredGroup;
-        }
-        return [
-          ...filteredGroup,
-          { groupId: group.id, groupName: group.name, optionId, optionName, price: optionPrice }
-        ];
-      } else {
-        // Multi choice selection
-        const groupSelections = prev.filter(sel => sel.groupId === group.id);
-        if (isCurrentlySelected) {
-          // Remove selected option
-          return prev.filter(sel => sel.optionId !== optionId);
-        } else {
-          // Add if size remains within constraints
-          if (groupSelections.length < group.maxAllowed) {
-            return [
-              ...prev,
-              { groupId: group.id, groupName: group.name, optionId, optionName, price: optionPrice }
-            ];
-          }
-          return prev;
-        }
-      }
-    });
+    setSelections(prev => toggleModifierSelection(prev, group, {
+      id: optionId,
+      name: optionName,
+      price: optionPrice,
+    }));
 
     // Clear group errors
     if (errors[group.id]) {
@@ -113,7 +77,7 @@ export const ModifierSelectionDialog: React.FC<ModifierSelectionDialogProps> = (
     onSubmit(selections);
   };
 
-  const calculatedTotal = item.price + selections.reduce((sum, sel) => sum + sel.price, 0);
+  const calculatedTotal = modifierSelectionTotal(item.price, selections);
 
   return (
     <PosDialog

@@ -55,7 +55,7 @@ function POSAppShellContent() {
 
   const [isSideMenuOpen, setSideMenuOpen] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<string>('');
-  const [currentMode, setCurrentMode] = useState<TerminalMode>('pos');
+  const [currentMode, setCurrentMode] = useState<TerminalMode>(() => isMobileViewport() ? 'waiter' : 'pos');
   const [currentKdsSection, setCurrentKdsSection] = useState<'orders' | 'stock' | 'kitchen'>('orders');
 
   // Clock snapshot runner
@@ -78,6 +78,18 @@ function POSAppShellContent() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 639px)');
+    const handleMobileHandoff = () => {
+      if (mediaQuery.matches) {
+        setCurrentMode((mode) => mode === 'pos' || mode === 'kds' ? 'waiter' : mode);
+      }
+    };
+    handleMobileHandoff();
+    mediaQuery.addEventListener('change', handleMobileHandoff);
+    return () => mediaQuery.removeEventListener('change', handleMobileHandoff);
   }, []);
 
   const handleSectionSelect = (section: POSSection) => {
@@ -442,6 +454,10 @@ function POSAppShellContent() {
 }
 
 type TerminalMode = 'pos' | 'kds' | 'waiter' | 'delivery';
+
+function isMobileViewport() {
+  return typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches;
+}
 
 type ShellIcon = React.ComponentType<{ className?: string }>;
 interface ShellDrawerButtonProps {

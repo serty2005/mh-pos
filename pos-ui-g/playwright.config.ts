@@ -11,14 +11,17 @@ process.env.NO_PROXY = [
 
 const port = Number(process.env.POS_UI_G_E2E_PORT ?? 3000);
 const host = process.env.POS_UI_G_E2E_HOST ?? '127.0.0.1';
-const baseURL = process.env.POS_UI_G_E2E_BASE_URL ?? `http://${host}:${port}`;
+const baseURL = process.env.POS_UI_G_E2E_BASE_URL ?? process.env.POS_UI_URL ?? `http://${host}:${port}`;
+
+process.env.POS_UI_URL ??= baseURL;
 
 export default defineConfig({
-  testDir: './e2e',
+  testDir: '.',
+  testMatch: ['e2e/**/*.spec.ts', 'tests/**/*.e2e.ts'],
   outputDir: process.env.POS_UI_G_E2E_OUTPUT_DIR ?? path.join(os.tmpdir(), 'mh-pos-ui-g-playwright'),
   fullyParallel: false,
   workers: 1,
-  timeout: 30_000,
+  timeout: 60_000,
   expect: {
     timeout: 5_000,
   },
@@ -29,7 +32,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: 'npx vite --host=127.0.0.1 --port=3000 --strictPort',
+    command: `npx vite --host=${host} --port=${port} --strictPort`,
     url: baseURL,
     reuseExistingServer: true,
     timeout: 60_000,

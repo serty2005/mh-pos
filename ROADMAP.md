@@ -234,7 +234,7 @@
   - публикует packages для POS Edge streams;
   - выполняет license pairing;
   - проверяет базовый POS read model;
-  - `--run-minimal-flow` выполняет waiter order -> KDS served -> cashier final check -> `ItemServed`/`CheckClosed` -> Cloud inventory ledger smoke;
+  - `--run-minimal-flow` выполняет waiter order/precheck -> KDS served -> cashier final check -> `ItemServed`/`CheckClosed` -> Cloud inventory ledger -> ClickHouse/OLAP bounded reads smoke;
   - `--run-kitchen-process-smoke` выполняет полный kitchen/process smoke без destructive storage actions.
 - DDD context map exists in `docs/architecture/DDD-CONTEXT-MAP.md`.
 
@@ -390,7 +390,7 @@
 - Replay того же stock `command_id` возвращает сохраненный результат без повторной записи events.
 - POS Edge использует stop-list как единственный механизм блокировки продаж при add/increase order line.
 - Stock balance остается аналитическим и может быть отрицательным.
-- Минимальный HTTP-only smoke `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud recipes/stop-list publication -> Edge sync -> waiter order -> KDS served -> cashier final check -> `ItemServed`/`CheckClosed` -> Cloud `stock_ledger`.
+- Минимальный HTTP-only smoke `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud recipes/stop-list publication -> Edge sync -> waiter order/precheck -> KDS served -> cashier final check -> `ItemServed`/`CheckClosed` -> Cloud `stock_ledger` -> ClickHouse `raw_business_events`/`olap_stock_moves` -> bounded `stock-move-summary` и `sales-kitchen-summary`.
 - Полный kitchen/process smoke `scripts/seed-dev-system.py --run-kitchen-process-smoke` проверяет Cloud seed publication для catalog/menu/recipes/inventory_reference, Edge sync, waiter order, KDS tile, `accept/start/ready/serve`, `recall/start/ready/serve`, ClickHouse `raw_business_events`, stock receipt/count/write-off/production ledger rows, catalog/recipe suggestions, manager approve и Edge proposal feedback.
 
 ### Cancellation/refund/reprint hardening
@@ -408,7 +408,7 @@
 - Cashier UI full whole-check and partial `order_line`/quantity cancellation/refund through ledger endpoints.
 - Inventory disposition selection.
 - Compatibility refund по captured payment оставлен отдельным fallback.
-- `scripts/seed-dev-system.py --run-minimal-flow` проверяет минимальный runtime sale path с waiter order/precheck, KDS served, cashier payment/final check, `ItemServed`/`CheckClosed` и Cloud `stock_ledger`.
+- `scripts/seed-dev-system.py --run-minimal-flow` проверяет минимальный runtime sale path с waiter order/precheck, KDS served, cashier payment/final check, `ItemServed`/`CheckClosed`, Cloud `stock_ledger`, ClickHouse raw archive, `olap_stock_moves` и bounded OLAP агрегаты.
 - Refund/cancellation остаются в профильных backend/UI e2e, а не в seed smoke.
 - Playwright `payments-refunds.spec.ts` закрывает исходные personal/cash shifts, открывает новую сменную границу, проверяет refund ledger read после закрытой смены и ожидаемый запрет cancellation после закрытия исходной смены.
 
@@ -597,7 +597,9 @@
   - waiter order/precheck;
   - KDS served;
   - cashier payment/final check;
-  - Cloud inventory ledger.
+  - Cloud inventory ledger;
+  - ClickHouse raw event archive;
+  - bounded `olap_stock_moves`, `stock-move-summary` и `sales-kitchen-summary` reads.
 - Kitchen/process smoke проверяет:
   - KDS recall/serve-again;
   - ClickHouse event trail;
@@ -610,9 +612,9 @@
   - item-level ACK;
   - прекращение повторной отправки после ACK.
 
-Заблокировано/локализовано:
+Локализовано по окружению:
 
-- Полный Docker smoke не был подтвержден в локальной проверке из-за окружения.
+- Полный Docker smoke `--run-minimal-flow --run-kitchen-process-smoke` подтвержден в локальной проверке 01.06.2026 при доступном Docker Compose/buildx.
 - `docker-compose.local.yml` поддерживает host-port overrides для:
   - `5432`;
   - `8123`;
