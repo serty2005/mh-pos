@@ -143,6 +143,91 @@ describe('POS API client', () => {
     });
   });
 
+  it('sends selected modifiers when adding a new order line', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id: 'line-1',
+      order_id: 'order-1',
+      menu_item_id: 'menu-1',
+      catalog_item_id: 'catalog-1',
+      name: 'Espresso',
+      quantity: 1,
+      unit_price: 12900,
+      total_price: 14900,
+      currency_code: 'RUB',
+      tax_profile_id: null,
+      course: null,
+      comment: null,
+      modifiers: [{
+        id: 'line-mod-1',
+        order_line_id: 'line-1',
+        modifier_group_id: 'milk',
+        modifier_option_id: 'lactose-free',
+        name: 'Lactose Free',
+        quantity: 1,
+        unit_price: 2000,
+        total_price: 2000,
+      }],
+      status: 'active',
+      created_at: '2026-06-01T10:00:00Z',
+      updated_at: '2026-06-01T10:00:00Z',
+    }), { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const api = createApiClient(() => auth, 'http://pos.local/api/v1');
+    await api.addOrderLine('order-1', 'menu-1', 1, [{ modifier_group_id: 'milk', modifier_option_id: 'lactose-free', quantity: 1 }]);
+
+    expect(fetchMock.mock.calls[0][0]).toBe('http://pos.local/api/v1/orders/order-1/lines');
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
+      menu_item_id: 'menu-1',
+      quantity: 1,
+      selected_modifiers: [{ modifier_group_id: 'milk', modifier_option_id: 'lactose-free', quantity: 1 }],
+    });
+  });
+
+  it('returns null for optional current cash session 404 without logging an error', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: {
+        code: 'NOT_FOUND',
+        message_key: 'errors.not_found',
+        correlation_id: 'req-cash-missing',
+      },
+    }), { status: 404 })));
+
+    const api = createApiClient(() => auth, 'http://pos.local/api/v1');
+
+    await expect(api.getCurrentCashSession()).resolves.toBeNull();
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it('accepts current cash session 200 response from backend contract', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id: 'cash-1',
+      edge_cash_session_id: 'edge-cash-1',
+      restaurant_id: 'restaurant-1',
+      device_id: 'node-1',
+      shift_id: 'shift-1',
+      opened_by_employee_id: 'employee-1',
+      closed_by_employee_id: null,
+      status: 'open',
+      business_date_local: '2026-06-01',
+      opening_cash_amount: 5000,
+      closing_cash_amount: null,
+      opened_at: '2026-06-01T10:00:00Z',
+      closed_at: null,
+      created_at: '2026-06-01T10:00:00Z',
+      updated_at: '2026-06-01T10:00:00Z',
+    }), { status: 200 })));
+
+    const api = createApiClient(() => auth, 'http://pos.local/api/v1');
+
+    await expect(api.getCurrentCashSession()).resolves.toMatchObject({
+      id: 'cash-1',
+      edge_cash_session_id: 'edge-cash-1',
+      opening_cash_amount: 5000,
+    });
+  });
+
   it('reads storage runtime metadata for the displayed schema version', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       generated_at: '2026-05-24T10:00:00Z',

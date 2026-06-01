@@ -12,7 +12,7 @@ import {
   PosSelectableTile,
   PosTabs
 } from '../../shared/ui';
-import { Armchair, Users, Plus, ReceiptText } from 'lucide-react';
+import { Armchair, Users, Plus, ReceiptText, Wallet } from 'lucide-react';
 
 export const POSFloorSection: React.FC = () => {
   const { 
@@ -32,6 +32,7 @@ export const POSFloorSection: React.FC = () => {
   const [guestsCount, setGuestsCount] = useState<number>(2);
 
   const currentHallTables = tables.filter(t => t.hallId === activeHallId);
+  const isEmployeeShiftOpen = Boolean(currentOperator);
 
   const handleTableClick = (tableId: string) => {
     const table = tables.find(t => t.id === tableId);
@@ -82,7 +83,15 @@ export const POSFloorSection: React.FC = () => {
 
         {/* Tables Matrix */}
         <div className="flex-1 p-6 overflow-y-auto pos-scrollarea-y pos-scrollbar-thin">
-          {currentHallTables.length === 0 ? (
+          {!isEmployeeShiftOpen ? (
+            <PosEmptyState
+              title={t.blocks.shiftRequired}
+              description={t.blocks.shiftRequiredDesc}
+              buttonLabel={t.cash.openShift}
+              onAction={() => setCurrentSection('cash')}
+              icon={<Wallet className="w-12 h-12" />}
+            />
+          ) : currentHallTables.length === 0 ? (
             <PosEmptyState
               title={t.floor.noTablesTitle}
               description={t.floor.noTablesDesc}
