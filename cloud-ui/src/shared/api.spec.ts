@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { getStopListReadiness, listInventoryStockBalances, listInventoryStockLedger } from './api';
+import { assignReviewItem, getStopListReadiness, listInventoryStockBalances, listInventoryStockLedger, unassignReviewItem } from './api';
 
 const stopListReadinessResponse = {
   restaurant_id: 'restaurant-1',
@@ -47,6 +47,16 @@ const inventoryStockLedgerResponse = [{
   created_at: '2026-05-30T10:01:00Z',
 }];
 
+const reviewAssignmentResponse = {
+  review_type: 'stop_list_update',
+  id: 'review-1',
+  status: 'pending',
+  assigned_to_employee_id: 'manager-2',
+  assigned_by_employee_id: 'manager-1',
+  assigned_at: '2026-06-01T10:00:00Z',
+  assignment_note: 'take ownership',
+};
+
 function stubJsonFetch(payload: unknown) {
   const fetchMock = vi.fn(async () => new Response(JSON.stringify(payload), { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
@@ -57,6 +67,12 @@ function requestedUrl(fetchMock: ReturnType<typeof vi.fn>) {
   const input = fetchMock.mock.calls[0]?.[0];
   expect(input).toBeDefined();
   return new URL(String(input));
+}
+
+async function requestedJsonBody(fetchMock: ReturnType<typeof vi.fn>) {
+  const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+  expect(init?.body).toBeDefined();
+  return JSON.parse(String(init?.body)) as Record<string, unknown>;
 }
 
 afterEach(() => {
@@ -168,5 +184,49 @@ describe('cloud api inventory readiness contract', () => {
     const url = requestedUrl(fetchMock);
     expect(url.searchParams.get('limit')).toBe('50');
     expect(url.searchParams.get('offset')).toBe('0');
+  });
+
+  it('calls review assignment endpoint with UUID command payload', async () => {
+    const fetchMock = stubJsonFetch(reviewAssignmentResponse);
+
+    await assignReviewItem('stop_list_update', 'review-1', {
+      command_id: '018f0000-0000-7000-8000-000000000901',
+      assigned_to_employee_id: 'manager-2',
+      assigned_by_employee_id: 'manager-1',
+      reason: 'take ownership',
+    });
+
+    const url = requestedUrl(fetchMock);
+    expect(url.pathname).toBe('/api/v1/manager/reviews/stop_list_update/review-1/assign');
+    const body = await requestedJsonBody(fetchMock);
+    expect(body).toEqual({
+      command_id: '018f0000-0000-7000-8000-000000000901',
+      assigned_to_employee_id: 'manager-2',
+      assigned_by_employee_id: 'manager-1',
+      reason: 'take ownership',
+    });
+  });
+
+  it('calls review unassignment endpoint with safe operator payload', async () => {
+    const fetchMock = stubJsonFetch({
+      review_type: 'stop_list_update',
+      id: 'review-1',
+      status: 'pending',
+    });
+
+    await unassignReviewItem('stop_list_update', 'review-1', {
+      command_id: '018f0000-0000-7000-8000-000000000902',
+      unassigned_by_employee_id: 'manager-1',
+      reason: 'rebalance queue',
+    });
+
+    const url = requestedUrl(fetchMock);
+    expect(url.pathname).toBe('/api/v1/manager/reviews/stop_list_update/review-1/unassign');
+    const body = await requestedJsonBody(fetchMock);
+    expect(body).toEqual({
+      command_id: '018f0000-0000-7000-8000-000000000902',
+      unassigned_by_employee_id: 'manager-1',
+      reason: 'rebalance queue',
+    });
   });
 });

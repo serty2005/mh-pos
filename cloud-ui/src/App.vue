@@ -66,6 +66,7 @@ import {
   assignCatalogItemTag,
   assignDeviceToRestaurant,
   assignEmployeeRole,
+  assignReviewItem,
   createCatalogFolder,
   createCatalogItem,
   createCatalogTag,
@@ -144,10 +145,11 @@ import {
   updateRole,
   updateStopListEntry,
   updateTable,
+  unassignReviewItem,
   upsertStopListEntry,
   ApiError,
 } from './shared/api';
-import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, FinancialOperationReportItem, InventoryStockBalance, InventoryStockLedgerEntry, KitchenTimingSummaryGroupBy, KitchenTimingSummaryItem, OlapBackfillJob, OlapExportStatus, OlapStockMove, OlapStockMoveSummary, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, SalesKitchenSummaryGroupBy, SalesKitchenSummaryItem, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
+import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, FinancialOperationReportItem, InventoryStockBalance, InventoryStockLedgerEntry, KitchenTimingSummaryGroupBy, KitchenTimingSummaryItem, OlapBackfillJob, OlapExportStatus, OlapStockMove, OlapStockMoveSummary, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, ReviewAssignmentType, SalesKitchenSummaryGroupBy, SalesKitchenSummaryItem, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
 import type { RecipeVersionView } from './shared/schemas';
 
 type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'financialOperations' | 'salesKitchenSummary' | 'recipeVersions' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
@@ -915,6 +917,8 @@ const cloudCtx = {
   createRecipeVersionDraft,
   loadProposalReview,
   reviewProposalSuggestion,
+  assignProposalReviewItem,
+  unassignProposalReviewItem,
   publishSelectedRestaurant,
   isLoading,
   formatCell,
@@ -1511,6 +1515,36 @@ async function reviewProposalSuggestion(
         ? 'cloud.messages.suggestionRejected'
         : 'cloud.messages.suggestionChangesRequested';
   });
+}
+
+async function assignProposalReviewItem(
+  kind: 'catalog' | 'recipe' | 'stop_list',
+  id: string,
+  payload: { command_id: string; assigned_to_employee_id: string; assigned_by_employee_id: string; reason: string },
+) {
+  await withLoading('proposal-assign', async () => {
+    await assignReviewItem(reviewTypeForKind(kind), id, payload);
+    await fetchProposalReview();
+    successKey.value = 'cloud.messages.reviewAssigned';
+  });
+}
+
+async function unassignProposalReviewItem(
+  kind: 'catalog' | 'recipe' | 'stop_list',
+  id: string,
+  payload: { command_id: string; unassigned_by_employee_id: string; reason: string },
+) {
+  await withLoading('proposal-unassign', async () => {
+    await unassignReviewItem(reviewTypeForKind(kind), id, payload);
+    await fetchProposalReview();
+    successKey.value = 'cloud.messages.reviewUnassigned';
+  });
+}
+
+function reviewTypeForKind(kind: 'catalog' | 'recipe' | 'stop_list'): ReviewAssignmentType {
+  if (kind === 'catalog') return 'catalog_suggestion';
+  if (kind === 'recipe') return 'recipe_suggestion';
+  return 'stop_list_update';
 }
 
 async function publishSelectedRestaurant() {

@@ -39,6 +39,9 @@
           <strong>{{ item.title }}</strong>
           <small>{{ item.subtitle }}</small>
           <span v-if="item.groupLabel" class="proposal-group-chip">{{ item.groupLabel }}</span>
+          <span v-if="item.assignedToEmployeeId" class="proposal-group-chip assignment-chip">
+            {{ t('cloud.proposals.assignedTo') }}: {{ employeeLabel(item.assignedToEmployeeId) }}
+          </span>
         </button>
       </div>
     </div>
@@ -69,6 +72,9 @@
           <strong>{{ item.title }}</strong>
           <small>{{ item.subtitle }}</small>
           <span v-if="item.groupLabel" class="proposal-group-chip">{{ item.groupLabel }}</span>
+          <span v-if="item.assignedToEmployeeId" class="proposal-group-chip assignment-chip">
+            {{ t('cloud.proposals.assignedTo') }}: {{ employeeLabel(item.assignedToEmployeeId) }}
+          </span>
         </button>
       </div>
     </div>
@@ -99,6 +105,9 @@
           <strong>{{ item.title }}</strong>
           <small>{{ item.subtitle }}</small>
           <span v-if="item.groupLabel" class="proposal-group-chip">{{ item.groupLabel }}</span>
+          <span v-if="item.assignedToEmployeeId" class="proposal-group-chip assignment-chip">
+            {{ t('cloud.proposals.assignedTo') }}: {{ employeeLabel(item.assignedToEmployeeId) }}
+          </span>
         </button>
       </div>
     </div>
@@ -123,6 +132,74 @@
             <dd>{{ fact.value }}</dd>
           </div>
         </dl>
+
+        <section class="proposal-assignment">
+          <div class="proposal-section-head">
+            <div>
+              <p class="eyebrow">{{ t('cloud.proposals.assignmentEyebrow') }}</p>
+              <h3>{{ t('cloud.proposals.assignmentTitle') }}</h3>
+            </div>
+            <span class="cloud-status" :class="hasAssignment ? 'approved' : 'pending'">
+              {{ hasAssignment ? t('cloud.proposals.assigned') : t('cloud.proposals.unassigned') }}
+            </span>
+          </div>
+
+          <dl class="proposal-facts">
+            <div v-for="fact in assignmentFacts(selected.raw)" :key="fact.label">
+              <dt>{{ fact.label }}</dt>
+              <dd>{{ fact.value }}</dd>
+            </div>
+          </dl>
+
+          <form v-if="!isTerminalReview" class="proposal-assignment-form" @submit.prevent>
+            <q-select
+              v-if="employeeOptions.length > 0"
+              v-model="assignedToEmployeeId"
+              dense
+              outlined
+              emit-value
+              map-options
+              :label="t('cloud.fields.assigned_to_employee_id')"
+              :options="employeeOptions"
+            />
+            <q-input v-else v-model="assignedToEmployeeId" dense outlined :label="t('cloud.fields.assigned_to_employee_id')" />
+
+            <q-select
+              v-if="employeeOptions.length > 0"
+              v-model="assignmentActorEmployeeId"
+              dense
+              outlined
+              emit-value
+              map-options
+              :label="t('cloud.fields.assignment_actor_employee_id')"
+              :options="employeeOptions"
+            />
+            <q-input v-else v-model="assignmentActorEmployeeId" dense outlined :label="t('cloud.fields.assignment_actor_employee_id')" />
+
+            <q-input v-model="assignmentReason" dense outlined type="textarea" autogrow :label="t('cloud.fields.assignment_reason')" />
+            <p class="cloud-field-hint">{{ t('cloud.proposals.assignmentHint') }}</p>
+            <div class="proposal-actions">
+              <q-btn
+                color="primary"
+                unelevated
+                icon="assignment_ind"
+                :disable="!canAssign"
+                :loading="ctx.isLoading('proposal-assign')"
+                :label="t('cloud.proposals.assign')"
+                @click="submitAssignment"
+              />
+              <q-btn
+                flat
+                icon="person_remove"
+                :disable="!canUnassign"
+                :loading="ctx.isLoading('proposal-unassign')"
+                :label="t('cloud.proposals.unassign')"
+                @click="submitUnassignment"
+              />
+            </div>
+          </form>
+          <p v-else class="cloud-field-hint">{{ t('cloud.proposals.terminalAssignmentHint') }}</p>
+        </section>
 
         <section class="proposal-diff">
           <h3>{{ t('cloud.proposals.diffTitle') }}</h3>
@@ -217,6 +294,7 @@ type ProposalRow = {
   title: string;
   subtitle: string;
   groupLabel: string;
+  assignedToEmployeeId: string;
   facts: { label: string; value: string }[];
   raw: CatalogSuggestion | RecipeSuggestion | StopListUpdateReview;
 };
@@ -231,6 +309,9 @@ const selectedKey = ref('');
 const reviewedByEmployeeId = ref('cloud-manager');
 const publishedBy = ref('cloud-ui');
 const reviewComment = ref('');
+const assignedToEmployeeId = ref('');
+const assignmentActorEmployeeId = ref('cloud-manager');
+const assignmentReason = ref('');
 
 const statusOptions = ['pending', 'approved', 'rejected', 'changes_requested'].map((status) => ({
   label: suggestionStatus(status),
@@ -246,7 +327,21 @@ const linkedGroup = computed(() => {
   if (!selected.value?.groupId) return [];
   return allRows.value.filter((item) => item.groupId === selected.value?.groupId);
 });
+const employeeOptions = computed(() => {
+  const rows = Array.isArray(props.ctx.scopedRows?.employees) ? props.ctx.scopedRows.employees : [];
+  return rows
+    .filter((item: Record<string, unknown>) => String(item.status ?? 'active') === 'active')
+    .map((item: Record<string, unknown>) => ({
+      label: `${String(item.name ?? item.id ?? '')} (${shortId(String(item.id ?? ''))})`,
+      value: String(item.id ?? ''),
+    }))
+    .filter((item: { value: string }) => item.value);
+});
 const canReview = computed(() => Boolean(selected.value && selected.value.status === 'pending' && reviewedByEmployeeId.value.trim()));
+const isTerminalReview = computed(() => selected.value?.status === 'approved' || selected.value?.status === 'rejected');
+const hasAssignment = computed(() => Boolean(selected.value?.assignedToEmployeeId));
+const canAssign = computed(() => Boolean(selected.value && !isTerminalReview.value && assignedToEmployeeId.value.trim() && assignmentActorEmployeeId.value.trim() && assignmentReason.value.trim()));
+const canUnassign = computed(() => Boolean(selected.value && !isTerminalReview.value && hasAssignment.value && assignmentActorEmployeeId.value.trim() && assignmentReason.value.trim()));
 
 watch(allRows, (rows) => {
   if (rows.length === 0) {
@@ -254,6 +349,11 @@ watch(allRows, (rows) => {
     return;
   }
   if (!rows.some((item) => item.key === selectedKey.value)) selectedKey.value = rows[0].key;
+});
+
+watch(selected, (item) => {
+  assignedToEmployeeId.value = item?.assignedToEmployeeId ?? '';
+  assignmentReason.value = '';
 });
 
 function toCatalogRow(item: CatalogSuggestion): ProposalRow {
@@ -270,6 +370,7 @@ function toCatalogRow(item: CatalogSuggestion): ProposalRow {
     title: name,
     subtitle: `${actionLabel(item.action)} · ${props.ctx.formatDate(item.cloud_received_at)}`,
     groupLabel: groupId ? `${t('cloud.fields.proposal_group_id')}: ${shortId(groupId)}` : '',
+    assignedToEmployeeId: item.assigned_to_employee_id,
     facts: commonFacts(item, data, [
       ['cloud.fields.kind', textValue(data, 'kind')],
       ['cloud.fields.catalog_item_id', item.catalog_item_id || textValue(data, 'catalog_item_id')],
@@ -293,6 +394,7 @@ function toRecipeRow(item: RecipeSuggestion): ProposalRow {
     title: owner ? `${t('cloud.fields.recipe_owner_catalog_item_id')}: ${shortId(owner)}` : item.suggestion_id,
     subtitle: `${actionLabel(item.action)} · ${props.ctx.formatDate(item.cloud_received_at)}`,
     groupLabel: groupId ? `${t('cloud.fields.proposal_group_id')}: ${shortId(groupId)}` : '',
+    assignedToEmployeeId: item.assigned_to_employee_id,
     facts: commonFacts(item, data, [
       ['cloud.fields.recipe_version_id', item.recipe_version_id || textValue(data, 'recipe_version_id')],
       ['cloud.fields.owner_catalog_suggestion_id', item.owner_catalog_suggestion_id || textValue(data, 'owner_catalog_suggestion_id')],
@@ -313,6 +415,7 @@ function toStopListRow(item: StopListUpdateReview): ProposalRow {
     title: `${t('cloud.fields.catalog_item_id')}: ${shortId(item.catalog_item_id)}`,
     subtitle: `${item.active ? t('cloud.proposals.stopListActivate') : t('cloud.proposals.stopListDeactivate')} · ${props.ctx.formatDate(item.projected_at)}`,
     groupLabel: `${t('cloud.fields.device_id')}: ${shortId(item.device_id)}`,
+    assignedToEmployeeId: item.assigned_to_employee_id,
     facts: [
       { label: t('cloud.fields.source_event_id'), value: safeValue(item.id) },
       { label: t('cloud.fields.device_id'), value: safeValue(item.device_id) },
@@ -325,6 +428,15 @@ function toStopListRow(item: StopListUpdateReview): ProposalRow {
     ],
     raw: item,
   };
+}
+
+function assignmentFacts(item: CatalogSuggestion | RecipeSuggestion | StopListUpdateReview) {
+  return [
+    { label: t('cloud.fields.assigned_to_employee_id'), value: employeeLabel(item.assigned_to_employee_id) },
+    { label: t('cloud.fields.assigned_by_employee_id'), value: employeeLabel(item.assigned_by_employee_id) },
+    { label: t('cloud.fields.assigned_at'), value: item.assigned_at ? props.ctx.formatDate(item.assigned_at) : '-' },
+    { label: t('cloud.fields.assignment_note'), value: safeValue(item.assignment_note) },
+  ];
 }
 
 function commonFacts(item: CatalogSuggestion | RecipeSuggestion, data: PayloadRecord, extra: [string, string][]) {
@@ -399,6 +511,61 @@ async function submitReview(action: ReviewAction) {
     published_by: publishedBy.value.trim(),
   });
   if (!props.ctx.errorKey.value) reviewComment.value = '';
+}
+
+async function submitAssignment() {
+  if (!selected.value || !canAssign.value) return;
+  await props.ctx.assignProposalReviewItem(selected.value.kind, selected.value.id, {
+    command_id: newUuidV7(),
+    assigned_to_employee_id: assignedToEmployeeId.value.trim(),
+    assigned_by_employee_id: assignmentActorEmployeeId.value.trim(),
+    reason: assignmentReason.value.trim(),
+  });
+  if (!props.ctx.errorKey.value) assignmentReason.value = '';
+}
+
+async function submitUnassignment() {
+  if (!selected.value || !canUnassign.value) return;
+  await props.ctx.unassignProposalReviewItem(selected.value.kind, selected.value.id, {
+    command_id: newUuidV7(),
+    unassigned_by_employee_id: assignmentActorEmployeeId.value.trim(),
+    reason: assignmentReason.value.trim(),
+  });
+  if (!props.ctx.errorKey.value) assignmentReason.value = '';
+}
+
+function employeeLabel(id: string) {
+  if (!id) return '-';
+  const rows = Array.isArray(props.ctx.scopedRows?.employees) ? props.ctx.scopedRows.employees : [];
+  const found = rows.find((item: Record<string, unknown>) => String(item.id ?? '') === id);
+  if (!found) return shortId(id);
+  return `${String(found.name ?? id)} (${shortId(id)})`;
+}
+
+function newUuidV7() {
+  const bytes: Uint8Array<ArrayBuffer> = new Uint8Array(16);
+  fillRandom(bytes);
+  const timestamp = Date.now();
+  bytes[0] = Math.floor(timestamp / 0x10000000000) & 0xff;
+  bytes[1] = Math.floor(timestamp / 0x100000000) & 0xff;
+  bytes[2] = Math.floor(timestamp / 0x1000000) & 0xff;
+  bytes[3] = Math.floor(timestamp / 0x10000) & 0xff;
+  bytes[4] = Math.floor(timestamp / 0x100) & 0xff;
+  bytes[5] = timestamp & 0xff;
+  bytes[6] = (bytes[6] & 0x0f) | 0x70;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0'));
+  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10).join('')}`;
+}
+
+function fillRandom(bytes: Uint8Array<ArrayBuffer>) {
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes);
+    return;
+  }
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Math.floor(Math.random() * 256);
+  }
 }
 
 function payloadData(payload: unknown): PayloadRecord {

@@ -26,6 +26,7 @@ import {
   pricingPolicySchema,
   recipeItemSchema,
   recipeVersionViewSchema,
+  reviewAssignmentResponseSchema,
   salesKitchenSummaryItemSchema,
   recipeSuggestionSchema,
   stopListUpdateReviewSchema,
@@ -68,6 +69,8 @@ import {
   type PricingPolicy,
   type RecipeItem,
   type RecipeVersionView,
+  type ReviewAssignmentResponse,
+  type ReviewAssignmentType,
   type SalesKitchenSummaryGroupBy,
   type SalesKitchenSummaryItem,
   type RecipeSuggestion,
@@ -117,6 +120,19 @@ export type SuggestionReviewPayload = {
   reviewed_by_employee_id: string;
   review_comment?: string;
   published_by?: string;
+};
+
+export type ReviewAssignPayload = {
+  command_id: string;
+  assigned_to_employee_id: string;
+  assigned_by_employee_id: string;
+  reason: string;
+};
+
+export type ReviewUnassignPayload = {
+  command_id: string;
+  unassigned_by_employee_id: string;
+  reason: string;
 };
 
 export class ApiError extends Error {
@@ -540,6 +556,14 @@ export function rejectStopListUpdateReview(id: string, payload: SuggestionReview
 
 export function requestChangesStopListUpdateReview(id: string, payload: SuggestionReviewPayload): Promise<StopListUpdateReview> {
   return post(`/manager/stop-list-updates/${encodeURIComponent(id)}/request-changes`, stopListUpdateReviewSchema, payload);
+}
+
+export function assignReviewItem(reviewType: ReviewAssignmentType, id: string, payload: ReviewAssignPayload): Promise<ReviewAssignmentResponse> {
+  return post(`/manager/reviews/${encodeURIComponent(reviewType)}/${encodeURIComponent(id)}/assign`, reviewAssignmentResponseSchema, payload);
+}
+
+export function unassignReviewItem(reviewType: ReviewAssignmentType, id: string, payload: ReviewUnassignPayload): Promise<ReviewAssignmentResponse> {
+  return post(`/manager/reviews/${encodeURIComponent(reviewType)}/${encodeURIComponent(id)}/unassign`, reviewAssignmentResponseSchema, payload);
 }
 
 export function listStopListEntries(restaurantId: string): Promise<StopListEntry[]> {

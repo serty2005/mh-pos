@@ -4,6 +4,17 @@ export const lifecycleStatusSchema = z.enum(['draft', 'published', 'archived']);
 export const restaurantStatusSchema = z.enum(['active', 'archived']);
 export const employeeStatusSchema = z.enum(['active', 'suspended', 'archived']);
 export const suggestionStatusSchema = z.enum(['pending', 'approved', 'rejected', 'changes_requested']);
+export const reviewAssignmentTypeSchema = z.enum(['catalog_suggestion', 'recipe_suggestion', 'stop_list_update']);
+
+export const reviewAssignmentResponseSchema = z.object({
+  review_type: reviewAssignmentTypeSchema,
+  id: z.string(),
+  status: suggestionStatusSchema,
+  assigned_to_employee_id: z.string().optional().default(''),
+  assigned_by_employee_id: z.string().optional().default(''),
+  assigned_at: z.string().optional(),
+  assignment_note: z.string().optional().default(''),
+});
 
 export const restaurantSchema = z.object({
   id: z.string(),
@@ -561,6 +572,10 @@ export const catalogSuggestionSchema = z.object({
   review_comment: z.string().optional().default(''),
   reviewed_by_employee_id: z.string().optional().default(''),
   reviewed_at: z.string().optional(),
+  assigned_to_employee_id: z.string().optional().default(''),
+  assigned_by_employee_id: z.string().optional().default(''),
+  assigned_at: z.string().optional(),
+  assignment_note: z.string().optional().default(''),
   applied_catalog_item_id: z.string().optional().default(''),
   source_event_id: z.string().optional().default(''),
   suggested_at: z.string(),
@@ -585,6 +600,10 @@ export const recipeSuggestionSchema = z.object({
   review_comment: z.string().optional().default(''),
   reviewed_by_employee_id: z.string().optional().default(''),
   reviewed_at: z.string().optional(),
+  assigned_to_employee_id: z.string().optional().default(''),
+  assigned_by_employee_id: z.string().optional().default(''),
+  assigned_at: z.string().optional(),
+  assignment_note: z.string().optional().default(''),
   source_event_id: z.string().optional().default(''),
   suggested_at: z.string(),
   cloud_received_at: z.string(),
@@ -610,6 +629,10 @@ export const stopListUpdateReviewSchema = z.object({
   review_comment: z.string().optional().default(''),
   reviewed_by_employee_id: z.string().optional().default(''),
   reviewed_at: z.string().optional(),
+  assigned_to_employee_id: z.string().optional().default(''),
+  assigned_by_employee_id: z.string().optional().default(''),
+  assigned_at: z.string().optional(),
+  assignment_note: z.string().optional().default(''),
   applied_stop_list_id: z.string().optional().default(''),
   updated_at: z.string(),
   occurred_at: z.string(),
@@ -661,6 +684,8 @@ export type RestaurantTable = z.infer<typeof tableSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;
 export type Category = z.infer<typeof categorySchema>;
 export type EdgeEvent = z.infer<typeof edgeEventSchema>;
+export type ReviewAssignmentType = z.infer<typeof reviewAssignmentTypeSchema>;
+export type ReviewAssignmentResponse = z.infer<typeof reviewAssignmentResponseSchema>;
 export type CatalogSuggestion = z.infer<typeof catalogSuggestionSchema>;
 export type RecipeSuggestion = z.infer<typeof recipeSuggestionSchema>;
 export type StopListUpdateReview = z.infer<typeof stopListUpdateReviewSchema>;

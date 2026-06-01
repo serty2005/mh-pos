@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { inventoryStockBalanceSchema, inventoryStockLedgerEntrySchema, stopListReadinessSchema } from './schemas';
+import { catalogSuggestionSchema, inventoryStockBalanceSchema, inventoryStockLedgerEntrySchema, reviewAssignmentResponseSchema, stopListReadinessSchema } from './schemas';
 
 describe('cloud schemas inventory readiness contract', () => {
   it('accepts stop-list readiness response and defaults optional fields', () => {
@@ -85,5 +85,37 @@ describe('cloud schemas inventory readiness contract', () => {
 
     expect(parsed.warehouse_id).toBe('');
     expect(parsed.order_line_id).toBe('');
+  });
+
+  it('accepts safe review assignment response without raw payload fields', () => {
+    const parsed = reviewAssignmentResponseSchema.parse({
+      review_type: 'catalog_suggestion',
+      id: 'review-1',
+      status: 'pending',
+      assigned_to_employee_id: 'manager-2',
+      assigned_by_employee_id: 'manager-1',
+      assigned_at: '2026-06-01T10:00:00Z',
+      assignment_note: 'take ownership',
+    });
+
+    expect(parsed.assigned_to_employee_id).toBe('manager-2');
+    expect('payload_json' in parsed).toBe(false);
+  });
+
+  it('defaults safe assignment metadata on catalog suggestion rows', () => {
+    const parsed = catalogSuggestionSchema.parse({
+      id: 'catalog-review-1',
+      suggestion_id: 'suggestion-1',
+      restaurant_id: 'restaurant-1',
+      action: 'create_item',
+      status: 'pending',
+      suggested_at: '2026-06-01T10:00:00Z',
+      cloud_received_at: '2026-06-01T10:00:01Z',
+      created_at: '2026-06-01T10:00:01Z',
+      updated_at: '2026-06-01T10:00:01Z',
+    });
+
+    expect(parsed.assigned_to_employee_id).toBe('');
+    expect(parsed.assignment_note).toBe('');
   });
 });

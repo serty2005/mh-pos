@@ -72,7 +72,7 @@
 
 - recipe editor имеет bounded route-backed строки recipe items и реализовано сейчас сценарный editor версий: просмотр текущих версий, draft form с компонентной строкой, save draft / submit, review выполняется в существующей очереди предложений;
 - duplicate hints и linked receipt line для catalog suggestion review остаются запланировано далее;
-- stop-list panel уже имеет bounded route-backed rows; `Готовность склада` показывает default conflict policy, async projection mode, publication/package metadata, latest Edge ACK metadata и sync problem counters без raw payload; Cloud review queue показывает safe Edge-origin stop-list update summary/diff, approve/reject/request-changes и safe assignment metadata без raw payload. Реализовано сейчас: backend routes `POST /api/v1/manager/reviews/{review_type}/{id}/assign|unassign` поддерживают `catalog_suggestion`, `recipe_suggestion`, `stop_list_update` с UUIDv7 `command_id` и append-only audit. Запланировано далее: полноценные UI controls для assignment queue. Вне текущего объема: escalation workflow и dashboard refactor;
+- stop-list panel уже имеет bounded route-backed rows; `Готовность склада` показывает default conflict policy, async projection mode, publication/package metadata, latest Edge ACK metadata и sync problem counters без raw payload; Cloud review queue показывает safe Edge-origin stop-list update summary/diff, approve/reject/request-changes, safe assignment metadata и полноценные UI controls для назначения/снятия назначения review items без raw payload. Реализовано сейчас: backend routes `POST /api/v1/manager/reviews/{review_type}/{id}/assign|unassign` поддерживают `catalog_suggestion`, `recipe_suggestion`, `stop_list_update` с UUIDv7 `command_id` и append-only audit; Cloud UI генерирует UUIDv7 `command_id`, требует reason/comment перед отправкой, использует список сотрудников ресторана для выбора менеджера, перечитывает queue state после команды и отключает controls для terminal statuses `approved`/`rejected`. Вне текущего объема: escalation workflow и dashboard refactor;
 - реализовано сейчас: inventory readiness surface показывает route-backed `stock-balances` table из Cloud backend с фильтрами `warehouse_id`, `catalog_item_id`, `business_date_to`, `costing_status`, aggregate costing status и readiness signals stop-list без raw payload. Там же есть read-only stock ledger preview по `GET /api/v1/inventory/stock-ledger` с `restaurant_id`, `catalog_item_id`, `source_event_type`, `source_event_id`, `order_line_id`, `limit=50` и `offset=0`; UI показывает только safe table/card поля ledger DTO и не выполняет складские команды. Edge-side stock receipts, inventory counts, write-offs and production input are covered by `pos-ui-g` kitchen mode and Cloud ledger/balance read endpoints;
 - запланировано далее: stock documents table, full costing/recalculation operator workflow и inventory runtime actions в Cloud UI;
 - реализовано сейчас: ClickHouse/OLAP workspace показывает read-only export status для `raw_business_events` и `stock_moves`, bounded preview `olap_stock_moves`, stock move summary с группировкой `business_date`, `catalog_item`, `warehouse`, backfill job status, kitchen timing summary и минимальный read-only `sales-kitchen-summary` preview. UI не вызывает `POST /api/v1/olap/export-retry` и mutating backfill controls, не показывает COGS/margin расчеты и не является BI dashboard;
@@ -115,7 +115,7 @@
 - раздел входящих Edge events выводит event metadata и checksum, но не показывает raw payload, sensitive request dumps или payload-derived финансовые details;
 - раздел финансовых операций выводит только read-only projection fields из Cloud reporting route; он не вызывает POS Edge endpoints, не создает Cloud cashier commands и не рассчитывает COGS/margin;
 - раздел `Sales/kitchen summary` и OLAP kitchen timing выводят только безопасные aggregate fields из bounded Cloud OLAP routes; они не вызывают POS Edge endpoints, не создают cashier commands, не показывают raw payload/request dump/snapshot JSON и не строят BI dashboard, charts, COGS или margin;
-- раздел `Очередь предложений` не выводит raw `payload_json`: detail/diff строится только по whitelist полям catalog proposal (`kind`, `name`, `sku`, `base_unit`, `kitchen_type`, `accounting_category`) и recipe proposal changes (`action`, `from_catalog_item_id`, `to_catalog_item_id`, `quantity`, `unit_code`, `loss_percent`); PIN/token/secret/request dump не отображаются;
+- раздел `Очередь предложений` не выводит raw `payload_json`: detail/diff строится только по whitelist полям catalog proposal (`kind`, `name`, `sku`, `base_unit`, `kitchen_type`, `accounting_category`) и recipe proposal changes (`action`, `from_catalog_item_id`, `to_catalog_item_id`, `quantity`, `unit_code`, `loss_percent`); assignment metadata выводится только safe полями (`assigned_to_employee_id`, `assigned_by_employee_id`, `assigned_at`, `assignment_note`); PIN/token/secret/request dump не отображаются;
 - approve/reject/request-changes формы отправляют только `reviewed_by_employee_id`, optional `review_comment` и optional `published_by`; после approve UI перечитывает `publication-state`, потому что apply/publish выполняет backend;
 - UX ориентиры полного пилота зафиксированы в `docs/ui/PILOT-UX-MARKET-REVIEW.md`; business workflows не должны требовать ручного ввода UUID/raw JSON для обычного менеджерского сценария;
 - пользовательские тексты идут через `vue-i18n`.
@@ -159,7 +159,28 @@ Review command body:
 
 `review_comment` и `published_by` optional; `published_by` используется backend approve flow для публикации master data. UI не вызывает неподтвержденных detail endpoints для suggestions.
 
-Реализовано сейчас: assignment endpoints возвращают только safe fields (`review_type`, `id`, `status`, assignment metadata) и не возвращают `payload_json`, raw Edge payload, PIN/token/secret/request dump. Запланировано далее: подключить эти routes к штатным Cloud UI controls очереди задач. Вне текущего объема: escalation, dashboard и большой UX refactor.
+Assign command body:
+
+```json
+{
+  "command_id": "UUIDv7",
+  "assigned_to_employee_id": "manager-2",
+  "assigned_by_employee_id": "manager-1",
+  "reason": "operator reason"
+}
+```
+
+Unassign command body:
+
+```json
+{
+  "command_id": "UUIDv7",
+  "unassigned_by_employee_id": "manager-1",
+  "reason": "operator reason"
+}
+```
+
+Реализовано сейчас: assignment endpoints возвращают только safe fields (`review_type`, `id`, `status`, assignment metadata) и не возвращают `payload_json`, raw Edge payload, PIN/token/secret/request dump; Cloud UI подключает эти routes к штатным controls очереди задач для `catalog_suggestion`, `recipe_suggestion` и `stop_list_update`. Вне текущего объема: escalation, dashboard и большой UX refactor.
 
 Для entities без подтвержденного `GET list` route UI показывает форму команды и поясняет, что list route не подтвержден.
 
