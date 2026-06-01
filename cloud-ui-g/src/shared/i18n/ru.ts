@@ -234,6 +234,138 @@ export const ru = {
       },
     },
   },
+  menu: {
+    pageTitle: 'Управление меню',
+    pageDescription: 'Menu items используют route-backed CRUD; categories доступны как command-only создание без list route.',
+    blockedTitle: 'Menu routes недоступны',
+    blockedDescription: 'Проверьте catalog/menu endpoints и выбранный ресторан.',
+    items: {
+      title: 'Menu items',
+      empty: 'Позиции меню не найдены.',
+      actions: {
+        create: 'Создать позицию',
+      },
+      fields: {
+        catalogItem: 'Catalog item',
+        selectCatalogItem: 'Выберите catalog item',
+        name: 'Название',
+        price: 'Цена в minor units',
+        currency: 'Currency',
+        status: 'Статус',
+        station: 'Station routing key',
+        availability: 'Availability JSON',
+      },
+    },
+    categories: {
+      title: 'Menu categories',
+      commandOnly: 'У categories подтверждено создание, но list/update route не подтвержден. Раздел работает как command-only форма.',
+      success: 'Категория создана.',
+      actions: {
+        create: 'Создать категорию',
+      },
+      fields: {
+        name: 'Название',
+        sortOrder: 'Порядок',
+      },
+    },
+  },
+  modifiers: {
+    pageTitle: 'Модификаторы',
+    pageDescription: 'Группы, опции и bindings используют подтвержденные master-data routes.',
+    blockedTitle: 'Modifier routes недоступны',
+    blockedDescription: 'Проверьте доступность modifiers, menu и catalog endpoints.',
+    groups: {
+      title: 'Modifier groups',
+      empty: 'Группы модификаторов не найдены.',
+      actions: {
+        create: 'Создать группу',
+      },
+      fields: {
+        name: 'Название группы',
+        required: 'Обязательная группа',
+        minCount: 'Минимум',
+        maxCount: 'Максимум',
+      },
+    },
+    options: {
+      title: 'Modifier options',
+      empty: 'Опции модификаторов не найдены.',
+      actions: {
+        create: 'Создать опцию',
+        activate: 'Активировать',
+      },
+      fields: {
+        selectGroup: 'Выберите группу',
+        name: 'Название опции',
+        priceMinor: 'Price minor',
+      },
+    },
+    bindings: {
+      title: 'Modifier bindings',
+      empty: 'Bindings не найдены.',
+      actions: {
+        create: 'Создать binding',
+      },
+      fields: {
+        selectTarget: 'Выберите target',
+      },
+      targetTypes: {
+        menu_item: 'Menu item',
+        catalog_item: 'Catalog item',
+        folder: 'Folder',
+        tag: 'Tag',
+      },
+    },
+  },
+  pricing: {
+    pageTitle: 'Pricing & Taxes',
+    pageDescription: 'Скидки/надбавки используют pricing policies CRUD, tax/service-charge package хранится через pricing_policy stream.',
+    blockedTitle: 'Pricing routes недоступны',
+    blockedDescription: 'Проверьте master-data pricing endpoint и выбранный ресторан.',
+    policies: {
+      title: 'Pricing policies',
+      empty: 'Pricing policies не найдены.',
+      validation: {
+        duplicateIndex: 'Application index должен быть уникальным среди неархивных policies.',
+      },
+      actions: {
+        create: 'Создать policy',
+      },
+      kinds: {
+        discount: 'Скидка',
+        surcharge: 'Надбавка',
+      },
+      amountKinds: {
+        fixed: 'Фиксированная сумма',
+        percentage: 'Процент',
+      },
+      fields: {
+        name: 'Название',
+        scope: 'Scope',
+        permission: 'Required permission',
+        manual: 'Manual application',
+        applicationIndex: 'Application index',
+      },
+    },
+    taxPackage: {
+      title: 'Tax/service-charge package',
+      description: 'Форма сохраняет structured arrays в payload_json stream pricing_policy. Raw payload не выводится из backend events.',
+      success: 'Package сохранен.',
+      invalidJson: 'Поля package должны быть JSON arrays.',
+      emptyLoaded: 'Package не найден. Можно сохранить первый snapshot для этого node_device_id.',
+      actions: {
+        load: 'Загрузить',
+        save: 'Сохранить',
+      },
+      fields: {
+        nodeDeviceId: 'Node device ID',
+        reason: 'Full snapshot reason',
+        taxProfiles: 'Tax profiles JSON array',
+        taxRules: 'Tax rules JSON array',
+        serviceChargeRules: 'Service charge rules JSON array',
+      },
+    },
+  },
   sections: {
     blocked: 'Раздел доступен после выбора ресторана и подтвержденных backend контрактов.',
   },

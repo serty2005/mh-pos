@@ -5,6 +5,7 @@ import {
   catalogFolderSchema,
   catalogItemTagSchema,
   catalogTagSchema,
+  categorySchema,
   employeeSchema,
   folderParameterSchema,
   hallSchema,
@@ -12,6 +13,7 @@ import {
   modifierBindingSchema,
   modifierGroupSchema,
   modifierOptionSchema,
+  pricingPolicyPackageSchema,
   pricingPolicySchema,
   publicationSummarySchema,
   restaurantSchema,
@@ -28,6 +30,7 @@ import {
   type CatalogFolder,
   type CatalogItemTag,
   type CatalogTag,
+  type Category,
   type Employee,
   type EdgeEvent,
   type Hall,
@@ -37,6 +40,7 @@ import {
   type ModifierGroup,
   type ModifierOption,
   type PairingCodeResult,
+  type PricingPolicyPackage,
   type PricingPolicy,
   type PublicationSummary,
   type Restaurant,
@@ -53,6 +57,10 @@ function post<T>(path: string, schema: z.ZodType<T>, payload: Payload) {
 
 function patch<T>(path: string, schema: z.ZodType<T>, payload: Payload) {
   return request(path, schema, { method: 'PATCH', body: JSON.stringify(payload) });
+}
+
+function put<T>(path: string, schema: z.ZodType<T>, payload: Payload) {
+  return request(path, schema, { method: 'PUT', body: JSON.stringify(payload) });
 }
 
 function query(restaurantId: string) {
@@ -89,6 +97,22 @@ export function listCatalogItems(restaurantId: string): Promise<CatalogItem[]> {
 
 export function listMenuItems(restaurantId: string): Promise<MenuItem[]> {
   return request(`/master-data/menu/items?${query(restaurantId)}`, z.array(menuItemSchema));
+}
+
+export function createMenuCategory(payload: Payload): Promise<Category> {
+  return post('/master-data/menu/categories', categorySchema, payload);
+}
+
+export function createMenuItem(payload: Payload): Promise<MenuItem> {
+  return post('/master-data/menu/items', menuItemSchema, payload);
+}
+
+export function updateMenuItem(id: string, payload: Payload): Promise<MenuItem> {
+  return patch(`/master-data/menu/items/${encodeURIComponent(id)}`, menuItemSchema, payload);
+}
+
+export function archiveMenuItem(id: string): Promise<MenuItem> {
+  return post(`/master-data/menu/items/${encodeURIComponent(id)}/archive`, menuItemSchema, {});
 }
 
 export function createCatalogItem(payload: Payload): Promise<CatalogItem> {
@@ -151,16 +175,59 @@ export function listModifierGroups(restaurantId: string): Promise<ModifierGroup[
   return request(`/master-data/modifiers/groups?${query(restaurantId)}`, z.array(modifierGroupSchema));
 }
 
+export function createModifierGroup(payload: Payload): Promise<ModifierGroup> {
+  return post('/master-data/modifiers/groups', modifierGroupSchema, payload);
+}
+
+export function updateModifierGroup(id: string, payload: Payload): Promise<ModifierGroup> {
+  return patch(`/master-data/modifiers/groups/${encodeURIComponent(id)}`, modifierGroupSchema, payload);
+}
+
 export function listModifierOptions(restaurantId: string): Promise<ModifierOption[]> {
   return request(`/master-data/modifiers/options?${query(restaurantId)}`, z.array(modifierOptionSchema));
+}
+
+export function createModifierOption(payload: Payload): Promise<ModifierOption> {
+  return post('/master-data/modifiers/options', modifierOptionSchema, payload);
+}
+
+export function updateModifierOption(id: string, payload: Payload): Promise<ModifierOption> {
+  return patch(`/master-data/modifiers/options/${encodeURIComponent(id)}`, modifierOptionSchema, payload);
 }
 
 export function listModifierBindings(restaurantId: string): Promise<ModifierBinding[]> {
   return request(`/master-data/modifiers/bindings?${query(restaurantId)}`, z.array(modifierBindingSchema));
 }
 
+export function createModifierBinding(payload: Payload): Promise<ModifierBinding> {
+  return post('/master-data/modifiers/bindings', modifierBindingSchema, payload);
+}
+
+export function updateModifierBinding(id: string, payload: Payload): Promise<ModifierBinding> {
+  return patch(`/master-data/modifiers/bindings/${encodeURIComponent(id)}`, modifierBindingSchema, payload);
+}
+
 export function listPricingPolicies(restaurantId: string): Promise<PricingPolicy[]> {
   return request(`/master-data/pricing/policies?${query(restaurantId)}`, z.array(pricingPolicySchema));
+}
+
+export function createPricingPolicy(payload: Payload): Promise<PricingPolicy> {
+  return post('/master-data/pricing/policies', pricingPolicySchema, payload);
+}
+
+export function updatePricingPolicy(id: string, payload: Payload): Promise<PricingPolicy> {
+  return patch(`/master-data/pricing/policies/${encodeURIComponent(id)}`, pricingPolicySchema, payload);
+}
+
+export function getPricingPolicyPackage(nodeDeviceId: string): Promise<PricingPolicyPackage | null> {
+  return requestOptional(
+    `/provisioning/master-data/pricing_policy?node_device_id=${encodeURIComponent(nodeDeviceId)}`,
+    pricingPolicyPackageSchema,
+  );
+}
+
+export function putPricingPolicyPackage(payload: Payload): Promise<PricingPolicyPackage> {
+  return put('/provisioning/master-data/pricing_policy', pricingPolicyPackageSchema, payload);
 }
 
 export function listHalls(restaurantId: string): Promise<Hall[]> {

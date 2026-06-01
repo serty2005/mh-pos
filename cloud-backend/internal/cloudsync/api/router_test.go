@@ -186,6 +186,72 @@ func TestProvisioningMasterDataPutAndGet(t *testing.T) {
 	}
 }
 
+func TestPricingPolicyPackagePutGetAndExchange(t *testing.T) {
+	repo := memory.NewRepository()
+	if err := repo.AuthorizeNodeForTest("node-1", "restaurant-1", "node-token"); err != nil {
+		t.Fatal(err)
+	}
+	router := api.NewRouter(app.NewService(repo, fixedClock{}))
+	putBody := []byte(`{
+	  "node_device_id":"node-1",
+	  "restaurant_id":"restaurant-1",
+	  "sync_mode":"full_snapshot",
+	  "full_snapshot_reason":"terminal_restaurant_changed",
+	  "cloud_version":21,
+	  "payload_json":{
+	    "tax_profiles":[{"id":"tax-vat-10","name":"VAT 10","tax_exempt":false,"active":true}],
+	    "tax_rules":[{"id":"tax-rule-vat-10","tax_profile_id":"tax-vat-10","name":"VAT 10 exclusive","kind":"percentage","mode":"exclusive","rate_basis_points":1000,"active":true}],
+	    "service_charge_rules":[{"id":"service-charge-10","restaurant_id":"restaurant-1","name":"Service charge 10","kind":"service_charge","amount_kind":"percentage","value_basis_points":1000,"active":true}],
+	    "pricing_policies":[{"id":"discount-cloud-5","restaurant_id":"restaurant-1","kind":"discount","name":"Cloud discount 5","scope":"order","amount_kind":"percentage","value_basis_points":500,"application_index":30,"active":true}]
+	  }
+	}`)
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/provisioning/master-data/pricing_policy", bytes.NewReader(putBody))
+	putRec := httptest.NewRecorder()
+	router.ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("expected pricing_policy PUT 200, got %d: %s", putRec.Code, putRec.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/provisioning/master-data/pricing_policy?node_device_id=node-1", nil)
+	getRec := httptest.NewRecorder()
+	router.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected pricing_policy GET 200, got %d: %s", getRec.Code, getRec.Body.String())
+	}
+	var pkg contracts.MasterDataPackage
+	if err := json.Unmarshal(getRec.Body.Bytes(), &pkg); err != nil {
+		t.Fatal(err)
+	}
+	if pkg.StreamName != contracts.MasterDataStreamPricing || pkg.CloudVersion != 21 || !bytes.Contains(pkg.PayloadJSON, []byte(`"pricing_policies"`)) {
+		t.Fatalf("unexpected pricing_policy package response: %+v payload=%s", pkg, pkg.PayloadJSON)
+	}
+
+	exchangeBody := []byte(`{
+	  "protocol_version":"sync_exchange.v1",
+	  "node_device_id":"node-1",
+	  "restaurant_id":"restaurant-1",
+	  "edge_events":[],
+	  "streams":[{"stream_name":"pricing_policy","last_cloud_version":20,"checkpoint_token":"pricing_policy:20"}]
+	}`)
+	exchangeReq := httptest.NewRequest(http.MethodPost, "/api/v1/sync/exchange", bytes.NewReader(exchangeBody))
+	exchangeReq.Header.Set("Authorization", "Bearer node-token")
+	exchangeRec := httptest.NewRecorder()
+	router.ServeHTTP(exchangeRec, exchangeReq)
+	if exchangeRec.Code != http.StatusAccepted {
+		t.Fatalf("expected exchange 202, got %d: %s", exchangeRec.Code, exchangeRec.Body.String())
+	}
+	var resp contracts.SyncExchangeResponse
+	if err := json.Unmarshal(exchangeRec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.CloudPackages) != 1 || resp.CloudPackages[0].StreamName != contracts.MasterDataStreamPricing || resp.CloudPackages[0].CloudVersion != 21 {
+		t.Fatalf("expected pricing_policy package in exchange response, got %+v", resp.CloudPackages)
+	}
+	if !bytes.Contains(resp.CloudPackages[0].PayloadJSON, []byte(`"service_charge_rules"`)) {
+		t.Fatalf("expected pricing_policy payload in exchange response, got %s", resp.CloudPackages[0].PayloadJSON)
+	}
+}
+
 func TestStopListReadinessRouteDoesNotExposeRawPayload(t *testing.T) {
 	repo := memory.NewRepository()
 	router := api.NewRouter(app.NewService(repo, fixedClock{}))

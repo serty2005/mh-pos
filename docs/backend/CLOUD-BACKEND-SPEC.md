@@ -216,6 +216,8 @@ Master data under canonical namespace:
 - `POST /api/v1/master-data/pricing/policies`
 - `GET /api/v1/master-data/pricing/policies`
 - `PATCH /api/v1/master-data/pricing/policies/{id}`
+- `PUT /api/v1/provisioning/master-data/pricing_policy`
+- `GET /api/v1/provisioning/master-data/pricing_policy?node_device_id=...`
 - Реализовано сейчас (route-backed aliases в текущем runtime):
   - `POST /api/v1/master-data/recipes/items`
   - `GET /api/v1/master-data/recipes/items`

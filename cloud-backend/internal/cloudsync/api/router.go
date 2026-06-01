@@ -90,8 +90,7 @@ func NewRouterWithProvisioningAndOLAP(service *app.Service, provisioningService 
 		r.Post("/sync/edge-events", h.receiveEdgeEvent)
 		r.Post("/sync/edge-events/batch", h.receiveEdgeEventBatch)
 		r.Post("/sync/exchange", h.exchange)
-		r.Put("/provisioning/master-data/{stream}", h.upsertMasterDataPackage)
-		r.Get("/provisioning/master-data/{stream}", h.getMasterDataPackage)
+		provisioningapi.RegisterMasterDataPackageRoutes(r, service)
 		if len(masterServices) > 0 {
 			masterapi.RegisterRoutes(r, masterServices[0])
 		}
@@ -493,64 +492,6 @@ func maskID(v string) string {
 		return v
 	}
 	return v[:8] + "..."
-}
-
-func (h *Handler) upsertMasterDataPackage(w http.ResponseWriter, r *http.Request) {
-	streamName := chi.URLParam(r, "stream")
-	var req struct {
-		NodeDeviceID       string          `json:"node_device_id"`
-		RestaurantID       string          `json:"restaurant_id"`
-		SyncMode           string          `json:"sync_mode"`
-		FullSnapshotReason string          `json:"full_snapshot_reason"`
-		CloudVersion       int64           `json:"cloud_version"`
-		CheckpointToken    string          `json:"checkpoint_token"`
-		CloudUpdatedAt     *time.Time      `json:"cloud_updated_at"`
-		PayloadJSON        json.RawMessage `json:"payload_json"`
-	}
-	dec := json.NewDecoder(io.LimitReader(r.Body, 4<<20))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, fmt.Errorf("%w: %v", contracts.ErrInvalidEnvelope, err))
-		return
-	}
-	v, err := h.service.UpsertMasterDataPackage(r.Context(), contracts.MasterDataPackage{
-		StreamName:         streamName,
-		NodeDeviceID:       req.NodeDeviceID,
-		RestaurantID:       req.RestaurantID,
-		SyncMode:           req.SyncMode,
-		FullSnapshotReason: req.FullSnapshotReason,
-		CloudVersion:       req.CloudVersion,
-		CheckpointToken:    req.CheckpointToken,
-		CloudUpdatedAt:     req.CloudUpdatedAt,
-		PayloadJSON:        req.PayloadJSON,
-	})
-	if err != nil {
-		status := http.StatusInternalServerError
-		if errors.Is(err, contracts.ErrInvalidEnvelope) {
-			status = http.StatusBadRequest
-		}
-		writeError(w, status, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, v)
-}
-
-func (h *Handler) getMasterDataPackage(w http.ResponseWriter, r *http.Request) {
-	streamName := chi.URLParam(r, "stream")
-	nodeDeviceID := r.URL.Query().Get("node_device_id")
-	v, err := h.service.GetMasterDataPackage(r.Context(), streamName, nodeDeviceID)
-	if err != nil {
-		status := http.StatusInternalServerError
-		switch {
-		case errors.Is(err, contracts.ErrInvalidEnvelope):
-			status = http.StatusBadRequest
-		case errors.Is(err, contracts.ErrNotFound):
-			status = http.StatusNotFound
-		}
-		writeError(w, status, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, v)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

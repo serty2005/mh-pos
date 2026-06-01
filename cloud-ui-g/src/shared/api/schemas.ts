@@ -246,6 +246,20 @@ export const categorySchema = z.object({
   updated_at: z.string(),
 });
 
+export const pricingPolicyPackageSchema = z.object({
+  node_device_id: z.string(),
+  restaurant_id: z.string(),
+  sync_mode: z.string(),
+  full_snapshot_reason: z.string().optional().default(''),
+  cloud_version: z.number(),
+  payload_json: z.object({
+    tax_profiles: z.array(z.record(z.string(), z.unknown())).default([]),
+    tax_rules: z.array(z.record(z.string(), z.unknown())).default([]),
+    service_charge_rules: z.array(z.record(z.string(), z.unknown())).default([]),
+    pricing_policies: z.array(z.record(z.string(), z.unknown())).default([]),
+  }),
+});
+
 export const unassignedEdgeNodeSchema = z.object({
   id: z.string(),
   node_device_id: z.string(),
@@ -330,6 +344,7 @@ export type Hall = z.infer<typeof hallSchema>;
 export type RestaurantTable = z.infer<typeof tableSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;
 export type Category = z.infer<typeof categorySchema>;
+export type PricingPolicyPackage = z.infer<typeof pricingPolicyPackageSchema>;
 export type EdgeEvent = z.infer<typeof edgeEventSchema>;
 export type PublicationSummary = z.infer<typeof publicationSummarySchema>;
 export type UnassignedEdgeNode = z.infer<typeof unassignedEdgeNodeSchema>;

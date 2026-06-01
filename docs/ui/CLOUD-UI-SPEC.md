@@ -52,6 +52,7 @@
 - item tags как command-only привязка;
 - modifier groups, options и bindings;
 - pricing policies;
+- tax/service-charge package authoring через `GET/PUT /api/v1/provisioning/master-data/pricing_policy` с сохранением `tax_profiles`, `tax_rules`, `service_charge_rules` в `payload_json`;
 - recipe items через `/api/v1/master-data/recipes/items`;
 - сценарный editor версий техкарт через `/api/v1/master-data/recipes/versions`, `/api/v1/master-data/recipes/versions/drafts`, `/api/v1/master-data/recipes/versions/{id}/submit`;
 - stop-list entries через `/api/v1/master-data/inventory/stop-list`;
