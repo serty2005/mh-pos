@@ -9,7 +9,10 @@ import {
   localizedError,
   actionLabel,
   orderStatusLabel,
+  proposalKindLabel,
+  proposalStatusLabel,
   stopListActionLabel,
+  ticketStatusLabel,
   safeNumber,
   type RecipeSuggestionState,
 } from './kitchenHelpers';
@@ -79,6 +82,9 @@ describe('kitchen helpers', () => {
   it('maps kitchen status and action labels through i18n', () => {
     expect(actionLabel('ready')).toBe(t.kitchen.actions.ready);
     expect(orderStatusLabel('in_progress')).toBe(t.kitchen.orderStatus.in_progress);
+    expect(ticketStatusLabel('accepted')).toBe(t.kitchen.ticketStatus.accepted);
+    expect(proposalStatusLabel('pending_sync')).toBe(t.kitchen.proposalStatus.pending_sync);
+    expect(proposalKindLabel('recipe')).toBe(t.kitchen.proposalKind.recipe);
     expect(stopListActionLabel('stop')).toBe(t.kitchen.stopListActions.stop);
   });
 });

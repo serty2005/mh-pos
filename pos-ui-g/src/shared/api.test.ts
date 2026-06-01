@@ -266,6 +266,27 @@ describe('POS API client', () => {
     });
   });
 
+  it('builds bounded closed order query with business date and offset', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([{
+      id: 'order-closed-1',
+      table_name: 'T1',
+      opened_at: '2026-06-01T10:00:00Z',
+      closed_at: '2026-06-01T11:00:00Z',
+      total: 1500,
+      status: 'closed',
+    }]), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const api = createApiClient(() => auth, 'http://pos.local/api/v1');
+    await expect(api.listClosedOrders({
+      businessDateLocal: '2026-06-01',
+      limit: 26,
+      offset: 25,
+    })).resolves.toHaveLength(1);
+
+    expect(fetchMock.mock.calls[0][0]).toBe('http://pos.local/api/v1/orders/closed?business_date_local=2026-06-01&limit=26&offset=25');
+  });
+
   it('uses backend-backed kitchen stop-list read and update endpoints without raw payload state', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify([{

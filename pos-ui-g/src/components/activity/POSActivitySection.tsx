@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { usePOS } from '../../context/POSContext';
 import { t } from '../../shared/i18n';
 import { 
@@ -11,7 +11,8 @@ import {
   PosInlineStatusBadge,
   PosRailHeader,
   PosSearchInput,
-  PosSelectableTile
+  PosSelectableTile,
+  PosSkeleton
 } from '../../shared/ui';
 import { 
   RefundDialog 
@@ -27,11 +28,16 @@ import {
 } from 'lucide-react';
 import { ClosedOrder } from '../../types';
 
-const CLOSED_ORDERS_FETCH_LIMIT = 50;
-
 export const POSActivitySection: React.FC = () => {
   const { 
     closedOrders, 
+    closedOrdersPage,
+    closedOrdersPageSize,
+    closedOrdersHasNextPage,
+    closedOrdersLoading,
+    closedOrdersError,
+    closedOrdersBusinessDate,
+    loadClosedOrdersPage,
     refundCheck, 
     partialRefundCheck, 
     reprintCheck,
@@ -43,11 +49,13 @@ export const POSActivitySection: React.FC = () => {
   const [selectedCheckId, setSelectedCheckId] = useState<string | null>(null);
   const [isRefundModalOpen, setRefundModalOpen] = useState<boolean>(false);
 
-  // Pagination states
-  const [page, setPage] = useState<number>(1);
-  const itemsPerPage = 6;
+  useEffect(() => {
+    if (selectedCheckId && !closedOrders.some((check) => check.id === selectedCheckId)) {
+      setSelectedCheckId(null);
+    }
+  }, [closedOrders, selectedCheckId]);
 
-  // Filter local closed orders
+  // Search applies only to the loaded bounded backend page.
   const filteredChecks = closedOrders.filter(check => {
     const matchId = check.shortId.includes(searchQuery) || check.id.includes(searchQuery);
     const matchTable = check.tableName?.toLowerCase().includes(searchQuery.toLowerCase());
@@ -55,10 +63,9 @@ export const POSActivitySection: React.FC = () => {
     return matchId || matchTable || matchOperator;
   });
 
-  const totalPages = Math.max(1, Math.ceil(filteredChecks.length / itemsPerPage));
-  const paginatedChecks = filteredChecks.slice((page - 1) * itemsPerPage, page * itemsPerPage);
-
   const selectedCheck = closedOrders.find(c => c.id === selectedCheckId) || null;
+  const rangeStart = closedOrders.length === 0 ? 0 : (closedOrdersPage - 1) * closedOrdersPageSize + 1;
+  const rangeEnd = (closedOrdersPage - 1) * closedOrdersPageSize + closedOrders.length;
 
   const handleFullRefundSubmit = (reason: string, disposition: 'waste' | 'return') => {
     if (selectedCheckId) {
@@ -104,35 +111,63 @@ export const POSActivitySection: React.FC = () => {
         
         {/* Search Bar Subheader */}
         <div className="border-b border-[var(--pos-border)] bg-[var(--pos-surface)] p-3 md:p-4 flex justify-between items-center shrink-0">
-          <PosSearchInput
-            id="activity-search-input"
-            value={searchQuery}
-            onChange={(value) => {
-              setSearchQuery(value);
-              setPage(1);
-            }}
-            onClear={() => setPage(1)}
-            placeholder={t.activity.searchPlaceholder}
-            clearLabel={t.common.clearSearch}
-            className="sm:w-[320px]"
-          />
+          <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end">
+            <PosSearchInput
+              id="activity-search-input"
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder={t.activity.searchPlaceholder}
+              clearLabel={t.common.clearSearch}
+              className="sm:w-[320px]"
+            />
+            <label className="flex flex-col gap-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--pos-text-secondary)]">
+              {t.activity.businessDateFilter}
+              <input
+                id="activity-business-date-filter"
+                type="date"
+                className="h-11 border border-[var(--pos-border)] bg-[var(--pos-surface)] px-3 font-mono text-xs text-[var(--pos-text-primary)] outline-none focus:border-[var(--pos-border-strong)]"
+                value={closedOrdersBusinessDate}
+                onChange={(event) => {
+                  setSearchQuery('');
+                  void loadClosedOrdersPage(1, event.target.value);
+                }}
+              />
+            </label>
+            {closedOrdersBusinessDate && (
+              <PosButton
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setSearchQuery('');
+                  void loadClosedOrdersPage(1, '');
+                }}
+              >
+                {t.activity.allBusinessDates}
+              </PosButton>
+            )}
+          </div>
         </div>
 
-        {closedOrders.length >= CLOSED_ORDERS_FETCH_LIMIT && (
+        <div className="px-6 pt-4 shrink-0">
+          <PosBanner type="info" message={t.activity.historyLimitHint} />
+        </div>
+        {closedOrdersError && (
           <div className="px-6 pt-4 shrink-0">
-            <PosBanner type="info" message={t.activity.historyLimitHint} />
+            <PosBanner type="danger" message={closedOrdersError} />
           </div>
         )}
 
         {/* Closed Checks List container */}
         <div className="flex-1 p-6 pos-scrollarea-y pos-scrollbar-thin overflow-y-auto">
-          {closedOrders.length === 0 ? (
+          {closedOrdersLoading ? (
+            <PosSkeleton type="lines" />
+          ) : closedOrders.length === 0 ? (
             <PosEmptyState
               title={t.activity.emptyChecksTitle}
               description={t.activity.emptyChecksDesc}
               icon={<ReceiptText className="w-12 h-12" />}
             />
-          ) : paginatedChecks.length === 0 ? (
+          ) : filteredChecks.length === 0 ? (
             <PosEmptyState
               title={t.activity.noSearchResultsTitle}
               description={t.activity.noSearchResultsDesc}
@@ -140,7 +175,7 @@ export const POSActivitySection: React.FC = () => {
             />
           ) : (
             <div className="border border-[var(--pos-border)] bg-[var(--pos-surface)] divide-y divide-[var(--pos-border)]">
-              {paginatedChecks.map((check) => {
+              {filteredChecks.map((check) => {
                 const isSelected = check.id === selectedCheckId;
                 
                 return (
@@ -182,15 +217,15 @@ export const POSActivitySection: React.FC = () => {
         </div>
 
         {/* Footer Paginated Control Panel */}
-        {filteredChecks.length > itemsPerPage && (
+        {(closedOrdersPage > 1 || closedOrdersHasNextPage) && (
           <div className="p-4 shrink-0">
             <PosPagination
-              currentPage={page}
-              isFirstPage={page === 1}
-              isLastPage={page === totalPages}
-              onPrev={() => setPage(p => Math.max(1, p - 1))}
-              onNext={() => setPage(p => Math.min(totalPages, p + 1))}
-              label={`${t.activity.pageLabelPrefix} ${(page-1)*itemsPerPage+1} ${t.activity.pageLabelMiddle} ${Math.min(filteredChecks.length, page*itemsPerPage)} ${t.activity.pageLabelSuffix} ${filteredChecks.length}`}
+              currentPage={closedOrdersPage}
+              isFirstPage={closedOrdersPage === 1}
+              isLastPage={!closedOrdersHasNextPage}
+              onPrev={() => void loadClosedOrdersPage(Math.max(1, closedOrdersPage - 1))}
+              onNext={() => void loadClosedOrdersPage(closedOrdersPage + 1)}
+              label={`${t.activity.pageLabelPrefix} ${rangeStart} ${t.activity.pageLabelMiddle} ${rangeEnd} · ${t.common.page} ${closedOrdersPage}`}
               prevLabel={t.common.previous}
               nextLabel={t.common.next}
             />

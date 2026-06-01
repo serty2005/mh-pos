@@ -81,6 +81,17 @@ export type CheckLedgerOperationPayload = {
   items?: FinancialOperationItemPayload[];
 };
 
+export type ClosedOrdersQuery = {
+  businessDateLocal?: string;
+  fromBusinessDateLocal?: string;
+  toBusinessDateLocal?: string;
+  shiftId?: string;
+  deviceId?: string;
+  checkId?: string;
+  limit?: number;
+  offset?: number;
+};
+
 export type ApiErrorCategory =
   | 'auth'
   | 'permission'
@@ -150,6 +161,11 @@ function defaultApiBase() {
 function nextCommandId(prefix: string) {
   commandSequence += 1;
   return `cmd-pos-ui-g-${Date.now()}-${commandSequence}-${prefix}`;
+}
+
+function appendQueryParam(params: URLSearchParams, key: string, value: string | undefined) {
+  const normalized = value?.trim();
+  if (normalized) params.set(key, normalized);
 }
 
 const viteEnv = import.meta as unknown as { env?: Record<string, string | undefined> };
@@ -351,7 +367,24 @@ export function createApiClient(getAuth: () => AuthSnapshot, base = (viteEnv.env
       method: 'POST',
       body: JSON.stringify({}),
     }),
-    listClosedOrders: (limit = 50, offset = 0) => request(`/orders/closed?${new URLSearchParams({ limit: String(limit), offset: String(offset) })}`, z.array(closedOrderSchema)),
+    listClosedOrders: (query: number | ClosedOrdersQuery = 50, offset = 0) => {
+      const params = new URLSearchParams();
+      if (typeof query === 'number') {
+        params.set('limit', String(query));
+        params.set('offset', String(offset));
+      } else {
+        appendQueryParam(params, 'business_date_local', query.businessDateLocal);
+        appendQueryParam(params, 'from_business_date_local', query.fromBusinessDateLocal);
+        appendQueryParam(params, 'to_business_date_local', query.toBusinessDateLocal);
+        appendQueryParam(params, 'shift_id', query.shiftId);
+        appendQueryParam(params, 'device_id', query.deviceId);
+        appendQueryParam(params, 'check_id', query.checkId);
+        if (query.limit !== undefined) params.set('limit', String(query.limit));
+        if (query.offset !== undefined) params.set('offset', String(query.offset));
+      }
+      const suffix = params.toString();
+      return request(`/orders/closed${suffix ? `?${suffix}` : ''}`, z.array(closedOrderSchema));
+    },
     refundPayment: (paymentId: string, reason = '') => request(`/payments/${encodeURIComponent(paymentId)}/refund`, paymentSchema, {
       method: 'POST',
       body: JSON.stringify({ command_id: nextCommandId('payment-refund'), reason }),

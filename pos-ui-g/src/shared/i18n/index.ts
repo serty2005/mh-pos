@@ -334,6 +334,8 @@ export const t = {
     noTable: 'Без стола',
     check: 'Чек',
     cashier: 'Кассир',
+    businessDateFilter: 'Операционная дата',
+    allBusinessDates: 'Все даты',
     pageLabelPrefix: 'Заказы c',
     pageLabelMiddle: 'по',
     pageLabelSuffix: 'из',
@@ -349,7 +351,7 @@ export const t = {
     waiterRefundBlocked: 'Официанты не имеют полномочий на фискальный возврат и списание средств ККМ.',
     print: 'Печать',
     refund: 'Возврат',
-    historyLimitHint: 'Показаны последние 50 закрытых заказов, загруженные текущим ограниченным backend-запросом. Архивные операции выполняются вне POS UI.',
+    historyLimitHint: 'Показана ограниченная backend-страница закрытых заказов. Поиск применяется только к загруженной странице, архивные операции выполняются вне POS UI.',
   },
   cash: {
     shiftTitle: 'Операции кассы и смены',

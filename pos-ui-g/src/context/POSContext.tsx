@@ -61,6 +61,8 @@ import {
 
 type LogEvent = { id: string; time: string; msg: string; type: 'info' | 'warn' | 'success' };
 
+const CLOSED_ORDERS_PAGE_SIZE = 25;
+
 type PaymentResult = { success: boolean; change: number; errorKey?: string };
 type CommandResult = { success: boolean; errorKey?: string };
 
@@ -106,6 +108,13 @@ interface POSContextType {
   reprintPrecheck: () => Promise<void>;
   payOrder: (method: 'cash' | 'card', inputAmount: number) => Promise<PaymentResult>;
   closedOrders: ClosedOrder[];
+  closedOrdersPage: number;
+  closedOrdersPageSize: number;
+  closedOrdersHasNextPage: boolean;
+  closedOrdersLoading: boolean;
+  closedOrdersError: string;
+  closedOrdersBusinessDate: string;
+  loadClosedOrdersPage: (page: number, businessDate?: string) => Promise<void>;
   refundCheck: (checkId: string, reason: string, disposition: 'waste' | 'return') => Promise<void>;
   partialRefundCheck: (checkId: string, lineId: string, qtyToRefund: number, reason: string, disposition: 'waste' | 'return') => Promise<void>;
   reprintCheck: (checkId: string) => Promise<void>;
@@ -178,6 +187,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [prechecksDto, setPrechecksDto] = useState<BackendPrecheck[]>([]);
   const [currentPricingDto, setCurrentPricingDto] = useState<BackendPricingCalculation | null>(null);
   const [closedOrdersDto, setClosedOrdersDto] = useState<BackendClosedOrder[]>([]);
+  const [closedOrdersPage, setClosedOrdersPage] = useState<number>(1);
+  const [closedOrdersHasNextPage, setClosedOrdersHasNextPage] = useState<boolean>(false);
+  const [closedOrdersLoading, setClosedOrdersLoading] = useState<boolean>(false);
+  const [closedOrdersError, setClosedOrdersError] = useState<string>('');
+  const [closedOrdersBusinessDate, setClosedOrdersBusinessDate] = useState<string>('');
   const [syncStatusDto, setSyncStatusDto] = useState<BackendSyncStatus | null>(null);
   const [storageStatusDto, setStorageStatusDto] = useState<BackendStorageStatus | null>(null);
   const [provisioningStatusDto, setProvisioningStatusDto] = useState<BackendProvisioningStatus | null>(null);
@@ -352,18 +366,52 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentPricingDto(await api.getOrderPricing(id).catch(() => null));
   }, [activeOrdersDto, api, selectedTableId]);
 
+  const applyClosedOrdersPage = useCallback(async (page: number, businessDate: string) => {
+    const nextPage = Math.max(1, page);
+    const rows = await api.listClosedOrders({
+      businessDateLocal: businessDate,
+      limit: CLOSED_ORDERS_PAGE_SIZE + 1,
+      offset: (nextPage - 1) * CLOSED_ORDERS_PAGE_SIZE,
+    });
+    setClosedOrdersDto(rows.slice(0, CLOSED_ORDERS_PAGE_SIZE));
+    setClosedOrdersHasNextPage(rows.length > CLOSED_ORDERS_PAGE_SIZE);
+    setClosedOrdersPage(nextPage);
+    setClosedOrdersBusinessDate(businessDate);
+    setClosedOrdersError('');
+  }, [api]);
+
+  const loadClosedOrdersPage = useCallback(async (page: number, businessDate = closedOrdersBusinessDate) => {
+    if (!authRef.current.sessionId) return;
+    setClosedOrdersLoading(true);
+    try {
+      await applyClosedOrdersPage(page, businessDate);
+    } catch (error) {
+      setClosedOrdersDto([]);
+      setClosedOrdersHasNextPage(false);
+      setClosedOrdersError(t.errors.unknown);
+      handleError(error, 'Не удалось загрузить закрытые заказы');
+    } finally {
+      setClosedOrdersLoading(false);
+    }
+  }, [applyClosedOrdersPage, closedOrdersBusinessDate, handleError]);
+
   const refreshActivity = useCallback(async () => {
     if (!authRef.current.sessionId) return;
     const canViewSync = actor?.permissions.includes('pos.sync.view') ?? false;
     const [closedOrders, sync, storage] = await Promise.all([
-      api.listClosedOrders(50).catch(() => []),
+      api.listClosedOrders({
+        businessDateLocal: closedOrdersBusinessDate,
+        limit: CLOSED_ORDERS_PAGE_SIZE + 1,
+        offset: (closedOrdersPage - 1) * CLOSED_ORDERS_PAGE_SIZE,
+      }).catch(() => []),
       canViewSync ? api.getSyncStatus().catch(() => null) : Promise.resolve(null),
       canViewSync ? api.getStorageStatus().catch(() => null) : Promise.resolve(null),
     ]);
-    setClosedOrdersDto(closedOrders);
+    setClosedOrdersDto(closedOrders.slice(0, CLOSED_ORDERS_PAGE_SIZE));
+    setClosedOrdersHasNextPage(closedOrders.length > CLOSED_ORDERS_PAGE_SIZE);
     setSyncStatusDto(sync);
     setStorageStatusDto(storage);
-  }, [actor, api]);
+  }, [actor, api, closedOrdersBusinessDate, closedOrdersPage]);
 
   const refreshAll = useCallback(async () => {
     try {
@@ -845,6 +893,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     reprintPrecheck,
     payOrder,
     closedOrders,
+    closedOrdersPage,
+    closedOrdersPageSize: CLOSED_ORDERS_PAGE_SIZE,
+    closedOrdersHasNextPage,
+    closedOrdersLoading,
+    closedOrdersError,
+    closedOrdersBusinessDate,
+    loadClosedOrdersPage,
     refundCheck,
     partialRefundCheck,
     reprintCheck,
@@ -882,6 +937,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     closeCashSession,
     closeEmployeeShift,
     closedOrders,
+    closedOrdersBusinessDate,
+    closedOrdersError,
+    closedOrdersHasNextPage,
+    closedOrdersLoading,
+    closedOrdersPage,
     createOrderForTable,
     currentOperator,
     currentOrder,
@@ -892,6 +952,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     isPinLocked,
     isEdgePaired,
     logEvents,
+    loadClosedOrdersPage,
     logout,
     menuItems,
     openCashSession,
