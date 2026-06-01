@@ -30,6 +30,7 @@ import type {
   BackendSyncStatus,
   BackendTable,
 } from './schemas';
+import { t } from './i18n';
 
 export type InventoryDisposition = 'no_stock_effect' | 'return_to_stock' | 'write_off_waste' | 'manual_review';
 
@@ -231,7 +232,7 @@ function mapFinancialOperation(operation: BackendFinancialOperation): FinancialO
   return {
     id: operation.id,
     type: operation.operation_type,
-    kind: operation.operation_kind === 'full' ? 'Полная операция' : 'Частичная операция',
+    kind: operation.operation_kind === 'full' ? t.activity.financialOperationFull : t.activity.financialOperationPartial,
     amount: operation.amount,
     reason: operation.reason,
     employee: operation.created_by_employee_id,

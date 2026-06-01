@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { ClosedOrder } from '../../types';
 import { t } from '../../shared/i18n';
-import { PosButton, PosDialog, PosFormRow, PosQuantityStepper, PosSelectableChip } from '../../shared/ui';
-import { ShieldAlert, RefreshCw, Trash2 } from 'lucide-react';
+import { PosBanner, PosButton, PosDialog, PosFormRow, PosQuantityStepper, PosSelectableChip } from '../../shared/ui';
+import { RefreshCw } from 'lucide-react';
 
 interface RefundDialogProps {
   isOpen: boolean;
@@ -88,16 +88,10 @@ export const RefundDialog: React.FC<RefundDialogProps> = ({
     >
       <div className="flex flex-col gap-4 select-none">
         
-        {/* Warning Badge */}
-        <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 text-red-850 dark:text-red-100 flex gap-2.5 text-xs">
-          <ShieldAlert className="w-[18px] h-[18px] text-red-500 shrink-0" />
-          <span>{t.modals.refundFiscalWarning}</span>
-        </div>
+        <PosBanner type="danger" message={t.modals.refundFiscalWarning} />
 
         {errorMsg && (
-          <span className="font-sans text-xs font-semibold text-[var(--pos-status-danger)] bg-red-50 dark:bg-red-950/20 py-1.5 px-4 block text-center">
-            {errorMsg}
-          </span>
+          <PosBanner type="danger" message={errorMsg} />
         )}
 
         {/* Refund Mode Selectors */}

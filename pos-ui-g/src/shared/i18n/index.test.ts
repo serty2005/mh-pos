@@ -7,9 +7,12 @@ describe('pos-ui-g i18n labels', () => {
     expect(t.activity.historyLimitHint).toContain('backend');
     expect(t.activity.businessDateFilter).toBeTruthy();
     expect(t.activity.allBusinessDates).toBeTruthy();
+    expect(t.activity.financialOperationFull).toBeTruthy();
+    expect(t.activity.financialOperationPartial).toBeTruthy();
     expect(t.modals.refundReasonRequired).toBeTruthy();
     expect(t.modals.cashEventAmountRequired).toBeTruthy();
     expect(t.modals.paymentSubmit).toBeTruthy();
+    expect(t.modals.precheckManagerPinPlaceholder).toBeTruthy();
     expect(t.common.next).toBeTruthy();
     expect(t.common.clear).toBeTruthy();
     expect(t.auth.pinSessionCopy).toBeTruthy();

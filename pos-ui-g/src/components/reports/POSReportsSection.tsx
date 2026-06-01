@@ -74,7 +74,7 @@ export const POSReportsSection: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
           <PosMetricCard
             title={t.reports.shiftSales}
-            value={`${shiftSalesSum} ₽`}
+            value={`${shiftSalesSum} ${t.common.ruble}`}
             statusText={t.reports.real}
             statusVariant="success"
           />
@@ -86,7 +86,7 @@ export const POSReportsSection: React.FC = () => {
           />
           <PosMetricCard
             title={t.reports.expectedCash}
-            value={`${finalExpectedCash} ₽`}
+            value={`${finalExpectedCash} ${t.common.ruble}`}
             statusText={t.reports.cashBalance}
             statusVariant="warning"
           />
@@ -102,18 +102,18 @@ export const POSReportsSection: React.FC = () => {
             <PosDataRow
               title={t.reports.cashPayments}
               subtitle={t.reports.cashPaymentsDesc}
-              value={`${cashSalesSum} ₽`}
+              value={`${cashSalesSum} ${t.common.ruble}`}
               highlightValue
             />
             <PosDataRow
               title={t.reports.cardPayments}
               subtitle={t.reports.cardPaymentsDesc}
-              value={`${cardSalesSum} ₽`}
+              value={`${cardSalesSum} ${t.common.ruble}`}
             />
             <PosDataRow
               title={t.reports.initialSafeBalance}
               subtitle={t.reports.initialSafeBalanceDesc}
-              value={`${initialCashAmount} ₽`}
+              value={`${initialCashAmount} ${t.common.ruble}`}
             />
           </div>
         </div>

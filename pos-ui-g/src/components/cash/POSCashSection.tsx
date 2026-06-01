@@ -244,7 +244,7 @@ export const POSCashSection: React.FC = () => {
                   </div>
 
                   <span className={`font-mono text-sm font-bold ${evt.type === 'in' ? 'text-[var(--pos-status-success)]' : 'text-[var(--pos-status-danger)]'}`}>
-                    {evt.type === 'in' ? '+' : '-'}{evt.amount} ₽
+                    {evt.type === 'in' ? '+' : '-'}{evt.amount} {t.common.ruble}
                   </span>
                 </div>
               ))}

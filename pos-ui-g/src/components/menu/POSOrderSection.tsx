@@ -277,7 +277,7 @@ export const POSOrderSection: React.FC = () => {
                     {/* Price Tag & Badges */}
                     <div className="flex items-center justify-between w-full mt-auto">
                       <span className="font-mono text-sm font-extrabold text-[var(--pos-text-primary)]">
-                        {item.price} ₽
+                        {item.price} {t.common.ruble}
                       </span>
                       {hasModifiers && isAvailable && (
                         <PosInlineStatusBadge variant="neutral" className="text-[9px] px-1 py-0 relative bg-[var(--pos-surface)] shrink-0">
@@ -359,7 +359,7 @@ export const POSOrderSection: React.FC = () => {
                               {line.selectedModifiers.map(sel => (
                                 <div key={sel.optionId} className="flex justify-between">
                                   <span>+ {sel.optionName}</span>
-                                  <span>{sel.price > 0 ? `(${sel.price} ₽)` : ''}</span>
+                                  <span>{sel.price > 0 ? `(${sel.price} ${t.common.ruble})` : ''}</span>
                                 </div>
                               ))}
                             </div>
@@ -380,7 +380,7 @@ export const POSOrderSection: React.FC = () => {
                             </div>
                           )}
                         </div>
-                        <span className="font-mono text-xs font-black tracking-tight shrink-0">{line.price} ₽</span>
+                        <span className="font-mono text-xs font-black tracking-tight shrink-0">{line.price} {t.common.ruble}</span>
                       </div>
 
                       {/* Line Counts controls / Quantities */}
@@ -393,7 +393,7 @@ export const POSOrderSection: React.FC = () => {
                         />
 
                         <span className="font-mono text-xs font-black text-[var(--pos-text-primary)]">
-                          {line.totalPrice} ₽
+                          {line.totalPrice} {t.common.ruble}
                         </span>
                       </div>
                     </div>
@@ -420,21 +420,21 @@ export const POSOrderSection: React.FC = () => {
             <div className="border-t border-[var(--pos-border)] p-4 bg-[var(--pos-surface-raised)]/20 select-none space-y-2 shrink-0">
               <div className="flex justify-between items-baseline font-mono text-xs text-[var(--pos-text-muted)]">
                 <span>{t.common.subtotal}:</span>
-                <span>{currentOrder.subtotal} ₽</span>
+                <span>{currentOrder.subtotal} {t.common.ruble}</span>
               </div>
               <div className="flex justify-between items-baseline font-mono text-xs text-[var(--pos-text-muted)]">
                 <span>{t.common.tax} (10%):</span>
-                <span>{currentOrder.tax} ₽</span>
+                <span>{currentOrder.tax} {t.common.ruble}</span>
               </div>
               {(currentOrder.discount > 0 || pricingPolicies.length > 0) && (
                 <div className="flex justify-between items-baseline font-mono text-xs text-[var(--pos-text-muted)]">
                   <span>{t.common.discount}:</span>
-                  <span>{currentOrder.discount} ₽</span>
+                  <span>{currentOrder.discount} {t.common.ruble}</span>
                 </div>
               )}
               <div className="flex justify-between items-baseline font-mono text-base font-black text-[var(--pos-text-primary)] border-t border-[var(--pos-border)] pt-2 uppercase tracking-wide">
                 <span>{t.common.total}:</span>
-                <span className="text-sm md:text-xl font-black text-[var(--pos-status-success)]">{currentOrder.total} ₽</span>
+                <span className="text-sm md:text-xl font-black text-[var(--pos-status-success)]">{currentOrder.total} {t.common.ruble}</span>
               </div>
             </div>
           )}
@@ -656,7 +656,7 @@ function PricingPolicyDialog({
                 >
                   <span className="font-sans text-sm font-bold block">{policy.name}</span>
                   <span className="font-mono text-[10px] uppercase opacity-80">
-                    {policy.kind === 'discount' ? t.pricing.discount : t.pricing.surcharge} · {policy.scope === 'line' ? t.pricing.lineScope : t.pricing.orderScope} · {policy.amountKind === 'percentage' ? `${policy.valueBasisPoints / 100}%` : `${policy.amount} ₽`}
+                    {policy.kind === 'discount' ? t.pricing.discount : t.pricing.surcharge} · {policy.scope === 'line' ? t.pricing.lineScope : t.pricing.orderScope} · {policy.amountKind === 'percentage' ? `${policy.valueBasisPoints / 100}%` : `${policy.amount} ${t.common.ruble}`}
                   </span>
                 </PosSelectableTile>
               );

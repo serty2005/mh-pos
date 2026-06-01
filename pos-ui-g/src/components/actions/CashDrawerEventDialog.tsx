@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { t } from '../../shared/i18n';
-import { PosButton, PosDialog, PosFormRow, PosSelectableChip } from '../../shared/ui';
+import { PosBanner, PosButton, PosDialog, PosFormRow, PosSelectableChip } from '../../shared/ui';
 import { Banknote, Check } from 'lucide-react';
 
 interface CashDrawerEventDialogProps {
@@ -75,9 +75,7 @@ export const CashDrawerEventDialog: React.FC<CashDrawerEventDialogProps> = ({
       <div className="flex flex-col gap-4 select-none">
         
         {errorMsg && (
-          <span className="font-sans text-xs font-bold text-[var(--pos-status-danger)] bg-red-50 dark:bg-red-950/20 py-1.5 px-4 block text-center uppercase">
-            {errorMsg}
-          </span>
+          <PosBanner type="danger" message={errorMsg} />
         )}
 
         {/* Cash In vs Cash Out selection rows */}

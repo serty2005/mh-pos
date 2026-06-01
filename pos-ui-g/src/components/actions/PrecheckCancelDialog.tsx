@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { t } from '../../shared/i18n';
-import { PosButton, PosDialog, PosFormRow, PosSelectableChip } from '../../shared/ui';
-import { ShieldAlert, Unlock } from 'lucide-react';
+import { PosBanner, PosButton, PosDialog, PosFormRow, PosSelectableChip } from '../../shared/ui';
+import { Unlock } from 'lucide-react';
 
 interface PrecheckCancelDialogProps {
   isOpen: boolean;
@@ -73,19 +73,13 @@ export const PrecheckCancelDialog: React.FC<PrecheckCancelDialogProps> = ({
     >
       <div className="flex flex-col gap-4 select-none">
         
-        {/* Warning Indicator */}
-        <div className="p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-100 flex gap-3 text-xs md:text-sm">
-          <ShieldAlert className="w-5 h-5 shrink-0 text-amber-500" />
-          <div className="space-y-1">
-            <span className="font-bold uppercase tracking-wider block font-mono text-xs">{t.modals.precheckCancelRequired}</span>
-            <span>{t.modals.precheckCancelDesc}</span>
-          </div>
-        </div>
+        <PosBanner
+          type="warning"
+          message={`${t.modals.precheckCancelRequired} ${t.modals.precheckCancelDesc}`}
+        />
 
         {errorMsg && (
-          <span className="font-sans text-xs font-bold text-[var(--pos-status-danger)] bg-red-50 dark:bg-red-950/20 py-1.5 px-4 block text-center uppercase tracking-wide">
-            {errorMsg}
-          </span>
+          <PosBanner type="danger" message={errorMsg} />
         )}
 
         {/* PIN Entry Area */}
@@ -98,7 +92,7 @@ export const PrecheckCancelDialog: React.FC<PrecheckCancelDialogProps> = ({
             type="password"
             maxLength={4}
             className="w-full h-12 border border-[var(--pos-border)] px-4 font-mono text-center text-lg tracking-widest bg-[var(--pos-surface)] text-[var(--pos-text-primary)] rounded-none outline-none focus:border-[var(--pos-border-strong)]"
-            placeholder="••••"
+            placeholder={t.modals.precheckManagerPinPlaceholder}
             value={pin}
             onChange={(e) => {
               setPin(e.target.value.replace(/\D/g, ''));

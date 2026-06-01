@@ -133,7 +133,7 @@ export const POSFloorSection: React.FC = () => {
                       {isActiveOrder ? (
                         <>
                           <span className="font-mono text-sm font-extrabold text-[var(--pos-surface)] tracking-tight">
-                            {table.activeOrderSum || 0} ₽
+                            {table.activeOrderSum || 0} {t.common.ruble}
                           </span>
                           <span className="font-sans text-[10px] uppercase tracking-wider opacity-60 truncate">
                             {table.waiter?.split(' ')[0] || t.floor.waiterFallback}
@@ -178,7 +178,7 @@ export const POSFloorSection: React.FC = () => {
                       {ord.tableName || `${t.common.order} #${ord.shortId}`}
                     </span>
                     <span className="font-mono text-xs font-black text-[var(--pos-status-success)]">
-                      {ord.total} ₽
+                      {ord.total} {t.common.ruble}
                     </span>
                   </div>
                   <div className="flex items-center justify-between font-mono text-[10px] text-[var(--pos-text-muted)]">

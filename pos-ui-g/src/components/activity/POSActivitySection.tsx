@@ -203,7 +203,7 @@ export const POSActivitySection: React.FC = () => {
 
                     <div className="flex flex-col items-end shrink-0">
                       <span className="font-mono text-base font-black text-[var(--pos-status-success)]">
-                        {check.total} ₽
+                        {check.total} {t.common.ruble}
                       </span>
                       <span className="font-mono text-[9px] text-[var(--pos-text-muted)] uppercase">
                         {check.paymentMethod === 'cash' ? t.modals.paymentMethodCash : t.modals.paymentMethodCard}
@@ -274,7 +274,7 @@ export const POSActivitySection: React.FC = () => {
                             <span key={m.optionId} className="font-mono text-[9px] text-[var(--pos-text-muted)] block ml-1.5">• {m.optionName}</span>
                           ))}
                         </div>
-                        <span className="font-mono shrink-0 font-bold">{line.price} ₽ × {line.quantity}</span>
+                        <span className="font-mono shrink-0 font-bold">{line.price} {t.common.ruble} × {line.quantity}</span>
                       </div>
                     ))}
                   </div>
@@ -291,7 +291,7 @@ export const POSActivitySection: React.FC = () => {
                           <span className="font-mono text-[10px] font-extrabold uppercase tracking-tight text-[var(--pos-text-primary)]">
                             {op.kind}
                           </span>
-                          <span className="font-mono text-[10px] font-black text-[var(--pos-text-muted)]">{op.amount} ₽</span>
+                          <span className="font-mono text-[10px] font-black text-[var(--pos-text-muted)]">{op.amount} {t.common.ruble}</span>
                         </div>
                         <span className="font-sans text-[10px] text-[var(--pos-text-muted)]">
                           {t.activity.performedBy}: {op.employee} • {op.timestamp}
