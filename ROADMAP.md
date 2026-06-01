@@ -252,7 +252,7 @@
 Не выполнено и не должно считаться завершенным:
 
 - `sqlc` rollout как текущий persistence implementation.
-- Промышленные ClickHouse backfill/operator jobs.
+- Production auth/RBAC perimeter для mutating ClickHouse backfill/operator controls.
 - OLAP projections шире текущих bounded:
   - `raw_business_events`;
   - `olap_stock_moves`;
@@ -706,13 +706,20 @@ GET /api/v1/inventory/stock-ledger?restaurant_id=&source_event_type=&source_even
   - idempotency по UUIDv7 `command_id`;
   - без raw payload;
   - без synchronous ClickHouse dual-write.
-- Cloud UI реализовано сейчас показывает read-only `export-status`, bounded `stock-moves` и `stock-move-summary`; support-only retry/backfill control не вызывается из UI.
+- Async backfill jobs foundation:
+  - `GET /api/v1/olap/backfill-jobs`;
+  - `POST /api/v1/olap/backfill-jobs`;
+  - `GET /api/v1/olap/backfill-jobs/{id}`;
+  - `POST /api/v1/olap/backfill-jobs/{id}/cancel`;
+  - jobs имеют UUIDv7 `command_id`, status/progress/checkpoint/error metadata и audit trail;
+  - фактический backfill выполняет background worker без synchronous ClickHouse write в HTTP request path.
+- Bounded kitchen timing aggregate `GET /api/v1/olap/kitchen-timing-summary` поверх `KitchenTicketStatusChanged`/`ItemServed` с группировкой `business_date|station`, lifecycle counts и средними transition durations без raw payload.
+- Cloud UI реализовано сейчас показывает read-only `export-status`, bounded `stock-moves`, `stock-move-summary`, backfill job status и kitchen timing summary; support-only retry/backfill mutating controls не вызываются из UI.
 
 Далее:
 
-- Production-grade backfill jobs/operator UI для mutating OLAP controls.
-- Расширенные sales/kitchen aggregates beyond first bounded endpoint.
-- Production-grade kitchen timing API.
+- Production auth/RBAC perimeter для mutating OLAP controls.
+- Расширенные sales aggregates beyond current bounded endpoints.
 - Costing-dependent COGS/margin после появления достоверной cost basis.
 
 ---

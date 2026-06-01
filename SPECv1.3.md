@@ -365,14 +365,14 @@ Inventory and costing logic:
 - Реализовано сейчас: Async Batch Forwarder экспортирует `inbox_events` bounded batch от 1 до 100 000 rows в ClickHouse `raw_business_events`.
 - ClickHouse `raw_business_events` хранит all business events бессрочно как immutable historical event archive; transactional source of truth остается PostgreSQL/runtime services.
 - PostgreSQL остается transactional source of truth для текущего operational state.
-- Реализовано сейчас: Cloud OLAP API читает bounded `raw_business_events` metadata, bounded `olap_stock_moves`, read-only export status и первый bounded `stock-move-summary` aggregate без raw payload. Transactional command validation остается в PostgreSQL/runtime services.
+- Реализовано сейчас: Cloud OLAP API читает bounded `raw_business_events` metadata, bounded `olap_stock_moves`, read-only export status, первый bounded `stock-move-summary` aggregate, первый bounded `sales-kitchen-summary`, bounded `kitchen-timing-summary` и backfill job state без raw payload. Transactional command validation остается в PostgreSQL/runtime services.
 - `processed_for_olap = true` rows старше 3 месяцев можно удалять из PostgreSQL `inbox_events`.
 - Synchronous dual-write в PostgreSQL и ClickHouse запрещен.
 
 Запланировано до полного пилота:
 
 - ClickHouse добавляется как immutable business event archive and OLAP/reporting accelerator, но не как transactional source of truth и не часть POS transaction path.
-- Реализовано сейчас: Cloud OLAP API отдает bounded read-only metadata endpoint для event archive, bounded stock moves endpoint, stock move summary и минимальный support-only export retry control. Запланировано далее: COGS/margin, sales aggregates, kitchen timing и промышленные backfill/operator jobs.
+- Реализовано сейчас: Cloud OLAP API отдает bounded read-only metadata endpoint для event archive, bounded stock moves endpoint, stock move summary, sales/kitchen summary, kitchen timing summary, минимальный support-only export retry control и async backfill jobs foundation. Запланировано далее: COGS/margin и richer sales aggregates после достоверной cost basis.
 
 Запланировано далее:
 

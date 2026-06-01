@@ -537,6 +537,137 @@ func (r *Repository) ListSalesKitchenSummary(ctx context.Context, filter app.Sal
 	return rows, scanner.Err()
 }
 
+func (r *Repository) ListKitchenTimingSummary(ctx context.Context, filter app.KitchenTimingSummaryFilter) ([]app.KitchenTimingSummary, error) {
+	groupKeyExpr := "business_date_local"
+	businessDateExpr := "business_date_local"
+	stationExpr := "''"
+	groupByExpr := "business_date_local"
+	orderExpr := "business_date_local DESC, group_key DESC"
+	if filter.GroupBy == "station" {
+		groupKeyExpr = "station_id"
+		businessDateExpr = "''"
+		stationExpr = "station_id"
+		groupByExpr = "station_id"
+		orderExpr = "station_id ASC"
+	}
+
+	query := strings.Builder{}
+	query.WriteString("SELECT ")
+	query.WriteString(quote(filter.GroupBy))
+	query.WriteString(" AS group_by, ")
+	query.WriteString(groupKeyExpr)
+	query.WriteString(" AS group_key, ")
+	query.WriteString(businessDateExpr)
+	query.WriteString(" AS business_date_local, ")
+	query.WriteString(stationExpr)
+	query.WriteString(" AS station_id, count() AS ticket_count, ")
+	query.WriteString("countIf(accepted_at IS NOT NULL) AS accepted_count, countIf(started_at IS NOT NULL) AS started_count, ")
+	query.WriteString("countIf(ready_at IS NOT NULL) AS ready_count, countIf(served_at IS NOT NULL) AS served_count, ")
+	query.WriteString("if(isNaN(avgIf(dateDiff('second', accepted_at, ready_at), accepted_at IS NOT NULL AND ready_at IS NOT NULL AND ready_at >= accepted_at)), 0, toInt64(avgIf(dateDiff('second', accepted_at, ready_at), accepted_at IS NOT NULL AND ready_at IS NOT NULL AND ready_at >= accepted_at))) AS avg_accept_to_ready_seconds, ")
+	query.WriteString("if(isNaN(avgIf(dateDiff('second', started_at, ready_at), started_at IS NOT NULL AND ready_at IS NOT NULL AND ready_at >= started_at)), 0, toInt64(avgIf(dateDiff('second', started_at, ready_at), started_at IS NOT NULL AND ready_at IS NOT NULL AND ready_at >= started_at))) AS avg_start_to_ready_seconds, ")
+	query.WriteString("if(isNaN(avgIf(dateDiff('second', ready_at, served_at), ready_at IS NOT NULL AND served_at IS NOT NULL AND served_at >= ready_at)), 0, toInt64(avgIf(dateDiff('second', ready_at, served_at), ready_at IS NOT NULL AND served_at IS NOT NULL AND served_at >= ready_at))) AS avg_ready_to_served_seconds, ")
+	query.WriteString("min(first_status_changed_at) AS first_status_changed_at, max(last_status_changed_at) AS last_status_changed_at FROM (")
+	query.WriteString(r.kitchenTimingPerTicketQuery(filter))
+	query.WriteString(") GROUP BY ")
+	query.WriteString(groupByExpr)
+	query.WriteString(" ORDER BY ")
+	query.WriteString(orderExpr)
+	query.WriteString(fmt.Sprintf(" LIMIT %d OFFSET %d FORMAT JSONEachRow", filter.Limit, filter.Offset))
+
+	respBody, err := r.query(ctx, query.String())
+	if err != nil {
+		return nil, err
+	}
+	defer respBody.Close()
+
+	rows := make([]app.KitchenTimingSummary, 0, filter.Limit)
+	scanner := bufio.NewScanner(respBody)
+	for scanner.Scan() {
+		var row struct {
+			GroupBy                 string  `json:"group_by"`
+			GroupKey                string  `json:"group_key"`
+			BusinessDateLocal       string  `json:"business_date_local"`
+			StationID               string  `json:"station_id"`
+			TicketCount             chInt64 `json:"ticket_count"`
+			AcceptedCount           chInt64 `json:"accepted_count"`
+			StartedCount            chInt64 `json:"started_count"`
+			ReadyCount              chInt64 `json:"ready_count"`
+			ServedCount             chInt64 `json:"served_count"`
+			AvgAcceptToReadySeconds chInt64 `json:"avg_accept_to_ready_seconds"`
+			AvgStartToReadySeconds  chInt64 `json:"avg_start_to_ready_seconds"`
+			AvgReadyToServedSeconds chInt64 `json:"avg_ready_to_served_seconds"`
+			FirstStatusChangedAt    string  `json:"first_status_changed_at"`
+			LastStatusChangedAt     string  `json:"last_status_changed_at"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
+			return nil, err
+		}
+		firstStatusChangedAt, err := parseOptionalCHTime(row.FirstStatusChangedAt)
+		if err != nil {
+			return nil, err
+		}
+		lastStatusChangedAt, err := parseOptionalCHTime(row.LastStatusChangedAt)
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, app.KitchenTimingSummary{
+			GroupBy:                 row.GroupBy,
+			GroupKey:                row.GroupKey,
+			BusinessDateLocal:       row.BusinessDateLocal,
+			StationID:               row.StationID,
+			TicketCount:             int64(row.TicketCount),
+			AcceptedCount:           int64(row.AcceptedCount),
+			StartedCount:            int64(row.StartedCount),
+			ReadyCount:              int64(row.ReadyCount),
+			ServedCount:             int64(row.ServedCount),
+			AvgAcceptToReadySeconds: int64(row.AvgAcceptToReadySeconds),
+			AvgStartToReadySeconds:  int64(row.AvgStartToReadySeconds),
+			AvgReadyToServedSeconds: int64(row.AvgReadyToServedSeconds),
+			FirstStatusChangedAt:    firstStatusChangedAt,
+			LastStatusChangedAt:     lastStatusChangedAt,
+		})
+	}
+	return rows, scanner.Err()
+}
+
+func (r *Repository) kitchenTimingPerTicketQuery(filter app.KitchenTimingSummaryFilter) string {
+	query := strings.Builder{}
+	query.WriteString("SELECT toString(toDate(occurred_at)) AS business_date_local, ")
+	query.WriteString("if(station_id = '', 'unknown', station_id) AS station_id, order_line_id, ")
+	query.WriteString("nullIf(minIf(occurred_at, to_status = 'accepted'), toDateTime64(0, 3, 'UTC')) AS accepted_at, ")
+	query.WriteString("nullIf(minIf(occurred_at, to_status = 'in_progress'), toDateTime64(0, 3, 'UTC')) AS started_at, ")
+	query.WriteString("nullIf(minIf(occurred_at, to_status = 'ready'), toDateTime64(0, 3, 'UTC')) AS ready_at, ")
+	query.WriteString("nullIf(minIf(occurred_at, to_status = 'served' OR event_type = 'ItemServed'), toDateTime64(0, 3, 'UTC')) AS served_at, ")
+	query.WriteString("min(occurred_at) AS first_status_changed_at, max(occurred_at) AS last_status_changed_at FROM (")
+	query.WriteString("SELECT event_type, occurred_at, ")
+	query.WriteString("JSONExtractString(payload, 'payload', 'data', 'order_line_id') AS order_line_id, ")
+	query.WriteString("JSONExtractString(payload, 'payload', 'data', 'station_id') AS station_id, ")
+	query.WriteString("JSONExtractString(payload, 'payload', 'data', 'to_status') AS to_status FROM ")
+	query.WriteString(ident(r.database))
+	query.WriteString(".raw_business_events FINAL WHERE event_type IN ('KitchenTicketStatusChanged','ItemServed')")
+	if filter.RestaurantID != "" {
+		query.WriteString(" AND restaurant_id = ")
+		query.WriteString(quote(filter.RestaurantID))
+	}
+	if filter.BusinessDateFrom != "" {
+		query.WriteString(" AND toDate(occurred_at) >= toDate(")
+		query.WriteString(quote(filter.BusinessDateFrom))
+		query.WriteString(")")
+	}
+	if filter.BusinessDateTo != "" {
+		query.WriteString(" AND toDate(occurred_at) <= toDate(")
+		query.WriteString(quote(filter.BusinessDateTo))
+		query.WriteString(")")
+	}
+	query.WriteString(") WHERE order_line_id != ''")
+	if filter.StationID != "" {
+		query.WriteString(" AND station_id = ")
+		query.WriteString(quote(filter.StationID))
+	}
+	query.WriteString(" GROUP BY business_date_local, station_id, order_line_id")
+	return query.String()
+}
+
 func (r *Repository) salesKitchenRawSummaryQuery(filter app.SalesKitchenSummaryFilter) string {
 	groupKeyExpr, businessDateExpr, eventTypeExpr, sourceEventTypeExpr, groupByExpr := salesKitchenRawGroupExpressions(filter.GroupBy)
 	query := strings.Builder{}

@@ -142,6 +142,45 @@ func TestListSalesKitchenSummaryRejectsInvalidFilters(t *testing.T) {
 	}
 }
 
+func TestListKitchenTimingSummaryAppliesFiltersGroupingAndBoundedLimit(t *testing.T) {
+	repo := &rawRepo{}
+	service := app.NewService(repo)
+
+	if _, err := service.ListKitchenTimingSummary(context.Background(), app.KitchenTimingSummaryFilter{
+		RestaurantID:     " rest-1 ",
+		BusinessDateFrom: "2026-05-01",
+		BusinessDateTo:   "2026-05-29",
+		StationID:        " hot ",
+		GroupBy:          " station ",
+		Limit:            1000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if repo.kitchenTimingFilter.Limit != 50 {
+		t.Fatalf("expected oversized limit to fall back to 50, got %d", repo.kitchenTimingFilter.Limit)
+	}
+	if repo.kitchenTimingFilter.GroupBy != "station" || repo.kitchenTimingFilter.StationID != "hot" {
+		t.Fatalf("expected trimmed kitchen timing filters, got %+v", repo.kitchenTimingFilter)
+	}
+}
+
+func TestListKitchenTimingSummaryRejectsInvalidFilters(t *testing.T) {
+	repo := &rawRepo{}
+	service := app.NewService(repo)
+
+	tests := []app.KitchenTimingSummaryFilter{
+		{GroupBy: "cogs"},
+		{BusinessDateFrom: "2026-05-XX"},
+		{BusinessDateFrom: "2026-05-29", BusinessDateTo: "2026-05-01"},
+		{Offset: -1},
+	}
+	for _, tt := range tests {
+		if _, err := service.ListKitchenTimingSummary(context.Background(), tt); err == nil {
+			t.Fatalf("expected invalid filter error for %+v", tt)
+		}
+	}
+}
+
 func TestGetExportStatusRequiresKnownStream(t *testing.T) {
 	repo := &rawRepo{}
 	service := app.NewServiceWithExportStatus(repo, repo)
@@ -219,15 +258,59 @@ func TestRequestExportRetryValidatesCommandAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestBackfillJobCommandsValidateAndUseUUIDv7(t *testing.T) {
+	repo := &rawRepo{backfillJob: app.BackfillJob{
+		ID:        "018f0000-0000-7000-8000-000000000311",
+		CommandID: "018f0000-0000-7000-8000-000000000311",
+		Stream:    "raw_business_events",
+		Status:    "queued",
+	}}
+	service := app.NewServiceWithOperatorControls(repo, repo, repo, repo)
+
+	_, err := service.CreateBackfillJob(context.Background(), app.BackfillCreateCommand{
+		CommandID: "018f0000-0000-7000-8000-000000000311",
+		Stream:    " raw_business_events ",
+		Reason:    " rebuild archive ",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repo.backfillCreate.Stream != "raw_business_events" || repo.backfillCreate.Reason != "rebuild archive" {
+		t.Fatalf("expected normalized create command, got %+v", repo.backfillCreate)
+	}
+	if _, err := service.CreateBackfillJob(context.Background(), app.BackfillCreateCommand{
+		CommandID: "not-a-uuid",
+		Stream:    "raw_business_events",
+		Reason:    "rebuild archive",
+	}); err == nil {
+		t.Fatal("expected invalid command_id error")
+	}
+	if _, err := service.CancelBackfillJob(context.Background(), app.BackfillCancelCommand{
+		JobID:     "018f0000-0000-7000-8000-000000000311",
+		CommandID: "018f0000-0000-7000-8000-000000000312",
+		Reason:    "operator cancel",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if repo.backfillCancel.JobID == "" {
+		t.Fatal("expected cancel command to reach repository")
+	}
+}
+
 type rawRepo struct {
-	filter             app.RawBusinessEventFilter
-	stockFilter        app.StockMoveFilter
-	summaryFilter      app.StockMoveSummaryFilter
-	salesKitchenFilter app.SalesKitchenSummaryFilter
-	statusStream       string
-	retryCommand       app.ExportRetryCommand
-	retryResult        app.ExportRetryResult
-	retryCalls         int
+	filter              app.RawBusinessEventFilter
+	stockFilter         app.StockMoveFilter
+	summaryFilter       app.StockMoveSummaryFilter
+	salesKitchenFilter  app.SalesKitchenSummaryFilter
+	kitchenTimingFilter app.KitchenTimingSummaryFilter
+	statusStream        string
+	retryCommand        app.ExportRetryCommand
+	retryResult         app.ExportRetryResult
+	retryCalls          int
+	backfillFilter      app.BackfillJobFilter
+	backfillCreate      app.BackfillCreateCommand
+	backfillCancel      app.BackfillCancelCommand
+	backfillJob         app.BackfillJob
 }
 
 func (r *rawRepo) ListRawBusinessEvents(_ context.Context, filter app.RawBusinessEventFilter) ([]app.RawBusinessEvent, error) {
@@ -247,6 +330,11 @@ func (r *rawRepo) ListStockMoveSummary(_ context.Context, filter app.StockMoveSu
 
 func (r *rawRepo) ListSalesKitchenSummary(_ context.Context, filter app.SalesKitchenSummaryFilter) ([]app.SalesKitchenSummary, error) {
 	r.salesKitchenFilter = filter
+	return nil, nil
+}
+
+func (r *rawRepo) ListKitchenTimingSummary(_ context.Context, filter app.KitchenTimingSummaryFilter) ([]app.KitchenTimingSummary, error) {
+	r.kitchenTimingFilter = filter
 	return nil, nil
 }
 
@@ -271,4 +359,30 @@ func (r *rawRepo) RequestExportRetry(_ context.Context, cmd app.ExportRetryComma
 		r.retryResult.AlreadyProcessed = true
 	}
 	return r.retryResult, nil
+}
+
+func (r *rawRepo) ListBackfillJobs(_ context.Context, filter app.BackfillJobFilter) ([]app.BackfillJob, error) {
+	r.backfillFilter = filter
+	return []app.BackfillJob{r.backfillJob}, nil
+}
+
+func (r *rawRepo) GetBackfillJob(_ context.Context, id string) (app.BackfillJob, error) {
+	r.backfillJob.ID = id
+	return r.backfillJob, nil
+}
+
+func (r *rawRepo) CreateBackfillJob(_ context.Context, cmd app.BackfillCreateCommand, _ time.Time) (app.BackfillJob, error) {
+	r.backfillCreate = cmd
+	r.backfillJob.ID = cmd.CommandID
+	r.backfillJob.CommandID = cmd.CommandID
+	r.backfillJob.Stream = cmd.Stream
+	r.backfillJob.Status = "queued"
+	return r.backfillJob, nil
+}
+
+func (r *rawRepo) CancelBackfillJob(_ context.Context, cmd app.BackfillCancelCommand, _ time.Time) (app.BackfillJob, error) {
+	r.backfillCancel = cmd
+	r.backfillJob.ID = cmd.JobID
+	r.backfillJob.Status = "cancelled"
+	return r.backfillJob, nil
 }

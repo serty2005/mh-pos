@@ -92,6 +92,8 @@ import {
   listFinancialOperations,
   listInventoryStockBalances,
   listInventoryStockLedger,
+  listKitchenTimingSummary,
+  listOlapBackfillJobs,
   listOlapStockMoveSummary,
   listOlapStockMoves,
   listSalesKitchenSummary,
@@ -145,7 +147,7 @@ import {
   upsertStopListEntry,
   ApiError,
 } from './shared/api';
-import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, FinancialOperationReportItem, InventoryStockBalance, InventoryStockLedgerEntry, OlapExportStatus, OlapStockMove, OlapStockMoveSummary, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, SalesKitchenSummaryGroupBy, SalesKitchenSummaryItem, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
+import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, FinancialOperationReportItem, InventoryStockBalance, InventoryStockLedgerEntry, KitchenTimingSummaryGroupBy, KitchenTimingSummaryItem, OlapBackfillJob, OlapExportStatus, OlapStockMove, OlapStockMoveSummary, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, SalesKitchenSummaryGroupBy, SalesKitchenSummaryItem, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
 import type { RecipeVersionView } from './shared/schemas';
 
 type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'financialOperations' | 'salesKitchenSummary' | 'recipeVersions' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
@@ -256,6 +258,8 @@ const inventoryStockLedger = ref<InventoryStockLedgerEntry[]>([]);
 const olapExportStatuses = ref<OlapExportStatus[]>([]);
 const olapStockMoves = ref<OlapStockMove[]>([]);
 const olapStockMoveSummary = ref<OlapStockMoveSummary[]>([]);
+const olapBackfillJobs = ref<OlapBackfillJob[]>([]);
+const kitchenTimingSummary = ref<KitchenTimingSummaryItem[]>([]);
 const financialOperations = ref<FinancialOperationReportItem[]>([]);
 const salesKitchenSummaryRows = ref<SalesKitchenSummaryItem[]>([]);
 const edgeDevices = ref<UnassignedEdgeNode[]>([]);
@@ -280,6 +284,12 @@ const olapFilters = reactive({
   warehouseId: '',
   sourceEventType: '',
   groupBy: 'business_date' as 'business_date' | 'catalog_item' | 'warehouse',
+});
+const kitchenTimingFilters = reactive<{ businessDateFrom: string; businessDateTo: string; stationId: string; groupBy: KitchenTimingSummaryGroupBy }>({
+  businessDateFrom: '',
+  businessDateTo: '',
+  stationId: '',
+  groupBy: 'business_date',
 });
 const form = reactive<Row>({});
 
@@ -832,6 +842,8 @@ const cloudCtx = {
   olapExportStatuses,
   olapStockMoves,
   olapStockMoveSummary,
+  olapBackfillJobs,
+  kitchenTimingSummary,
   financialOperations,
   salesKitchenSummaryRows,
   edgeEvents,
@@ -849,6 +861,7 @@ const cloudCtx = {
   financialOperationFilters,
   salesKitchenSummaryFilters,
   olapFilters,
+  kitchenTimingFilters,
   form,
   scopedRows,
   permissionGroups,
@@ -1184,6 +1197,8 @@ async function loadOlapOperatorSurface() {
     olapExportStatuses.value = [];
     olapStockMoves.value = [];
     olapStockMoveSummary.value = [];
+    olapBackfillJobs.value = [];
+    kitchenTimingSummary.value = [];
     return;
   }
   await withLoading('olap-operator', async () => {
@@ -1196,15 +1211,27 @@ async function loadOlapOperatorSurface() {
       limit: 50,
       offset: 0,
     };
-    const [rawStatus, stockStatus, moves, summary] = await Promise.all([
+    const timingFilters = {
+      businessDateFrom: String(kitchenTimingFilters.businessDateFrom || olapFilters.businessDateFrom || '').trim(),
+      businessDateTo: String(kitchenTimingFilters.businessDateTo || olapFilters.businessDateTo || '').trim(),
+      stationId: String(kitchenTimingFilters.stationId ?? '').trim(),
+      groupBy: kitchenTimingFilters.groupBy,
+      limit: 50,
+      offset: 0,
+    };
+    const [rawStatus, stockStatus, moves, summary, backfillJobs, timingSummary] = await Promise.all([
       getOlapExportStatus('raw_business_events'),
       getOlapExportStatus('stock_moves'),
       listOlapStockMoves(selectedRestaurantId.value, filters),
       listOlapStockMoveSummary(selectedRestaurantId.value, { ...filters, groupBy: olapFilters.groupBy }),
+      listOlapBackfillJobs({ limit: 50, offset: 0 }),
+      listKitchenTimingSummary(selectedRestaurantId.value, timingFilters),
     ]);
     olapExportStatuses.value = [rawStatus, stockStatus];
     olapStockMoves.value = moves;
     olapStockMoveSummary.value = summary;
+    olapBackfillJobs.value = backfillJobs;
+    kitchenTimingSummary.value = timingSummary;
   });
 }
 

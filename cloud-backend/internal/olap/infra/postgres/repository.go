@@ -349,14 +349,14 @@ FOR UPDATE`, cmd.CommandID))
 		return app.ExportRetryResult{}, err
 	}
 	result := app.ExportRetryResult{
-		CommandID:          cmd.CommandID,
-		Stream:             cmd.Stream,
-		Mode:               cmd.Mode,
-		Accepted:           true,
-		CheckpointBefore:   checkpointBefore,
-		RetryRequestedAt:   now,
-		PendingCount:       pendingCount,
-		FailedCount:        failedCount,
+		CommandID:        cmd.CommandID,
+		Stream:           cmd.Stream,
+		Mode:             cmd.Mode,
+		Accepted:         true,
+		CheckpointBefore: checkpointBefore,
+		RetryRequestedAt: now,
+		PendingCount:     pendingCount,
+		FailedCount:      failedCount,
 	}
 	if _, err := tx.Exec(ctx, `
 INSERT INTO olap_export_retry_commands(
@@ -369,6 +369,371 @@ INSERT INTO olap_export_retry_commands(
 		return app.ExportRetryResult{}, err
 	}
 	return result, nil
+}
+
+func (r *Repository) ListBackfillJobs(ctx context.Context, filter app.BackfillJobFilter) ([]app.BackfillJob, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT id,command_id,stream,status,requested_from,requested_to,checkpoint_cursor,batch_size,
+       total_rows,processed_rows,last_error,cancel_requested,reason,requested_by,
+       created_at,started_at,completed_at,updated_at
+FROM olap_backfill_jobs
+WHERE ($1 = '' OR stream = $1)
+  AND ($2 = '' OR status = $2)
+ORDER BY created_at DESC, id DESC
+LIMIT $3 OFFSET $4`, filter.Stream, filter.Status, filter.Limit, filter.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]app.BackfillJob, 0, filter.Limit)
+	for rows.Next() {
+		job, err := scanBackfillJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, job)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) GetBackfillJob(ctx context.Context, id string) (app.BackfillJob, error) {
+	job, err := scanBackfillJob(r.pool.QueryRow(ctx, `
+SELECT id,command_id,stream,status,requested_from,requested_to,checkpoint_cursor,batch_size,
+       total_rows,processed_rows,last_error,cancel_requested,reason,requested_by,
+       created_at,started_at,completed_at,updated_at
+FROM olap_backfill_jobs
+WHERE id = $1`, strings.TrimSpace(id)))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return app.BackfillJob{}, contracts.ErrNotFound
+	}
+	return job, err
+}
+
+func (r *Repository) CreateBackfillJob(ctx context.Context, cmd app.BackfillCreateCommand, now time.Time) (app.BackfillJob, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return app.BackfillJob{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	existing, err := scanBackfillJob(tx.QueryRow(ctx, `
+SELECT id,command_id,stream,status,requested_from,requested_to,checkpoint_cursor,batch_size,
+       total_rows,processed_rows,last_error,cancel_requested,reason,requested_by,
+       created_at,started_at,completed_at,updated_at
+FROM olap_backfill_jobs
+WHERE command_id = $1
+FOR UPDATE`, cmd.CommandID))
+	if err == nil {
+		if existing.Stream != cmd.Stream || existing.Reason != cmd.Reason {
+			return app.BackfillJob{}, contracts.ErrPayloadConflict
+		}
+		existing.AlreadyProcessed = true
+		if err := tx.Commit(ctx); err != nil {
+			return app.BackfillJob{}, err
+		}
+		return existing, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return app.BackfillJob{}, err
+	}
+
+	totalRows, err := countBackfillRows(ctx, tx, cmd.Stream, cmd.RequestedFrom, cmd.RequestedTo)
+	if err != nil {
+		return app.BackfillJob{}, err
+	}
+	jobID := cmd.CommandID
+	job, err := scanBackfillJob(tx.QueryRow(ctx, `
+INSERT INTO olap_backfill_jobs(
+  id,command_id,stream,status,requested_from,requested_to,batch_size,total_rows,
+  processed_rows,reason,requested_by,created_at,updated_at
+) VALUES ($1,$2,$3,'queued',$4,$5,$6,$7,0,$8,$9,$10,$10)
+RETURNING id,command_id,stream,status,requested_from,requested_to,checkpoint_cursor,batch_size,
+          total_rows,processed_rows,last_error,cancel_requested,reason,requested_by,
+          created_at,started_at,completed_at,updated_at`,
+		jobID, cmd.CommandID, cmd.Stream, cmd.RequestedFrom, cmd.RequestedTo, cmd.BatchSize, totalRows, cmd.Reason, cmd.RequestedBy, now))
+	if err != nil {
+		return app.BackfillJob{}, err
+	}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO olap_operator_audit_events(id,command_id,action,stream,job_id,requested_by,reason,created_at)
+VALUES ($1,$2,'create_backfill_job',$3,$4,$5,$6,$7)`,
+		cmd.CommandID+":create", cmd.CommandID, cmd.Stream, job.ID, cmd.RequestedBy, cmd.Reason, now); err != nil {
+		return app.BackfillJob{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return app.BackfillJob{}, err
+	}
+	return job, nil
+}
+
+func (r *Repository) CancelBackfillJob(ctx context.Context, cmd app.BackfillCancelCommand, now time.Time) (app.BackfillJob, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return app.BackfillJob{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	job, err := scanBackfillJob(tx.QueryRow(ctx, `
+SELECT id,command_id,stream,status,requested_from,requested_to,checkpoint_cursor,batch_size,
+       total_rows,processed_rows,last_error,cancel_requested,reason,requested_by,
+       created_at,started_at,completed_at,updated_at
+FROM olap_backfill_jobs
+WHERE id = $1
+FOR UPDATE`, cmd.JobID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return app.BackfillJob{}, contracts.ErrNotFound
+	}
+	if err != nil {
+		return app.BackfillJob{}, err
+	}
+	if job.Status == "queued" || job.Status == "running" {
+		job, err = scanBackfillJob(tx.QueryRow(ctx, `
+UPDATE olap_backfill_jobs
+SET status = 'cancelled',
+    cancel_requested = true,
+    completed_at = COALESCE(completed_at, $2),
+    updated_at = $2
+WHERE id = $1
+RETURNING id,command_id,stream,status,requested_from,requested_to,checkpoint_cursor,batch_size,
+          total_rows,processed_rows,last_error,cancel_requested,reason,requested_by,
+          created_at,started_at,completed_at,updated_at`, cmd.JobID, now))
+		if err != nil {
+			return app.BackfillJob{}, err
+		}
+	}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO olap_operator_audit_events(id,command_id,action,stream,job_id,requested_by,reason,created_at)
+VALUES ($1,$2,'cancel_backfill_job',$3,$4,$5,$6,$7)
+ON CONFLICT (id) DO NOTHING`,
+		cmd.CommandID+":cancel", cmd.CommandID, job.Stream, job.ID, cmd.RequestedBy, cmd.Reason, now); err != nil {
+		return app.BackfillJob{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return app.BackfillJob{}, err
+	}
+	return job, nil
+}
+
+func (r *Repository) ClaimBackfillJob(ctx context.Context, workerID string, now time.Time) (app.BackfillJob, bool, error) {
+	job, err := scanBackfillJob(r.pool.QueryRow(ctx, `
+WITH picked AS (
+  SELECT id
+  FROM olap_backfill_jobs
+  WHERE status IN ('queued','running')
+    AND cancel_requested = false
+  ORDER BY created_at, id
+  LIMIT 1
+  FOR UPDATE SKIP LOCKED
+)
+UPDATE olap_backfill_jobs j
+SET status = 'running',
+    started_at = COALESCE(j.started_at, $2),
+    locked_by = $1,
+    locked_at = $2,
+    updated_at = $2
+FROM picked
+WHERE j.id = picked.id
+RETURNING j.id,j.command_id,j.stream,j.status,j.requested_from,j.requested_to,j.checkpoint_cursor,j.batch_size,
+          j.total_rows,j.processed_rows,j.last_error,j.cancel_requested,j.reason,j.requested_by,
+          j.created_at,j.started_at,j.completed_at,j.updated_at`, strings.TrimSpace(workerID), now))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return app.BackfillJob{}, false, nil
+	}
+	return job, err == nil, err
+}
+
+func (r *Repository) LoadBackfillBatch(ctx context.Context, job app.BackfillJob, limit int) (app.BackfillBatch, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	switch job.Stream {
+	case "raw_business_events":
+		events, err := r.loadRawBackfillBatch(ctx, job, limit)
+		return app.BackfillBatch{RawEvents: events}, err
+	case "stock_moves":
+		moves, err := r.loadStockMoveBackfillBatch(ctx, job, limit)
+		return app.BackfillBatch{StockMoves: moves}, err
+	default:
+		return app.BackfillBatch{}, app.ErrOLAPUnavailable
+	}
+}
+
+func (r *Repository) MarkBackfillProgress(ctx context.Context, job app.BackfillJob, batch app.BackfillBatch, now time.Time) error {
+	delta := len(batch.RawEvents) + len(batch.StockMoves)
+	cursor := job.CheckpointCursor
+	if len(batch.RawEvents) > 0 {
+		cursor = batch.RawEvents[len(batch.RawEvents)-1].ID
+	}
+	if len(batch.StockMoves) > 0 {
+		cursor = batch.StockMoves[len(batch.StockMoves)-1].LedgerEntryID
+	}
+	status := "running"
+	var completedAt *time.Time
+	if delta == 0 {
+		status = "completed"
+		completedAt = &now
+	}
+	_, err := r.pool.Exec(ctx, `
+UPDATE olap_backfill_jobs
+SET status = $2,
+    checkpoint_cursor = $3,
+    processed_rows = processed_rows + $4,
+    last_error = '',
+    locked_by = '',
+    locked_at = NULL,
+    completed_at = COALESCE(completed_at, $5),
+    updated_at = $6
+WHERE id = $1`, job.ID, status, cursor, delta, completedAt, now)
+	return err
+}
+
+func (r *Repository) MarkBackfillFailed(ctx context.Context, job app.BackfillJob, reason string, now time.Time) error {
+	_, err := r.pool.Exec(ctx, `
+UPDATE olap_backfill_jobs
+SET status = 'failed',
+    last_error = $2,
+    locked_by = '',
+    locked_at = NULL,
+    updated_at = $3
+WHERE id = $1`, job.ID, reason, now)
+	return err
+}
+
+func scanBackfillJob(row pgx.Row) (app.BackfillJob, error) {
+	var job app.BackfillJob
+	err := row.Scan(
+		&job.ID,
+		&job.CommandID,
+		&job.Stream,
+		&job.Status,
+		&job.RequestedFrom,
+		&job.RequestedTo,
+		&job.CheckpointCursor,
+		&job.BatchSize,
+		&job.TotalRows,
+		&job.ProcessedRows,
+		&job.LastError,
+		&job.CancelRequested,
+		&job.Reason,
+		&job.RequestedBy,
+		&job.CreatedAt,
+		&job.StartedAt,
+		&job.CompletedAt,
+		&job.UpdatedAt,
+	)
+	return job, err
+}
+
+func (r *Repository) loadRawBackfillBatch(ctx context.Context, job app.BackfillJob, limit int) ([]app.InboxEvent, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT id,receipt_id,tenant_id,restaurant_id,device_id,employee_id,
+       command_id,event_id,edge_event_id,event_type,aggregate_type,aggregate_id,
+       envelope_version,occurred_at,cloud_received_at,raw_payload,raw_payload_sha256_hex
+FROM inbox_events
+WHERE ($1 = '' OR id > $1)
+  AND ($2::timestamptz IS NULL OR occurred_at >= $2)
+  AND ($3::timestamptz IS NULL OR occurred_at <= $3)
+ORDER BY id
+LIMIT $4`, job.CheckpointCursor, job.RequestedFrom, job.RequestedTo, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	events := make([]app.InboxEvent, 0, limit)
+	for rows.Next() {
+		var event app.InboxEvent
+		var raw []byte
+		if err := rows.Scan(
+			&event.ID,
+			&event.ReceiptID,
+			&event.TenantID,
+			&event.RestaurantID,
+			&event.DeviceID,
+			&event.EmployeeID,
+			&event.CommandID,
+			&event.EventID,
+			&event.EdgeEventID,
+			&event.EventType,
+			&event.AggregateType,
+			&event.AggregateID,
+			&event.EnvelopeVersion,
+			&event.OccurredAt,
+			&event.CloudReceivedAt,
+			&raw,
+			&event.RawPayloadSHA256Hex,
+		); err != nil {
+			return nil, err
+		}
+		event.RawPayload = json.RawMessage(raw)
+		events = append(events, event)
+	}
+	return events, rows.Err()
+}
+
+func (r *Repository) loadStockMoveBackfillBatch(ctx context.Context, job app.BackfillJob, limit int) ([]app.StockMove, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT id,restaurant_id,COALESCE(warehouse_id,''),stock_document_id,source_event_id,source_event_type,
+       catalog_item_id,COALESCE(order_line_id,''),movement_type,quantity::text,unit_code,
+       unit_cost_minor,total_cost_minor,costing_status,occurred_at,business_date_local::text,created_at
+FROM stock_ledger
+WHERE ($1 = '' OR id > $1)
+  AND ($2::timestamptz IS NULL OR occurred_at >= $2)
+  AND ($3::timestamptz IS NULL OR occurred_at <= $3)
+ORDER BY id
+LIMIT $4`, job.CheckpointCursor, job.RequestedFrom, job.RequestedTo, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	moves := make([]app.StockMove, 0, limit)
+	for rows.Next() {
+		var move app.StockMove
+		if err := rows.Scan(
+			&move.LedgerEntryID,
+			&move.RestaurantID,
+			&move.WarehouseID,
+			&move.StockDocumentID,
+			&move.SourceEventID,
+			&move.SourceEventType,
+			&move.CatalogItemID,
+			&move.OrderLineID,
+			&move.MovementType,
+			&move.Quantity,
+			&move.UnitCode,
+			&move.UnitCostMinor,
+			&move.TotalCostMinor,
+			&move.CostingStatus,
+			&move.OccurredAt,
+			&move.BusinessDateLocal,
+			&move.LedgerCreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		moves = append(moves, move)
+	}
+	return moves, rows.Err()
+}
+
+func countBackfillRows(ctx context.Context, tx pgx.Tx, stream string, from, to *time.Time) (int64, error) {
+	var count int64
+	switch stream {
+	case "raw_business_events":
+		err := tx.QueryRow(ctx, `
+SELECT COUNT(*)
+FROM inbox_events
+WHERE ($1::timestamptz IS NULL OR occurred_at >= $1)
+  AND ($2::timestamptz IS NULL OR occurred_at <= $2)`, from, to).Scan(&count)
+		return count, err
+	case "stock_moves":
+		err := tx.QueryRow(ctx, `
+SELECT COUNT(*)
+FROM stock_ledger
+WHERE ($1::timestamptz IS NULL OR occurred_at >= $1)
+  AND ($2::timestamptz IS NULL OR occurred_at <= $2)`, from, to).Scan(&count)
+		return count, err
+	default:
+		return 0, app.ErrOLAPUnavailable
+	}
 }
 
 type storedExportRetryResult struct {

@@ -85,6 +85,7 @@ func run() error {
 	var olapService *olapapp.Service
 	var olapForwarder *olapapp.Forwarder
 	var olapStockMoveForwarder *olapapp.StockMoveForwarder
+	var olapBackfillWorker *olapapp.BackfillWorker
 	if clickHouseURL != "" {
 		olapPostgresRepo := olappg.NewRepository(pool)
 		clickHouseRepo := olapch.NewRepository(olapch.Config{
@@ -96,7 +97,7 @@ func run() error {
 		if err := clickHouseRepo.Migrate(ctx); err != nil {
 			return err
 		}
-		olapService = olapapp.NewServiceWithControls(clickHouseRepo, olapPostgresRepo, olapPostgresRepo)
+		olapService = olapapp.NewServiceWithOperatorControls(clickHouseRepo, olapPostgresRepo, olapPostgresRepo, olapPostgresRepo)
 		olapForwarder = olapapp.NewForwarder(olapPostgresRepo, clickHouseRepo, clock.SystemClock{}, olapapp.ForwarderConfig{
 			WorkerID:      cfg.Get("CLOUD_OLAP_FORWARDER_ID", "cloud-olap-forwarder"),
 			BatchSize:     cfg.Int("CLOUD_OLAP_FORWARDER_BATCH_SIZE", 1000),
@@ -108,6 +109,12 @@ func run() error {
 			BatchSize:     cfg.Int("CLOUD_OLAP_STOCK_MOVES_FORWARDER_BATCH_SIZE", 1000),
 			RetryDelay:    time.Duration(cfg.Int("CLOUD_OLAP_STOCK_MOVES_FORWARDER_RETRY_SECONDS", 60)) * time.Second,
 			ProcessingTTL: time.Duration(cfg.Int("CLOUD_OLAP_STOCK_MOVES_FORWARDER_PROCESSING_TTL_SECONDS", 300)) * time.Second,
+		})
+		olapBackfillWorker = olapapp.NewBackfillWorker(olapPostgresRepo, clickHouseRepo, clock.SystemClock{}, olapapp.ForwarderConfig{
+			WorkerID:      cfg.Get("CLOUD_OLAP_BACKFILL_WORKER_ID", "cloud-olap-backfill-worker"),
+			BatchSize:     cfg.Int("CLOUD_OLAP_BACKFILL_BATCH_SIZE", 1000),
+			RetryDelay:    time.Duration(cfg.Int("CLOUD_OLAP_BACKFILL_RETRY_SECONDS", 60)) * time.Second,
+			ProcessingTTL: time.Duration(cfg.Int("CLOUD_OLAP_BACKFILL_PROCESSING_TTL_SECONDS", 300)) * time.Second,
 		})
 	}
 
@@ -146,6 +153,9 @@ func run() error {
 	}
 	if olapStockMoveForwarder != nil {
 		go runOLAPStockMoveForwarder(workerCtx, olapStockMoveForwarder, time.Duration(cfg.Int("CLOUD_OLAP_STOCK_MOVES_FORWARDER_INTERVAL_SECONDS", 5))*time.Second)
+	}
+	if olapBackfillWorker != nil {
+		go runOLAPBackfillWorker(workerCtx, olapBackfillWorker, time.Duration(cfg.Int("CLOUD_OLAP_BACKFILL_INTERVAL_SECONDS", 5))*time.Second)
 	}
 
 	stop := make(chan os.Signal, 1)
@@ -199,6 +209,24 @@ func runOLAPStockMoveForwarder(ctx context.Context, worker *olapapp.StockMoveFor
 	for {
 		if err := worker.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("cloud olap stock moves forwarder failed", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func runOLAPBackfillWorker(ctx context.Context, worker *olapapp.BackfillWorker, interval time.Duration) {
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if err := worker.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("cloud olap backfill worker failed", "error", err)
 		}
 		select {
 		case <-ctx.Done():

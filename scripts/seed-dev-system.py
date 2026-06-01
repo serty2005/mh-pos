@@ -914,6 +914,13 @@ def run_minimal_flow_smoke(
         wait_seconds=wait_seconds,
         interval_seconds=interval_seconds,
     )
+    kitchen_timing_summary = wait_for_kitchen_timing_summary(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        group_by="business_date",
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
 
     return {
         "order_id": order["id"],
@@ -932,6 +939,7 @@ def run_minimal_flow_smoke(
         "olap_item_served_stock_move_count": len(served_olap_stock_moves),
         "olap_stock_move_summary_count": len(stock_move_summary),
         "olap_sales_kitchen_summary_group_keys": sorted({item.get("group_key", "") for item in sales_kitchen_summary if item.get("group_key", "")}),
+        "olap_kitchen_timing_summary_count": len(kitchen_timing_summary),
         "blocked_sale_error_code": blocked_sale.get("error_code", ""),
     }
 
@@ -1568,6 +1576,20 @@ def wait_for_sales_kitchen_summary(cloud_client, restaurant_id, group_by, expect
         time.sleep(max(0, interval_seconds))
 
 
+def wait_for_kitchen_timing_summary(cloud_client, restaurant_id, group_by, wait_seconds, interval_seconds):
+    deadline = time.monotonic() + max(1, wait_seconds)
+    while True:
+        items = list_kitchen_timing_summary(cloud_client, restaurant_id=restaurant_id, group_by=group_by)
+        raw = json.dumps(items, ensure_ascii=False)
+        if "payload" in raw or "raw_payload" in raw or "margin" in raw.lower() or "cogs" in raw.lower():
+            raise RuntimeError("OLAP kitchen timing response exposed raw payload or costing BI fields")
+        if any(item.get("ticket_count", 0) > 0 for item in items):
+            return items
+        if time.monotonic() >= deadline:
+            raise RuntimeError("ClickHouse kitchen-timing-summary did not expose KDS timing rows before timeout")
+        time.sleep(max(0, interval_seconds))
+
+
 def wait_for_cloud_suggestion(cloud_client, kind, restaurant_id, suggestion_id, wait_seconds, interval_seconds):
     path = {
         "catalog": f"{API_PREFIX}/master-data/catalog-suggestions",
@@ -1694,6 +1716,20 @@ def list_sales_kitchen_summary(cloud_client, restaurant_id, group_by):
         cloud_client,
         "GET",
         f"{API_PREFIX}/olap/sales-kitchen-summary",
+        expected_status=(200,),
+        query={
+            "restaurant_id": restaurant_id,
+            "group_by": group_by,
+            "limit": 50,
+        },
+    )
+
+
+def list_kitchen_timing_summary(cloud_client, restaurant_id, group_by):
+    return request(
+        cloud_client,
+        "GET",
+        f"{API_PREFIX}/olap/kitchen-timing-summary",
         expected_status=(200,),
         query={
             "restaurant_id": restaurant_id,

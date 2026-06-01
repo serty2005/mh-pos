@@ -117,6 +117,8 @@ Edge Outbox
 - ClickHouse получает immutable `raw_business_events` из Cloud PostgreSQL `inbox_events`.
 - ClickHouse получает `olap_stock_moves` projection из Cloud `stock_ledger` через async forwarder.
 - Cloud OLAP API читает bounded `raw_business_events` metadata, bounded `olap_stock_moves`, read-only export status, первый bounded `stock-move-summary` aggregate и первый bounded `sales-kitchen-summary` aggregate из ClickHouse; эти endpoints не участвуют в transactional command validation.
+- Cloud OLAP API читает bounded `kitchen-timing-summary` по подтвержденным KDS event streams; endpoint не раскрывает raw payload и не участвует в transactional command validation.
+- Async OLAP backfill jobs создаются/отменяются через PostgreSQL state и audit trail, а фактический переэкспорт выполняет background worker без synchronous ClickHouse write в HTTP request path.
 - Минимальный support-only `POST /api/v1/olap/export-retry` снимает retry/backoff state в PostgreSQL без raw payload и без synchronous ClickHouse write в request path.
 - `stock_balances` остаются аналитической проекцией и не блокируют продажи;
 

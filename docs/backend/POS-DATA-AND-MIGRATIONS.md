@@ -104,6 +104,9 @@ Managed SQL files, реализовано сейчас:
 - Async Batch Forwarder читает `inbox_events`, собирает bounded batch от 1 до 100 000 rows и экспортирует их в ClickHouse.
 - После successful export worker помечает события как `processed_for_olap = true` и обновляет `olap_export_checkpoints`.
 - Bounded `GET /api/v1/olap/sales-kitchen-summary` читает существующие ClickHouse `raw_business_events` и `olap_stock_moves` query-level aggregate без новой таблицы/materialized view, без raw payload и без synchronous ClickHouse write в request path.
+- `olap_backfill_jobs` хранит async operator jobs для переэкспорта `raw_business_events` и `stock_moves`; job содержит UUIDv7 `command_id`, stream, status, requested range, checkpoint cursor, total/processed rows, error metadata и timestamps.
+- `olap_operator_audit_events` хранит audit trail mutating OLAP controls (`create_backfill_job`, `cancel_backfill_job`) без raw payload.
+- Bounded `GET /api/v1/olap/kitchen-timing-summary` читает подтвержденные KDS event streams из ClickHouse и возвращает lifecycle counts/average timing без raw payload.
 
 `001_init.sql` provides foundation for:
 
@@ -137,6 +140,7 @@ Managed SQL files, реализовано сейчас:
 - `modifier_options` получает optional `linked_catalog_item_id`; POS Edge не применяет это поле в order/pricing runtime.
 - ClickHouse `raw_business_events` наполняется только Async Batch Forwarder из PostgreSQL `inbox_events` и является бессрочным архивом business events.
 - Реализовано сейчас: ClickHouse `olap_stock_moves` наполняется async projection из PostgreSQL `stock_ledger` и не является transactional source of truth.
+- Реализовано сейчас: Async OLAP Backfill Worker выполняет `olap_backfill_jobs` вне HTTP request path и переэкспортирует source rows в ClickHouse через те же safe exporters; повторный backfill не должен дублировать business rows в bounded reads благодаря stable row ids и `ReplacingMergeTree`.
 
 ## ClickHouse Immutable Event Store
 

@@ -14,10 +14,12 @@ import {
   hallSchema,
   inventoryStockBalanceSchema,
   inventoryStockLedgerEntrySchema,
+  kitchenTimingSummaryItemSchema,
   menuItemSchema,
   modifierBindingSchema,
   modifierGroupSchema,
   modifierOptionSchema,
+  olapBackfillJobSchema,
   olapExportStatusSchema,
   olapStockMoveSchema,
   olapStockMoveSummarySchema,
@@ -52,6 +54,9 @@ import {
   type Hall,
   type InventoryStockBalance,
   type InventoryStockLedgerEntry,
+  type KitchenTimingSummaryGroupBy,
+  type KitchenTimingSummaryItem,
+  type OlapBackfillJob,
   type MenuItem,
   type ModifierBinding,
   type ModifierGroup,
@@ -88,6 +93,12 @@ export type OlapStockMoveFilters = BoundedListFilters & {
 };
 export type OlapStockMoveSummaryFilters = OlapStockMoveFilters & {
   groupBy?: 'business_date' | 'catalog_item' | 'warehouse';
+};
+export type KitchenTimingSummaryFilters = BoundedListFilters & {
+  businessDateFrom?: string;
+  businessDateTo?: string;
+  stationId?: string;
+  groupBy?: KitchenTimingSummaryGroupBy;
 };
 
 export type ApiErrorCategory = 'validation' | 'not_found' | 'conflict' | 'server' | 'network' | 'timeout' | 'unexpected';
@@ -593,6 +604,30 @@ export function listOlapStockMoveSummary(
   const params = olapStockMoveParams(restaurantId, filters);
   if (filters.groupBy) params.set('group_by', filters.groupBy);
   return request(`/olap/stock-move-summary?${params.toString()}`, z.array(olapStockMoveSummarySchema));
+}
+
+export function listOlapBackfillJobs(filters: { stream?: OlapStream; status?: string; limit?: number; offset?: number } = {}): Promise<OlapBackfillJob[]> {
+  const params = new URLSearchParams();
+  if (filters.stream) params.set('stream', filters.stream);
+  if (filters.status) params.set('status', filters.status);
+  params.set('limit', String(filters.limit ?? 50));
+  params.set('offset', String(filters.offset ?? 0));
+  return request(`/olap/backfill-jobs?${params.toString()}`, z.array(olapBackfillJobSchema));
+}
+
+export function listKitchenTimingSummary(
+  restaurantId: string,
+  filters: KitchenTimingSummaryFilters = {},
+): Promise<KitchenTimingSummaryItem[]> {
+  const params = new URLSearchParams();
+  params.set('restaurant_id', restaurantId);
+  if (filters.businessDateFrom) params.set('business_date_from', filters.businessDateFrom);
+  if (filters.businessDateTo) params.set('business_date_to', filters.businessDateTo);
+  if (filters.stationId) params.set('station_id', filters.stationId);
+  if (filters.groupBy) params.set('group_by', filters.groupBy);
+  params.set('limit', String(filters.limit ?? 50));
+  params.set('offset', String(filters.offset ?? 0));
+  return request(`/olap/kitchen-timing-summary?${params.toString()}`, z.array(kitchenTimingSummaryItemSchema));
 }
 
 function olapStockMoveParams(restaurantId: string, filters: OlapStockMoveFilters) {

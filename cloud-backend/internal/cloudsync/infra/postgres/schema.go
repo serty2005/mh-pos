@@ -77,6 +77,27 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Indexes: []string{"olap_export_retry_commands_stream_created"},
 		},
 		{
+			Table:         "olap_backfill_jobs",
+			RequiredBy:    "async OLAP backfill jobs outside HTTP request path",
+			MigrationFile: "001_init.sql",
+			Columns: []string{
+				"id", "command_id", "stream", "status", "requested_from", "requested_to",
+				"checkpoint_cursor", "batch_size", "total_rows", "processed_rows", "last_error",
+				"cancel_requested", "reason", "requested_by", "locked_by", "locked_at",
+				"created_at", "started_at", "completed_at", "updated_at",
+			},
+			Indexes: []string{"olap_backfill_jobs_stream_status_created"},
+		},
+		{
+			Table:         "olap_operator_audit_events",
+			RequiredBy:    "operator audit trail for mutating OLAP controls",
+			MigrationFile: "001_init.sql",
+			Columns: []string{
+				"id", "command_id", "action", "stream", "job_id", "requested_by", "reason", "created_at",
+			},
+			Indexes: []string{"olap_operator_audit_events_job_created"},
+		},
+		{
 			Table:         "cloud_sync_problem_events",
 			RequiredBy:    "cloudsync postgres repository problem item quarantine",
 			MigrationFile: "001_init.sql",

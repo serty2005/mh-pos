@@ -52,12 +52,12 @@
 - `stop_list_conflict_policy` для `StopListUpdated`: `cloud_wins`, `edge_overlay_until_next_publication`, `edge_overlay_requires_manager_review`; default `edge_overlay_requires_manager_review`;
 - safe readiness API/UI signal для stop-list publication, последнего известного Edge ACK metadata и sync problem counters без raw payload;
 - поддержка `CheckClosed`/`ItemServed`/`StockWriteOffCaptured` как pilot inventory facts через текущий receiver и Inventory Worker;
-- ClickHouse first slices: managed `raw_business_events`, async forwarder из PostgreSQL `inbox_events`, `processed_for_olap`, retry state, export checkpoint и bounded read-only metadata API; managed `olap_stock_moves`, async export из PostgreSQL `stock_ledger`, bounded stock moves API, read-only export status, минимальный support-only export retry control, первый bounded stock movement summary и первый bounded sales/kitchen summary.
+- ClickHouse first slices: managed `raw_business_events`, async forwarder из PostgreSQL `inbox_events`, `processed_for_olap`, retry state, export checkpoint и bounded read-only metadata API; managed `olap_stock_moves`, async export из PostgreSQL `stock_ledger`, bounded stock moves API, read-only export status, минимальный support-only export retry control, async backfill job foundation, первый bounded stock movement summary, первый bounded sales/kitchen summary и bounded kitchen timing summary.
 
 Запланировано до полного пилота:
 
 - full inventory engine для receipts, counts, production, consumption, refund/cancellation dispositions, balances, costing и retro recalculation;
-- production-grade backfill jobs/operator UI, richer sales aggregates, COGS/margin и production-grade kitchen timing API beyond first bounded sales/kitchen summary.
+- production auth/RBAC perimeter для mutating OLAP controls, richer sales aggregates и COGS/margin после появления достоверной cost basis.
 
 ## Назначение
 
@@ -152,11 +152,13 @@ Inventory read model:
 - `POST /api/v1/olap/export-retry` — support-only control для `stream=raw_business_events|stock_moves` и `mode=retry_failed|resume_from_checkpoint`; request требует UUIDv7 `command_id` и operator reason, response не содержит raw payload/reason, mutation меняет только PostgreSQL retry/backoff control state и command log. Cloud UI текущего scope этот endpoint не вызывает.
 - `GET /api/v1/olap/stock-move-summary?restaurant_id=&business_date_from=&business_date_to=&catalog_item_id=&warehouse_id=&source_event_type=&group_by=business_date|catalog_item|warehouse&limit=&offset=` — bounded ClickHouse aggregate по `olap_stock_moves`; не является COGS/margin API.
 - `GET /api/v1/olap/sales-kitchen-summary?restaurant_id=&business_date_from=&business_date_to=&group_by=business_date|event_type|source_event_type|catalog_item&limit=&offset=` — bounded read-only aggregate по `raw_business_events` и `olap_stock_moves`; response не содержит raw payload/hash, не является BI dashboard, COGS/margin или cashier command API.
+- `GET /api/v1/olap/kitchen-timing-summary?restaurant_id=&business_date_from=&business_date_to=&station_id=&group_by=business_date|station&limit=&offset=` — bounded KDS timing aggregate поверх `KitchenTicketStatusChanged`/`ItemServed`; response содержит lifecycle counts и средние длительности без raw payload.
+- `GET /api/v1/olap/backfill-jobs?stream=&status=&limit=&offset=`, `POST /api/v1/olap/backfill-jobs`, `GET /api/v1/olap/backfill-jobs/{id}` и `POST /api/v1/olap/backfill-jobs/{id}/cancel` — support/operator-only async backfill foundation с UUIDv7 `command_id`, checkpoint/progress/status/error metadata и audit trail; HTTP handlers не пишут business rows в ClickHouse.
 
 Использование в Cloud UI:
 
-- реализовано сейчас: Cloud UI читает `stock-balances`, `olap/export-status`, `olap/stock-moves` и `olap/stock-move-summary` как bounded read-only operator surface с safe фильтрами и без raw payload display.
-- вне текущего объема: Cloud UI не вызывает support-only `POST /api/v1/olap/export-retry`, не запускает production-grade backfill jobs, не показывает COGS/margin и не превращает first bounded slices в BI dashboard.
+- реализовано сейчас: Cloud UI читает `stock-balances`, `olap/export-status`, `olap/stock-moves`, `olap/stock-move-summary`, `olap/backfill-jobs` и `olap/kitchen-timing-summary` как bounded operator surface с safe фильтрами и без raw payload display.
+- вне текущего объема: Cloud UI не вызывает support-only mutating `POST /api/v1/olap/export-retry` и `POST /api/v1/olap/backfill-jobs`, не показывает COGS/margin и не превращает bounded slices в BI dashboard.
 
 Generic Cloud -> Edge package storage:
 
@@ -560,11 +562,14 @@ Schema verification:
 - `GET /api/v1/inventory/stock-ledger` возвращает bounded read-only rows из Cloud-owned `stock_ledger` для smoke/операционной проверки `CheckClosed`/`ItemServed` processing; endpoint не раскрывает raw sync payload и не является OLAP API.
 - `GET /api/v1/inventory/stock-balances` реализовано сейчас как bounded read-only balance view поверх Cloud-owned PostgreSQL `stock_ledger`: отрицательные остатки допустимы, sale blocking не использует stock balance, aggregate costing status ограничен `final`, `estimated`, `needs_recalculation`, `mixed`, `unknown`.
 - OLAP Stock Moves Forwarder асинхронно экспортирует новые `stock_ledger` rows в ClickHouse `olap_stock_moves` по checkpoint `olap_export_checkpoints.id = 'olap_stock_moves'`; retry state хранится в той же checkpoint table через `last_error`, `consecutive_failures` и `next_retry_at`.
+- Async OLAP Backfill Worker выполняет jobs из `olap_backfill_jobs` вне HTTP request path: для `raw_business_events` переэкспортирует выбранный range из PostgreSQL `inbox_events`, для `stock_moves` переэкспортирует range из `stock_ledger`; ClickHouse `ReplacingMergeTree` и stable row ids защищают read model от видимых дублей при повторном backfill.
 - `GET /api/v1/olap/stock-moves` возвращает bounded read-only rows из ClickHouse `olap_stock_moves` с фильтрами `restaurant_id`, business date range, `catalog_item_id`, `warehouse_id`, `source_event_type`, `limit`, `offset`; response не содержит raw payload.
 - `GET /api/v1/olap/export-status` реализовано сейчас как read-only observability над `olap_export_checkpoints`, `inbox_events` и `stock_ledger`: response содержит stream, checkpoint, last exported id/time, counters, last error metadata, consecutive failures, next retry и retry_blocked без raw payload.
 - `POST /api/v1/olap/export-retry` реализовано сейчас как минимальный support-only mutating control: идемпотентность хранится в `olap_export_retry_commands`, `retry_failed` переводит failed `inbox_events` обратно в pending для `raw_business_events`, `resume_from_checkpoint` дополнительно снимает processing locks, а для `stock_moves` снимается checkpoint backoff; endpoint не сбрасывает checkpoint вручную, не пишет ClickHouse business rows и не подключен к Cloud UI.
 - `GET /api/v1/olap/stock-move-summary` реализовано сейчас как первый bounded агрегированный ClickHouse read: фильтры совпадают с stock moves, `group_by` ограничен `business_date`, `catalog_item`, `warehouse`, ordering deterministic, response содержит quantities/cost totals без COGS/margin wording.
 - `GET /api/v1/olap/sales-kitchen-summary` реализовано сейчас как первый bounded sales/kitchen aggregate: фильтры `restaurant_id`, `business_date_from`, `business_date_to`, `limit`, `offset`, `group_by=business_date|event_type|source_event_type|catalog_item`; endpoint читает существующие `raw_business_events` и `olap_stock_moves`, не выбирает raw payload, не добавляет новые ClickHouse tables/materialized views и не пишет ClickHouse из request path.
+- `GET /api/v1/olap/kitchen-timing-summary` реализовано сейчас как bounded kitchen timing API: группировки `business_date|station`, фильтр `station_id`, lifecycle counts и средние секунды `accepted -> ready`, `in_progress -> ready`, `ready -> served`; endpoint читает только confirmed event streams без raw payload.
+- `GET/POST /api/v1/olap/backfill-jobs` и `POST /api/v1/olap/backfill-jobs/{id}/cancel` реализованы сейчас как foundation для operator workflow: jobs имеют checkpoint/progress/status/error metadata, idempotency по UUIDv7 `command_id`, audit trail `olap_operator_audit_events`, bounded list/get и background execution без synchronous ClickHouse write в HTTP path.
 - `CatalogItemChangeSuggested` создает Cloud review item; upsert в catalog выполняется только после manager approve текущими `catalog-suggestions` routes.
 - `RecipeChangeSuggested` создает Cloud review item с diff по ingredients, quantities, units, loss percent и prep time; published recipe не меняется до approve/apply текущими `recipe-suggestions` routes. Реализовано сейчас: Cloud-authored recipe version draft при submit создает pending `RecipeChangeSuggested` с `action = publish_recipe_version`; approve активирует draft version, архивирует предыдущую active version для owner item и публикует `recipes` package.
 - `StopListUpdated` обрабатывается асинхронно через `inventory_event_queue`: worker пишет `cloud_projection_stop_list_updates` без raw payload. `edge_overlay_until_next_publication` обновляет bounded `stop_lists` overlay, `cloud_wins` не перетирает Cloud-owned row, `edge_overlay_requires_manager_review` фиксирует безопасную projection для bounded manager review.
@@ -577,7 +582,7 @@ Schema verification:
 - ClickHouse `raw_business_events` реализовано сейчас как бессрочный архив business events.
 - Async Batch Forwarder переносит accepted events из PostgreSQL `inbox_events` в ClickHouse и после successful export выставляет `processed_for_olap = true`.
 - ClickHouse `olap_stock_moves` реализовано сейчас как первый bounded read model для складских движений; он не является source of truth и наполняется только async export из PostgreSQL `stock_ledger`.
-- `GET /api/v1/olap/raw-business-events`, `GET /api/v1/olap/stock-moves`, `GET /api/v1/olap/export-status`, `GET /api/v1/olap/stock-move-summary` и `GET /api/v1/olap/sales-kitchen-summary` реализованы сейчас как bounded/read-only endpoints без raw payload.
+- `GET /api/v1/olap/raw-business-events`, `GET /api/v1/olap/stock-moves`, `GET /api/v1/olap/export-status`, `GET /api/v1/olap/stock-move-summary`, `GET /api/v1/olap/sales-kitchen-summary`, `GET /api/v1/olap/kitchen-timing-summary` и bounded backfill job endpoints реализованы сейчас без raw payload.
 
 Запланировано до полного пилота:
 

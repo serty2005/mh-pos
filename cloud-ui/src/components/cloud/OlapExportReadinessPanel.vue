@@ -13,7 +13,7 @@
 
       <div class="cloud-signal-row">
         <span>{{ t('cloud.readiness.olap.signals.readOnly') }}</span>
-        <span>{{ t('cloud.readiness.olap.signals.noRetry') }}</span>
+        <span>{{ t('cloud.readiness.olap.signals.noDirectBackfill') }}</span>
         <span>{{ t('cloud.readiness.olap.signals.noRawPayload') }}</span>
       </div>
 
@@ -72,6 +72,90 @@
         />
         <q-btn color="primary" unelevated icon="search" :label="t('cloud.readiness.olap.applyFilters')" :loading="ctx.isLoading('olap-operator')" @click="ctx.loadOlapOperatorSurface()" />
       </div>
+
+      <div class="section-head compact">
+        <div>
+          <p class="eyebrow">{{ t('cloud.readiness.olap.backfillEyebrow') }}</p>
+          <h3>{{ t('cloud.readiness.olap.backfillTitle') }}</h3>
+        </div>
+      </div>
+      <div v-if="ctx.olapBackfillJobs.value.length === 0" class="empty-state wide">
+        {{ t('cloud.readiness.olap.emptyBackfill') }}
+      </div>
+      <template v-else>
+        <div class="cloud-table-wrap">
+          <table class="cloud-table">
+            <thead>
+              <tr>
+                <th>{{ t('cloud.fields.status') }}</th>
+                <th>{{ t('cloud.fields.source') }}</th>
+                <th>{{ t('cloud.readiness.olap.columns.progress') }}</th>
+                <th>{{ t('cloud.readiness.olap.columns.checkpoint') }}</th>
+                <th>{{ t('cloud.fields.updated_at') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="job in ctx.olapBackfillJobs.value" :key="job.id">
+                <td><span class="status-pill" :data-status="job.status">{{ job.status }}</span></td>
+                <td>{{ streamLabel(job.stream) }}</td>
+                <td>{{ job.processed_rows }} / {{ job.total_rows }}</td>
+                <td>{{ ctx.safeOperationalValue(job.checkpoint_cursor || '-') }}</td>
+                <td>{{ ctx.formatDate(job.updated_at) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+
+      <div class="section-head compact">
+        <div>
+          <p class="eyebrow">{{ t('cloud.readiness.olap.kitchenTimingEyebrow') }}</p>
+          <h3>{{ t('cloud.readiness.olap.kitchenTimingTitle') }}</h3>
+        </div>
+      </div>
+      <div class="olap-filter-grid compact-grid">
+        <q-input v-model="ctx.kitchenTimingFilters.businessDateFrom" dense outlined mask="####-##-##" :label="t('cloud.readiness.olap.filters.businessDateFrom')" />
+        <q-input v-model="ctx.kitchenTimingFilters.businessDateTo" dense outlined mask="####-##-##" :label="t('cloud.readiness.olap.filters.businessDateTo')" />
+        <q-input v-model="ctx.kitchenTimingFilters.stationId" dense outlined :label="t('cloud.readiness.olap.filters.station')" />
+        <q-select
+          v-model="ctx.kitchenTimingFilters.groupBy"
+          dense
+          outlined
+          emit-value
+          map-options
+          :options="kitchenTimingGroupByOptions"
+          :label="t('cloud.readiness.olap.filters.groupBy')"
+        />
+      </div>
+      <div v-if="ctx.kitchenTimingSummary.value.length === 0" class="empty-state wide">
+        {{ t('cloud.readiness.olap.emptyKitchenTiming') }}
+      </div>
+      <template v-else>
+        <div class="cloud-table-wrap">
+          <table class="cloud-table">
+            <thead>
+              <tr>
+                <th>{{ t('cloud.readiness.olap.columns.group') }}</th>
+                <th>{{ t('cloud.readiness.olap.columns.tickets') }}</th>
+                <th>{{ t('cloud.readiness.olap.columns.lifecycle') }}</th>
+                <th>{{ t('cloud.readiness.olap.columns.avgStartReady') }}</th>
+                <th>{{ t('cloud.readiness.olap.columns.avgReadyServed') }}</th>
+                <th>{{ t('cloud.readiness.olap.columns.last') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in ctx.kitchenTimingSummary.value" :key="`${item.group_by}:${item.group_key}`">
+                <td>{{ kitchenTimingGroupLabel(item) }}</td>
+                <td>{{ item.ticket_count }}</td>
+                <td>{{ item.accepted_count }} / {{ item.started_count }} / {{ item.ready_count }} / {{ item.served_count }}</td>
+                <td>{{ durationLabel(item.avg_start_to_ready_seconds) }}</td>
+                <td>{{ durationLabel(item.avg_ready_to_served_seconds) }}</td>
+                <td>{{ ctx.formatDate(item.last_status_changed_at || '') }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
 
       <div class="section-head compact">
         <div>
@@ -216,10 +300,15 @@ const groupByOptions = computed(() => [
   { label: t('cloud.readiness.olap.groupBy.warehouse'), value: 'warehouse' },
 ]);
 
+const kitchenTimingGroupByOptions = computed(() => [
+  { label: t('cloud.readiness.olap.groupBy.business_date'), value: 'business_date' },
+  { label: t('cloud.readiness.olap.groupBy.station'), value: 'station' },
+]);
+
 const gaps = [
-  'cloud.readiness.olap.gaps.retryControl',
-  'cloud.readiness.olap.gaps.backfill',
-  'cloud.readiness.olap.gaps.analytics',
+  'cloud.readiness.olap.gaps.cogs',
+  'cloud.readiness.olap.gaps.auth',
+  'cloud.readiness.olap.gaps.bi',
 ];
 
 function streamLabel(stream: string) {
@@ -253,5 +342,18 @@ function summaryGroupLabel(item: OlapStockMoveSummary) {
   if (item.group_by === 'catalog_item') return catalogItemLabel(item.catalog_item_id || item.group_key);
   if (item.group_by === 'warehouse') return props.ctx.safeOperationalValue(item.warehouse_id || item.group_key);
   return item.business_date_local || item.group_key;
+}
+
+function kitchenTimingGroupLabel(item: Record<string, string>) {
+  if (item.group_by === 'station') return props.ctx.safeOperationalValue(item.station_id || item.group_key);
+  return item.business_date_local || item.group_key;
+}
+
+function durationLabel(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '-';
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (minutes <= 0) return `${rest}s`;
+  return `${minutes}m ${rest}s`;
 }
 </script>

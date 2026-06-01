@@ -235,6 +235,8 @@ Cloud Inventory Worker
 - `POST /api/v1/olap/export-retry` реализован как support-only mutation для снятия retry/backoff state: `command_id` UUIDv7, `stream=raw_business_events|stock_moves`, `mode=retry_failed|resume_from_checkpoint`, `reason`; response не содержит raw payload или reason и не запускает synchronous ClickHouse write.
 - `GET /api/v1/olap/stock-move-summary` читает первый bounded aggregate из ClickHouse `olap_stock_moves` с группировкой `business_date|catalog_item|warehouse`; endpoint не раскрывает raw sync payload и не является COGS/margin расчетом.
 - `GET /api/v1/olap/sales-kitchen-summary` читает первый bounded sales/kitchen aggregate из ClickHouse `raw_business_events` и `olap_stock_moves` с группировкой `business_date|event_type|source_event_type|catalog_item`; endpoint не раскрывает raw sync payload/hash, не является BI dashboard, COGS/margin расчетом или cashier command API.
+- `GET /api/v1/olap/kitchen-timing-summary` читает bounded KDS timing aggregate по `KitchenTicketStatusChanged`/`ItemServed` с группировкой `business_date|station`; endpoint не раскрывает raw payload и не меняет transactional state.
+- `GET/POST /api/v1/olap/backfill-jobs` и `POST /api/v1/olap/backfill-jobs/{id}/cancel` управляют async backfill jobs через PostgreSQL state/audit; фактический переэкспорт в ClickHouse выполняет background worker, не sync receiver request path.
 - `GET /api/v1/sync/readiness/stop-list?restaurant_id=&node_device_id=` возвращает stop-list publication/package readiness, последний known accepted `StopListUpdated` ACK metadata и sync problem counters без raw payload.
 - Synchronous dual-write в PostgreSQL и ClickHouse запрещен.
 

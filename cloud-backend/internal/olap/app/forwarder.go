@@ -58,6 +58,18 @@ type StockMoveExporter interface {
 	InsertStockMoves(context.Context, []StockMove, time.Time) error
 }
 
+type BackfillBatch struct {
+	RawEvents  []InboxEvent
+	StockMoves []StockMove
+}
+
+type BackfillQueueRepository interface {
+	ClaimBackfillJob(context.Context, string, time.Time) (BackfillJob, bool, error)
+	LoadBackfillBatch(context.Context, BackfillJob, int) (BackfillBatch, error)
+	MarkBackfillProgress(context.Context, BackfillJob, BackfillBatch, time.Time) error
+	MarkBackfillFailed(context.Context, BackfillJob, string, time.Time) error
+}
+
 type ForwarderConfig struct {
 	WorkerID      string
 	BatchSize     int
@@ -81,6 +93,17 @@ type StockMoveForwarder struct {
 	logger   *slog.Logger
 }
 
+type BackfillWorker struct {
+	queue    BackfillQueueRepository
+	exporter interface {
+		Exporter
+		StockMoveExporter
+	}
+	clock  clock.Clock
+	config ForwarderConfig
+	logger *slog.Logger
+}
+
 func NewForwarder(queue QueueRepository, exporter Exporter, clock clock.Clock, config ForwarderConfig) *Forwarder {
 	if strings.TrimSpace(config.WorkerID) == "" {
 		config.WorkerID = fmt.Sprintf("olap-forwarder-%d", time.Now().UnixNano())
@@ -101,6 +124,23 @@ func NewStockMoveForwarder(queue StockMoveQueueRepository, exporter StockMoveExp
 	}
 	config = normalizeForwarderConfig(config)
 	return &StockMoveForwarder{
+		queue:    queue,
+		exporter: exporter,
+		clock:    clock,
+		config:   config,
+		logger:   slog.Default(),
+	}
+}
+
+func NewBackfillWorker(queue BackfillQueueRepository, exporter interface {
+	Exporter
+	StockMoveExporter
+}, clock clock.Clock, config ForwarderConfig) *BackfillWorker {
+	if strings.TrimSpace(config.WorkerID) == "" {
+		config.WorkerID = fmt.Sprintf("olap-backfill-worker-%d", time.Now().UnixNano())
+	}
+	config = normalizeForwarderConfig(config)
+	return &BackfillWorker{
 		queue:    queue,
 		exporter: exporter,
 		clock:    clock,
@@ -173,6 +213,59 @@ func (f *StockMoveForwarder) RunOnce(ctx context.Context) error {
 		return nil
 	}
 	return f.queue.MarkStockMovesProcessed(ctx, moves, now)
+}
+
+func (w *BackfillWorker) RunOnce(ctx context.Context) error {
+	if w == nil || w.queue == nil || w.exporter == nil {
+		return ErrOLAPUnavailable
+	}
+	now := w.clock.Now().UTC()
+	job, ok, err := w.queue.ClaimBackfillJob(ctx, w.config.WorkerID, now)
+	if err != nil || !ok {
+		return err
+	}
+	batchSize := job.BatchSize
+	if batchSize <= 0 || batchSize > w.config.BatchSize {
+		batchSize = w.config.BatchSize
+	}
+	batch, err := w.queue.LoadBackfillBatch(ctx, job, batchSize)
+	if err != nil {
+		return w.queue.MarkBackfillFailed(ctx, job, safeError(err), now)
+	}
+	if len(batch.RawEvents) == 0 && len(batch.StockMoves) == 0 {
+		return w.queue.MarkBackfillProgress(ctx, job, batch, now)
+	}
+	if len(batch.RawEvents) > 0 {
+		if err := w.exporter.InsertRawBusinessEvents(ctx, batch.RawEvents, now); err != nil {
+			if markErr := w.queue.MarkBackfillFailed(ctx, job, safeError(err), now); markErr != nil {
+				return markErr
+			}
+			w.logBackfillFailure(ctx, job, err)
+			return nil
+		}
+	}
+	if len(batch.StockMoves) > 0 {
+		if err := w.exporter.InsertStockMoves(ctx, batch.StockMoves, now); err != nil {
+			if markErr := w.queue.MarkBackfillFailed(ctx, job, safeError(err), now); markErr != nil {
+				return markErr
+			}
+			w.logBackfillFailure(ctx, job, err)
+			return nil
+		}
+	}
+	return w.queue.MarkBackfillProgress(ctx, job, batch, now)
+}
+
+func (w *BackfillWorker) logBackfillFailure(ctx context.Context, job BackfillJob, err error) {
+	w.logger.WarnContext(ctx, "clickhouse backfill failed",
+		"operation", "olap.backfill",
+		"action", "export_backfill_batch",
+		"result", "retry_required",
+		"error_code", "CLICKHOUSE_BACKFILL_FAILED",
+		"job_id", job.ID,
+		"stream", job.Stream,
+		"internal_error", safeError(err),
+	)
 }
 
 func normalizeForwarderConfig(config ForwarderConfig) ForwarderConfig {

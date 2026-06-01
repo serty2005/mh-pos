@@ -402,6 +402,47 @@ export const salesKitchenSummaryItemSchema = z.object({
   last_occurred_at: z.string().optional().default(''),
 });
 
+export const kitchenTimingSummaryGroupBySchema = z.enum(['business_date', 'station']);
+
+export const kitchenTimingSummaryItemSchema = z.object({
+  group_by: kitchenTimingSummaryGroupBySchema,
+  group_key: z.string(),
+  business_date_local: z.string().optional().default(''),
+  station_id: z.string().optional().default(''),
+  ticket_count: z.number(),
+  accepted_count: z.number(),
+  started_count: z.number(),
+  ready_count: z.number(),
+  served_count: z.number(),
+  avg_accept_to_ready_seconds: z.number(),
+  avg_start_to_ready_seconds: z.number(),
+  avg_ready_to_served_seconds: z.number(),
+  first_status_changed_at: z.string().optional().default(''),
+  last_status_changed_at: z.string().optional().default(''),
+});
+
+export const olapBackfillJobSchema = z.object({
+  id: z.string(),
+  command_id: z.string(),
+  stream: z.enum(['raw_business_events', 'stock_moves']),
+  status: z.enum(['queued', 'running', 'completed', 'failed', 'cancelled']),
+  requested_from: z.string().optional(),
+  requested_to: z.string().optional(),
+  checkpoint_cursor: z.string().optional().default(''),
+  batch_size: z.number(),
+  total_rows: z.number(),
+  processed_rows: z.number(),
+  last_error: z.string().optional().default(''),
+  cancel_requested: z.boolean(),
+  reason: z.string().optional().default(''),
+  requested_by: z.string().optional().default(''),
+  created_at: z.string(),
+  started_at: z.string().optional(),
+  completed_at: z.string().optional(),
+  updated_at: z.string(),
+  already_processed: z.boolean().optional().default(false),
+});
+
 export const hallSchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
@@ -612,6 +653,9 @@ export type OlapStockMoveSummary = z.infer<typeof olapStockMoveSummarySchema>;
 export type FinancialOperationReportItem = z.infer<typeof financialOperationReportItemSchema>;
 export type SalesKitchenSummaryGroupBy = z.infer<typeof salesKitchenSummaryGroupBySchema>;
 export type SalesKitchenSummaryItem = z.infer<typeof salesKitchenSummaryItemSchema>;
+export type KitchenTimingSummaryGroupBy = z.infer<typeof kitchenTimingSummaryGroupBySchema>;
+export type KitchenTimingSummaryItem = z.infer<typeof kitchenTimingSummaryItemSchema>;
+export type OlapBackfillJob = z.infer<typeof olapBackfillJobSchema>;
 export type Hall = z.infer<typeof hallSchema>;
 export type RestaurantTable = z.infer<typeof tableSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;

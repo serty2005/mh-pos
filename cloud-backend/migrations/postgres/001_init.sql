@@ -141,6 +141,46 @@ CREATE TABLE IF NOT EXISTS olap_export_retry_commands (
 CREATE INDEX IF NOT EXISTS olap_export_retry_commands_stream_created
   ON olap_export_retry_commands(stream, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS olap_backfill_jobs (
+  id TEXT PRIMARY KEY CHECK (id <> ''),
+  command_id TEXT NOT NULL UNIQUE CHECK (command_id <> ''),
+  stream TEXT NOT NULL CHECK (stream IN ('raw_business_events','stock_moves')),
+  status TEXT NOT NULL CHECK (status IN ('queued','running','completed','failed','cancelled')),
+  requested_from TIMESTAMPTZ,
+  requested_to TIMESTAMPTZ,
+  checkpoint_cursor TEXT NOT NULL DEFAULT '',
+  batch_size INTEGER NOT NULL DEFAULT 1000 CHECK (batch_size > 0),
+  total_rows BIGINT NOT NULL DEFAULT 0 CHECK (total_rows >= 0),
+  processed_rows BIGINT NOT NULL DEFAULT 0 CHECK (processed_rows >= 0),
+  last_error TEXT NOT NULL DEFAULT '',
+  cancel_requested BOOLEAN NOT NULL DEFAULT false,
+  reason TEXT NOT NULL CHECK (reason <> ''),
+  requested_by TEXT NOT NULL DEFAULT '',
+  locked_by TEXT NOT NULL DEFAULT '',
+  locked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS olap_backfill_jobs_stream_status_created
+  ON olap_backfill_jobs(stream, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS olap_operator_audit_events (
+  id TEXT PRIMARY KEY CHECK (id <> ''),
+  command_id TEXT NOT NULL CHECK (command_id <> ''),
+  action TEXT NOT NULL CHECK (action IN ('create_backfill_job','cancel_backfill_job')),
+  stream TEXT NOT NULL CHECK (stream IN ('raw_business_events','stock_moves')),
+  job_id TEXT NOT NULL REFERENCES olap_backfill_jobs(id) ON DELETE RESTRICT,
+  requested_by TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS olap_operator_audit_events_job_created
+  ON olap_operator_audit_events(job_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS cloud_sync_problem_events (
   id TEXT PRIMARY KEY,
   direction TEXT NOT NULL CHECK (direction IN ('edge_to_cloud','cloud_to_edge')),
