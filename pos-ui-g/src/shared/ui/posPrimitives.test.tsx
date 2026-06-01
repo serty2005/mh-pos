@@ -8,6 +8,7 @@ import {
   PosInlineStatusBadge,
   PosQuantityStepper,
   PosSearchInput,
+  PosSelectableChip,
   PosTabs,
 } from './index';
 
@@ -88,6 +89,20 @@ describe('shared POS UI primitives', () => {
     asElement(clearButton).props.onClick?.();
     expect(onChange).toHaveBeenCalledWith('');
     expect(onClear).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders PosSelectableChip active state and aria-pressed', () => {
+    const onClick = vi.fn();
+    const chip = renderPrimitive(PosSelectableChip({
+      active: true,
+      onClick,
+      children: 'Active',
+    }));
+
+    expect(chip.props['aria-pressed']).toBe(true);
+    expect(chip.props.className).toContain('var(--pos-action-primary)');
+    chip.props.onClick?.();
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 
   it('renders PosInlineStatusBadge variant styling', () => {

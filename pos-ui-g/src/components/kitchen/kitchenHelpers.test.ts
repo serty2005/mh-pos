@@ -7,6 +7,9 @@ import {
   formatDateTime,
   isPositiveDecimal,
   localizedError,
+  actionLabel,
+  orderStatusLabel,
+  stopListActionLabel,
   safeNumber,
   type RecipeSuggestionState,
 } from './kitchenHelpers';
@@ -71,5 +74,11 @@ describe('kitchen helpers', () => {
       messageKey: 'errors.permission',
       category: 'permission',
     }))).toBe(t.errors.noPermission);
+  });
+
+  it('maps kitchen status and action labels through i18n', () => {
+    expect(actionLabel('ready')).toBe(t.kitchen.actions.ready);
+    expect(orderStatusLabel('in_progress')).toBe(t.kitchen.orderStatus.in_progress);
+    expect(stopListActionLabel('stop')).toBe(t.kitchen.stopListActions.stop);
   });
 });

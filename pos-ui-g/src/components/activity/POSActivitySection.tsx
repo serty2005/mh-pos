@@ -3,6 +3,7 @@ import { usePOS } from '../../context/POSContext';
 import { t } from '../../shared/i18n';
 import { 
   PosButton, 
+  PosBanner,
   PosEmptyState, 
   PosPagination, 
   PosActionRail,
@@ -25,6 +26,8 @@ import {
   ShieldAlert
 } from 'lucide-react';
 import { ClosedOrder } from '../../types';
+
+const CLOSED_ORDERS_FETCH_LIMIT = 50;
 
 export const POSActivitySection: React.FC = () => {
   const { 
@@ -115,6 +118,12 @@ export const POSActivitySection: React.FC = () => {
           />
         </div>
 
+        {closedOrders.length >= CLOSED_ORDERS_FETCH_LIMIT && (
+          <div className="px-6 pt-4 shrink-0">
+            <PosBanner type="info" message={t.activity.historyLimitHint} />
+          </div>
+        )}
+
         {/* Closed Checks List container */}
         <div className="flex-1 p-6 pos-scrollarea-y pos-scrollbar-thin overflow-y-auto">
           {closedOrders.length === 0 ? (
@@ -182,6 +191,8 @@ export const POSActivitySection: React.FC = () => {
               onPrev={() => setPage(p => Math.max(1, p - 1))}
               onNext={() => setPage(p => Math.min(totalPages, p + 1))}
               label={`${t.activity.pageLabelPrefix} ${(page-1)*itemsPerPage+1} ${t.activity.pageLabelMiddle} ${Math.min(filteredChecks.length, page*itemsPerPage)} ${t.activity.pageLabelSuffix} ${filteredChecks.length}`}
+              prevLabel={t.common.previous}
+              nextLabel={t.common.next}
             />
           </div>
         )}

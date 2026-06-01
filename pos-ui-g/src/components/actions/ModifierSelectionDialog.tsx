@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MenuItem, SelectedModifier, ModifierGroup } from '../../types';
 import { t } from '../../shared/i18n';
-import { PosButton, PosDialog } from '../../shared/ui';
+import { PosButton, PosDialog, PosSelectableChip } from '../../shared/ui';
 import { Check } from 'lucide-react';
 import {
   initialSelectionsForMode,
@@ -64,7 +64,7 @@ export const ModifierSelectionDialog: React.FC<ModifierSelectionDialogProps> = (
     item.modifierGroups?.forEach(group => {
       const groupSelections = selections.filter(sel => sel.groupId === group.id);
       if (groupSelections.length < group.minRequired) {
-        nextErrors[group.id] = `Необходимо выбрать минимум: ${group.minRequired}`;
+        nextErrors[group.id] = `${t.modals.modifierMinRequired}: ${group.minRequired}`;
         valid = false;
       }
     });
@@ -83,7 +83,7 @@ export const ModifierSelectionDialog: React.FC<ModifierSelectionDialogProps> = (
     <PosDialog
       isOpen={isOpen}
       onClose={onClose}
-      title={mode === 'edit' ? 'Изменение модификаторов' : 'Настройка модификаторов'}
+      title={mode === 'edit' ? t.modals.modifierEditTitle : t.modals.modifierSetupTitle}
       footer={
         <>
           <PosButton variant="secondary" size="sm" onClick={onClose}>
@@ -96,7 +96,7 @@ export const ModifierSelectionDialog: React.FC<ModifierSelectionDialogProps> = (
             onClick={handleValidationAndSubmit}
             icon={<Check className="w-4 h-4" />}
           >
-            {mode === 'edit' ? t.common.save : t.common.confirm} ({calculatedTotal} ₽)
+            {mode === 'edit' ? t.common.save : t.common.confirm} ({calculatedTotal} {t.common.ruble})
           </PosButton>
         </>
       }
@@ -106,7 +106,7 @@ export const ModifierSelectionDialog: React.FC<ModifierSelectionDialogProps> = (
         {/* Core Item Header */}
         <div className="border-b border-[var(--pos-border)] pb-4">
           <h4 className="font-sans text-base font-bold text-[var(--pos-text-primary)]">{item.name}</h4>
-          <span className="font-mono text-xs font-semibold text-[var(--pos-text-muted)]">Базовая цена: {item.price} ₽</span>
+          <span className="font-mono text-xs font-semibold text-[var(--pos-text-muted)]">{t.modals.modifierBasePrice}: {item.price} {t.common.ruble}</span>
         </div>
 
         {/* Modifier groups iterator */}
@@ -122,7 +122,7 @@ export const ModifierSelectionDialog: React.FC<ModifierSelectionDialogProps> = (
                   {group.minRequired > 0 && <span className="text-[var(--pos-status-danger)] ml-0.5">*</span>}
                 </span>
                 <span className="font-mono text-[10px] text-[var(--pos-text-muted)] uppercase">
-                  (Мин: {group.minRequired} / Макс: {group.maxAllowed})
+                  ({t.modals.modifierMin}: {group.minRequired} / {t.modals.modifierMax}: {group.maxAllowed})
                 </span>
               </div>
 
@@ -132,22 +132,18 @@ export const ModifierSelectionDialog: React.FC<ModifierSelectionDialogProps> = (
                   const isSelected = selections.some(sel => sel.optionId === opt.id);
                   
                   return (
-                    <button
+                    <PosSelectableChip
                       key={opt.id}
                       id={`mod-opt-${opt.id}`}
-                      type="button"
+                      active={isSelected}
                       onClick={() => handleOptionToggle(group, opt.id, opt.name, opt.price)}
-                      className={`h-[48px] px-4 font-sans text-xs font-semibold border flex items-center justify-between cursor-pointer select-none transition-all rounded-none
-                        ${isSelected
-                          ? 'bg-[var(--pos-action-primary)] text-[var(--pos-surface)] border-[var(--pos-action-primary)] font-bold'
-                          : 'bg-[var(--pos-surface)] text-[var(--pos-text-primary)] border-[var(--pos-border)] hover:bg-[var(--pos-surface-raised)]'
-                        }`}
+                      className="h-[48px] px-4 font-sans text-xs font-semibold flex items-center justify-between normal-case tracking-normal"
                     >
                       <span className="truncate">{opt.name}</span>
                       <span className="font-mono font-bold shrink-0 ml-2">
-                        {opt.price > 0 ? `+${opt.price} ₽` : '0 ₽'}
+                        {opt.price > 0 ? `+${opt.price} ${t.common.ruble}` : `0 ${t.common.ruble}`}
                       </span>
-                    </button>
+                    </PosSelectableChip>
                   );
                 })}
               </div>

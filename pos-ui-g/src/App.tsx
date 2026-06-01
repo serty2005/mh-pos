@@ -30,7 +30,7 @@ import {
   QrCode,
   Monitor
 } from 'lucide-react';
-import { PosBottomNav, PosButton, PosIconButton, PosSelectableChip } from './shared/ui';
+import { PosBottomNav, PosButton, PosIconButton, PosInlineStatusBadge, PosSelectableChip, PosSelectableTile } from './shared/ui';
 import type { POSSection } from './types';
 
 function POSAppShellContent() {
@@ -479,9 +479,9 @@ function ShellDrawerButton({
   onClick,
 }: ShellDrawerButtonProps) {
   return (
-    <button
+    <PosSelectableTile
       id={id}
-      type="button"
+      active={active}
       onClick={onClick}
       className={`w-full h-12 px-6 flex items-center gap-4 text-left font-mono font-semibold transition-colors border-none cursor-pointer ${
         active
@@ -491,8 +491,12 @@ function ShellDrawerButton({
     >
       <Icon className="w-4.5 h-4.5 shrink-0" />
       <span className="text-xs uppercase tracking-wider">{label}</span>
-      {badge && <span className="ml-auto text-[8px] border border-amber-500 text-amber-600 px-1 uppercase">{badge}</span>}
-    </button>
+      {badge && (
+        <PosInlineStatusBadge variant="warning" className="ml-auto text-[8px] px-1 py-0">
+          {badge}
+        </PosInlineStatusBadge>
+      )}
+    </PosSelectableTile>
   );
 }
 

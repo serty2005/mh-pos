@@ -683,6 +683,8 @@ interface PosPaginationProps {
   onPrev: () => void;
   onNext: () => void;
   label?: string;
+  prevLabel?: string;
+  nextLabel?: string;
 }
 
 export const PosPagination: React.FC<PosPaginationProps> = ({
@@ -691,7 +693,9 @@ export const PosPagination: React.FC<PosPaginationProps> = ({
   isLastPage,
   onPrev,
   onNext,
-  label = `Страница ${currentPage}`
+  label = String(currentPage),
+  prevLabel = 'previous',
+  nextLabel = 'next',
 }) => {
   return (
     <div className="flex items-center justify-between py-2 px-4 border border-[var(--pos-border)] bg-[var(--pos-surface)] select-none">
@@ -700,14 +704,14 @@ export const PosPagination: React.FC<PosPaginationProps> = ({
         <PosIconButton
           onClick={onPrev}
           disabled={isFirstPage}
-          label="prev"
+          label={prevLabel}
           variant="neutral"
           icon={<ChevronLeft className="w-4 h-4" />}
         />
         <PosIconButton
           onClick={onNext}
           disabled={isLastPage}
-          label="next"
+          label={nextLabel}
           variant="neutral"
           icon={<ChevronRight className="w-4 h-4" />}
         />

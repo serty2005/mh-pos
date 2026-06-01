@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { t } from '../../shared/i18n';
-import { PosButton, PosDialog, PosFormRow } from '../../shared/ui';
+import { PosButton, PosDialog, PosFormRow, PosSelectableChip } from '../../shared/ui';
 import { ShieldAlert, Unlock } from 'lucide-react';
 
 interface PrecheckCancelDialogProps {
@@ -28,11 +28,11 @@ export const PrecheckCancelDialog: React.FC<PrecheckCancelDialogProps> = ({
 
   const handleSubmit = async () => {
     if (!pin) {
-      setErrorMsg('Необходимо заполнить PIN-код менеджера.');
+      setErrorMsg(t.modals.precheckPinRequired);
       return;
     }
     if (!reason || reason.trim().length < 4) {
-      setErrorMsg('Причина отмены должна содержать минимум 4 символа.');
+      setErrorMsg(t.modals.precheckReasonRequired);
       return;
     }
 
@@ -40,7 +40,7 @@ export const PrecheckCancelDialog: React.FC<PrecheckCancelDialogProps> = ({
     if (success) {
       onClose();
     } else {
-      setErrorMsg('Неверный PIN-код или отсутствие прав менеджера.');
+      setErrorMsg(t.modals.precheckManagerDenied);
     }
   };
 
@@ -77,7 +77,7 @@ export const PrecheckCancelDialog: React.FC<PrecheckCancelDialogProps> = ({
         <div className="p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-100 flex gap-3 text-xs md:text-sm">
           <ShieldAlert className="w-5 h-5 shrink-0 text-amber-500" />
           <div className="space-y-1">
-            <span className="font-bold uppercase tracking-wider block font-mono text-xs">Действие требует подтверждения:</span>
+            <span className="font-bold uppercase tracking-wider block font-mono text-xs">{t.modals.precheckCancelRequired}</span>
             <span>{t.modals.precheckCancelDesc}</span>
           </div>
         </div>
@@ -90,7 +90,7 @@ export const PrecheckCancelDialog: React.FC<PrecheckCancelDialogProps> = ({
 
         {/* PIN Entry Area */}
         <PosFormRow
-          label="PIN-код Менеджера"
+          label={t.modals.precheckManagerPin}
           id="precheck-manager-pin"
         >
           <input
@@ -109,14 +109,14 @@ export const PrecheckCancelDialog: React.FC<PrecheckCancelDialogProps> = ({
 
         {/* Cancellation Reason Entry Area */}
         <PosFormRow
-          label="Причина отмены пречека"
+          label={t.modals.precheckCancelReason}
           id="precheck-cancel-reason"
         >
           <input
             id="precheck-cancel-reason"
             type="text"
             className="w-full h-12 border border-[var(--pos-border)] px-4 font-sans text-sm bg-[var(--pos-surface)] text-[var(--pos-text-primary)] rounded-none outline-none focus:border-[var(--pos-border-strong)]"
-            placeholder="Например: дозаказ блюда, ошибка официанта"
+            placeholder={t.modals.precheckCancelReasonPlaceholder}
             value={reason}
             onChange={(e) => {
               setReason(e.target.value);
@@ -127,18 +127,17 @@ export const PrecheckCancelDialog: React.FC<PrecheckCancelDialogProps> = ({
 
         {/* Quick Reasons Chips list */}
         <div className="space-y-1.5">
-          <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">Быстрый шаблон причины</span>
+          <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">{t.modals.precheckQuickReason}</span>
           <div className="flex flex-wrap gap-1.5">
-            {['Дозаказ блюда', 'Ошибка официанта', 'Разделение чека', 'Гость передумал'].map((text) => (
-              <button
+            {t.modals.precheckQuickReasons.map((text) => (
+              <PosSelectableChip
                 key={text}
                 id={`quick-reason-btn-${text.replace(/\s+/g, '-')}`}
-                type="button"
                 onClick={() => handleQuickReason(text)}
-                className="font-mono text-[10px] px-2.5 py-1.5 border border-[var(--pos-border)] hover:bg-[var(--pos-surface-raised)] cursor-pointer tracking-tight rounded-none bg-[var(--pos-surface)] text-[var(--pos-text-secondary)]"
+                className="h-8 font-mono text-[10px] px-2.5 py-1.5 tracking-tight"
               >
                 {text}
-              </button>
+              </PosSelectableChip>
             ))}
           </div>
         </div>

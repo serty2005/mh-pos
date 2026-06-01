@@ -75,19 +75,19 @@ export const POSReportsSection: React.FC = () => {
           <PosMetricCard
             title={t.reports.shiftSales}
             value={`${shiftSalesSum} ₽`}
-            statusText="В РЕАЛЕ"
+            statusText={t.reports.real}
             statusVariant="success"
           />
           <PosMetricCard
             title={t.reports.salesCount}
             value={totalClosedSalesCount}
-            statusText="ЧЕКИ"
+            statusText={t.reports.checks}
             statusVariant="info"
           />
           <PosMetricCard
             title={t.reports.expectedCash}
             value={`${finalExpectedCash} ₽`}
-            statusText="КАССОВЫЙ БАЛАНС"
+            statusText={t.reports.cashBalance}
             statusVariant="warning"
           />
         </div>
@@ -100,19 +100,19 @@ export const POSReportsSection: React.FC = () => {
 
           <div className="divide-y divide-[var(--pos-border)]">
             <PosDataRow
-              title="Оплаты Наличными (Cash captures)"
-              subtitle="Фискальный ящик и разменная монета"
+              title={t.reports.cashPayments}
+              subtitle={t.reports.cashPaymentsDesc}
               value={`${cashSalesSum} ₽`}
               highlightValue
             />
             <PosDataRow
-              title="Оплаты Картой (Manual bank transfers)"
-              subtitle="Оплачено через банковские эквайринг-терминалы"
+              title={t.reports.cardPayments}
+              subtitle={t.reports.cardPaymentsDesc}
               value={`${cardSalesSum} ₽`}
             />
             <PosDataRow
-              title="Стартовый баланс сейфа"
-              subtitle="Начальное внесение при открытии кассовой смены"
+              title={t.reports.initialSafeBalance}
+              subtitle={t.reports.initialSafeBalanceDesc}
               value={`${initialCashAmount} ₽`}
             />
           </div>
@@ -122,7 +122,7 @@ export const POSReportsSection: React.FC = () => {
         <div className="p-4 border border-blue-200 bg-blue-50/10 text-blue-800 dark:text-blue-100 flex gap-3 text-xs md:text-sm">
           <Info className="w-5 h-5 text-[var(--pos-status-info)] shrink-0 mt-0.5" />
           <span className="leading-relaxed font-sans">
-            <strong>Обратите внимание:</strong> Текущий POS-терминал хранит только операционную историю за текущую бизнес-дату. Детальные OLAP-аналитические отчеты, ABC-анализ меню, инвентарные техкарты и расходы сырья выводятся на управляющем веб-интерфейсе <strong>Cloud Manager Workspace</strong>.
+            <strong>{t.reports.cloudBoundaryNoticeTitle}</strong> {t.reports.cloudBoundaryNotice}
           </span>
         </div>
 
@@ -133,7 +133,7 @@ export const POSReportsSection: React.FC = () => {
         <PosActionRail className="h-full">
           <div className="h-14 border-b border-[var(--pos-border)] px-4 flex items-center justify-between bg-[var(--pos-surface-raised)] select-none shrink-0">
             <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--pos-text-secondary)]">
-              Операционный профиль
+              {t.reports.operationalProfile}
             </span>
           </div>
 
@@ -141,30 +141,30 @@ export const POSReportsSection: React.FC = () => {
             
             {/* Operator status */}
             <div className="space-y-1.5 select-none">
-              <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">Личная сессия</span>
+              <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">{t.reports.personalSession}</span>
               <PosStatusStrip
                 title={t.reports.personalShift}
-                message={currentOperator ? currentOperator.employeeName : 'Нет открытой смены'}
+                message={currentOperator ? currentOperator.employeeName : t.reports.noOpenShift}
                 variant={currentOperator ? 'success' : 'danger'}
               />
             </div>
 
             {/* Cash KKM status */}
             <div className="space-y-1.5 select-none">
-              <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">Сессия кассы</span>
+              <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">{t.reports.cashSessionRail}</span>
               <PosStatusStrip
                 title={t.reports.cashSession}
-                message={cashSession ? `Открыта в ${cashSession.openedAt.split(',')[1] || cashSession.openedAt}` : 'Кассовая сессия закрыта'}
+                message={cashSession ? `${t.reports.cashSessionOpenedAt} ${cashSession.openedAt.split(',')[1] || cashSession.openedAt}` : t.reports.cashSessionClosed}
                 variant={cashSession ? 'warning' : 'neutral'}
               />
             </div>
 
             {/* Sync status indicators */}
             <div className="space-y-1.5 select-none">
-              <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">Соединение с Cloud</span>
+              <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">{t.reports.cloudConnection}</span>
               <PosStatusStrip
-                title="Очередь транзакций"
-                message={syncStatus === 'online' ? `Связь активна · ${outboxCount} в outbox` : `Есть проблемы sync · ${outboxCount} в outbox`}
+                title={t.reports.transactionQueue}
+                message={syncStatus === 'online' ? `${t.reports.activeConnection} · ${outboxCount} ${t.reports.outboxSuffix}` : `${t.reports.syncHasProblems} · ${outboxCount} ${t.reports.outboxSuffix}`}
                 variant={syncStatus === 'online' ? 'success' : 'danger'}
               />
             </div>

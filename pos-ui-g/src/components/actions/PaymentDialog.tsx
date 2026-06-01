@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { usePOS } from '../../context/POSContext';
 import { t } from '../../shared/i18n';
-import { PosButton, PosDialog, PosBanner } from '../../shared/ui';
+import { PosButton, PosDialog, PosBanner, PosSelectableChip } from '../../shared/ui';
 import { CreditCard, Banknote, CheckCircle } from 'lucide-react';
 
 interface PaymentDialogProps {
@@ -92,17 +92,17 @@ export const PaymentDialog: React.FC<PaymentDialogProps> = ({
           
           <div className="w-full bg-[var(--pos-surface-raised)] border border-[var(--pos-border)] p-4 mt-4 space-y-2">
             <div className="flex justify-between text-xs font-mono text-[var(--pos-text-secondary)]">
-              <span>Сумма к оплате:</span>
-              <span className="font-bold">{amountToPay} ₽</span>
+              <span>{t.modals.paymentAmountDue}:</span>
+              <span className="font-bold">{amountToPay} {t.common.ruble}</span>
             </div>
             <div className="flex justify-between text-xs font-mono text-[var(--pos-text-secondary)]">
-              <span>Внесено:</span>
-              <span className="font-bold">{inputtedAmount} ₽</span>
+              <span>{t.modals.paymentAmountReceived}:</span>
+              <span className="font-bold">{inputtedAmount} {t.common.ruble}</span>
             </div>
             {paymentReport.change > 0 && (
               <div className="flex justify-between text-sm font-mono text-[var(--pos-status-success)] border-t border-[var(--pos-border)] pt-2 font-bold">
                 <span>{t.modals.paymentChange}:</span>
-                <span>{paymentReport.change} ₽</span>
+                <span>{paymentReport.change} {t.common.ruble}</span>
               </div>
             )}
           </div>
@@ -140,7 +140,7 @@ export const PaymentDialog: React.FC<PaymentDialogProps> = ({
             disabled={!cashSession || !isInputSufficient}
             icon={<Banknote className="w-5 h-5" />}
           >
-            Провести оплату ({amountToPay} ₽)
+            {t.modals.paymentSubmit} ({amountToPay} {t.common.ruble})
           </PosButton>
         </>
       }
@@ -158,47 +158,39 @@ export const PaymentDialog: React.FC<PaymentDialogProps> = ({
         {/* Totals Review banner */}
         <div className="grid grid-cols-2 gap-4 bg-[var(--pos-surface-raised)] border border-[var(--pos-border)] p-4">
           <div className="flex flex-col">
-            <span className="font-mono text-[10px] text-[var(--pos-text-muted)] uppercase tracking-wider">К оплате (Итого):</span>
-            <span className="font-mono text-xl font-black text-[var(--pos-text-primary)]">{amountToPay} ₽</span>
+            <span className="font-mono text-[10px] text-[var(--pos-text-muted)] uppercase tracking-wider">{t.modals.paymentDueTotal}:</span>
+            <span className="font-mono text-xl font-black text-[var(--pos-text-primary)]">{amountToPay} {t.common.ruble}</span>
           </div>
           <div className="flex flex-col items-end">
             <span className="font-mono text-[10px] text-[var(--pos-text-muted)] uppercase tracking-wider">{t.modals.paymentChange}:</span>
             <span className={`font-mono text-xl font-black ${changeValue > 0 ? 'text-[var(--pos-status-success)]' : 'text-[var(--pos-text-muted)]'}`}>
-              {changeValue} ₽
+              {changeValue} {t.common.ruble}
             </span>
           </div>
         </div>
 
         {/* Method Picker row */}
         <div className="space-y-2">
-          <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--pos-text-secondary)]">Способ оплаты</span>
+          <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--pos-text-secondary)]">{t.modals.paymentMethod}</span>
           <div className="grid grid-cols-2 gap-3">
-            <button
+            <PosSelectableChip
               id="pay-method-cash-btn"
-              type="button"
+              active={method === 'cash'}
               onClick={() => setMethod('cash')}
-              className={`h-[56px] border flex items-center justify-center gap-2 font-mono text-xs uppercase font-bold cursor-pointer select-none rounded-none transition-all
-                ${method === 'cash' 
-                  ? 'bg-[var(--pos-action-primary)] border-[var(--pos-action-primary)] text-[var(--pos-surface)]' 
-                  : 'bg-[var(--pos-surface)] border-[var(--pos-border)] text-[var(--pos-text-primary)] hover:bg-[var(--pos-surface-raised)]'
-                }`}
+              className="h-[56px] flex items-center justify-center gap-2"
             >
               <Banknote className="w-5 h-5 shrink-0" />
               <span>{t.modals.paymentMethodCash}</span>
-            </button>
-            <button
+            </PosSelectableChip>
+            <PosSelectableChip
               id="pay-method-card-btn"
-              type="button"
+              active={method === 'card'}
               onClick={() => setMethod('card')}
-              className={`h-[56px] border flex items-center justify-center gap-2 font-mono text-xs uppercase font-bold cursor-pointer select-none rounded-none transition-all
-                ${method === 'card' 
-                  ? 'bg-[var(--pos-action-primary)] border-[var(--pos-action-primary)] text-[var(--pos-surface)]' 
-                  : 'bg-[var(--pos-surface)] border-[var(--pos-border)] text-[var(--pos-text-primary)] hover:bg-[var(--pos-surface-raised)]'
-                }`}
+              className="h-[56px] flex items-center justify-center gap-2"
             >
               <CreditCard className="w-5 h-5 shrink-0" />
               <span>{t.modals.paymentMethodCard}</span>
-            </button>
+            </PosSelectableChip>
           </div>
         </div>
 
@@ -206,14 +198,16 @@ export const PaymentDialog: React.FC<PaymentDialogProps> = ({
         <div className="space-y-2">
           <div className="flex justify-between items-baseline">
             <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--pos-text-secondary)]">{t.modals.paymentInputAmount}</span>
-            <button 
+            <PosButton
               id="pay-exact-btn"
               type="button" 
               onClick={handleExactSum} 
-              className="font-mono text-[10px] text-[var(--pos-status-info)] font-bold uppercase cursor-pointer hover:underline border-none bg-none"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 font-mono text-[10px] text-[var(--pos-status-info)]"
             >
-              Точная сумма
-            </button>
+              {t.modals.paymentExactAmount}
+            </PosButton>
           </div>
           <input
             id="payment-amount-input"
@@ -252,7 +246,7 @@ export const PaymentDialog: React.FC<PaymentDialogProps> = ({
                 onClick={() => handleQuickSum(sum)}
                 className="flex-1 h-12 border border-[var(--pos-border)] bg-[var(--pos-surface-raised)] font-mono text-xs font-bold text-center flex items-center justify-center hover:bg-[var(--pos-border)] cursor-pointer select-none text-[var(--pos-text-secondary)] rounded-none"
               >
-                +{sum} ₽
+                +{sum} {t.common.ruble}
               </button>
             ))}
           </div>

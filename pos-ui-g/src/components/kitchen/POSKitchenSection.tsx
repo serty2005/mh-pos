@@ -1,9 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
   ClipboardList,
-  Clock3,
   PackageCheck,
   RefreshCcw,
   Search,
@@ -14,33 +13,27 @@ import {
 import { usePOS } from '../../context/POSContext';
 import { createApiClient, type KitchenTicketAction } from '../../shared/api';
 import { t } from '../../shared/i18n';
-import { PosBanner, PosButton, PosEmptyState, PosFormRow, PosInlineStatusBadge, PosSearchInput, PosSectionHeader, PosSelectableTile, PosSkeleton, PosTabs } from '../../shared/ui';
+import { PosBanner, PosButton, PosEmptyState, PosFormRow, PosInlineStatusBadge, PosSearchInput, PosSectionHeader, PosSelectableTile, PosTabs } from '../../shared/ui';
+import { KitchenOrdersTab, type OrdersTab } from './KitchenOrdersTab';
+import { KitchenProposalList } from './KitchenProposalList';
 import type {
   BackendCatalogItem,
   BackendKitchenOrderQueueItem,
   BackendKitchenProposal,
   BackendKitchenRecipe,
   BackendKitchenStopListState,
-  BackendKitchenTicket,
 } from '../../shared/schemas';
 import {
-  actionLabel,
-  activeOrderStatuses,
   catalogKind,
   catalogKindLabel,
   catalogKinds,
   catalogUnit,
   createInitialStockForm,
   createRecipeChange,
-  formatDateTime,
-  formatMinutes,
   getRecipeIngredients,
   isPositiveDecimal,
   localizedError,
-  orderStatusLabel,
-  proposalKindLabel,
   proposalStatusLabel,
-  readyOrderStatuses,
   recipeActionLabel,
   recipeSuggestionActions,
   safeNumber,
@@ -48,7 +41,6 @@ import {
   stopListActionLabel,
   stopListActions,
   stopListSyncLabel,
-  ticketStatusLabel,
   type CatalogKindFilter,
   type CatalogSuggestionState,
   type RecipeSuggestionAction,
@@ -59,19 +51,8 @@ import {
 } from './kitchenHelpers';
 
 type KitchenBottomSection = 'orders' | 'stock' | 'kitchen';
-type OrdersTab = 'queue' | 'ready';
 type StockTab = 'receipt' | 'count' | 'writeoff' | 'production';
 type KitchenTab = 'recipes' | 'suggestions' | 'stop_list' | 'my_proposals';
-
-const orderActions: Record<string, KitchenTicketAction[]> = {
-  new: ['accept', 'cancel'],
-  accepted: ['start', 'hold', 'cancel'],
-  in_progress: ['hold', 'ready', 'cancel'],
-  hold: ['start', 'cancel'],
-  ready: ['serve', 'recall'],
-  served: ['recall'],
-  recall: ['start', 'cancel'],
-};
 
 export function POSKitchenSection({ section }: { section: KitchenBottomSection }) {
   const { authSnapshot } = usePOS();
@@ -158,13 +139,6 @@ export function POSKitchenSection({ section }: { section: KitchenBottomSection }
       return kindMatches && (!query || text.includes(query));
     });
   }, [activeCatalog, catalogFilter, catalogSearch]);
-
-  const ordersForTab = useMemo(() => {
-    if (ordersTab === 'ready') {
-      return orders.filter((order) => readyOrderStatuses.includes(order.kitchen_order_status));
-    }
-    return orders.filter((order) => activeOrderStatuses.includes(order.kitchen_order_status));
-  }, [orders, ordersTab]);
 
   const loadOrders = async () => {
     const queue = await api.listKitchenOrderQueue({ limit: 100 });
@@ -422,40 +396,14 @@ export function POSKitchenSection({ section }: { section: KitchenBottomSection }
       {successMessage && <div className="px-4 pt-4"><PosBanner type="success" message={successMessage} /></div>}
 
       {section === 'orders' && (
-        <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-          <PosTabs
-            id="orders-tabs"
-            activeId={ordersTab}
-            onChange={(id) => setOrdersTab(id as OrdersTab)}
-            items={[
-              { id: 'queue', label: t.kitchen.tabQueue, count: orders.filter((order) => activeOrderStatuses.includes(order.kitchen_order_status)).length },
-              { id: 'ready', label: t.kitchen.tabReady, count: orders.filter((order) => readyOrderStatuses.includes(order.kitchen_order_status)).length },
-            ]}
-          />
-          <div className="flex-1 min-h-0 p-4 overflow-auto pos-scrollbar-thin">
-            {loading ? (
-              <PosSkeleton type="grid" />
-            ) : ordersForTab.length === 0 ? (
-              <PosEmptyState
-                title={ordersTab === 'ready' ? t.kitchen.emptyReady : t.kitchen.emptyQueue}
-                description={t.kitchen.refresh}
-                icon={ordersTab === 'ready' ? <PackageCheck className="w-10 h-10" /> : <ClipboardList className="w-10 h-10" />}
-              />
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {ordersForTab.map((order) => (
-                  <React.Fragment key={order.order_id}>
-                    <OrderTile
-                      order={order}
-                      busy={busy}
-                      onAction={(ticketId, action) => void runTicketAction(ticketId, action)}
-                    />
-                  </React.Fragment>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        <KitchenOrdersTab
+          orders={orders}
+          ordersTab={ordersTab}
+          loading={loading}
+          busy={busy}
+          onTabChange={setOrdersTab}
+          onAction={(ticketId, action) => void runTicketAction(ticketId, action)}
+        />
       )}
 
       {section === 'stock' && (
@@ -546,111 +494,9 @@ export function POSKitchenSection({ section }: { section: KitchenBottomSection }
             )}
 
             {kitchenTab === 'my_proposals' && (
-              <ProposalList proposals={proposals} />
+              <KitchenProposalList proposals={proposals} />
             )}
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function OrderTile({
-  order,
-  busy,
-  onAction,
-}: {
-  order: BackendKitchenOrderQueueItem;
-  busy: boolean;
-  onAction: (ticketId: string, action: KitchenTicketAction) => void;
-}) {
-  return (
-    <article className="border border-[var(--pos-border)] bg-[var(--pos-surface)] min-h-[260px] flex flex-col">
-      <div className="p-4 border-b border-[var(--pos-border)] flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="font-mono text-[10px] uppercase tracking-widest text-[var(--pos-text-muted)]">
-            {t.common.order}
-          </div>
-          <h3 className="font-mono text-base font-black text-[var(--pos-text-primary)] truncate">
-            {order.table_name || order.edge_order_id || order.order_id || t.kitchen.tableFallback}
-          </h3>
-        </div>
-        <PosInlineStatusBadge variant="neutral" className="shrink-0">
-          {orderStatusLabel(order.kitchen_order_status)}
-        </PosInlineStatusBadge>
-      </div>
-
-      <div className="grid grid-cols-3 border-b border-[var(--pos-border)] divide-x divide-[var(--pos-border)]">
-        <TileMetric icon={<Clock3 className="w-3.5 h-3.5" />} label={t.kitchen.elapsed} value={formatMinutes(order.elapsed_seconds || 0)} />
-        <TileMetric label={t.kitchen.openedAt} value={formatDateTime(order.created_at)} />
-        <TileMetric label={t.kitchen.changedAt} value={formatDateTime(order.last_status_changed_at)} />
-      </div>
-
-      <div className="flex-1 divide-y divide-[var(--pos-border)]">
-        {(order.tickets || []).map((ticket) => (
-          <React.Fragment key={ticket.id}>
-            <TicketRow ticket={ticket} busy={busy} onAction={onAction} />
-          </React.Fragment>
-        ))}
-      </div>
-    </article>
-  );
-}
-
-function TileMetric({ icon, label, value }: { icon?: React.ReactNode; label: string; value: string }) {
-  return (
-    <div className="p-3 min-w-0">
-      <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-widest text-[var(--pos-text-muted)]">
-        {icon}
-        {label}
-      </div>
-      <div className="mt-1 font-mono text-xs font-bold text-[var(--pos-text-primary)] truncate">{value}</div>
-    </div>
-  );
-}
-
-function TicketRow({
-  ticket,
-  busy,
-  onAction,
-}: {
-  ticket: BackendKitchenTicket;
-  busy: boolean;
-  onAction: (ticketId: string, action: KitchenTicketAction) => void;
-}) {
-  const actions = orderActions[ticket.status] || [];
-  return (
-    <div className="p-3 space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="font-sans text-sm font-semibold text-[var(--pos-text-primary)] break-words">
-            {ticket.name}
-          </div>
-          <div className="mt-1 font-mono text-[10px] uppercase tracking-wider text-[var(--pos-text-muted)]">
-            {ticket.quantity} {ticket.unit_code}
-            {ticket.course ? ` · ${t.common.course} ${ticket.course}` : ''}
-          </div>
-          {ticket.comment && (
-            <div className="mt-1 text-xs text-[var(--pos-text-secondary)] break-words">{ticket.comment}</div>
-          )}
-        </div>
-        <PosInlineStatusBadge variant="neutral" className="shrink-0">
-          {ticketStatusLabel(ticket.status)}
-        </PosInlineStatusBadge>
-      </div>
-      {actions.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {actions.map((action) => (
-            <PosButton
-              key={`${ticket.id}-${action}`}
-              size="sm"
-              variant={action === 'cancel' ? 'danger' : action === 'ready' || action === 'serve' ? 'success' : 'secondary'}
-              disabled={busy}
-              onClick={() => onAction(ticket.id, action)}
-            >
-              {actionLabel(action)}
-            </PosButton>
-          ))}
         </div>
       )}
     </div>
@@ -1109,38 +955,6 @@ function SyncStatePill({ state, status, attempts }: { state: string; status?: st
     <div className={`self-start border px-2 py-1 font-mono text-[10px] uppercase tracking-wider ${tone}`}>
       <div>{stopListSyncLabel(state)}</div>
       {status && <div className="mt-0.5 text-[9px] opacity-80">{status}{attempts ? ` · ${attempts}` : ''}</div>}
-    </div>
-  );
-}
-
-function ProposalList({ proposals }: { proposals: BackendKitchenProposal[] }) {
-  if (proposals.length === 0) {
-    return (
-      <PosEmptyState
-        title={t.kitchen.emptyProposals}
-        description={t.kitchen.tabSuggestions}
-        icon={<AlertTriangle className="w-10 h-10" />}
-      />
-    );
-  }
-  return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-      {proposals.map((proposal) => (
-        <article key={proposal.id} className="border border-[var(--pos-border)] bg-[var(--pos-surface)] p-4 space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="font-mono text-[10px] uppercase tracking-widest text-[var(--pos-text-muted)]">{proposalKindLabel(proposal.kind)}</div>
-              <h3 className="font-sans text-sm font-bold text-[var(--pos-text-primary)]">{proposal.action || proposal.outbox_event_type}</h3>
-            </div>
-            <PosInlineStatusBadge variant="neutral">
-              {proposalStatusLabel(proposal.status)}
-            </PosInlineStatusBadge>
-          </div>
-          <div className="font-mono text-[10px] uppercase tracking-wider text-[var(--pos-text-muted)]">
-            {formatDateTime(proposal.created_at)}
-          </div>
-        </article>
-      ))}
     </div>
   );
 }

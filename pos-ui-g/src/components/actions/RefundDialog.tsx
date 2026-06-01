@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ClosedOrder, OrderLine } from '../../types';
+import { ClosedOrder } from '../../types';
 import { t } from '../../shared/i18n';
-import { PosButton, PosDialog, PosFormRow, PosQuantityStepper } from '../../shared/ui';
+import { PosButton, PosDialog, PosFormRow, PosQuantityStepper, PosSelectableChip } from '../../shared/ui';
 import { ShieldAlert, RefreshCw, Trash2 } from 'lucide-react';
 
 interface RefundDialogProps {
@@ -47,7 +47,7 @@ export const RefundDialog: React.FC<RefundDialogProps> = ({
   const handleSubmit = () => {
     setErrorMsg(null);
     if (!reason || reason.trim().length < 4) {
-      setErrorMsg('Укажите причину возврата (минимум 4 символа).');
+      setErrorMsg(t.modals.refundReasonRequired);
       return;
     }
 
@@ -56,7 +56,7 @@ export const RefundDialog: React.FC<RefundDialogProps> = ({
       onClose();
     } else {
       if (!selectedLineId) {
-        setErrorMsg('Выберите позицию для частичного возврата.');
+        setErrorMsg(t.modals.refundLineRequired);
         return;
       }
       onPartialRefund(selectedLineId, qtyToRefund, reason, disposition);
@@ -81,7 +81,7 @@ export const RefundDialog: React.FC<RefundDialogProps> = ({
             onClick={handleSubmit}
             icon={<RefreshCw className="w-4 h-4" />}
           >
-            {refundMode === 'full' ? 'Оформить полный возврат' : 'Вернуть выбранную часть'}
+            {refundMode === 'full' ? t.modals.refundConfirmFull : t.modals.refundConfirmPartial}
           </PosButton>
         </>
       }
@@ -91,7 +91,7 @@ export const RefundDialog: React.FC<RefundDialogProps> = ({
         {/* Warning Badge */}
         <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 text-red-850 dark:text-red-100 flex gap-2.5 text-xs">
           <ShieldAlert className="w-[18px] h-[18px] text-red-500 shrink-0" />
-          <span>Это действие регистрирует фискальный возврат и уменьшает кассовый баланс. Позиция списывается согласно выбранному типу инвентаря.</span>
+          <span>{t.modals.refundFiscalWarning}</span>
         </div>
 
         {errorMsg && (
@@ -102,38 +102,30 @@ export const RefundDialog: React.FC<RefundDialogProps> = ({
 
         {/* Refund Mode Selectors */}
         <div className="space-y-1.5">
-          <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">Режим возврата оплат</span>
+          <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">{t.modals.refundMode}</span>
           <div className="grid grid-cols-2 gap-2">
-            <button
+            <PosSelectableChip
               id="refund-mode-full-btn"
-              type="button"
+              active={refundMode === 'full'}
               onClick={() => {
                 setRefundMode('full');
                 setErrorMsg(null);
               }}
-              className={`h-11 px-4 font-mono text-xs uppercase font-bold border cursor-pointer select-none rounded-none transition-all
-                ${refundMode === 'full' 
-                  ? 'bg-[var(--pos-action-primary)] text-[var(--pos-surface)] border-[var(--pos-action-primary)]' 
-                  : 'bg-[var(--pos-surface)] border-[var(--pos-border)] text-[var(--pos-text-primary)] hover:bg-[var(--pos-bg)]'
-                }`}
+              className="h-11 px-4"
             >
-              Полный возврат чека
-            </button>
-            <button
+              {t.modals.refundModeFull}
+            </PosSelectableChip>
+            <PosSelectableChip
               id="refund-mode-part-btn"
-              type="button"
+              active={refundMode === 'partial'}
               onClick={() => {
                 setRefundMode('partial');
                 setErrorMsg(null);
               }}
-              className={`h-11 px-4 font-mono text-xs uppercase font-bold border cursor-pointer select-none rounded-none transition-all
-                ${refundMode === 'partial' 
-                  ? 'bg-[var(--pos-action-primary)] text-[var(--pos-surface)] border-[var(--pos-action-primary)]' 
-                  : 'bg-[var(--pos-surface)] border-[var(--pos-border)] text-[var(--pos-text-primary)] hover:bg-[var(--pos-bg)]'
-                }`}
+              className="h-11 px-4"
             >
-              Частичный по позициям
-            </button>
+              {t.modals.refundModePartial}
+            </PosSelectableChip>
           </div>
         </div>
 
@@ -141,7 +133,7 @@ export const RefundDialog: React.FC<RefundDialogProps> = ({
         {refundMode === 'partial' && (
           <div className="space-y-3 p-4 bg-[var(--pos-surface-raised)] border border-[var(--pos-border)]">
             <PosFormRow
-              label="Выберите товар к возврату"
+              label={t.modals.refundTargetItem}
               id="refund-target-item"
             >
               <select
@@ -156,14 +148,14 @@ export const RefundDialog: React.FC<RefundDialogProps> = ({
               >
                 {check.lines.map((line) => (
                   <option key={line.id} value={line.id}>
-                    {line.name} ({line.price} ₽ × {line.quantity} шт.)
+                    {line.name} ({line.price} {t.common.ruble} × {line.quantity} {t.common.pieces})
                   </option>
                 ))}
               </select>
             </PosFormRow>
 
             <div className="flex items-center justify-between">
-              <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--pos-text-secondary)]">Количество к возврату</span>
+              <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--pos-text-secondary)]">{t.modals.refundQuantity}</span>
               <PosQuantityStepper
                 id="refund-qty-stepper"
                 value={qtyToRefund}
@@ -177,45 +169,37 @@ export const RefundDialog: React.FC<RefundDialogProps> = ({
 
         {/* Inventory Disposition rows */}
         <div className="space-y-1.5">
-          <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">Движение товара на складе</span>
+          <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">{t.modals.refundInventoryFlow}</span>
           <div className="grid grid-cols-2 gap-2">
-            <button
+            <PosSelectableChip
               id="dispo-return-btn"
-              type="button"
+              active={disposition === 'return'}
               onClick={() => setDisposition('return')}
-              className={`h-11 px-4 font-sans text-xs font-semibold border cursor-pointer select-none rounded-none transition-all
-                ${disposition === 'return' 
-                  ? 'bg-[var(--pos-action-primary)] text-[var(--pos-surface)] border-[var(--pos-action-primary)]' 
-                  : 'bg-[var(--pos-surface)] border-[var(--pos-border)] text-[var(--pos-text-primary)] hover:bg-[var(--pos-bg)]'
-                }`}
+              className="h-11 px-4 font-sans normal-case tracking-normal"
             >
               {t.modals.inventoryReturn}
-            </button>
-            <button
+            </PosSelectableChip>
+            <PosSelectableChip
               id="dispo-waste-btn"
-              type="button"
+              active={disposition === 'waste'}
               onClick={() => setDisposition('waste')}
-              className={`h-11 px-4 font-sans text-xs font-semibold border cursor-pointer select-none rounded-none transition-all
-                ${disposition === 'waste' 
-                  ? 'bg-[var(--pos-action-primary)] text-[var(--pos-surface)] border-[var(--pos-action-primary)]' 
-                  : 'bg-[var(--pos-surface)] border-[var(--pos-border)] text-[var(--pos-text-primary)] hover:bg-[var(--pos-bg)]'
-                }`}
+              className="h-11 px-4 font-sans normal-case tracking-normal"
             >
               {t.modals.inventoryWaste}
-            </button>
+            </PosSelectableChip>
           </div>
         </div>
 
         {/* Cancellation Reason Entry Input */}
         <PosFormRow
-          label="Причина отмены/возврата чека"
+          label={t.modals.refundReasonLabel}
           id="refund-text-reason"
         >
           <input
             id="refund-text-reason"
             type="text"
             className="w-full h-12 border border-[var(--pos-border)] px-4 font-sans text-sm bg-[var(--pos-surface)] text-[var(--pos-text-primary)] rounded-none outline-none focus:border-[var(--pos-border-strong)]"
-            placeholder="Например: Ошибка кассира, Возврат гостя при отказе"
+            placeholder={t.modals.refundReasonPlaceholder}
             value={reason}
             onChange={(e) => {
               setReason(e.target.value);
@@ -226,19 +210,18 @@ export const RefundDialog: React.FC<RefundDialogProps> = ({
 
         {/* Quick template triggers for reasons */}
         <div className="flex flex-wrap gap-1.5">
-          {['Ошибка при оплате', 'Отвергнуто гостем', 'Плохое качество блюд', 'Ошибка при дозаказе'].map((text) => (
-            <button
+          {t.modals.refundQuickReasons.map((text) => (
+            <PosSelectableChip
               key={text}
               id={`refund-qreason-${text.replace(/\s+/g, '-')}`}
-              type="button"
               onClick={() => {
                 setReason(text);
                 setErrorMsg(null);
               }}
-              className="font-mono text-[9px] px-2.5 py-1.5 border border-[var(--pos-border)] hover:bg-[var(--pos-surface-raised)] cursor-pointer rounded-none bg-[var(--pos-surface)] text-[var(--pos-text-secondary)]"
+              className="h-8 font-mono text-[9px] px-2.5 py-1.5"
             >
               {text}
-            </button>
+            </PosSelectableChip>
           ))}
         </div>
 
