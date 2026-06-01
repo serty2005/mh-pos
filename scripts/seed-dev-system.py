@@ -874,6 +874,47 @@ def run_minimal_flow_smoke(
     if expected_components and not set(expected_components).issubset(set(ledger_catalog_ids)):
         raise RuntimeError(f"Cloud inventory ledger did not include recipe components: expected {expected_components}, got {ledger_catalog_ids}")
 
+    served_olap_events = wait_for_olap_events(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        event_type="ItemServed",
+        event_ids={item_served["event_id"]},
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
+    check_closed_olap_events = wait_for_olap_events(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        event_type="CheckClosed",
+        event_ids={check_closed["event_id"]},
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
+    served_olap_stock_moves = wait_for_olap_stock_moves(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        source_event_type="ItemServed",
+        source_event_id=item_served["event_id"],
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
+    stock_move_summary = wait_for_olap_stock_move_summary(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        source_event_type="ItemServed",
+        expected_catalog_item_ids=ledger_catalog_ids,
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
+    sales_kitchen_summary = wait_for_sales_kitchen_summary(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        group_by="event_type",
+        expected_group_keys={"ItemServed", "CheckClosed"},
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
+
     return {
         "order_id": order["id"],
         "order_line_id": line["id"],
@@ -886,6 +927,11 @@ def run_minimal_flow_smoke(
         "served_ledger_entry_count": len(served_ledger),
         "check_closed_delta_entry_count": len(check_closed_delta),
         "ledger_catalog_item_ids": ledger_catalog_ids,
+        "olap_item_served_event_count": len(served_olap_events),
+        "olap_check_closed_event_count": len(check_closed_olap_events),
+        "olap_item_served_stock_move_count": len(served_olap_stock_moves),
+        "olap_stock_move_summary_count": len(stock_move_summary),
+        "olap_sales_kitchen_summary_group_keys": sorted({item.get("group_key", "") for item in sales_kitchen_summary if item.get("group_key", "")}),
         "blocked_sale_error_code": blocked_sale.get("error_code", ""),
     }
 
@@ -1485,6 +1531,43 @@ def wait_for_olap_stock_moves(cloud_client, restaurant_id, source_event_type, so
         time.sleep(max(0, interval_seconds))
 
 
+def wait_for_olap_stock_move_summary(cloud_client, restaurant_id, source_event_type, expected_catalog_item_ids, wait_seconds, interval_seconds):
+    expected = {item for item in expected_catalog_item_ids if item}
+    deadline = time.monotonic() + max(1, wait_seconds)
+    while True:
+        items = list_olap_stock_move_summary(
+            cloud_client,
+            restaurant_id=restaurant_id,
+            source_event_type=source_event_type,
+            group_by="catalog_item",
+        )
+        raw = json.dumps(items, ensure_ascii=False)
+        if "payload" in raw or "raw_payload" in raw:
+            raise RuntimeError("OLAP stock move summary response exposed raw payload")
+        found = {item.get("catalog_item_id") or item.get("group_key") for item in items}
+        if items and (not expected or expected.issubset(found)):
+            return items
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"ClickHouse stock-move-summary did not expose {source_event_type} catalog items {sorted(expected)} before timeout")
+        time.sleep(max(0, interval_seconds))
+
+
+def wait_for_sales_kitchen_summary(cloud_client, restaurant_id, group_by, expected_group_keys, wait_seconds, interval_seconds):
+    expected = {item for item in expected_group_keys if item}
+    deadline = time.monotonic() + max(1, wait_seconds)
+    while True:
+        items = list_sales_kitchen_summary(cloud_client, restaurant_id=restaurant_id, group_by=group_by)
+        raw = json.dumps(items, ensure_ascii=False)
+        if "payload" in raw or "raw_payload" in raw or "margin" in raw.lower() or "cogs" in raw.lower():
+            raise RuntimeError("OLAP sales-kitchen summary response exposed raw payload or costing BI fields")
+        found = {item.get("group_key", "") for item in items}
+        if expected.issubset(found):
+            return items
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"ClickHouse sales-kitchen-summary did not expose group keys {sorted(expected)} before timeout")
+        time.sleep(max(0, interval_seconds))
+
+
 def wait_for_cloud_suggestion(cloud_client, kind, restaurant_id, suggestion_id, wait_seconds, interval_seconds):
     path = {
         "catalog": f"{API_PREFIX}/master-data/catalog-suggestions",
@@ -1586,6 +1669,35 @@ def list_olap_stock_moves(cloud_client, restaurant_id, source_event_type):
         query={
             "restaurant_id": restaurant_id,
             "source_event_type": source_event_type,
+            "limit": 50,
+        },
+    )
+
+
+def list_olap_stock_move_summary(cloud_client, restaurant_id, source_event_type, group_by):
+    return request(
+        cloud_client,
+        "GET",
+        f"{API_PREFIX}/olap/stock-move-summary",
+        expected_status=(200,),
+        query={
+            "restaurant_id": restaurant_id,
+            "source_event_type": source_event_type,
+            "group_by": group_by,
+            "limit": 50,
+        },
+    )
+
+
+def list_sales_kitchen_summary(cloud_client, restaurant_id, group_by):
+    return request(
+        cloud_client,
+        "GET",
+        f"{API_PREFIX}/olap/sales-kitchen-summary",
+        expected_status=(200,),
+        query={
+            "restaurant_id": restaurant_id,
+            "group_by": group_by,
             "limit": 50,
         },
     )

@@ -114,6 +114,8 @@ func TestListSalesKitchenSummaryUsesExistingDatasetsAndSafeGrouping(t *testing.T
 		".olap_stock_moves FINAL",
 		"event_type IN ('KitchenTicketStatusChanged','ItemServed'",
 		"source_event_type AS group_key",
+		"stock_in_quantity",
+		"stock_out_quantity",
 		"restaurant_id = 'rest-1'",
 		"toDate(occurred_at) >= toDate('2026-05-01')",
 		"business_date_local >= toDate('2026-05-01')",
@@ -125,5 +127,8 @@ func TestListSalesKitchenSummaryUsesExistingDatasetsAndSafeGrouping(t *testing.T
 	}
 	if strings.Contains(query, " payload") || strings.Contains(query, "margin") || strings.Contains(query, "COGS") {
 		t.Fatalf("sales/kitchen summary query must not select raw payload or BI costing labels: %s", query)
+	}
+	if strings.Contains(query, "sum(in_quantity)") || strings.Contains(query, "sum(out_quantity)") {
+		t.Fatalf("sales/kitchen summary query must avoid ClickHouse alias substitution on response fields: %s", query)
 	}
 }

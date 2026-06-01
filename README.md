@@ -31,7 +31,7 @@
 - Reprint precheck/check строится из immutable snapshot.
 - `scripts/seed-dev-system.py` является единственным локальным Python seed script: он создает полный Cloud-owned dataset, публикует master data, выполняет license pairing POS Edge и проверяет базовый POS read model.
 - Runtime cashier/refund/stop-list сценарии проверяются профильными backend/UI тестами и минимальным HTTP smoke; seed script не выполняет destructive storage actions.
-- `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud recipes/stop-list publication -> Edge sync -> waiter order -> KDS served -> cashier payment/final check -> `ItemServed`/`CheckClosed` -> Cloud inventory ledger, включая stop-list rejection для demo sold-out item и отсутствие double consumption по тому же `order_line_id`.
+- `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud recipes/stop-list publication -> Edge sync -> waiter order/precheck -> KDS served -> cashier payment/final check -> `ItemServed`/`CheckClosed` -> Cloud inventory ledger -> ClickHouse/OLAP bounded reads, включая stop-list rejection для demo sold-out item и отсутствие double consumption по тому же `order_line_id`.
 - `scripts/seed-dev-system.py --run-kitchen-process-smoke` проверяет профильный kitchen/process path через backend/Cloud routes: Cloud publication для catalog/menu/recipes/inventory_reference, Edge sync, waiter order, KDS `accept/start/ready/serve`, `recall/start/ready/serve`, ClickHouse `raw_business_events`, Cloud stock ledger для kitchen stock events, catalog/recipe suggestions, Cloud approve и Edge proposal feedback.
 - Playwright spec `payments-refunds.spec.ts` проверяет оплату по `precheck_id`, immutable finalized payment/check, refund после закрытия исходных personal/cash shifts с ledger read и запрет cancellation после закрытия исходной смены.
 - Cloud -> Edge master-data ingest в POS Edge runtime поддерживает потоки `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`, `recipes`, `inventory_reference`.
@@ -107,7 +107,7 @@ python3 scripts/seed-dev-system.py \
 
 `scripts/seed-dev-system.py` является единственным пользовательским скриптом в `scripts`. Он создает полный набор текущих Cloud-owned справочников через HTTP API: ресторан, роли, сотрудников с PIN, залы и столы, catalog folders/parameters/tags/items, menu categories/items, modifier groups/options/bindings, pricing policies, recipe items и stop-list examples. После создания и публикации всех сущностей скрипт генерирует license pairing code для POS Edge, выполняет `pair-via-license`, проверяет POS read model и выводит `restaurant_id`, `node_device_id`, pairing code и все PIN-коды для проверки ролей.
 
-Минимальный сквозной smoke запускается тем же скриптом с флагом `--run-minimal-flow`: он проверяет `Cloud recipes/stop-list publication -> Edge sync -> waiter order -> KDS served -> cashier final check -> ItemServed/CheckClosed -> Cloud inventory ledger` через HTTP API без прямых записей в PostgreSQL/SQLite.
+Минимальный сквозной smoke запускается тем же скриптом с флагом `--run-minimal-flow`: он проверяет `Cloud recipes/stop-list publication -> Edge sync -> waiter order/precheck -> KDS served -> cashier final check -> ItemServed/CheckClosed -> Cloud inventory ledger -> ClickHouse/OLAP bounded reads` через HTTP API без прямых записей в PostgreSQL/SQLite.
 
 Полный профильный smoke запускается на чистых backend volumes и может включать обе ветки в одном запуске:
 

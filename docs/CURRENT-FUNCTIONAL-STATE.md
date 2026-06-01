@@ -28,7 +28,7 @@
 - добавить Cloud manager flow для production-grade recipe lifecycle polish, stop-list escalation polish, inventory operations, publication readiness и sync/problem observability;
 - добавить полный Cloud-owned складской движок: materialized balances, production-grade stock receipts/counts/production state, sale consumption, refund/cancellation dispositions, recipe expansion, full costing lifecycle и retro recalculation DAG;
 - расширить ClickHouse runtime от первых bounded `stock-move-summary`/`sales-kitchen-summary` endpoints и минимального retry control до richer sales/kitchen/costing aggregates и production-grade backfill jobs;
-- поддерживать полный smoke path Cloud setup -> Edge sync -> waiter order -> kitchen served/recall/serve-again -> Cloud inventory ledger -> ClickHouse export -> bounded OLAP API, сейчас покрытый `scripts/seed-dev-system.py --run-kitchen-process-smoke` для kitchen/process без cashier payment/check.
+- поддерживать полный smoke path Cloud setup -> Edge sync -> waiter order/precheck -> KDS served -> cashier payment/final check -> Edge outbox -> Cloud inventory ledger -> ClickHouse export -> bounded OLAP API; сейчас полный хвост после финального чека покрывает `scripts/seed-dev-system.py --run-minimal-flow`, а advanced kitchen/process ветку покрывает `--run-kitchen-process-smoke`.
 
 ## POS Edge Backend
 
@@ -180,7 +180,7 @@
 - Docker compose поднимает Cloud PostgreSQL, ClickHouse, Cloud API, License API и POS Edge без POS UI.
 - Единственный Python seed script использует HTTP API и не делает прямых записей в PostgreSQL/SQLite.
 - `scripts/seed-dev-system.py` проверяет health Cloud/POS/License, создает полный Cloud-owned seed dataset, публикует master data, выполняет license pairing POS Edge и проверяет базовый POS read model.
-- `scripts/seed-dev-system.py --run-minimal-flow` выполняет минимальный HTTP-only smoke: Cloud recipes/stop-list publication, Edge sync, waiter order/precheck, KDS served, cashier payment/final check, прием `ItemServed`/`CheckClosed` в Cloud, появление строк Cloud `stock_ledger` по `ItemServed` и отсутствие duplicate `CheckClosed` delta для того же `order_line_id`.
+- `scripts/seed-dev-system.py --run-minimal-flow` выполняет минимальный HTTP-only smoke: Cloud recipes/stop-list publication, Edge sync, waiter order/precheck, KDS served, cashier payment/final check, прием `ItemServed`/`CheckClosed` в Cloud, появление строк Cloud `stock_ledger` по `ItemServed`, отсутствие duplicate `CheckClosed` delta для того же `order_line_id`, экспорт событий в ClickHouse `raw_business_events`, экспорт складских движений в `olap_stock_moves` и bounded reads `stock-move-summary`/`sales-kitchen-summary` без raw payload.
 - `scripts/seed-dev-system.py --run-kitchen-process-smoke` выполняет профильный kitchen/process smoke: Cloud seed publication для catalog/menu/recipes/inventory_reference, Edge sync, waiter order, kitchen order tile, `accept/start/ready/serve`, `recall/start/ready/serve`, ClickHouse `raw_business_events`, Cloud stock ledger и `olap_stock_moves` read для receipt/count/write-off/production, catalog/recipe suggestions, Cloud manager approve и Edge proposal feedback. При одновременном запуске `--run-minimal-flow` и `--run-kitchen-process-smoke` summary содержит отдельные секции `minimal_flow` и `kitchen_process_smoke`; полный kitchen/process smoke использует kitchen role/PIN, а не manager PIN.
 - PowerShell/Bash wrappers и прежние onboarding flows удалены; в `scripts` остается один пользовательский Python seed script.
 - HTTP слой скриптов игнорирует proxy для localhost/loopback, чтобы не ломать Docker published ports.
@@ -202,7 +202,7 @@
 Оставшиеся риски:
 
 - Полный `go test ./...` и `npm run build` нужно запускать после каждого изменения соответствующего кода; этот документ фиксирует покрытие по найденным тестам, а не заменяет запуск CI.
-- Полный локальный Docker smoke в текущей проверке не подтвержден из-за окружения. Local compose поддерживает переопределение host ports для PostgreSQL, ClickHouse HTTP/native, Cloud API, POS Edge и License API; buildx blocker остается требованием локального Docker CLI/Compose окружения.
+- Полный локальный Docker smoke `--run-minimal-flow --run-kitchen-process-smoke` подтвержден 01.06.2026 в окружении с доступным Docker Compose/buildx. Local compose поддерживает переопределение host ports для PostgreSQL, ClickHouse HTTP/native, Cloud API, POS Edge и License API; buildx blocker остается требованием локального Docker CLI/Compose окружения.
 - Cloud Backend теперь имеет отдельный профильный contract: `docs/backend/CLOUD-BACKEND-SPEC.md`; при изменении Cloud routes, provisioning, publication, sync receiver или PostgreSQL schema его нужно обновлять вместе с кодом.
 - Legacy Edge-side manual inventory foundation удален из кода и managed SQLite baseline; историческая пометка сохранена в профильных sync/data docs.
 

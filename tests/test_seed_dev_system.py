@@ -184,14 +184,29 @@ class FakeClient:
                 return [{"event_id": "event-item-served-2"}, {"event_id": "event-item-served"}]
             if "event_type=KitchenTicketStatusChanged" in path:
                 return [{"event_id": "event-kds-status-0"}, {"event_id": "event-kds-status-1"}]
+            if "event_type=CheckClosed" in path:
+                return [{"event_id": "event-check-closed"}]
             return []
         if path.startswith("/api/v1/olap/stock-moves"):
             if "source_event_type=ItemServed" in path:
-                return [{"ledger_entry_id": "olap-ledger-1", "source_event_id": "event-item-served-2", "source_event_type": "ItemServed"}]
+                return [
+                    {"ledger_entry_id": "olap-ledger-1", "source_event_id": "event-item-served-2", "source_event_type": "ItemServed"},
+                    {"ledger_entry_id": "olap-ledger-minimal", "source_event_id": "event-item-served", "source_event_type": "ItemServed"},
+                ]
             for event_type in ("StockReceiptCaptured", "InventoryCountCaptured", "StockWriteOffCaptured", "ProductionCompleted"):
                 if f"source_event_type={event_type}" in path:
                     return [{"ledger_entry_id": f"olap-ledger-{event_type}", "source_event_id": f"event-{event_type}", "source_event_type": event_type}]
             return []
+        if path.startswith("/api/v1/olap/stock-move-summary"):
+            return [
+                {"group_by": "catalog_item", "group_key": "catalog-sirloin", "catalog_item_id": "catalog-sirloin", "move_count": 1},
+                {"group_by": "catalog_item", "group_key": "catalog-sauce", "catalog_item_id": "catalog-sauce", "move_count": 1},
+            ]
+        if path.startswith("/api/v1/olap/sales-kitchen-summary"):
+            return [
+                {"group_by": "event_type", "group_key": "ItemServed", "event_type": "ItemServed", "event_count": 1},
+                {"group_by": "event_type", "group_key": "CheckClosed", "event_type": "CheckClosed", "event_count": 1},
+            ]
         if path.startswith("/api/v1/inventory/stock-ledger"):
             if "source_event_type=CheckClosed" in path:
                 return []
@@ -201,6 +216,8 @@ class FakeClient:
                 {"id": "ledger-1", "source_event_id": "event-item-served", "source_event_type": "ItemServed", "order_line_id": "line-soup", "catalog_item_id": "catalog-sirloin"},
                 {"id": "ledger-2", "source_event_id": "event-item-served", "source_event_type": "ItemServed", "order_line_id": "line-soup", "catalog_item_id": "catalog-sauce"},
             ]
+        if path.startswith("/api/v1/inventory/stock-balances"):
+            return [{"catalog_item_id": "catalog-sirloin", "warehouse_id": "warehouse-main", "quantity": "7.500"}]
         if path == "/api/v1/kitchen/stock-receipts":
             return {"id": body["receipt_id"], "warehouse_id": body.get("warehouse_id", ""), "event_type": "StockReceiptCaptured"}
         if path == "/api/v1/kitchen/inventory-counts":
@@ -215,7 +232,7 @@ class FakeClient:
             return {"id": body["suggestion_id"], "kind": "recipe", "status": "pending_sync"}
         if path.startswith("/api/v1/master-data/catalog-suggestions"):
             if path.endswith("/approve"):
-                return {"id": "cloud-catalog-suggestion-1", "suggestion_id": "catalog-suggestion", "status": "approved"}
+                return {"id": "cloud-catalog-suggestion-1", "suggestion_id": "catalog-suggestion", "status": "approved", "applied_catalog_item_id": "catalog-smoke-herb"}
             return [{"id": "cloud-catalog-suggestion-1", "suggestion_id": "catalog-suggestion", "status": "pending"}]
         if path.startswith("/api/v1/master-data/recipe-suggestions"):
             if path.endswith("/approve"):
@@ -373,12 +390,19 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertEqual(result["served_ledger_entry_count"], 2)
         self.assertEqual(result["check_closed_delta_entry_count"], 0)
         self.assertEqual(result["ledger_catalog_item_ids"], ["catalog-sauce", "catalog-sirloin"])
+        self.assertEqual(result["olap_item_served_event_count"], 1)
+        self.assertEqual(result["olap_check_closed_event_count"], 1)
+        self.assertEqual(result["olap_item_served_stock_move_count"], 1)
+        self.assertEqual(result["olap_stock_move_summary_count"], 2)
+        self.assertEqual(result["olap_sales_kitchen_summary_group_keys"], ["CheckClosed", "ItemServed"])
         self.assertEqual(result["blocked_sale_error_code"], "SALE_ITEM_STOP_LISTED")
         cloud_paths = [path for _, path, _, _ in cloud.calls]
         self.assertTrue(any("event_type=ItemServed" in path for path in cloud_paths))
         self.assertTrue(any("event_type=CheckClosed" in path for path in cloud_paths))
         self.assertTrue(any("source_event_type=ItemServed" in path for path in cloud_paths))
         self.assertTrue(any("source_event_type=CheckClosed" in path for path in cloud_paths))
+        self.assertTrue(any(path.startswith("/api/v1/olap/stock-move-summary?") for path in cloud_paths))
+        self.assertTrue(any(path.startswith("/api/v1/olap/sales-kitchen-summary?") for path in cloud_paths))
 
     def test_minimal_flow_smoke_does_not_require_kitchen_pin(self):
         module = load_seed_module()
@@ -445,8 +469,8 @@ class SeedDevSystemTest(unittest.TestCase):
             "/api/v1/kitchen/productions",
             "/api/v1/kitchen/catalog-suggestions",
             "/api/v1/kitchen/recipe-suggestions",
-            "/api/v1/kitchen/proposals?kind=catalog&limit=100&offset=0",
-            "/api/v1/kitchen/proposals?kind=recipe&limit=100&offset=0",
+            "/api/v1/kitchen/proposals?kind=catalog&status=approved&limit=100&offset=0",
+            "/api/v1/kitchen/proposals?kind=recipe&status=approved&limit=100&offset=0",
         ):
             self.assertIn(path, pos_paths)
         self.assertTrue(any(path.startswith("/api/v1/olap/raw-business-events?") for path in cloud_paths))
