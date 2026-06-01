@@ -3,7 +3,7 @@ import { Cloud, KeyRound, RefreshCw, ShieldCheck, Wifi } from 'lucide-react';
 
 import { usePOS } from '../context/POSContext';
 import { t } from '../shared/i18n';
-import { PosBanner, PosButton } from '../shared/ui';
+import { PosBanner, PosButton, PosSelectableChip } from '../shared/ui';
 
 export const PairingScreen: React.FC = () => {
   const {
@@ -59,24 +59,24 @@ export const PairingScreen: React.FC = () => {
       <section className="flex-1 flex items-center justify-center p-6 md:p-10 bg-[var(--pos-surface)] overflow-y-auto">
         <div className="w-full max-w-[560px] border border-[var(--pos-border)] bg-[var(--pos-bg)]">
           <div className="grid grid-cols-2 border-b border-[var(--pos-border)]">
-            <button
+            <PosSelectableChip
               id="pair-mode-cloud-btn"
-              type="button"
+              active={mode === 'cloud'}
               onClick={() => setMode('cloud')}
-              className={`h-14 flex items-center justify-center gap-2 font-mono text-xs font-bold uppercase tracking-wider border-r border-[var(--pos-border)] ${mode === 'cloud' ? 'bg-[var(--pos-action-primary)] text-[var(--pos-surface)]' : 'bg-[var(--pos-surface)] text-[var(--pos-text-secondary)] hover:bg-[var(--pos-surface-raised)]'}`}
+              className="h-14 flex items-center justify-center gap-2 border-y-0 border-l-0 border-r border-[var(--pos-border)]"
             >
               <Cloud className="w-4 h-4" />
               {t.pair.cloudMode}
-            </button>
-            <button
+            </PosSelectableChip>
+            <PosSelectableChip
               id="pair-mode-license-btn"
-              type="button"
+              active={mode === 'license'}
               onClick={() => setMode('license')}
-              className={`h-14 flex items-center justify-center gap-2 font-mono text-xs font-bold uppercase tracking-wider ${mode === 'license' ? 'bg-[var(--pos-action-primary)] text-[var(--pos-surface)]' : 'bg-[var(--pos-surface)] text-[var(--pos-text-secondary)] hover:bg-[var(--pos-surface-raised)]'}`}
+              className="h-14 flex items-center justify-center gap-2 border-0"
             >
               <KeyRound className="w-4 h-4" />
               {t.pair.licenseMode}
-            </button>
+            </PosSelectableChip>
           </div>
 
           <div className="p-6 space-y-6">

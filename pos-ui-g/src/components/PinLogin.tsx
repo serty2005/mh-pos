@@ -50,12 +50,12 @@ export const PinLogin: React.FC = () => {
             {t.auth.pinTitle}
           </h1>
           <p className="font-sans text-xs md:text-sm text-[var(--pos-text-muted)] leading-relaxed font-light">
-            Введите PIN-код сотрудника для открытия рабочей сессии и доступа к кассовым операциям.
+            {t.auth.pinSessionCopy}
           </p>
         </div>
 
         <div className="font-mono text-[10px] text-[var(--pos-text-muted)] uppercase tracking-widest">
-          Версия БД: {appVersion}
+          {t.auth.dbVersion}: {appVersion}
         </div>
       </div>
 
@@ -98,43 +98,56 @@ export const PinLogin: React.FC = () => {
           {/* Keypad Grid cells */}
           <div className="grid grid-cols-3 gap-3 w-full mb-6">
             {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((num) => (
-              <button
+              <PosButton
                 key={num}
                 id={`pin-btn-${num}`}
-                className="h-[64px] border border-[var(--pos-border)] bg-[var(--pos-surface-raised)] hover:bg-[var(--pos-border)] active:bg-[var(--pos-border-strong)] font-mono text-xl font-bold cursor-pointer transition-colors text-[var(--pos-text-primary)] rounded-none"
+                type="button"
+                variant="secondary"
+                size="lg"
+                className="h-[64px] px-0 bg-[var(--pos-surface-raised)] hover:bg-[var(--pos-border)] active:bg-[var(--pos-border-strong)] font-mono text-xl font-bold text-[var(--pos-text-primary)]"
                 onClick={() => handleKeyPress(num)}
               >
                 {num}
-              </button>
+              </PosButton>
             ))}
             
             {/* Clear Button */}
-            <button
+            <PosButton
               id={`pin-btn-clear`}
-              className="h-[64px] border border-[var(--pos-border)] bg-[var(--pos-surface-raised)] hover:bg-[var(--pos-border)] font-mono text-xs uppercase tracking-wider font-bold cursor-pointer transition-colors text-[var(--pos-status-danger)] rounded-none"
+              type="button"
+              variant="secondary"
+              size="lg"
+              aria-label={t.common.clear}
+              className="h-[64px] px-0 bg-[var(--pos-surface-raised)] hover:bg-[var(--pos-border)] font-mono text-xs font-bold text-[var(--pos-status-danger)]"
               onClick={handleClear}
             >
               C
-            </button>
+            </PosButton>
             
             {/* Zero */}
-            <button
+            <PosButton
               id={`pin-btn-0`}
-              className="h-[64px] border border-[var(--pos-border)] bg-[var(--pos-surface-raised)] hover:bg-[var(--pos-border)] font-mono text-xl font-bold cursor-pointer transition-colors text-[var(--pos-text-primary)] rounded-none"
+              type="button"
+              variant="secondary"
+              size="lg"
+              className="h-[64px] px-0 bg-[var(--pos-surface-raised)] hover:bg-[var(--pos-border)] font-mono text-xl font-bold text-[var(--pos-text-primary)]"
               onClick={() => handleKeyPress('0')}
             >
               0
-            </button>
+            </PosButton>
 
             {/* Backspace */}
-            <button
+            <PosButton
               id={`pin-btn-delete`}
-              className="h-[64px] border border-[var(--pos-border)] bg-[var(--pos-surface-raised)] hover:bg-[var(--pos-border)] flex items-center justify-center font-mono text-xl font-bold cursor-pointer transition-colors text-[var(--pos-text-secondary)] rounded-none"
+              type="button"
+              variant="secondary"
+              size="lg"
+              className="h-[64px] px-0 bg-[var(--pos-surface-raised)] hover:bg-[var(--pos-border)] font-mono text-xl font-bold text-[var(--pos-text-secondary)]"
               onClick={handleDelete}
-              aria-label="Delete"
+              aria-label={t.auth.deleteDigit}
             >
               <Delete className="w-5 h-5" />
-            </button>
+            </PosButton>
           </div>
 
           {/* Submit Action Button */}
@@ -148,7 +161,7 @@ export const PinLogin: React.FC = () => {
             className="font-mono text-xs uppercase tracking-widest"
             icon={<ArrowRight className="w-4 h-4" />}
           >
-            Войти
+            {t.auth.login}
           </PosButton>
         </div>
       </div>

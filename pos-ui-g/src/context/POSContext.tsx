@@ -258,7 +258,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const provisioning = await api.getProvisioningStatus();
       applyProvisioningStatus(provisioning);
     } catch (error) {
-      handleError(error, 'Не удалось получить pairing status');
+      handleError(error, t.ops.pairingStatusFailed);
     }
   }, [api, applyProvisioningStatus, handleError, setAuth]);
 
@@ -270,7 +270,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       applyProvisioningStatus(status);
     } catch (error) {
       setProvisioningError(t.pair.error);
-      handleError(error, 'Не удалось получить provisioning status');
+      handleError(error, t.ops.provisioningStatusFailed);
     } finally {
       setProvisioningLoading(false);
     }
@@ -282,10 +282,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const status = await api.registerCloudProvisioning(cloudUrl);
       applyProvisioningStatus(status);
-      addLogEvent('Регистрация Edge в Cloud отправлена.', 'success');
+      addLogEvent(t.ops.edgeRegistrationSent, 'success');
     } catch (error) {
       setProvisioningError(t.pair.error);
-      handleError(error, 'Не удалось зарегистрировать Edge в Cloud');
+      handleError(error, t.ops.edgeRegistrationFailed);
     } finally {
       setProvisioningLoading(false);
     }
@@ -297,10 +297,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const status = await api.pairViaLicense(pairingCode.trim().toUpperCase());
       applyProvisioningStatus(status);
-      addLogEvent('Edge привязан по license code.', 'success');
+      addLogEvent(t.ops.licensePaired, 'success');
     } catch (error) {
       setProvisioningError(t.pair.error);
-      handleError(error, 'Не удалось привязать Edge по license code');
+      handleError(error, t.ops.licensePairFailed);
     } finally {
       setProvisioningLoading(false);
     }
@@ -389,7 +389,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setClosedOrdersDto([]);
       setClosedOrdersHasNextPage(false);
       setClosedOrdersError(t.errors.unknown);
-      handleError(error, 'Не удалось загрузить закрытые заказы');
+      handleError(error, t.ops.closedOrdersLoadFailed);
     } finally {
       setClosedOrdersLoading(false);
     }
@@ -422,7 +422,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await refreshCurrentPricing();
       await refreshActivity();
     } catch (error) {
-      handleError(error, 'Не удалось обновить состояние POS');
+      handleError(error, t.ops.posRefreshFailed);
     }
   }, [handleError, refreshActivity, refreshCurrentPrechecks, refreshCurrentPricing, refreshDirectory, refreshFloor, refreshOps]);
 
@@ -505,7 +505,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const schemaVersion = runtime?.schema_version || storageStatusDto?.schema_migrations[0]?.version || '';
     const moduleVersion = runtime?.module_version || '';
     if (moduleVersion && schemaVersion) return `${moduleVersion} / ${schemaVersion}`;
-    return moduleVersion || schemaVersion || 'н/д';
+    return moduleVersion || schemaVersion || t.common.notAvailable;
   }, [storageStatusDto]);
 
   const setActiveHallId = useCallback((id: string) => {
@@ -526,11 +526,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         actorEmployeeId: result.actor.employee_id,
       });
       setPinLocked(false);
-      addLogEvent(`Сотрудник ${result.actor.name} авторизован.`, 'success');
+      addLogEvent(t.ops.employeeAuthorized(result.actor.name), 'success');
       await refreshAll();
       return true;
     } catch (error) {
-      handleError(error, 'Ошибка авторизации по PIN');
+      handleError(error, t.ops.authFailed);
       return false;
     }
   }, [addLogEvent, api, handleError, refreshAll, refreshIdentity, setAuth]);
@@ -539,7 +539,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       if (authRef.current.sessionId) await api.logout();
     } catch (error) {
-      handleError(error, 'Ошибка выхода из сессии');
+      handleError(error, t.ops.logoutFailed);
     } finally {
       localStorage.removeItem(storageKeys.sessionId);
       setAuth({ ...authRef.current, sessionId: '', actorEmployeeId: '' });
@@ -548,17 +548,17 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCashSessionDto(null);
       setSelectedTableId(null);
       setPinLocked(true);
-      addLogEvent('Терминал заблокирован.', 'info');
+      addLogEvent(t.ops.terminalLocked, 'info');
     }
   }, [addLogEvent, api, handleError, setAuth]);
 
   const openEmployeeShift = useCallback(async () => {
     try {
       await api.openShift();
-      addLogEvent('Личная смена открыта.', 'success');
+      addLogEvent(t.ops.employeeShiftOpened, 'success');
       await refreshAll();
     } catch (error) {
-      handleError(error, 'Не удалось открыть личную смену');
+      handleError(error, t.ops.employeeShiftOpenFailed);
     }
   }, [addLogEvent, api, handleError, refreshAll]);
 
@@ -566,20 +566,20 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!shift) return;
     try {
       await api.closeShift(shift.id);
-      addLogEvent('Личная смена закрыта.', 'success');
+      addLogEvent(t.ops.employeeShiftClosed, 'success');
       await logout();
     } catch (error) {
-      handleError(error, 'Не удалось закрыть личную смену');
+      handleError(error, t.ops.employeeShiftCloseFailed);
     }
   }, [addLogEvent, api, handleError, logout, shift]);
 
   const openCashSession = useCallback(async (initialAmount: number) => {
     try {
       await api.openCashSession(initialAmount);
-      addLogEvent('Кассовая смена открыта.', 'success');
+      addLogEvent(t.ops.cashSessionOpened, 'success');
       await refreshAll();
     } catch (error) {
-      handleError(error, 'Не удалось открыть кассовую смену');
+      handleError(error, t.ops.cashSessionOpenFailed);
     }
   }, [addLogEvent, api, handleError, refreshAll]);
 
@@ -587,10 +587,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!cashSessionDto) return;
     try {
       await api.closeCashSession(cashSessionDto.id, cashSessionDto.opening_cash_amount);
-      addLogEvent('Кассовая смена закрыта.', 'success');
+      addLogEvent(t.ops.cashSessionClosed, 'success');
       await refreshAll();
     } catch (error) {
-      handleError(error, 'Не удалось закрыть кассовую смену');
+      handleError(error, t.ops.cashSessionCloseFailed);
     }
   }, [addLogEvent, api, cashSessionDto, handleError, refreshAll]);
 
@@ -616,10 +616,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         },
         ...prev,
       ]);
-      addLogEvent('Операция кассового ящика записана.', 'success');
+      addLogEvent(t.ops.cashDrawerEventRecorded, 'success');
       await refreshActivity();
     } catch (error) {
-      handleError(error, 'Не удалось записать операцию кассового ящика');
+      handleError(error, t.ops.cashDrawerEventFailed);
     }
   }, [addLogEvent, api, cashSessionDto, handleError, refreshActivity]);
 
@@ -630,10 +630,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const created = await api.createOrder(tableId, table.name, guestsCount);
       setSelectedTableId(tableId);
       setCurrentSection('order');
-      addLogEvent(`Создан заказ ${created.edge_order_id}.`, 'success');
+      addLogEvent(t.ops.orderCreated(created.edge_order_id), 'success');
       await refreshFloor();
     } catch (error) {
-      handleError(error, 'Не удалось создать заказ');
+      handleError(error, t.ops.orderCreateFailed);
     }
   }, [addLogEvent, api, handleError, refreshFloor, tablesDto]);
 
@@ -646,7 +646,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await refreshCurrentPricing(backendCurrentOrder.id);
       return { success: true };
     } catch (error) {
-      handleError(error, 'Не удалось добавить позицию');
+      handleError(error, t.ops.orderLineAddFailed);
       return { success: false, errorKey: 'errors.conflict' };
     }
   }, [api, backendCurrentOrder, handleError, refreshCurrentPrechecks, refreshCurrentPricing, refreshFloor]);
@@ -660,7 +660,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await refreshCurrentPricing(backendCurrentOrder.id);
       return { success: true };
     } catch (error) {
-      handleError(error, 'Не удалось обновить модификаторы');
+      handleError(error, t.ops.modifiersUpdateFailed);
       return { success: false, errorKey: 'errors.conflict' };
     }
   }, [api, backendCurrentOrder, handleError, refreshCurrentPrechecks, refreshCurrentPricing, refreshFloor]);
@@ -675,14 +675,14 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         await api.applySurchargePolicy(backendCurrentOrder.id, policy.id, reason);
       }
-      addLogEvent(`Применена настройка цены: ${policy.name}.`, 'success');
+      addLogEvent(t.ops.pricingPolicyApplied(policy.name), 'success');
       await refreshFloor();
       await refreshCurrentPrechecks(backendCurrentOrder.id);
       await refreshCurrentPricing(backendCurrentOrder.id);
       await refreshActivity();
       return { success: true };
     } catch (error) {
-      handleError(error, 'Не удалось применить скидку или надбавку');
+      handleError(error, t.ops.pricingPolicyFailed);
       return { success: false, errorKey: 'errors.conflict' };
     }
   }, [addLogEvent, api, backendCurrentOrder, handleError, pricingPoliciesDto, refreshActivity, refreshCurrentPrechecks, refreshCurrentPricing, refreshFloor]);
@@ -694,7 +694,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await refreshFloor();
       await refreshCurrentPricing(backendCurrentOrder.id);
     } catch (error) {
-      handleError(error, 'Не удалось удалить позицию');
+      handleError(error, t.ops.orderLineRemoveFailed);
     }
   }, [api, backendCurrentOrder, handleError, refreshCurrentPricing, refreshFloor]);
 
@@ -710,7 +710,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return { success: true };
     } catch (error) {
-      handleError(error, 'Не удалось изменить количество');
+      handleError(error, t.ops.quantityChangeFailed);
       return { success: false, errorKey: 'errors.conflict' };
     }
   }, [api, backendCurrentOrder, handleError, refreshCurrentPricing, refreshFloor, removeOrderLine]);
@@ -722,7 +722,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await refreshFloor();
       await refreshCurrentPricing(backendCurrentOrder.id);
     } catch (error) {
-      handleError(error, 'Не удалось обновить позицию');
+      handleError(error, t.ops.orderLineUpdateFailed);
     }
   }, [api, backendCurrentOrder, handleError, refreshCurrentPricing, refreshFloor]);
 
@@ -730,11 +730,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!backendCurrentOrder) return;
     try {
       await api.issuePrecheck(backendCurrentOrder.id);
-      addLogEvent('Пречек выпущен backend.', 'success');
+      addLogEvent(t.ops.precheckIssued, 'success');
       await refreshFloor();
       await refreshCurrentPrechecks(backendCurrentOrder.id);
     } catch (error) {
-      handleError(error, 'Не удалось выпустить пречек');
+      handleError(error, t.ops.precheckIssueFailed);
     }
   }, [addLogEvent, api, backendCurrentOrder, handleError, refreshCurrentPrechecks, refreshFloor]);
 
@@ -742,12 +742,12 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!activePrecheck) return false;
     try {
       await api.cancelPrecheck(activePrecheck.id, managerPin, reason);
-      addLogEvent('Пречек отменен backend.', 'success');
+      addLogEvent(t.ops.precheckCancelled, 'success');
       await refreshFloor();
       await refreshCurrentPrechecks(activePrecheck.order_id);
       return true;
     } catch (error) {
-      handleError(error, 'Не удалось отменить пречек');
+      handleError(error, t.ops.precheckCancelFailed);
       return false;
     }
   }, [activePrecheck, addLogEvent, api, handleError, refreshCurrentPrechecks, refreshFloor]);
@@ -756,9 +756,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!activePrecheck) return;
     try {
       await api.reprintPrecheck(activePrecheck.id);
-      addLogEvent('Копия пречека отправлена на печать.', 'success');
+      addLogEvent(t.ops.precheckReprintSent, 'success');
     } catch (error) {
-      handleError(error, 'Не удалось напечатать пречек');
+      handleError(error, t.ops.precheckReprintFailed);
     }
   }, [activePrecheck, addLogEvent, api, handleError]);
 
@@ -767,13 +767,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       await api.capturePrecheckPayment(activePrecheck.id, method, inputAmount, activePrecheck.currency_code);
       const change = paymentChange(activePrecheck.remaining_total, inputAmount);
-      addLogEvent('Оплата проведена backend.', 'success');
+      addLogEvent(t.ops.paymentCaptured, 'success');
       setSelectedTableId(null);
       await refreshFloor();
       await refreshActivity();
       return { success: true, change };
     } catch (error) {
-      handleError(error, 'Не удалось провести оплату');
+      handleError(error, t.ops.paymentCaptureFailed);
       return { success: false, change: 0, errorKey: 'errors.paymentFailed' };
     }
   }, [activePrecheck, addLogEvent, api, handleError, refreshActivity, refreshFloor]);
@@ -785,10 +785,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         operationKind: 'full',
         inventoryDisposition: dispositionToBackend(disposition),
       });
-      addLogEvent('Возврат чека записан backend.', 'success');
+      addLogEvent(t.ops.refundRecorded, 'success');
       await refreshActivity();
     } catch (error) {
-      handleError(error, 'Не удалось оформить возврат');
+      handleError(error, t.ops.refundFailed);
     }
   }, [addLogEvent, api, handleError, refreshActivity]);
 
@@ -810,29 +810,29 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           taxAmount: 0,
         }],
       });
-      addLogEvent('Частичный возврат записан backend.', 'success');
+      addLogEvent(t.ops.partialRefundRecorded, 'success');
       await refreshActivity();
     } catch (error) {
-      handleError(error, 'Не удалось оформить частичный возврат');
+      handleError(error, t.ops.partialRefundFailed);
     }
   }, [addLogEvent, api, closedOrders, handleError, refreshActivity]);
 
   const reprintCheck = useCallback(async (checkId: string) => {
     try {
       await api.reprintCheck(checkId);
-      addLogEvent('Копия чека отправлена на печать.', 'success');
+      addLogEvent(t.ops.checkReprintSent, 'success');
     } catch (error) {
-      handleError(error, 'Не удалось напечатать чек');
+      handleError(error, t.ops.checkReprintFailed);
     }
   }, [addLogEvent, api, handleError]);
 
   const syncOutbox = useCallback(async () => {
     try {
       await api.retryFailedOutbox();
-      addLogEvent('Повторная отправка outbox запущена.', 'success');
+      addLogEvent(t.ops.outboxRetryStarted, 'success');
       await refreshActivity();
     } catch (error) {
-      handleError(error, 'Не удалось повторить синхронизацию');
+      handleError(error, t.ops.outboxRetryFailed);
     }
   }, [addLogEvent, api, handleError, refreshActivity]);
 

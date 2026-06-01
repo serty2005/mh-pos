@@ -11,5 +11,11 @@ describe('pos-ui-g i18n labels', () => {
     expect(t.modals.cashEventAmountRequired).toBeTruthy();
     expect(t.modals.paymentSubmit).toBeTruthy();
     expect(t.common.next).toBeTruthy();
+    expect(t.common.clear).toBeTruthy();
+    expect(t.auth.pinSessionCopy).toBeTruthy();
+    expect(t.auth.login).toBeTruthy();
+    expect(t.auth.dbVersion).toBeTruthy();
+    expect(t.ops.closedOrdersLoadFailed).toBeTruthy();
+    expect(t.ops.employeeAuthorized('Оператор')).toContain('Оператор');
   });
 });

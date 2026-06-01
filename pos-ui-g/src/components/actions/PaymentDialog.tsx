@@ -224,30 +224,34 @@ export const PaymentDialog: React.FC<PaymentDialogProps> = ({
           {/* Pad buttons */}
           <div className="flex-1 grid grid-cols-3 gap-2">
             {['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '.', 'C'].map((key) => (
-              <button
+              <PosButton
                 key={key}
                 id={`pay-pad-${key === 'C' ? 'clear' : key === '.' ? 'dot' : key}`}
                 type="button"
                 onClick={() => handleKeypadPress(key)}
-                className="h-12 border border-[var(--pos-border)] bg-[var(--pos-surface)] font-mono font-bold text-center hover:bg-[var(--pos-surface-raised)] cursor-pointer select-none rounded-none text-[var(--pos-text-primary)]"
+                variant="secondary"
+                size="sm"
+                className="h-12 px-0 bg-[var(--pos-surface)] font-mono font-bold text-center hover:bg-[var(--pos-surface-raised)] text-[var(--pos-text-primary)]"
               >
                 {key}
-              </button>
+              </PosButton>
             ))}
           </div>
 
           {/* Quick Sum Buttons Column */}
           <div className="w-full sm:w-[120px] flex sm:flex-col gap-2 shrink-0">
             {[100, 500, 1000, 5000].map((sum) => (
-              <button
+              <PosButton
                 key={sum}
                 id={`pay-quick-${sum}`}
                 type="button"
                 onClick={() => handleQuickSum(sum)}
-                className="flex-1 h-12 border border-[var(--pos-border)] bg-[var(--pos-surface-raised)] font-mono text-xs font-bold text-center flex items-center justify-center hover:bg-[var(--pos-border)] cursor-pointer select-none text-[var(--pos-text-secondary)] rounded-none"
+                variant="secondary"
+                size="sm"
+                className="flex-1 h-12 px-0 bg-[var(--pos-surface-raised)] font-mono text-xs font-bold text-center hover:bg-[var(--pos-border)] text-[var(--pos-text-secondary)]"
               >
                 +{sum} {t.common.ruble}
-              </button>
+              </PosButton>
             ))}
           </div>
         </div>
