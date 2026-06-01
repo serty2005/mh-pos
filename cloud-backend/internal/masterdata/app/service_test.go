@@ -725,6 +725,192 @@ func TestStopListUpdateReviewRejectRequestChangesAndInvalidTransition(t *testing
 	}
 }
 
+func TestReviewAssignmentCommandsAreIdempotentAndAudited(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	now := fixedClock{}.Now()
+	repo.SeedStopListUpdateReview(domain.StopListUpdateReview{
+		ID:               "event-stop-assign-1",
+		RestaurantID:     "restaurant-1",
+		DeviceID:         "edge-1",
+		StopListID:       "edge-stop-assign-1",
+		CatalogItemID:    "dish-assign-1",
+		Active:           true,
+		ConflictPolicy:   "edge_overlay_requires_manager_review",
+		Source:           "edge",
+		ProjectionAction: "requires_manager_review",
+		Status:           domain.SuggestionStatusPending,
+		UpdatedAt:        now,
+		OccurredAt:       now,
+		ProjectedAt:      now,
+		CreatedAt:        now,
+	})
+
+	assignCommandID := "018f0000-0000-7000-8000-000000000701"
+	assigned, err := service.AssignReviewItem(ctx, "stop_list_update", "event-stop-assign-1", app.ReviewAssignCommand{
+		CommandID:            assignCommandID,
+		AssignedToEmployeeID: "manager-2",
+		AssignedByEmployeeID: "manager-1",
+		Reason:               "take ownership",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assigned.AssignedToEmployeeID != "manager-2" || assigned.AssignedByEmployeeID != "manager-1" || assigned.AssignmentNote != "take ownership" {
+		t.Fatalf("unexpected assignment response: %+v", assigned)
+	}
+	replayedAssign, err := service.AssignReviewItem(ctx, "stop_list_update", "event-stop-assign-1", app.ReviewAssignCommand{
+		CommandID:            assignCommandID,
+		AssignedToEmployeeID: "manager-2",
+		AssignedByEmployeeID: "manager-1",
+		Reason:               "take ownership",
+	})
+	if err != nil {
+		t.Fatalf("assign replay must be idempotent, got %v", err)
+	}
+	if replayedAssign.AssignedToEmployeeID != "manager-2" || len(repo.ReviewAssignmentAuditEvents()) != 1 {
+		t.Fatalf("expected replay without duplicate audit, response=%+v audit=%+v", replayedAssign, repo.ReviewAssignmentAuditEvents())
+	}
+
+	unassignCommandID := "018f0000-0000-7000-8000-000000000702"
+	unassigned, err := service.UnassignReviewItem(ctx, "stop_list_update", "event-stop-assign-1", app.ReviewUnassignCommand{
+		CommandID:              unassignCommandID,
+		UnassignedByEmployeeID: "manager-1",
+		Reason:                 "rebalance queue",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unassigned.AssignedToEmployeeID != "" || unassigned.AssignedByEmployeeID != "" || unassigned.AssignedAt != nil || unassigned.AssignmentNote != "" {
+		t.Fatalf("unexpected unassignment response: %+v", unassigned)
+	}
+	replayedUnassign, err := service.UnassignReviewItem(ctx, "stop_list_update", "event-stop-assign-1", app.ReviewUnassignCommand{
+		CommandID:              unassignCommandID,
+		UnassignedByEmployeeID: "manager-1",
+		Reason:                 "rebalance queue",
+	})
+	if err != nil {
+		t.Fatalf("unassign replay must be idempotent, got %v", err)
+	}
+	if replayedUnassign.AssignedToEmployeeID != "" || len(repo.ReviewAssignmentAuditEvents()) != 2 {
+		t.Fatalf("expected replay without duplicate audit, response=%+v audit=%+v", replayedUnassign, repo.ReviewAssignmentAuditEvents())
+	}
+	body, _ := json.Marshal(unassigned)
+	if strings.Contains(string(body), "payload_json") || strings.Contains(string(body), "raw_payload") {
+		t.Fatalf("assignment response must not expose raw payload fields: %s", body)
+	}
+	events := repo.ReviewAssignmentAuditEvents()
+	if events[0].Action != "assigned" || events[1].Action != "unassigned" {
+		t.Fatalf("expected assigned/unassigned audit trail, got %+v", events)
+	}
+}
+
+func TestReviewAssignmentRejectsTerminalAndUnknownReviewType(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	now := fixedClock{}.Now()
+	for _, tc := range []struct {
+		id     string
+		status domain.SuggestionStatus
+	}{
+		{id: "event-stop-approved", status: domain.SuggestionStatusApproved},
+		{id: "event-stop-rejected", status: domain.SuggestionStatusRejected},
+	} {
+		repo.SeedStopListUpdateReview(domain.StopListUpdateReview{
+			ID:               tc.id,
+			RestaurantID:     "restaurant-1",
+			DeviceID:         "edge-1",
+			StopListID:       tc.id + "-stop",
+			CatalogItemID:    tc.id + "-dish",
+			Active:           true,
+			ConflictPolicy:   "edge_overlay_requires_manager_review",
+			Source:           "edge",
+			ProjectionAction: "requires_manager_review",
+			Status:           tc.status,
+			UpdatedAt:        now,
+			OccurredAt:       now,
+			ProjectedAt:      now,
+			CreatedAt:        now,
+		})
+		if _, err := service.AssignReviewItem(ctx, "stop_list_update", tc.id, app.ReviewAssignCommand{
+			CommandID:            "018f0000-0000-7000-8000-000000000711",
+			AssignedToEmployeeID: "manager-2",
+			AssignedByEmployeeID: "manager-1",
+			Reason:               "take ownership",
+		}); !errors.Is(err, domain.ErrConflict) {
+			t.Fatalf("expected terminal %s assign conflict, got %v", tc.status, err)
+		}
+		if _, err := service.UnassignReviewItem(ctx, "stop_list_update", tc.id, app.ReviewUnassignCommand{
+			CommandID:              "018f0000-0000-7000-8000-000000000712",
+			UnassignedByEmployeeID: "manager-1",
+			Reason:                 "rebalance queue",
+		}); !errors.Is(err, domain.ErrConflict) {
+			t.Fatalf("expected terminal %s unassign conflict, got %v", tc.status, err)
+		}
+	}
+	if _, err := service.AssignReviewItem(ctx, "unknown", "event-stop-approved", app.ReviewAssignCommand{
+		CommandID:            "018f0000-0000-7000-8000-000000000713",
+		AssignedToEmployeeID: "manager-2",
+		AssignedByEmployeeID: "manager-1",
+		Reason:               "take ownership",
+	}); !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected unknown review_type validation error, got %v", err)
+	}
+}
+
+func TestReviewAssignmentSupportsCatalogAndRecipeSuggestions(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	now := fixedClock{}.Now()
+	repo.SeedCatalogSuggestion(domain.CatalogSuggestion{
+		ID:              "catalog-assignment-1",
+		SuggestionID:    "edge-catalog-assignment-1",
+		RestaurantID:    "restaurant-1",
+		Action:          "create",
+		Status:          domain.SuggestionStatusPending,
+		SuggestedAt:     now,
+		CloudReceivedAt: now,
+		PayloadJSON:     json.RawMessage(`{"data":{"name":"Tea"}}`),
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+	if _, err := repo.SubmitRecipeSuggestion(ctx, domain.RecipeSuggestion{
+		ID:              "recipe-assignment-1",
+		SuggestionID:    "edge-recipe-assignment-1",
+		RestaurantID:    "restaurant-1",
+		Action:          "update",
+		Status:          domain.SuggestionStatusPending,
+		SuggestedAt:     now,
+		CloudReceivedAt: now,
+		PayloadJSON:     json.RawMessage(`{"data":{"action":"update"}}`),
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		reviewType string
+		id         string
+		commandID  string
+	}{
+		{reviewType: "catalog_suggestion", id: "catalog-assignment-1", commandID: "018f0000-0000-7000-8000-000000000721"},
+		{reviewType: "recipe_suggestion", id: "recipe-assignment-1", commandID: "018f0000-0000-7000-8000-000000000722"},
+	} {
+		assigned, err := service.AssignReviewItem(ctx, tc.reviewType, tc.id, app.ReviewAssignCommand{
+			CommandID:            tc.commandID,
+			AssignedToEmployeeID: "manager-2",
+			AssignedByEmployeeID: "manager-1",
+			Reason:               "take ownership",
+		})
+		if err != nil {
+			t.Fatalf("%s assign failed: %v", tc.reviewType, err)
+		}
+		if assigned.ReviewType != tc.reviewType || assigned.AssignedToEmployeeID != "manager-2" {
+			t.Fatalf("unexpected %s assignment response: %+v", tc.reviewType, assigned)
+		}
+	}
+}
+
 func newService() (*app.Service, *memory.Repository) {
 	repo := memory.NewRepository()
 	return app.NewService(repo, fixedClock{}, &fixedIDs{}), repo

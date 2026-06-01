@@ -615,7 +615,8 @@ INSERT INTO cloud_recipe_suggestions(
 ON CONFLICT (suggestion_id) DO UPDATE SET updated_at = EXCLUDED.updated_at
 RETURNING id,suggestion_id,restaurant_id,COALESCE(recipe_version_id,''),COALESCE(owner_catalog_item_id,''),COALESCE(owner_catalog_suggestion_id,''),
        COALESCE(proposal_group_id,''),action,COALESCE(reason,''),prep_time_delta_minutes,status,COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),
-       reviewed_at,COALESCE(source_event_id,''),suggested_at,cloud_received_at,payload_json,created_at,updated_at`,
+       reviewed_at,COALESCE(assigned_to_employee_id,''),COALESCE(assigned_by_employee_id,''),assigned_at,COALESCE(assignment_note,''),
+       COALESCE(source_event_id,''),suggested_at,cloud_received_at,payload_json,created_at,updated_at`,
 		v.ID, v.SuggestionID, v.RestaurantID, nullableText(v.RecipeVersionID), nullableText(v.OwnerCatalogItemID), nullableText(v.OwnerCatalogSuggestionID), nullableText(v.ProposalGroupID), v.Action, v.Reason, v.PrepTimeDeltaMinutes, string(v.Status), nullableText(v.SourceEventID), v.SuggestedAt, v.CloudReceivedAt, string(v.PayloadJSON), v.CreatedAt, v.UpdatedAt))
 	if err != nil {
 		return domain.RecipeSuggestion{}, normalizeErr(err)
@@ -933,6 +934,7 @@ func (r *Repository) ListCatalogSuggestions(ctx context.Context, restaurantID, s
 	rows, err := r.pool.Query(ctx, `
 SELECT id,suggestion_id,restaurant_id,COALESCE(catalog_item_id,''),COALESCE(proposal_group_id,''),action,COALESCE(reason,''),status,
        COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(applied_catalog_item_id,''),COALESCE(source_event_id,''),
+       COALESCE(assigned_to_employee_id,''),COALESCE(assigned_by_employee_id,''),assigned_at,COALESCE(assignment_note,''),
        suggested_at,cloud_received_at,payload_json,created_at,updated_at
 FROM cloud_catalog_suggestions
 WHERE ($1 = '' OR restaurant_id = $1) AND ($2 = '' OR status = $2)
@@ -957,6 +959,7 @@ func (r *Repository) GetCatalogSuggestion(ctx context.Context, id string) (domai
 	v, err := scanCatalogSuggestion(r.pool.QueryRow(ctx, `
 SELECT id,suggestion_id,restaurant_id,COALESCE(catalog_item_id,''),COALESCE(proposal_group_id,''),action,COALESCE(reason,''),status,
        COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(applied_catalog_item_id,''),COALESCE(source_event_id,''),
+       COALESCE(assigned_to_employee_id,''),COALESCE(assigned_by_employee_id,''),assigned_at,COALESCE(assignment_note,''),
        suggested_at,cloud_received_at,payload_json,created_at,updated_at
 FROM cloud_catalog_suggestions WHERE id = $1`, strings.TrimSpace(id)))
 	return v, normalizeErr(err)
@@ -965,12 +968,15 @@ FROM cloud_catalog_suggestions WHERE id = $1`, strings.TrimSpace(id)))
 func (r *Repository) UpdateCatalogSuggestion(ctx context.Context, v domain.CatalogSuggestion) (domain.CatalogSuggestion, error) {
 	out, err := scanCatalogSuggestion(r.pool.QueryRow(ctx, `
 UPDATE cloud_catalog_suggestions
-SET status=$2,review_comment=$3,reviewed_by_employee_id=$4,reviewed_at=$5,applied_catalog_item_id=$6,updated_at=$7
+SET status=$2,review_comment=$3,reviewed_by_employee_id=$4,reviewed_at=$5,applied_catalog_item_id=$6,updated_at=$7,
+    assigned_to_employee_id=$8,assigned_by_employee_id=$9,assigned_at=$10,assignment_note=$11
 WHERE id=$1
 RETURNING id,suggestion_id,restaurant_id,COALESCE(catalog_item_id,''),COALESCE(proposal_group_id,''),action,COALESCE(reason,''),status,
        COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(applied_catalog_item_id,''),COALESCE(source_event_id,''),
+       COALESCE(assigned_to_employee_id,''),COALESCE(assigned_by_employee_id,''),assigned_at,COALESCE(assignment_note,''),
        suggested_at,cloud_received_at,payload_json,created_at,updated_at`,
-		v.ID, string(v.Status), nullableText(v.ReviewComment), nullableText(v.ReviewedByEmployeeID), v.ReviewedAt, nullableText(v.AppliedCatalogItemID), v.UpdatedAt))
+		v.ID, string(v.Status), nullableText(v.ReviewComment), nullableText(v.ReviewedByEmployeeID), v.ReviewedAt, nullableText(v.AppliedCatalogItemID), v.UpdatedAt,
+		nullableText(v.AssignedToEmployeeID), nullableText(v.AssignedByEmployeeID), v.AssignedAt, nullableText(v.AssignmentNote)))
 	return out, normalizeErr(err)
 }
 
@@ -984,7 +990,8 @@ func (r *Repository) ListRecipeSuggestions(ctx context.Context, restaurantID, st
 	rows, err := r.pool.Query(ctx, `
 SELECT id,suggestion_id,restaurant_id,COALESCE(recipe_version_id,''),COALESCE(owner_catalog_item_id,''),COALESCE(owner_catalog_suggestion_id,''),
        COALESCE(proposal_group_id,''),action,COALESCE(reason,''),prep_time_delta_minutes,status,COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),
-       reviewed_at,COALESCE(source_event_id,''),suggested_at,cloud_received_at,payload_json,created_at,updated_at
+       reviewed_at,COALESCE(assigned_to_employee_id,''),COALESCE(assigned_by_employee_id,''),assigned_at,COALESCE(assignment_note,''),
+       COALESCE(source_event_id,''),suggested_at,cloud_received_at,payload_json,created_at,updated_at
 FROM cloud_recipe_suggestions
 WHERE ($1 = '' OR restaurant_id = $1) AND ($2 = '' OR status = $2)
 ORDER BY cloud_received_at DESC, id DESC
@@ -1008,7 +1015,8 @@ func (r *Repository) GetRecipeSuggestion(ctx context.Context, id string) (domain
 	v, err := scanRecipeSuggestion(r.pool.QueryRow(ctx, `
 SELECT id,suggestion_id,restaurant_id,COALESCE(recipe_version_id,''),COALESCE(owner_catalog_item_id,''),COALESCE(owner_catalog_suggestion_id,''),
        COALESCE(proposal_group_id,''),action,COALESCE(reason,''),prep_time_delta_minutes,status,COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),
-       reviewed_at,COALESCE(source_event_id,''),suggested_at,cloud_received_at,payload_json,created_at,updated_at
+       reviewed_at,COALESCE(assigned_to_employee_id,''),COALESCE(assigned_by_employee_id,''),assigned_at,COALESCE(assignment_note,''),
+       COALESCE(source_event_id,''),suggested_at,cloud_received_at,payload_json,created_at,updated_at
 FROM cloud_recipe_suggestions WHERE id = $1`, strings.TrimSpace(id)))
 	return v, normalizeErr(err)
 }
@@ -1016,12 +1024,15 @@ FROM cloud_recipe_suggestions WHERE id = $1`, strings.TrimSpace(id)))
 func (r *Repository) UpdateRecipeSuggestion(ctx context.Context, v domain.RecipeSuggestion) (domain.RecipeSuggestion, error) {
 	out, err := scanRecipeSuggestion(r.pool.QueryRow(ctx, `
 UPDATE cloud_recipe_suggestions
-SET status=$2,review_comment=$3,reviewed_by_employee_id=$4,reviewed_at=$5,updated_at=$6
+SET status=$2,review_comment=$3,reviewed_by_employee_id=$4,reviewed_at=$5,updated_at=$6,
+    assigned_to_employee_id=$7,assigned_by_employee_id=$8,assigned_at=$9,assignment_note=$10
 WHERE id=$1
 RETURNING id,suggestion_id,restaurant_id,COALESCE(recipe_version_id,''),COALESCE(owner_catalog_item_id,''),COALESCE(owner_catalog_suggestion_id,''),
        COALESCE(proposal_group_id,''),action,COALESCE(reason,''),prep_time_delta_minutes,status,COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),
-       reviewed_at,COALESCE(source_event_id,''),suggested_at,cloud_received_at,payload_json,created_at,updated_at`,
-		v.ID, string(v.Status), nullableText(v.ReviewComment), nullableText(v.ReviewedByEmployeeID), v.ReviewedAt, v.UpdatedAt))
+       reviewed_at,COALESCE(assigned_to_employee_id,''),COALESCE(assigned_by_employee_id,''),assigned_at,COALESCE(assignment_note,''),
+       COALESCE(source_event_id,''),suggested_at,cloud_received_at,payload_json,created_at,updated_at`,
+		v.ID, string(v.Status), nullableText(v.ReviewComment), nullableText(v.ReviewedByEmployeeID), v.ReviewedAt, v.UpdatedAt,
+		nullableText(v.AssignedToEmployeeID), nullableText(v.AssignedByEmployeeID), v.AssignedAt, nullableText(v.AssignmentNote)))
 	return out, normalizeErr(err)
 }
 
@@ -1057,7 +1068,8 @@ func (r *Repository) ListStopListUpdateReviews(ctx context.Context, restaurantID
 	rows, err := r.pool.Query(ctx, `
 SELECT source_event_id,restaurant_id,device_id,stop_list_id,COALESCE(warehouse_id,''),catalog_item_id,available_quantity::float8,
        active,conflict_policy,source,COALESCE(reason,''),projection_action,review_status,COALESCE(review_comment,''),
-       COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(applied_stop_list_id,''),updated_at,occurred_at,projected_at,created_at
+       COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(assigned_to_employee_id,''),COALESCE(assigned_by_employee_id,''),
+       assigned_at,COALESCE(assignment_note,''),COALESCE(applied_stop_list_id,''),updated_at,occurred_at,projected_at,created_at
 FROM cloud_projection_stop_list_updates
 WHERE projection_action = 'requires_manager_review'
   AND ($1 = '' OR restaurant_id = $1)
@@ -1083,7 +1095,8 @@ func (r *Repository) GetStopListUpdateReview(ctx context.Context, id string) (do
 	v, err := scanStopListUpdateReview(r.pool.QueryRow(ctx, `
 SELECT source_event_id,restaurant_id,device_id,stop_list_id,COALESCE(warehouse_id,''),catalog_item_id,available_quantity::float8,
        active,conflict_policy,source,COALESCE(reason,''),projection_action,review_status,COALESCE(review_comment,''),
-       COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(applied_stop_list_id,''),updated_at,occurred_at,projected_at,created_at
+       COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(assigned_to_employee_id,''),COALESCE(assigned_by_employee_id,''),
+       assigned_at,COALESCE(assignment_note,''),COALESCE(applied_stop_list_id,''),updated_at,occurred_at,projected_at,created_at
 FROM cloud_projection_stop_list_updates
 WHERE source_event_id = $1 AND projection_action = 'requires_manager_review'`, strings.TrimSpace(id)))
 	return v, normalizeErr(err)
@@ -1092,13 +1105,35 @@ WHERE source_event_id = $1 AND projection_action = 'requires_manager_review'`, s
 func (r *Repository) UpdateStopListUpdateReview(ctx context.Context, v domain.StopListUpdateReview) (domain.StopListUpdateReview, error) {
 	out, err := scanStopListUpdateReview(r.pool.QueryRow(ctx, `
 UPDATE cloud_projection_stop_list_updates
-SET review_status=$2,review_comment=$3,reviewed_by_employee_id=$4,reviewed_at=$5,applied_stop_list_id=$6
+SET review_status=$2,review_comment=$3,reviewed_by_employee_id=$4,reviewed_at=$5,applied_stop_list_id=$6,updated_at=$7,
+    assigned_to_employee_id=$8,assigned_by_employee_id=$9,assigned_at=$10,assignment_note=$11
 WHERE source_event_id=$1
 RETURNING source_event_id,restaurant_id,device_id,stop_list_id,COALESCE(warehouse_id,''),catalog_item_id,available_quantity::float8,
        active,conflict_policy,source,COALESCE(reason,''),projection_action,review_status,COALESCE(review_comment,''),
-       COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(applied_stop_list_id,''),updated_at,occurred_at,projected_at,created_at`,
-		strings.TrimSpace(v.ID), string(v.Status), nullableText(v.ReviewComment), nullableText(v.ReviewedByEmployeeID), v.ReviewedAt, nullableText(v.AppliedStopListID)))
+       COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(assigned_to_employee_id,''),COALESCE(assigned_by_employee_id,''),
+       assigned_at,COALESCE(assignment_note,''),COALESCE(applied_stop_list_id,''),updated_at,occurred_at,projected_at,created_at`,
+		strings.TrimSpace(v.ID), string(v.Status), nullableText(v.ReviewComment), nullableText(v.ReviewedByEmployeeID), v.ReviewedAt, nullableText(v.AppliedStopListID), v.UpdatedAt,
+		nullableText(v.AssignedToEmployeeID), nullableText(v.AssignedByEmployeeID), v.AssignedAt, nullableText(v.AssignmentNote)))
 	return out, normalizeErr(err)
+}
+
+func (r *Repository) GetReviewAssignmentAuditEvent(ctx context.Context, commandID string) (domain.ReviewAssignmentAuditEvent, error) {
+	var v domain.ReviewAssignmentAuditEvent
+	err := r.pool.QueryRow(ctx, `
+SELECT id,command_id,review_type,review_id,action,COALESCE(assigned_to_employee_id,''),actor_employee_id,COALESCE(reason,''),created_at
+FROM cloud_review_assignment_audit_events
+WHERE command_id = $1`, strings.TrimSpace(commandID)).Scan(
+		&v.ID, &v.CommandID, &v.ReviewType, &v.ReviewID, &v.Action, &v.AssignedToEmployeeID, &v.ActorEmployeeID, &v.Reason, &v.CreatedAt,
+	)
+	return v, normalizeErr(err)
+}
+
+func (r *Repository) AppendReviewAssignmentAuditEvent(ctx context.Context, v domain.ReviewAssignmentAuditEvent) error {
+	_, err := r.pool.Exec(ctx, `
+INSERT INTO cloud_review_assignment_audit_events(id,command_id,review_type,review_id,action,assigned_to_employee_id,actor_employee_id,reason,created_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		v.ID, v.CommandID, v.ReviewType, v.ReviewID, v.Action, nullableText(v.AssignedToEmployeeID), v.ActorEmployeeID, nullableText(v.Reason), v.CreatedAt)
+	return normalizeErr(err)
 }
 
 func upsertKindFoundation(ctx context.Context, tx pgx.Tx, v domain.CatalogItem) error {
@@ -1261,7 +1296,8 @@ func scanStopListUpdateReview(row scanner) (domain.StopListUpdateReview, error) 
 	err := row.Scan(
 		&v.ID, &v.RestaurantID, &v.DeviceID, &v.StopListID, &v.WarehouseID, &v.CatalogItemID, &available,
 		&v.Active, &v.ConflictPolicy, &v.Source, &v.Reason, &v.ProjectionAction, &status, &v.ReviewComment,
-		&v.ReviewedByEmployeeID, &v.ReviewedAt, &v.AppliedStopListID, &v.UpdatedAt, &v.OccurredAt, &v.ProjectedAt, &v.CreatedAt,
+		&v.ReviewedByEmployeeID, &v.ReviewedAt, &v.AssignedToEmployeeID, &v.AssignedByEmployeeID, &v.AssignedAt, &v.AssignmentNote,
+		&v.AppliedStopListID, &v.UpdatedAt, &v.OccurredAt, &v.ProjectedAt, &v.CreatedAt,
 	)
 	if available.Valid {
 		v.AvailableQuantity = &available.Float64
@@ -1316,7 +1352,7 @@ func scanPublication(row scanner) (domain.Publication, error) {
 func scanCatalogSuggestion(row scanner) (domain.CatalogSuggestion, error) {
 	var v domain.CatalogSuggestion
 	var status string
-	err := row.Scan(&v.ID, &v.SuggestionID, &v.RestaurantID, &v.CatalogItemID, &v.ProposalGroupID, &v.Action, &v.Reason, &status, &v.ReviewComment, &v.ReviewedByEmployeeID, &v.ReviewedAt, &v.AppliedCatalogItemID, &v.SourceEventID, &v.SuggestedAt, &v.CloudReceivedAt, &v.PayloadJSON, &v.CreatedAt, &v.UpdatedAt)
+	err := row.Scan(&v.ID, &v.SuggestionID, &v.RestaurantID, &v.CatalogItemID, &v.ProposalGroupID, &v.Action, &v.Reason, &status, &v.ReviewComment, &v.ReviewedByEmployeeID, &v.ReviewedAt, &v.AppliedCatalogItemID, &v.SourceEventID, &v.AssignedToEmployeeID, &v.AssignedByEmployeeID, &v.AssignedAt, &v.AssignmentNote, &v.SuggestedAt, &v.CloudReceivedAt, &v.PayloadJSON, &v.CreatedAt, &v.UpdatedAt)
 	v.Status = domain.SuggestionStatus(status)
 	return v, err
 }
@@ -1324,7 +1360,7 @@ func scanCatalogSuggestion(row scanner) (domain.CatalogSuggestion, error) {
 func scanRecipeSuggestion(row scanner) (domain.RecipeSuggestion, error) {
 	var v domain.RecipeSuggestion
 	var status string
-	err := row.Scan(&v.ID, &v.SuggestionID, &v.RestaurantID, &v.RecipeVersionID, &v.OwnerCatalogItemID, &v.OwnerCatalogSuggestionID, &v.ProposalGroupID, &v.Action, &v.Reason, &v.PrepTimeDeltaMinutes, &status, &v.ReviewComment, &v.ReviewedByEmployeeID, &v.ReviewedAt, &v.SourceEventID, &v.SuggestedAt, &v.CloudReceivedAt, &v.PayloadJSON, &v.CreatedAt, &v.UpdatedAt)
+	err := row.Scan(&v.ID, &v.SuggestionID, &v.RestaurantID, &v.RecipeVersionID, &v.OwnerCatalogItemID, &v.OwnerCatalogSuggestionID, &v.ProposalGroupID, &v.Action, &v.Reason, &v.PrepTimeDeltaMinutes, &status, &v.ReviewComment, &v.ReviewedByEmployeeID, &v.ReviewedAt, &v.AssignedToEmployeeID, &v.AssignedByEmployeeID, &v.AssignedAt, &v.AssignmentNote, &v.SourceEventID, &v.SuggestedAt, &v.CloudReceivedAt, &v.PayloadJSON, &v.CreatedAt, &v.UpdatedAt)
 	v.Status = domain.SuggestionStatus(status)
 	return v, err
 }

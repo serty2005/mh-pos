@@ -218,6 +218,51 @@ func TestStopListUpdateReviewRoutesDoNotExposeRawPayload(t *testing.T) {
 	}
 }
 
+func TestManagerReviewAssignmentRoutes(t *testing.T) {
+	router, repo := newRouterWithRepo()
+	now := fixedClock{}.Now()
+	repo.SeedStopListUpdateReview(domain.StopListUpdateReview{
+		ID:               "event-stop-api-assign-1",
+		RestaurantID:     "restaurant-1",
+		DeviceID:         "edge-1",
+		StopListID:       "stop-api-assign-1",
+		CatalogItemID:    "dish-1",
+		Active:           true,
+		ConflictPolicy:   "edge_overlay_requires_manager_review",
+		Source:           "edge",
+		Reason:           "sold out",
+		ProjectionAction: "requires_manager_review",
+		Status:           domain.SuggestionStatusPending,
+		UpdatedAt:        now,
+		OccurredAt:       now.Add(-time.Minute),
+		ProjectedAt:      now,
+		CreatedAt:        now,
+	})
+
+	assigned := post(t, router, "/api/v1/manager/reviews/stop_list_update/event-stop-api-assign-1/assign", `{"command_id":"018f0000-0000-7000-8000-000000000801","assigned_to_employee_id":"manager-2","assigned_by_employee_id":"manager-1","reason":"take ownership"}`)
+	if assigned.Code != http.StatusOK {
+		t.Fatalf("expected assign 200, got %d: %s", assigned.Code, assigned.Body.String())
+	}
+	if !strings.Contains(assigned.Body.String(), `"assigned_to_employee_id":"manager-2"`) || strings.Contains(assigned.Body.String(), "payload_json") || strings.Contains(assigned.Body.String(), "raw_payload") {
+		t.Fatalf("assignment response must be safe, got %s", assigned.Body.String())
+	}
+	replayedAssign := post(t, router, "/api/v1/manager/reviews/stop_list_update/event-stop-api-assign-1/assign", `{"command_id":"018f0000-0000-7000-8000-000000000801","assigned_to_employee_id":"manager-2","assigned_by_employee_id":"manager-1","reason":"take ownership"}`)
+	if replayedAssign.Code != http.StatusOK || len(repo.ReviewAssignmentAuditEvents()) != 1 {
+		t.Fatalf("expected idempotent assign replay, code=%d body=%s audit=%+v", replayedAssign.Code, replayedAssign.Body.String(), repo.ReviewAssignmentAuditEvents())
+	}
+	unassigned := post(t, router, "/api/v1/manager/reviews/stop_list_update/event-stop-api-assign-1/unassign", `{"command_id":"018f0000-0000-7000-8000-000000000802","unassigned_by_employee_id":"manager-1","reason":"rebalance queue"}`)
+	if unassigned.Code != http.StatusOK {
+		t.Fatalf("expected unassign 200, got %d: %s", unassigned.Code, unassigned.Body.String())
+	}
+	if strings.Contains(unassigned.Body.String(), "assigned_to_employee_id") || strings.Contains(unassigned.Body.String(), "raw_payload") {
+		t.Fatalf("unassignment response must be safe and cleared, got %s", unassigned.Body.String())
+	}
+	unknown := post(t, router, "/api/v1/manager/reviews/unknown/event-stop-api-assign-1/assign", `{"command_id":"018f0000-0000-7000-8000-000000000803","assigned_to_employee_id":"manager-2","assigned_by_employee_id":"manager-1","reason":"take ownership"}`)
+	if unknown.Code != http.StatusBadRequest {
+		t.Fatalf("expected unknown review_type 400, got %d: %s", unknown.Code, unknown.Body.String())
+	}
+}
+
 func newRouter() http.Handler {
 	router, _ := newRouterWithRepo()
 	return router

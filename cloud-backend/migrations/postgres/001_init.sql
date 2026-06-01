@@ -847,6 +847,10 @@ CREATE TABLE IF NOT EXISTS cloud_catalog_suggestions (
   review_comment TEXT NOT NULL DEFAULT '',
   reviewed_by_employee_id TEXT NOT NULL DEFAULT '',
   reviewed_at TIMESTAMPTZ,
+  assigned_to_employee_id TEXT NOT NULL DEFAULT '',
+  assigned_by_employee_id TEXT NOT NULL DEFAULT '',
+  assigned_at TIMESTAMPTZ,
+  assignment_note TEXT NOT NULL DEFAULT '',
   applied_catalog_item_id TEXT NOT NULL DEFAULT '',
   source_event_id TEXT NOT NULL DEFAULT '',
   suggested_at TIMESTAMPTZ NOT NULL,
@@ -871,6 +875,10 @@ CREATE TABLE IF NOT EXISTS cloud_recipe_suggestions (
   review_comment TEXT NOT NULL DEFAULT '',
   reviewed_by_employee_id TEXT NOT NULL DEFAULT '',
   reviewed_at TIMESTAMPTZ,
+  assigned_to_employee_id TEXT NOT NULL DEFAULT '',
+  assigned_by_employee_id TEXT NOT NULL DEFAULT '',
+  assigned_at TIMESTAMPTZ,
+  assignment_note TEXT NOT NULL DEFAULT '',
   source_event_id TEXT NOT NULL DEFAULT '',
   suggested_at TIMESTAMPTZ NOT NULL,
   cloud_received_at TIMESTAMPTZ NOT NULL,
@@ -905,6 +913,33 @@ CREATE TABLE IF NOT EXISTS cloud_suggestion_review_events (
   reviewed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL
 );
+
+ALTER TABLE cloud_catalog_suggestions
+  ADD COLUMN IF NOT EXISTS assigned_to_employee_id TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS assigned_by_employee_id TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS assignment_note TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE cloud_recipe_suggestions
+  ADD COLUMN IF NOT EXISTS assigned_to_employee_id TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS assigned_by_employee_id TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS assignment_note TEXT NOT NULL DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS cloud_review_assignment_audit_events (
+  id TEXT PRIMARY KEY,
+  command_id TEXT NOT NULL UNIQUE CHECK (command_id <> ''),
+  review_type TEXT NOT NULL CHECK (review_type IN ('catalog_suggestion','recipe_suggestion','stop_list_update')),
+  review_id TEXT NOT NULL CHECK (review_id <> ''),
+  action TEXT NOT NULL CHECK (action IN ('assigned','unassigned')),
+  assigned_to_employee_id TEXT NOT NULL DEFAULT '',
+  actor_employee_id TEXT NOT NULL CHECK (actor_employee_id <> ''),
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS cloud_review_assignment_audit_events_review_created
+  ON cloud_review_assignment_audit_events(review_type, review_id, created_at DESC);
 
 -- === 005_master_data_restaurants_api.sql ===
 CREATE TABLE IF NOT EXISTS cloud_restaurants (
@@ -1357,6 +1392,10 @@ CREATE TABLE IF NOT EXISTS cloud_projection_stop_list_updates (
   review_comment TEXT NOT NULL DEFAULT '',
   reviewed_by_employee_id TEXT NOT NULL DEFAULT '',
   reviewed_at TIMESTAMPTZ,
+  assigned_to_employee_id TEXT NOT NULL DEFAULT '',
+  assigned_by_employee_id TEXT NOT NULL DEFAULT '',
+  assigned_at TIMESTAMPTZ,
+  assignment_note TEXT NOT NULL DEFAULT '',
   applied_stop_list_id TEXT NOT NULL DEFAULT '',
   updated_at TIMESTAMPTZ NOT NULL,
   occurred_at TIMESTAMPTZ NOT NULL,
@@ -1369,6 +1408,12 @@ CREATE INDEX IF NOT EXISTS cloud_projection_stop_list_updates_restaurant_updated
 
 CREATE INDEX IF NOT EXISTS cloud_projection_stop_list_updates_action
   ON cloud_projection_stop_list_updates(projection_action, projected_at DESC);
+
+ALTER TABLE cloud_projection_stop_list_updates
+  ADD COLUMN IF NOT EXISTS assigned_to_employee_id TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS assigned_by_employee_id TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS assignment_note TEXT NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS stop_lists (
   id TEXT PRIMARY KEY,

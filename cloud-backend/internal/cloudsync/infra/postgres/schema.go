@@ -370,7 +370,7 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Table:         "cloud_projection_stop_list_updates",
 			RequiredBy:    "async StopListUpdated projection without raw payload exposure",
 			MigrationFile: "001_init.sql",
-			Columns:       []string{"source_event_id", "queue_id", "restaurant_id", "device_id", "stop_list_id", "warehouse_id", "catalog_item_id", "available_quantity", "active", "conflict_policy", "source", "reason", "projection_action", "review_status", "review_comment", "reviewed_by_employee_id", "reviewed_at", "applied_stop_list_id", "updated_at", "occurred_at", "projected_at", "created_at"},
+			Columns:       []string{"source_event_id", "queue_id", "restaurant_id", "device_id", "stop_list_id", "warehouse_id", "catalog_item_id", "available_quantity", "active", "conflict_policy", "source", "reason", "projection_action", "review_status", "review_comment", "reviewed_by_employee_id", "reviewed_at", "assigned_to_employee_id", "assigned_by_employee_id", "assigned_at", "assignment_note", "applied_stop_list_id", "updated_at", "occurred_at", "projected_at", "created_at"},
 			Indexes:       []string{"cloud_projection_stop_list_updates_restaurant_updated", "cloud_projection_stop_list_updates_action"},
 		},
 		{
@@ -398,13 +398,13 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Table:         "cloud_catalog_suggestions",
 			RequiredBy:    "cloud kitchen proposal review queue catalog suggestions",
 			MigrationFile: "001_init.sql",
-			Columns:       []string{"id", "suggestion_id", "restaurant_id", "catalog_item_id", "proposal_group_id", "action", "reason", "status", "review_comment", "reviewed_by_employee_id", "reviewed_at", "applied_catalog_item_id", "source_event_id", "suggested_at", "cloud_received_at", "payload_json", "created_at", "updated_at"},
+			Columns:       []string{"id", "suggestion_id", "restaurant_id", "catalog_item_id", "proposal_group_id", "action", "reason", "status", "review_comment", "reviewed_by_employee_id", "reviewed_at", "assigned_to_employee_id", "assigned_by_employee_id", "assigned_at", "assignment_note", "applied_catalog_item_id", "source_event_id", "suggested_at", "cloud_received_at", "payload_json", "created_at", "updated_at"},
 		},
 		{
 			Table:         "cloud_recipe_suggestions",
 			RequiredBy:    "cloud kitchen proposal review queue recipe suggestions",
 			MigrationFile: "001_init.sql",
-			Columns:       []string{"id", "suggestion_id", "restaurant_id", "recipe_version_id", "owner_catalog_item_id", "owner_catalog_suggestion_id", "proposal_group_id", "action", "reason", "prep_time_delta_minutes", "status", "review_comment", "reviewed_by_employee_id", "reviewed_at", "source_event_id", "suggested_at", "cloud_received_at", "payload_json", "created_at", "updated_at"},
+			Columns:       []string{"id", "suggestion_id", "restaurant_id", "recipe_version_id", "owner_catalog_item_id", "owner_catalog_suggestion_id", "proposal_group_id", "action", "reason", "prep_time_delta_minutes", "status", "review_comment", "reviewed_by_employee_id", "reviewed_at", "assigned_to_employee_id", "assigned_by_employee_id", "assigned_at", "assignment_note", "source_event_id", "suggested_at", "cloud_received_at", "payload_json", "created_at", "updated_at"},
 		},
 		{
 			Table:         "cloud_recipe_suggestion_changes",
@@ -417,6 +417,13 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			RequiredBy:    "cloud kitchen proposal feedback stream source",
 			MigrationFile: "001_init.sql",
 			Columns:       []string{"id", "restaurant_id", "suggestion_kind", "suggestion_id", "status", "reviewed_by_employee_id", "review_comment", "reviewed_at", "created_at"},
+		},
+		{
+			Table:         "cloud_review_assignment_audit_events",
+			RequiredBy:    "append-only assignment audit for cloud manager review items",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"id", "command_id", "review_type", "review_id", "action", "assigned_to_employee_id", "actor_employee_id", "reason", "created_at"},
+			Indexes:       []string{"cloud_review_assignment_audit_events_review_created"},
 		},
 		{
 			Table:         "cloud_edge_nodes",

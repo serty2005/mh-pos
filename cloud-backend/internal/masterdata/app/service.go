@@ -119,6 +119,8 @@ type Repository interface {
 	ListStopListUpdateReviews(context.Context, string, string, int, int) ([]domain.StopListUpdateReview, error)
 	GetStopListUpdateReview(context.Context, string) (domain.StopListUpdateReview, error)
 	UpdateStopListUpdateReview(context.Context, domain.StopListUpdateReview) (domain.StopListUpdateReview, error)
+	GetReviewAssignmentAuditEvent(context.Context, string) (domain.ReviewAssignmentAuditEvent, error)
+	AppendReviewAssignmentAuditEvent(context.Context, domain.ReviewAssignmentAuditEvent) error
 }
 
 // IDGenerator задает источник идентификаторов для use cases и тестов.
@@ -501,6 +503,29 @@ type SuggestionReviewCommand struct {
 	ReviewedByEmployeeID string `json:"reviewed_by_employee_id"`
 	ReviewComment        string `json:"review_comment,omitempty"`
 	PublishedBy          string `json:"published_by,omitempty"`
+}
+
+type ReviewAssignCommand struct {
+	CommandID            string `json:"command_id"`
+	AssignedToEmployeeID string `json:"assigned_to_employee_id"`
+	AssignedByEmployeeID string `json:"assigned_by_employee_id"`
+	Reason               string `json:"reason,omitempty"`
+}
+
+type ReviewUnassignCommand struct {
+	CommandID              string `json:"command_id"`
+	UnassignedByEmployeeID string `json:"unassigned_by_employee_id"`
+	Reason                 string `json:"reason,omitempty"`
+}
+
+type ReviewAssignmentResponse struct {
+	ReviewType           string     `json:"review_type"`
+	ID                   string     `json:"id"`
+	Status               string     `json:"status"`
+	AssignedToEmployeeID string     `json:"assigned_to_employee_id,omitempty"`
+	AssignedByEmployeeID string     `json:"assigned_by_employee_id,omitempty"`
+	AssignedAt           *time.Time `json:"assigned_at,omitempty"`
+	AssignmentNote       string     `json:"assignment_note,omitempty"`
 }
 
 // StreamPackage описывает stream-specific package, сохраняемый для Edge import.
@@ -2032,6 +2057,174 @@ func (s *Service) GetStopListUpdateReview(ctx context.Context, id string) (domai
 	return s.repo.GetStopListUpdateReview(ctx, strings.TrimSpace(id))
 }
 
+func (s *Service) AssignReviewItem(ctx context.Context, reviewType, id string, cmd ReviewAssignCommand) (ReviewAssignmentResponse, error) {
+	reviewType = strings.TrimSpace(reviewType)
+	id = strings.TrimSpace(id)
+	cmd.CommandID = strings.TrimSpace(cmd.CommandID)
+	cmd.AssignedToEmployeeID = strings.TrimSpace(cmd.AssignedToEmployeeID)
+	cmd.AssignedByEmployeeID = strings.TrimSpace(cmd.AssignedByEmployeeID)
+	cmd.Reason = strings.TrimSpace(cmd.Reason)
+	if replay, ok, err := s.replayReviewAssignment(ctx, reviewType, id, cmd.CommandID, "assigned"); err != nil || ok {
+		return replay, err
+	}
+	if err := validateReviewAssignCommand(cmd); err != nil {
+		return ReviewAssignmentResponse{}, err
+	}
+	now := s.clock.Now().UTC()
+	switch reviewType {
+	case "catalog_suggestion":
+		v, err := s.repo.GetCatalogSuggestion(ctx, id)
+		if err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		if isTerminalSuggestionStatus(v.Status) {
+			return ReviewAssignmentResponse{}, fmt.Errorf("%w: terminal review item cannot be assigned", domain.ErrConflict)
+		}
+		v.AssignedToEmployeeID = cmd.AssignedToEmployeeID
+		v.AssignedByEmployeeID = cmd.AssignedByEmployeeID
+		v.AssignedAt = &now
+		v.AssignmentNote = cmd.Reason
+		v.UpdatedAt = now
+		stored, err := s.repo.UpdateCatalogSuggestion(ctx, v)
+		if err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		if err := s.appendReviewAssignmentAudit(ctx, cmd.CommandID, reviewType, id, "assigned", cmd.AssignedToEmployeeID, cmd.AssignedByEmployeeID, cmd.Reason, now); err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		return catalogAssignmentResponse(reviewType, stored), nil
+	case "recipe_suggestion":
+		v, err := s.repo.GetRecipeSuggestion(ctx, id)
+		if err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		if isTerminalSuggestionStatus(v.Status) {
+			return ReviewAssignmentResponse{}, fmt.Errorf("%w: terminal review item cannot be assigned", domain.ErrConflict)
+		}
+		v.AssignedToEmployeeID = cmd.AssignedToEmployeeID
+		v.AssignedByEmployeeID = cmd.AssignedByEmployeeID
+		v.AssignedAt = &now
+		v.AssignmentNote = cmd.Reason
+		v.UpdatedAt = now
+		stored, err := s.repo.UpdateRecipeSuggestion(ctx, v)
+		if err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		if err := s.appendReviewAssignmentAudit(ctx, cmd.CommandID, reviewType, id, "assigned", cmd.AssignedToEmployeeID, cmd.AssignedByEmployeeID, cmd.Reason, now); err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		return recipeAssignmentResponse(reviewType, stored), nil
+	case "stop_list_update":
+		v, err := s.repo.GetStopListUpdateReview(ctx, id)
+		if err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		if isTerminalSuggestionStatus(v.Status) {
+			return ReviewAssignmentResponse{}, fmt.Errorf("%w: terminal review item cannot be assigned", domain.ErrConflict)
+		}
+		v.AssignedToEmployeeID = cmd.AssignedToEmployeeID
+		v.AssignedByEmployeeID = cmd.AssignedByEmployeeID
+		v.AssignedAt = &now
+		v.AssignmentNote = cmd.Reason
+		v.UpdatedAt = now
+		stored, err := s.repo.UpdateStopListUpdateReview(ctx, v)
+		if err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		if err := s.appendReviewAssignmentAudit(ctx, cmd.CommandID, reviewType, id, "assigned", cmd.AssignedToEmployeeID, cmd.AssignedByEmployeeID, cmd.Reason, now); err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		return stopListAssignmentResponse(reviewType, stored), nil
+	default:
+		return ReviewAssignmentResponse{}, fmt.Errorf("%w: unknown review_type", domain.ErrInvalid)
+	}
+}
+
+func (s *Service) UnassignReviewItem(ctx context.Context, reviewType, id string, cmd ReviewUnassignCommand) (ReviewAssignmentResponse, error) {
+	reviewType = strings.TrimSpace(reviewType)
+	id = strings.TrimSpace(id)
+	cmd.CommandID = strings.TrimSpace(cmd.CommandID)
+	cmd.UnassignedByEmployeeID = strings.TrimSpace(cmd.UnassignedByEmployeeID)
+	cmd.Reason = strings.TrimSpace(cmd.Reason)
+	if replay, ok, err := s.replayReviewAssignment(ctx, reviewType, id, cmd.CommandID, "unassigned"); err != nil || ok {
+		return replay, err
+	}
+	if err := validateReviewUnassignCommand(cmd); err != nil {
+		return ReviewAssignmentResponse{}, err
+	}
+	now := s.clock.Now().UTC()
+	switch reviewType {
+	case "catalog_suggestion":
+		v, err := s.repo.GetCatalogSuggestion(ctx, id)
+		if err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		if isTerminalSuggestionStatus(v.Status) {
+			return ReviewAssignmentResponse{}, fmt.Errorf("%w: terminal review item cannot be unassigned", domain.ErrConflict)
+		}
+		previous := v.AssignedToEmployeeID
+		v.AssignedToEmployeeID = ""
+		v.AssignedByEmployeeID = ""
+		v.AssignedAt = nil
+		v.AssignmentNote = ""
+		v.UpdatedAt = now
+		stored, err := s.repo.UpdateCatalogSuggestion(ctx, v)
+		if err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		if err := s.appendReviewAssignmentAudit(ctx, cmd.CommandID, reviewType, id, "unassigned", previous, cmd.UnassignedByEmployeeID, cmd.Reason, now); err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		return catalogAssignmentResponse(reviewType, stored), nil
+	case "recipe_suggestion":
+		v, err := s.repo.GetRecipeSuggestion(ctx, id)
+		if err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		if isTerminalSuggestionStatus(v.Status) {
+			return ReviewAssignmentResponse{}, fmt.Errorf("%w: terminal review item cannot be unassigned", domain.ErrConflict)
+		}
+		previous := v.AssignedToEmployeeID
+		v.AssignedToEmployeeID = ""
+		v.AssignedByEmployeeID = ""
+		v.AssignedAt = nil
+		v.AssignmentNote = ""
+		v.UpdatedAt = now
+		stored, err := s.repo.UpdateRecipeSuggestion(ctx, v)
+		if err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		if err := s.appendReviewAssignmentAudit(ctx, cmd.CommandID, reviewType, id, "unassigned", previous, cmd.UnassignedByEmployeeID, cmd.Reason, now); err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		return recipeAssignmentResponse(reviewType, stored), nil
+	case "stop_list_update":
+		v, err := s.repo.GetStopListUpdateReview(ctx, id)
+		if err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		if isTerminalSuggestionStatus(v.Status) {
+			return ReviewAssignmentResponse{}, fmt.Errorf("%w: terminal review item cannot be unassigned", domain.ErrConflict)
+		}
+		previous := v.AssignedToEmployeeID
+		v.AssignedToEmployeeID = ""
+		v.AssignedByEmployeeID = ""
+		v.AssignedAt = nil
+		v.AssignmentNote = ""
+		v.UpdatedAt = now
+		stored, err := s.repo.UpdateStopListUpdateReview(ctx, v)
+		if err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		if err := s.appendReviewAssignmentAudit(ctx, cmd.CommandID, reviewType, id, "unassigned", previous, cmd.UnassignedByEmployeeID, cmd.Reason, now); err != nil {
+			return ReviewAssignmentResponse{}, err
+		}
+		return stopListAssignmentResponse(reviewType, stored), nil
+	default:
+		return ReviewAssignmentResponse{}, fmt.Errorf("%w: unknown review_type", domain.ErrInvalid)
+	}
+}
+
 func (s *Service) ApproveCatalogSuggestion(ctx context.Context, id string, cmd SuggestionReviewCommand) (domain.CatalogSuggestion, error) {
 	v, err := s.repo.GetCatalogSuggestion(ctx, strings.TrimSpace(id))
 	if err != nil {
@@ -3070,6 +3263,152 @@ func packageFromPublication(pub domain.Publication, nodeDeviceID string) (domain
 
 func errorsIsNotFound(err error) bool {
 	return errors.Is(err, domain.ErrNotFound)
+}
+
+func validateReviewAssignCommand(cmd ReviewAssignCommand) error {
+	if !isUUIDv7(cmd.CommandID) {
+		return fmt.Errorf("%w: command_id must be uuidv7", domain.ErrInvalid)
+	}
+	if cmd.AssignedToEmployeeID == "" {
+		return fmt.Errorf("%w: assigned_to_employee_id is required", domain.ErrInvalid)
+	}
+	if cmd.AssignedByEmployeeID == "" {
+		return fmt.Errorf("%w: assigned_by_employee_id is required", domain.ErrInvalid)
+	}
+	if cmd.Reason == "" {
+		return fmt.Errorf("%w: reason is required", domain.ErrInvalid)
+	}
+	if len(cmd.Reason) > 500 {
+		return fmt.Errorf("%w: reason must be 500 characters or less", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func validateReviewUnassignCommand(cmd ReviewUnassignCommand) error {
+	if !isUUIDv7(cmd.CommandID) {
+		return fmt.Errorf("%w: command_id must be uuidv7", domain.ErrInvalid)
+	}
+	if cmd.UnassignedByEmployeeID == "" {
+		return fmt.Errorf("%w: unassigned_by_employee_id is required", domain.ErrInvalid)
+	}
+	if cmd.Reason == "" {
+		return fmt.Errorf("%w: reason is required", domain.ErrInvalid)
+	}
+	if len(cmd.Reason) > 500 {
+		return fmt.Errorf("%w: reason must be 500 characters or less", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func (s *Service) replayReviewAssignment(ctx context.Context, reviewType, id, commandID, action string) (ReviewAssignmentResponse, bool, error) {
+	if !isUUIDv7(commandID) {
+		return ReviewAssignmentResponse{}, false, nil
+	}
+	event, err := s.repo.GetReviewAssignmentAuditEvent(ctx, commandID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return ReviewAssignmentResponse{}, false, nil
+	}
+	if err != nil {
+		return ReviewAssignmentResponse{}, false, err
+	}
+	if event.ReviewType != reviewType || event.ReviewID != id || event.Action != action {
+		return ReviewAssignmentResponse{}, true, fmt.Errorf("%w: command_id belongs to another review assignment command", domain.ErrConflict)
+	}
+	response, err := s.reviewAssignmentResponse(ctx, reviewType, id)
+	return response, true, err
+}
+
+func (s *Service) reviewAssignmentResponse(ctx context.Context, reviewType, id string) (ReviewAssignmentResponse, error) {
+	switch reviewType {
+	case "catalog_suggestion":
+		v, err := s.repo.GetCatalogSuggestion(ctx, id)
+		return catalogAssignmentResponse(reviewType, v), err
+	case "recipe_suggestion":
+		v, err := s.repo.GetRecipeSuggestion(ctx, id)
+		return recipeAssignmentResponse(reviewType, v), err
+	case "stop_list_update":
+		v, err := s.repo.GetStopListUpdateReview(ctx, id)
+		return stopListAssignmentResponse(reviewType, v), err
+	default:
+		return ReviewAssignmentResponse{}, fmt.Errorf("%w: unknown review_type", domain.ErrInvalid)
+	}
+}
+
+func (s *Service) appendReviewAssignmentAudit(ctx context.Context, commandID, reviewType, reviewID, action, assignedToEmployeeID, actorEmployeeID, reason string, now time.Time) error {
+	return s.repo.AppendReviewAssignmentAuditEvent(ctx, domain.ReviewAssignmentAuditEvent{
+		ID:                   s.ids.NewID(),
+		CommandID:            commandID,
+		ReviewType:           reviewType,
+		ReviewID:             reviewID,
+		Action:               action,
+		AssignedToEmployeeID: assignedToEmployeeID,
+		ActorEmployeeID:      actorEmployeeID,
+		Reason:               reason,
+		CreatedAt:            now,
+	})
+}
+
+func isTerminalSuggestionStatus(status domain.SuggestionStatus) bool {
+	return status == domain.SuggestionStatusApproved || status == domain.SuggestionStatusRejected
+}
+
+func catalogAssignmentResponse(reviewType string, v domain.CatalogSuggestion) ReviewAssignmentResponse {
+	return ReviewAssignmentResponse{
+		ReviewType:           reviewType,
+		ID:                   v.ID,
+		Status:               string(v.Status),
+		AssignedToEmployeeID: v.AssignedToEmployeeID,
+		AssignedByEmployeeID: v.AssignedByEmployeeID,
+		AssignedAt:           v.AssignedAt,
+		AssignmentNote:       v.AssignmentNote,
+	}
+}
+
+func recipeAssignmentResponse(reviewType string, v domain.RecipeSuggestion) ReviewAssignmentResponse {
+	return ReviewAssignmentResponse{
+		ReviewType:           reviewType,
+		ID:                   v.ID,
+		Status:               string(v.Status),
+		AssignedToEmployeeID: v.AssignedToEmployeeID,
+		AssignedByEmployeeID: v.AssignedByEmployeeID,
+		AssignedAt:           v.AssignedAt,
+		AssignmentNote:       v.AssignmentNote,
+	}
+}
+
+func stopListAssignmentResponse(reviewType string, v domain.StopListUpdateReview) ReviewAssignmentResponse {
+	return ReviewAssignmentResponse{
+		ReviewType:           reviewType,
+		ID:                   v.ID,
+		Status:               string(v.Status),
+		AssignedToEmployeeID: v.AssignedToEmployeeID,
+		AssignedByEmployeeID: v.AssignedByEmployeeID,
+		AssignedAt:           v.AssignedAt,
+		AssignmentNote:       v.AssignmentNote,
+	}
+}
+
+func isUUIDv7(v string) bool {
+	if len(v) != 36 {
+		return false
+	}
+	for i, r := range v {
+		switch i {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return false
+			}
+		default:
+			if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
+				return false
+			}
+		}
+	}
+	if v[14] != '7' {
+		return false
+	}
+	variant := v[19]
+	return variant == '8' || variant == '9' || variant == 'a' || variant == 'A' || variant == 'b' || variant == 'B'
 }
 
 func (s *Service) reviewCatalogSuggestion(ctx context.Context, id string, cmd SuggestionReviewCommand, status domain.SuggestionStatus) (domain.CatalogSuggestion, error) {

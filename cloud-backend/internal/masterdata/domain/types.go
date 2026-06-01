@@ -432,6 +432,10 @@ type StopListUpdateReview struct {
 	ReviewComment        string           `json:"review_comment,omitempty"`
 	ReviewedByEmployeeID string           `json:"reviewed_by_employee_id,omitempty"`
 	ReviewedAt           *time.Time       `json:"reviewed_at,omitempty"`
+	AssignedToEmployeeID string           `json:"assigned_to_employee_id,omitempty"`
+	AssignedByEmployeeID string           `json:"assigned_by_employee_id,omitempty"`
+	AssignedAt           *time.Time       `json:"assigned_at,omitempty"`
+	AssignmentNote       string           `json:"assignment_note,omitempty"`
 	AppliedStopListID    string           `json:"applied_stop_list_id,omitempty"`
 	UpdatedAt            time.Time        `json:"updated_at"`
 	OccurredAt           time.Time        `json:"occurred_at"`
@@ -500,6 +504,10 @@ type CatalogSuggestion struct {
 	ReviewComment        string           `json:"review_comment,omitempty"`
 	ReviewedByEmployeeID string           `json:"reviewed_by_employee_id,omitempty"`
 	ReviewedAt           *time.Time       `json:"reviewed_at,omitempty"`
+	AssignedToEmployeeID string           `json:"assigned_to_employee_id,omitempty"`
+	AssignedByEmployeeID string           `json:"assigned_by_employee_id,omitempty"`
+	AssignedAt           *time.Time       `json:"assigned_at,omitempty"`
+	AssignmentNote       string           `json:"assignment_note,omitempty"`
 	AppliedCatalogItemID string           `json:"applied_catalog_item_id,omitempty"`
 	SourceEventID        string           `json:"source_event_id,omitempty"`
 	SuggestedAt          time.Time        `json:"suggested_at"`
@@ -525,12 +533,29 @@ type RecipeSuggestion struct {
 	ReviewComment            string           `json:"review_comment,omitempty"`
 	ReviewedByEmployeeID     string           `json:"reviewed_by_employee_id,omitempty"`
 	ReviewedAt               *time.Time       `json:"reviewed_at,omitempty"`
+	AssignedToEmployeeID     string           `json:"assigned_to_employee_id,omitempty"`
+	AssignedByEmployeeID     string           `json:"assigned_by_employee_id,omitempty"`
+	AssignedAt               *time.Time       `json:"assigned_at,omitempty"`
+	AssignmentNote           string           `json:"assignment_note,omitempty"`
 	SourceEventID            string           `json:"source_event_id,omitempty"`
 	SuggestedAt              time.Time        `json:"suggested_at"`
 	CloudReceivedAt          time.Time        `json:"cloud_received_at"`
 	PayloadJSON              json.RawMessage  `json:"payload_json"`
 	CreatedAt                time.Time        `json:"created_at"`
 	UpdatedAt                time.Time        `json:"updated_at"`
+}
+
+// ReviewAssignmentAuditEvent фиксирует append-only audit для назначения Cloud review item.
+type ReviewAssignmentAuditEvent struct {
+	ID                   string    `json:"id"`
+	CommandID            string    `json:"command_id"`
+	ReviewType           string    `json:"review_type"`
+	ReviewID             string    `json:"review_id"`
+	Action               string    `json:"action"`
+	AssignedToEmployeeID string    `json:"assigned_to_employee_id,omitempty"`
+	ActorEmployeeID      string    `json:"actor_employee_id"`
+	Reason               string    `json:"reason,omitempty"`
+	CreatedAt            time.Time `json:"created_at"`
 }
 
 // RecipeSuggestionChange хранит строки diff для recipe suggestion.

@@ -42,6 +42,7 @@ type Repository struct {
 	recipeSuggestions       map[string]domain.RecipeSuggestion
 	recipeSuggestionChanges map[string][]domain.RecipeSuggestionChange
 	stopListUpdates         map[string]domain.StopListUpdateReview
+	assignmentAuditEvents   map[string]domain.ReviewAssignmentAuditEvent
 }
 
 // NewRepository создает пустой in-memory repository.
@@ -73,6 +74,7 @@ func NewRepository() *Repository {
 		recipeSuggestions:       map[string]domain.RecipeSuggestion{},
 		recipeSuggestionChanges: map[string][]domain.RecipeSuggestionChange{},
 		stopListUpdates:         map[string]domain.StopListUpdateReview{},
+		assignmentAuditEvents:   map[string]domain.ReviewAssignmentAuditEvent{},
 	}
 }
 
@@ -1085,6 +1087,43 @@ func (r *Repository) SeedStopListUpdateReview(v domain.StopListUpdateReview) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.stopListUpdates[v.ID] = v
+}
+
+func (r *Repository) GetReviewAssignmentAuditEvent(_ context.Context, commandID string) (domain.ReviewAssignmentAuditEvent, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.assignmentAuditEvents[strings.TrimSpace(commandID)]
+	if !ok {
+		return domain.ReviewAssignmentAuditEvent{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) AppendReviewAssignmentAuditEvent(_ context.Context, v domain.ReviewAssignmentAuditEvent) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	commandID := strings.TrimSpace(v.CommandID)
+	if _, exists := r.assignmentAuditEvents[commandID]; exists {
+		return domain.ErrConflict
+	}
+	r.assignmentAuditEvents[commandID] = v
+	return nil
+}
+
+func (r *Repository) ReviewAssignmentAuditEvents() []domain.ReviewAssignmentAuditEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.ReviewAssignmentAuditEvent, 0, len(r.assignmentAuditEvents))
+	for _, event := range r.assignmentAuditEvents {
+		out = append(out, event)
+	}
+	slices.SortFunc(out, func(a, b domain.ReviewAssignmentAuditEvent) int {
+		if cmp := a.CreatedAt.Compare(b.CreatedAt); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.CommandID, b.CommandID)
+	})
+	return out
 }
 
 func (r *Repository) Package(streamName, nodeDeviceID string) (app.StreamPackage, bool) {

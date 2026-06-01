@@ -381,6 +381,14 @@
   - approve;
   - reject;
   - request-changes.
+- Cloud manager review assignment реализовано сейчас для:
+  - `catalog_suggestion`;
+  - `recipe_suggestion`;
+  - `stop_list_update`;
+  - `POST /api/v1/manager/reviews/{review_type}/{id}/assign`;
+  - `POST /api/v1/manager/reviews/{review_type}/{id}/unassign`;
+  - UUIDv7 `command_id` idempotency;
+  - append-only audit events `assigned` / `unassigned`.
 - Stop-list review API отдает safe DTO без raw payload.
 - Stop-list review decisions идемпотентны.
 - Approve применяет изменения только через Cloud-owned `stop_lists` + publication path.
@@ -440,6 +448,7 @@
 - Cloud UI имеет bounded authoring для recipe items, сценарный editor версий техкарт и stop-list entries по подтвержденным master-data routes.
 - Минимальный `stop_list_conflict_policy`.
 - Bounded Edge-origin stop-list manager review flow.
+- Assignment/unassignment для Cloud manager review items реализовано сейчас на backend; escalation и dashboard workflow вне текущего объема.
 - Safe readiness API/UI signals для stop-list publication, Edge ACK metadata и sync problem counters.
 - Сценарный Cloud-owned recipe version editor/review:
   - draft versions;
@@ -450,7 +459,7 @@
 
 Запланировано далее:
 
-- Расширенный stop-list review polish.
+- Расширенный stop-list review polish и штатные Cloud UI controls для assignment queue.
 
 ## Advanced KDS / Kitchen Lifecycle
 

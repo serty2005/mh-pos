@@ -111,6 +111,8 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 		r.Post("/stop-list-updates/{id}/approve", h.approveStopListUpdateReview)
 		r.Post("/stop-list-updates/{id}/reject", h.rejectStopListUpdateReview)
 		r.Post("/stop-list-updates/{id}/request-changes", h.requestChangesStopListUpdateReview)
+		r.Post("/reviews/{review_type}/{id}/assign", h.assignReviewItem)
+		r.Post("/reviews/{review_type}/{id}/unassign", h.unassignReviewItem)
 	})
 	r.Post("/restaurants", h.createRestaurant)
 	r.Get("/restaurants", h.listRestaurants)
@@ -814,6 +816,24 @@ func (h *Handler) requestChangesStopListUpdateReview(w http.ResponseWriter, r *h
 		return
 	}
 	v, err := h.service.RequestChangesStopListUpdateReview(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) assignReviewItem(w http.ResponseWriter, r *http.Request) {
+	var cmd app.ReviewAssignCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.AssignReviewItem(r.Context(), chi.URLParam(r, "review_type"), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) unassignReviewItem(w http.ResponseWriter, r *http.Request) {
+	var cmd app.ReviewUnassignCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UnassignReviewItem(r.Context(), chi.URLParam(r, "review_type"), chi.URLParam(r, "id"), cmd)
 	write(w, http.StatusOK, v, err)
 }
 

@@ -39,12 +39,13 @@ func TestRequiredSchemaIncludesCloudInventoryFoundationTables(t *testing.T) {
 		reqs[req.Table] = cols
 	}
 	for table, cols := range map[string][]string{
-		"inventory_event_queue":              {"id", "receipt_id", "restaurant_id", "warehouse_id", "device_id", "event_id", "event_type", "status", "attempts", "occurred_at", "created_at", "updated_at"},
-		"stock_documents":                    {"id", "restaurant_id", "warehouse_id", "document_type", "source_event_id", "source_event_type", "business_date_local", "occurred_at", "created_at"},
-		"stock_ledger":                       {"id", "restaurant_id", "warehouse_id", "stock_document_id", "source_event_id", "source_event_type", "catalog_item_id", "order_line_id", "movement_type", "quantity", "unit_code", "unit_cost_minor", "total_cost_minor", "costing_status", "occurred_at", "business_date_local", "created_at"},
-		"stock_recalculation_jobs":           {"id", "restaurant_id", "source_document_id", "status", "recalculate_from", "created_at", "updated_at"},
-		"cloud_projection_stop_list_updates": {"source_event_id", "queue_id", "restaurant_id", "device_id", "stop_list_id", "catalog_item_id", "available_quantity", "active", "conflict_policy", "source", "projection_action", "review_status", "review_comment", "reviewed_by_employee_id", "reviewed_at", "applied_stop_list_id", "updated_at", "occurred_at", "projected_at"},
-		"stop_lists":                         {"id", "restaurant_id", "catalog_item_id", "available_quantity", "source", "reason", "active", "cloud_version", "updated_at"},
+		"inventory_event_queue":                {"id", "receipt_id", "restaurant_id", "warehouse_id", "device_id", "event_id", "event_type", "status", "attempts", "occurred_at", "created_at", "updated_at"},
+		"stock_documents":                      {"id", "restaurant_id", "warehouse_id", "document_type", "source_event_id", "source_event_type", "business_date_local", "occurred_at", "created_at"},
+		"stock_ledger":                         {"id", "restaurant_id", "warehouse_id", "stock_document_id", "source_event_id", "source_event_type", "catalog_item_id", "order_line_id", "movement_type", "quantity", "unit_code", "unit_cost_minor", "total_cost_minor", "costing_status", "occurred_at", "business_date_local", "created_at"},
+		"stock_recalculation_jobs":             {"id", "restaurant_id", "source_document_id", "status", "recalculate_from", "created_at", "updated_at"},
+		"cloud_projection_stop_list_updates":   {"source_event_id", "queue_id", "restaurant_id", "device_id", "stop_list_id", "catalog_item_id", "available_quantity", "active", "conflict_policy", "source", "projection_action", "review_status", "review_comment", "reviewed_by_employee_id", "reviewed_at", "assigned_to_employee_id", "assigned_by_employee_id", "assigned_at", "assignment_note", "applied_stop_list_id", "updated_at", "occurred_at", "projected_at"},
+		"stop_lists":                           {"id", "restaurant_id", "catalog_item_id", "available_quantity", "source", "reason", "active", "cloud_version", "updated_at"},
+		"cloud_review_assignment_audit_events": {"id", "command_id", "review_type", "review_id", "action", "assigned_to_employee_id", "actor_employee_id", "reason", "created_at"},
 	} {
 		found, ok := reqs[table]
 		if !ok {

@@ -247,6 +247,10 @@ Master data under canonical namespace:
   - `POST /api/v1/manager/stop-list-updates/{id}/approve`
   - `POST /api/v1/manager/stop-list-updates/{id}/reject`
   - `POST /api/v1/manager/stop-list-updates/{id}/request-changes`
+  - `POST /api/v1/manager/reviews/{review_type}/{id}/assign`
+  - `POST /api/v1/manager/reviews/{review_type}/{id}/unassign`
+
+Реализовано сейчас: `review_type` для assignment ограничен значениями `catalog_suggestion`, `recipe_suggestion`, `stop_list_update`. `assign` принимает UUIDv7 `command_id`, `assigned_to_employee_id`, `assigned_by_employee_id` и safe `reason`; `unassign` принимает UUIDv7 `command_id`, `unassigned_by_employee_id` и safe `reason`. Replay того же `command_id` идемпотентен и не добавляет повторную audit row. Terminal statuses `approved` и `rejected` нельзя назначать или снимать с назначения. Responses возвращают только safe assignment metadata и не содержат raw payload.
   - Stop-list review DTO содержит только safe projection fields из `cloud_projection_stop_list_updates`; raw Edge payload не отдается. Approve пишет Cloud-owned `stop_lists` row и публикацию, reject/request-changes меняют только review audit state.
 - `POST /api/v1/master-data/menu/categories`
 - `POST /api/v1/master-data/floor/halls`
@@ -539,7 +543,7 @@ Managed SQL file, реализовано сейчас:
 - Projections: `cloud_projection_event_type_stats`, `cloud_projection_shift_finance`, `cloud_projection_financial_operations`.
 - Master-data packages: `cloud_master_data_packages`.
 - Currency reference: `cloud_currency_reference`.
-- Master data: `cloud_restaurants`, `cloud_roles`, `cloud_employees`, `cloud_categories`, `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_services`, `cloud_catalog_folders`, `cloud_catalog_folder_parameters`, `cloud_catalog_tags`, `cloud_catalog_item_tags`, `cloud_recipe_items`, `cloud_recipe_versions`, `cloud_recipe_lines`, `cloud_modifier_groups`, `cloud_modifier_options`, `cloud_modifier_group_bindings`, `cloud_pricing_policies`, `cloud_menu_items`, `cloud_menu_item_modifier_groups`, `cloud_menu_location_assignments`, `cloud_master_data_publications`.
+- Master data: `cloud_restaurants`, `cloud_roles`, `cloud_employees`, `cloud_categories`, `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_services`, `cloud_catalog_folders`, `cloud_catalog_folder_parameters`, `cloud_catalog_tags`, `cloud_catalog_item_tags`, `cloud_recipe_items`, `cloud_recipe_versions`, `cloud_recipe_lines`, `cloud_modifier_groups`, `cloud_modifier_options`, `cloud_modifier_group_bindings`, `cloud_pricing_policies`, `cloud_menu_items`, `cloud_menu_item_modifier_groups`, `cloud_menu_location_assignments`, `cloud_master_data_publications`, `cloud_review_assignment_audit_events`.
 - Provisioning: `cloud_edge_nodes`, `cloud_unassigned_edge_nodes`, `cloud_pairing_codes`.
 - Inventory runtime: `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`.
 - OLAP control state: `olap_export_checkpoints`, `olap_export_retry_commands`.
@@ -572,6 +576,7 @@ Schema verification:
 - `GET/POST /api/v1/olap/backfill-jobs` и `POST /api/v1/olap/backfill-jobs/{id}/cancel` реализованы сейчас как foundation для operator workflow: jobs имеют checkpoint/progress/status/error metadata, idempotency по UUIDv7 `command_id`, audit trail `olap_operator_audit_events`, bounded list/get и background execution без synchronous ClickHouse write в HTTP path.
 - `CatalogItemChangeSuggested` создает Cloud review item; upsert в catalog выполняется только после manager approve текущими `catalog-suggestions` routes.
 - `RecipeChangeSuggested` создает Cloud review item с diff по ingredients, quantities, units, loss percent и prep time; published recipe не меняется до approve/apply текущими `recipe-suggestions` routes. Реализовано сейчас: Cloud-authored recipe version draft при submit создает pending `RecipeChangeSuggested` с `action = publish_recipe_version`; approve активирует draft version, архивирует предыдущую active version для owner item и публикует `recipes` package.
+- Реализовано сейчас: Cloud manager review items для `CatalogItemChangeSuggested`, `RecipeChangeSuggested` и Edge-origin `StopListUpdated` поддерживают назначение на менеджера и снятие назначения через общие assignment routes. Assignment state хранится в review storage (`assigned_to_employee_id`, `assigned_by_employee_id`, `assigned_at`, `assignment_note`), а действия `assigned`/`unassigned` пишутся в append-only audit. Escalation и dashboard workflow вне текущего объема.
 - `StopListUpdated` обрабатывается асинхронно через `inventory_event_queue`: worker пишет `cloud_projection_stop_list_updates` без raw payload. `edge_overlay_until_next_publication` обновляет bounded `stop_lists` overlay, `cloud_wins` не перетирает Cloud-owned row, `edge_overlay_requires_manager_review` фиксирует безопасную projection для bounded manager review.
 - Bounded manager review для `edge_overlay_requires_manager_review` реализован сейчас: list/detail имеют stable bounded paging, decisions идемпотентны, invalid transition возвращает conflict, approve применяет изменение только через Cloud-owned `stop_lists` + publication, reject/request-changes не меняют runtime stop-list authority.
 - `GET /api/v1/sync/readiness/stop-list` реализовано сейчас как safe readiness summary: publication/package metadata, latest accepted `StopListUpdated` ACK metadata и агрегат `cloud_sync_problem_events` по кодам ошибок без raw payload.
@@ -590,7 +595,7 @@ Schema verification:
 - Receipt line с pending catalog suggestion остается запланировано далее.
 - Полный materialized balance engine, recipe expansion, modifier linked catalog item consumption и retro costing DAG становятся частью Cloud Inventory Engine; bounded `stock-balances` read из `stock_ledger` реализован сейчас.
 - Расширенные sales/kitchen/costing-dependent projections beyond first bounded sales/kitchen summary запланированы далее.
-- Расширенный manager review workflow для Edge-origin stop-list изменений остается запланирован далее; текущий runtime уже имеет bounded review/apply без raw payload, но без production-grade task assignment/escalation.
+- Расширенный manager review workflow для Edge-origin stop-list изменений остается запланирован далее; текущий runtime уже имеет bounded review/apply, assignment/unassignment и audit без raw payload, но без escalation/dashboard workflow.
 
 Вне текущего объема:
 
@@ -603,6 +608,7 @@ Schema verification:
 - Cloud UI использует Cloud Backend routes для launch readiness, Edge-device flow, master data, publication и safe Edge events list.
 - Cloud UI читает `GET /api/v1/sync/readiness/stop-list` в inventory readiness panel и показывает только counts/status/checkpoint/ACK metadata без raw sync payload.
 - Cloud UI читает bounded `GET /api/v1/manager/stop-list-updates` и вызывает approve/reject/request-changes для safe Edge-origin stop-list review; raw Edge payload не рендерится.
+- Реализовано сейчас: backend assignment routes доступны для `catalog_suggestion`, `recipe_suggestion` и `stop_list_update`; Cloud UI wiring для отдельного production-grade assignment dashboard запланировано далее.
 - Cloud UI не использует POS session, POS Edge runtime endpoints или cashier stores.
 - Cloud UI не показывает raw payloads, PIN material, token material или sensitive request dumps.
 - Cloud UI работает в local pilot perimeter через CORS origins `5174`.
