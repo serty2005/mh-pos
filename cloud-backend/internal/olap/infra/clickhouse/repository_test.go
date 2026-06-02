@@ -132,3 +132,106 @@ func TestListSalesKitchenSummaryUsesExistingDatasetsAndSafeGrouping(t *testing.T
 		t.Fatalf("sales/kitchen summary query must avoid ClickHouse alias substitution on response fields: %s", query)
 	}
 }
+
+func TestListKitchenTimingSummaryUsesBusinessDateGroupingAndParsesRows(t *testing.T) {
+	var query string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		query = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"group_by":"business_date","group_key":"2026-05-29","business_date_local":"2026-05-29","station_id":"","ticket_count":"3","accepted_count":"2","started_count":"2","ready_count":"2","served_count":"1","avg_accept_to_ready_seconds":"360","avg_start_to_ready_seconds":"240","avg_ready_to_served_seconds":"60","first_status_changed_at":"2026-05-29 10:00:00.000","last_status_changed_at":"2026-05-29 11:00:00.000"}` + "\n"))
+	}))
+	defer server.Close()
+
+	repo := clickhouse.NewRepository(clickhouse.Config{URL: server.URL, Database: "mh_pos_cloud"})
+	items, err := repo.ListKitchenTimingSummary(context.Background(), app.KitchenTimingSummaryFilter{
+		RestaurantID:     "rest-1",
+		BusinessDateFrom: "2026-05-01",
+		BusinessDateTo:   "2026-05-29",
+		GroupBy:          "business_date",
+		Limit:            10,
+		Offset:           5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected one kitchen timing row, got %+v", items)
+	}
+	item := items[0]
+	if item.GroupBy != "business_date" || item.GroupKey != "2026-05-29" || item.TicketCount != 3 || item.AvgStartToReadySeconds != 240 {
+		t.Fatalf("unexpected kitchen timing row: %+v", item)
+	}
+	if item.FirstStatusChangedAt == nil || item.LastStatusChangedAt == nil {
+		t.Fatalf("expected parsed timing bounds, got %+v", item)
+	}
+	for _, want := range []string{
+		"'business_date' AS group_by",
+		"business_date_local AS group_key",
+		"mh_pos_cloud.raw_business_events FINAL",
+		"event_type IN ('KitchenTicketStatusChanged','ItemServed')",
+		"restaurant_id = 'rest-1'",
+		"toDate(occurred_at) >= toDate('2026-05-01')",
+		"toDate(occurred_at) <= toDate('2026-05-29')",
+		"WHERE order_line_id != ''",
+		"GROUP BY business_date_local, station_id, order_line_id",
+		"GROUP BY business_date_local ORDER BY business_date_local DESC, group_key DESC LIMIT 10 OFFSET 5",
+		"FORMAT JSONEachRow",
+	} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("expected query to contain %q, got %s", want, query)
+		}
+	}
+}
+
+func TestListKitchenTimingSummaryUsesStationGroupingAndFilters(t *testing.T) {
+	var query string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		query = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"group_by":"station","group_key":"hot","business_date_local":"","station_id":"hot","ticket_count":"2","accepted_count":"2","started_count":"1","ready_count":"1","served_count":"1","avg_accept_to_ready_seconds":"420","avg_start_to_ready_seconds":"180","avg_ready_to_served_seconds":"75","first_status_changed_at":"","last_status_changed_at":""}` + "\n"))
+	}))
+	defer server.Close()
+
+	repo := clickhouse.NewRepository(clickhouse.Config{URL: server.URL, Database: "mh_pos_cloud"})
+	items, err := repo.ListKitchenTimingSummary(context.Background(), app.KitchenTimingSummaryFilter{
+		RestaurantID: "rest-1",
+		StationID:    "hot",
+		GroupBy:      "station",
+		Limit:        7,
+		Offset:       2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected one station timing row, got %+v", items)
+	}
+	item := items[0]
+	if item.GroupBy != "station" || item.GroupKey != "hot" || item.StationID != "hot" || item.AvgReadyToServedSeconds != 75 {
+		t.Fatalf("unexpected station timing row: %+v", item)
+	}
+	if item.FirstStatusChangedAt != nil || item.LastStatusChangedAt != nil {
+		t.Fatalf("expected empty optional timing bounds, got %+v", item)
+	}
+	for _, want := range []string{
+		"'station' AS group_by",
+		"station_id AS group_key",
+		"'' AS business_date_local",
+		"station_id AS station_id",
+		"if(station_id = '', 'unknown', station_id) AS station_id",
+		"AND station_id = 'hot'",
+		"GROUP BY station_id ORDER BY station_id ASC LIMIT 7 OFFSET 2",
+	} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("expected query to contain %q, got %s", want, query)
+		}
+	}
+}
