@@ -106,6 +106,8 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 		r.Post("/recipe-suggestions/{id}/request-changes", h.requestChangesRecipeSuggestion)
 	})
 	r.Route("/manager", func(r chi.Router) {
+		r.Get("/catalog-suggestions/{id}/audit", h.listCatalogSuggestionReviewAudit)
+		r.Get("/recipe-suggestions/{id}/audit", h.listRecipeSuggestionReviewAudit)
 		r.Get("/stop-list-updates", h.listStopListUpdateReviews)
 		r.Get("/stop-list-updates/{id}", h.getStopListUpdateReview)
 		r.Get("/stop-list-updates/{id}/audit", h.listStopListUpdateReviewAudit)
@@ -795,6 +797,16 @@ func (h *Handler) getStopListUpdateReview(w http.ResponseWriter, r *http.Request
 
 func (h *Handler) listStopListUpdateReviewAudit(w http.ResponseWriter, r *http.Request) {
 	v, err := h.service.ListStopListUpdateReviewAudit(r.Context(), chi.URLParam(r, "id"), intQuery(r, "limit", 50), intQuery(r, "offset", 0))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) listCatalogSuggestionReviewAudit(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListCatalogSuggestionReviewAudit(r.Context(), chi.URLParam(r, "id"), intQuery(r, "limit", 50), intQuery(r, "offset", 0))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) listRecipeSuggestionReviewAudit(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListRecipeSuggestionReviewAudit(r.Context(), chi.URLParam(r, "id"), intQuery(r, "limit", 50), intQuery(r, "offset", 0))
 	write(w, http.StatusOK, v, err)
 }
 

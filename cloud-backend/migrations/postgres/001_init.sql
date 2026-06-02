@@ -929,7 +929,7 @@ ALTER TABLE cloud_recipe_suggestions
 CREATE TABLE IF NOT EXISTS cloud_review_assignment_audit_events (
   event_id TEXT PRIMARY KEY CHECK (event_id <> ''),
   command_id TEXT NOT NULL UNIQUE CHECK (command_id <> ''),
-  review_type TEXT NOT NULL CHECK (review_type = 'stop_list_update'),
+  review_type TEXT NOT NULL CONSTRAINT cloud_review_assignment_audit_events_review_type_check CHECK (review_type IN ('stop_list_update','catalog_suggestion','recipe_suggestion')),
   review_id TEXT NOT NULL CHECK (review_id <> ''),
   action TEXT NOT NULL CHECK (action IN ('assigned','unassigned')),
   actor_employee_id TEXT NOT NULL CHECK (actor_employee_id <> ''),
@@ -942,6 +942,10 @@ ALTER TABLE cloud_review_assignment_audit_events
   ADD COLUMN IF NOT EXISTS event_id TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS target_employee_id TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+ALTER TABLE cloud_review_assignment_audit_events
+  DROP CONSTRAINT IF EXISTS cloud_review_assignment_audit_events_review_type_check,
+  ADD CONSTRAINT cloud_review_assignment_audit_events_review_type_check CHECK (review_type IN ('stop_list_update','catalog_suggestion','recipe_suggestion'));
 
 CREATE INDEX IF NOT EXISTS cloud_review_assignment_audit_events_review_created
   ON cloud_review_assignment_audit_events(review_type, review_id, occurred_at DESC);

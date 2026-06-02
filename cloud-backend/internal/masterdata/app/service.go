@@ -2072,8 +2072,23 @@ func (s *Service) GetStopListUpdateReview(ctx context.Context, id string) (domai
 	return s.repo.GetStopListUpdateReview(ctx, strings.TrimSpace(id))
 }
 
+// ListStopListUpdateReviewAudit возвращает bounded assignment audit для stop-list review item без raw payload.
 func (s *Service) ListStopListUpdateReviewAudit(ctx context.Context, id string, limit, offset int) ([]ReviewAssignmentAuditEventResponse, error) {
-	events, err := s.repo.ListReviewAssignmentAuditEvents(ctx, "stop_list_update", strings.TrimSpace(id), normalizeAuditLimit(limit), normalizeAuditOffset(offset))
+	return s.listReviewAssignmentAudit(ctx, "stop_list_update", id, limit, offset)
+}
+
+// ListCatalogSuggestionReviewAudit возвращает bounded assignment audit для catalog suggestion review item без raw payload.
+func (s *Service) ListCatalogSuggestionReviewAudit(ctx context.Context, id string, limit, offset int) ([]ReviewAssignmentAuditEventResponse, error) {
+	return s.listReviewAssignmentAudit(ctx, "catalog_suggestion", id, limit, offset)
+}
+
+// ListRecipeSuggestionReviewAudit возвращает bounded assignment audit для recipe suggestion review item без raw payload.
+func (s *Service) ListRecipeSuggestionReviewAudit(ctx context.Context, id string, limit, offset int) ([]ReviewAssignmentAuditEventResponse, error) {
+	return s.listReviewAssignmentAudit(ctx, "recipe_suggestion", id, limit, offset)
+}
+
+func (s *Service) listReviewAssignmentAudit(ctx context.Context, reviewType, id string, limit, offset int) ([]ReviewAssignmentAuditEventResponse, error) {
+	events, err := s.repo.ListReviewAssignmentAuditEvents(ctx, reviewType, strings.TrimSpace(id), normalizeAuditLimit(limit), normalizeAuditOffset(offset))
 	if err != nil {
 		return nil, err
 	}

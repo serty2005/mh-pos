@@ -930,6 +930,161 @@ func TestListStopListUpdateReviewAuditCapsLimitToHundred(t *testing.T) {
 	}
 }
 
+func TestListCatalogSuggestionReviewAuditReturnsBoundedSafeEvents(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	now := fixedClock{}.Now()
+	events := []domain.ReviewAssignmentAuditEvent{
+		{
+			EventID:          "catalog-audit-001",
+			CommandID:        "catalog-command-001",
+			ReviewType:       "catalog_suggestion",
+			ReviewID:         "catalog-audit-1",
+			Action:           "assigned",
+			ActorEmployeeID:  "manager-1",
+			TargetEmployeeID: "manager-2",
+			Reason:           "take catalog review",
+			OccurredAt:       now,
+		},
+		{
+			EventID:          "catalog-audit-002",
+			CommandID:        "catalog-command-002",
+			ReviewType:       "catalog_suggestion",
+			ReviewID:         "catalog-audit-1",
+			Action:           "unassigned",
+			ActorEmployeeID:  "manager-1",
+			TargetEmployeeID: "manager-2",
+			Reason:           "rebalance catalog queue",
+			OccurredAt:       now.Add(time.Minute),
+		},
+		{
+			EventID:          "catalog-audit-other-type",
+			CommandID:        "catalog-command-other-type",
+			ReviewType:       "recipe_suggestion",
+			ReviewID:         "catalog-audit-1",
+			Action:           "assigned",
+			ActorEmployeeID:  "manager-9",
+			TargetEmployeeID: "manager-8",
+			OccurredAt:       now.Add(2 * time.Minute),
+		},
+	}
+	for _, event := range events {
+		if err := repo.AppendReviewAssignmentAuditEvent(ctx, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := service.ListCatalogSuggestionReviewAudit(ctx, "catalog-audit-1", 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].EventID != "catalog-audit-002" || got[0].ReviewType != "catalog_suggestion" || got[0].CommandID == "" {
+		t.Fatalf("expected bounded newest catalog audit event, got %+v", got)
+	}
+	body, _ := json.Marshal(got)
+	for _, forbidden := range []string{"payload_json", "raw_payload", "sync_payload", "envelope", "request_dump", "token", "pin", "sql"} {
+		if strings.Contains(strings.ToLower(string(body)), forbidden) {
+			t.Fatalf("catalog audit response must not expose %s: %s", forbidden, body)
+		}
+	}
+}
+
+func TestListRecipeSuggestionReviewAuditReturnsBoundedSafeEvents(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	now := fixedClock{}.Now()
+	events := []domain.ReviewAssignmentAuditEvent{
+		{
+			EventID:          "recipe-audit-001",
+			CommandID:        "recipe-command-001",
+			ReviewType:       "recipe_suggestion",
+			ReviewID:         "recipe-audit-1",
+			Action:           "assigned",
+			ActorEmployeeID:  "manager-1",
+			TargetEmployeeID: "manager-2",
+			Reason:           "take recipe review",
+			OccurredAt:       now,
+		},
+		{
+			EventID:          "recipe-audit-002",
+			CommandID:        "recipe-command-002",
+			ReviewType:       "recipe_suggestion",
+			ReviewID:         "recipe-audit-1",
+			Action:           "unassigned",
+			ActorEmployeeID:  "manager-1",
+			TargetEmployeeID: "manager-2",
+			Reason:           "rebalance recipe queue",
+			OccurredAt:       now.Add(time.Minute),
+		},
+		{
+			EventID:          "recipe-audit-other-review",
+			CommandID:        "recipe-command-other-review",
+			ReviewType:       "recipe_suggestion",
+			ReviewID:         "recipe-audit-other",
+			Action:           "assigned",
+			ActorEmployeeID:  "manager-9",
+			TargetEmployeeID: "manager-8",
+			OccurredAt:       now.Add(2 * time.Minute),
+		},
+	}
+	for _, event := range events {
+		if err := repo.AppendReviewAssignmentAuditEvent(ctx, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := service.ListRecipeSuggestionReviewAudit(ctx, "recipe-audit-1", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].EventID != "recipe-audit-002" || got[1].EventID != "recipe-audit-001" {
+		t.Fatalf("expected newest-first recipe audit events, got %+v", got)
+	}
+	for _, event := range got {
+		if event.ReviewType != "recipe_suggestion" || event.ReviewID != "recipe-audit-1" || event.CommandID == "" {
+			t.Fatalf("unexpected recipe audit event: %+v", event)
+		}
+	}
+	body, _ := json.Marshal(got)
+	for _, forbidden := range []string{"payload_json", "raw_payload", "sync_payload", "envelope", "request_dump", "token", "pin", "sql"} {
+		if strings.Contains(strings.ToLower(string(body)), forbidden) {
+			t.Fatalf("recipe audit response must not expose %s: %s", forbidden, body)
+		}
+	}
+}
+
+func TestListCatalogSuggestionReviewAuditCapsLimitToHundred(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	now := fixedClock{}.Now()
+	for i := 0; i < 101; i++ {
+		if err := repo.AppendReviewAssignmentAuditEvent(ctx, domain.ReviewAssignmentAuditEvent{
+			EventID:          fmt.Sprintf("catalog-limit-event-%03d", i),
+			CommandID:        fmt.Sprintf("catalog-limit-command-%03d", i),
+			ReviewType:       "catalog_suggestion",
+			ReviewID:         "catalog-audit-limit",
+			Action:           "assigned",
+			ActorEmployeeID:  "manager-1",
+			TargetEmployeeID: "manager-2",
+			Reason:           "bounded catalog list",
+			OccurredAt:       now.Add(time.Duration(i) * time.Second),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := service.ListCatalogSuggestionReviewAudit(ctx, "catalog-audit-limit", 1000, -10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 100 {
+		t.Fatalf("expected max 100 catalog audit events, got %d", len(got))
+	}
+	if got[0].EventID != "catalog-limit-event-100" || got[99].EventID != "catalog-limit-event-001" {
+		t.Fatalf("expected newest-first capped catalog audit events, got first=%+v last=%+v", got[0], got[99])
+	}
+}
+
 func TestReviewAssignmentRejectsTerminalAndUnknownReviewType(t *testing.T) {
 	service, repo := newService()
 	ctx := context.Background()

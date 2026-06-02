@@ -290,6 +290,141 @@ func TestManagerReviewAssignmentRoutes(t *testing.T) {
 	}
 }
 
+func TestCatalogSuggestionAuditRouteReturnsExpectedEvents(t *testing.T) {
+	router, repo := newRouterWithRepo()
+	now := fixedClock{}.Now()
+	events := []domain.ReviewAssignmentAuditEvent{
+		{
+			EventID:          "api-catalog-audit-001",
+			CommandID:        "api-catalog-command-001",
+			ReviewType:       "catalog_suggestion",
+			ReviewID:         "catalog-api-audit-1",
+			Action:           "assigned",
+			ActorEmployeeID:  "manager-1",
+			TargetEmployeeID: "manager-2",
+			Reason:           "take catalog review",
+			OccurredAt:       now,
+		},
+		{
+			EventID:          "api-catalog-audit-002",
+			CommandID:        "api-catalog-command-002",
+			ReviewType:       "catalog_suggestion",
+			ReviewID:         "catalog-api-audit-1",
+			Action:           "unassigned",
+			ActorEmployeeID:  "manager-1",
+			TargetEmployeeID: "manager-2",
+			Reason:           "rebalance catalog queue",
+			OccurredAt:       now.Add(time.Minute),
+		},
+		{
+			EventID:          "api-catalog-audit-other-type",
+			CommandID:        "api-catalog-command-other-type",
+			ReviewType:       "recipe_suggestion",
+			ReviewID:         "catalog-api-audit-1",
+			Action:           "assigned",
+			ActorEmployeeID:  "manager-9",
+			TargetEmployeeID: "manager-8",
+			OccurredAt:       now.Add(2 * time.Minute),
+		},
+	}
+	for _, event := range events {
+		if err := repo.AppendReviewAssignmentAuditEvent(t.Context(), event); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	audit := httptest.NewRecorder()
+	router.ServeHTTP(audit, httptest.NewRequest(http.MethodGet, "/api/v1/manager/catalog-suggestions/catalog-api-audit-1/audit?limit=1000&offset=-1", nil))
+	if audit.Code != http.StatusOK {
+		t.Fatalf("expected catalog audit 200, got %d: %s", audit.Code, audit.Body.String())
+	}
+	var auditEvents []app.ReviewAssignmentAuditEventResponse
+	if err := json.Unmarshal(audit.Body.Bytes(), &auditEvents); err != nil {
+		t.Fatal(err)
+	}
+	if len(auditEvents) != 2 || auditEvents[0].EventID != "api-catalog-audit-002" || auditEvents[1].EventID != "api-catalog-audit-001" {
+		t.Fatalf("expected catalog audit events newest-first, got %+v", auditEvents)
+	}
+	for _, event := range auditEvents {
+		if event.ReviewType != "catalog_suggestion" || event.ReviewID != "catalog-api-audit-1" || event.CommandID == "" {
+			t.Fatalf("unexpected catalog audit event: %+v", event)
+		}
+	}
+	assertNoRawAuditFields(t, audit.Body.String())
+}
+
+func TestRecipeSuggestionAuditRouteReturnsExpectedEvents(t *testing.T) {
+	router, repo := newRouterWithRepo()
+	now := fixedClock{}.Now()
+	events := []domain.ReviewAssignmentAuditEvent{
+		{
+			EventID:          "api-recipe-audit-001",
+			CommandID:        "api-recipe-command-001",
+			ReviewType:       "recipe_suggestion",
+			ReviewID:         "recipe-api-audit-1",
+			Action:           "assigned",
+			ActorEmployeeID:  "manager-1",
+			TargetEmployeeID: "manager-2",
+			Reason:           "take recipe review",
+			OccurredAt:       now,
+		},
+		{
+			EventID:          "api-recipe-audit-002",
+			CommandID:        "api-recipe-command-002",
+			ReviewType:       "recipe_suggestion",
+			ReviewID:         "recipe-api-audit-1",
+			Action:           "unassigned",
+			ActorEmployeeID:  "manager-1",
+			TargetEmployeeID: "manager-2",
+			Reason:           "rebalance recipe queue",
+			OccurredAt:       now.Add(time.Minute),
+		},
+		{
+			EventID:          "api-recipe-audit-other-review",
+			CommandID:        "api-recipe-command-other-review",
+			ReviewType:       "recipe_suggestion",
+			ReviewID:         "recipe-api-audit-other",
+			Action:           "assigned",
+			ActorEmployeeID:  "manager-9",
+			TargetEmployeeID: "manager-8",
+			OccurredAt:       now.Add(2 * time.Minute),
+		},
+	}
+	for _, event := range events {
+		if err := repo.AppendReviewAssignmentAuditEvent(t.Context(), event); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	audit := httptest.NewRecorder()
+	router.ServeHTTP(audit, httptest.NewRequest(http.MethodGet, "/api/v1/manager/recipe-suggestions/recipe-api-audit-1/audit", nil))
+	if audit.Code != http.StatusOK {
+		t.Fatalf("expected recipe audit 200, got %d: %s", audit.Code, audit.Body.String())
+	}
+	var auditEvents []app.ReviewAssignmentAuditEventResponse
+	if err := json.Unmarshal(audit.Body.Bytes(), &auditEvents); err != nil {
+		t.Fatal(err)
+	}
+	if len(auditEvents) != 2 || auditEvents[0].EventID != "api-recipe-audit-002" || auditEvents[1].EventID != "api-recipe-audit-001" {
+		t.Fatalf("expected recipe audit events newest-first, got %+v", auditEvents)
+	}
+	for _, event := range auditEvents {
+		if event.ReviewType != "recipe_suggestion" || event.ReviewID != "recipe-api-audit-1" || event.CommandID == "" {
+			t.Fatalf("unexpected recipe audit event: %+v", event)
+		}
+	}
+	assertNoRawAuditFields(t, audit.Body.String())
+}
+
+func assertNoRawAuditFields(t *testing.T, body string) {
+	t.Helper()
+	for _, forbidden := range []string{"payload_json", "raw_payload", "sync_payload", "envelope", "request_dump", "token", "pin", "sql"} {
+		if strings.Contains(strings.ToLower(body), forbidden) {
+			t.Fatalf("audit response must not expose %s: %s", forbidden, body)
+		}
+	}
+}
+
 func newRouter() http.Handler {
 	router, _ := newRouterWithRepo()
 	return router

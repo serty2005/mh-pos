@@ -7,7 +7,7 @@ import (
 
 const (
 	// DefaultProductVersion задает единую версию продукта для модулей монорепозитория.
-	DefaultProductVersion = "0.1.7"
+	DefaultProductVersion = "0.1.8"
 )
 
 // Resolve возвращает версию модуля из env или canonical default.

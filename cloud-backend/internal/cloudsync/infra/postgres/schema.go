@@ -420,7 +420,7 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 		},
 		{
 			Table:         "cloud_review_assignment_audit_events",
-			RequiredBy:    "append-only assignment audit for Edge-origin stop-list review items",
+			RequiredBy:    "append-only assignment audit read for stop-list, catalog, and recipe review items",
 			MigrationFile: "001_init.sql",
 			Columns:       []string{"event_id", "command_id", "review_type", "review_id", "action", "actor_employee_id", "target_employee_id", "reason", "occurred_at"},
 			Indexes:       []string{"cloud_review_assignment_audit_events_review_created"},

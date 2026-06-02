@@ -317,6 +317,28 @@ func TestReviewAssignmentAuditEventsListFiltersAndSortsNewestFirst(t *testing.T)
 			Reason:           "must be filtered",
 			OccurredAt:       base.Add(2 * time.Hour),
 		},
+		{
+			EventID:          "assignment-event-catalog-same-review",
+			CommandID:        "assignment-command-catalog-same-review",
+			ReviewType:       "catalog_suggestion",
+			ReviewID:         "stop-event-list-1",
+			Action:           "assigned",
+			ActorEmployeeID:  "manager-catalog",
+			TargetEmployeeID: "employee-catalog",
+			Reason:           "must be filtered by type",
+			OccurredAt:       base.Add(3 * time.Hour),
+		},
+		{
+			EventID:          "assignment-event-recipe",
+			CommandID:        "assignment-command-recipe",
+			ReviewType:       "recipe_suggestion",
+			ReviewID:         "recipe-event-list-1",
+			Action:           "assigned",
+			ActorEmployeeID:  "manager-recipe",
+			TargetEmployeeID: "employee-recipe",
+			Reason:           "recipe assignment audit",
+			OccurredAt:       base.Add(4 * time.Hour),
+		},
 	}
 	for _, event := range events {
 		if err := repo.AppendReviewAssignmentAuditEvent(ctx, event); err != nil {
@@ -344,6 +366,22 @@ func TestReviewAssignmentAuditEventsListFiltersAndSortsNewestFirst(t *testing.T)
 	}
 	if len(paged) != 2 || paged[0].EventID != "assignment-event-002" || paged[1].EventID != "assignment-event-001" {
 		t.Fatalf("unexpected paged audit events: %+v", paged)
+	}
+
+	catalog, err := repo.ListReviewAssignmentAuditEvents(ctx, "catalog_suggestion", "stop-event-list-1", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog) != 1 || catalog[0].EventID != "assignment-event-catalog-same-review" {
+		t.Fatalf("expected catalog audit to be filtered by review type and id, got %+v", catalog)
+	}
+
+	recipe, err := repo.ListReviewAssignmentAuditEvents(ctx, "recipe_suggestion", "recipe-event-list-1", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recipe) != 1 || recipe[0].EventID != "assignment-event-recipe" {
+		t.Fatalf("expected recipe audit to be filtered by review type and id, got %+v", recipe)
 	}
 }
 
