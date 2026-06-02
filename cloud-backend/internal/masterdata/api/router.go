@@ -108,6 +108,7 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 	r.Route("/manager", func(r chi.Router) {
 		r.Get("/stop-list-updates", h.listStopListUpdateReviews)
 		r.Get("/stop-list-updates/{id}", h.getStopListUpdateReview)
+		r.Get("/stop-list-updates/{id}/audit", h.listStopListUpdateReviewAudit)
 		r.Post("/stop-list-updates/{id}/approve", h.approveStopListUpdateReview)
 		r.Post("/stop-list-updates/{id}/reject", h.rejectStopListUpdateReview)
 		r.Post("/stop-list-updates/{id}/request-changes", h.requestChangesStopListUpdateReview)
@@ -789,6 +790,11 @@ func (h *Handler) listStopListUpdateReviews(w http.ResponseWriter, r *http.Reque
 
 func (h *Handler) getStopListUpdateReview(w http.ResponseWriter, r *http.Request) {
 	v, err := h.service.GetStopListUpdateReview(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) listStopListUpdateReviewAudit(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListStopListUpdateReviewAudit(r.Context(), chi.URLParam(r, "id"), intQuery(r, "limit", 50), intQuery(r, "offset", 0))
 	write(w, http.StatusOK, v, err)
 }
 

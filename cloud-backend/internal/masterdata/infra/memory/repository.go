@@ -1110,6 +1110,43 @@ func (r *Repository) AppendReviewAssignmentAuditEvent(_ context.Context, v domai
 	return nil
 }
 
+func (r *Repository) ListReviewAssignmentAuditEvents(_ context.Context, reviewType, reviewID string, limit, offset int) ([]domain.ReviewAssignmentAuditEvent, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	reviewType = strings.TrimSpace(reviewType)
+	reviewID = strings.TrimSpace(reviewID)
+	out := make([]domain.ReviewAssignmentAuditEvent, 0)
+	for _, event := range r.assignmentAuditEvents {
+		if event.ReviewType != reviewType || event.ReviewID != reviewID {
+			continue
+		}
+		out = append(out, event)
+	}
+	slices.SortFunc(out, func(a, b domain.ReviewAssignmentAuditEvent) int {
+		if cmp := b.OccurredAt.Compare(a.OccurredAt); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(b.EventID, a.EventID)
+	})
+	if offset > len(out) {
+		return []domain.ReviewAssignmentAuditEvent{}, nil
+	}
+	end := offset + limit
+	if end > len(out) {
+		end = len(out)
+	}
+	return slices.Clone(out[offset:end]), nil
+}
+
 func (r *Repository) ReviewAssignmentAuditEvents() []domain.ReviewAssignmentAuditEvent {
 	r.mu.Lock()
 	defer r.mu.Unlock()

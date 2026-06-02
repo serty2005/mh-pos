@@ -387,7 +387,13 @@
   - UUIDv7 `command_id` idempotency;
   - append-only audit events `assigned` / `unassigned` с `event_id`, `review_id`, `actor_employee_id`, `target_employee_id`, `occurred_at` и safe `reason`;
   - response без raw Edge payload.
-- Catalog/recipe assignment запланирован далее.
+- Stop-list assignment audit read реализовано сейчас:
+  - `GET /api/v1/manager/stop-list-updates/{id}/audit?limit=&offset=`;
+  - default `limit=50`, max `100`, `offset` non-negative;
+  - stable sort `occurred_at DESC, event_id DESC`;
+  - unknown review id возвращает safe empty list;
+  - response содержит safe audit fields и `command_id`, без raw payload, sync envelope, request dump, token/PIN/SQL details.
+- Catalog/recipe assignment audit запланирован далее.
 - Escalation/dashboard запланированы далее.
 - Raw payload exposure вне текущего объема и запрещено.
 - Cloud UI assignment controls для очереди предложений реализовано сейчас:

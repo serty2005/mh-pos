@@ -1136,6 +1136,37 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
 	return normalizeErr(err)
 }
 
+func (r *Repository) ListReviewAssignmentAuditEvents(ctx context.Context, reviewType, reviewID string, limit, offset int) ([]domain.ReviewAssignmentAuditEvent, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT event_id,command_id,review_type,review_id,action,actor_employee_id,COALESCE(target_employee_id,''),COALESCE(reason,''),occurred_at
+FROM cloud_review_assignment_audit_events
+WHERE review_type = $1 AND review_id = $2
+ORDER BY occurred_at DESC, event_id DESC
+LIMIT $3 OFFSET $4`, strings.TrimSpace(reviewType), strings.TrimSpace(reviewID), limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]domain.ReviewAssignmentAuditEvent, 0, limit)
+	for rows.Next() {
+		var v domain.ReviewAssignmentAuditEvent
+		if err := rows.Scan(&v.EventID, &v.CommandID, &v.ReviewType, &v.ReviewID, &v.Action, &v.ActorEmployeeID, &v.TargetEmployeeID, &v.Reason, &v.OccurredAt); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 func upsertKindFoundation(ctx context.Context, tx pgx.Tx, v domain.CatalogItem) error {
 	switch v.Kind {
 	case domain.CatalogItemDish:

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -811,6 +812,121 @@ func TestReviewAssignmentCommandsAreIdempotentAndAudited(t *testing.T) {
 	}
 	if events[1].ActorEmployeeID != "manager-1" || events[1].TargetEmployeeID != "manager-2" || events[1].Reason != "rebalance queue" || !events[1].OccurredAt.Equal(now) {
 		t.Fatalf("unexpected unassign audit event: %+v", events[1])
+	}
+}
+
+func TestListStopListUpdateReviewAuditReturnsBoundedSafeEvents(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	now := fixedClock{}.Now()
+	repo.SeedStopListUpdateReview(domain.StopListUpdateReview{
+		ID:               "event-stop-audit-1",
+		RestaurantID:     "restaurant-1",
+		DeviceID:         "edge-1",
+		StopListID:       "edge-stop-audit-1",
+		CatalogItemID:    "dish-audit-1",
+		Active:           true,
+		ConflictPolicy:   "edge_overlay_requires_manager_review",
+		Source:           "edge",
+		ProjectionAction: "requires_manager_review",
+		Status:           domain.SuggestionStatusPending,
+		UpdatedAt:        now,
+		OccurredAt:       now,
+		ProjectedAt:      now,
+		CreatedAt:        now,
+	})
+
+	if _, err := service.AssignReviewItem(ctx, "stop_list_update", "event-stop-audit-1", app.ReviewAssignCommand{
+		CommandID:            "018f0000-0000-7000-8000-000000000721",
+		AssignedToEmployeeID: "manager-2",
+		AssignedByEmployeeID: "manager-1",
+		Reason:               "take ownership",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UnassignReviewItem(ctx, "stop_list_update", "event-stop-audit-1", app.ReviewUnassignCommand{
+		CommandID:              "018f0000-0000-7000-8000-000000000722",
+		UnassignedByEmployeeID: "manager-1",
+		Reason:                 "rebalance queue",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := service.ListStopListUpdateReviewAudit(ctx, "event-stop-audit-1", 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected two audit events, got %+v", events)
+	}
+	actions := map[string]bool{}
+	for _, event := range events {
+		actions[event.Action] = true
+		if event.ReviewType != "stop_list_update" || event.ReviewID != "event-stop-audit-1" || event.CommandID == "" {
+			t.Fatalf("unexpected audit event: %+v", event)
+		}
+	}
+	if !actions["assigned"] || !actions["unassigned"] {
+		t.Fatalf("expected assigned and unassigned audit actions, got %+v", events)
+	}
+	body, _ := json.Marshal(events)
+	for _, forbidden := range []string{"payload_json", "raw_payload", "sync_payload", "envelope"} {
+		if strings.Contains(string(body), forbidden) {
+			t.Fatalf("audit response must not expose %s: %s", forbidden, body)
+		}
+	}
+}
+
+func TestListStopListUpdateReviewAuditCapsLimitToHundred(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	now := fixedClock{}.Now()
+	for i := 0; i < 101; i++ {
+		event := domain.ReviewAssignmentAuditEvent{
+			EventID:          fmt.Sprintf("audit-event-%03d", i),
+			CommandID:        fmt.Sprintf("audit-command-%03d", i),
+			ReviewType:       "stop_list_update",
+			ReviewID:         "event-stop-audit-limit",
+			Action:           "assigned",
+			ActorEmployeeID:  "manager-1",
+			TargetEmployeeID: "manager-2",
+			Reason:           "bounded list",
+			OccurredAt:       now.Add(time.Duration(i) * time.Second),
+		}
+		if err := repo.AppendReviewAssignmentAuditEvent(ctx, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := repo.AppendReviewAssignmentAuditEvent(ctx, domain.ReviewAssignmentAuditEvent{
+		EventID:          "audit-event-other",
+		CommandID:        "audit-command-other",
+		ReviewType:       "stop_list_update",
+		ReviewID:         "event-stop-audit-other",
+		Action:           "assigned",
+		ActorEmployeeID:  "manager-1",
+		TargetEmployeeID: "manager-2",
+		OccurredAt:       now.Add(2 * time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := service.ListStopListUpdateReviewAudit(ctx, "event-stop-audit-limit", 1000, -10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 100 {
+		t.Fatalf("expected max 100 audit events, got %d", len(events))
+	}
+	if events[0].EventID != "audit-event-100" || events[99].EventID != "audit-event-001" {
+		t.Fatalf("expected newest-first bounded events, got first=%+v last=%+v", events[0], events[99])
+	}
+
+	missing, err := service.ListStopListUpdateReviewAudit(ctx, "missing-review", 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("unknown review id should return a safe empty list, got %+v", missing)
 	}
 }
 

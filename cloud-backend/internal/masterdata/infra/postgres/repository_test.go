@@ -265,6 +265,88 @@ func TestReviewAssignmentAuditEventAppendGetAndNotFound(t *testing.T) {
 	}
 }
 
+func TestReviewAssignmentAuditEventsListFiltersAndSortsNewestFirst(t *testing.T) {
+	ctx := context.Background()
+	pool, closeFn := openPostgresWithBaseline(t, ctx)
+	defer closeFn()
+	repo := NewRepository(pool)
+
+	base := time.Date(2026, 5, 20, 13, 0, 0, 0, time.UTC)
+	events := []domain.ReviewAssignmentAuditEvent{
+		{
+			EventID:          "assignment-event-001",
+			CommandID:        "assignment-command-001",
+			ReviewType:       "stop_list_update",
+			ReviewID:         "stop-event-list-1",
+			Action:           "assigned",
+			ActorEmployeeID:  "manager-1",
+			TargetEmployeeID: "employee-1",
+			Reason:           "old owner",
+			OccurredAt:       base,
+		},
+		{
+			EventID:          "assignment-event-002",
+			CommandID:        "assignment-command-002",
+			ReviewType:       "stop_list_update",
+			ReviewID:         "stop-event-list-1",
+			Action:           "unassigned",
+			ActorEmployeeID:  "manager-2",
+			TargetEmployeeID: "employee-1",
+			Reason:           "same timestamp lower id",
+			OccurredAt:       base.Add(time.Hour),
+		},
+		{
+			EventID:          "assignment-event-003",
+			CommandID:        "assignment-command-003",
+			ReviewType:       "stop_list_update",
+			ReviewID:         "stop-event-list-1",
+			Action:           "assigned",
+			ActorEmployeeID:  "manager-3",
+			TargetEmployeeID: "employee-3",
+			Reason:           "same timestamp higher id",
+			OccurredAt:       base.Add(time.Hour),
+		},
+		{
+			EventID:          "assignment-event-other",
+			CommandID:        "assignment-command-other",
+			ReviewType:       "stop_list_update",
+			ReviewID:         "stop-event-list-other",
+			Action:           "assigned",
+			ActorEmployeeID:  "manager-other",
+			TargetEmployeeID: "employee-other",
+			Reason:           "must be filtered",
+			OccurredAt:       base.Add(2 * time.Hour),
+		},
+	}
+	for _, event := range events {
+		if err := repo.AppendReviewAssignmentAuditEvent(ctx, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := repo.ListReviewAssignmentAuditEvents(ctx, "stop_list_update", "stop-event-list-1", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected three filtered audit events, got %+v", got)
+	}
+	wantOrder := []string{"assignment-event-003", "assignment-event-002", "assignment-event-001"}
+	for i, want := range wantOrder {
+		if got[i].EventID != want || got[i].ReviewID != "stop-event-list-1" || got[i].ReviewType != "stop_list_update" {
+			t.Fatalf("unexpected event at %d: got %+v want event_id=%s", i, got[i], want)
+		}
+	}
+
+	paged, err := repo.ListReviewAssignmentAuditEvents(ctx, "stop_list_update", "stop-event-list-1", 2, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paged) != 2 || paged[0].EventID != "assignment-event-002" || paged[1].EventID != "assignment-event-001" {
+		t.Fatalf("unexpected paged audit events: %+v", paged)
+	}
+}
+
 func openPostgresIntegrationPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := strings.TrimSpace(os.Getenv("CLOUD_POSTGRES_TEST_DSN"))

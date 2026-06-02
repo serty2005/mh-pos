@@ -257,6 +257,33 @@ func TestManagerReviewAssignmentRoutes(t *testing.T) {
 	if strings.Contains(unassigned.Body.String(), "assigned_to_employee_id") || strings.Contains(unassigned.Body.String(), "raw_payload") {
 		t.Fatalf("unassignment response must be safe and cleared, got %s", unassigned.Body.String())
 	}
+	audit := httptest.NewRecorder()
+	router.ServeHTTP(audit, httptest.NewRequest(http.MethodGet, "/api/v1/manager/stop-list-updates/event-stop-api-assign-1/audit?limit=1000&offset=-1", nil))
+	if audit.Code != http.StatusOK {
+		t.Fatalf("expected audit 200, got %d: %s", audit.Code, audit.Body.String())
+	}
+	var auditEvents []app.ReviewAssignmentAuditEventResponse
+	if err := json.Unmarshal(audit.Body.Bytes(), &auditEvents); err != nil {
+		t.Fatal(err)
+	}
+	if len(auditEvents) != 2 {
+		t.Fatalf("expected assigned/unassigned audit events, got %s", audit.Body.String())
+	}
+	actions := map[string]bool{}
+	for _, event := range auditEvents {
+		actions[event.Action] = true
+		if event.ReviewType != "stop_list_update" || event.ReviewID != "event-stop-api-assign-1" || event.CommandID == "" {
+			t.Fatalf("unexpected audit event: %+v", event)
+		}
+	}
+	if !actions["assigned"] || !actions["unassigned"] {
+		t.Fatalf("expected assigned/unassigned audit actions, got %+v", auditEvents)
+	}
+	for _, forbidden := range []string{"payload_json", "raw_payload", "sync_payload", "envelope", "request_dump", "token", "pin", "sql"} {
+		if strings.Contains(strings.ToLower(audit.Body.String()), forbidden) {
+			t.Fatalf("audit response must not expose %s: %s", forbidden, audit.Body.String())
+		}
+	}
 	invalidCommand := post(t, router, "/api/v1/manager/stop-list-updates/event-stop-api-assign-1/assign", `{"command_id":"not-uuid-v7","assigned_to_employee_id":"manager-2","assigned_by_employee_id":"manager-1","reason":"take ownership"}`)
 	if invalidCommand.Code != http.StatusBadRequest {
 		t.Fatalf("expected invalid UUIDv7 command id to return 400, got %d: %s", invalidCommand.Code, invalidCommand.Body.String())

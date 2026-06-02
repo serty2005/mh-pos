@@ -122,6 +122,7 @@ type Repository interface {
 	UpdateStopListUpdateReview(context.Context, domain.StopListUpdateReview) (domain.StopListUpdateReview, error)
 	GetReviewAssignmentAuditEvent(context.Context, string) (domain.ReviewAssignmentAuditEvent, error)
 	AppendReviewAssignmentAuditEvent(context.Context, domain.ReviewAssignmentAuditEvent) error
+	ListReviewAssignmentAuditEvents(context.Context, string, string, int, int) ([]domain.ReviewAssignmentAuditEvent, error)
 }
 
 // IDGenerator задает источник идентификаторов для use cases и тестов.
@@ -527,6 +528,19 @@ type ReviewAssignmentResponse struct {
 	AssignedByEmployeeID string     `json:"assigned_by_employee_id,omitempty"`
 	AssignedAt           *time.Time `json:"assigned_at,omitempty"`
 	AssignmentNote       string     `json:"assignment_note,omitempty"`
+}
+
+// ReviewAssignmentAuditEventResponse описывает безопасную выдачу audit trail без raw payload.
+type ReviewAssignmentAuditEventResponse struct {
+	EventID          string    `json:"event_id"`
+	ReviewID         string    `json:"review_id"`
+	ReviewType       string    `json:"review_type"`
+	Action           string    `json:"action"`
+	ActorEmployeeID  string    `json:"actor_employee_id"`
+	TargetEmployeeID string    `json:"target_employee_id,omitempty"`
+	OccurredAt       time.Time `json:"occurred_at"`
+	Reason           string    `json:"reason,omitempty"`
+	CommandID        string    `json:"command_id,omitempty"`
 }
 
 // StreamPackage описывает stream-specific package, сохраняемый для Edge import.
@@ -2058,6 +2072,18 @@ func (s *Service) GetStopListUpdateReview(ctx context.Context, id string) (domai
 	return s.repo.GetStopListUpdateReview(ctx, strings.TrimSpace(id))
 }
 
+func (s *Service) ListStopListUpdateReviewAudit(ctx context.Context, id string, limit, offset int) ([]ReviewAssignmentAuditEventResponse, error) {
+	events, err := s.repo.ListReviewAssignmentAuditEvents(ctx, "stop_list_update", strings.TrimSpace(id), normalizeAuditLimit(limit), normalizeAuditOffset(offset))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ReviewAssignmentAuditEventResponse, 0, len(events))
+	for _, event := range events {
+		out = append(out, reviewAssignmentAuditEventResponse(event))
+	}
+	return out, nil
+}
+
 func (s *Service) AssignReviewItem(ctx context.Context, reviewType, id string, cmd ReviewAssignCommand) (ReviewAssignmentResponse, error) {
 	reviewType = strings.TrimSpace(reviewType)
 	id = strings.TrimSpace(id)
@@ -3295,6 +3321,37 @@ func stopListAssignmentResponse(reviewType string, v domain.StopListUpdateReview
 		AssignedAt:           v.AssignedAt,
 		AssignmentNote:       v.AssignmentNote,
 	}
+}
+
+func reviewAssignmentAuditEventResponse(v domain.ReviewAssignmentAuditEvent) ReviewAssignmentAuditEventResponse {
+	return ReviewAssignmentAuditEventResponse{
+		EventID:          v.EventID,
+		ReviewID:         v.ReviewID,
+		ReviewType:       v.ReviewType,
+		Action:           v.Action,
+		ActorEmployeeID:  v.ActorEmployeeID,
+		TargetEmployeeID: v.TargetEmployeeID,
+		OccurredAt:       v.OccurredAt,
+		Reason:           v.Reason,
+		CommandID:        v.CommandID,
+	}
+}
+
+func normalizeAuditLimit(limit int) int {
+	if limit <= 0 {
+		return 50
+	}
+	if limit > 100 {
+		return 100
+	}
+	return limit
+}
+
+func normalizeAuditOffset(offset int) int {
+	if offset < 0 {
+		return 0
+	}
+	return offset
 }
 
 func isUUIDv7(v string) bool {
