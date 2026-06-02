@@ -20,6 +20,7 @@ import (
 	"cloud-backend/internal/cloudsync/contracts"
 	"cloud-backend/internal/masterdata/domain"
 	"cloud-backend/internal/platform/clock"
+	"cloud-backend/internal/platform/idgen"
 )
 
 const (
@@ -2070,74 +2071,30 @@ func (s *Service) AssignReviewItem(ctx context.Context, reviewType, id string, c
 	if err := validateReviewAssignCommand(cmd); err != nil {
 		return ReviewAssignmentResponse{}, err
 	}
-	now := s.clock.Now().UTC()
-	switch reviewType {
-	case "catalog_suggestion":
-		v, err := s.repo.GetCatalogSuggestion(ctx, id)
-		if err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		if isTerminalSuggestionStatus(v.Status) {
-			return ReviewAssignmentResponse{}, fmt.Errorf("%w: terminal review item cannot be assigned", domain.ErrConflict)
-		}
-		v.AssignedToEmployeeID = cmd.AssignedToEmployeeID
-		v.AssignedByEmployeeID = cmd.AssignedByEmployeeID
-		v.AssignedAt = &now
-		v.AssignmentNote = cmd.Reason
-		v.UpdatedAt = now
-		stored, err := s.repo.UpdateCatalogSuggestion(ctx, v)
-		if err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		if err := s.appendReviewAssignmentAudit(ctx, cmd.CommandID, reviewType, id, "assigned", cmd.AssignedToEmployeeID, cmd.AssignedByEmployeeID, cmd.Reason, now); err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		return catalogAssignmentResponse(reviewType, stored), nil
-	case "recipe_suggestion":
-		v, err := s.repo.GetRecipeSuggestion(ctx, id)
-		if err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		if isTerminalSuggestionStatus(v.Status) {
-			return ReviewAssignmentResponse{}, fmt.Errorf("%w: terminal review item cannot be assigned", domain.ErrConflict)
-		}
-		v.AssignedToEmployeeID = cmd.AssignedToEmployeeID
-		v.AssignedByEmployeeID = cmd.AssignedByEmployeeID
-		v.AssignedAt = &now
-		v.AssignmentNote = cmd.Reason
-		v.UpdatedAt = now
-		stored, err := s.repo.UpdateRecipeSuggestion(ctx, v)
-		if err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		if err := s.appendReviewAssignmentAudit(ctx, cmd.CommandID, reviewType, id, "assigned", cmd.AssignedToEmployeeID, cmd.AssignedByEmployeeID, cmd.Reason, now); err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		return recipeAssignmentResponse(reviewType, stored), nil
-	case "stop_list_update":
-		v, err := s.repo.GetStopListUpdateReview(ctx, id)
-		if err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		if isTerminalSuggestionStatus(v.Status) {
-			return ReviewAssignmentResponse{}, fmt.Errorf("%w: terminal review item cannot be assigned", domain.ErrConflict)
-		}
-		v.AssignedToEmployeeID = cmd.AssignedToEmployeeID
-		v.AssignedByEmployeeID = cmd.AssignedByEmployeeID
-		v.AssignedAt = &now
-		v.AssignmentNote = cmd.Reason
-		v.UpdatedAt = now
-		stored, err := s.repo.UpdateStopListUpdateReview(ctx, v)
-		if err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		if err := s.appendReviewAssignmentAudit(ctx, cmd.CommandID, reviewType, id, "assigned", cmd.AssignedToEmployeeID, cmd.AssignedByEmployeeID, cmd.Reason, now); err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		return stopListAssignmentResponse(reviewType, stored), nil
-	default:
-		return ReviewAssignmentResponse{}, fmt.Errorf("%w: unknown review_type", domain.ErrInvalid)
+	if reviewType != "stop_list_update" {
+		return ReviewAssignmentResponse{}, fmt.Errorf("%w: only stop_list_update assignment is supported", domain.ErrInvalid)
 	}
+	now := s.clock.Now().UTC()
+	v, err := s.repo.GetStopListUpdateReview(ctx, id)
+	if err != nil {
+		return ReviewAssignmentResponse{}, err
+	}
+	if isTerminalSuggestionStatus(v.Status) {
+		return ReviewAssignmentResponse{}, fmt.Errorf("%w: terminal review item cannot be assigned", domain.ErrConflict)
+	}
+	v.AssignedToEmployeeID = cmd.AssignedToEmployeeID
+	v.AssignedByEmployeeID = cmd.AssignedByEmployeeID
+	v.AssignedAt = &now
+	v.AssignmentNote = cmd.Reason
+	v.UpdatedAt = now
+	stored, err := s.repo.UpdateStopListUpdateReview(ctx, v)
+	if err != nil {
+		return ReviewAssignmentResponse{}, err
+	}
+	if err := s.appendReviewAssignmentAudit(ctx, cmd.CommandID, reviewType, id, "assigned", cmd.AssignedToEmployeeID, cmd.AssignedByEmployeeID, cmd.Reason, now); err != nil {
+		return ReviewAssignmentResponse{}, err
+	}
+	return stopListAssignmentResponse(reviewType, stored), nil
 }
 
 func (s *Service) UnassignReviewItem(ctx context.Context, reviewType, id string, cmd ReviewUnassignCommand) (ReviewAssignmentResponse, error) {
@@ -2152,77 +2109,31 @@ func (s *Service) UnassignReviewItem(ctx context.Context, reviewType, id string,
 	if err := validateReviewUnassignCommand(cmd); err != nil {
 		return ReviewAssignmentResponse{}, err
 	}
-	now := s.clock.Now().UTC()
-	switch reviewType {
-	case "catalog_suggestion":
-		v, err := s.repo.GetCatalogSuggestion(ctx, id)
-		if err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		if isTerminalSuggestionStatus(v.Status) {
-			return ReviewAssignmentResponse{}, fmt.Errorf("%w: terminal review item cannot be unassigned", domain.ErrConflict)
-		}
-		previous := v.AssignedToEmployeeID
-		v.AssignedToEmployeeID = ""
-		v.AssignedByEmployeeID = ""
-		v.AssignedAt = nil
-		v.AssignmentNote = ""
-		v.UpdatedAt = now
-		stored, err := s.repo.UpdateCatalogSuggestion(ctx, v)
-		if err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		if err := s.appendReviewAssignmentAudit(ctx, cmd.CommandID, reviewType, id, "unassigned", previous, cmd.UnassignedByEmployeeID, cmd.Reason, now); err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		return catalogAssignmentResponse(reviewType, stored), nil
-	case "recipe_suggestion":
-		v, err := s.repo.GetRecipeSuggestion(ctx, id)
-		if err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		if isTerminalSuggestionStatus(v.Status) {
-			return ReviewAssignmentResponse{}, fmt.Errorf("%w: terminal review item cannot be unassigned", domain.ErrConflict)
-		}
-		previous := v.AssignedToEmployeeID
-		v.AssignedToEmployeeID = ""
-		v.AssignedByEmployeeID = ""
-		v.AssignedAt = nil
-		v.AssignmentNote = ""
-		v.UpdatedAt = now
-		stored, err := s.repo.UpdateRecipeSuggestion(ctx, v)
-		if err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		if err := s.appendReviewAssignmentAudit(ctx, cmd.CommandID, reviewType, id, "unassigned", previous, cmd.UnassignedByEmployeeID, cmd.Reason, now); err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		return recipeAssignmentResponse(reviewType, stored), nil
-	case "stop_list_update":
-		v, err := s.repo.GetStopListUpdateReview(ctx, id)
-		if err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		if isTerminalSuggestionStatus(v.Status) {
-			return ReviewAssignmentResponse{}, fmt.Errorf("%w: terminal review item cannot be unassigned", domain.ErrConflict)
-		}
-		previous := v.AssignedToEmployeeID
-		v.AssignedToEmployeeID = ""
-		v.AssignedByEmployeeID = ""
-		v.AssignedAt = nil
-		v.AssignmentNote = ""
-		v.UpdatedAt = now
-		stored, err := s.repo.UpdateStopListUpdateReview(ctx, v)
-		if err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		if err := s.appendReviewAssignmentAudit(ctx, cmd.CommandID, reviewType, id, "unassigned", previous, cmd.UnassignedByEmployeeID, cmd.Reason, now); err != nil {
-			return ReviewAssignmentResponse{}, err
-		}
-		return stopListAssignmentResponse(reviewType, stored), nil
-	default:
-		return ReviewAssignmentResponse{}, fmt.Errorf("%w: unknown review_type", domain.ErrInvalid)
+	if reviewType != "stop_list_update" {
+		return ReviewAssignmentResponse{}, fmt.Errorf("%w: only stop_list_update assignment is supported", domain.ErrInvalid)
 	}
+	now := s.clock.Now().UTC()
+	v, err := s.repo.GetStopListUpdateReview(ctx, id)
+	if err != nil {
+		return ReviewAssignmentResponse{}, err
+	}
+	if isTerminalSuggestionStatus(v.Status) {
+		return ReviewAssignmentResponse{}, fmt.Errorf("%w: terminal review item cannot be unassigned", domain.ErrConflict)
+	}
+	previous := v.AssignedToEmployeeID
+	v.AssignedToEmployeeID = ""
+	v.AssignedByEmployeeID = ""
+	v.AssignedAt = nil
+	v.AssignmentNote = ""
+	v.UpdatedAt = now
+	stored, err := s.repo.UpdateStopListUpdateReview(ctx, v)
+	if err != nil {
+		return ReviewAssignmentResponse{}, err
+	}
+	if err := s.appendReviewAssignmentAudit(ctx, cmd.CommandID, reviewType, id, "unassigned", previous, cmd.UnassignedByEmployeeID, cmd.Reason, now); err != nil {
+		return ReviewAssignmentResponse{}, err
+	}
+	return stopListAssignmentResponse(reviewType, stored), nil
 }
 
 func (s *Service) ApproveCatalogSuggestion(ctx context.Context, id string, cmd SuggestionReviewCommand) (domain.CatalogSuggestion, error) {
@@ -3320,12 +3231,6 @@ func (s *Service) replayReviewAssignment(ctx context.Context, reviewType, id, co
 
 func (s *Service) reviewAssignmentResponse(ctx context.Context, reviewType, id string) (ReviewAssignmentResponse, error) {
 	switch reviewType {
-	case "catalog_suggestion":
-		v, err := s.repo.GetCatalogSuggestion(ctx, id)
-		return catalogAssignmentResponse(reviewType, v), err
-	case "recipe_suggestion":
-		v, err := s.repo.GetRecipeSuggestion(ctx, id)
-		return recipeAssignmentResponse(reviewType, v), err
 	case "stop_list_update":
 		v, err := s.repo.GetStopListUpdateReview(ctx, id)
 		return stopListAssignmentResponse(reviewType, v), err
@@ -3335,16 +3240,20 @@ func (s *Service) reviewAssignmentResponse(ctx context.Context, reviewType, id s
 }
 
 func (s *Service) appendReviewAssignmentAudit(ctx context.Context, commandID, reviewType, reviewID, action, assignedToEmployeeID, actorEmployeeID, reason string, now time.Time) error {
+	eventID, err := idgen.NewV7()
+	if err != nil {
+		return err
+	}
 	return s.repo.AppendReviewAssignmentAuditEvent(ctx, domain.ReviewAssignmentAuditEvent{
-		ID:                   s.ids.NewID(),
-		CommandID:            commandID,
-		ReviewType:           reviewType,
-		ReviewID:             reviewID,
-		Action:               action,
-		AssignedToEmployeeID: assignedToEmployeeID,
-		ActorEmployeeID:      actorEmployeeID,
-		Reason:               reason,
-		CreatedAt:            now,
+		EventID:          eventID,
+		CommandID:        commandID,
+		ReviewType:       reviewType,
+		ReviewID:         reviewID,
+		Action:           action,
+		ActorEmployeeID:  actorEmployeeID,
+		TargetEmployeeID: assignedToEmployeeID,
+		Reason:           reason,
+		OccurredAt:       now,
 	})
 }
 

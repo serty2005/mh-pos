@@ -197,7 +197,7 @@ describe('cloud api inventory readiness contract', () => {
     });
 
     const url = requestedUrl(fetchMock);
-    expect(url.pathname).toBe('/api/v1/manager/reviews/stop_list_update/review-1/assign');
+    expect(url.pathname).toBe('/api/v1/manager/stop-list-updates/review-1/assign');
     const body = await requestedJsonBody(fetchMock);
     expect(body).toEqual({
       command_id: '018f0000-0000-7000-8000-000000000901',
@@ -221,7 +221,7 @@ describe('cloud api inventory readiness contract', () => {
     });
 
     const url = requestedUrl(fetchMock);
-    expect(url.pathname).toBe('/api/v1/manager/reviews/stop_list_update/review-1/unassign');
+    expect(url.pathname).toBe('/api/v1/manager/stop-list-updates/review-1/unassign');
     const body = await requestedJsonBody(fetchMock);
     expect(body).toEqual({
       command_id: '018f0000-0000-7000-8000-000000000902',

@@ -803,6 +803,15 @@ func TestReviewAssignmentCommandsAreIdempotentAndAudited(t *testing.T) {
 	if events[0].Action != "assigned" || events[1].Action != "unassigned" {
 		t.Fatalf("expected assigned/unassigned audit trail, got %+v", events)
 	}
+	if !isTestUUIDv7(events[0].EventID) || !isTestUUIDv7(events[1].EventID) {
+		t.Fatalf("audit event_id must be UUIDv7, got %+v", events)
+	}
+	if events[0].ReviewID != "event-stop-assign-1" || events[0].ActorEmployeeID != "manager-1" || events[0].TargetEmployeeID != "manager-2" || !events[0].OccurredAt.Equal(now) {
+		t.Fatalf("unexpected assign audit event: %+v", events[0])
+	}
+	if events[1].ActorEmployeeID != "manager-1" || events[1].TargetEmployeeID != "manager-2" || events[1].Reason != "rebalance queue" || !events[1].OccurredAt.Equal(now) {
+		t.Fatalf("unexpected unassign audit event: %+v", events[1])
+	}
 }
 
 func TestReviewAssignmentRejectsTerminalAndUnknownReviewType(t *testing.T) {
@@ -858,7 +867,7 @@ func TestReviewAssignmentRejectsTerminalAndUnknownReviewType(t *testing.T) {
 	}
 }
 
-func TestReviewAssignmentSupportsCatalogAndRecipeSuggestions(t *testing.T) {
+func TestReviewAssignmentRejectsCatalogAndRecipeSuggestions(t *testing.T) {
 	service, repo := newService()
 	ctx := context.Background()
 	now := fixedClock{}.Now()
@@ -896,19 +905,60 @@ func TestReviewAssignmentSupportsCatalogAndRecipeSuggestions(t *testing.T) {
 		{reviewType: "catalog_suggestion", id: "catalog-assignment-1", commandID: "018f0000-0000-7000-8000-000000000721"},
 		{reviewType: "recipe_suggestion", id: "recipe-assignment-1", commandID: "018f0000-0000-7000-8000-000000000722"},
 	} {
-		assigned, err := service.AssignReviewItem(ctx, tc.reviewType, tc.id, app.ReviewAssignCommand{
+		_, err := service.AssignReviewItem(ctx, tc.reviewType, tc.id, app.ReviewAssignCommand{
 			CommandID:            tc.commandID,
 			AssignedToEmployeeID: "manager-2",
 			AssignedByEmployeeID: "manager-1",
 			Reason:               "take ownership",
 		})
-		if err != nil {
-			t.Fatalf("%s assign failed: %v", tc.reviewType, err)
-		}
-		if assigned.ReviewType != tc.reviewType || assigned.AssignedToEmployeeID != "manager-2" {
-			t.Fatalf("unexpected %s assignment response: %+v", tc.reviewType, assigned)
+		if !errors.Is(err, domain.ErrInvalid) {
+			t.Fatalf("expected %s assignment to stay unsupported, got %v", tc.reviewType, err)
 		}
 	}
+}
+
+func TestStopListReviewDecisionPreservesAssignment(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	now := fixedClock{}.Now()
+	repo.SeedStopListUpdateReview(domain.StopListUpdateReview{
+		ID:                   "event-stop-preserve-assignment",
+		RestaurantID:         "restaurant-1",
+		DeviceID:             "edge-1",
+		StopListID:           "edge-stop-preserve-assignment",
+		CatalogItemID:        "dish-preserve-assignment",
+		Active:               true,
+		ConflictPolicy:       "edge_overlay_requires_manager_review",
+		Source:               "edge",
+		ProjectionAction:     "requires_manager_review",
+		Status:               domain.SuggestionStatusPending,
+		AssignedToEmployeeID: "manager-2",
+		AssignedByEmployeeID: "manager-1",
+		AssignedAt:           &now,
+		AssignmentNote:       "take ownership",
+		UpdatedAt:            now,
+		OccurredAt:           now,
+		ProjectedAt:          now,
+		CreatedAt:            now,
+	})
+	reviewed, err := service.RequestChangesStopListUpdateReview(ctx, "event-stop-preserve-assignment", app.SuggestionReviewCommand{
+		ReviewedByEmployeeID: "manager-2",
+		ReviewComment:        "need details",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reviewed.AssignedToEmployeeID != "manager-2" || reviewed.AssignedByEmployeeID != "manager-1" || reviewed.AssignedAt == nil || reviewed.AssignmentNote != "take ownership" {
+		t.Fatalf("stop-list review decision must preserve assignment fields, got %+v", reviewed)
+	}
+}
+
+func isTestUUIDv7(v string) bool {
+	if len(v) != 36 || v[14] != '7' {
+		return false
+	}
+	variant := v[19]
+	return variant == '8' || variant == '9' || variant == 'a' || variant == 'A' || variant == 'b' || variant == 'B'
 }
 
 func newService() (*app.Service, *memory.Repository) {

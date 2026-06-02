@@ -381,14 +381,15 @@
   - approve;
   - reject;
   - request-changes.
-- Cloud manager review assignment реализовано сейчас для:
-  - `catalog_suggestion`;
-  - `recipe_suggestion`;
-  - `stop_list_update`;
-  - `POST /api/v1/manager/reviews/{review_type}/{id}/assign`;
-  - `POST /api/v1/manager/reviews/{review_type}/{id}/unassign`;
+- Cloud manager review assignment реализовано сейчас только для Edge-origin `stop_list_update`:
+  - `POST /api/v1/manager/stop-list-updates/{id}/assign`;
+  - `POST /api/v1/manager/stop-list-updates/{id}/unassign`;
   - UUIDv7 `command_id` idempotency;
-  - append-only audit events `assigned` / `unassigned`.
+  - append-only audit events `assigned` / `unassigned` с `event_id`, `review_id`, `actor_employee_id`, `target_employee_id`, `occurred_at` и safe `reason`;
+  - response без raw Edge payload.
+- Catalog/recipe assignment запланирован далее.
+- Escalation/dashboard запланированы далее.
+- Raw payload exposure вне текущего объема и запрещено.
 - Cloud UI assignment controls для очереди предложений реализовано сейчас:
   - безопасные assignment metadata в строках и detail view;
   - выбор менеджера из списка сотрудников ресторана;

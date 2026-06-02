@@ -151,7 +151,7 @@
             </div>
           </dl>
 
-          <form v-if="!isTerminalReview" class="proposal-assignment-form" @submit.prevent>
+          <form v-if="supportsAssignment && !isTerminalReview" class="proposal-assignment-form" @submit.prevent>
             <q-select
               v-if="employeeOptions.length > 0"
               v-model="assignedToEmployeeId"
@@ -198,7 +198,7 @@
               />
             </div>
           </form>
-          <p v-else class="cloud-field-hint">{{ t('cloud.proposals.terminalAssignmentHint') }}</p>
+          <p v-else-if="isTerminalReview" class="cloud-field-hint">{{ t('cloud.proposals.terminalAssignmentHint') }}</p>
         </section>
 
         <section class="proposal-diff">
@@ -339,9 +339,10 @@ const employeeOptions = computed(() => {
 });
 const canReview = computed(() => Boolean(selected.value && selected.value.status === 'pending' && reviewedByEmployeeId.value.trim()));
 const isTerminalReview = computed(() => selected.value?.status === 'approved' || selected.value?.status === 'rejected');
+const supportsAssignment = computed(() => selected.value?.kind === 'stop_list');
 const hasAssignment = computed(() => Boolean(selected.value?.assignedToEmployeeId));
-const canAssign = computed(() => Boolean(selected.value && !isTerminalReview.value && assignedToEmployeeId.value.trim() && assignmentActorEmployeeId.value.trim() && assignmentReason.value.trim()));
-const canUnassign = computed(() => Boolean(selected.value && !isTerminalReview.value && hasAssignment.value && assignmentActorEmployeeId.value.trim() && assignmentReason.value.trim()));
+const canAssign = computed(() => Boolean(selected.value && supportsAssignment.value && !isTerminalReview.value && assignedToEmployeeId.value.trim() && assignmentActorEmployeeId.value.trim() && assignmentReason.value.trim()));
+const canUnassign = computed(() => Boolean(selected.value && supportsAssignment.value && !isTerminalReview.value && hasAssignment.value && assignmentActorEmployeeId.value.trim() && assignmentReason.value.trim()));
 
 watch(allRows, (rows) => {
   if (rows.length === 0) {
@@ -514,7 +515,7 @@ async function submitReview(action: ReviewAction) {
 }
 
 async function submitAssignment() {
-  if (!selected.value || !canAssign.value) return;
+  if (!selected.value || !supportsAssignment.value || !canAssign.value) return;
   await props.ctx.assignProposalReviewItem(selected.value.kind, selected.value.id, {
     command_id: newUuidV7(),
     assigned_to_employee_id: assignedToEmployeeId.value.trim(),
@@ -525,7 +526,7 @@ async function submitAssignment() {
 }
 
 async function submitUnassignment() {
-  if (!selected.value || !canUnassign.value) return;
+  if (!selected.value || !supportsAssignment.value || !canUnassign.value) return;
   await props.ctx.unassignProposalReviewItem(selected.value.kind, selected.value.id, {
     command_id: newUuidV7(),
     unassigned_by_employee_id: assignmentActorEmployeeId.value.trim(),

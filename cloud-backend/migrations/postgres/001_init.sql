@@ -927,19 +927,24 @@ ALTER TABLE cloud_recipe_suggestions
   ADD COLUMN IF NOT EXISTS assignment_note TEXT NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS cloud_review_assignment_audit_events (
-  id TEXT PRIMARY KEY,
+  event_id TEXT PRIMARY KEY CHECK (event_id <> ''),
   command_id TEXT NOT NULL UNIQUE CHECK (command_id <> ''),
-  review_type TEXT NOT NULL CHECK (review_type IN ('catalog_suggestion','recipe_suggestion','stop_list_update')),
+  review_type TEXT NOT NULL CHECK (review_type = 'stop_list_update'),
   review_id TEXT NOT NULL CHECK (review_id <> ''),
   action TEXT NOT NULL CHECK (action IN ('assigned','unassigned')),
-  assigned_to_employee_id TEXT NOT NULL DEFAULT '',
   actor_employee_id TEXT NOT NULL CHECK (actor_employee_id <> ''),
+  target_employee_id TEXT NOT NULL DEFAULT '',
   reason TEXT NOT NULL DEFAULT '',
-  created_at TIMESTAMPTZ NOT NULL
+  occurred_at TIMESTAMPTZ NOT NULL
 );
 
+ALTER TABLE cloud_review_assignment_audit_events
+  ADD COLUMN IF NOT EXISTS event_id TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS target_employee_id TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
 CREATE INDEX IF NOT EXISTS cloud_review_assignment_audit_events_review_created
-  ON cloud_review_assignment_audit_events(review_type, review_id, created_at DESC);
+  ON cloud_review_assignment_audit_events(review_type, review_id, occurred_at DESC);
 
 -- === 005_master_data_restaurants_api.sql ===
 CREATE TABLE IF NOT EXISTS cloud_restaurants (

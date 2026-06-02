@@ -72,7 +72,7 @@
 
 - recipe editor имеет bounded route-backed строки recipe items и реализовано сейчас сценарный editor версий: просмотр текущих версий, draft form с компонентной строкой, save draft / submit, review выполняется в существующей очереди предложений;
 - duplicate hints и linked receipt line для catalog suggestion review остаются запланировано далее;
-- stop-list panel уже имеет bounded route-backed rows; `Готовность склада` показывает default conflict policy, async projection mode, publication/package metadata, latest Edge ACK metadata и sync problem counters без raw payload; Cloud review queue показывает safe Edge-origin stop-list update summary/diff, approve/reject/request-changes, safe assignment metadata и полноценные UI controls для назначения/снятия назначения review items без raw payload. Реализовано сейчас: backend routes `POST /api/v1/manager/reviews/{review_type}/{id}/assign|unassign` поддерживают `catalog_suggestion`, `recipe_suggestion`, `stop_list_update` с UUIDv7 `command_id` и append-only audit; Cloud UI генерирует UUIDv7 `command_id`, требует reason/comment перед отправкой, использует список сотрудников ресторана для выбора менеджера, перечитывает queue state после команды и отключает controls для terminal statuses `approved`/`rejected`. Вне текущего объема: escalation workflow и dashboard refactor;
+- stop-list panel уже имеет bounded route-backed rows; `Готовность склада` показывает default conflict policy, async projection mode, publication/package metadata, latest Edge ACK metadata и sync problem counters без raw payload; Cloud review queue показывает safe Edge-origin stop-list update summary/diff, approve/reject/request-changes и safe assignment metadata без raw payload. Реализовано сейчас: backend routes `POST /api/v1/manager/stop-list-updates/{id}/assign|unassign` поддерживают только `stop_list_update` с UUIDv7 `command_id` и append-only audit. Assignment для catalog/recipe review запланирован далее. Escalation workflow и dashboard refactor запланированы далее. Raw payload exposure вне текущего объема и запрещено;
 - реализовано сейчас: inventory readiness surface показывает route-backed `stock-balances` table из Cloud backend с фильтрами `warehouse_id`, `catalog_item_id`, `business_date_to`, `costing_status`, aggregate costing status и readiness signals stop-list без raw payload. Там же есть read-only stock ledger preview по `GET /api/v1/inventory/stock-ledger` с `restaurant_id`, `catalog_item_id`, `source_event_type`, `source_event_id`, `order_line_id`, `limit=50` и `offset=0`; UI показывает только safe table/card поля ledger DTO и не выполняет складские команды. Edge-side stock receipts, inventory counts, write-offs and production input are covered by `pos-ui-g` kitchen mode and Cloud ledger/balance read endpoints;
 - запланировано далее: stock documents table, full costing/recalculation operator workflow и inventory runtime actions в Cloud UI;
 - реализовано сейчас: ClickHouse/OLAP workspace показывает read-only export status для `raw_business_events` и `stock_moves`, bounded preview `olap_stock_moves`, stock move summary с группировкой `business_date`, `catalog_item`, `warehouse`, backfill job status, kitchen timing summary и минимальный read-only `sales-kitchen-summary` preview. UI не вызывает `POST /api/v1/olap/export-retry` и mutating backfill controls, не показывает COGS/margin расчеты и не является BI dashboard;
@@ -141,8 +141,8 @@
 - `GET /api/v1/master-data/recipe-suggestions?restaurant_id=&status=&limit=&offset=`;
 - `POST /api/v1/master-data/catalog-suggestions/{id}/approve|reject|request-changes`;
 - `POST /api/v1/master-data/recipe-suggestions/{id}/approve|reject|request-changes`.
-- `POST /api/v1/manager/reviews/{review_type}/{id}/assign`;
-- `POST /api/v1/manager/reviews/{review_type}/{id}/unassign`.
+- `POST /api/v1/manager/stop-list-updates/{id}/assign`;
+- `POST /api/v1/manager/stop-list-updates/{id}/unassign`.
 - `GET /api/v1/master-data/recipes/versions?restaurant_id=&owner_catalog_item_id=&status=&limit=&offset=`;
 - `POST /api/v1/master-data/recipes/versions/drafts`;
 - `POST /api/v1/master-data/recipes/versions/{id}/submit`.
@@ -180,7 +180,7 @@ Unassign command body:
 }
 ```
 
-Реализовано сейчас: assignment endpoints возвращают только safe fields (`review_type`, `id`, `status`, assignment metadata) и не возвращают `payload_json`, raw Edge payload, PIN/token/secret/request dump; Cloud UI подключает эти routes к штатным controls очереди задач для `catalog_suggestion`, `recipe_suggestion` и `stop_list_update`. Вне текущего объема: escalation, dashboard и большой UX refactor.
+Реализовано сейчас: stop-list assignment endpoints возвращают только safe fields (`review_type`, `id`, `status`, assignment metadata) и не возвращают `payload_json`, raw Edge payload, PIN/token/secret/request dump. Catalog/recipe assignment controls запланированы далее. Вне текущего объема и запрещено: raw payload exposure. Запланировано далее: escalation, dashboard и большой UX refactor.
 
 Для entities без подтвержденного `GET list` route UI показывает форму команды и поясняет, что list route не подтвержден.
 

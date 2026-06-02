@@ -45,7 +45,7 @@ func TestRequiredSchemaIncludesCloudInventoryFoundationTables(t *testing.T) {
 		"stock_recalculation_jobs":             {"id", "restaurant_id", "source_document_id", "status", "recalculate_from", "created_at", "updated_at"},
 		"cloud_projection_stop_list_updates":   {"source_event_id", "queue_id", "restaurant_id", "device_id", "stop_list_id", "catalog_item_id", "available_quantity", "active", "conflict_policy", "source", "projection_action", "review_status", "review_comment", "reviewed_by_employee_id", "reviewed_at", "assigned_to_employee_id", "assigned_by_employee_id", "assigned_at", "assignment_note", "applied_stop_list_id", "updated_at", "occurred_at", "projected_at"},
 		"stop_lists":                           {"id", "restaurant_id", "catalog_item_id", "available_quantity", "source", "reason", "active", "cloud_version", "updated_at"},
-		"cloud_review_assignment_audit_events": {"id", "command_id", "review_type", "review_id", "action", "assigned_to_employee_id", "actor_employee_id", "reason", "created_at"},
+		"cloud_review_assignment_audit_events": {"event_id", "command_id", "review_type", "review_id", "action", "actor_employee_id", "target_employee_id", "reason", "occurred_at"},
 	} {
 		found, ok := reqs[table]
 		if !ok {

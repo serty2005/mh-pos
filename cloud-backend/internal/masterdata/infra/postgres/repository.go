@@ -1120,19 +1120,19 @@ RETURNING source_event_id,restaurant_id,device_id,stop_list_id,COALESCE(warehous
 func (r *Repository) GetReviewAssignmentAuditEvent(ctx context.Context, commandID string) (domain.ReviewAssignmentAuditEvent, error) {
 	var v domain.ReviewAssignmentAuditEvent
 	err := r.pool.QueryRow(ctx, `
-SELECT id,command_id,review_type,review_id,action,COALESCE(assigned_to_employee_id,''),actor_employee_id,COALESCE(reason,''),created_at
+SELECT event_id,command_id,review_type,review_id,action,actor_employee_id,COALESCE(target_employee_id,''),COALESCE(reason,''),occurred_at
 FROM cloud_review_assignment_audit_events
 WHERE command_id = $1`, strings.TrimSpace(commandID)).Scan(
-		&v.ID, &v.CommandID, &v.ReviewType, &v.ReviewID, &v.Action, &v.AssignedToEmployeeID, &v.ActorEmployeeID, &v.Reason, &v.CreatedAt,
+		&v.EventID, &v.CommandID, &v.ReviewType, &v.ReviewID, &v.Action, &v.ActorEmployeeID, &v.TargetEmployeeID, &v.Reason, &v.OccurredAt,
 	)
 	return v, normalizeErr(err)
 }
 
 func (r *Repository) AppendReviewAssignmentAuditEvent(ctx context.Context, v domain.ReviewAssignmentAuditEvent) error {
 	_, err := r.pool.Exec(ctx, `
-INSERT INTO cloud_review_assignment_audit_events(id,command_id,review_type,review_id,action,assigned_to_employee_id,actor_employee_id,reason,created_at)
+INSERT INTO cloud_review_assignment_audit_events(event_id,command_id,review_type,review_id,action,actor_employee_id,target_employee_id,reason,occurred_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		v.ID, v.CommandID, v.ReviewType, v.ReviewID, v.Action, nullableText(v.AssignedToEmployeeID), v.ActorEmployeeID, nullableText(v.Reason), v.CreatedAt)
+		v.EventID, v.CommandID, v.ReviewType, v.ReviewID, v.Action, v.ActorEmployeeID, nullableText(v.TargetEmployeeID), nullableText(v.Reason), v.OccurredAt)
 	return normalizeErr(err)
 }
 

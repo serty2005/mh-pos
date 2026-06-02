@@ -1118,7 +1118,7 @@ func (r *Repository) ReviewAssignmentAuditEvents() []domain.ReviewAssignmentAudi
 		out = append(out, event)
 	}
 	slices.SortFunc(out, func(a, b domain.ReviewAssignmentAuditEvent) int {
-		if cmp := a.CreatedAt.Compare(b.CreatedAt); cmp != 0 {
+		if cmp := a.OccurredAt.Compare(b.OccurredAt); cmp != 0 {
 			return cmp
 		}
 		return strings.Compare(a.CommandID, b.CommandID)

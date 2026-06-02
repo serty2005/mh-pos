@@ -559,11 +559,17 @@ export function requestChangesStopListUpdateReview(id: string, payload: Suggesti
 }
 
 export function assignReviewItem(reviewType: ReviewAssignmentType, id: string, payload: ReviewAssignPayload): Promise<ReviewAssignmentResponse> {
-  return post(`/manager/reviews/${encodeURIComponent(reviewType)}/${encodeURIComponent(id)}/assign`, reviewAssignmentResponseSchema, payload);
+  if (reviewType !== 'stop_list_update') {
+    return Promise.reject(new Error('review assignment is supported only for stop_list_update'));
+  }
+  return post(`/manager/stop-list-updates/${encodeURIComponent(id)}/assign`, reviewAssignmentResponseSchema, payload);
 }
 
 export function unassignReviewItem(reviewType: ReviewAssignmentType, id: string, payload: ReviewUnassignPayload): Promise<ReviewAssignmentResponse> {
-  return post(`/manager/reviews/${encodeURIComponent(reviewType)}/${encodeURIComponent(id)}/unassign`, reviewAssignmentResponseSchema, payload);
+  if (reviewType !== 'stop_list_update') {
+    return Promise.reject(new Error('review assignment is supported only for stop_list_update'));
+  }
+  return post(`/manager/stop-list-updates/${encodeURIComponent(id)}/unassign`, reviewAssignmentResponseSchema, payload);
 }
 
 export function listStopListEntries(restaurantId: string): Promise<StopListEntry[]> {

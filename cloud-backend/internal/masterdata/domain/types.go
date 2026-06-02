@@ -547,15 +547,15 @@ type RecipeSuggestion struct {
 
 // ReviewAssignmentAuditEvent фиксирует append-only audit для назначения Cloud review item.
 type ReviewAssignmentAuditEvent struct {
-	ID                   string    `json:"id"`
-	CommandID            string    `json:"command_id"`
-	ReviewType           string    `json:"review_type"`
-	ReviewID             string    `json:"review_id"`
-	Action               string    `json:"action"`
-	AssignedToEmployeeID string    `json:"assigned_to_employee_id,omitempty"`
-	ActorEmployeeID      string    `json:"actor_employee_id"`
-	Reason               string    `json:"reason,omitempty"`
-	CreatedAt            time.Time `json:"created_at"`
+	EventID          string    `json:"event_id"`
+	CommandID        string    `json:"command_id"`
+	ReviewType       string    `json:"review_type"`
+	ReviewID         string    `json:"review_id"`
+	Action           string    `json:"action"`
+	ActorEmployeeID  string    `json:"actor_employee_id"`
+	TargetEmployeeID string    `json:"target_employee_id,omitempty"`
+	Reason           string    `json:"reason,omitempty"`
+	OccurredAt       time.Time `json:"occurred_at"`
 }
 
 // RecipeSuggestionChange хранит строки diff для recipe suggestion.

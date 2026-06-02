@@ -111,8 +111,8 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 		r.Post("/stop-list-updates/{id}/approve", h.approveStopListUpdateReview)
 		r.Post("/stop-list-updates/{id}/reject", h.rejectStopListUpdateReview)
 		r.Post("/stop-list-updates/{id}/request-changes", h.requestChangesStopListUpdateReview)
-		r.Post("/reviews/{review_type}/{id}/assign", h.assignReviewItem)
-		r.Post("/reviews/{review_type}/{id}/unassign", h.unassignReviewItem)
+		r.Post("/stop-list-updates/{id}/assign", h.assignStopListUpdateReview)
+		r.Post("/stop-list-updates/{id}/unassign", h.unassignStopListUpdateReview)
 	})
 	r.Post("/restaurants", h.createRestaurant)
 	r.Get("/restaurants", h.listRestaurants)
@@ -819,21 +819,21 @@ func (h *Handler) requestChangesStopListUpdateReview(w http.ResponseWriter, r *h
 	write(w, http.StatusOK, v, err)
 }
 
-func (h *Handler) assignReviewItem(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) assignStopListUpdateReview(w http.ResponseWriter, r *http.Request) {
 	var cmd app.ReviewAssignCommand
 	if !decode(w, r, &cmd) {
 		return
 	}
-	v, err := h.service.AssignReviewItem(r.Context(), chi.URLParam(r, "review_type"), chi.URLParam(r, "id"), cmd)
+	v, err := h.service.AssignReviewItem(r.Context(), "stop_list_update", chi.URLParam(r, "id"), cmd)
 	write(w, http.StatusOK, v, err)
 }
 
-func (h *Handler) unassignReviewItem(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) unassignStopListUpdateReview(w http.ResponseWriter, r *http.Request) {
 	var cmd app.ReviewUnassignCommand
 	if !decode(w, r, &cmd) {
 		return
 	}
-	v, err := h.service.UnassignReviewItem(r.Context(), chi.URLParam(r, "review_type"), chi.URLParam(r, "id"), cmd)
+	v, err := h.service.UnassignReviewItem(r.Context(), "stop_list_update", chi.URLParam(r, "id"), cmd)
 	write(w, http.StatusOK, v, err)
 }
 
