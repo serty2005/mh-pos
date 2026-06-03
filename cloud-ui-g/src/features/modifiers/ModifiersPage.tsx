@@ -20,7 +20,14 @@ import EmptyState from '../../shared/ui/EmptyState';
 import ModifierBindingsPanel from './ModifierBindingsPanel';
 import ModifierGroupsPanel from './ModifierGroupsPanel';
 import ModifierOptionsPanel from './ModifierOptionsPanel';
-import type { ModifierBindingFormValues, ModifierGroupFormValues, ModifierOptionFormValues } from './modifierForms';
+import {
+  buildCreateModifierBindingPayload,
+  buildCreateModifierGroupPayload,
+  buildCreateModifierOptionPayload,
+  type ModifierBindingFormValues,
+  type ModifierGroupFormValues,
+  type ModifierOptionFormValues,
+} from './modifierForms';
 
 type Props = {
   restaurantId: string;
@@ -99,7 +106,7 @@ export default function ModifiersPage({ restaurantId }: Props) {
             groups={groups}
             loading={loading}
             error={error}
-            onCreate={(values: ModifierGroupFormValues) => mutate(async () => { await createModifierGroup({ restaurant_id: restaurantId, ...values }); })}
+            onCreate={(values: ModifierGroupFormValues) => mutate(async () => { await createModifierGroup({ restaurant_id: restaurantId, ...buildCreateModifierGroupPayload(values) }); })}
             onUpdate={(id: string, values: ModifierGroupFormValues) => mutate(async () => { await updateModifierGroup(id, values); })}
           />
           <ModifierOptionsPanel
@@ -107,7 +114,7 @@ export default function ModifiersPage({ restaurantId }: Props) {
             groups={groups}
             loading={loading}
             error={error}
-            onCreate={(values: ModifierOptionFormValues) => mutate(async () => { await createModifierOption({ restaurant_id: restaurantId, ...values }); })}
+            onCreate={(values: ModifierOptionFormValues) => mutate(async () => { await createModifierOption({ restaurant_id: restaurantId, ...buildCreateModifierOptionPayload(values) }); })}
             onUpdate={(id: string, values: ModifierOptionFormValues) => mutate(async () => { await updateModifierOption(id, { name: values.name, price_minor: values.price_minor, status: values.status }); })}
           />
           <ModifierBindingsPanel
@@ -119,7 +126,7 @@ export default function ModifiersPage({ restaurantId }: Props) {
             tags={tags}
             loading={loading}
             error={error}
-            onCreate={(values: ModifierBindingFormValues) => mutate(async () => { await createModifierBinding({ restaurant_id: restaurantId, ...values }); })}
+            onCreate={(values: ModifierBindingFormValues) => mutate(async () => { await createModifierBinding({ restaurant_id: restaurantId, ...buildCreateModifierBindingPayload(values) }); })}
             onUpdate={(id: string, values: ModifierBindingFormValues) => mutate(async () => { await updateModifierBinding(id, { sort_order: values.sort_order, status: values.status }); })}
           />
         </>

@@ -5,7 +5,7 @@ import { useI18n } from '../../shared/i18n/I18nProvider';
 import EmptyState from '../../shared/ui/EmptyState';
 import PricingPoliciesPanel from './PricingPoliciesPanel';
 import TaxPackagePanel from './TaxPackagePanel';
-import type { PricingPolicyFormValues, TaxPackageDraft } from './pricingForms';
+import { buildCreatePricingPolicyPayload, type PricingPolicyFormValues, type TaxPackageDraft } from './pricingForms';
 
 type Props = {
   restaurantId: string;
@@ -65,7 +65,7 @@ export default function PricingPage({ restaurantId }: Props) {
             policies={policies}
             loading={loading}
             error={error}
-            onCreate={(values: PricingPolicyFormValues) => mutate(async () => { await createPricingPolicy({ restaurant_id: restaurantId, ...values }); })}
+            onCreate={(values: PricingPolicyFormValues) => mutate(async () => { await createPricingPolicy({ restaurant_id: restaurantId, ...buildCreatePricingPolicyPayload(values) }); })}
             onUpdate={(id: string, values: PricingPolicyFormValues) => mutate(async () => { await updatePricingPolicy(id, values); })}
           />
           <TaxPackagePanel

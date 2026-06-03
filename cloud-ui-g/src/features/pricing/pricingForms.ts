@@ -54,6 +54,11 @@ export const defaultTaxPackageDraft: TaxPackageDraft = {
   service_charge_rules: [],
 };
 
+export function buildCreatePricingPolicyPayload(values: PricingPolicyFormValues) {
+  const { status: _status, ...payload } = normalizePricingPolicyValues(values);
+  return payload;
+}
+
 export function toPricingPolicyValues(policy: PricingPolicy): PricingPolicyFormValues {
   return {
     name: policy.name,

@@ -5,7 +5,7 @@ import { useI18n } from '../../shared/i18n/I18nProvider';
 import EmptyState from '../../shared/ui/EmptyState';
 import MenuCategoryCommandPanel from './MenuCategoryCommandPanel';
 import MenuItemsPanel from './MenuItemsPanel';
-import type { MenuCategoryFormValues, MenuItemFormValues } from './menuForms';
+import { buildCreateMenuItemPayload, type MenuCategoryFormValues, type MenuItemFormValues } from './menuForms';
 
 type Props = {
   restaurantId: string;
@@ -74,7 +74,7 @@ export default function MenuPage({ restaurantId, restaurantCurrency }: Props) {
             restaurantCurrency={restaurantCurrency}
             loading={loading}
             error={error}
-            onCreate={(values: MenuItemFormValues) => mutate(async () => { await createMenuItem({ restaurant_id: restaurantId, ...values }); })}
+            onCreate={(values: MenuItemFormValues) => mutate(async () => { await createMenuItem({ restaurant_id: restaurantId, ...buildCreateMenuItemPayload(values) }); })}
             onUpdate={(id: string, values: MenuItemFormValues) => mutate(async () => { await updateMenuItem(id, values); })}
             onArchive={(id: string) => mutate(async () => { await archiveMenuItem(id); })}
           />

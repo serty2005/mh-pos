@@ -28,6 +28,11 @@ export const defaultRestaurantValues: RestaurantFormValues = {
   status: 'active',
 };
 
+export function buildCreateRestaurantPayload(values: RestaurantFormValues) {
+  const { status: _status, ...payload } = values;
+  return payload;
+}
+
 export default function RestaurantForm({ mode, initial, disabled = false, onSubmit, onCancel }: RestaurantFormProps) {
   const { t } = useI18n();
   const [values, setValues] = useState<RestaurantFormValues>(defaultRestaurantValues);

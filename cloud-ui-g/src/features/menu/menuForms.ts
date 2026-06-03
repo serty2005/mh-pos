@@ -35,6 +35,11 @@ export const defaultMenuCategoryValues: MenuCategoryFormValues = {
   sort_order: 0,
 };
 
+export function buildCreateMenuItemPayload(values: MenuItemFormValues) {
+  const { status: _status, ...payload } = normalizeMenuItemValues(values);
+  return payload;
+}
+
 export function toMenuItemValues(item: MenuItem): MenuItemFormValues {
   return {
     catalog_item_id: item.catalog_item_id,

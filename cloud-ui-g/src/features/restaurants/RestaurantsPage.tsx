@@ -3,7 +3,7 @@ import { archiveRestaurant, createRestaurant, updateRestaurant } from '../../sha
 import type { Restaurant } from '../../shared/api/schemas';
 import { useI18n } from '../../shared/i18n/I18nProvider';
 import SafeErrorBanner from '../../shared/ui/SafeErrorBanner';
-import RestaurantForm, { type RestaurantFormValues } from './RestaurantForm';
+import RestaurantForm, { buildCreateRestaurantPayload, type RestaurantFormValues } from './RestaurantForm';
 
 type RestaurantsPageProps = {
   restaurants: Restaurant[];
@@ -20,7 +20,7 @@ export default function RestaurantsPage({ restaurants, onReload }: RestaurantsPa
     setLoading(true);
     setError(null);
     try {
-      await createRestaurant(values);
+      await createRestaurant(buildCreateRestaurantPayload(values));
       await onReload();
     } catch (nextError) {
       setError(nextError);

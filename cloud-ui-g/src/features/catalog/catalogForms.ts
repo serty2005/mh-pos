@@ -77,6 +77,26 @@ export const defaultItemTagCommandValues: ItemTagCommandFormValues = {
   tag_id: '',
 };
 
+export function buildCreateCatalogItemPayload(values: CatalogItemFormValues) {
+  const { status: _status, ...payload } = values;
+  return payload;
+}
+
+export function buildCreateCatalogFolderPayload(values: CatalogFolderFormValues) {
+  const { status: _status, ...payload } = values;
+  return payload;
+}
+
+export function buildCreateFolderParameterPayload(values: FolderParameterFormValues) {
+  const { status: _status, ...payload } = values;
+  return payload;
+}
+
+export function buildCreateCatalogTagPayload(values: CatalogTagFormValues) {
+  const { status: _status, ...payload } = values;
+  return payload;
+}
+
 export function toCatalogItemValues(item: CatalogItem): CatalogItemFormValues {
   return {
     kind: item.kind,

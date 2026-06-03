@@ -24,12 +24,16 @@ import CatalogItemsPanel from './CatalogItemsPanel';
 import CatalogTagsPanel from './CatalogTagsPanel';
 import FolderParametersPanel from './FolderParametersPanel';
 import ItemTagCommandPanel from './ItemTagCommandPanel';
-import type {
-  CatalogFolderFormValues,
-  CatalogItemFormValues,
-  CatalogTagFormValues,
-  FolderParameterFormValues,
-  ItemTagCommandFormValues,
+import {
+  buildCreateCatalogFolderPayload,
+  buildCreateCatalogItemPayload,
+  buildCreateCatalogTagPayload,
+  buildCreateFolderParameterPayload,
+  type CatalogFolderFormValues,
+  type CatalogItemFormValues,
+  type CatalogTagFormValues,
+  type FolderParameterFormValues,
+  type ItemTagCommandFormValues,
 } from './catalogForms';
 
 type CatalogPageProps = {
@@ -132,7 +136,7 @@ export default function CatalogPage({ restaurantId }: CatalogPageProps) {
             loading={loading}
             error={error}
             onCreate={(values: CatalogItemFormValues) => mutate(async () => {
-              await createCatalogItem({ restaurant_id: restaurantId, ...values });
+              await createCatalogItem({ restaurant_id: restaurantId, ...buildCreateCatalogItemPayload(values) });
             })}
             onUpdate={(id: string, values: CatalogItemFormValues) => mutate(async () => {
               await updateCatalogItem(id, values);
@@ -147,7 +151,7 @@ export default function CatalogPage({ restaurantId }: CatalogPageProps) {
             loading={loading}
             error={error}
             onCreate={(values: CatalogFolderFormValues) => mutate(async () => {
-              await createCatalogFolder({ restaurant_id: restaurantId, ...values });
+              await createCatalogFolder({ restaurant_id: restaurantId, ...buildCreateCatalogFolderPayload(values) });
             })}
             onUpdate={(id: string, values: CatalogFolderFormValues) => mutate(async () => {
               await updateCatalogFolder(id, values);
@@ -163,7 +167,7 @@ export default function CatalogPage({ restaurantId }: CatalogPageProps) {
             loading={loading}
             error={error}
             onCreate={(values: FolderParameterFormValues) => mutate(async () => {
-              await createFolderParameter({ restaurant_id: restaurantId, ...values });
+              await createFolderParameter({ restaurant_id: restaurantId, ...buildCreateFolderParameterPayload(values) });
             })}
             onUpdate={(id: string, values: FolderParameterFormValues) => mutate(async () => {
               await updateFolderParameter(id, {
@@ -179,7 +183,7 @@ export default function CatalogPage({ restaurantId }: CatalogPageProps) {
             loading={loading}
             error={error}
             onCreate={(values: CatalogTagFormValues) => mutate(async () => {
-              await createCatalogTag({ restaurant_id: restaurantId, ...values });
+              await createCatalogTag({ restaurant_id: restaurantId, ...buildCreateCatalogTagPayload(values) });
             })}
             onUpdate={(id: string, values: CatalogTagFormValues) => mutate(async () => {
               await updateCatalogTag(id, values);

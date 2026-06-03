@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildCreatePricingPolicyPayload,
   buildPricingPolicyPackagePayload,
   findDuplicateApplicationIndex,
   type PricingPolicyFormValues,
@@ -58,6 +59,20 @@ describe('pricingForms', () => {
         service_charge_rules: draft.service_charge_rules,
         pricing_policies: [],
       },
+    });
+  });
+
+  it('omits update-only status from pricing policy create payload', () => {
+    expect(buildCreatePricingPolicyPayload(basePolicy)).toEqual({
+      name: 'Manager discount',
+      kind: 'discount',
+      scope: 'order',
+      amount_kind: 'percentage',
+      amount_minor: 0,
+      value_basis_points: 500,
+      application_index: 10,
+      manual: true,
+      requires_permission: 'pos.pricing.discount.apply',
     });
   });
 });

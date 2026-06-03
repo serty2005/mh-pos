@@ -49,6 +49,21 @@ export const defaultModifierBindingValues: ModifierBindingFormValues = {
   status: 'published',
 };
 
+export function buildCreateModifierGroupPayload(values: ModifierGroupFormValues) {
+  const { status: _status, ...payload } = values;
+  return payload;
+}
+
+export function buildCreateModifierOptionPayload(values: ModifierOptionFormValues) {
+  const { status: _status, ...payload } = values;
+  return payload;
+}
+
+export function buildCreateModifierBindingPayload(values: ModifierBindingFormValues) {
+  const { status: _status, ...payload } = values;
+  return payload;
+}
+
 export function toModifierGroupValues(group: ModifierGroup): ModifierGroupFormValues {
   return {
     name: group.name,
