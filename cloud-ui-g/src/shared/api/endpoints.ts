@@ -87,8 +87,48 @@ export function listRoles(restaurantId: string): Promise<Role[]> {
   return request(`/master-data/roles?${query(restaurantId)}`, z.array(roleSchema));
 }
 
+export function createRole(payload: Payload): Promise<Role> {
+  return post('/master-data/roles', roleSchema, payload);
+}
+
+export function updateRole(id: string, payload: Payload): Promise<Role> {
+  return patch(`/master-data/roles/${encodeURIComponent(id)}`, roleSchema, payload);
+}
+
+export function archiveRole(id: string): Promise<Role> {
+  return post(`/master-data/roles/${encodeURIComponent(id)}/archive`, roleSchema, {});
+}
+
 export function listEmployees(restaurantId: string): Promise<Employee[]> {
   return request(`/master-data/employees?${query(restaurantId)}`, z.array(employeeSchema));
+}
+
+export function createEmployee(payload: Payload): Promise<Employee> {
+  return post('/master-data/employees', employeeSchema, payload);
+}
+
+export function updateEmployee(id: string, payload: Payload): Promise<Employee> {
+  return patch(`/master-data/employees/${encodeURIComponent(id)}`, employeeSchema, payload);
+}
+
+export function suspendEmployee(id: string): Promise<Employee> {
+  return post(`/master-data/employees/${encodeURIComponent(id)}/suspend`, employeeSchema, {});
+}
+
+export function activateEmployee(id: string): Promise<Employee> {
+  return post(`/master-data/employees/${encodeURIComponent(id)}/activate`, employeeSchema, {});
+}
+
+export function archiveEmployee(id: string): Promise<Employee> {
+  return post(`/master-data/employees/${encodeURIComponent(id)}/archive`, employeeSchema, {});
+}
+
+export function assignEmployeeRole(id: string, roleId: string): Promise<Employee> {
+  return post(`/master-data/employees/${encodeURIComponent(id)}/role`, employeeSchema, { role_id: roleId });
+}
+
+export function rotateEmployeePIN(id: string, pin: string): Promise<Employee> {
+  return post(`/master-data/employees/${encodeURIComponent(id)}/pin`, employeeSchema, { pin });
 }
 
 export function listCatalogItems(restaurantId: string): Promise<CatalogItem[]> {
