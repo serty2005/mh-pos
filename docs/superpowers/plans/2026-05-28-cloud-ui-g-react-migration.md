@@ -292,6 +292,8 @@ cloud-ui-g/
 
 ### Итерация 7: Menu, Modifiers, Pricing Policies, Taxes
 
+Выполнена
+
 ```markdown
 ## Задача
 Реализуй рабочие менеджерские UI для продаваемого меню, модификаторов, скидок/надбавок и налоговых/service-charge reference packages.
@@ -336,6 +338,8 @@ cloud-ui-g/
 ```
 
 ### Итерация 8: Staff, Roles, Permission Matrix, PIN Lifecycle
+
+Выполнена
 
 ```markdown
 ## Задача
