@@ -490,6 +490,48 @@ export const ru = {
       },
     },
   },
+  floor: {
+    pageTitle: 'Залы и столы',
+    pageDescription: 'Управление залами и столами использует подтвержденные master-data floor routes. Drag-and-drop координаты не сохраняются, потому что backend contract для координат не подтвержден.',
+    blockedTitle: 'Floor routes недоступны',
+    blockedDescription: 'Проверьте доступность master-data floor endpoints и выбранный ресторан.',
+    shared: {
+      status: 'Статус',
+      archiveConfirm: 'Подтвердите архивирование записи floor.',
+    },
+    halls: {
+      title: 'Залы',
+      description: 'Создание, изменение и архивирование залов выполняются через route-backed API.',
+      empty: 'Залы не найдены.',
+      actions: {
+        create: 'Создать зал',
+      },
+      fields: {
+        name: 'Название зала',
+      },
+    },
+    tables: {
+      title: 'Столы',
+      description: 'Стол привязывается к загруженному залу; ручной ввод UUID не используется в manager flow.',
+      empty: 'Столы не найдены.',
+      noHalls: 'Сначала создайте активный зал.',
+      actions: {
+        create: 'Создать стол',
+      },
+      fields: {
+        hall: 'Зал',
+        selectHall: 'Выберите зал',
+        name: 'Название стола',
+        seats: 'Количество мест',
+      },
+    },
+    preview: {
+      title: 'Предпросмотр плана',
+      description: 'Предпросмотр группирует столы по залам и показывает readiness без сохранения координат.',
+      empty: 'Предпросмотр появится после создания зала.',
+      noTables: 'В зале пока нет столов.',
+    },
+  },
   sections: {
     blocked: 'Раздел доступен после выбора ресторана и подтвержденных backend контрактов.',
   },

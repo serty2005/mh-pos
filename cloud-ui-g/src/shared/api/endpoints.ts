@@ -274,8 +274,32 @@ export function listHalls(restaurantId: string): Promise<Hall[]> {
   return request(`/master-data/floor/halls?${query(restaurantId)}`, z.array(hallSchema));
 }
 
+export function createHall(payload: Payload): Promise<Hall> {
+  return post('/master-data/floor/halls', hallSchema, payload);
+}
+
+export function updateHall(id: string, payload: Payload): Promise<Hall> {
+  return patch(`/master-data/floor/halls/${encodeURIComponent(id)}`, hallSchema, payload);
+}
+
+export function archiveHall(id: string): Promise<Hall> {
+  return post(`/master-data/floor/halls/${encodeURIComponent(id)}/archive`, hallSchema, {});
+}
+
 export function listTables(restaurantId: string): Promise<RestaurantTable[]> {
   return request(`/master-data/floor/tables?${query(restaurantId)}`, z.array(tableSchema));
+}
+
+export function createTable(payload: Payload): Promise<RestaurantTable> {
+  return post('/master-data/floor/tables', tableSchema, payload);
+}
+
+export function updateTable(id: string, payload: Payload): Promise<RestaurantTable> {
+  return patch(`/master-data/floor/tables/${encodeURIComponent(id)}`, tableSchema, payload);
+}
+
+export function archiveTable(id: string): Promise<RestaurantTable> {
+  return post(`/master-data/floor/tables/${encodeURIComponent(id)}/archive`, tableSchema, {});
 }
 
 export function listUnassignedDevices(): Promise<UnassignedEdgeNode[]> {
