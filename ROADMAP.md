@@ -603,6 +603,7 @@
   - publication;
   - known Edge node.
 - Cloud UI содержит route-backed recipe version editor.
+- Cloud UI содержит read-only сценарий `Подготовка продажи`: связи catalog item -> menu item -> direct modifier bindings -> pricing policies по существующим Cloud master-data rows, bounded table/card preview и conservative readiness hints без новых backend routes или mutations.
 - Cloud UI содержит минимальный read-only preview `sales-kitchen-summary`: фильтры business date from/to и `group_by`, bounded запрос `limit=50&offset=0`, table/card вывод безопасных агрегированных полей без raw payload, графиков, BI dashboard, COGS/margin и retry/backfill controls.
 
 Запланировано далее:

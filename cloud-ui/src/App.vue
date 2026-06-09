@@ -21,6 +21,7 @@
     <edge-device-panel v-else-if="activeKey === 'edgeDevices'" :ctx="cloudCtx" />
     <edge-events-panel v-else-if="activeKey === 'edgeEvents'" :ctx="cloudCtx" />
     <financial-operations-panel v-else-if="activeKey === 'financialOperations'" :ctx="cloudCtx" />
+    <sale-preparation-links-panel v-else-if="activeKey === 'salePreparationLinks'" :ctx="cloudCtx" />
     <sales-kitchen-summary-panel v-else-if="activeKey === 'salesKitchenSummary'" :ctx="cloudCtx" />
     <recipe-version-editor-panel v-else-if="activeKey === 'recipeVersions'" :ctx="cloudCtx" />
     <proposal-review-queue v-else-if="activeKey === 'proposalReview'" :ctx="cloudCtx" />
@@ -49,6 +50,7 @@ import PublicationPanel from './components/cloud/PublicationPanel.vue';
 import ProposalReviewQueue from './components/cloud/ProposalReviewQueue.vue';
 import RecipeVersionEditorPanel from './components/cloud/RecipeVersionEditorPanel.vue';
 import ResourceWorkspace from './components/cloud/ResourceWorkspace.vue';
+import SalePreparationLinksPanel from './components/cloud/SalePreparationLinksPanel.vue';
 import SalesKitchenSummaryPanel from './components/cloud/SalesKitchenSummaryPanel.vue';
 import {
   activateEmployee,
@@ -152,7 +154,7 @@ import {
 import type { AssignmentStatus, CatalogSuggestion, EdgeEvent, FinancialOperationReportItem, InventoryStockBalance, InventoryStockLedgerEntry, KitchenTimingSummaryGroupBy, KitchenTimingSummaryItem, OlapBackfillJob, OlapExportStatus, OlapStockMove, OlapStockMoveSummary, PairingCodeResult, PublicationSummary, RecipeSuggestion, Restaurant, ReviewAssignmentType, SalesKitchenSummaryGroupBy, SalesKitchenSummaryItem, StopListReadiness, StopListUpdateReview, UnassignedEdgeNode } from './shared/schemas';
 import type { RecipeVersionView } from './shared/schemas';
 
-type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'financialOperations' | 'salesKitchenSummary' | 'recipeVersions' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
+type ScenarioKey = 'launchPlan' | 'edgeDevices' | 'edgeEvents' | 'financialOperations' | 'salePreparationLinks' | 'salesKitchenSummary' | 'recipeVersions' | 'proposalReview' | 'inventoryReadiness' | 'olapExports';
 type ResourceKey =
   | ScenarioKey
   | 'restaurants'
@@ -699,6 +701,7 @@ const scenarioNav = [
   { key: 'edgeDevices' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.edgeDevices', descriptionKey: 'cloud.descriptions.edgeDevices' },
   { key: 'edgeEvents' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.edgeEvents', descriptionKey: 'cloud.descriptions.edgeEvents' },
   { key: 'financialOperations' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.financialOperations', descriptionKey: 'cloud.descriptions.financialOperations' },
+  { key: 'salePreparationLinks' as ResourceKey, groupKey: 'cloud.groups.scenarios', titleKey: 'cloud.resources.salePreparationLinks', descriptionKey: 'cloud.descriptions.salePreparationLinks' },
   { key: 'salesKitchenSummary' as ResourceKey, groupKey: 'cloud.groups.publication', titleKey: 'cloud.resources.salesKitchenSummary', descriptionKey: 'cloud.descriptions.salesKitchenSummary' },
   { key: 'recipeVersions' as ResourceKey, groupKey: 'cloud.groups.inventory', titleKey: 'cloud.resources.recipeVersions', descriptionKey: 'cloud.descriptions.recipeVersions' },
   { key: 'proposalReview' as ResourceKey, groupKey: 'cloud.groups.inventory', titleKey: 'cloud.resources.proposalReview', descriptionKey: 'cloud.descriptions.proposalReview' },
@@ -729,7 +732,7 @@ const visibleFields = computed(() => (activeConfig.value?.fields ?? []).filter((
 const permissionFields = computed(() => visibleFields.value.filter((item) => item.type === 'permissionMatrix'));
 const currentRows = computed<Row[]>(() => {
   if (activeKey.value === 'restaurants') return restaurants.value as unknown as Row[];
-  if (activeKey.value === 'launchPlan' || activeKey.value === 'edgeDevices' || activeKey.value === 'edgeEvents' || activeKey.value === 'financialOperations' || activeKey.value === 'salesKitchenSummary' || activeKey.value === 'recipeVersions' || activeKey.value === 'proposalReview' || activeKey.value === 'inventoryReadiness' || activeKey.value === 'olapExports' || activeKey.value === 'publications' || activeKey.value === 'itemTags' || activeKey.value === 'categories') return [];
+  if (activeKey.value === 'launchPlan' || activeKey.value === 'edgeDevices' || activeKey.value === 'edgeEvents' || activeKey.value === 'financialOperations' || activeKey.value === 'salePreparationLinks' || activeKey.value === 'salesKitchenSummary' || activeKey.value === 'recipeVersions' || activeKey.value === 'proposalReview' || activeKey.value === 'inventoryReadiness' || activeKey.value === 'olapExports' || activeKey.value === 'publications' || activeKey.value === 'itemTags' || activeKey.value === 'categories') return [];
   return scopedRows[activeKey.value as ScopedResourceKey];
 });
 const filteredRows = computed(() => {
@@ -742,6 +745,7 @@ const restaurantOptions = computed(() => restaurants.value.map((item) => ({ labe
 const activeLoading = computed(() => {
   if (activeKey.value === 'proposalReview') return isLoading('proposal-review');
   if (activeKey.value === 'financialOperations') return isLoading('financial-operations');
+  if (activeKey.value === 'salePreparationLinks') return isLoading('sale-preparation-links');
   if (activeKey.value === 'salesKitchenSummary') return isLoading('sales-kitchen-summary');
   return isLoading(activeKey.value);
 });
@@ -901,6 +905,7 @@ const cloudCtx = {
   loadInventoryStockLedger,
   loadOlapOperatorSurface,
   loadFinancialOperations,
+  loadSalePreparationLinks,
   loadSalesKitchenSummary,
   reloadActive,
   submitForm,
@@ -939,6 +944,7 @@ watch(selectedRestaurantId, async () => {
   if (activeKey.value === 'edgeDevices' || activeKey.value === 'launchPlan') await loadEdgeDevices();
   if (activeKey.value === 'edgeEvents') await loadEdgeEvents();
   if (activeKey.value === 'financialOperations') await loadFinancialOperations();
+  if (activeKey.value === 'salePreparationLinks') await loadSalePreparationLinks();
   if (activeKey.value === 'salesKitchenSummary') await loadSalesKitchenSummary();
   if (activeKey.value === 'olapExports') await loadOlapOperatorSurface();
   if (activeKey.value === 'recipeVersions') await loadRecipeVersions();
@@ -955,6 +961,7 @@ watch(activeKey, async () => {
   if (activeKey.value === 'edgeDevices') await loadEdgeDevices();
   if (activeKey.value === 'edgeEvents') await loadEdgeEvents();
   if (activeKey.value === 'financialOperations') await loadFinancialOperations();
+  if (activeKey.value === 'salePreparationLinks') await loadSalePreparationLinks();
   if (activeKey.value === 'salesKitchenSummary') await loadSalesKitchenSummary();
   if (activeKey.value === 'olapExports') await loadOlapOperatorSurface();
   if (activeKey.value === 'recipeVersions') await loadRecipeVersions();
@@ -985,7 +992,7 @@ function setActive(key: ResourceKey) {
 }
 
 function isScopedResourceKey(key: ResourceKey): key is ScopedResourceKey {
-  return !['launchPlan', 'edgeDevices', 'edgeEvents', 'financialOperations', 'salesKitchenSummary', 'recipeVersions', 'proposalReview', 'inventoryReadiness', 'olapExports', 'restaurants', 'publications', 'itemTags', 'categories'].includes(key);
+  return !['launchPlan', 'edgeDevices', 'edgeEvents', 'financialOperations', 'salePreparationLinks', 'salesKitchenSummary', 'recipeVersions', 'proposalReview', 'inventoryReadiness', 'olapExports', 'restaurants', 'publications', 'itemTags', 'categories'].includes(key);
 }
 
 function navCount(key: ResourceKey) {
@@ -993,6 +1000,7 @@ function navCount(key: ResourceKey) {
   if (key === 'edgeDevices') return edgeDevices.value.length;
   if (key === 'edgeEvents') return edgeEvents.value.length;
   if (key === 'financialOperations') return financialOperations.value.length;
+  if (key === 'salePreparationLinks') return scopedRows.menuItems.length;
   if (key === 'salesKitchenSummary') return salesKitchenSummaryRows.value.length;
   if (key === 'olapExports') return olapStockMoves.value.length + olapStockMoveSummary.value.length;
   if (key === 'recipeVersions') return recipeVersions.value.length;
@@ -1134,6 +1142,19 @@ async function loadRestaurants() {
 async function loadScopedData() {
   if (!selectedRestaurantId.value) return;
   await Promise.all((Object.keys(scopedRows) as ScopedResourceKey[]).map((key) => loadScopedResource(key)));
+}
+
+async function loadSalePreparationLinks() {
+  if (!selectedRestaurantId.value) return;
+  await withLoading('sale-preparation-links', async () => {
+    await Promise.all([
+      loadScopedResource('catalogItems'),
+      loadScopedResource('menuItems'),
+      loadScopedResource('modifierGroups'),
+      loadScopedResource('modifierBindings'),
+      loadScopedResource('pricingPolicies'),
+    ]);
+  });
 }
 
 async function loadScopedResource(key: ScopedResourceKey) {
@@ -1283,6 +1304,7 @@ async function reloadActive() {
   if (activeKey.value === 'edgeDevices') return loadEdgeDevices();
   if (activeKey.value === 'edgeEvents') return loadEdgeEvents();
   if (activeKey.value === 'financialOperations') return loadFinancialOperations();
+  if (activeKey.value === 'salePreparationLinks') return loadSalePreparationLinks();
   if (activeKey.value === 'salesKitchenSummary') return loadSalesKitchenSummary();
   if (activeKey.value === 'olapExports') return loadOlapOperatorSurface();
   if (activeKey.value === 'recipeVersions') return loadRecipeVersions();

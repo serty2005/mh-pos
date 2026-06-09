@@ -19,10 +19,10 @@
 7. Route-backed manager review для catalog/recipe suggestions и Edge-origin stop-list updates, bounded read-only поверхности для inventory balances, stock ledger, OLAP export/stock movement slices, backfill job status и kitchen timing summary без неподтвержденных команд.
 8. Read-only Cloud reporting по detailed financial operation projection для `CancellationRecorded`/`RefundRecorded`.
 9. Минимальный read-only preview bounded OLAP агрегата `sales-kitchen-summary`.
+10. Read-only сценарий подготовки продажи, который показывает связи `catalog item -> menu item -> modifier bindings -> pricing policies` поверх уже загруженных Cloud-owned master data.
 
 запланировано далее:
 
-- вывести связи `catalog item -> menu item -> modifier bindings -> pricing policies` как единый сценарий подготовки продажи;
 - показывать версии опубликованного пакета и состояние доставки на Edge, когда backend подтвердит такой контракт.
 - до полного пилота расширять manager surfaces для inventory operations, costing status, ClickHouse export readiness и OLAP API diagnostics только поверх подтвержденных Cloud backend routes; текущий UI уже читает bounded `stock-balances`, `stock-ledger`, OLAP export status, stock moves, stock move summary и `sales-kitchen-summary` без mutating controls или BI dashboard;
 
@@ -65,6 +65,7 @@
 - `GET /api/v1/restaurants/{id}/master-data/publication-state` возвращает `200 null` до первой публикации выбранного ресторана; Cloud UI трактует это как empty state панели публикации, а не как ошибку browser console;
 - отдельный раздел `События от Edge`, который читает `GET /api/v1/sync/edge-events` и показывает только безопасные receipt metadata/checksum без raw payload; на narrow screens таблица заменяется card/list fallback с теми же безопасными полями;
 - отдельный read-only раздел `Финансовые операции`, который читает `GET /api/v1/reporting/financial-operations` с фильтрами business date from/to, operation type, shift, original shift и check; UI показывает projection metadata/checksum без raw sync payload, snapshot JSON, PIN/token/request dump и без cashier mutations;
+- отдельный read-only раздел `Подготовка продажи`, который не вызывает новых backend routes и использует уже загруженные `catalogItems`, `menuItems`, `modifierBindings`, `modifierGroups` и `pricingPolicies`; UI показывает bounded table/card preview первых 50 sellable menu item rows, client-side search/status/incomplete filters, conservative readiness labels (`ready`, `warning`, `missing`) и hints по missing catalog link, non-published menu/catalog lifecycle, отсутствию прямых modifier bindings или published pricing policies. Раздел не создает catalog/menu/modifier/pricing данные, не публикует master data сам по себе, не выполняет cashier commands и не показывает raw payload/snapshot JSON;
 - отдельный read-only раздел `Sales/kitchen summary`, который читает `GET /api/v1/olap/sales-kitchen-summary` с `restaurant_id`, `business_date_from`, `business_date_to`, `group_by`, `limit=50` и `offset=0`; UI показывает bounded table/card preview по безопасным aggregate fields (`group_by`, `group_key`, optional business date/event/source event/catalog item, counts, quantities, total movement minor amount и first/last timestamps) без raw payload, snapshot JSON, retry/backfill controls, графиков, BI dashboard и COGS/margin расчетов;
 - resource lists на narrow screens переходят с широких таблиц на карточки, где статус выводится тем же safe status label, а не raw payload или POS runtime detail.
 
@@ -187,7 +188,7 @@ Unassign command body:
 
 Для entities без подтвержденного `GET list` route UI показывает форму команды и поясняет, что list route не подтвержден.
 
-реализовано сейчас: API client покрывает bounded inventory balance view `GET /api/v1/inventory/stock-balances`, bounded stock ledger preview `GET /api/v1/inventory/stock-ledger`, stop-list readiness, `GET /api/v1/olap/export-status?stream=raw_business_events|stock_moves`, `GET /api/v1/olap/stock-moves`, `GET /api/v1/olap/stock-move-summary`, `GET /api/v1/olap/backfill-jobs`, `GET /api/v1/olap/kitchen-timing-summary` и минимальный bounded preview `GET /api/v1/olap/sales-kitchen-summary`. Ответы валидируются через Zod, query формируется через bounded `limit/offset`, а UI не отображает raw payload fields. Запланировано далее: full costing/recalculation status, production auth/RBAC perimeter для mutating OLAP controls и richer BI endpoints; UI не вызывает изменяющие retry/backfill controls в текущем scope.
+реализовано сейчас: API client покрывает bounded inventory balance view `GET /api/v1/inventory/stock-balances`, bounded stock ledger preview `GET /api/v1/inventory/stock-ledger`, stop-list readiness, `GET /api/v1/olap/export-status?stream=raw_business_events|stock_moves`, `GET /api/v1/olap/stock-moves`, `GET /api/v1/olap/stock-move-summary`, `GET /api/v1/olap/backfill-jobs`, `GET /api/v1/olap/kitchen-timing-summary` и минимальный bounded preview `GET /api/v1/olap/sales-kitchen-summary`. Раздел `Подготовка продажи` не добавляет API contract и читает только существующие Cloud master-data arrays из `App.vue`. Ответы валидируются через Zod, query формируется через bounded `limit/offset`, а UI не отображает raw payload fields. Запланировано далее: full costing/recalculation status, production auth/RBAC perimeter для mutating OLAP controls и richer BI endpoints; UI не вызывает изменяющие retry/backfill controls в текущем scope.
 
 ## Runtime Code
 
