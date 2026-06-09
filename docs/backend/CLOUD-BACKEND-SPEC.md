@@ -158,7 +158,9 @@ Inventory read model:
 Использование в Cloud UI:
 
 - реализовано сейчас: Cloud UI читает `stock-balances`, `olap/export-status`, `olap/stock-moves`, `olap/stock-move-summary`, `olap/backfill-jobs` и `olap/kitchen-timing-summary` как bounded operator surface с safe фильтрами и без raw payload display.
+- реализовано сейчас: publication panel читает только safe `GET /api/v1/restaurants/{id}/master-data/publication-state`; routes `/master-data/packages/*`, `/master-data/snapshot` и `sync/exchange` переносят package payload/snapshot для Edge delivery и не являются Cloud UI read-only delivery-status contract.
 - вне текущего объема: Cloud UI не вызывает support-only mutating `POST /api/v1/olap/export-retry` и `POST /api/v1/olap/backfill-jobs`, не показывает COGS/margin и не превращает bounded slices в BI dashboard.
+- запланировано далее: отдельный safe read-only package delivery status/Edge package ACK DTO для Cloud UI; до появления такого route UI не должен имитировать delivery state поверх payload routes или raw exchange payload.
 
 Generic Cloud -> Edge package storage:
 
@@ -584,6 +586,7 @@ Schema verification:
 - `StopListUpdated` обрабатывается асинхронно через `inventory_event_queue`: worker пишет `cloud_projection_stop_list_updates` без raw payload. `edge_overlay_until_next_publication` обновляет bounded `stop_lists` overlay, `cloud_wins` не перетирает Cloud-owned row, `edge_overlay_requires_manager_review` фиксирует безопасную projection для bounded manager review.
 - Bounded manager review для `edge_overlay_requires_manager_review` реализован сейчас: list/detail имеют stable bounded paging, decisions идемпотентны, invalid transition возвращает conflict, approve применяет изменение только через Cloud-owned `stop_lists` + publication, reject/request-changes не меняют runtime stop-list authority.
 - `GET /api/v1/sync/readiness/stop-list` реализовано сейчас как safe readiness summary: publication/package metadata, latest accepted `StopListUpdated` ACK metadata и агрегат `cloud_sync_problem_events` по кодам ошибок без raw payload.
+- Отдельный safe read-only route для package delivery status по restaurant/device/package сейчас не подтвержден кодом; доступные package/snapshot routes возвращают provisioning payload, а `sync/exchange` возвращает Cloud packages для Edge import. Cloud UI может показывать только `publication-state` и stop-list readiness ACK metadata, но не должен заявлять общий package delivery ACK.
 - `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` создают Cloud-owned stock documents/ledger rows.
 - `KitchenTicketStatusChanged` и `ItemServed` используются для kitchen timing и inventory deduplication, но не меняют finalized checks.
 - Если Cloud уже принял superseding `ItemServed` для той же order line до обработки очереди, Inventory Worker пропускает superseded served fact.

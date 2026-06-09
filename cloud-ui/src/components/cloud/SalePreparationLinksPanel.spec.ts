@@ -259,6 +259,42 @@ function mountPanel(ctx = createCtx()) {
   });
 }
 
+function readyCatalogItem(index: number) {
+  return {
+    id: `catalog-${index}`,
+    restaurant_id: 'restaurant-1',
+    kind: 'dish',
+    folder_id: '',
+    name: `Catalog ${index}`,
+    sku: `SKU-${index}`,
+    base_unit: 'portion',
+    kitchen_type: 'hot',
+    accounting_category: 'food',
+    status: 'published',
+    cloud_version: 1,
+    created_at: '2026-06-01T10:00:00Z',
+    updated_at: '2026-06-01T10:00:00Z',
+  };
+}
+
+function readyMenuItem(index: number) {
+  return {
+    id: `menu-${index}`,
+    restaurant_id: 'restaurant-1',
+    catalog_item_id: `catalog-${index}`,
+    category_id: '',
+    name: `Menu item ${index}`,
+    price: 1000 + index,
+    currency: 'RUB',
+    status: 'published',
+    availability_json: '{}',
+    station_routing_key: 'hot',
+    cloud_version: 1,
+    created_at: '2026-06-01T10:00:00Z',
+    updated_at: '2026-06-01T10:00:00Z',
+  };
+}
+
 describe('SalePreparationLinksPanel', () => {
   it('renders ready, missing and warning rows from supplied Cloud master data', () => {
     const wrapper = mountPanel();
@@ -274,6 +310,28 @@ describe('SalePreparationLinksPanel', () => {
     expect(wrapper.text()).toContain('cloud.salePreparation.hints.noModifierBindings');
   });
 
+  it('renders all visible labels through i18n keys', () => {
+    const wrapper = mountPanel();
+    const text = wrapper.text();
+
+    expect(text).toContain('cloud.salePreparation.status');
+    expect(text).toContain('cloud.salePreparation.title');
+    expect(text).toContain('cloud.salePreparation.description');
+    expect(text).toContain('cloud.salePreparation.filters.search');
+    expect(text).toContain('cloud.salePreparation.filters.status');
+    expect(text).toContain('cloud.salePreparation.filters.onlyIncomplete');
+    expect(text).toContain('cloud.salePreparation.signals.readOnly');
+    expect(text).toContain('cloud.salePreparation.signals.cloudMasterDataOnly');
+    expect(text).toContain('cloud.salePreparation.signals.noCashierCommands');
+    expect(text).toContain('cloud.salePreparation.signals.noRawPayload');
+    expect(text).toContain('cloud.salePreparation.columns.menuItem');
+    expect(text).toContain('cloud.salePreparation.columns.catalogItem');
+    expect(text).toContain('cloud.salePreparation.columns.modifiers');
+    expect(text).toContain('cloud.salePreparation.columns.pricing');
+    expect(text).toContain('cloud.salePreparation.columns.readiness');
+    expect(text).toContain('cloud.salePreparation.columns.hint');
+  });
+
   it('refresh action calls ctx.loadSalePreparationLinks', async () => {
     const ctx = createCtx();
     const wrapper = mountPanel(ctx);
@@ -281,6 +339,40 @@ describe('SalePreparationLinksPanel', () => {
     await wrapper.find('button').trigger('click');
 
     expect(ctx.loadSalePreparationLinks).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds preview to 50 rows and shows bounded note', () => {
+    const count = 55;
+    const catalogItems = Array.from({ length: count }, (_, index) => readyCatalogItem(index + 1));
+    const menuItems = Array.from({ length: count }, (_, index) => readyMenuItem(index + 1));
+    const modifierBindings = Array.from({ length: count }, (_, index) => ({
+      id: `binding-${index + 1}`,
+      restaurant_id: 'restaurant-1',
+      modifier_group_id: 'modifier-group-1',
+      target_type: 'menu_item',
+      target_id: `menu-${index + 1}`,
+      sort_order: index + 1,
+      status: 'published',
+      cloud_version: 1,
+      created_at: '2026-06-01T10:00:00Z',
+      updated_at: '2026-06-01T10:00:00Z',
+    }));
+    const baseCtx = createCtx();
+    const ctx = createCtx({
+      scopedRows: {
+        ...baseCtx.scopedRows,
+        catalogItems,
+        menuItems,
+        modifierBindings,
+      },
+    });
+
+    const wrapper = mountPanel(ctx);
+
+    expect(wrapper.findAll('tbody tr')).toHaveLength(50);
+    expect(wrapper.text()).toContain('cloud.salePreparation.boundedNote:shown=50,total=55');
+    expect(wrapper.text()).toContain('Menu item 50');
+    expect(wrapper.text()).not.toContain('Menu item 51');
   });
 
   it('filters rows by search without backend calls', async () => {
@@ -295,6 +387,28 @@ describe('SalePreparationLinksPanel', () => {
     expect(ctx.loadSalePreparationLinks).not.toHaveBeenCalled();
   });
 
+  it('filters rows by readiness status without backend calls', async () => {
+    const ctx = createCtx();
+    const wrapper = mountPanel(ctx);
+    const select = wrapper.find('[data-label="cloud.salePreparation.filters.status"] select');
+
+    await select.setValue('ready');
+    expect(wrapper.text()).toContain('Margherita');
+    expect(wrapper.text()).not.toContain('Ghost dish');
+    expect(wrapper.text()).not.toContain('Soup');
+
+    await select.setValue('missing');
+    expect(wrapper.text()).not.toContain('Margherita');
+    expect(wrapper.text()).toContain('Ghost dish');
+    expect(wrapper.text()).not.toContain('Soup');
+
+    await select.setValue('warning');
+    expect(wrapper.text()).not.toContain('Margherita');
+    expect(wrapper.text()).not.toContain('Ghost dish');
+    expect(wrapper.text()).toContain('Soup');
+    expect(ctx.loadSalePreparationLinks).not.toHaveBeenCalled();
+  });
+
   it('filters only incomplete rows', async () => {
     const wrapper = mountPanel();
 
@@ -305,10 +419,89 @@ describe('SalePreparationLinksPanel', () => {
     expect(wrapper.text()).toContain('Soup');
   });
 
+  it('keeps missing readiness ahead of warning reasons', () => {
+    const baseCtx = createCtx();
+    const missingCatalogCtx = createCtx({
+      scopedRows: {
+        ...baseCtx.scopedRows,
+        menuItems: [{
+          ...readyMenuItem(1),
+          id: 'menu-draft-missing',
+          catalog_item_id: 'catalog-missing',
+          name: 'Draft missing catalog',
+          status: 'draft',
+        }],
+        modifierBindings: [],
+        pricingPolicies: [],
+      },
+    });
+    const unpublishedCatalogCtx = createCtx({
+      scopedRows: {
+        ...baseCtx.scopedRows,
+        catalogItems: [{ ...readyCatalogItem(1), id: 'catalog-draft', status: 'draft' }],
+        menuItems: [{ ...readyMenuItem(1), catalog_item_id: 'catalog-draft', name: 'Unpublished catalog item' }],
+        modifierBindings: [],
+        pricingPolicies: [],
+      },
+    });
+    const unpublishedMenuCtx = createCtx({
+      scopedRows: {
+        ...baseCtx.scopedRows,
+        catalogItems: [readyCatalogItem(1)],
+        menuItems: [{ ...readyMenuItem(1), name: 'Unpublished menu item', status: 'draft' }],
+        modifierBindings: [],
+        pricingPolicies: [],
+      },
+    });
+
+    expect(mountPanel(missingCatalogCtx).text()).toContain('cloud.salePreparation.hints.missingCatalogItem');
+    expect(mountPanel(missingCatalogCtx).text()).not.toContain('cloud.salePreparation.hints.noModifierBindings');
+    expect(mountPanel(unpublishedCatalogCtx).text()).toContain('cloud.salePreparation.hints.catalogNotPublished');
+    expect(mountPanel(unpublishedCatalogCtx).text()).not.toContain('cloud.salePreparation.hints.noPricingPolicy');
+    expect(mountPanel(unpublishedMenuCtx).text()).toContain('cloud.salePreparation.hints.menuItemNotPublished');
+    expect(mountPanel(unpublishedMenuCtx).text()).not.toContain('cloud.salePreparation.hints.noModifierBindings');
+  });
+
+  it('warns when a published sellable row has no published pricing policy', () => {
+    const baseCtx = createCtx();
+    const ctx = createCtx({
+      scopedRows: {
+        ...baseCtx.scopedRows,
+        catalogItems: [readyCatalogItem(1)],
+        menuItems: [readyMenuItem(1)],
+        modifierBindings: [{
+          id: 'binding-1',
+          restaurant_id: 'restaurant-1',
+          modifier_group_id: 'modifier-group-1',
+          target_type: 'menu_item',
+          target_id: 'menu-1',
+          sort_order: 1,
+          status: 'published',
+          cloud_version: 1,
+          created_at: '2026-06-01T10:00:00Z',
+          updated_at: '2026-06-01T10:00:00Z',
+        }],
+        pricingPolicies: [{
+          ...baseCtx.scopedRows.pricingPolicies[0],
+          status: 'draft',
+        }],
+      },
+    });
+
+    const wrapper = mountPanel(ctx);
+
+    expect(wrapper.text()).toContain('cloud.salePreparation.readiness.warning');
+    expect(wrapper.text()).toContain('cloud.salePreparation.hints.noPricingPolicy');
+  });
+
   it('renders card fallback and does not display raw payload-like fields', () => {
     const wrapper = mountPanel();
 
     expect(wrapper.find('.edge-event-card-list').exists()).toBe(true);
+    expect(wrapper.find('.edge-event-card').text()).toContain('safe:menu-pizza');
+    expect(wrapper.find('.edge-event-card').text()).toContain('status:published');
+    expect(wrapper.find('.edge-event-card').text()).toContain('cloud.salePreparation.summaries.modifiers:count=1,groups=Cheese');
+    expect(wrapper.find('.edge-event-card').text()).toContain('cloud.salePreparation.hints.ready');
     expect(wrapper.text()).not.toContain('{"unsafe":true}');
     expect(wrapper.text()).not.toContain('payload_json');
     expect(wrapper.text()).not.toContain('raw_payload');

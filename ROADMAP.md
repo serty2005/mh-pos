@@ -610,6 +610,7 @@
 
 - Runtime surfaces для inventory operations/costing за пределами текущих read-only `stock-balances` и `stock-ledger` после появления подтвержденных Cloud backend routes.
 - Изменяющие surfaces для OLAP exports/operator controls только после production-grade backend jobs; текущий Cloud UI остается read-only для export status, stock moves, stock move summary и `sales-kitchen-summary`.
+- Safe package delivery status/Edge package ACK surface для Cloud UI после появления отдельного read-only backend route/DTO; текущие package payload/snapshot routes и `sync/exchange` не используются как UI delivery-state источник.
 
 ## Full pilot smoke
 
