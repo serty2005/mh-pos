@@ -1,6 +1,22 @@
 # MyHoReCa Cloud UI
 
-`cloud-ui` — отдельный пилотный frontend для управления `cloud-backend`.
+`cloud-ui` — устаревший Vue/Quasar frontend для управления `cloud-backend`.
+
+## Статус разработки
+
+реализовано сейчас:
+
+- код каталога сохранен как legacy/reference-only runtime surface для уже реализованных Cloud UI сценариев;
+- build и unit tests остаются доступными для проверки существующего кода.
+
+запланировано далее:
+
+- все новые правки Cloud-бэкофиса выполняются в `cloud-ui-g`.
+
+вне текущего объема:
+
+- развитие новых Cloud UI сценариев в `cloud-ui`;
+- перенос новых React/Vite экранов обратно в Vue/Quasar.
 
 ## Статус
 
@@ -31,6 +47,8 @@ npm run dev
 
 Открой `http://localhost:5174`.
 
+Для активной разработки Cloud-бэкофиса используй `cloud-ui-g`.
+
 ## Скрипты
 
 Реализовано сейчас:
@@ -39,7 +57,9 @@ npm run dev
 - `npm run build` - `vue-tsc --noEmit` и production build.
 - `npm run preview` - локальный preview production build.
 
-В `cloud-ui/package.json` нет `test` script, поэтому `npm run test` не является поддержанной проверкой этого модуля.
+Реализовано сейчас:
+
+- `npm run test` - unit tests через Vitest.
 
 Для другого Cloud API:
 

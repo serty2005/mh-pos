@@ -157,7 +157,8 @@ Inventory read model:
 
 Использование в Cloud UI:
 
-- реализовано сейчас: Cloud UI читает `stock-balances`, `olap/export-status`, `olap/stock-moves`, `olap/stock-move-summary`, `olap/backfill-jobs` и `olap/kitchen-timing-summary` как bounded operator surface с safe фильтрами и без raw payload display.
+- реализовано сейчас: legacy `cloud-ui` читает `stock-balances`, `olap/export-status`, `olap/stock-moves`, `olap/stock-move-summary`, `olap/backfill-jobs` и `olap/kitchen-timing-summary` как bounded operator surface с safe фильтрами и без raw payload display.
+- реализовано сейчас: активный `cloud-ui-g` читает publication state, выполняет publication, работает с Edge-device flow, master data и safe Edge events list; inventory/OLAP/reporting screens в `cloud-ui-g` еще не реализованы.
 - реализовано сейчас: publication panel читает только safe `GET /api/v1/restaurants/{id}/master-data/publication-state`; routes `/master-data/packages/*`, `/master-data/snapshot` и `sync/exchange` переносят package payload/snapshot для Edge delivery и не являются Cloud UI read-only delivery-status contract.
 - вне текущего объема: Cloud UI не вызывает support-only mutating `POST /api/v1/olap/export-retry` и `POST /api/v1/olap/backfill-jobs`, не показывает COGS/margin и не превращает bounded slices в BI dashboard.
 - запланировано далее: отдельный safe read-only package delivery status/Edge package ACK DTO для Cloud UI; до появления такого route UI не должен имитировать delivery state поверх payload routes или raw exchange payload.
@@ -397,7 +398,7 @@ PIN policy:
 - Publication создает монотонную версию для ресторана.
 - Publication сохраняет `cloud_master_data_publications`.
 - Publication строит deterministic stream packages и сохраняет их в `cloud_master_data_packages`.
-- Cloud UI после successful master-data CRUD может автоматически вызвать publication API; ручная публикация остается operator checkpoint.
+- Активный `cloud-ui-g` вызывает publication API из отдельной publication panel с explicit `published_by`; ручная публикация остается operator checkpoint.
 - Edge-ready snapshot endpoint возвращает typed ingest DTO, который POS Edge может применить без PowerShell field stripping.
 
 Текущие published streams:
@@ -612,9 +613,10 @@ Schema verification:
 
 Реализовано сейчас:
 
-- Cloud UI использует Cloud Backend routes для launch readiness, Edge-device flow, master data, publication и safe Edge events list.
-- Cloud UI читает `GET /api/v1/sync/readiness/stop-list` в inventory readiness panel и показывает только counts/status/checkpoint/ACK metadata без raw sync payload.
-- Cloud UI читает bounded `GET /api/v1/manager/stop-list-updates` и вызывает approve/reject/request-changes для safe Edge-origin stop-list review; raw Edge payload не рендерится.
+- Активный Cloud UI target — `cloud-ui-g`; устаревший Vue/Quasar `cloud-ui` остается legacy/reference-only и не принимает новые Cloud-бэкофисные фичи.
+- `cloud-ui-g` использует Cloud Backend routes для launch readiness, Edge-device flow, master data, publication и safe Edge events list.
+- Legacy `cloud-ui` читает `GET /api/v1/sync/readiness/stop-list` в inventory readiness panel и показывает только counts/status/checkpoint/ACK metadata без raw sync payload.
+- Legacy `cloud-ui` читает bounded `GET /api/v1/manager/stop-list-updates` и вызывает approve/reject/request-changes для safe Edge-origin stop-list review; raw Edge payload не рендерится.
 - Реализовано сейчас: backend assignment routes доступны только для `stop_list_update` через `POST /api/v1/manager/stop-list-updates/{id}/assign|unassign`; bounded audit read доступен для `stop_list_update`, `catalog_suggestion` и `recipe_suggestion` через manager audit routes; assignment runtime для `catalog_suggestion` и `recipe_suggestion`, escalation и dashboard запланированы далее.
 - Cloud UI не использует POS session, POS Edge runtime endpoints или cashier stores.
 - Cloud UI не показывает raw payloads, PIN material, token material или sensitive request dumps.

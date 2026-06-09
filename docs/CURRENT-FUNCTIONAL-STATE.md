@@ -141,22 +141,29 @@
 
 Реализовано сейчас:
 
-- Отдельный интерфейс для Cloud-owned сценариев, не использующий POS session или POS Edge stores.
-- Первый сценарий запуска: readiness panel по restaurant/staff/floor/catalog/menu/modifiers/pricing/Edge/publication, Edge-device flow, master data preparation и публикация snapshot.
-- Управление ресторанами, ролями, сотрудниками, каталогом, папками, тегами, модификаторами, policies, залами, столами, menu items и публикациями по подтвержденным Cloud routes.
-- Генерация pairing code и назначение Edge-device ресторану.
-- Просмотр безопасного списка входящих Edge events без raw payload, включая card/list fallback на narrow screens с metadata/checksum вместо raw event payload; resource lists на narrow screens показывают status label в карточке и не раскрывают raw payload.
-- Read-only раздел финансовых операций читает `GET /api/v1/reporting/financial-operations` и показывает projection `CancellationRecorded`/`RefundRecorded` с фильтрами по restaurant/date/type/shift/original shift/check без raw payload, PIN/token/request dump и без Cloud cashier commands.
-- Cloud-owned recipes и stop-list authoring через подтвержденные master-data routes; реализовано сейчас также bounded сценарный editor версий техкарт с draft, submit в `RecipeChangeSuggested`, approve/apply через Cloud authority и publication package.
-- Route-backed manager surfaces для catalog/recipe proposal review и Edge-origin stop-list update review: списки, detail/diff, approve/reject/request-changes и publication/feedback после approve; recipe version editor отправляет draft в эту же review queue; sale preparation links panel показывает read-only связи `catalog item -> menu item -> modifier bindings -> pricing policies` по уже загруженным Cloud master-data rows с client-side filters, bounded table/card preview и conservative readiness hints без новых backend routes, публикации или mutations; inventory readiness panel читает backend summary по publication/Edge ACK/sync problem counters, runtime таблицу `stock-balances` и bounded read-only `stock-ledger` preview с `limit=50&offset=0`; OLAP exports panel читает read-only export status, stock moves, stock move summary, backfill job status и kitchen timing summary; `Sales/kitchen summary` читает bounded `GET /api/v1/olap/sales-kitchen-summary` как минимальный read-only table/card preview с фильтрами business date range, `group_by` и refresh; stock documents, full costing engine, mutating retry/backfill controls и richer BI analytics остаются без имитации отсутствующих Cloud UI flows.
-- Publication panel показывает safe publication summary из `GET /api/v1/restaurants/{id}/master-data/publication-state`; отдельный package delivery status/Edge package ACK route для Cloud UI сейчас не подтвержден, поэтому UI не имитирует delivery state поверх package payload/snapshot routes или `sync/exchange`.
-- Локализованные сообщения, safe error details, no raw payload / PIN / token display; Cloud create/rotate PIN поля используют password input, а списки сотрудников показывают только `pin_configured` и credential version.
+- Активный Cloud-бэкофис находится в `cloud-ui-g`: это отдельное React/Vite/TypeScript приложение, не использующее POS session, POS Edge stores или cashier routes.
+- `cloud-ui-g` работает с `cloud-backend` через `VITE_CLOUD_API_BASE`, по умолчанию `http://localhost:8090/api/v1`.
+- В `cloud-ui-g` реализованы route-backed разделы dashboard, restaurants, Edge sync, catalog, menu, modifiers, pricing/taxes, staff/permissions, floor и publications.
+- Dashboard показывает readiness по выбранному ресторану: roles/employees, halls/tables, catalog, menu, modifiers/pricing, Edge assignment и publication.
+- Edge sync в `cloud-ui-g` читает незакрепленные устройства, выполняет assign device to restaurant, запрашивает assignment status, генерирует pairing code и показывает безопасный список Edge events без raw payload.
+- Master-data разделы `cloud-ui-g` работают поверх подтвержденных Cloud routes для restaurants, roles, employees, catalog items/folders/parameters/tags/item-tags, menu categories/items, modifier groups/options/bindings, pricing policies, halls/tables и publication state/publish.
+- Pricing/taxes в `cloud-ui-g` дополнительно читает и обновляет package `pricing_policy` через provisioning route.
+- UI strings в `cloud-ui-g` идут через локальный i18n слой, API responses валидируются Zod-схемами, safe error banner не должен показывать raw payload, PIN/token/request dump или backend internals.
+- `cloud-ui-g` имеет navigation placeholders `inventory` и `reports`, но соответствующие React runtime screens сейчас не реализованы и показываются как blocked sections.
+- Устаревший `cloud-ui` на Vue/Quasar остается в репозитории как legacy/reference-only surface: в нем есть более широкие manager-facing экраны для financial operations, recipes/stop-list, proposal review, inventory readiness, OLAP/read-only reporting и `sales-kitchen-summary`, но новые Cloud UI правки больше не выполняются в этом каталоге.
+
+Запланировано далее:
+
+- Дальнейшая разработка Cloud-бэкофиса идет только в `cloud-ui-g`.
+- Перенос нужных legacy-сценариев из `cloud-ui` в `cloud-ui-g` выполняется постепенно и только поверх подтвержденных backend routes/DTO.
+- Inventory/reporting/OLAP/proposal review экраны в `cloud-ui-g` добавляются отдельно; нельзя считать их реализованными в активном React UI только потому, что похожий код есть в устаревшем Vue UI.
 
 Вне текущего объема:
 
-- Cashier runtime в Cloud UI.
-- Cloud auth/RBAC UI.
-- KDS runtime screens, PSP, fiscalization, delivery и cashier runtime в Cloud UI; inventory runtime actions, OLAP exports/retry/backfill controls, BI dashboards, charts и COGS/margin аналитика остаются вне текущего объема Cloud UI.
+- Новая разработка Cloud-бэкофиса в `cloud-ui`.
+- Cashier runtime, KDS runtime screens, PSP, fiscalization, delivery и POS order/payment/check/precheck flows в Cloud UI.
+- Cloud auth/RBAC UI до появления подтвержденного backend-контракта.
+- Inventory runtime actions, mutating OLAP retry/backfill controls, BI dashboards, charts и COGS/margin аналитика в активном `cloud-ui-g`.
 
 ## Данные и миграции
 
