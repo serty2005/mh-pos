@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { assignReviewItem, getStopListReadiness, listInventoryStockBalances, listInventoryStockLedger, unassignReviewItem } from './api';
+import {
+  assignReviewItem,
+  getStopListReadiness,
+  listInventoryStockBalances,
+  listInventoryStockLedger,
+  listSalesKitchenSummary,
+  unassignReviewItem,
+} from './api';
 
 const stopListReadinessResponse = {
   restaurant_id: 'restaurant-1',
@@ -45,6 +52,22 @@ const inventoryStockLedgerResponse = [{
   occurred_at: '2026-05-30T10:00:00Z',
   business_date_local: '2026-05-30',
   created_at: '2026-05-30T10:01:00Z',
+}];
+
+const salesKitchenSummaryResponse = [{
+  group_by: 'business_date',
+  group_key: '2026-05-30',
+  business_date_local: '2026-05-30',
+  event_count: 3,
+  stock_move_count: 2,
+  sale_event_count: 1,
+  kitchen_event_count: 2,
+  out_quantity: '2.000',
+  in_quantity: '0.000',
+  net_quantity: '-2.000',
+  total_cost_minor: -500,
+  first_occurred_at: '2026-05-30T10:00:00Z',
+  last_occurred_at: '2026-05-30T10:30:00Z',
 }];
 
 const reviewAssignmentResponse = {
@@ -182,6 +205,25 @@ describe('cloud api inventory readiness contract', () => {
     await listInventoryStockLedger('restaurant-1');
 
     const url = requestedUrl(fetchMock);
+    expect(url.searchParams.get('limit')).toBe('50');
+    expect(url.searchParams.get('offset')).toBe('0');
+  });
+
+  it('maps sales/kitchen summary filters to bounded read-only query params', async () => {
+    const fetchMock = stubJsonFetch(salesKitchenSummaryResponse);
+
+    await listSalesKitchenSummary('restaurant-1', {
+      businessDateFrom: '2026-05-01',
+      businessDateTo: '2026-05-31',
+      groupBy: 'catalog_item',
+    });
+
+    const url = requestedUrl(fetchMock);
+    expect(url.pathname).toBe('/api/v1/olap/sales-kitchen-summary');
+    expect(url.searchParams.get('restaurant_id')).toBe('restaurant-1');
+    expect(url.searchParams.get('business_date_from')).toBe('2026-05-01');
+    expect(url.searchParams.get('business_date_to')).toBe('2026-05-31');
+    expect(url.searchParams.get('group_by')).toBe('catalog_item');
     expect(url.searchParams.get('limit')).toBe('50');
     expect(url.searchParams.get('offset')).toBe('0');
   });

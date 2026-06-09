@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { catalogSuggestionSchema, inventoryStockBalanceSchema, inventoryStockLedgerEntrySchema, reviewAssignmentResponseSchema, stopListReadinessSchema } from './schemas';
+import {
+  catalogSuggestionSchema,
+  inventoryStockBalanceSchema,
+  inventoryStockLedgerEntrySchema,
+  reviewAssignmentResponseSchema,
+  salesKitchenSummaryGroupBySchema,
+  salesKitchenSummaryItemSchema,
+  stopListReadinessSchema,
+} from './schemas';
 
 describe('cloud schemas inventory readiness contract', () => {
   it('accepts stop-list readiness response and defaults optional fields', () => {
@@ -85,6 +93,39 @@ describe('cloud schemas inventory readiness contract', () => {
 
     expect(parsed.warehouse_id).toBe('');
     expect(parsed.order_line_id).toBe('');
+  });
+
+  it('accepts sales/kitchen summary row and strips raw payload fields', () => {
+    const parsed = salesKitchenSummaryItemSchema.parse({
+      group_by: 'business_date',
+      group_key: '2026-05-30',
+      event_count: 3,
+      stock_move_count: 2,
+      sale_event_count: 1,
+      kitchen_event_count: 2,
+      out_quantity: '2.000',
+      in_quantity: '0.000',
+      net_quantity: '-2.000',
+      total_cost_minor: -500,
+      payload: '{"unsafe":true}',
+      raw_payload_sha256_hex: 'hash',
+      snapshot_json: '{}',
+    });
+
+    expect(parsed.business_date_local).toBe('');
+    expect(parsed.first_occurred_at).toBe('');
+    expect(parsed.last_occurred_at).toBe('');
+    expect('payload' in parsed).toBe(false);
+    expect('raw_payload_sha256_hex' in parsed).toBe(false);
+    expect('snapshot_json' in parsed).toBe(false);
+  });
+
+  it('rejects unsupported sales/kitchen group_by values', () => {
+    expect(salesKitchenSummaryGroupBySchema.safeParse('business_date').success).toBe(true);
+    expect(salesKitchenSummaryGroupBySchema.safeParse('event_type').success).toBe(true);
+    expect(salesKitchenSummaryGroupBySchema.safeParse('source_event_type').success).toBe(true);
+    expect(salesKitchenSummaryGroupBySchema.safeParse('catalog_item').success).toBe(true);
+    expect(salesKitchenSummaryGroupBySchema.safeParse('warehouse').success).toBe(false);
   });
 
   it('accepts safe review assignment response without raw payload fields', () => {
