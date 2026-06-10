@@ -1,0 +1,10 @@
+[mcp_servers.plane]
+command = "uvx"
+args = ["plane-mcp-server==0.2.8", "stdio"]
+env = {
+    PLANE_BASE_URL = "https://dev.serty.top",
+    PLANE_WORKSPACE_SLUG = "myhoreca-pos"
+}
+env_vars = ["PLANE_API_KEY"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
