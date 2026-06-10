@@ -67,6 +67,7 @@
 - `license-server/` — license/pairing support service.
 - `shared/` — общие platform helpers.
 - `scripts/` — единственный локальный seed script `seed-dev-system.py`.
+- `tools/plane-mcp/` — локальные инструкции и примеры для подключения Plane-MCP к задачам разработки.
 
 ## Главные документы
 
@@ -80,6 +81,12 @@
 - `docs/architecture/DDD-CONTEXT-MAP.md` — bounded contexts и ownership boundaries.
 - `docs/adr/ADR-015-persistence-and-analytics-strategy.md` — решение по persistence/analytics strategy.
 - `AGENTS.md` — основной источник правил работы агентов и процесса разработки; внутренние playbook-материалы хранятся в `docs/internal/agent/`.
+
+## Таск-трекинг Plane
+
+Проектный процесс задач ведется через Plane. Для подключения локального AI-агента к задачам использовать `tools/plane-mcp/README.md`: там описаны доступы, env-переменные, MCP-конфиг, smoke-test, разрешенные операции агента и стартовый промпт для работы по Plane identifier.
+
+Runtime-код `mh-pos` не зависит от Plane-MCP. Токены Plane хранить только локально; не добавлять значение `PLANE_API_KEY` в README, MCP-конфиги репозитория, комментарии задач или логи.
 
 ## Локальный запуск
 
