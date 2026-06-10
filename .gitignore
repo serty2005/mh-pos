@@ -19,3 +19,6 @@ scripts/.seed-dev-system-summary.json
 *.jpg
 *.webp
 *.zip
+.env
+tools/plane-mcp/.env
+tools/plane-mcp/.env.local
