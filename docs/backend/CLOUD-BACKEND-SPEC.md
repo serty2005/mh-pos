@@ -52,11 +52,12 @@
 - `stop_list_conflict_policy` для `StopListUpdated`: `cloud_wins`, `edge_overlay_until_next_publication`, `edge_overlay_requires_manager_review`; default `edge_overlay_requires_manager_review`;
 - safe readiness API/UI signal для stop-list publication, последнего известного Edge ACK metadata и sync problem counters без raw payload;
 - поддержка `CheckClosed`/`ItemServed`/`StockWriteOffCaptured` как pilot inventory facts через текущий receiver и Inventory Worker;
+- Cloud Inventory Worker выполняет recipe expansion основной позиции продажи по active recipe version и modifier-linked consumption по nullable `ModifierOption.linked_catalog_item_id`; linked modifier item списывается напрямую, без recipe expansion linked item;
 - ClickHouse first slices: managed `raw_business_events`, async forwarder из PostgreSQL `inbox_events`, `processed_for_olap`, retry state, export checkpoint и bounded read-only metadata API; managed `olap_stock_moves`, async export из PostgreSQL `stock_ledger`, bounded stock moves API, read-only export status, минимальный support-only export retry control, async backfill job foundation, первый bounded stock movement summary, первый bounded sales/kitchen summary и bounded kitchen timing summary.
 
 Запланировано до полного пилота:
 
-- full inventory engine для receipts, counts, production, consumption, refund/cancellation dispositions, balances, costing и retro recalculation;
+- full inventory engine beyond текущего bounded worker slice: materialized balances, production-grade receipts/counts, refund/cancellation dispositions, semi-finished auto-production split, costing и retro recalculation;
 - production auth/RBAC perimeter для mutating OLAP controls, richer sales aggregates и COGS/margin после появления достоверной cost basis.
 
 ## Назначение
@@ -419,7 +420,7 @@ Publication DTO правила:
 - `menu` stream содержит menu items and link-only `menu_item_modifier_groups`.
 - Rich modifier group fields не вкладываются внутрь `menu_items`.
 - `modifier_groups[]` передает `id`, `restaurant_id`, `name`, `required`, `min_count`, `max_count`, `active`.
-- `modifier_options[]` передает `id`, `restaurant_id`, `modifier_group_id`, `name`, `price_minor`, `active`.
+- `modifier_options[]` передает `id`, `restaurant_id`, `modifier_group_id`, optional read-only `linked_catalog_item_id`, `name`, `price_minor`, `active`.
 - `modifier_bindings[]` передает `id`, `restaurant_id`, `modifier_group_id`, `target_type`, `target_id`, `sort_order`, `active`.
 - `pricing_policy` stream передает `tax_profiles`, `tax_rules`, `service_charge_rules`, `pricing_policies`, когда соответствующий package сохранен/опубликован.
 - `recipes` stream передает `recipe_versions` и `recipe_lines`, когда соответствующий package сохранен/опубликован.
@@ -550,7 +551,7 @@ Managed SQL file, реализовано сейчас:
 - Projections: `cloud_projection_event_type_stats`, `cloud_projection_shift_finance`, `cloud_projection_financial_operations`.
 - Master-data packages: `cloud_master_data_packages`.
 - Currency reference: `cloud_currency_reference`.
-- Master data: `cloud_restaurants`, `cloud_roles`, `cloud_employees`, `cloud_categories`, `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_services`, `cloud_catalog_folders`, `cloud_catalog_folder_parameters`, `cloud_catalog_tags`, `cloud_catalog_item_tags`, `cloud_recipe_items`, `cloud_recipe_versions`, `cloud_recipe_lines`, `cloud_modifier_groups`, `cloud_modifier_options`, `cloud_modifier_group_bindings`, `cloud_pricing_policies`, `cloud_menu_items`, `cloud_menu_item_modifier_groups`, `cloud_menu_location_assignments`, `cloud_master_data_publications`, `cloud_review_assignment_audit_events`.
+- Master data: `cloud_restaurants`, `cloud_roles`, `cloud_employees`, `cloud_categories`, `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_services`, `cloud_catalog_folders`, `cloud_catalog_folder_parameters`, `cloud_catalog_tags`, `cloud_catalog_item_tags`, `cloud_recipe_items`, `cloud_recipe_versions`, `cloud_recipe_lines`, `cloud_modifier_groups`, `cloud_modifier_options` с nullable `linked_catalog_item_id`, `cloud_modifier_group_bindings`, `cloud_pricing_policies`, `cloud_menu_items`, `cloud_menu_item_modifier_groups`, `cloud_menu_location_assignments`, `cloud_master_data_publications`, `cloud_review_assignment_audit_events`.
 - Provisioning: `cloud_edge_nodes`, `cloud_unassigned_edge_nodes`, `cloud_pairing_codes`.
 - Inventory runtime: `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`.
 - OLAP control state: `olap_export_checkpoints`, `olap_export_retry_commands`.
@@ -601,7 +602,7 @@ Schema verification:
 
 - Cloud authoring/publication workflow для stop-list/recipes становится штатным источником sale-blocking availability overlay; POS Edge runtime уже блокирует продажи по локальному `stop_lists`.
 - Receipt line с pending catalog suggestion остается запланировано далее.
-- Полный materialized balance engine, recipe expansion, modifier linked catalog item consumption и retro costing DAG становятся частью Cloud Inventory Engine; bounded `stock-balances` read из `stock_ledger` реализован сейчас.
+- Полный materialized balance engine, semi-finished auto-production split и retro costing DAG остаются частью дальнейшего Cloud Inventory Engine; bounded `stock-balances` read из `stock_ledger`, recipe expansion основной продажи и modifier linked catalog item consumption реализованы сейчас.
 - Расширенные sales/kitchen/costing-dependent projections beyond first bounded sales/kitchen summary запланированы далее.
 - Расширенный manager review workflow для Edge-origin stop-list изменений остается запланирован далее; текущий runtime уже имеет bounded review/apply, assignment/unassignment и audit без raw payload, но без escalation/dashboard workflow.
 

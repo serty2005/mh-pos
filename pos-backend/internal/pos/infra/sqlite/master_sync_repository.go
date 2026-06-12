@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"pos-backend/internal/pos/domain"
 )
@@ -175,10 +176,15 @@ ON CONFLICT(id) DO UPDATE SET restaurant_id=excluded.restaurant_id,name=excluded
 }
 
 func (r *Repository) UpsertMasterModifierOption(ctx context.Context, v *domain.ModifierOption, meta domain.MasterRecordSyncMeta) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO modifier_options(id,restaurant_id,modifier_group_id,name,price_minor,active,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
-VALUES (?,?,?,?,?,?,?,?,?,?)
-ON CONFLICT(id) DO UPDATE SET restaurant_id=excluded.restaurant_id,modifier_group_id=excluded.modifier_group_id,name=excluded.name,price_minor=excluded.price_minor,active=excluded.active,cloud_version=excluded.cloud_version,cloud_updated_at=excluded.cloud_updated_at,cloud_deleted_at=excluded.cloud_deleted_at,last_synced_at=excluded.last_synced_at`,
-		v.ID, v.RestaurantID, v.ModifierGroupID, v.Name, v.PriceMinor, boolInt(v.Active), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+	var linkedCatalogItemID *string
+	if strings.TrimSpace(v.LinkedCatalogItemID) != "" {
+		linked := strings.TrimSpace(v.LinkedCatalogItemID)
+		linkedCatalogItemID = &linked
+	}
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO modifier_options(id,restaurant_id,modifier_group_id,linked_catalog_item_id,name,price_minor,active,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET restaurant_id=excluded.restaurant_id,modifier_group_id=excluded.modifier_group_id,linked_catalog_item_id=excluded.linked_catalog_item_id,name=excluded.name,price_minor=excluded.price_minor,active=excluded.active,cloud_version=excluded.cloud_version,cloud_updated_at=excluded.cloud_updated_at,cloud_deleted_at=excluded.cloud_deleted_at,last_synced_at=excluded.last_synced_at`,
+		v.ID, v.RestaurantID, v.ModifierGroupID, nullableString(linkedCatalogItemID), v.Name, v.PriceMinor, boolInt(v.Active), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
 	return normalizeErr(err)
 }
 

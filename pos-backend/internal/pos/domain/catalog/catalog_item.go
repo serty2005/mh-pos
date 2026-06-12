@@ -77,12 +77,13 @@ type ModifierGroup struct {
 }
 
 type ModifierOption struct {
-	ID              string `json:"id"`
-	RestaurantID    string `json:"restaurant_id"`
-	ModifierGroupID string `json:"modifier_group_id"`
-	Name            string `json:"name"`
-	PriceMinor      int64  `json:"price_minor"`
-	Active          bool   `json:"active"`
+	ID                  string `json:"id"`
+	RestaurantID        string `json:"restaurant_id"`
+	ModifierGroupID     string `json:"modifier_group_id"`
+	LinkedCatalogItemID string `json:"linked_catalog_item_id,omitempty"`
+	Name                string `json:"name"`
+	PriceMinor          int64  `json:"price_minor"`
+	Active              bool   `json:"active"`
 }
 
 type ModifierGroupBinding struct {

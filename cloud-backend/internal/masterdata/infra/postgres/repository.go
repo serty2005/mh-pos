@@ -370,22 +370,22 @@ func (r *Repository) ListModifierGroups(ctx context.Context, restaurantID string
 }
 
 func (r *Repository) CreateModifierOption(ctx context.Context, v domain.ModifierOption) (domain.ModifierOption, error) {
-	out, err := scanModifierOption(r.pool.QueryRow(ctx, `INSERT INTO cloud_modifier_options(id,restaurant_id,modifier_group_id,name,price_minor,status,cloud_version,archived_at,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,restaurant_id,modifier_group_id,name,price_minor,status,cloud_version,archived_at,created_at,updated_at`, v.ID, v.RestaurantID, v.ModifierGroupID, v.Name, v.PriceMinor, v.Status, v.CloudVersion, v.ArchivedAt, v.CreatedAt, v.UpdatedAt))
+	out, err := scanModifierOption(r.pool.QueryRow(ctx, `INSERT INTO cloud_modifier_options(id,restaurant_id,modifier_group_id,linked_catalog_item_id,name,price_minor,status,cloud_version,archived_at,created_at,updated_at) VALUES ($1,$2,$3,NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11) RETURNING id,restaurant_id,modifier_group_id,COALESCE(linked_catalog_item_id,''),name,price_minor,status,cloud_version,archived_at,created_at,updated_at`, v.ID, v.RestaurantID, v.ModifierGroupID, v.LinkedCatalogItemID, v.Name, v.PriceMinor, v.Status, v.CloudVersion, v.ArchivedAt, v.CreatedAt, v.UpdatedAt))
 	return out, normalizeErr(err)
 }
 
 func (r *Repository) UpdateModifierOption(ctx context.Context, v domain.ModifierOption) (domain.ModifierOption, error) {
-	out, err := scanModifierOption(r.pool.QueryRow(ctx, `UPDATE cloud_modifier_options SET name=$2,price_minor=$3,status=$4,cloud_version=$5,archived_at=$6,updated_at=$7 WHERE id=$1 RETURNING id,restaurant_id,modifier_group_id,name,price_minor,status,cloud_version,archived_at,created_at,updated_at`, v.ID, v.Name, v.PriceMinor, v.Status, v.CloudVersion, v.ArchivedAt, v.UpdatedAt))
+	out, err := scanModifierOption(r.pool.QueryRow(ctx, `UPDATE cloud_modifier_options SET linked_catalog_item_id=NULLIF($2,''),name=$3,price_minor=$4,status=$5,cloud_version=$6,archived_at=$7,updated_at=$8 WHERE id=$1 RETURNING id,restaurant_id,modifier_group_id,COALESCE(linked_catalog_item_id,''),name,price_minor,status,cloud_version,archived_at,created_at,updated_at`, v.ID, v.LinkedCatalogItemID, v.Name, v.PriceMinor, v.Status, v.CloudVersion, v.ArchivedAt, v.UpdatedAt))
 	return out, normalizeErr(err)
 }
 
 func (r *Repository) GetModifierOption(ctx context.Context, id string) (domain.ModifierOption, error) {
-	v, err := scanModifierOption(r.pool.QueryRow(ctx, `SELECT id,restaurant_id,modifier_group_id,name,price_minor,status,cloud_version,archived_at,created_at,updated_at FROM cloud_modifier_options WHERE id=$1`, strings.TrimSpace(id)))
+	v, err := scanModifierOption(r.pool.QueryRow(ctx, `SELECT id,restaurant_id,modifier_group_id,COALESCE(linked_catalog_item_id,''),name,price_minor,status,cloud_version,archived_at,created_at,updated_at FROM cloud_modifier_options WHERE id=$1`, strings.TrimSpace(id)))
 	return v, normalizeErr(err)
 }
 
 func (r *Repository) ListModifierOptions(ctx context.Context, restaurantID string) ([]domain.ModifierOption, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id,restaurant_id,modifier_group_id,name,price_minor,status,cloud_version,archived_at,created_at,updated_at FROM cloud_modifier_options WHERE restaurant_id=$1 ORDER BY modifier_group_id,id`, strings.TrimSpace(restaurantID))
+	rows, err := r.pool.Query(ctx, `SELECT id,restaurant_id,modifier_group_id,COALESCE(linked_catalog_item_id,''),name,price_minor,status,cloud_version,archived_at,created_at,updated_at FROM cloud_modifier_options WHERE restaurant_id=$1 ORDER BY modifier_group_id,id`, strings.TrimSpace(restaurantID))
 	if err != nil {
 		return nil, err
 	}
@@ -1263,7 +1263,7 @@ func scanModifierGroup(row scanner) (domain.ModifierGroup, error) {
 func scanModifierOption(row scanner) (domain.ModifierOption, error) {
 	var v domain.ModifierOption
 	var status string
-	err := row.Scan(&v.ID, &v.RestaurantID, &v.ModifierGroupID, &v.Name, &v.PriceMinor, &status, &v.CloudVersion, &v.ArchivedAt, &v.CreatedAt, &v.UpdatedAt)
+	err := row.Scan(&v.ID, &v.RestaurantID, &v.ModifierGroupID, &v.LinkedCatalogItemID, &v.Name, &v.PriceMinor, &status, &v.CloudVersion, &v.ArchivedAt, &v.CreatedAt, &v.UpdatedAt)
 	v.Status = domain.LifecycleStatus(status)
 	return v, err
 }

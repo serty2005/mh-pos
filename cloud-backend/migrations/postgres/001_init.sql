@@ -734,6 +734,7 @@ CREATE TABLE IF NOT EXISTS cloud_modifier_options (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
   modifier_group_id TEXT NOT NULL REFERENCES cloud_modifier_groups(id),
+  linked_catalog_item_id TEXT REFERENCES cloud_catalog_items(id),
   name TEXT NOT NULL CHECK (name <> ''),
   price_minor BIGINT NOT NULL DEFAULT 0 CHECK (price_minor >= 0),
   status TEXT NOT NULL CHECK (status IN ('draft','published','archived')),
@@ -1223,6 +1224,7 @@ ALTER TABLE cloud_modifier_groups
 
 ALTER TABLE cloud_modifier_options
   ADD COLUMN IF NOT EXISTS price_minor BIGINT NOT NULL DEFAULT 0 CHECK (price_minor >= 0),
+  ADD COLUMN IF NOT EXISTS linked_catalog_item_id TEXT REFERENCES cloud_catalog_items(id),
   ADD COLUMN IF NOT EXISTS cloud_version BIGINT NOT NULL DEFAULT 1 CHECK (cloud_version > 0),
   ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
 

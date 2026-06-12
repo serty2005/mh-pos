@@ -278,14 +278,24 @@ type FinancialOperationProjection struct {
 type OrderClosed = OrderCreated
 
 type InventoryItem struct {
-	OrderLineID          string `json:"order_line_id,omitempty"`
-	CatalogItemID        string `json:"catalog_item_id"`
-	Quantity             string `json:"quantity"`
-	CountedQuantity      string `json:"counted_quantity,omitempty"`
-	UnitCode             string `json:"unit_code"`
-	RequiredForInventory bool   `json:"required_for_inventory,omitempty"`
-	UnitCostMinor        int64  `json:"unit_cost_minor,omitempty"`
-	Currency             string `json:"currency,omitempty"`
+	OrderLineID          string              `json:"order_line_id,omitempty"`
+	CatalogItemID        string              `json:"catalog_item_id"`
+	Quantity             string              `json:"quantity"`
+	CountedQuantity      string              `json:"counted_quantity,omitempty"`
+	UnitCode             string              `json:"unit_code"`
+	RequiredForInventory bool                `json:"required_for_inventory,omitempty"`
+	UnitCostMinor        int64               `json:"unit_cost_minor,omitempty"`
+	Currency             string              `json:"currency,omitempty"`
+	Modifiers            []InventoryModifier `json:"modifiers,omitempty"`
+}
+
+type InventoryModifier struct {
+	OrderLineModifierID string `json:"order_line_modifier_id,omitempty"`
+	ModifierGroupID     string `json:"modifier_group_id,omitempty"`
+	ModifierOptionID    string `json:"modifier_option_id"`
+	Name                string `json:"name,omitempty"`
+	Quantity            string `json:"quantity"`
+	UnitCode            string `json:"unit_code,omitempty"`
 }
 
 type CheckClosed struct {
@@ -384,10 +394,10 @@ type StopListUpdated struct {
 type StopListConflictPolicy string
 
 const (
-	StopListConflictPolicyCloudWins                         StopListConflictPolicy = "cloud_wins"
-	StopListConflictPolicyEdgeOverlayUntilNextPublication   StopListConflictPolicy = "edge_overlay_until_next_publication"
-	StopListConflictPolicyEdgeOverlayRequiresManagerReview  StopListConflictPolicy = "edge_overlay_requires_manager_review"
-	DefaultStopListConflictPolicy                           StopListConflictPolicy = StopListConflictPolicyEdgeOverlayRequiresManagerReview
+	StopListConflictPolicyCloudWins                        StopListConflictPolicy = "cloud_wins"
+	StopListConflictPolicyEdgeOverlayUntilNextPublication  StopListConflictPolicy = "edge_overlay_until_next_publication"
+	StopListConflictPolicyEdgeOverlayRequiresManagerReview StopListConflictPolicy = "edge_overlay_requires_manager_review"
+	DefaultStopListConflictPolicy                          StopListConflictPolicy = StopListConflictPolicyEdgeOverlayRequiresManagerReview
 )
 
 func NormalizeStopListConflictPolicy(value string) StopListConflictPolicy {

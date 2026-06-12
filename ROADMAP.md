@@ -660,6 +660,7 @@
 
 - Cloud PostgreSQL baseline содержит inventory schema foundation.
 - Worker пишет pilot `stock_ledger` rows with costing fields.
+- Worker выполняет sale consumption с recipe expansion для основной позиции и modifier-linked consumption по Cloud-authoritative `linked_catalog_item_id`; linked modifier item списывается напрямую и не разворачивается в recipe.
 - Bounded Cloud inventory ledger endpoint существует для проверки обработанных worker rows; legacy `cloud-ui` показывает первые 50 строк как read-only preview без raw payload и складских команд.
 - `GET /api/v1/inventory/stock-balances` подтвержден по runtime-коду и тестам как bounded Cloud-owned balance read model поверх PostgreSQL `stock_ledger`; route объявлен в `cloud-backend/internal/cloudsync/api/router.go`, реализован в service/repository слое, покрыт API tests на агрегацию, границы выдачи, фильтр статуса, пустой результат и safe no-raw-payload response, а legacy `cloud-ui` показывает bounded balances/costing status table.
 
@@ -667,10 +668,8 @@
 
 - Materialized balances.
 - Production-grade stock receipts/counts/production state.
-- Sale consumption.
 - Refund/cancellation stock disposition.
-- Recipe expansion.
-- Modifier-linked consumption.
+- Semi-finished auto-production split.
 - Full costing state.
 - Retro recalculation DAG для документов задним числом и отрицательных остатков.
 - Cloud UI/API для ручного ввода складских документов.

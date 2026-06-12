@@ -967,6 +967,7 @@ func normalizeModifierOption(v domain.ModifierOption) domain.ModifierOption {
 	v.ID = strings.TrimSpace(v.ID)
 	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
 	v.ModifierGroupID = strings.TrimSpace(v.ModifierGroupID)
+	v.LinkedCatalogItemID = strings.TrimSpace(v.LinkedCatalogItemID)
 	v.Name = strings.TrimSpace(v.Name)
 	return v
 }

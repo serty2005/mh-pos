@@ -245,7 +245,7 @@ func TestCatalogMenuValidationAndPublicationPackageShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	modifierOption, err := service.CreateModifierOption(ctx, app.CreateModifierOptionCommand{RestaurantID: restaurant.ID, ModifierGroupID: modifierGroup.ID, Name: "Oat milk", PriceMinor: 300})
+	modifierOption, err := service.CreateModifierOption(ctx, app.CreateModifierOptionCommand{RestaurantID: restaurant.ID, ModifierGroupID: modifierGroup.ID, LinkedCatalogItemID: catalog.ID, Name: "Oat milk", PriceMinor: 300})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,6 +309,59 @@ func TestCatalogMenuValidationAndPublicationPackageShape(t *testing.T) {
 	}
 	assertPOSEdgeCatalogReferencePackage(t, fullBody, restaurant.ID, folderParameter.ID, folder.ID, tag.ID, catalog.ID)
 	assertPOSEdgeModifierIngestPackage(t, fullBody, restaurant.ID, menu.ID, modifierGroup.ID, modifierOption.ID, modifierBinding.ID)
+}
+
+func TestModifierOptionLinkedCatalogItemValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		link    func(mainItem domain.CatalogItem, otherItem domain.CatalogItem) string
+		wantErr bool
+	}{
+		{name: "nullable link is accepted", link: func(domain.CatalogItem, domain.CatalogItem) string { return "" }},
+		{name: "same restaurant item is accepted", link: func(mainItem domain.CatalogItem, _ domain.CatalogItem) string { return mainItem.ID }},
+		{name: "unknown item is rejected", link: func(domain.CatalogItem, domain.CatalogItem) string { return "missing-item" }, wantErr: true},
+		{name: "other restaurant item is rejected", link: func(_ domain.CatalogItem, otherItem domain.CatalogItem) string { return otherItem.ID }, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, _ := newService()
+			ctx := context.Background()
+			restaurant, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "Demo", Timezone: "Europe/Moscow", Currency: "RUB"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			otherRestaurant, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "Other", Timezone: "Europe/Moscow", Currency: "RUB"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			group, err := service.CreateModifierGroup(ctx, app.CreateModifierGroupCommand{RestaurantID: restaurant.ID, Name: "Sauce", MaxCount: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			item, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: restaurant.ID, Kind: domain.CatalogItemGood, Name: "Sauce pack", SKU: "SAUCE", BaseUnit: "pc"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			otherItem, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: otherRestaurant.ID, Kind: domain.CatalogItemGood, Name: "Other sauce", SKU: "OTHER", BaseUnit: "pc"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			link := tt.link(item, otherItem)
+			got, err := service.CreateModifierOption(ctx, app.CreateModifierOptionCommand{RestaurantID: restaurant.ID, ModifierGroupID: group.ID, LinkedCatalogItemID: link, Name: "Extra sauce", PriceMinor: 0})
+			if tt.wantErr {
+				if !errors.Is(err, domain.ErrInvalid) && !errors.Is(err, domain.ErrNotFound) {
+					t.Fatalf("expected validation error, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected modifier option to be accepted, got %v", err)
+			}
+			if strings.TrimSpace(link) != got.LinkedCatalogItemID {
+				t.Fatalf("unexpected linked catalog item id: %+v", got)
+			}
+		})
+	}
 }
 
 func TestCatalogItemKindServiceAndSemiFinishedRoundTripAndPublication(t *testing.T) {
@@ -1280,12 +1333,13 @@ type posEdgeModifierGroup struct {
 }
 
 type posEdgeModifierOption struct {
-	ID              string `json:"id"`
-	RestaurantID    string `json:"restaurant_id"`
-	ModifierGroupID string `json:"modifier_group_id"`
-	Name            string `json:"name"`
-	PriceMinor      int64  `json:"price_minor"`
-	Active          bool   `json:"active"`
+	ID                  string `json:"id"`
+	RestaurantID        string `json:"restaurant_id"`
+	ModifierGroupID     string `json:"modifier_group_id"`
+	LinkedCatalogItemID string `json:"linked_catalog_item_id,omitempty"`
+	Name                string `json:"name"`
+	PriceMinor          int64  `json:"price_minor"`
+	Active              bool   `json:"active"`
 }
 
 type posEdgeModifierGroupBinding struct {
@@ -1430,6 +1484,9 @@ func assertPOSEdgeModifierIngestPackage(t *testing.T, body []byte, restaurantID,
 	}
 	if len(cmd.ModifierOptions) != 1 || cmd.ModifierOptions[0].ID != optionID || cmd.ModifierOptions[0].RestaurantID != restaurantID || cmd.ModifierOptions[0].ModifierGroupID != groupID {
 		t.Fatalf("unexpected modifier options projection: %+v", cmd.ModifierOptions)
+	}
+	if cmd.ModifierOptions[0].LinkedCatalogItemID == "" {
+		t.Fatalf("expected linked catalog item id in modifier option projection: %+v", cmd.ModifierOptions[0])
 	}
 	if len(cmd.ModifierBindings) != 1 || cmd.ModifierBindings[0].ID != bindingID || cmd.ModifierBindings[0].RestaurantID != restaurantID || cmd.ModifierBindings[0].ModifierGroupID != groupID {
 		t.Fatalf("unexpected modifier binding projection: %+v", cmd.ModifierBindings)

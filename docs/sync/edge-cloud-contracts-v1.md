@@ -188,7 +188,7 @@ Request body shape currently supported by POS Edge:
 - `menu` применяет `menu_items` и effective `menu_item_modifier_groups` links после применения menu items; для старого explicit `stream: "catalog"` link-only payload остается accepted, если referenced menu item уже существует.
 - Cloud publication package для POS Edge является typed ingest DTO, а не Cloud rich projection. `modifier_groups[]` содержит только поля, которые принимает POS Edge: `id`, `restaurant_id`, `name`, `required`, `min_count`, `max_count`, `active`.
 - `folder_parameters[]`, `tags[]` и `item_tags[]` содержат `restaurant_id`, потому что POS Edge сохраняет эти справочники с restaurant-scoped identity и отклоняет записи без явного restaurant context.
-- `modifier_options[]` содержит `id`, `restaurant_id`, `modifier_group_id`, `name`, `price_minor`, `active`.
+- `modifier_options[]` содержит `id`, `restaurant_id`, `modifier_group_id`, optional read-only `linked_catalog_item_id`, `name`, `price_minor`, `active`.
 - `modifier_bindings[]` содержит `id`, `restaurant_id`, `modifier_group_id`, `target_type`, `target_id`, `sort_order`, `active`.
 - `menu_item_modifier_groups[]` является link-only массивом и содержит только `menu_item_id`, `modifier_group_id`, `sort_order`. Правила обязательности и count limits остаются в top-level `modifier_groups[]`.
 - `menu_items[]` в ingest payload не содержит embedded rich `modifier_groups[]`; POS runtime read model собирает modifiers из top-level groups/options/links после применения snapshot.
@@ -378,7 +378,7 @@ Cancellation/refund sync behavior:
 - `CheckClosed` после уже обработанного `ItemServed` списывает только положительную unserved delta;
 - replay того же `CheckClosed` не создает второй stock document.
 
-Запланировано далее: modifier linked recipe expansion и полный costing engine. Bounded balances, Cloud proposal review/apply и ClickHouse `raw_business_events` export реализованы сейчас.
+Реализовано сейчас: recipe expansion основной позиции продажи и modifier-linked consumption по Cloud-authoritative `linked_catalog_item_id`; linked modifier item списывается напрямую. Запланировано далее: semi-finished auto-production split, COGS/margin и полный retro costing engine. Bounded balances, Cloud proposal review/apply и ClickHouse `raw_business_events` export реализованы сейчас.
 
 `KitchenTicketStatusChanged` фиксирует advanced KDS lifecycle без прямой складской проводки:
 
@@ -480,7 +480,7 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 Не реализовано сейчас:
 
 - production-grade manager review workflow для `edge_overlay_requires_manager_review`;
-- modifier linked catalog item consumption и retro costing DAG;
+- semi-finished auto-production split, COGS/margin и retro costing DAG;
 - richer sales/kitchen/costing aggregate OLAP API beyond first bounded endpoint, production-grade backfill jobs и OLAP operator UI;
 - PSP/fiscal event streams.
 

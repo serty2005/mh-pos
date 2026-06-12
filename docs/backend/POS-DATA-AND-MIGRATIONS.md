@@ -82,7 +82,7 @@ Cashier runtime invariants:
 - целевой `stop_lists` sync Edge <-> Cloud;
 - recipe expansion and retro costing DAG.
 
-Modifier acceptance реализовано сейчас только в order/pricing/precheck/check storage path: `order_line_modifiers` и `precheck_line_modifiers` сохраняют selected modifiers для replay/audit/reprint. В целевой inventory architecture Edge не знает о `ModifierOption.linked_catalog_item_id`; эту связь применяет только Cloud Inventory Worker.
+Modifier acceptance реализовано сейчас только в order/pricing/precheck/check storage path: `order_line_modifiers` и `precheck_line_modifiers` сохраняют selected modifiers для replay/audit/reprint. В целевой inventory architecture Edge хранит `ModifierOption.linked_catalog_item_id` только как read-only reference из Cloud publication; эту связь применяет только Cloud Inventory Worker.
 
 UOM/status audit:
 
@@ -137,7 +137,7 @@ Managed SQL files, реализовано сейчас:
 - PostgreSQL baseline содержит Cloud-owned `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`.
 - `stock_ledger` хранит `unit_cost_minor`, `total_cost_minor`, `costing_status`, `source_event_id`, `source_event_type`, `occurred_at` и `business_date_local`.
 - Cloud Inventory Worker пишет документы и ledger из нормализованных item payloads.
-- `modifier_options` получает optional `linked_catalog_item_id`; POS Edge не применяет это поле в order/pricing runtime.
+- `modifier_options` содержит optional `linked_catalog_item_id`; POS Edge не применяет это поле в order/pricing runtime и не получает stock authority.
 - ClickHouse `raw_business_events` наполняется только Async Batch Forwarder из PostgreSQL `inbox_events` и является бессрочным архивом business events.
 - Реализовано сейчас: ClickHouse `olap_stock_moves` наполняется async projection из PostgreSQL `stock_ledger` и не является transactional source of truth.
 - Реализовано сейчас: Async OLAP Backfill Worker выполняет `olap_backfill_jobs` вне HTTP request path и переэкспортирует source rows в ClickHouse через те же safe exporters; повторный backfill не должен дублировать business rows в bounded reads благодаря stable row ids и `ReplacingMergeTree`.

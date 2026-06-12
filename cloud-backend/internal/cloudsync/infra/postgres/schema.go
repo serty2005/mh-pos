@@ -292,7 +292,7 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Table:         "cloud_modifier_options",
 			RequiredBy:    "cloud menu modifier option foundation",
 			MigrationFile: "001_init.sql",
-			Columns:       []string{"id", "restaurant_id", "modifier_group_id", "name", "price_minor", "status", "created_at", "updated_at"},
+			Columns:       []string{"id", "restaurant_id", "modifier_group_id", "linked_catalog_item_id", "name", "price_minor", "status", "created_at", "updated_at"},
 		},
 		{
 			Table:         "cloud_modifier_group_bindings",

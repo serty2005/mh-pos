@@ -88,14 +88,14 @@ func (r *Repository) ListModifierOptionsByGroupIDs(ctx context.Context, groupIDs
 		return out, nil
 	}
 	for _, groupID := range groupIDs {
-		rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,restaurant_id,modifier_group_id,name,price_minor,active FROM modifier_options WHERE modifier_group_id = ? AND active = 1 ORDER BY name`, groupID)
+		rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,restaurant_id,modifier_group_id,COALESCE(linked_catalog_item_id,''),name,price_minor,active FROM modifier_options WHERE modifier_group_id = ? AND active = 1 ORDER BY name`, groupID)
 		if err != nil {
 			return nil, normalizeErr(err)
 		}
 		for rows.Next() {
 			var v domain.ModifierOption
 			var active int
-			if err := rows.Scan(&v.ID, &v.RestaurantID, &v.ModifierGroupID, &v.Name, &v.PriceMinor, &active); err != nil {
+			if err := rows.Scan(&v.ID, &v.RestaurantID, &v.ModifierGroupID, &v.LinkedCatalogItemID, &v.Name, &v.PriceMinor, &active); err != nil {
 				_ = rows.Close()
 				return nil, err
 			}

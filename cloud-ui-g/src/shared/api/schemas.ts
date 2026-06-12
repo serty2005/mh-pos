@@ -129,6 +129,7 @@ export const modifierOptionSchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
   modifier_group_id: z.string(),
+  linked_catalog_item_id: z.string().optional(),
   name: z.string(),
   price_minor: z.number(),
   status: lifecycleStatusSchema,

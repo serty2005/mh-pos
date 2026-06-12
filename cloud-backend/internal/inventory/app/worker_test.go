@@ -167,6 +167,30 @@ func TestRunOnceExpandsRecipeAndModifiersForCheckClosed(t *testing.T) {
 	if len(repo.documents) != 1 || len(repo.documents[0].Ledger) != 2 {
 		t.Fatalf("unexpected docs %+v", repo.documents)
 	}
+	got := ledgerQuantityByCatalogItem(repo.documents[0])
+	if got["ing-1"] != "1.000" {
+		t.Fatalf("expected recipe component quantity 1.000, got %+v", got)
+	}
+	if got["mod-item-1"] != "2.000" {
+		t.Fatalf("expected linked modifier consumption to scale by sold line quantity, got %+v", got)
+	}
+}
+
+func TestRunOnceModifierWithoutLinkCreatesNoAdditionalLedgerRow(t *testing.T) {
+	repo := &fakeRepo{
+		events:              []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventCheckClosed, checkClosedPayloadWithModifier(t))},
+		modifierOptionLinks: map[string]string{},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 1 || len(repo.documents[0].Ledger) != 1 {
+		t.Fatalf("expected only base sale row when modifier has no link, got %+v", repo.documents)
+	}
+	if repo.documents[0].Ledger[0].CatalogItemID != "item-1" {
+		t.Fatalf("expected fallback base item ledger row, got %+v", repo.documents[0].Ledger[0])
+	}
 }
 
 func TestRunOnceFailsOnInvalidRecipeLine(t *testing.T) {
@@ -391,6 +415,29 @@ func TestRunOnceCheckClosedAfterServedDoesNotDoubleConsumeLine(t *testing.T) {
 	}
 	if repo.documents[0].SourceEventType != string(contracts.EventItemServed) {
 		t.Fatalf("expected only ItemServed document, got %+v", repo.documents[0])
+	}
+}
+
+func TestRunOnceCheckClosedAfterServedDoesNotDoubleConsumeLinkedModifier(t *testing.T) {
+	repo := &fakeRepo{
+		events: []app.QueuedEvent{
+			queuedEvent(t, "queue-1", "018f0000-0000-7000-8000-0000000000a1", contracts.EventItemServed, itemServedPayload(t, "line-1", "item-1", "2.000")),
+			queuedEvent(t, "queue-2", "018f0000-0000-7000-8000-0000000000a2", contracts.EventCheckClosed, checkClosedPayloadWithModifier(t)),
+		},
+		modifierOptionLinks: map[string]string{"mod-opt-1": "mod-item-1"},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{
+		"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101",
+	}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 1 {
+		t.Fatalf("expected CheckClosed delta to skip line and linked modifier after ItemServed, got %+v", repo.documents)
+	}
+	if got := ledgerQuantityByCatalogItem(repo.documents[0]); got["mod-item-1"] != "" {
+		t.Fatalf("expected no linked modifier row after served line, got %+v", got)
 	}
 }
 
@@ -887,4 +934,12 @@ func checkClosedPayloadWithModifier(t *testing.T) json.RawMessage {
 			}},
 		}},
 	})
+}
+
+func ledgerQuantityByCatalogItem(document app.StockDocument) map[string]string {
+	out := map[string]string{}
+	for _, entry := range document.Ledger {
+		out[entry.CatalogItemID] = entry.Quantity
+	}
+	return out
 }

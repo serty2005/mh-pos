@@ -260,7 +260,7 @@ func (w *Worker) checkClosedDocument(ctx context.Context, event QueuedEvent, now
 	if err != nil {
 		return StockDocument{}, false, err
 	}
-	modifierItems, err := w.modifierItemsFromPayload(ctx, event.RestaurantID, event.Payload)
+	modifierItems, err := w.modifierItemsFromItems(ctx, event.RestaurantID, deltaItems)
 	if err != nil {
 		return StockDocument{}, false, err
 	}
@@ -646,32 +646,26 @@ func scaledQuantity(left, right string) string {
 	return fmt.Sprintf("%.3f", ln*rn)
 }
 
-func (w *Worker) modifierItemsFromPayload(ctx context.Context, restaurantID string, raw json.RawMessage) ([]contracts.InventoryItem, error) {
-	var root map[string]any
-	if json.Unmarshal(raw, &root) != nil {
-		return nil, nil
-	}
-	data, _ := root["data"].(map[string]any)
-	items, _ := data["items"].([]any)
+func (w *Worker) modifierItemsFromItems(ctx context.Context, restaurantID string, items []contracts.InventoryItem) ([]contracts.InventoryItem, error) {
 	type modRef struct{ qty, unit string }
 	refs := map[string][]modRef{}
 	optionIDs := make([]string, 0)
-	for _, iv := range items {
-		im, _ := iv.(map[string]any)
-		mods, _ := im["modifiers"].([]any)
-		for _, mv := range mods {
-			m, _ := mv.(map[string]any)
-			optionID, _ := m["modifier_option_id"].(string)
-			optionID = strings.TrimSpace(optionID)
+	for _, item := range items {
+		if !positive(item.Quantity) {
+			continue
+		}
+		for _, modifier := range item.Modifiers {
+			optionID := strings.TrimSpace(modifier.ModifierOptionID)
 			if optionID == "" {
 				continue
 			}
-			qty, _ := m["quantity"].(string)
+			qty := strings.TrimSpace(modifier.Quantity)
 			if strings.TrimSpace(qty) == "" {
 				qty = "1.000"
 			}
-			unit, _ := m["unit_code"].(string)
-			refs[optionID] = append(refs[optionID], modRef{qty: qty, unit: unit})
+			// В inventory invariant выбранная quantity модификатора трактуется как количество на единицу sold line.
+			qty = scaledQuantity(item.Quantity, qty)
+			refs[optionID] = append(refs[optionID], modRef{qty: qty, unit: modifier.UnitCode})
 			if len(refs[optionID]) == 1 {
 				optionIDs = append(optionIDs, optionID)
 			}

@@ -312,17 +312,19 @@ type UpdateModifierGroupCommand struct {
 }
 
 type CreateModifierOptionCommand struct {
-	RestaurantID     string `json:"restaurant_id"`
-	ModifierGroupID  string `json:"modifier_group_id"`
-	Name             string `json:"name"`
-	PriceMinor       int64  `json:"price_minor"`
-	LegacyPriceDelta *int64 `json:"price_delta,omitempty"`
+	RestaurantID        string `json:"restaurant_id"`
+	ModifierGroupID     string `json:"modifier_group_id"`
+	LinkedCatalogItemID string `json:"linked_catalog_item_id,omitempty"`
+	Name                string `json:"name"`
+	PriceMinor          int64  `json:"price_minor"`
+	LegacyPriceDelta    *int64 `json:"price_delta,omitempty"`
 }
 
 type UpdateModifierOptionCommand struct {
-	Name       string                  `json:"name,omitempty"`
-	PriceMinor *int64                  `json:"price_minor,omitempty"`
-	Status     *domain.LifecycleStatus `json:"status,omitempty"`
+	Name                string                  `json:"name,omitempty"`
+	LinkedCatalogItemID *string                 `json:"linked_catalog_item_id,omitempty"`
+	PriceMinor          *int64                  `json:"price_minor,omitempty"`
+	Status              *domain.LifecycleStatus `json:"status,omitempty"`
 }
 
 type CreateModifierGroupBindingCommand struct {
@@ -1177,8 +1179,12 @@ func (s *Service) CreateModifierOption(ctx context.Context, cmd CreateModifierOp
 	if restaurantID == "" || groupID == "" || name == "" || price < 0 {
 		return domain.ModifierOption{}, fmt.Errorf("%w: modifier option requires restaurant_id, modifier_group_id, name and non-negative price_minor", domain.ErrInvalid)
 	}
+	linkedCatalogItemID, err := s.validateLinkedModifierCatalogItem(ctx, restaurantID, cmd.LinkedCatalogItemID)
+	if err != nil {
+		return domain.ModifierOption{}, err
+	}
 	now := s.clock.Now().UTC()
-	option := domain.ModifierOption{ID: s.ids.NewID(), RestaurantID: restaurantID, ModifierGroupID: groupID, Name: name, PriceMinor: price, Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
+	option := domain.ModifierOption{ID: s.ids.NewID(), RestaurantID: restaurantID, ModifierGroupID: groupID, LinkedCatalogItemID: linkedCatalogItemID, Name: name, PriceMinor: price, Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
 	return s.repo.CreateModifierOption(ctx, option)
 }
 
@@ -1193,6 +1199,13 @@ func (s *Service) UpdateModifierOption(ctx context.Context, id string, cmd Updat
 	}
 	if strings.TrimSpace(cmd.Name) != "" {
 		option.Name = strings.TrimSpace(cmd.Name)
+	}
+	if cmd.LinkedCatalogItemID != nil {
+		linkedCatalogItemID, err := s.validateLinkedModifierCatalogItem(ctx, option.RestaurantID, *cmd.LinkedCatalogItemID)
+		if err != nil {
+			return domain.ModifierOption{}, err
+		}
+		option.LinkedCatalogItemID = linkedCatalogItemID
 	}
 	if cmd.PriceMinor != nil {
 		if *cmd.PriceMinor < 0 {
@@ -2728,7 +2741,7 @@ func edgeModifierGroups(items []domain.ModifierGroup) []domain.EdgeModifierGroup
 func edgeModifierOptions(items []domain.ModifierOption) []domain.EdgeModifierOption {
 	out := make([]domain.EdgeModifierOption, 0, len(items))
 	for _, item := range items {
-		out = append(out, domain.EdgeModifierOption{ID: item.ID, RestaurantID: item.RestaurantID, ModifierGroupID: item.ModifierGroupID, Name: item.Name, PriceMinor: item.PriceMinor, Active: item.ActiveForPOS()})
+		out = append(out, domain.EdgeModifierOption{ID: item.ID, RestaurantID: item.RestaurantID, ModifierGroupID: item.ModifierGroupID, LinkedCatalogItemID: item.LinkedCatalogItemID, Name: item.Name, PriceMinor: item.PriceMinor, Active: item.ActiveForPOS()})
 	}
 	return out
 }
@@ -3164,6 +3177,21 @@ func (s *Service) ensureActiveRestaurant(ctx context.Context, restaurantID strin
 		return fmt.Errorf("%w: restaurant is archived", domain.ErrInvalid)
 	}
 	return nil
+}
+
+func (s *Service) validateLinkedModifierCatalogItem(ctx context.Context, restaurantID, catalogItemID string) (string, error) {
+	catalogItemID = strings.TrimSpace(catalogItemID)
+	if catalogItemID == "" {
+		return "", nil
+	}
+	item, err := s.repo.GetCatalogItem(ctx, catalogItemID)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(item.RestaurantID) != strings.TrimSpace(restaurantID) {
+		return "", fmt.Errorf("%w: linked_catalog_item_id must belong to the same restaurant", domain.ErrInvalid)
+	}
+	return catalogItemID, nil
 }
 
 func verifyPIN(encoded, pin string) error {

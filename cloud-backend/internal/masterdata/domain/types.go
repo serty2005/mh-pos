@@ -276,16 +276,17 @@ func (g ModifierGroup) ActiveForPOS() bool {
 
 // ModifierOption описывает вариант модификатора с канонической ценой, а не price_delta.
 type ModifierOption struct {
-	ID              string          `json:"id"`
-	RestaurantID    string          `json:"restaurant_id"`
-	ModifierGroupID string          `json:"modifier_group_id"`
-	Name            string          `json:"name"`
-	PriceMinor      int64           `json:"price_minor"`
-	Status          LifecycleStatus `json:"status"`
-	CloudVersion    int64           `json:"cloud_version"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
-	ArchivedAt      *time.Time      `json:"archived_at,omitempty"`
+	ID                  string          `json:"id"`
+	RestaurantID        string          `json:"restaurant_id"`
+	ModifierGroupID     string          `json:"modifier_group_id"`
+	LinkedCatalogItemID string          `json:"linked_catalog_item_id,omitempty"`
+	Name                string          `json:"name"`
+	PriceMinor          int64           `json:"price_minor"`
+	Status              LifecycleStatus `json:"status"`
+	CloudVersion        int64           `json:"cloud_version"`
+	CreatedAt           time.Time       `json:"created_at"`
+	UpdatedAt           time.Time       `json:"updated_at"`
+	ArchivedAt          *time.Time      `json:"archived_at,omitempty"`
 }
 
 // ActiveForPOS сообщает, должен ли вариант модификатора быть опубликован на Edge.
@@ -750,12 +751,13 @@ type EdgeModifierGroup struct {
 
 // EdgeModifierOption является Cloud -> POS Edge ingest projection варианта модификатора.
 type EdgeModifierOption struct {
-	ID              string `json:"id"`
-	RestaurantID    string `json:"restaurant_id"`
-	ModifierGroupID string `json:"modifier_group_id"`
-	Name            string `json:"name"`
-	PriceMinor      int64  `json:"price_minor"`
-	Active          bool   `json:"active"`
+	ID                  string `json:"id"`
+	RestaurantID        string `json:"restaurant_id"`
+	ModifierGroupID     string `json:"modifier_group_id"`
+	LinkedCatalogItemID string `json:"linked_catalog_item_id,omitempty"`
+	Name                string `json:"name"`
+	PriceMinor          int64  `json:"price_minor"`
+	Active              bool   `json:"active"`
 }
 
 // EdgeModifierGroupBinding является Cloud -> POS Edge ingest projection явной привязки группы модификаторов.

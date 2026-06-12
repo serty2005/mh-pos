@@ -276,7 +276,7 @@ Boundary rules:
 
 Вне текущего объема:
 
-- Modifier-to-recipe expansion, automatic stock consumption и return-to-stock stock moves относятся к recipes/inventory, а не к текущему modifier runtime.
+- Modifier-to-recipe expansion в POS modifier runtime, Edge-side automatic stock consumption и return-to-stock stock moves относятся к recipes/inventory, а не к текущему modifier pricing runtime.
 
 ## Recipes And Inventory
 
@@ -292,7 +292,7 @@ Boundary rules:
 - Edge SQLite целевая схема содержит `recipe_versions`, `recipe_lines` read-only и `stop_lists`; Edge-side `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines` удалены из целевого baseline.
 - `StopList` содержит `catalog_item_id` и `available_quantity`; запись может относиться к блюду, ингредиенту или заготовке и синхронизируется Edge <-> Cloud.
 - При добавлении позиции и увеличении quantity Edge локально разворачивает read-only active recipe version и блокирует продажу, если само блюдо или обязательный компонент находится в active stop-list с `available_quantity = 0` или `NULL`.
-- Modifier на Edge остается ценовой опцией `modifier_option_id`; Cloud-only `ModifierOption.linked_catalog_item_id` приводит к отдельному списанию только в Inventory Worker.
+- Modifier на Edge остается ценовой опцией `modifier_option_id`; Cloud-only `ModifierOption.linked_catalog_item_id` приводит к отдельному списанию только в Inventory Worker. POS Edge хранит эту связь только как read-only reference и не получает stock authority.
 - `CheckClosed` является финальным batch trigger для заказа; Worker делает delta consumption после сверки с уже обработанными KDS событиями `ItemServed`.
 - `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted` и `ItemServed` являются Edge/KDS input events, а не Edge stock documents.
 - `KitchenTicketStatusChanged` является operational-only Edge/KDS event без Cloud Inventory Worker проводки. `CatalogItemChangeSuggested` и `RecipeChangeSuggested` реализованы сейчас на POS Edge как proposal events с локальным статусом `pending_sync`; Cloud review/apply реализован сейчас через manager approve/reject/request-changes routes. `StopListUpdated` реализован сейчас как Edge -> Cloud audit/projection event: receiver validates/enqueues, Inventory Worker writes safe projection without raw payload, and `stop_list_conflict_policy` supports `cloud_wins`, `edge_overlay_until_next_publication`, `edge_overlay_requires_manager_review` with default `edge_overlay_requires_manager_review`.
@@ -301,6 +301,8 @@ Boundary rules:
 Inventory and costing logic:
 
 - `ProductionCompleted` создает Cloud `PRODUCTION`: приходует заготовку и списывает сырье.
+- Реализовано сейчас: продажа основной позиции разворачивается Cloud Inventory Worker по active recipe version, если она есть; иначе списывается сам `catalog_item_id`.
+- Реализовано сейчас: selected modifier с Cloud-authoritative `linked_catalog_item_id` создает отдельное прямое `SALE/OUT` списание linked item; linked modifier item не разворачивается в recipe в этой итерации.
 - Auto-production при продаже сначала списывает доступную заготовку, а недостающую часть split-списанием разворачивает по рецепту до сырья.
 - `stock_ledger.unit_cost_minor` фиксирует себестоимость на момент события.
 - Если списание уходит в минус без истории приходов, `unit_cost_minor = 0`.
@@ -315,7 +317,7 @@ Inventory and costing logic:
 Не реализовано сейчас:
 
 - production-grade assignment/escalation для Edge-origin stop-list review и расширенный stop-list UX за пределами bounded KDS form;
-- recipe expansion, semi-finished auto-production split и retro costing DAG.
+- semi-finished auto-production split, COGS/margin и retro costing DAG.
 
 Запланировано до полного пилота:
 
@@ -323,7 +325,7 @@ Inventory and costing logic:
 - smoke для Cloud package -> Edge sync -> offline sale blocking реализован сейчас в `scripts/seed-dev-system.py --run-minimal-flow`;
 - полный kitchen/process smoke для Cloud seed, Edge sync, KDS recall/serve-again, ClickHouse trail, stock events, proposal approve и Edge feedback реализован сейчас в `scripts/seed-dev-system.py --run-kitchen-process-smoke`;
 - реализовано сейчас: bounded Edge stop-list edit form и manager review flow поверх `StopListUpdated`; запланировано далее production-grade assignment/escalation, расширенный conflict UX и operator polish;
-- full inventory engine: recipe expansion, modifier linked catalog item consumption, production, purchase/receipt input, inventory count adjustments, refund/cancellation stock dispositions, balances, costing status и retro recalculation DAG;
+- full inventory engine beyond текущего bounded worker slice: semi-finished auto-production split, production-grade purchase/receipt input, inventory count adjustments, refund/cancellation stock dispositions, balances, costing status и retro recalculation DAG;
 - реализовано сейчас: ClickHouse first slice с managed schema `raw_business_events`, async forwarder `inbox_events -> raw_business_events`, export state, retry state и bounded metadata API;
 - реализовано сейчас: первый ClickHouse stock moves slice с managed schema `olap_stock_moves`, async forwarder `stock_ledger -> olap_stock_moves`, checkpoint/retry state и bounded API `GET /api/v1/olap/stock-moves` без raw payload;
 - реализовано сейчас: read-only `GET /api/v1/olap/export-status?stream=raw_business_events|stock_moves`, первый bounded агрегат `GET /api/v1/olap/stock-move-summary` по `olap_stock_moves` и минимальный support-only `POST /api/v1/olap/export-retry` для `retry_failed|resume_from_checkpoint` без raw payload и без synchronous ClickHouse dual-write;

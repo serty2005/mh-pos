@@ -26,7 +26,7 @@
 - расширить KDS lifecycle за пределы текущего backend-backed ticket/stock/proposal/stop-list foundation: cooking events, station priority и operator analytics;
 - зафиксировать POS Edge backend как авторитетный runtime для financial/order/KDS command validation и stop-list sale blocking; POS UI не становится авторитетным слоем;
 - добавить Cloud manager flow для production-grade recipe lifecycle polish, stop-list escalation polish, inventory operations, publication readiness и sync/problem observability;
-- добавить полный Cloud-owned складской движок: materialized balances, production-grade stock receipts/counts/production state, sale consumption, refund/cancellation dispositions, recipe expansion, full costing lifecycle и retro recalculation DAG;
+- добавить полный Cloud-owned складской движок beyond текущего bounded worker slice: materialized balances, production-grade stock receipts/counts/production state, refund/cancellation dispositions, semi-finished auto-production split, full costing lifecycle и retro recalculation DAG;
 - расширить ClickHouse runtime от первых bounded `stock-move-summary`/`sales-kitchen-summary` endpoints и минимального retry control до richer sales/kitchen/costing aggregates и production-grade backfill jobs;
 - поддерживать полный smoke path Cloud setup -> Edge sync -> waiter order/precheck -> KDS served -> cashier payment/final check -> Edge outbox -> Cloud inventory ledger -> ClickHouse export -> bounded OLAP API; сейчас полный хвост после финального чека покрывает `scripts/seed-dev-system.py --run-minimal-flow`, а advanced kitchen/process ветку покрывает `--run-kitchen-process-smoke`.
 
@@ -93,13 +93,14 @@
 - Хранилище master-data packages и Cloud -> Edge package retrieval.
 - Cloud-owned master data authority: рестораны, роли, сотрудники, PIN lifecycle, каталог, услуги, папки, параметры папок, теги, привязки тегов, группы/опции/привязки модификаторов, policies скидок/надбавок, залы, столы, menu items и публикации.
 - Publication flow формирует typed ingest DTO для POS Edge: top-level modifier groups/options/bindings и link-only `menu_item_modifier_groups`.
+- Cloud Inventory Worker выполняет recipe expansion основной позиции продажи по active Cloud recipe version и modifier-linked consumption по nullable `ModifierOption.linked_catalog_item_id`; linked modifier item списывается напрямую, без recipe expansion linked item. `CheckClosed` после обработанного `ItemServed` списывает только unserved delta и не дублирует linked modifier rows для полностью served order line.
 - Provisioning endpoints: регистрация устройства, список незакрепленных устройств, назначение ресторану, статус назначения и генерация одноразового pairing code через License Server.
 
 Вне текущего объема:
 
 - Production auth/RBAC perimeter для Cloud API.
 - Расширенные sales/kitchen/costing агрегаты beyond first bounded endpoint, production-grade backfill jobs/operator UI, materialized inventory balance engine и full inventory costing.
-- Recipe expansion, semi-finished auto-production split и retro costing DAG.
+- Semi-finished auto-production split, COGS/margin и retro costing DAG.
 
 ## License Server
 

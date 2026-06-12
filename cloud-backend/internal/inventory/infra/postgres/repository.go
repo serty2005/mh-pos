@@ -237,6 +237,33 @@ func errorsIsNoRows(err error) bool {
 
 func (r *Repository) ListActiveRecipeLines(ctx context.Context, restaurantID, catalogItemID string) ([]app.RecipeLine, error) {
 	rows, err := r.pool.Query(ctx, `
+SELECT rl.component_catalog_item_id, rl.quantity::text, rl.unit
+FROM cloud_recipe_versions rv
+JOIN cloud_recipe_lines rl ON rl.recipe_version_id = rv.id
+WHERE rv.restaurant_id = $1
+  AND rv.owner_catalog_item_id = $2
+  AND rv.status = 'active'
+ORDER BY rl.sort_order, rl.id`, strings.TrimSpace(restaurantID), strings.TrimSpace(catalogItemID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	lines := make([]app.RecipeLine, 0)
+	for rows.Next() {
+		var line app.RecipeLine
+		if err := rows.Scan(&line.ComponentCatalogItemID, &line.Quantity, &line.UnitCode); err != nil {
+			return nil, err
+		}
+		lines = append(lines, line)
+	}
+	if err := rows.Err(); err != nil || len(lines) > 0 {
+		return lines, err
+	}
+	return r.listLegacyRecipeItems(ctx, restaurantID, catalogItemID)
+}
+
+func (r *Repository) listLegacyRecipeItems(ctx context.Context, restaurantID, catalogItemID string) ([]app.RecipeLine, error) {
+	rows, err := r.pool.Query(ctx, `
 SELECT component_catalog_item_id, quantity::text, unit
 FROM cloud_recipe_items
 WHERE restaurant_id = $1 AND recipe_owner_catalog_item_id = $2
