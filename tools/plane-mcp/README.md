@@ -6,12 +6,75 @@
 
 Runtime-код `mh-pos` не использует эти файлы.
 
+## Быстрый старт для разработчика
+
+Нужно один раз настроить локальный MCP-клиент, затем начинать каждую задачу с Plane identifier вроде `MHPOS-42`.
+
+1. Получить доступ к Plane workspace `myhoreca-pos` и project `562fe804-ecc3-41df-b85d-c981e6c13760`.
+2. Создать личный Plane Personal Access Token в профиле пользователя.
+3. Установить Python 3.10+ и `uv`/`uvx`.
+4. Скопировать `tools/plane-mcp/.env.example` в локальный `tools/plane-mcp/.env` или выставить env в shell.
+5. Подключить MCP server к своему агенту по примеру из `mcp.example.json`.
+6. Проверить доступ через `curl` и read smoke-test из `smoke-test.md`.
+7. Перед работой дать агенту Plane identifier задачи и стартовый промпт из этого README.
+
+Минимальная shell-настройка для WSL/Linux:
+
+```bash
+cd /home/serty/repos/mh-pos
+export PLANE_BASE_URL="https://dev.serty.top"
+export PLANE_WORKSPACE_SLUG="myhoreca-pos"
+export PLANE_PROJECT_ID="562fe804-ecc3-41df-b85d-c981e6c13760"
+read -rsp "Plane API key: " PLANE_API_KEY
+echo
+export PLANE_API_KEY
+```
+
+Значение `PLANE_API_KEY` не добавлять в `mcp.example.json`, README, issue comments или shell-команды, которые попадут в history.
+
+## Рабочий цикл задачи
+
+Каждая задача разработки должна иметь один Plane work item. Агент работает только в scope этой задачи, если пользователь явно не расширил его.
+
+1. Найти задачу через `retrieve_work_item_by_identifier`.
+2. Прочитать описание, comments, state, labels, module, cycle, links и relations.
+3. Проверить `git status` и профильные документы проекта.
+4. Если задача готова к работе, перевести ее `Ready -> In Progress`.
+5. Выполнить изменения и профильные проверки.
+6. Добавить итоговый комментарий в Plane: что изменено, файлы, проверки, риски, что вне scope.
+7. Перевести задачу `In Progress -> Review`.
+
+`Done` выставляет только владелец задачи после review/merge. Агент не делает merge, release или deployment через Plane-MCP.
+
+Рекомендуемый формат итогового Plane comment:
+
+```text
+Выполнено:
+- ...
+
+Измененные файлы:
+- ...
+
+Проверки:
+- ...
+
+Не запускалось:
+- ...
+
+Оставшиеся риски:
+- ...
+
+Вне scope:
+- ...
+```
+
 ## Официальный сервер
 
 - Документация: https://developers.plane.so/dev-tools/mcp-server
 - Репозиторий: https://github.com/makeplane/plane-mcp-server
 - PyPI package: `plane-mcp-server`
 - Проверенная версия: `0.2.8`, release от 2026-03-23.
+- Дата последней проверки для `mh-pos`: 2026-06-10.
 - Лицензия: MIT.
 - Запуск для локального self-hosted workflow: `uvx plane-mcp-server==0.2.8 stdio`.
 
@@ -69,6 +132,17 @@ Runtime-код `mh-pos` не использует эти файлы.
 
 Не использовать общий team-token.
 
+## Что нужно для старта конкретной задачи
+
+Разработчику или агенту достаточно получить от владельца задачи:
+
+- Plane identifier задачи, например `MHPOS-42`;
+- ожидаемую ветку или правило именования ветки, если оно задано командой;
+- подтверждение, можно ли агенту менять state задачи в Plane;
+- список обязательных проверок, если задача требует больше стандартного набора из `AGENTS.md`.
+
+Если Plane identifier не передан, агент не должен сам выбирать ближайшую похожую задачу. Сначала нужно попросить пользователя указать identifier или создать отдельный work item.
+
 ## Настройка WSL
 
 ```bash
@@ -99,7 +173,7 @@ curl --fail-with-body \
 ## Ручной запуск
 
 ```bash
-cd /home/master/repos/myhoreca-pos
+cd /home/serty/repos/mh-pos
 export PLANE_BASE_URL="https://dev.serty.top"
 export PLANE_WORKSPACE_SLUG="myhoreca-pos"
 export PLANE_PROJECT_ID="562fe804-ecc3-41df-b85d-c981e6c13760"
@@ -155,6 +229,8 @@ claude mcp list
 claude mcp get plane-myhoreca-pos
 ```
 
+Для Cursor, VS Code, Windsurf, Zed и Claude Desktop схема та же: stdio server запускает `uvx`, `PLANE_BASE_URL` и `PLANE_WORKSPACE_SLUG` лежат в user-local MCP config, `PLANE_API_KEY` передается только через локальный secret/env. Не добавлять `.vscode/mcp.json`, `.cursor/mcp.json` или другие user-local configs в репозиторий, если в них есть token или пользовательские настройки.
+
 ## Ожидаемые tools/resources
 
 Официальная документация для версии `0.2.8` описывает 100+ tools across 20 modules. В `MCP Server for Claude Code` страница может показывать более короткий summary 55+ tools; для `mh-pos` считать актуальной подробную tool reference основного MCP Server документа.
@@ -203,6 +279,14 @@ claude mcp get plane-myhoreca-pos
 - Менять project/workspace feature flags без отдельного подтверждения.
 - Массово переносить задачи между cycles/modules без отдельного подтверждения.
 - Выполнять write smoke-test на продуктовой задаче.
+
+## Правила синхронизации с Git
+
+- Branch/commit/PR naming не выводится из Plane автоматически, если команда не задала отдельное правило.
+- Plane identifier рекомендуется включать в название ветки и PR title, например `feature/MHPOS-42-plane-mcp-onboarding`.
+- В Plane comment не писать secrets, raw env, request dumps, PIN, tokens, credentials и sensitive payloads.
+- Если изменения затрагивают HTTP routes, payloads, UI flows, permission model, DB schema, sync events, error/logging contracts или migration policy, обновить профильную документацию по правилам `AGENTS.md`.
+- Если задача оказалась шире описания Plane, сначала оставить комментарий или спросить владельца, а не расширять scope молча.
 
 ## Пригодность под workflow mh-pos
 
