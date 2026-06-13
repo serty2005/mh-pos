@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { mapMenuItem, mapOrder, mapTable } from './backendMappers';
+import { permissions, type EmployeeShift } from '../types';
+import { mapMenuItem, mapOrder, mapTable, roleFromPermissions } from './backendMappers';
 import type { BackendMenuItem, BackendOrder, BackendTable } from './schemas';
 
 describe('backend DTO mappers', () => {
@@ -152,6 +153,20 @@ describe('backend DTO mappers', () => {
       quantity: 2,
       course: 2,
       comment: 'без соли',
+    });
+  });
+
+  it('derives POS UI roles from backend permissions', () => {
+    const cases: Array<{ expected: EmployeeShift['role']; permissions: string[] }> = [
+      { expected: 'waiter', permissions: [permissions.ORDER_VIEW, permissions.PRECHECK_ISSUE] },
+      { expected: 'cashier', permissions: [permissions.ORDER_VIEW, permissions.PAYMENT_CASH] },
+      { expected: 'manager', permissions: [permissions.ORDER_VIEW, permissions.PAYMENT_CASH, permissions.PAYMENT_REFUND] },
+      { expected: 'kitchen', permissions: [permissions.KITCHEN_VIEW, permissions.KITCHEN_STOP_LIST_UPDATE] },
+      { expected: 'support', permissions: [permissions.SYNC_VIEW, permissions.SYNC_RETRY] },
+    ];
+
+    cases.forEach((item) => {
+      expect(roleFromPermissions(item.permissions)).toBe(item.expected);
     });
   });
 });

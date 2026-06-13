@@ -12,11 +12,13 @@ import {
   PosTabs,
 } from './index';
 
-function asElement(node: React.ReactNode) {
+type PrimitiveNode = React.ReactNode | Promise<React.ReactNode> | null;
+
+function asElement(node: PrimitiveNode) {
   return node as React.ReactElement<Record<string, any>>;
 }
 
-function renderPrimitive(node: React.ReactNode | null) {
+function renderPrimitive(node: PrimitiveNode) {
   return asElement(node);
 }
 

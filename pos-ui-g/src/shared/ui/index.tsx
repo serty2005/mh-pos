@@ -325,7 +325,7 @@ export const PosInlineStatusBadge: React.FC<PosInlineStatusBadgeProps> = ({
   );
 };
 
-interface PosSelectableTileProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+interface PosSelectableTileProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'title' | 'value'> {
   active?: boolean;
   title?: React.ReactNode;
   subtitle?: React.ReactNode;

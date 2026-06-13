@@ -452,10 +452,13 @@ Recipes/inventory:
 - Reprint permissions:
   - `pos.precheck.reprint`
   - `pos.check.reprint`
-- Запланировано до полного пилота:
-  - waiter profile keeps order/precheck permissions but no payment/refund permissions by default;
-  - kitchen profile gets kitchen view/update permissions only;
-  - backend permissions remain authoritative over UI visibility.
+- Role seed defaults:
+  - `cashier` получает order/precheck/payment cash-card/pricing read-apply permissions без refund/cash drawer/check reprint/sync retry;
+  - `waiter` получает floor/menu/catalog, order и precheck permissions без payment/refund/cash drawer permissions;
+  - `kitchen` получает kitchen/KDS, kitchen stock, proposal, recipe и stop-list permissions без financial/cashier permissions;
+  - `manager` получает cashier, refund/cancel, cash drawer, check reprint и sync retry permissions;
+  - `support_admin` получает только `pos.sync.view` и `pos.sync.retry_failed`.
+- Backend permissions remain authoritative over UI visibility.
 
 ## Provisioning
 

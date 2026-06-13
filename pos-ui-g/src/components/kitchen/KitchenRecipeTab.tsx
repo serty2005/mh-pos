@@ -19,6 +19,8 @@ export function KitchenRecipeTab({
   recipeItemId,
   suggestion,
   busy,
+  canLoadRecipe,
+  canSubmitSuggestion,
   onRecipeItemChange,
   onLoadRecipe,
   onSuggestionChange,
@@ -30,6 +32,8 @@ export function KitchenRecipeTab({
   recipeItemId: string;
   suggestion: RecipeSuggestionState;
   busy: boolean;
+  canLoadRecipe: boolean;
+  canSubmitSuggestion: boolean;
   onRecipeItemChange: (value: string) => void;
   onLoadRecipe: () => void;
   onSuggestionChange: (patch: Partial<RecipeSuggestionState>) => void;
@@ -48,7 +52,7 @@ export function KitchenRecipeTab({
             <option value="">{t.kitchen.selectDishOrSemi}</option>
             {catalog.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
-          <PosButton type="button" onClick={onLoadRecipe} disabled={busy || !recipeItemId} icon={<Utensils className="w-4 h-4" />}>
+          <PosButton type="button" onClick={onLoadRecipe} disabled={busy || !canLoadRecipe || !recipeItemId} icon={<Utensils className="w-4 h-4" />}>
             {t.kitchen.loadRecipe}
           </PosButton>
         </div>
@@ -90,7 +94,7 @@ export function KitchenRecipeTab({
         ingredients={ingredients}
         ingredientCatalog={ingredientCatalog}
         suggestion={suggestion}
-        busy={busy || !recipeItemId}
+        busy={busy || !canSubmitSuggestion || !recipeItemId}
         onChange={onSuggestionChange}
         onSubmit={onSubmitSuggestion}
       />

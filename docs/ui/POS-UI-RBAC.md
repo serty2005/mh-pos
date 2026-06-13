@@ -1,135 +1,79 @@
 # POS UI RBAC
 
-Статус: синхронизировано с текущим cashier, waiter и `pos-ui-g` kitchen UI/backend permissions.
+Статус: синхронизировано с текущим `pos-backend`, активным POS UI `pos-ui-g` и активным Cloud UI `cloud-ui-g`.
 
-UI visibility is UX only. Backend app-layer permissions remain authoritative.
-
-Интерфейс кассира разделен на переиспользуемые компоненты POS shell в `pos-ui/src/pages/pos/*`; React shell `pos-ui-g` использует тот же backend permission catalog для auth/session checks. Visibility guards остаются UX-слоем, backend permission ids остаются authoritative.
-
-Нижняя quick access bar, скрываемое меню разделов, `floor` (`Залы / столы`), `order` (`Заказы`), `activity` (`Активность`), `reports` (`Отчеты`) и `cash` (`Касса`) являются UX-навигацией. Они не добавляют новых backend permission ids и не заменяют backend application-layer checks.
-
-`Активность` показывает paginated/filtered closed orders, детали оплат, ledger операций по выбранному final check, reprint, whole-check и partial `order_line`/quantity cancellation/refund и compatibility refund только по существующим правам `pos.check.view`, `pos.check.reprint`, `pos.precheck.cancel`, `pos.payment.refund` и состоянию открытой кассовой смены. `Отчеты` показывает только ограниченные операционные сводки на основе уже доступных reads и не вводит отдельные report permissions до backend-контракта.
+UI visibility является только UX-слоем. Backend application-layer RBAC остается авторитетным security boundary. Legacy `pos-ui` не является целевым UI для новых правок и в этой матрице не учитывается.
 
 ## Реализовано Сейчас
 
-Permission ids used by cashier UI:
+`pos-ui-g` получает permissions из POS Edge auth/session actor context и использует их для UX visibility/disabled states. Все финансовые, складские, KDS, sync и storage действия повторно проверяются backend service layer.
 
-- `pos.employee_shift.open`
-- `pos.employee_shift.close`
-- `pos.employee_shift.view_current`
-- `pos.employee_shift.recent`
-- `pos.cash_session.open`
-- `pos.cash_session.close`
-- `pos.cash_session.view_current`
-- `pos.cash_drawer.record_event`
-- `pos.floor.view`
-- `pos.menu.view`
-- `pos.catalog.view`
-- `pos.order.create`
-- `pos.order.view`
-- `pos.order.add_line`
-- `pos.order.change_quantity`
-- `pos.order.void_line`
-- `pos.order.close`
-- `pos.precheck.issue`
-- `pos.precheck.view`
-- `pos.precheck.reprint`
-- `pos.precheck.cancel.request`
-- `pos.precheck.cancel`
-- `pos.payment.cash`
-- `pos.payment.card.manual`
-- `pos.payment.other`
-- `pos.payment.refund`
-- `pos.check.view`
-- `pos.check.reprint`
-- `pos.sync.view`
-- `pos.sync.retry_failed`
+`cloud-ui-g` управляет справочниками, сотрудниками и POS role permission profiles через Cloud Backend master-data routes. Это не production Cloud operator RBAC perimeter: Cloud auth/RBAC для самих операторов Cloud UI остается вне текущего runtime.
 
-## Cashier UI Actions
+## Backend Permission Catalog
 
-| UI action | Permission | Статус |
-| --- | --- | --- |
-| Open employee shift | `pos.employee_shift.open` | реализовано сейчас |
-| Close employee shift | `pos.employee_shift.close` | реализовано сейчас |
-| Open cash session | `pos.cash_session.open` | реализовано сейчас |
-| Close cash session | `pos.cash_session.close` | реализовано сейчас |
-| View floor/tables | `pos.floor.view` | реализовано сейчас |
-| View menu/catalog | `pos.menu.view`, `pos.catalog.view` | реализовано сейчас |
-| Create order | `pos.order.create` | реализовано сейчас |
-| Add order line | `pos.order.add_line` | реализовано сейчас |
-| Select modifiers while adding order line | `pos.order.add_line` | реализовано сейчас |
-| Edit modifiers on active open order line | `pos.order.change_quantity` | реализовано сейчас |
-| Edit line comment/course | `pos.order.change_quantity` | реализовано сейчас |
-| Change line quantity | `pos.order.change_quantity` | реализовано сейчас |
-| Void line | `pos.order.void_line` | реализовано сейчас |
-| Issue precheck | `pos.precheck.issue` | реализовано сейчас |
-| Cancel precheck request | `pos.precheck.cancel.request` | реализовано сейчас |
-| Manager approve precheck cancel | `pos.precheck.cancel` | реализовано сейчас |
-| Reprint precheck | `pos.precheck.reprint` | реализовано сейчас |
-| Capture cash payment | `pos.payment.cash` | реализовано сейчас |
-| Capture manual card payment | `pos.payment.card.manual` | реализовано сейчас |
-| Full check cancellation through ledger route | `pos.precheck.cancel` | реализовано сейчас |
-| Full check refund through ledger route | `pos.payment.refund` | реализовано сейчас |
-| Refund captured payment through compatibility route | `pos.payment.refund` | реализовано сейчас |
-| Check cancellation/refund ledger UI by `order_line`/quantity scope | `pos.precheck.cancel`, `pos.payment.refund` | реализовано сейчас |
-| View check financial operations in closed-order detail | `pos.check.view` | реализовано сейчас |
-| View final check / closed orders | `pos.check.view` | реализовано сейчас |
-| Reprint final check | `pos.check.reprint` | реализовано сейчас |
+Фактически используемые POS Edge permissions:
 
-Pagination/filter controls закрытых заказов не вводят новые permission ids; backend `pos.check.view` остается authoritative для read.
+- Auth/session: PIN login возвращает actor permissions; отдельного permission на сам login нет.
+- Employee shifts: `pos.employee_shift.open`, `pos.employee_shift.close`, `pos.employee_shift.view_current`, `pos.employee_shift.recent`.
+- Cash shifts/cash drawer: `pos.cash_session.open`, `pos.cash_session.close`, `pos.cash_session.view_current`, `pos.cash_drawer.record_event`.
+- Floor/menu/catalog reads: `pos.floor.view`, `pos.menu.view`, `pos.catalog.view`.
+- Order/precheck/payment/check: `pos.order.create`, `pos.order.view`, `pos.order.add_line`, `pos.order.change_quantity`, `pos.order.void_line`, `pos.order.close`, `pos.precheck.issue`, `pos.precheck.view`, `pos.precheck.reprint`, `pos.precheck.cancel.request`, `pos.precheck.cancel`, `pos.payment.cash`, `pos.payment.card.manual`, `pos.payment.other`, `pos.payment.refund`, `pos.check.view`, `pos.check.reprint`.
+- Pricing: `pos.pricing.view`, `pos.pricing.discount.apply`, `pos.pricing.surcharge.apply`; `requires_permission` у policy дополнительно проверяется backend.
+- Kitchen/KDS: `pos.kitchen.view`, `pos.kitchen.status.change`.
+- Kitchen stock input: `pos.kitchen.stock.receipt`, `pos.kitchen.stock.inventory_count`, `pos.kitchen.stock.write_off`, `pos.kitchen.production.complete`.
+- Kitchen proposals: `pos.kitchen.catalog.view`, `pos.kitchen.recipe.view`, `pos.kitchen.recipe.suggest`, `pos.kitchen.catalog.suggest`.
+- Stop-list: `pos.kitchen.stop_list.view`, `pos.kitchen.stop_list.update`.
+- Sync/storage/support operations: `pos.sync.view`, `pos.sync.retry_failed`; storage destructive operations остаются support/RBAC-sensitive backend routes и не дают cashier/waiter/kitchen финансовых полномочий.
 
-## Waiter Mobile UI Actions
+## Role Matrix
 
-| UI action | Required backend permission | Status |
-| --- | --- | --- |
-| Waiter view floor/tables | `pos.floor.view` | реализовано сейчас |
-| Waiter view menu | `pos.menu.view` | реализовано сейчас |
-| Waiter view/select active orders | `pos.order.view` | реализовано сейчас |
-| Waiter create order | `pos.order.create` | реализовано сейчас |
-| Waiter add order line with modifiers | `pos.order.add_line` | реализовано сейчас |
-| Waiter change line quantity | `pos.order.change_quantity` | реализовано сейчас |
-| Waiter void line | `pos.order.void_line` | реализовано сейчас |
-| Waiter issue precheck | `pos.precheck.issue` | реализовано сейчас |
-| Waiter view/reprint precheck | `pos.precheck.view`, `pos.precheck.reprint` | реализовано сейчас |
-| Waiter payment/refund/cash drawer controls | payment/refund/cash permissions | вне текущего waiter default |
+| Роль | Backend permissions | Доступные UI sections/actions | Явно запрещено по умолчанию | Gaps / спорные места | Статус |
+| --- | --- | --- | --- | --- | --- |
+| `cashier` | employee shift open/close/view/recent; cash session open/view; floor/menu/catalog; order create/view/add/change/void/close; pricing view/discount/surcharge apply; precheck issue/view/reprint; payment cash/card; check view | `pos-ui-g` POS mode: floor, order, activity, reports, cash; cash/card payment; issue/reprint precheck; policy discount/surcharge controls only when backend exposes matching permissions | refund, check reprint, cash drawer event, cash session close, payment other, sync retry, kitchen/KDS stock/proposals/stop-list | `senior_cashier` существует в backend как расширенный профиль, но не является отдельной целевой ролью этой матрицы | реализовано сейчас |
+| `waiter` | employee shift open/close/view/recent; floor/menu/catalog; order create/view/add/change/void/close; pricing view; precheck issue/view/reprint; check view | `pos-ui-g` POS mode can show order/precheck workflow without active payment/refund/cash drawer controls; waiter handoff mode показывает QR/handoff shell | payment cash/card/other, refund, cash drawer, cash session, check reprint, sync retry, kitchen stock/proposals/stop-list | Полноценный mobile waiter route из старого `pos-ui` не считается целевым runtime; для `pos-ui-g` текущий waiter surface ограничен handoff/permission-safe POS shell | реализовано сейчас |
+| `kitchen` | employee shift view_current in canonical backend profile; catalog view; kitchen view/status; kitchen catalog/recipe read; recipe/catalog suggestions; stock receipt/count/write-off/production; stop-list view/update | `pos-ui-g` KDS mode: order queue, status actions, stock forms, recipe view/suggestions, catalog suggestions, my proposals, stop-list view/update | payment/refund/check/cash drawer/cash session/sync retry/cashier controls | Dev/system seed выдает kitchen также employee shift open/close/recent для smoke/runtime удобства; это не добавляет финансовых полномочий | реализовано сейчас |
+| `manager` | employee shift all; cash session open/close/view; cash drawer; floor/menu/catalog; order all; pricing all; precheck issue/view/reprint/cancel request/cancel; payment cash/card/other/refund; check view/reprint; sync view/retry | `pos-ui-g` POS mode: cashier flow плюс refund/cancel/reprint/cash drawer/sync retry controls; `cloud-ui-g` staff/permissions/backoffice sections are route-backed management UI, not Cloud operator RBAC | unsupported business functions: PSP/fiscal device controls, order split/merge/transfer, unsupported OLAP mutating controls in active `cloud-ui-g` | Manager Cloud UI controls do not imply production Cloud auth/RBAC perimeter | реализовано сейчас |
+| `support` (`support_admin` в backend) | `pos.sync.view`, `pos.sync.retry_failed` | `pos-ui-g` sync/status diagnostics and retry where backend allows; support-only backend operations remain explicitly separated from cashier/waiter/kitchen | order/payment/refund/check/cash drawer/cash session/kitchen controls | User-facing role name `support` maps to current backend role id `support_admin`; active `cloud-ui-g` does not implement production support login/RBAC | реализовано сейчас |
 
-## Kitchen Mode UI Actions
+## UI Visibility In `pos-ui-g`
 
-| UI action | Required backend permission | Status |
-| --- | --- | --- |
-| Kitchen order queue and ticket list | `pos.kitchen.view` | реализовано сейчас |
-| Kitchen ticket accept/start/hold/ready/serve/recall/cancel | `pos.kitchen.status.change` | реализовано сейчас |
-| Kitchen full catalog picker for stock/recipe forms | `pos.catalog.view` | реализовано сейчас |
-| Kitchen stock receipt capture | `pos.kitchen.stock.receipt` | реализовано сейчас |
-| Kitchen inventory count | `pos.kitchen.stock.inventory_count` | реализовано сейчас |
-| Kitchen stock write-off | `pos.kitchen.stock.write_off` | реализовано сейчас |
-| Kitchen production completed | `pos.kitchen.production.complete` | реализовано сейчас |
-| Kitchen catalog suggestion | `pos.kitchen.catalog.suggest` | реализовано сейчас |
-| Kitchen recipe view | `pos.kitchen.recipe.view` | реализовано сейчас |
-| Kitchen recipe change suggestion | `pos.kitchen.recipe.suggest` | реализовано сейчас |
-| Kitchen stop-list view/edit | `pos.kitchen.stop_list.view`, `pos.kitchen.stop_list.update` | реализовано сейчас |
-| Stop-list sale blocking UI error | backend-owned sale blocking error code/message key | реализовано сейчас |
+Реализовано сейчас:
 
-## Вне Текущего UI Объема
+- Payment button is active only with at least one of `pos.payment.cash`, `pos.payment.card.manual`, `pos.payment.other`.
+- Refund button is active only with `pos.payment.refund` and an open cash session.
+- Final check reprint is active only with `pos.check.reprint`.
+- Precheck issue/cancel request buttons are active only with `pos.precheck.issue` / `pos.precheck.cancel.request`.
+- Pricing policy dialog shows only policies allowed by `pos.pricing.discount.apply`, `pos.pricing.surcharge.apply` and optional policy `requires_permission`.
+- Cash drawer event, cash session close/open and sync retry controls are gated by their exact permissions.
+- KDS/stock/proposal/stop-list surfaces are gated by the corresponding kitchen permission IDs.
 
-- waiter payment without cashier permissions;
-- order transfer/split/merge;
-- partial modifier/service/tip cancellation/refund ledger screens beyond current order-line/quantity actions;
-- discount/surcharge/tax override controls;
-- Cloud inventory/procurement back-office operations inside POS UI;
-- hardware bump-bar/printer operation and rich KDS analytics beyond bounded pilot timing metrics;
-- manager tools runtime beyond cashier-visible sync/closed-orders/cash-drawer panels;
-- PSP terminal/fiscal device operation screens.
+Запланировано далее:
 
-## Notes
+- Дополнительные component/e2e проверки для role-specific visibility в `pos-ui-g`.
+- Уточнение UX для read-only manager/support diagnostics, если появятся новые backend support routes.
 
-- Refund/cancellation больше не является compatibility-only сценарием в cashier UI: closed-order activity показывает whole-check и partial `order_line`/quantity cancellation/refund через backend ledger endpoints с явным выбором inventory disposition.
-- The compatibility payment refund button remains visible only for closed orders with captured payments and is disabled without `pos.payment.refund` or current open cash session.
-- Cancellation/refund policy still needs pilot acceptance for operator workflow and fiscal wording.
-- UI must not show raw backend/internal errors or calculate authoritative financial totals.
+Вне текущего объема:
 
-## Pricing policy permissions
+- Использовать frontend visibility как security boundary.
+- Добавлять cashier/waiter/kitchen финансовые полномочия через UI без backend permission.
+- Реализовывать order transfer/split/merge, PSP/fiscal device screens, hardware bump-bar, rich KDS analytics.
+- Реанимировать legacy `pos-ui` как целевой runtime.
 
-Статус: backend/API foundation реализован, cashier UI editor запланировано далее.
+## Cloud UI Boundary
 
-Будущий cashier editor выбора скидки из Cloud-authored policy должен требовать `pos.pricing.discount.apply`; выбор надбавки должен требовать `pos.pricing.surcharge.apply`; просмотр списка активных policies должен требовать `pos.pricing.view`. Если policy содержит `requires_permission`, backend дополнительно проверяет это право в operator session. Текущий cashier UI не показывает active discount/surcharge controls.
+Реализовано сейчас:
+
+- `cloud-ui-g` имеет route-backed sections: dashboard, restaurants, edge-sync, catalog, menu, modifiers, pricing-taxes, staff-permissions, floor, publications.
+- `staff-permissions` редактирует POS Edge roles/employees/permission profiles и валидирует permission IDs на Cloud Backend side.
+- `inventory` и `reports` в активном `cloud-ui-g` остаются blocked/planned placeholders и не являются активными runtime actions.
+
+Запланировано далее:
+
+- Production Cloud operator auth/RBAC perimeter для Cloud UI и mutating operator controls.
+- Перенос подтвержденных manager/review/reporting surfaces из legacy `cloud-ui` в `cloud-ui-g` только после сверки backend routes/DTO.
+
+Вне текущего объема:
+
+- Считать Cloud UI staff-permissions экран Cloud operator authorization boundary.
+- Включать unsupported inventory/reporting actions как активные runtime controls без backend route/permission boundary.

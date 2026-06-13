@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { activeIssuedPrecheck, canUsePermission, paymentChange } from './posContextHelpers';
+import { activeIssuedPrecheck, canUseAnyPermission, canUsePermission, paymentChange } from './posContextHelpers';
 import type { BackendPrecheck } from '../shared/schemas';
 
 describe('POS context helpers', () => {
@@ -22,6 +22,8 @@ describe('POS context helpers', () => {
   it('checks permissions as UX gating only', () => {
     expect(canUsePermission(['pos.payment.cash'], 'pos.payment.cash')).toBe(true);
     expect(canUsePermission(['pos.order.view'], 'pos.payment.cash')).toBe(false);
+    expect(canUseAnyPermission(['pos.payment.card.manual'], ['pos.payment.cash', 'pos.payment.card.manual'])).toBe(true);
+    expect(canUseAnyPermission(['pos.order.view'], ['pos.payment.cash', 'pos.payment.card.manual'])).toBe(false);
   });
 });
 

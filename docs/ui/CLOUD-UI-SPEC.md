@@ -47,7 +47,7 @@
 - Dashboard readiness проверяет наличие roles/employees, halls/tables, catalog items, menu items, modifiers/pricing, Edge assignment и publication.
 - Edge sync показывает unassigned devices, assignment status, pairing code generation и safe Edge events list.
 - Restaurants раздел управляет restaurant records.
-- Staff/permissions раздел управляет roles, employees, role assignment, employee status, PIN rotation и permission profiles/matrix.
+- Staff/permissions раздел управляет POS Edge roles, employees, role assignment, employee status, PIN rotation и POS permission profiles/matrix; это не Cloud operator RBAC и не production Cloud authorization boundary.
 - Catalog раздел управляет catalog items, folders, folder parameters, tags и command-only item tag assignment.
 - Menu раздел управляет menu items и command-only menu category create.
 - Modifiers раздел управляет modifier groups, options и bindings.

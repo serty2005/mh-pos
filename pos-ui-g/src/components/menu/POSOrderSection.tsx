@@ -40,7 +40,8 @@ import {
   MessageSquare,
   BadgePercent
 } from 'lucide-react';
-import { MenuItem, OrderLine, PricingPolicy, SelectedModifier } from '../../types';
+import { canUseAnyPermission, canUsePermission } from '../../context/posContextHelpers';
+import { MenuItem, OrderLine, PricingPolicy, SelectedModifier, permissions } from '../../types';
 
 export const POSOrderSection: React.FC = () => {
   const {
@@ -85,6 +86,22 @@ export const POSOrderSection: React.FC = () => {
 
   // Local notification banner for stop list alerts
   const [stopListAlertProduct, setStopListAlertProduct] = useState<string | null>(null);
+  const operatorPermissions = currentOperator?.permissions ?? [];
+  const canIssuePrecheck = canUsePermission(operatorPermissions, permissions.PRECHECK_ISSUE);
+  const canRequestPrecheckCancel = canUsePermission(operatorPermissions, permissions.PRECHECK_CANCEL_REQUEST);
+  const canCapturePayment = canUseAnyPermission(operatorPermissions, [
+    permissions.PAYMENT_CASH,
+    permissions.PAYMENT_CARD,
+    permissions.PAYMENT_OTHER,
+  ]);
+  const canApplyDiscount = canUsePermission(operatorPermissions, permissions.PRICING_DISCOUNT_APPLY);
+  const canApplySurcharge = canUsePermission(operatorPermissions, permissions.PRICING_SURCHARGE_APPLY);
+  const canApplyPolicy = (policy: PricingPolicy): boolean => {
+    const canApplyByKind = policy.kind === 'discount' ? canApplyDiscount : canApplySurcharge;
+    if (!canApplyByKind) return false;
+    return !policy.requiresPermission || canUsePermission(operatorPermissions, policy.requiresPermission);
+  };
+  const availablePricingPolicies = pricingPolicies.filter(canApplyPolicy);
 
   const categories = useMemo(() => {
     const unique = Array.from(new Set(menuItems.map((item) => item.category))).filter((id): id is string => Boolean(id));
@@ -153,11 +170,12 @@ export const POSOrderSection: React.FC = () => {
     setModModalOpen(true);
   };
 
-  const selectedPricingPolicy = pricingPolicies.find((policy) => policy.id === selectedPricingPolicyId) ?? pricingPolicies[0];
+  const selectedPricingPolicy = availablePricingPolicies.find((policy) => policy.id === selectedPricingPolicyId) ?? availablePricingPolicies[0];
   const selectedActionMenuItem = clickedLineForActions ? menuItems.find((menuItem) => menuItem.id === clickedLineForActions.itemId) : null;
 
   const openPricingDialog = () => {
-    const firstPolicy = pricingPolicies[0];
+    const firstPolicy = availablePricingPolicies[0];
+    if (!firstPolicy) return;
     setSelectedPricingPolicyId(firstPolicy?.id ?? '');
     setPricingLineId(currentOrder?.lines[0]?.id ?? '');
     setPricingReason('');
@@ -165,7 +183,7 @@ export const POSOrderSection: React.FC = () => {
   };
 
   const submitPricingPolicy = async () => {
-    const policy = pricingPolicies.find((item) => item.id === selectedPricingPolicyId);
+    const policy = availablePricingPolicies.find((item) => item.id === selectedPricingPolicyId);
     if (!policy) return;
     const result = await applyPricingPolicy(policy.id, policy.scope === 'line' ? pricingLineId : '', pricingReason);
     if (result.success) {
@@ -426,7 +444,7 @@ export const POSOrderSection: React.FC = () => {
                 <span>{t.common.tax} (10%):</span>
                 <span>{currentOrder.tax} {t.common.ruble}</span>
               </div>
-              {(currentOrder.discount > 0 || pricingPolicies.length > 0) && (
+              {(currentOrder.discount > 0 || availablePricingPolicies.length > 0) && (
                 <div className="flex justify-between items-baseline font-mono text-xs text-[var(--pos-text-muted)]">
                   <span>{t.common.discount}:</span>
                   <span>{currentOrder.discount} {t.common.ruble}</span>
@@ -465,7 +483,7 @@ export const POSOrderSection: React.FC = () => {
                     variant="secondary"
                     size="md"
                     onClick={openPricingDialog}
-                    disabled={currentOrder.lines.length === 0 || pricingPolicies.length === 0}
+                    disabled={currentOrder.lines.length === 0 || availablePricingPolicies.length === 0}
                     icon={<BadgePercent className="w-4 h-4" />}
                   >
                     {t.pricing.action}
@@ -477,7 +495,7 @@ export const POSOrderSection: React.FC = () => {
                     variant="primary"
                     size="md"
                     onClick={issuePrecheck}
-                    disabled={currentOrder.lines.length === 0}
+                    disabled={currentOrder.lines.length === 0 || !canIssuePrecheck}
                     icon={<Printer className="w-4 h-4" />}
                   >
                     {t.menu.precheck}
@@ -491,8 +509,7 @@ export const POSOrderSection: React.FC = () => {
                     variant="primary"
                     size="md"
                     onClick={() => setPaymentModalOpen(true)}
-                    // Limited waiter permissions safeguard check
-                    disabled={currentOperator?.role === 'waiter'}
+                    disabled={!canCapturePayment}
                     icon={<Banknote className="w-4 h-4" />}
                   >
                     {t.sections.cash}
@@ -504,6 +521,7 @@ export const POSOrderSection: React.FC = () => {
                     variant="danger"
                     size="md"
                     onClick={() => setPrecheckCancelOpen(true)}
+                    disabled={!canRequestPrecheckCancel}
                     icon={<SlidersHorizontal className="w-4 h-4" />}
                   >
                     {t.common.cancel}
@@ -533,7 +551,7 @@ export const POSOrderSection: React.FC = () => {
       <PricingPolicyDialog
         isOpen={isPricingModalOpen}
         onClose={() => setPricingModalOpen(false)}
-        policies={pricingPolicies}
+        policies={availablePricingPolicies}
         selectedPolicyId={selectedPricingPolicyId}
         selectedPolicy={selectedPricingPolicy}
         onPolicyChange={setSelectedPricingPolicyId}

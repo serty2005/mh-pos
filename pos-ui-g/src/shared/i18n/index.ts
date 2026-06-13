@@ -103,6 +103,8 @@ export const t = {
     roleManager: 'Администратор',
     roleCashier: 'Кассир',
     roleWaiter: 'Официант',
+    roleKitchen: 'Кухня',
+    roleSupport: 'Поддержка',
   },
   theme: {
     title: 'Оформление',

@@ -13,6 +13,7 @@ import type {
   SelectedModifier,
   Table,
 } from '../types';
+import { permissions as permissionCatalog } from '../types';
 import type {
   BackendActorContext,
   BackendCashDrawerEvent,
@@ -179,6 +180,7 @@ export function mapOperator(actor: BackendActorContext | null, shift: BackendShi
     id: shift.id,
     employeeName: actor.name,
     role: roleFromPermissions(actor.permissions),
+    permissions: actor.permissions,
     openTime: shift.opened_at,
     closeTime: shift.closed_at ?? undefined,
     status: shift.status,
@@ -276,8 +278,34 @@ function formatTime(value: string): string {
   return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(date);
 }
 
-function roleFromPermissions(permissions: string[]): EmployeeShift['role'] {
-  if (permissions.includes('pos.precheck.cancel') || permissions.includes('pos.payment.refund')) return 'manager';
-  if (permissions.includes('pos.payment.cash') || permissions.includes('pos.payment.card.manual')) return 'cashier';
+export function roleFromPermissions(permissions: string[]): EmployeeShift['role'] {
+  const has = (permission: string) => permissions.includes(permission);
+  const hasAny = (requiredPermissions: string[]) => requiredPermissions.some(has);
+
+  if (hasAny([
+    permissionCatalog.PRECHECK_CANCEL,
+    permissionCatalog.PAYMENT_REFUND,
+    permissionCatalog.PAYMENT_OTHER,
+    permissionCatalog.CASH_DRAWER_RECORD,
+    permissionCatalog.SYNC_RETRY,
+  ]) && hasAny([permissionCatalog.PAYMENT_CASH, permissionCatalog.PAYMENT_CARD, permissionCatalog.ORDER_VIEW])) {
+    return 'manager';
+  }
+  if (hasAny([
+    permissionCatalog.KITCHEN_VIEW,
+    permissionCatalog.KITCHEN_STATUS_CHANGE,
+    permissionCatalog.KITCHEN_STOCK_RECEIPT,
+    permissionCatalog.KITCHEN_STOCK_INVENTORY_COUNT,
+    permissionCatalog.KITCHEN_STOCK_WRITE_OFF,
+    permissionCatalog.KITCHEN_PRODUCTION_COMPLETE,
+    permissionCatalog.KITCHEN_STOP_LIST_VIEW,
+    permissionCatalog.KITCHEN_STOP_LIST_UPDATE,
+  ])) {
+    return 'kitchen';
+  }
+  if (has(permissionCatalog.SYNC_RETRY) && !hasAny([permissionCatalog.ORDER_VIEW, permissionCatalog.PAYMENT_CASH, permissionCatalog.PAYMENT_CARD])) {
+    return 'support';
+  }
+  if (hasAny([permissionCatalog.PAYMENT_CASH, permissionCatalog.PAYMENT_CARD])) return 'cashier';
   return 'waiter';
 }

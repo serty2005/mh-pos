@@ -13,3 +13,7 @@ export function paymentChange(total: number, paidAmount: number): number {
 export function canUsePermission(permissions: string[], permission: string): boolean {
   return permissions.includes(permission);
 }
+
+export function canUseAnyPermission(permissions: string[], requiredPermissions: string[]): boolean {
+  return requiredPermissions.some((permission) => canUsePermission(permissions, permission));
+}

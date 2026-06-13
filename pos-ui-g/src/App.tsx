@@ -114,6 +114,10 @@ function POSAppShellContent() {
         return t.shell.roleManager;
       case 'cashier':
         return t.shell.roleCashier;
+      case 'kitchen':
+        return t.shell.roleKitchen;
+      case 'support':
+        return t.shell.roleSupport;
       case 'waiter':
       default:
         return t.shell.roleWaiter;

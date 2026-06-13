@@ -108,6 +108,8 @@ PERMISSIONS = {
         "pos.kitchen.stock.inventory_count",
         "pos.kitchen.stock.write_off",
         "pos.kitchen.production.complete",
+        "pos.kitchen.stop_list.view",
+        "pos.kitchen.stop_list.update",
     ],
     "manager": [
         "pos.employee_shift.open",

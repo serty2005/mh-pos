@@ -26,6 +26,8 @@ import {
   Settings,
   Terminal
 } from 'lucide-react';
+import { canUsePermission } from '../../context/posContextHelpers';
+import { permissions } from '../../types';
 
 export const POSCashSection: React.FC = () => {
   const {
@@ -48,6 +50,13 @@ export const POSCashSection: React.FC = () => {
   // States for opening KKM session
   const [initialCash, setInitialCash] = useState<string>('5000');
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const operatorPermissions = currentOperator?.permissions ?? [];
+  const canOpenEmployeeShift = canUsePermission(operatorPermissions, permissions.EMPLOYEE_SHIFT_OPEN);
+  const canCloseEmployeeShift = canUsePermission(operatorPermissions, permissions.EMPLOYEE_SHIFT_CLOSE);
+  const canOpenCashSession = canUsePermission(operatorPermissions, permissions.CASH_SESSION_OPEN);
+  const canCloseCashSession = canUsePermission(operatorPermissions, permissions.CASH_SESSION_CLOSE);
+  const canRecordCashDrawerEvent = canUsePermission(operatorPermissions, permissions.CASH_DRAWER_RECORD);
+  const canRetrySync = canUsePermission(operatorPermissions, permissions.SYNC_RETRY);
 
   const handleOpenSessionSubmit = () => {
     setSessionError(null);
@@ -120,6 +129,7 @@ export const POSCashSection: React.FC = () => {
                 size="sm"
                 fullWidth
                 onClick={closeEmployeeShift}
+                disabled={!canCloseEmployeeShift}
               >
                 {t.cash.closeShift}
               </PosButton>
@@ -130,6 +140,7 @@ export const POSCashSection: React.FC = () => {
                 size="sm"
                 fullWidth
                 onClick={openEmployeeShift}
+                disabled={Boolean(currentOperator) && !canOpenEmployeeShift}
               >
                 {t.cash.openShift}
               </PosButton>
@@ -186,7 +197,7 @@ export const POSCashSection: React.FC = () => {
                       variant="primary"
                       size="sm"
                       onClick={handleOpenSessionSubmit}
-                      disabled={!currentOperator}
+                      disabled={!currentOperator || !canOpenCashSession}
                       className="h-10 text-xs shrink-0"
                     >
                       {t.cash.openSession}
@@ -203,6 +214,7 @@ export const POSCashSection: React.FC = () => {
                 size="sm"
                 fullWidth
                 onClick={closeCashSession}
+                disabled={!canCloseCashSession}
               >
                 {t.cash.closeSession}
               </PosButton>
@@ -270,8 +282,7 @@ export const POSCashSection: React.FC = () => {
               size="md"
               fullWidth
               onClick={() => setEventModalOpen(true)}
-              // Waiter permission bypass guard
-              disabled={currentOperator?.role === 'waiter' || !cashSession}
+              disabled={!canRecordCashDrawerEvent || !cashSession}
               icon={<ArrowUpRight className="w-4 h-4" />}
             >
               {t.cash.recordDrawer}
@@ -295,7 +306,7 @@ export const POSCashSection: React.FC = () => {
                 size="sm"
                 className="text-xs"
                 onClick={handleSyncOutboxClick}
-                disabled={outboxCount === 0 || syncStatus === 'offline'}
+                disabled={!canRetrySync || outboxCount === 0 || syncStatus === 'offline'}
                 icon={<RefreshCw className="w-4 h-4" />}
               >
                 {t.cash.flush} ({outboxCount})

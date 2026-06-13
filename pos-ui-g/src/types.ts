@@ -106,7 +106,8 @@ export interface Hall {
 export interface EmployeeShift {
   id: string;
   employeeName: string;
-  role: 'cashier' | 'waiter' | 'manager';
+  role: 'cashier' | 'waiter' | 'kitchen' | 'manager' | 'support';
+  permissions: string[];
   openTime: string;
   closeTime?: string;
   status: 'open' | 'closed';
@@ -165,9 +166,12 @@ export const permissions = {
   EMPLOYEE_SHIFT_OPEN: 'pos.employee_shift.open',
   EMPLOYEE_SHIFT_CLOSE: 'pos.employee_shift.close',
   EMPLOYEE_SHIFT_VIEW: 'pos.employee_shift.view_current',
+  EMPLOYEE_SHIFT_RECENT: 'pos.employee_shift.recent',
   CASH_SESSION_OPEN: 'pos.cash_session.open',
   CASH_SESSION_CLOSE: 'pos.cash_session.close',
+  CASH_SESSION_VIEW: 'pos.cash_session.view_current',
   CASH_DRAWER_RECORD: 'pos.cash_drawer.record_event',
+  CATALOG_VIEW: 'pos.catalog.view',
   FLOOR_VIEW: 'pos.floor.view',
   MENU_VIEW: 'pos.menu.view',
   ORDER_CREATE: 'pos.order.create',
@@ -176,12 +180,17 @@ export const permissions = {
   ORDER_CHANGE_QTY: 'pos.order.change_quantity',
   ORDER_VOID_LINE: 'pos.order.void_line',
   ORDER_CLOSE: 'pos.order.close',
+  PRICING_VIEW: 'pos.pricing.view',
+  PRICING_DISCOUNT_APPLY: 'pos.pricing.discount.apply',
+  PRICING_SURCHARGE_APPLY: 'pos.pricing.surcharge.apply',
   PRECHECK_ISSUE: 'pos.precheck.issue',
+  PRECHECK_VIEW: 'pos.precheck.view',
   PRECHECK_CANCEL_REQUEST: 'pos.precheck.cancel.request',
   PRECHECK_CANCEL: 'pos.precheck.cancel',
   PRECHECK_REPRINT: 'pos.precheck.reprint',
   PAYMENT_CASH: 'pos.payment.cash',
   PAYMENT_CARD: 'pos.payment.card.manual',
+  PAYMENT_OTHER: 'pos.payment.other',
   PAYMENT_REFUND: 'pos.payment.refund',
   CHECK_VIEW: 'pos.check.view',
   CHECK_REPRINT: 'pos.check.reprint',
@@ -197,4 +206,6 @@ export const permissions = {
   KITCHEN_STOCK_INVENTORY_COUNT: 'pos.kitchen.stock.inventory_count',
   KITCHEN_STOCK_WRITE_OFF: 'pos.kitchen.stock.write_off',
   KITCHEN_PRODUCTION_COMPLETE: 'pos.kitchen.production.complete',
+  KITCHEN_STOP_LIST_VIEW: 'pos.kitchen.stop_list.view',
+  KITCHEN_STOP_LIST_UPDATE: 'pos.kitchen.stop_list.update',
 } as const;

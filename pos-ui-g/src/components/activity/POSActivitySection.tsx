@@ -26,7 +26,8 @@ import {
   FileText,
   ShieldAlert
 } from 'lucide-react';
-import { ClosedOrder } from '../../types';
+import { canUsePermission } from '../../context/posContextHelpers';
+import { ClosedOrder, permissions } from '../../types';
 
 export const POSActivitySection: React.FC = () => {
   const { 
@@ -48,6 +49,9 @@ export const POSActivitySection: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCheckId, setSelectedCheckId] = useState<string | null>(null);
   const [isRefundModalOpen, setRefundModalOpen] = useState<boolean>(false);
+  const operatorPermissions = currentOperator?.permissions ?? [];
+  const canRefundCheck = canUsePermission(operatorPermissions, permissions.PAYMENT_REFUND);
+  const canReprintCheck = canUsePermission(operatorPermissions, permissions.CHECK_REPRINT);
 
   useEffect(() => {
     if (selectedCheckId && !closedOrders.some((check) => check.id === selectedCheckId)) {
@@ -311,7 +315,7 @@ export const POSActivitySection: React.FC = () => {
           </div>
 
           {/* Locked indicators warning based on permissions */}
-          {selectedCheck && currentOperator?.role === 'waiter' && (
+          {selectedCheck && !canRefundCheck && (
             <div className="p-3 bg-red-50 dark:bg-neutral-900 border-t border-[var(--pos-border)]">
               <div className="flex items-start gap-2 text-red-800 dark:text-red-250 font-sans text-xs p-1 select-none">
                 <ShieldAlert className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
@@ -328,6 +332,7 @@ export const POSActivitySection: React.FC = () => {
                 variant="secondary"
                 size="md"
                 onClick={() => reprintCheck(selectedCheck.id)}
+                disabled={!canReprintCheck}
                 icon={<Printer className="w-4 h-4" />}
               >
                 {t.activity.print}
@@ -338,8 +343,7 @@ export const POSActivitySection: React.FC = () => {
                 variant="danger"
                 size="md"
                 onClick={() => setRefundModalOpen(true)}
-                // Waiter permissions bypass guard
-                disabled={currentOperator?.role === 'waiter' || !cashSession || selectedCheck.status === 'refunded'}
+                disabled={!canRefundCheck || !cashSession || selectedCheck.status === 'refunded'}
                 icon={<RefreshCw className="w-4 h-4 animate-spin-slow" />}
               >
                 {t.activity.refund}

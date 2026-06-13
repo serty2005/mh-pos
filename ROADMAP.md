@@ -762,7 +762,7 @@ GET /api/v1/inventory/stock-ledger?restaurant_id=&source_event_type=&source_even
 - Поддерживать `scripts/seed-dev-system.py` как единственный Fedora/Linux/Windows-compatible путь заполнения данных.
 - Новые Cloud-owned справочники, publication streams и POS read flows добавлять в seed script и документацию тем же PR.
 - Расширять demo seed dataset вместе с новыми Cloud-owned справочниками, publication streams и POS read flows, чтобы ручной наглядный тест не отставал от runtime.
-- Сверить RBAC matrix с фактическим UI и backend permissions.
+- Поддерживать RBAC matrix при добавлении новых backend permissions, `pos-ui-g` surfaces и Cloud UI routes.
 - Проверить migration/backup behavior на старой SQLite DB.
 - Продолжить destructive apply/delete/compaction policy для больших локальных SQLite БД закрытых заказов поверх текущего status/dry-run/manifest-only export-plan/export-only/verify/read-plan/lookup/apply-plan foundation.
 
