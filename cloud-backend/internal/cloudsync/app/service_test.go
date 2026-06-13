@@ -363,6 +363,7 @@ func TestReceiveFinancialOperationEnqueuesOnlyForStockDisposition(t *testing.T) 
 		wantQueue   int
 	}{
 		{name: "refund return", eventType: contracts.EventRefundRecorded, operation: "refund", disposition: "return_to_stock", wantQueue: 1},
+		{name: "cancellation return", eventType: contracts.EventCancellationRecorded, operation: "cancellation", disposition: "return_to_stock", wantQueue: 1},
 		{name: "cancellation waste", eventType: contracts.EventCancellationRecorded, operation: "cancellation", disposition: "write_off_waste", wantQueue: 1},
 		{name: "manual review", eventType: contracts.EventRefundRecorded, operation: "refund", disposition: "manual_review", wantQueue: 1},
 		{name: "no stock effect", eventType: contracts.EventRefundRecorded, operation: "refund", disposition: "no_stock_effect", wantQueue: 0},
