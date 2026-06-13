@@ -668,6 +668,20 @@ func TestRunOnceFinancialNonInventoryScopesCreateNoMovement(t *testing.T) {
 	}
 }
 
+func TestRunOnceFinancialModifierLineWithoutCatalogCreatesNoMovement(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{
+		sampleQueuedEvent(t, contracts.EventRefundRecorded, financialOperationModifierLineWithoutCatalogPayload(t)),
+	}}
+	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 0 || len(repo.processed) != 1 || len(repo.failed) != 0 {
+		t.Fatalf("modifier_line without authoritative catalog item must be a safe no-movement outcome, documents=%+v processed=%+v failed=%+v", repo.documents, repo.processed, repo.failed)
+	}
+}
+
 func TestRunOnceFinancialMissingCatalogItemCreatesNoUnsafeMovement(t *testing.T) {
 	repo := &fakeRepo{events: []app.QueuedEvent{
 		sampleQueuedEvent(t, contracts.EventRefundRecorded, financialOperationOrderLineMissingCatalogPayload(t)),
@@ -1034,6 +1048,26 @@ func financialOperationScopePayload(t *testing.T, operationType, disposition, sc
 		"scope":        scope,
 		"amount":       1000,
 		"currency":     "RUB",
+	}}
+	return marshalPayload(t, data)
+}
+
+func financialOperationModifierLineWithoutCatalogPayload(t *testing.T) json.RawMessage {
+	t.Helper()
+	data := financialOperationData("refund", "return_to_stock")
+	data["items"] = []map[string]any{{
+		"id":            "operation-item-1",
+		"operation_id":  "financial-operation-1",
+		"scope":         "modifier_line",
+		"order_line_id": "line-1",
+		"quantity":      1,
+		"amount":        1000,
+		"currency":      "RUB",
+		"snapshot": map[string]any{
+			"modifier_option_id": "mod-opt-1",
+			"quantity":           1,
+			"unit_code":          "PC",
+		},
 	}}
 	return marshalPayload(t, data)
 }
