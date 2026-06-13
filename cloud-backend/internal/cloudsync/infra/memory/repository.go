@@ -133,7 +133,7 @@ func (r *Repository) ReceiveEdgeEvent(_ context.Context, receipt app.EdgeEventRe
 	r.applyEventTypeProjection(receipt)
 	r.applyFinancialOperationProjection(receipt, ack.CloudReceiptID)
 	r.applyShiftFinanceProjection(receipt)
-	if contracts.IsInventoryRelevantEventType(receipt.Envelope.EventType) {
+	if contracts.ShouldEnqueueInventoryEvent(receipt.Envelope.EventType, receipt.Envelope.Payload) {
 		r.inventoryQueue[ack.CloudReceiptID] = ack
 	}
 	return ack, nil

@@ -81,6 +81,28 @@ func TestValidateEnvelopeAcceptsCurrentFinancialOperationEvents(t *testing.T) {
 	}
 }
 
+func TestValidateEnvelopeAcceptsCurrentFinancialOperationItems(t *testing.T) {
+	envelope := validFinancialOperationEnvelope(t, contracts.EventRefundRecorded, "refund")
+	setFinancialOperationPayloadField(t, &envelope, "inventory_disposition", "return_to_stock")
+	setFinancialOperationPayloadField(t, &envelope, "items", []map[string]any{{
+		"id":            "operation-item-1",
+		"operation_id":  "financial-operation-1",
+		"scope":         "order_line",
+		"order_line_id": "line-1",
+		"quantity":      1,
+		"amount":        1000,
+		"currency":      "RUB",
+		"snapshot": map[string]any{
+			"id":              "line-1",
+			"catalog_item_id": "item-1",
+			"quantity":        2,
+		},
+	}})
+	if err := contracts.ValidateEnvelope(envelope); err != nil {
+		t.Fatalf("expected current POS financial operation item payload to be accepted, got %v", err)
+	}
+}
+
 func TestValidateEnvelopeAcceptsTargetInventoryEvents(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -165,6 +187,29 @@ func TestKitchenStatusChangedIsOperationalOnlyAndItemServedIsInventoryRelevant(t
 	}
 	if contracts.IsInventoryRelevantEventType(contracts.EventRecipeChangeSuggested) {
 		t.Fatal("RecipeChangeSuggested must stay outside inventory_event_queue")
+	}
+}
+
+func TestShouldEnqueueInventoryEventRespectsFinancialDisposition(t *testing.T) {
+	noEffect := validFinancialOperationEnvelope(t, contracts.EventRefundRecorded, "refund")
+	if contracts.ShouldEnqueueInventoryEvent(noEffect.EventType, noEffect.Payload) {
+		t.Fatal("no_stock_effect financial operation must not enter inventory_event_queue")
+	}
+	returnToStock := validFinancialOperationEnvelope(t, contracts.EventRefundRecorded, "refund")
+	setFinancialOperationPayloadField(t, &returnToStock, "inventory_disposition", "return_to_stock")
+	setFinancialOperationPayloadField(t, &returnToStock, "items", []map[string]any{{
+		"scope":         "order_line",
+		"order_line_id": "line-1",
+		"quantity":      1,
+		"amount":        1000,
+		"currency":      "RUB",
+		"snapshot":      map[string]any{"id": "line-1", "catalog_item_id": "item-1", "quantity": 1},
+	}})
+	if !contracts.ShouldEnqueueInventoryEvent(returnToStock.EventType, returnToStock.Payload) {
+		t.Fatal("return_to_stock financial operation must enter inventory_event_queue")
+	}
+	if contracts.ShouldEnqueueInventoryEvent(contracts.EventKitchenTicketStatusChanged, json.RawMessage(`{"origin":"edge_device","data":{}}`)) {
+		t.Fatal("operational kitchen status event must not enter inventory_event_queue")
 	}
 }
 

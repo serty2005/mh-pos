@@ -211,36 +211,45 @@ type PaymentRefunded = PaymentCaptured
 type CheckRefunded = CheckCreated
 
 type FinancialOperationRecorded struct {
-	ID                   string                     `json:"id"`
-	EdgeOperationID      string                     `json:"edge_operation_id"`
-	RestaurantID         string                     `json:"restaurant_id"`
-	DeviceID             string                     `json:"device_id"`
-	ShiftID              string                     `json:"shift_id"`
-	OriginalShiftID      string                     `json:"original_shift_id"`
-	CheckID              string                     `json:"check_id"`
-	PrecheckID           string                     `json:"precheck_id"`
-	OperationType        string                     `json:"operation_type"`
-	OperationKind        string                     `json:"operation_kind"`
-	Status               string                     `json:"status"`
-	Amount               int64                      `json:"amount"`
-	Currency             string                     `json:"currency"`
-	BusinessDateLocal    string                     `json:"business_date_local"`
-	InventoryDisposition string                     `json:"inventory_disposition"`
-	Reason               string                     `json:"reason"`
-	CreatedByEmployeeID  string                     `json:"created_by_employee_id,omitempty"`
-	ApprovedByEmployeeID *string                    `json:"approved_by_employee_id,omitempty"`
-	Snapshot             json.RawMessage            `json:"snapshot,omitempty"`
-	Items                []InventoryDispositionItem `json:"items,omitempty"`
-	CreatedAt            time.Time                  `json:"created_at"`
+	ID                   string                   `json:"id"`
+	EdgeOperationID      string                   `json:"edge_operation_id"`
+	RestaurantID         string                   `json:"restaurant_id"`
+	DeviceID             string                   `json:"device_id"`
+	ShiftID              string                   `json:"shift_id"`
+	OriginalShiftID      string                   `json:"original_shift_id"`
+	CheckID              string                   `json:"check_id"`
+	PrecheckID           string                   `json:"precheck_id"`
+	OperationType        string                   `json:"operation_type"`
+	OperationKind        string                   `json:"operation_kind"`
+	Status               string                   `json:"status"`
+	Amount               int64                    `json:"amount"`
+	Currency             string                   `json:"currency"`
+	BusinessDateLocal    string                   `json:"business_date_local"`
+	InventoryDisposition string                   `json:"inventory_disposition"`
+	Reason               string                   `json:"reason"`
+	CreatedByEmployeeID  string                   `json:"created_by_employee_id,omitempty"`
+	ApprovedByEmployeeID *string                  `json:"approved_by_employee_id,omitempty"`
+	Snapshot             json.RawMessage          `json:"snapshot,omitempty"`
+	Items                []FinancialOperationItem `json:"items,omitempty"`
+	CreatedAt            time.Time                `json:"created_at"`
 }
 
-type InventoryDispositionItem struct {
-	OrderLineID          string `json:"order_line_id"`
-	CatalogItemID        string `json:"catalog_item_id"`
-	Quantity             string `json:"quantity"`
-	UnitCode             string `json:"unit_code,omitempty"`
-	InventoryDisposition string `json:"inventory_disposition"`
-	Reason               string `json:"reason,omitempty"`
+// FinancialOperationItem принимает текущую форму POS ledger item и уже нормализованные складские поля.
+type FinancialOperationItem struct {
+	ID                   string          `json:"id,omitempty"`
+	OperationID          string          `json:"operation_id,omitempty"`
+	Scope                string          `json:"scope,omitempty"`
+	OrderLineID          string          `json:"order_line_id,omitempty"`
+	PaymentID            string          `json:"payment_id,omitempty"`
+	Quantity             json.RawMessage `json:"quantity,omitempty"`
+	Amount               int64           `json:"amount,omitempty"`
+	Currency             string          `json:"currency,omitempty"`
+	TaxAmount            int64           `json:"tax_amount,omitempty"`
+	Snapshot             json.RawMessage `json:"snapshot,omitempty"`
+	CatalogItemID        string          `json:"catalog_item_id,omitempty"`
+	UnitCode             string          `json:"unit_code,omitempty"`
+	InventoryDisposition string          `json:"inventory_disposition,omitempty"`
+	Reason               string          `json:"reason,omitempty"`
 }
 
 // FinancialOperationProjection описывает Cloud read model ledger operation без чтения mutable POS state.
@@ -732,6 +741,22 @@ func validateFinancialOperationRecordedPayload(v SyncEnvelope) error {
 	if data.CreatedAt.IsZero() {
 		return fmt.Errorf("%w: financial operation created_at is required", ErrInvalidEnvelope)
 	}
+	if data.InventoryDisposition != "no_stock_effect" && len(data.Items) == 0 {
+		return fmt.Errorf("%w: financial operation stock disposition requires items", ErrInvalidEnvelope)
+	}
+	for _, item := range data.Items {
+		switch strings.TrimSpace(item.Scope) {
+		case "", "whole_check", "order_line", "modifier_line", "service_charge", "tip", "payment":
+		default:
+			return fmt.Errorf("%w: financial operation item scope is invalid", ErrInvalidEnvelope)
+		}
+		if len(item.Quantity) > 0 && string(item.Quantity) != "null" && !positiveJSONNumber(item.Quantity) {
+			return fmt.Errorf("%w: financial operation item quantity must be positive", ErrInvalidEnvelope)
+		}
+		if item.TaxAmount < 0 {
+			return fmt.Errorf("%w: financial operation item tax_amount must be non-negative", ErrInvalidEnvelope)
+		}
+	}
 	return nil
 }
 
@@ -942,6 +967,21 @@ func positiveDecimal(value string) bool {
 	return err == nil && n > 0
 }
 
+func positiveJSONNumber(value json.RawMessage) bool {
+	var raw any
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return false
+	}
+	switch v := raw.(type) {
+	case float64:
+		return v > 0
+	case string:
+		return positiveDecimal(v)
+	default:
+		return false
+	}
+}
+
 func nonNegativeDecimal(value string) bool {
 	n, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
 	return err == nil && n >= 0
@@ -975,6 +1015,22 @@ func IsInventoryRelevantEventType(v EventType) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func ShouldEnqueueInventoryEvent(v EventType, payloadRaw json.RawMessage) bool {
+	if !IsInventoryRelevantEventType(v) {
+		return false
+	}
+	switch v {
+	case EventRefundRecorded, EventCancellationRecorded:
+		var payload Payload[FinancialOperationRecorded]
+		if err := json.Unmarshal(payloadRaw, &payload); err != nil {
+			return false
+		}
+		return strings.TrimSpace(payload.Data.InventoryDisposition) != "no_stock_effect"
+	default:
+		return true
 	}
 }
 

@@ -349,6 +349,45 @@ func TestReceiveRefundRecordedReplaysIdempotentlyAndUpdatesShiftFinance(t *testi
 	if len(projected) != 1 || projected[0].OperationID != "financial-operation-1" || projected[0].EdgeOperationID == "" || projected[0].Amount != 1000 {
 		t.Fatalf("unexpected refund operation projection: %+v", projected)
 	}
+	if got := repo.InventoryQueueCount(); got != 0 {
+		t.Fatalf("no_stock_effect refund must not enter inventory queue, got %d", got)
+	}
+}
+
+func TestReceiveFinancialOperationEnqueuesOnlyForStockDisposition(t *testing.T) {
+	tests := []struct {
+		name        string
+		eventType   contracts.EventType
+		operation   string
+		disposition string
+		wantQueue   int
+	}{
+		{name: "refund return", eventType: contracts.EventRefundRecorded, operation: "refund", disposition: "return_to_stock", wantQueue: 1},
+		{name: "cancellation waste", eventType: contracts.EventCancellationRecorded, operation: "cancellation", disposition: "write_off_waste", wantQueue: 1},
+		{name: "manual review", eventType: contracts.EventRefundRecorded, operation: "refund", disposition: "manual_review", wantQueue: 1},
+		{name: "no stock effect", eventType: contracts.EventRefundRecorded, operation: "refund", disposition: "no_stock_effect", wantQueue: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := memory.NewRepository()
+			service := app.NewService(repo, fixedClock{})
+			raw := sampleFinancialOperationEnvelopeWithDisposition(t, tt.eventType, tt.operation, tt.disposition)
+			first, err := service.Receive(context.Background(), raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := service.Receive(context.Background(), raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if first != second {
+				t.Fatalf("expected stable ack on replay\nfirst=%+v\nsecond=%+v", first, second)
+			}
+			if got := repo.InventoryQueueCount(); got != tt.wantQueue {
+				t.Fatalf("unexpected inventory queue count for %s: got %d want %d", tt.disposition, got, tt.wantQueue)
+			}
+		})
+	}
 }
 
 func TestReceiveInventoryEventEnqueuesOnceOnReplay(t *testing.T) {
@@ -787,6 +826,35 @@ func sampleStopListUpdatedEnvelope(t *testing.T) []byte {
 func sampleRefundRecordedEnvelope(t *testing.T) []byte {
 	t.Helper()
 	return sampleFinancialOperationEnvelope(t, contracts.EventRefundRecorded, "018f0000-0000-7000-8000-0000000000f1", "command-refund-1", "financial-operation-1", "refund", 1000, "shift-refund-1", "2026-05-06")
+}
+
+func sampleFinancialOperationEnvelopeWithDisposition(t *testing.T, eventType contracts.EventType, operationType, disposition string) []byte {
+	t.Helper()
+	raw := sampleFinancialOperationEnvelope(t, eventType, "018f0000-0000-7000-8000-0000000000d1", "command-financial-disposition-1", "financial-operation-disposition-1", operationType, 1000, "shift-refund-1", "2026-05-06")
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	payload := body["payload"].(map[string]any)
+	data := payload["data"].(map[string]any)
+	data["inventory_disposition"] = disposition
+	if disposition != "no_stock_effect" {
+		data["items"] = []map[string]any{{
+			"id":            "operation-item-1",
+			"operation_id":  "financial-operation-disposition-1",
+			"scope":         "order_line",
+			"order_line_id": "line-1",
+			"quantity":      1,
+			"amount":        1000,
+			"currency":      "RUB",
+			"snapshot":      map[string]any{"id": "line-1", "catalog_item_id": "item-1", "quantity": 2},
+		}}
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
 }
 
 func sampleFinancialOperationEnvelope(t *testing.T, eventType contracts.EventType, eventID, commandID, operationID, operationType string, amount int64, shiftID, businessDate string) []byte {

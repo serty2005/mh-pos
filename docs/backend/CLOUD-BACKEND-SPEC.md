@@ -57,7 +57,7 @@
 
 Запланировано до полного пилота:
 
-- full inventory engine beyond текущего bounded worker slice: materialized balances, production-grade receipts/counts, refund/cancellation dispositions, semi-finished auto-production split, costing и retro recalculation;
+- full inventory engine beyond текущего bounded worker slice: materialized balances, production-grade receipts/counts, semi-finished auto-production split, costing и retro recalculation; bounded refund/cancellation dispositions `return_to_stock`/`write_off_waste` реализованы сейчас;
 - production auth/RBAC perimeter для mutating OLAP controls, richer sales aggregates и COGS/margin после появления достоверной cost basis.
 
 ## Назначение
@@ -531,7 +531,7 @@ Inbound compatibility:
 - Для refunds Cloud обновляет coarse shift finance refund counters.
 - Cloud поддерживает service/repository read model `cloud_projection_financial_operations`.
 - Cloud предоставляет bounded read-only HTTP reporting endpoint `GET /api/v1/reporting/financial-operations?restaurant_id=&business_date_from=&business_date_to=&operation_type=&shift_id=&original_shift_id=&check_id=&limit=&offset=` поверх `cloud_projection_financial_operations`; endpoint возвращает operation/check/shift/date/type/disposition/reason metadata и `raw_payload_sha256_hex`, но не возвращает raw sync payload или snapshot JSON.
-- `RefundRecorded` и `CancellationRecorded` являются inventory-relevant events. Cloud Inventory Worker обрабатывает operation-level `inventory_disposition`: `return_to_stock` создает `RETURN/IN`, `write_off_waste` создает `WASTE/OUT`, `no_stock_effect` не создает складское движение, `manual_review` переводит queue item в failure для операторского разбора. Для автоматического движения нужны нормализованные `items`.
+- `RefundRecorded` и `CancellationRecorded` являются inventory-relevant events только при explicit stock disposition. Cloud receiver ставит их в `inventory_event_queue`, если `inventory_disposition != no_stock_effect`; `no_stock_effect` остается accepted/projection event без queue/ledger. Cloud Inventory Worker обрабатывает operation-level `inventory_disposition`: `return_to_stock` создает `RETURN/IN`, `write_off_waste` создает `WASTE/OUT`, `manual_review` переводит queue item в failure для операторского разбора без stock document. Для автоматического движения Worker нормализует текущие POS ledger `items[]` из immutable operation/check/precheck snapshots.
 
 Вне текущего объема:
 

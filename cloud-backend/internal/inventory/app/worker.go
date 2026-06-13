@@ -199,7 +199,7 @@ func (w *Worker) documentsFromEvent(ctx context.Context, event QueuedEvent, now 
 		doc, ok, err := w.productionDocument(event, now)
 		return singleDocument(doc, ok, err)
 	case contracts.EventRefundRecorded, contracts.EventCancellationRecorded:
-		doc, ok, err := w.financialOperationDocument(event, now)
+		doc, ok, err := w.financialOperationDocument(ctx, event, now)
 		return singleDocument(doc, ok, err)
 	case contracts.EventStopListUpdated:
 		return nil, w.applyStopListUpdated(ctx, event, now)
@@ -396,7 +396,7 @@ func (w *Worker) productionDocument(event QueuedEvent, now time.Time) (StockDocu
 	return doc, true, nil
 }
 
-func (w *Worker) financialOperationDocument(event QueuedEvent, now time.Time) (StockDocument, bool, error) {
+func (w *Worker) financialOperationDocument(ctx context.Context, event QueuedEvent, now time.Time) (StockDocument, bool, error) {
 	payload, err := decode[contracts.FinancialOperationRecorded](event.Payload)
 	if err != nil {
 		return StockDocument{}, false, err
@@ -420,16 +420,200 @@ func (w *Worker) financialOperationDocument(event QueuedEvent, now time.Time) (S
 		documentType = DocumentWaste
 		movement = MovementOut
 	}
-	items := make([]contracts.InventoryItem, 0, len(payload.Data.Items))
-	for _, item := range payload.Data.Items {
-		items = append(items, contracts.InventoryItem{
-			OrderLineID:   item.OrderLineID,
-			CatalogItemID: item.CatalogItemID,
-			Quantity:      item.Quantity,
-			UnitCode:      strings.TrimSpace(item.UnitCode),
-		})
+	baseItems := financialOperationInventoryItems(payload.Data)
+	if len(baseItems) == 0 {
+		return StockDocument{}, false, nil
+	}
+	items, err := w.expandRecipeItems(ctx, event.RestaurantID, baseItems)
+	if err != nil {
+		return StockDocument{}, false, err
+	}
+	modifierItems, err := w.modifierItemsFromItems(ctx, event.RestaurantID, baseItems)
+	if err != nil {
+		return StockDocument{}, false, err
+	}
+	items = append(items, modifierItems...)
+	if len(items) == 0 {
+		return StockDocument{}, false, nil
 	}
 	return w.documentFromItems(event, now, documentType, movement, payload.Data.BusinessDateLocal, items, false)
+}
+
+func financialOperationInventoryItems(data contracts.FinancialOperationRecorded) []contracts.InventoryItem {
+	out := make([]contracts.InventoryItem, 0, len(data.Items))
+	for _, item := range data.Items {
+		scope := strings.TrimSpace(item.Scope)
+		if scope == "" && strings.TrimSpace(item.CatalogItemID) != "" {
+			if inventoryItem, ok := directFinancialInventoryItem(item); ok {
+				out = append(out, inventoryItem)
+			}
+			continue
+		}
+		switch scope {
+		case "whole_check":
+			raw := item.Snapshot
+			if len(raw) == 0 {
+				raw = data.Snapshot
+			}
+			out = append(out, inventoryItemsFromSnapshot(raw, "", "")...)
+		case "order_line":
+			out = append(out, inventoryItemsFromSnapshot(item.Snapshot, strings.TrimSpace(item.OrderLineID), quantityFromRaw(item.Quantity))...)
+		case "modifier_line":
+			if inventoryItem, ok := directFinancialInventoryItem(item); ok {
+				out = append(out, inventoryItem)
+			}
+		case "service_charge", "tip", "payment":
+			continue
+		default:
+			if inventoryItem, ok := directFinancialInventoryItem(item); ok {
+				out = append(out, inventoryItem)
+			}
+		}
+	}
+	return out
+}
+
+func directFinancialInventoryItem(item contracts.FinancialOperationItem) (contracts.InventoryItem, bool) {
+	quantity := quantityFromRaw(item.Quantity)
+	if strings.TrimSpace(item.CatalogItemID) == "" || !positive(quantity) {
+		return contracts.InventoryItem{}, false
+	}
+	unitCode := strings.TrimSpace(item.UnitCode)
+	if unitCode == "" {
+		unitCode = "PC"
+	}
+	return contracts.InventoryItem{
+		OrderLineID:   strings.TrimSpace(item.OrderLineID),
+		CatalogItemID: strings.TrimSpace(item.CatalogItemID),
+		Quantity:      quantity,
+		UnitCode:      unitCode,
+	}, true
+}
+
+type financialSnapshotLine struct {
+	ID            string                      `json:"id"`
+	OrderLineID   string                      `json:"order_line_id"`
+	CatalogItemID string                      `json:"catalog_item_id"`
+	Quantity      json.RawMessage             `json:"quantity"`
+	UnitCode      string                      `json:"unit_code"`
+	Modifiers     []financialSnapshotModifier `json:"modifiers,omitempty"`
+}
+
+type financialSnapshotModifier struct {
+	ID                  string          `json:"id"`
+	OrderLineModifierID string          `json:"order_line_modifier_id"`
+	ModifierGroupID     string          `json:"modifier_group_id"`
+	ModifierOptionID    string          `json:"modifier_option_id"`
+	Name                string          `json:"name"`
+	Quantity            json.RawMessage `json:"quantity"`
+	UnitCode            string          `json:"unit_code"`
+}
+
+func inventoryItemsFromSnapshot(raw json.RawMessage, wantedOrderLineID, quantityOverride string) []contracts.InventoryItem {
+	if len(raw) == 0 || !json.Valid(raw) {
+		return nil
+	}
+	var snapshot struct {
+		CheckSnapshot    json.RawMessage         `json:"check_snapshot"`
+		PrecheckSnapshot json.RawMessage         `json:"precheck_snapshot"`
+		Lines            []financialSnapshotLine `json:"lines"`
+	}
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		return nil
+	}
+	if len(snapshot.CheckSnapshot) > 0 && json.Valid(snapshot.CheckSnapshot) {
+		if items := inventoryItemsFromSnapshot(snapshot.CheckSnapshot, wantedOrderLineID, quantityOverride); len(items) > 0 {
+			return items
+		}
+	}
+	if len(snapshot.PrecheckSnapshot) > 0 && json.Valid(snapshot.PrecheckSnapshot) {
+		if items := inventoryItemsFromSnapshot(snapshot.PrecheckSnapshot, wantedOrderLineID, quantityOverride); len(items) > 0 {
+			return items
+		}
+	}
+	if len(snapshot.Lines) > 0 {
+		out := make([]contracts.InventoryItem, 0, len(snapshot.Lines))
+		for _, line := range snapshot.Lines {
+			if item, ok := inventoryItemFromSnapshotLine(line, wantedOrderLineID, quantityOverride); ok {
+				out = append(out, item)
+			}
+		}
+		return out
+	}
+	var line financialSnapshotLine
+	if err := json.Unmarshal(raw, &line); err != nil {
+		return nil
+	}
+	if item, ok := inventoryItemFromSnapshotLine(line, wantedOrderLineID, quantityOverride); ok {
+		return []contracts.InventoryItem{item}
+	}
+	return nil
+}
+
+func inventoryItemFromSnapshotLine(line financialSnapshotLine, wantedOrderLineID, quantityOverride string) (contracts.InventoryItem, bool) {
+	orderLineID := strings.TrimSpace(line.OrderLineID)
+	if orderLineID == "" {
+		orderLineID = strings.TrimSpace(line.ID)
+	}
+	if strings.TrimSpace(wantedOrderLineID) != "" && orderLineID != strings.TrimSpace(wantedOrderLineID) {
+		return contracts.InventoryItem{}, false
+	}
+	quantity := strings.TrimSpace(quantityOverride)
+	if quantity == "" {
+		quantity = quantityFromRaw(line.Quantity)
+	}
+	if strings.TrimSpace(line.CatalogItemID) == "" || !positive(quantity) {
+		return contracts.InventoryItem{}, false
+	}
+	unitCode := strings.TrimSpace(line.UnitCode)
+	if unitCode == "" {
+		unitCode = "PC"
+	}
+	item := contracts.InventoryItem{
+		OrderLineID:   orderLineID,
+		CatalogItemID: strings.TrimSpace(line.CatalogItemID),
+		Quantity:      quantity,
+		UnitCode:      unitCode,
+	}
+	for _, modifier := range line.Modifiers {
+		optionID := strings.TrimSpace(modifier.ModifierOptionID)
+		if optionID == "" {
+			continue
+		}
+		modifierQuantity := quantityFromRaw(modifier.Quantity)
+		if modifierQuantity == "" {
+			modifierQuantity = "1.000"
+		}
+		modifierID := strings.TrimSpace(modifier.OrderLineModifierID)
+		if modifierID == "" {
+			modifierID = strings.TrimSpace(modifier.ID)
+		}
+		item.Modifiers = append(item.Modifiers, contracts.InventoryModifier{
+			OrderLineModifierID: modifierID,
+			ModifierGroupID:     strings.TrimSpace(modifier.ModifierGroupID),
+			ModifierOptionID:    optionID,
+			Name:                strings.TrimSpace(modifier.Name),
+			Quantity:            modifierQuantity,
+			UnitCode:            strings.TrimSpace(modifier.UnitCode),
+		})
+	}
+	return item, true
+}
+
+func quantityFromRaw(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var number float64
+	if err := json.Unmarshal(raw, &number); err == nil && number > 0 {
+		return fmt.Sprintf("%.3f", number)
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil && positive(text) {
+		n, _ := strconv.ParseFloat(strings.TrimSpace(text), 64)
+		return fmt.Sprintf("%.3f", n)
+	}
+	return ""
 }
 
 func (w *Worker) documentFromItems(event QueuedEvent, now time.Time, typ DocumentType, movement MovementType, businessDateLocal string, items []contracts.InventoryItem, useCountedQuantity bool) (StockDocument, bool, error) {

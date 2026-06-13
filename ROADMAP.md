@@ -371,6 +371,8 @@
 - Retro recalculation jobs остаются следующим шагом.
 - Cloud Inventory Worker дедуплицирует `ItemServed` replay и `CheckClosed` replay.
 - `CheckClosed` после обработанного `ItemServed` списывает только положительную unserved delta по `order_line_id`.
+- `RefundRecorded` и `CancellationRecorded` обрабатываются Cloud-side только при explicit stock disposition: `return_to_stock` создает append-only `RETURN/IN`, `write_off_waste` создает append-only `WASTE/OUT`, `no_stock_effect` не попадает в inventory queue, `manual_review` попадает в queue и завершается failure без stock document для операторского разбора.
+- Для financial disposition Worker использует immutable operation/check/precheck snapshots: partial `order_line` берет только указанную quantity, `whole_check` разворачивает snapshot lines, `service_charge`, `tip`, `payment` и `modifier_line` без authoritative linked catalog item не создают stock movement.
 - `StopListUpdated` обрабатывается async через `inventory_event_queue` в bounded `cloud_projection_stop_list_updates` без raw payload.
 - `stop_list_conflict_policy` поддерживает:
   - `cloud_wins`;
@@ -661,6 +663,7 @@
 - Cloud PostgreSQL baseline содержит inventory schema foundation.
 - Worker пишет pilot `stock_ledger` rows with costing fields.
 - Worker выполняет sale consumption с recipe expansion для основной позиции и modifier-linked consumption по Cloud-authoritative `linked_catalog_item_id`; linked modifier item списывается напрямую и не разворачивается в recipe.
+- Worker выполняет bounded refund/cancellation stock disposition: `return_to_stock` -> `RETURN/IN`, `write_off_waste` -> `WASTE/OUT`, `no_stock_effect` -> без queue/ledger, `manual_review` -> queue failure без автоматического движения.
 - Bounded Cloud inventory ledger endpoint существует для проверки обработанных worker rows; legacy `cloud-ui` показывает первые 50 строк как read-only preview без raw payload и складских команд.
 - `GET /api/v1/inventory/stock-balances` подтвержден по runtime-коду и тестам как bounded Cloud-owned balance read model поверх PostgreSQL `stock_ledger`; route объявлен в `cloud-backend/internal/cloudsync/api/router.go`, реализован в service/repository слое, покрыт API tests на агрегацию, границы выдачи, фильтр статуса, пустой результат и safe no-raw-payload response, а legacy `cloud-ui` показывает bounded balances/costing status table.
 
@@ -668,7 +671,6 @@
 
 - Materialized balances.
 - Production-grade stock receipts/counts/production state.
-- Refund/cancellation stock disposition.
 - Semi-finished auto-production split.
 - Full costing state.
 - Retro recalculation DAG для документов задним числом и отрицательных остатков.

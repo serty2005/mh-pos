@@ -299,7 +299,7 @@ CheckRefunded
 Cancellation/refund sync behavior:
 
 - `CancellationRecorded` и `RefundRecorded` являются текущими Edge -> Cloud operational events для append-only financial operation ledger.
-- Whole-check и partial `order_line`/quantity cancellation/refund UI, а также compatibility payment refund пишут те же текущие ledger events: `CancellationRecorded` для cancellation и `RefundRecorded` для refund. Переданный UI `command_id` остается idempotency key; `inventory_disposition` и operation `items[]` остаются payload data и не являются stock movement event.
+- Whole-check и partial `order_line`/quantity cancellation/refund UI, а также compatibility payment refund пишут те же текущие ledger events: `CancellationRecorded` для cancellation и `RefundRecorded` для refund. Переданный UI `command_id` остается idempotency key; `inventory_disposition` и operation `items[]` остаются payload data. Реализовано сейчас: Cloud receiver ставит эти events в `inventory_event_queue` только при `inventory_disposition != no_stock_effect`, а stock ledger пишет только Cloud Inventory Worker.
 - `PaymentRefunded` и `CheckRefunded` остаются валидируемыми legacy event types, но новый POS Edge refund flow пишет `RefundRecorded`.
 - Cloud receiver валидирует для текущих `CancellationRecorded`/`RefundRecorded` operation id, edge operation id, совпадение payload `restaurant_id`/`device_id` с envelope, check id, precheck id, original/current shift ids, amount, currency, business date, operation-level inventory disposition, reason и immutable snapshot; затем сохраняет raw envelope/journal rows, обновляет event-type stats и поддерживает detailed projection `cloud_projection_financial_operations`.
 - Ошибочные items в batch/exchange не останавливают прием остальных items: Cloud возвращает item-level `rejected`/`retryable` ACK и сохраняет проблемный raw item в `cloud_sync_problem_events` для последующего анализа.
@@ -317,7 +317,7 @@ Cancellation/refund sync behavior:
 
 Реализовано сейчас: POS Edge генерирует `CheckClosed` при создании final check после полной оплаты; payload строится из immutable `check.Snapshot` и передается внутри стандартного sync envelope в `payload.data`. POS Edge KDS lifecycle генерирует `KitchenTicketStatusChanged`, а `serve` дополнительно генерирует `ItemServed`. POS Edge kitchen stock input routes генерируют `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` как outbox envelopes без POS-side stock documents; replay того же stock `command_id` и event type возвращает сохраненный результат без нового envelope. POS Edge kitchen proposal routes генерируют `CatalogItemChangeSuggested` и `RecipeChangeSuggested`, сохраняют локальный `kitchen_proposals.status = pending_sync`, поддерживают `proposal_group_id` для связки нового блюда и техкарты и не мутируют master data до Cloud publication. POS Edge kitchen stop-list update route генерирует `StopListUpdated`, пишет локальный overlay для backend-authoritative sale blocking и не создает stock documents/balances/costing на Edge. Cloud receiver принимает `CheckClosed`, `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `StopListUpdated`; Cloud Inventory Worker создает stock documents/ledger rows для accepted receipt/count/write-off/production events и `SALE` rows по `ItemServed`. `StopListUpdated` валидируется, сохраняется как accepted event/raw audit input, попадает в durable `inventory_event_queue` и обрабатывается worker-ом в `cloud_projection_stop_list_updates` без raw payload exposure.
 
-Запланировано до полного пилота для остальных inventory payloads, необходимых полному Cloud Inventory Engine и ClickHouse OLAP: расширенные `RefundRecorded`/`CancellationRecorded` inventory effects и OLAP-проекции поверх `raw_business_events`. Все payloads передаются внутри стандартного sync envelope в `payload.data`.
+Запланировано до полного пилота для остальных inventory payloads, необходимых полному Cloud Inventory Engine и ClickHouse OLAP: расширенные allocation/costing сценарии beyond текущего operation-level `RefundRecorded`/`CancellationRecorded` disposition и OLAP-проекции поверх `raw_business_events`. Все payloads передаются внутри стандартного sync envelope в `payload.data`.
 
 `CheckClosed` является финальным batch-delta trigger:
 
@@ -423,7 +423,7 @@ Cancellation/refund sync behavior:
 
 POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` по `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES`; Cloud worker не применяет `CatalogItemChangeSuggested`/`RecipeChangeSuggested` к master data без explicit policy или manager approve.
 
-`RefundRecorded` и `CancellationRecorded` сейчас передают operation-level disposition, а не disposition по каждой строке:
+`RefundRecorded` и `CancellationRecorded` сейчас передают operation-level disposition, а не disposition по каждой строке. `return_to_stock` создает Cloud-owned `RETURN/IN`, `write_off_waste` создает Cloud-owned `WASTE/OUT`, `no_stock_effect` не создает queue/ledger effect, `manual_review` не создает автоматическое движение и остается failed queue item для операторского разбора:
 
 ```json
 {
@@ -474,7 +474,7 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 - Precheck/check reprint использует immutable snapshot payload, включая selected modifiers с name, quantity, unit price и total price.
 - Payment ссылается на `precheck_id`, а не на legacy `check_id`.
 - `PaymentCaptured`, `CheckCreated` и `CheckClosed` используют в envelope текущую кассовую смену оплаты; исходная личная смена заказа остается в order payload и не переписывается.
-- `RefundRecorded`/`CancellationRecorded` payload содержит immutable operation snapshot with embedded check snapshot, selected modifiers and item scopes; Cloud raw/journal receipt не должен отбрасывать modifier data из snapshot payload. Текущий validation contract требует operation-level `inventory_disposition`; `items[].inventory_disposition` не является реализованным полем.
+- `RefundRecorded`/`CancellationRecorded` payload содержит immutable operation snapshot with embedded check snapshot, selected modifiers and item scopes; Cloud raw/journal receipt не должен отбрасывать modifier data из snapshot payload. Текущий validation contract требует operation-level `inventory_disposition`; `items[].inventory_disposition` не является реализованным полем. Для Cloud inventory effect Worker нормализует `whole_check` из immutable check/precheck snapshot lines, `order_line` из item snapshot и указанной quantity; `service_charge`, `tip`, `payment` и `modifier_line` без authoritative linked catalog item не создают stock movement.
 - Proposal events `CatalogItemChangeSuggested` и `RecipeChangeSuggested` принимаются Cloud receiver, попадают в review/apply flow и не применяются к master data без manager approve.
 
 Не реализовано сейчас:

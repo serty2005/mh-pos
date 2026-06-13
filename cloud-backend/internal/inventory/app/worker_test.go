@@ -600,6 +600,87 @@ func TestRunOnceMapsRefundReturnAndCancellationWaste(t *testing.T) {
 	}
 }
 
+func TestRunOnceFinancialOrderLineUsesOperationItemQuantityFromSnapshot(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{
+		sampleQueuedEvent(t, contracts.EventRefundRecorded, financialOperationOrderLineSnapshotPayload(t, "refund", "return_to_stock", "1")),
+	}}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{
+		"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101",
+	}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 1 || len(repo.documents[0].Ledger) != 1 {
+		t.Fatalf("expected one refund return ledger row, got %+v", repo.documents)
+	}
+	entry := repo.documents[0].Ledger[0]
+	if entry.CatalogItemID != "item-1" || entry.OrderLineID != "line-1" || entry.Quantity != "1.000" || entry.MovementType != app.MovementIn {
+		t.Fatalf("partial order_line must use operation item quantity and immutable snapshot, got %+v", entry)
+	}
+}
+
+func TestRunOnceFinancialWholeCheckExpandsSnapshotLinesAndRecipes(t *testing.T) {
+	repo := &fakeRepo{
+		events: []app.QueuedEvent{
+			sampleQueuedEvent(t, contracts.EventCancellationRecorded, financialOperationWholeCheckSnapshotPayload(t, "cancellation", "write_off_waste")),
+		},
+		recipes: map[string][]app.RecipeLine{
+			"item-1": {{ComponentCatalogItemID: "ing-1", Quantity: "0.500", UnitCode: "KG"}},
+		},
+		modifierOptionLinks: map[string]string{"mod-opt-1": "mod-item-1"},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{
+		"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101", "018f0000-0000-7000-8000-00000000d102",
+	}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 1 || repo.documents[0].Type != app.DocumentWaste {
+		t.Fatalf("expected one WASTE document, got %+v", repo.documents)
+	}
+	got := ledgerQuantityByCatalogItem(repo.documents[0])
+	if got["ing-1"] != "1.000" || got["mod-item-1"] != "2.000" {
+		t.Fatalf("whole-check disposition must expand immutable snapshot lines through current inventory model, got %+v", got)
+	}
+	for _, entry := range repo.documents[0].Ledger {
+		if entry.MovementType != app.MovementOut {
+			t.Fatalf("write_off_waste must create OUT ledger rows, got %+v", entry)
+		}
+	}
+}
+
+func TestRunOnceFinancialNonInventoryScopesCreateNoMovement(t *testing.T) {
+	for _, scope := range []string{"service_charge", "tip", "payment"} {
+		t.Run(scope, func(t *testing.T) {
+			repo := &fakeRepo{events: []app.QueuedEvent{
+				sampleQueuedEvent(t, contracts.EventRefundRecorded, financialOperationScopePayload(t, "refund", "return_to_stock", scope)),
+			}}
+			worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+			if err := worker.RunOnce(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if len(repo.documents) != 0 || len(repo.processed) != 1 {
+				t.Fatalf("%s must not create stock movement, documents=%+v processed=%+v", scope, repo.documents, repo.processed)
+			}
+		})
+	}
+}
+
+func TestRunOnceFinancialMissingCatalogItemCreatesNoUnsafeMovement(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{
+		sampleQueuedEvent(t, contracts.EventRefundRecorded, financialOperationOrderLineMissingCatalogPayload(t)),
+	}}
+	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 0 || len(repo.processed) != 1 {
+		t.Fatalf("missing catalog item must be a safe no-movement outcome, documents=%+v processed=%+v", repo.documents, repo.processed)
+	}
+}
+
 func TestRunOnceProjectsStopListUpdatedWithoutStockDocument(t *testing.T) {
 	repo := &fakeRepo{events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventStopListUpdated, stopListUpdatedPayload(t, "edge_overlay_until_next_publication"))}}
 	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
@@ -878,6 +959,102 @@ func financialOperationPayload(t *testing.T, operationType, disposition string) 
 func financialOperationPayloadWithoutItems(t *testing.T, operationType, disposition string) json.RawMessage {
 	t.Helper()
 	return marshalPayload(t, financialOperationData(operationType, disposition))
+}
+
+func financialOperationOrderLineSnapshotPayload(t *testing.T, operationType, disposition string, quantity any) json.RawMessage {
+	t.Helper()
+	data := financialOperationData(operationType, disposition)
+	data["items"] = []map[string]any{{
+		"id":            "operation-item-1",
+		"operation_id":  "financial-operation-1",
+		"scope":         "order_line",
+		"order_line_id": "line-1",
+		"quantity":      quantity,
+		"amount":        1000,
+		"currency":      "RUB",
+		"snapshot": map[string]any{
+			"id":              "line-1",
+			"catalog_item_id": "item-1",
+			"quantity":        2,
+			"modifiers": []map[string]any{{
+				"id":                 "line-mod-1",
+				"modifier_option_id": "mod-opt-1",
+				"quantity":           1,
+			}},
+		},
+	}}
+	return marshalPayload(t, data)
+}
+
+func financialOperationWholeCheckSnapshotPayload(t *testing.T, operationType, disposition string) json.RawMessage {
+	t.Helper()
+	data := financialOperationData(operationType, disposition)
+	checkSnapshot := map[string]any{
+		"check_id":            "check-1",
+		"order_id":            "order-1",
+		"precheck_id":         "precheck-1",
+		"restaurant_id":       "restaurant-1",
+		"business_date_local": "2026-05-05",
+		"closed_at":           "2026-05-05T09:00:00Z",
+		"precheck_snapshot": map[string]any{
+			"lines": []map[string]any{{
+				"order_line_id":   "line-1",
+				"catalog_item_id": "item-1",
+				"quantity":        2,
+				"modifiers": []map[string]any{{
+					"modifier_option_id": "mod-opt-1",
+					"quantity":           1,
+					"unit_code":          "PC",
+				}},
+			}},
+		},
+	}
+	data["snapshot"] = map[string]any{
+		"document_type":  "financial_operation",
+		"operation_id":   "financial-operation-1",
+		"check_snapshot": checkSnapshot,
+	}
+	data["items"] = []map[string]any{{
+		"id":           "operation-item-1",
+		"operation_id": "financial-operation-1",
+		"scope":        "whole_check",
+		"amount":       1000,
+		"currency":     "RUB",
+		"snapshot":     checkSnapshot,
+	}}
+	return marshalPayload(t, data)
+}
+
+func financialOperationScopePayload(t *testing.T, operationType, disposition, scope string) json.RawMessage {
+	t.Helper()
+	data := financialOperationData(operationType, disposition)
+	data["items"] = []map[string]any{{
+		"id":           "operation-item-1",
+		"operation_id": "financial-operation-1",
+		"scope":        scope,
+		"amount":       1000,
+		"currency":     "RUB",
+	}}
+	return marshalPayload(t, data)
+}
+
+func financialOperationOrderLineMissingCatalogPayload(t *testing.T) json.RawMessage {
+	t.Helper()
+	data := financialOperationData("refund", "return_to_stock")
+	data["items"] = []map[string]any{{
+		"id":            "operation-item-1",
+		"operation_id":  "financial-operation-1",
+		"scope":         "order_line",
+		"order_line_id": "line-1",
+		"quantity":      1,
+		"amount":        1000,
+		"currency":      "RUB",
+		"snapshot": map[string]any{
+			"id":       "line-1",
+			"quantity": 1,
+		},
+	}}
+	return marshalPayload(t, data)
 }
 
 func financialOperationData(operationType, disposition string) map[string]any {

@@ -257,9 +257,9 @@ Pricing contract:
 - Item scopes are `whole_check`, `order_line`, `modifier_line`, `service_charge`, `tip`, `payment`.
 - Backend rejects over-cancel, over-refund, over-line-amount, over-line-quantity and over-payment-allocation scenarios.
 - Operation snapshot embeds immutable check snapshot and operation items.
-- Inventory disposition is explicit: `no_stock_effect`, `return_to_stock`, `write_off_waste`, `manual_review`; financial operation does not mutate stock tables.
+- Inventory disposition is explicit: `no_stock_effect`, `return_to_stock`, `write_off_waste`, `manual_review`; POS financial operation does not mutate stock tables.
 - Текущие POS Edge events: `CancellationRecorded` и `RefundRecorded`. New refund runtime не emit legacy `PaymentRefunded`/`CheckRefunded`; эти names остаются только Cloud-accepted legacy sync event types.
-- Cloud receiver валидирует current financial operation payload fields, включая совпадение payload `restaurant_id`/`device_id` с envelope, `precheck_id`, `reason` и immutable snapshot, stores raw/journal envelopes and event-type stats, and maintains detailed `cloud_projection_financial_operations` for current `CancellationRecorded`/`RefundRecorded`; Cloud reporting читает эту projection через bounded `GET /api/v1/reporting/financial-operations` без raw sync payload и без Cloud cashier commands.
+- Cloud receiver валидирует current financial operation payload fields, включая совпадение payload `restaurant_id`/`device_id` с envelope, `precheck_id`, `reason` и immutable snapshot, stores raw/journal envelopes and event-type stats, and maintains detailed `cloud_projection_financial_operations` for current `CancellationRecorded`/`RefundRecorded`; Cloud reporting читает эту projection через bounded `GET /api/v1/reporting/financial-operations` без raw sync payload и без Cloud cashier commands. Реализовано сейчас: Cloud ставит `CancellationRecorded`/`RefundRecorded` в `inventory_event_queue` только при `inventory_disposition != no_stock_effect`, `return_to_stock` создает Cloud-owned `RETURN/IN`, `write_off_waste` создает `WASTE/OUT`, `manual_review` не создает automatic movement и остается failed queue item.
 
 Не реализовано сейчас:
 
@@ -267,7 +267,6 @@ Pricing contract:
 - fiscal receipt creation;
 - refund manager PIN policy beyond current RBAC permission check;
 - cashier UI for modifier/service/tip partial cancellation/refund;
-- automatic stock return/write-off;
 - separate `business_day` and `fiscal_shift` runtime aggregates.
 
 ## Shift, Business Date And Fiscal Boundary
@@ -340,16 +339,17 @@ Recipes/inventory:
 
 - Реализовано сейчас: POS Edge работает как генератор events и UI ввода; он не создает `StockDocument`, `StockMove`, stock balance или costing rows.
 - Реализовано сейчас: Edge SQLite содержит read-only `recipe_versions`, `recipe_lines`, `stop_lists` и `warehouse_reference`; legacy Edge-side stock tables удалены из целевого baseline.
-- Реализовано сейчас: Cloud Inventory Worker обрабатывает `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated` через durable queue.
+- Реализовано сейчас: Cloud Inventory Worker обрабатывает `CheckClosed`, `ItemServed`, `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`, stock-affecting `RefundRecorded`/`CancellationRecorded` и `StopListUpdated` через durable queue.
 - Реализовано сейчас: Cloud PostgreSQL хранит `inventory_event_queue`, `stock_documents`, `stock_ledger` with `unit_cost_minor`, `total_cost_minor` and `costing_status`; ClickHouse batch projection `olap_stock_moves` реализована как первый bounded read.
 - Реализовано сейчас: cancellation/refund ledger хранит явный `inventory_disposition`; POS runtime не мутирует local stock tables, потому что local stock tables удалены.
+- Реализовано сейчас: Cloud-side cancellation/refund inventory disposition использует immutable operation/check/precheck snapshots; `whole_check` разворачивается в snapshot lines, partial `order_line` использует указанную quantity, `service_charge`, `tip`, `payment` и `modifier_line` без authoritative linked catalog item не создают stock movement.
 - Реализовано сейчас: POS Edge recipe/stop-list ingest, локальная sale blocking проверка active stop-list для sellable catalog item и mandatory active recipe components. Проверка не читает stock balance и не создает stock documents/moves.
 - Реализовано сейчас: final check после полной оплаты пишет POS-generated `CheckClosed` outbox envelope из immutable `check.Snapshot`.
 - Реализовано сейчас: минимальный POS Edge KDS lifecycle foundation создает kitchen tickets из order lines, пишет `KitchenTicketStatusChanged`, а `serve` пишет `ItemServed`.
 - Реализовано сейчас: POS Edge kitchen stock input routes валидируют `warehouse_id`/default warehouse, существующие stock-capable catalog items, receipt supplier/document date/line totals, inventory count `counted_quantity`, write-off reason и production для active `semi_finished` с active recipe; routes пишут только `local_event_log`/`pos_sync_outbox`.
 - Реализовано сейчас: POS Edge kitchen recipe/proposal routes читают active recipe из `recipe_versions`/`recipe_lines`, добавляют ingredient names из полного `catalog_items`, сохраняют локальные `kitchen_proposals`, пишут `CatalogItemChangeSuggested`/`RecipeChangeSuggested` и не применяют предложения к catalog/recipe read model до Cloud publication.
 - Реализовано сейчас: Cloud Inventory Worker компенсирует уже обработанный `ItemServed` после `served -> recall -> ... -> serve` append-only `ItemServedCompensation` document и затем пишет новый `ItemServed` sale document.
-- Не реализовано сейчас: modifier linked catalog item stock consumption, retro costing DAG.
+- Не реализовано сейчас: retro costing DAG.
 - Запланировано до полного пилота: Cloud authoring/publication UI polish для recipes/stop-list, production workflow polish для `StopListUpdated` review и расширение KDS за пределы ticket lifecycle foundation.
 - Профильный целевой contract: `docs/backend/INVENTORY-COSTING-SPEC.md`.
 

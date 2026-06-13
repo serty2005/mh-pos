@@ -161,7 +161,7 @@ INSERT INTO cloud_operational_events(
 	if err := upsertSuggestionQueues(ctx, tx, receipt, ack.CloudReceiptID, receipt.CloudReceivedAt); err != nil {
 		return contracts.EventAck{}, err
 	}
-	if contracts.IsInventoryRelevantEventType(receipt.Envelope.EventType) {
+	if contracts.ShouldEnqueueInventoryEvent(receipt.Envelope.EventType, receipt.Envelope.Payload) {
 		if err := enqueueInventoryEvent(ctx, tx, receipt, ack.CloudReceiptID); err != nil {
 			return contracts.EventAck{}, err
 		}
