@@ -146,6 +146,8 @@
 - `scripts/seed-dev-system.py` является единственным локальным seed entrypoint: он создает полный набор Cloud-owned справочников, публикует master data, выполняет license pairing POS Edge и проверяет POS read model.
 - Seed script выполняет health check Cloud/POS/License, берет `node_device_id` из POS provisioning status, создает справочники через Cloud API, публикует packages, генерирует license pairing code, вызывает POS `pair-via-license` и проверяет PIN login/menu/floor read model.
 - `--run-minimal-flow` выполняет минимальную financial/KDS mutation через HTTP: waiter order/precheck -> KDS served -> cashier payment/final check -> `ItemServed`/`CheckClosed` -> Cloud inventory ledger -> ClickHouse/OLAP bounded reads без double consumption и raw payload exposure. Refund/cancellation runtime boundaries проверяются отдельными backend/UI тестами. Seed script не делает automatic retry financial mutations и destructive storage actions.
+- `--run-kitchen-process-smoke` выполняет профильный Cloud publication -> Edge sync -> KDS lifecycle/recall -> stock/proposal events -> Cloud ledger/ClickHouse/proposal feedback smoke через HTTP API.
+- При добавлении нового Cloud-owned справочника или stream нужно тем же PR обновить seed dataset, publication stream/package, POS read flow или smoke assertion, `CLOUD_OWNED_SEED_SURFACES` в script guard и профильные документы.
 - JSON summary содержит локальные demo IDs, pairing code и PIN-коды; он предназначен только для local/dev проверки и игнорируется git.
 
 Вне текущего объема:
@@ -418,6 +420,7 @@ Recipes/inventory:
 Профильный smoke:
 
 - реализовано сейчас: `scripts/seed-dev-system.py --run-kitchen-process-smoke` проверяет Cloud publication -> Edge sync для catalog/menu/recipes/inventory_reference, waiter order, KDS order tile, `accept/start/ready/serve`, `recall/start/ready/serve`, Edge stock/proposal routes и прием Cloud feedback.
+- Seed/smoke расширяется только через canonical `scripts/seed-dev-system.py`; отдельные пользовательские smoke entrypoints не добавляются без явного архитектурного решения.
 - Inventory facts:
   - реализовано сейчас: final check creation writes current financial events and additional `CheckClosed` inventory event;
   - `CheckClosed` payload includes order line id, catalog item id, quantity, unit code and `required_for_inventory`;

@@ -231,12 +231,15 @@
   - item-level ACK;
   - прекращение повторной отправки после ACK.
 - Python 3 local seed runner `scripts/seed-dev-system.py`:
+  - остается единственным user-facing Fedora/Linux/Windows-compatible demo/seed entrypoint;
+  - работает только через HTTP API Cloud/POS/License и не пишет напрямую в PostgreSQL/SQLite/ClickHouse;
   - создает полный Cloud-owned dataset;
   - публикует packages для POS Edge streams;
   - выполняет license pairing;
   - проверяет базовый POS read model;
   - `--run-minimal-flow` выполняет waiter order/precheck -> KDS served -> cashier final check -> `ItemServed`/`CheckClosed` -> Cloud inventory ledger -> ClickHouse/OLAP bounded reads smoke;
-  - `--run-kitchen-process-smoke` выполняет полный kitchen/process smoke без destructive storage actions.
+  - `--run-kitchen-process-smoke` выполняет полный kitchen/process smoke без destructive storage actions;
+  - financial mutations в smoke выполняются single-shot без automatic retry.
 - DDD context map exists in `docs/architecture/DDD-CONTEXT-MAP.md`.
 
 ## Persistence Policy
@@ -761,7 +764,7 @@ GET /api/v1/inventory/stock-ledger?restaurant_id=&source_event_type=&source_even
 
 - Поддерживать `scripts/seed-dev-system.py` как единственный Fedora/Linux/Windows-compatible путь заполнения данных.
 - Новые Cloud-owned справочники, publication streams и POS read flows добавлять в seed script и документацию тем же PR.
-- Расширять demo seed dataset вместе с новыми Cloud-owned справочниками, publication streams и POS read flows, чтобы ручной наглядный тест не отставал от runtime.
+- Расширять demo seed dataset вместе с новыми Cloud-owned справочниками, publication streams и POS read flows, чтобы ручной наглядный тест не отставал от runtime. Обязательный checklist для каждого нового Cloud-owned сценария: seed data, publication stream/package, POS read flow или smoke assertion, профильные docs.
 - Поддерживать RBAC matrix при добавлении новых backend permissions, `pos-ui-g` surfaces и Cloud UI routes.
 - Проверить migration/backup behavior на старой SQLite DB.
 - Продолжить destructive apply/delete/compaction policy для больших локальных SQLite БД закрытых заказов поверх текущего status/dry-run/manifest-only export-plan/export-only/verify/read-plan/lookup/apply-plan foundation.

@@ -191,12 +191,14 @@
 Реализовано сейчас:
 
 - Docker compose поднимает Cloud PostgreSQL, ClickHouse, Cloud API, License API и POS Edge без POS UI.
-- Единственный Python seed script использует HTTP API и не делает прямых записей в PostgreSQL/SQLite.
+- `scripts/seed-dev-system.py` является единственным user-facing Python demo/seed entrypoint для Fedora/Linux/Windows-compatible локального контура. Helper/test-only scripts в текущем `scripts/` отсутствуют; прежние wrapper/onboarding paths не являются актуальными пользовательскими сценариями.
+- Единственный Python seed script использует HTTP API Cloud/POS/License и не делает прямых записей в PostgreSQL/SQLite/ClickHouse.
 - `scripts/seed-dev-system.py` проверяет health Cloud/POS/License, создает полный Cloud-owned seed dataset, публикует master data, выполняет license pairing POS Edge и проверяет базовый POS read model.
 - `scripts/seed-dev-system.py --run-minimal-flow` выполняет минимальный HTTP-only smoke: Cloud recipes/stop-list publication, Edge sync, waiter order/precheck, KDS served, cashier payment/final check, прием `ItemServed`/`CheckClosed` в Cloud, появление строк Cloud `stock_ledger` по `ItemServed`, отсутствие duplicate `CheckClosed` delta для того же `order_line_id`, экспорт событий в ClickHouse `raw_business_events`, экспорт складских движений в `olap_stock_moves` и bounded reads `stock-move-summary`/`sales-kitchen-summary` без raw payload.
 - `scripts/seed-dev-system.py --run-kitchen-process-smoke` выполняет профильный kitchen/process smoke: Cloud seed publication для catalog/menu/recipes/inventory_reference, Edge sync, waiter order, kitchen order tile, `accept/start/ready/serve`, `recall/start/ready/serve`, ClickHouse `raw_business_events`, Cloud stock ledger и `olap_stock_moves` read для receipt/count/write-off/production, catalog/recipe suggestions, Cloud manager approve и Edge proposal feedback. При одновременном запуске `--run-minimal-flow` и `--run-kitchen-process-smoke` summary содержит отдельные секции `minimal_flow` и `kitchen_process_smoke`; полный kitchen/process smoke использует kitchen role/PIN, а не manager PIN.
 - PowerShell/Bash wrappers и прежние onboarding flows удалены; в `scripts` остается один пользовательский Python seed script.
 - HTTP слой скриптов игнорирует proxy для localhost/loopback, чтобы не ломать Docker published ports.
+- Seed/smoke guards закрепляют отсутствие direct DB client imports, запрет destructive storage/archive routes и отсутствие automatic retry financial mutations.
 
 ## Покрытие тестами бизнес-логики
 
@@ -210,7 +212,7 @@
 - Cloud master-data tests покрывают CRUD/validation, PIN reuse rules, role permission validation, catalog/menu/publication shape, service/semi-finished kinds, lifecycle statuses и pricing policies.
 - License tests покрывают registration, resolve, consumed/expired/invalid pairing codes.
 - UI unit/e2e tests покрывают currency/error/session guards, RBAC, schema parsing, cashier terminal conflict handling, compensation boundaries, modifier flow, payments/refunds, refund после закрытия исходных personal/cash shifts, запрет cancellation после закрытия исходной смены и sync/provisioning flows.
-- Script tests покрывают единственный seed flow, отсутствие других user-facing Python entrypoints в `scripts`, отсутствие preassigned IDs в seed dataset и генерацию pairing после публикации master data.
+- Script tests покрывают единственный seed flow, отсутствие других user-facing Python entrypoints в `scripts`, отсутствие preassigned IDs в seed dataset, dev-only summary рядом со скриптом, отключение proxy для localhost/loopback, отсутствие direct DB client imports, запрет destructive storage/archive routes, single-shot financial mutation request, карту расширения Cloud-owned seed surfaces и генерацию pairing после публикации master data.
 
 Оставшиеся риски:
 
@@ -222,6 +224,7 @@
 ## Запланировано далее
 
 - Поддерживать `docs/backend/CLOUD-BACKEND-SPEC.md` как профильный документ Cloud Backend при каждом изменении Cloud routes, payloads, sync/provisioning contracts или schema.
+- При добавлении Cloud-owned сценария обновлять `scripts/seed-dev-system.py`, publication stream/package, POS read flow/smoke assertion и профильные документы в одном PR.
 - До полного пилота: полный Cloud Inventory Engine, richer sales/costing OLAP API beyond current bounded endpoints и production auth/RBAC perimeter для mutating OLAP operator controls.
 - После полного пилота: hardware bump-bar integrations, kitchen printer orchestration, rich BI dashboards, ERP/accounting integrations и внешние delivery/payment/fiscal контуры.
 - Data-preserving migrations после первого реального внедрения.

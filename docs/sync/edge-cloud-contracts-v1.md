@@ -203,6 +203,7 @@ Request body shape currently supported by POS Edge:
 - Cloud schema и publication workflow реально публикуют `recipes`/`inventory_reference` в `cloud_master_data_packages` как часть одного детерминированного publication snapshot. Реализовано сейчас: Cloud-authored recipe version draft после approve становится active authority version и попадает в `recipes` package; draft/review rows не публикуются на Edge.
 - `scripts/seed-dev-system.py` создает recipe/stop-list examples и default warehouse, публикует их в Edge; runtime sale-blocking проверяется профильными POS backend tests и `--run-minimal-flow`.
 - `scripts/seed-dev-system.py --run-kitchen-process-smoke` покрывает Cloud publication -> Edge import -> KDS lifecycle/recall -> stock/proposal events -> Cloud ledger/ClickHouse/proposal feedback.
+- При добавлении Cloud-owned stream или POS read flow canonical seed/smoke обновляется в том же PR: seed data, publication package, POS read assertion/smoke step, `CLOUD_OWNED_SEED_SURFACES` и профильные docs. Отдельные user-facing seed/smoke scripts не являются актуальным путем.
 
 ## Edge -> Cloud Operational Events
 

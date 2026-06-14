@@ -182,7 +182,7 @@ docker compose -f docker-compose.local.yml down -v
 
 ## Заполнение Cloud и POS начальными данными
 
-Реализовано сейчас: канонический локальный путь использует один самодостаточный Python 3 скрипт без внешних Python dependencies. `scripts/seed-dev-system.py` создает полный набор текущих Cloud-owned справочников через Cloud HTTP API, публикует master-data packages, генерирует license pairing code, выполняет POS Edge `pair-via-license` и проверяет POS read model через POS HTTP API. Прямые записи в PostgreSQL/SQLite не используются.
+Реализовано сейчас: канонический локальный путь использует один самодостаточный Python 3 скрипт без внешних Python dependencies. `scripts/seed-dev-system.py` является единственным user-facing demo/seed entrypoint для Fedora/Linux/Windows-compatible локального контура: он создает полный набор текущих Cloud-owned справочников через Cloud HTTP API, публикует master-data packages, генерирует license pairing code, выполняет POS Edge `pair-via-license` и проверяет POS read model через POS HTTP API. Прямые записи в PostgreSQL/SQLite/ClickHouse не используются.
 
 Полный seed для поднятого Docker stack:
 
@@ -207,7 +207,7 @@ python3 scripts/seed-dev-system.py \
   --run-minimal-flow
 ```
 
-Реализовано сейчас: флаг `--run-minimal-flow` после seed/pairing выполняет HTTP-only сценарий `Cloud recipes/stop-list publication -> Edge sync -> waiter order/precheck -> KDS served -> cashier final check -> ItemServed/CheckClosed -> Cloud inventory ledger -> ClickHouse/OLAP bounded reads`. Сценарий проверяет stop-list rejection для demo sold-out item, создает заказ официантом, проводит KDS ticket через `accept/start/ready/serve`, выпускает precheck, закрывает его оплатой кассира, ожидает `ItemServed` и `CheckClosed` в Cloud safe event log, проверяет `stock_ledger` для `ItemServed`, отсутствие duplicate `CheckClosed` delta по тому же `order_line_id`, экспорт `ItemServed`/`CheckClosed` в ClickHouse `raw_business_events`, bounded `olap_stock_moves` для `ItemServed`, `stock-move-summary` и `sales-kitchen-summary` без raw payload.
+Реализовано сейчас: флаг `--run-minimal-flow` после seed/pairing выполняет HTTP-only сценарий `Cloud recipes/stop-list publication -> Edge sync -> waiter order/precheck -> KDS served -> cashier final check -> ItemServed/CheckClosed -> Cloud inventory ledger -> ClickHouse/OLAP bounded reads`. Сценарий проверяет stop-list rejection для demo sold-out item, создает заказ официантом, проводит KDS ticket через `accept/start/ready/serve`, выпускает precheck, закрывает его оплатой кассира, ожидает `ItemServed` и `CheckClosed` в Cloud safe event log, проверяет `stock_ledger` для `ItemServed`, отсутствие duplicate `CheckClosed` delta по тому же `order_line_id`, экспорт `ItemServed`/`CheckClosed` в ClickHouse `raw_business_events`, bounded `olap_stock_moves` для `ItemServed`, `stock-move-summary` и `sales-kitchen-summary` без raw payload. Финансовая мутация оплаты выполняется single-shot без automatic retry.
 
 Полный kitchen/process smoke для поднятого stack:
 
@@ -239,6 +239,8 @@ python3 scripts/seed-dev-system.py \
 Если включены оба флага, итоговый JSON содержит независимые секции `minimal_flow` и `kitchen_process_smoke`. Минимальная ветка подтверждает полный cashier/waiter/KDS/check/inventory/OLAP хвост и может использовать резервный PIN с KDS authority для подачи блюда, а полный kitchen/process smoke должен использовать опубликованную kitchen role/PIN `5555`, чтобы проверить фактические backend RBAC и Cloud маршруты.
 
 Seed-вход содержит только пользовательские данные: названия, имена, PIN, цены, количества, места и наборы прав. ID, `node_device_id`, generated SKU и остальные технические значения берутся из backend responses или генерируются системно. `scripts/.seed-dev-system-summary.json` содержит локальные demo credentials и добавлен в `.gitignore`; не коммить этот файл.
+
+Правило расширения: новый Cloud-owned справочник, publication stream или POS read flow добавляется в canonical `scripts/seed-dev-system.py` тем же PR, что и runtime/doc изменение. Обязательный checklist: seed dataset, publication stream/package, POS read flow или smoke assertion, script guard `CLOUD_OWNED_SEED_SURFACES`, профильные документы. Отдельные пользовательские seed/smoke entrypoints не добавляются без явного архитектурного решения.
 
 Повторный запуск рассчитан на чистые backend volumes. Если POS Edge уже находится в `paired`, скрипт завершится fail-fast: для нового полного seed нужно пересоздать локальные Docker volumes через `docker compose -f docker-compose.local.yml down -v` и поднять stack заново.
 

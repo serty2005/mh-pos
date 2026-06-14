@@ -973,10 +973,10 @@ SET status=$2,review_comment=$3,reviewed_by_employee_id=$4,reviewed_at=$5,applie
 WHERE id=$1
 RETURNING id,suggestion_id,restaurant_id,COALESCE(catalog_item_id,''),COALESCE(proposal_group_id,''),action,COALESCE(reason,''),status,
        COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(applied_catalog_item_id,''),COALESCE(source_event_id,''),
-       COALESCE(assigned_to_employee_id,''),COALESCE(assigned_by_employee_id,''),assigned_at,COALESCE(assignment_note,''),
-       suggested_at,cloud_received_at,payload_json,created_at,updated_at`,
+	       COALESCE(assigned_to_employee_id,''),COALESCE(assigned_by_employee_id,''),assigned_at,COALESCE(assignment_note,''),
+	       suggested_at,cloud_received_at,payload_json,created_at,updated_at`,
 		v.ID, string(v.Status), nullableText(v.ReviewComment), nullableText(v.ReviewedByEmployeeID), v.ReviewedAt, nullableText(v.AppliedCatalogItemID), v.UpdatedAt,
-		nullableText(v.AssignedToEmployeeID), nullableText(v.AssignedByEmployeeID), v.AssignedAt, nullableText(v.AssignmentNote)))
+		trimmedText(v.AssignedToEmployeeID), trimmedText(v.AssignedByEmployeeID), v.AssignedAt, trimmedText(v.AssignmentNote)))
 	return out, normalizeErr(err)
 }
 
@@ -1030,9 +1030,9 @@ WHERE id=$1
 RETURNING id,suggestion_id,restaurant_id,COALESCE(recipe_version_id,''),COALESCE(owner_catalog_item_id,''),COALESCE(owner_catalog_suggestion_id,''),
        COALESCE(proposal_group_id,''),action,COALESCE(reason,''),prep_time_delta_minutes,status,COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),
        reviewed_at,COALESCE(assigned_to_employee_id,''),COALESCE(assigned_by_employee_id,''),assigned_at,COALESCE(assignment_note,''),
-       COALESCE(source_event_id,''),suggested_at,cloud_received_at,payload_json,created_at,updated_at`,
+	       COALESCE(source_event_id,''),suggested_at,cloud_received_at,payload_json,created_at,updated_at`,
 		v.ID, string(v.Status), nullableText(v.ReviewComment), nullableText(v.ReviewedByEmployeeID), v.ReviewedAt, v.UpdatedAt,
-		nullableText(v.AssignedToEmployeeID), nullableText(v.AssignedByEmployeeID), v.AssignedAt, nullableText(v.AssignmentNote)))
+		trimmedText(v.AssignedToEmployeeID), trimmedText(v.AssignedByEmployeeID), v.AssignedAt, trimmedText(v.AssignmentNote)))
 	return out, normalizeErr(err)
 }
 
@@ -1111,9 +1111,9 @@ WHERE source_event_id=$1
 RETURNING source_event_id,restaurant_id,device_id,stop_list_id,COALESCE(warehouse_id,''),catalog_item_id,available_quantity::float8,
        active,conflict_policy,source,COALESCE(reason,''),projection_action,review_status,COALESCE(review_comment,''),
        COALESCE(reviewed_by_employee_id,''),reviewed_at,COALESCE(assigned_to_employee_id,''),COALESCE(assigned_by_employee_id,''),
-       assigned_at,COALESCE(assignment_note,''),COALESCE(applied_stop_list_id,''),updated_at,occurred_at,projected_at,created_at`,
+	       assigned_at,COALESCE(assignment_note,''),COALESCE(applied_stop_list_id,''),updated_at,occurred_at,projected_at,created_at`,
 		strings.TrimSpace(v.ID), string(v.Status), nullableText(v.ReviewComment), nullableText(v.ReviewedByEmployeeID), v.ReviewedAt, nullableText(v.AppliedStopListID), v.UpdatedAt,
-		nullableText(v.AssignedToEmployeeID), nullableText(v.AssignedByEmployeeID), v.AssignedAt, nullableText(v.AssignmentNote)))
+		trimmedText(v.AssignedToEmployeeID), trimmedText(v.AssignedByEmployeeID), v.AssignedAt, trimmedText(v.AssignmentNote)))
 	return out, normalizeErr(err)
 }
 
@@ -1412,6 +1412,10 @@ func nullableText(v string) any {
 		return nil
 	}
 	return v
+}
+
+func trimmedText(v string) string {
+	return strings.TrimSpace(v)
 }
 
 func normalizeErr(err error) error {

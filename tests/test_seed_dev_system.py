@@ -1,9 +1,11 @@
 import importlib.util
+import ast
 import contextlib
 import io
 import json
 import pathlib
 import unittest
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -207,6 +209,8 @@ class FakeClient:
                 {"group_by": "event_type", "group_key": "ItemServed", "event_type": "ItemServed", "event_count": 1},
                 {"group_by": "event_type", "group_key": "CheckClosed", "event_type": "CheckClosed", "event_count": 1},
             ]
+        if path.startswith("/api/v1/olap/kitchen-timing-summary"):
+            return [{"group_by": "business_date", "group_key": "2026-06-14", "ticket_count": 1}]
         if path.startswith("/api/v1/inventory/stock-ledger"):
             if "source_event_type=CheckClosed" in path:
                 return []
@@ -262,6 +266,19 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertEqual(output.parent, ROOT / "scripts")
         self.assertEqual(output.name, ".seed-dev-system-summary.json")
 
+    def test_json_client_disables_system_proxy_for_local_stack(self):
+        module = load_seed_module()
+
+        with (
+            mock.patch.object(module.urllib.request, "ProxyHandler", return_value="proxy-handler") as proxy_handler,
+            mock.patch.object(module.urllib.request, "build_opener", return_value="opener") as build_opener,
+        ):
+            client = module.JsonClient("http://localhost:8090")
+
+        self.assertEqual(client.opener, "opener")
+        proxy_handler.assert_called_once_with({})
+        build_opener.assert_called_once_with("proxy-handler")
+
     def test_seed_dataset_contains_user_data_without_preassigned_ids(self):
         module = load_seed_module()
 
@@ -278,6 +295,31 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertTrue(dataset["pricing_policies"])
         self.assertTrue(dataset["recipes"])
         self.assertTrue(dataset["stop_list"])
+
+    def test_cloud_owned_seed_extension_plan_matches_dataset(self):
+        module = load_seed_module()
+        dataset = module.build_seed_dataset("unit")
+
+        module.validate_seed_extension_plan(dataset)
+        dataset_keys = {item["dataset_key"] for item in module.CLOUD_OWNED_SEED_SURFACES}
+        publication_streams = {item["publication_stream"] for item in module.CLOUD_OWNED_SEED_SURFACES}
+        read_checks = {item["pos_read_check"] for item in module.CLOUD_OWNED_SEED_SURFACES}
+
+        for key in (
+            "restaurant",
+            "roles",
+            "employees",
+            "catalog_items",
+            "menu_categories",
+            "recipes",
+            "stop_list",
+            "floor",
+        ):
+            self.assertIn(key, dataset_keys)
+        for stream in ("restaurants", "staff", "catalog", "menu", "pricing_policy", "recipes", "inventory_reference", "floor"):
+            self.assertIn(stream, publication_streams)
+        for read_check in ("pin_login", "menu_items", "kitchen_recipe", "blocked_sale"):
+            self.assertIn(read_check, read_checks)
 
     def test_seed_dataset_contains_kitchen_role_pin_and_smoke_permissions(self):
         module = load_seed_module()
@@ -330,6 +372,49 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertIn("kitchen_pin", summary["pins"])
         self.assertIn("support_pin", summary["pins"])
 
+    def test_seed_script_uses_http_only_and_no_db_client_imports(self):
+        tree = ast.parse(SCRIPT_PATH.read_text(encoding="utf-8"))
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name.split(".", 1)[0] for alias in node.names)
+            if isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module.split(".", 1)[0])
+
+        forbidden = {"sqlite3", "psycopg", "psycopg2", "asyncpg", "pgx", "clickhouse_connect", "clickhouse_driver", "subprocess"}
+        self.assertFalse(imported & forbidden)
+
+    def test_request_rejects_destructive_storage_archive_routes(self):
+        module = load_seed_module()
+
+        class Client:
+            def request(self, method, path, body=None, expected_status=(200, 201), headers=None):
+                raise AssertionError("guard must reject before HTTP call")
+
+        for path in (
+            "/api/v1/storage/archive/apply-plan",
+            "/api/v1/storage/reset",
+            "/api/v1/archives/apply",
+        ):
+            with self.assertRaises(RuntimeError):
+                module.request(Client(), "POST", path, {})
+
+    def test_financial_mutation_request_is_single_shot(self):
+        module = load_seed_module()
+
+        class FailingClient:
+            def __init__(self):
+                self.count = 0
+
+            def request(self, method, path, body=None, expected_status=(200, 201), headers=None):
+                self.count += 1
+                raise RuntimeError("payment failed")
+
+        client = FailingClient()
+        with self.assertRaises(RuntimeError):
+            module.request(client, "POST", "/api/v1/prechecks/precheck-1/payments", {"amount": 100})
+        self.assertEqual(client.count, 1)
+
     def test_main_runs_both_smoke_flags_and_writes_separate_summary_sections(self):
         module = load_seed_module()
         cloud = FakeClient("cloud")
@@ -364,6 +449,32 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertEqual(summary["minimal_flow"]["check_id"], "check-1")
         self.assertEqual(summary["kitchen_process_smoke"]["kitchen_ticket_id"], "ticket-line-soup")
 
+    def test_full_smoke_never_calls_destructive_storage_or_archive_routes(self):
+        module = load_seed_module()
+        cloud = FakeClient("cloud")
+        cloud.full_smoke = True
+        pos = FakeClient("pos")
+        license_client = FakeClient("license")
+
+        module.seed_full_system(
+            cloud,
+            pos,
+            license_client,
+            cloud_base_url="http://cloud-api:8090",
+            client_device_id="unit-client",
+            suffix="unit",
+            wait_seconds=1,
+            interval_seconds=0,
+            run_minimal_flow=True,
+            run_kitchen_process_smoke=True,
+        )
+
+        forbidden = tuple(module.FORBIDDEN_MUTATING_ROUTE_FRAGMENTS)
+        for client in (cloud, pos, license_client):
+            for method, path, _, _ in client.calls:
+                if method in ("POST", "PUT", "PATCH", "DELETE"):
+                    self.assertFalse(any(fragment in path.lower() for fragment in forbidden), path)
+
     def test_minimal_flow_smoke_runs_waiter_to_cloud_inventory_ledger(self):
         module = load_seed_module()
         cloud = FakeClient("cloud")
@@ -395,6 +506,7 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertEqual(result["olap_item_served_stock_move_count"], 1)
         self.assertEqual(result["olap_stock_move_summary_count"], 2)
         self.assertEqual(result["olap_sales_kitchen_summary_group_keys"], ["CheckClosed", "ItemServed"])
+        self.assertEqual(result["olap_kitchen_timing_summary_count"], 1)
         self.assertEqual(result["blocked_sale_error_code"], "SALE_ITEM_STOP_LISTED")
         cloud_paths = [path for _, path, _, _ in cloud.calls]
         self.assertTrue(any("event_type=ItemServed" in path for path in cloud_paths))
@@ -403,6 +515,7 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertTrue(any("source_event_type=CheckClosed" in path for path in cloud_paths))
         self.assertTrue(any(path.startswith("/api/v1/olap/stock-move-summary?") for path in cloud_paths))
         self.assertTrue(any(path.startswith("/api/v1/olap/sales-kitchen-summary?") for path in cloud_paths))
+        self.assertTrue(any(path.startswith("/api/v1/olap/kitchen-timing-summary?") for path in cloud_paths))
 
     def test_minimal_flow_smoke_does_not_require_kitchen_pin(self):
         module = load_seed_module()

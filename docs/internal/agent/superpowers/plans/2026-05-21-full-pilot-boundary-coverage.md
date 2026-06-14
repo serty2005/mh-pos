@@ -1,5 +1,7 @@
 # Full Pilot Boundary Coverage Implementation Plan
 
+> Исторический рабочий план. Актуальный user-facing seed/smoke entrypoint: `scripts/seed-dev-system.py`; прежний `scripts/run-stack-smoke.py` не является текущим путем запуска.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Довести репозиторий от текущего cashier-pilot состояния до полного пилотного контура: кассир, менеджер, официант, advanced KDS lifecycle, POS-side authoritative financial/inventory checks, stop-list sale blocking, Cloud-managed setup, полный Cloud Inventory Engine и ClickHouse OLAP API.
@@ -71,7 +73,7 @@ Cloud UI:
 - `docs/ui/POS-UI-SPEC.md`, `docs/ui/CLOUD-UI-SPEC.md`, `docs/ui/POS-UI-RBAC.md`
 - `docs/ui/PILOT-UX-MARKET-REVIEW.md`
 - `docs/sync/directional-sync-ownership.md`, `docs/sync/edge-cloud-contracts-v1.md`
-- `scripts/run-stack-smoke.py`, `scripts/tests/*`
+- `scripts/seed-dev-system.py`, `tests/test_seed_dev_system.py`
 
 ## Milestone A: Stop-List Safety First
 
@@ -314,10 +316,8 @@ Cloud UI:
 ### Task 14: Offline And Sync Smoke Coverage
 
 **Files:**
-- Modify: `scripts/run-stack-smoke.py`
-- Modify: `scripts/tests/test_mhpos_seed.py`
-- Modify: `scripts/tests/test_mhpos_contract.py`
-- Modify: `scripts/tests/test_mhpos_stack.py`
+- Modify: `scripts/seed-dev-system.py`
+- Modify: `tests/test_seed_dev_system.py`
 - Modify: `docs/temp/FULL-FLOW-SMOKE-2026-05-16.md`
 
 - [ ] Extend seed data with cashier, waiter, kitchen, manager roles; one stopped dish; one stopped component; one active recipe.
@@ -325,7 +325,7 @@ Cloud UI:
 - [ ] Add smoke step: waiter creates order and precheck offline while sync sender cannot reach Cloud; outbox remains pending.
 - [ ] Add smoke step: reconnect Cloud; outbox ACKs `OrderLineAdded`, `PrecheckIssued`, `CheckClosed`, `ItemServed`.
 - [ ] Add smoke step: Cloud inventory worker writes ledger rows from `CheckClosed`/`ItemServed`.
-- [ ] Выполнить `python scripts/run-stack-smoke.py --suite full_pilot`.
+- [ ] Выполнить `python scripts/seed-dev-system.py --run-minimal-flow --run-kitchen-process-smoke`.
 
 ### Task 15: Documentation Alignment
 
@@ -360,7 +360,7 @@ Cloud UI:
   - `cd pos-ui && npm install && npm run build`
   - `cd cloud-ui && npm install && npm run build`
 - [ ] Execute full smoke:
-  - `python scripts/run-stack-smoke.py --suite full_pilot`
+  - `python scripts/seed-dev-system.py --run-minimal-flow --run-kitchen-process-smoke`
 - [ ] Record known accepted pilot limitations in `ROADMAP.md`.
 - [ ] Mark runtime code touched: yes, across POS Edge, Cloud Backend, POS UI and Cloud UI.
 
@@ -473,9 +473,9 @@ Cloud UI:
     - Functional proof: readiness blocks until stop-list/proposal review, publication and ClickHouse export health exist; problem events show metadata only.
 
 16. **Full pilot smoke**
-    - Files: `scripts/run-stack-smoke.py`, `scripts/tests/*`, `docs/temp/FULL-FLOW-SMOKE-2026-05-16.md`.
+    - Files: `scripts/seed-dev-system.py`, `tests/test_seed_dev_system.py`, `docs/temp/FULL-FLOW-SMOKE-2026-05-16.md`.
     - Implement: suite `full_pilot` covering Cloud setup, Edge sync, stop-list block, waiter order, advanced kitchen lifecycle, chef receipt/proposals, cashier payment, Cloud inventory ledger/balances/costing, ClickHouse export and OLAP API reads.
-    - Local check: `python scripts/run-stack-smoke.py --suite full_pilot`.
+    - Local check: `python scripts/seed-dev-system.py --run-minimal-flow --run-kitchen-process-smoke`.
     - Functional proof: suite passes from clean seed without manual DB edits.
 
 17. **Release gate**
@@ -485,7 +485,7 @@ Cloud UI:
     - Local check: `cd cloud-backend && go mod tidy && go test ./...`.
     - Local check: `cd pos-ui && npm install && npm run build`.
     - Local check: `cd cloud-ui && npm install && npm run build`.
-    - Local check: `python scripts/run-stack-smoke.py --suite full_pilot`.
+    - Local check: `python scripts/seed-dev-system.py --run-minimal-flow --run-kitchen-process-smoke`.
     - Functional proof: all gates pass and docs contain no unsupported behavior marked as current.
 
 ## Pilot Definition Of Done

@@ -75,6 +75,21 @@ INSERT INTO cloud_catalog_suggestions(
 	if !updated.UpdatedAt.Equal(updatedAt) {
 		t.Fatalf("expected updated_at %s, got %s", updatedAt, updated.UpdatedAt)
 	}
+
+	clearedAt := now.Add(40 * time.Minute)
+	updated.AssignedToEmployeeID = " "
+	updated.AssignedByEmployeeID = ""
+	updated.AssignedAt = nil
+	updated.AssignmentNote = " "
+	updated.UpdatedAt = clearedAt
+	cleared, err := repo.UpdateCatalogSuggestion(ctx, updated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCatalogAssignmentCleared(t, cleared)
+	if !cleared.UpdatedAt.Equal(clearedAt) {
+		t.Fatalf("expected updated_at %s, got %s", clearedAt, cleared.UpdatedAt)
+	}
 }
 
 func TestRecipeSuggestionsReadAndUpdateAssignmentFields(t *testing.T) {
@@ -135,6 +150,21 @@ INSERT INTO cloud_recipe_suggestions(
 	assertRecipeAssignment(t, updated, "employee-4", "manager-4", reassignedAt, "needs recipe owner")
 	if !updated.UpdatedAt.Equal(updatedAt) {
 		t.Fatalf("expected updated_at %s, got %s", updatedAt, updated.UpdatedAt)
+	}
+
+	clearedAt := now.Add(40 * time.Minute)
+	updated.AssignedToEmployeeID = " "
+	updated.AssignedByEmployeeID = ""
+	updated.AssignedAt = nil
+	updated.AssignmentNote = " "
+	updated.UpdatedAt = clearedAt
+	cleared, err := repo.UpdateRecipeSuggestion(ctx, updated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertRecipeAssignmentCleared(t, cleared)
+	if !cleared.UpdatedAt.Equal(clearedAt) {
+		t.Fatalf("expected updated_at %s, got %s", clearedAt, cleared.UpdatedAt)
 	}
 }
 
@@ -210,6 +240,21 @@ WHERE source_event_id = 'stop-event-1'`).Scan(&storedTo, &storedBy, &storedAssig
 	}
 	if storedTo != "employee-6" || storedBy != "manager-6" || storedNote != "final stop-list owner" || !storedAssignedAt.Equal(reassignedAt) || !storedUpdatedAt.Equal(updatedAt) {
 		t.Fatalf("unexpected stored stop-list assignment: to=%q by=%q assigned_at=%s note=%q updated_at=%s", storedTo, storedBy, storedAssignedAt, storedNote, storedUpdatedAt)
+	}
+
+	clearedAt := now.Add(40 * time.Minute)
+	updated.AssignedToEmployeeID = " "
+	updated.AssignedByEmployeeID = ""
+	updated.AssignedAt = nil
+	updated.AssignmentNote = " "
+	updated.UpdatedAt = clearedAt
+	cleared, err := repo.UpdateStopListUpdateReview(ctx, updated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertStopListAssignmentCleared(t, cleared)
+	if !cleared.UpdatedAt.Equal(clearedAt) {
+		t.Fatalf("expected updated_at %s, got %s", clearedAt, cleared.UpdatedAt)
 	}
 }
 
@@ -488,6 +533,13 @@ func assertCatalogAssignment(t *testing.T, got domain.CatalogSuggestion, wantTo,
 	assertTimePtrEqual(t, got.AssignedAt, wantAt)
 }
 
+func assertCatalogAssignmentCleared(t *testing.T, got domain.CatalogSuggestion) {
+	t.Helper()
+	if got.AssignedToEmployeeID != "" || got.AssignedByEmployeeID != "" || got.AssignmentNote != "" || got.AssignedAt != nil {
+		t.Fatalf("expected cleared catalog assignment, got %+v", got)
+	}
+}
+
 func assertRecipeAssignment(t *testing.T, got domain.RecipeSuggestion, wantTo, wantBy string, wantAt time.Time, wantNote string) {
 	t.Helper()
 	if got.AssignedToEmployeeID != wantTo || got.AssignedByEmployeeID != wantBy || got.AssignmentNote != wantNote {
@@ -496,12 +548,26 @@ func assertRecipeAssignment(t *testing.T, got domain.RecipeSuggestion, wantTo, w
 	assertTimePtrEqual(t, got.AssignedAt, wantAt)
 }
 
+func assertRecipeAssignmentCleared(t *testing.T, got domain.RecipeSuggestion) {
+	t.Helper()
+	if got.AssignedToEmployeeID != "" || got.AssignedByEmployeeID != "" || got.AssignmentNote != "" || got.AssignedAt != nil {
+		t.Fatalf("expected cleared recipe assignment, got %+v", got)
+	}
+}
+
 func assertStopListAssignment(t *testing.T, got domain.StopListUpdateReview, wantTo, wantBy string, wantAt time.Time, wantNote string) {
 	t.Helper()
 	if got.AssignedToEmployeeID != wantTo || got.AssignedByEmployeeID != wantBy || got.AssignmentNote != wantNote {
 		t.Fatalf("unexpected stop-list assignment: %+v", got)
 	}
 	assertTimePtrEqual(t, got.AssignedAt, wantAt)
+}
+
+func assertStopListAssignmentCleared(t *testing.T, got domain.StopListUpdateReview) {
+	t.Helper()
+	if got.AssignedToEmployeeID != "" || got.AssignedByEmployeeID != "" || got.AssignmentNote != "" || got.AssignedAt != nil {
+		t.Fatalf("expected cleared stop-list assignment, got %+v", got)
+	}
 }
 
 func assertTimePtrEqual(t *testing.T, got *time.Time, want time.Time) {

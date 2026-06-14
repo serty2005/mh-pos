@@ -15,6 +15,33 @@ API_PREFIX = "/api/v1"
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 DEFAULT_OUTPUT = str(SCRIPT_DIR / ".seed-dev-system-summary.json")
 
+# Карта расширения seed/smoke: новый Cloud-owned справочник или stream
+# добавляется здесь вместе с dataset key, publication stream и POS read check.
+CLOUD_OWNED_SEED_SURFACES = (
+    {"dataset_key": "restaurant", "publication_stream": "restaurants", "pos_read_check": "pin_login"},
+    {"dataset_key": "roles", "publication_stream": "staff", "pos_read_check": "pin_login"},
+    {"dataset_key": "employees", "publication_stream": "staff", "pos_read_check": "pin_login"},
+    {"dataset_key": "floor", "publication_stream": "floor", "pos_read_check": "halls"},
+    {"dataset_key": "catalog_items", "publication_stream": "catalog", "pos_read_check": "catalog_items"},
+    {"dataset_key": "catalog_folders", "publication_stream": "catalog", "pos_read_check": "catalog_items"},
+    {"dataset_key": "catalog_tags", "publication_stream": "catalog", "pos_read_check": "catalog_items"},
+    {"dataset_key": "modifier_groups", "publication_stream": "catalog", "pos_read_check": "menu_items"},
+    {"dataset_key": "menu_categories", "publication_stream": "menu", "pos_read_check": "menu_items"},
+    {"dataset_key": "pricing_policies", "publication_stream": "pricing_policy", "pos_read_check": "menu_items"},
+    {"dataset_key": "recipes", "publication_stream": "recipes", "pos_read_check": "kitchen_recipe"},
+    {"dataset_key": "stop_list", "publication_stream": "inventory_reference", "pos_read_check": "blocked_sale"},
+)
+
+FORBIDDEN_MUTATING_ROUTE_FRAGMENTS = (
+    "/storage/archive/apply",
+    "/storage/apply",
+    "/archive/apply",
+    "/archives/apply",
+    "/storage/delete",
+    "/storage/reset",
+    "/storage/compact",
+)
+
 PERMISSIONS = {
     "cashier": [
         "pos.employee_shift.open",
@@ -207,12 +234,23 @@ def decode_body(data):
 def request(client, method, path, body=None, expected_status=(200, 201), query=None, headers=None):
     if query:
         path = path + "?" + urllib.parse.urlencode({k: v for k, v in query.items() if v not in (None, "")})
+    assert_seed_smoke_request_allowed(method, path)
     if hasattr(client, "request"):
         try:
             return client.request(method, path, body, expected_status=expected_status, headers=headers)
         except TypeError:
             return client.request(method, path, body, expected_status=expected_status)
     raise TypeError("client must expose request(method, path, body, expected_status)")
+
+
+def assert_seed_smoke_request_allowed(method, path):
+    method = method.upper()
+    if method not in ("POST", "PUT", "PATCH", "DELETE"):
+        return
+    lowered = path.lower()
+    for fragment in FORBIDDEN_MUTATING_ROUTE_FRAGMENTS:
+        if fragment in lowered:
+            raise RuntimeError(f"seed smoke must not call destructive storage/archive route: {method} {path}")
 
 
 def root_health(client):
@@ -330,6 +368,16 @@ def build_seed_dataset(suffix):
     }
 
 
+def validate_seed_extension_plan(dataset):
+    missing = sorted(
+        item["dataset_key"]
+        for item in CLOUD_OWNED_SEED_SURFACES
+        if item["dataset_key"] not in dataset
+    )
+    if missing:
+        raise RuntimeError(f"seed extension plan references missing dataset keys: {missing}")
+
+
 def seed_full_system(
     cloud_client,
     pos_client,
@@ -356,6 +404,7 @@ def seed_full_system(
         raise RuntimeError("POS Edge is already paired. Reset local backend data before running the full seed.")
 
     dataset = build_seed_dataset(suffix)
+    validate_seed_extension_plan(dataset)
     restaurant = request(cloud_client, "POST", f"{API_PREFIX}/restaurants", dataset["restaurant"], expected_status=(201,))
     restaurant_id = restaurant["id"]
 

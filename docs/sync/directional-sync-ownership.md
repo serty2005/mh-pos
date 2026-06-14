@@ -49,6 +49,8 @@
 `pricing_policy` включает tax/service-charge reference tables и automatic discount/surcharge policies; manual override runtime остается backend RBAC-controlled action.
 `recipes` включает `recipe_versions` и `recipe_lines`; `inventory_reference` включает `stop_lists` и Cloud-owned `warehouses`.
 
+Canonical seed/smoke для Cloud-owned ingest остается `scripts/seed-dev-system.py`. Новый Cloud-owned stream, справочник или POS read flow добавляется вместе с seed data, publication package, POS read assertion/smoke step, script guard `CLOUD_OWNED_SEED_SURFACES` и профильными docs; отдельный user-facing seed/smoke entrypoint не добавляется без отдельного архитектурного решения.
+
 Запланировано до полного пилота:
 
 - добавить Cloud authoring UI/publication workflow для recipes/stop-list;
