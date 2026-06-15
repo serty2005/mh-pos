@@ -360,6 +360,13 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Indexes:       []string{"stock_ledger_restaurant_occurred_at", "stock_ledger_restaurant_warehouse_occurred_at", "stock_ledger_source_event", "stock_ledger_order_line_consumption"},
 		},
 		{
+			Table:         "inventory_stock_balances",
+			RequiredBy:    "cloud inventory materialized balances and costing status read model",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"restaurant_id", "warehouse_id", "catalog_item_id", "unit_code", "quantity_on_hand", "last_movement_at", "last_ledger_entry_id", "costing_status", "needs_recalculation", "created_at", "updated_at"},
+			Indexes:       []string{"inventory_stock_balances_pkey", "inventory_stock_balances_restaurant_warehouse_item", "inventory_stock_balances_restaurant_last_movement", "inventory_stock_balances_costing_status"},
+		},
+		{
 			Table:         "stock_recalculation_jobs",
 			RequiredBy:    "cloud inventory foundation retrospective recalculation queue",
 			MigrationFile: "001_init.sql",

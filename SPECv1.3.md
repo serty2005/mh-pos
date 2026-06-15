@@ -43,7 +43,7 @@
 - Edge -> Cloud operational outbox foundation;
 - Cloud -> Edge master-data ingest for supported streams.
 - POS Edge stop-list sale blocking при `AddOrderLine` и увеличении quantity по direct `catalog_item_id` и mandatory active recipe components из локальных `recipe_versions`/`recipe_lines`.
-- Целевая Cloud-centric inventory architecture зафиксирована в `docs/backend/INVENTORY-COSTING-SPEC.md`, но полный runtime engine не реализован сейчас.
+- Целевая Cloud-centric inventory architecture зафиксирована в `docs/backend/INVENTORY-COSTING-SPEC.md`. Реализовано сейчас: bounded worker, `stock_ledger` и materialized `stock-balances`; полный runtime engine не реализован сейчас.
 
 Цель полной пилотной реализации:
 
@@ -216,7 +216,7 @@ Boundary rules:
 
 - Целевая Edge inventory схема содержит только `recipe_versions`, `recipe_lines` в read-only режиме и двусторонний overlay `stop_lists`.
 - Целевая Edge schema не должна содержать `stock_documents`, `stock_moves`, `stock_balances`, `item_costs`, `purchase_receipts`, `purchase_receipt_lines`.
-- Целевой Cloud runtime владеет `stock_documents`, `stock_ledger`, costing state, stop-list authority и очередью Inventory Worker. Реализовано сейчас: Cloud PostgreSQL baseline содержит `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`; Cloud Inventory Worker обрабатывает нормализованные item payloads с fallback costing `estimated`.
+- Целевой Cloud runtime владеет `stock_documents`, `stock_ledger`, materialized balances, costing state, stop-list authority и очередью Inventory Worker. Реализовано сейчас: Cloud PostgreSQL baseline содержит `inventory_event_queue`, `stock_documents`, `stock_ledger`, `inventory_stock_balances`, `stock_recalculation_jobs`, `stop_lists`; Cloud Inventory Worker обрабатывает нормализованные item payloads с fallback costing `estimated` и транзакционно обновляет materialized balances.
 - Legacy Edge-side manual stock document foundation использовался в pre-pilot runtime и удален при переходе на Cloud-centric Event-Driven Inventory.
 
 ## Pricing, Discounts And Tax
@@ -284,8 +284,8 @@ Boundary rules:
 
 - POS Edge и KDS являются генераторами immutable business events и не формируют складские документы, складские проводки или себестоимость.
 - POS Edge backend является авторитетным runtime для offline order/precheck/payment/check commands, pricing snapshots, financial operation ledger, idempotency, cash/session boundaries, stop-list sale blocking и KDS command validation. POS UI не является авторитетным слоем и только отправляет команды/показывает ответы backend.
-- Cloud является единственным source of truth для склада: Cloud receiver принимает Edge outbox, durable queue передает события Inventory Worker, Worker пишет `stock_documents` и `stock_ledger` в PostgreSQL.
-- Cloud остается авторитетным источником master/reference/configuration data, складских документов, stock ledger, costing/recalculation state, ClickHouse export и OLAP reads.
+- Cloud является единственным source of truth для склада: Cloud receiver принимает Edge outbox, durable queue передает события Inventory Worker, Worker пишет `stock_documents`, `stock_ledger` и materialized `inventory_stock_balances` в PostgreSQL.
+- Cloud остается авторитетным источником master/reference/configuration data, складских документов, stock ledger, materialized balances, costing/recalculation state, ClickHouse export и OLAP reads.
 - ClickHouse используется как immutable business event archive и Cloud OLAP/reporting accelerator через batch projection `olap_stock_moves`; он не является transactional source of truth и не входит в POS transaction path.
 - Остаток склада является аналитическим показателем, допускает отрицательные значения и не блокирует продажу.
 - Продажу блокирует только `StopList`.
@@ -325,7 +325,7 @@ Inventory and costing logic:
 - smoke для Cloud package -> Edge sync -> offline sale blocking реализован сейчас в `scripts/seed-dev-system.py --run-minimal-flow`;
 - полный kitchen/process smoke для Cloud seed, Edge sync, KDS recall/serve-again, ClickHouse trail, stock events, proposal approve и Edge feedback реализован сейчас в `scripts/seed-dev-system.py --run-kitchen-process-smoke`;
 - реализовано сейчас: bounded Edge stop-list edit form и manager review flow поверх `StopListUpdated`; запланировано далее production-grade assignment/escalation, расширенный conflict UX и operator polish;
-- full inventory engine beyond текущего bounded worker slice: semi-finished auto-production split, production-grade purchase/receipt input, materialized inventory count adjustments, balances, full costing status и retro recalculation DAG; bounded refund/cancellation stock dispositions `return_to_stock`/`write_off_waste` реализованы сейчас без PSP/fiscal/COGS/margin;
+- full inventory engine beyond текущего bounded worker slice: semi-finished auto-production split, production-grade purchase/receipt input, materialized inventory count adjustments, full costing status и retro recalculation DAG; bounded materialized balances и refund/cancellation stock dispositions `return_to_stock`/`write_off_waste` реализованы сейчас без PSP/fiscal/COGS/margin;
 - реализовано сейчас: ClickHouse first slice с managed schema `raw_business_events`, async forwarder `inbox_events -> raw_business_events`, export state, retry state и bounded metadata API;
 - реализовано сейчас: первый ClickHouse stock moves slice с managed schema `olap_stock_moves`, async forwarder `stock_ledger -> olap_stock_moves`, checkpoint/retry state и bounded API `GET /api/v1/olap/stock-moves` без raw payload;
 - реализовано сейчас: read-only `GET /api/v1/olap/export-status?stream=raw_business_events|stock_moves`, первый bounded агрегат `GET /api/v1/olap/stock-move-summary` по `olap_stock_moves` и минимальный support-only `POST /api/v1/olap/export-retry` для `retry_failed|resume_from_checkpoint` без raw payload и без synchronous ClickHouse dual-write;

@@ -99,7 +99,7 @@ type InventoryLedgerEntry struct {
 	CreatedAt         time.Time `json:"created_at"`
 }
 
-// InventoryStockBalance описывает bounded Cloud-owned balance read model поверх stock_ledger.
+// InventoryStockBalance описывает bounded Cloud-owned materialized balance read model.
 type InventoryStockBalance struct {
 	RestaurantID       string    `json:"restaurant_id"`
 	WarehouseID        string    `json:"warehouse_id,omitempty"`

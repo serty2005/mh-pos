@@ -221,7 +221,10 @@ class FakeClient:
                 {"id": "ledger-2", "source_event_id": "event-item-served", "source_event_type": "ItemServed", "order_line_id": "line-soup", "catalog_item_id": "catalog-sauce"},
             ]
         if path.startswith("/api/v1/inventory/stock-balances"):
-            return [{"catalog_item_id": "catalog-sirloin", "warehouse_id": "warehouse-main", "quantity": "7.500"}]
+            return [
+                {"catalog_item_id": "catalog-sirloin", "warehouse_id": "warehouse-main", "quantity_on_hand": "-0.120", "unit_code": "g", "costing_status": "estimated", "needs_recalculation": True},
+                {"catalog_item_id": "catalog-sauce", "warehouse_id": "warehouse-main", "quantity_on_hand": "-0.030", "unit_code": "g", "costing_status": "estimated", "needs_recalculation": True},
+            ]
         if path == "/api/v1/kitchen/stock-receipts":
             return {"id": body["receipt_id"], "warehouse_id": body.get("warehouse_id", ""), "event_type": "StockReceiptCaptured"}
         if path == "/api/v1/kitchen/inventory-counts":
@@ -501,6 +504,8 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertEqual(result["served_ledger_entry_count"], 2)
         self.assertEqual(result["check_closed_delta_entry_count"], 0)
         self.assertEqual(result["ledger_catalog_item_ids"], ["catalog-sauce", "catalog-sirloin"])
+        self.assertEqual(result["stock_balance_catalog_item_ids"], ["catalog-sauce", "catalog-sirloin"])
+        self.assertEqual(result["stock_balance_count"], 2)
         self.assertEqual(result["olap_item_served_event_count"], 1)
         self.assertEqual(result["olap_check_closed_event_count"], 1)
         self.assertEqual(result["olap_item_served_stock_move_count"], 1)
@@ -513,6 +518,7 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertTrue(any("event_type=CheckClosed" in path for path in cloud_paths))
         self.assertTrue(any("source_event_type=ItemServed" in path for path in cloud_paths))
         self.assertTrue(any("source_event_type=CheckClosed" in path for path in cloud_paths))
+        self.assertTrue(any(path.startswith("/api/v1/inventory/stock-balances?") for path in cloud_paths))
         self.assertTrue(any(path.startswith("/api/v1/olap/stock-move-summary?") for path in cloud_paths))
         self.assertTrue(any(path.startswith("/api/v1/olap/sales-kitchen-summary?") for path in cloud_paths))
         self.assertTrue(any(path.startswith("/api/v1/olap/kitchen-timing-summary?") for path in cloud_paths))

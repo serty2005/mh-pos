@@ -26,7 +26,7 @@
 - расширить KDS lifecycle за пределы текущего backend-backed ticket/stock/proposal/stop-list foundation: cooking events, station priority и operator analytics;
 - зафиксировать POS Edge backend как авторитетный runtime для financial/order/KDS command validation и stop-list sale blocking; POS UI не становится авторитетным слоем;
 - добавить Cloud manager flow для production-grade recipe lifecycle polish, stop-list escalation polish, inventory operations, publication readiness и sync/problem observability;
-- добавить полный Cloud-owned складской движок beyond текущего bounded worker slice: materialized balances, production-grade stock receipts/counts/production state, semi-finished auto-production split, full costing lifecycle и retro recalculation DAG; bounded refund/cancellation dispositions уже реализованы Cloud-side для `return_to_stock`/`write_off_waste`;
+- добавить полный Cloud-owned складской движок beyond текущего bounded worker/materialized-balance slice: production-grade stock receipts/counts/production state, semi-finished auto-production split, full costing lifecycle и retro recalculation DAG; bounded materialized balances и refund/cancellation dispositions уже реализованы Cloud-side для `return_to_stock`/`write_off_waste`;
 - расширить ClickHouse runtime от первых bounded `stock-move-summary`/`sales-kitchen-summary` endpoints и минимального retry control до richer sales/kitchen/costing aggregates и production-grade backfill jobs;
 - поддерживать полный smoke path Cloud setup -> Edge sync -> waiter order/precheck -> KDS served -> cashier payment/final check -> Edge outbox -> Cloud inventory ledger -> ClickHouse export -> bounded OLAP API; сейчас полный хвост после финального чека покрывает `scripts/seed-dev-system.py --run-minimal-flow`, а advanced kitchen/process ветку покрывает `--run-kitchen-process-smoke`.
 
@@ -71,7 +71,7 @@
 - `sync/exchange` проверяет bearer `node_token`, assigned restaurant и device status.
 - Idempotent receipt для Edge events, raw payload checksum, event type stats и coarse shift finance projection.
 - Bounded read-only Cloud inventory ledger endpoint `GET /api/v1/inventory/stock-ledger` для проверки обработанных Cloud Inventory Worker строк без raw sync payload.
-- Bounded read-only Cloud inventory balances endpoint `GET /api/v1/inventory/stock-balances` поверх PostgreSQL `stock_ledger`: фильтры по ресторану/складу/товару/business date/costing status, отрицательные остатки допустимы, aggregate `costing_status` виден без raw payload, COGS или margin.
+- Bounded read-only Cloud inventory balances endpoint `GET /api/v1/inventory/stock-balances` поверх PostgreSQL `inventory_stock_balances`: фильтры по ресторану/складу/товару/UTC-дате `last_movement_at`/costing status, отрицательные остатки допустимы, deterministic `costing_status` и `needs_recalculation` видны без raw payload, COGS или margin.
 - `ItemServed` попадает в durable `inventory_event_queue` и Cloud Inventory Worker создает sale ledger идемпотентно по source event; superseded served fact пропускается, если superseding `ItemServed` уже принят до обработки очереди; если старый served fact уже обработан, superseding `ItemServed` пишет append-only `ItemServedCompensation` return ledger и затем новый sale ledger; `KitchenTicketStatusChanged` принимается как operational-only event и не ставится в inventory queue.
 - `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` принимаются Cloud receiver и превращаются Cloud Inventory Worker в stock documents/ledger rows.
 - `RefundRecorded` и `CancellationRecorded` принимаются Cloud receiver как append-only financial operation facts; `no_stock_effect` не создает складского эффекта, `return_to_stock` и `write_off_waste` попадают в `inventory_event_queue` и асинхронно создают Cloud-owned `RETURN/IN` или `WASTE/OUT`, а `manual_review` не создает автоматическое движение и остается failed queue item для операторского разбора.
@@ -101,7 +101,7 @@
 Вне текущего объема:
 
 - Production auth/RBAC perimeter для Cloud API.
-- Расширенные sales/kitchen/costing агрегаты beyond first bounded endpoint, production-grade backfill jobs/operator UI, materialized inventory balance engine и full inventory costing.
+- Расширенные sales/kitchen/costing агрегаты beyond first bounded endpoint, production-grade backfill jobs/operator UI, production-grade balance rebuild/recalculation tooling и full inventory costing.
 - Semi-finished auto-production split, COGS/margin и retro costing DAG.
 
 ## License Server
@@ -194,7 +194,7 @@
 - `scripts/seed-dev-system.py` является единственным user-facing Python demo/seed entrypoint для Fedora/Linux/Windows-compatible локального контура. Helper/test-only scripts в текущем `scripts/` отсутствуют; прежние wrapper/onboarding paths не являются актуальными пользовательскими сценариями.
 - Единственный Python seed script использует HTTP API Cloud/POS/License и не делает прямых записей в PostgreSQL/SQLite/ClickHouse.
 - `scripts/seed-dev-system.py` проверяет health Cloud/POS/License, создает полный Cloud-owned seed dataset, публикует master data, выполняет license pairing POS Edge и проверяет базовый POS read model.
-- `scripts/seed-dev-system.py --run-minimal-flow` выполняет минимальный HTTP-only smoke: Cloud recipes/stop-list publication, Edge sync, waiter order/precheck, KDS served, cashier payment/final check, прием `ItemServed`/`CheckClosed` в Cloud, появление строк Cloud `stock_ledger` по `ItemServed`, отсутствие duplicate `CheckClosed` delta для того же `order_line_id`, экспорт событий в ClickHouse `raw_business_events`, экспорт складских движений в `olap_stock_moves` и bounded reads `stock-move-summary`/`sales-kitchen-summary` без raw payload.
+- `scripts/seed-dev-system.py --run-minimal-flow` выполняет минимальный HTTP-only smoke: Cloud recipes/stop-list publication, Edge sync, waiter order/precheck, KDS served, cashier payment/final check, прием `ItemServed`/`CheckClosed` в Cloud, появление строк Cloud `stock_ledger` по `ItemServed`, появление materialized `stock-balances`, отсутствие duplicate `CheckClosed` delta для того же `order_line_id`, экспорт событий в ClickHouse `raw_business_events`, экспорт складских движений в `olap_stock_moves` и bounded reads `stock-move-summary`/`sales-kitchen-summary` без raw payload.
 - `scripts/seed-dev-system.py --run-kitchen-process-smoke` выполняет профильный kitchen/process smoke: Cloud seed publication для catalog/menu/recipes/inventory_reference, Edge sync, waiter order, kitchen order tile, `accept/start/ready/serve`, `recall/start/ready/serve`, ClickHouse `raw_business_events`, Cloud stock ledger и `olap_stock_moves` read для receipt/count/write-off/production, catalog/recipe suggestions, Cloud manager approve и Edge proposal feedback. При одновременном запуске `--run-minimal-flow` и `--run-kitchen-process-smoke` summary содержит отдельные секции `minimal_flow` и `kitchen_process_smoke`; полный kitchen/process smoke использует kitchen role/PIN, а не manager PIN.
 - PowerShell/Bash wrappers и прежние onboarding flows удалены; в `scripts` остается один пользовательский Python seed script.
 - HTTP слой скриптов игнорирует proxy для localhost/loopback, чтобы не ломать Docker published ports.
@@ -212,7 +212,7 @@
 - Cloud master-data tests покрывают CRUD/validation, PIN reuse rules, role permission validation, catalog/menu/publication shape, service/semi-finished kinds, lifecycle statuses и pricing policies.
 - License tests покрывают registration, resolve, consumed/expired/invalid pairing codes.
 - UI unit/e2e tests покрывают currency/error/session guards, RBAC, schema parsing, cashier terminal conflict handling, compensation boundaries, modifier flow, payments/refunds, refund после закрытия исходных personal/cash shifts, запрет cancellation после закрытия исходной смены и sync/provisioning flows.
-- Script tests покрывают единственный seed flow, отсутствие других user-facing Python entrypoints в `scripts`, отсутствие preassigned IDs в seed dataset, dev-only summary рядом со скриптом, отключение proxy для localhost/loopback, отсутствие direct DB client imports, запрет destructive storage/archive routes, single-shot financial mutation request, карту расширения Cloud-owned seed surfaces и генерацию pairing после публикации master data.
+- Script tests покрывают единственный seed flow, materialized balance assertion в minimal flow, отсутствие других user-facing Python entrypoints в `scripts`, отсутствие preassigned IDs в seed dataset, dev-only summary рядом со скриптом, отключение proxy для localhost/loopback, отсутствие direct DB client imports, запрет destructive storage/archive routes, single-shot financial mutation request, карту расширения Cloud-owned seed surfaces и генерацию pairing после публикации master data.
 
 Оставшиеся риски:
 

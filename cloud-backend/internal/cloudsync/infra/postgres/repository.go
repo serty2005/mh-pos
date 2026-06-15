@@ -585,7 +585,7 @@ LIMIT $6 OFFSET $7`,
 	return out, rows.Err()
 }
 
-// ListInventoryStockBalances агрегирует Cloud-owned stock ledger в bounded balance view.
+// ListInventoryStockBalances читает materialized Cloud-owned balance view без raw event payload.
 func (r *Repository) ListInventoryStockBalances(ctx context.Context, filter app.InventoryStockBalanceFilter) ([]contracts.InventoryStockBalance, error) {
 	limit := filter.Limit
 	if limit <= 0 || limit > 200 {
@@ -596,47 +596,14 @@ func (r *Repository) ListInventoryStockBalances(ctx context.Context, filter app.
 		offset = 0
 	}
 	rows, err := r.pool.Query(ctx, `
-WITH scoped AS (
-  SELECT restaurant_id,
-         COALESCE(warehouse_id, '') AS warehouse_id,
-         catalog_item_id,
-         unit_code,
-         CASE WHEN movement_type = 'IN' THEN quantity ELSE -quantity END AS signed_quantity,
-         CASE
-           WHEN costing_status = 'recalculated' THEN 'final'
-           WHEN costing_status = 'failed' THEN 'unknown'
-           ELSE costing_status
-         END AS normalized_costing_status,
-         costing_status,
-         occurred_at,
-         business_date_local
-  FROM stock_ledger
-  WHERE restaurant_id = $1
-    AND ($2 = '' OR COALESCE(warehouse_id, '') = $2)
-    AND ($3 = '' OR catalog_item_id = $3)
-    AND ($4 = '' OR business_date_local <= $4::date)
-),
-grouped AS (
-  SELECT restaurant_id,
-         warehouse_id,
-         catalog_item_id,
-         unit_code,
-         SUM(signed_quantity)::text AS quantity_on_hand,
-         CASE
-           WHEN COUNT(DISTINCT normalized_costing_status) = 0 THEN 'unknown'
-           WHEN COUNT(DISTINCT normalized_costing_status) = 1 THEN MIN(normalized_costing_status)
-           ELSE 'mixed'
-         END AS costing_status,
-         BOOL_OR(costing_status = 'needs_recalculation') AS needs_recalculation,
-         MAX(occurred_at) AS last_movement_at,
-         MAX(business_date_local)::text AS business_date_to
-  FROM scoped
-  GROUP BY restaurant_id, warehouse_id, catalog_item_id, unit_code
-)
 SELECT restaurant_id,warehouse_id,catalog_item_id,quantity_on_hand,unit_code,costing_status,
-       needs_recalculation,last_movement_at,business_date_to
-FROM grouped
-WHERE ($5 = '' OR costing_status = $5)
+       needs_recalculation,last_movement_at,(last_movement_at AT TIME ZONE 'UTC')::date::text AS business_date_to
+FROM inventory_stock_balances
+WHERE restaurant_id = $1
+  AND ($2 = '' OR warehouse_id = $2)
+  AND ($3 = '' OR catalog_item_id = $3)
+  AND ($4 = '' OR (last_movement_at AT TIME ZONE 'UTC')::date <= $4::date)
+  AND ($5 = '' OR costing_status = $5)
 ORDER BY restaurant_id ASC, warehouse_id ASC, catalog_item_id ASC, unit_code ASC
 LIMIT $6 OFFSET $7`,
 		filter.RestaurantID,

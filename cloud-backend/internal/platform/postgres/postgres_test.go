@@ -165,6 +165,8 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 		"cloud_modifier_group_bindings",
 		"cloud_pricing_policies",
 		"price_minor",
+		"inventory_stock_balances",
+		"inventory_stock_balances_restaurant_warehouse_item",
 	} {
 		if !strings.Contains(baseBody, required) {
 			t.Fatalf("expected canonical postgres baseline to manage %s", required)

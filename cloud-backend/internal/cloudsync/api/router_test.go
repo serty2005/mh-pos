@@ -493,58 +493,12 @@ func TestListInventoryLedgerReturnsBoundedReadOnlyLedger(t *testing.T) {
 	}
 }
 
-func TestListInventoryStockBalancesAggregatesLedgerSafely(t *testing.T) {
+func TestListInventoryStockBalancesReadsMaterializedStateSafely(t *testing.T) {
 	repo := memory.NewRepository()
 	occurred := time.Date(2026, 5, 5, 9, 0, 0, 0, time.UTC)
-	repo.AddInventoryLedgerForTest(
-		contracts.InventoryLedgerEntry{
-			ID:                "ledger-in",
-			RestaurantID:      "restaurant-1",
-			WarehouseID:       "warehouse-main",
-			StockDocumentID:   "stock-doc-in",
-			SourceEventID:     "event-receipt",
-			SourceEventType:   string(contracts.EventStockReceiptCaptured),
-			CatalogItemID:     "component-1",
-			MovementType:      "IN",
-			Quantity:          "1.000",
-			UnitCode:          "PC",
-			CostingStatus:     "estimated",
-			OccurredAt:        occurred,
-			BusinessDateLocal: "2026-05-05",
-			CreatedAt:         occurred,
-		},
-		contracts.InventoryLedgerEntry{
-			ID:                "ledger-out",
-			RestaurantID:      "restaurant-1",
-			WarehouseID:       "warehouse-main",
-			StockDocumentID:   "stock-doc-out",
-			SourceEventID:     "event-sale",
-			SourceEventType:   string(contracts.EventItemServed),
-			CatalogItemID:     "component-1",
-			MovementType:      "OUT",
-			Quantity:          "3.000",
-			UnitCode:          "PC",
-			CostingStatus:     "needs_recalculation",
-			OccurredAt:        occurred.Add(time.Hour),
-			BusinessDateLocal: "2026-05-05",
-			CreatedAt:         occurred.Add(time.Hour),
-		},
-		contracts.InventoryLedgerEntry{
-			ID:                "ledger-other",
-			RestaurantID:      "restaurant-2",
-			WarehouseID:       "warehouse-main",
-			StockDocumentID:   "stock-doc-other",
-			SourceEventID:     "event-other",
-			SourceEventType:   string(contracts.EventStockReceiptCaptured),
-			CatalogItemID:     "component-1",
-			MovementType:      "IN",
-			Quantity:          "10.000",
-			UnitCode:          "PC",
-			CostingStatus:     "final",
-			OccurredAt:        occurred,
-			BusinessDateLocal: "2026-05-05",
-			CreatedAt:         occurred,
-		},
+	repo.AddInventoryStockBalancesForTest(
+		contracts.InventoryStockBalance{RestaurantID: "restaurant-1", WarehouseID: "warehouse-main", CatalogItemID: "component-1", QuantityOnHand: "-2.000", UnitCode: "PC", CostingStatus: "needs_recalculation", NeedsRecalculation: true, LastMovementAt: occurred.Add(time.Hour), BusinessDateTo: "2026-05-05"},
+		contracts.InventoryStockBalance{RestaurantID: "restaurant-2", WarehouseID: "warehouse-main", CatalogItemID: "component-1", QuantityOnHand: "10.000", UnitCode: "PC", CostingStatus: "final", LastMovementAt: occurred, BusinessDateTo: "2026-05-05"},
 	)
 	router := api.NewRouter(app.NewService(repo, fixedClock{}))
 
@@ -561,8 +515,8 @@ func TestListInventoryStockBalancesAggregatesLedgerSafely(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("expected one balance, got %+v", items)
 	}
-	if items[0].QuantityOnHand != "-2.000" || items[0].CostingStatus != "mixed" || !items[0].NeedsRecalculation {
-		t.Fatalf("unexpected balance aggregate: %+v", items[0])
+	if items[0].QuantityOnHand != "-2.000" || items[0].CostingStatus != "needs_recalculation" || !items[0].NeedsRecalculation {
+		t.Fatalf("unexpected materialized balance: %+v", items[0])
 	}
 	body := rec.Body.String()
 	for _, forbidden := range []string{"payload", "raw", "COGS", "margin"} {
@@ -575,9 +529,9 @@ func TestListInventoryStockBalancesAggregatesLedgerSafely(t *testing.T) {
 func TestListInventoryStockBalancesSupportsBoundsEmptyStateAndStatusFilter(t *testing.T) {
 	repo := memory.NewRepository()
 	occurred := time.Date(2026, 5, 5, 9, 0, 0, 0, time.UTC)
-	repo.AddInventoryLedgerForTest(
-		contracts.InventoryLedgerEntry{ID: "ledger-1", RestaurantID: "restaurant-1", WarehouseID: "warehouse-main", StockDocumentID: "doc-1", SourceEventID: "event-1", SourceEventType: string(contracts.EventStockReceiptCaptured), CatalogItemID: "item-1", MovementType: "IN", Quantity: "1.000", UnitCode: "PC", CostingStatus: "estimated", OccurredAt: occurred, BusinessDateLocal: "2026-05-05", CreatedAt: occurred},
-		contracts.InventoryLedgerEntry{ID: "ledger-2", RestaurantID: "restaurant-1", WarehouseID: "warehouse-main", StockDocumentID: "doc-2", SourceEventID: "event-2", SourceEventType: string(contracts.EventStockReceiptCaptured), CatalogItemID: "item-2", MovementType: "IN", Quantity: "1.000", UnitCode: "PC", CostingStatus: "final", OccurredAt: occurred, BusinessDateLocal: "2026-05-05", CreatedAt: occurred},
+	repo.AddInventoryStockBalancesForTest(
+		contracts.InventoryStockBalance{RestaurantID: "restaurant-1", WarehouseID: "warehouse-main", CatalogItemID: "item-1", QuantityOnHand: "1.000", UnitCode: "PC", CostingStatus: "estimated", NeedsRecalculation: true, LastMovementAt: occurred, BusinessDateTo: "2026-05-05"},
+		contracts.InventoryStockBalance{RestaurantID: "restaurant-1", WarehouseID: "warehouse-main", CatalogItemID: "item-2", QuantityOnHand: "1.000", UnitCode: "PC", CostingStatus: "final", LastMovementAt: occurred, BusinessDateTo: "2026-05-05"},
 	)
 	router := api.NewRouter(app.NewService(repo, fixedClock{}))
 

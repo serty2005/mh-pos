@@ -103,9 +103,9 @@ type StopListEdgeAckReadiness struct {
 }
 
 type SyncProblemSummary struct {
-	Total          int64                    `json:"total"`
-	LatestCreatedAt *time.Time              `json:"latest_created_at,omitempty"`
-	ByErrorCode    []SyncProblemCodeSummary `json:"by_error_code"`
+	Total           int64                    `json:"total"`
+	LatestCreatedAt *time.Time               `json:"latest_created_at,omitempty"`
+	ByErrorCode     []SyncProblemCodeSummary `json:"by_error_code"`
 }
 
 type SyncProblemCodeSummary struct {
@@ -137,15 +137,15 @@ type InventoryLedgerFilter struct {
 	Offset          int
 }
 
-// InventoryStockBalanceFilter задает bounded aggregate query поверх Cloud-owned stock ledger.
+// InventoryStockBalanceFilter задает bounded query поверх Cloud-owned materialized balances.
 type InventoryStockBalanceFilter struct {
-	RestaurantID    string
-	WarehouseID     string
-	CatalogItemID   string
+	RestaurantID   string
+	WarehouseID    string
+	CatalogItemID  string
 	BusinessDateTo string
-	CostingStatus   string
-	Limit           int
-	Offset          int
+	CostingStatus  string
+	Limit          int
+	Offset         int
 }
 
 type Service struct {
@@ -275,7 +275,7 @@ func (s *Service) ListInventoryLedger(ctx context.Context, filter InventoryLedge
 	return s.repo.ListInventoryLedger(ctx, filter)
 }
 
-// ListInventoryStockBalances возвращает аналитические остатки из Cloud stock_ledger без raw event payload.
+// ListInventoryStockBalances возвращает materialized аналитические остатки Cloud без raw event payload.
 func (s *Service) ListInventoryStockBalances(ctx context.Context, filter InventoryStockBalanceFilter) ([]contracts.InventoryStockBalance, error) {
 	filter.RestaurantID = strings.TrimSpace(filter.RestaurantID)
 	filter.WarehouseID = strings.TrimSpace(filter.WarehouseID)
@@ -289,9 +289,9 @@ func (s *Service) ListInventoryStockBalances(ctx context.Context, filter Invento
 		return nil, err
 	}
 	switch filter.CostingStatus {
-	case "", "final", "estimated", "needs_recalculation", "mixed", "unknown":
+	case "", "final", "estimated", "needs_recalculation", "recalculated", "failed":
 	default:
-		return nil, fmt.Errorf("%w: costing_status must be final, estimated, needs_recalculation, mixed or unknown", contracts.ErrInvalidEnvelope)
+		return nil, fmt.Errorf("%w: costing_status must be final, estimated, needs_recalculation, recalculated or failed", contracts.ErrInvalidEnvelope)
 	}
 	if filter.Limit <= 0 || filter.Limit > 200 {
 		filter.Limit = 50

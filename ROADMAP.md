@@ -371,6 +371,7 @@
   - `stock_recalculation_jobs`;
   - `stop_lists`.
 - Worker пишет `stock_ledger` with `unit_cost_minor`, `total_cost_minor`, `costing_status` для нормализованных item payloads.
+- Worker транзакционно обновляет Cloud-owned materialized `inventory_stock_balances` при записи `stock_ledger`.
 - Retro recalculation jobs остаются следующим шагом.
 - Cloud Inventory Worker дедуплицирует `ItemServed` replay и `CheckClosed` replay.
 - `CheckClosed` после обработанного `ItemServed` списывает только положительную unserved delta по `order_line_id`.
@@ -420,7 +421,7 @@
 - Replay того же stock `command_id` возвращает сохраненный результат без повторной записи events.
 - POS Edge использует stop-list как единственный механизм блокировки продаж при add/increase order line.
 - Stock balance остается аналитическим и может быть отрицательным.
-- Минимальный HTTP-only smoke `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud recipes/stop-list publication -> Edge sync -> waiter order/precheck -> KDS served -> cashier final check -> `ItemServed`/`CheckClosed` -> Cloud `stock_ledger` -> ClickHouse `raw_business_events`/`olap_stock_moves` -> bounded `stock-move-summary` и `sales-kitchen-summary`.
+- Минимальный HTTP-only smoke `scripts/seed-dev-system.py --run-minimal-flow` проверяет Cloud recipes/stop-list publication -> Edge sync -> waiter order/precheck -> KDS served -> cashier final check -> `ItemServed`/`CheckClosed` -> Cloud `stock_ledger` и materialized `stock-balances` -> ClickHouse `raw_business_events`/`olap_stock_moves` -> bounded `stock-move-summary` и `sales-kitchen-summary`.
 - Полный kitchen/process smoke `scripts/seed-dev-system.py --run-kitchen-process-smoke` проверяет Cloud seed publication для catalog/menu/recipes/inventory_reference, Edge sync, waiter order, KDS tile, `accept/start/ready/serve`, `recall/start/ready/serve`, ClickHouse `raw_business_events`, stock receipt/count/write-off/production ledger rows, catalog/recipe suggestions, manager approve и Edge proposal feedback.
 
 ### Cancellation/refund/reprint hardening
@@ -665,14 +666,14 @@
 
 - Cloud PostgreSQL baseline содержит inventory schema foundation.
 - Worker пишет pilot `stock_ledger` rows with costing fields.
+- Cloud PostgreSQL baseline содержит materialized `inventory_stock_balances`; Worker обновляет balance rows в той же транзакции, что и `stock_ledger`.
 - Worker выполняет sale consumption с recipe expansion для основной позиции и modifier-linked consumption по Cloud-authoritative `linked_catalog_item_id`; linked modifier item списывается напрямую и не разворачивается в recipe.
 - Worker выполняет bounded refund/cancellation stock disposition: `return_to_stock` -> `RETURN/IN`, `write_off_waste` -> `WASTE/OUT`, `no_stock_effect` -> без queue/ledger, `manual_review` -> queue failure без автоматического движения.
 - Bounded Cloud inventory ledger endpoint существует для проверки обработанных worker rows; legacy `cloud-ui` показывает первые 50 строк как read-only preview без raw payload и складских команд.
-- `GET /api/v1/inventory/stock-balances` подтвержден по runtime-коду и тестам как bounded Cloud-owned balance read model поверх PostgreSQL `stock_ledger`; route объявлен в `cloud-backend/internal/cloudsync/api/router.go`, реализован в service/repository слое, покрыт API tests на агрегацию, границы выдачи, фильтр статуса, пустой результат и safe no-raw-payload response, а legacy `cloud-ui` показывает bounded balances/costing status table.
+- `GET /api/v1/inventory/stock-balances` подтвержден по runtime-коду и тестам как bounded Cloud-owned materialized balance read model поверх PostgreSQL `inventory_stock_balances`; route объявлен в `cloud-backend/internal/cloudsync/api/router.go`, реализован в service/repository слое, покрыт API tests на чтение materialized state, границы выдачи, фильтр статуса, пустой результат, stable sort и safe no-raw-payload response, а legacy `cloud-ui` показывает bounded balances/costing status table.
 
 Запланировано далее:
 
-- Materialized balances.
 - Production-grade stock receipts/counts/production state.
 - Semi-finished auto-production split.
 - Full costing state.
@@ -687,8 +688,8 @@
 
 Цель bounded slice:
 
-- использовать уже подтвержденный route `GET /api/v1/inventory/stock-balances` как текущий bounded Cloud-owned inventory balances read endpoint поверх `stock_ledger`;
-- показать costing status visibility без COGS/margin;
+- реализовано сейчас: использовать route `GET /api/v1/inventory/stock-balances` как текущий bounded Cloud-owned inventory balances read endpoint поверх materialized `inventory_stock_balances`;
+- реализовано сейчас: показать deterministic costing status visibility без COGS/margin;
 - не делать full retro recalculation DAG;
 - не переносить stock balances/costing authority на POS Edge;
 - расширять активный `cloud-ui-g` inventory/costing surface только поверх подтвержденных backend routes; текущая bounded `stock-balances` table уже route-backed в legacy `cloud-ui`, full costing/recalculation operator workflow остается `запланировано далее`.
@@ -708,7 +709,7 @@ GET /api/v1/inventory/stock-ledger?restaurant_id=&source_event_type=&source_even
 - stable sort;
 - отрицательные остатки разрешены;
 - sale blocking не должен использовать stock balance;
-- ответ должен показывать quantity, unit, last movement, costing status summary and `needs_recalculation`, если это выводимо из данных.
+- ответ показывает quantity, unit, last movement, deterministic costing status summary и `needs_recalculation` из materialized balance row; `business_date_to` является bounded фильтром по UTC-дате `last_movement_at`, а не historical ledger recomputation.
 
 ## ClickHouse OLAP
 

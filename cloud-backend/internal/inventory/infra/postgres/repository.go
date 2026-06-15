@@ -134,8 +134,59 @@ INSERT INTO stock_ledger(
 		); err != nil {
 			return err
 		}
+		if err := upsertStockBalance(ctx, tx, entry); err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
+}
+
+func upsertStockBalance(ctx context.Context, tx pgx.Tx, entry app.StockLedgerEntry) error {
+	_, err := tx.Exec(ctx, `
+WITH aggregate AS (
+  SELECT
+    CASE
+      WHEN BOOL_OR(costing_status = 'failed') THEN 'failed'
+      WHEN BOOL_OR(costing_status = 'needs_recalculation') THEN 'needs_recalculation'
+      WHEN BOOL_OR(costing_status = 'estimated') THEN 'estimated'
+      WHEN (ARRAY_AGG(costing_status ORDER BY occurred_at DESC, id DESC))[1] = 'recalculated' THEN 'recalculated'
+      ELSE 'final'
+    END AS costing_status
+  FROM stock_ledger
+  WHERE restaurant_id = $1
+    AND COALESCE(warehouse_id, '') = $2
+    AND catalog_item_id = $3
+    AND unit_code = $4
+)
+INSERT INTO inventory_stock_balances(
+  restaurant_id,warehouse_id,catalog_item_id,unit_code,quantity_on_hand,last_movement_at,last_ledger_entry_id,
+  costing_status,needs_recalculation,created_at,updated_at
+) VALUES (
+  $1,$2,$3,$4,
+  CASE WHEN $5 = 'IN' THEN $6::numeric ELSE -$6::numeric END,
+  $7,$8,
+  (SELECT costing_status FROM aggregate),
+  (SELECT costing_status IN ('needs_recalculation','estimated') FROM aggregate),
+  $9,$9
+)
+ON CONFLICT (restaurant_id, warehouse_id, catalog_item_id, unit_code) DO UPDATE SET
+  quantity_on_hand = inventory_stock_balances.quantity_on_hand + EXCLUDED.quantity_on_hand,
+  last_movement_at = EXCLUDED.last_movement_at,
+  last_ledger_entry_id = EXCLUDED.last_ledger_entry_id,
+  costing_status = EXCLUDED.costing_status,
+  needs_recalculation = EXCLUDED.needs_recalculation,
+  updated_at = EXCLUDED.updated_at`,
+		strings.TrimSpace(entry.RestaurantID),
+		strings.TrimSpace(entry.WarehouseID),
+		strings.TrimSpace(entry.CatalogItemID),
+		strings.TrimSpace(entry.UnitCode),
+		string(entry.MovementType),
+		strings.TrimSpace(entry.Quantity),
+		entry.OccurredAt,
+		strings.TrimSpace(entry.ID),
+		entry.CreatedAt,
+	)
+	return err
 }
 
 func (r *Repository) ApplyStopListUpdate(ctx context.Context, cmd app.StopListProjectionCommand) error {

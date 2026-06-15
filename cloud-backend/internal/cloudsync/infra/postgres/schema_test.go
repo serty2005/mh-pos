@@ -42,6 +42,7 @@ func TestRequiredSchemaIncludesCloudInventoryFoundationTables(t *testing.T) {
 		"inventory_event_queue":                {"id", "receipt_id", "restaurant_id", "warehouse_id", "device_id", "event_id", "event_type", "status", "attempts", "occurred_at", "created_at", "updated_at"},
 		"stock_documents":                      {"id", "restaurant_id", "warehouse_id", "document_type", "source_event_id", "source_event_type", "business_date_local", "occurred_at", "created_at"},
 		"stock_ledger":                         {"id", "restaurant_id", "warehouse_id", "stock_document_id", "source_event_id", "source_event_type", "catalog_item_id", "order_line_id", "movement_type", "quantity", "unit_code", "unit_cost_minor", "total_cost_minor", "costing_status", "occurred_at", "business_date_local", "created_at"},
+		"inventory_stock_balances":             {"restaurant_id", "warehouse_id", "catalog_item_id", "unit_code", "quantity_on_hand", "last_movement_at", "last_ledger_entry_id", "costing_status", "needs_recalculation", "created_at", "updated_at"},
 		"stock_recalculation_jobs":             {"id", "restaurant_id", "source_document_id", "status", "recalculate_from", "created_at", "updated_at"},
 		"cloud_projection_stop_list_updates":   {"source_event_id", "queue_id", "restaurant_id", "device_id", "stop_list_id", "catalog_item_id", "available_quantity", "active", "conflict_policy", "source", "projection_action", "review_status", "review_comment", "reviewed_by_employee_id", "reviewed_at", "assigned_to_employee_id", "assigned_by_employee_id", "assigned_at", "assignment_note", "applied_stop_list_id", "updated_at", "occurred_at", "projected_at"},
 		"stop_lists":                           {"id", "restaurant_id", "catalog_item_id", "available_quantity", "source", "reason", "active", "cloud_version", "updated_at"},
@@ -72,6 +73,12 @@ func TestRequiredSchemaIncludesCloudInventoryIndexes(t *testing.T) {
 		"inventory_event_queue": {"inventory_event_queue_status_retry", "inventory_event_queue_event_type", "inventory_event_queue_restaurant_warehouse_order"},
 		"stock_documents":       {"stock_documents_restaurant_occurred_at", "stock_documents_restaurant_warehouse_occurred_at", "stock_documents_source_event_unique"},
 		"stock_ledger":          {"stock_ledger_restaurant_occurred_at", "stock_ledger_restaurant_warehouse_occurred_at", "stock_ledger_source_event", "stock_ledger_order_line_consumption"},
+		"inventory_stock_balances": {
+			"inventory_stock_balances_pkey",
+			"inventory_stock_balances_restaurant_warehouse_item",
+			"inventory_stock_balances_restaurant_last_movement",
+			"inventory_stock_balances_costing_status",
+		},
 	} {
 		found, ok := reqs[table]
 		if !ok {
@@ -188,5 +195,36 @@ func TestListInventoryLedgerReadsBaselineDateAsText(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].BusinessDateLocal != "2026-05-19" {
 		t.Fatalf("unexpected ledger response: %+v", items)
+	}
+}
+
+func TestListInventoryStockBalancesReadsMaterializedBaselineState(t *testing.T) {
+	ctx := context.Background()
+	pool, closeFn := openPostgresWithBaseline(t, ctx)
+	defer closeFn()
+
+	if _, err := pool.Exec(ctx, `INSERT INTO stock_documents(id,restaurant_id,warehouse_id,document_type,source_event_id,source_event_type,business_date_local,occurred_at,created_at) VALUES ('inv-doc-balance','rest-1','warehouse-main','PURCHASE','event-receipt','StockReceiptCaptured','2026-05-19','2026-05-19T09:00:00Z','2026-05-19T09:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO stock_ledger(id,restaurant_id,warehouse_id,stock_document_id,source_event_id,source_event_type,catalog_item_id,movement_type,quantity,unit_code,unit_cost_minor,total_cost_minor,costing_status,occurred_at,business_date_local,created_at) VALUES ('ledger-balance','rest-1','warehouse-main','inv-doc-balance','event-receipt','StockReceiptCaptured','item-1','IN',2,'PC',10,20,'recalculated','2026-05-19T09:00:00Z','2026-05-19','2026-05-19T09:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO inventory_stock_balances(restaurant_id,warehouse_id,catalog_item_id,unit_code,quantity_on_hand,last_movement_at,last_ledger_entry_id,costing_status,needs_recalculation,created_at,updated_at) VALUES ('rest-1','warehouse-main','item-1','PC',2,'2026-05-19T09:00:00Z','ledger-balance','recalculated',false,'2026-05-19T09:00:00Z','2026-05-19T09:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := NewRepository(pool).ListInventoryStockBalances(ctx, app.InventoryStockBalanceFilter{
+		RestaurantID:   "rest-1",
+		WarehouseID:    "warehouse-main",
+		CatalogItemID:  "item-1",
+		BusinessDateTo: "2026-05-19",
+		CostingStatus:  "recalculated",
+		Limit:          10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].QuantityOnHand != "2.000" || items[0].CostingStatus != "recalculated" || items[0].BusinessDateTo != "2026-05-19" {
+		t.Fatalf("unexpected materialized balance response: %+v", items)
 	}
 }

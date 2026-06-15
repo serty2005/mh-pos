@@ -924,6 +924,13 @@ def run_minimal_flow_smoke(
     )
     if expected_components and not set(expected_components).issubset(set(ledger_catalog_ids)):
         raise RuntimeError(f"Cloud inventory ledger did not include recipe components: expected {expected_components}, got {ledger_catalog_ids}")
+    stock_balances = wait_for_inventory_stock_balances(
+        cloud_client,
+        restaurant_id=restaurant_id,
+        expected_catalog_item_ids=ledger_catalog_ids,
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
 
     served_olap_events = wait_for_olap_events(
         cloud_client,
@@ -985,6 +992,8 @@ def run_minimal_flow_smoke(
         "served_ledger_entry_count": len(served_ledger),
         "check_closed_delta_entry_count": len(check_closed_delta),
         "ledger_catalog_item_ids": ledger_catalog_ids,
+        "stock_balance_count": len(stock_balances),
+        "stock_balance_catalog_item_ids": sorted({item.get("catalog_item_id", "") for item in stock_balances if item.get("catalog_item_id", "")}),
         "olap_item_served_event_count": len(served_olap_events),
         "olap_check_closed_event_count": len(check_closed_olap_events),
         "olap_item_served_stock_move_count": len(served_olap_stock_moves),
@@ -1587,6 +1596,24 @@ def wait_for_olap_stock_moves(cloud_client, restaurant_id, source_event_type, so
             return matched
         if time.monotonic() >= deadline:
             raise RuntimeError(f"ClickHouse olap_stock_moves did not expose {source_event_type} move for event {source_event_id}")
+        time.sleep(max(0, interval_seconds))
+
+
+def wait_for_inventory_stock_balances(cloud_client, restaurant_id, expected_catalog_item_ids, wait_seconds, interval_seconds):
+    expected = {item for item in expected_catalog_item_ids if item}
+    deadline = time.monotonic() + max(1, wait_seconds)
+    while True:
+        items = list_inventory_stock_balances(cloud_client, restaurant_id=restaurant_id)
+        raw = json.dumps(items, ensure_ascii=False)
+        if "payload" in raw or "raw_payload" in raw or "sync_envelope" in raw:
+            raise RuntimeError("Cloud stock balances response exposed raw payload")
+        if any("quantity_on_hand" not in item or "costing_status" not in item for item in items):
+            raise RuntimeError("Cloud stock balances response did not expose materialized balance/costing fields")
+        found = {item.get("catalog_item_id") for item in items}
+        if expected.issubset(found):
+            return items
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"Cloud materialized stock balances did not expose catalog items {sorted(expected)} before timeout")
         time.sleep(max(0, interval_seconds))
 
 

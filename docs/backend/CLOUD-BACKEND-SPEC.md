@@ -53,11 +53,11 @@
 - safe readiness API/UI signal для stop-list publication, последнего известного Edge ACK metadata и sync problem counters без raw payload;
 - поддержка `CheckClosed`/`ItemServed`/`StockWriteOffCaptured` как pilot inventory facts через текущий receiver и Inventory Worker;
 - Cloud Inventory Worker выполняет recipe expansion основной позиции продажи по active recipe version и modifier-linked consumption по nullable `ModifierOption.linked_catalog_item_id`; linked modifier item списывается напрямую, без recipe expansion linked item;
-- ClickHouse first slices: managed `raw_business_events`, async forwarder из PostgreSQL `inbox_events`, `processed_for_olap`, retry state, export checkpoint и bounded read-only metadata API; managed `olap_stock_moves`, async export из PostgreSQL `stock_ledger`, bounded stock moves API, read-only export status, минимальный support-only export retry control, async backfill job foundation, первый bounded stock movement summary, первый bounded sales/kitchen summary и bounded kitchen timing summary.
+- ClickHouse first slices: managed `raw_business_events`, async forwarder из PostgreSQL `inbox_events`, `processed_for_olap`, retry state, export checkpoint и bounded read-only metadata API; managed `olap_stock_moves`, async export из PostgreSQL `stock_ledger`, bounded stock moves API, read-only export status, минимальный support-only export retry control, async backfill job foundation, первый bounded stock movement summary, первый bounded sales/kitchen summary и bounded kitchen timing summary; Cloud-owned materialized `inventory_stock_balances` для bounded stock balance visibility.
 
 Запланировано до полного пилота:
 
-- full inventory engine beyond текущего bounded worker slice: materialized balances, production-grade receipts/counts, semi-finished auto-production split, costing и retro recalculation; bounded refund/cancellation dispositions `return_to_stock`/`write_off_waste` реализованы сейчас;
+- full inventory engine beyond текущего bounded worker/materialized-balance slice: production-grade receipts/counts, semi-finished auto-production split, costing и retro recalculation; bounded refund/cancellation dispositions `return_to_stock`/`write_off_waste` реализованы сейчас;
 - production auth/RBAC perimeter для mutating OLAP controls, richer sales aggregates и COGS/margin после появления достоверной cost basis.
 
 ## Назначение
@@ -143,7 +143,7 @@ Sync receiver:
 Inventory read model:
 
 - `GET /api/v1/inventory/stock-ledger?restaurant_id=&source_event_type=&source_event_id=&order_line_id=&catalog_item_id=&limit=&offset=` — bounded read-only view of Cloud-owned `stock_ledger` без raw Edge payload.
-- `GET /api/v1/inventory/stock-balances?restaurant_id=&warehouse_id=&catalog_item_id=&business_date_to=&costing_status=&limit=&offset=` — bounded Cloud-owned aggregate поверх PostgreSQL `stock_ledger`; response содержит `quantity_on_hand`, `unit_code`, aggregate `costing_status`, `needs_recalculation`, `last_movement_at`, `business_date_to` без raw Edge payload, COGS или margin.
+- `GET /api/v1/inventory/stock-balances?restaurant_id=&warehouse_id=&catalog_item_id=&business_date_to=&costing_status=&limit=&offset=` — bounded Cloud-owned materialized read model поверх PostgreSQL `inventory_stock_balances`; `business_date_to` фильтрует UTC-дату `last_movement_at`; response содержит `quantity_on_hand`, `unit_code`, deterministic `costing_status`, `needs_recalculation`, `last_movement_at`, `business_date_to` без raw Edge payload, COGS или margin.
 
 	OLAP read model:
 
@@ -553,7 +553,7 @@ Managed SQL file, реализовано сейчас:
 - Currency reference: `cloud_currency_reference`.
 - Master data: `cloud_restaurants`, `cloud_roles`, `cloud_employees`, `cloud_categories`, `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_services`, `cloud_catalog_folders`, `cloud_catalog_folder_parameters`, `cloud_catalog_tags`, `cloud_catalog_item_tags`, `cloud_recipe_items`, `cloud_recipe_versions`, `cloud_recipe_lines`, `cloud_modifier_groups`, `cloud_modifier_options` с nullable `linked_catalog_item_id`, `cloud_modifier_group_bindings`, `cloud_pricing_policies`, `cloud_menu_items`, `cloud_menu_item_modifier_groups`, `cloud_menu_location_assignments`, `cloud_master_data_publications`, `cloud_review_assignment_audit_events`.
 - Provisioning: `cloud_edge_nodes`, `cloud_unassigned_edge_nodes`, `cloud_pairing_codes`.
-- Inventory runtime: `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists`.
+- Inventory runtime: `inventory_event_queue`, `stock_documents`, `stock_ledger`, `inventory_stock_balances`, `stock_recalculation_jobs`, `stop_lists`.
 - OLAP control state: `olap_export_checkpoints`, `olap_export_retry_commands`.
 
 Schema verification:
@@ -566,13 +566,13 @@ Schema verification:
 Реализована только основа:
 
 - PostgreSQL baseline содержит Cloud inventory runtime tables.
-- `inventory_event_queue`, `stock_documents`, `stock_ledger`, `stock_recalculation_jobs`, `stop_lists` являются целевой Cloud-owned основой.
+- `inventory_event_queue`, `stock_documents`, `stock_ledger`, `inventory_stock_balances`, `stock_recalculation_jobs`, `stop_lists` являются целевой Cloud-owned основой.
 
 Реализовано сейчас:
 
-- Cloud Inventory Worker создает stock documents and stock ledger из accepted normalized item events.
+- Cloud Inventory Worker создает stock documents and stock ledger из accepted normalized item events и транзакционно обновляет `inventory_stock_balances`.
 - `GET /api/v1/inventory/stock-ledger` возвращает bounded read-only rows из Cloud-owned `stock_ledger` для smoke/операционной проверки `CheckClosed`/`ItemServed` processing; endpoint не раскрывает raw sync payload и не является OLAP API.
-- `GET /api/v1/inventory/stock-balances` реализовано сейчас как bounded read-only balance view поверх Cloud-owned PostgreSQL `stock_ledger`: отрицательные остатки допустимы, sale blocking не использует stock balance, aggregate costing status ограничен `final`, `estimated`, `needs_recalculation`, `mixed`, `unknown`.
+- `GET /api/v1/inventory/stock-balances` реализовано сейчас как bounded read-only balance view поверх Cloud-owned PostgreSQL `inventory_stock_balances`: отрицательные остатки допустимы, sale blocking не использует stock balance, costing status ограничен `final`, `estimated`, `needs_recalculation`, `recalculated`, `failed`, а `needs_recalculation` виден отдельным boolean field.
 - OLAP Stock Moves Forwarder асинхронно экспортирует новые `stock_ledger` rows в ClickHouse `olap_stock_moves` по checkpoint `olap_export_checkpoints.id = 'olap_stock_moves'`; retry state хранится в той же checkpoint table через `last_error`, `consecutive_failures` и `next_retry_at`.
 - Async OLAP Backfill Worker выполняет jobs из `olap_backfill_jobs` вне HTTP request path: для `raw_business_events` переэкспортирует выбранный range из PostgreSQL `inbox_events`, для `stock_moves` переэкспортирует range из `stock_ledger`; ClickHouse `ReplacingMergeTree` и stable row ids защищают read model от видимых дублей при повторном backfill.
 - `GET /api/v1/olap/stock-moves` возвращает bounded read-only rows из ClickHouse `olap_stock_moves` с фильтрами `restaurant_id`, business date range, `catalog_item_id`, `warehouse_id`, `source_event_type`, `limit`, `offset`; response не содержит raw payload.
@@ -585,7 +585,7 @@ Schema verification:
 - `CatalogItemChangeSuggested` создает Cloud review item; upsert в catalog выполняется только после manager approve текущими `catalog-suggestions` routes.
 - `RecipeChangeSuggested` создает Cloud review item с diff по ingredients, quantities, units, loss percent и prep time; published recipe не меняется до approve/apply текущими `recipe-suggestions` routes. Реализовано сейчас: Cloud-authored recipe version draft при submit создает pending `RecipeChangeSuggested` с `action = publish_recipe_version`; approve активирует draft version, архивирует предыдущую active version для owner item и публикует `recipes` package.
 - Реализовано сейчас: Edge-origin stop-list review item для `StopListUpdated` поддерживает назначение на менеджера и снятие назначения через `POST /api/v1/manager/stop-list-updates/{id}/assign|unassign`. Assignment state хранится в `cloud_projection_stop_list_updates` (`assigned_to_employee_id`, `assigned_by_employee_id`, `assigned_at`, `assignment_note`), а действия `assigned`/`unassigned` пишутся в append-only `cloud_review_assignment_audit_events` с `event_id` UUIDv7, `review_id`, `actor_employee_id`, `target_employee_id`, `reason` и `occurred_at`. Реализовано сейчас: bounded чтение assignment audit доступно для `stop_list_update`, `catalog_suggestion` и `recipe_suggestion` через `GET /api/v1/manager/stop-list-updates/{id}/audit?limit=&offset=`, `GET /api/v1/manager/catalog-suggestions/{id}/audit?limit=&offset=` и `GET /api/v1/manager/recipe-suggestions/{id}/audit?limit=&offset=` без raw payload; unknown review id возвращает safe empty list. Assignment runtime для catalog/recipe запланирован далее и не заявлен как реализованный. Escalation/dashboard запланированы далее. Raw payload exposure вне текущего объема и запрещено.
-- Canonical seed/smoke для Cloud-owned сценариев находится только в `scripts/seed-dev-system.py`: при добавлении Cloud-owned справочника, review flow, publication stream/package или bounded POS read flow тем же PR обновляются seed dataset, publication assertion, smoke assertion/read check, script guard `CLOUD_OWNED_SEED_SURFACES` и профильная документация. Seed/smoke работает через HTTP API и не пишет напрямую в PostgreSQL/ClickHouse.
+- Canonical seed/smoke для Cloud-owned сценариев находится только в `scripts/seed-dev-system.py`: при добавлении Cloud-owned справочника, review flow, publication stream/package или bounded POS read flow тем же PR обновляются seed dataset, publication assertion, smoke assertion/read check, script guard `CLOUD_OWNED_SEED_SURFACES` и профильная документация. Реализовано сейчас: minimal flow проверяет materialized `stock-balances` через HTTP API. Seed/smoke работает через HTTP API и не пишет напрямую в PostgreSQL/ClickHouse.
 - `StopListUpdated` обрабатывается асинхронно через `inventory_event_queue`: worker пишет `cloud_projection_stop_list_updates` без raw payload. `edge_overlay_until_next_publication` обновляет bounded `stop_lists` overlay, `cloud_wins` не перетирает Cloud-owned row, `edge_overlay_requires_manager_review` фиксирует безопасную projection для bounded manager review.
 - Bounded manager review для `edge_overlay_requires_manager_review` реализован сейчас: list/detail имеют stable bounded paging, decisions идемпотентны, invalid transition возвращает conflict, approve применяет изменение только через Cloud-owned `stop_lists` + publication, reject/request-changes не меняют runtime stop-list authority.
 - `GET /api/v1/sync/readiness/stop-list` реализовано сейчас как safe readiness summary: publication/package metadata, latest accepted `StopListUpdated` ACK metadata и агрегат `cloud_sync_problem_events` по кодам ошибок без raw payload.
@@ -603,7 +603,7 @@ Schema verification:
 
 - Cloud authoring/publication workflow для stop-list/recipes становится штатным источником sale-blocking availability overlay; POS Edge runtime уже блокирует продажи по локальному `stop_lists`.
 - Receipt line с pending catalog suggestion остается запланировано далее.
-- Полный materialized balance engine, semi-finished auto-production split и retro costing DAG остаются частью дальнейшего Cloud Inventory Engine; bounded `stock-balances` read из `stock_ledger`, recipe expansion основной продажи и modifier linked catalog item consumption реализованы сейчас.
+- Production-grade balance rebuild/recalculation tooling, semi-finished auto-production split и retro costing DAG остаются частью дальнейшего Cloud Inventory Engine; bounded materialized `stock-balances`, recipe expansion основной продажи и modifier linked catalog item consumption реализованы сейчас.
 - Расширенные sales/kitchen/costing-dependent projections beyond first bounded sales/kitchen summary запланированы далее.
 - Расширенный manager review workflow для Edge-origin stop-list изменений остается запланирован далее; текущий runtime уже имеет bounded review/apply, assignment/unassignment и audit без raw payload, но без escalation/dashboard workflow.
 

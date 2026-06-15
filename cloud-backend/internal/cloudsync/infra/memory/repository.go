@@ -26,6 +26,7 @@ type Repository struct {
 	shiftFinanceByKey map[string]ShiftFinanceProjection
 	financialOpsByID  map[string]contracts.FinancialOperationProjection
 	inventoryLedger   []contracts.InventoryLedgerEntry
+	inventoryBalances []contracts.InventoryStockBalance
 	inventoryQueue    map[string]contracts.EventAck
 	authorizedNodes   map[string]authorizedNode
 	problemEdgeEvents []app.ProblemEdgeEvent
@@ -341,7 +342,7 @@ func (r *Repository) ListInventoryLedger(_ context.Context, filter app.Inventory
 	return out, nil
 }
 
-// ListInventoryStockBalances агрегирует memory ledger rows для API tests.
+// ListInventoryStockBalances возвращает materialized memory balance rows для API tests.
 func (r *Repository) ListInventoryStockBalances(_ context.Context, filter app.InventoryStockBalanceFilter) ([]contracts.InventoryStockBalance, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -354,14 +355,8 @@ func (r *Repository) ListInventoryStockBalances(_ context.Context, filter app.In
 	if offset < 0 {
 		offset = 0
 	}
-	type aggregate struct {
-		balance            contracts.InventoryStockBalance
-		quantity           float64
-		normalizedStatuses map[string]bool
-		needsRecalculation bool
-	}
-	aggregates := map[string]*aggregate{}
-	for _, item := range r.inventoryLedger {
+	out := make([]contracts.InventoryStockBalance, 0, min(limit, len(r.inventoryBalances)))
+	for _, item := range r.inventoryBalances {
 		if filter.RestaurantID != "" && item.RestaurantID != filter.RestaurantID {
 			continue
 		}
@@ -372,49 +367,13 @@ func (r *Repository) ListInventoryStockBalances(_ context.Context, filter app.In
 		if filter.CatalogItemID != "" && item.CatalogItemID != filter.CatalogItemID {
 			continue
 		}
-		if filter.BusinessDateTo != "" && item.BusinessDateLocal > filter.BusinessDateTo {
+		if filter.BusinessDateTo != "" && item.BusinessDateTo > filter.BusinessDateTo {
 			continue
 		}
-		key := strings.Join([]string{item.RestaurantID, warehouseID, item.CatalogItemID, item.UnitCode}, "|")
-		current := aggregates[key]
-		if current == nil {
-			current = &aggregate{
-				balance: contracts.InventoryStockBalance{
-					RestaurantID:  item.RestaurantID,
-					WarehouseID:   warehouseID,
-					CatalogItemID: item.CatalogItemID,
-					UnitCode:      item.UnitCode,
-				},
-				normalizedStatuses: map[string]bool{},
-			}
-			aggregates[key] = current
-		}
-		qty, _ := strconv.ParseFloat(strings.TrimSpace(item.Quantity), 64)
-		if item.MovementType == "OUT" {
-			qty = -qty
-		}
-		current.quantity += qty
-		status := normalizeBalanceCostingStatus(item.CostingStatus)
-		current.normalizedStatuses[status] = true
-		if item.CostingStatus == "needs_recalculation" {
-			current.needsRecalculation = true
-		}
-		if item.OccurredAt.After(current.balance.LastMovementAt) {
-			current.balance.LastMovementAt = item.OccurredAt
-		}
-		if item.BusinessDateLocal > current.balance.BusinessDateTo {
-			current.balance.BusinessDateTo = item.BusinessDateLocal
-		}
-	}
-	out := make([]contracts.InventoryStockBalance, 0, min(limit, len(aggregates)))
-	for _, current := range aggregates {
-		current.balance.QuantityOnHand = strconv.FormatFloat(current.quantity, 'f', 3, 64)
-		current.balance.CostingStatus = aggregateBalanceCostingStatus(current.normalizedStatuses)
-		current.balance.NeedsRecalculation = current.needsRecalculation
-		if filter.CostingStatus != "" && current.balance.CostingStatus != filter.CostingStatus {
+		if filter.CostingStatus != "" && item.CostingStatus != filter.CostingStatus {
 			continue
 		}
-		out = append(out, current.balance)
+		out = append(out, item)
 	}
 	slices.SortFunc(out, func(a, b contracts.InventoryStockBalance) int {
 		if cmp := strings.Compare(a.RestaurantID, b.RestaurantID); cmp != 0 {
@@ -436,32 +395,6 @@ func (r *Repository) ListInventoryStockBalances(_ context.Context, filter app.In
 		out = out[:limit]
 	}
 	return out, nil
-}
-
-func normalizeBalanceCostingStatus(status string) string {
-	switch strings.TrimSpace(status) {
-	case "final", "recalculated":
-		return "final"
-	case "estimated":
-		return "estimated"
-	case "needs_recalculation":
-		return "needs_recalculation"
-	default:
-		return "unknown"
-	}
-}
-
-func aggregateBalanceCostingStatus(statuses map[string]bool) string {
-	if len(statuses) == 0 {
-		return "unknown"
-	}
-	if len(statuses) > 1 {
-		return "mixed"
-	}
-	for status := range statuses {
-		return status
-	}
-	return "unknown"
 }
 
 func (r *Repository) UpsertMasterDataPackage(_ context.Context, v contracts.MasterDataPackage) (contracts.MasterDataPackage, error) {
@@ -584,6 +517,12 @@ func (r *Repository) AddInventoryLedgerForTest(items ...contracts.InventoryLedge
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.inventoryLedger = append(r.inventoryLedger, items...)
+}
+
+func (r *Repository) AddInventoryStockBalancesForTest(items ...contracts.InventoryStockBalance) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.inventoryBalances = append(r.inventoryBalances, items...)
 }
 
 func (r *Repository) applyEventTypeProjection(receipt app.EdgeEventReceipt) {

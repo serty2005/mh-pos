@@ -1372,6 +1372,30 @@ CREATE INDEX IF NOT EXISTS stock_ledger_source_event
 CREATE INDEX IF NOT EXISTS stock_ledger_order_line_consumption
   ON stock_ledger(restaurant_id, order_line_id, source_event_type, movement_type);
 
+CREATE TABLE IF NOT EXISTS inventory_stock_balances (
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  warehouse_id TEXT NOT NULL DEFAULT '',
+  catalog_item_id TEXT NOT NULL CHECK (catalog_item_id <> ''),
+  unit_code TEXT NOT NULL CHECK (unit_code <> ''),
+  quantity_on_hand NUMERIC(14,3) NOT NULL DEFAULT 0,
+  last_movement_at TIMESTAMPTZ NOT NULL,
+  last_ledger_entry_id TEXT NOT NULL REFERENCES stock_ledger(id) ON DELETE RESTRICT,
+  costing_status TEXT NOT NULL CHECK (costing_status IN ('final','estimated','needs_recalculation','recalculated','failed')),
+  needs_recalculation BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (restaurant_id, warehouse_id, catalog_item_id, unit_code)
+);
+
+CREATE INDEX IF NOT EXISTS inventory_stock_balances_restaurant_warehouse_item
+  ON inventory_stock_balances(restaurant_id, warehouse_id, catalog_item_id);
+
+CREATE INDEX IF NOT EXISTS inventory_stock_balances_restaurant_last_movement
+  ON inventory_stock_balances(restaurant_id, last_movement_at DESC, catalog_item_id, unit_code);
+
+CREATE INDEX IF NOT EXISTS inventory_stock_balances_costing_status
+  ON inventory_stock_balances(restaurant_id, costing_status, last_movement_at DESC);
+
 CREATE TABLE IF NOT EXISTS stock_recalculation_jobs (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
