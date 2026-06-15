@@ -234,6 +234,7 @@
   - остается единственным user-facing Fedora/Linux/Windows-compatible demo/seed entrypoint;
   - работает только через HTTP API Cloud/POS/License и не пишет напрямую в PostgreSQL/SQLite/ClickHouse;
   - создает полный Cloud-owned dataset;
+  - создает active recipe versions через manager draft -> submit -> approve flow;
   - публикует packages для POS Edge streams;
   - выполняет license pairing;
   - проверяет базовый POS read model;

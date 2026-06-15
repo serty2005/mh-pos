@@ -194,7 +194,7 @@ python3 scripts/seed-dev-system.py \
   --output scripts/.seed-dev-system-summary.json
 ```
 
-Скрипт создает ресторан, роли cashier/senior cashier/waiter/manager/kitchen/support, сотрудников с PIN `1111`/`2222`/`3333`/`4444`/`5555`/`9999`, залы и столы, catalog folders/folder parameters/tags/items, menu categories/items, service item, modifier groups/options/bindings, pricing policies, recipe items, stop-list examples и publication. После создания всех сущностей он генерирует pairing code через Cloud/License flow, привязывает POS Edge и проверяет, что POS видит Cloud-created halls/menu.
+Скрипт создает ресторан, роли cashier/senior cashier/waiter/manager/kitchen/support, сотрудников с PIN `1111`/`2222`/`3333`/`4444`/`5555`/`9999`, залы и столы, catalog folders/folder parameters/tags/items, menu categories/items, service item, modifier groups/options/bindings, pricing policies, active recipe versions через manager draft -> submit -> approve flow, stop-list examples и publication. После создания всех сущностей он генерирует pairing code через Cloud/License flow, привязывает POS Edge и проверяет, что POS видит Cloud-created halls/menu.
 
 Минимальный сквозной smoke для поднятого stack:
 

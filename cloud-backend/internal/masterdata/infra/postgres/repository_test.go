@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -165,6 +166,55 @@ INSERT INTO cloud_recipe_suggestions(
 	assertRecipeAssignmentCleared(t, cleared)
 	if !cleared.UpdatedAt.Equal(clearedAt) {
 		t.Fatalf("expected updated_at %s, got %s", clearedAt, cleared.UpdatedAt)
+	}
+}
+
+func TestSubmitRecipeSuggestionAllowsCloudAuthoredSuggestionWithoutSourceEvent(t *testing.T) {
+	ctx := context.Background()
+	pool, closeFn := openPostgresWithBaseline(t, ctx)
+	defer closeFn()
+	repo := NewRepository(pool)
+
+	now := time.Date(2026, 5, 20, 11, 30, 0, 0, time.UTC)
+	got, err := repo.SubmitRecipeSuggestion(ctx, domain.RecipeSuggestion{
+		ID:                 "recipe-suggestion-review-1",
+		SuggestionID:       "recipe-version-review-1",
+		RestaurantID:       "restaurant-1",
+		RecipeVersionID:    "recipe-version-1",
+		OwnerCatalogItemID: "catalog-soup",
+		Action:             "publish_recipe_version",
+		Reason:             "cloud manager draft",
+		Status:             domain.SuggestionStatusPending,
+		SuggestedAt:        now,
+		CloudReceivedAt:    now,
+		PayloadJSON:        json.RawMessage(`{"data":{"action":"publish_recipe_version"}}`),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}, []domain.RecipeSuggestionChange{{
+		ID:                 "recipe-suggestion-review-1-change-1",
+		RecipeSuggestionID: "recipe-suggestion-review-1",
+		LineID:             "recipe-line-1",
+		Action:             "add_ingredient",
+		ToCatalogItemID:    "catalog-potato",
+		Quantity:           "120",
+		UnitCode:           "g",
+		LossPercent:        "3",
+		SortOrder:          1,
+		CreatedAt:          now,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SourceEventID != "" || got.Status != domain.SuggestionStatusPending {
+		t.Fatalf("unexpected cloud-authored recipe suggestion: %+v", got)
+	}
+
+	stored, err := repo.GetRecipeSuggestion(ctx, got.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.SourceEventID != "" || stored.RecipeVersionID != "recipe-version-1" {
+		t.Fatalf("unexpected stored recipe suggestion: %+v", stored)
 	}
 }
 

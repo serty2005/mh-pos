@@ -617,7 +617,7 @@ RETURNING id,suggestion_id,restaurant_id,COALESCE(recipe_version_id,''),COALESCE
        COALESCE(proposal_group_id,''),action,COALESCE(reason,''),prep_time_delta_minutes,status,COALESCE(review_comment,''),COALESCE(reviewed_by_employee_id,''),
        reviewed_at,COALESCE(assigned_to_employee_id,''),COALESCE(assigned_by_employee_id,''),assigned_at,COALESCE(assignment_note,''),
        COALESCE(source_event_id,''),suggested_at,cloud_received_at,payload_json,created_at,updated_at`,
-		v.ID, v.SuggestionID, v.RestaurantID, nullableText(v.RecipeVersionID), nullableText(v.OwnerCatalogItemID), nullableText(v.OwnerCatalogSuggestionID), nullableText(v.ProposalGroupID), v.Action, v.Reason, v.PrepTimeDeltaMinutes, string(v.Status), nullableText(v.SourceEventID), v.SuggestedAt, v.CloudReceivedAt, string(v.PayloadJSON), v.CreatedAt, v.UpdatedAt))
+		v.ID, v.SuggestionID, v.RestaurantID, nullableText(v.RecipeVersionID), nullableText(v.OwnerCatalogItemID), nullableText(v.OwnerCatalogSuggestionID), nullableText(v.ProposalGroupID), v.Action, v.Reason, v.PrepTimeDeltaMinutes, string(v.Status), trimmedText(v.SourceEventID), v.SuggestedAt, v.CloudReceivedAt, string(v.PayloadJSON), v.CreatedAt, v.UpdatedAt))
 	if err != nil {
 		return domain.RecipeSuggestion{}, normalizeErr(err)
 	}

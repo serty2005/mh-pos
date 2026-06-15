@@ -74,8 +74,16 @@ class FakeClient:
             return {"id": f"modifier-binding-{self.counter}"}
         if path == "/api/v1/master-data/pricing/policies":
             return {"id": f"pricing-policy-{self.counter}"}
-        if path == "/api/v1/master-data/recipes/items":
-            return {"id": f"recipe-{self.counter}"}
+        if path == "/api/v1/master-data/recipes/versions/drafts":
+            owner = body["owner_catalog_item_id"]
+            lines = [
+                {"id": f"recipe-line-{owner}-{index + 1}", **line}
+                for index, line in enumerate(body.get("lines", []))
+            ]
+            return {"version": {"id": f"recipe-version-{owner}", "status": "draft"}, "lines": lines}
+        if path.startswith("/api/v1/master-data/recipes/versions/") and path.endswith("/submit"):
+            version_id = path.split("/")[-2]
+            return {"id": f"recipe-suggestion-{version_id}", "recipe_version_id": version_id, "status": "pending"}
         if path == "/api/v1/master-data/inventory/stop-list":
             return {"id": f"stop-list-{self.counter}"}
         if path == "/api/v1/master-data/floor/halls":
@@ -150,7 +158,7 @@ class FakeClient:
             return {"id": "order-1", "status": "open"}
         if path == "/api/v1/orders/order-1/lines":
             if body.get("menu_item_id") == "menu-stopped":
-                return {"error_code": "SALE_ITEM_STOP_LISTED"}
+                return {"error": {"code": "SALE_STOP_LIST_CONFLICT", "message_key": "errors.stopListConflict"}}
             return {"id": "line-soup", "menu_item_id": body.get("menu_item_id"), "modifiers": body.get("selected_modifiers", [])}
         if path == "/api/v1/orders/order-1/precheck":
             return {"id": "precheck-1", "status": "issued", "total": 34900, "currency": "RUB"}
@@ -243,7 +251,7 @@ class FakeClient:
             return [{"id": "cloud-catalog-suggestion-1", "suggestion_id": "catalog-suggestion", "status": "pending"}]
         if path.startswith("/api/v1/master-data/recipe-suggestions"):
             if path.endswith("/approve"):
-                return {"id": "cloud-recipe-suggestion-1", "suggestion_id": "recipe-suggestion", "status": "approved"}
+                return {"id": path.split("/")[-2], "suggestion_id": "recipe-suggestion", "status": "approved"}
             return [{"id": "cloud-recipe-suggestion-1", "suggestion_id": "recipe-suggestion", "status": "pending"}]
         if path.startswith("/api/v1/kitchen/proposals"):
             return [
@@ -512,7 +520,7 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertEqual(result["olap_stock_move_summary_count"], 2)
         self.assertEqual(result["olap_sales_kitchen_summary_group_keys"], ["CheckClosed", "ItemServed"])
         self.assertEqual(result["olap_kitchen_timing_summary_count"], 1)
-        self.assertEqual(result["blocked_sale_error_code"], "SALE_ITEM_STOP_LISTED")
+        self.assertEqual(result["blocked_sale_error_code"], "SALE_STOP_LIST_CONFLICT")
         cloud_paths = [path for _, path, _, _ in cloud.calls]
         self.assertTrue(any("event_type=ItemServed" in path for path in cloud_paths))
         self.assertTrue(any("event_type=CheckClosed" in path for path in cloud_paths))
@@ -522,6 +530,32 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertTrue(any(path.startswith("/api/v1/olap/stock-move-summary?") for path in cloud_paths))
         self.assertTrue(any(path.startswith("/api/v1/olap/sales-kitchen-summary?") for path in cloud_paths))
         self.assertTrue(any(path.startswith("/api/v1/olap/kitchen-timing-summary?") for path in cloud_paths))
+
+    def test_seed_full_system_uses_manager_recipe_version_review_flow(self):
+        module = load_seed_module()
+        cloud = FakeClient("cloud")
+        pos = FakeClient("pos")
+        license_client = FakeClient("license")
+
+        summary = module.seed_full_system(
+            cloud,
+            pos,
+            license_client,
+            cloud_base_url="http://cloud-api:8090",
+            client_device_id="unit-client",
+            suffix="unit",
+            wait_seconds=1,
+            interval_seconds=0,
+        )
+
+        cloud_paths = [path for _, path, _, _ in cloud.calls]
+        self.assertTrue(summary["recipe_version_ids"])
+        self.assertTrue(summary["recipe_line_ids"])
+        self.assertTrue(summary["recipe_suggestion_ids"])
+        self.assertIn("/api/v1/master-data/recipes/versions/drafts", cloud_paths)
+        self.assertTrue(any(path.startswith("/api/v1/master-data/recipes/versions/") and path.endswith("/submit") for path in cloud_paths))
+        self.assertTrue(any(path.startswith("/api/v1/master-data/recipe-suggestions/") and path.endswith("/approve") for path in cloud_paths))
+        self.assertNotIn("/api/v1/master-data/recipes/items", cloud_paths)
 
     def test_minimal_flow_smoke_does_not_require_kitchen_pin(self):
         module = load_seed_module()

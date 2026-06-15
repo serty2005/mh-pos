@@ -609,23 +609,7 @@ def seed_full_system(
         created = request(cloud_client, "POST", f"{API_PREFIX}/master-data/pricing/policies", body, expected_status=(201,))
         pricing_policy_ids.append(created["id"])
 
-    recipe_ids = []
-    for recipe in dataset["recipes"]:
-        created = request(
-            cloud_client,
-            "POST",
-            f"{API_PREFIX}/master-data/recipes/items",
-            {
-                "restaurant_id": restaurant_id,
-                "recipe_owner_catalog_item_id": catalog_ids[recipe["owner_ref"]],
-                "component_catalog_item_id": catalog_ids[recipe["component_ref"]],
-                "quantity": recipe["quantity"],
-                "unit": recipe["unit"],
-                "loss_percent": recipe["loss_percent"],
-            },
-            expected_status=(201,),
-        )
-        recipe_ids.append(created["id"])
+    recipe_versions = create_and_approve_recipe_versions(cloud_client, restaurant_id, catalog_ids, dataset["recipes"], employee_ids["manager"])
 
     stop_list_ids = []
     for entry in dataset["stop_list"]:
@@ -705,7 +689,9 @@ def seed_full_system(
         "modifier_option_ids": modifier_option_ids,
         "modifier_binding_ids": modifier_binding_ids,
         "pricing_policy_ids": pricing_policy_ids,
-        "recipe_item_ids": recipe_ids,
+        "recipe_version_ids": [item["version_id"] for item in recipe_versions],
+        "recipe_line_ids": [line_id for item in recipe_versions for line_id in item["line_ids"]],
+        "recipe_suggestion_ids": [item["suggestion_id"] for item in recipe_versions],
         "stop_list_ids": stop_list_ids,
         "publication_id": publication["id"],
         "health": health,
@@ -771,6 +757,79 @@ def verify_pos_ready(pos_client, restaurant_id, node_device_id, client_device_id
         time.sleep(max(0, interval_seconds))
 
 
+def create_and_approve_recipe_versions(cloud_client, restaurant_id, catalog_ids, recipes, manager_employee_id):
+    by_owner = {}
+    for recipe in recipes:
+        by_owner.setdefault(recipe["owner_ref"], []).append(recipe)
+
+    created_versions = []
+    for owner_ref, lines in by_owner.items():
+        draft = request(
+            cloud_client,
+            "POST",
+            f"{API_PREFIX}/master-data/recipes/versions/drafts",
+            {
+                "restaurant_id": restaurant_id,
+                "owner_catalog_item_id": catalog_ids[owner_ref],
+                "name": f"{owner_ref} demo recipe",
+                "yield_quantity": 1,
+                "yield_unit": "portion",
+                "created_by_employee_id": manager_employee_id,
+                "submit_for_review": False,
+                "reason": "seed manager recipe draft",
+                "lines": [
+                    {
+                        "component_catalog_item_id": catalog_ids[recipe["component_ref"]],
+                        "quantity": recipe["quantity"],
+                        "unit": recipe["unit"],
+                        "loss_percent": recipe["loss_percent"],
+                    }
+                    for recipe in lines
+                ],
+            },
+            expected_status=(201,),
+        )
+        version = draft.get("version") or {}
+        version_id = version.get("id", "")
+        if not version_id:
+            raise RuntimeError(f"Cloud recipe draft did not return version id for owner {owner_ref}: {draft}")
+
+        suggestion = request(
+            cloud_client,
+            "POST",
+            f"{API_PREFIX}/master-data/recipes/versions/{version_id}/submit",
+            {
+                "submitted_by_employee_id": manager_employee_id,
+                "reason": "seed manager recipe review",
+            },
+            expected_status=(200,),
+        )
+        suggestion_id = suggestion.get("id", "")
+        if not suggestion_id:
+            raise RuntimeError(f"Cloud recipe submit did not return suggestion id for version {version_id}: {suggestion}")
+
+        approved = request(
+            cloud_client,
+            "POST",
+            f"{API_PREFIX}/master-data/recipe-suggestions/{suggestion_id}/approve",
+            {
+                "reviewed_by_employee_id": manager_employee_id,
+                "review_comment": "approved by seed-dev-system manager flow",
+                "published_by": "seed-dev-system",
+            },
+            expected_status=(200,),
+        )
+        if approved.get("status") != "approved":
+            raise RuntimeError(f"Cloud recipe suggestion was not approved for version {version_id}: {approved}")
+        created_versions.append({
+            "owner_ref": owner_ref,
+            "version_id": version_id,
+            "line_ids": [line.get("id", "") for line in draft.get("lines", []) if line.get("id", "")],
+            "suggestion_id": suggestion_id,
+        })
+    return created_versions
+
+
 def run_minimal_flow_smoke(
     cloud_client,
     pos_client,
@@ -827,6 +886,8 @@ def run_minimal_flow_smoke(
             expected_status=(409,),
             headers=waiter_headers,
         )
+        if error_code(blocked_sale) != "SALE_STOP_LIST_CONFLICT":
+            raise RuntimeError(f"blocked sale returned unexpected error contract: {blocked_sale}")
 
     line = request(
         pos_client,
@@ -1000,7 +1061,7 @@ def run_minimal_flow_smoke(
         "olap_stock_move_summary_count": len(stock_move_summary),
         "olap_sales_kitchen_summary_group_keys": sorted({item.get("group_key", "") for item in sales_kitchen_summary if item.get("group_key", "")}),
         "olap_kitchen_timing_summary_count": len(kitchen_timing_summary),
-        "blocked_sale_error_code": blocked_sale.get("error_code", ""),
+        "blocked_sale_error_code": error_code(blocked_sale),
     }
 
 
@@ -1484,6 +1545,17 @@ def first_menu_item_id(items, excluded_id=""):
         if item_id and item_id != excluded_id:
             return item_id
     return ""
+
+
+def error_code(response):
+    if not isinstance(response, dict):
+        return ""
+    if response.get("error_code"):
+        return response.get("error_code", "")
+    error = response.get("error")
+    if isinstance(error, dict):
+        return error.get("code", "") or error.get("error_code", "")
+    return response.get("code", "")
 
 
 def wait_for_kitchen_order_tile(pos_client, order_line_id, headers, wait_seconds, interval_seconds):
