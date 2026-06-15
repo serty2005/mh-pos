@@ -1429,15 +1429,62 @@ CREATE INDEX IF NOT EXISTS inventory_stock_balances_costing_status
 CREATE TABLE IF NOT EXISTS stock_recalculation_jobs (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
-  source_document_id TEXT NOT NULL REFERENCES stock_documents(id) ON DELETE RESTRICT,
-  status TEXT NOT NULL CHECK (status <> ''),
-  recalculate_from TIMESTAMPTZ NOT NULL,
+  source_document_id TEXT REFERENCES stock_documents(id) ON DELETE RESTRICT,
+  trigger_type TEXT NOT NULL CHECK (trigger_type <> ''),
+  trigger_event_id TEXT,
+  trigger_command_id TEXT,
+  status TEXT NOT NULL CHECK (status IN ('queued','running','completed','failed','cancelled')),
+  business_date_from DATE NOT NULL,
+  business_date_to DATE NOT NULL,
+  affected_catalog_item_count INTEGER NOT NULL DEFAULT 0 CHECK (affected_catalog_item_count >= 0),
+  affected_warehouse_count INTEGER NOT NULL DEFAULT 0 CHECK (affected_warehouse_count >= 0),
+  total_steps INTEGER NOT NULL DEFAULT 0 CHECK (total_steps >= 0),
+  completed_steps INTEGER NOT NULL DEFAULT 0 CHECK (completed_steps >= 0),
+  failure_code TEXT,
+  failure_message_key TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  started_at TIMESTAMPTZ,
+  finished_at TIMESTAMPTZ,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS stock_recalculation_jobs_restaurant_status
-  ON stock_recalculation_jobs(restaurant_id, status, recalculate_from);
+  ON stock_recalculation_jobs(restaurant_id, status, created_at, id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS stock_recalculation_jobs_trigger_event_unique
+  ON stock_recalculation_jobs(restaurant_id, trigger_type, trigger_event_id)
+  WHERE trigger_event_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS stock_recalculation_jobs_trigger_command_unique
+  ON stock_recalculation_jobs(restaurant_id, trigger_type, trigger_command_id)
+  WHERE trigger_command_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS stock_recalculation_job_items (
+  job_id TEXT NOT NULL REFERENCES stock_recalculation_jobs(id) ON DELETE CASCADE,
+  catalog_item_id TEXT NOT NULL CHECK (catalog_item_id <> ''),
+  warehouse_id TEXT NOT NULL DEFAULT '',
+  unit_code TEXT NOT NULL CHECK (unit_code <> ''),
+  business_date_from DATE NOT NULL,
+  business_date_to DATE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (job_id, catalog_item_id, warehouse_id, unit_code)
+);
+
+CREATE INDEX IF NOT EXISTS stock_recalculation_job_items_item
+  ON stock_recalculation_job_items(catalog_item_id, warehouse_id, business_date_from, business_date_to);
+
+CREATE TABLE IF NOT EXISTS stock_recalculation_edges (
+  job_id TEXT NOT NULL REFERENCES stock_recalculation_jobs(id) ON DELETE CASCADE,
+  dependency_catalog_item_id TEXT NOT NULL CHECK (dependency_catalog_item_id <> ''),
+  dependent_catalog_item_id TEXT NOT NULL CHECK (dependent_catalog_item_id <> ''),
+  edge_type TEXT NOT NULL CHECK (edge_type IN ('recipe','modifier_link')),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (job_id, dependency_catalog_item_id, dependent_catalog_item_id, edge_type)
+);
+
+CREATE INDEX IF NOT EXISTS stock_recalculation_edges_job_order
+  ON stock_recalculation_edges(job_id, sort_order, dependency_catalog_item_id, dependent_catalog_item_id);
 
 CREATE TABLE IF NOT EXISTS cloud_projection_stop_list_updates (
   source_event_id TEXT PRIMARY KEY CHECK (source_event_id <> ''),

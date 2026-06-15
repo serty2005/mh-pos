@@ -371,13 +371,16 @@
   - `stock_ledger`;
   - `inventory_document_processing_state`;
   - `stock_recalculation_jobs`;
+  - `stock_recalculation_job_items`;
+  - `stock_recalculation_edges`;
   - `stop_lists`.
 - выполнено: `inventory_document_processing_state` фиксирует production-grade lifecycle обработки для `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted`: `accepted`, `posted`, `partially_posted`, `failed`, posted/expected ledger counters, aggregate `costing_status`, `needs_recalculation` и безопасные failure code/message key без raw payload.
 - выполнено: повтор того же source event защищен уникальным `(restaurant_id, source_event_id, source_event_type)` и не создает повторные stock documents/ledger/balance rows.
 - выполнено: `InventoryCountCaptured` пишет детерминированную корректировку к текущему Cloud materialized balance или no-op posted state с `posted_ledger_count = 0`; `ProductionCompleted` пишет готовую позицию `IN` и ingredient `OUT` по active recipe, а при missing recipe/cost сохраняет факт как `estimated`/`needs_recalculation`.
 - Worker пишет `stock_ledger` with `unit_cost_minor`, `total_cost_minor`, `costing_status` для нормализованных item payloads.
 - Worker транзакционно обновляет Cloud-owned materialized `inventory_stock_balances` при записи `stock_ledger`.
-- Retro recalculation jobs остаются следующим шагом.
+- выполнено: ограниченный Inventory Engine v2 retro recalculation DAG для Cloud-owned costing создает idempotent `queued/running/completed/failed` jobs при backdated receipt/count/production/write-off, хранит affected catalog/warehouse/unit ranges и recipe dependency edges, выполняет пересчет в background worker и меняет только costing fields/status существующих `stock_ledger` rows.
+- выполнено: bounded read-only `GET /api/v1/inventory/recalculation-jobs` и `GET /api/v1/inventory/recalculation-jobs/{id}` показывают status/progress/safe failure metadata без raw payload; mutating retry/cancel endpoint не добавлен.
 - Cloud Inventory Worker дедуплицирует `ItemServed` replay и `CheckClosed` replay.
 - `CheckClosed` после обработанного `ItemServed` списывает только положительную unserved delta по `order_line_id`.
 - `RefundRecorded` и `CancellationRecorded` обрабатываются Cloud-side только при explicit stock disposition: `return_to_stock` создает append-only `RETURN/IN`, `write_off_waste` создает append-only `WASTE/OUT`, `no_stock_effect` не попадает в inventory queue, `manual_review` попадает в queue и завершается failure без stock document для операторского разбора.
@@ -681,10 +684,10 @@
 
 - Production-grade stock receipts/counts/production state.
 - Semi-finished auto-production split.
-- Full costing state.
-- Retro recalculation DAG для документов задним числом и отрицательных остатков.
+- Richer costing math и production-grade balance rebuild поверх текущего bounded recalculation lifecycle.
+- Production-grade negative-balance costing beyond deterministic fallback.
 - Cloud UI/API для ручного ввода складских документов.
-- Full costing/recalculation status.
+- Full costing/recalculation operator workflow.
 - COGS/margin только после появления достоверной cost basis.
 
 Следующая рекомендуемая итерация:
@@ -695,7 +698,7 @@
 
 - реализовано сейчас: использовать route `GET /api/v1/inventory/stock-balances` как текущий bounded Cloud-owned inventory balances read endpoint поверх materialized `inventory_stock_balances`;
 - реализовано сейчас: показать deterministic costing status visibility без COGS/margin;
-- не делать full retro recalculation DAG;
+- реализовано сейчас: bounded retro recalculation DAG/job lifecycle добавлен для costing fields/status; COGS/margin и production-grade balance rebuild не входят в этот slice;
 - не переносить stock balances/costing authority на POS Edge;
 - расширять активный `cloud-ui-g` inventory/costing surface только поверх подтвержденных backend routes; текущая bounded `stock-balances` table уже route-backed в legacy `cloud-ui`, full costing/recalculation operator workflow остается `запланировано далее`.
 
@@ -866,7 +869,7 @@ GET /api/v1/inventory/stock-ledger?restaurant_id=&source_event_type=&source_even
 - Synchronous dual-write в PostgreSQL и ClickHouse в request path.
 - POS Edge stock documents/moves/balances/costing.
 - COGS/margin до появления достоверной cost basis.
-- Full retro recalculation DAG в текущем bounded inventory-balances step.
+- Cloud UI operator workflow и production-grade balance rebuild в текущем bounded recalculation step.
 
 ---
 

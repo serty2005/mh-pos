@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"cloud-backend/internal/cloudsync/app"
@@ -44,7 +45,9 @@ func TestRequiredSchemaIncludesCloudInventoryFoundationTables(t *testing.T) {
 		"inventory_document_processing_state":  {"id", "restaurant_id", "source_event_id", "source_event_type", "source_aggregate_id", "stock_document_id", "status", "posted_ledger_count", "expected_ledger_count", "costing_status", "needs_recalculation", "failure_code", "failure_message_key", "created_at", "updated_at", "posted_at"},
 		"stock_ledger":                         {"id", "restaurant_id", "warehouse_id", "stock_document_id", "source_event_id", "source_event_type", "catalog_item_id", "order_line_id", "movement_type", "quantity", "unit_code", "unit_cost_minor", "total_cost_minor", "costing_status", "occurred_at", "business_date_local", "created_at"},
 		"inventory_stock_balances":             {"restaurant_id", "warehouse_id", "catalog_item_id", "unit_code", "quantity_on_hand", "last_movement_at", "last_ledger_entry_id", "costing_status", "needs_recalculation", "created_at", "updated_at"},
-		"stock_recalculation_jobs":             {"id", "restaurant_id", "source_document_id", "status", "recalculate_from", "created_at", "updated_at"},
+		"stock_recalculation_jobs":             {"id", "restaurant_id", "source_document_id", "trigger_type", "trigger_event_id", "trigger_command_id", "status", "business_date_from", "business_date_to", "affected_catalog_item_count", "affected_warehouse_count", "total_steps", "completed_steps", "failure_code", "failure_message_key", "created_at", "started_at", "finished_at", "updated_at"},
+		"stock_recalculation_job_items":        {"job_id", "catalog_item_id", "warehouse_id", "unit_code", "business_date_from", "business_date_to", "created_at"},
+		"stock_recalculation_edges":            {"job_id", "dependency_catalog_item_id", "dependent_catalog_item_id", "edge_type", "sort_order", "created_at"},
 		"cloud_projection_stop_list_updates":   {"source_event_id", "queue_id", "restaurant_id", "device_id", "stop_list_id", "catalog_item_id", "available_quantity", "active", "conflict_policy", "source", "projection_action", "review_status", "review_comment", "reviewed_by_employee_id", "reviewed_at", "assigned_to_employee_id", "assigned_by_employee_id", "assigned_at", "assignment_note", "applied_stop_list_id", "updated_at", "occurred_at", "projected_at"},
 		"stop_lists":                           {"id", "restaurant_id", "catalog_item_id", "available_quantity", "source", "reason", "active", "cloud_version", "updated_at"},
 		"cloud_review_assignment_audit_events": {"event_id", "command_id", "review_type", "review_id", "action", "actor_employee_id", "target_employee_id", "reason", "occurred_at"},
@@ -81,6 +84,9 @@ func TestRequiredSchemaIncludesCloudInventoryIndexes(t *testing.T) {
 			"inventory_stock_balances_restaurant_last_movement",
 			"inventory_stock_balances_costing_status",
 		},
+		"stock_recalculation_jobs":      {"stock_recalculation_jobs_restaurant_status", "stock_recalculation_jobs_trigger_event_unique", "stock_recalculation_jobs_trigger_command_unique"},
+		"stock_recalculation_job_items": {"stock_recalculation_job_items_pkey", "stock_recalculation_job_items_item"},
+		"stock_recalculation_edges":     {"stock_recalculation_edges_pkey", "stock_recalculation_edges_job_order"},
 	} {
 		found, ok := reqs[table]
 		if !ok {
@@ -107,6 +113,19 @@ func TestProcessingStateSchemaHasNoRawPayloadColumn(t *testing.T) {
 		return
 	}
 	t.Fatal("expected inventory_document_processing_state in schema verification contract")
+}
+
+func TestRecalculationSchemaHasNoRawPayloadColumns(t *testing.T) {
+	for _, req := range RequiredSchema() {
+		switch req.Table {
+		case "stock_recalculation_jobs", "stock_recalculation_job_items", "stock_recalculation_edges":
+			for _, column := range req.Columns {
+				if strings.Contains(column, "payload") || column == "raw_payload" || column == "payload_json" {
+					t.Fatalf("%s must not expose payload column: %+v", req.Table, req.Columns)
+				}
+			}
+		}
+	}
 }
 
 func TestRequiredSchemaIncludesFinancialOperationProjection(t *testing.T) {
@@ -184,6 +203,8 @@ func TestCloudInventoryConstraintsRejectInvalidValues(t *testing.T) {
 		`INSERT INTO stock_ledger(id,restaurant_id,stock_document_id,source_event_id,source_event_type,catalog_item_id,movement_type,quantity,unit_code,unit_cost_minor,total_cost_minor,costing_status,occurred_at,business_date_local,created_at) VALUES ('ledger-bad-costing','rest-1','inv-doc-valid','event-4','CheckClosed','item-1','OUT',1,'PC',10,10,'bad',now(),'2026-05-19',now())`,
 		`INSERT INTO inventory_document_processing_state(id,restaurant_id,source_event_id,source_event_type,status,posted_ledger_count,costing_status,needs_recalculation,created_at,updated_at) VALUES ('state-bad-type','rest-1','event-5','CheckClosed','accepted',0,'estimated',false,now(),now())`,
 		`INSERT INTO inventory_document_processing_state(id,restaurant_id,source_event_id,source_event_type,status,posted_ledger_count,costing_status,needs_recalculation,created_at,updated_at) VALUES ('state-bad-status','rest-1','event-6','StockReceiptCaptured','retrying',0,'estimated',false,now(),now())`,
+		`INSERT INTO stock_recalculation_jobs(id,restaurant_id,source_document_id,trigger_type,status,business_date_from,business_date_to,created_at,updated_at) VALUES ('recalc-bad-status','rest-1','inv-doc-valid','StockReceiptCaptured','retrying','2026-05-19','2026-05-19',now(),now())`,
+		`INSERT INTO stock_recalculation_edges(job_id,dependency_catalog_item_id,dependent_catalog_item_id,edge_type) VALUES ('missing-job','item-1','item-2','bad')`,
 	} {
 		if _, err := pool.Exec(ctx, q); err == nil {
 			t.Fatal("expected constraint violation")

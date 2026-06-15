@@ -640,6 +640,95 @@ LIMIT $6 OFFSET $7`,
 	return out, rows.Err()
 }
 
+// ListInventoryRecalculationJobs читает bounded diagnostic status/progress по async costing jobs.
+func (r *Repository) ListInventoryRecalculationJobs(ctx context.Context, filter app.InventoryRecalculationJobFilter) ([]contracts.InventoryRecalculationJob, error) {
+	limit := filter.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT id,restaurant_id,trigger_type,COALESCE(trigger_event_id,''),COALESCE(trigger_command_id,''),status,
+       business_date_from::text,business_date_to::text,affected_catalog_item_count,affected_warehouse_count,
+       total_steps,completed_steps,COALESCE(failure_code,''),COALESCE(failure_message_key,''),
+       created_at,started_at,finished_at,updated_at
+FROM stock_recalculation_jobs
+WHERE ($1 = '' OR restaurant_id = $1)
+  AND ($2 = '' OR status = $2)
+  AND ($3 = '' OR trigger_type = $3)
+ORDER BY created_at DESC,id DESC
+LIMIT $4 OFFSET $5`,
+		filter.RestaurantID,
+		filter.Status,
+		filter.TriggerType,
+		limit,
+		offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]contracts.InventoryRecalculationJob, 0, limit)
+	for rows.Next() {
+		item, err := scanInventoryRecalculationJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+// GetInventoryRecalculationJob читает один async costing job без raw payload.
+func (r *Repository) GetInventoryRecalculationJob(ctx context.Context, id string) (contracts.InventoryRecalculationJob, error) {
+	row := r.pool.QueryRow(ctx, `
+SELECT id,restaurant_id,trigger_type,COALESCE(trigger_event_id,''),COALESCE(trigger_command_id,''),status,
+       business_date_from::text,business_date_to::text,affected_catalog_item_count,affected_warehouse_count,
+       total_steps,completed_steps,COALESCE(failure_code,''),COALESCE(failure_message_key,''),
+       created_at,started_at,finished_at,updated_at
+FROM stock_recalculation_jobs
+WHERE id = $1`, strings.TrimSpace(id))
+	item, err := scanInventoryRecalculationJob(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return contracts.InventoryRecalculationJob{}, contracts.ErrNotFound
+	}
+	return item, err
+}
+
+type recalculationJobScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanInventoryRecalculationJob(row recalculationJobScanner) (contracts.InventoryRecalculationJob, error) {
+	var item contracts.InventoryRecalculationJob
+	if err := row.Scan(
+		&item.ID,
+		&item.RestaurantID,
+		&item.TriggerType,
+		&item.TriggerEventID,
+		&item.TriggerCommandID,
+		&item.Status,
+		&item.BusinessDateFrom,
+		&item.BusinessDateTo,
+		&item.AffectedCatalogItemCount,
+		&item.AffectedWarehouseCount,
+		&item.TotalSteps,
+		&item.CompletedSteps,
+		&item.FailureCode,
+		&item.FailureMessageKey,
+		&item.CreatedAt,
+		&item.StartedAt,
+		&item.FinishedAt,
+		&item.UpdatedAt,
+	); err != nil {
+		return contracts.InventoryRecalculationJob{}, err
+	}
+	return item, nil
+}
+
 func (r *Repository) UpsertMasterDataPackage(ctx context.Context, v contracts.MasterDataPackage) (contracts.MasterDataPackage, error) {
 	nodeDeviceID := strings.TrimSpace(v.NodeDeviceID)
 	payload := bytesTrimSpace(v.PayloadJSON)

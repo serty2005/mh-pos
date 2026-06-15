@@ -16,6 +16,7 @@ import (
 type DocumentType string
 type MovementType string
 type ProcessingStatus string
+type RecalculationJobStatus string
 
 const (
 	DocumentSale           DocumentType = "SALE"
@@ -32,6 +33,12 @@ const (
 	ProcessingStatusPosted          ProcessingStatus = "posted"
 	ProcessingStatusPartiallyPosted ProcessingStatus = "partially_posted"
 	ProcessingStatusFailed          ProcessingStatus = "failed"
+
+	RecalculationStatusQueued    RecalculationJobStatus = "queued"
+	RecalculationStatusRunning   RecalculationJobStatus = "running"
+	RecalculationStatusCompleted RecalculationJobStatus = "completed"
+	RecalculationStatusFailed    RecalculationJobStatus = "failed"
+	RecalculationStatusCancelled RecalculationJobStatus = "cancelled"
 
 	// SourceEventItemServedCompensation помечает сторно уже обработанного ItemServed при recall/serve-again.
 	SourceEventItemServedCompensation = "ItemServedCompensation"
@@ -53,6 +60,14 @@ type Repository interface {
 	CompleteProcessingState(context.Context, ProcessingStateCommand) error
 	FailProcessingState(context.Context, ProcessingStateCommand) error
 	CreateStockDocument(context.Context, StockDocument) error
+	CreateRecalculationJob(context.Context, RecalculationTriggerCommand) error
+	ClaimRecalculationJob(context.Context, RecalculationClaimCommand) (RecalculationJob, bool, error)
+	ValidateRecalculationDAG(context.Context, string) error
+	ListRecalculationLedgerRows(context.Context, string) ([]RecalculationLedgerRow, error)
+	LatestCostBasis(context.Context, CostBasisQuery) (int64, bool, error)
+	UpdateRecalculationLedgerRow(context.Context, RecalculationLedgerUpdate) error
+	CompleteRecalculationJob(context.Context, RecalculationJobProgress) error
+	FailRecalculationJob(context.Context, RecalculationJobFailure) error
 	ApplyStopListUpdate(context.Context, StopListProjectionCommand) error
 	MarkProcessed(context.Context, string, time.Time) error
 	MarkFailed(context.Context, string, string, time.Time) error
@@ -171,6 +186,82 @@ type ProcessingStateCommand struct {
 	Now                 time.Time
 }
 
+// RecalculationTriggerCommand фиксирует безопасные metadata trigger-а без raw Edge payload.
+type RecalculationTriggerCommand struct {
+	ID               string
+	RestaurantID     string
+	SourceDocumentID string
+	TriggerType      string
+	TriggerEventID   string
+	TriggerCommandID string
+	BusinessDateFrom string
+	OccurredAt       time.Time
+	Ledger           []StockLedgerEntry
+	Now              time.Time
+}
+
+type RecalculationClaimCommand struct {
+	LockedBy string
+	Now      time.Time
+}
+
+type RecalculationJob struct {
+	ID               string
+	RestaurantID     string
+	TriggerType      string
+	TriggerEventID   string
+	TriggerCommandID string
+	Status           RecalculationJobStatus
+	TotalSteps       int
+	CompletedSteps   int
+}
+
+type RecalculationLedgerRow struct {
+	ID            string
+	RestaurantID  string
+	WarehouseID   string
+	CatalogItemID string
+	MovementType  MovementType
+	Quantity      string
+	UnitCode      string
+	UnitCostMinor int64
+	OccurredAt    time.Time
+}
+
+type CostBasisQuery struct {
+	RestaurantID  string
+	WarehouseID   string
+	CatalogItemID string
+	UnitCode      string
+	OccurredAt    time.Time
+	LedgerID      string
+}
+
+type RecalculationLedgerUpdate struct {
+	JobID          string
+	LedgerID       string
+	UnitCostMinor  int64
+	TotalCostMinor int64
+	CostingStatus  string
+	CompletedSteps int
+	Now            time.Time
+}
+
+type RecalculationJobProgress struct {
+	JobID          string
+	TotalSteps     int
+	CompletedSteps int
+	Now            time.Time
+}
+
+type RecalculationJobFailure struct {
+	JobID             string
+	FailureCode       string
+	FailureMessageKey string
+	CompletedSteps    int
+	Now               time.Time
+}
+
 type Config struct {
 	WorkerID  string
 	BatchSize int
@@ -212,6 +303,81 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// RunRecalculationOnce выполняет один queued retro-costing job вне HTTP request path.
+func (w *Worker) RunRecalculationOnce(ctx context.Context) error {
+	now := w.clock.Now().UTC()
+	job, ok, err := w.repo.ClaimRecalculationJob(ctx, RecalculationClaimCommand{LockedBy: w.config.WorkerID, Now: now})
+	if err != nil || !ok {
+		return err
+	}
+	if err := w.repo.ValidateRecalculationDAG(ctx, job.ID); err != nil {
+		return w.repo.FailRecalculationJob(ctx, RecalculationJobFailure{
+			JobID:             job.ID,
+			FailureCode:       "RECIPE_DEPENDENCY_CYCLE",
+			FailureMessageKey: "inventory.recalculation.recipe_cycle",
+			CompletedSteps:    job.CompletedSteps,
+			Now:               now,
+		})
+	}
+	rows, err := w.repo.ListRecalculationLedgerRows(ctx, job.ID)
+	if err != nil {
+		return w.repo.FailRecalculationJob(ctx, RecalculationJobFailure{
+			JobID:             job.ID,
+			FailureCode:       "LEDGER_SCAN_FAILED",
+			FailureMessageKey: "inventory.recalculation.ledger_scan_failed",
+			CompletedSteps:    job.CompletedSteps,
+			Now:               now,
+		})
+	}
+	completed := 0
+	for _, row := range rows {
+		unitCost, status, err := w.recalculatedCost(ctx, row)
+		if err != nil {
+			return w.repo.FailRecalculationJob(ctx, RecalculationJobFailure{
+				JobID:             job.ID,
+				FailureCode:       "COST_BASIS_FAILED",
+				FailureMessageKey: "inventory.recalculation.cost_basis_failed",
+				CompletedSteps:    completed,
+				Now:               now,
+			})
+		}
+		completed++
+		if err := w.repo.UpdateRecalculationLedgerRow(ctx, RecalculationLedgerUpdate{
+			JobID:          job.ID,
+			LedgerID:       row.ID,
+			UnitCostMinor:  unitCost,
+			TotalCostMinor: totalCostMinor(row.Quantity, unitCost),
+			CostingStatus:  status,
+			CompletedSteps: completed,
+			Now:            now,
+		}); err != nil {
+			return err
+		}
+	}
+	return w.repo.CompleteRecalculationJob(ctx, RecalculationJobProgress{JobID: job.ID, TotalSteps: len(rows), CompletedSteps: completed, Now: now})
+}
+
+func (w *Worker) recalculatedCost(ctx context.Context, row RecalculationLedgerRow) (int64, string, error) {
+	if row.MovementType == MovementIn && row.UnitCostMinor > 0 {
+		return row.UnitCostMinor, "recalculated", nil
+	}
+	cost, ok, err := w.repo.LatestCostBasis(ctx, CostBasisQuery{
+		RestaurantID:  row.RestaurantID,
+		WarehouseID:   row.WarehouseID,
+		CatalogItemID: row.CatalogItemID,
+		UnitCode:      row.UnitCode,
+		OccurredAt:    row.OccurredAt,
+		LedgerID:      row.ID,
+	})
+	if err != nil {
+		return 0, "", err
+	}
+	if !ok {
+		return 0, "needs_recalculation", nil
+	}
+	return cost, "recalculated", nil
 }
 
 func (w *Worker) processEvent(ctx context.Context, event QueuedEvent, now time.Time) error {
@@ -261,6 +427,20 @@ func (w *Worker) processStatefulDocumentEvent(ctx context.Context, event QueuedE
 	for _, document := range documents {
 		document.ProcessingState = &stateCmd
 		if err := w.repo.CreateStockDocument(ctx, document); err != nil {
+			return err
+		}
+		if err := w.repo.CreateRecalculationJob(ctx, RecalculationTriggerCommand{
+			ID:               w.ids.NewID(),
+			RestaurantID:     strings.TrimSpace(event.RestaurantID),
+			SourceDocumentID: strings.TrimSpace(document.ID),
+			TriggerType:      string(event.EventType),
+			TriggerEventID:   strings.TrimSpace(event.EventID),
+			TriggerCommandID: "",
+			BusinessDateFrom: strings.TrimSpace(document.BusinessDateLocal),
+			OccurredAt:       document.OccurredAt,
+			Ledger:           document.Ledger,
+			Now:              now,
+		}); err != nil {
 			return err
 		}
 	}

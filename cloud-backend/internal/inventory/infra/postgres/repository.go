@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -267,6 +268,452 @@ INSERT INTO stock_ledger(
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+func (r *Repository) CreateRecalculationJob(ctx context.Context, cmd app.RecalculationTriggerCommand) error {
+	directItems := make(map[string]bool)
+	for _, entry := range cmd.Ledger {
+		if item := strings.TrimSpace(entry.CatalogItemID); item != "" {
+			directItems[item] = true
+		}
+	}
+	if len(directItems) == 0 {
+		return nil
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	affectedItems, edges, err := recipeDependencyClosure(ctx, tx, strings.TrimSpace(cmd.RestaurantID), directItems)
+	if err != nil {
+		return err
+	}
+	itemIDs := mapKeys(affectedItems)
+	rows, err := tx.Query(ctx, `
+SELECT catalog_item_id,COALESCE(warehouse_id,''),unit_code,MIN(business_date_local)::text,MAX(business_date_local)::text,COUNT(1)
+FROM stock_ledger
+WHERE restaurant_id = $1
+  AND occurred_at > $2
+  AND catalog_item_id = ANY($3)
+GROUP BY catalog_item_id,COALESCE(warehouse_id,''),unit_code
+ORDER BY catalog_item_id,COALESCE(warehouse_id,''),unit_code`,
+		strings.TrimSpace(cmd.RestaurantID),
+		cmd.OccurredAt.UTC(),
+		itemIDs,
+	)
+	if err != nil {
+		return err
+	}
+	type affectedRange struct {
+		catalogItemID string
+		warehouseID   string
+		unitCode      string
+		from          string
+		to            string
+		count         int
+	}
+	ranges := make([]affectedRange, 0)
+	totalSteps := 0
+	warehouses := map[string]bool{}
+	affectedCatalog := map[string]bool{}
+	businessDateTo := strings.TrimSpace(cmd.BusinessDateFrom)
+	for rows.Next() {
+		var item affectedRange
+		if err := rows.Scan(&item.catalogItemID, &item.warehouseID, &item.unitCode, &item.from, &item.to, &item.count); err != nil {
+			rows.Close()
+			return err
+		}
+		ranges = append(ranges, item)
+		totalSteps += item.count
+		warehouses[item.warehouseID] = true
+		affectedCatalog[item.catalogItemID] = true
+		if businessDateTo == "" || item.to > businessDateTo {
+			businessDateTo = item.to
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	if totalSteps == 0 {
+		return tx.Commit(ctx)
+	}
+	now := cmd.Now.UTC()
+	if businessDateTo == "" {
+		businessDateTo = strings.TrimSpace(cmd.BusinessDateFrom)
+	}
+	var insertedID string
+	err = tx.QueryRow(ctx, `
+INSERT INTO stock_recalculation_jobs(
+  id,restaurant_id,source_document_id,trigger_type,trigger_event_id,trigger_command_id,status,
+  business_date_from,business_date_to,affected_catalog_item_count,affected_warehouse_count,total_steps,completed_steps,created_at,updated_at
+) VALUES (
+  $1,$2,NULLIF($3,''),$4,NULLIF($5,''),NULLIF($6,''),'queued',
+  $7,$8,$9,$10,$11,0,$12,$12
+)
+ON CONFLICT DO NOTHING
+RETURNING id`,
+		strings.TrimSpace(cmd.ID),
+		strings.TrimSpace(cmd.RestaurantID),
+		strings.TrimSpace(cmd.SourceDocumentID),
+		strings.TrimSpace(cmd.TriggerType),
+		strings.TrimSpace(cmd.TriggerEventID),
+		strings.TrimSpace(cmd.TriggerCommandID),
+		strings.TrimSpace(cmd.BusinessDateFrom),
+		businessDateTo,
+		len(affectedCatalog),
+		len(warehouses),
+		totalSteps,
+		now,
+	).Scan(&insertedID)
+	if errorsIsNoRows(err) {
+		return tx.Commit(ctx)
+	}
+	if err != nil {
+		return err
+	}
+	for _, item := range ranges {
+		if _, err := tx.Exec(ctx, `
+INSERT INTO stock_recalculation_job_items(job_id,catalog_item_id,warehouse_id,unit_code,business_date_from,business_date_to,created_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7)
+ON CONFLICT DO NOTHING`,
+			insertedID, item.catalogItemID, item.warehouseID, item.unitCode, item.from, item.to, now); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+UPDATE stock_ledger
+SET costing_status = 'needs_recalculation'
+WHERE restaurant_id = $1
+  AND catalog_item_id = $2
+  AND COALESCE(warehouse_id,'') = $3
+  AND unit_code = $4
+  AND business_date_local BETWEEN $5::date AND $6::date
+  AND costing_status <> 'failed'`,
+			strings.TrimSpace(cmd.RestaurantID), item.catalogItemID, item.warehouseID, item.unitCode, item.from, item.to); err != nil {
+			return err
+		}
+		if err := refreshStockBalanceCosting(ctx, tx, strings.TrimSpace(cmd.RestaurantID), item.warehouseID, item.catalogItemID, item.unitCode, now); err != nil {
+			return err
+		}
+	}
+	for i, edge := range edges {
+		if _, err := tx.Exec(ctx, `
+INSERT INTO stock_recalculation_edges(job_id,dependency_catalog_item_id,dependent_catalog_item_id,edge_type,sort_order,created_at)
+VALUES ($1,$2,$3,'recipe',$4,$5)
+ON CONFLICT DO NOTHING`,
+			insertedID, edge.from, edge.to, i, now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+type recipeEdge struct {
+	from string
+	to   string
+}
+
+func recipeDependencyClosure(ctx context.Context, tx pgx.Tx, restaurantID string, direct map[string]bool) (map[string]bool, []recipeEdge, error) {
+	rows, err := tx.Query(ctx, `
+SELECT rl.component_catalog_item_id, rv.owner_catalog_item_id
+FROM cloud_recipe_versions rv
+JOIN cloud_recipe_lines rl ON rl.recipe_version_id = rv.id
+WHERE rv.restaurant_id = $1 AND rv.status = 'active'
+UNION
+SELECT component_catalog_item_id, recipe_owner_catalog_item_id
+FROM cloud_recipe_items
+WHERE restaurant_id = $1
+ORDER BY 1,2`, restaurantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	graph := map[string][]string{}
+	for rows.Next() {
+		var from, to string
+		if err := rows.Scan(&from, &to); err != nil {
+			return nil, nil, err
+		}
+		from = strings.TrimSpace(from)
+		to = strings.TrimSpace(to)
+		if from != "" && to != "" {
+			graph[from] = append(graph[from], to)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	affected := map[string]bool{}
+	edges := make([]recipeEdge, 0)
+	var visit func(string)
+	visit = func(item string) {
+		if affected[item] {
+			return
+		}
+		affected[item] = true
+		for _, dependent := range graph[item] {
+			edges = append(edges, recipeEdge{from: item, to: dependent})
+			visit(dependent)
+		}
+	}
+	for item := range direct {
+		visit(item)
+	}
+	return affected, edges, nil
+}
+
+func mapKeys(values map[string]bool) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	return out
+}
+
+func (r *Repository) ClaimRecalculationJob(ctx context.Context, cmd app.RecalculationClaimCommand) (app.RecalculationJob, bool, error) {
+	var job app.RecalculationJob
+	var status string
+	err := r.pool.QueryRow(ctx, `
+WITH picked AS (
+  SELECT id
+  FROM stock_recalculation_jobs
+  WHERE status = 'queued'
+  ORDER BY created_at, id
+  LIMIT 1
+  FOR UPDATE SKIP LOCKED
+)
+UPDATE stock_recalculation_jobs j
+SET status = 'running',
+    started_at = COALESCE(started_at, $1),
+    updated_at = $1,
+    failure_code = NULL,
+    failure_message_key = NULL
+FROM picked
+WHERE j.id = picked.id
+RETURNING j.id,j.restaurant_id,j.trigger_type,COALESCE(j.trigger_event_id,''),COALESCE(j.trigger_command_id,''),j.status,j.total_steps,j.completed_steps`,
+		cmd.Now.UTC(),
+	).Scan(&job.ID, &job.RestaurantID, &job.TriggerType, &job.TriggerEventID, &job.TriggerCommandID, &status, &job.TotalSteps, &job.CompletedSteps)
+	if errorsIsNoRows(err) {
+		return app.RecalculationJob{}, false, nil
+	}
+	if err != nil {
+		return app.RecalculationJob{}, false, err
+	}
+	job.Status = app.RecalculationJobStatus(status)
+	return job, true, nil
+}
+
+func (r *Repository) ValidateRecalculationDAG(ctx context.Context, jobID string) error {
+	rows, err := r.pool.Query(ctx, `
+SELECT dependency_catalog_item_id,dependent_catalog_item_id
+FROM stock_recalculation_edges
+WHERE job_id = $1
+ORDER BY sort_order,dependency_catalog_item_id,dependent_catalog_item_id`, strings.TrimSpace(jobID))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	graph := map[string][]string{}
+	for rows.Next() {
+		var from, to string
+		if err := rows.Scan(&from, &to); err != nil {
+			return err
+		}
+		graph[from] = append(graph[from], to)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	visiting := map[string]bool{}
+	visited := map[string]bool{}
+	var visit func(string) bool
+	visit = func(node string) bool {
+		if visiting[node] {
+			return true
+		}
+		if visited[node] {
+			return false
+		}
+		visiting[node] = true
+		for _, next := range graph[node] {
+			if visit(next) {
+				return true
+			}
+		}
+		delete(visiting, node)
+		visited[node] = true
+		return false
+	}
+	for node := range graph {
+		if visit(node) {
+			return fmt.Errorf("recipe dependency cycle")
+		}
+	}
+	return nil
+}
+
+func (r *Repository) ListRecalculationLedgerRows(ctx context.Context, jobID string) ([]app.RecalculationLedgerRow, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT l.id,l.restaurant_id,COALESCE(l.warehouse_id,''),l.catalog_item_id,l.movement_type,l.quantity::text,l.unit_code,l.unit_cost_minor,l.occurred_at
+FROM stock_ledger l
+JOIN stock_recalculation_job_items i
+  ON i.job_id = $1
+ AND i.catalog_item_id = l.catalog_item_id
+ AND i.warehouse_id = COALESCE(l.warehouse_id,'')
+ AND i.unit_code = l.unit_code
+ AND l.business_date_local BETWEEN i.business_date_from AND i.business_date_to
+JOIN stock_recalculation_jobs j ON j.id = i.job_id AND j.restaurant_id = l.restaurant_id
+WHERE j.id = $1
+ORDER BY l.business_date_local ASC,l.occurred_at ASC,l.id ASC`, strings.TrimSpace(jobID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]app.RecalculationLedgerRow, 0)
+	for rows.Next() {
+		var row app.RecalculationLedgerRow
+		var movement string
+		if err := rows.Scan(&row.ID, &row.RestaurantID, &row.WarehouseID, &row.CatalogItemID, &movement, &row.Quantity, &row.UnitCode, &row.UnitCostMinor, &row.OccurredAt); err != nil {
+			return nil, err
+		}
+		row.MovementType = app.MovementType(movement)
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) LatestCostBasis(ctx context.Context, q app.CostBasisQuery) (int64, bool, error) {
+	var cost int64
+	err := r.pool.QueryRow(ctx, `
+SELECT unit_cost_minor
+FROM stock_ledger
+WHERE restaurant_id = $1
+  AND COALESCE(warehouse_id,'') = $2
+  AND catalog_item_id = $3
+  AND unit_code = $4
+  AND movement_type = 'IN'
+  AND unit_cost_minor > 0
+  AND (occurred_at < $5 OR (occurred_at = $5 AND id < $6))
+ORDER BY occurred_at DESC,id DESC
+LIMIT 1`,
+		strings.TrimSpace(q.RestaurantID),
+		strings.TrimSpace(q.WarehouseID),
+		strings.TrimSpace(q.CatalogItemID),
+		strings.TrimSpace(q.UnitCode),
+		q.OccurredAt.UTC(),
+		strings.TrimSpace(q.LedgerID),
+	).Scan(&cost)
+	if errorsIsNoRows(err) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return cost, true, nil
+}
+
+func (r *Repository) UpdateRecalculationLedgerRow(ctx context.Context, update app.RecalculationLedgerUpdate) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var restaurantID, warehouseID, catalogItemID, unitCode string
+	if err := tx.QueryRow(ctx, `
+UPDATE stock_ledger
+SET unit_cost_minor = $2,
+    total_cost_minor = $3,
+    costing_status = $4
+WHERE id = $1
+RETURNING restaurant_id,COALESCE(warehouse_id,''),catalog_item_id,unit_code`,
+		strings.TrimSpace(update.LedgerID),
+		update.UnitCostMinor,
+		update.TotalCostMinor,
+		strings.TrimSpace(update.CostingStatus),
+	).Scan(&restaurantID, &warehouseID, &catalogItemID, &unitCode); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+UPDATE stock_recalculation_jobs
+SET completed_steps = $2, updated_at = $3
+WHERE id = $1`,
+		strings.TrimSpace(update.JobID), update.CompletedSteps, update.Now.UTC()); err != nil {
+		return err
+	}
+	if err := refreshStockBalanceCosting(ctx, tx, restaurantID, warehouseID, catalogItemID, unitCode, update.Now.UTC()); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *Repository) CompleteRecalculationJob(ctx context.Context, progress app.RecalculationJobProgress) error {
+	_, err := r.pool.Exec(ctx, `
+UPDATE stock_recalculation_jobs
+SET status = 'completed',
+    total_steps = $2,
+    completed_steps = $3,
+    failure_code = NULL,
+    failure_message_key = NULL,
+    finished_at = $4,
+    updated_at = $4
+WHERE id = $1`,
+		strings.TrimSpace(progress.JobID), progress.TotalSteps, progress.CompletedSteps, progress.Now.UTC())
+	return err
+}
+
+func (r *Repository) FailRecalculationJob(ctx context.Context, failure app.RecalculationJobFailure) error {
+	_, err := r.pool.Exec(ctx, `
+UPDATE stock_recalculation_jobs
+SET status = 'failed',
+    completed_steps = $2,
+    failure_code = NULLIF($3,''),
+    failure_message_key = NULLIF($4,''),
+    finished_at = $5,
+    updated_at = $5
+WHERE id = $1`,
+		strings.TrimSpace(failure.JobID),
+		failure.CompletedSteps,
+		strings.TrimSpace(failure.FailureCode),
+		strings.TrimSpace(failure.FailureMessageKey),
+		failure.Now.UTC())
+	return err
+}
+
+func refreshStockBalanceCosting(ctx context.Context, tx pgx.Tx, restaurantID, warehouseID, catalogItemID, unitCode string, now time.Time) error {
+	_, err := tx.Exec(ctx, `
+WITH aggregate AS (
+  SELECT
+    CASE
+      WHEN BOOL_OR(costing_status = 'failed') THEN 'failed'
+      WHEN BOOL_OR(costing_status = 'needs_recalculation') THEN 'needs_recalculation'
+      WHEN BOOL_OR(costing_status = 'estimated') THEN 'estimated'
+      WHEN (ARRAY_AGG(costing_status ORDER BY occurred_at DESC, id DESC))[1] = 'recalculated' THEN 'recalculated'
+      ELSE 'final'
+    END AS costing_status
+  FROM stock_ledger
+  WHERE restaurant_id = $1
+    AND COALESCE(warehouse_id,'') = $2
+    AND catalog_item_id = $3
+    AND unit_code = $4
+)
+UPDATE inventory_stock_balances
+SET costing_status = (SELECT costing_status FROM aggregate),
+    needs_recalculation = (SELECT costing_status IN ('needs_recalculation','estimated') FROM aggregate),
+    updated_at = $5
+WHERE restaurant_id = $1
+  AND warehouse_id = $2
+  AND catalog_item_id = $3
+  AND unit_code = $4`,
+		strings.TrimSpace(restaurantID),
+		strings.TrimSpace(warehouseID),
+		strings.TrimSpace(catalogItemID),
+		strings.TrimSpace(unitCode),
+		now.UTC(),
+	)
+	return err
 }
 
 func ensureProcessingStateForDocument(ctx context.Context, tx pgx.Tx, cmd app.ProcessingStateCommand, document app.StockDocument) (bool, error) {

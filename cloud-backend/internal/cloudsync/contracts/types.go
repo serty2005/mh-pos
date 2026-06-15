@@ -112,6 +112,28 @@ type InventoryStockBalance struct {
 	BusinessDateTo     string    `json:"business_date_to"`
 }
 
+// InventoryRecalculationJob описывает bounded diagnostic view по async costing job без raw payload.
+type InventoryRecalculationJob struct {
+	ID                       string     `json:"id"`
+	RestaurantID             string     `json:"restaurant_id"`
+	TriggerType              string     `json:"trigger_type"`
+	TriggerEventID           string     `json:"trigger_event_id,omitempty"`
+	TriggerCommandID         string     `json:"trigger_command_id,omitempty"`
+	Status                   string     `json:"status"`
+	BusinessDateFrom         string     `json:"business_date_from"`
+	BusinessDateTo           string     `json:"business_date_to"`
+	AffectedCatalogItemCount int        `json:"affected_catalog_item_count"`
+	AffectedWarehouseCount   int        `json:"affected_warehouse_count"`
+	TotalSteps               int        `json:"total_steps"`
+	CompletedSteps           int        `json:"completed_steps"`
+	FailureCode              string     `json:"failure_code,omitempty"`
+	FailureMessageKey        string     `json:"failure_message_key,omitempty"`
+	CreatedAt                time.Time  `json:"created_at"`
+	StartedAt                *time.Time `json:"started_at,omitempty"`
+	FinishedAt               *time.Time `json:"finished_at,omitempty"`
+	UpdatedAt                time.Time  `json:"updated_at"`
+}
+
 type ShiftOpened struct {
 	ID                 string    `json:"id"`
 	RestaurantID       string    `json:"restaurant_id"`

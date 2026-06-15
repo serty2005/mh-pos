@@ -23,6 +23,8 @@ type Repository interface {
 	ListFinancialOperations(context.Context, FinancialOperationProjectionFilter) ([]contracts.FinancialOperationProjection, error)
 	ListInventoryLedger(context.Context, InventoryLedgerFilter) ([]contracts.InventoryLedgerEntry, error)
 	ListInventoryStockBalances(context.Context, InventoryStockBalanceFilter) ([]contracts.InventoryStockBalance, error)
+	ListInventoryRecalculationJobs(context.Context, InventoryRecalculationJobFilter) ([]contracts.InventoryRecalculationJob, error)
+	GetInventoryRecalculationJob(context.Context, string) (contracts.InventoryRecalculationJob, error)
 	UpsertMasterDataPackage(context.Context, contracts.MasterDataPackage) (contracts.MasterDataPackage, error)
 	GetMasterDataPackage(context.Context, string, string) (contracts.MasterDataPackage, error)
 	AuthenticateNodeToken(context.Context, string, string, string) error
@@ -146,6 +148,15 @@ type InventoryStockBalanceFilter struct {
 	CostingStatus  string
 	Limit          int
 	Offset         int
+}
+
+// InventoryRecalculationJobFilter задает bounded diagnostic query по async costing jobs.
+type InventoryRecalculationJobFilter struct {
+	RestaurantID string
+	Status       string
+	TriggerType  string
+	Limit        int
+	Offset       int
 }
 
 type Service struct {
@@ -300,6 +311,34 @@ func (s *Service) ListInventoryStockBalances(ctx context.Context, filter Invento
 		return nil, fmt.Errorf("%w: offset must be non-negative", contracts.ErrInvalidEnvelope)
 	}
 	return s.repo.ListInventoryStockBalances(ctx, filter)
+}
+
+// ListInventoryRecalculationJobs возвращает bounded status/progress view без raw trigger payload.
+func (s *Service) ListInventoryRecalculationJobs(ctx context.Context, filter InventoryRecalculationJobFilter) ([]contracts.InventoryRecalculationJob, error) {
+	filter.RestaurantID = strings.TrimSpace(filter.RestaurantID)
+	filter.Status = strings.TrimSpace(filter.Status)
+	filter.TriggerType = strings.TrimSpace(filter.TriggerType)
+	switch filter.Status {
+	case "", "queued", "running", "completed", "failed", "cancelled":
+	default:
+		return nil, fmt.Errorf("%w: status must be queued, running, completed, failed or cancelled", contracts.ErrInvalidEnvelope)
+	}
+	if filter.Limit <= 0 || filter.Limit > 100 {
+		filter.Limit = 50
+	}
+	if filter.Offset < 0 {
+		return nil, fmt.Errorf("%w: offset must be non-negative", contracts.ErrInvalidEnvelope)
+	}
+	return s.repo.ListInventoryRecalculationJobs(ctx, filter)
+}
+
+// GetInventoryRecalculationJob читает один job status по id без связанных raw payload/effects.
+func (s *Service) GetInventoryRecalculationJob(ctx context.Context, id string) (contracts.InventoryRecalculationJob, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return contracts.InventoryRecalculationJob{}, fmt.Errorf("%w: job id is required", contracts.ErrInvalidEnvelope)
+	}
+	return s.repo.GetInventoryRecalculationJob(ctx, id)
 }
 
 // ReceiveBatch принимает batch SyncEnvelope и возвращает item-level ACK decisions.

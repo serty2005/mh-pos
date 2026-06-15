@@ -43,7 +43,7 @@
 - Edge -> Cloud operational outbox foundation;
 - Cloud -> Edge master-data ingest for supported streams.
 - POS Edge stop-list sale blocking при `AddOrderLine` и увеличении quantity по direct `catalog_item_id` и mandatory active recipe components из локальных `recipe_versions`/`recipe_lines`.
-- Целевая Cloud-centric inventory architecture зафиксирована в `docs/backend/INVENTORY-COSTING-SPEC.md`. Реализовано сейчас: bounded worker, `stock_ledger`, materialized `stock-balances` и Cloud-состояние обработки для receipt/count/write-off/production; полный costing/recalculation runtime engine не реализован сейчас.
+- Целевая Cloud-centric inventory architecture зафиксирована в `docs/backend/INVENTORY-COSTING-SPEC.md`. Реализовано сейчас: bounded worker, `stock_ledger`, materialized `stock-balances`, Cloud-состояние обработки для receipt/count/write-off/production и ограниченный async retro recalculation DAG/job lifecycle для costing fields. COGS/margin, production-grade balance rebuild и Cloud UI operator workflow не реализованы сейчас.
 
 Цель полной пилотной реализации:
 
@@ -303,7 +303,7 @@ Inventory and costing logic:
 - Реализовано сейчас: `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` имеют Cloud-owned `inventory_document_processing_state` с уникальным `(restaurant_id, source_event_id, source_event_type)`. Повтор source event не создает повторные stock documents/ledger/balance mutations; safe validation failures фиксируются как `failed` state с безопасными failure code/message key без raw payload.
 - Реализовано сейчас: `InventoryCountCaptured` приводит Cloud materialized balance к counted quantity через deterministic `IN`/`OUT` adjustment; если counted equals current, Cloud создает posted processing state с нулем ledger rows и без stock document.
 - `ProductionCompleted` создает Cloud `PRODUCTION`: приходует заготовку и списывает сырье.
-- Реализовано сейчас: если active recipe/cost basis для `ProductionCompleted` отсутствуют, worker сохраняет факт прихода готовой позиции `IN` и помечает costing visibility как `estimated`/`needs_recalculation`; retro recalculation DAG не запускается.
+- Реализовано сейчас: если active recipe/cost basis для `ProductionCompleted` отсутствуют, worker сохраняет факт прихода готовой позиции `IN` и помечает costing visibility как `estimated`/`needs_recalculation`; bounded retro recalculation worker может позднее пересчитать affected costing fields, если появляется backdated trigger и reliable cost basis.
 - Реализовано сейчас: продажа основной позиции разворачивается Cloud Inventory Worker по active recipe version, если она есть; иначе списывается сам `catalog_item_id`.
 - Реализовано сейчас: selected modifier с Cloud-authoritative `linked_catalog_item_id` создает отдельное прямое `SALE/OUT` списание linked item; linked modifier item не разворачивается в recipe в этой итерации.
 - Auto-production при продаже сначала списывает доступную заготовку, а недостающую часть split-списанием разворачивает по рецепту до сырья.
@@ -311,7 +311,7 @@ Inventory and costing logic:
 - Если списание уходит в минус без истории приходов, `unit_cost_minor = 0`.
 - Если есть последняя известная цена, списание в минус использует ее для всего расхода, уводящего остаток ниже нуля.
 - Приход задним числом влияет только на события начиная с даты приходного документа.
-- Документы в прошлом запускают asynchronous recalculation job; worker строит DAG зависимостей `raw goods -> semi_finished -> dishes` и пересчитывает журнал хронологически.
+- Реализовано сейчас: документы receipt/count/production/write-off в прошлом запускают asynchronous recalculation job, если есть affected ledger rows позднее trigger date; worker строит deterministic DAG зависимостей `raw goods -> semi_finished -> dishes`, валидирует cycles safe failed job, проходит rows по `business_date_local`, `occurred_at`, `id` и обновляет только costing fields/status.
 
 Профильный контракт:
 
@@ -320,7 +320,7 @@ Inventory and costing logic:
 Не реализовано сейчас:
 
 - production-grade assignment/escalation для Edge-origin stop-list review и расширенный stop-list UX за пределами bounded KDS form;
-- semi-finished auto-production split, COGS/margin и retro costing DAG.
+- semi-finished auto-production split, COGS/margin, production-grade balance rebuild и Cloud UI operator workflow.
 
 Запланировано до полного пилота:
 
@@ -328,7 +328,7 @@ Inventory and costing logic:
 - smoke для Cloud package -> Edge sync -> offline sale blocking реализован сейчас в `scripts/seed-dev-system.py --run-minimal-flow`;
 - полный kitchen/process smoke для Cloud seed, Edge sync, KDS recall/serve-again, ClickHouse trail, stock events, proposal approve и Edge feedback реализован сейчас в `scripts/seed-dev-system.py --run-kitchen-process-smoke`;
 - реализовано сейчас: bounded Edge stop-list edit form и manager review flow поверх `StopListUpdated`; запланировано далее production-grade assignment/escalation, расширенный conflict UX и operator polish;
-- full inventory engine beyond текущего bounded worker slice: semi-finished auto-production split, production-grade purchase/receipt input, materialized inventory count adjustments, full costing status и retro recalculation DAG; bounded materialized balances и refund/cancellation stock dispositions `return_to_stock`/`write_off_waste` реализованы сейчас без PSP/fiscal/COGS/margin;
+- full inventory engine beyond текущего bounded worker/recalculation slice: semi-finished auto-production split, production-grade purchase/receipt input, richer costing math и production-grade balance rebuild; bounded materialized balances, retro costing job/DAG lifecycle и refund/cancellation stock dispositions `return_to_stock`/`write_off_waste` реализованы сейчас без PSP/fiscal/COGS/margin;
 - реализовано сейчас: ClickHouse first slice с managed schema `raw_business_events`, async forwarder `inbox_events -> raw_business_events`, export state, retry state и bounded metadata API;
 - реализовано сейчас: первый ClickHouse stock moves slice с managed schema `olap_stock_moves`, async forwarder `stock_ledger -> olap_stock_moves`, checkpoint/retry state и bounded API `GET /api/v1/olap/stock-moves` без raw payload;
 - реализовано сейчас: read-only `GET /api/v1/olap/export-status?stream=raw_business_events|stock_moves`, первый bounded агрегат `GET /api/v1/olap/stock-move-summary` по `olap_stock_moves` и минимальный support-only `POST /api/v1/olap/export-retry` для `retry_failed|resume_from_checkpoint` без raw payload и без synchronous ClickHouse dual-write;

@@ -174,6 +174,9 @@ func runInventoryWorker(ctx context.Context, worker *inventoryapp.Worker, interv
 		if err := worker.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("cloud inventory worker failed", "error", err)
 		}
+		if err := worker.RunRecalculationOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("cloud inventory recalculation worker failed", "error", err)
+		}
 		select {
 		case <-ctx.Done():
 			return

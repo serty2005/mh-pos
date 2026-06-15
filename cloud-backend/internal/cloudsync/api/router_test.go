@@ -570,6 +570,67 @@ func TestListInventoryStockBalancesSupportsBoundsEmptyStateAndStatusFilter(t *te
 	}
 }
 
+func TestListInventoryRecalculationJobsReturnsBoundedDiagnosticStatus(t *testing.T) {
+	repo := memory.NewRepository()
+	created := time.Date(2026, 5, 6, 9, 0, 0, 0, time.UTC)
+	repo.AddInventoryRecalculationJobsForTest(
+		contracts.InventoryRecalculationJob{ID: "job-1", RestaurantID: "restaurant-1", TriggerType: "StockReceiptCaptured", TriggerEventID: "event-1", Status: "queued", BusinessDateFrom: "2026-05-05", BusinessDateTo: "2026-05-06", AffectedCatalogItemCount: 1, AffectedWarehouseCount: 1, TotalSteps: 2, CreatedAt: created, UpdatedAt: created},
+		contracts.InventoryRecalculationJob{ID: "job-2", RestaurantID: "restaurant-2", TriggerType: "InventoryCountCaptured", Status: "failed", BusinessDateFrom: "2026-05-05", BusinessDateTo: "2026-05-06", FailureCode: "RECIPE_DEPENDENCY_CYCLE", FailureMessageKey: "inventory.recalculation.recipe_cycle", CreatedAt: created.Add(time.Hour), UpdatedAt: created.Add(time.Hour)},
+	)
+	router := api.NewRouter(app.NewService(repo, fixedClock{}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/inventory/recalculation-jobs?restaurant_id=restaurant-1&status=queued&trigger_type=StockReceiptCaptured&limit=10", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var items []contracts.InventoryRecalculationJob
+	if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != "job-1" || items[0].TotalSteps != 2 {
+		t.Fatalf("unexpected recalculation jobs: %+v", items)
+	}
+	body := rec.Body.String()
+	for _, forbidden := range []string{"payload", "raw", "SQL"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("recalculation job response must not expose %s: %s", forbidden, body)
+		}
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/inventory/recalculation-jobs/job-1", nil)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 detail, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var detail contracts.InventoryRecalculationJob
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.ID != "job-1" || detail.TriggerEventID != "event-1" {
+		t.Fatalf("unexpected detail: %+v", detail)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/inventory/recalculation-jobs/missing", nil)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown job id, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestListInventoryRecalculationJobsRejectsInvalidFilters(t *testing.T) {
+	router := api.NewRouter(app.NewService(memory.NewRepository(), fixedClock{}))
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/inventory/recalculation-jobs?status=retrying", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid status, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func sampleFinancialOperationEnvelope(t *testing.T, eventType contracts.EventType, eventID, commandID, operationID, operationType string, amount int64, shiftID, businessDate string) []byte {
 	t.Helper()
 	body := map[string]any{

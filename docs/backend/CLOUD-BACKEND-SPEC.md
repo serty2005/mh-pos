@@ -57,7 +57,7 @@
 
 Запланировано до полного пилота:
 
-- full inventory engine beyond текущего bounded worker/materialized-balance slice: production-grade receipts/counts, semi-finished auto-production split, costing и retro recalculation; bounded refund/cancellation dispositions `return_to_stock`/`write_off_waste` реализованы сейчас;
+- full inventory engine beyond текущего bounded worker/materialized-balance/recalculation slice: production-grade receipts/counts, semi-finished auto-production split, richer costing math и production-grade balance rebuild; bounded refund/cancellation dispositions `return_to_stock`/`write_off_waste` и bounded retro recalculation job/DAG lifecycle реализованы сейчас;
 - production auth/RBAC perimeter для mutating OLAP controls, richer sales aggregates и COGS/margin после появления достоверной cost basis.
 
 ## Назначение
@@ -144,7 +144,9 @@ Inventory read model:
 
 - `GET /api/v1/inventory/stock-ledger?restaurant_id=&source_event_type=&source_event_id=&order_line_id=&catalog_item_id=&limit=&offset=` — bounded read-only view of Cloud-owned `stock_ledger` без raw Edge payload.
 - `GET /api/v1/inventory/stock-balances?restaurant_id=&warehouse_id=&catalog_item_id=&business_date_to=&costing_status=&limit=&offset=` — bounded Cloud-owned materialized read model поверх PostgreSQL `inventory_stock_balances`; `business_date_to` фильтрует UTC-дату `last_movement_at`; response содержит `quantity_on_hand`, `unit_code`, deterministic `costing_status`, `needs_recalculation`, `last_movement_at`, `business_date_to` без raw Edge payload, COGS или margin.
-- Реализовано сейчас: отдельный public read endpoint для `inventory_document_processing_state` не добавлен; эксплуатационная проверка текущей итерации выполняется через worker/repository tests и существующие bounded `stock-ledger`/`stock-balances` reads.
+- `GET /api/v1/inventory/recalculation-jobs?restaurant_id=&status=&trigger_type=&limit=&offset=` — bounded read-only diagnostic view async costing jobs: status, date range, affected counts, progress counters, safe failure metadata; response не содержит raw payload, SQL errors, request dumps, COGS или margin.
+- `GET /api/v1/inventory/recalculation-jobs/{id}` — detail для одного async costing job с тем же bounded safe metadata; unknown id возвращает safe `404`.
+- Реализовано сейчас: отдельный public read endpoint для `inventory_document_processing_state` не добавлен; эксплуатационная проверка document processing state выполняется через worker/repository tests и существующие bounded reads.
 
 	OLAP read model:
 
@@ -554,7 +556,7 @@ Managed SQL file, реализовано сейчас:
 - Currency reference: `cloud_currency_reference`.
 - Master data: `cloud_restaurants`, `cloud_roles`, `cloud_employees`, `cloud_categories`, `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_services`, `cloud_catalog_folders`, `cloud_catalog_folder_parameters`, `cloud_catalog_tags`, `cloud_catalog_item_tags`, `cloud_recipe_items`, `cloud_recipe_versions`, `cloud_recipe_lines`, `cloud_modifier_groups`, `cloud_modifier_options` с nullable `linked_catalog_item_id`, `cloud_modifier_group_bindings`, `cloud_pricing_policies`, `cloud_menu_items`, `cloud_menu_item_modifier_groups`, `cloud_menu_location_assignments`, `cloud_master_data_publications`, `cloud_review_assignment_audit_events`.
 - Provisioning: `cloud_edge_nodes`, `cloud_unassigned_edge_nodes`, `cloud_pairing_codes`.
-- Inventory runtime: `inventory_event_queue`, `stock_documents`, `stock_ledger`, `inventory_stock_balances`, `stock_recalculation_jobs`, `stop_lists`.
+- Inventory runtime: `inventory_event_queue`, `stock_documents`, `stock_ledger`, `inventory_stock_balances`, `stock_recalculation_jobs`, `stock_recalculation_job_items`, `stock_recalculation_edges`, `stop_lists`.
 - OLAP control state: `olap_export_checkpoints`, `olap_export_retry_commands`.
 
 Schema verification:
@@ -567,13 +569,14 @@ Schema verification:
 Реализована только основа:
 
 - PostgreSQL baseline содержит Cloud inventory runtime tables.
-- `inventory_event_queue`, `stock_documents`, `stock_ledger`, `inventory_stock_balances`, `stock_recalculation_jobs`, `stop_lists` являются целевой Cloud-owned основой.
+- `inventory_event_queue`, `stock_documents`, `stock_ledger`, `inventory_stock_balances`, `stock_recalculation_jobs`, `stock_recalculation_job_items`, `stock_recalculation_edges`, `stop_lists` являются целевой Cloud-owned основой.
 
 Реализовано сейчас:
 
 - Cloud Inventory Worker создает stock documents and stock ledger из accepted normalized item events и транзакционно обновляет `inventory_stock_balances`.
 - `GET /api/v1/inventory/stock-ledger` возвращает bounded read-only rows из Cloud-owned `stock_ledger` для smoke/операционной проверки `CheckClosed`/`ItemServed` processing; endpoint не раскрывает raw sync payload и не является OLAP API.
 - `GET /api/v1/inventory/stock-balances` реализовано сейчас как bounded read-only balance view поверх Cloud-owned PostgreSQL `inventory_stock_balances`: отрицательные остатки допустимы, sale blocking не использует stock balance, costing status ограничен `final`, `estimated`, `needs_recalculation`, `recalculated`, `failed`, а `needs_recalculation` виден отдельным boolean field.
+- `GET /api/v1/inventory/recalculation-jobs` и `GET /api/v1/inventory/recalculation-jobs/{id}` реализованы сейчас как bounded diagnostic read surface поверх `stock_recalculation_jobs`: default/max limit, filters `restaurant_id/status/trigger_type`, stable sort `created_at DESC, id DESC`, safe `404` для неизвестного id и no-raw-payload response.
 - OLAP Stock Moves Forwarder асинхронно экспортирует новые `stock_ledger` rows в ClickHouse `olap_stock_moves` по checkpoint `olap_export_checkpoints.id = 'olap_stock_moves'`; retry state хранится в той же checkpoint table через `last_error`, `consecutive_failures` и `next_retry_at`.
 - Async OLAP Backfill Worker выполняет jobs из `olap_backfill_jobs` вне HTTP request path: для `raw_business_events` переэкспортирует выбранный range из PostgreSQL `inbox_events`, для `stock_moves` переэкспортирует range из `stock_ledger`; ClickHouse `ReplacingMergeTree` и stable row ids защищают read model от видимых дублей при повторном backfill.
 - `GET /api/v1/olap/stock-moves` возвращает bounded read-only rows из ClickHouse `olap_stock_moves` с фильтрами `restaurant_id`, business date range, `catalog_item_id`, `warehouse_id`, `source_event_type`, `limit`, `offset`; response не содержит raw payload.
@@ -592,7 +595,8 @@ Schema verification:
 - `GET /api/v1/sync/readiness/stop-list` реализовано сейчас как safe readiness summary: publication/package metadata, latest accepted `StopListUpdated` ACK metadata и агрегат `cloud_sync_problem_events` по кодам ошибок без raw payload.
 - Отдельный safe read-only route для package delivery status по restaurant/device/package сейчас не подтвержден кодом; доступные package/snapshot routes возвращают provisioning payload, а `sync/exchange` возвращает Cloud packages для Edge import. Cloud UI может показывать только `publication-state` и stop-list readiness ACK metadata, но не должен заявлять общий package delivery ACK.
 - `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` создают Cloud-owned stock documents/ledger rows и отдельный `inventory_document_processing_state` без raw payload. State является audit/idempotency contract для повторов: `(restaurant_id, source_event_id, source_event_type)` уникален, posted state хранит document id, ledger counters, aggregate costing status и recalculation marker, failed state хранит только безопасные failure code/message key.
-- Для `InventoryCountCaptured` Cloud worker считает корректировку от текущего materialized balance: `IN`, `OUT` или no-op `posted` state с нулем ledger rows. Для `ProductionCompleted` Cloud worker пишет готовую позицию `IN` и ingredient `OUT` по active recipe; если recipe/cost basis отсутствуют, факт production сохраняется с `estimated`/`needs_recalculation`, а retro recalculation DAG остается запланирован далее.
+- Для `InventoryCountCaptured` Cloud worker считает корректировку от текущего materialized balance: `IN`, `OUT` или no-op `posted` state с нулем ledger rows. Для `ProductionCompleted` Cloud worker пишет готовую позицию `IN` и ingredient `OUT` по active recipe; если recipe/cost basis отсутствуют, факт production сохраняется с `estimated`/`needs_recalculation`.
+- Реализовано сейчас: backdated `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted` и `StockWriteOffCaptured` создают idempotent async recalculation job, если есть affected ledger rows позднее trigger date. Job хранит affected catalog/warehouse/unit ranges и recipe dependency edges; `RunRecalculationOnce` выполняется background worker-ом, обновляет только costing fields/status существующих `stock_ledger` rows и refresh materialized balance costing visibility. Recipe cycles завершают job safe failure `RECIPE_DEPENDENCY_CYCLE` без panic и без raw payload.
 - `KitchenTicketStatusChanged` и `ItemServed` используются для kitchen timing и inventory deduplication, но не меняют finalized checks.
 - Если Cloud уже принял superseding `ItemServed` для той же order line до обработки очереди, Inventory Worker пропускает superseded served fact.
 - Если старый `ItemServed` уже создал stock document до recall/serve-again, superseding `ItemServed` создает append-only `RETURN/IN` compensation document с `source_event_type = ItemServedCompensation`, затем новый `SALE/OUT` document. Replay защищен unique `(source_event_id, source_event_type)`, raw Edge payload в read APIs не раскрывается.
@@ -605,7 +609,7 @@ Schema verification:
 
 - Cloud authoring/publication workflow для stop-list/recipes становится штатным источником sale-blocking availability overlay; POS Edge runtime уже блокирует продажи по локальному `stop_lists`.
 - Receipt line с pending catalog suggestion остается запланировано далее.
-- Production-grade balance rebuild/recalculation tooling, semi-finished auto-production split и retro costing DAG остаются частью дальнейшего Cloud Inventory Engine; bounded materialized `stock-balances`, recipe expansion основной продажи и modifier linked catalog item consumption реализованы сейчас.
+- Production-grade balance rebuild tooling, semi-finished auto-production split и richer costing math остаются частью дальнейшего Cloud Inventory Engine; bounded materialized `stock-balances`, bounded retro recalculation lifecycle, recipe expansion основной продажи и modifier linked catalog item consumption реализованы сейчас.
 - Расширенные sales/kitchen/costing-dependent projections beyond first bounded sales/kitchen summary запланированы далее.
 - Расширенный manager review workflow для Edge-origin stop-list изменений остается запланирован далее; текущий runtime уже имеет bounded review/apply, assignment/unassignment и audit без raw payload, но без escalation/dashboard workflow.
 

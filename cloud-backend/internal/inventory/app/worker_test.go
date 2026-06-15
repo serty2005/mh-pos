@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -21,7 +22,8 @@ type fixedIDs struct {
 
 func (f *fixedIDs) NewID() string {
 	if f.next >= len(f.values) {
-		panic("fixed id exhausted")
+		f.next++
+		return fmt.Sprintf("018f0000-0000-7000-8000-%012d", f.next)
 	}
 	value := f.values[f.next]
 	f.next++
@@ -38,6 +40,16 @@ type fakeRepo struct {
 	recipes             map[string][]app.RecipeLine
 	modifierOptionLinks map[string]string
 	supersededServedIDs map[string]bool
+	recalculationJobs   []app.RecalculationJob
+	recalculationRows   map[string][]app.RecalculationLedgerRow
+	recalculationEdges  map[string][]recalculationEdge
+	recalculationOrder  []string
+	recalculationErrors map[string]app.RecalculationJobFailure
+}
+
+type recalculationEdge struct {
+	from string
+	to   string
 }
 
 func (f *fakeRepo) ClaimPending(context.Context, app.ClaimCommand) ([]app.QueuedEvent, error) {
@@ -67,6 +79,207 @@ func (f *fakeRepo) CreateStockDocument(_ context.Context, document app.StockDocu
 		state.ExpectedLedgerCount = &expected
 		state.CostingStatus, state.NeedsRecalculation = aggregateTestCosting(document.Ledger)
 		f.setProcessingState(state)
+	}
+	return nil
+}
+
+func (f *fakeRepo) CreateRecalculationJob(_ context.Context, cmd app.RecalculationTriggerCommand) error {
+	for _, existing := range f.recalculationJobs {
+		if existing.RestaurantID == cmd.RestaurantID && existing.TriggerType == cmd.TriggerType && existing.TriggerEventID == cmd.TriggerEventID && cmd.TriggerEventID != "" {
+			return nil
+		}
+	}
+	affected := map[string]bool{}
+	warehouses := map[string]bool{}
+	for _, entry := range cmd.Ledger {
+		affected[entry.CatalogItemID] = true
+		warehouses[entry.WarehouseID] = true
+		f.collectRecipeDependents(entry.CatalogItemID, affected, map[string]bool{}, nil)
+	}
+	rows := make([]app.RecalculationLedgerRow, 0)
+	for _, document := range f.documents {
+		for _, entry := range document.Ledger {
+			if document.ID == cmd.SourceDocumentID {
+				continue
+			}
+			if entry.RestaurantID != cmd.RestaurantID || !affected[entry.CatalogItemID] || !entry.OccurredAt.After(cmd.OccurredAt) {
+				continue
+			}
+			rows = append(rows, app.RecalculationLedgerRow{
+				ID:            entry.ID,
+				RestaurantID:  entry.RestaurantID,
+				WarehouseID:   entry.WarehouseID,
+				CatalogItemID: entry.CatalogItemID,
+				MovementType:  entry.MovementType,
+				Quantity:      entry.Quantity,
+				UnitCode:      entry.UnitCode,
+				UnitCostMinor: entry.UnitCostMinor,
+				OccurredAt:    entry.OccurredAt,
+			})
+		}
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	job := app.RecalculationJob{ID: cmd.ID, RestaurantID: cmd.RestaurantID, TriggerType: cmd.TriggerType, TriggerEventID: cmd.TriggerEventID, Status: app.RecalculationStatusQueued, TotalSteps: len(rows)}
+	f.recalculationJobs = append(f.recalculationJobs, job)
+	if f.recalculationRows == nil {
+		f.recalculationRows = map[string][]app.RecalculationLedgerRow{}
+	}
+	f.recalculationRows[job.ID] = rows
+	if f.recalculationEdges == nil {
+		f.recalculationEdges = map[string][]recalculationEdge{}
+	}
+	for item := range affected {
+		f.collectRecipeDependents(item, map[string]bool{}, map[string]bool{}, func(from, to string) {
+			f.recalculationEdges[job.ID] = append(f.recalculationEdges[job.ID], recalculationEdge{from: from, to: to})
+		})
+	}
+	_ = warehouses
+	return nil
+}
+
+func (f *fakeRepo) collectRecipeDependents(component string, affected, visiting map[string]bool, edge func(string, string)) {
+	for owner, lines := range f.recipes {
+		for _, line := range lines {
+			if line.ComponentCatalogItemID != component {
+				continue
+			}
+			if edge != nil {
+				edge(component, owner)
+			}
+			if affected != nil {
+				affected[owner] = true
+			}
+			if visiting[owner] {
+				continue
+			}
+			visiting[owner] = true
+			f.collectRecipeDependents(owner, affected, visiting, edge)
+			delete(visiting, owner)
+		}
+	}
+}
+
+func (f *fakeRepo) ClaimRecalculationJob(_ context.Context, _ app.RecalculationClaimCommand) (app.RecalculationJob, bool, error) {
+	for i := range f.recalculationJobs {
+		if f.recalculationJobs[i].Status != app.RecalculationStatusQueued {
+			continue
+		}
+		f.recalculationJobs[i].Status = app.RecalculationStatusRunning
+		return f.recalculationJobs[i], true, nil
+	}
+	return app.RecalculationJob{}, false, nil
+}
+
+func (f *fakeRepo) ValidateRecalculationDAG(_ context.Context, jobID string) error {
+	edges := f.recalculationEdges[jobID]
+	graph := map[string][]string{}
+	for _, edge := range edges {
+		graph[edge.from] = append(graph[edge.from], edge.to)
+	}
+	visiting := map[string]bool{}
+	visited := map[string]bool{}
+	var visit func(string) bool
+	visit = func(node string) bool {
+		if visiting[node] {
+			return true
+		}
+		if visited[node] {
+			return false
+		}
+		visiting[node] = true
+		for _, next := range graph[node] {
+			if visit(next) {
+				return true
+			}
+		}
+		delete(visiting, node)
+		visited[node] = true
+		return false
+	}
+	for node := range graph {
+		if visit(node) {
+			return errors.New("recipe dependency cycle")
+		}
+	}
+	return nil
+}
+
+func (f *fakeRepo) ListRecalculationLedgerRows(_ context.Context, jobID string) ([]app.RecalculationLedgerRow, error) {
+	rows := append([]app.RecalculationLedgerRow(nil), f.recalculationRows[jobID]...)
+	slices.SortFunc(rows, func(a, b app.RecalculationLedgerRow) int {
+		if da, db := a.OccurredAt.Format("2006-01-02"), b.OccurredAt.Format("2006-01-02"); da != db {
+			return strings.Compare(da, db)
+		}
+		if cmp := a.OccurredAt.Compare(b.OccurredAt); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
+	return rows, nil
+}
+
+func (f *fakeRepo) LatestCostBasis(_ context.Context, q app.CostBasisQuery) (int64, bool, error) {
+	var best *app.StockLedgerEntry
+	for _, document := range f.documents {
+		for i := range document.Ledger {
+			entry := &document.Ledger[i]
+			if entry.ID == q.LedgerID || entry.RestaurantID != q.RestaurantID || entry.WarehouseID != q.WarehouseID || entry.CatalogItemID != q.CatalogItemID || entry.UnitCode != q.UnitCode || entry.UnitCostMinor <= 0 || entry.OccurredAt.After(q.OccurredAt) {
+				continue
+			}
+			if best == nil || entry.OccurredAt.After(best.OccurredAt) || (entry.OccurredAt.Equal(best.OccurredAt) && entry.ID > best.ID) {
+				best = entry
+			}
+		}
+	}
+	if best == nil {
+		return 0, false, nil
+	}
+	return best.UnitCostMinor, true, nil
+}
+
+func (f *fakeRepo) UpdateRecalculationLedgerRow(_ context.Context, update app.RecalculationLedgerUpdate) error {
+	f.recalculationOrder = append(f.recalculationOrder, update.LedgerID)
+	for di := range f.documents {
+		for ei := range f.documents[di].Ledger {
+			if f.documents[di].Ledger[ei].ID != update.LedgerID {
+				continue
+			}
+			f.documents[di].Ledger[ei].UnitCostMinor = update.UnitCostMinor
+			f.documents[di].Ledger[ei].TotalCostMinor = update.TotalCostMinor
+			f.documents[di].Ledger[ei].CostingStatus = update.CostingStatus
+		}
+	}
+	for i := range f.recalculationJobs {
+		if f.recalculationJobs[i].ID == update.JobID {
+			f.recalculationJobs[i].CompletedSteps = update.CompletedSteps
+		}
+	}
+	return nil
+}
+
+func (f *fakeRepo) CompleteRecalculationJob(_ context.Context, progress app.RecalculationJobProgress) error {
+	for i := range f.recalculationJobs {
+		if f.recalculationJobs[i].ID == progress.JobID {
+			f.recalculationJobs[i].Status = app.RecalculationStatusCompleted
+			f.recalculationJobs[i].TotalSteps = progress.TotalSteps
+			f.recalculationJobs[i].CompletedSteps = progress.CompletedSteps
+		}
+	}
+	return nil
+}
+
+func (f *fakeRepo) FailRecalculationJob(_ context.Context, failure app.RecalculationJobFailure) error {
+	if f.recalculationErrors == nil {
+		f.recalculationErrors = map[string]app.RecalculationJobFailure{}
+	}
+	f.recalculationErrors[failure.JobID] = failure
+	for i := range f.recalculationJobs {
+		if f.recalculationJobs[i].ID == failure.JobID {
+			f.recalculationJobs[i].Status = app.RecalculationStatusFailed
+			f.recalculationJobs[i].CompletedSteps = failure.CompletedSteps
+		}
 	}
 	return nil
 }
@@ -796,6 +1009,199 @@ func TestRunOnceCreatesWasteLedgerFromStockWriteOff(t *testing.T) {
 	}
 }
 
+func TestBackdatedReceiptCreatesQueuedRecalculationJob(t *testing.T) {
+	future := stockDocumentForTest("doc-future-sale", "event-future-sale", app.DocumentSale, app.MovementOut, "1.000", "needs_recalculation", time.Date(2026, 5, 6, 9, 0, 0, 0, time.UTC))
+	repo := &fakeRepo{
+		events:    []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventStockReceiptCaptured, stockReceiptPayload(t))},
+		documents: []app.StockDocument{future},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.recalculationJobs) != 1 || repo.recalculationJobs[0].Status != app.RecalculationStatusQueued {
+		t.Fatalf("expected queued recalculation job, got %+v", repo.recalculationJobs)
+	}
+	if got := len(repo.recalculationRows[repo.recalculationJobs[0].ID]); got != 1 {
+		t.Fatalf("expected one affected future ledger row, got %d", got)
+	}
+}
+
+func TestNonBackdatedReceiptDoesNotCreateRecalculationJob(t *testing.T) {
+	past := stockDocumentForTest("doc-past-sale", "event-past-sale", app.DocumentSale, app.MovementOut, "1.000", "estimated", time.Date(2026, 5, 4, 9, 0, 0, 0, time.UTC))
+	repo := &fakeRepo{
+		events:    []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventStockReceiptCaptured, stockReceiptPayload(t))},
+		documents: []app.StockDocument{past},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.recalculationJobs) != 0 {
+		t.Fatalf("non-backdated receipt must not create job, got %+v", repo.recalculationJobs)
+	}
+}
+
+func TestBackdatedCountCreatesJobWithAffectedRange(t *testing.T) {
+	future := stockDocumentForTest("doc-future-counted", "event-future-counted", app.DocumentSale, app.MovementOut, "2.000", "needs_recalculation", time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC))
+	repo := &fakeRepo{
+		events:    []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventInventoryCountCaptured, inventoryCountPayload(t))},
+		documents: []app.StockDocument{future},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.recalculationJobs) != 1 {
+		t.Fatalf("expected count to create one recalculation job, got %+v", repo.recalculationJobs)
+	}
+	rows := repo.recalculationRows[repo.recalculationJobs[0].ID]
+	if len(rows) != 1 || rows[0].ID != "ledger-doc-future-counted" {
+		t.Fatalf("unexpected affected range rows: %+v", rows)
+	}
+}
+
+func TestBackdatedProductionCreatesDependencyEdges(t *testing.T) {
+	future := stockDocumentForTest("doc-future-dish", "event-future-dish", app.DocumentSale, app.MovementOut, "1.000", "needs_recalculation", time.Date(2026, 5, 6, 11, 0, 0, 0, time.UTC))
+	future.Ledger[0].CatalogItemID = "dish-1"
+	repo := &fakeRepo{
+		events:    []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventProductionCompleted, productionPayload(t))},
+		documents: []app.StockDocument{future},
+		recipes: map[string][]app.RecipeLine{
+			"semi-1": {{ComponentCatalogItemID: "ing-1", Quantity: "0.500", UnitCode: "KG"}},
+			"dish-1": {{ComponentCatalogItemID: "semi-1", Quantity: "1.000", UnitCode: "KG"}},
+		},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.recalculationJobs) != 1 {
+		t.Fatalf("expected production dependency job, got %+v", repo.recalculationJobs)
+	}
+	edges := repo.recalculationEdges[repo.recalculationJobs[0].ID]
+	if len(edges) == 0 {
+		t.Fatalf("expected dependency edges, got none")
+	}
+}
+
+func TestBackdatedWriteOffAffectingFutureLedgerCreatesJob(t *testing.T) {
+	future := stockDocumentForTest("doc-future-writeoff", "event-future-writeoff", app.DocumentSale, app.MovementOut, "2.000", "needs_recalculation", time.Date(2026, 5, 6, 9, 0, 0, 0, time.UTC))
+	repo := &fakeRepo{
+		events:    []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventStockWriteOffCaptured, stockWriteOffPayload(t))},
+		documents: []app.StockDocument{future},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.recalculationJobs) != 1 {
+		t.Fatalf("expected write-off recalculation job, got %+v", repo.recalculationJobs)
+	}
+}
+
+func TestDuplicateRecalculationTriggerDoesNotCreateDuplicateJob(t *testing.T) {
+	future := stockDocumentForTest("doc-future-dup", "event-future-dup", app.DocumentSale, app.MovementOut, "1.000", "needs_recalculation", time.Date(2026, 5, 6, 9, 0, 0, 0, time.UTC))
+	repo := &fakeRepo{
+		events: []app.QueuedEvent{
+			queuedEvent(t, "queue-1", "018f0000-0000-7000-8000-0000000000a1", contracts.EventStockReceiptCaptured, stockReceiptPayload(t)),
+			queuedEvent(t, "queue-2", "018f0000-0000-7000-8000-0000000000a1", contracts.EventStockReceiptCaptured, stockReceiptPayload(t)),
+		},
+		documents: []app.StockDocument{future},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.recalculationJobs) != 1 {
+		t.Fatalf("duplicate trigger must keep one job, got %+v", repo.recalculationJobs)
+	}
+}
+
+func TestRecalculationJobRunsInDeterministicOrderAndUpdatesProgress(t *testing.T) {
+	late := stockDocumentForTest("doc-late", "event-late", app.DocumentSale, app.MovementOut, "1.000", "needs_recalculation", time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC))
+	early := stockDocumentForTest("doc-early", "event-early", app.DocumentSale, app.MovementOut, "1.000", "needs_recalculation", time.Date(2026, 5, 6, 9, 0, 0, 0, time.UTC))
+	repo := &fakeRepo{
+		events:    []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventStockReceiptCaptured, stockReceiptPayload(t))},
+		documents: []app.StockDocument{late, early},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.RunRecalculationOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(repo.recalculationOrder, ",") != "ledger-doc-early,ledger-doc-late" {
+		t.Fatalf("unexpected deterministic order: %+v", repo.recalculationOrder)
+	}
+	job := repo.recalculationJobs[0]
+	if job.Status != app.RecalculationStatusCompleted || job.TotalSteps != 2 || job.CompletedSteps != 2 {
+		t.Fatalf("unexpected progress: %+v", job)
+	}
+}
+
+func TestRecalculationUpdatesRowsWithCostBasisAndLeavesMissingBasisSafe(t *testing.T) {
+	withBasis := stockDocumentForTest("doc-with-basis", "event-with-basis", app.DocumentSale, app.MovementOut, "1.000", "needs_recalculation", time.Date(2026, 5, 6, 9, 0, 0, 0, time.UTC))
+	withoutBasis := stockDocumentForTest("doc-without-basis", "event-without-basis", app.DocumentSale, app.MovementOut, "1.000", "needs_recalculation", time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC))
+	withBasis.Ledger[0].UnitCode = "KG"
+	withoutBasis.Ledger[0].UnitCode = "KG"
+	withoutBasis.Ledger[0].CatalogItemID = "item-missing-basis"
+	repo := &fakeRepo{
+		events:    []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventStockReceiptCaptured, stockReceiptPayload(t))},
+		documents: []app.StockDocument{withBasis, withoutBasis},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.RunRecalculationOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	statuses := map[string]string{}
+	for _, doc := range repo.documents {
+		for _, entry := range doc.Ledger {
+			statuses[entry.ID] = entry.CostingStatus
+		}
+	}
+	if statuses["ledger-doc-with-basis"] != "recalculated" || statuses["ledger-doc-without-basis"] != "needs_recalculation" {
+		t.Fatalf("unexpected recalculated statuses: %+v", statuses)
+	}
+}
+
+func TestRecipeDependencyCycleFailsRecalculationJobSafely(t *testing.T) {
+	future := stockDocumentForTest("doc-future-cycle", "event-future-cycle", app.DocumentSale, app.MovementOut, "1.000", "needs_recalculation", time.Date(2026, 5, 6, 9, 0, 0, 0, time.UTC))
+	future.Ledger[0].CatalogItemID = "cycle-b"
+	repo := &fakeRepo{
+		events:    []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventStockReceiptCaptured, stockReceiptPayload(t))},
+		documents: []app.StockDocument{future},
+		recipes: map[string][]app.RecipeLine{
+			"cycle-a": {{ComponentCatalogItemID: "cycle-b", Quantity: "1.000", UnitCode: "PC"}},
+			"cycle-b": {{ComponentCatalogItemID: "item-1", Quantity: "1.000", UnitCode: "PC"}, {ComponentCatalogItemID: "cycle-a", Quantity: "1.000", UnitCode: "PC"}},
+		},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.RunRecalculationOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	job := repo.recalculationJobs[0]
+	if job.Status != app.RecalculationStatusFailed {
+		t.Fatalf("expected failed job for cycle, got %+v", job)
+	}
+	if got := repo.recalculationErrors[job.ID]; got.FailureCode != "RECIPE_DEPENDENCY_CYCLE" || got.FailureMessageKey == "" {
+		t.Fatalf("expected safe failure metadata, got %+v", got)
+	}
+}
+
 func TestRunOnceStockReceiptReplayDoesNotDuplicateStateDocumentOrLedger(t *testing.T) {
 	payload := stockReceiptPayload(t)
 	repo := &fakeRepo{events: []app.QueuedEvent{
@@ -1098,6 +1504,30 @@ func (f *failingRepo) ClaimPending(context.Context, app.ClaimCommand) ([]app.Que
 	return nil, f.err
 }
 func (f *failingRepo) CreateStockDocument(context.Context, app.StockDocument) error {
+	return f.err
+}
+func (f *failingRepo) CreateRecalculationJob(context.Context, app.RecalculationTriggerCommand) error {
+	return f.err
+}
+func (f *failingRepo) ClaimRecalculationJob(context.Context, app.RecalculationClaimCommand) (app.RecalculationJob, bool, error) {
+	return app.RecalculationJob{}, false, f.err
+}
+func (f *failingRepo) ValidateRecalculationDAG(context.Context, string) error {
+	return f.err
+}
+func (f *failingRepo) ListRecalculationLedgerRows(context.Context, string) ([]app.RecalculationLedgerRow, error) {
+	return nil, f.err
+}
+func (f *failingRepo) LatestCostBasis(context.Context, app.CostBasisQuery) (int64, bool, error) {
+	return 0, false, f.err
+}
+func (f *failingRepo) UpdateRecalculationLedgerRow(context.Context, app.RecalculationLedgerUpdate) error {
+	return f.err
+}
+func (f *failingRepo) CompleteRecalculationJob(context.Context, app.RecalculationJobProgress) error {
+	return f.err
+}
+func (f *failingRepo) FailRecalculationJob(context.Context, app.RecalculationJobFailure) error {
 	return f.err
 }
 func (f *failingRepo) ApplyStopListUpdate(context.Context, app.StopListProjectionCommand) error {
@@ -1471,6 +1901,33 @@ func ledgerQuantityByCatalogItem(document app.StockDocument) map[string]string {
 		out[entry.CatalogItemID] = entry.Quantity
 	}
 	return out
+}
+
+func stockDocumentForTest(id, eventID string, documentType app.DocumentType, movement app.MovementType, quantity, costingStatus string, occurredAt time.Time) app.StockDocument {
+	return app.StockDocument{
+		ID:                id,
+		RestaurantID:      "restaurant-1",
+		Type:              documentType,
+		SourceEventID:     eventID,
+		SourceEventType:   string(documentType),
+		BusinessDateLocal: occurredAt.Format("2006-01-02"),
+		OccurredAt:        occurredAt,
+		CreatedAt:         occurredAt,
+		Ledger: []app.StockLedgerEntry{{
+			ID:                "ledger-" + id,
+			RestaurantID:      "restaurant-1",
+			SourceEventID:     eventID,
+			SourceEventType:   string(documentType),
+			CatalogItemID:     "item-1",
+			MovementType:      movement,
+			Quantity:          quantity,
+			UnitCode:          "PC",
+			CostingStatus:     costingStatus,
+			OccurredAt:        occurredAt,
+			BusinessDateLocal: occurredAt.Format("2006-01-02"),
+			CreatedAt:         occurredAt,
+		}},
+	}
 }
 
 func aggregateTestCosting(ledger []app.StockLedgerEntry) (string, bool) {

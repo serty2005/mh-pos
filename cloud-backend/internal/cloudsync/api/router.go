@@ -87,6 +87,8 @@ func NewRouterWithProvisioningAndOLAP(service *app.Service, provisioningService 
 		r.Get("/reporting/financial-operations", h.listFinancialOperations)
 		r.Get("/inventory/stock-ledger", h.listInventoryLedger)
 		r.Get("/inventory/stock-balances", h.listInventoryStockBalances)
+		r.Get("/inventory/recalculation-jobs", h.listInventoryRecalculationJobs)
+		r.Get("/inventory/recalculation-jobs/{id}", h.getInventoryRecalculationJob)
 		r.Post("/sync/edge-events", h.receiveEdgeEvent)
 		r.Post("/sync/edge-events/batch", h.receiveEdgeEventBatch)
 		r.Post("/sync/exchange", h.exchange)
@@ -369,6 +371,59 @@ func (h *Handler) listInventoryStockBalances(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) listInventoryRecalculationJobs(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("%w: limit must be a number", contracts.ErrInvalidEnvelope))
+			return
+		}
+		limit = parsed
+	}
+	offset := 0
+	if raw := r.URL.Query().Get("offset"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("%w: offset must be a number", contracts.ErrInvalidEnvelope))
+			return
+		}
+		offset = parsed
+	}
+	items, err := h.service.ListInventoryRecalculationJobs(r.Context(), app.InventoryRecalculationJobFilter{
+		RestaurantID: r.URL.Query().Get("restaurant_id"),
+		Status:       r.URL.Query().Get("status"),
+		TriggerType:  r.URL.Query().Get("trigger_type"),
+		Limit:        limit,
+		Offset:       offset,
+	})
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, contracts.ErrInvalidEnvelope) {
+			status = http.StatusBadRequest
+		}
+		writeError(w, status, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) getInventoryRecalculationJob(w http.ResponseWriter, r *http.Request) {
+	item, err := h.service.GetInventoryRecalculationJob(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, contracts.ErrInvalidEnvelope):
+			status = http.StatusBadRequest
+		case errors.Is(err, contracts.ErrNotFound):
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
 }
 
 func (h *Handler) receiveEdgeEvent(w http.ResponseWriter, r *http.Request) {

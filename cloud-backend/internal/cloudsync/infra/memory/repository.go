@@ -27,6 +27,7 @@ type Repository struct {
 	financialOpsByID  map[string]contracts.FinancialOperationProjection
 	inventoryLedger   []contracts.InventoryLedgerEntry
 	inventoryBalances []contracts.InventoryStockBalance
+	recalculationJobs []contracts.InventoryRecalculationJob
 	inventoryQueue    map[string]contracts.EventAck
 	authorizedNodes   map[string]authorizedNode
 	problemEdgeEvents []app.ProblemEdgeEvent
@@ -397,6 +398,60 @@ func (r *Repository) ListInventoryStockBalances(_ context.Context, filter app.In
 	return out, nil
 }
 
+// ListInventoryRecalculationJobs возвращает bounded memory view для API tests.
+func (r *Repository) ListInventoryRecalculationJobs(_ context.Context, filter app.InventoryRecalculationJobFilter) ([]contracts.InventoryRecalculationJob, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	limit := filter.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	out := make([]contracts.InventoryRecalculationJob, 0, min(limit, len(r.recalculationJobs)))
+	for _, item := range r.recalculationJobs {
+		if filter.RestaurantID != "" && item.RestaurantID != filter.RestaurantID {
+			continue
+		}
+		if filter.Status != "" && item.Status != filter.Status {
+			continue
+		}
+		if filter.TriggerType != "" && item.TriggerType != filter.TriggerType {
+			continue
+		}
+		out = append(out, item)
+	}
+	slices.SortFunc(out, func(a, b contracts.InventoryRecalculationJob) int {
+		if cmp := b.CreatedAt.Compare(a.CreatedAt); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(b.ID, a.ID)
+	})
+	if offset >= len(out) {
+		return []contracts.InventoryRecalculationJob{}, nil
+	}
+	out = out[offset:]
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// GetInventoryRecalculationJob читает один memory job status для API tests.
+func (r *Repository) GetInventoryRecalculationJob(_ context.Context, id string) (contracts.InventoryRecalculationJob, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, item := range r.recalculationJobs {
+		if item.ID == strings.TrimSpace(id) {
+			return item, nil
+		}
+	}
+	return contracts.InventoryRecalculationJob{}, contracts.ErrNotFound
+}
+
 func (r *Repository) UpsertMasterDataPackage(_ context.Context, v contracts.MasterDataPackage) (contracts.MasterDataPackage, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -523,6 +578,12 @@ func (r *Repository) AddInventoryStockBalancesForTest(items ...contracts.Invento
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.inventoryBalances = append(r.inventoryBalances, items...)
+}
+
+func (r *Repository) AddInventoryRecalculationJobsForTest(items ...contracts.InventoryRecalculationJob) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.recalculationJobs = append(r.recalculationJobs, items...)
 }
 
 func (r *Repository) applyEventTypeProjection(receipt app.EdgeEventReceipt) {

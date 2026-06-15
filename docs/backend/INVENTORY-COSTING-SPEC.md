@@ -28,7 +28,7 @@ POS Edge / KDS
 
 POS Edge сохраняет cashier/KDS факты локально и отправляет события через outbox. Cloud API принимает события идемпотентно, пишет их в PostgreSQL `inbox_events` и не выполняет synchronous dual-write в ClickHouse. Async Batch Forwarder экспортирует события в ClickHouse `raw_business_events`. Inventory Worker асинхронно обрабатывает accepted events, разворачивает рецепты, применяет stop-list side effects, создает Cloud-owned складские документы и пишет хронологический `stock_ledger`.
 
-PostgreSQL хранит транзакционный журнал, materialized balances и состояния пересчета. Реализовано сейчас: ClickHouse хранит immutable `raw_business_events` бессрочно, получает первый bounded slice `olap_stock_moves` из PostgreSQL `stock_ledger`, отдает read-only export status, первый bounded stock movement summary, sales/kitchen summary и kitchen timing summary. Cloud backend также отдает bounded `stock-balances` read model из PostgreSQL `inventory_stock_balances` с deterministic costing status без raw payload. Legacy `cloud-ui` реализовано сейчас показывает bounded read-only `stock-balances`, OLAP export status, stock moves, stock move summary, backfill job status и kitchen timing summary; активный `cloud-ui-g` эти inventory/OLAP screens еще не реализует. Mutating retry/backfill controls, COGS, маржинальность, production-grade balance rebuild/recalculation tooling и rich BI остаются `запланировано далее`, пока нет полного costing/recalculation engine, production auth/RBAC perimeter и нужных projection данных.
+PostgreSQL хранит транзакционный журнал, materialized balances и состояния пересчета. Реализовано сейчас: ClickHouse хранит immutable `raw_business_events` бессрочно, получает первый bounded slice `olap_stock_moves` из PostgreSQL `stock_ledger`, отдает read-only export status, первый bounded stock movement summary, sales/kitchen summary и kitchen timing summary. Cloud backend также отдает bounded `stock-balances` read model из PostgreSQL `inventory_stock_balances` с deterministic costing status без raw payload. Реализовано сейчас: ограниченный retro recalculation DAG для Cloud-owned inventory costing создает idempotent jobs, affected ranges и recipe dependency edges, а background worker пересчитывает только costing fields/status существующих `stock_ledger` rows. Legacy `cloud-ui` реализовано сейчас показывает bounded read-only `stock-balances`, OLAP export status, stock moves, stock move summary, backfill job status и kitchen timing summary; активный `cloud-ui-g` эти inventory/OLAP screens еще не реализует. Mutating retry/backfill controls, COGS, маржинальность, production-grade balance rebuild tooling, Cloud UI operator workflow и rich BI остаются `запланировано далее`.
 
 ## Pilot Implementation Boundary
 
@@ -40,6 +40,12 @@ PostgreSQL хранит транзакционный журнал, materialized 
 - `InventoryCountCaptured` создает deterministic adjustment от текущего Cloud materialized balance к `counted_quantity`: `IN`, если counted больше current; `OUT`, если counted меньше current; если quantity совпадает, документ не создается, а processing state получает `posted`, `posted_ledger_count = 0`, `expected_ledger_count = 0`.
 - `ProductionCompleted` при active recipe создает один `PRODUCTION` document с `IN` для готовой/полуготовой позиции и `OUT` для ingredient rows. Если recipe/cost basis отсутствуют, worker не падает: факт production сохраняется как `PRODUCTION/IN`, а processing state и ledger visibility остаются `estimated`/`needs_recalculation` для будущего costing/recalculation hook.
 - Cloud PostgreSQL baseline содержит `inventory_event_queue`, `stock_documents`, `stock_ledger`, `inventory_stock_balances`, `stock_recalculation_jobs` и `stop_lists`.
+- Реализовано сейчас: `stock_recalculation_jobs` расширен до bounded async queue для trigger types `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted`, `StockWriteOffCaptured` и будущих cost-basis commands; job хранит `restaurant_id`, trigger metadata без raw payload, `business_date_from/to`, affected counts, progress counters, safe failure code/message key и timestamps.
+- Реализовано сейчас: `stock_recalculation_job_items` хранит affected `catalog_item_id`/`warehouse_id`/`unit_code` ranges, а `stock_recalculation_edges` хранит deterministic recipe DAG edges `ingredient -> produced/semi_finished/dish`. Partial unique indexes по `(restaurant_id, trigger_type, trigger_event_id)` и `(restaurant_id, trigger_type, trigger_command_id)` защищают replay от duplicate jobs/effects.
+- Реализовано сейчас: backdated receipt/count/production/write-off создает queued recalculation job только если после affected event date уже есть затронутые ledger rows по тому же Cloud-owned scope или зависимым recipe items. Non-backdated trigger без будущих affected rows не создает no-op job.
+- Реализовано сейчас: `RunRecalculationOnce` забирает один queued job через PostgreSQL `FOR UPDATE SKIP LOCKED`, переводит в `running`, проверяет DAG cycles, читает affected ledger rows в порядке `business_date_local`, `occurred_at`, `id`, обновляет только `unit_cost_minor`, `total_cost_minor`, `costing_status` и materialized balance costing visibility, затем завершает `completed` или `failed`.
+- Реализовано сейчас: recipe dependency cycle не вызывает panic; job получает `failed` с safe `failure_code = RECIPE_DEPENDENCY_CYCLE` и `failure_message_key = inventory.recalculation.recipe_cycle`.
+- Реализовано сейчас: bounded diagnostic read API `GET /api/v1/inventory/recalculation-jobs` и `GET /api/v1/inventory/recalculation-jobs/{id}` отдает status/progress/error metadata без raw payload и без mutating retry/cancel controls.
 - Cloud Inventory Worker умеет принимать нормализованные item payloads по inventory-relevant events и писать pilot ledger rows.
 - Cloud Inventory Worker при продаже разворачивает основную позицию в строки active `cloud_recipe_versions`/`cloud_recipe_lines`, если для `catalog_item_id` есть active recipe version; если active version отсутствует, сохраняется fallback-списание самого `catalog_item_id`.
 - Cloud Inventory Worker при `CheckClosed` обрабатывает selected modifiers из snapshot и создает отдельное `SALE/OUT` списание по `ModifierOption.linked_catalog_item_id`, если такая Cloud-authoritative связь задана. Если связи нет, modifier остается только ценовой/snapshot опцией.
@@ -56,10 +62,10 @@ PostgreSQL хранит транзакционный журнал, materialized 
 
 Запланировано до полного пилота:
 
-- Retro recalculation DAG, production-grade balance rebuild tooling, COGS/margin и Cloud UI operator workflow остаются отдельной итерацией поверх уже сохраненного processing state.
+- Production-grade balance rebuild tooling, COGS/margin и Cloud UI operator workflow остаются отдельной итерацией поверх уже сохраненного processing state.
 - полноценный Edge-origin stop-list edit UI и production-grade review workflow поверх уже реализованного backend route/review slice;
 - расширенный stop-list edit UX from KDS/POS Edge поверх backend command route;
-- full inventory engine beyond текущего bounded worker/materialized-balance slice: production-grade receipts/counts/recalculation state, semi-finished auto-production split, production-grade balance rebuild и retro recalculation DAG; bounded refund/cancellation dispositions `return_to_stock` и `write_off_waste` реализованы сейчас без PSP/fiscal/COGS/margin;
+- full inventory engine beyond текущего bounded worker/materialized-balance/recalculation slice: semi-finished auto-production split, production-grade balance rebuild и richer costing math; bounded refund/cancellation dispositions `return_to_stock` и `write_off_waste` реализованы сейчас без PSP/fiscal/COGS/margin;
 - ClickHouse `olap_stock_moves`, read-only export status, минимальный support-only export retry control, async backfill jobs foundation, первый stock movement summary, первый bounded sales/kitchen summary и bounded kitchen timing summary реализованы сейчас; legacy `cloud-ui` читает read-only export status/stock movement slices/backfill job status/timing summary и не вызывает support-only mutating retry/backfill controls. Активный `cloud-ui-g` должен переносить эти screens отдельно и только поверх подтвержденных routes. COGS/margin и richer sales aggregates остаются `запланировано далее`;
 - fault-injection reconnect/outbox ACK и production-grade costing/recalculation smoke.
 
@@ -108,6 +114,8 @@ Cloud PostgreSQL владеет transactional inventory model:
 - `stock_ledger` - immutable хронологический журнал проводок с unit cost.
 - `inventory_stock_balances` - Cloud-owned materialized остатки по `(restaurant_id, warehouse_id, catalog_item_id, unit_code)` с quantity, last movement и bounded costing visibility.
 - `stock_recalculation_jobs` - очередь ретроспективного пересчета.
+- `stock_recalculation_job_items` - affected catalog/warehouse/unit date ranges для job.
+- `stock_recalculation_edges` - deterministic dependency DAG edges для recipes.
 - `stop_lists` - authoritative stop-list state с двусторонней синхронизацией.
 - `olap_stock_moves` - ClickHouse проекция, не PostgreSQL source table.
 
@@ -207,7 +215,7 @@ erDiagram
 
 `CheckClosed` является финальным batch trigger для заказа. Worker использует его для delta consumption: списывает только позиции и linked modifiers, которые еще не были списаны по effective `ItemServed` quantity для той же строки заказа.
 
-Статус: реализовано сейчас для генерации на POS Edge, Cloud contract и Cloud Inventory Worker delta posting, включая recipe expansion основной позиции и modifier-linked consumption по Cloud-authoritative link. COGS/margin, semi-finished auto-production split и retro recalculation DAG остаются вне этой итерации.
+Статус: реализовано сейчас для генерации на POS Edge, Cloud contract и Cloud Inventory Worker delta posting, включая recipe expansion основной позиции, modifier-linked consumption по Cloud-authoritative link и bounded retro recalculation job/DAG lifecycle для costing fields. COGS/margin, semi-finished auto-production split и Cloud UI operator workflow остаются вне этой итерации.
 
 ```json
 {
@@ -487,7 +495,7 @@ erDiagram
 
 Реализовано сейчас для продажи: Worker разворачивает основную проданную позицию по active recipe version до компонентов и списывает компоненты как `SALE/OUT`; если active recipe отсутствует, списывается сам `catalog_item_id`. Linked modifier item в этой итерации списывается напрямую и не разворачивается в recipe.
 
-Вне текущего объема этой итерации: semi-finished auto-production split, nested DAG expansion, COGS/margin и retro recalculation.
+Вне текущего объема этой итерации: semi-finished auto-production split, nested auto-production expansion, COGS/margin и Cloud UI operator workflow.
 
 Целевой полный engine при продаже блюда применяет иерархическое списание:
 
@@ -521,8 +529,10 @@ Balance-level costing visibility агрегирует существующие `
 1. Если товар списывается в минус и истории приходов до даты события нет, `unit_cost_minor = 0`.
 2. Если товар уходит в минус, но ранее были приходы, применяется последняя известная цена для всего списания, уводящего в минус.
 3. Ввод приходной накладной задним числом влияет только на события с `occurred_at` начиная с даты этой накладной. Более ранние чеки не пересчитываются по новой цене.
-4. Запланировано далее: создание или редактирование документа в прошлом запускает `stock_recalculation_jobs`.
-5. Запланировано далее: Recalculation Worker строит DAG зависимостей `raw goods -> semi_finished -> dishes` и пересчитывает `stock_ledger` хронологически от даты измененного документа.
+4. Реализовано сейчас: создание документа в прошлом для receipt/count/production/write-off ставит `stock_recalculation_jobs`, если есть affected ledger rows позднее trigger event date; повтор trigger event не создает duplicate job/effects.
+5. Реализовано сейчас: Recalculation Worker строит DAG зависимостей `raw goods -> semi_finished -> dishes`, валидирует cycles безопасным failed job и пересчитывает `stock_ledger` хронологически от affected date.
+6. Реализовано сейчас: выбран подход обновления только costing fields/status существующих `stock_ledger` rows. Business facts, source events, stock documents, movement type, quantity и dates не переписываются; append-only correction rows для costing в этой итерации не создаются.
+7. Реализовано сейчас: deterministic fallback math использует известную receipt/unit cost как basis; rows без reliable basis остаются `needs_recalculation`.
 
 `costing_status`:
 
@@ -559,7 +569,7 @@ Balance-level costing visibility агрегирует существующие `
 - расширить Cloud stop-list review и Edge manager/KDS edit flow до production UX;
 - добавить production auth/RBAC perimeter и mutating operator UI для ClickHouse projections; legacy `cloud-ui` ограничен read-only bounded slices и backfill job status, а активный `cloud-ui-g` пока не имеет этих screens;
 - расширить первый sales/kitchen summary до richer sales/kitchen/costing bounded Cloud OLAP API поверх ClickHouse projections;
-- покрыть auto-production split, production-grade balance rebuild, full costing status lifecycle и retro costing тестами.
+- покрыть auto-production split, production-grade balance rebuild и richer costing math тестами.
 
 Вне текущего объема:
 

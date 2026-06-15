@@ -377,8 +377,26 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Table:         "stock_recalculation_jobs",
 			RequiredBy:    "cloud inventory foundation retrospective recalculation queue",
 			MigrationFile: "001_init.sql",
-			Columns:       []string{"id", "restaurant_id", "source_document_id", "status", "recalculate_from", "created_at", "updated_at"},
-			Indexes:       []string{"stock_recalculation_jobs_restaurant_status"},
+			Columns: []string{
+				"id", "restaurant_id", "source_document_id", "trigger_type", "trigger_event_id", "trigger_command_id",
+				"status", "business_date_from", "business_date_to", "affected_catalog_item_count", "affected_warehouse_count",
+				"total_steps", "completed_steps", "failure_code", "failure_message_key", "created_at", "started_at", "finished_at", "updated_at",
+			},
+			Indexes: []string{"stock_recalculation_jobs_restaurant_status", "stock_recalculation_jobs_trigger_event_unique", "stock_recalculation_jobs_trigger_command_unique"},
+		},
+		{
+			Table:         "stock_recalculation_job_items",
+			RequiredBy:    "affected catalog/warehouse ranges for retrospective costing jobs",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"job_id", "catalog_item_id", "warehouse_id", "unit_code", "business_date_from", "business_date_to", "created_at"},
+			Indexes:       []string{"stock_recalculation_job_items_pkey", "stock_recalculation_job_items_item"},
+		},
+		{
+			Table:         "stock_recalculation_edges",
+			RequiredBy:    "deterministic recipe dependency DAG for retrospective costing jobs",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"job_id", "dependency_catalog_item_id", "dependent_catalog_item_id", "edge_type", "sort_order", "created_at"},
+			Indexes:       []string{"stock_recalculation_edges_pkey", "stock_recalculation_edges_job_order"},
 		},
 		{
 			Table:         "cloud_projection_stop_list_updates",
