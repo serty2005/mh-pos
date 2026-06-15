@@ -15,6 +15,7 @@ import (
 
 type DocumentType string
 type MovementType string
+type ProcessingStatus string
 
 const (
 	DocumentSale           DocumentType = "SALE"
@@ -26,6 +27,11 @@ const (
 
 	MovementIn  MovementType = "IN"
 	MovementOut MovementType = "OUT"
+
+	ProcessingStatusAccepted        ProcessingStatus = "accepted"
+	ProcessingStatusPosted          ProcessingStatus = "posted"
+	ProcessingStatusPartiallyPosted ProcessingStatus = "partially_posted"
+	ProcessingStatusFailed          ProcessingStatus = "failed"
 
 	// SourceEventItemServedCompensation помечает сторно уже обработанного ItemServed при recall/serve-again.
 	SourceEventItemServedCompensation = "ItemServedCompensation"
@@ -43,6 +49,9 @@ type RecipeLine struct {
 
 type Repository interface {
 	ClaimPending(context.Context, ClaimCommand) ([]QueuedEvent, error)
+	BeginProcessingState(context.Context, ProcessingStateCommand) (ProcessingState, error)
+	CompleteProcessingState(context.Context, ProcessingStateCommand) error
+	FailProcessingState(context.Context, ProcessingStateCommand) error
 	CreateStockDocument(context.Context, StockDocument) error
 	ApplyStopListUpdate(context.Context, StopListProjectionCommand) error
 	MarkProcessed(context.Context, string, time.Time) error
@@ -50,6 +59,7 @@ type Repository interface {
 	ListActiveRecipeLines(context.Context, string, string) ([]RecipeLine, error)
 	ListModifierOptionLinks(context.Context, string, []string) (map[string]string, error)
 	ListServedOrderLineQuantities(context.Context, string, []string) (map[string]string, error)
+	GetCurrentQuantity(context.Context, string, string, string, string) (string, error)
 	HasSupersedingServedEvent(context.Context, string, string, string) (bool, error)
 }
 
@@ -67,6 +77,7 @@ type QueuedEvent struct {
 	DeviceID     string
 	EventID      string
 	EventType    contracts.EventType
+	AggregateID  string
 	OccurredAt   time.Time
 	Payload      json.RawMessage
 }
@@ -82,6 +93,7 @@ type StockDocument struct {
 	OccurredAt        time.Time
 	CreatedAt         time.Time
 	Ledger            []StockLedgerEntry
+	ProcessingState   *ProcessingStateCommand
 }
 
 type StockLedgerEntry struct {
@@ -121,6 +133,42 @@ type StopListProjectionCommand struct {
 	UpdatedAt         time.Time
 	OccurredAt        time.Time
 	ProjectedAt       time.Time
+}
+
+type ProcessingState struct {
+	ID                  string
+	RestaurantID        string
+	SourceEventID       string
+	SourceEventType     string
+	SourceAggregateID   string
+	StockDocumentID     string
+	Status              ProcessingStatus
+	PostedLedgerCount   int
+	ExpectedLedgerCount *int
+	CostingStatus       string
+	NeedsRecalculation  bool
+	FailureCode         string
+	FailureMessageKey   string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	PostedAt            *time.Time
+}
+
+type ProcessingStateCommand struct {
+	ID                  string
+	RestaurantID        string
+	SourceEventID       string
+	SourceEventType     string
+	SourceAggregateID   string
+	StockDocumentID     string
+	Status              ProcessingStatus
+	PostedLedgerCount   int
+	ExpectedLedgerCount *int
+	CostingStatus       string
+	NeedsRecalculation  bool
+	FailureCode         string
+	FailureMessageKey   string
+	Now                 time.Time
 }
 
 type Config struct {
@@ -167,6 +215,9 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 }
 
 func (w *Worker) processEvent(ctx context.Context, event QueuedEvent, now time.Time) error {
+	if isDocumentProcessingStateEvent(event.EventType) {
+		return w.processStatefulDocumentEvent(ctx, event, now)
+	}
 	documents, err := w.documentsFromEvent(ctx, event, now)
 	if err != nil {
 		return err
@@ -177,6 +228,65 @@ func (w *Worker) processEvent(ctx context.Context, event QueuedEvent, now time.T
 		}
 	}
 	return nil
+}
+
+func (w *Worker) processStatefulDocumentEvent(ctx context.Context, event QueuedEvent, now time.Time) error {
+	stateCmd := w.processingStateCommand(event, now)
+	state, err := w.repo.BeginProcessingState(ctx, stateCmd)
+	if err != nil {
+		return err
+	}
+	if state.Status == ProcessingStatusPosted || state.Status == ProcessingStatusPartiallyPosted || state.Status == ProcessingStatusFailed {
+		return nil
+	}
+	documents, err := w.documentsFromEvent(ctx, event, now)
+	if err != nil {
+		stateCmd.Status = ProcessingStatusFailed
+		stateCmd.FailureCode = "VALIDATION_FAILED"
+		stateCmd.FailureMessageKey = "inventory.processing.validation_failed"
+		if markErr := w.repo.FailProcessingState(ctx, stateCmd); markErr != nil {
+			return markErr
+		}
+		return nil
+	}
+	if len(documents) == 0 {
+		zero := 0
+		stateCmd.Status = ProcessingStatusPosted
+		stateCmd.PostedLedgerCount = 0
+		stateCmd.ExpectedLedgerCount = &zero
+		stateCmd.CostingStatus = "final"
+		stateCmd.NeedsRecalculation = false
+		return w.repo.CompleteProcessingState(ctx, stateCmd)
+	}
+	for _, document := range documents {
+		document.ProcessingState = &stateCmd
+		if err := w.repo.CreateStockDocument(ctx, document); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *Worker) processingStateCommand(event QueuedEvent, now time.Time) ProcessingStateCommand {
+	return ProcessingStateCommand{
+		ID:                w.ids.NewID(),
+		RestaurantID:      strings.TrimSpace(event.RestaurantID),
+		SourceEventID:     strings.TrimSpace(event.EventID),
+		SourceEventType:   string(event.EventType),
+		SourceAggregateID: strings.TrimSpace(event.AggregateID),
+		Status:            ProcessingStatusAccepted,
+		CostingStatus:     "estimated",
+		Now:               now,
+	}
+}
+
+func isDocumentProcessingStateEvent(eventType contracts.EventType) bool {
+	switch eventType {
+	case contracts.EventStockReceiptCaptured, contracts.EventInventoryCountCaptured, contracts.EventStockWriteOffCaptured, contracts.EventProductionCompleted:
+		return true
+	default:
+		return false
+	}
 }
 
 func (w *Worker) documentsFromEvent(ctx context.Context, event QueuedEvent, now time.Time) ([]StockDocument, error) {
@@ -190,13 +300,13 @@ func (w *Worker) documentsFromEvent(ctx context.Context, event QueuedEvent, now 
 		doc, ok, err := w.stockReceiptDocument(event, now)
 		return singleDocument(doc, ok, err)
 	case contracts.EventInventoryCountCaptured:
-		doc, ok, err := w.inventoryCountDocument(event, now)
+		doc, ok, err := w.inventoryCountDocument(ctx, event, now)
 		return singleDocument(doc, ok, err)
 	case contracts.EventStockWriteOffCaptured:
 		doc, ok, err := w.stockWriteOffDocument(event, now)
 		return singleDocument(doc, ok, err)
 	case contracts.EventProductionCompleted:
-		doc, ok, err := w.productionDocument(event, now)
+		doc, ok, err := w.productionDocument(ctx, event, now)
 		return singleDocument(doc, ok, err)
 	case contracts.EventRefundRecorded, contracts.EventCancellationRecorded:
 		doc, ok, err := w.financialOperationDocument(ctx, event, now)
@@ -366,15 +476,44 @@ func (w *Worker) stockReceiptDocument(event QueuedEvent, now time.Time) (StockDo
 	return w.documentFromItems(event, now, DocumentPurchase, MovementIn, payload.Data.BusinessDateLocal, payload.Data.Items, false)
 }
 
-func (w *Worker) inventoryCountDocument(event QueuedEvent, now time.Time) (StockDocument, bool, error) {
+func (w *Worker) inventoryCountDocument(ctx context.Context, event QueuedEvent, now time.Time) (StockDocument, bool, error) {
 	payload, err := decode[contracts.InventoryCountCaptured](event.Payload)
 	if err != nil {
 		return StockDocument{}, false, err
 	}
-	return w.documentFromItems(event, now, DocumentInventoryCount, MovementIn, payload.Data.BusinessDateLocal, payload.Data.Items, true)
+	items := make([]contracts.InventoryItem, 0, len(payload.Data.Items))
+	for _, item := range payload.Data.Items {
+		counted := strings.TrimSpace(item.CountedQuantity)
+		if !nonNegative(counted) || strings.TrimSpace(item.CatalogItemID) == "" {
+			continue
+		}
+		unit := strings.TrimSpace(item.UnitCode)
+		if unit == "" {
+			unit = "PC"
+		}
+		current, err := w.repo.GetCurrentQuantity(ctx, event.RestaurantID, event.WarehouseID, item.CatalogItemID, unit)
+		if err != nil {
+			return StockDocument{}, false, err
+		}
+		delta, movement, ok := countAdjustment(current, counted)
+		if !ok {
+			continue
+		}
+		item.Quantity = delta
+		item.CountedQuantity = ""
+		item.UnitCode = unit
+		if movement == MovementOut {
+			item.Quantity = "-" + delta
+		}
+		items = append(items, item)
+	}
+	if len(items) == 0 {
+		return StockDocument{}, false, nil
+	}
+	return w.inventoryCountAdjustmentDocument(event, now, payload.Data.BusinessDateLocal, items)
 }
 
-func (w *Worker) productionDocument(event QueuedEvent, now time.Time) (StockDocument, bool, error) {
+func (w *Worker) productionDocument(ctx context.Context, event QueuedEvent, now time.Time) (StockDocument, bool, error) {
 	payload, err := decode[contracts.ProductionCompleted](event.Payload)
 	if err != nil {
 		return StockDocument{}, false, err
@@ -388,7 +527,7 @@ func (w *Worker) productionDocument(event QueuedEvent, now time.Time) (StockDocu
 	if err != nil || !ok {
 		return doc, ok, err
 	}
-	components, err := w.recipeToLedger(context.Background(), event.RestaurantID, payload.Data.SemiFinishedCatalogItemID, payload.Data.Quantity, payload.Data.BusinessDateLocal, event, now)
+	components, err := w.recipeToLedger(ctx, event.RestaurantID, payload.Data.SemiFinishedCatalogItemID, payload.Data.Quantity, payload.Data.BusinessDateLocal, event, now)
 	if err != nil {
 		return StockDocument{}, false, err
 	}
@@ -644,6 +783,7 @@ func (w *Worker) documentFromItemsWithSourceType(event QueuedEvent, now time.Tim
 		}
 		unitCost := item.UnitCostMinor
 		totalCost := totalCostMinor(quantity, unitCost)
+		costingStatus := costingStatusForItem(movement, unitCost)
 		document.Ledger = append(document.Ledger, StockLedgerEntry{
 			ID:                w.ids.NewID(),
 			RestaurantID:      event.RestaurantID,
@@ -658,7 +798,7 @@ func (w *Worker) documentFromItemsWithSourceType(event QueuedEvent, now time.Tim
 			UnitCode:          strings.TrimSpace(item.UnitCode),
 			UnitCostMinor:     unitCost,
 			TotalCostMinor:    totalCost,
-			CostingStatus:     "estimated",
+			CostingStatus:     costingStatus,
 			OccurredAt:        event.OccurredAt,
 			BusinessDateLocal: strings.TrimSpace(businessDateLocal),
 			CreatedAt:         now,
@@ -666,6 +806,52 @@ func (w *Worker) documentFromItemsWithSourceType(event QueuedEvent, now time.Tim
 	}
 	if len(document.Ledger) == 0 {
 		return StockDocument{}, false, fmt.Errorf("inventory event has no ledger rows")
+	}
+	return document, true, nil
+}
+
+func (w *Worker) inventoryCountAdjustmentDocument(event QueuedEvent, now time.Time, businessDateLocal string, items []contracts.InventoryItem) (StockDocument, bool, error) {
+	documentID := w.ids.NewID()
+	document := StockDocument{
+		ID:                documentID,
+		RestaurantID:      event.RestaurantID,
+		WarehouseID:       event.WarehouseID,
+		Type:              DocumentInventoryCount,
+		SourceEventID:     event.EventID,
+		SourceEventType:   string(event.EventType),
+		BusinessDateLocal: strings.TrimSpace(businessDateLocal),
+		OccurredAt:        event.OccurredAt,
+		CreatedAt:         now,
+	}
+	for _, item := range items {
+		quantity := strings.TrimSpace(item.Quantity)
+		movement := MovementIn
+		if strings.HasPrefix(quantity, "-") {
+			movement = MovementOut
+			quantity = strings.TrimPrefix(quantity, "-")
+		}
+		if !positive(quantity) || strings.TrimSpace(item.CatalogItemID) == "" {
+			continue
+		}
+		document.Ledger = append(document.Ledger, StockLedgerEntry{
+			ID:                w.ids.NewID(),
+			RestaurantID:      event.RestaurantID,
+			WarehouseID:       event.WarehouseID,
+			StockDocumentID:   documentID,
+			SourceEventID:     event.EventID,
+			SourceEventType:   string(event.EventType),
+			CatalogItemID:     strings.TrimSpace(item.CatalogItemID),
+			MovementType:      movement,
+			Quantity:          quantity,
+			UnitCode:          strings.TrimSpace(item.UnitCode),
+			CostingStatus:     "estimated",
+			OccurredAt:        event.OccurredAt,
+			BusinessDateLocal: strings.TrimSpace(businessDateLocal),
+			CreatedAt:         now,
+		})
+	}
+	if len(document.Ledger) == 0 {
+		return StockDocument{}, false, nil
 	}
 	return document, true, nil
 }
@@ -685,6 +871,37 @@ func businessDate(t time.Time) string {
 func positive(value string) bool {
 	n, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
 	return err == nil && n > 0
+}
+
+func nonNegative(value string) bool {
+	n, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	return err == nil && n >= 0
+}
+
+func countAdjustment(current, counted string) (string, MovementType, bool) {
+	currentValue, err := strconv.ParseFloat(strings.TrimSpace(current), 64)
+	if err != nil {
+		currentValue = 0
+	}
+	countedValue, err := strconv.ParseFloat(strings.TrimSpace(counted), 64)
+	if err != nil || countedValue < 0 {
+		return "", "", false
+	}
+	delta := countedValue - currentValue
+	if delta > 0.0005 {
+		return fmt.Sprintf("%.3f", delta), MovementIn, true
+	}
+	if delta < -0.0005 {
+		return fmt.Sprintf("%.3f", -delta), MovementOut, true
+	}
+	return "", "", false
+}
+
+func costingStatusForItem(movement MovementType, unitCostMinor int64) string {
+	if movement == MovementIn && unitCostMinor > 0 {
+		return "final"
+	}
+	return "estimated"
 }
 
 func totalCostMinor(quantity string, unitCost int64) int64 {

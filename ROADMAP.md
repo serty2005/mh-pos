@@ -368,8 +368,12 @@
   - `inventory_event_queue`;
   - `stock_documents`;
   - `stock_ledger`;
+  - `inventory_document_processing_state`;
   - `stock_recalculation_jobs`;
   - `stop_lists`.
+- выполнено: `inventory_document_processing_state` фиксирует production-grade lifecycle обработки для `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted`: `accepted`, `posted`, `partially_posted`, `failed`, posted/expected ledger counters, aggregate `costing_status`, `needs_recalculation` и безопасные failure code/message key без raw payload.
+- выполнено: повтор того же source event защищен уникальным `(restaurant_id, source_event_id, source_event_type)` и не создает повторные stock documents/ledger/balance rows.
+- выполнено: `InventoryCountCaptured` пишет детерминированную корректировку к текущему Cloud materialized balance или no-op posted state с `posted_ledger_count = 0`; `ProductionCompleted` пишет готовую позицию `IN` и ingredient `OUT` по active recipe, а при missing recipe/cost сохраняет факт как `estimated`/`needs_recalculation`.
 - Worker пишет `stock_ledger` with `unit_cost_minor`, `total_cost_minor`, `costing_status` для нормализованных item payloads.
 - Worker транзакционно обновляет Cloud-owned materialized `inventory_stock_balances` при записи `stock_ledger`.
 - Retro recalculation jobs остаются следующим шагом.

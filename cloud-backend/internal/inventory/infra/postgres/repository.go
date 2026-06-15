@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"strings"
 	"time"
@@ -48,7 +49,7 @@ UPDATE inventory_event_queue q
 SET status = 'processing', locked_at = $1, locked_by = $3, updated_at = $1
 FROM picked
 WHERE q.id = picked.id
-RETURNING q.id,q.receipt_id,q.restaurant_id,COALESCE(q.warehouse_id,''),q.device_id,q.event_id,q.event_type,q.occurred_at,
+RETURNING q.id,q.receipt_id,q.restaurant_id,COALESCE(q.warehouse_id,''),q.device_id,q.event_id,q.event_type,q.aggregate_id,q.occurred_at,
   (SELECT raw_payload FROM cloud_edge_event_raw_payloads raw WHERE raw.receipt_id = q.receipt_id)`,
 		cmd.Now, limit, strings.TrimSpace(cmd.LockedBy))
 	if err != nil {
@@ -61,7 +62,7 @@ RETURNING q.id,q.receipt_id,q.restaurant_id,COALESCE(q.warehouse_id,''),q.device
 		var event app.QueuedEvent
 		var eventType string
 		var raw []byte
-		if err := rows.Scan(&event.ID, &event.ReceiptID, &event.RestaurantID, &event.WarehouseID, &event.DeviceID, &event.EventID, &eventType, &event.OccurredAt, &raw); err != nil {
+		if err := rows.Scan(&event.ID, &event.ReceiptID, &event.RestaurantID, &event.WarehouseID, &event.DeviceID, &event.EventID, &eventType, &event.AggregateID, &event.OccurredAt, &raw); err != nil {
 			return nil, err
 		}
 		var envelope contracts.SyncEnvelope
@@ -74,12 +75,129 @@ RETURNING q.id,q.receipt_id,q.restaurant_id,COALESCE(q.warehouse_id,''),q.device
 	return out, rows.Err()
 }
 
+func (r *Repository) BeginProcessingState(ctx context.Context, cmd app.ProcessingStateCommand) (app.ProcessingState, error) {
+	now := cmd.Now.UTC()
+	_, err := r.pool.Exec(ctx, `
+INSERT INTO inventory_document_processing_state(
+  id,restaurant_id,source_event_id,source_event_type,source_aggregate_id,status,
+  posted_ledger_count,costing_status,needs_recalculation,created_at,updated_at
+) VALUES (
+  $1,$2,$3,$4,NULLIF($5,''),'accepted',0,'estimated',false,$6,$6
+)
+ON CONFLICT (restaurant_id, source_event_id, source_event_type) DO NOTHING`,
+		strings.TrimSpace(cmd.ID),
+		strings.TrimSpace(cmd.RestaurantID),
+		strings.TrimSpace(cmd.SourceEventID),
+		strings.TrimSpace(cmd.SourceEventType),
+		strings.TrimSpace(cmd.SourceAggregateID),
+		now,
+	)
+	if err != nil {
+		return app.ProcessingState{}, err
+	}
+	return r.getProcessingState(ctx, cmd.RestaurantID, cmd.SourceEventID, cmd.SourceEventType)
+}
+
+func (r *Repository) CompleteProcessingState(ctx context.Context, cmd app.ProcessingStateCommand) error {
+	now := cmd.Now.UTC()
+	_, err := r.pool.Exec(ctx, `
+UPDATE inventory_document_processing_state
+SET stock_document_id = NULLIF($4,''),
+    status = $5,
+    posted_ledger_count = $6,
+    expected_ledger_count = $7,
+    costing_status = $8,
+    needs_recalculation = $9,
+    failure_code = NULL,
+    failure_message_key = NULL,
+    posted_at = $10,
+    updated_at = $10
+WHERE restaurant_id = $1 AND source_event_id = $2 AND source_event_type = $3`,
+		strings.TrimSpace(cmd.RestaurantID),
+		strings.TrimSpace(cmd.SourceEventID),
+		strings.TrimSpace(cmd.SourceEventType),
+		strings.TrimSpace(cmd.StockDocumentID),
+		string(cmd.Status),
+		cmd.PostedLedgerCount,
+		cmd.ExpectedLedgerCount,
+		strings.TrimSpace(cmd.CostingStatus),
+		cmd.NeedsRecalculation,
+		now,
+	)
+	return err
+}
+
+func (r *Repository) FailProcessingState(ctx context.Context, cmd app.ProcessingStateCommand) error {
+	now := cmd.Now.UTC()
+	_, err := r.pool.Exec(ctx, `
+UPDATE inventory_document_processing_state
+SET status = 'failed',
+    failure_code = NULLIF($4,''),
+    failure_message_key = NULLIF($5,''),
+    updated_at = $6
+WHERE restaurant_id = $1 AND source_event_id = $2 AND source_event_type = $3`,
+		strings.TrimSpace(cmd.RestaurantID),
+		strings.TrimSpace(cmd.SourceEventID),
+		strings.TrimSpace(cmd.SourceEventType),
+		strings.TrimSpace(cmd.FailureCode),
+		strings.TrimSpace(cmd.FailureMessageKey),
+		now,
+	)
+	return err
+}
+
+func (r *Repository) getProcessingState(ctx context.Context, restaurantID, sourceEventID, sourceEventType string) (app.ProcessingState, error) {
+	var state app.ProcessingState
+	var expected sql.NullInt64
+	var postedAt *time.Time
+	err := r.pool.QueryRow(ctx, `
+SELECT id,restaurant_id,source_event_id,source_event_type,COALESCE(source_aggregate_id,''),COALESCE(stock_document_id,''),
+       status,posted_ledger_count,expected_ledger_count,costing_status,needs_recalculation,
+       COALESCE(failure_code,''),COALESCE(failure_message_key,''),created_at,updated_at,posted_at
+FROM inventory_document_processing_state
+WHERE restaurant_id = $1 AND source_event_id = $2 AND source_event_type = $3`,
+		strings.TrimSpace(restaurantID), strings.TrimSpace(sourceEventID), strings.TrimSpace(sourceEventType),
+	).Scan(
+		&state.ID,
+		&state.RestaurantID,
+		&state.SourceEventID,
+		&state.SourceEventType,
+		&state.SourceAggregateID,
+		&state.StockDocumentID,
+		&state.Status,
+		&state.PostedLedgerCount,
+		&expected,
+		&state.CostingStatus,
+		&state.NeedsRecalculation,
+		&state.FailureCode,
+		&state.FailureMessageKey,
+		&state.CreatedAt,
+		&state.UpdatedAt,
+		&postedAt,
+	)
+	if expected.Valid {
+		v := int(expected.Int64)
+		state.ExpectedLedgerCount = &v
+	}
+	state.PostedAt = postedAt
+	return state, err
+}
+
 func (r *Repository) CreateStockDocument(ctx context.Context, document app.StockDocument) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
+
+	if document.ProcessingState != nil {
+		if done, err := ensureProcessingStateForDocument(ctx, tx, *document.ProcessingState, document); err != nil || done {
+			if err != nil {
+				return err
+			}
+			return tx.Commit(ctx)
+		}
+	}
 
 	var existing string
 	err = tx.QueryRow(ctx, `
@@ -88,6 +206,11 @@ WHERE source_event_id = $1 AND source_event_type = $2
 LIMIT 1
 FOR UPDATE`, document.SourceEventID, document.SourceEventType).Scan(&existing)
 	if err == nil {
+		if document.ProcessingState != nil {
+			if err := updateProcessingStatePosted(ctx, tx, *document.ProcessingState, existing, ledgerCountForExistingDocument(ctx, tx, existing), document.Ledger, document.CreatedAt); err != nil {
+				return err
+			}
+		}
 		return tx.Commit(ctx)
 	}
 	if err != nil && !errorsIsNoRows(err) {
@@ -138,7 +261,117 @@ INSERT INTO stock_ledger(
 			return err
 		}
 	}
+	if document.ProcessingState != nil {
+		if err := updateProcessingStatePosted(ctx, tx, *document.ProcessingState, document.ID, len(document.Ledger), document.Ledger, document.CreatedAt); err != nil {
+			return err
+		}
+	}
 	return tx.Commit(ctx)
+}
+
+func ensureProcessingStateForDocument(ctx context.Context, tx pgx.Tx, cmd app.ProcessingStateCommand, document app.StockDocument) (bool, error) {
+	now := cmd.Now.UTC()
+	if now.IsZero() {
+		now = document.CreatedAt.UTC()
+	}
+	_, err := tx.Exec(ctx, `
+INSERT INTO inventory_document_processing_state(
+  id,restaurant_id,source_event_id,source_event_type,source_aggregate_id,status,
+  posted_ledger_count,costing_status,needs_recalculation,created_at,updated_at
+) VALUES (
+  $1,$2,$3,$4,NULLIF($5,''),'accepted',0,'estimated',false,$6,$6
+)
+ON CONFLICT (restaurant_id, source_event_id, source_event_type) DO NOTHING`,
+		strings.TrimSpace(cmd.ID),
+		strings.TrimSpace(cmd.RestaurantID),
+		strings.TrimSpace(cmd.SourceEventID),
+		strings.TrimSpace(cmd.SourceEventType),
+		strings.TrimSpace(cmd.SourceAggregateID),
+		now,
+	)
+	if err != nil {
+		return false, err
+	}
+	var status string
+	err = tx.QueryRow(ctx, `
+SELECT status
+FROM inventory_document_processing_state
+WHERE restaurant_id = $1 AND source_event_id = $2 AND source_event_type = $3
+FOR UPDATE`,
+		strings.TrimSpace(cmd.RestaurantID),
+		strings.TrimSpace(cmd.SourceEventID),
+		strings.TrimSpace(cmd.SourceEventType),
+	).Scan(&status)
+	if err != nil {
+		return false, err
+	}
+	switch app.ProcessingStatus(status) {
+	case app.ProcessingStatusPosted, app.ProcessingStatusPartiallyPosted, app.ProcessingStatusFailed:
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
+func ledgerCountForExistingDocument(ctx context.Context, tx pgx.Tx, documentID string) int {
+	var count int
+	_ = tx.QueryRow(ctx, `SELECT COUNT(1) FROM stock_ledger WHERE stock_document_id = $1`, strings.TrimSpace(documentID)).Scan(&count)
+	return count
+}
+
+func updateProcessingStatePosted(ctx context.Context, tx pgx.Tx, cmd app.ProcessingStateCommand, documentID string, postedCount int, ledger []app.StockLedgerEntry, now time.Time) error {
+	expectedCount := len(ledger)
+	status := app.ProcessingStatusPosted
+	if postedCount < expectedCount {
+		status = app.ProcessingStatusPartiallyPosted
+	}
+	costingStatus, needsRecalculation := aggregateCostingStatus(ledger)
+	_, err := tx.Exec(ctx, `
+UPDATE inventory_document_processing_state
+SET stock_document_id = $4,
+    status = $5,
+    posted_ledger_count = $6,
+    expected_ledger_count = $7,
+    costing_status = $8,
+    needs_recalculation = $9,
+    failure_code = NULL,
+    failure_message_key = NULL,
+    posted_at = $10,
+    updated_at = $10
+WHERE restaurant_id = $1 AND source_event_id = $2 AND source_event_type = $3`,
+		strings.TrimSpace(cmd.RestaurantID),
+		strings.TrimSpace(cmd.SourceEventID),
+		strings.TrimSpace(cmd.SourceEventType),
+		strings.TrimSpace(documentID),
+		string(status),
+		postedCount,
+		expectedCount,
+		costingStatus,
+		needsRecalculation,
+		now.UTC(),
+	)
+	return err
+}
+
+func aggregateCostingStatus(ledger []app.StockLedgerEntry) (string, bool) {
+	status := "final"
+	for _, entry := range ledger {
+		switch strings.TrimSpace(entry.CostingStatus) {
+		case "failed":
+			return "failed", false
+		case "needs_recalculation":
+			status = "needs_recalculation"
+		case "estimated":
+			if status != "needs_recalculation" {
+				status = "estimated"
+			}
+		case "recalculated":
+			if status == "final" {
+				status = "recalculated"
+			}
+		}
+	}
+	return status, status == "needs_recalculation" || status == "estimated"
 }
 
 func upsertStockBalance(ctx context.Context, tx pgx.Tx, entry app.StockLedgerEntry) error {
@@ -409,6 +642,26 @@ GROUP BY order_line_id`, strings.TrimSpace(restaurantID), orderLineIDs, string(c
 		out[strings.TrimSpace(orderLineID)] = strings.TrimSpace(quantity)
 	}
 	return out, rows.Err()
+}
+
+func (r *Repository) GetCurrentQuantity(ctx context.Context, restaurantID, warehouseID, catalogItemID, unitCode string) (string, error) {
+	var quantity string
+	err := r.pool.QueryRow(ctx, `
+SELECT quantity_on_hand::text
+FROM inventory_stock_balances
+WHERE restaurant_id = $1
+  AND warehouse_id = $2
+  AND catalog_item_id = $3
+  AND unit_code = $4`,
+		strings.TrimSpace(restaurantID),
+		strings.TrimSpace(warehouseID),
+		strings.TrimSpace(catalogItemID),
+		strings.TrimSpace(unitCode),
+	).Scan(&quantity)
+	if errorsIsNoRows(err) {
+		return "0.000", nil
+	}
+	return strings.TrimSpace(quantity), err
 }
 
 func (r *Repository) HasSupersedingServedEvent(ctx context.Context, restaurantID, orderLineID, servedEventID string) (bool, error) {

@@ -1340,6 +1340,36 @@ CREATE INDEX IF NOT EXISTS stock_documents_restaurant_warehouse_occurred_at
 CREATE UNIQUE INDEX IF NOT EXISTS stock_documents_source_event_unique
   ON stock_documents(source_event_id, source_event_type);
 
+CREATE TABLE IF NOT EXISTS inventory_document_processing_state (
+  id TEXT PRIMARY KEY CHECK (id <> ''),
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  source_event_id TEXT NOT NULL CHECK (source_event_id <> ''),
+  source_event_type TEXT NOT NULL CHECK (source_event_type IN ('StockReceiptCaptured','InventoryCountCaptured','StockWriteOffCaptured','ProductionCompleted')),
+  source_aggregate_id TEXT,
+  stock_document_id TEXT REFERENCES stock_documents(id) ON DELETE RESTRICT,
+  status TEXT NOT NULL CHECK (status IN ('accepted','posted','partially_posted','failed','ignored_duplicate')),
+  posted_ledger_count BIGINT NOT NULL DEFAULT 0 CHECK (posted_ledger_count >= 0),
+  expected_ledger_count BIGINT CHECK (expected_ledger_count IS NULL OR expected_ledger_count >= 0),
+  costing_status TEXT NOT NULL CHECK (costing_status IN ('final','estimated','needs_recalculation','recalculated','failed')),
+  needs_recalculation BOOLEAN NOT NULL DEFAULT false,
+  failure_code TEXT,
+  failure_message_key TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  posted_at TIMESTAMPTZ,
+  UNIQUE (restaurant_id, source_event_id, source_event_type)
+);
+
+CREATE INDEX IF NOT EXISTS inventory_document_processing_state_restaurant_type_status
+  ON inventory_document_processing_state(restaurant_id, source_event_type, status, updated_at DESC, id DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS inventory_document_processing_state_source_event_unique
+  ON inventory_document_processing_state(restaurant_id, source_event_id, source_event_type);
+
+CREATE INDEX IF NOT EXISTS inventory_document_processing_state_document
+  ON inventory_document_processing_state(stock_document_id)
+  WHERE stock_document_id IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS stock_ledger (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),

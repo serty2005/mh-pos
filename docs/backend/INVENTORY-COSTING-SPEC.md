@@ -34,6 +34,11 @@ PostgreSQL хранит транзакционный журнал, materialized 
 
 Реализовано сейчас:
 
+- Cloud Inventory Worker ведет `inventory_document_processing_state` для `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted`. State хранит UUIDv7 `id`, restaurant/source event identity, optional source aggregate, optional `stock_document_id`, `status`, ledger counters, aggregate `costing_status`, `needs_recalculation`, безопасные failure code/message key и timestamps; raw Edge payload в этой таблице не хранится.
+- Уникальность `(restaurant_id, source_event_id, source_event_type)` является идемпотентным ключом обработки: повтор того же receipt/count/write-off/production event возвращает уже сохраненный state/result и не создает повторные `stock_documents`, `stock_ledger` или `inventory_stock_balances` mutations.
+- Успешный posting обновляет processing state в той же PostgreSQL transaction, где создаются Cloud-owned `stock_documents`, `stock_ledger` и materialized balance update. Безопасная validation/business failure фиксирует `failed` state с `failure_code = VALIDATION_FAILED` и `failure_message_key = inventory.processing.validation_failed`, без raw payload и без повторного создания документов.
+- `InventoryCountCaptured` создает deterministic adjustment от текущего Cloud materialized balance к `counted_quantity`: `IN`, если counted больше current; `OUT`, если counted меньше current; если quantity совпадает, документ не создается, а processing state получает `posted`, `posted_ledger_count = 0`, `expected_ledger_count = 0`.
+- `ProductionCompleted` при active recipe создает один `PRODUCTION` document с `IN` для готовой/полуготовой позиции и `OUT` для ingredient rows. Если recipe/cost basis отсутствуют, worker не падает: факт production сохраняется как `PRODUCTION/IN`, а processing state и ledger visibility остаются `estimated`/`needs_recalculation` для будущего costing/recalculation hook.
 - Cloud PostgreSQL baseline содержит `inventory_event_queue`, `stock_documents`, `stock_ledger`, `inventory_stock_balances`, `stock_recalculation_jobs` и `stop_lists`.
 - Cloud Inventory Worker умеет принимать нормализованные item payloads по inventory-relevant events и писать pilot ledger rows.
 - Cloud Inventory Worker при продаже разворачивает основную позицию в строки active `cloud_recipe_versions`/`cloud_recipe_lines`, если для `catalog_item_id` есть active recipe version; если active version отсутствует, сохраняется fallback-списание самого `catalog_item_id`.
@@ -51,6 +56,7 @@ PostgreSQL хранит транзакционный журнал, materialized 
 
 Запланировано до полного пилота:
 
+- Retro recalculation DAG, production-grade balance rebuild tooling, COGS/margin и Cloud UI operator workflow остаются отдельной итерацией поверх уже сохраненного processing state.
 - полноценный Edge-origin stop-list edit UI и production-grade review workflow поверх уже реализованного backend route/review slice;
 - расширенный stop-list edit UX from KDS/POS Edge поверх backend command route;
 - full inventory engine beyond текущего bounded worker/materialized-balance slice: production-grade receipts/counts/recalculation state, semi-finished auto-production split, production-grade balance rebuild и retro recalculation DAG; bounded refund/cancellation dispositions `return_to_stock` и `write_off_waste` реализованы сейчас без PSP/fiscal/COGS/margin;

@@ -31,6 +31,7 @@ func (f *fixedIDs) NewID() string {
 type fakeRepo struct {
 	events              []app.QueuedEvent
 	documents           []app.StockDocument
+	processingStates    map[string]app.ProcessingState
 	stopListUpdates     []app.StopListProjectionCommand
 	processed           []string
 	failed              map[string]string
@@ -46,13 +47,86 @@ func (f *fakeRepo) ClaimPending(context.Context, app.ClaimCommand) ([]app.Queued
 }
 
 func (f *fakeRepo) CreateStockDocument(_ context.Context, document app.StockDocument) error {
+	if document.ProcessingState != nil {
+		if state := f.processingState(*document.ProcessingState); state.Status == app.ProcessingStatusPosted || state.Status == app.ProcessingStatusPartiallyPosted || state.Status == app.ProcessingStatusFailed {
+			return nil
+		}
+	}
 	for _, existing := range f.documents {
 		if existing.SourceEventID == document.SourceEventID && existing.SourceEventType == document.SourceEventType {
 			return nil
 		}
 	}
 	f.documents = append(f.documents, document)
+	if document.ProcessingState != nil {
+		expected := len(document.Ledger)
+		state := f.processingState(*document.ProcessingState)
+		state.StockDocumentID = document.ID
+		state.Status = app.ProcessingStatusPosted
+		state.PostedLedgerCount = len(document.Ledger)
+		state.ExpectedLedgerCount = &expected
+		state.CostingStatus, state.NeedsRecalculation = aggregateTestCosting(document.Ledger)
+		f.setProcessingState(state)
+	}
 	return nil
+}
+
+func (f *fakeRepo) BeginProcessingState(_ context.Context, cmd app.ProcessingStateCommand) (app.ProcessingState, error) {
+	state := f.processingState(cmd)
+	if state.ID == "" {
+		state = app.ProcessingState{
+			ID:              cmd.ID,
+			RestaurantID:    cmd.RestaurantID,
+			SourceEventID:   cmd.SourceEventID,
+			SourceEventType: cmd.SourceEventType,
+			Status:          app.ProcessingStatusAccepted,
+			CostingStatus:   "estimated",
+			CreatedAt:       cmd.Now,
+			UpdatedAt:       cmd.Now,
+		}
+		f.setProcessingState(state)
+	}
+	return state, nil
+}
+
+func (f *fakeRepo) CompleteProcessingState(_ context.Context, cmd app.ProcessingStateCommand) error {
+	state := f.processingState(cmd)
+	state.Status = cmd.Status
+	state.PostedLedgerCount = cmd.PostedLedgerCount
+	state.ExpectedLedgerCount = cmd.ExpectedLedgerCount
+	state.CostingStatus = cmd.CostingStatus
+	state.NeedsRecalculation = cmd.NeedsRecalculation
+	state.UpdatedAt = cmd.Now
+	f.setProcessingState(state)
+	return nil
+}
+
+func (f *fakeRepo) FailProcessingState(_ context.Context, cmd app.ProcessingStateCommand) error {
+	state := f.processingState(cmd)
+	state.Status = app.ProcessingStatusFailed
+	state.FailureCode = cmd.FailureCode
+	state.FailureMessageKey = cmd.FailureMessageKey
+	state.UpdatedAt = cmd.Now
+	f.setProcessingState(state)
+	return nil
+}
+
+func (f *fakeRepo) processingState(cmd app.ProcessingStateCommand) app.ProcessingState {
+	if f.processingStates == nil {
+		f.processingStates = map[string]app.ProcessingState{}
+	}
+	return f.processingStates[processingStateKey(cmd.RestaurantID, cmd.SourceEventID, cmd.SourceEventType)]
+}
+
+func (f *fakeRepo) setProcessingState(state app.ProcessingState) {
+	if f.processingStates == nil {
+		f.processingStates = map[string]app.ProcessingState{}
+	}
+	f.processingStates[processingStateKey(state.RestaurantID, state.SourceEventID, state.SourceEventType)] = state
+}
+
+func processingStateKey(restaurantID, sourceEventID, sourceEventType string) string {
+	return strings.TrimSpace(restaurantID) + "|" + strings.TrimSpace(sourceEventID) + "|" + strings.TrimSpace(sourceEventType)
 }
 
 func (f *fakeRepo) ApplyStopListUpdate(_ context.Context, cmd app.StopListProjectionCommand) error {
@@ -113,6 +187,27 @@ func (f *fakeRepo) ListServedOrderLineQuantities(_ context.Context, _ string, or
 		out[id] = fmt.Sprintf("%.3f", qty)
 	}
 	return out, nil
+}
+
+func (f *fakeRepo) GetCurrentQuantity(_ context.Context, restaurantID, warehouseID, catalogItemID, unitCode string) (string, error) {
+	var total float64
+	for _, document := range f.documents {
+		if strings.TrimSpace(document.RestaurantID) != strings.TrimSpace(restaurantID) || strings.TrimSpace(document.WarehouseID) != strings.TrimSpace(warehouseID) {
+			continue
+		}
+		for _, entry := range document.Ledger {
+			if strings.TrimSpace(entry.CatalogItemID) != strings.TrimSpace(catalogItemID) || strings.TrimSpace(entry.UnitCode) != strings.TrimSpace(unitCode) {
+				continue
+			}
+			qty, _ := strconv.ParseFloat(strings.TrimSpace(entry.Quantity), 64)
+			if entry.MovementType == app.MovementOut {
+				total -= qty
+			} else {
+				total += qty
+			}
+		}
+	}
+	return fmt.Sprintf("%.3f", total), nil
 }
 
 func (f *fakeRepo) HasSupersedingServedEvent(_ context.Context, _ string, _ string, servedEventID string) (bool, error) {
@@ -511,7 +606,7 @@ func TestRunOnceCheckClosedReplayIsIdempotent(t *testing.T) {
 
 func TestRunOnceCreatesPurchaseLedgerFromStockReceipt(t *testing.T) {
 	repo := &fakeRepo{events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventStockReceiptCaptured, stockReceiptPayload(t))}}
-	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000c001", "018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
 
 	if err := worker.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
@@ -526,11 +621,38 @@ func TestRunOnceCreatesPurchaseLedgerFromStockReceipt(t *testing.T) {
 	if doc.Ledger[0].UnitCostMinor != 120 || doc.Ledger[0].TotalCostMinor != 360 {
 		t.Fatalf("expected estimated costs from receipt item, got %+v", doc.Ledger[0])
 	}
+	state := repo.processingStates[processingStateKey("restaurant-1", "018f0000-0000-7000-8000-0000000000a1", string(contracts.EventStockReceiptCaptured))]
+	if state.Status != app.ProcessingStatusPosted || state.PostedLedgerCount != 1 || state.CostingStatus != "final" || state.NeedsRecalculation {
+		t.Fatalf("unexpected receipt processing state: %+v", state)
+	}
+}
+
+func TestRunOnceReceiptWithoutCostMarksProcessingStateEstimated(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventStockReceiptCaptured, marshalPayload(t, map[string]any{
+		"receipt_id":          "stock-receipt-1",
+		"restaurant_id":       "restaurant-1",
+		"business_date_local": "2026-05-05",
+		"received_at":         "2026-05-05T09:00:00Z",
+		"items": []map[string]any{{
+			"catalog_item_id": "item-1",
+			"quantity":        "3.000",
+			"unit_code":       "KG",
+		}},
+	}))}}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000c001", "018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	state := repo.processingStates[processingStateKey("restaurant-1", "018f0000-0000-7000-8000-0000000000a1", string(contracts.EventStockReceiptCaptured))]
+	if state.CostingStatus != "estimated" || !state.NeedsRecalculation {
+		t.Fatalf("receipt without cost must be safely estimated, got %+v", state)
+	}
 }
 
 func TestRunOnceCreatesInventoryCountLedgerFromCountedQuantity(t *testing.T) {
 	repo := &fakeRepo{events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventInventoryCountCaptured, inventoryCountPayload(t))}}
-	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000c001", "018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
 
 	if err := worker.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
@@ -542,11 +664,74 @@ func TestRunOnceCreatesInventoryCountLedgerFromCountedQuantity(t *testing.T) {
 	if doc.Type != app.DocumentInventoryCount || len(doc.Ledger) != 1 || doc.Ledger[0].MovementType != app.MovementIn || doc.Ledger[0].Quantity != "7.500" {
 		t.Fatalf("unexpected inventory count document: %+v", doc)
 	}
+	state := repo.processingStates[processingStateKey("restaurant-1", "018f0000-0000-7000-8000-0000000000a1", string(contracts.EventInventoryCountCaptured))]
+	if state.Status != app.ProcessingStatusPosted || state.PostedLedgerCount != 1 || state.CostingStatus != "estimated" || !state.NeedsRecalculation {
+		t.Fatalf("unexpected count processing state: %+v", state)
+	}
+}
+
+func TestRunOnceInventoryCountCreatesOutAdjustmentWhenCurrentExceedsCounted(t *testing.T) {
+	repo := &fakeRepo{
+		events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventInventoryCountCaptured, inventoryCountPayload(t))},
+		documents: []app.StockDocument{{
+			ID:           "existing-doc",
+			RestaurantID: "restaurant-1",
+			Type:         app.DocumentPurchase,
+			Ledger: []app.StockLedgerEntry{{
+				ID:            "existing-ledger",
+				RestaurantID:  "restaurant-1",
+				CatalogItemID: "item-1",
+				MovementType:  app.MovementIn,
+				Quantity:      "10.000",
+				UnitCode:      "KG",
+			}},
+		}},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000c001", "018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	doc := repo.documents[1]
+	if doc.Type != app.DocumentInventoryCount || len(doc.Ledger) != 1 || doc.Ledger[0].MovementType != app.MovementOut || doc.Ledger[0].Quantity != "2.500" {
+		t.Fatalf("expected deterministic OUT adjustment from current 10.000 to counted 7.500, got %+v", doc)
+	}
+}
+
+func TestRunOnceInventoryCountNoopPostsProcessingStateWithoutDocument(t *testing.T) {
+	repo := &fakeRepo{
+		events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventInventoryCountCaptured, inventoryCountPayload(t))},
+		documents: []app.StockDocument{{
+			ID:           "existing-doc",
+			RestaurantID: "restaurant-1",
+			Type:         app.DocumentPurchase,
+			Ledger: []app.StockLedgerEntry{{
+				ID:            "existing-ledger",
+				RestaurantID:  "restaurant-1",
+				CatalogItemID: "item-1",
+				MovementType:  app.MovementIn,
+				Quantity:      "7.500",
+				UnitCode:      "KG",
+			}},
+		}},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000c001"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 1 {
+		t.Fatalf("count no-op must not create a stock document, got %+v", repo.documents)
+	}
+	state := repo.processingStates[processingStateKey("restaurant-1", "018f0000-0000-7000-8000-0000000000a1", string(contracts.EventInventoryCountCaptured))]
+	if state.Status != app.ProcessingStatusPosted || state.PostedLedgerCount != 0 || state.ExpectedLedgerCount == nil || *state.ExpectedLedgerCount != 0 || state.NeedsRecalculation {
+		t.Fatalf("unexpected no-op count state: %+v", state)
+	}
 }
 
 func TestRunOnceCreatesProductionLedgerForSemiFinishedItem(t *testing.T) {
 	repo := &fakeRepo{events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventProductionCompleted, productionPayload(t))}}
-	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000c001", "018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
 
 	if err := worker.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
@@ -558,11 +743,46 @@ func TestRunOnceCreatesProductionLedgerForSemiFinishedItem(t *testing.T) {
 	if doc.Type != app.DocumentProduction || len(doc.Ledger) != 1 || doc.Ledger[0].MovementType != app.MovementIn || doc.Ledger[0].CatalogItemID != "semi-1" {
 		t.Fatalf("unexpected production document: %+v", doc)
 	}
+	state := repo.processingStates[processingStateKey("restaurant-1", "018f0000-0000-7000-8000-0000000000a1", string(contracts.EventProductionCompleted))]
+	if state.Status != app.ProcessingStatusPosted || state.PostedLedgerCount != 1 || !state.NeedsRecalculation {
+		t.Fatalf("production without recipe/cost must post deterministically with recalculation marker, got %+v", state)
+	}
+}
+
+func TestRunOnceProductionCreatesFinishedInAndIngredientOut(t *testing.T) {
+	repo := &fakeRepo{
+		events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventProductionCompleted, productionPayload(t))},
+		recipes: map[string][]app.RecipeLine{
+			"semi-1": {{ComponentCatalogItemID: "ing-1", Quantity: "0.250", UnitCode: "KG"}},
+		},
+	}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000c001", "018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101", "018f0000-0000-7000-8000-00000000d102"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 1 || len(repo.documents[0].Ledger) != 2 {
+		t.Fatalf("expected one production document with finished and ingredient rows, got %+v", repo.documents)
+	}
+	got := map[string]app.StockLedgerEntry{}
+	for _, entry := range repo.documents[0].Ledger {
+		got[entry.CatalogItemID] = entry
+	}
+	if got["semi-1"].MovementType != app.MovementIn || got["semi-1"].Quantity != "4.000" {
+		t.Fatalf("expected finished IN row, got %+v", got["semi-1"])
+	}
+	if got["ing-1"].MovementType != app.MovementOut || got["ing-1"].Quantity != "1.000" {
+		t.Fatalf("expected ingredient OUT row, got %+v", got["ing-1"])
+	}
+	state := repo.processingStates[processingStateKey("restaurant-1", "018f0000-0000-7000-8000-0000000000a1", string(contracts.EventProductionCompleted))]
+	if state.PostedLedgerCount != 2 || state.Status != app.ProcessingStatusPosted {
+		t.Fatalf("unexpected production processing state: %+v", state)
+	}
 }
 
 func TestRunOnceCreatesWasteLedgerFromStockWriteOff(t *testing.T) {
 	repo := &fakeRepo{events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventStockWriteOffCaptured, stockWriteOffPayload(t))}}
-	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000c001", "018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
 
 	if err := worker.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
@@ -573,6 +793,91 @@ func TestRunOnceCreatesWasteLedgerFromStockWriteOff(t *testing.T) {
 	doc := repo.documents[0]
 	if doc.Type != app.DocumentWaste || len(doc.Ledger) != 1 || doc.Ledger[0].MovementType != app.MovementOut {
 		t.Fatalf("unexpected write-off document: %+v", doc)
+	}
+}
+
+func TestRunOnceStockReceiptReplayDoesNotDuplicateStateDocumentOrLedger(t *testing.T) {
+	payload := stockReceiptPayload(t)
+	repo := &fakeRepo{events: []app.QueuedEvent{
+		queuedEvent(t, "queue-1", "018f0000-0000-7000-8000-0000000000a1", contracts.EventStockReceiptCaptured, payload),
+		queuedEvent(t, "queue-2", "018f0000-0000-7000-8000-0000000000a1", contracts.EventStockReceiptCaptured, payload),
+	}}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000c001", "018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101", "018f0000-0000-7000-8000-00000000c002"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 1 || len(repo.processingStates) != 1 || len(repo.documents[0].Ledger) != 1 {
+		t.Fatalf("receipt replay must keep one state/document/ledger set, states=%+v docs=%+v", repo.processingStates, repo.documents)
+	}
+	if len(repo.processed) != 2 {
+		t.Fatalf("expected both replay queue rows processed, got %+v", repo.processed)
+	}
+}
+
+func TestRunOnceStockWriteOffReplayDoesNotDoubleWrite(t *testing.T) {
+	payload := stockWriteOffPayload(t)
+	repo := &fakeRepo{events: []app.QueuedEvent{
+		queuedEvent(t, "queue-1", "018f0000-0000-7000-8000-0000000000a1", contracts.EventStockWriteOffCaptured, payload),
+		queuedEvent(t, "queue-2", "018f0000-0000-7000-8000-0000000000a1", contracts.EventStockWriteOffCaptured, payload),
+	}}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000c001", "018f0000-0000-7000-8000-00000000d001", "018f0000-0000-7000-8000-00000000d101", "018f0000-0000-7000-8000-00000000c002"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 1 || repo.documents[0].Ledger[0].MovementType != app.MovementOut {
+		t.Fatalf("write-off replay must not double write, got %+v", repo.documents)
+	}
+}
+
+func TestRunOnceInvalidStockWriteOffCreatesSafeFailedProcessingState(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventStockWriteOffCaptured, marshalPayload(t, map[string]any{
+		"write_off_id":        "writeoff-1",
+		"restaurant_id":       "restaurant-1",
+		"business_date_local": "2026-05-05",
+		"written_off_at":      "2026-05-05T09:00:00Z",
+		"reason_code":         "expired",
+		"items": []map[string]any{{
+			"catalog_item_id": "item-1",
+			"quantity":        "0.000",
+			"unit_code":       "KG",
+		}},
+	}))}}
+	worker := app.NewWorker(repo, &fixedIDs{values: []string{"018f0000-0000-7000-8000-00000000c001", "018f0000-0000-7000-8000-00000000d001"}}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.documents) != 0 || len(repo.failed) != 0 || len(repo.processed) != 1 {
+		t.Fatalf("safe validation failure must not create document or retry queue, docs=%+v failed=%+v processed=%+v", repo.documents, repo.failed, repo.processed)
+	}
+	state := repo.processingStates[processingStateKey("restaurant-1", "018f0000-0000-7000-8000-0000000000a1", string(contracts.EventStockWriteOffCaptured))]
+	if state.Status != app.ProcessingStatusFailed || state.FailureCode != "VALIDATION_FAILED" || state.FailureMessageKey != "inventory.processing.validation_failed" {
+		t.Fatalf("unexpected failed processing state: %+v", state)
+	}
+}
+
+func TestRunOnceNonInventoryEventCreatesNoProcessingState(t *testing.T) {
+	repo := &fakeRepo{events: []app.QueuedEvent{sampleQueuedEvent(t, contracts.EventKitchenTicketStatusChanged, marshalPayload(t, map[string]any{
+		"status_event_id": "status-event-1",
+		"restaurant_id":   "restaurant-1",
+		"order_id":        "order-1",
+		"order_line_id":   "line-1",
+		"from_status":     "new",
+		"to_status":       "accepted",
+		"changed_at":      "2026-05-05T09:00:00Z",
+	}))}}
+	worker := app.NewWorker(repo, &fixedIDs{}, fixedClock{}, app.Config{WorkerID: "worker-1", BatchSize: 10})
+
+	if err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.processingStates) != 0 {
+		t.Fatalf("non-inventory event must not create processing state, got %+v", repo.processingStates)
+	}
+	if repo.failed["queue-1"] == "" {
+		t.Fatalf("unexpected queue outcome for unsupported non-inventory event: %+v", repo.failed)
 	}
 }
 
@@ -809,8 +1114,20 @@ func (f *failingRepo) ListModifierOptionLinks(context.Context, string, []string)
 func (f *failingRepo) ListServedOrderLineQuantities(context.Context, string, []string) (map[string]string, error) {
 	return nil, f.err
 }
+func (f *failingRepo) GetCurrentQuantity(context.Context, string, string, string, string) (string, error) {
+	return "", f.err
+}
 func (f *failingRepo) HasSupersedingServedEvent(context.Context, string, string, string) (bool, error) {
 	return false, f.err
+}
+func (f *failingRepo) BeginProcessingState(context.Context, app.ProcessingStateCommand) (app.ProcessingState, error) {
+	return app.ProcessingState{}, f.err
+}
+func (f *failingRepo) CompleteProcessingState(context.Context, app.ProcessingStateCommand) error {
+	return f.err
+}
+func (f *failingRepo) FailProcessingState(context.Context, app.ProcessingStateCommand) error {
+	return f.err
 }
 
 type fixedClock struct{}
@@ -833,6 +1150,7 @@ func queuedEvent(t *testing.T, queueID, eventID string, eventType contracts.Even
 		DeviceID:     "device-1",
 		EventID:      eventID,
 		EventType:    eventType,
+		AggregateID:  "aggregate-1",
 		OccurredAt:   time.Date(2026, 5, 5, 9, 0, 0, 0, time.UTC),
 		Payload:      payload,
 	}
@@ -1153,4 +1471,25 @@ func ledgerQuantityByCatalogItem(document app.StockDocument) map[string]string {
 		out[entry.CatalogItemID] = entry.Quantity
 	}
 	return out
+}
+
+func aggregateTestCosting(ledger []app.StockLedgerEntry) (string, bool) {
+	status := "final"
+	for _, entry := range ledger {
+		switch entry.CostingStatus {
+		case "failed":
+			return "failed", false
+		case "needs_recalculation":
+			status = "needs_recalculation"
+		case "estimated":
+			if status != "needs_recalculation" {
+				status = "estimated"
+			}
+		case "recalculated":
+			if status == "final" {
+				status = "recalculated"
+			}
+		}
+	}
+	return status, status == "estimated" || status == "needs_recalculation"
 }

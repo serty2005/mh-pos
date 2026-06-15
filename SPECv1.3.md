@@ -43,7 +43,7 @@
 - Edge -> Cloud operational outbox foundation;
 - Cloud -> Edge master-data ingest for supported streams.
 - POS Edge stop-list sale blocking при `AddOrderLine` и увеличении quantity по direct `catalog_item_id` и mandatory active recipe components из локальных `recipe_versions`/`recipe_lines`.
-- Целевая Cloud-centric inventory architecture зафиксирована в `docs/backend/INVENTORY-COSTING-SPEC.md`. Реализовано сейчас: bounded worker, `stock_ledger` и materialized `stock-balances`; полный runtime engine не реализован сейчас.
+- Целевая Cloud-centric inventory architecture зафиксирована в `docs/backend/INVENTORY-COSTING-SPEC.md`. Реализовано сейчас: bounded worker, `stock_ledger`, materialized `stock-balances` и Cloud-состояние обработки для receipt/count/write-off/production; полный costing/recalculation runtime engine не реализован сейчас.
 
 Цель полной пилотной реализации:
 
@@ -300,7 +300,10 @@ Boundary rules:
 
 Inventory and costing logic:
 
+- Реализовано сейчас: `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` имеют Cloud-owned `inventory_document_processing_state` с уникальным `(restaurant_id, source_event_id, source_event_type)`. Повтор source event не создает повторные stock documents/ledger/balance mutations; safe validation failures фиксируются как `failed` state с безопасными failure code/message key без raw payload.
+- Реализовано сейчас: `InventoryCountCaptured` приводит Cloud materialized balance к counted quantity через deterministic `IN`/`OUT` adjustment; если counted equals current, Cloud создает posted processing state с нулем ledger rows и без stock document.
 - `ProductionCompleted` создает Cloud `PRODUCTION`: приходует заготовку и списывает сырье.
+- Реализовано сейчас: если active recipe/cost basis для `ProductionCompleted` отсутствуют, worker сохраняет факт прихода готовой позиции `IN` и помечает costing visibility как `estimated`/`needs_recalculation`; retro recalculation DAG не запускается.
 - Реализовано сейчас: продажа основной позиции разворачивается Cloud Inventory Worker по active recipe version, если она есть; иначе списывается сам `catalog_item_id`.
 - Реализовано сейчас: selected modifier с Cloud-authoritative `linked_catalog_item_id` создает отдельное прямое `SALE/OUT` списание linked item; linked modifier item не разворачивается в recipe в этой итерации.
 - Auto-production при продаже сначала списывает доступную заготовку, а недостающую часть split-списанием разворачивает по рецепту до сырья.

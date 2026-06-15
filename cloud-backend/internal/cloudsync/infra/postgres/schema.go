@@ -342,6 +342,13 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Indexes:       []string{"stock_documents_restaurant_occurred_at", "stock_documents_restaurant_warehouse_occurred_at", "stock_documents_source_event_unique"},
 		},
 		{
+			Table:         "inventory_document_processing_state",
+			RequiredBy:    "Cloud Inventory Worker idempotent audit state for Edge stock input events",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"id", "restaurant_id", "source_event_id", "source_event_type", "source_aggregate_id", "stock_document_id", "status", "posted_ledger_count", "expected_ledger_count", "costing_status", "needs_recalculation", "failure_code", "failure_message_key", "created_at", "updated_at", "posted_at"},
+			Indexes:       []string{"inventory_document_processing_state_source_event_unique", "inventory_document_processing_state_restaurant_type_status", "inventory_document_processing_state_document"},
+		},
+		{
 			Table:         "inventory_event_queue",
 			RequiredBy:    "Cloud Inventory Worker durable queue for accepted Edge inventory events",
 			MigrationFile: "001_init.sql",

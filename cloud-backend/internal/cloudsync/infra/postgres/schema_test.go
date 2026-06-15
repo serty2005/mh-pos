@@ -41,6 +41,7 @@ func TestRequiredSchemaIncludesCloudInventoryFoundationTables(t *testing.T) {
 	for table, cols := range map[string][]string{
 		"inventory_event_queue":                {"id", "receipt_id", "restaurant_id", "warehouse_id", "device_id", "event_id", "event_type", "status", "attempts", "occurred_at", "created_at", "updated_at"},
 		"stock_documents":                      {"id", "restaurant_id", "warehouse_id", "document_type", "source_event_id", "source_event_type", "business_date_local", "occurred_at", "created_at"},
+		"inventory_document_processing_state":  {"id", "restaurant_id", "source_event_id", "source_event_type", "source_aggregate_id", "stock_document_id", "status", "posted_ledger_count", "expected_ledger_count", "costing_status", "needs_recalculation", "failure_code", "failure_message_key", "created_at", "updated_at", "posted_at"},
 		"stock_ledger":                         {"id", "restaurant_id", "warehouse_id", "stock_document_id", "source_event_id", "source_event_type", "catalog_item_id", "order_line_id", "movement_type", "quantity", "unit_code", "unit_cost_minor", "total_cost_minor", "costing_status", "occurred_at", "business_date_local", "created_at"},
 		"inventory_stock_balances":             {"restaurant_id", "warehouse_id", "catalog_item_id", "unit_code", "quantity_on_hand", "last_movement_at", "last_ledger_entry_id", "costing_status", "needs_recalculation", "created_at", "updated_at"},
 		"stock_recalculation_jobs":             {"id", "restaurant_id", "source_document_id", "status", "recalculate_from", "created_at", "updated_at"},
@@ -70,9 +71,10 @@ func TestRequiredSchemaIncludesCloudInventoryIndexes(t *testing.T) {
 		reqs[req.Table] = indexes
 	}
 	for table, indexes := range map[string][]string{
-		"inventory_event_queue": {"inventory_event_queue_status_retry", "inventory_event_queue_event_type", "inventory_event_queue_restaurant_warehouse_order"},
-		"stock_documents":       {"stock_documents_restaurant_occurred_at", "stock_documents_restaurant_warehouse_occurred_at", "stock_documents_source_event_unique"},
-		"stock_ledger":          {"stock_ledger_restaurant_occurred_at", "stock_ledger_restaurant_warehouse_occurred_at", "stock_ledger_source_event", "stock_ledger_order_line_consumption"},
+		"inventory_event_queue":               {"inventory_event_queue_status_retry", "inventory_event_queue_event_type", "inventory_event_queue_restaurant_warehouse_order"},
+		"stock_documents":                     {"stock_documents_restaurant_occurred_at", "stock_documents_restaurant_warehouse_occurred_at", "stock_documents_source_event_unique"},
+		"inventory_document_processing_state": {"inventory_document_processing_state_source_event_unique", "inventory_document_processing_state_restaurant_type_status", "inventory_document_processing_state_document"},
+		"stock_ledger":                        {"stock_ledger_restaurant_occurred_at", "stock_ledger_restaurant_warehouse_occurred_at", "stock_ledger_source_event", "stock_ledger_order_line_consumption"},
 		"inventory_stock_balances": {
 			"inventory_stock_balances_pkey",
 			"inventory_stock_balances_restaurant_warehouse_item",
@@ -90,6 +92,21 @@ func TestRequiredSchemaIncludesCloudInventoryIndexes(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestProcessingStateSchemaHasNoRawPayloadColumn(t *testing.T) {
+	for _, req := range RequiredSchema() {
+		if req.Table != "inventory_document_processing_state" {
+			continue
+		}
+		for _, column := range req.Columns {
+			if column == "raw_payload" || column == "payload_json" {
+				t.Fatalf("processing state must not expose raw payload column: %+v", req.Columns)
+			}
+		}
+		return
+	}
+	t.Fatal("expected inventory_document_processing_state in schema verification contract")
 }
 
 func TestRequiredSchemaIncludesFinancialOperationProjection(t *testing.T) {
@@ -165,6 +182,8 @@ func TestCloudInventoryConstraintsRejectInvalidValues(t *testing.T) {
 		`INSERT INTO stock_documents(id,restaurant_id,document_type,source_event_id,source_event_type,business_date_local,occurred_at,created_at) VALUES ('inv-doc-invalid','rest-1','BAD','event-2','CheckClosed','2026-05-19',now(),now())`,
 		`INSERT INTO stock_ledger(id,restaurant_id,stock_document_id,source_event_id,source_event_type,catalog_item_id,movement_type,quantity,unit_code,unit_cost_minor,total_cost_minor,costing_status,occurred_at,business_date_local,created_at) VALUES ('ledger-bad-movement','rest-1','inv-doc-valid','event-3','CheckClosed','item-1','SIDE',1,'PC',10,10,'final',now(),'2026-05-19',now())`,
 		`INSERT INTO stock_ledger(id,restaurant_id,stock_document_id,source_event_id,source_event_type,catalog_item_id,movement_type,quantity,unit_code,unit_cost_minor,total_cost_minor,costing_status,occurred_at,business_date_local,created_at) VALUES ('ledger-bad-costing','rest-1','inv-doc-valid','event-4','CheckClosed','item-1','OUT',1,'PC',10,10,'bad',now(),'2026-05-19',now())`,
+		`INSERT INTO inventory_document_processing_state(id,restaurant_id,source_event_id,source_event_type,status,posted_ledger_count,costing_status,needs_recalculation,created_at,updated_at) VALUES ('state-bad-type','rest-1','event-5','CheckClosed','accepted',0,'estimated',false,now(),now())`,
+		`INSERT INTO inventory_document_processing_state(id,restaurant_id,source_event_id,source_event_type,status,posted_ledger_count,costing_status,needs_recalculation,created_at,updated_at) VALUES ('state-bad-status','rest-1','event-6','StockReceiptCaptured','retrying',0,'estimated',false,now(),now())`,
 	} {
 		if _, err := pool.Exec(ctx, q); err == nil {
 			t.Fatal("expected constraint violation")

@@ -55,6 +55,93 @@ WHERE restaurant_id = 'restaurant-1' AND warehouse_id = 'warehouse-main' AND cat
 	}
 }
 
+func TestCreateStockDocumentPostsProcessingStateIdempotently(t *testing.T) {
+	ctx := context.Background()
+	pool, closeFn := openInventoryPostgresWithBaseline(t, ctx)
+	defer closeFn()
+	repo := NewRepository(pool)
+	now := time.Date(2026, 6, 15, 9, 0, 0, 0, time.UTC)
+
+	document := stockDocumentForTest("doc-receipt", "event-receipt", app.DocumentPurchase, app.MovementIn, "3.000", "final", now)
+	document.SourceEventType = "StockReceiptCaptured"
+	document.Ledger[0].SourceEventType = "StockReceiptCaptured"
+	document.ProcessingState = &app.ProcessingStateCommand{
+		ID:                "state-receipt",
+		RestaurantID:      "restaurant-1",
+		SourceEventID:     "event-receipt",
+		SourceEventType:   "StockReceiptCaptured",
+		SourceAggregateID: "receipt-1",
+		Now:               now,
+	}
+	if err := repo.CreateStockDocument(ctx, document); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateStockDocument(ctx, document); err != nil {
+		t.Fatal(err)
+	}
+
+	var status, documentID, costingStatus string
+	var postedCount, expectedCount int
+	var needs bool
+	if err := pool.QueryRow(ctx, `
+SELECT status,COALESCE(stock_document_id,''),posted_ledger_count,expected_ledger_count,costing_status,needs_recalculation
+FROM inventory_document_processing_state
+WHERE restaurant_id = 'restaurant-1' AND source_event_id = 'event-receipt' AND source_event_type = 'StockReceiptCaptured'`).Scan(
+		&status, &documentID, &postedCount, &expectedCount, &costingStatus, &needs,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if status != "posted" || documentID != "doc-receipt" || postedCount != 1 || expectedCount != 1 || costingStatus != "final" || needs {
+		t.Fatalf("unexpected processing state: status=%s doc=%s posted=%d expected=%d costing=%s needs=%v", status, documentID, postedCount, expectedCount, costingStatus, needs)
+	}
+	var stateCount, ledgerCount int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(1) FROM inventory_document_processing_state`).Scan(&stateCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT COUNT(1) FROM stock_ledger`).Scan(&ledgerCount); err != nil {
+		t.Fatal(err)
+	}
+	if stateCount != 1 || ledgerCount != 1 {
+		t.Fatalf("replay must keep one state and one ledger row, state=%d ledger=%d", stateCount, ledgerCount)
+	}
+}
+
+func TestCreateStockDocumentRollsBackProcessingStateWithLedgerFailure(t *testing.T) {
+	ctx := context.Background()
+	pool, closeFn := openInventoryPostgresWithBaseline(t, ctx)
+	defer closeFn()
+	repo := NewRepository(pool)
+	now := time.Date(2026, 6, 15, 9, 0, 0, 0, time.UTC)
+
+	document := stockDocumentForTest("doc-bad", "event-bad", app.DocumentPurchase, app.MovementIn, "3.000", "final", now)
+	document.SourceEventType = "StockReceiptCaptured"
+	document.Ledger[0].SourceEventType = "StockReceiptCaptured"
+	document.Ledger[0].UnitCode = ""
+	document.ProcessingState = &app.ProcessingStateCommand{
+		ID:              "state-bad",
+		RestaurantID:    "restaurant-1",
+		SourceEventID:   "event-bad",
+		SourceEventType: "StockReceiptCaptured",
+		Now:             now,
+	}
+	if err := repo.CreateStockDocument(ctx, document); err == nil {
+		t.Fatal("expected invalid ledger row to fail")
+	}
+	var stateCount, documentCount, ledgerCount int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(1) FROM inventory_document_processing_state`).Scan(&stateCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT COUNT(1) FROM stock_documents`).Scan(&documentCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT COUNT(1) FROM stock_ledger`).Scan(&ledgerCount); err != nil {
+		t.Fatal(err)
+	}
+	if stateCount != 0 || documentCount != 0 || ledgerCount != 0 {
+		t.Fatalf("document/ledger/state must roll back together, state=%d doc=%d ledger=%d", stateCount, documentCount, ledgerCount)
+	}
+}
+
 func TestCreateStockDocumentAggregatesBalanceCostingStatusConservatively(t *testing.T) {
 	ctx := context.Background()
 	pool, closeFn := openInventoryPostgresWithBaseline(t, ctx)
