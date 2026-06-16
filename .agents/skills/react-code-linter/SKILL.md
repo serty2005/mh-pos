@@ -1,17 +1,34 @@
 ---
 name: react-code-linter
-description: Use when you have lint errors, formatting issues, or before committing code to ensure it passes CI.
+description: Use after React/TypeScript UI changes, when npm build/typecheck/test fails, or before final reporting for UI work in pos-ui-g or cloud-ui-g. Uses this project's npm scripts, not yarn.
 ---
 
-# Fix Lint and Formatting
+# UI Verification
 
-## Instructions
+Use the smallest check that can catch the risk introduced by the change.
 
-1. Run `yarn prettier` to fix formatting
-2. Run `yarn linc` to check for remaining lint issues
-3. Report any remaining manual fixes needed
+## Commands
 
-## Common Mistakes
+- POS UI build: `cd pos-ui-g && npm run build`
+- POS UI typecheck: `cd pos-ui-g && npm run lint`
+- POS UI unit tests: `cd pos-ui-g && npm run test`
+- POS UI e2e: `cd pos-ui-g && npm run test:e2e`
+- Cloud UI build: `cd cloud-ui-g && npm run build`
+- Cloud UI typecheck: `cd cloud-ui-g && npm run lint`
+- Cloud UI unit tests: `cd cloud-ui-g && npm run test`
 
-- **Running prettier on wrong files** - `yarn prettier` only formats changed files
-- **Ignoring linc errors** - These will fail CI, fix them before committing
+## What To Run
+
+- Style-only change: build, plus Playwright/screenshot if visual layout changed.
+- Type/API/client change: build and typecheck.
+- Store/state/business UI logic: build and unit tests if relevant tests exist.
+- Dialog, table, navigation, auth/session, license, order/check/payment/shift workflow: build and Playwright when environment allows.
+- i18n change: build and verify all supported locale files were updated.
+
+## Rules
+
+- Do not run `yarn`; this project uses npm scripts.
+- Do not run every command by default. Match checks to changed files and risk.
+- If a command fails, capture the first actionable error and fix it when in scope.
+- Do not paste full logs into the final report. Summarize the failing command and key error.
+- If the environment prevents a check, state that clearly.
