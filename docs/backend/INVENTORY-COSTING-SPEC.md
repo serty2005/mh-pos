@@ -28,7 +28,7 @@ POS Edge / KDS
 
 POS Edge сохраняет cashier/KDS факты локально и отправляет события через outbox. Cloud API принимает события идемпотентно, пишет их в PostgreSQL `inbox_events` и не выполняет synchronous dual-write в ClickHouse. Async Batch Forwarder экспортирует события в ClickHouse `raw_business_events`. Inventory Worker асинхронно обрабатывает accepted events, разворачивает рецепты, применяет stop-list side effects, создает Cloud-owned складские документы и пишет хронологический `stock_ledger`.
 
-PostgreSQL хранит транзакционный журнал, materialized balances и состояния пересчета. Реализовано сейчас: ClickHouse хранит immutable `raw_business_events` бессрочно, получает первый bounded slice `olap_stock_moves` из PostgreSQL `stock_ledger`, отдает read-only export status, первый bounded stock movement summary, sales/kitchen summary и kitchen timing summary. Cloud backend также отдает bounded `stock-balances` read model из PostgreSQL `inventory_stock_balances` с deterministic costing status без raw payload. Реализовано сейчас: ограниченный retro recalculation DAG для Cloud-owned inventory costing создает idempotent jobs, affected ranges и recipe dependency edges, а background worker пересчитывает только costing fields/status существующих `stock_ledger` rows. Legacy `cloud-ui` реализовано сейчас показывает bounded read-only `stock-balances`, OLAP export status, stock moves, stock move summary, backfill job status и kitchen timing summary; активный `cloud-ui-g` эти inventory/OLAP screens еще не реализует. Mutating retry/backfill controls, COGS, маржинальность, production-grade balance rebuild tooling, Cloud UI operator workflow и rich BI остаются `запланировано далее`.
+PostgreSQL хранит транзакционный журнал, materialized balances и состояния пересчета. Реализовано сейчас: ClickHouse хранит immutable `raw_business_events` бессрочно, получает первый bounded slice `olap_stock_moves` из PostgreSQL `stock_ledger`, отдает read-only export status, первый bounded stock movement summary, sales/kitchen summary и kitchen timing summary. Cloud backend также отдает bounded `stock-balances` read model из PostgreSQL `inventory_stock_balances` с deterministic costing status без raw payload. Реализовано сейчас: ограниченный retro recalculation DAG для Cloud-owned inventory costing создает idempotent jobs, affected ranges и recipe dependency edges, а background worker пересчитывает только costing fields/status существующих `stock_ledger` rows. Активный `cloud-ui-g` эти inventory/OLAP screens еще не реализует. Mutating retry/backfill controls, COGS, маржинальность, production-grade balance rebuild tooling, Cloud UI operator workflow и rich BI остаются `запланировано далее`.
 
 ## Pilot Implementation Boundary
 
@@ -66,7 +66,7 @@ PostgreSQL хранит транзакционный журнал, materialized 
 - полноценный Edge-origin stop-list edit UI и production-grade review workflow поверх уже реализованного backend route/review slice;
 - расширенный stop-list edit UX from KDS/POS Edge поверх backend command route;
 - full inventory engine beyond текущего bounded worker/materialized-balance/recalculation slice: semi-finished auto-production split, production-grade balance rebuild и richer costing math; bounded refund/cancellation dispositions `return_to_stock` и `write_off_waste` реализованы сейчас без PSP/fiscal/COGS/margin;
-- ClickHouse `olap_stock_moves`, read-only export status, минимальный support-only export retry control, async backfill jobs foundation, первый stock movement summary, первый bounded sales/kitchen summary и bounded kitchen timing summary реализованы сейчас; legacy `cloud-ui` читает read-only export status/stock movement slices/backfill job status/timing summary и не вызывает support-only mutating retry/backfill controls. Активный `cloud-ui-g` должен переносить эти screens отдельно и только поверх подтвержденных routes. COGS/margin и richer sales aggregates остаются `запланировано далее`;
+- ClickHouse `olap_stock_moves`, read-only export status, минимальный support-only export retry control, async backfill jobs foundation, первый stock movement summary, первый bounded sales/kitchen summary и bounded kitchen timing summary реализованы сейчас; активный `cloud-ui-g` должен переносить эти screens отдельно и только поверх подтвержденных routes. COGS/margin и richer sales aggregates остаются `запланировано далее`;
 - fault-injection reconnect/outbox ACK и production-grade costing/recalculation smoke.
 
 Вне текущего объема полного пилота:
@@ -567,7 +567,7 @@ Balance-level costing visibility агрегирует существующие `
 Запланировано до полного пилота:
 
 - расширить Cloud stop-list review и Edge manager/KDS edit flow до production UX;
-- добавить production auth/RBAC perimeter и mutating operator UI для ClickHouse projections; legacy `cloud-ui` ограничен read-only bounded slices и backfill job status, а активный `cloud-ui-g` пока не имеет этих screens;
+- добавить production auth/RBAC perimeter и mutating operator UI для ClickHouse projections; активный `cloud-ui-g` пока не имеет этих screens;
 - расширить первый sales/kitchen summary до richer sales/kitchen/costing bounded Cloud OLAP API поверх ClickHouse projections;
 - покрыть auto-production split, production-grade balance rebuild и richer costing math тестами.
 

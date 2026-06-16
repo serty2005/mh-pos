@@ -661,7 +661,7 @@ def seed_full_system(
         cloud_client,
         "POST",
         f"{API_PREFIX}/restaurants/{restaurant_id}/devices/generate-pairing-code",
-        {"node_device_id": node_device_id, "display_name": f"POS Terminal {suffix}", "expires_in_minutes": 30},
+        {"display_name": f"POS Terminal {suffix}", "expires_in_minutes": 30},
         expected_status=(201,),
     )
     pairing_code = pairing["pairing_code"]
@@ -672,6 +672,7 @@ def seed_full_system(
         "restaurant_id": restaurant_id,
         "node_device_id": node_device_id,
         "pairing_code": pairing_code,
+        "pairing_id": pairing.get("pairing_id", ""),
         "pairing_status": paired,
         "cloud_base_url": cloud_base_url,
         "generated_at_unix": int(time.time()),

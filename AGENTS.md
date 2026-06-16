@@ -140,7 +140,13 @@ go test ./...
 - После изменений UI выполнять:
 
 ```powershell
-cd pos-ui
+cd pos-ui-g
+npm install
+npm run build
+```
+
+```powershell
+cd cloud-ui-g
 npm install
 npm run build
 ```
@@ -176,7 +182,13 @@ go test ./...
 ```
 
 ```powershell
-cd pos-ui
+cd pos-ui-g
+npm install
+npm run build
+```
+
+```powershell
+cd cloud-ui-g
 npm install
 npm run build
 ```

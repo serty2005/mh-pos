@@ -220,7 +220,7 @@ Cloud production delivery path:
 Zero-to-Cashier provisioning path:
 
 - Option A: при `POS_CLOUD_SYNC_URL=http://localhost:8090` Edge регистрируется в Cloud через `POST /api/v1/devices/register`, хранит локальный статус `pending_admin_approval`, polling получает assignment, скачивает snapshot и вызывает существующий local pair use case.
-- Option B: UI или оператор отправляет license code в `POST /api/v1/system/provisioning/pair-via-license`; Edge resolve-ит code через `LICENSE_SERVER_URL`, сохраняет cloud config/token, скачивает snapshot, применяет master-data и переходит в статус `paired`.
+- Option B: UI или оператор отправляет license code в `POST /api/v1/system/provisioning/pair-via-license`; Edge resolve-ит code через `LICENSE_SERVER_URL`, получает `cloud_url` и `pairing_id`, отправляет в Cloud encrypted consume со своим `node_device_id`, получает node token/snapshot URL, скачивает snapshot, применяет master-data и переходит в статус `paired`.
 - `node_device_id` не равен `client_device_id`: первый принадлежит Edge Backend и хранится в SQLite, второй принадлежит браузеру/UI и auto-registers при PIN login.
 
 `..\scripts\seed-dev-system.py` проверяет этот путь локально: Cloud CRUD -> publish -> POS Edge license pairing -> POS catalog/menu read -> PIN login Cloud-created employee.

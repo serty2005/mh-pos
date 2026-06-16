@@ -158,17 +158,17 @@
 - Pricing/taxes в `cloud-ui-g` дополнительно читает и обновляет package `pricing_policy` через provisioning route.
 - UI strings в `cloud-ui-g` идут через локальный i18n слой, API responses валидируются Zod-схемами, safe error banner не должен показывать raw payload, PIN/token/request dump или backend internals.
 - `cloud-ui-g` имеет navigation placeholders `inventory` и `reports`, но соответствующие React runtime screens сейчас не реализованы и показываются как blocked sections.
-- Устаревший `cloud-ui` на Vue/Quasar остается в репозитории как legacy/reference-only surface: в нем есть более широкие manager-facing экраны для financial operations, recipes/stop-list, proposal review, inventory readiness, OLAP/read-only reporting и `sales-kitchen-summary`, но новые Cloud UI правки больше не выполняются в этом каталоге.
+- Устаревший `cloud-ui` на Vue/Quasar удален из runtime tree. Исторически он содержал более широкие manager-facing экраны для financial operations, recipes/stop-list, proposal review, inventory readiness, OLAP/read-only reporting и `sales-kitchen-summary`, но новые Cloud UI правки выполняются только в `cloud-ui-g`.
 
 Запланировано далее:
 
 - Дальнейшая разработка Cloud-бэкофиса идет только в `cloud-ui-g`.
-- Перенос нужных legacy-сценариев из `cloud-ui` в `cloud-ui-g` выполняется постепенно и только поверх подтвержденных backend routes/DTO.
+- Перенос нужных исторических legacy-сценариев в `cloud-ui-g` выполняется постепенно и только поверх подтвержденных backend routes/DTO.
 - Inventory/reporting/OLAP/proposal review экраны в `cloud-ui-g` добавляются отдельно; нельзя считать их реализованными в активном React UI только потому, что похожий код есть в устаревшем Vue UI.
 
 Вне текущего объема:
 
-- Новая разработка Cloud-бэкофиса в `cloud-ui`.
+- Новая разработка Cloud-бэкофиса вне `cloud-ui-g`.
 - Cashier runtime, KDS runtime screens, PSP, fiscalization, delivery и POS order/payment/check/precheck flows в Cloud UI.
 - Cloud auth/RBAC UI до появления подтвержденного backend-контракта.
 - Inventory runtime actions, mutating OLAP retry/backfill controls, BI dashboards, charts и COGS/margin аналитика в активном `cloud-ui-g`.

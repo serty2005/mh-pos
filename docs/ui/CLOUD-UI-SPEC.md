@@ -6,7 +6,7 @@
 
 `cloud-ui-g` является отдельным React/Vite/TypeScript интерфейсом для `cloud-backend` и Cloud-owned операционных сценариев. Он не является частью `pos-ui`, не использует POS session, POS Edge runtime endpoints, cashier routes или локальные POS stores.
 
-`cloud-ui` на Vue/Quasar признан устаревшим. Он остается в репозитории как legacy/reference-only код для уже написанных Cloud UI сценариев, но дальнейшая разработка Cloud-бэкофиса идет мимо `cloud-ui`.
+`cloud-ui` на Vue/Quasar признан устаревшим и удален из runtime tree. Дальнейшая разработка Cloud-бэкофиса идет только в `cloud-ui-g`.
 
 ## Статус Каталогов
 
@@ -15,16 +15,16 @@
 - `cloud-ui-g` — активный Cloud UI runtime target.
 - `cloud-ui-g/package.json` содержит `dev`, `build`, `preview`, `clean`, `lint` и `test`.
 - `cloud-ui-g` использует `VITE_CLOUD_API_BASE`; default из `.env.example` — `http://localhost:8090/api/v1`.
-- `cloud-ui` сохраняет legacy Vue/Quasar screens и собственные `dev`, `build`, `preview`, `test`, но не является целевым каталогом для новых правок.
+- `cloud-ui` удален; старые Vue/Quasar scripts больше не являются частью проверок.
 
 запланировано далее:
 
-- переносить нужные manager-facing сценарии из `cloud-ui` в `cloud-ui-g` только после сверки с текущими backend routes/DTO;
+- переносить нужные manager-facing сценарии в `cloud-ui-g` только после сверки с текущими backend routes/DTO;
 - поддерживать документацию по активному Cloud UI вокруг `cloud-ui-g`.
 
 вне текущего объема:
 
-- новые Cloud UI фичи в `cloud-ui`;
+- новые Cloud UI фичи вне `cloud-ui-g`;
 - перенос React/Vite экранов обратно в Vue/Quasar.
 
 ## Реализовано Сейчас В `cloud-ui-g`
@@ -45,9 +45,9 @@
   - `publications`.
 - Navigation placeholders `inventory` и `reports` существуют, но пока показывают blocked section и не считаются реализованными runtime screens.
 - Dashboard readiness проверяет наличие roles/employees, halls/tables, catalog items, menu items, modifiers/pricing, Edge assignment и publication.
-- Edge sync показывает unassigned devices, assignment status, pairing code generation и safe Edge events list.
+- Edge sync показывает server-owned pending devices, restaurant-owned assigned devices, assignment status, pairing code generation, safe Edge events list по выбранному устройству и metadata по отправленным Cloud -> Edge master-data packages без раскрытия raw payload.
 - Restaurants раздел управляет restaurant records.
-- Staff/permissions раздел управляет POS Edge roles, employees, role assignment, employee status, PIN rotation и POS permission profiles/matrix; это не Cloud operator RBAC и не production Cloud authorization boundary.
+- Staff/permissions раздел управляет POS Edge roles, employees, role assignment, employee status, PIN rotation и POS permission profiles/matrix; список сотрудников показан компактной таблицей, create/edit сотрудника выполняется в модалке, а редактирование прав идет только через общую матрицу ролей со строками сотрудников только для чтения, которые пересчитываются от текущих прав должности; справочник прав поддерживает поиск и выделение связанного столбца матрицы; это не Cloud operator RBAC и не production Cloud authorization boundary.
 - Catalog раздел управляет catalog items, folders, folder parameters, tags и command-only item tag assignment.
 - Menu раздел управляет menu items и command-only menu category create.
 - Modifiers раздел управляет modifier groups, options и bindings.
@@ -120,20 +120,22 @@
 - `PATCH /api/v1/master-data/floor/tables/{id}`
 - `POST /api/v1/master-data/floor/tables/{id}/archive`
 - `GET /api/v1/devices/unassigned`
+- `GET /api/v1/restaurants/{restaurant_id}/devices`
 - `POST /api/v1/restaurants/{restaurant_id}/devices/{node_device_id}/assign`
 - `GET /api/v1/devices/{node_device_id}/assignment-status`
 - `POST /api/v1/restaurants/{restaurant_id}/devices/generate-pairing-code`
+- `POST /api/v1/devices/pairing/consume`
 - `GET /api/v1/sync/edge-events?restaurant_id=&limit=`
 - `GET /api/v1/restaurants/{id}/master-data/publication-state`
 - `POST /api/v1/restaurants/{id}/master-data/publish`
 
-## Legacy `cloud-ui`
+## Удаленный Legacy `cloud-ui`
 
 реализовано сейчас:
 
-- `cloud-ui` содержит Vue/Quasar implementation более широкого manager-facing набора экранов: financial operations, recipe versions, proposal review, inventory readiness, OLAP export/read-only slices, sale preparation links и sales/kitchen summary.
-- Этот код может использоваться как reference для подтвержденных API schemas, safe error handling и UX-инвариантов.
-- Наличие экрана в `cloud-ui` не означает, что такой экран реализован в активном `cloud-ui-g`.
+- Удаленный Vue/Quasar `cloud-ui` исторически содержал более широкий manager-facing набор экранов: financial operations, recipe versions, proposal review, inventory readiness, OLAP export/read-only slices, sale preparation links и sales/kitchen summary.
+- Источником истины для переноса остаются текущие backend routes/DTO, docs и активный `cloud-ui-g`, а не удаленный runtime.
+- Наличие исторического экрана в старом `cloud-ui` не означает, что такой экран реализован в активном `cloud-ui-g`.
 
 запланировано далее:
 
@@ -142,7 +144,7 @@
 вне текущего объема:
 
 - поддерживать два равноправных Cloud UI runtime;
-- добавлять новые Cloud UI features в `cloud-ui`.
+- добавлять новые Cloud UI features вне `cloud-ui-g`.
 
 ## UX И Безопасность
 

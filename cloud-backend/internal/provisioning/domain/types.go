@@ -74,8 +74,9 @@ type UnassignedEdgeNode struct {
 type PairingCode struct {
 	ID              string            `json:"id"`
 	PairingCodeHash string            `json:"-"`
+	PairingKey      string            `json:"-"`
 	RestaurantID    string            `json:"restaurant_id"`
-	NodeDeviceID    string            `json:"node_device_id"`
+	NodeDeviceID    string            `json:"node_device_id,omitempty"`
 	CloudURL        string            `json:"cloud_url"`
 	Status          PairingCodeStatus `json:"status"`
 	ExpiresAt       time.Time         `json:"expires_at"`

@@ -2,6 +2,12 @@ package provisioning
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -19,6 +25,7 @@ import (
 type CloudClient interface {
 	RegisterDevice(context.Context, string, CloudRegisterRequest) (CloudRegisterResponse, error)
 	AssignmentStatus(context.Context, string, string) (CloudAssignmentStatus, error)
+	ConsumePairingCode(context.Context, string, CloudPairingConsumeRequest) (CloudPairingConsumeResponse, error)
 	DownloadSnapshot(context.Context, string) (appmastersync.ApplyMasterDataCommand, error)
 }
 
@@ -53,15 +60,28 @@ type CloudAssignmentStatus struct {
 }
 
 type LicenseResolveRequest struct {
-	PairingCode  string `json:"pairing_code"`
-	NodeDeviceID string `json:"node_device_id"`
+	PairingCode string `json:"pairing_code"`
 }
 
 type LicenseResolveResponse struct {
-	CloudURL     string      `json:"cloud_url"`
-	RestaurantID string      `json:"restaurant_id"`
-	NodeDeviceID string      `json:"node_device_id"`
-	Credentials  Credentials `json:"credentials"`
+	PairingID    string `json:"pairing_id"`
+	CloudURL     string `json:"cloud_url"`
+	RestaurantID string `json:"restaurant_id"`
+}
+
+type CloudPairingConsumeRequest struct {
+	PairingID  string `json:"pairing_id"`
+	Nonce      string `json:"nonce"`
+	Ciphertext string `json:"ciphertext"`
+}
+
+type CloudPairingConsumeResponse struct {
+	NodeDeviceID string       `json:"node_device_id"`
+	RestaurantID string       `json:"restaurant_id"`
+	Status       string       `json:"status"`
+	CloudURL     string       `json:"cloud_url"`
+	SnapshotURL  string       `json:"snapshot_url"`
+	Credentials  *Credentials `json:"credentials,omitempty"`
 }
 
 type Service struct {
@@ -199,13 +219,22 @@ func (s *Service) PairViaLicense(ctx context.Context, cmd PairViaLicenseCommand)
 		_ = s.repo.UpsertEdgeProvisioningState(ctx, state)
 		return domain.ProvisioningStatusView{}, err
 	}
-	if resp.NodeDeviceID != "" && resp.NodeDeviceID != state.NodeDeviceID {
-		if state.Status == domain.ProvisioningPaired {
-			return domain.ProvisioningStatusView{}, fmt.Errorf("%w: license node_device_id conflicts with paired local identity", domain.ErrConflict)
-		}
-		state.NodeDeviceID = resp.NodeDeviceID
+	consumeReq, err := buildPairingConsumeRequest(strings.TrimSpace(cmd.PairingCode), resp.PairingID, state.NodeDeviceID, "POS Terminal", s.ids.NewID())
+	if err != nil {
+		return domain.ProvisioningStatusView{}, err
 	}
-	if err := s.finishAssigned(ctx, state, resp.CloudURL, resp.RestaurantID, "/api/v1/restaurants/"+resp.RestaurantID+"/edge-nodes/"+state.NodeDeviceID+"/master-data/snapshot", &resp.Credentials); err != nil {
+	consume, err := s.cloud.ConsumePairingCode(ctx, resp.CloudURL, consumeReq)
+	if err != nil {
+		state.Status = domain.ProvisioningError
+		state.LastError = safeError(err)
+		state.UpdatedAt = s.clock.Now()
+		_ = s.repo.UpsertEdgeProvisioningState(ctx, state)
+		return domain.ProvisioningStatusView{}, err
+	}
+	if consume.NodeDeviceID != "" && consume.NodeDeviceID != state.NodeDeviceID {
+		return domain.ProvisioningStatusView{}, fmt.Errorf("%w: cloud pairing consume returned another node_device_id", domain.ErrConflict)
+	}
+	if err := s.finishAssigned(ctx, state, consume.CloudURL, consume.RestaurantID, consume.SnapshotURL, consume.Credentials); err != nil {
 		return domain.ProvisioningStatusView{}, err
 	}
 	state, _ = s.repo.GetEdgeProvisioningState(ctx)
@@ -299,4 +328,44 @@ func safeError(err error) string {
 		return text[:240]
 	}
 	return text
+}
+
+func buildPairingConsumeRequest(code, pairingID, nodeDeviceID, displayName, requestID string) (CloudPairingConsumeRequest, error) {
+	payload := struct {
+		NodeDeviceID string `json:"node_device_id"`
+		DisplayName  string `json:"display_name"`
+		RequestID    string `json:"request_id"`
+	}{
+		NodeDeviceID: strings.TrimSpace(nodeDeviceID),
+		DisplayName:  strings.TrimSpace(displayName),
+		RequestID:    strings.TrimSpace(requestID),
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return CloudPairingConsumeRequest{}, err
+	}
+	key := pairingKey(code, pairingID)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return CloudPairingConsumeRequest{}, err
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return CloudPairingConsumeRequest{}, err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return CloudPairingConsumeRequest{}, err
+	}
+	ciphertext := aead.Seal(nil, nonce, body, []byte(strings.TrimSpace(pairingID)))
+	return CloudPairingConsumeRequest{
+		PairingID:  strings.TrimSpace(pairingID),
+		Nonce:      base64.RawURLEncoding.EncodeToString(nonce),
+		Ciphertext: base64.RawURLEncoding.EncodeToString(ciphertext),
+	}, nil
+}
+
+func pairingKey(code, pairingID string) []byte {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(code) + ":" + strings.TrimSpace(pairingID) + ":mh-pos-pairing-v1"))
+	return sum[:]
 }

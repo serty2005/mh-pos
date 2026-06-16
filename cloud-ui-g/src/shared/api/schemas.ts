@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const lifecycleStatusSchema = z.enum(['draft', 'published', 'archived']);
 export const restaurantStatusSchema = z.enum(['active', 'archived']);
 export const employeeStatusSchema = z.enum(['active', 'suspended', 'archived']);
-export const edgeDeviceStatusSchema = z.enum(['pending', 'assigned', 'rejected', 'expired']);
+export const edgeDeviceStatusSchema = z.enum(['pending', 'assigned', 'rejected', 'expired', 'unassigned', 'revoked']);
 
 export const restaurantSchema = z.object({
   id: z.string(),
@@ -261,6 +261,33 @@ export const pricingPolicyPackageSchema = z.object({
   }),
 });
 
+export const masterDataPackageSchema = z.object({
+  stream_name: z.string(),
+  node_device_id: z.string().optional().default(''),
+  restaurant_id: z.string().optional().default(''),
+  sync_mode: z.string(),
+  full_snapshot_reason: z.string().optional().default(''),
+  cloud_version: z.number(),
+  checkpoint_token: z.string().optional().default(''),
+  cloud_updated_at: z.string().optional(),
+  payload_json: z.unknown(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const restaurantEdgeNodeSchema = z.object({
+  id: z.string(),
+  restaurant_id: z.string().optional().default(''),
+  node_device_id: z.string(),
+  display_name: z.string(),
+  status: edgeDeviceStatusSchema,
+  last_seen_at: z.string().optional(),
+  assigned_at: z.string().optional(),
+  revoked_at: z.string().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
 export const unassignedEdgeNodeSchema = z.object({
   id: z.string(),
   node_device_id: z.string(),
@@ -293,8 +320,8 @@ export const assignmentStatusSchema = z.object({
 
 export const pairingCodeResultSchema = z.object({
   pairing_code: z.string(),
+  pairing_id: z.string(),
   restaurant_id: z.string(),
-  node_device_id: z.string(),
   expires_at: z.string(),
 });
 
@@ -346,6 +373,8 @@ export type RestaurantTable = z.infer<typeof tableSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;
 export type Category = z.infer<typeof categorySchema>;
 export type PricingPolicyPackage = z.infer<typeof pricingPolicyPackageSchema>;
+export type MasterDataPackage = z.infer<typeof masterDataPackageSchema>;
+export type RestaurantEdgeNode = z.infer<typeof restaurantEdgeNodeSchema>;
 export type EdgeEvent = z.infer<typeof edgeEventSchema>;
 export type PublicationSummary = z.infer<typeof publicationSummarySchema>;
 export type UnassignedEdgeNode = z.infer<typeof unassignedEdgeNodeSchema>;

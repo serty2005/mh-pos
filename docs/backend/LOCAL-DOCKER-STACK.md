@@ -15,7 +15,7 @@
 Не реализовано сейчас в `docker-compose.local.yml`:
 
 - `devbox` service/profile;
-- `pos-ui`, `pos-ui-g`, `cloud-ui` или `cloud-ui-g` services.
+- `pos-ui-g` или `cloud-ui-g` services.
 
 Именованные volumes:
 
@@ -103,7 +103,7 @@ curl -fsS http://localhost:8080/health
 POS UI:
 
 ```bash
-cd pos-ui
+cd pos-ui-g
 npm install
 npm run build
 ```
@@ -118,10 +118,6 @@ npm run test
 npm run build
 ```
 
-Устаревший `cloud-ui` можно проверять только при сопровождении legacy/reference-only кода:
-
-```bash
-cd cloud-ui
 npm install
 npm run test
 npm run build
@@ -140,15 +136,15 @@ python3 scripts/seed-dev-system.py \
 
 Файл `.e2e/bootstrap.example.json` показывает ожидаемую форму. Реальный `.e2e/bootstrap.json` игнорируется git.
 
-Для browser-based E2E запусти Vite локально, затем тесты во втором shell:
+Для browser-based E2E запусти Vite локально, затем тесты во втором shell, если соответствующие specs перенесены в `pos-ui-g`:
 
 ```bash
-cd pos-ui
+cd pos-ui-g
 npm run dev
 ```
 
 ```bash
-cd pos-ui
+cd pos-ui-g
 POS_E2E_BOOTSTRAP_JSON=../.e2e/bootstrap.json \
 POS_E2E_UI_BASE=http://localhost:5173 \
 POS_E2E_API_BASE=http://localhost:8080/api/v1 \
@@ -251,7 +247,7 @@ Python HTTP layer игнорирует системные proxy-переменн
 После запуска Docker stack запусти UI локально:
 
 ```bash
-cd pos-ui
+cd pos-ui-g
 npm install
 npm run dev
 ```
@@ -285,6 +281,6 @@ POS sync sender доставляет Edge -> Cloud operational rows автома
 - после pairing через license code или Cloud assignment `pos-edge` прекращает повторный device registration/snapshot provisioning poll;
 - локальные Edge outbox rows отправляются через authenticated `sync/exchange` на ближайшем worker tick;
 - пустой `sync/exchange` для Cloud -> Edge pull ограничен отдельным interval, чтобы локальный Docker stack не создавал шумный Cloud access log при отсутствии локальных событий.
-- Активный `cloud-ui-g` вызывает publication API с default `published_by = cloud-ui-g`; legacy `cloud-ui` может отправлять `published_by = cloud-ui`. Ручная публикация в разделе Publication state остается доступна для явного operator checkpoint.
+- Активный `cloud-ui-g` вызывает publication API с default `published_by = cloud-ui-g`. Ручная публикация в разделе Publication state остается доступна для явного operator checkpoint.
 
-вне текущего объема: production serving `pos-ui`/`pos-ui-g`/`cloud-ui-g` из Docker Compose, devbox service в текущем compose и production auth perimeter для Cloud/License API.
+вне текущего объема: production serving `pos-ui-g`/`cloud-ui-g` из Docker Compose, devbox service в текущем compose и production auth perimeter для Cloud/License API.

@@ -93,7 +93,9 @@ class FakeClient:
         if path == "/api/v1/master-data/publications":
             return {"id": "publication-1"}
         if path == "/api/v1/restaurants/restaurant-1/devices/generate-pairing-code":
-            return {"pairing_code": "PAIR1234", "node_device_id": body["node_device_id"]}
+            if "node_device_id" in body:
+                raise AssertionError("Cloud pairing code generation must not receive edge node_device_id")
+            return {"pairing_code": "PAIR1234", "pairing_id": "pairing-1"}
         if path == "/api/v1/system/provisioning/pair-via-license":
             return {"paired": True, "node_device_id": "edge-node-from-pos", "restaurant_id": "restaurant-1"}
         if path == "/api/v1/auth/pin-login":
@@ -379,6 +381,11 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertGreater(pairing_index, publication_index)
         self.assertEqual(summary["node_device_id"], "edge-node-from-pos")
         self.assertEqual(summary["pairing_code"], "PAIR1234")
+        self.assertEqual(summary["pairing_id"], "pairing-1")
+        pairing_call = cloud.calls[pairing_index]
+        self.assertEqual(pairing_call[2], {"display_name": "POS Terminal unit", "expires_in_minutes": 30})
+        self.assertIn("/api/v1/system/provisioning/pair-via-license", [path for _, path, _, _ in pos.calls])
+        self.assertEqual([path for _, path, _, _ in license_client.calls], ["/health"])
         self.assertIn("waiter_pin", summary["pins"])
         self.assertIn("kitchen_pin", summary["pins"])
         self.assertIn("support_pin", summary["pins"])

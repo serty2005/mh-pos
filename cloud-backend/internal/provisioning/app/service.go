@@ -2,10 +2,13 @@ package app
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -19,10 +22,14 @@ import (
 type Repository interface {
 	RegisterUnassigned(context.Context, domain.UnassignedEdgeNode) (domain.UnassignedEdgeNode, error)
 	ListUnassigned(context.Context) ([]domain.UnassignedEdgeNode, error)
+	ListEdgeNodesByRestaurant(context.Context, string) ([]domain.EdgeNode, error)
 	UpsertEdgeNode(context.Context, domain.EdgeNode) (domain.EdgeNode, error)
 	GetEdgeNode(context.Context, string) (domain.EdgeNode, error)
 	MarkUnassignedAssigned(context.Context, string, string, time.Time) error
 	CreatePairingCode(context.Context, domain.PairingCode) (domain.PairingCode, error)
+	RevokeActivePairingCodes(context.Context, string, time.Time) error
+	GetPairingCode(context.Context, string) (domain.PairingCode, error)
+	ConsumePairingCode(context.Context, string, string, time.Time) error
 }
 
 type IDGenerator interface {
@@ -34,12 +41,12 @@ type LicenseClient interface {
 }
 
 type LicensePairingPayload struct {
-	PairingCode  string             `json:"pairing_code"`
-	CloudURL     string             `json:"cloud_url"`
-	RestaurantID string             `json:"restaurant_id"`
-	NodeDeviceID string             `json:"node_device_id"`
-	Credentials  domain.Credentials `json:"credentials"`
-	ExpiresAt    time.Time          `json:"expires_at"`
+	PairingCode  string    `json:"pairing_code"`
+	PairingID    string    `json:"pairing_id"`
+	InstanceID   string    `json:"instance_id"`
+	CloudURL     string    `json:"cloud_url"`
+	RestaurantID string    `json:"restaurant_id"`
+	ExpiresAt    time.Time `json:"expires_at"`
 }
 
 type Service struct {
@@ -91,9 +98,39 @@ type GeneratePairingCodeCommand struct {
 
 type GeneratePairingCodeResult struct {
 	PairingCode  string    `json:"pairing_code"`
+	PairingID    string    `json:"pairing_id"`
 	RestaurantID string    `json:"restaurant_id"`
-	NodeDeviceID string    `json:"node_device_id"`
 	ExpiresAt    time.Time `json:"expires_at"`
+}
+
+type PairingConsumeCommand struct {
+	PairingID  string `json:"pairing_id"`
+	Nonce      string `json:"nonce"`
+	Ciphertext string `json:"ciphertext"`
+}
+
+type PairingConsumePayload struct {
+	NodeDeviceID string `json:"node_device_id"`
+	DisplayName  string `json:"display_name"`
+	AppVersion   string `json:"app_version"`
+	RequestID    string `json:"request_id"`
+}
+
+type PairingConsumeResult struct {
+	NodeDeviceID string              `json:"node_device_id"`
+	RestaurantID string              `json:"restaurant_id"`
+	Status       string              `json:"status"`
+	CloudURL     string              `json:"cloud_url"`
+	SnapshotURL  string              `json:"snapshot_url"`
+	Credentials  *domain.Credentials `json:"credentials,omitempty"`
+	Restaurant   RestaurantInfo      `json:"restaurant"`
+}
+
+type RestaurantInfo struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Timezone string `json:"timezone"`
+	Currency string `json:"currency"`
 }
 
 func (s *Service) RegisterDevice(ctx context.Context, cmd RegisterDeviceCommand) (RegisterDeviceResult, error) {
@@ -129,6 +166,15 @@ func (s *Service) RegisterDevice(ctx context.Context, cmd RegisterDeviceCommand)
 
 func (s *Service) ListUnassigned(ctx context.Context) ([]domain.UnassignedEdgeNode, error) {
 	return s.repo.ListUnassigned(ctx)
+}
+
+// ListRestaurantDevices возвращает Edge nodes, уже принадлежащие выбранному ресторану.
+func (s *Service) ListRestaurantDevices(ctx context.Context, restaurantID string) ([]domain.EdgeNode, error) {
+	restaurantID = strings.TrimSpace(restaurantID)
+	if restaurantID == "" {
+		return nil, fmt.Errorf("%w: restaurant_id is required", domain.ErrInvalid)
+	}
+	return s.repo.ListEdgeNodesByRestaurant(ctx, restaurantID)
 }
 
 func (s *Service) AssignDevice(ctx context.Context, restaurantID, nodeDeviceID string) (AssignDeviceResult, error) {
@@ -201,14 +247,6 @@ func (s *Service) GeneratePairingCode(ctx context.Context, restaurantID string, 
 	if s.license == nil {
 		return GeneratePairingCodeResult{}, domain.ErrLicenseServerUnavailable
 	}
-	nodeID := strings.TrimSpace(cmd.NodeDeviceID)
-	if nodeID == "" {
-		nodeID = s.ids.NewID()
-	}
-	displayName := strings.TrimSpace(cmd.DisplayName)
-	if displayName == "" {
-		displayName = "POS Terminal"
-	}
 	minutes := cmd.ExpiresInMinutes
 	if minutes <= 0 {
 		minutes = 30
@@ -218,26 +256,16 @@ func (s *Service) GeneratePairingCode(ctx context.Context, restaurantID string, 
 	}
 	now := s.clock.Now().UTC()
 	expiresAt := now.Add(time.Duration(minutes) * time.Minute)
-	token := newSecret("node")
+	pairingID := s.ids.NewID()
 	code := pairingCode()
-	if _, err := s.repo.UpsertEdgeNode(ctx, domain.EdgeNode{
-		ID:              s.ids.NewID(),
-		RestaurantID:    restaurantID,
-		NodeDeviceID:    nodeID,
-		DisplayName:     displayName,
-		Status:          domain.EdgeNodeAssigned,
-		CredentialsHash: secretHash(token),
-		AssignedAt:      &now,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-	}); err != nil {
+	if err := s.repo.RevokeActivePairingCodes(ctx, restaurantID, now); err != nil {
 		return GeneratePairingCodeResult{}, err
 	}
 	if _, err := s.repo.CreatePairingCode(ctx, domain.PairingCode{
-		ID:              s.ids.NewID(),
+		ID:              pairingID,
 		PairingCodeHash: secretHash(code),
+		PairingKey:      pairingKey(code, pairingID),
 		RestaurantID:    restaurantID,
-		NodeDeviceID:    nodeID,
 		CloudURL:        s.cloudURL,
 		Status:          domain.PairingCodeActive,
 		ExpiresAt:       expiresAt,
@@ -248,16 +276,87 @@ func (s *Service) GeneratePairingCode(ctx context.Context, restaurantID string, 
 	}
 	err := s.license.RegisterPairingCode(ctx, LicensePairingPayload{
 		PairingCode:  code,
+		PairingID:    pairingID,
+		InstanceID:   s.cloudURL,
 		CloudURL:     s.cloudURL,
 		RestaurantID: restaurantID,
-		NodeDeviceID: nodeID,
-		Credentials:  domain.Credentials{Type: "node_token", Token: token},
 		ExpiresAt:    expiresAt,
 	})
 	if err != nil {
 		return GeneratePairingCodeResult{}, domain.ErrLicenseServerUnavailable
 	}
-	return GeneratePairingCodeResult{PairingCode: code, RestaurantID: restaurantID, NodeDeviceID: nodeID, ExpiresAt: expiresAt}, nil
+	return GeneratePairingCodeResult{PairingCode: code, PairingID: pairingID, RestaurantID: restaurantID, ExpiresAt: expiresAt}, nil
+}
+
+func (s *Service) ConsumePairingCode(ctx context.Context, cmd PairingConsumeCommand) (PairingConsumeResult, error) {
+	pairingID := strings.TrimSpace(cmd.PairingID)
+	if pairingID == "" || strings.TrimSpace(cmd.Nonce) == "" || strings.TrimSpace(cmd.Ciphertext) == "" {
+		return PairingConsumeResult{}, fmt.Errorf("%w: pairing_id, nonce and ciphertext are required", domain.ErrInvalid)
+	}
+	pairing, err := s.repo.GetPairingCode(ctx, pairingID)
+	if err != nil {
+		return PairingConsumeResult{}, domain.ErrPairingCodeInvalid
+	}
+	now := s.clock.Now().UTC()
+	if pairing.Status != domain.PairingCodeActive {
+		return PairingConsumeResult{}, domain.ErrPairingCodeInvalid
+	}
+	if !pairing.ExpiresAt.After(now) {
+		return PairingConsumeResult{}, domain.ErrPairingCodeExpired
+	}
+	payload, err := decryptPairingPayload(pairing.PairingKey, pairing.ID, cmd.Nonce, cmd.Ciphertext)
+	if err != nil {
+		return PairingConsumeResult{}, domain.ErrPairingCodeInvalid
+	}
+	nodeID := strings.TrimSpace(payload.NodeDeviceID)
+	if nodeID == "" {
+		return PairingConsumeResult{}, fmt.Errorf("%w: node_device_id is required", domain.ErrInvalid)
+	}
+	if existing, err := s.repo.GetEdgeNode(ctx, nodeID); err == nil && existing.RestaurantID != "" && existing.RestaurantID != pairing.RestaurantID {
+		return PairingConsumeResult{}, fmt.Errorf("%w: device already assigned to another restaurant", domain.ErrConflict)
+	}
+	restaurant, err := s.master.GetRestaurant(ctx, pairing.RestaurantID)
+	if err != nil {
+		return PairingConsumeResult{}, err
+	}
+	token := newSecret("node")
+	displayName := strings.TrimSpace(payload.DisplayName)
+	if displayName == "" {
+		displayName = "POS Edge Node"
+	}
+	node, err := s.repo.UpsertEdgeNode(ctx, domain.EdgeNode{
+		ID:              s.ids.NewID(),
+		RestaurantID:    pairing.RestaurantID,
+		NodeDeviceID:    nodeID,
+		DisplayName:     displayName,
+		Status:          domain.EdgeNodeAssigned,
+		CredentialsHash: secretHash(token),
+		LastSeenAt:      &now,
+		AssignedAt:      &now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+	if err != nil {
+		return PairingConsumeResult{}, err
+	}
+	if err := s.repo.ConsumePairingCode(ctx, pairing.ID, nodeID, now); err != nil {
+		return PairingConsumeResult{}, err
+	}
+	_ = s.repo.MarkUnassignedAssigned(ctx, nodeID, pairing.RestaurantID, now)
+	return PairingConsumeResult{
+		NodeDeviceID: node.NodeDeviceID,
+		RestaurantID: node.RestaurantID,
+		Status:       string(node.Status),
+		CloudURL:     s.cloudURL,
+		SnapshotURL:  snapshotURL(node.RestaurantID, node.NodeDeviceID),
+		Credentials:  &domain.Credentials{Type: "node_token", Token: token},
+		Restaurant: RestaurantInfo{
+			ID:       restaurant.ID,
+			Name:     restaurant.Name,
+			Timezone: restaurant.Timezone,
+			Currency: restaurant.Currency,
+		},
+	}, nil
 }
 
 func (s *Service) ensureRestaurantReady(ctx context.Context, restaurantID string) error {
@@ -290,6 +389,40 @@ func snapshotURL(restaurantID, nodeDeviceID string) string {
 func secretHash(v string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(v)))
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func pairingKey(code, pairingID string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(code) + ":" + strings.TrimSpace(pairingID) + ":mh-pos-pairing-v1"))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func decryptPairingPayload(encodedKey, pairingID, encodedNonce, encodedCiphertext string) (PairingConsumePayload, error) {
+	var out PairingConsumePayload
+	key, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(encodedKey))
+	if err != nil {
+		return out, err
+	}
+	nonce, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(encodedNonce))
+	if err != nil {
+		return out, err
+	}
+	ciphertext, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(encodedCiphertext))
+	if err != nil {
+		return out, err
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return out, err
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return out, err
+	}
+	plain, err := aead.Open(nil, nonce, ciphertext, []byte(pairingID))
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(plain, &out)
 }
 
 func newSecret(prefix string) string {

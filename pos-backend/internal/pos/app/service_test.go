@@ -75,6 +75,7 @@ func (r checkCreatedOutboxFailingRepo) CreateOutboxMessage(ctx context.Context, 
 type countingProvisioningCloud struct {
 	registerCalls int
 	statusCalls   int
+	consumeCalls  int
 	snapshotCalls int
 }
 
@@ -86,6 +87,11 @@ func (c *countingProvisioningCloud) RegisterDevice(context.Context, string, appp
 func (c *countingProvisioningCloud) AssignmentStatus(context.Context, string, string) (appprovisioning.CloudAssignmentStatus, error) {
 	c.statusCalls++
 	return appprovisioning.CloudAssignmentStatus{NodeDeviceID: "node-1", Status: "pending_admin_approval"}, nil
+}
+
+func (c *countingProvisioningCloud) ConsumePairingCode(context.Context, string, appprovisioning.CloudPairingConsumeRequest) (appprovisioning.CloudPairingConsumeResponse, error) {
+	c.consumeCalls++
+	return appprovisioning.CloudPairingConsumeResponse{}, nil
 }
 
 func (c *countingProvisioningCloud) DownloadSnapshot(context.Context, string) (appmastersync.ApplyMasterDataCommand, error) {

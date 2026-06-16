@@ -3,12 +3,14 @@ import {
   assignDeviceToRestaurant,
   generatePairingCode,
   getAssignmentStatus,
+  listRestaurantDevices,
   listUnassignedDevices,
 } from '../../shared/api/endpoints';
-import type { PairingCodeResult, UnassignedEdgeNode } from '../../shared/api/schemas';
+import type { PairingCodeResult, RestaurantEdgeNode, UnassignedEdgeNode } from '../../shared/api/schemas';
 
 export function useEdgeDevices(restaurantId: string) {
   const [devices, setDevices] = useState<UnassignedEdgeNode[]>([]);
+  const [restaurantDevices, setRestaurantDevices] = useState<RestaurantEdgeNode[]>([]);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'blocked'>('idle');
   const [error, setError] = useState<unknown>(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
@@ -22,14 +24,19 @@ export function useEdgeDevices(restaurantId: string) {
     setStatus('loading');
     setError(null);
     try {
-      const data = await listUnassignedDevices();
-      setDevices(data);
+      const [unassigned, owned] = await Promise.all([
+        listUnassignedDevices(),
+        restaurantId ? listRestaurantDevices(restaurantId) : Promise.resolve([]),
+      ]);
+      setDevices(unassigned);
+      setRestaurantDevices(owned);
+      setSelectedDeviceId((current) => current || owned[0]?.node_device_id || '');
       setStatus('ready');
     } catch (nextError) {
       setStatus('blocked');
       setError(nextError);
     }
-  }, []);
+  }, [restaurantId]);
 
   useEffect(() => {
     void reload();
@@ -45,6 +52,7 @@ export function useEdgeDevices(restaurantId: string) {
       setAssignmentStatus(result.status);
       const latest = await getAssignmentStatus(selectedDeviceId);
       setAssignmentStatus(latest.status);
+      setSelectedDeviceId(latest.node_device_id);
       await reload();
     } catch (nextError) {
       setActionError(nextError);
@@ -60,15 +68,17 @@ export function useEdgeDevices(restaurantId: string) {
     try {
       const result = await generatePairingCode(restaurantId, {});
       setPairingCode(result);
+      await reload();
     } catch (nextError) {
       setActionError(nextError);
     } finally {
       setPairingLoading(false);
     }
-  }, [restaurantId]);
+  }, [reload, restaurantId]);
 
   return {
     devices,
+    restaurantDevices,
     status,
     error,
     selectedDeviceId,

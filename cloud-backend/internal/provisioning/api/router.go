@@ -32,9 +32,11 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 	h := &Handler{service: service}
 	r.Post("/devices/register", h.registerDevice)
 	r.Get("/devices/unassigned", h.listUnassigned)
+	r.Get("/restaurants/{restaurant_id}/devices", h.listRestaurantDevices)
 	r.Post("/restaurants/{restaurant_id}/devices/{node_device_id}/assign", h.assignDevice)
 	r.Get("/devices/{node_device_id}/assignment-status", h.assignmentStatus)
 	r.Post("/restaurants/{restaurant_id}/devices/generate-pairing-code", h.generatePairingCode)
+	r.Post("/devices/pairing/consume", h.consumePairingCode)
 }
 
 // RegisterMasterDataPackageRoutes подключает generic GET/PUT для Cloud-authored provisioning packages.
@@ -102,6 +104,11 @@ func (h *Handler) listUnassigned(w http.ResponseWriter, r *http.Request) {
 	write(w, r, http.StatusOK, v, err)
 }
 
+func (h *Handler) listRestaurantDevices(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListRestaurantDevices(r.Context(), chi.URLParam(r, "restaurant_id"))
+	write(w, r, http.StatusOK, v, err)
+}
+
 func (h *Handler) assignDevice(w http.ResponseWriter, r *http.Request) {
 	v, err := h.service.AssignDevice(r.Context(), chi.URLParam(r, "restaurant_id"), chi.URLParam(r, "node_device_id"))
 	write(w, r, http.StatusOK, v, err)
@@ -119,6 +126,15 @@ func (h *Handler) generatePairingCode(w http.ResponseWriter, r *http.Request) {
 	}
 	v, err := h.service.GeneratePairingCode(r.Context(), chi.URLParam(r, "restaurant_id"), cmd)
 	write(w, r, http.StatusCreated, v, err)
+}
+
+func (h *Handler) consumePairingCode(w http.ResponseWriter, r *http.Request) {
+	var cmd app.PairingConsumeCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.ConsumePairingCode(r.Context(), cmd)
+	write(w, r, http.StatusOK, v, err)
 }
 
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {

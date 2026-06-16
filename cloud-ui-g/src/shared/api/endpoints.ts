@@ -15,8 +15,10 @@ import {
   modifierOptionSchema,
   pricingPolicyPackageSchema,
   pricingPolicySchema,
+  masterDataPackageSchema,
   publicationSummarySchema,
   restaurantSchema,
+  restaurantEdgeNodeSchema,
   roleSchema,
   tableSchema,
   assignmentStatusSchema,
@@ -41,9 +43,11 @@ import {
   type ModifierOption,
   type PairingCodeResult,
   type PricingPolicyPackage,
+  type MasterDataPackage,
   type PricingPolicy,
   type PublicationSummary,
   type Restaurant,
+  type RestaurantEdgeNode,
   type RestaurantTable,
   type Role,
   type UnassignedEdgeNode,
@@ -266,6 +270,13 @@ export function getPricingPolicyPackage(nodeDeviceId: string): Promise<PricingPo
   );
 }
 
+export function getMasterDataPackage(streamName: string, nodeDeviceId: string): Promise<MasterDataPackage | null> {
+  return requestOptional(
+    `/provisioning/master-data/${encodeURIComponent(streamName)}?node_device_id=${encodeURIComponent(nodeDeviceId)}`,
+    masterDataPackageSchema,
+  );
+}
+
 export function putPricingPolicyPackage(payload: Payload): Promise<PricingPolicyPackage> {
   return put('/provisioning/master-data/pricing_policy', pricingPolicyPackageSchema, payload);
 }
@@ -306,6 +317,10 @@ export function listUnassignedDevices(): Promise<UnassignedEdgeNode[]> {
   return request('/devices/unassigned', z.array(unassignedEdgeNodeSchema));
 }
 
+export function listRestaurantDevices(restaurantId: string): Promise<RestaurantEdgeNode[]> {
+  return request(`/restaurants/${encodeURIComponent(restaurantId)}/devices`, z.array(restaurantEdgeNodeSchema));
+}
+
 export function assignDeviceToRestaurant(restaurantId: string, nodeDeviceId: string): Promise<AssignDeviceResult> {
   return post(
     `/restaurants/${encodeURIComponent(restaurantId)}/devices/${encodeURIComponent(nodeDeviceId)}/assign`,
@@ -329,10 +344,13 @@ export function generatePairingCode(
   );
 }
 
-export function listEdgeEvents(restaurantId: string, limit = 50): Promise<EdgeEvent[]> {
+export function listEdgeEvents(restaurantId: string, limit = 50, deviceId = ''): Promise<EdgeEvent[]> {
   const params = new URLSearchParams();
   params.set('restaurant_id', restaurantId);
   params.set('limit', String(limit));
+  if (deviceId.trim()) {
+    params.set('device_id', deviceId.trim());
+  }
   return request(`/sync/edge-events?${params.toString()}`, z.array(edgeEventSchema));
 }
 

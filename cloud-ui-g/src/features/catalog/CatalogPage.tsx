@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ClipboardList } from 'lucide-react';
 import {
   archiveCatalogFolder,
   archiveCatalogItem,
@@ -118,12 +119,21 @@ export default function CatalogPage({ restaurantId }: CatalogPageProps) {
 
   return (
     <section className="space-y-4">
-      <div className="rounded-2xl border border-slate-200 bg-white p-6">
-        <h3 className="text-base font-semibold text-slate-900">{t('catalog.pageTitle')}</h3>
-        <p className="mt-1 text-sm text-slate-600">{t('catalog.pageDescription')}</p>
-        <p className="mt-2 text-xs text-slate-500">
-          {t('catalog.readiness')}: {status === 'ready' ? t('status.ready') : status === 'loading' ? t('status.loading') : t('status.blocked')}
-        </p>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-700">
+              <ClipboardList className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold tracking-tight text-slate-950">{t('catalog.pageTitle')}</h3>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">{t('catalog.pageDescription')}</p>
+            </div>
+          </div>
+          <p className={status === 'ready' ? 'rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700' : status === 'loading' ? 'rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700' : 'rounded-full border border-amber-100 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700'}>
+            {t('catalog.readiness')}: {status === 'ready' ? t('status.ready') : status === 'loading' ? t('status.loading') : t('status.blocked')}
+          </p>
+        </div>
       </div>
 
       {status === 'blocked' ? <EmptyState title={t('catalog.blockedTitle')} description={t('catalog.blockedDescription')} /> : null}

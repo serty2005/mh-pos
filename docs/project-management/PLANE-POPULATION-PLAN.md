@@ -380,7 +380,7 @@ State:
     - Зафиксировать ClickHouse raw events, olap_stock_moves, bounded summaries, backfill foundation.
 
 16. `Cloud Backoffice`
-    - Зафиксировать active `cloud-ui-g`, legacy `cloud-ui` reference-only и migration gaps.
+   - Зафиксировать active `cloud-ui-g`, удаление legacy `cloud-ui` и migration gaps.
 
 17. `Storage and Archiving`
     - Уже начато. Довести baseline `POS-2` и дочерние задачи.
@@ -525,7 +525,7 @@ Definition of Done этапа:
    - Storage and Archiving уже начатые задачи.
 
 2. `2026-06/07 — Cloud UI React Parity`
-   - Перенос нужных legacy `cloud-ui` сценариев в `cloud-ui-g`.
+   - Перенос нужных исторических legacy-сценариев в `cloud-ui-g`.
    - Только поверх подтвержденных backend routes.
 
 3. `2026-07 — Inventory Engine Foundation`
@@ -631,7 +631,7 @@ go test ./...
 UI:
 
 ```bash
-cd pos-ui
+cd pos-ui-g
 npm install
 npm run build
 ```
@@ -681,7 +681,7 @@ python3 scripts/seed-dev-system.py \
 - Можно случайно перенести future plan как уже реализованное. Митигировать через baseline-аудит с подтверждением кодом/тестами.
 - Можно перегрузить Plane слишком большим количеством post-pilot задач. Митигировать parent tasks для дальних направлений.
 - Можно создать `Ready` задачи без реального acceptance. Митигировать weekly backlog QA.
-- Можно смешать legacy `cloud-ui` и active `cloud-ui-g`. Митигировать явным статусом legacy/reference-only.
+- Можно смешать удаленный legacy `cloud-ui` и active `cloud-ui-g`. Митигировать явным статусом: runtime только `cloud-ui-g`.
 - Можно расширить POS Edge складскую ответственность. Митигировать инвариантом: POS Edge не пишет stock documents/moves/balances/costing.
 - Можно дать агенту destructive Plane/write operations шире текущей задачи. Митигировать правилом: write только для назначенного work item.
 

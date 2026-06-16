@@ -68,7 +68,7 @@ Canonical seed/smoke для Cloud-owned ingest остается `scripts/seed-de
 - После successful pairing/assignment POS Edge не выполняет повторный Cloud device registration/snapshot provisioning loop; фоновая maintenance только регистрирует not configured node или poll-ит `pending_admin_approval`.
 - Повторный Cloud assignment-status для уже выданного `node_token` не ротирует token hash, чтобы внешние проверки статуса не приводили к `401 SYNC_UNAUTHORIZED` на последующих `sync/exchange`.
 - Пустой exchange без Edge outbox throttled отдельным Cloud pull interval, а появившиеся Edge outbox events отправляются в ближайший worker tick без ожидания этого throttling interval.
-- Активный `cloud-ui-g` не создает publication package автоматически после каждого CRUD. Оператор выполняет явную публикацию через canonical publication API, после чего роль, сотрудник или PIN, созданные в Cloud UI после pairing, попадают на Edge в ближайший Cloud -> Edge exchange. Legacy `cloud-ui` может использовать собственный publication flow, но не является целевым каталогом разработки.
+- Активный `cloud-ui-g` не создает publication package автоматически после каждого CRUD. Оператор выполняет явную публикацию через canonical publication API, после чего роль, сотрудник или PIN, созданные в Cloud UI после pairing, попадают на Edge в ближайший Cloud -> Edge exchange.
 
 ## Текущий Edge -> Cloud Runtime
 

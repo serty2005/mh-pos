@@ -53,6 +53,23 @@ func (r *Repository) ListUnassigned(ctx context.Context) ([]domain.UnassignedEdg
 	return out, rows.Err()
 }
 
+func (r *Repository) ListEdgeNodesByRestaurant(ctx context.Context, restaurantID string) ([]domain.EdgeNode, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id,COALESCE(restaurant_id,''),node_device_id,display_name,status,COALESCE(credentials_hash,''),last_seen_at,assigned_at,revoked_at,created_at,updated_at FROM cloud_edge_nodes WHERE restaurant_id = $1 ORDER BY updated_at DESC`, strings.TrimSpace(restaurantID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.EdgeNode
+	for rows.Next() {
+		v, err := scanEdgeNode(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) UpsertEdgeNode(ctx context.Context, v domain.EdgeNode) (domain.EdgeNode, error) {
 	id := strings.TrimSpace(v.ID)
 	if id == "" {
@@ -87,11 +104,26 @@ func (r *Repository) MarkUnassignedAssigned(ctx context.Context, nodeDeviceID, r
 
 func (r *Repository) CreatePairingCode(ctx context.Context, v domain.PairingCode) (domain.PairingCode, error) {
 	out, err := scanPairingCode(r.pool.QueryRow(ctx, `
-INSERT INTO cloud_pairing_codes(id,pairing_code_hash,restaurant_id,node_device_id,cloud_url,status,expires_at,consumed_at,created_at,updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-RETURNING id,pairing_code_hash,restaurant_id,node_device_id,cloud_url,status,expires_at,consumed_at,created_at,updated_at`,
-		v.ID, v.PairingCodeHash, v.RestaurantID, v.NodeDeviceID, v.CloudURL, v.Status, v.ExpiresAt, v.ConsumedAt, v.CreatedAt, v.UpdatedAt))
+INSERT INTO cloud_pairing_codes(id,pairing_code_hash,pairing_key,restaurant_id,node_device_id,cloud_url,status,expires_at,consumed_at,created_at,updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+RETURNING id,pairing_code_hash,pairing_key,restaurant_id,COALESCE(node_device_id,''),cloud_url,status,expires_at,consumed_at,created_at,updated_at`,
+		v.ID, v.PairingCodeHash, v.PairingKey, v.RestaurantID, nullableText(v.NodeDeviceID), v.CloudURL, v.Status, v.ExpiresAt, v.ConsumedAt, v.CreatedAt, v.UpdatedAt))
 	return out, normalizeErr(err)
+}
+
+func (r *Repository) RevokeActivePairingCodes(ctx context.Context, restaurantID string, now time.Time) error {
+	_, err := r.pool.Exec(ctx, `UPDATE cloud_pairing_codes SET status = 'revoked', updated_at = $2 WHERE restaurant_id = $1 AND status = 'active'`, strings.TrimSpace(restaurantID), now)
+	return normalizeErr(err)
+}
+
+func (r *Repository) GetPairingCode(ctx context.Context, pairingID string) (domain.PairingCode, error) {
+	v, err := scanPairingCode(r.pool.QueryRow(ctx, `SELECT id,pairing_code_hash,pairing_key,restaurant_id,COALESCE(node_device_id,''),cloud_url,status,expires_at,consumed_at,created_at,updated_at FROM cloud_pairing_codes WHERE id = $1`, strings.TrimSpace(pairingID)))
+	return v, normalizeErr(err)
+}
+
+func (r *Repository) ConsumePairingCode(ctx context.Context, pairingID, nodeDeviceID string, consumedAt time.Time) error {
+	_, err := r.pool.Exec(ctx, `UPDATE cloud_pairing_codes SET status = 'consumed', node_device_id = $2, consumed_at = $3, updated_at = $3 WHERE id = $1 AND status = 'active'`, strings.TrimSpace(pairingID), strings.TrimSpace(nodeDeviceID), consumedAt)
+	return normalizeErr(err)
 }
 
 type scanner interface {
@@ -117,7 +149,7 @@ func scanEdgeNode(row scanner) (domain.EdgeNode, error) {
 func scanPairingCode(row scanner) (domain.PairingCode, error) {
 	var v domain.PairingCode
 	var status string
-	err := row.Scan(&v.ID, &v.PairingCodeHash, &v.RestaurantID, &v.NodeDeviceID, &v.CloudURL, &status, &v.ExpiresAt, &v.ConsumedAt, &v.CreatedAt, &v.UpdatedAt)
+	err := row.Scan(&v.ID, &v.PairingCodeHash, &v.PairingKey, &v.RestaurantID, &v.NodeDeviceID, &v.CloudURL, &status, &v.ExpiresAt, &v.ConsumedAt, &v.CreatedAt, &v.UpdatedAt)
 	v.Status = domain.PairingCodeStatus(status)
 	return v, err
 }

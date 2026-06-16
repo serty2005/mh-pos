@@ -38,7 +38,7 @@
 - ClickHouse используется как immutable event archive и bounded OLAP слой, но не как transactional source of truth.
 - Stop-list блокирует продажу; stock balance является аналитическим показателем и может быть отрицательным.
 - Синхронная двойная запись в PostgreSQL и ClickHouse в request path запрещена.
-- Активный Cloud UI target — `cloud-ui-g`; устаревший Vue `cloud-ui` остается reference-only и больше не принимает новые Cloud-бэкофисные фичи.
+- Активный Cloud UI target — `cloud-ui-g`; устаревший Vue `cloud-ui` удален из runtime tree и больше не принимает Cloud-бэкофисные фичи.
 
 ---
 
@@ -252,7 +252,7 @@
 - Managed SQL files and startup migration/verification policy.
 - ADR-015 accepted for persistence and analytics strategy.
 - ClickHouse добавлен как обязательный Cloud runtime component для bounded analytics slices.
-- Legacy `cloud-ui` реализовано сейчас читает bounded inventory/OLAP operator slices: `stock-balances`, `stock-ledger`, OLAP export status, `olap_stock_moves` preview и `stock-move-summary`; активный `cloud-ui-g` эти screens еще не реализует.
+- Активный `cloud-ui-g` inventory/OLAP screens еще не реализует; старый Vue `cloud-ui`, где были read-only previews, удален из runtime tree.
 
 Не выполнено и не должно считаться завершенным:
 
@@ -307,10 +307,7 @@
 - Passive backlog/readiness states переведены на `PosReadinessCard`.
 - Waiter mobile viewport `390x844` уплотнен с sticky context/authority dock, lock badge и scrollable modifier dialog без payment/refund/cash drawer authority.
 - `pos-ui-g` kitchen mode переведен на backend-backed runtime с queue/ready order tiles, stock forms, full catalog picker, recipe view и proposals.
-- Legacy `cloud-ui`: presentation layer вынесен из монолитного `App.vue` в flow components.
-- Legacy `cloud-ui`: launch/readiness checklist стал primary journey с restaurant/staff/floor/catalog/menu/modifiers/pricing/Edge/publication gates.
-- Legacy `cloud-ui`: master-data CRUD оставлен secondary/admin layer.
-- Legacy `cloud-ui`: добавлен card/list fallback для narrow screens, включая resource status cards и Edge events metadata/checksum без raw payload.
+- Исторический Vue `cloud-ui` удален из runtime tree; его подтвержденные сценарии переносятся в активный `cloud-ui-g` только поверх текущих backend routes/DTO.
 - Активный `cloud-ui-g`: React/Vite shell подключен к подтвержденным Cloud Backend routes для dashboard, restaurants, Edge sync, catalog, menu, modifiers, pricing/taxes, staff/permissions, floor и publications; `inventory` и `reports` пока остаются blocked navigation placeholders.
 
 ---
@@ -593,8 +590,8 @@
 
 Выполнено:
 
-- Legacy `cloud-ui` содержит stop-list/recipe authoring; перенос в активный `cloud-ui-g` запланирован далее.
-- Legacy `cloud-ui` содержит route-backed manager review surfaces для:
+- Удаленный Vue `cloud-ui` исторически содержал stop-list/recipe authoring; перенос в активный `cloud-ui-g` запланирован далее.
+- Удаленный Vue `cloud-ui` исторически содержал route-backed manager review surfaces для:
   - `CatalogItemChangeSuggested`;
   - `RecipeChangeSuggested`;
   - Edge-origin stop-list updates.
@@ -607,7 +604,7 @@
   - linked new dish + recipe group display для proposal groups;
   - safe error handling;
   - publication/readiness signal after approve.
-- В legacy `cloud-ui` launch readiness учитывает:
+- В активном `cloud-ui-g` еще нужно перенести readiness gates для:
   - restaurant;
   - staff;
   - floor;
@@ -618,16 +615,16 @@
   - stop-list review;
   - publication;
   - known Edge node.
-- Legacy `cloud-ui` содержит route-backed recipe version editor.
-- Legacy `cloud-ui` содержит read-only сценарий `Подготовка продажи`: связи catalog item -> menu item -> direct modifier bindings -> pricing policies по существующим Cloud master-data rows, bounded table/card preview и conservative readiness hints без новых backend routes или mutations.
-- Legacy `cloud-ui` содержит минимальный read-only preview `sales-kitchen-summary`: фильтры business date from/to и `group_by`, bounded запрос `limit=50&offset=0`, table/card вывод безопасных агрегированных полей без raw payload, графиков, BI dashboard, COGS/margin и retry/backfill controls.
+- Удаленный Vue `cloud-ui` исторически содержал route-backed recipe version editor.
+- Удаленный Vue `cloud-ui` исторически содержал read-only сценарий `Подготовка продажи`: связи catalog item -> menu item -> direct modifier bindings -> pricing policies по существующим Cloud master-data rows, bounded table/card preview и conservative readiness hints без новых backend routes или mutations.
+- Удаленный Vue `cloud-ui` исторически содержал минимальный read-only preview `sales-kitchen-summary`: фильтры business date from/to и `group_by`, bounded запрос `limit=50&offset=0`, table/card вывод безопасных агрегированных полей без raw payload, графиков, BI dashboard, COGS/margin и retry/backfill controls.
 - Активный `cloud-ui-g` сейчас покрывает launch/dashboard, master-data, Edge sync и publication; recipe/stop-list/proposal/inventory/reporting перенос остается `запланировано далее`.
 
 Запланировано далее:
 
 - Вести все новые Cloud UI правки только в `cloud-ui-g`.
 - Runtime surfaces для inventory operations/costing за пределами текущих read-only `stock-balances` и `stock-ledger` после появления подтвержденных Cloud backend routes.
-- Изменяющие surfaces для OLAP exports/operator controls только после production-grade backend jobs; legacy `cloud-ui` остается read-only для export status, stock moves, stock move summary и `sales-kitchen-summary`, а активный `cloud-ui-g` еще не имеет этих экранов.
+- Изменяющие surfaces для OLAP exports/operator controls только после production-grade backend jobs; активный `cloud-ui-g` еще не имеет export status, stock moves, stock move summary и `sales-kitchen-summary` screens.
 - Safe package delivery status/Edge package ACK surface для Cloud UI после появления отдельного read-only backend route/DTO; текущие package payload/snapshot routes и `sync/exchange` не используются как UI delivery-state источник.
 
 ## Full pilot smoke
@@ -677,8 +674,8 @@
 - Cloud PostgreSQL baseline содержит materialized `inventory_stock_balances`; Worker обновляет balance rows в той же транзакции, что и `stock_ledger`.
 - Worker выполняет sale consumption с recipe expansion для основной позиции и modifier-linked consumption по Cloud-authoritative `linked_catalog_item_id`; linked modifier item списывается напрямую и не разворачивается в recipe.
 - Worker выполняет bounded refund/cancellation stock disposition: `return_to_stock` -> `RETURN/IN`, `write_off_waste` -> `WASTE/OUT`, `no_stock_effect` -> без queue/ledger, `manual_review` -> queue failure без автоматического движения.
-- Bounded Cloud inventory ledger endpoint существует для проверки обработанных worker rows; legacy `cloud-ui` показывает первые 50 строк как read-only preview без raw payload и складских команд.
-- `GET /api/v1/inventory/stock-balances` подтвержден по runtime-коду и тестам как bounded Cloud-owned materialized balance read model поверх PostgreSQL `inventory_stock_balances`; route объявлен в `cloud-backend/internal/cloudsync/api/router.go`, реализован в service/repository слое, покрыт API tests на чтение materialized state, границы выдачи, фильтр статуса, пустой результат, stable sort и safe no-raw-payload response, а legacy `cloud-ui` показывает bounded balances/costing status table.
+- Bounded Cloud inventory ledger endpoint существует для проверки обработанных worker rows; активный `cloud-ui-g` еще не показывает этот read-only preview.
+- `GET /api/v1/inventory/stock-balances` подтвержден по runtime-коду и тестам как bounded Cloud-owned materialized balance read model поверх PostgreSQL `inventory_stock_balances`; route объявлен в `cloud-backend/internal/cloudsync/api/router.go`, реализован в service/repository слое, покрыт API tests на чтение materialized state, границы выдачи, фильтр статуса, пустой результат, stable sort и safe no-raw-payload response, а активный `cloud-ui-g` еще не имеет bounded balances/costing status table.
 
 Запланировано далее:
 
@@ -700,7 +697,7 @@
 - реализовано сейчас: показать deterministic costing status visibility без COGS/margin;
 - реализовано сейчас: bounded retro recalculation DAG/job lifecycle добавлен для costing fields/status; COGS/margin и production-grade balance rebuild не входят в этот slice;
 - не переносить stock balances/costing authority на POS Edge;
-- расширять активный `cloud-ui-g` inventory/costing surface только поверх подтвержденных backend routes; текущая bounded `stock-balances` table уже route-backed в legacy `cloud-ui`, full costing/recalculation operator workflow остается `запланировано далее`.
+- расширять активный `cloud-ui-g` inventory/costing surface только поверх подтвержденных backend routes; bounded `stock-balances` table для активного UI остается `запланировано далее`, full costing/recalculation operator workflow тоже остается `запланировано далее`.
 
 Ожидаемый минимальный contract:
 
@@ -757,7 +754,7 @@ GET /api/v1/inventory/stock-ledger?restaurant_id=&source_event_type=&source_even
   - jobs имеют UUIDv7 `command_id`, status/progress/checkpoint/error metadata и audit trail;
   - фактический backfill выполняет background worker без synchronous ClickHouse write в HTTP request path.
 - Bounded kitchen timing aggregate `GET /api/v1/olap/kitchen-timing-summary` поверх `KitchenTicketStatusChanged`/`ItemServed` с группировкой `business_date|station`, lifecycle counts и средними transition durations без raw payload.
-- Legacy `cloud-ui` реализовано сейчас показывает read-only `export-status`, bounded `stock-moves`, `stock-move-summary`, backfill job status и kitchen timing summary; support-only retry/backfill mutating controls не вызываются из UI. Активный `cloud-ui-g` эти reporting/OLAP экраны еще не реализует.
+- Активный `cloud-ui-g` reporting/OLAP экраны еще не реализует; support-only retry/backfill mutating controls не вызываются из UI.
 
 Далее:
 
@@ -891,7 +888,7 @@ GET /api/v1/inventory/stock-ledger?restaurant_id=&source_event_type=&source_even
 Готовность к полному пилоту означает:
 
 - cashier flow из Definition Of Ready For Cashier Pilot остается зеленым;
-- Legacy `cloud-ui` позволяет настроить stop-list и recipes, опубликовать их и увидеть readiness Edge; для активного `cloud-ui-g` перенос stop-list/recipes остается обязательным дальнейшим шагом перед признанием React Cloud UI функционально равным legacy-сценариям;
+- Для активного `cloud-ui-g` перенос stop-list/recipes остается обязательным дальнейшим шагом перед признанием React Cloud UI функционально полным для manager pilot;
 - POS Edge применяет `recipes` и `inventory_reference` через managed sync;
 - POS Edge локально блокирует stop-listed sale offline по локальному `stop_lists`;
 - POS Edge валидирует kitchen stock commands по `warehouse_reference`;

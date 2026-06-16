@@ -60,6 +60,11 @@ func (c *CloudClient) AssignmentStatus(ctx context.Context, cloudURL, nodeDevice
 	return out, json.NewDecoder(resp.Body).Decode(&out)
 }
 
+func (c *CloudClient) ConsumePairingCode(ctx context.Context, cloudURL string, req provisioning.CloudPairingConsumeRequest) (provisioning.CloudPairingConsumeResponse, error) {
+	var out provisioning.CloudPairingConsumeResponse
+	return out, c.post(ctx, strings.TrimRight(cloudURL, "/")+"/api/v1/devices/pairing/consume", req, &out)
+}
+
 func (c *CloudClient) DownloadSnapshot(ctx context.Context, url string) (appmastersync.ApplyMasterDataCommand, error) {
 	var out appmastersync.ApplyMasterDataCommand
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)

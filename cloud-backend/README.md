@@ -46,7 +46,7 @@ CLOUD_POSTGRES_MIGRATIONS_DIR=migrations/postgres
 CLOUD_POSTGRES_BACKUP_DIR=data/cloud-backups
 CLOUD_PUBLIC_URL=http://localhost:8090
 LICENSE_SERVER_URL=http://localhost:8095
-MH_POS_VERSION=0.1.8
+MH_POS_VERSION=0.1.9
 ```
 
 `CLOUD_POSTGRES_DSN` обязателен.
@@ -133,6 +133,7 @@ Option A, Cloud Approve:
 ```text
 POST /api/v1/devices/register
 GET  /api/v1/devices/unassigned
+GET  /api/v1/restaurants/{restaurant_id}/devices
 POST /api/v1/restaurants/{restaurant_id}/devices/{node_device_id}/assign
 GET  /api/v1/devices/{node_device_id}/assignment-status
 ```
@@ -143,9 +144,10 @@ Option B, License Server Code:
 
 ```text
 POST /api/v1/restaurants/{restaurant_id}/devices/generate-pairing-code
+POST /api/v1/devices/pairing/consume
 ```
 
-Cloud генерирует короткий одноразовый code и node token, сохраняет hashes, регистрирует code в `LICENSE_SERVER_URL` и возвращает plaintext code только в response. Если License Server недоступен, возвращается `503 LICENSE_SERVER_UNAVAILABLE`.
+Cloud генерирует короткий одноразовый code и `pairing_id`, сохраняет hash и derived decrypt key, регистрирует invitation в `LICENSE_SERVER_URL` и возвращает plaintext code только в response. POS Edge после resolve в License Server вызывает encrypted consume в Cloud; только consume назначает Edge node и выдает node token. Если License Server недоступен, возвращается `503 LICENSE_SERVER_UNAVAILABLE`.
 
 Вне текущего объема: production authorization perimeter Cloud API. Текущие endpoints предназначены для dev/pilot perimeter и не смешиваются с POS operator auth.
 

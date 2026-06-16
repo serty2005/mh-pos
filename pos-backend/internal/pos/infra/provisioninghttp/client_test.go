@@ -25,8 +25,7 @@ func TestLicenseResolveMapsPairingCodeInvalidToDomainInvalid(t *testing.T) {
 
 	client := NewLicenseClient(time.Second)
 	_, err := client.Resolve(context.Background(), server.URL, provisioning.LicenseResolveRequest{
-		PairingCode:  "123456",
-		NodeDeviceID: "edge-node-1",
+		PairingCode: "123456",
 	})
 	if !errors.Is(err, domain.ErrInvalid) {
 		t.Fatalf("expected domain invalid for license 400, got %v", err)

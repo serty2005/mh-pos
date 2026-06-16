@@ -167,7 +167,7 @@ POS UI должен руководствоваться восемью золот
 
 ## POS UI Component Standardization / Design-System Rules
 
-- Перед созданием нового POS UI элемента проверить `pos-ui/src/shared/ui`.
+- Перед созданием нового POS UI элемента проверить `pos-ui-g/src/shared/ui`.
 - Если нужный primitive/composite уже есть, использовать его вместо локальной разметки и локальных классов.
 - Если нужного primitive нет, создать переиспользуемый компонент или расширить существующий так, чтобы следующий экран мог использовать тот же API.
 - Не плодить локальные копии кнопок, context buttons, tabs/chips, dialog shell, metric/status cards, empty/error states, quantity steppers, tables/lists, action rails и scrollbar patterns внутри feature-компонентов.

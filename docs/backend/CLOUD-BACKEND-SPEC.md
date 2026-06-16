@@ -161,7 +161,7 @@ Inventory read model:
 
 Использование в Cloud UI:
 
-- реализовано сейчас: legacy `cloud-ui` читает `stock-balances`, `olap/export-status`, `olap/stock-moves`, `olap/stock-move-summary`, `olap/backfill-jobs` и `olap/kitchen-timing-summary` как bounded operator surface с safe фильтрами и без raw payload display.
+- реализовано сейчас: активный `cloud-ui-g` еще не имеет screens для `stock-balances`, `olap/export-status`, `olap/stock-moves`, `olap/stock-move-summary`, `olap/backfill-jobs` и `olap/kitchen-timing-summary`; старый Vue `cloud-ui`, где были read-only previews, удален из runtime tree.
 - реализовано сейчас: активный `cloud-ui-g` читает publication state, выполняет publication, работает с Edge-device flow, master data и safe Edge events list; inventory/OLAP/reporting screens в `cloud-ui-g` еще не реализованы.
 - реализовано сейчас: publication panel читает только safe `GET /api/v1/restaurants/{id}/master-data/publication-state`; routes `/master-data/packages/*`, `/master-data/snapshot` и `sync/exchange` переносят package payload/snapshot для Edge delivery и не являются Cloud UI read-only delivery-status contract.
 - вне текущего объема: Cloud UI не вызывает support-only mutating `POST /api/v1/olap/export-retry` и `POST /api/v1/olap/backfill-jobs`, не показывает COGS/margin и не превращает bounded slices в BI dashboard.
@@ -447,17 +447,20 @@ Cloud Approve:
 
 License Code:
 
-1. Cloud генерирует node id при необходимости, node token и короткий pairing code.
-2. Cloud сохраняет hashes/verifiers и регистрирует pairing code в License Server.
+1. Cloud генерирует короткий pairing code и `pairing_id` для выбранного ресторана; `node_device_id` на этом шаге не создается.
+2. Cloud сохраняет hash кода и derived decrypt key для consume, ревокает предыдущий active code этого ресторана и регистрирует pairing invitation в License Server с `instance_id`.
 3. Plain pairing code возвращается только в HTTP response Cloud UI.
-4. POS Edge отправляет code в License Server через собственный pair-via-license flow.
-5. POS Edge получает Cloud URL, restaurant id, node device id, credentials и применяет snapshot.
+4. POS Edge отправляет code в License Server через собственный pair-via-license flow и получает `cloud_url`, `pairing_id` и restaurant id.
+5. POS Edge отправляет в Cloud `POST /devices/pairing/consume` с encrypted payload, где `node_device_id` зашифрован ключом, выведенным из pairing code.
+6. Cloud расшифровывает payload активным кодом, создает assigned Edge node, помечает pending row как assigned, consumed code как consumed и возвращает restaurant bootstrap, snapshot URL и node credentials.
 
 Правила:
 
 - `assign` и `generate-pairing-code` требуют active restaurant.
 - Node token хранится в Cloud как hash/verifier, а не как plaintext.
 - `assignment-status` после assigned выдает credentials для Edge provisioning только если token еще не был выдан. Повторная проверка статуса не ротирует существующий `credentials_hash` и не возвращает plaintext token.
+- `generate-pairing-code` не назначает устройство и не выпускает node token; token выдается только на successful encrypted consume.
+- Активным может быть только один pairing code на ресторан; новый код ревокает предыдущий active code.
 - License Server недоступен: Cloud возвращает `503 LICENSE_SERVER_UNAVAILABLE`.
 
 Вне текущего объема:
@@ -621,10 +624,10 @@ Schema verification:
 
 Реализовано сейчас:
 
-- Активный Cloud UI target — `cloud-ui-g`; устаревший Vue/Quasar `cloud-ui` остается legacy/reference-only и не принимает новые Cloud-бэкофисные фичи.
+- Активный Cloud UI target — `cloud-ui-g`; устаревший Vue/Quasar `cloud-ui` удален из runtime tree и не принимает Cloud-бэкофисные фичи.
 - `cloud-ui-g` использует Cloud Backend routes для launch readiness, Edge-device flow, master data, publication и safe Edge events list.
-- Legacy `cloud-ui` читает `GET /api/v1/sync/readiness/stop-list` в inventory readiness panel и показывает только counts/status/checkpoint/ACK metadata без raw sync payload.
-- Legacy `cloud-ui` читает bounded `GET /api/v1/manager/stop-list-updates` и вызывает approve/reject/request-changes для safe Edge-origin stop-list review; raw Edge payload не рендерится.
+- Активный `cloud-ui-g` еще не имеет inventory readiness panel для `GET /api/v1/sync/readiness/stop-list`.
+- Активный `cloud-ui-g` еще не имеет safe Edge-origin stop-list review surface поверх bounded `GET /api/v1/manager/stop-list-updates`.
 - Реализовано сейчас: backend assignment routes доступны только для `stop_list_update` через `POST /api/v1/manager/stop-list-updates/{id}/assign|unassign`; bounded audit read доступен для `stop_list_update`, `catalog_suggestion` и `recipe_suggestion` через manager audit routes; assignment runtime для `catalog_suggestion` и `recipe_suggestion`, escalation и dashboard запланированы далее.
 - Cloud UI не использует POS session, POS Edge runtime endpoints или cashier stores.
 - Cloud UI не показывает raw payloads, PIN material, token material или sensitive request dumps.

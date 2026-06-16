@@ -2,6 +2,10 @@ package app
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -26,10 +30,11 @@ func (g *fixedIDs) NewID() string {
 
 type provisioningRepo struct {
 	edgeNodes map[string]domain.EdgeNode
+	pairings  map[string]domain.PairingCode
 }
 
 func newProvisioningRepo() *provisioningRepo {
-	return &provisioningRepo{edgeNodes: map[string]domain.EdgeNode{}}
+	return &provisioningRepo{edgeNodes: map[string]domain.EdgeNode{}, pairings: map[string]domain.PairingCode{}}
 }
 
 func (r *provisioningRepo) RegisterUnassigned(context.Context, domain.UnassignedEdgeNode) (domain.UnassignedEdgeNode, error) {
@@ -38,6 +43,16 @@ func (r *provisioningRepo) RegisterUnassigned(context.Context, domain.Unassigned
 
 func (r *provisioningRepo) ListUnassigned(context.Context) ([]domain.UnassignedEdgeNode, error) {
 	return nil, nil
+}
+
+func (r *provisioningRepo) ListEdgeNodesByRestaurant(_ context.Context, restaurantID string) ([]domain.EdgeNode, error) {
+	var out []domain.EdgeNode
+	for _, node := range r.edgeNodes {
+		if node.RestaurantID == restaurantID {
+			out = append(out, node)
+		}
+	}
+	return out, nil
 }
 
 func (r *provisioningRepo) UpsertEdgeNode(_ context.Context, v domain.EdgeNode) (domain.EdgeNode, error) {
@@ -59,6 +74,22 @@ func (r *provisioningRepo) MarkUnassignedAssigned(context.Context, string, strin
 
 func (r *provisioningRepo) CreatePairingCode(context.Context, domain.PairingCode) (domain.PairingCode, error) {
 	return domain.PairingCode{}, nil
+}
+
+func (r *provisioningRepo) RevokeActivePairingCodes(context.Context, string, time.Time) error {
+	return nil
+}
+
+func (r *provisioningRepo) GetPairingCode(_ context.Context, pairingID string) (domain.PairingCode, error) {
+	v, ok := r.pairings[pairingID]
+	if !ok {
+		return domain.PairingCode{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *provisioningRepo) ConsumePairingCode(context.Context, string, string, time.Time) error {
+	return nil
 }
 
 func TestAssignmentStatusDoesNotRotateExistingNodeToken(t *testing.T) {
@@ -142,5 +173,52 @@ func TestAssignmentStatusReturnsPendingForUnknownNode(t *testing.T) {
 	}
 	if status.Status != "pending" {
 		t.Fatalf("expected pending status, got %+v", status)
+	}
+}
+
+func TestListRestaurantDevicesReturnsOwnedEdgeNodesOnly(t *testing.T) {
+	repo := newProvisioningRepo()
+	repo.edgeNodes["node-1"] = domain.EdgeNode{NodeDeviceID: "node-1", RestaurantID: "restaurant-1", Status: domain.EdgeNodeAssigned}
+	repo.edgeNodes["node-2"] = domain.EdgeNode{NodeDeviceID: "node-2", RestaurantID: "restaurant-2", Status: domain.EdgeNodeAssigned}
+	service := NewService(repo, nil, fixedClock{}, &fixedIDs{}, "http://cloud.local", nil)
+
+	devices, err := service.ListRestaurantDevices(context.Background(), "restaurant-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 || devices[0].NodeDeviceID != "node-1" {
+		t.Fatalf("expected one restaurant-owned node, got %+v", devices)
+	}
+}
+
+func TestPairingPayloadDecryptsWithDerivedPairingKey(t *testing.T) {
+	code := "ABCD2345"
+	pairingID := "pairing-1"
+	key := pairingKey(code, pairingID)
+	keyBytes, err := base64.RawURLEncoding.DecodeString(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := aes.NewCipher(keyBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonce := []byte("123456789012")
+	body, err := json.Marshal(PairingConsumePayload{NodeDeviceID: "edge-node-1", DisplayName: "POS Edge", RequestID: "request-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext := aead.Seal(nil, nonce, body, []byte(pairingID))
+
+	got, err := decryptPairingPayload(key, pairingID, base64.RawURLEncoding.EncodeToString(nonce), base64.RawURLEncoding.EncodeToString(ciphertext))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.NodeDeviceID != "edge-node-1" || got.RequestID != "request-1" {
+		t.Fatalf("unexpected decrypted payload: %+v", got)
 	}
 }

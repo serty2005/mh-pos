@@ -462,7 +462,7 @@ Runtime code не менять.
 
 Осмотри структуру:
 - cloud-ui-g/src/features;
-- cloud-ui/src/components/cloud;
+- docs/ui/CLOUD-UI-SPEC.md и docs/ui/CLOUD-UI-RMS-MANAGER-CLOUD-API-SPEC.md;
 - cloud-ui-g/src/shared/api;
 - cloud-ui-g/src/i18n или shared/i18n.
 

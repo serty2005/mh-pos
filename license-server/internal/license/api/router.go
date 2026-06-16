@@ -46,32 +46,32 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "PAIRING_CODE_INVALID", "errors.pairing.invalid", err)
 		return
 	}
-	logPairingEvent(r, slog.LevelInfo, "license.pairing.register", "started", "", cmd.RestaurantID, cmd.NodeDeviceID, cmd.CloudURL, cmd.PairingCode)
+	logPairingEvent(r, slog.LevelInfo, "license.pairing.register", "started", "", cmd.RestaurantID, cmd.PairingID, cmd.CloudURL, cmd.PairingCode)
 	v, err := h.service.Register(r.Context(), cmd)
 	if err != nil {
-		logPairingEvent(r, slog.LevelWarn, "license.pairing.register", "rejected", app.SafeErrorReason(err), cmd.RestaurantID, cmd.NodeDeviceID, cmd.CloudURL, cmd.PairingCode)
+		logPairingEvent(r, slog.LevelWarn, "license.pairing.register", "rejected", app.SafeErrorReason(err), cmd.RestaurantID, cmd.PairingID, cmd.CloudURL, cmd.PairingCode)
 		writeAppError(w, r, err)
 		return
 	}
-	logPairingEvent(r, slog.LevelInfo, "license.pairing.register", "success", "", cmd.RestaurantID, cmd.NodeDeviceID, cmd.CloudURL, cmd.PairingCode)
+	logPairingEvent(r, slog.LevelInfo, "license.pairing.register", "success", "", cmd.RestaurantID, cmd.PairingID, cmd.CloudURL, cmd.PairingCode)
 	writeJSON(w, http.StatusCreated, v)
 }
 
 func (h *Handler) resolve(w http.ResponseWriter, r *http.Request) {
 	var cmd app.ResolveCommand
 	if err := decode(r, &cmd); err != nil {
-		logPairingEvent(r, slog.LevelWarn, "license.pairing.resolve", "rejected", "decode_failed", "", cmd.NodeDeviceID, "", cmd.PairingCode)
+		logPairingEvent(r, slog.LevelWarn, "license.pairing.resolve", "rejected", "decode_failed", "", "", "", cmd.PairingCode)
 		writeError(w, r, http.StatusBadRequest, "PAIRING_CODE_INVALID", "errors.pairing.invalid", err)
 		return
 	}
-	logPairingEvent(r, slog.LevelInfo, "license.pairing.resolve", "started", "", "", cmd.NodeDeviceID, "", cmd.PairingCode)
+	logPairingEvent(r, slog.LevelInfo, "license.pairing.resolve", "started", "", "", "", "", cmd.PairingCode)
 	v, err := h.service.Resolve(r.Context(), cmd)
 	if err != nil {
-		logPairingEvent(r, levelForAppError(err), "license.pairing.resolve", "rejected", app.SafeErrorReason(err), "", cmd.NodeDeviceID, "", cmd.PairingCode)
+		logPairingEvent(r, levelForAppError(err), "license.pairing.resolve", "rejected", app.SafeErrorReason(err), "", "", "", cmd.PairingCode)
 		writeAppError(w, r, err)
 		return
 	}
-	logPairingEvent(r, slog.LevelInfo, "license.pairing.resolve", "success", "", v.RestaurantID, v.NodeDeviceID, v.CloudURL, cmd.PairingCode)
+	logPairingEvent(r, slog.LevelInfo, "license.pairing.resolve", "success", "", v.RestaurantID, v.PairingID, v.CloudURL, cmd.PairingCode)
 	writeJSON(w, http.StatusOK, v)
 }
 
@@ -115,14 +115,14 @@ func levelForAppError(err error) slog.Level {
 	return slog.LevelError
 }
 
-func logPairingEvent(r *http.Request, level slog.Level, operation, result, reason, restaurantID, nodeDeviceID, cloudURL, pairingCode string) {
+func logPairingEvent(r *http.Request, level slog.Level, operation, result, reason, restaurantID, pairingID, cloudURL, pairingCode string) {
 	args := []any{
 		"request_id", middleware.GetReqID(r.Context()),
 		"operation", operation,
 		"action", r.Method + " " + r.URL.Path,
 		"result", result,
 		"restaurant_id", maskLogID(restaurantID),
-		"node_device_id", maskLogID(nodeDeviceID),
+		"pairing_id", maskLogID(pairingID),
 		"pairing_code_present", strings.TrimSpace(pairingCode) != "",
 		"pairing_code_length", len(strings.TrimSpace(pairingCode)),
 	}

@@ -40,30 +40,30 @@ func (r *memoryRepo) MarkConsumed(_ context.Context, hash string, consumedAt tim
 	return nil
 }
 
-func TestRegisterResolveAndConsumePairingCode(t *testing.T) {
+func TestRegisterAndResolvePairingCode(t *testing.T) {
 	service := app.NewService(newMemoryRepo())
 	ctx := context.Background()
 
 	if _, err := service.Register(ctx, app.RegisterPairingCodeCommand{
 		PairingCode:  "123456",
+		PairingID:    "pairing-1",
+		InstanceID:   "cloud-instance-1",
 		CloudURL:     "http://localhost:8090",
 		RestaurantID: "restaurant-1",
-		NodeDeviceID: "edge-node-1",
-		Credentials:  app.Credentials{Type: "node_token", Token: "token-1"},
 		ExpiresAt:    time.Now().Add(time.Hour),
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	resolved, err := service.Resolve(ctx, app.ResolveCommand{PairingCode: "123456", NodeDeviceID: "edge-node-1"})
+	resolved, err := service.Resolve(ctx, app.ResolveCommand{PairingCode: "123456"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved.CloudURL != "http://localhost:8090" || resolved.RestaurantID != "restaurant-1" || resolved.Credentials.Token != "token-1" {
+	if resolved.PairingID != "pairing-1" || resolved.CloudURL != "http://localhost:8090" || resolved.RestaurantID != "restaurant-1" {
 		t.Fatalf("unexpected resolve result: %+v", resolved)
 	}
-	if _, err := service.Resolve(ctx, app.ResolveCommand{PairingCode: "123456", NodeDeviceID: "edge-node-1"}); !errors.Is(err, app.ErrConsumed) {
-		t.Fatalf("expected consumed code to be rejected, got %v", err)
+	if _, err := service.Resolve(ctx, app.ResolveCommand{PairingCode: "123456"}); err != nil {
+		t.Fatalf("expected license resolve to stay available until Cloud consume, got %v", err)
 	}
 }
 
@@ -79,10 +79,10 @@ func TestResolveRejectsInvalidAndExpiredCodes(t *testing.T) {
 	}
 	if _, err := service.Register(ctx, app.RegisterPairingCodeCommand{
 		PairingCode:  "654321",
+		PairingID:    "pairing-1",
+		InstanceID:   "cloud-instance-1",
 		CloudURL:     "http://localhost:8090",
 		RestaurantID: "restaurant-1",
-		NodeDeviceID: "edge-node-1",
-		Credentials:  app.Credentials{Type: "node_token", Token: "token-1"},
 		ExpiresAt:    time.Now().Add(-time.Minute),
 	}); !errors.Is(err, app.ErrExpired) {
 		t.Fatalf("expected expired code registration to be rejected, got %v", err)

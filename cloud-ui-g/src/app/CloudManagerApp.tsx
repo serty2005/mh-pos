@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react';
+import { Menu, X } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { navigationById, navigationItems } from './navigation';
 import type { CloudRouteId } from './routes';
 import { defaultRoute } from './routes';
-import RestaurantSelector from '../features/restaurants/RestaurantSelector';
 import { useRestaurants } from '../features/restaurants/useRestaurants';
-import { apiBase } from '../shared/api/client';
 import { useI18n } from '../shared/i18n/I18nProvider';
 import EmptyState from '../shared/ui/EmptyState';
 import RestaurantsPage from '../features/restaurants/RestaurantsPage';
@@ -52,9 +51,9 @@ export default function CloudManagerApp() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50 p-3 sm:p-4 lg:p-6">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 lg:flex-row">
-        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-3 lg:hidden">
+    <main className="min-h-[100dvh] bg-slate-100 font-sans text-slate-800">
+      <div className="flex min-h-screen w-full flex-col lg:flex-row">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-white p-3 lg:hidden">
           <div>
             <p className="text-sm font-semibold text-slate-900">{t('app.title')}</p>
             <p className="text-xs text-slate-500">{t('nav.mobileHint')}</p>
@@ -62,9 +61,10 @@ export default function CloudManagerApp() {
           <button
             type="button"
             onClick={() => setSidebarOpen((prev) => !prev)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 text-slate-700 transition-colors hover:bg-slate-100"
+            aria-label={isSidebarOpen ? t('nav.closeMenu') : t('nav.openMenu')}
           >
-            {isSidebarOpen ? t('nav.closeMenu') : t('nav.openMenu')}
+            {isSidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>
         </div>
 
@@ -73,34 +73,18 @@ export default function CloudManagerApp() {
           activeRouteId={activeRouteId}
           isRestaurantSelected={isRestaurantSelected}
           isOpen={isSidebarOpen}
+          restaurants={restaurants}
+          restaurantsStatus={status}
+          restaurantsError={error}
+          selectedRestaurantId={selectedRestaurantId}
+          onSelectRestaurant={setSelectedRestaurantId}
+          onRetryRestaurants={() => {
+            void reload();
+          }}
           onNavigate={handleNavigate}
         />
 
-        <section className="min-w-0 flex-1 space-y-4">
-          <header className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">{t(activeItem.labelKey)}</h2>
-                <p className="text-sm text-slate-500">{t('dashboard.readinessDescription')}</p>
-              </div>
-              <div className="text-xs text-slate-600">
-                <div>{t('app.environment')}: {import.meta.env.MODE}</div>
-                <div>{t('app.apiBase')}: {apiBase}</div>
-              </div>
-            </div>
-          </header>
-
-          <RestaurantSelector
-            restaurants={restaurants}
-            status={status}
-            error={error}
-            selectedRestaurantId={selectedRestaurantId}
-            onSelectRestaurant={setSelectedRestaurantId}
-            onRetry={() => {
-              void reload();
-            }}
-          />
-
+        <section className="min-w-0 flex-1 space-y-5 overflow-y-auto border-l border-slate-200 bg-slate-50/70 p-4 sm:p-6 lg:h-screen lg:p-8">
           {routeRequiresRestaurant && !isRestaurantSelected ? (
             <section className="rounded-2xl border border-slate-200 bg-white p-6">
               <EmptyState

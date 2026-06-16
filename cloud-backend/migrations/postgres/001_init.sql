@@ -1079,8 +1079,9 @@ CREATE INDEX IF NOT EXISTS cloud_unassigned_edge_nodes_status_seen
 CREATE TABLE IF NOT EXISTS cloud_pairing_codes (
   id TEXT PRIMARY KEY,
   pairing_code_hash TEXT NOT NULL UNIQUE CHECK (pairing_code_hash <> ''),
+  pairing_key TEXT NOT NULL CHECK (pairing_key <> ''),
   restaurant_id TEXT NOT NULL REFERENCES cloud_restaurants(id),
-  node_device_id TEXT NOT NULL CHECK (node_device_id <> ''),
+  node_device_id TEXT,
   cloud_url TEXT NOT NULL CHECK (cloud_url <> ''),
   status TEXT NOT NULL CHECK (status IN ('active','consumed','expired','revoked')),
   expires_at TIMESTAMPTZ NOT NULL,
@@ -1089,8 +1090,21 @@ CREATE TABLE IF NOT EXISTS cloud_pairing_codes (
   updated_at TIMESTAMPTZ NOT NULL
 );
 
+ALTER TABLE cloud_pairing_codes
+  ADD COLUMN IF NOT EXISTS pairing_key TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE cloud_pairing_codes
+  ALTER COLUMN node_device_id DROP NOT NULL;
+
+ALTER TABLE cloud_pairing_codes
+  DROP CONSTRAINT IF EXISTS cloud_pairing_codes_node_device_id_check;
+
 CREATE INDEX IF NOT EXISTS cloud_pairing_codes_restaurant_status
   ON cloud_pairing_codes(restaurant_id, status, expires_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS cloud_pairing_codes_one_active_per_restaurant
+  ON cloud_pairing_codes(restaurant_id)
+  WHERE status = 'active';
 
 -- === 007_refund_and_pricing_policy_hardening.sql ===
 ALTER TABLE cloud_edge_event_receipts

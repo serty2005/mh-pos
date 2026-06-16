@@ -475,8 +475,8 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Table:         "cloud_pairing_codes",
 			RequiredBy:    "cloud license server pairing code registration",
 			MigrationFile: "001_init.sql",
-			Columns:       []string{"id", "pairing_code_hash", "restaurant_id", "node_device_id", "cloud_url", "status", "expires_at", "consumed_at", "created_at", "updated_at"},
-			Indexes:       []string{"cloud_pairing_codes_restaurant_status"},
+			Columns:       []string{"id", "pairing_code_hash", "pairing_key", "restaurant_id", "node_device_id", "cloud_url", "status", "expires_at", "consumed_at", "created_at", "updated_at"},
+			Indexes:       []string{"cloud_pairing_codes_restaurant_status", "cloud_pairing_codes_one_active_per_restaurant"},
 		},
 	}
 }

@@ -17,10 +17,10 @@ func TestRegisterPairingCodePostsPayload(t *testing.T) {
 	expiresAt := time.Date(2026, 6, 13, 12, 30, 0, 0, time.UTC)
 	payload := app.LicensePairingPayload{
 		PairingCode:  "123456",
+		PairingID:    "pairing-1",
+		InstanceID:   "cloud-instance-1",
 		CloudURL:     "https://cloud.example.test",
 		RestaurantID: "restaurant-1",
-		NodeDeviceID: "edge-node-1",
-		Credentials:  domain.Credentials{Type: "node_token", Token: "token-1"},
 		ExpiresAt:    expiresAt,
 	}
 
@@ -40,10 +40,10 @@ func TestRegisterPairingCodePostsPayload(t *testing.T) {
 			t.Fatalf("decode request body: %v", err)
 		}
 		if got.PairingCode != payload.PairingCode ||
+			got.PairingID != payload.PairingID ||
+			got.InstanceID != payload.InstanceID ||
 			got.CloudURL != payload.CloudURL ||
 			got.RestaurantID != payload.RestaurantID ||
-			got.NodeDeviceID != payload.NodeDeviceID ||
-			got.Credentials != payload.Credentials ||
 			!got.ExpiresAt.Equal(payload.ExpiresAt) {
 			t.Fatalf("unexpected payload: %+v", got)
 		}

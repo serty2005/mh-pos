@@ -59,17 +59,13 @@ func consumed(reason string) error {
 	return &safeError{err: ErrConsumed, reason: reason}
 }
 
-type Credentials struct {
-	Type  string `json:"type"`
-	Token string `json:"token"`
-}
-
 type PairingCode struct {
 	PairingCodeHash string
+	PairingID       string
+	InstanceID      string
 	CloudURL        string
 	RestaurantID    string
 	NodeDeviceID    string
-	Credentials     Credentials
 	ExpiresAt       time.Time
 	ConsumedAt      *time.Time
 	CreatedAt       time.Time
@@ -90,12 +86,12 @@ func NewService(repo Repository) *Service {
 }
 
 type RegisterPairingCodeCommand struct {
-	PairingCode  string      `json:"pairing_code"`
-	CloudURL     string      `json:"cloud_url"`
-	RestaurantID string      `json:"restaurant_id"`
-	NodeDeviceID string      `json:"node_device_id"`
-	Credentials  Credentials `json:"credentials"`
-	ExpiresAt    time.Time   `json:"expires_at"`
+	PairingCode  string    `json:"pairing_code"`
+	PairingID    string    `json:"pairing_id"`
+	InstanceID   string    `json:"instance_id"`
+	CloudURL     string    `json:"cloud_url"`
+	RestaurantID string    `json:"restaurant_id"`
+	ExpiresAt    time.Time `json:"expires_at"`
 }
 
 type RegisterResult struct {
@@ -104,20 +100,19 @@ type RegisterResult struct {
 }
 
 type ResolveCommand struct {
-	PairingCode  string `json:"pairing_code"`
-	NodeDeviceID string `json:"node_device_id"`
+	PairingCode string `json:"pairing_code"`
 }
 
 type ResolveResult struct {
-	CloudURL     string      `json:"cloud_url"`
-	RestaurantID string      `json:"restaurant_id"`
-	NodeDeviceID string      `json:"node_device_id"`
-	Credentials  Credentials `json:"credentials"`
+	PairingID    string    `json:"pairing_id"`
+	CloudURL     string    `json:"cloud_url"`
+	RestaurantID string    `json:"restaurant_id"`
+	ExpiresAt    time.Time `json:"expires_at"`
 }
 
 func (s *Service) Register(ctx context.Context, cmd RegisterPairingCodeCommand) (RegisterResult, error) {
 	code := strings.TrimSpace(cmd.PairingCode)
-	if code == "" || strings.TrimSpace(cmd.CloudURL) == "" || strings.TrimSpace(cmd.RestaurantID) == "" || strings.TrimSpace(cmd.NodeDeviceID) == "" || strings.TrimSpace(cmd.Credentials.Token) == "" {
+	if code == "" || strings.TrimSpace(cmd.PairingID) == "" || strings.TrimSpace(cmd.InstanceID) == "" || strings.TrimSpace(cmd.CloudURL) == "" || strings.TrimSpace(cmd.RestaurantID) == "" {
 		return RegisterResult{}, invalid("registration_required_fields_missing")
 	}
 	expiresAt := cmd.ExpiresAt.UTC()
@@ -126,10 +121,10 @@ func (s *Service) Register(ctx context.Context, cmd RegisterPairingCodeCommand) 
 	}
 	err := s.repo.Save(ctx, PairingCode{
 		PairingCodeHash: Hash(code),
+		PairingID:       strings.TrimSpace(cmd.PairingID),
+		InstanceID:      strings.TrimSpace(cmd.InstanceID),
 		CloudURL:        strings.TrimSpace(cmd.CloudURL),
 		RestaurantID:    strings.TrimSpace(cmd.RestaurantID),
-		NodeDeviceID:    strings.TrimSpace(cmd.NodeDeviceID),
-		Credentials:     cmd.Credentials,
 		ExpiresAt:       expiresAt,
 		CreatedAt:       time.Now().UTC(),
 	})
@@ -157,14 +152,7 @@ func (s *Service) Resolve(ctx context.Context, cmd ResolveCommand) (ResolveResul
 	if !item.ExpiresAt.After(time.Now().UTC()) {
 		return ResolveResult{}, expired("pairing_code_expired")
 	}
-	if requested := strings.TrimSpace(cmd.NodeDeviceID); requested != "" && requested != item.NodeDeviceID {
-		return ResolveResult{}, invalid("node_device_id_mismatch")
-	}
-	now := time.Now().UTC()
-	if err := s.repo.MarkConsumed(ctx, item.PairingCodeHash, now); err != nil {
-		return ResolveResult{}, err
-	}
-	return ResolveResult{CloudURL: item.CloudURL, RestaurantID: item.RestaurantID, NodeDeviceID: item.NodeDeviceID, Credentials: item.Credentials}, nil
+	return ResolveResult{PairingID: item.PairingID, CloudURL: item.CloudURL, RestaurantID: item.RestaurantID, ExpiresAt: item.ExpiresAt}, nil
 }
 
 func Hash(code string) string {
