@@ -26,6 +26,8 @@
 
 `pos-ui-g/` является активным React/Vite/TypeScript POS UI. Новые POS UI изменения должны проектироваться под этот стек.
 
+Реализовано сейчас: waiter mobile order/precheck runtime живет в `pos-ui-g/src/components/waiter/POSWaiterSection.tsx` и подключается через terminal mode `waiter` в `pos-ui-g/src/App.tsx`. Default waiter surface не вызывает payment/refund/cash drawer/cash shift/fiscal endpoints; backend остается авторитетным для permissions, locked state, totals и order/precheck transitions.
+
 ## Component Modularity Standard
 
 Все новые UI элементы в `pos-ui-g/` должны быть модульными и переиспользуемыми, если они могут повториться в другом экране или flow.

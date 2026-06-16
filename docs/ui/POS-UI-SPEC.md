@@ -53,14 +53,14 @@ UI вызывает backend API за авторитетным состояние
 
 Waiter mobile surface в `pos-ui-g` реализовано сейчас:
 
-- route `/pos/waiter` является mobile-first surface, проверяемой отдельной Playwright spec под viewport `390x844`;
-- использует только подтвержденные POS backend contracts: смена сотрудника, залы, столы, активные/current orders, menu items, добавление строки с modifier dialog, изменение quantity, void line, issue/reprint precheck;
-- не требует кассовую смену и не показывает payment/refund/cash drawer controls по умолчанию;
+- terminal mode `waiter` является mobile-first surface и автоматически выбирается на mobile viewport; он проверяется отдельной Playwright spec под viewport `390x844`;
+- использует только подтвержденные POS backend contracts: смена сотрудника, залы, столы, активные/current orders, menu items, добавление строки с modifier dialog, изменение quantity, void line с явной причиной, issue/reprint precheck;
+- не требует кассовую смену и не показывает payment/refund/cash drawer/fiscal controls по умолчанию;
 - не считает authoritative totals, цены модификаторов, складские остатки или платежные статусы; показывает backend-provided order/precheck totals;
-- явно показывает sticky mobile context dock: текущий стол, заказ, статус и границы полномочий официанта; order/precheck runtime доступен, payment/refund/cash drawer authority скрыта;
+- явно показывает mobile context: текущий стол, заказ, статус и границы полномочий официанта; order/precheck runtime доступен, payment/refund/cash drawer/fiscal authority скрыта;
 - после active issued precheck или locked order визуально блокирует меню, quantity и void controls; selected table/order/status остаются видимыми в mobile context strip, а меню дополнительно показывает lock badge без добавления новых действий;
 - modifier dialog показывает required/min/max правила, validation message и disabled/loading submit state без локальной подмены backend validation; общий `PosDialog` ограничивает высоту карточки и прокручивает body, чтобы длинный список modifiers оставался usable на mobile;
-- viewport `390x844` держит compact sticky context/authority dock, touch-friendly table/menu/order rows и sticky topbar без payment/refund/cash drawer controls;
+- viewport `390x844` держит compact context/authority surface, touch-friendly table/menu/order rows и locked-state reason без payment/refund/cash drawer/fiscal controls;
 - empty/loading/error/no-permission states идут через `pos-ui-g/src/shared/i18n` и reusable primitives из `pos-ui-g/src/shared/ui`.
 
 `pos-ui-g` KDS mode реализовано сейчас как backend-backed kitchen runtime:
@@ -202,7 +202,7 @@ Requirements:
 Реализовано сейчас:
 
 - `/pos` и `/pos/cashier` загружают текущий cashier pilot terminal.
-- `/pos/waiter` загружает текущий waiter mobile order/precheck runtime без payment/refund/cash drawer authority.
+- Terminal mode `waiter` загружает текущий mobile order/precheck runtime без payment/refund/cash drawer/fiscal authority.
 - `pos-ui-g` kitchen mode загружает backend-backed KDS, stock input и proposal runtime.
 - Код cashier terminal разделен на composable для runtime/API state и presentation components для POS shell, floor, menu grid, order rail, payment/actions modals и utility panels.
 - Bottom quick access bar и скрываемое side menu являются основным navigation shell для POS runtime.
@@ -230,7 +230,7 @@ Requirements:
 
 Запланировано далее:
 
-- `/pos/waiter` должен расширяться только в пределах подтвержденных backend contracts; он остается единственным mobile layout полного пилота, остальные modes не получают мобильные варианты;
+- Waiter terminal mode должен расширяться только в пределах подтвержденных backend contracts; он остается единственным mobile layout полного пилота, остальные modes не получают мобильные варианты;
 - `/pos/manager` остается вне POS UI runtime, если manager операции полностью покрыты Cloud UI;
 - `/pos/kitchen` / `pos-ui-g` должен расширяться только поверх подтвержденных backend routes;
 - расширенный production workflow polish для stop-list beyond минимальной backend-backed формы и sync indicator.

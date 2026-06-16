@@ -574,16 +574,16 @@
 
 Выполнено:
 
-- Route `/pos/waiter` стал mobile-first order/precheck flow по существующим order/menu/floor/precheck contracts.
+- Waiter terminal mode в `pos-ui-g` стал mobile-first order/precheck flow по существующим order/menu/floor/precheck contracts.
 - Waiter mobile является единственным мобильным layout пилота.
 - Cashier/KDS/manager не получают mobile variants.
 - Waiter role видит floor/menu/order/precheck actions.
-- Waiter role не получает payment/refund/cash drawer controls без payment permissions.
+- Waiter role не получает payment/refund/cash drawer/fiscal controls без payment permissions.
 - Playwright mobile viewport spec добавлен для:
   - создания заказа;
   - выбора модификаторов;
   - выпуска precheck;
-  - проверки отсутствия payment/refund/cash drawer controls.
+  - проверки отсутствия payment/refund/cash drawer/fiscal controls и сетевых вызовов к этим endpoint из waiter path.
 - Локальный запуск требует demo bootstrap.
 
 ## Manager pilot operations

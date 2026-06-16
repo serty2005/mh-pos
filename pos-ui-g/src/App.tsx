@@ -8,6 +8,7 @@ import { POSActivitySection } from './components/activity/POSActivitySection';
 import { POSReportsSection } from './components/reports/POSReportsSection';
 import { POSCashSection } from './components/cash/POSCashSection';
 import { POSKitchenSection } from './components/kitchen/POSKitchenSection';
+import { POSWaiterSection } from './components/waiter/POSWaiterSection';
 import { t } from './shared/i18n';
 import { 
   Armchair, 
@@ -27,7 +28,6 @@ import {
   ChefHat,
   Smartphone,
   Truck,
-  QrCode,
   Monitor
 } from 'lucide-react';
 import { PosBottomNav, PosButton, PosIconButton, PosInlineStatusBadge, PosSelectableChip, PosSelectableTile } from './shared/ui';
@@ -129,7 +129,7 @@ function POSAppShellContent() {
       return <POSKitchenSection section={currentKdsSection} />;
     }
     if (currentMode === 'waiter') {
-      return <WaiterQrView waiterUrl={`${window.location.origin}/waiter`} />;
+      return <POSWaiterSection />;
     }
     if (currentMode === 'delivery') {
       return <ModePlaceholder title={t.modes.deliveryBacklog} tone="warning" />;
@@ -509,25 +509,6 @@ function ModePlaceholder({ title, tone = 'neutral' }: { title: string; tone?: 'n
     <div className="flex-1 min-h-0 flex items-center justify-center bg-[var(--pos-bg)] p-8">
       <div className={`max-w-md w-full border ${tone === 'warning' ? 'border-amber-300 text-amber-600' : 'border-[var(--pos-border)] text-[var(--pos-text-secondary)]'} bg-[var(--pos-surface)] p-8 text-center`}>
         <span className="font-mono text-xs font-black uppercase tracking-widest">{title}</span>
-      </div>
-    </div>
-  );
-}
-
-function WaiterQrView({ waiterUrl }: { waiterUrl: string }) {
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(waiterUrl)}`;
-  return (
-    <div className="flex-1 min-h-0 flex items-center justify-center bg-[var(--pos-bg)] p-8">
-      <div className="w-full max-w-sm border border-[var(--pos-border)] bg-[var(--pos-surface)] p-6 text-center space-y-4">
-        <QrCode className="w-8 h-8 mx-auto text-[var(--pos-text-secondary)]" />
-        <div>
-          <h2 className="font-sans text-lg font-bold text-[var(--pos-text-primary)]">{t.modes.waiterQrTitle}</h2>
-          <p className="font-sans text-xs text-[var(--pos-text-muted)] mt-1">{t.modes.waiterQrDesc}</p>
-        </div>
-        <img className="mx-auto w-[220px] h-[220px] border border-[var(--pos-border)] bg-white" src={qrUrl} alt={t.modes.waiterQrTitle} />
-        <div className="font-mono text-[11px] text-[var(--pos-text-secondary)] break-all border border-[var(--pos-border)] p-2">
-          {waiterUrl}
-        </div>
       </div>
     </div>
   );

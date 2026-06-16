@@ -46,6 +46,7 @@ import {
   PricingPolicy,
   SelectedModifier,
   Table,
+  permissions,
 } from '../types';
 import { activeIssuedPrecheck, paymentChange } from './posContextHelpers';
 import {
@@ -100,7 +101,7 @@ interface POSContextType {
   currentOrder: Order | null;
   addMenuItemToOrder: (item: MenuItem, selectedModifiers: SelectedModifier[]) => Promise<CommandResult>;
   editOrderLineModifiers: (lineId: string, selectedModifiers: SelectedModifier[]) => Promise<CommandResult>;
-  removeOrderLine: (lineId: string) => Promise<void>;
+  removeOrderLine: (lineId: string, reason?: string) => Promise<void>;
   changeLineQuantity: (lineId: string, newQty: number) => Promise<CommandResult>;
   updateCommentAndCourse: (lineId: string, comment: string, course: number) => Promise<void>;
   issuePrecheck: () => Promise<void>;
@@ -175,6 +176,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const api = useMemo(() => createApiClient(() => authRef.current), []);
 
   const [actor, setActor] = useState<BackendActorContext | null>(null);
+  const actorRef = useRef<BackendActorContext | null>(null);
   const [shift, setShift] = useState<BackendShift | null>(null);
   const [recentShifts, setRecentShifts] = useState<BackendShift[]>([]);
   const [cashSessionDto, setCashSessionDto] = useState<BackendCashSession | null>(null);
@@ -203,6 +205,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     () => Boolean(auth.nodeDeviceId && auth.restaurantId),
     [auth.nodeDeviceId, auth.restaurantId],
   );
+
+  useEffect(() => {
+    actorRef.current = actor;
+  }, [actor]);
 
   const setAuth = useCallback((next: AuthSnapshot) => {
     authRef.current = next;
@@ -306,7 +312,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [addLogEvent, api, applyProvisioningStatus, handleError]);
 
-  const refreshOps = useCallback(async () => {
+  const refreshOps = useCallback(async (permissionsOverride?: string[]) => {
     if (!authRef.current.sessionId || !authRef.current.nodeDeviceId) return;
     const [currentShift, shifts] = await Promise.all([
       api.getCurrentShift(),
@@ -315,6 +321,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setShift(currentShift);
     setRecentShifts(shifts);
     if (!currentShift) {
+      setCashSessionDto(null);
+      return;
+    }
+    const effectivePermissions = permissionsOverride ?? actorRef.current?.permissions ?? [];
+    if (!effectivePermissions.includes(permissions.CASH_SESSION_VIEW)) {
       setCashSessionDto(null);
       return;
     }
@@ -413,9 +424,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStorageStatusDto(storage);
   }, [actor, api, closedOrdersBusinessDate, closedOrdersPage]);
 
-  const refreshAll = useCallback(async () => {
+  const refreshAll = useCallback(async (permissionsOverride?: string[]) => {
     try {
-      await refreshOps();
+      await refreshOps(permissionsOverride);
       await refreshDirectory();
       await refreshFloor();
       await refreshCurrentPrechecks();
@@ -446,7 +457,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActor(session.actor);
         setAuth({ ...authRef.current, actorEmployeeId: session.actor.employee_id });
         setPinLocked(false);
-        await refreshOps();
+        await refreshOps(session.actor.permissions);
       } catch {
         setPinLocked(true);
       }
@@ -527,7 +538,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       setPinLocked(false);
       addLogEvent(t.ops.employeeAuthorized(result.actor.name), 'success');
-      await refreshAll();
+      await refreshAll(result.actor.permissions);
       return true;
     } catch (error) {
       handleError(error, t.ops.authFailed);
@@ -687,10 +698,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [addLogEvent, api, backendCurrentOrder, handleError, pricingPoliciesDto, refreshActivity, refreshCurrentPrechecks, refreshCurrentPricing, refreshFloor]);
 
-  const removeOrderLine = useCallback(async (lineId: string) => {
+  const removeOrderLine = useCallback(async (lineId: string, reason = t.modals.deleteLine) => {
     if (!backendCurrentOrder) return;
     try {
-      await api.voidOrderLine(backendCurrentOrder.id, lineId, 'Удаление позиции на POS');
+      await api.voidOrderLine(backendCurrentOrder.id, lineId, reason);
       await refreshFloor();
       await refreshCurrentPricing(backendCurrentOrder.id);
     } catch (error) {

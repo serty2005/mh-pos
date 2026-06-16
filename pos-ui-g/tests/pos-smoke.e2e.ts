@@ -81,7 +81,7 @@ test('cashier can add an order line with selected modifier payload', async ({ pa
   expect(consoleMessages).toEqual([]);
 });
 
-test('mobile viewport opens waiter handoff instead of desktop POS', async ({ page }) => {
+test('mobile viewport opens waiter runtime instead of desktop POS', async ({ page }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => {
@@ -95,5 +95,6 @@ test('mobile viewport opens waiter handoff instead of desktop POS', async ({ pag
   }
   await page.locator('#pin-submit-btn').click();
 
-  await expect(page.getByText('Доступ к Waiter-экрану')).toBeVisible();
+  await expect(page.locator('#waiter-mobile-runtime')).toBeVisible();
+  await expect(page.getByText('Доступ к Waiter-экрану')).toHaveCount(0);
 });

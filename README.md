@@ -14,7 +14,7 @@
 - POS cashier UI показывает отдельную секцию услуг, открывает выбор modifiers для позиций с modifier groups и отображает выбранные modifiers в активном заказе.
 - POS cashier UI использует текущий shell `floor` / `order` / `activity` / `reports` / `cash`; delivery, settings, storage/archive/retention и Cloud reporting не являются operator-facing cashier flows.
 - React/Vite `pos-ui-g` имеет lightweight shared UI primitive layer для shell navigation/icon controls, tabs/chips, search inputs, status badges и dialog selectors; UI остается неавторитетным для платежей, order mutations, KDS transitions и stop-list enforcement.
-- POS waiter UI реализован как mobile-first route `/pos/waiter`: зал/стол, активные заказы, создание заказа, меню/поиск, modifiers при добавлении строки, quantity, void line и issue/reprint precheck без payment/refund/cash drawer authority по умолчанию; mobile dock держит текущий стол/заказ/статус и границы полномочий.
+- POS waiter UI реализован в активном React/Vite `pos-ui-g` как mobile-first terminal mode: зал/стол, активные заказы, создание заказа, меню/поиск, modifiers при добавлении строки, quantity, void line и issue/reprint precheck без payment/refund/cash drawer/fiscal authority по умолчанию; mobile context держит текущий стол/заказ/статус и границы полномочий.
 - POS Edge backend и route `/pos/kitchen` реализуют минимальный KDS lifecycle runtime: kitchen tickets создаются из order lines, `GET /api/v1/kitchen/tickets` читает backend read model, status actions `accept/start/hold/ready/serve/recall/cancel` проходят backend RBAC и пишут `KitchenTicketStatusChanged`; `serve` дополнительно пишет `ItemServed`.
 - Cloud Inventory Worker обрабатывает `ItemServed` recall/serve-again без silent mutation: если старый served fact уже создал ledger, superseding `ItemServed` добавляет append-only `ItemServedCompensation` `RETURN/IN`, затем новый `SALE/OUT`; если superseding event уже принят до обработки старого, старый served fact пропускается.
 - Active-looking POS UI placeholders для переноса/разделения строки, banquet/preorder, mock waiter filters и discount/surcharge editor не считаются реализованным runtime: они скрыты, passive или disabled/backlog до появления backend/API/UI contract; повторяющиеся backlog/readiness cards отображаются через reusable `PosReadinessCard`.
@@ -60,6 +60,7 @@
 
 - `pos-backend/` — POS Edge Go backend, SQLite runtime, cashier API.
 - `pos-ui-g/` — активный React/Vite POS UI.
+- `pos-ui/` — не входит в текущий runtime tree; если встречается в истории или ветках, считается legacy/reference-only и не принимает новые waiter runtime правки.
 - `cloud-backend/` — Cloud API, PostgreSQL sync receiver и master-data authority foundation.
 - `cloud-ui-g/` — активный React/Vite Cloud-бэкофис; все новые Cloud UI правки выполняются здесь.
 - `license-server/` — license/pairing support service.
