@@ -1,6 +1,6 @@
 ---
 name: minimalist-ui
-description: Use when changing MyHoreca POS visual style: color, typography, spacing, density, cards, tables, forms, buttons, icons, responsive layout, and polished operational UI details. Style companion for design-taste-frontend.
+description: "Use when changing MyHoreca POS visual style: color, typography, spacing, density, cards, tables, forms, buttons, icons, responsive layout, and polished operational UI details. Style companion for design-taste-frontend."
 ---
 
 # MyHoreca UI Style System
