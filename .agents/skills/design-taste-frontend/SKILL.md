@@ -1,6 +1,6 @@
 ---
 name: design-taste-frontend
-description: Use for any React/Vite/Tailwind UI work in pos-ui-g or cloud-ui-g: screens, forms, tables, navigation, i18n, accessibility, loading/empty/error states, workflow ergonomics, API integration, and Playwright checks. Primary frontend skill for this project.
+description: "Use for any React/Vite/Tailwind UI work in pos-ui-g or cloud-ui-g: screens, forms, tables, navigation, i18n, accessibility, loading/empty/error states, workflow ergonomics, API integration, and Playwright checks. Primary frontend skill for this project."
 ---
 
 # MyHoreca Frontend Engineering

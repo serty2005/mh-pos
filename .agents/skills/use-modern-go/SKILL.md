@@ -1,6 +1,6 @@
 ---
 name: use-modern-go
-description: Use for any Go backend work in pos-backend or cloud-backend: handlers, services, storage, migrations, tests, RBAC, errors, logging, sync, startup, maintenance, and database code. Project targets Go 1.26.2.
+description: "Use for any Go backend work in pos-backend or cloud-backend: handlers, services, storage, migrations, tests, RBAC, errors, logging, sync, startup, maintenance, and database code. Project targets Go 1.26.2."
 ---
 
 # Modern Go For MyHoreca POS
