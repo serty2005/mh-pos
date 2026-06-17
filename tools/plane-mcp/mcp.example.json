@@ -1,16 +1,7 @@
 {
   "mcpServers": {
     "plane-myhoreca-pos": {
-      "command": "uvx",
-      "args": [
-        "plane-mcp-server==0.2.8",
-        "stdio"
-      ],
-      "env": {
-        "PLANE_BASE_URL": "https://dev.serty.top",
-        "PLANE_WORKSPACE_SLUG": "myhoreca-pos",
-        "PLANE_PROJECT_ID": "562fe804-ecc3-41df-b85d-c981e6c13760"
-      }
+      "command": "/home/master/repos/myhoreca-pos/tools/plane-mcp/run-stdio.sh"
     }
   }
 }
