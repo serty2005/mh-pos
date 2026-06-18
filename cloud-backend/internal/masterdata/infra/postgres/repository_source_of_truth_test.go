@@ -97,6 +97,30 @@ func TestRestaurantPersistenceRoundTripUpdateListAndNotFound(t *testing.T) {
 	}
 }
 
+func TestPostgresIntegrationDSNGuardAllowsOnlyLocalTestDatabases(t *testing.T) {
+	allowed := []string{
+		"postgres://postgres:postgres@localhost:5432/mh_pos_cloud?sslmode=disable",
+		"postgres://postgres:postgres@127.0.0.1:5432/mh_pos_cloud_test?sslmode=disable",
+		"postgres://postgres:postgres@cloud-postgres:5432/mh_pos_cloud?sslmode=disable",
+	}
+	for _, dsn := range allowed {
+		if err := validatePostgresIntegrationTestDSN(dsn); err != nil {
+			t.Fatalf("expected DSN to be allowed, got %v", err)
+		}
+	}
+
+	rejected := []string{
+		"postgres://postgres:postgres@db.example.com:5432/mh_pos_cloud?sslmode=disable",
+		"postgres://postgres:postgres@localhost:5432/mh_pos_prod?sslmode=disable",
+		"postgres://postgres:postgres@localhost:5432/?sslmode=disable",
+	}
+	for _, dsn := range rejected {
+		if err := validatePostgresIntegrationTestDSN(dsn); err == nil {
+			t.Fatal("expected unsafe DSN to be rejected")
+		}
+	}
+}
+
 func TestRolePermissionsPersistenceAndMemoryParity(t *testing.T) {
 	ctx := t.Context()
 	pool, closeFn := openPostgresWithBaseline(t, ctx)

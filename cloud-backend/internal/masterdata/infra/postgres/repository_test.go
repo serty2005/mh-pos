@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -486,6 +487,9 @@ func openPostgresIntegrationPool(t *testing.T) *pgxpool.Pool {
 	if dsn == "" {
 		t.Skip("CLOUD_POSTGRES_TEST_DSN is not set")
 	}
+	if err := validatePostgresIntegrationTestDSN(dsn); err != nil {
+		t.Fatalf("unsafe CLOUD_POSTGRES_TEST_DSN: %v", err)
+	}
 	pool, err := pgxpool.New(t.Context(), dsn)
 	if err != nil {
 		t.Fatal(err)
@@ -573,6 +577,35 @@ func lockPostgresIntegration(t *testing.T, ctx context.Context, pool *pgxpool.Po
 			t.Logf("unlock postgres integration db: %v", err)
 		}
 	})
+}
+
+func validatePostgresIntegrationTestDSN(dsn string) error {
+	cfg, err := pgxpool.ParseConfig(strings.TrimSpace(dsn))
+	if err != nil {
+		return fmt.Errorf("parse dsn: %w", err)
+	}
+	host := strings.ToLower(strings.TrimSpace(cfg.ConnConfig.Host))
+	database := strings.ToLower(strings.TrimSpace(cfg.ConnConfig.Database))
+	if database == "" {
+		return errors.New("database name is required")
+	}
+	if !isLocalPostgresIntegrationHost(host) {
+		return fmt.Errorf("host %q is not an allowed local integration-test host", host)
+	}
+	if database != "mh_pos_cloud" && !strings.Contains(database, "test") {
+		return fmt.Errorf("database %q is not an allowed integration-test database", database)
+	}
+	return nil
+}
+
+func isLocalPostgresIntegrationHost(host string) bool {
+	host = strings.Trim(host, "[]")
+	switch host {
+	case "", "localhost", "127.0.0.1", "::1", "cloud-postgres":
+		return true
+	default:
+		return false
+	}
 }
 
 func assertCatalogAssignment(t *testing.T, got domain.CatalogSuggestion, wantTo, wantBy string, wantAt time.Time, wantNote string) {
