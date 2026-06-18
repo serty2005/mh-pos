@@ -62,7 +62,7 @@ test('agent smoke opens POS shell, navigates by clicks, and validates desktop/mo
   await saveViewportScreenshot(page, testInfo, 'agent-shell-desktop.png');
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator('#nav-kds-orders')).toBeVisible();
+  await expect(page.locator('#waiter-mobile-runtime')).toBeVisible();
   await expectFrontendDesignInvariants(page);
   await saveViewportScreenshot(page, testInfo, 'agent-shell-mobile.png');
 });

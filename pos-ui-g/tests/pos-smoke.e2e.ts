@@ -5,12 +5,21 @@ const appUrl = process.env.POS_UI_URL ?? 'http://localhost:3000';
 test('cashier can add an order line with selected modifier payload', async ({ page }) => {
   test.setTimeout(60_000);
   const consoleMessages: string[] = [];
+  const unexpectedHttpErrors: string[] = [];
   const addLinePayloads: unknown[] = [];
 
   page.on('console', (message) => {
     if (message.type() === 'error' || message.type() === 'warning') {
+      if (message.text().startsWith('Failed to load resource:')) return;
       consoleMessages.push(`${message.type()}: ${message.text()}`);
     }
+  });
+
+  page.on('response', (response) => {
+    if (response.status() < 400) return;
+    const url = new URL(response.url());
+    if (response.status() === 404 && url.pathname === '/api/v1/cash-shifts/current') return;
+    unexpectedHttpErrors.push(`${response.status()} ${response.request().method()} ${url.pathname}`);
   });
 
   page.on('request', (request) => {
@@ -78,6 +87,7 @@ test('cashier can add an order line with selected modifier payload', async ({ pa
     ],
   });
   await expect(page.getByText(optionName, { exact: false }).first()).toBeVisible();
+  expect(unexpectedHttpErrors).toEqual([]);
   expect(consoleMessages).toEqual([]);
 });
 

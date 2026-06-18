@@ -132,7 +132,26 @@ type MockLine = {
   updated_at: string;
 };
 
-type MockOrder = ReturnType<WaiterBackendMock['emptyOrder']>;
+type MockOrder = {
+  id: string;
+  edge_order_id: string;
+  restaurant_id: string;
+  device_id: string;
+  shift_id: string;
+  status: 'open' | 'locked' | 'closed' | 'cancelled';
+  table_id: string;
+  table_name: string;
+  guest_count: number;
+  subtotal: number;
+  discount_total: number;
+  tax_total: number;
+  total: number;
+  opened_at: string;
+  closed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  lines: MockLine[];
+};
 
 class WaiterBackendMock {
   orders: MockOrder[] = [];
@@ -190,14 +209,14 @@ class WaiterBackendMock {
     return this.activeOrder()?.lines.find((line) => line.id === lineId)?.quantity ?? 0;
   }
 
-  emptyOrder(tableId: string, tableName: string, guestCount: number) {
+  emptyOrder(tableId: string, tableName: string, guestCount: number): MockOrder {
     return {
       id: 'order-waiter-1',
       edge_order_id: 'edge-order-waiter-1',
       restaurant_id: 'rest-waiter-e2e',
       device_id: 'node-waiter-e2e',
       shift_id: 'shift-waiter-e2e',
-      status: 'open' as const,
+      status: 'open',
       table_id: tableId,
       table_name: tableName,
       guest_count: guestCount,
