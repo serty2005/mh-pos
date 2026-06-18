@@ -125,7 +125,7 @@ type BackfillJob struct {
 	ProcessedRows    int64      `json:"processed_rows"`
 	LastError        string     `json:"last_error,omitempty"`
 	CancelRequested  bool       `json:"cancel_requested"`
-	Reason           string     `json:"reason,omitempty"`
+	Reason           string     `json:"-"`
 	RequestedBy      string     `json:"requested_by,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	StartedAt        *time.Time `json:"started_at,omitempty"`

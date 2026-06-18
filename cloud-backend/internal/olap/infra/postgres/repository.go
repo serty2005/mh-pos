@@ -99,7 +99,7 @@ func (r *Repository) ClaimPending(ctx context.Context, cmd app.ClaimCommand) ([]
 	}
 	rows, err := r.pool.Query(ctx, `
 WITH picked AS (
-  SELECT id
+  SELECT id, cloud_received_at
   FROM inbox_events
   WHERE processed_for_olap = false
     AND (
@@ -110,7 +110,8 @@ WITH picked AS (
   ORDER BY cloud_received_at, id
   LIMIT $1
   FOR UPDATE SKIP LOCKED
-)
+),
+updated AS (
 UPDATE inbox_events e
 SET olap_export_status = 'processing',
     olap_export_attempts = e.olap_export_attempts + 1,
@@ -120,9 +121,16 @@ SET olap_export_status = 'processing',
     updated_at = $3
 FROM picked
 WHERE e.id = picked.id
-RETURNING e.id,e.receipt_id,e.tenant_id,e.restaurant_id,e.device_id,e.employee_id,
+RETURNING picked.cloud_received_at AS picked_cloud_received_at,
+          e.id,e.receipt_id,e.tenant_id,e.restaurant_id,e.device_id,e.employee_id,
           e.command_id,e.event_id,e.edge_event_id,e.event_type,e.aggregate_type,e.aggregate_id,
-          e.envelope_version,e.occurred_at,e.cloud_received_at,e.raw_payload,e.raw_payload_sha256_hex`,
+          e.envelope_version,e.occurred_at,e.cloud_received_at,e.raw_payload,e.raw_payload_sha256_hex
+)
+SELECT id,receipt_id,tenant_id,restaurant_id,device_id,employee_id,
+       command_id,event_id,edge_event_id,event_type,aggregate_type,aggregate_id,
+       envelope_version,occurred_at,cloud_received_at,raw_payload,raw_payload_sha256_hex
+FROM updated
+ORDER BY picked_cloud_received_at,id`,
 		cmd.Limit,
 		strings.TrimSpace(cmd.LockedBy),
 		cmd.Now,
@@ -424,7 +432,12 @@ FROM olap_backfill_jobs
 WHERE command_id = $1
 FOR UPDATE`, cmd.CommandID))
 	if err == nil {
-		if existing.Stream != cmd.Stream || existing.Reason != cmd.Reason {
+		if existing.Stream != cmd.Stream ||
+			!sameOptionalTime(existing.RequestedFrom, cmd.RequestedFrom) ||
+			!sameOptionalTime(existing.RequestedTo, cmd.RequestedTo) ||
+			existing.BatchSize != cmd.BatchSize ||
+			existing.Reason != cmd.Reason ||
+			existing.RequestedBy != cmd.RequestedBy {
 			return app.BackfillJob{}, contracts.ErrPayloadConflict
 		}
 		existing.AlreadyProcessed = true
@@ -519,7 +532,7 @@ func (r *Repository) ClaimBackfillJob(ctx context.Context, workerID string, now 
 WITH picked AS (
   SELECT id
   FROM olap_backfill_jobs
-  WHERE status IN ('queued','running')
+  WHERE status = 'queued'
     AND cancel_requested = false
   ORDER BY created_at, id
   LIMIT 1
@@ -834,4 +847,11 @@ func eventIDs(events []app.InboxEvent) []string {
 		ids = append(ids, event.ID)
 	}
 	return ids
+}
+
+func sameOptionalTime(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Equal(*b)
 }
