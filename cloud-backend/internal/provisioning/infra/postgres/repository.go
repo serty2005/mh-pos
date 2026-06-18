@@ -98,8 +98,31 @@ func (r *Repository) GetEdgeNode(ctx context.Context, nodeDeviceID string) (doma
 }
 
 func (r *Repository) MarkUnassignedAssigned(ctx context.Context, nodeDeviceID, restaurantID string, assignedAt time.Time) error {
-	_, err := r.pool.Exec(ctx, `UPDATE cloud_unassigned_edge_nodes SET status = 'assigned', assigned_restaurant_id = $2, assigned_at = $3, updated_at = $3 WHERE node_device_id = $1`, strings.TrimSpace(nodeDeviceID), strings.TrimSpace(restaurantID), assignedAt)
-	return normalizeErr(err)
+	nodeDeviceID = strings.TrimSpace(nodeDeviceID)
+	restaurantID = strings.TrimSpace(restaurantID)
+	tag, err := r.pool.Exec(ctx, `
+UPDATE cloud_unassigned_edge_nodes
+SET status = 'assigned',
+    assigned_restaurant_id = $2,
+    assigned_at = CASE WHEN status = 'pending' THEN $3 ELSE assigned_at END,
+    updated_at = CASE WHEN status = 'pending' THEN $3 ELSE updated_at END
+WHERE node_device_id = $1
+  AND (status = 'pending' OR (status = 'assigned' AND assigned_restaurant_id = $2))`,
+		nodeDeviceID, restaurantID, assignedAt)
+	if err != nil {
+		return normalizeErr(err)
+	}
+	if tag.RowsAffected() > 0 {
+		return nil
+	}
+	var exists bool
+	if err := r.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cloud_unassigned_edge_nodes WHERE node_device_id = $1)`, nodeDeviceID).Scan(&exists); err != nil {
+		return normalizeErr(err)
+	}
+	if !exists {
+		return domain.ErrNotFound
+	}
+	return domain.ErrConflict
 }
 
 func (r *Repository) CreatePairingCode(ctx context.Context, v domain.PairingCode) (domain.PairingCode, error) {
@@ -122,8 +145,14 @@ func (r *Repository) GetPairingCode(ctx context.Context, pairingID string) (doma
 }
 
 func (r *Repository) ConsumePairingCode(ctx context.Context, pairingID, nodeDeviceID string, consumedAt time.Time) error {
-	_, err := r.pool.Exec(ctx, `UPDATE cloud_pairing_codes SET status = 'consumed', node_device_id = $2, consumed_at = $3, updated_at = $3 WHERE id = $1 AND status = 'active'`, strings.TrimSpace(pairingID), strings.TrimSpace(nodeDeviceID), consumedAt)
-	return normalizeErr(err)
+	tag, err := r.pool.Exec(ctx, `UPDATE cloud_pairing_codes SET status = 'consumed', node_device_id = $2, consumed_at = $3, updated_at = $3 WHERE id = $1 AND status = 'active'`, strings.TrimSpace(pairingID), strings.TrimSpace(nodeDeviceID), consumedAt)
+	if err != nil {
+		return normalizeErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrConflict
+	}
+	return nil
 }
 
 type scanner interface {
