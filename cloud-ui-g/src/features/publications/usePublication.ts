@@ -35,8 +35,9 @@ export function usePublication(restaurantId: string) {
     const next = await publishMasterData(restaurantId, payload);
     setPublication(next);
     setStatus('ready');
+    await reload();
     return next;
-  }, [restaurantId]);
+  }, [reload, restaurantId]);
 
   return { publication, status, error, reload, publish };
 }
