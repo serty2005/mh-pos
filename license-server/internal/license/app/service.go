@@ -11,9 +11,11 @@ import (
 )
 
 var (
-	ErrInvalid  = fmt.Errorf("pairing code invalid")
-	ErrExpired  = fmt.Errorf("pairing code expired")
-	ErrConsumed = fmt.Errorf("pairing code invalid: consumed")
+	ErrInvalid             = fmt.Errorf("pairing code invalid")
+	ErrExpired             = fmt.Errorf("pairing code expired")
+	ErrConsumed            = fmt.Errorf("pairing code invalid: consumed")
+	ErrEntitlementNotFound = fmt.Errorf("entitlement snapshot not found")
+	ErrEntitlementVersion  = fmt.Errorf("entitlement snapshot version conflict")
 )
 
 // SafeErrorReason возвращает стабильную внутреннюю причину отказа без pairing code и токенов.
@@ -75,6 +77,28 @@ type Repository interface {
 	Save(context.Context, PairingCode) error
 	GetByHash(context.Context, string) (PairingCode, error)
 	MarkConsumed(context.Context, string, time.Time) error
+	SaveEntitlements(context.Context, EntitlementSnapshot) error
+	GetEntitlements(context.Context, string, string) (EntitlementSnapshot, error)
+}
+
+// EntitlementSnapshot хранит authoritative module grants для tenant/server.
+type EntitlementSnapshot struct {
+	TenantID     string          `json:"tenant_id"`
+	ServerID     string          `json:"server_id"`
+	Version      int64           `json:"version"`
+	Status       string          `json:"status"`
+	Entitlements map[string]bool `json:"entitlements"`
+	IssuedAt     time.Time       `json:"issued_at"`
+	ExpiresAt    time.Time       `json:"expires_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+}
+
+type PutEntitlementsCommand struct {
+	Version      int64           `json:"version"`
+	Status       string          `json:"status"`
+	Entitlements map[string]bool `json:"entitlements"`
+	IssuedAt     time.Time       `json:"issued_at"`
+	ExpiresAt    time.Time       `json:"expires_at"`
 }
 
 type Service struct {
@@ -153,6 +177,53 @@ func (s *Service) Resolve(ctx context.Context, cmd ResolveCommand) (ResolveResul
 		return ResolveResult{}, expired("pairing_code_expired")
 	}
 	return ResolveResult{PairingID: item.PairingID, CloudURL: item.CloudURL, RestaurantID: item.RestaurantID, ExpiresAt: item.ExpiresAt}, nil
+}
+
+// PutEntitlements сохраняет только более новую provider-issued версию snapshot.
+func (s *Service) PutEntitlements(ctx context.Context, tenantID, serverID string, cmd PutEntitlementsCommand) (EntitlementSnapshot, error) {
+	tenantID, serverID = strings.TrimSpace(tenantID), strings.TrimSpace(serverID)
+	status := strings.TrimSpace(cmd.Status)
+	if tenantID == "" || serverID == "" || cmd.Version <= 0 || (status != "active" && status != "revoked") || cmd.IssuedAt.IsZero() || cmd.ExpiresAt.IsZero() || len(cmd.Entitlements) == 0 {
+		return EntitlementSnapshot{}, invalid("entitlement_snapshot_invalid")
+	}
+	if status == "active" && !cmd.ExpiresAt.After(cmd.IssuedAt) {
+		return EntitlementSnapshot{}, invalid("entitlement_expiry_invalid")
+	}
+	for id := range cmd.Entitlements {
+		if !validEntitlementID(id) {
+			return EntitlementSnapshot{}, invalid("entitlement_id_invalid")
+		}
+	}
+	if current, err := s.repo.GetEntitlements(ctx, tenantID, serverID); err == nil && cmd.Version <= current.Version {
+		return EntitlementSnapshot{}, ErrEntitlementVersion
+	} else if err != nil && !errors.Is(err, ErrEntitlementNotFound) {
+		return EntitlementSnapshot{}, err
+	}
+	snapshot := EntitlementSnapshot{TenantID: tenantID, ServerID: serverID, Version: cmd.Version, Status: status, Entitlements: cmd.Entitlements, IssuedAt: cmd.IssuedAt.UTC(), ExpiresAt: cmd.ExpiresAt.UTC(), UpdatedAt: time.Now().UTC()}
+	if err := s.repo.SaveEntitlements(ctx, snapshot); err != nil {
+		return EntitlementSnapshot{}, err
+	}
+	return snapshot, nil
+}
+
+func (s *Service) GetEntitlements(ctx context.Context, tenantID, serverID string) (EntitlementSnapshot, error) {
+	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(serverID) == "" {
+		return EntitlementSnapshot{}, invalid("entitlement_scope_required")
+	}
+	return s.repo.GetEntitlements(ctx, strings.TrimSpace(tenantID), strings.TrimSpace(serverID))
+}
+
+func validEntitlementID(id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" || len(id) > 100 || id[0] == '-' || id[len(id)-1] == '-' {
+		return false
+	}
+	for _, r := range id {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' && r != '.' {
+			return false
+		}
+	}
+	return true
 }
 
 func Hash(code string) string {

@@ -1,4 +1,6 @@
 {
   "LICENSE_HTTP_ADDR": ":8095",
-  "LICENSE_SQLITE_PATH": "/app/data/license-server.db"
+  "LICENSE_SQLITE_PATH": "/app/data/license-server.db",
+  "LICENSE_SQLITE_BACKUP_DIR": "/app/data/backups",
+  "LICENSE_ADMIN_TOKEN": "local-development-only"
 }

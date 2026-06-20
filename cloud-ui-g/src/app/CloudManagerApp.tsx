@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Menu, X } from 'lucide-react';
 import Sidebar from './Sidebar';
-import { navigationById, navigationItems } from './navigation';
+import { navigationById, navigationForEntitlements, navigationItems } from './navigation';
 import type { CloudRouteId } from './routes';
 import { defaultRoute } from './routes';
 import { useRestaurants } from '../features/restaurants/useRestaurants';
@@ -17,6 +17,7 @@ import ModifiersPage from '../features/modifiers/ModifiersPage';
 import PricingPage from '../features/pricing/PricingPage';
 import StaffPage from '../features/staff/StaffPage';
 import FloorPage from '../features/floor/FloorPage';
+import { getEntitlements } from '../shared/api/endpoints';
 
 export default function CloudManagerApp() {
   const { t } = useI18n();
@@ -24,6 +25,17 @@ export default function CloudManagerApp() {
   const [selectedRestaurantId, setSelectedRestaurantId] = useState('');
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const { restaurants, status, error, reload } = useRestaurants();
+  const [entitlements, setEntitlements] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    void getEntitlements().then((snapshot) => {
+      if (snapshot.status === 'active' && new Date(snapshot.expires_at).getTime() > Date.now()) {
+        setEntitlements(snapshot.entitlements);
+      }
+    }).catch(() => setEntitlements({}));
+  }, []);
+
+  const licensedNavigation = useMemo(() => navigationForEntitlements(entitlements), [entitlements]);
 
   const activeItem = useMemo(() => navigationById.get(activeRouteId) ?? navigationItems[0], [activeRouteId]);
   const selectedRestaurant = useMemo(
@@ -69,7 +81,7 @@ export default function CloudManagerApp() {
         </div>
 
         <Sidebar
-          items={navigationItems}
+          items={licensedNavigation}
           activeRouteId={activeRouteId}
           isRestaurantSelected={isRestaurantSelected}
           isOpen={isSidebarOpen}

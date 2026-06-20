@@ -10,11 +10,25 @@ import (
 )
 
 type memoryRepo struct {
-	items map[string]app.PairingCode
+	items        map[string]app.PairingCode
+	entitlements map[string]app.EntitlementSnapshot
 }
 
 func newMemoryRepo() *memoryRepo {
-	return &memoryRepo{items: map[string]app.PairingCode{}}
+	return &memoryRepo{items: map[string]app.PairingCode{}, entitlements: map[string]app.EntitlementSnapshot{}}
+}
+
+func (r *memoryRepo) SaveEntitlements(_ context.Context, item app.EntitlementSnapshot) error {
+	r.entitlements[item.TenantID+":"+item.ServerID] = item
+	return nil
+}
+
+func (r *memoryRepo) GetEntitlements(_ context.Context, tenantID, serverID string) (app.EntitlementSnapshot, error) {
+	item, ok := r.entitlements[tenantID+":"+serverID]
+	if !ok {
+		return app.EntitlementSnapshot{}, app.ErrEntitlementNotFound
+	}
+	return item, nil
 }
 
 func (r *memoryRepo) Save(_ context.Context, item app.PairingCode) error {
@@ -86,6 +100,31 @@ func TestResolveRejectsInvalidAndExpiredCodes(t *testing.T) {
 		ExpiresAt:    time.Now().Add(-time.Minute),
 	}); !errors.Is(err, app.ErrExpired) {
 		t.Fatalf("expected expired code registration to be rejected, got %v", err)
+	}
+}
+
+func TestEntitlementsEnableDisableRevokeAndMonotonicVersion(t *testing.T) {
+	service := app.NewService(newMemoryRepo())
+	now := time.Now().UTC()
+	put := func(version int64, status string, enabled bool) (app.EntitlementSnapshot, error) {
+		return service.PutEntitlements(t.Context(), "tenant-1", "edge-1", app.PutEntitlementsCommand{Version: version, Status: status, Entitlements: map[string]bool{"kitchen-space": enabled}, IssuedAt: now, ExpiresAt: now.Add(time.Hour)})
+	}
+	if _, err := put(1, "active", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := put(2, "active", false); err != nil {
+		t.Fatal(err)
+	}
+	revoked, err := put(3, "revoked", false)
+	if err != nil || revoked.Status != "revoked" {
+		t.Fatalf("revoke: %+v %v", revoked, err)
+	}
+	if _, err := put(3, "active", true); !errors.Is(err, app.ErrEntitlementVersion) {
+		t.Fatalf("version: %v", err)
+	}
+	got, err := service.GetEntitlements(t.Context(), "tenant-1", "edge-1")
+	if err != nil || got.Version != 3 || got.Status != "revoked" {
+		t.Fatalf("get: %+v %v", got, err)
 	}
 }
 

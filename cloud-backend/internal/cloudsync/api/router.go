@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"mh-pos-platform/licensegate"
 
 	"cloud-backend/internal/cloudsync/app"
 	"cloud-backend/internal/cloudsync/contracts"
@@ -28,6 +30,7 @@ import (
 
 type Handler struct {
 	service *app.Service
+	gate    licensegate.Gate
 }
 
 type financialOperationReportItem struct {
@@ -69,18 +72,28 @@ func NewRouterWithProvisioning(service *app.Service, provisioningService *provis
 }
 
 func NewRouterWithProvisioningAndOLAP(service *app.Service, provisioningService *provisioningapp.Service, olapService *olapapp.Service, masterServices ...*masterapp.Service) http.Handler {
-	h := &Handler{service: service}
+	return NewRouterWithProvisioningOLAPAndLicense(service, provisioningService, olapService, nil, masterServices...)
+}
+
+func NewRouterWithProvisioningOLAPAndLicense(service *app.Service, provisioningService *provisioningapp.Service, olapService *olapapp.Service, gate licensegate.Gate, masterServices ...*masterapp.Service) http.Handler {
+	h := &Handler{service: service, gate: gate}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(requestAuditLog)
 	r.Use(middleware.Recoverer)
 	r.Use(localCORS)
+	if gate != nil {
+		r.Use(licensegate.Middleware(gate, cloudModuleForRequest))
+	}
 	r.Options("/*", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
 	r.Get("/health", h.health)
+	if gate != nil {
+		r.Get("/api/v1/license/entitlements", licensegate.StatusHandler(gate))
+	}
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/sync/edge-events", h.listEdgeEvents)
 		r.Get("/sync/readiness/stop-list", h.stopListReadiness)
@@ -100,6 +113,20 @@ func NewRouterWithProvisioningAndOLAP(service *app.Service, provisioningService 
 		provisioningapi.RegisterRoutes(r, provisioningService)
 	})
 	return r
+}
+
+func cloudModuleForRequest(r *http.Request) string {
+	path := r.URL.Path
+	switch {
+	case strings.Contains(path, "/master-data/floor/") || strings.Contains(path, "/master-data/halls") || strings.Contains(path, "/master-data/tables"):
+		return licensegate.TableMode
+	case strings.Contains(path, "/master-data/recipes/") || strings.Contains(path, "/master-data/recipe-suggestions"):
+		return licensegate.KitchenSpace
+	case strings.Contains(path, "/master-data/inventory/") || strings.HasPrefix(path, "/api/v1/inventory/"):
+		return licensegate.WarehouseMode
+	default:
+		return ""
+	}
 }
 
 func requestAuditLog(next http.Handler) http.Handler {
@@ -494,8 +521,32 @@ func (h *Handler) exchange(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err, r)
 		return
 	}
+	resp.CloudPackages = h.licensedCloudPackages(r.Context(), resp.CloudPackages)
 	platformExchangeLog(r, "exchange", "success", "", req.NodeDeviceID)
 	writeJSON(w, http.StatusAccepted, resp)
+}
+
+// licensedCloudPackages не отдает Edge данные модуля, отключенного внешним authority.
+func (h *Handler) licensedCloudPackages(ctx context.Context, packages []contracts.SyncExchangeCloudPackage) []contracts.SyncExchangeCloudPackage {
+	if h.gate == nil {
+		return packages
+	}
+	result := make([]contracts.SyncExchangeCloudPackage, 0, len(packages))
+	for _, pkg := range packages {
+		moduleID := ""
+		switch pkg.StreamName {
+		case contracts.MasterDataStreamFloor:
+			moduleID = licensegate.TableMode
+		case contracts.MasterDataStreamRecipes:
+			moduleID = licensegate.KitchenSpace
+		case contracts.MasterDataStreamInventory:
+			moduleID = licensegate.WarehouseMode
+		}
+		if moduleID == "" || h.gate.Require(ctx, moduleID) == nil {
+			result = append(result, pkg)
+		}
+	}
+	return result
 }
 
 func bearerToken(raw string) string {

@@ -41,6 +41,14 @@
 - `cloud-backend/config/cloud-api.example.json`;
 - `license-server/config/license-api.example.json`.
 
+Licensing authority config:
+
+- `LICENSE_ADMIN_TOKEN` — обязательный provider secret только для License Server update API;
+- `LICENSE_TENANT_ID` и `LICENSE_SERVER_ID` — runtime scope Cloud/Edge;
+- `LICENSE_STALE_GRACE_SECONDS` — provider deployment grace при недоступности authority; клиентский UI его не изменяет.
+
+Контракт и module IDs описаны в `docs/backend/LICENSE-ENTITLEMENTS.md`.
+
 Реализовано сейчас: loader находится в общем локальном Go module `shared/platform` (`module mh-pos-platform`) и подключается сервисами через `replace`.
 
 Реализовано сейчас: POS Edge storage archive export использует `POS_SQLITE_ARCHIVE_DIR`. Если значение не задано, entrypoint выбирает `archives` рядом с active SQLite data directory из `POS_SQLITE_PATH`; сам export не пишет файлы внутрь `.db` file и не запускает destructive apply. Физическое удаление и `VACUUM` выполняются только отдельным `POST /api/v1/storage/archive/apply-plan` после verified archive и runtime safety gate.

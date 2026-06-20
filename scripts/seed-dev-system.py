@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import datetime
 import json
 import pathlib
 import re
@@ -389,6 +390,7 @@ def seed_full_system(
     interval_seconds=2,
     run_minimal_flow=False,
     run_kitchen_process_smoke=False,
+    license_admin_token="local-development-only",
 ):
     suffix = suffix or command_suffix()
     health = {
@@ -396,6 +398,26 @@ def seed_full_system(
         "pos": root_health(pos_client),
         "license": root_health(license_client),
     }
+    entitlement_version = int(time.time())
+    issued_at = datetime.datetime.now(datetime.timezone.utc)
+    entitlement_body = {
+        "version": entitlement_version,
+        "status": "active",
+        "entitlements": {module_id: True for module_id in (
+            "table-mode", "telegram-worker", "kitchen-space", "waiter-space", "checker-flow", "warehouse-mode",
+        )},
+        "issued_at": issued_at.isoformat().replace("+00:00", "Z"),
+        "expires_at": (issued_at + datetime.timedelta(days=30)).isoformat().replace("+00:00", "Z"),
+    }
+    for server_id in ("cloud-local", "edge-local"):
+        request(
+            license_client,
+            "PUT",
+            f"{API_PREFIX}/entitlements/local-tenant/{server_id}",
+            entitlement_body,
+            expected_status=(200,),
+            headers={"Authorization": f"Bearer {license_admin_token}"},
+        )
     status = request(pos_client, "GET", f"{API_PREFIX}/system/provisioning-status", expected_status=(200,))
     node_device_id = status.get("node_device_id", "")
     if not node_device_id:
@@ -415,7 +437,6 @@ def seed_full_system(
             "POST",
             f"{API_PREFIX}/master-data/roles",
             {
-                "restaurant_id": restaurant_id,
                 "name": f"{role['name']} {suffix}",
                 "permissions_json": permissions_json(role["profile"]),
             },
@@ -431,7 +452,7 @@ def seed_full_system(
             "POST",
             f"{API_PREFIX}/master-data/employees",
             {
-                "restaurant_id": restaurant_id,
+                "restaurant_ids": [restaurant_id],
                 "role_id": role_ids[employee["role_ref"]],
                 "name": employee["name"],
                 "pin": employee["pin"],
@@ -699,6 +720,7 @@ def seed_full_system(
         "stop_list_ids": stop_list_ids,
         "publication_id": publication["id"],
         "health": health,
+        "entitlement_version": entitlement_version,
     }
     if run_minimal_flow:
         summary["minimal_flow"] = run_minimal_flow_smoke(
@@ -1915,6 +1937,7 @@ def parse_args(argv=None):
     parser.add_argument("--interval-seconds", type=float, default=2)
     parser.add_argument("--run-minimal-flow", action="store_true", help="Run Cloud publication -> Edge sync -> waiter order -> cashier check -> Cloud inventory ledger smoke.")
     parser.add_argument("--run-kitchen-process-smoke", action="store_true", help="Run full kitchen process smoke: KDS recall, ClickHouse trail, stock events, proposals and feedback.")
+    parser.add_argument("--license-admin-token", default="local-development-only", help="Provider token for local entitlement bootstrap.")
     return parser.parse_args(argv)
 
 
@@ -1931,6 +1954,7 @@ def main(argv=None):
         interval_seconds=args.interval_seconds,
         run_minimal_flow=args.run_minimal_flow,
         run_kitchen_process_smoke=args.run_kitchen_process_smoke,
+        license_admin_token=args.license_admin_token,
     )
     write_summary(args.output, summary)
     print(json.dumps(summary, ensure_ascii=False, indent=2))

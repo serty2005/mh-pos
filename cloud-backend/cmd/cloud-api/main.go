@@ -30,6 +30,7 @@ import (
 	"cloud-backend/internal/provisioning/infra/licensehttp"
 	provisioningpg "cloud-backend/internal/provisioning/infra/postgres"
 	"mh-pos-platform/config"
+	"mh-pos-platform/licensegate"
 )
 
 func main() {
@@ -52,6 +53,10 @@ func run() error {
 	addr := cfg.Get("CLOUD_HTTP_ADDR", ":8090")
 	publicURL := cfg.Get("CLOUD_PUBLIC_URL", "http://localhost:8090")
 	licenseURL := cfg.Get("LICENSE_SERVER_URL", "")
+	if licenseURL == "" {
+		return errors.New("LICENSE_SERVER_URL is required")
+	}
+	licenseGate := licensegate.NewClient(licenseURL, cfg.Get("LICENSE_TENANT_ID", "local-tenant"), cfg.Get("LICENSE_SERVER_ID", "cloud-local"), time.Duration(cfg.Int("LICENSE_STALE_GRACE_SECONDS", 0))*time.Second)
 	dsn := cfg.Get("CLOUD_POSTGRES_DSN", "")
 	migrationsDir := cfg.Get("CLOUD_POSTGRES_MIGRATIONS_DIR", "migrations/postgres")
 	backupDir := cfg.Get("CLOUD_POSTGRES_BACKUP_DIR", "data/cloud-backups")
@@ -135,7 +140,7 @@ func run() error {
 	provisioningService := provisioningapp.NewService(provisioningpg.NewRepository(pool), masterService, clock.SystemClock{}, idgen.UUIDGenerator{}, publicURL, licenseClient)
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewRouterWithProvisioningAndOLAP(service, provisioningService, olapService, masterService),
+		Handler:           api.NewRouterWithProvisioningOLAPAndLicense(service, provisioningService, olapService, licenseGate, masterService),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -147,7 +152,7 @@ func run() error {
 	}()
 	workerCtx, workerCancel := context.WithCancel(ctx)
 	defer workerCancel()
-	go runInventoryWorker(workerCtx, inventoryWorker, 2*time.Second)
+	go runInventoryWorker(workerCtx, inventoryWorker, licenseGate, 2*time.Second)
 	if olapForwarder != nil {
 		go runOLAPForwarder(workerCtx, olapForwarder, time.Duration(cfg.Int("CLOUD_OLAP_FORWARDER_INTERVAL_SECONDS", 5))*time.Second)
 	}
@@ -167,15 +172,17 @@ func run() error {
 	return server.Shutdown(shutdownCtx)
 }
 
-func runInventoryWorker(ctx context.Context, worker *inventoryapp.Worker, interval time.Duration) {
+func runInventoryWorker(ctx context.Context, worker *inventoryapp.Worker, gate licensegate.Gate, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		if err := worker.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			slog.Error("cloud inventory worker failed", "error", err)
-		}
-		if err := worker.RunRecalculationOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			slog.Error("cloud inventory recalculation worker failed", "error", err)
+		if gate.Require(ctx, licensegate.WarehouseMode) == nil {
+			if err := worker.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Error("cloud inventory worker failed", "error", err)
+			}
+			if err := worker.RunRecalculationOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Error("cloud inventory recalculation worker failed", "error", err)
+			}
 		}
 		select {
 		case <-ctx.Done():

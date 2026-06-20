@@ -19,5 +19,8 @@
   "POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES": 120,
   "POS_PROVISIONING_POLL_INTERVAL": "3s",
   "POS_EDGE_DISPLAY_NAME": "Docker POS Terminal",
-  "LICENSE_SERVER_URL": "http://license-api:8095"
+  "LICENSE_SERVER_URL": "http://license-api:8095",
+  "LICENSE_TENANT_ID": "local-tenant",
+  "LICENSE_SERVER_ID": "edge-local",
+  "LICENSE_STALE_GRACE_SECONDS": 300
 }

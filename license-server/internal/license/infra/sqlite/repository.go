@@ -3,7 +3,9 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -34,6 +36,27 @@ func (r *Repository) Migrate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if _, err := r.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS entitlement_snapshots (
+  tenant_id TEXT NOT NULL,
+  server_id TEXT NOT NULL,
+  version INTEGER NOT NULL CHECK (version > 0),
+  status TEXT NOT NULL CHECK (status IN ('active','revoked')),
+  entitlements_json TEXT NOT NULL CHECK (json_valid(entitlements_json)),
+  issued_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (tenant_id, server_id)
+)`); err != nil {
+		return err
+	}
+	if _, err := r.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS db_runtime_versions (
+  module_name TEXT PRIMARY KEY,
+  current_version TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+); INSERT INTO db_runtime_versions(module_name,current_version,updated_at) VALUES ('license-server','0.1.0',?)
+ON CONFLICT(module_name) DO UPDATE SET current_version=excluded.current_version,updated_at=excluded.updated_at`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
 	for _, stmt := range []string{
 		`ALTER TABLE pairing_codes ADD COLUMN pairing_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE pairing_codes ADD COLUMN instance_id TEXT NOT NULL DEFAULT ''`,
@@ -42,7 +65,68 @@ func (r *Repository) Migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	return r.verifySchema(ctx)
+}
+
+func (r *Repository) verifySchema(ctx context.Context) error {
+	for table, required := range map[string][]string{
+		"pairing_codes":         {"pairing_code_hash", "pairing_id", "instance_id", "expires_at"},
+		"entitlement_snapshots": {"tenant_id", "server_id", "version", "status", "entitlements_json", "expires_at"},
+		"db_runtime_versions":   {"module_name", "current_version", "updated_at"},
+	} {
+		rows, err := r.db.QueryContext(ctx, `SELECT name FROM pragma_table_info(?)`, table)
+		if err != nil {
+			return err
+		}
+		found := map[string]bool{}
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				rows.Close()
+				return err
+			}
+			found[name] = true
+		}
+		rows.Close()
+		for _, column := range required {
+			if !found[column] {
+				return fmt.Errorf("license schema verification failed: %s.%s missing", table, column)
+			}
+		}
+	}
 	return nil
+}
+
+func (r *Repository) SaveEntitlements(ctx context.Context, v app.EntitlementSnapshot) error {
+	entitlements, err := json.Marshal(v.Entitlements)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `INSERT INTO entitlement_snapshots(tenant_id,server_id,version,status,entitlements_json,issued_at,expires_at,updated_at)
+VALUES (?,?,?,?,?,?,?,?)
+ON CONFLICT(tenant_id,server_id) DO UPDATE SET version=excluded.version,status=excluded.status,entitlements_json=excluded.entitlements_json,issued_at=excluded.issued_at,expires_at=excluded.expires_at,updated_at=excluded.updated_at`,
+		v.TenantID, v.ServerID, v.Version, v.Status, string(entitlements), v.IssuedAt.Format(time.RFC3339Nano), v.ExpiresAt.Format(time.RFC3339Nano), v.UpdatedAt.Format(time.RFC3339Nano))
+	return err
+}
+
+func (r *Repository) GetEntitlements(ctx context.Context, tenantID, serverID string) (app.EntitlementSnapshot, error) {
+	var v app.EntitlementSnapshot
+	var raw, issued, expires, updated string
+	err := r.db.QueryRowContext(ctx, `SELECT tenant_id,server_id,version,status,entitlements_json,issued_at,expires_at,updated_at FROM entitlement_snapshots WHERE tenant_id=? AND server_id=?`, tenantID, serverID).
+		Scan(&v.TenantID, &v.ServerID, &v.Version, &v.Status, &raw, &issued, &expires, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return app.EntitlementSnapshot{}, app.ErrEntitlementNotFound
+	}
+	if err != nil {
+		return app.EntitlementSnapshot{}, err
+	}
+	if err := json.Unmarshal([]byte(raw), &v.Entitlements); err != nil {
+		return app.EntitlementSnapshot{}, err
+	}
+	v.IssuedAt, _ = time.Parse(time.RFC3339Nano, issued)
+	v.ExpiresAt, _ = time.Parse(time.RFC3339Nano, expires)
+	v.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
+	return v, nil
 }
 
 func (r *Repository) Save(ctx context.Context, v app.PairingCode) error {

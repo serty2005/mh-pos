@@ -26,6 +26,7 @@ import {
   edgeEventSchema,
   pairingCodeResultSchema,
   unassignedEdgeNodeSchema,
+  entitlementSnapshotSchema,
   type AssignmentStatus,
   type AssignDeviceResult,
   type CatalogItem,
@@ -51,6 +52,7 @@ import {
   type RestaurantTable,
   type Role,
   type UnassignedEdgeNode,
+  type EntitlementSnapshot,
 } from './schemas';
 
 type Payload = Record<string, unknown>;
@@ -73,6 +75,10 @@ function query(restaurantId: string) {
 
 export function listRestaurants(): Promise<Restaurant[]> {
   return request('/restaurants', z.array(restaurantSchema));
+}
+
+export function getEntitlements(): Promise<EntitlementSnapshot> {
+  return request('/license/entitlements', entitlementSnapshotSchema);
 }
 
 export function createRestaurant(payload: Payload): Promise<Restaurant> {

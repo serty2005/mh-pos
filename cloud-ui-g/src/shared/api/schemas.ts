@@ -5,6 +5,18 @@ export const restaurantStatusSchema = z.enum(['active', 'archived']);
 export const employeeStatusSchema = z.enum(['active', 'suspended', 'archived']);
 export const edgeDeviceStatusSchema = z.enum(['pending', 'assigned', 'rejected', 'expired', 'unassigned', 'revoked']);
 
+export const entitlementSnapshotSchema = z.object({
+  tenant_id: z.string(),
+  server_id: z.string(),
+  version: z.number(),
+  status: z.enum(['active', 'revoked']),
+  entitlements: z.record(z.string(), z.boolean()),
+  issued_at: z.string(),
+  expires_at: z.string(),
+});
+
+export type EntitlementSnapshot = z.infer<typeof entitlementSnapshotSchema>;
+
 export const restaurantSchema = z.object({
   id: z.string(),
   name: z.string(),

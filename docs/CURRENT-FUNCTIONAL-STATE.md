@@ -17,7 +17,7 @@
 Не обнаружено сейчас:
 
 - Подтвержденного runtime для delivery, настоящего платежного процессинга, фискального адаптера, COGS/margin OLAP reads, production BI, production-grade kitchen timing API и расширенных cooking events за пределами ticket lifecycle foundation.
-- Автоматическая Cloud -> Edge доставка без manual publish, QR-enabled ticket issuance, physical ESC/POS printing, Telegram reports, sales dashboard и external module entitlement enforcement пока не реализованы. Tenant-level roles/employees, employee restaurant memberships, `organization.manage`, tenant catalog identity и restaurant menu overrides реализованы сейчас. Master-data CRUD не обновляет Edge package автоматически, Cloud UI вызывает manual publish route; reprint возвращает snapshot без printer orchestration, а License Server остается pairing stub. QR checker/enrollment/relay/confirm перенесены в post-deploy цикл. Целевой контракт описан в `docs/project-management/EXHIBITION-ALPHA-PILOT-REQUIREMENTS.md`.
+- Автоматическая Cloud -> Edge доставка без manual publish, QR-enabled ticket issuance, physical ESC/POS printing, Telegram reports и sales dashboard пока не реализованы. External License Server, versioned entitlement snapshots и backend gates для существующих table/kitchen/warehouse surfaces реализованы сейчас; будущие telegram/waiter/checker runtime получают gates вместе со своими routes/workers. Tenant-level roles/employees, employee restaurant memberships, `organization.manage`, tenant catalog identity и restaurant menu overrides реализованы сейчас. Master-data CRUD не обновляет Edge package автоматически, Cloud UI вызывает manual publish route; reprint возвращает snapshot без printer orchestration. QR checker/enrollment/relay/confirm перенесены в post-deploy цикл. Целевой контракт описан в `docs/project-management/EXHIBITION-ALPHA-PILOT-REQUIREMENTS.md`.
 
 Цель полной пилотной реализации:
 
@@ -231,7 +231,7 @@
 
 ## Запланировано далее
 
-- До первого выставочного запуска: автоматическая per-Edge batch assembly без Publish action, ticket issuance/QR printing, ESC/POS subsystem, Cloud sales dashboard, Telegram worker, внешний licensing authority и module gates. Tenant-level roles/employees, memberships, tenant catalog identity и restaurant menu overrides реализованы сейчас.
+- До первого выставочного запуска: автоматическая per-Edge batch assembly без Publish action, ticket issuance/QR printing, ESC/POS subsystem, Cloud sales dashboard и Telegram worker. Внешний licensing authority и gates существующих table/kitchen/warehouse surfaces реализованы сейчас; tenant-level roles/employees, memberships, tenant catalog identity и restaurant menu overrides также реализованы сейчас.
 - После первого выставочного запуска: checker enrollment, scanner UI, typed Cloud-Edge relay, QR lookup/confirm/revoke и usage reporting.
 - Поддерживать `docs/backend/CLOUD-BACKEND-SPEC.md` как профильный документ Cloud Backend при каждом изменении Cloud routes, payloads, sync/provisioning contracts или schema.
 - При добавлении Cloud-owned сценария обновлять `scripts/seed-dev-system.py`, publication stream/package, POS read flow/smoke assertion и профильные документы в одном PR.

@@ -23,3 +23,11 @@ export const navigationItems: NavigationItem[] = [
 export const navigationById = new Map<CloudRouteId, NavigationItem>(
   navigationItems.map((item) => [item.route.id, item]),
 );
+
+export function navigationForEntitlements(entitlements: Record<string, boolean>) {
+  return navigationItems.filter((item) => {
+    if (item.route.id === 'floor') return entitlements['table-mode'] === true;
+    if (item.route.id === 'inventory') return entitlements['warehouse-mode'] === true;
+    return true;
+  });
+}

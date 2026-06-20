@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"mh-pos-platform/config"
+	"mh-pos-platform/licensegate"
 	"pos-backend/internal/platform/clock"
 	"pos-backend/internal/platform/idgen"
 	"pos-backend/internal/platform/logging"
@@ -56,6 +57,10 @@ func run() error {
 		cloudProvisioningURL = strings.TrimSuffix(cloudProvisioningURL, "/api/v1/sync/edge-events")
 	}
 	licenseURL := cfg.Get("LICENSE_SERVER_URL", "")
+	if licenseURL == "" {
+		return errors.New("LICENSE_SERVER_URL is required")
+	}
+	licenseGate := licensegate.NewClient(licenseURL, cfg.Get("LICENSE_TENANT_ID", "local-tenant"), cfg.Get("LICENSE_SERVER_ID", "edge-local"), time.Duration(cfg.Int("LICENSE_STALE_GRACE_SECONDS", 0))*time.Second)
 
 	db, err := platformsqlite.Open(dbPath)
 	if err != nil {
@@ -75,11 +80,11 @@ func run() error {
 	repo := possqlite.NewRepository(db)
 	tx := platformsqlite.NewTxManager(db)
 	service := app.NewServiceWithOptions(repo, tx, idgen.UUIDGenerator{}, clock.SystemClock{}, app.ServiceOptions{
-		CloudProvisioningURL:      cloudProvisioningURL,
-		LicenseServerURL:          licenseURL,
-		CloudProvisioningClient:   posprovisioninghttp.NewCloudClient(10 * time.Second),
-		LicenseProvisioningClient: posprovisioninghttp.NewLicenseClient(10 * time.Second),
-		StorageArchiveDir:         archiveDir,
+		CloudProvisioningURL:                    cloudProvisioningURL,
+		LicenseServerURL:                        licenseURL,
+		CloudProvisioningClient:                 posprovisioninghttp.NewCloudClient(10 * time.Second),
+		LicenseProvisioningClient:               posprovisioninghttp.NewLicenseClient(10 * time.Second),
+		StorageArchiveDir:                       archiveDir,
 		RecipeSuggestionMaxPrepTimeDeltaMinutes: cfg.Int("POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES", 120),
 		MasterDataBackupBeforeFullSnapshot: func(ctx context.Context, req app.MasterDataBackupRequest) error {
 			_, err := platformsqlite.BackupDatabase(ctx, db, dbPath, backupDir, platformsqlite.BackupOptions{
@@ -97,7 +102,7 @@ func run() error {
 
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewRouter(service),
+		Handler:           api.NewRouterWithLicense(service, licenseGate),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

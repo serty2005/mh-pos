@@ -2,7 +2,9 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,9 +15,25 @@ import (
 	"cloud-backend/internal/cloudsync/app"
 	"cloud-backend/internal/cloudsync/contracts"
 	"cloud-backend/internal/cloudsync/infra/memory"
+	"mh-pos-platform/licensegate"
 )
 
 type fixedClock struct{}
+
+type deniedModuleGate struct {
+	moduleID string
+}
+
+func (g deniedModuleGate) Require(_ context.Context, moduleID string) error {
+	if moduleID == g.moduleID {
+		return licensegate.ErrDenied
+	}
+	return nil
+}
+
+func (deniedModuleGate) Current(context.Context) (licensegate.Snapshot, error) {
+	return licensegate.Snapshot{}, errors.New("not used")
+}
 
 func (fixedClock) Now() time.Time {
 	return time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
@@ -150,6 +168,64 @@ func TestPostExchangeRequiresNodeTokenAndReturnsPackage(t *testing.T) {
 	}
 	if len(resp.CloudPackages) != 1 || resp.CloudPackages[0].CloudVersion != 8 {
 		t.Fatalf("expected catalog package in exchange response, got %+v", resp)
+	}
+}
+
+func TestExchangeOmitsCloudPackageForDisabledModule(t *testing.T) {
+	repo := memory.NewRepository()
+	if err := repo.AuthorizeNodeForTest("node-1", "restaurant-1", "node-token"); err != nil {
+		t.Fatal(err)
+	}
+	service := app.NewService(repo, fixedClock{})
+	packages := []contracts.MasterDataPackage{
+		{
+			StreamName:      contracts.MasterDataStreamCatalog,
+			NodeDeviceID:    "node-1",
+			RestaurantID:    "restaurant-1",
+			SyncMode:        contracts.SyncModeIncremental,
+			CloudVersion:    2,
+			CheckpointToken: "catalog:2",
+			PayloadJSON:     json.RawMessage(`{"catalog_items":[]}`),
+		},
+		{
+			StreamName:      contracts.MasterDataStreamRecipes,
+			NodeDeviceID:    "node-1",
+			RestaurantID:    "restaurant-1",
+			SyncMode:        contracts.SyncModeIncremental,
+			CloudVersion:    3,
+			CheckpointToken: "recipes:3",
+			PayloadJSON:     json.RawMessage(`{"recipe_versions":[],"recipe_lines":[]}`),
+		},
+	}
+	for _, pkg := range packages {
+		if _, err := service.UpsertMasterDataPackage(t.Context(), pkg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	router := api.NewRouterWithProvisioningOLAPAndLicense(service, nil, nil, deniedModuleGate{moduleID: licensegate.KitchenSpace})
+	body := []byte(`{
+		"protocol_version":"sync_exchange.v1",
+		"node_device_id":"node-1",
+		"restaurant_id":"restaurant-1",
+		"edge_events":[],
+		"streams":[
+			{"stream_name":"catalog","last_cloud_version":1},
+			{"stream_name":"recipes","last_cloud_version":1}
+		]
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/exchange", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer node-token")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 exchange, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp contracts.SyncExchangeResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.CloudPackages) != 1 || resp.CloudPackages[0].StreamName != contracts.MasterDataStreamCatalog {
+		t.Fatalf("expected only unlicensed-independent catalog package, got %+v", resp.CloudPackages)
 	}
 }
 

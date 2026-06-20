@@ -31,6 +31,7 @@ import {
   storageStatusSchema,
   syncStatusSchema,
   tableSchema,
+  entitlementSnapshotSchema,
 } from './schemas';
 
 export type AuthSnapshot = {
@@ -216,6 +217,7 @@ export function createApiClient(getAuth: () => AuthSnapshot, base = (viteEnv.env
   }
 
   return {
+    getEntitlements: () => request('/license/entitlements', entitlementSnapshotSchema),
     getPairingStatus: () => request('/system/pairing-status', pairingStatusSchema),
     getProvisioningStatus: () => request('/system/provisioning-status', provisioningStatusSchema),
     registerCloudProvisioning: (cloudUrl = '') => request('/system/provisioning/register-cloud', provisioningStatusSchema, {

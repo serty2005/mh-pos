@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"mh-pos-platform/licensegate"
 
 	httpx "pos-backend/internal/platform/http"
 	"pos-backend/internal/pos/app"
@@ -23,6 +24,10 @@ type Handler struct {
 }
 
 func NewRouter(service *app.Service) http.Handler {
+	return NewRouterWithLicense(service, nil)
+}
+
+func NewRouterWithLicense(service *app.Service, gate licensegate.Gate) http.Handler {
 	h := &Handler{service: service}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -30,11 +35,17 @@ func NewRouter(service *app.Service) http.Handler {
 	r.Use(requestAuditLog)
 	r.Use(recoverJSON)
 	r.Use(localCORS)
+	if gate != nil {
+		r.Use(licensegate.Middleware(gate, edgeModuleForRequest))
+	}
 	r.Options("/*", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
 	r.Get("/health", h.health)
+	if gate != nil {
+		r.Get("/api/v1/license/entitlements", licensegate.StatusHandler(gate))
+	}
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/auth/pin-login", h.pinLogin)
@@ -135,6 +146,22 @@ func NewRouter(service *app.Service) http.Handler {
 	})
 
 	return r
+}
+
+func edgeModuleForRequest(r *http.Request) string {
+	path := r.URL.Path
+	switch {
+	case strings.HasPrefix(path, "/api/v1/halls") || strings.HasPrefix(path, "/api/v1/tables") || strings.HasSuffix(path, "/sync/master-data/floor"):
+		return licensegate.TableMode
+	case strings.Contains(path, "/precheck"):
+		return licensegate.TableMode
+	case strings.Contains(path, "/kitchen/stock-") || strings.Contains(path, "/kitchen/inventory-") || strings.Contains(path, "/kitchen/productions") || strings.Contains(path, "/kitchen/stop-list") || strings.HasSuffix(path, "/sync/master-data/inventory_reference"):
+		return licensegate.WarehouseMode
+	case strings.HasPrefix(path, "/api/v1/kitchen/") || strings.HasSuffix(path, "/sync/master-data/recipes"):
+		return licensegate.KitchenSpace
+	default:
+		return ""
+	}
 }
 
 func requireDevTools(w http.ResponseWriter, r *http.Request) bool {

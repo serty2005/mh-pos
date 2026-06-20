@@ -197,6 +197,29 @@ func TestHTTPAndRepositoryErrorStringsDoNotExposeSecrets(t *testing.T) {
 	assertBodyDoesNotContain(t, f.logs.String(), plaintextCodeMarker, hashMarker, app.Hash(plaintextCodeMarker))
 }
 
+func TestHTTPEntitlementsRequireProviderTokenAndReturnSnapshot(t *testing.T) {
+	f := newHTTPFixture(t)
+	body := `{"version":1,"status":"active","entitlements":{"table-mode":true,"kitchen-space":false},"issued_at":"2026-06-20T00:00:00Z","expires_at":"2099-06-20T00:00:00Z"}`
+	unauthorized := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/entitlements/tenant-1/cloud-1", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	f.router.ServeHTTP(unauthorized, req)
+	assertJSONStatus(t, unauthorized, http.StatusUnauthorized)
+	assertSafeErrorEnvelope(t, unauthorized, "LICENSE_AUTH_REQUIRED", "errors.license.authRequired")
+
+	updated := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/entitlements/tenant-1/cloud-1", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer provider-test-token")
+	f.router.ServeHTTP(updated, req)
+	assertJSONStatus(t, updated, http.StatusOK)
+
+	got := httptest.NewRecorder()
+	f.router.ServeHTTP(got, httptest.NewRequest(http.MethodGet, "/api/v1/entitlements/tenant-1/cloud-1", nil))
+	assertJSONStatus(t, got, http.StatusOK)
+	assertBodyContains(t, got.Body.String(), `"tenant_id":"tenant-1"`, `"server_id":"cloud-1"`, `"table-mode":true`)
+}
+
 type httpFixture struct {
 	db     *sql.DB
 	repo   *sqlite.Repository
@@ -224,7 +247,7 @@ func newHTTPFixture(t *testing.T) *httpFixture {
 	return &httpFixture{
 		db:     db,
 		repo:   repo,
-		router: api.NewRouter(app.NewService(repo)),
+		router: api.NewRouter(app.NewService(repo), "provider-test-token"),
 		logs:   &logs,
 	}
 }

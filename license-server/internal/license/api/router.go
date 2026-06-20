@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,11 +20,16 @@ import (
 )
 
 type Handler struct {
-	service *app.Service
+	service    *app.Service
+	adminToken string
 }
 
-func NewRouter(service *app.Service) http.Handler {
-	h := &Handler{service: service}
+func NewRouter(service *app.Service, adminTokens ...string) http.Handler {
+	adminToken := ""
+	if len(adminTokens) > 0 {
+		adminToken = strings.TrimSpace(adminTokens[0])
+	}
+	h := &Handler{service: service, adminToken: adminToken}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -35,8 +41,39 @@ func NewRouter(service *app.Service) http.Handler {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/pairing-codes", h.register)
 		r.Post("/pairing-codes/resolve", h.resolve)
+		r.Get("/entitlements/{tenant_id}/{server_id}", h.getEntitlements)
+		r.Put("/entitlements/{tenant_id}/{server_id}", h.putEntitlements)
 	})
 	return r
+}
+
+func (h *Handler) getEntitlements(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.GetEntitlements(r.Context(), chi.URLParam(r, "tenant_id"), chi.URLParam(r, "server_id"))
+	if err != nil {
+		writeAppError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (h *Handler) putEntitlements(w http.ResponseWriter, r *http.Request) {
+	provided := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+	if h.adminToken == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(h.adminToken)) != 1 {
+		writeError(w, r, http.StatusUnauthorized, "LICENSE_AUTH_REQUIRED", "errors.license.authRequired", app.ErrInvalid)
+		return
+	}
+	var cmd app.PutEntitlementsCommand
+	if err := decode(r, &cmd); err != nil {
+		writeError(w, r, http.StatusBadRequest, "VALIDATION_FAILED", "errors.validation", err)
+		return
+	}
+	v, err := h.service.PutEntitlements(r.Context(), chi.URLParam(r, "tenant_id"), chi.URLParam(r, "server_id"), cmd)
+	if err != nil {
+		writeAppError(w, r, err)
+		return
+	}
+	slog.InfoContext(r.Context(), "license entitlement snapshot updated", "operation", "license.entitlements.update", "result", "success", "tenant_id", maskLogID(v.TenantID), "server_id", maskLogID(v.ServerID), "version", v.Version, "status", v.Status)
+	writeJSON(w, http.StatusOK, v)
 }
 
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +120,10 @@ func decode(r *http.Request, v any) error {
 
 func writeAppError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, app.ErrEntitlementNotFound):
+		writeError(w, r, http.StatusNotFound, "LICENSE_SNAPSHOT_NOT_FOUND", "errors.license.snapshotNotFound", err)
+	case errors.Is(err, app.ErrEntitlementVersion):
+		writeError(w, r, http.StatusConflict, "LICENSE_VERSION_CONFLICT", "errors.license.versionConflict", err)
 	case errors.Is(err, app.ErrExpired):
 		writeError(w, r, http.StatusBadRequest, "PAIRING_CODE_EXPIRED", "errors.pairing.expired", err)
 	case errors.Is(err, app.ErrInvalid), errors.Is(err, app.ErrConsumed):

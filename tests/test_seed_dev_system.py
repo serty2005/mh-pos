@@ -36,6 +36,8 @@ class FakeClient:
         self.counter += 1
         if path == "/api/v1/system/provisioning-status":
             return {"node_device_id": "edge-node-from-pos", "paired": False}
+        if path.startswith("/api/v1/entitlements/local-tenant/"):
+            return {**body, "tenant_id": "local-tenant", "server_id": path.rsplit("/", 1)[-1]}
         if path == "/api/v1/restaurants":
             return {"id": "restaurant-1"}
         if path == "/api/v1/master-data/roles":
@@ -388,8 +390,20 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertEqual(summary["pairing_id"], "pairing-1")
         pairing_call = cloud.calls[pairing_index]
         self.assertEqual(pairing_call[2], {"display_name": "POS Terminal unit", "expires_in_minutes": 30})
+        role_call = next(call for call in cloud.calls if call[1] == "/api/v1/master-data/roles")
+        employee_call = next(call for call in cloud.calls if call[1] == "/api/v1/master-data/employees")
+        self.assertNotIn("restaurant_id", role_call[2])
+        self.assertEqual(employee_call[2]["restaurant_ids"], ["restaurant-1"])
+        self.assertNotIn("restaurant_id", employee_call[2])
         self.assertIn("/api/v1/system/provisioning/pair-via-license", [path for _, path, _, _ in pos.calls])
-        self.assertEqual([path for _, path, _, _ in license_client.calls], ["/health"])
+        self.assertEqual(
+            [path for _, path, _, _ in license_client.calls],
+            [
+                "/health",
+                "/api/v1/entitlements/local-tenant/cloud-local",
+                "/api/v1/entitlements/local-tenant/edge-local",
+            ],
+        )
         self.assertIn("waiter_pin", summary["pins"])
         self.assertIn("kitchen_pin", summary["pins"])
         self.assertIn("support_pin", summary["pins"])

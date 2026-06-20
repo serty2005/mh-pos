@@ -196,8 +196,8 @@ describe('MenuPage page integration', () => {
     const inputs = page.container.querySelectorAll('input');
     await change(selects[0], 'catalog-tea');
     await change(inputs[0], 'Coffee menu');
-    await change(inputs[1], '250');
-    await change(inputs[2], 'rub');
+    await change(page.container.querySelector('input[type="number"]')!, '250');
+    await change(Array.from(inputs).find((input) => input.value === 'RUB')!, 'rub');
     await click(buttonByText(page.container, ru.menu.items.actions.create));
 
     await waitFor(() => {

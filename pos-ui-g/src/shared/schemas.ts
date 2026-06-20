@@ -1,5 +1,15 @@
 import { z } from 'zod';
 
+export const entitlementSnapshotSchema = z.object({
+  tenant_id: z.string(),
+  server_id: z.string(),
+  version: z.number(),
+  status: z.enum(['active', 'revoked']),
+  entitlements: z.record(z.string(), z.boolean()),
+  issued_at: z.string(),
+  expires_at: z.string(),
+});
+
 const optionalNullableString = z.string().nullable().optional();
 
 export const edgeNodeIdentitySchema = z.object({

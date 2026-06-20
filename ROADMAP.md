@@ -53,8 +53,8 @@
 
 - текущие catalog, role и employee schema остаются restaurant-owned и требуют tenant migration;
 - текущий runtime требует manual publication после CRUD; автоматическая per-Edge batch assembly и удаление Publish UI/API еще не реализованы;
-- physical printer orchestration, ticket issuance, Telegram worker, реальный sales dashboard и module entitlement enforcement отсутствуют;
-- License Server пока является pairing stub;
+- physical printer orchestration, ticket issuance, Telegram worker и реальный sales dashboard отсутствуют;
+- License Server authority и gates существующих table/kitchen/warehouse surfaces реализованы; gates будущих telegram/waiter/checker runtime добавляются вместе с соответствующими routes/workers;
 - не зафиксированы целевые модели ESC/POS-принтеров и production RPO/RTO.
 
 Следующий post-deploy цикл:
