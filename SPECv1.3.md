@@ -250,6 +250,7 @@ Boundary rules:
 Запланировано до пилота:
 
 - Runtime adjustments должны ссылаться на synced policy ids там, где центральная policy уже существует.
+- Effective Cloud master-data changes доставляются подключенным Edge автоматически через scheduled exchange. Operator publish запрещен; без назначенных Edge delivery packages не накапливаются, а first assignment собирает актуальный full batch.
 - Full Cloud UI/publication workflow для pricing/tax policy должен быть доведен отдельно; текущий шаг подтверждает только generic package storage/apply для `pricing_policy`.
 - Manual line override / manual amount override допускается только при явном разрешении policy, отдельном permission boundary и audit trail.
 

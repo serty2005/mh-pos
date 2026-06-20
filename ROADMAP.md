@@ -1,6 +1,6 @@
 # ROADMAP
 
-Статус документа: актуализировано под фактический код, сводную карту текущего состояния и цель полной пилотной реализации на 30.05.2026.
+Статус документа: актуализировано под фактический код, полный ресторанный пилот и согласованный выставочный запуск на 20.06.2026.
 
 Этот документ объединяет:
 - исходную детальную структуру старого `ROADMAP.md`;
@@ -9,6 +9,8 @@
 - осторожную маркировку спорных пунктов, которые есть в старом тексте, но не подтверждены текущим кодом.
 
 Архитектурный контракт находится в `SPECv1.3.md`, backend-контракты — в `docs/backend/*`, UI-контракты — в `docs/ui/*`, sync-контракты — в `docs/sync/*`.
+
+Отдельный минимальный клиентский объем продажи и печати билетов зафиксирован в `docs/project-management/EXHIBITION-ALPHA-PILOT-REQUIREMENTS.md` и активном выставочном цикле Plane. QR-проверка вынесена в следующий post-deploy цикл.
 
 Код и тесты являются источником истины для фактически реализованного runtime. Если документация описывает поведение как реализованное, но код/тесты это не подтверждают, документация должна быть исправлена под фактическое состояние, а не наоборот.
 
@@ -28,6 +30,39 @@
 - KDS stop-list edit UI;
 - Cloud-owned recipe version editor/review.
 
+## Первый выставочный запуск
+
+В работе:
+
+- tenant владеет единым каталогом, ролями и сотрудниками; рестораны владеют меню, employee memberships и операционными настройками;
+- управляющий организацией получает `organization.manage` и доступ ко всем ресторанам tenant, остальные сотрудники — минимум одно явное membership;
+- билеты продаются как catalog services через существующий финансовый поток и отражаются по конкретному restaurant;
+- restaurant menu item задает собственные name, price, tag, tax и menu folder поверх tenant catalog item;
+- effective Cloud changes автоматически попадают подключенным Edge на scheduled sync; ручной publish отсутствует, а до подключения Edge delivery packages не создаются;
+- `qr_confirmation_enabled` автоматически включает `single_unit_per_line`; каждая unit получает UUIDv7 ticket identity, уникальный номер и QR;
+- первый запуск включает выпуск и печать QR, но не включает scan/lookup/confirm/revoke и checker infrastructure;
+- нефискальный check и ticket печатаются реальным ESC/POS subsystem по версионируемым шаблонам через Windows USB printer или network ESC/POS;
+- Cloud dashboard показывает продажи по restaurant, ticket category, service, business date и cash shift с freshness marker;
+- Telegram reports настраиваются на restaurant и отправляются по расписанию и/или после закрытия кассовой смены;
+- внешний License Server является authority для `table-mode`, `telegram-worker`, `kitchen-space`, `waiter-space`, `checker-flow`, `warehouse-mode` и будущих entitlement IDs;
+- Cloud и Edge backend блокируют нелицензированные routes/workers, а UI скрывает соответствующие разделы;
+- stale grace задается поставщиком в deployment config сервера и недоступен клиенту;
+- требуются single-host runbook, backup/restore, printer hardware acceptance и сквозной smoke.
+
+Заблокировано реализацией:
+
+- текущие catalog, role и employee schema остаются restaurant-owned и требуют tenant migration;
+- текущий runtime требует manual publication после CRUD; автоматическая per-Edge batch assembly и удаление Publish UI/API еще не реализованы;
+- physical printer orchestration, ticket issuance, Telegram worker, реальный sales dashboard и module entitlement enforcement отсутствуют;
+- License Server пока является pairing stub;
+- не зафиксированы целевые модели ESC/POS-принтеров и production RPO/RTO.
+
+Следующий post-deploy цикл:
+
+- checker device enrollment;
+- scanner/checker UI и Cloud-Edge typed relay;
+- QR lookup/confirm, one-use guard, revoke/refund states и checker reporting.
+
 ## Принципы
 
 - POS Edge остается авторитетным для offline-команд заказа, пречека, оплаты, финального чека, финансового журнала, pricing snapshot, idempotency, границ смен/кассы, stop-list sale blocking и KDS command validation.
@@ -35,10 +70,12 @@
 - POS Edge и KDS являются генераторами неизменяемых business events и интерфейсом ввода складских фактов.
 - POS Edge не создает Cloud-owned stock documents, stock moves, stock balances и costing state.
 - Cloud является источником истины для master data, stock documents, stock ledger, costing/recalculation state, ClickHouse export и OLAP reads.
+- Cloud -> Edge master-data delivery автоматическая: connected Edge получает effective version на scheduled exchange, а operator publish action запрещен.
 - ClickHouse используется как immutable event archive и bounded OLAP слой, но не как transactional source of truth.
 - Stop-list блокирует продажу; stock balance является аналитическим показателем и может быть отрицательным.
 - Синхронная двойная запись в PostgreSQL и ClickHouse в request path запрещена.
 - Активный Cloud UI target — `cloud-ui-g`; устаревший Vue `cloud-ui` удален из runtime tree и больше не принимает Cloud-бэкофисные фичи.
+- Выставка является только набором tenant/restaurant data и licenses; отдельный fork или exhibition-only runtime запрещен.
 
 ---
 

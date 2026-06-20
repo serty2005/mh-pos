@@ -49,11 +49,11 @@
 `pricing_policy` включает tax/service-charge reference tables и automatic discount/surcharge policies; manual override runtime остается backend RBAC-controlled action.
 `recipes` включает `recipe_versions` и `recipe_lines`; `inventory_reference` включает `stop_lists` и Cloud-owned `warehouses`.
 
-Canonical seed/smoke для Cloud-owned ingest остается `scripts/seed-dev-system.py`. Новый Cloud-owned stream, справочник или POS read flow добавляется вместе с seed data, publication package, POS read assertion/smoke step, script guard `CLOUD_OWNED_SEED_SURFACES` и профильными docs; отдельный user-facing seed/smoke entrypoint не добавляется без отдельного архитектурного решения.
+Canonical seed/smoke для Cloud-owned ingest остается `scripts/seed-dev-system.py`. Новый Cloud-owned stream, справочник или POS read flow добавляется вместе с seed data, automatic delivery package, POS read assertion/smoke step, script guard `CLOUD_OWNED_SEED_SURFACES` и профильными docs; отдельный user-facing seed/smoke entrypoint не добавляется без отдельного архитектурного решения.
 
 Запланировано до полного пилота:
 
-- добавить Cloud authoring UI/publication workflow для recipes/stop-list;
+- включить recipes/stop-list в общий automatic Cloud -> Edge delivery workflow;
 - не включать Cloud-owned stock documents/moves/balances в Edge ingest.
 
 Реализовано сейчас:
@@ -68,7 +68,8 @@ Canonical seed/smoke для Cloud-owned ingest остается `scripts/seed-de
 - После successful pairing/assignment POS Edge не выполняет повторный Cloud device registration/snapshot provisioning loop; фоновая maintenance только регистрирует not configured node или poll-ит `pending_admin_approval`.
 - Повторный Cloud assignment-status для уже выданного `node_token` не ротирует token hash, чтобы внешние проверки статуса не приводили к `401 SYNC_UNAUTHORIZED` на последующих `sync/exchange`.
 - Пустой exchange без Edge outbox throttled отдельным Cloud pull interval, а появившиеся Edge outbox events отправляются в ближайший worker tick без ожидания этого throttling interval.
-- Активный `cloud-ui-g` не создает publication package автоматически после каждого CRUD. Оператор выполняет явную публикацию через canonical publication API, после чего роль, сотрудник или PIN, созданные в Cloud UI после pairing, попадают на Edge в ближайший Cloud -> Edge exchange.
+- Реализовано сейчас: `cloud-ui-g` не обновляет package автоматически после CRUD; оператор вызывает manual publication API. Это gap, а не целевой workflow.
+- Целевой контракт: effective Cloud change автоматически меняет доступную версию всех подключенных Edge ресторана; без подключенных Edge delivery packages не создаются. При назначении/первом подключении Edge Cloud собирает актуальный full batch, затем Edge забирает новые версии на scheduled exchange. Operator Publish action отсутствует.
 
 ## Текущий Edge -> Cloud Runtime
 

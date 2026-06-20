@@ -54,6 +54,7 @@
 - Pricing/taxes раздел управляет pricing policies и package `pricing_policy` через provisioning route.
 - Floor раздел управляет halls/tables и показывает preview зала.
 - Publications раздел читает publication state и выполняет publish master data.
+- Это текущее, но устаревающее поведение: целевой Cloud UI удаляет Publish action и заменяет Publications экран read-only состоянием автоматической доставки по Edge — Cloud version, acknowledged Edge version, lag и safe error.
 - API client валидирует responses через Zod-схемы и использует bounded/safe query там, где route это поддерживает.
 - Пользовательские строки находятся в `cloud-ui-g/src/shared/i18n` и `cloud-ui-g/src/i18n`; новые строки не должны добавляться hardcoded в components.
 
@@ -128,6 +129,8 @@
 - `GET /api/v1/sync/edge-events?restaurant_id=&limit=`
 - `GET /api/v1/restaurants/{id}/master-data/publication-state`
 - `POST /api/v1/restaurants/{id}/master-data/publish`
+
+`POST .../publish` используется только текущим runtime и должен быть удален из пользовательского flow после реализации automatic delivery. UI не вызывает его и не предлагает manual checkpoint.
 
 ## Удаленный Legacy `cloud-ui`
 

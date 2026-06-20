@@ -175,7 +175,7 @@ npm run build
 Сделать:
 
 - dashboard header/KPI/readiness cards приблизить к reference density;
-- publication panel сделать похожей на operator checkpoint, без моков;
+- manual publication panel не развивать; целевой экран показывает только automatic delivery status по Edge после появления backend DTO;
 - restaurants list/form привести к более polished management style;
 - если нужны sales KPI routes, не мокать, а сверить и обновить `CLOUD-UI-RMS-MANAGER-CLOUD-API-SPEC.md`.
 

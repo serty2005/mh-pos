@@ -198,7 +198,17 @@ Request body shape currently supported by POS Edge:
 - `inventory_reference` применяет active/inactive `stop_lists` overlay rows и Cloud-owned `warehouses` в локальную `warehouse_reference` read model; local Docker seed publication содержит default `warehouse-main`.
 - Unsupported JSON fields отклоняются strict decode; неизвестные stream names не применяются.
 
-Только основа:
+Целевой delivery lifecycle:
+
+- effective Cloud master-data commit автоматически увеличивает logical Cloud version для затронутых restaurant/streams;
+- packages существуют только для назначенных/подключенных Edge; без Edge Cloud хранит authority data, но не копит delivery rows;
+- assignment/first connection собирает current full snapshot для node;
+- scheduled `sync/exchange` отдает только версии новее подтвержденного node checkpoint;
+- draft/review и нелицензированные данные не входят в effective batch;
+- повторная сборка и доставка идемпотентны;
+- manual publish endpoint и operator checkpoint не являются целевым контрактом.
+
+Только основа, реализованная сейчас:
 
 - Cloud schema и publication workflow реально публикуют `recipes`/`inventory_reference` в `cloud_master_data_packages` как часть одного детерминированного publication snapshot. Реализовано сейчас: Cloud-authored recipe version draft после approve становится active authority version и попадает в `recipes` package; draft/review rows не публикуются на Edge.
 - `scripts/seed-dev-system.py` создает recipe/stop-list examples и default warehouse, публикует их в Edge; runtime sale-blocking проверяется профильными POS backend tests и `--run-minimal-flow`.

@@ -1,6 +1,6 @@
 ﻿# Текущее функциональное состояние проекта
 
-Статус: реализовано сейчас по коду, тестам и документации на 2026-05-31; цель полного пилота зафиксирована отдельно и не считается текущим runtime.
+Статус: реализовано сейчас по коду, тестам и документации на 2026-06-20; цели полного и выставочного альфа-пилотов зафиксированы отдельно и не считаются текущим runtime.
 
 Этот документ является сводной картой фактического состояния репозитория. Он не заменяет профильные спецификации: архитектурные инварианты остаются в `SPECv1.3.md`, backend-контракты - в `docs/backend/*`, контракты интерфейсов - в `docs/ui/*`, синхронизация - в `docs/sync/*`.
 
@@ -17,6 +17,7 @@
 Не обнаружено сейчас:
 
 - Подтвержденного runtime для delivery, настоящего платежного процессинга, фискального адаптера, COGS/margin OLAP reads, production BI, production-grade kitchen timing API и расширенных cooking events за пределами ticket lifecycle foundation.
+- Tenant-level catalog/roles/employees, employee restaurant memberships, `organization.manage`, restaurant menu overrides, автоматическая Cloud -> Edge доставка без manual publish, QR-enabled ticket issuance, physical ESC/POS printing, Telegram reports, sales dashboard и external module entitlement enforcement пока не реализованы. Текущий catalog/roles/employees привязан к `restaurant_id`; master-data CRUD не обновляет Edge package автоматически, Cloud UI вызывает manual publish route; reprint возвращает snapshot без printer orchestration, а License Server остается pairing stub. QR checker/enrollment/relay/confirm перенесены в post-deploy цикл. Целевой контракт описан в `docs/project-management/EXHIBITION-ALPHA-PILOT-REQUIREMENTS.md`.
 
 Цель полной пилотной реализации:
 
@@ -99,6 +100,7 @@
 - Async backfill job foundation `GET/POST /api/v1/olap/backfill-jobs`, `GET /api/v1/olap/backfill-jobs/{id}` и `POST /api/v1/olap/backfill-jobs/{id}/cancel` хранит operator jobs в PostgreSQL с UUIDv7 `command_id`, progress/checkpoint/error metadata и audit trail; фактический backfill выполняет background worker без synchronous ClickHouse write в HTTP request path.
 - Хранилище master-data packages и Cloud -> Edge package retrieval.
 - Cloud-owned master data authority: рестораны, роли, сотрудники, PIN lifecycle, каталог, услуги, папки, параметры папок, теги, привязки тегов, группы/опции/привязки модификаторов, policies скидок/надбавок, залы, столы, menu items и публикации.
+- Реализованный publication workflow требует operator action после Cloud CRUD; provisioning создает первый snapshot только при его отсутствии. Это фактический gap относительно целевой автоматической доставки.
 - Publication flow формирует typed ingest DTO для POS Edge: top-level modifier groups/options/bindings и link-only `menu_item_modifier_groups`.
 - Cloud Inventory Worker выполняет recipe expansion основной позиции продажи по active Cloud recipe version и modifier-linked consumption по nullable `ModifierOption.linked_catalog_item_id`; linked modifier item списывается напрямую, без recipe expansion linked item. `CheckClosed` после обработанного `ItemServed` списывает только unserved delta и не дублирует linked modifier rows для полностью served order line.
 - Provisioning endpoints: регистрация устройства, список незакрепленных устройств, назначение ресторану, статус назначения и генерация одноразового pairing code через License Server.
@@ -228,6 +230,8 @@
 
 ## Запланировано далее
 
+- До первого выставочного запуска: tenant-level catalog/roles/employees и memberships, restaurant menu overrides, автоматическая per-Edge batch assembly без Publish action, ticket issuance/QR printing, ESC/POS subsystem, Cloud sales dashboard, Telegram worker, внешний licensing authority и module gates.
+- После первого выставочного запуска: checker enrollment, scanner UI, typed Cloud-Edge relay, QR lookup/confirm/revoke и usage reporting.
 - Поддерживать `docs/backend/CLOUD-BACKEND-SPEC.md` как профильный документ Cloud Backend при каждом изменении Cloud routes, payloads, sync/provisioning contracts или schema.
 - При добавлении Cloud-owned сценария обновлять `scripts/seed-dev-system.py`, publication stream/package, POS read flow/smoke assertion и профильные документы в одном PR.
 - До полного пилота: полный Cloud Inventory Engine, richer sales/costing OLAP API beyond current bounded endpoints и production auth/RBAC perimeter для mutating OLAP operator controls.

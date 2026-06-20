@@ -665,3 +665,41 @@ Runtime code не менять, если задача specification.
 - задачи без module/labels;
 - рекомендуемые следующие действия.
 ```
+
+## Промпт последовательной актуализации выставочного альфа-цикла
+
+```text
+Последовательно актуализируй одну задачу launch-цикла Plane `2026-06 — Alpha: exhibition sales launch` или следующего цикла `2026-07 — Post-deploy: QR ticket validation`.
+
+Вход: Plane identifier <POS-N>. За один прогон обрабатывай только одну задачу.
+
+Сначала прочитай:
+- AGENTS.md;
+- docs/project-management/EXHIBITION-ALPHA-PILOT-REQUIREMENTS.md;
+- docs/CURRENT-FUNCTIONAL-STATE.md;
+- ROADMAP.md;
+- профильные backend/UI/sync документы и фактический код задачи.
+
+Через Plane MCP получи задачу, comments, state, labels, cycle и связанные work items. Проверь каждое утверждение о `реализовано сейчас` по коду или тестам.
+
+Не пересматривай утвержденные решения: выставка является только лицензионной конфигурацией общей RMS-POS без fork; catalog/roles/employees принадлежат tenant, menu и employee memberships принадлежат restaurant scope; `organization.manage` охватывает все рестораны tenant. Первый запуск включает QR-enabled ticket issuance, ESC/POS printing, Cloud sales analytics, Telegram и external licensing, но не checker lookup/confirm. Checker enrollment, mobile scanner, typed relay, one-use guard и usage/revoke events принадлежат только post-deploy циклу.
+
+Перед переводом runtime-задачи в Ready проверь соответствующий раздел exhibition specification и фактический код. Не подменяй отсутствующие hardware/operations решения предположением разработчика.
+
+Обнови description задачи по структуре:
+- цель;
+- подтвержденное текущее поведение;
+- требуемое поведение;
+- архитектурные и security-инварианты;
+- зависимости и связанные POS-задачи;
+- критерии приемки;
+- минимальные автоматические и ручные проверки;
+- документация к обновлению;
+- вне scope.
+
+Если контракт или зависимость не определены, оставь `Specified`; переводи в `Ready` только задачу с исполнимыми criteria и проверками. Не выставляй `Done`. Не создавай новую задачу, если gap уже покрыт существующей карточкой.
+
+Рекомендуемый launch-порядок: POS-61, POS-62, POS-65, POS-42, POS-52, POS-53, POS-48, POS-64, POS-40, POS-41, POS-63, POS-38, POS-43, POS-44, POS-45, POS-47, POS-46. POS-39 является родительским scope только post-deploy QR-проверки.
+
+В конце добавь Plane comment: что проверено, что изменено, какие факты подтверждены кодом, какие зависимости остались и почему выбран итоговый state.
+```

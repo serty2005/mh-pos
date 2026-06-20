@@ -35,6 +35,7 @@
 - `eae2d32` ввел Zero-to-Cashier: provisioning bounded context, Cloud Approve, License Code flow, floor stream, structured error envelope и безопасный Cloud -> Edge snapshot apply.
 - `d3789b0` добавил безопасный Cloud UI журнал входящих Edge events без raw payload и выровнял accepted event catalog со schema baseline.
 - `6eb98a0` подтвердил, что транспорт Cloud -> Edge работает через publication version/checkpoint; после Cloud-owned CRUD нужна публикация, иначе Edge честно остается на старой версии.
+- Это подтвержденный текущий gap: целевой runtime автоматически собирает delivery state для подключенных Edge и не требует operator publication.
 - `51d95d0` принял ADR-016: PostgreSQL остается транзакционным Cloud store, ClickHouse является будущим бессрочным архивом business events; синхронный dual-write запрещен.
 - `689e075` перенес целевую складскую архитектуру в Cloud: stock documents, stock ledger, costing jobs и stop-lists принадлежат Cloud Inventory Worker; Edge-side stock foundation был переходным legacy и удален при cutover.
 - `86e1dee` усилил current financial operation payload contract: `CancellationRecorded`/`RefundRecorded` требуют identity fields, check/precheck/shift/date/reason/snapshot и не смешиваются с legacy refund events.
@@ -333,6 +334,8 @@ Production-oriented aliases:
 - Некоторые aliases сохранены для production-like сценариев и Cloud UI compatibility; canonical Cloud UI может использовать `/master-data/...` routes.
 - `GET /api/v1/restaurants/{id}/master-data/publication-state` до первой публикации возвращает `200 null`.
 
+Целевой API удаляет user-facing `POST .../publish`. Master-data mutation атомарно обновляет logical stream version; read-only delivery status показывает Cloud/Edge checkpoints и lag. При отсутствии назначенных Edge package rows не создаются.
+
 ## Error Contract And Logging
 
 Реализовано сейчас:
@@ -402,7 +405,8 @@ PIN policy:
 - Publication создает монотонную версию для ресторана.
 - Publication сохраняет `cloud_master_data_publications`.
 - Publication строит deterministic stream packages и сохраняет их в `cloud_master_data_packages`.
-- Активный `cloud-ui-g` вызывает publication API из отдельной publication panel с explicit `published_by`; ручная публикация остается operator checkpoint.
+- Реализовано сейчас: `cloud-ui-g` вызывает publication API из отдельной panel. Это gap.
+- Запланировано далее: manual route/panel удаляются; package для подключенного Edge формируется автоматически после effective Cloud changes, а для нового Edge — из актуального state при assignment/first connection.
 - Edge-ready snapshot endpoint возвращает typed ingest DTO, который POS Edge может применить без PowerShell field stripping.
 
 Текущие published streams:
