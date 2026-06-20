@@ -5,11 +5,14 @@ import "time"
 type MenuItem struct {
 	ID                        string                  `json:"id"`
 	CatalogItemID             string                  `json:"catalog_item_id"`
+	CategoryID                string                  `json:"category_id,omitempty"`
+	TagID                     string                  `json:"tag_id,omitempty"`
 	ItemType                  string                  `json:"item_type,omitempty"`
 	Name                      string                  `json:"name"`
 	Price                     int64                   `json:"price"`
 	Currency                  string                  `json:"currency"`
 	TaxProfileID              *string                 `json:"tax_profile_id,omitempty"`
+	RuntimeStatus             string                  `json:"runtime_status,omitempty"`
 	ModifierGroups            []MenuItemModifierGroup `json:"modifier_groups,omitempty"`
 	StopListActive            bool                    `json:"stop_list_active,omitempty"`
 	StopListBlocked           bool                    `json:"stop_list_blocked,omitempty"`

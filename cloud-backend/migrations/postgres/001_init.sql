@@ -572,7 +572,7 @@ CREATE INDEX IF NOT EXISTS cloud_categories_restaurant_status
 
 CREATE TABLE IF NOT EXISTS cloud_catalog_items (
   id TEXT PRIMARY KEY,
-  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  restaurant_id TEXT NOT NULL DEFAULT '',
   kind TEXT NOT NULL CHECK (kind IN ('dish','good','semi_finished','service')),
   folder_id TEXT,
   name TEXT NOT NULL CHECK (name <> ''),
@@ -583,7 +583,7 @@ CREATE TABLE IF NOT EXISTS cloud_catalog_items (
   status TEXT NOT NULL CHECK (status IN ('draft','published','archived')),
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
-  UNIQUE (restaurant_id, sku)
+  UNIQUE (sku)
 );
 
 CREATE INDEX IF NOT EXISTS cloud_catalog_items_restaurant_kind_status
@@ -591,35 +591,35 @@ CREATE INDEX IF NOT EXISTS cloud_catalog_items_restaurant_kind_status
 
 CREATE TABLE IF NOT EXISTS cloud_dishes (
   catalog_item_id TEXT PRIMARY KEY REFERENCES cloud_catalog_items(id) ON DELETE CASCADE,
-  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  restaurant_id TEXT NOT NULL DEFAULT '',
   recipe_policy TEXT NOT NULL DEFAULT 'none' CHECK (recipe_policy IN ('none','optional','required')),
   updated_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS cloud_goods (
   catalog_item_id TEXT PRIMARY KEY REFERENCES cloud_catalog_items(id) ON DELETE CASCADE,
-  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  restaurant_id TEXT NOT NULL DEFAULT '',
   stock_tracking_mode TEXT NOT NULL DEFAULT 'none' CHECK (stock_tracking_mode IN ('none','quantity')),
   updated_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS cloud_semi_finished_products (
   catalog_item_id TEXT PRIMARY KEY REFERENCES cloud_catalog_items(id) ON DELETE CASCADE,
-  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  restaurant_id TEXT NOT NULL DEFAULT '',
   production_unit TEXT NOT NULL DEFAULT 'portion',
   updated_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS cloud_services (
   catalog_item_id TEXT PRIMARY KEY REFERENCES cloud_catalog_items(id) ON DELETE CASCADE,
-  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  restaurant_id TEXT NOT NULL DEFAULT '',
   fixed_unit TEXT NOT NULL DEFAULT 'service',
   updated_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS cloud_catalog_folders (
   id TEXT PRIMARY KEY,
-  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  restaurant_id TEXT NOT NULL DEFAULT '',
   parent_id TEXT REFERENCES cloud_catalog_folders(id),
   name TEXT NOT NULL CHECK (name <> ''),
   sort_order BIGINT NOT NULL DEFAULT 0,
@@ -650,7 +650,7 @@ CREATE TABLE IF NOT EXISTS cloud_catalog_folder_parameters (
 
 CREATE TABLE IF NOT EXISTS cloud_catalog_tags (
   id TEXT PRIMARY KEY,
-  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  restaurant_id TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL CHECK (name <> ''),
   code TEXT NOT NULL CHECK (code <> ''),
   status TEXT NOT NULL CHECK (status IN ('draft','published','archived')),
@@ -658,11 +658,11 @@ CREATE TABLE IF NOT EXISTS cloud_catalog_tags (
   archived_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
-  UNIQUE (restaurant_id, code)
+  UNIQUE (code)
 );
 
 CREATE TABLE IF NOT EXISTS cloud_catalog_item_tags (
-  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  restaurant_id TEXT NOT NULL DEFAULT '',
   catalog_item_id TEXT NOT NULL REFERENCES cloud_catalog_items(id) ON DELETE CASCADE,
   tag_id TEXT NOT NULL REFERENCES cloud_catalog_tags(id) ON DELETE CASCADE,
   cloud_version BIGINT NOT NULL DEFAULT 1 CHECK (cloud_version > 0),
@@ -799,10 +799,13 @@ CREATE TABLE IF NOT EXISTS cloud_menu_items (
   restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
   catalog_item_id TEXT NOT NULL REFERENCES cloud_catalog_items(id),
   category_id TEXT REFERENCES cloud_categories(id),
+  tag_id TEXT REFERENCES cloud_catalog_tags(id),
+  tax_profile_id TEXT,
   name TEXT NOT NULL CHECK (name <> ''),
   price BIGINT NOT NULL CHECK (price >= 0),
   currency TEXT NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
   status TEXT NOT NULL CHECK (status IN ('draft','published','archived')),
+  runtime_status TEXT NOT NULL DEFAULT 'available' CHECK (runtime_status IN ('available','unavailable','hidden')),
   availability_json JSONB NOT NULL DEFAULT '{}'::jsonb,
   station_routing_key TEXT,
   created_at TIMESTAMPTZ NOT NULL,
@@ -1040,13 +1043,16 @@ ALTER TABLE cloud_menu_items
   ADD COLUMN IF NOT EXISTS cloud_version BIGINT NOT NULL DEFAULT 1 CHECK (cloud_version > 0);
 
 ALTER TABLE cloud_menu_items
-  ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS tag_id TEXT REFERENCES cloud_catalog_tags(id),
+  ADD COLUMN IF NOT EXISTS tax_profile_id TEXT,
+  ADD COLUMN IF NOT EXISTS runtime_status TEXT NOT NULL DEFAULT 'available' CHECK (runtime_status IN ('available','unavailable','hidden'));
 
 ALTER TABLE cloud_catalog_items
   DROP CONSTRAINT IF EXISTS cloud_catalog_items_restaurant_id_sku_key;
 
 CREATE UNIQUE INDEX IF NOT EXISTS cloud_catalog_items_active_sku
-  ON cloud_catalog_items(restaurant_id, sku)
+  ON cloud_catalog_items(sku)
   WHERE status <> 'archived';
 
 -- === 006_zero_to_cashier_provisioning.sql ===
@@ -1215,7 +1221,7 @@ ALTER TABLE cloud_catalog_items
 
 CREATE TABLE IF NOT EXISTS cloud_catalog_folders (
   id TEXT PRIMARY KEY,
-  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  restaurant_id TEXT NOT NULL DEFAULT '',
   parent_id TEXT REFERENCES cloud_catalog_folders(id),
   name TEXT NOT NULL CHECK (name <> ''),
   sort_order BIGINT NOT NULL DEFAULT 0,
@@ -1246,7 +1252,7 @@ CREATE TABLE IF NOT EXISTS cloud_catalog_folder_parameters (
 
 CREATE TABLE IF NOT EXISTS cloud_catalog_tags (
   id TEXT PRIMARY KEY,
-  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  restaurant_id TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL CHECK (name <> ''),
   code TEXT NOT NULL CHECK (code <> ''),
   status TEXT NOT NULL CHECK (status IN ('draft','published','archived')),
@@ -1254,11 +1260,11 @@ CREATE TABLE IF NOT EXISTS cloud_catalog_tags (
   archived_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
-  UNIQUE (restaurant_id, code)
+  UNIQUE (code)
 );
 
 CREATE TABLE IF NOT EXISTS cloud_catalog_item_tags (
-  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  restaurant_id TEXT NOT NULL DEFAULT '',
   catalog_item_id TEXT NOT NULL REFERENCES cloud_catalog_items(id) ON DELETE CASCADE,
   tag_id TEXT NOT NULL REFERENCES cloud_catalog_tags(id) ON DELETE CASCADE,
   cloud_version BIGINT NOT NULL DEFAULT 1 CHECK (cloud_version > 0),
@@ -1268,7 +1274,7 @@ CREATE TABLE IF NOT EXISTS cloud_catalog_item_tags (
 
 CREATE TABLE IF NOT EXISTS cloud_services (
   catalog_item_id TEXT PRIMARY KEY REFERENCES cloud_catalog_items(id) ON DELETE CASCADE,
-  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  restaurant_id TEXT NOT NULL DEFAULT '',
   fixed_unit TEXT NOT NULL DEFAULT 'service',
   updated_at TIMESTAMPTZ NOT NULL
 );

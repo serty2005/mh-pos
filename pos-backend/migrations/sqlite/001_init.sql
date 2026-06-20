@@ -307,10 +307,13 @@ CREATE INDEX IF NOT EXISTS tax_rules_profile_priority ON tax_rules(tax_profile_i
 CREATE TABLE IF NOT EXISTS menu_items (
   id TEXT PRIMARY KEY,
   catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
+  category_id TEXT,
+  tag_id TEXT,
   name TEXT NOT NULL,
   price INTEGER NOT NULL CHECK (price >= 0),
   currency TEXT NOT NULL,
   tax_profile_id TEXT REFERENCES tax_profiles(id),
+  runtime_status TEXT NOT NULL DEFAULT 'available' CHECK (runtime_status IN ('available','unavailable','hidden')),
   active INTEGER NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -363,6 +366,8 @@ CREATE TABLE IF NOT EXISTS order_lines (
   order_id TEXT NOT NULL REFERENCES orders(id),
   menu_item_id TEXT NOT NULL REFERENCES menu_items(id),
   catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
+  category_id TEXT,
+  tag_id TEXT,
   name TEXT NOT NULL,
   quantity INTEGER NOT NULL CHECK (quantity > 0),
   unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
@@ -1236,11 +1241,26 @@ ALTER TABLE cash_sessions ADD COLUMN business_date_local TEXT NOT NULL DEFAULT '
 -- sqlite:repair-column menu_items tax_profile_id
 ALTER TABLE menu_items ADD COLUMN tax_profile_id TEXT;
 
+-- sqlite:repair-column menu_items category_id
+ALTER TABLE menu_items ADD COLUMN category_id TEXT;
+
+-- sqlite:repair-column menu_items tag_id
+ALTER TABLE menu_items ADD COLUMN tag_id TEXT;
+
+-- sqlite:repair-column menu_items runtime_status
+ALTER TABLE menu_items ADD COLUMN runtime_status TEXT NOT NULL DEFAULT 'available' CHECK (runtime_status IN ('available','unavailable','hidden'));
+
 -- sqlite:repair-column order_lines currency_code
 ALTER TABLE order_lines ADD COLUMN currency_code TEXT NOT NULL DEFAULT 'RUB';
 
 -- sqlite:repair-column order_lines tax_profile_id
 ALTER TABLE order_lines ADD COLUMN tax_profile_id TEXT;
+
+-- sqlite:repair-column order_lines category_id
+ALTER TABLE order_lines ADD COLUMN category_id TEXT;
+
+-- sqlite:repair-column order_lines tag_id
+ALTER TABLE order_lines ADD COLUMN tag_id TEXT;
 
 -- sqlite:repair-column order_lines course
 ALTER TABLE order_lines ADD COLUMN course TEXT;

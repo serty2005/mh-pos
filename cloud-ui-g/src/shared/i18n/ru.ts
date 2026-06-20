@@ -298,12 +298,21 @@ export const ru = {
       fields: {
         catalogItem: 'Catalog item',
         selectCatalogItem: 'Выберите catalog item',
+        category: 'ID папки меню',
+        tag: 'ID тега',
+        taxProfile: 'ID налогового профиля',
         name: 'Название',
         price: 'Цена в minor units',
         currency: 'Currency',
         status: 'Статус',
+        runtimeStatus: 'Runtime-статус',
         station: 'Station routing key',
         availability: 'Availability JSON',
+      },
+      runtimeStatuses: {
+        available: 'доступен',
+        unavailable: 'недоступен',
+        hidden: 'скрыт',
       },
     },
     categories: {

@@ -49,7 +49,7 @@
 - Restaurants раздел управляет restaurant records.
 - Staff/permissions раздел управляет tenant-level POS Edge roles/employees, role assignment, employee restaurant memberships, status, PIN rotation и POS permission profiles/matrix; `organization.manage` отображается как доступ ко всем restaurants без отдельных галок; это не Cloud operator RBAC и не production Cloud authorization boundary.
 - Catalog раздел управляет catalog items, folders, folder parameters, tags и command-only item tag assignment.
-- Menu раздел управляет menu items и command-only menu category create.
+- Menu раздел управляет menu items и command-only menu category create. Реализовано сейчас: форма menu item редактирует restaurant overrides `name`, `price`, `category_id` как menu folder/ticket category identity, `tag_id`, `tax_profile_id`, `availability_json` и `runtime_status` поверх неизменяемой связки `catalog_item_id`/`menu_item_id`.
 - Modifiers раздел управляет modifier groups, options и bindings.
 - Pricing/taxes раздел управляет pricing policies и package `pricing_policy` через provisioning route.
 - Floor раздел управляет halls/tables и показывает preview зала.

@@ -413,7 +413,7 @@ func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*d
 		if err != nil {
 			return err
 		}
-		line = &domain.OrderLine{ID: s.ids.NewID(), OrderID: order.ID, MenuItemID: menuItem.ID, CatalogItemID: menuItem.CatalogItemID, Name: menuItem.Name, Quantity: cmd.Quantity, UnitPrice: menuItem.Price, TotalPrice: menuItem.Price*cmd.Quantity + modifierTotal, CurrencyCode: menuItem.Currency, TaxProfileID: menuItem.TaxProfileID, Status: domain.OrderLineActive, CreatedAt: now, UpdatedAt: now}
+		line = &domain.OrderLine{ID: s.ids.NewID(), OrderID: order.ID, MenuItemID: menuItem.ID, CatalogItemID: menuItem.CatalogItemID, CategoryID: menuItem.CategoryID, TagID: menuItem.TagID, Name: menuItem.Name, Quantity: cmd.Quantity, UnitPrice: menuItem.Price, TotalPrice: menuItem.Price*cmd.Quantity + modifierTotal, CurrencyCode: menuItem.Currency, TaxProfileID: menuItem.TaxProfileID, Status: domain.OrderLineActive, CreatedAt: now, UpdatedAt: now}
 		for i := range selectedModifiers {
 			selectedModifiers[i].ID = s.ids.NewID()
 			selectedModifiers[i].OrderLineID = line.ID

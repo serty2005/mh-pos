@@ -63,6 +63,7 @@ func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand)
 		Price:         cmd.Price,
 		Currency:      currency,
 		TaxProfileID:  optionalString(cmd.TaxProfileID),
+		RuntimeStatus: "available",
 		Active:        true,
 		CreatedAt:     now,
 		UpdatedAt:     now,

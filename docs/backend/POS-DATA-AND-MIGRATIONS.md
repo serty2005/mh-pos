@@ -219,6 +219,7 @@ PostgreSQL `inbox_events` является delivery queue и short-term operatio
 - `tax_profiles` и `tax_rules` хранят tax profile/rule foundation.
 - `tax_profiles`, `tax_rules` и `service_charge_rules` включают Cloud -> Edge sync metadata: `cloud_version`, `cloud_updated_at`, `cloud_deleted_at`, `last_synced_at`.
 - `menu_items.tax_profile_id` и `order_lines.tax_profile_id` позволяют snapshot tax policy без смешивания tax behavior с Catalog.
+- `menu_items.category_id`, `menu_items.tag_id`, `menu_items.runtime_status`, `order_lines.category_id` и `order_lines.tag_id` сохраняют restaurant-effective menu override и stable ticket/category identity; downstream reporting не должен вычислять категорию из пользовательского текста.
 - `order_lines.course` и `order_lines.comment` являются POS runtime metadata для уже добавленной строки и не меняют pricing pipeline.
 - `prechecks` и `checks` содержат `currency_code`, `discount_total`, `surcharge_total`, `tax_total`, `total`, `paid_total`, `remaining_total`.
 - Precheck breakdown persistence использует `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`; discount/surcharge breakdown rows сохраняют `application_index`.

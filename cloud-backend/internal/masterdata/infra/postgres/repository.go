@@ -227,7 +227,7 @@ func (r *Repository) CreateCatalogItem(ctx context.Context, v domain.CatalogItem
 INSERT INTO cloud_catalog_items(id,restaurant_id,kind,folder_id,name,sku,base_unit,kitchen_type,accounting_category,status,cloud_version,archived_at,created_at,updated_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 RETURNING id,restaurant_id,kind,COALESCE(folder_id,''),name,sku,base_unit,COALESCE(kitchen_type,''),COALESCE(accounting_category,''),status,cloud_version,archived_at,created_at,updated_at`,
-		v.ID, v.RestaurantID, v.Kind, nullableText(v.FolderID), v.Name, v.SKU, v.BaseUnit, nullableText(v.KitchenType), nullableText(v.AccountingCategory), v.Status, v.CloudVersion, v.ArchivedAt, v.CreatedAt, v.UpdatedAt))
+		v.ID, strings.TrimSpace(v.RestaurantID), v.Kind, nullableText(v.FolderID), v.Name, v.SKU, v.BaseUnit, nullableText(v.KitchenType), nullableText(v.AccountingCategory), v.Status, v.CloudVersion, v.ArchivedAt, v.CreatedAt, v.UpdatedAt))
 	if err != nil {
 		return domain.CatalogItem{}, normalizeErr(err)
 	}
@@ -270,7 +270,15 @@ func (r *Repository) GetCatalogItem(ctx context.Context, id string) (domain.Cata
 }
 
 func (r *Repository) ListCatalogItems(ctx context.Context, restaurantID string) ([]domain.CatalogItem, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id,restaurant_id,kind,COALESCE(folder_id,''),name,sku,base_unit,COALESCE(kitchen_type,''),COALESCE(accounting_category,''),status,cloud_version,archived_at,created_at,updated_at FROM cloud_catalog_items WHERE restaurant_id = $1 ORDER BY id`, strings.TrimSpace(restaurantID))
+	restaurantID = strings.TrimSpace(restaurantID)
+	query := `SELECT id,restaurant_id,kind,COALESCE(folder_id,''),name,sku,base_unit,COALESCE(kitchen_type,''),COALESCE(accounting_category,''),status,cloud_version,archived_at,created_at,updated_at FROM cloud_catalog_items`
+	args := []any{}
+	if restaurantID != "" {
+		query += ` WHERE restaurant_id = '' OR restaurant_id = $1`
+		args = append(args, restaurantID)
+	}
+	query += ` ORDER BY id`
+	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +310,15 @@ func (r *Repository) GetCatalogFolder(ctx context.Context, id string) (domain.Ca
 }
 
 func (r *Repository) ListCatalogFolders(ctx context.Context, restaurantID string) ([]domain.CatalogFolder, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id,restaurant_id,COALESCE(parent_id,''),name,sort_order,status,cloud_version,archived_at,created_at,updated_at FROM cloud_catalog_folders WHERE restaurant_id=$1 ORDER BY parent_id NULLS FIRST, sort_order, id`, strings.TrimSpace(restaurantID))
+	restaurantID = strings.TrimSpace(restaurantID)
+	query := `SELECT id,restaurant_id,COALESCE(parent_id,''),name,sort_order,status,cloud_version,archived_at,created_at,updated_at FROM cloud_catalog_folders`
+	args := []any{}
+	if restaurantID != "" {
+		query += ` WHERE restaurant_id = '' OR restaurant_id = $1`
+		args = append(args, restaurantID)
+	}
+	query += ` ORDER BY parent_id NULLS FIRST, sort_order, id`
+	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +382,15 @@ func (r *Repository) GetCatalogTag(ctx context.Context, id string) (domain.Catal
 }
 
 func (r *Repository) ListCatalogTags(ctx context.Context, restaurantID string) ([]domain.CatalogTag, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id,restaurant_id,name,code,status,cloud_version,archived_at,created_at,updated_at FROM cloud_catalog_tags WHERE restaurant_id=$1 ORDER BY code,id`, strings.TrimSpace(restaurantID))
+	restaurantID = strings.TrimSpace(restaurantID)
+	query := `SELECT id,restaurant_id,name,code,status,cloud_version,archived_at,created_at,updated_at FROM cloud_catalog_tags`
+	args := []any{}
+	if restaurantID != "" {
+		query += ` WHERE restaurant_id = '' OR restaurant_id = $1`
+		args = append(args, restaurantID)
+	}
+	query += ` ORDER BY code,id`
+	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -383,12 +407,20 @@ func (r *Repository) ListCatalogTags(ctx context.Context, restaurantID string) (
 }
 
 func (r *Repository) AssignCatalogItemTag(ctx context.Context, v domain.CatalogItemTag) (domain.CatalogItemTag, error) {
-	_, err := r.pool.Exec(ctx, `INSERT INTO cloud_catalog_item_tags(restaurant_id,catalog_item_id,tag_id,cloud_version,created_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(catalog_item_id,tag_id) DO UPDATE SET cloud_version=EXCLUDED.cloud_version`, v.RestaurantID, v.CatalogItemID, v.TagID, v.CloudVersion, v.CreatedAt)
+	_, err := r.pool.Exec(ctx, `INSERT INTO cloud_catalog_item_tags(restaurant_id,catalog_item_id,tag_id,cloud_version,created_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(catalog_item_id,tag_id) DO UPDATE SET restaurant_id=EXCLUDED.restaurant_id, cloud_version=EXCLUDED.cloud_version`, strings.TrimSpace(v.RestaurantID), v.CatalogItemID, v.TagID, v.CloudVersion, v.CreatedAt)
 	return v, normalizeErr(err)
 }
 
 func (r *Repository) ListCatalogItemTags(ctx context.Context, restaurantID string) ([]domain.CatalogItemTag, error) {
-	rows, err := r.pool.Query(ctx, `SELECT restaurant_id,catalog_item_id,tag_id,cloud_version,created_at FROM cloud_catalog_item_tags WHERE restaurant_id=$1 ORDER BY catalog_item_id,tag_id`, strings.TrimSpace(restaurantID))
+	restaurantID = strings.TrimSpace(restaurantID)
+	query := `SELECT restaurant_id,catalog_item_id,tag_id,cloud_version,created_at FROM cloud_catalog_item_tags`
+	args := []any{}
+	if restaurantID != "" {
+		query += ` WHERE restaurant_id = '' OR restaurant_id = $1`
+		args = append(args, restaurantID)
+	}
+	query += ` ORDER BY catalog_item_id,tag_id`
+	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -890,30 +922,30 @@ func (r *Repository) ListTables(ctx context.Context, restaurantID string) ([]dom
 
 func (r *Repository) CreateMenuItem(ctx context.Context, v domain.MenuItem) (domain.MenuItem, error) {
 	out, err := scanMenuItem(r.pool.QueryRow(ctx, `
-INSERT INTO cloud_menu_items(id,restaurant_id,catalog_item_id,category_id,name,price,currency,status,availability_json,station_routing_key,cloud_version,archived_at,created_at,updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14)
-RETURNING id,restaurant_id,catalog_item_id,COALESCE(category_id,''),name,price,currency,status,availability_json::text,COALESCE(station_routing_key,''),cloud_version,archived_at,created_at,updated_at`,
-		v.ID, v.RestaurantID, v.CatalogItemID, nullableText(v.CategoryID), v.Name, v.Price, v.Currency, v.Status, v.AvailabilityJSON, nullableText(v.StationRoutingKey), v.CloudVersion, v.ArchivedAt, v.CreatedAt, v.UpdatedAt))
+INSERT INTO cloud_menu_items(id,restaurant_id,catalog_item_id,category_id,tag_id,tax_profile_id,name,price,currency,status,runtime_status,availability_json,station_routing_key,cloud_version,archived_at,created_at,updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14,$15,$16,$17)
+RETURNING id,restaurant_id,catalog_item_id,COALESCE(category_id,''),COALESCE(tag_id,''),COALESCE(tax_profile_id,''),name,price,currency,status,runtime_status,availability_json::text,COALESCE(station_routing_key,''),cloud_version,archived_at,created_at,updated_at`,
+		v.ID, v.RestaurantID, v.CatalogItemID, nullableText(v.CategoryID), nullableText(v.TagID), nullableText(v.TaxProfileID), v.Name, v.Price, v.Currency, v.Status, v.RuntimeStatus, v.AvailabilityJSON, nullableText(v.StationRoutingKey), v.CloudVersion, v.ArchivedAt, v.CreatedAt, v.UpdatedAt))
 	return out, normalizeErr(err)
 }
 
 func (r *Repository) UpdateMenuItem(ctx context.Context, v domain.MenuItem) (domain.MenuItem, error) {
 	out, err := scanMenuItem(r.pool.QueryRow(ctx, `
 UPDATE cloud_menu_items
-SET catalog_item_id=$2,category_id=$3,name=$4,price=$5,currency=$6,status=$7,availability_json=$8::jsonb,station_routing_key=$9,cloud_version=$10,archived_at=$11,updated_at=$12
+SET catalog_item_id=$2,category_id=$3,tag_id=$4,tax_profile_id=$5,name=$6,price=$7,currency=$8,status=$9,runtime_status=$10,availability_json=$11::jsonb,station_routing_key=$12,cloud_version=$13,archived_at=$14,updated_at=$15
 WHERE id=$1
-RETURNING id,restaurant_id,catalog_item_id,COALESCE(category_id,''),name,price,currency,status,availability_json::text,COALESCE(station_routing_key,''),cloud_version,archived_at,created_at,updated_at`,
-		v.ID, v.CatalogItemID, nullableText(v.CategoryID), v.Name, v.Price, v.Currency, v.Status, v.AvailabilityJSON, nullableText(v.StationRoutingKey), v.CloudVersion, v.ArchivedAt, v.UpdatedAt))
+RETURNING id,restaurant_id,catalog_item_id,COALESCE(category_id,''),COALESCE(tag_id,''),COALESCE(tax_profile_id,''),name,price,currency,status,runtime_status,availability_json::text,COALESCE(station_routing_key,''),cloud_version,archived_at,created_at,updated_at`,
+		v.ID, v.CatalogItemID, nullableText(v.CategoryID), nullableText(v.TagID), nullableText(v.TaxProfileID), v.Name, v.Price, v.Currency, v.Status, v.RuntimeStatus, v.AvailabilityJSON, nullableText(v.StationRoutingKey), v.CloudVersion, v.ArchivedAt, v.UpdatedAt))
 	return out, normalizeErr(err)
 }
 
 func (r *Repository) GetMenuItem(ctx context.Context, id string) (domain.MenuItem, error) {
-	v, err := scanMenuItem(r.pool.QueryRow(ctx, `SELECT id,restaurant_id,catalog_item_id,COALESCE(category_id,''),name,price,currency,status,availability_json::text,COALESCE(station_routing_key,''),cloud_version,archived_at,created_at,updated_at FROM cloud_menu_items WHERE id = $1`, strings.TrimSpace(id)))
+	v, err := scanMenuItem(r.pool.QueryRow(ctx, `SELECT id,restaurant_id,catalog_item_id,COALESCE(category_id,''),COALESCE(tag_id,''),COALESCE(tax_profile_id,''),name,price,currency,status,runtime_status,availability_json::text,COALESCE(station_routing_key,''),cloud_version,archived_at,created_at,updated_at FROM cloud_menu_items WHERE id = $1`, strings.TrimSpace(id)))
 	return v, normalizeErr(err)
 }
 
 func (r *Repository) ListMenuItems(ctx context.Context, restaurantID string) ([]domain.MenuItem, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id,restaurant_id,catalog_item_id,COALESCE(category_id,''),name,price,currency,status,availability_json::text,COALESCE(station_routing_key,''),cloud_version,archived_at,created_at,updated_at FROM cloud_menu_items WHERE restaurant_id = $1 ORDER BY id`, strings.TrimSpace(restaurantID))
+	rows, err := r.pool.Query(ctx, `SELECT id,restaurant_id,catalog_item_id,COALESCE(category_id,''),COALESCE(tag_id,''),COALESCE(tax_profile_id,''),name,price,currency,status,runtime_status,availability_json::text,COALESCE(station_routing_key,''),cloud_version,archived_at,created_at,updated_at FROM cloud_menu_items WHERE restaurant_id = $1 ORDER BY id`, strings.TrimSpace(restaurantID))
 	if err != nil {
 		return nil, err
 	}
@@ -1431,7 +1463,7 @@ func scanTable(row scanner) (domain.Table, error) {
 func scanMenuItem(row scanner) (domain.MenuItem, error) {
 	var v domain.MenuItem
 	var status string
-	err := row.Scan(&v.ID, &v.RestaurantID, &v.CatalogItemID, &v.CategoryID, &v.Name, &v.Price, &v.Currency, &status, &v.AvailabilityJSON, &v.StationRoutingKey, &v.CloudVersion, &v.ArchivedAt, &v.CreatedAt, &v.UpdatedAt)
+	err := row.Scan(&v.ID, &v.RestaurantID, &v.CatalogItemID, &v.CategoryID, &v.TagID, &v.TaxProfileID, &v.Name, &v.Price, &v.Currency, &status, &v.RuntimeStatus, &v.AvailabilityJSON, &v.StationRoutingKey, &v.CloudVersion, &v.ArchivedAt, &v.CreatedAt, &v.UpdatedAt)
 	v.Status = domain.LifecycleStatus(status)
 	return v, err
 }

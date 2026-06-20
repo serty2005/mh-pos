@@ -373,6 +373,74 @@ func TestCatalogMenuValidationAndPublicationPackageShape(t *testing.T) {
 	assertPOSEdgeModifierIngestPackage(t, fullBody, restaurant.ID, menu.ID, modifierGroup.ID, modifierOption.ID, modifierBinding.ID)
 }
 
+func TestTenantCatalogItemFeedsIndependentRestaurantMenus(t *testing.T) {
+	service, _ := newService()
+	ctx := context.Background()
+	first, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "Expo A", Timezone: "Europe/Moscow", Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "Expo B", Timezone: "Europe/Moscow", Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{Kind: domain.CatalogItemService, Name: "Entrance ticket", SKU: "TICKET-GA", BaseUnit: "service"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstCategory, err := service.CreateCategory(ctx, app.CreateCategoryCommand{RestaurantID: first.ID, Name: "Tickets A", SortOrder: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondCategory, err := service.CreateCategory(ctx, app.CreateCategoryCommand{RestaurantID: second.ID, Name: "Tickets B", SortOrder: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstMenu, err := service.CreateMenuItem(ctx, app.CreateMenuItemCommand{RestaurantID: first.ID, CatalogItemID: catalog.ID, CategoryID: firstCategory.ID, TagID: "tag-vip", TaxProfileID: "tax-a", Name: "Adult ticket", Price: 100000, Currency: "RUB", RuntimeStatus: "available"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondMenu, err := service.CreateMenuItem(ctx, app.CreateMenuItemCommand{RestaurantID: second.ID, CatalogItemID: catalog.ID, CategoryID: secondCategory.ID, TagID: "tag-regular", TaxProfileID: "tax-b", Name: "Guest pass", Price: 75000, Currency: "RUB", RuntimeStatus: "available"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hidden := "hidden"
+	updatedFirst, err := service.UpdateMenuItem(ctx, firstMenu.ID, app.UpdateMenuItemCommand{Name: "Adult ticket online", Price: ptrInt64(120000), RuntimeStatus: &hidden})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedFirst.Name != "Adult ticket online" || updatedFirst.Price != 120000 || updatedFirst.RuntimeStatus != "hidden" {
+		t.Fatalf("first menu override was not updated: %+v", updatedFirst)
+	}
+	secondAfter, err := service.GetMenuItem(ctx, secondMenu.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondAfter.Name != "Guest pass" || secondAfter.Price != 75000 || secondAfter.CategoryID != secondCategory.ID || secondAfter.CatalogItemID != catalog.ID {
+		t.Fatalf("second restaurant menu was changed by first override: %+v", secondAfter)
+	}
+	if _, err := service.Publish(ctx, app.PublishCommand{RestaurantID: first.ID, PublishedBy: "operator-1", NodeDeviceID: "node-a"}); err != nil {
+		t.Fatal(err)
+	}
+	firstPackage, err := service.GetCurrentPublishedPackage(ctx, first.ID, "node-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(firstPackage.MenuItems) != 1 || firstPackage.MenuItems[0].ID != firstMenu.ID || firstPackage.MenuItems[0].CatalogItemID != catalog.ID || firstPackage.MenuItems[0].CategoryID != firstCategory.ID || firstPackage.MenuItems[0].Name != "Adult ticket online" || firstPackage.MenuItems[0].Price != 120000 || firstPackage.MenuItems[0].Active {
+		t.Fatalf("first Edge package must contain only first restaurant-effective menu, got %+v", firstPackage.MenuItems)
+	}
+	if _, err := service.Publish(ctx, app.PublishCommand{RestaurantID: second.ID, PublishedBy: "operator-1", NodeDeviceID: "node-b"}); err != nil {
+		t.Fatal(err)
+	}
+	secondPackage, err := service.GetCurrentPublishedPackage(ctx, second.ID, "node-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(secondPackage.MenuItems) != 1 || secondPackage.MenuItems[0].ID != secondMenu.ID || secondPackage.MenuItems[0].CatalogItemID != catalog.ID || secondPackage.MenuItems[0].CategoryID != secondCategory.ID || secondPackage.MenuItems[0].Name != "Guest pass" || secondPackage.MenuItems[0].Price != 75000 || !secondPackage.MenuItems[0].Active {
+		t.Fatalf("second Edge package must contain only second restaurant-effective menu, got %+v", secondPackage.MenuItems)
+	}
+}
+
 func TestModifierOptionLinkedCatalogItemValidation(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -382,7 +450,7 @@ func TestModifierOptionLinkedCatalogItemValidation(t *testing.T) {
 		{name: "nullable link is accepted", link: func(domain.CatalogItem, domain.CatalogItem) string { return "" }},
 		{name: "same restaurant item is accepted", link: func(mainItem domain.CatalogItem, _ domain.CatalogItem) string { return mainItem.ID }},
 		{name: "unknown item is rejected", link: func(domain.CatalogItem, domain.CatalogItem) string { return "missing-item" }, wantErr: true},
-		{name: "other restaurant item is rejected", link: func(_ domain.CatalogItem, otherItem domain.CatalogItem) string { return otherItem.ID }, wantErr: true},
+		{name: "tenant catalog item used by another restaurant is accepted", link: func(_ domain.CatalogItem, otherItem domain.CatalogItem) string { return otherItem.ID }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1425,9 +1493,13 @@ type posEdgeMenuItemModifierGroup struct {
 type posEdgeMenuItem struct {
 	ID            string `json:"id"`
 	CatalogItemID string `json:"catalog_item_id"`
+	CategoryID    string `json:"category_id,omitempty"`
+	TagID         string `json:"tag_id,omitempty"`
 	Name          string `json:"name"`
 	Price         int64  `json:"price"`
 	Currency      string `json:"currency"`
+	TaxProfileID  string `json:"tax_profile_id,omitempty"`
+	RuntimeStatus string `json:"runtime_status,omitempty"`
 	Active        bool   `json:"active"`
 	CreatedAt     string `json:"created_at"`
 	UpdatedAt     string `json:"updated_at"`

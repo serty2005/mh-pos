@@ -305,6 +305,10 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertGreaterEqual(len(dataset["roles"]), 6)
         self.assertGreaterEqual(len(dataset["employees"]), 6)
         self.assertGreaterEqual(len(dataset["catalog_items"]), 6)
+        menu_items = [item for item in dataset["catalog_items"] if "price_minor" in item]
+        self.assertTrue(menu_items)
+        self.assertTrue(all(item.get("category_ref") for item in menu_items))
+        self.assertTrue(all(item.get("tags") for item in menu_items))
         self.assertTrue(dataset["pricing_policies"])
         self.assertTrue(dataset["recipes"])
         self.assertTrue(dataset["stop_list"])

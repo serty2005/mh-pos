@@ -997,8 +997,15 @@ func normalizeMenuItemModifierGroup(v domain.MenuItemModifierGroup) domain.MenuI
 func normalizeMenuItem(v domain.MenuItem, now time.Time) domain.MenuItem {
 	v.ID = strings.TrimSpace(v.ID)
 	v.CatalogItemID = strings.TrimSpace(v.CatalogItemID)
+	v.CategoryID = strings.TrimSpace(v.CategoryID)
+	v.TagID = strings.TrimSpace(v.TagID)
 	v.Name = strings.TrimSpace(v.Name)
 	v.Currency = strings.ToUpper(strings.TrimSpace(v.Currency))
+	switch strings.TrimSpace(v.RuntimeStatus) {
+	case "unavailable", "hidden":
+	default:
+		v.RuntimeStatus = "available"
+	}
 	v.CreatedAt = defaultTime(v.CreatedAt, now)
 	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
 	return v
@@ -1161,8 +1168,8 @@ func validateCatalogItem(v domain.CatalogItem) error {
 }
 
 func validateCatalogFolder(v domain.CatalogFolder) error {
-	if v.ID == "" || v.RestaurantID == "" || v.Name == "" {
-		return fmt.Errorf("%w: catalog folder id, restaurant_id and name are required", domain.ErrInvalid)
+	if v.ID == "" || v.Name == "" {
+		return fmt.Errorf("%w: catalog folder id and name are required", domain.ErrInvalid)
 	}
 	return nil
 }
@@ -1175,14 +1182,14 @@ func validateFolderParameter(v domain.FolderParameter) error {
 }
 
 func validateCatalogTag(v domain.CatalogTag) error {
-	if v.ID == "" || v.RestaurantID == "" || v.Name == "" || v.Code == "" {
-		return fmt.Errorf("%w: catalog tag id, restaurant_id, name and code are required", domain.ErrInvalid)
+	if v.ID == "" || v.Name == "" || v.Code == "" {
+		return fmt.Errorf("%w: catalog tag id, name and code are required", domain.ErrInvalid)
 	}
 	return nil
 }
 
 func validateCatalogItemTag(v domain.CatalogItemTag) error {
-	if v.CatalogItemID == "" || v.TagID == "" || v.RestaurantID == "" {
+	if v.CatalogItemID == "" || v.TagID == "" {
 		return fmt.Errorf("%w: catalog item tag ids are required", domain.ErrInvalid)
 	}
 	return nil

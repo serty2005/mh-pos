@@ -8,13 +8,13 @@ import (
 )
 
 func (r *Repository) CreateMenuItem(ctx context.Context, v *domain.MenuItem) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO menu_items(id,catalog_item_id,name,price,currency,tax_profile_id,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.CatalogItemID, v.Name, v.Price, v.Currency, nullableString(v.TaxProfileID), boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO menu_items(id,catalog_item_id,category_id,tag_id,name,price,currency,tax_profile_id,runtime_status,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.CatalogItemID, nullableStringValue(v.CategoryID), nullableStringValue(v.TagID), v.Name, v.Price, v.Currency, nullableString(v.TaxProfileID), menuRuntimeStatus(v.RuntimeStatus), boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }
 
 func (r *Repository) ListMenuItems(ctx context.Context) ([]domain.MenuItem, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT m.id,m.catalog_item_id,COALESCE(c.type,''),m.name,m.price,m.currency,m.tax_profile_id,m.active,m.created_at,m.updated_at,
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT m.id,m.catalog_item_id,COALESCE(m.category_id,''),COALESCE(m.tag_id,''),COALESCE(c.type,''),m.name,m.price,m.currency,m.tax_profile_id,COALESCE(m.runtime_status,'available'),m.active,m.created_at,m.updated_at,
 COALESCE(sl.active,0),sl.available_quantity
 FROM menu_items m
 LEFT JOIN catalog_items c ON c.id = m.catalog_item_id
@@ -31,7 +31,7 @@ ORDER BY m.created_at`)
 		var created, updated string
 		var taxProfileID sql.NullString
 		var stopListQuantity sql.NullFloat64
-		if err := rows.Scan(&v.ID, &v.CatalogItemID, &v.ItemType, &v.Name, &v.Price, &v.Currency, &taxProfileID, &active, &created, &updated, &stopListActive, &stopListQuantity); err != nil {
+		if err := rows.Scan(&v.ID, &v.CatalogItemID, &v.CategoryID, &v.TagID, &v.ItemType, &v.Name, &v.Price, &v.Currency, &taxProfileID, &v.RuntimeStatus, &active, &created, &updated, &stopListActive, &stopListQuantity); err != nil {
 			return nil, err
 		}
 		v.TaxProfileID = stringPtr(taxProfileID)
@@ -63,13 +63,13 @@ func (r *Repository) GetMenuItem(ctx context.Context, id string) (*domain.MenuIt
 	var created, updated string
 	var taxProfileID sql.NullString
 	var stopListQuantity sql.NullFloat64
-	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT m.id,m.catalog_item_id,COALESCE(c.type,''),m.name,m.price,m.currency,m.tax_profile_id,m.active,m.created_at,m.updated_at,
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT m.id,m.catalog_item_id,COALESCE(m.category_id,''),COALESCE(m.tag_id,''),COALESCE(c.type,''),m.name,m.price,m.currency,m.tax_profile_id,COALESCE(m.runtime_status,'available'),m.active,m.created_at,m.updated_at,
 COALESCE(sl.active,0),sl.available_quantity
 FROM menu_items m
 LEFT JOIN catalog_items c ON c.id = m.catalog_item_id
 LEFT JOIN stop_lists sl ON sl.catalog_item_id = m.catalog_item_id AND sl.active = 1 AND sl.cloud_deleted_at IS NULL
 WHERE m.id = ?`, id).
-		Scan(&v.ID, &v.CatalogItemID, &v.ItemType, &v.Name, &v.Price, &v.Currency, &taxProfileID, &active, &created, &updated, &stopListActive, &stopListQuantity)
+		Scan(&v.ID, &v.CatalogItemID, &v.CategoryID, &v.TagID, &v.ItemType, &v.Name, &v.Price, &v.Currency, &taxProfileID, &v.RuntimeStatus, &active, &created, &updated, &stopListActive, &stopListQuantity)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
@@ -96,6 +96,13 @@ func applyMenuStopListOverlay(item *domain.MenuItem, active int, available sql.N
 		return
 	}
 	item.StopListBlocked = true
+}
+
+func menuRuntimeStatus(value string) string {
+	if value == "unavailable" || value == "hidden" {
+		return value
+	}
+	return "available"
 }
 
 func (r *Repository) hydrateMenuItemModifiers(ctx context.Context, item *domain.MenuItem) error {

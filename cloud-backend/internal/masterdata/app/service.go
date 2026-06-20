@@ -205,7 +205,7 @@ type RotatePINCommand struct {
 
 // CreateCatalogItemCommand описывает создание Cloud-owned catalog item.
 type CreateCatalogItemCommand struct {
-	RestaurantID       string                 `json:"restaurant_id"`
+	RestaurantID       string                 `json:"restaurant_id,omitempty"`
 	Kind               domain.CatalogItemKind `json:"kind"`
 	Type               domain.CatalogItemKind `json:"type,omitempty"`
 	FolderID           string                 `json:"folder_id,omitempty"`
@@ -230,7 +230,7 @@ type UpdateCatalogItemCommand struct {
 }
 
 type CreateCatalogFolderCommand struct {
-	RestaurantID string `json:"restaurant_id"`
+	RestaurantID string `json:"restaurant_id,omitempty"`
 	ParentID     string `json:"parent_id,omitempty"`
 	Name         string `json:"name"`
 	SortOrder    int64  `json:"sort_order"`
@@ -258,7 +258,7 @@ type UpdateFolderParameterCommand struct {
 }
 
 type CreateCatalogTagCommand struct {
-	RestaurantID string `json:"restaurant_id"`
+	RestaurantID string `json:"restaurant_id,omitempty"`
 	Name         string `json:"name"`
 	Code         string `json:"code"`
 }
@@ -270,7 +270,7 @@ type UpdateCatalogTagCommand struct {
 }
 
 type AssignCatalogItemTagCommand struct {
-	RestaurantID  string `json:"restaurant_id"`
+	RestaurantID  string `json:"restaurant_id,omitempty"`
 	CatalogItemID string `json:"catalog_item_id"`
 	TagID         string `json:"tag_id"`
 }
@@ -444,9 +444,12 @@ type CreateMenuItemCommand struct {
 	RestaurantID      string `json:"restaurant_id"`
 	CatalogItemID     string `json:"catalog_item_id"`
 	CategoryID        string `json:"category_id"`
+	TagID             string `json:"tag_id,omitempty"`
+	TaxProfileID      string `json:"tax_profile_id,omitempty"`
 	Name              string `json:"name"`
 	Price             int64  `json:"price"`
 	Currency          string `json:"currency"`
+	RuntimeStatus     string `json:"runtime_status,omitempty"`
 	AvailabilityJSON  string `json:"availability_json"`
 	StationRoutingKey string `json:"station_routing_key"`
 }
@@ -455,10 +458,13 @@ type CreateMenuItemCommand struct {
 type UpdateMenuItemCommand struct {
 	CatalogItemID     string                  `json:"catalog_item_id,omitempty"`
 	CategoryID        string                  `json:"category_id,omitempty"`
+	TagID             *string                 `json:"tag_id,omitempty"`
+	TaxProfileID      *string                 `json:"tax_profile_id,omitempty"`
 	Name              string                  `json:"name,omitempty"`
 	Price             *int64                  `json:"price,omitempty"`
 	Currency          string                  `json:"currency,omitempty"`
 	Status            *domain.LifecycleStatus `json:"status,omitempty"`
+	RuntimeStatus     *string                 `json:"runtime_status,omitempty"`
 	AvailabilityJSON  string                  `json:"availability_json,omitempty"`
 	StationRoutingKey string                  `json:"station_routing_key,omitempty"`
 }
@@ -891,7 +897,7 @@ func (s *Service) CreateCatalogItem(ctx context.Context, cmd CreateCatalogItemCo
 	if cmd.Kind == "" && cmd.Type != "" {
 		cmd.Kind = cmd.Type
 	}
-	if err := validateCatalogFields(cmd.RestaurantID, cmd.Kind, cmd.Name, cmd.SKU, cmd.BaseUnit); err != nil {
+	if err := validateCatalogFields(cmd.Kind, cmd.Name, cmd.SKU, cmd.BaseUnit); err != nil {
 		return domain.CatalogItem{}, err
 	}
 	now := s.clock.Now().UTC()
@@ -985,8 +991,8 @@ func (s *Service) ArchiveCatalogItem(ctx context.Context, id string) (domain.Cat
 
 func (s *Service) CreateCatalogFolder(ctx context.Context, cmd CreateCatalogFolderCommand) (domain.CatalogFolder, error) {
 	restaurantID, name := strings.TrimSpace(cmd.RestaurantID), strings.TrimSpace(cmd.Name)
-	if restaurantID == "" || name == "" {
-		return domain.CatalogFolder{}, fmt.Errorf("%w: restaurant_id and name are required", domain.ErrInvalid)
+	if name == "" {
+		return domain.CatalogFolder{}, fmt.Errorf("%w: name is required", domain.ErrInvalid)
 	}
 	now := s.clock.Now().UTC()
 	folder := domain.CatalogFolder{ID: s.ids.NewID(), RestaurantID: restaurantID, ParentID: strings.TrimSpace(cmd.ParentID), Name: name, SortOrder: cmd.SortOrder, Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
@@ -1083,8 +1089,8 @@ func (s *Service) UpdateFolderParameter(ctx context.Context, id string, cmd Upda
 
 func (s *Service) CreateCatalogTag(ctx context.Context, cmd CreateCatalogTagCommand) (domain.CatalogTag, error) {
 	restaurantID, name, code := strings.TrimSpace(cmd.RestaurantID), strings.TrimSpace(cmd.Name), strings.TrimSpace(cmd.Code)
-	if restaurantID == "" || name == "" || code == "" {
-		return domain.CatalogTag{}, fmt.Errorf("%w: restaurant_id, name and code are required", domain.ErrInvalid)
+	if name == "" || code == "" {
+		return domain.CatalogTag{}, fmt.Errorf("%w: name and code are required", domain.ErrInvalid)
 	}
 	now := s.clock.Now().UTC()
 	tag := domain.CatalogTag{ID: s.ids.NewID(), RestaurantID: restaurantID, Name: name, Code: code, Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
@@ -1126,8 +1132,14 @@ func (s *Service) UpdateCatalogTag(ctx context.Context, id string, cmd UpdateCat
 
 func (s *Service) AssignCatalogItemTag(ctx context.Context, cmd AssignCatalogItemTagCommand) (domain.CatalogItemTag, error) {
 	restaurantID, itemID, tagID := strings.TrimSpace(cmd.RestaurantID), strings.TrimSpace(cmd.CatalogItemID), strings.TrimSpace(cmd.TagID)
-	if restaurantID == "" || itemID == "" || tagID == "" {
-		return domain.CatalogItemTag{}, fmt.Errorf("%w: restaurant_id, catalog_item_id and tag_id are required", domain.ErrInvalid)
+	if itemID == "" || tagID == "" {
+		return domain.CatalogItemTag{}, fmt.Errorf("%w: catalog_item_id and tag_id are required", domain.ErrInvalid)
+	}
+	if _, err := s.ensureCatalogItemAvailable(ctx, itemID); err != nil {
+		return domain.CatalogItemTag{}, err
+	}
+	if _, err := s.repo.GetCatalogTag(ctx, tagID); err != nil {
+		return domain.CatalogItemTag{}, err
 	}
 	tag := domain.CatalogItemTag{RestaurantID: restaurantID, CatalogItemID: itemID, TagID: tagID, CloudVersion: 1, CreatedAt: s.clock.Now().UTC()}
 	return s.repo.AssignCatalogItemTag(ctx, tag)
@@ -1874,14 +1886,14 @@ func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand)
 	if currency != restaurant.Currency {
 		return domain.MenuItem{}, fmt.Errorf("%w: menu item currency must match restaurant currency", domain.ErrInvalid)
 	}
-	catalogItem, err := s.repo.GetCatalogItem(ctx, catalogItemID)
+	if _, err := s.ensureCatalogItemAvailable(ctx, catalogItemID); err != nil {
+		return domain.MenuItem{}, err
+	}
+	availability, err := normalizeAvailability(cmd.AvailabilityJSON)
 	if err != nil {
 		return domain.MenuItem{}, err
 	}
-	if catalogItem.RestaurantID != restaurantID || catalogItem.Status == domain.StatusArchived {
-		return domain.MenuItem{}, fmt.Errorf("%w: catalog item is archived or belongs to another restaurant", domain.ErrInvalid)
-	}
-	availability, err := normalizeAvailability(cmd.AvailabilityJSON)
+	runtimeStatus, err := normalizeMenuRuntimeStatus(cmd.RuntimeStatus)
 	if err != nil {
 		return domain.MenuItem{}, err
 	}
@@ -1891,10 +1903,13 @@ func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand)
 		RestaurantID:      restaurantID,
 		CatalogItemID:     catalogItemID,
 		CategoryID:        strings.TrimSpace(cmd.CategoryID),
+		TagID:             strings.TrimSpace(cmd.TagID),
+		TaxProfileID:      strings.TrimSpace(cmd.TaxProfileID),
 		Name:              name,
 		Price:             cmd.Price,
 		Currency:          currency,
 		Status:            domain.StatusPublished,
+		RuntimeStatus:     runtimeStatus,
 		AvailabilityJSON:  availability,
 		StationRoutingKey: strings.TrimSpace(cmd.StationRoutingKey),
 		CloudVersion:      1,
@@ -1921,17 +1936,20 @@ func (s *Service) UpdateMenuItem(ctx context.Context, id string, cmd UpdateMenuI
 		return domain.MenuItem{}, err
 	}
 	if strings.TrimSpace(cmd.CatalogItemID) != "" {
-		catalogItem, err := s.repo.GetCatalogItem(ctx, strings.TrimSpace(cmd.CatalogItemID))
+		catalogItem, err := s.ensureCatalogItemAvailable(ctx, strings.TrimSpace(cmd.CatalogItemID))
 		if err != nil {
 			return domain.MenuItem{}, err
-		}
-		if catalogItem.RestaurantID != item.RestaurantID || catalogItem.Status == domain.StatusArchived {
-			return domain.MenuItem{}, fmt.Errorf("%w: catalog item is archived or belongs to another restaurant", domain.ErrInvalid)
 		}
 		item.CatalogItemID = catalogItem.ID
 	}
 	if strings.TrimSpace(cmd.CategoryID) != "" {
 		item.CategoryID = strings.TrimSpace(cmd.CategoryID)
+	}
+	if cmd.TagID != nil {
+		item.TagID = strings.TrimSpace(*cmd.TagID)
+	}
+	if cmd.TaxProfileID != nil {
+		item.TaxProfileID = strings.TrimSpace(*cmd.TaxProfileID)
 	}
 	if strings.TrimSpace(cmd.Name) != "" {
 		item.Name = strings.TrimSpace(cmd.Name)
@@ -1965,13 +1983,16 @@ func (s *Service) UpdateMenuItem(ctx context.Context, id string, cmd UpdateMenuI
 		}
 		item.Status = *cmd.Status
 	}
-	if item.Status == domain.StatusPublished {
-		catalogItem, err := s.repo.GetCatalogItem(ctx, item.CatalogItemID)
+	if cmd.RuntimeStatus != nil {
+		runtimeStatus, err := normalizeMenuRuntimeStatus(*cmd.RuntimeStatus)
 		if err != nil {
 			return domain.MenuItem{}, err
 		}
-		if catalogItem.Status == domain.StatusArchived {
-			return domain.MenuItem{}, fmt.Errorf("%w: archived catalog item cannot be used by published menu item", domain.ErrInvalid)
+		item.RuntimeStatus = runtimeStatus
+	}
+	if item.Status == domain.StatusPublished {
+		if _, err := s.ensureCatalogItemAvailable(ctx, item.CatalogItemID); err != nil {
+			return domain.MenuItem{}, err
 		}
 	}
 	if strings.TrimSpace(cmd.AvailabilityJSON) != "" {
@@ -2427,6 +2448,7 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
 	}
+	itemTags = filterItemTagsForCatalog(itemTags, catalogItems)
 	sortRoles(roles)
 	sortEmployees(employees)
 	sortCatalog(catalogItems)
@@ -2860,6 +2882,20 @@ func edgePricingPolicies(items []domain.PricingPolicy) []domain.EdgePricingPolic
 	return out
 }
 
+func filterItemTagsForCatalog(itemTags []domain.CatalogItemTag, catalogItems []domain.CatalogItem) []domain.CatalogItemTag {
+	allowed := map[string]struct{}{}
+	for _, item := range catalogItems {
+		allowed[item.ID] = struct{}{}
+	}
+	out := itemTags[:0]
+	for _, link := range itemTags {
+		if _, ok := allowed[link.CatalogItemID]; ok {
+			out = append(out, link)
+		}
+	}
+	return out
+}
+
 func edgeRecipes(items []domain.RecipeItem, catalogItems []domain.CatalogItem) ([]domain.EdgeRecipeVersion, []domain.EdgeRecipeLine) {
 	catalogByID := map[string]domain.CatalogItem{}
 	for _, item := range catalogItems {
@@ -2984,7 +3020,21 @@ func edgeDefaultWarehouses(restaurantID string, now time.Time) []domain.EdgeWare
 func edgeMenuItems(items []domain.MenuItem) []domain.EdgeMenuItem {
 	out := make([]domain.EdgeMenuItem, 0, len(items))
 	for _, item := range items {
-		out = append(out, domain.EdgeMenuItem{ID: item.ID, CatalogItemID: item.CatalogItemID, Name: item.Name, Price: item.Price, Currency: item.Currency, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+		active := item.ActiveForPOS() && item.RuntimeStatus == "available"
+		out = append(out, domain.EdgeMenuItem{
+			ID:            item.ID,
+			CatalogItemID: item.CatalogItemID,
+			CategoryID:    item.CategoryID,
+			TagID:         item.TagID,
+			Name:          item.Name,
+			Price:         item.Price,
+			Currency:      item.Currency,
+			TaxProfileID:  item.TaxProfileID,
+			RuntimeStatus: item.RuntimeStatus,
+			Active:        active,
+			CreatedAt:     item.CreatedAt,
+			UpdatedAt:     item.UpdatedAt,
+		})
 	}
 	return out
 }
@@ -3003,9 +3053,9 @@ func summarizePublication(pub domain.Publication, counts map[string]int) Publica
 	}
 }
 
-func validateCatalogFields(restaurantID string, kind domain.CatalogItemKind, name, sku, baseUnit string) error {
-	if strings.TrimSpace(restaurantID) == "" || strings.TrimSpace(name) == "" || strings.TrimSpace(sku) == "" || strings.TrimSpace(baseUnit) == "" {
-		return fmt.Errorf("%w: restaurant_id, name, sku and base_unit are required", domain.ErrInvalid)
+func validateCatalogFields(kind domain.CatalogItemKind, name, sku, baseUnit string) error {
+	if strings.TrimSpace(name) == "" || strings.TrimSpace(sku) == "" || strings.TrimSpace(baseUnit) == "" {
+		return fmt.Errorf("%w: name, sku and base_unit are required", domain.ErrInvalid)
 	}
 	return domain.ValidateCatalogItemKind(kind)
 }
@@ -3022,12 +3072,19 @@ func (s *Service) ensureRestaurantActive(ctx context.Context, restaurantID strin
 }
 
 func (s *Service) ensureCatalogItemInRestaurant(ctx context.Context, restaurantID, catalogItemID string) (domain.CatalogItem, error) {
+	if strings.TrimSpace(restaurantID) == "" {
+		return domain.CatalogItem{}, fmt.Errorf("%w: restaurant_id is required", domain.ErrInvalid)
+	}
+	return s.ensureCatalogItemAvailable(ctx, catalogItemID)
+}
+
+func (s *Service) ensureCatalogItemAvailable(ctx context.Context, catalogItemID string) (domain.CatalogItem, error) {
 	item, err := s.repo.GetCatalogItem(ctx, strings.TrimSpace(catalogItemID))
 	if err != nil {
 		return domain.CatalogItem{}, err
 	}
-	if item.RestaurantID != strings.TrimSpace(restaurantID) {
-		return domain.CatalogItem{}, fmt.Errorf("%w: catalog item belongs to another restaurant", domain.ErrInvalid)
+	if item.Status == domain.StatusArchived {
+		return domain.CatalogItem{}, fmt.Errorf("%w: catalog item is archived", domain.ErrInvalid)
 	}
 	return item, nil
 }
@@ -3133,6 +3190,19 @@ func normalizeAvailability(raw string) (string, error) {
 		return "", err
 	}
 	return string(body), nil
+}
+
+func normalizeMenuRuntimeStatus(raw string) (string, error) {
+	status := strings.TrimSpace(raw)
+	if status == "" {
+		return "available", nil
+	}
+	switch status {
+	case "available", "unavailable", "hidden":
+		return status, nil
+	default:
+		return "", fmt.Errorf("%w: runtime_status must be available, unavailable or hidden", domain.ErrInvalid)
+	}
 }
 
 func canonicalJSON(raw string) string {
@@ -3247,12 +3317,11 @@ func (s *Service) validateLinkedModifierCatalogItem(ctx context.Context, restaur
 	if catalogItemID == "" {
 		return "", nil
 	}
-	item, err := s.repo.GetCatalogItem(ctx, catalogItemID)
-	if err != nil {
-		return "", err
+	if strings.TrimSpace(restaurantID) == "" {
+		return "", fmt.Errorf("%w: restaurant_id is required", domain.ErrInvalid)
 	}
-	if strings.TrimSpace(item.RestaurantID) != strings.TrimSpace(restaurantID) {
-		return "", fmt.Errorf("%w: linked_catalog_item_id must belong to the same restaurant", domain.ErrInvalid)
+	if _, err := s.ensureCatalogItemAvailable(ctx, catalogItemID); err != nil {
+		return "", err
 	}
 	return catalogItemID, nil
 }

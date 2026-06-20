@@ -15,6 +15,8 @@ type OrderLine struct {
 	OrderID       string          `json:"order_id"`
 	MenuItemID    string          `json:"menu_item_id"`
 	CatalogItemID string          `json:"catalog_item_id"`
+	CategoryID    string          `json:"category_id,omitempty"`
+	TagID         string          `json:"tag_id,omitempty"`
 	Name          string          `json:"name"`
 	Quantity      int64           `json:"quantity"`
 	UnitPrice     int64           `json:"unit_price"`

@@ -219,21 +219,24 @@ ON CONFLICT(menu_item_id,modifier_group_id) DO UPDATE SET sort_order=excluded.so
 }
 
 func (r *Repository) UpsertMasterMenuItem(ctx context.Context, v *domain.MenuItem, meta domain.MasterRecordSyncMeta) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO menu_items(id,catalog_item_id,name,price,currency,tax_profile_id,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO menu_items(id,catalog_item_id,category_id,tag_id,name,price,currency,tax_profile_id,runtime_status,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(id) DO UPDATE SET
   catalog_item_id = excluded.catalog_item_id,
+  category_id = excluded.category_id,
+  tag_id = excluded.tag_id,
   name = excluded.name,
   price = excluded.price,
   currency = excluded.currency,
   tax_profile_id = excluded.tax_profile_id,
+  runtime_status = excluded.runtime_status,
   active = excluded.active,
   updated_at = excluded.updated_at,
   cloud_version = excluded.cloud_version,
   cloud_updated_at = excluded.cloud_updated_at,
   cloud_deleted_at = excluded.cloud_deleted_at,
   last_synced_at = excluded.last_synced_at`,
-		v.ID, v.CatalogItemID, v.Name, v.Price, v.Currency, nullableString(v.TaxProfileID), boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+		v.ID, v.CatalogItemID, nullableStringValue(v.CategoryID), nullableStringValue(v.TagID), v.Name, v.Price, v.Currency, nullableString(v.TaxProfileID), menuRuntimeStatus(v.RuntimeStatus), boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
 	return normalizeErr(err)
 }
 

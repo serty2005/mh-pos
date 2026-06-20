@@ -14,8 +14,9 @@ Cloud backend для POS/RMS платформы: прием Edge operational eve
 - хранение raw envelope;
 - operational event journal в PostgreSQL (`cloud_operational_events`);
 - deterministic runtime projections для event type stats и shift finance/refund foundation.
-- реализовано сейчас: Cloud-owned production-oriented CRUD API для ресторанов, залов/столов, ролей, сотрудников/PIN credentials, catalog items, menu items и versioned master-data publications;
-- реализовано сейчас: publication workflow создает deterministic Cloud -> Edge packages для stream `restaurants`, `staff`, `floor`, `catalog`, `menu` и сохраняет их в `cloud_master_data_packages`;
+- реализовано сейчас: Cloud-owned production-oriented CRUD API для ресторанов, залов/столов, ролей, сотрудников/PIN credentials, tenant-level catalog items, restaurant-scoped menu items и versioned master-data publications;
+- реализовано сейчас: restaurant menu items являются overrides поверх tenant catalog identity и хранят stable `menu_item_id`, `catalog_item_id`, category/menu folder, tag, active tax profile, availability и runtime status;
+- реализовано сейчас: publication workflow создает deterministic Cloud -> Edge packages для stream `restaurants`, `staff`, `floor`, `catalog`, restaurant-effective `menu` и сохраняет их в `cloud_master_data_packages`;
 - реализовано сейчас: generic Cloud -> Edge package storage/validation поддерживает stream `pricing_policy` для tax/service-charge reference payloads; full Cloud UI/publication workflow для pricing/tax остается запланирован далее;
 - реализовано сейчас: device provisioning поддерживает Cloud Approve и License Code flow для чистого подключения POS Edge без dev bootstrap;
 - реализовано сейчас: Cloud UI API responses по сотрудникам и публикациям не возвращают PIN и `pin_hash`; PIN hash присутствует только внутри sync-ready staff package для device/system delivery на Edge.
@@ -63,7 +64,9 @@ MH_POS_VERSION=0.1.10
 
 ## Master Data Authority
 
-Реализовано сейчас: Cloud является источником истины для production-oriented справочников сотрудников, ролей, каталога и меню. POS Edge не становится production CRUD для этих сущностей; Edge получает published state через Cloud -> Edge package/snapshot delivery и использует локальную read model offline.
+Реализовано сейчас: Cloud является источником истины для production-oriented справочников сотрудников, ролей, tenant-level каталога и restaurant menu overrides. POS Edge не становится production CRUD для этих сущностей; Edge получает published state через Cloud -> Edge package/snapshot delivery и использует локальную read model offline.
+
+Реализовано сейчас: один `catalog_item_id` может использоваться несколькими ресторанами через разные `menu_item_id`. Изменение name/price/tag/tax/menu folder/availability/runtime status у одного menu item не меняет другое меню; Edge package `menu` содержит только menu items выбранного ресторана.
 
 Cloud master-data production API для будущего `cloud-ui`:
 

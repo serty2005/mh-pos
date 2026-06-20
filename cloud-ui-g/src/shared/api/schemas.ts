@@ -49,7 +49,7 @@ export const employeeSchema = z.object({
 
 export const catalogItemSchema = z.object({
   id: z.string(),
-  restaurant_id: z.string(),
+  restaurant_id: z.string().optional().default(''),
   kind: z.enum(['dish', 'good', 'semi_finished', 'service']),
   folder_id: z.string().optional().default(''),
   name: z.string(),
@@ -66,7 +66,7 @@ export const catalogItemSchema = z.object({
 
 export const catalogFolderSchema = z.object({
   id: z.string(),
-  restaurant_id: z.string(),
+  restaurant_id: z.string().optional().default(''),
   parent_id: z.string().optional().default(''),
   name: z.string(),
   sort_order: z.number(),
@@ -93,7 +93,7 @@ export const folderParameterSchema = z.object({
 
 export const catalogTagSchema = z.object({
   id: z.string(),
-  restaurant_id: z.string(),
+  restaurant_id: z.string().optional().default(''),
   name: z.string(),
   code: z.string(),
   status: lifecycleStatusSchema,
@@ -104,7 +104,7 @@ export const catalogTagSchema = z.object({
 });
 
 export const catalogItemTagSchema = z.object({
-  restaurant_id: z.string(),
+  restaurant_id: z.string().optional().default(''),
   catalog_item_id: z.string(),
   tag_id: z.string(),
   cloud_version: z.number(),
@@ -225,10 +225,13 @@ export const menuItemSchema = z.object({
   restaurant_id: z.string(),
   catalog_item_id: z.string(),
   category_id: z.string().optional().default(''),
+  tag_id: z.string().optional().default(''),
+  tax_profile_id: z.string().optional().default(''),
   name: z.string(),
   price: z.number(),
   currency: z.string(),
   status: lifecycleStatusSchema,
+  runtime_status: z.string().optional().default('available'),
   availability_json: z.string(),
   station_routing_key: z.string().optional().default(''),
   cloud_version: z.number(),

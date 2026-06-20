@@ -6534,9 +6534,9 @@ func TestApplyMasterDataAcceptsCloudCatalogStreamPackageShape(t *testing.T) {
 		"checkpoint_token":"master-data:cloud-restaurant-1:43",
 		"cloud_version":43,
 		"cloud_updated_at":"2026-05-09T10:00:00Z",
-		"folders":[{"id":"folder-services","restaurant_id":"` + f.restaurant.ID + `","name":"Services","sort_order":10,"active":true}],
+		"folders":[{"id":"folder-services","restaurant_id":"","name":"Services","sort_order":10,"active":true}],
 		"folder_parameters":[{"id":"folder-param-1","restaurant_id":"` + f.restaurant.ID + `","folder_id":"folder-services","parameter_key":"accounting_category","value_type":"string","value_json":"\"services\""}],
-		"tags":[{"id":"tag-delivery","restaurant_id":"` + f.restaurant.ID + `","name":"Delivery","code":"delivery","active":true}],
+		"tags":[{"id":"tag-delivery","restaurant_id":"","name":"Delivery","code":"delivery","active":true}],
 		"catalog_items":[{
 			"id":"cloud-service-1",
 			"type":"service",
@@ -6549,7 +6549,7 @@ func TestApplyMasterDataAcceptsCloudCatalogStreamPackageShape(t *testing.T) {
 			"created_at":"2026-05-09T10:00:00Z",
 			"updated_at":"2026-05-09T10:00:00Z"
 		}],
-		"item_tags":[{"catalog_item_id":"cloud-service-1","tag_id":"tag-delivery","restaurant_id":"` + f.restaurant.ID + `"}],
+		"item_tags":[{"catalog_item_id":"cloud-service-1","tag_id":"tag-delivery","restaurant_id":""}],
 		"modifier_groups":[{"id":"modifier-group-1","restaurant_id":"` + f.restaurant.ID + `","name":"Sauce","required":false,"min_count":0,"max_count":2,"active":true}],
 		"modifier_options":[{"id":"modifier-option-1","restaurant_id":"` + f.restaurant.ID + `","modifier_group_id":"modifier-group-1","name":"Extra sauce","price_minor":0,"active":true}],
 		"modifier_bindings":[{"id":"modifier-binding-1","restaurant_id":"` + f.restaurant.ID + `","modifier_group_id":"modifier-group-1","target_type":"tag","target_id":"tag-delivery","sort_order":10,"active":true}],
@@ -6576,6 +6576,13 @@ func TestApplyMasterDataAcceptsCloudCatalogStreamPackageShape(t *testing.T) {
 	}
 	if itemType != string(domain.CatalogItemService) || sku != "CLOUD-DELIVERY" || folderID != "folder-services" || accountingCategory != "services" {
 		t.Fatalf("expected service catalog row, got type=%q sku=%q folder=%q accounting=%q", itemType, sku, folderID, accountingCategory)
+	}
+	var tagRestaurantID string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT restaurant_id FROM catalog_tags WHERE id = 'tag-delivery'`).Scan(&tagRestaurantID); err != nil {
+		t.Fatal(err)
+	}
+	if tagRestaurantID != "" {
+		t.Fatalf("expected tenant-level tag to keep empty restaurant_id, got %q", tagRestaurantID)
 	}
 	var modifierPrice int64
 	if err := f.db.QueryRowContext(f.ctx, `SELECT price_minor FROM modifier_options WHERE id = 'modifier-option-1'`).Scan(&modifierPrice); err != nil {

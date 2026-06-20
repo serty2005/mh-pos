@@ -16,6 +16,7 @@ type Props = {
 };
 
 const statuses: MenuItemFormValues['status'][] = ['draft', 'published', 'archived'];
+const runtimeStatuses = ['available', 'unavailable', 'hidden'];
 
 export default function MenuItemsPanel({ items, catalogItems, restaurantCurrency, loading, error, onCreate, onUpdate, onArchive }: Props) {
   const { t } = useI18n();
@@ -51,6 +52,26 @@ export default function MenuItemsPanel({ items, catalogItems, restaurantCurrency
         <div>
           <label className="mb-1 block text-sm text-slate-700">{t('menu.items.fields.name')}</label>
           <input value={values.name} onChange={(event) => setValues({ ...values, name: event.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" disabled={loading} />
+        </div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-4">
+        <div>
+          <label className="mb-1 block text-sm text-slate-700">{t('menu.items.fields.category')}</label>
+          <input value={values.category_id} onChange={(event) => setValues({ ...values, category_id: event.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" disabled={loading} />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm text-slate-700">{t('menu.items.fields.tag')}</label>
+          <input value={values.tag_id} onChange={(event) => setValues({ ...values, tag_id: event.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" disabled={loading} />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm text-slate-700">{t('menu.items.fields.taxProfile')}</label>
+          <input value={values.tax_profile_id} onChange={(event) => setValues({ ...values, tax_profile_id: event.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" disabled={loading} />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm text-slate-700">{t('menu.items.fields.runtimeStatus')}</label>
+          <select value={values.runtime_status} onChange={(event) => setValues({ ...values, runtime_status: event.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" disabled={loading}>
+            {runtimeStatuses.map((status) => <option key={status} value={status}>{t(`menu.items.runtimeStatuses.${status}`)}</option>)}
+          </select>
         </div>
       </div>
       <div className="grid gap-3 md:grid-cols-4">
@@ -95,7 +116,10 @@ export default function MenuItemsPanel({ items, catalogItems, restaurantCurrency
           <div className="flex flex-wrap justify-between gap-2">
             <div>
               <p className="text-sm font-medium text-slate-900">{item.name}</p>
-              <p className="text-xs text-slate-600">{catalogLabel(item.catalog_item_id)} · {item.price} {item.currency} · {t(`catalog.statuses.${item.status}`)}</p>
+              <p className="text-xs text-slate-600">{catalogLabel(item.catalog_item_id)} · {item.price} {item.currency} · {t(`catalog.statuses.${item.status}`)} · {t(`menu.items.runtimeStatuses.${item.runtime_status}`)}</p>
+              <p className="text-xs text-slate-500">
+                {t('menu.items.fields.category')}: {item.category_id || '-'} · {t('menu.items.fields.tag')}: {item.tag_id || '-'} · {t('menu.items.fields.taxProfile')}: {item.tax_profile_id || '-'}
+              </p>
             </div>
             <div className="flex gap-2">
               <button type="button" onClick={() => setEditing(item)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700" disabled={loading}>{t('catalog.shared.edit')}</button>

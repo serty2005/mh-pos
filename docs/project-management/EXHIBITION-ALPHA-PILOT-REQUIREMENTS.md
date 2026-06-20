@@ -50,17 +50,15 @@
 - PIN login, roles, permissions, personal shifts и cash sessions;
 - immutable precheck/check snapshots и controlled reprint response;
 - Cloud master-data publication и Edge ingest;
+- tenant-level roles/employees, employee restaurant memberships, `organization.manage` и authoritative restaurant scope enforcement;
+- tenant-level catalog identity и restaurant menu overrides для name, price, tag, active tax, menu folder, availability и runtime status;
 - Edge outbox, Cloud event receive, PostgreSQL operational storage и async ClickHouse export;
 - bounded OLAP foundation и Cloud dashboard shell;
 - Edge pairing через License Server stub.
 
 ### 3.2. Не реализовано и обязательно до запуска
 
-- tenant-level catalog вместо текущего restaurant-owned catalog;
 - автоматическая сборка Edge batch после Cloud changes и удаления ручного publish flow;
-- tenant-level roles/employees и employee restaurant memberships;
-- `organization.manage` и authoritative restaurant scope enforcement;
-- restaurant menu overrides для name, price, tag, tax и folder;
 - `qr_confirmation_enabled`, `single_unit_per_line`, validity и ticket issuance;
 - физическая ESC/POS-очередь, драйверы, шаблоны, delivery status и retries;
 - реальные sales/ticket projections и KPI главной Cloud-бэкофиса;

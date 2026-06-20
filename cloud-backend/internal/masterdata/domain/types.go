@@ -163,10 +163,10 @@ func (t Table) ActiveForPOS() bool {
 	return t.Status == StatusPublished
 }
 
-// CatalogItem описывает общую Cloud-owned номенклатуру без сведения всех видов в одну финальную модель.
+// CatalogItem описывает tenant-owned номенклатуру без restaurant ownership.
 type CatalogItem struct {
 	ID                 string          `json:"id"`
-	RestaurantID       string          `json:"restaurant_id"`
+	RestaurantID       string          `json:"restaurant_id,omitempty"`
 	Kind               CatalogItemKind `json:"kind"`
 	FolderID           string          `json:"folder_id,omitempty"`
 	Name               string          `json:"name"`
@@ -191,10 +191,10 @@ func (c CatalogItem) EdgeType() string {
 	return string(c.Kind)
 }
 
-// CatalogFolder описывает Cloud-owned папку номенклатуры, отдельную от категорий меню.
+// CatalogFolder описывает tenant-owned папку номенклатуры, отдельную от категорий меню.
 type CatalogFolder struct {
 	ID           string          `json:"id"`
-	RestaurantID string          `json:"restaurant_id"`
+	RestaurantID string          `json:"restaurant_id,omitempty"`
 	ParentID     string          `json:"parent_id,omitempty"`
 	Name         string          `json:"name"`
 	SortOrder    int64           `json:"sort_order"`
@@ -230,10 +230,10 @@ func (p FolderParameter) ActiveForPOS() bool {
 	return p.Status == StatusPublished
 }
 
-// CatalogTag описывает аналитическую метку каталога, не участвующую в иерархии папок.
+// CatalogTag описывает tenant-owned аналитическую метку каталога.
 type CatalogTag struct {
 	ID           string          `json:"id"`
-	RestaurantID string          `json:"restaurant_id"`
+	RestaurantID string          `json:"restaurant_id,omitempty"`
 	Name         string          `json:"name"`
 	Code         string          `json:"code"`
 	Status       LifecycleStatus `json:"status"`
@@ -250,7 +250,7 @@ func (t CatalogTag) ActiveForPOS() bool {
 
 // CatalogItemTag связывает позицию каталога с аналитической меткой.
 type CatalogItemTag struct {
-	RestaurantID    string    `json:"restaurant_id"`
+	RestaurantID    string    `json:"restaurant_id,omitempty"`
 	CatalogItemID   string    `json:"catalog_item_id"`
 	TagID           string    `json:"tag_id"`
 	CloudVersion    int64     `json:"cloud_version"`
@@ -464,10 +464,13 @@ type MenuItem struct {
 	RestaurantID      string          `json:"restaurant_id"`
 	CatalogItemID     string          `json:"catalog_item_id"`
 	CategoryID        string          `json:"category_id,omitempty"`
+	TagID             string          `json:"tag_id,omitempty"`
+	TaxProfileID      string          `json:"tax_profile_id,omitempty"`
 	Name              string          `json:"name"`
 	Price             int64           `json:"price"`
 	Currency          string          `json:"currency"`
 	Status            LifecycleStatus `json:"status"`
+	RuntimeStatus     string          `json:"runtime_status"`
 	AvailabilityJSON  string          `json:"availability_json"`
 	StationRoutingKey string          `json:"station_routing_key,omitempty"`
 	CloudVersion      int64           `json:"cloud_version"`
@@ -722,9 +725,13 @@ type EdgeCatalogItemTag struct {
 type EdgeMenuItem struct {
 	ID            string    `json:"id"`
 	CatalogItemID string    `json:"catalog_item_id"`
+	CategoryID    string    `json:"category_id,omitempty"`
+	TagID         string    `json:"tag_id,omitempty"`
 	Name          string    `json:"name"`
 	Price         int64     `json:"price"`
 	Currency      string    `json:"currency"`
+	TaxProfileID  string    `json:"tax_profile_id,omitempty"`
+	RuntimeStatus string    `json:"runtime_status,omitempty"`
 	Active        bool      `json:"active"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`

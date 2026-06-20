@@ -86,8 +86,8 @@ func (r *Repository) UpdateOrderClosed(ctx context.Context, v *domain.Order) err
 }
 
 func (r *Repository) CreateOrderLine(ctx context.Context, v *domain.OrderLine) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO order_lines(id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,currency_code,tax_profile_id,course,comment,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.OrderID, v.MenuItemID, v.CatalogItemID, v.Name, v.Quantity, v.UnitPrice, v.TotalPrice, v.CurrencyCode, nullableString(v.TaxProfileID), nullableString(v.Course), nullableString(v.Comment), string(v.Status), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO order_lines(id,order_id,menu_item_id,catalog_item_id,category_id,tag_id,name,quantity,unit_price,total_price,currency_code,tax_profile_id,course,comment,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.OrderID, v.MenuItemID, v.CatalogItemID, nullableStringValue(v.CategoryID), nullableStringValue(v.TagID), v.Name, v.Quantity, v.UnitPrice, v.TotalPrice, v.CurrencyCode, nullableString(v.TaxProfileID), nullableString(v.Course), nullableString(v.Comment), string(v.Status), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }
 
@@ -115,8 +115,8 @@ func (r *Repository) GetOrderLine(ctx context.Context, id string) (*domain.Order
 	var status, created, updated string
 	var taxProfileID sql.NullString
 	var course, comment sql.NullString
-	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,currency_code,tax_profile_id,course,comment,status,created_at,updated_at FROM order_lines WHERE id = ?`, id).
-		Scan(&v.ID, &v.OrderID, &v.MenuItemID, &v.CatalogItemID, &v.Name, &v.Quantity, &v.UnitPrice, &v.TotalPrice, &v.CurrencyCode, &taxProfileID, &course, &comment, &status, &created, &updated)
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,order_id,menu_item_id,catalog_item_id,COALESCE(category_id,''),COALESCE(tag_id,''),name,quantity,unit_price,total_price,currency_code,tax_profile_id,course,comment,status,created_at,updated_at FROM order_lines WHERE id = ?`, id).
+		Scan(&v.ID, &v.OrderID, &v.MenuItemID, &v.CatalogItemID, &v.CategoryID, &v.TagID, &v.Name, &v.Quantity, &v.UnitPrice, &v.TotalPrice, &v.CurrencyCode, &taxProfileID, &course, &comment, &status, &created, &updated)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
@@ -284,7 +284,7 @@ func (r *Repository) ListClosedOrders(ctx context.Context, query order.ClosedOrd
 }
 
 func (r *Repository) ListOrderLines(ctx context.Context, orderID string) ([]domain.OrderLine, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,currency_code,tax_profile_id,course,comment,status,created_at,updated_at FROM order_lines WHERE order_id = ? ORDER BY created_at`, orderID)
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,order_id,menu_item_id,catalog_item_id,COALESCE(category_id,''),COALESCE(tag_id,''),name,quantity,unit_price,total_price,currency_code,tax_profile_id,course,comment,status,created_at,updated_at FROM order_lines WHERE order_id = ? ORDER BY created_at`, orderID)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +294,7 @@ func (r *Repository) ListOrderLines(ctx context.Context, orderID string) ([]doma
 		var status, created, updated string
 		var taxProfileID sql.NullString
 		var course, comment sql.NullString
-		if err := rows.Scan(&v.ID, &v.OrderID, &v.MenuItemID, &v.CatalogItemID, &v.Name, &v.Quantity, &v.UnitPrice, &v.TotalPrice, &v.CurrencyCode, &taxProfileID, &course, &comment, &status, &created, &updated); err != nil {
+		if err := rows.Scan(&v.ID, &v.OrderID, &v.MenuItemID, &v.CatalogItemID, &v.CategoryID, &v.TagID, &v.Name, &v.Quantity, &v.UnitPrice, &v.TotalPrice, &v.CurrencyCode, &taxProfileID, &course, &comment, &status, &created, &updated); err != nil {
 			return nil, err
 		}
 		v.Status = domain.OrderLineStatus(status)

@@ -17,7 +17,7 @@
 Не обнаружено сейчас:
 
 - Подтвержденного runtime для delivery, настоящего платежного процессинга, фискального адаптера, COGS/margin OLAP reads, production BI, production-grade kitchen timing API и расширенных cooking events за пределами ticket lifecycle foundation.
-- Tenant-level catalog, restaurant menu overrides, автоматическая Cloud -> Edge доставка без manual publish, QR-enabled ticket issuance, physical ESC/POS printing, Telegram reports, sales dashboard и external module entitlement enforcement пока не реализованы. Tenant-level roles/employees, employee restaurant memberships и `organization.manage` реализованы; catalog пока привязан к `restaurant_id`. Master-data CRUD не обновляет Edge package автоматически, Cloud UI вызывает manual publish route; reprint возвращает snapshot без printer orchestration, а License Server остается pairing stub. QR checker/enrollment/relay/confirm перенесены в post-deploy цикл. Целевой контракт описан в `docs/project-management/EXHIBITION-ALPHA-PILOT-REQUIREMENTS.md`.
+- Автоматическая Cloud -> Edge доставка без manual publish, QR-enabled ticket issuance, physical ESC/POS printing, Telegram reports, sales dashboard и external module entitlement enforcement пока не реализованы. Tenant-level roles/employees, employee restaurant memberships, `organization.manage`, tenant catalog identity и restaurant menu overrides реализованы сейчас. Master-data CRUD не обновляет Edge package автоматически, Cloud UI вызывает manual publish route; reprint возвращает snapshot без printer orchestration, а License Server остается pairing stub. QR checker/enrollment/relay/confirm перенесены в post-deploy цикл. Целевой контракт описан в `docs/project-management/EXHIBITION-ALPHA-PILOT-REQUIREMENTS.md`.
 
 Цель полной пилотной реализации:
 
@@ -39,7 +39,7 @@
 - PIN-вход, backend-сессии, привязка `node_device_id` / `client_device_id`, проверка actor context и rate limit для PIN.
 - RBAC на уровне application services; UI visibility не является границей безопасности.
 - Личная смена сотрудника и кассовая смена устройства как разные runtime-понятия.
-- Залы, столы, меню и каталог как локальные read models, получаемые из Cloud-owned справочников.
+- Залы, столы, меню и каталог как локальные read models, получаемые из Cloud-owned справочников. Catalog хранит tenant-level `catalog_item_id`, menu хранит restaurant-effective `menu_item_id`, overrides name/price/tag/tax/menu folder/availability/runtime status и сохраняет stable category/tag identity downstream в order lines.
 - Создание заказов, чтение текущего/активных/закрытых заказов, добавление строк, изменение количества, списание строки, курс подачи и комментарий строки.
 - Выбор и редактирование модификаторов активной строки заказа; backend проверяет активность группы/опции, связь с menu item, required/min/max и цену.
 - Backend authoritative pricing: скидки, надбавки, automatic policies из Cloud, единый порядок применения по `application_index`, налог последним шагом и целочисленное округление.
@@ -53,7 +53,7 @@
 - Backend-backed KDS ticket lifecycle: `kitchen_tickets` создаются из non-service order lines, `GET /api/v1/kitchen/order-queue` и `GET /api/v1/kitchen/tickets` поддерживают bounded read/status filter, status actions `accept/start/hold/ready/serve/recall/cancel` проверяют `pos.kitchen.status.change`, пишут `KitchenTicketStatusChanged`, а `serve` дополнительно пишет `ItemServed`; повторная подача после recall пишет новый `ItemServed` с `serve_sequence` и `supersedes_served_event_id`.
 - Kitchen stock/proposal/stop-list runtime: POS Edge принимает receipt/count/write-off/production, recipe read, catalog/recipe suggestions, stop-list update commands, safe stop-list state read для UI indicator и proposal feedback read model без создания Edge-side stock documents.
 - Локальный lifecycle SQLite: status, retention dry-run, archive export plan, export-only JSONL archive, read-plan, lookup preview, apply-plan и apply-readiness с поддержкой destructive apply (физическое удаление закрытых orders/checks/financial_operations и связанных при verified JSONL + чистый scoped outbox + отсутствие открытых operational boundaries для cutoff периода) и последующий VACUUM compaction БД.
-- Cloud -> Edge master-data ingest для `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`.
+- Cloud -> Edge master-data ingest для `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`. `menu` принимает restaurant-effective `category_id`, `tag_id`, `tax_profile_id` и `runtime_status`, а `catalog` принимает tenant-level folders/tags/item-tag links без обязательного restaurant binding.
 - Sync sender через authenticated `sync/exchange`, item-level ACK, retry/reclaim/backoff и безопасную обработку неподдержанных направлений.
 - Cloud-centric Inventory foundation: Cloud sync receiver принимает целевые складские события, durable `inventory_event_queue` передает их Cloud Inventory Worker, POS Edge legacy manual stock foundation удален из runtime.
 
@@ -99,7 +99,8 @@
 - Bounded kitchen timing агрегат `GET /api/v1/olap/kitchen-timing-summary?restaurant_id=&business_date_from=&business_date_to=&station_id=&group_by=business_date|station&limit=&offset=` читает confirmed KDS streams `KitchenTicketStatusChanged`/`ItemServed` без raw payload и возвращает lifecycle counts/average transition seconds.
 - Async backfill job foundation `GET/POST /api/v1/olap/backfill-jobs`, `GET /api/v1/olap/backfill-jobs/{id}` и `POST /api/v1/olap/backfill-jobs/{id}/cancel` хранит operator jobs в PostgreSQL с UUIDv7 `command_id`, progress/checkpoint/error metadata и audit trail; фактический backfill выполняет background worker без synchronous ClickHouse write в HTTP request path.
 - Хранилище master-data packages и Cloud -> Edge package retrieval.
-- Cloud-owned master data authority: рестораны, роли, сотрудники, PIN lifecycle, каталог, услуги, папки, параметры папок, теги, привязки тегов, группы/опции/привязки модификаторов, policies скидок/надбавок, залы, столы, menu items и публикации.
+- Cloud-owned master data authority: рестораны, роли, сотрудники, PIN lifecycle, tenant-level каталог, услуги, папки, параметры папок, теги, привязки тегов, группы/опции/привязки модификаторов, policies скидок/надбавок, залы, столы, restaurant-scoped menu items и публикации.
+- Restaurant menu overrides реализованы сейчас: один `catalog_item_id` может использоваться несколькими ресторанами через разные `menu_item_id`; menu item хранит override name, price, tag, active tax profile, menu folder/category, availability JSON и runtime status. Cloud publication отправляет на Edge только menu items выбранного ресторана, при этом catalog read model остается Cloud-owned tenant/restaurant scope для кухни и склада.
 - Реализованный publication workflow требует operator action после Cloud CRUD; provisioning создает первый snapshot только при его отсутствии. Это фактический gap относительно целевой автоматической доставки.
 - Publication flow формирует typed ingest DTO для POS Edge: top-level modifier groups/options/bindings и link-only `menu_item_modifier_groups`.
 - Cloud Inventory Worker выполняет recipe expansion основной позиции продажи по active Cloud recipe version и modifier-linked consumption по nullable `ModifierOption.linked_catalog_item_id`; linked modifier item списывается напрямую, без recipe expansion linked item. `CheckClosed` после обработанного `ItemServed` списывает только unserved delta и не дублирует linked modifier rows для полностью served order line.
@@ -156,7 +157,7 @@
 - В `cloud-ui-g` реализованы route-backed разделы dashboard, restaurants, Edge sync, catalog, menu, modifiers, pricing/taxes, staff/permissions, floor и publications.
 - Dashboard показывает readiness по выбранному ресторану: roles/employees, halls/tables, catalog, menu, modifiers/pricing, Edge assignment и publication.
 - Edge sync в `cloud-ui-g` читает незакрепленные устройства, выполняет assign device to restaurant, запрашивает assignment status, генерирует pairing code и показывает безопасный список Edge events без raw payload.
-- Master-data разделы `cloud-ui-g` работают поверх подтвержденных Cloud routes для restaurants, roles, employees, catalog items/folders/parameters/tags/item-tags, menu categories/items, modifier groups/options/bindings, pricing policies, halls/tables и publication state/publish.
+- Master-data разделы `cloud-ui-g` работают поверх подтвержденных Cloud routes для restaurants, roles, employees, catalog items/folders/parameters/tags/item-tags, menu categories/items, modifier groups/options/bindings, pricing policies, halls/tables и publication state/publish. Menu items UI редактирует restaurant overrides для category/menu folder, tag, active tax profile и runtime status поверх стабильных `catalog_item_id`/`menu_item_id`.
 - Pricing/taxes в `cloud-ui-g` дополнительно читает и обновляет package `pricing_policy` через provisioning route.
 - UI strings в `cloud-ui-g` идут через локальный i18n слой, API responses валидируются Zod-схемами, safe error banner не должен показывать raw payload, PIN/token/request dump или backend internals.
 - `cloud-ui-g` имеет navigation placeholders `inventory` и `reports`, но соответствующие React runtime screens сейчас не реализованы и показываются как blocked sections.
@@ -230,7 +231,7 @@
 
 ## Запланировано далее
 
-- До первого выставочного запуска: tenant-level catalog, restaurant menu overrides, автоматическая per-Edge batch assembly без Publish action, ticket issuance/QR printing, ESC/POS subsystem, Cloud sales dashboard, Telegram worker, внешний licensing authority и module gates. Tenant-level roles/employees и memberships реализованы сейчас.
+- До первого выставочного запуска: автоматическая per-Edge batch assembly без Publish action, ticket issuance/QR printing, ESC/POS subsystem, Cloud sales dashboard, Telegram worker, внешний licensing authority и module gates. Tenant-level roles/employees, memberships, tenant catalog identity и restaurant menu overrides реализованы сейчас.
 - После первого выставочного запуска: checker enrollment, scanner UI, typed Cloud-Edge relay, QR lookup/confirm/revoke и usage reporting.
 - Поддерживать `docs/backend/CLOUD-BACKEND-SPEC.md` как профильный документ Cloud Backend при каждом изменении Cloud routes, payloads, sync/provisioning contracts или schema.
 - При добавлении Cloud-owned сценария обновлять `scripts/seed-dev-system.py`, publication stream/package, POS read flow/smoke assertion и профильные документы в одном PR.

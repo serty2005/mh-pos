@@ -193,7 +193,7 @@ func (r *Repository) CreateCatalogItem(_ context.Context, v domain.CatalogItem) 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, item := range r.catalogItems {
-		if item.RestaurantID == v.RestaurantID && strings.EqualFold(item.SKU, v.SKU) && item.Status != domain.StatusArchived {
+		if strings.EqualFold(item.SKU, v.SKU) && item.Status != domain.StatusArchived {
 			return domain.CatalogItem{}, domain.ErrConflict
 		}
 	}
@@ -208,7 +208,7 @@ func (r *Repository) UpdateCatalogItem(_ context.Context, v domain.CatalogItem) 
 		return domain.CatalogItem{}, domain.ErrNotFound
 	}
 	for _, item := range r.catalogItems {
-		if item.ID != v.ID && item.RestaurantID == v.RestaurantID && strings.EqualFold(item.SKU, v.SKU) && item.Status != domain.StatusArchived && v.Status != domain.StatusArchived {
+		if item.ID != v.ID && strings.EqualFold(item.SKU, v.SKU) && item.Status != domain.StatusArchived && v.Status != domain.StatusArchived {
 			return domain.CatalogItem{}, domain.ErrConflict
 		}
 	}
@@ -230,8 +230,9 @@ func (r *Repository) ListCatalogItems(_ context.Context, restaurantID string) ([
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var out []domain.CatalogItem
+	restaurantID = strings.TrimSpace(restaurantID)
 	for _, item := range r.catalogItems {
-		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+		if restaurantID == "" || item.RestaurantID == "" || item.RestaurantID == restaurantID {
 			out = append(out, item)
 		}
 	}
@@ -269,8 +270,9 @@ func (r *Repository) ListCatalogFolders(_ context.Context, restaurantID string) 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var out []domain.CatalogFolder
+	restaurantID = strings.TrimSpace(restaurantID)
 	for _, item := range r.folders {
-		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+		if restaurantID == "" || item.RestaurantID == "" || item.RestaurantID == restaurantID {
 			out = append(out, item)
 		}
 	}
@@ -347,8 +349,9 @@ func (r *Repository) ListCatalogTags(_ context.Context, restaurantID string) ([]
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var out []domain.CatalogTag
+	restaurantID = strings.TrimSpace(restaurantID)
 	for _, item := range r.tags {
-		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+		if restaurantID == "" || item.RestaurantID == "" || item.RestaurantID == restaurantID {
 			out = append(out, item)
 		}
 	}
@@ -366,8 +369,9 @@ func (r *Repository) ListCatalogItemTags(_ context.Context, restaurantID string)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var out []domain.CatalogItemTag
+	restaurantID = strings.TrimSpace(restaurantID)
 	for _, item := range r.itemTags {
-		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+		if restaurantID == "" || item.RestaurantID == "" || item.RestaurantID == restaurantID {
 			out = append(out, item)
 		}
 	}
