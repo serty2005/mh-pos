@@ -18,6 +18,7 @@ type MasterSyncRepository interface {
 	UpsertMasterDevice(context.Context, *device.Device, shared.MasterRecordSyncMeta) error
 	UpsertMasterRole(context.Context, *employee.Role, shared.MasterRecordSyncMeta) error
 	UpsertMasterEmployee(context.Context, *employee.Employee, shared.MasterRecordSyncMeta) error
+	DeactivateMissingMasterEmployees(context.Context, string, []string, string) error
 	UpsertMasterHall(context.Context, *floor.Hall, shared.MasterRecordSyncMeta) error
 	UpsertMasterTable(context.Context, *floor.Table, shared.MasterRecordSyncMeta) error
 	UpsertMasterCatalogItem(context.Context, *catalog.CatalogItem, shared.MasterRecordSyncMeta) error

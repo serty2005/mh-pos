@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -35,7 +36,7 @@ func (f *fixedIDs) NewID() string {
 
 func TestEmployeeEndpointsDoNotExposePINMaterial(t *testing.T) {
 	router := newRouter()
-	role := post(t, router, "/api/v1/master-data/roles", `{"restaurant_id":"restaurant-1","name":"cashier","permissions_json":"{}"}`)
+	role := post(t, router, "/api/v1/master-data/roles", `{"name":"cashier","permissions_json":"{}"}`)
 	if role.Code != http.StatusCreated {
 		t.Fatalf("expected role created, got %d: %s", role.Code, role.Body.String())
 	}
@@ -45,7 +46,7 @@ func TestEmployeeEndpointsDoNotExposePINMaterial(t *testing.T) {
 	if err := json.Unmarshal(role.Body.Bytes(), &roleBody); err != nil {
 		t.Fatal(err)
 	}
-	employee := post(t, router, "/api/v1/master-data/employees", `{"restaurant_id":"restaurant-1","role_id":"`+roleBody.ID+`","name":"Anna","pin":"1111"}`)
+	employee := post(t, router, "/api/v1/master-data/employees", `{"restaurant_ids":["restaurant-1"],"role_id":"`+roleBody.ID+`","name":"Anna","pin":"1111"}`)
 	if employee.Code != http.StatusCreated {
 		t.Fatalf("expected employee created, got %d: %s", employee.Code, employee.Body.String())
 	}
@@ -64,12 +65,12 @@ func TestEmployeeEndpointsDoNotExposePINMaterial(t *testing.T) {
 
 func TestPublicationEndpointsReturnSummary(t *testing.T) {
 	router := newRouter()
-	role := post(t, router, "/api/v1/master-data/roles", `{"restaurant_id":"restaurant-1","name":"cashier","permissions_json":"{}"}`)
+	role := post(t, router, "/api/v1/master-data/roles", `{"name":"cashier","permissions_json":"{}"}`)
 	var roleBody struct {
 		ID string `json:"id"`
 	}
 	_ = json.Unmarshal(role.Body.Bytes(), &roleBody)
-	_ = post(t, router, "/api/v1/master-data/employees", `{"restaurant_id":"restaurant-1","role_id":"`+roleBody.ID+`","name":"Anna","pin":"1111"}`)
+	_ = post(t, router, "/api/v1/master-data/employees", `{"restaurant_ids":["restaurant-1"],"role_id":"`+roleBody.ID+`","name":"Anna","pin":"1111"}`)
 	catalog := post(t, router, "/api/v1/master-data/catalog/items", `{"restaurant_id":"restaurant-1","kind":"dish","name":"Tea","sku":"TEA","base_unit":"portion"}`)
 	var catalogBody struct {
 		ID string `json:"id"`
@@ -125,12 +126,12 @@ func TestProductionRestaurantPublishAndSnapshotEndpoints(t *testing.T) {
 		ID string `json:"id"`
 	}
 	_ = json.Unmarshal(restaurant.Body.Bytes(), &restaurantBody)
-	role := post(t, router, "/api/v1/roles", `{"restaurant_id":"`+restaurantBody.ID+`","name":"cashier","permissions_json":"{}"}`)
+	role := post(t, router, "/api/v1/roles", `{"name":"cashier","permissions_json":"{}"}`)
 	var roleBody struct {
 		ID string `json:"id"`
 	}
 	_ = json.Unmarshal(role.Body.Bytes(), &roleBody)
-	_ = post(t, router, "/api/v1/employees", `{"restaurant_id":"`+restaurantBody.ID+`","role_id":"`+roleBody.ID+`","name":"Anna","pin":"1111"}`)
+	_ = post(t, router, "/api/v1/employees", `{"restaurant_ids":["`+restaurantBody.ID+`"],"role_id":"`+roleBody.ID+`","name":"Anna","pin":"1111"}`)
 	catalog := post(t, router, "/api/v1/catalog/items", `{"restaurant_id":"`+restaurantBody.ID+`","type":"dish","name":"Tea","sku":"TEA","base_unit":"portion"}`)
 	var catalogBody struct {
 		ID string `json:"id"`
@@ -433,6 +434,8 @@ func newRouter() http.Handler {
 func newRouterWithRepo() (http.Handler, *memory.Repository) {
 	r := chi.NewRouter()
 	repo := memory.NewRepository()
+	now := fixedClock{}.Now()
+	_, _ = repo.CreateRestaurant(context.Background(), domain.Restaurant{ID: "restaurant-1", Name: "Test", Timezone: "Europe/Moscow", Currency: "RUB", BusinessDayMode: "standard", BusinessDayBoundaryLocalTime: "05:00", Status: domain.RestaurantActive, CloudVersion: 1, CreatedAt: now, UpdatedAt: now})
 	service := app.NewService(repo, fixedClock{}, &fixedIDs{})
 	r.Route("/api/v1", func(r chi.Router) {
 		api.RegisterRoutes(r, service)

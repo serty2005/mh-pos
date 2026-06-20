@@ -14,6 +14,7 @@ import {
   expectNoRawMarkers,
   installFetchMock,
   renderPage,
+  restaurant,
   restaurantId,
   role,
   safeApiError,
@@ -30,9 +31,9 @@ afterEach(() => {
 describe('StaffPage page integration', () => {
   it('covers loading, empty employees/roles, and blocked route errors safely', async () => {
     const roles = deferred<unknown[]>();
-    installFetchMock([
-      { path: `/master-data/roles?restaurant_id=${restaurantId}`, responder: () => roles.promise },
-      { path: `/master-data/employees?restaurant_id=${restaurantId}`, responder: () => [] },
+    installFetchMock([{ path: '/restaurants', responder: () => [restaurant()] },
+      { method: 'GET', path: '/master-data/roles', responder: () => roles.promise },
+      { method: 'GET', path: '/master-data/employees', responder: () => [] },
     ]);
 
     const loading = await renderPage(<StaffPage restaurantId={restaurantId} />);
@@ -43,9 +44,9 @@ describe('StaffPage page integration', () => {
     roles.resolve([]);
     await loading.cleanup();
 
-    installFetchMock([
-      { path: `/master-data/roles?restaurant_id=${restaurantId}`, responder: () => [] },
-      { path: `/master-data/employees?restaurant_id=${restaurantId}`, responder: () => [] },
+    installFetchMock([{ path: '/restaurants', responder: () => [restaurant()] },
+      { method: 'GET', path: '/master-data/roles', responder: () => [] },
+      { method: 'GET', path: '/master-data/employees', responder: () => [] },
     ]);
     const empty = await renderPage(<StaffPage restaurantId={restaurantId} />);
     await waitFor(() => expect(text(empty.container)).toContain(ru.staff.employees.emptyTitle));
@@ -53,9 +54,9 @@ describe('StaffPage page integration', () => {
     await waitFor(() => expect(text(empty.container)).toContain(ru.staff.roles.empty));
     await empty.cleanup();
 
-    installFetchMock([
-      { path: `/master-data/roles?restaurant_id=${restaurantId}`, responder: () => { throw safeApiError(); } },
-      { path: `/master-data/employees?restaurant_id=${restaurantId}`, responder: () => [] },
+    installFetchMock([{ path: '/restaurants', responder: () => [restaurant()] },
+      { method: 'GET', path: '/master-data/roles', responder: () => { throw safeApiError(); } },
+      { method: 'GET', path: '/master-data/employees', responder: () => [] },
     ]);
     const blocked = await renderPage(<StaffPage restaurantId={restaurantId} />);
     await waitFor(() => expect(text(blocked.container)).toContain(ru.staff.blockedTitle));
@@ -66,16 +67,18 @@ describe('StaffPage page integration', () => {
   it('creates a role with canonical permissions JSON and reloads lists once', async () => {
     let roleReads = 0;
     let employeeReads = 0;
-    const api = installFetchMock([
+    const api = installFetchMock([{ path: '/restaurants', responder: () => [restaurant()] },
       {
-        path: `/master-data/roles?restaurant_id=${restaurantId}`,
+        method: 'GET',
+        path: '/master-data/roles',
         responder: () => {
           roleReads += 1;
           return roleReads > 1 ? [role({ id: 'role-created', name: ru.staff.roleProfiles.manager })] : [];
         },
       },
       {
-        path: `/master-data/employees?restaurant_id=${restaurantId}`,
+        method: 'GET',
+        path: '/master-data/employees',
         responder: () => {
           employeeReads += 1;
           return [];
@@ -108,13 +111,11 @@ describe('StaffPage page integration', () => {
     });
 
     const body = api.callsFor('/master-data/roles', 'POST')[0].body as {
-      restaurant_id: string;
       name: string;
       permissions_json: string;
     };
     const permissions = JSON.parse(body.permissions_json) as Record<string, boolean>;
     const managerProfile = roleProfileById.get('manager');
-    expect(body.restaurant_id).toBe(restaurantId);
     expect(body.name).toBe(ru.staff.roleProfiles.manager);
     expect(Object.keys(permissions).sort()).toEqual([...(managerProfile?.permissionIds ?? [])].sort());
 
@@ -127,9 +128,9 @@ describe('StaffPage page integration', () => {
     });
     const targetPermission = permissionCatalog.find((permission) => permission.id === 'pos.floor.view');
     expect(targetPermission).toBeDefined();
-    const api = installFetchMock([
-      { path: `/master-data/roles?restaurant_id=${restaurantId}`, responder: () => [existingRole] },
-      { path: `/master-data/employees?restaurant_id=${restaurantId}`, responder: () => [] },
+    const api = installFetchMock([{ path: '/restaurants', responder: () => [restaurant()] },
+      { method: 'GET', path: '/master-data/roles', responder: () => [existingRole] },
+      { method: 'GET', path: '/master-data/employees', responder: () => [] },
       {
         method: 'PATCH',
         path: `/master-data/roles/${existingRole.id}`,
@@ -157,16 +158,18 @@ describe('StaffPage page integration', () => {
     const createPending = deferred<unknown>();
     let roleReads = 0;
     let employeeReads = 0;
-    const api = installFetchMock([
+    const api = installFetchMock([{ path: '/restaurants', responder: () => [restaurant()] },
       {
-        path: `/master-data/roles?restaurant_id=${restaurantId}`,
+        method: 'GET',
+        path: '/master-data/roles',
         responder: () => {
           roleReads += 1;
           return [role()];
         },
       },
       {
-        path: `/master-data/employees?restaurant_id=${restaurantId}`,
+        method: 'GET',
+        path: '/master-data/employees',
         responder: () => {
           employeeReads += 1;
           return employeeReads > 1 ? [employee()] : [];
@@ -203,13 +206,13 @@ describe('StaffPage page integration', () => {
     });
 
     const body = api.callsFor('/master-data/employees', 'POST')[0].body as {
-      restaurant_id: string;
+      restaurant_ids: string[];
       name: string;
       role_id: string;
       pin: string;
     };
     expect(body).toEqual({
-      restaurant_id: restaurantId,
+      restaurant_ids: [restaurantId],
       name: 'Bob Cashier',
       role_id: 'role-manager',
       pin: '1234',
@@ -217,9 +220,9 @@ describe('StaffPage page integration', () => {
 
     await page.cleanup();
 
-    installFetchMock([
-      { path: `/master-data/roles?restaurant_id=${restaurantId}`, responder: () => [role()] },
-      { path: `/master-data/employees?restaurant_id=${restaurantId}`, responder: () => [] },
+    installFetchMock([{ path: '/restaurants', responder: () => [restaurant()] },
+      { method: 'GET', path: '/master-data/roles', responder: () => [role()] },
+      { method: 'GET', path: '/master-data/employees', responder: () => [] },
       { method: 'POST', path: '/master-data/employees', responder: () => { throw safeApiError(); } },
     ]);
 

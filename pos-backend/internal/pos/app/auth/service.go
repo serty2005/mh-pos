@@ -230,6 +230,9 @@ func (s *Service) GetSession(ctx context.Context, sessionID, nodeDeviceID, clien
 	if err != nil {
 		return nil, err
 	}
+	if !employee.Active || employee.RestaurantID != session.RestaurantID {
+		return nil, fmt.Errorf("%w: employee no longer has restaurant access", domain.ErrForbidden)
+	}
 	role, err := s.repo.GetRole(ctx, employee.RoleID)
 	if err != nil {
 		return nil, err

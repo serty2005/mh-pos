@@ -87,8 +87,8 @@ export function archiveRestaurant(id: string): Promise<Restaurant> {
   return post(`/restaurants/${encodeURIComponent(id)}/archive`, restaurantSchema, {});
 }
 
-export function listRoles(restaurantId: string): Promise<Role[]> {
-  return request(`/master-data/roles?${query(restaurantId)}`, z.array(roleSchema));
+export function listRoles(): Promise<Role[]> {
+  return request('/master-data/roles', z.array(roleSchema));
 }
 
 export function createRole(payload: Payload): Promise<Role> {
@@ -103,8 +103,8 @@ export function archiveRole(id: string): Promise<Role> {
   return post(`/master-data/roles/${encodeURIComponent(id)}/archive`, roleSchema, {});
 }
 
-export function listEmployees(restaurantId: string): Promise<Employee[]> {
-  return request(`/master-data/employees?${query(restaurantId)}`, z.array(employeeSchema));
+export function listEmployees(): Promise<Employee[]> {
+  return request('/master-data/employees', z.array(employeeSchema));
 }
 
 export function createEmployee(payload: Payload): Promise<Employee> {

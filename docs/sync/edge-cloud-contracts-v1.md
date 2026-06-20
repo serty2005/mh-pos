@@ -183,6 +183,7 @@ Request body shape currently supported by POS Edge:
 - `sync_mode` по умолчанию равен `incremental`.
 - Поддерживаемые значения: `incremental` и `full_snapshot`.
 - `full_snapshot` требует `full_snapshot_reason` со значением `terminal_restaurant_changed` или `node_role_changed`.
+- `staff` является полным eligible set для указанного `restaurant_id`; отсутствие ранее известного employee деактивирует его локально. Cloud не передает сотрудников без active membership, кроме ролей с `organization.manage`.
 - Unsupported streams отклоняются.
 - `catalog` применяет `catalog_items` с canonical `item_type`/`type` values `dish`, `good`, `semi_finished`, `service`, а также `folders`, `folder_parameters`, `tags`, `item_tags`, `modifier_groups`, `modifier_options` и `modifier_bindings`.
 - `menu` применяет `menu_items` и effective `menu_item_modifier_groups` links после применения menu items; для старого explicit `stream: "catalog"` link-only payload остается accepted, если referenced menu item уже существует.

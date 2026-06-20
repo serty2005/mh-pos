@@ -11,12 +11,14 @@ export type RoleFormValues = {
 export type EmployeeCreateFormValues = {
   name: string;
   role_id: string;
+  restaurant_ids: string[];
   pin: string;
 };
 
 export type EmployeeUpdateFormValues = {
   name: string;
   role_id: string;
+  restaurant_ids: string[];
   status: EmployeeStatus;
 };
 
@@ -29,12 +31,14 @@ export const defaultRoleValues: RoleFormValues = {
 export const defaultEmployeeCreateValues: EmployeeCreateFormValues = {
   name: '',
   role_id: '',
+  restaurant_ids: [],
   pin: '',
 };
 
 export const defaultEmployeeUpdateValues: EmployeeUpdateFormValues = {
   name: '',
   role_id: '',
+  restaurant_ids: [],
   status: 'active',
 };
 
@@ -75,11 +79,12 @@ export function employeeToUpdateValues(employee: Employee): EmployeeUpdateFormVa
   return {
     name: employee.name,
     role_id: employee.role_id,
+    restaurant_ids: employee.restaurant_ids,
     status: employee.status,
   };
 }
 
-// buildCreateRolePayload исключает restaurant_id: его добавляет StaffPage из выбранного scope.
+// buildCreateRolePayload формирует tenant-level роль без restaurant ownership.
 export function buildCreateRolePayload(values: RoleFormValues) {
   return {
     name: values.name.trim(),
@@ -101,6 +106,7 @@ export function buildCreateEmployeePayload(values: EmployeeCreateFormValues) {
   return {
     name: values.name.trim(),
     role_id: values.role_id,
+    restaurant_ids: values.restaurant_ids,
     pin: values.pin.trim(),
   };
 }
@@ -110,6 +116,7 @@ export function buildUpdateEmployeePayload(values: EmployeeUpdateFormValues) {
   return {
     name: values.name.trim(),
     role_id: values.role_id,
+    restaurant_ids: values.restaurant_ids,
     status: values.status,
   };
 }

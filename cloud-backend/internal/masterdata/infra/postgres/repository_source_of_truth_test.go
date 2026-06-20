@@ -132,7 +132,6 @@ func TestRolePermissionsPersistenceAndMemoryParity(t *testing.T) {
 	roles := []domain.Role{
 		{
 			ID:              "role-source-empty",
-			RestaurantID:    "restaurant-role-a",
 			Name:            "Empty",
 			PermissionsJSON: `{}`,
 			Active:          true,
@@ -142,7 +141,6 @@ func TestRolePermissionsPersistenceAndMemoryParity(t *testing.T) {
 		},
 		{
 			ID:              "role-source-many",
-			RestaurantID:    "restaurant-role-a",
 			Name:            "Manager",
 			PermissionsJSON: `{"permissions":["pos.order.create","pos.pricing.discount.apply","custom.experimental.permission"],"pos.floor.view":true}`,
 			Active:          true,
@@ -151,8 +149,7 @@ func TestRolePermissionsPersistenceAndMemoryParity(t *testing.T) {
 			UpdatedAt:       base.Add(time.Minute),
 		},
 		{
-			ID:              "role-source-other-restaurant",
-			RestaurantID:    "restaurant-role-b",
+			ID:              "role-source-other",
 			Name:            "Other",
 			PermissionsJSON: `{"permissions":["pos.menu.view"]}`,
 			Active:          true,
@@ -183,17 +180,16 @@ func TestRolePermissionsPersistenceAndMemoryParity(t *testing.T) {
 	}
 	assertJSONPermissions(t, got.PermissionsJSON, []string{"pos.payment.cash", "custom.experimental.permission", "pos.pricing.discount.apply"})
 
-	pgList, err := pgRepo.ListRoles(ctx, "restaurant-role-a")
+	pgList, err := pgRepo.ListRoles(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertIDs(t, roleIDs(pgList), []string{"role-source-empty", "role-source-many"})
-	memList, err := memRepo.ListRoles(ctx, "restaurant-role-a")
+	assertIDs(t, roleIDs(pgList), []string{"role-source-empty", "role-source-many", "role-source-other"})
+	memList, err := memRepo.ListRoles(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertRolesParity(t, pgList, memList)
-	assertIDs(t, roleIDs(mustListRoles(t, pgRepo, ctx, "restaurant-role-b")), []string{"role-source-other-restaurant"})
 }
 
 func TestEmployeePINHashPersistenceAndNoPlaintextLeakage(t *testing.T) {
@@ -205,7 +201,6 @@ func TestEmployeePINHashPersistenceAndNoPlaintextLeakage(t *testing.T) {
 	base := testMasterDataTime()
 	role := domain.Role{
 		ID:              "role-employee-source",
-		RestaurantID:    "restaurant-employee-a",
 		Name:            "Cashier",
 		PermissionsJSON: `{}`,
 		Active:          true,
@@ -218,7 +213,6 @@ func TestEmployeePINHashPersistenceAndNoPlaintextLeakage(t *testing.T) {
 	}
 	otherRole := role
 	otherRole.ID = "role-employee-source-other"
-	otherRole.RestaurantID = "restaurant-employee-b"
 	otherRole.Name = "Other Cashier"
 	if _, err := repo.CreateRole(ctx, otherRole); err != nil {
 		t.Fatal(err)
@@ -227,7 +221,7 @@ func TestEmployeePINHashPersistenceAndNoPlaintextLeakage(t *testing.T) {
 	pinHash := "$argon2id$v=19$m=65536,t=3,p=1$source$safehash"
 	employee := domain.Employee{
 		ID:                     "employee-source-001",
-		RestaurantID:           "restaurant-employee-a",
+		RestaurantIDs:          []string{"restaurant-employee-a"},
 		RoleID:                 role.ID,
 		Name:                   "Nina",
 		Status:                 domain.EmployeeActive,
@@ -248,8 +242,8 @@ func TestEmployeePINHashPersistenceAndNoPlaintextLeakage(t *testing.T) {
 	}
 
 	otherEmployee := employee
-	otherEmployee.ID = "employee-source-other-restaurant"
-	otherEmployee.RestaurantID = "restaurant-employee-b"
+	otherEmployee.ID = "employee-source-other"
+	otherEmployee.RestaurantIDs = []string{"restaurant-employee-b"}
 	otherEmployee.RoleID = otherRole.ID
 	otherEmployee.Name = "Other"
 	if _, err := repo.CreateEmployee(ctx, otherEmployee); err != nil {
@@ -286,11 +280,11 @@ func TestEmployeePINHashPersistenceAndNoPlaintextLeakage(t *testing.T) {
 	}
 	assertNoSensitiveEmployeeLeak(t, updated, plainMarker)
 
-	employees, err := repo.ListEmployees(ctx, "restaurant-employee-a")
+	employees, err := repo.ListEmployees(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertIDs(t, employeeIDs(employees), []string{"employee-source-001"})
+	assertIDs(t, employeeIDs(employees), []string{"employee-source-001", "employee-source-other"})
 	archived := updated
 	archived.Status = domain.EmployeeArchived
 	archived.UpdatedAt = base.Add(2 * time.Hour)
@@ -560,7 +554,7 @@ func TestPricingPolicyPersistenceUpdateListPublicationFieldAndMemoryParity(t *te
 type roleRepository interface {
 	CreateRole(context.Context, domain.Role) (domain.Role, error)
 	UpdateRole(context.Context, domain.Role) (domain.Role, error)
-	ListRoles(context.Context, string) ([]domain.Role, error)
+	ListRoles(context.Context) ([]domain.Role, error)
 }
 
 type publicationRepository interface {
@@ -631,7 +625,6 @@ func assertRestaurantEqual(t *testing.T, got, want domain.Restaurant) {
 func assertEmployeeEqual(t *testing.T, got, want domain.Employee) {
 	t.Helper()
 	if got.ID != want.ID ||
-		got.RestaurantID != want.RestaurantID ||
 		got.RoleID != want.RoleID ||
 		got.Name != want.Name ||
 		got.Status != want.Status ||
@@ -640,7 +633,8 @@ func assertEmployeeEqual(t *testing.T, got, want domain.Employee) {
 		!jsonEqual([]byte(got.PermissionSnapshotJSON), []byte(want.PermissionSnapshotJSON)) ||
 		got.CloudVersion != want.CloudVersion ||
 		!got.CreatedAt.Equal(want.CreatedAt) ||
-		!got.UpdatedAt.Equal(want.UpdatedAt) {
+		!got.UpdatedAt.Equal(want.UpdatedAt) ||
+		!reflect.DeepEqual(got.RestaurantIDs, want.RestaurantIDs) {
 		t.Fatalf("unexpected employee round-trip for id %q", want.ID)
 	}
 }
@@ -719,7 +713,6 @@ func assertRolesParity(t *testing.T, got, want []domain.Role) {
 	}
 	for i := range got {
 		if got[i].ID != want[i].ID ||
-			got[i].RestaurantID != want[i].RestaurantID ||
 			got[i].Name != want[i].Name ||
 			got[i].Active != want[i].Active ||
 			got[i].CloudVersion != want[i].CloudVersion ||
@@ -848,15 +841,6 @@ func assertIDs(t *testing.T, got, want []string) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected ids: got %v want %v", got, want)
 	}
-}
-
-func mustListRoles(t *testing.T, repo *Repository, ctx context.Context, restaurantID string) []domain.Role {
-	t.Helper()
-	out, err := repo.ListRoles(ctx, restaurantID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return out
 }
 
 func assertPublicationPackageRows(t *testing.T, ctx context.Context, pool *pgxpool.Pool, restaurantID string, want int) {

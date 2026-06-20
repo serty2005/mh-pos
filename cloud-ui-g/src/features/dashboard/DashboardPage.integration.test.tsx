@@ -31,8 +31,8 @@ afterEach(() => {
 
 function readinessRoutes(overrides: Record<string, unknown> = {}) {
   const defaults: Record<string, unknown> = {
-    [`/master-data/roles?restaurant_id=${restaurantId}`]: [role()],
-    [`/master-data/employees?restaurant_id=${restaurantId}`]: [employee()],
+    ['/master-data/roles']: [role()],
+    ['/master-data/employees']: [employee()],
     [`/master-data/floor/halls?restaurant_id=${restaurantId}`]: [hall()],
     [`/master-data/floor/tables?restaurant_id=${restaurantId}`]: [table()],
     [`/master-data/catalog/items?restaurant_id=${restaurantId}`]: [],
@@ -58,7 +58,7 @@ describe('DashboardPage page integration', () => {
     const roles = deferred<unknown[]>();
     installFetchMock([
       { path: `/restaurants/${restaurantId}/master-data/publication-state`, responder: () => null },
-      ...readinessRoutes({ [`/master-data/roles?restaurant_id=${restaurantId}`]: roles.promise }),
+      ...readinessRoutes({ ['/master-data/roles']: roles.promise }),
     ]);
 
     const page = await renderPage(<DashboardPage restaurantId={restaurantId} />);
@@ -76,8 +76,8 @@ describe('DashboardPage page integration', () => {
     installFetchMock([
       { path: `/restaurants/${restaurantId}/master-data/publication-state`, responder: () => null },
       ...readinessRoutes({
-        [`/master-data/roles?restaurant_id=${restaurantId}`]: [],
-        [`/master-data/employees?restaurant_id=${restaurantId}`]: [],
+        ['/master-data/roles']: [],
+        ['/master-data/employees']: [],
         [`/master-data/floor/halls?restaurant_id=${restaurantId}`]: [],
         [`/master-data/floor/tables?restaurant_id=${restaurantId}`]: [],
         [`/restaurants/${restaurantId}/devices`]: [],
@@ -114,7 +114,7 @@ describe('DashboardPage page integration', () => {
   it('renders safe errors without backend internals', async () => {
     installFetchMock([
       { path: `/restaurants/${restaurantId}/master-data/publication-state`, responder: () => { throw safeApiError(); } },
-      ...readinessRoutes({ [`/master-data/roles?restaurant_id=${restaurantId}`]: { throwError: true } }),
+      ...readinessRoutes({ ['/master-data/roles']: { throwError: true } }),
     ]);
 
     const page = await renderPage(<DashboardPage restaurantId={restaurantId} />);

@@ -9,7 +9,7 @@ import {
   UserPlus,
   X,
 } from 'lucide-react';
-import type { Employee, Role } from '../../shared/api/schemas';
+import type { Employee, Restaurant, Role } from '../../shared/api/schemas';
 import { useI18n } from '../../shared/i18n/I18nProvider';
 import EmptyState from '../../shared/ui/EmptyState';
 import SafeErrorBanner from '../../shared/ui/SafeErrorBanner';
@@ -26,6 +26,8 @@ import {
 type Props = {
   employees: Employee[];
   roles: Role[];
+  restaurants: Restaurant[];
+  defaultRestaurantId: string;
   loading: boolean;
   error: unknown;
   onCreate: (values: EmployeeCreateFormValues) => Promise<void>;
@@ -55,6 +57,8 @@ function statusClass(status: EmployeeStatus) {
 export default function EmployeesPanel({
   employees,
   roles,
+  restaurants,
+  defaultRestaurantId,
   loading,
   error,
   onCreate,
@@ -102,7 +106,7 @@ export default function EmployeesPanel({
 
   const openCreate = () => {
     setEditing(null);
-    setCreateValues(defaultEmployeeCreateValues);
+    setCreateValues({ ...defaultEmployeeCreateValues, restaurant_ids: defaultRestaurantId ? [defaultRestaurantId] : [] });
     setNextPin('');
     setModalOpen(true);
   };
@@ -133,6 +137,7 @@ export default function EmployeesPanel({
   };
 
   const formValues = editing ? editValues : createValues;
+  const organizationManager = parsePermissionIds(roleById.get(formValues.role_id)?.permissions_json ?? '').includes('organization.manage');
   const hasActiveRoles = activeRoles.length > 0;
 
   return (
@@ -215,7 +220,7 @@ export default function EmployeesPanel({
                   <th className="px-4 py-3">{t('staff.employees.pinConfigured')}</th>
                   <th className="px-4 py-3">{t('staff.employees.pinVersion')}</th>
                   <th className="px-4 py-3">{t('staff.employees.permissionCount')}</th>
-                  <th className="px-4 py-3">{t('staff.employees.updatedAt')}</th>
+                  <th className="px-4 py-3">{t('staff.employees.memberships')}</th>
                   <th className="px-4 py-3 text-right">{t('staff.employees.actions.title')}</th>
                 </tr>
               </thead>
@@ -249,7 +254,7 @@ export default function EmployeesPanel({
                       </td>
                       <td className="px-4 py-3 font-mono tabular-nums text-slate-700">{employee.pin_credential_version}</td>
                       <td className="px-4 py-3 font-mono tabular-nums text-slate-700">{permissionCount}</td>
-                      <td className="px-4 py-3 font-mono text-[11px] text-slate-500">{employee.updated_at}</td>
+                      <td className="px-4 py-3 text-slate-600">{employee.all_restaurants ? t('staff.employees.allRestaurants') : employee.restaurant_ids.length}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1.5">
                           <button
@@ -309,6 +314,7 @@ export default function EmployeesPanel({
                   {editing ? t('staff.employees.editDescription') : t('staff.employees.createDescription')}
                 </p>
               </div>
+
               <button
                 type="button"
                 onClick={closeModal}
@@ -389,6 +395,30 @@ export default function EmployeesPanel({
                 )}
               </div>
 
+              <fieldset className="rounded-xl border border-slate-200 p-3" disabled={loading || organizationManager}>
+                <legend className="px-1 text-xs font-semibold text-slate-600">{t('staff.employees.memberships')}</legend>
+                {organizationManager ? <p className="text-xs text-slate-500">{t('staff.employees.organizationScope')}</p> : (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {restaurants.filter((restaurant) => restaurant.status === 'active').map((restaurant) => (
+                      <label key={restaurant.id} className="flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={formValues.restaurant_ids.includes(restaurant.id)}
+                          onChange={(event) => {
+                            const ids = event.target.checked
+                              ? [...formValues.restaurant_ids, restaurant.id]
+                              : formValues.restaurant_ids.filter((id) => id !== restaurant.id);
+                            if (editing) setEditValues({ ...editValues, restaurant_ids: ids });
+                            else setCreateValues({ ...createValues, restaurant_ids: ids });
+                          }}
+                        />
+                        {restaurant.name}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </fieldset>
+
               {editing ? (
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-semibold text-slate-600">{t('staff.employees.fields.rotatePin')}</span>
@@ -416,7 +446,7 @@ export default function EmployeesPanel({
                 </button>
                 <button
                   type="submit"
-                  disabled={loading || !formValues.name.trim() || !formValues.role_id || (!editing && !createValues.pin.trim())}
+                  disabled={loading || !formValues.name.trim() || !formValues.role_id || (!organizationManager && formValues.restaurant_ids.length === 0) || (!editing && !createValues.pin.trim())}
                   className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {editing ? t('catalog.shared.save') : t('staff.employees.actions.create')}

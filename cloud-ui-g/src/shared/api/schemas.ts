@@ -21,7 +21,6 @@ export const restaurantSchema = z.object({
 
 export const roleSchema = z.object({
   id: z.string(),
-  restaurant_id: z.string(),
   name: z.string(),
   permissions_json: z.string(),
   active: z.boolean(),
@@ -33,8 +32,9 @@ export const roleSchema = z.object({
 
 export const employeeSchema = z.object({
   id: z.string(),
-  restaurant_id: z.string(),
   role_id: z.string(),
+  restaurant_ids: z.array(z.string()),
+  all_restaurants: z.boolean(),
   name: z.string(),
   status: employeeStatusSchema,
   pin_configured: z.boolean(),

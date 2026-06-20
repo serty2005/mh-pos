@@ -39,11 +39,11 @@ type Repository interface {
 	CreateRole(context.Context, domain.Role) (domain.Role, error)
 	UpdateRole(context.Context, domain.Role) (domain.Role, error)
 	GetRole(context.Context, string) (domain.Role, error)
-	ListRoles(context.Context, string) ([]domain.Role, error)
+	ListRoles(context.Context) ([]domain.Role, error)
 	CreateEmployee(context.Context, domain.Employee) (domain.Employee, error)
 	UpdateEmployee(context.Context, domain.Employee) (domain.Employee, error)
 	GetEmployee(context.Context, string) (domain.Employee, error)
-	ListEmployees(context.Context, string) ([]domain.Employee, error)
+	ListEmployees(context.Context) ([]domain.Employee, error)
 	CreateCatalogItem(context.Context, domain.CatalogItem) (domain.CatalogItem, error)
 	UpdateCatalogItem(context.Context, domain.CatalogItem) (domain.CatalogItem, error)
 	GetCatalogItem(context.Context, string) (domain.CatalogItem, error)
@@ -130,26 +130,6 @@ type IDGenerator interface {
 	NewID() string
 }
 
-// RandomIDGenerator генерирует UUID-like identifiers без инфраструктурной зависимости.
-type RandomIDGenerator struct{}
-
-// NewID возвращает новый случайный identifier.
-func (RandomIDGenerator) NewID() string {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Sprintf("id-%d", time.Now().UTC().UnixNano())
-	}
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%s-%s-%s-%s-%s",
-		hex.EncodeToString(b[0:4]),
-		hex.EncodeToString(b[4:6]),
-		hex.EncodeToString(b[6:8]),
-		hex.EncodeToString(b[8:10]),
-		hex.EncodeToString(b[10:16]),
-	)
-}
-
 // Service реализует use cases Cloud-authored master data и publication workflow.
 type Service struct {
 	repo  Repository
@@ -160,14 +140,13 @@ type Service struct {
 // NewService создает application service Cloud master-data authority.
 func NewService(repo Repository, clock clock.Clock, ids IDGenerator) *Service {
 	if ids == nil {
-		ids = RandomIDGenerator{}
+		ids = idgen.UUIDGenerator{}
 	}
 	return &Service{repo: repo, clock: clock, ids: ids}
 }
 
 // CreateRoleCommand описывает создание роли с JSON snapshot прав.
 type CreateRoleCommand struct {
-	RestaurantID    string `json:"restaurant_id"`
 	Name            string `json:"name"`
 	PermissionsJSON string `json:"permissions_json"`
 }
@@ -200,17 +179,18 @@ type UpdateRoleCommand struct {
 
 // CreateEmployeeCommand описывает создание сотрудника с plaintext PIN только на входе use case.
 type CreateEmployeeCommand struct {
-	RestaurantID string `json:"restaurant_id"`
-	RoleID       string `json:"role_id"`
-	Name         string `json:"name"`
-	PIN          string `json:"pin"`
+	RoleID        string   `json:"role_id"`
+	RestaurantIDs []string `json:"restaurant_ids"`
+	Name          string   `json:"name"`
+	PIN           string   `json:"pin"`
 }
 
 // UpdateEmployeeCommand описывает безопасное изменение карточки сотрудника.
 type UpdateEmployeeCommand struct {
-	RoleID string                 `json:"role_id,omitempty"`
-	Name   string                 `json:"name,omitempty"`
-	Status *domain.EmployeeStatus `json:"status,omitempty"`
+	RoleID        string                 `json:"role_id,omitempty"`
+	RestaurantIDs *[]string              `json:"restaurant_ids,omitempty"`
+	Name          string                 `json:"name,omitempty"`
+	Status        *domain.EmployeeStatus `json:"status,omitempty"`
 }
 
 // AssignRoleCommand описывает смену роли сотрудника с пересчетом permission snapshot.
@@ -651,14 +631,13 @@ func (s *Service) ArchiveRestaurant(ctx context.Context, id string) (domain.Rest
 
 // CreateRole создает Cloud-authored роль.
 func (s *Service) CreateRole(ctx context.Context, cmd CreateRoleCommand) (domain.Role, error) {
-	restaurantID := strings.TrimSpace(cmd.RestaurantID)
 	name := strings.TrimSpace(cmd.Name)
 	permissions := strings.TrimSpace(cmd.PermissionsJSON)
 	if permissions == "" {
 		permissions = "{}"
 	}
-	if restaurantID == "" || name == "" {
-		return domain.Role{}, fmt.Errorf("%w: restaurant_id and name are required", domain.ErrInvalid)
+	if name == "" {
+		return domain.Role{}, fmt.Errorf("%w: name is required", domain.ErrInvalid)
 	}
 	if err := domain.ValidatePermissionsJSON(permissions); err != nil {
 		return domain.Role{}, err
@@ -666,7 +645,6 @@ func (s *Service) CreateRole(ctx context.Context, cmd CreateRoleCommand) (domain
 	now := s.clock.Now().UTC()
 	role := domain.Role{
 		ID:              s.ids.NewID(),
-		RestaurantID:    restaurantID,
 		Name:            name,
 		PermissionsJSON: canonicalJSON(permissions),
 		Active:          true,
@@ -677,9 +655,9 @@ func (s *Service) CreateRole(ctx context.Context, cmd CreateRoleCommand) (domain
 	return s.repo.CreateRole(ctx, role)
 }
 
-// ListRoles возвращает роли ресторана.
-func (s *Service) ListRoles(ctx context.Context, restaurantID string) ([]domain.Role, error) {
-	return s.repo.ListRoles(ctx, strings.TrimSpace(restaurantID))
+// ListRoles возвращает tenant-level роли.
+func (s *Service) ListRoles(ctx context.Context) ([]domain.Role, error) {
+	return s.repo.ListRoles(ctx)
 }
 
 // GetRole возвращает одну роль.
@@ -705,6 +683,17 @@ func (s *Service) UpdateRole(ctx context.Context, id string, cmd UpdateRoleComma
 	if cmd.Active != nil {
 		role.Active = *cmd.Active
 	}
+	if !role.ManagesOrganization() {
+		employees, err := s.repo.ListEmployees(ctx)
+		if err != nil {
+			return domain.Role{}, err
+		}
+		for _, employee := range employees {
+			if employee.RoleID == role.ID && employee.Status != domain.EmployeeArchived && len(employee.RestaurantIDs) == 0 {
+				return domain.Role{}, fmt.Errorf("%w: removing organization.manage requires employee memberships", domain.ErrInvalid)
+			}
+		}
+	}
 	role.CloudVersion++
 	role.UpdatedAt = s.clock.Now().UTC()
 	if !role.Active && role.ArchivedAt == nil {
@@ -722,20 +711,23 @@ func (s *Service) ArchiveRole(ctx context.Context, id string) (domain.Role, erro
 
 // CreateEmployee создает Cloud-authored сотрудника и хэширует PIN credential.
 func (s *Service) CreateEmployee(ctx context.Context, cmd CreateEmployeeCommand) (domain.Employee, error) {
-	restaurantID := strings.TrimSpace(cmd.RestaurantID)
 	roleID := strings.TrimSpace(cmd.RoleID)
 	name := strings.TrimSpace(cmd.Name)
-	if restaurantID == "" || roleID == "" || name == "" || strings.TrimSpace(cmd.PIN) == "" {
-		return domain.Employee{}, fmt.Errorf("%w: restaurant_id, role_id, name and pin are required", domain.ErrInvalid)
+	if roleID == "" || name == "" || strings.TrimSpace(cmd.PIN) == "" {
+		return domain.Employee{}, fmt.Errorf("%w: role_id, name and pin are required", domain.ErrInvalid)
 	}
 	role, err := s.repo.GetRole(ctx, roleID)
 	if err != nil {
 		return domain.Employee{}, err
 	}
-	if !role.Active || role.RestaurantID != restaurantID {
-		return domain.Employee{}, fmt.Errorf("%w: role is archived or belongs to another restaurant", domain.ErrInvalid)
+	if !role.Active {
+		return domain.Employee{}, fmt.Errorf("%w: role is archived", domain.ErrInvalid)
 	}
-	if err := s.ensurePINUnique(ctx, restaurantID, "", cmd.PIN); err != nil {
+	restaurantIDs, allRestaurants, err := s.normalizeEmployeeScope(ctx, role, cmd.RestaurantIDs)
+	if err != nil {
+		return domain.Employee{}, err
+	}
+	if err := s.ensurePINUnique(ctx, "", cmd.PIN); err != nil {
 		return domain.Employee{}, err
 	}
 	pinHash, err := hashPIN(cmd.PIN)
@@ -745,8 +737,9 @@ func (s *Service) CreateEmployee(ctx context.Context, cmd CreateEmployeeCommand)
 	now := s.clock.Now().UTC()
 	employee := domain.Employee{
 		ID:                     s.ids.NewID(),
-		RestaurantID:           restaurantID,
 		RoleID:                 roleID,
+		RestaurantIDs:          restaurantIDs,
+		AllRestaurants:         allRestaurants,
 		Name:                   name,
 		Status:                 domain.EmployeeActive,
 		PINHash:                pinHash,
@@ -760,14 +753,19 @@ func (s *Service) CreateEmployee(ctx context.Context, cmd CreateEmployeeCommand)
 	return s.repo.CreateEmployee(ctx, employee)
 }
 
-// ListEmployees возвращает сотрудников ресторана.
-func (s *Service) ListEmployees(ctx context.Context, restaurantID string) ([]domain.Employee, error) {
-	items, err := s.repo.ListEmployees(ctx, strings.TrimSpace(restaurantID))
+// ListEmployees возвращает tenant-level сотрудников и их memberships.
+func (s *Service) ListEmployees(ctx context.Context) ([]domain.Employee, error) {
+	items, err := s.repo.ListEmployees(ctx)
 	if err != nil {
 		return nil, err
 	}
 	for i := range items {
 		items[i].PINConfigured = strings.TrimSpace(items[i].PINHash) != ""
+		role, roleErr := s.repo.GetRole(ctx, items[i].RoleID)
+		if roleErr != nil {
+			return nil, roleErr
+		}
+		items[i].AllRestaurants = role.ManagesOrganization()
 	}
 	return items, nil
 }
@@ -779,6 +777,11 @@ func (s *Service) GetEmployee(ctx context.Context, id string) (domain.Employee, 
 		return domain.Employee{}, err
 	}
 	employee.PINConfigured = strings.TrimSpace(employee.PINHash) != ""
+	role, err := s.repo.GetRole(ctx, employee.RoleID)
+	if err != nil {
+		return domain.Employee{}, err
+	}
+	employee.AllRestaurants = role.ManagesOrganization()
 	return employee, nil
 }
 
@@ -802,11 +805,23 @@ func (s *Service) UpdateEmployee(ctx context.Context, id string, cmd UpdateEmplo
 		if err != nil {
 			return domain.Employee{}, err
 		}
-		if !role.Active || role.RestaurantID != employee.RestaurantID {
-			return domain.Employee{}, fmt.Errorf("%w: role is archived or belongs to another restaurant", domain.ErrInvalid)
+		if !role.Active {
+			return domain.Employee{}, fmt.Errorf("%w: role is archived", domain.ErrInvalid)
 		}
 		employee.RoleID = role.ID
 		employee.PermissionSnapshotJSON = role.PermissionsJSON
+	}
+	role, err := s.repo.GetRole(ctx, employee.RoleID)
+	if err != nil {
+		return domain.Employee{}, err
+	}
+	requested := employee.RestaurantIDs
+	if cmd.RestaurantIDs != nil {
+		requested = *cmd.RestaurantIDs
+	}
+	employee.RestaurantIDs, employee.AllRestaurants, err = s.normalizeEmployeeScope(ctx, role, requested)
+	if err != nil {
+		return domain.Employee{}, err
 	}
 	employee.CloudVersion++
 	employee.UpdatedAt = s.clock.Now().UTC()
@@ -856,7 +871,7 @@ func (s *Service) RotateEmployeePIN(ctx context.Context, id string, cmd RotatePI
 	if err != nil {
 		return domain.Employee{}, err
 	}
-	if err := s.ensurePINUnique(ctx, employee.RestaurantID, employee.ID, cmd.PIN); err != nil {
+	if err := s.ensurePINUnique(ctx, employee.ID, cmd.PIN); err != nil {
 		return domain.Employee{}, err
 	}
 	pinHash, err := hashPIN(cmd.PIN)
@@ -2314,14 +2329,36 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 	if err != nil && !errorsIsNotFound(err) {
 		return domain.MasterDataPacket{}, nil, nil, err
 	}
-	roles, err := s.repo.ListRoles(ctx, restaurantID)
+	roles, err := s.repo.ListRoles(ctx)
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
 	}
-	employees, err := s.repo.ListEmployees(ctx, restaurantID)
+	employees, err := s.repo.ListEmployees(ctx)
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
 	}
+	roleByID := make(map[string]domain.Role, len(roles))
+	for _, role := range roles {
+		roleByID[role.ID] = role
+	}
+	eligible := employees[:0]
+	eligibleRoleIDs := map[string]struct{}{}
+	for _, employee := range employees {
+		role, ok := roleByID[employee.RoleID]
+		if !ok || !role.Active || !employee.ActiveForPOS() || (!role.ManagesOrganization() && !slices.Contains(employee.RestaurantIDs, restaurantID)) {
+			continue
+		}
+		eligible = append(eligible, employee)
+		eligibleRoleIDs[role.ID] = struct{}{}
+	}
+	employees = eligible
+	eligibleRoles := roles[:0]
+	for _, role := range roles {
+		if _, ok := eligibleRoleIDs[role.ID]; ok {
+			eligibleRoles = append(eligibleRoles, role)
+		}
+	}
+	roles = eligibleRoles
 	halls, err := s.repo.ListHalls(ctx, restaurantID)
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
@@ -2430,7 +2467,7 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 		CloudUpdatedAt:         now,
 		Restaurants:            edgeRestaurants(restaurants),
 		Roles:                  edgeRoles(roles),
-		Employees:              edgeEmployees(employees),
+		Employees:              edgeEmployees(employees, restaurantID),
 		CatalogItems:           edgeCatalogItems(catalogItems),
 		Folders:                edgeFolders(folders),
 		FolderParameters:       edgeFolderParameters(folderParameters),
@@ -2682,10 +2719,10 @@ func edgeRoles(items []domain.Role) []domain.EdgeRole {
 	return out
 }
 
-func edgeEmployees(items []domain.Employee) []domain.EdgeEmployee {
+func edgeEmployees(items []domain.Employee, restaurantID string) []domain.EdgeEmployee {
 	out := make([]domain.EdgeEmployee, 0, len(items))
 	for _, item := range items {
-		out = append(out, domain.EdgeEmployee{ID: item.ID, RestaurantID: item.RestaurantID, RoleID: item.RoleID, Name: item.Name, PINHash: item.PINHash, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+		out = append(out, domain.EdgeEmployee{ID: item.ID, RestaurantID: restaurantID, RoleID: item.RoleID, Name: item.Name, PINHash: item.PINHash, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
 	}
 	return out
 }
@@ -3132,12 +3169,12 @@ func hashPIN(pin string) (string, error) {
 	}, ":"), nil
 }
 
-func (s *Service) ensurePINUnique(ctx context.Context, restaurantID, exceptEmployeeID, pin string) error {
+func (s *Service) ensurePINUnique(ctx context.Context, exceptEmployeeID, pin string) error {
 	pin = strings.TrimSpace(pin)
 	if pin == "" {
 		return fmt.Errorf("%w: pin is required", domain.ErrInvalid)
 	}
-	employees, err := s.repo.ListEmployees(ctx, strings.TrimSpace(restaurantID))
+	employees, err := s.repo.ListEmployees(ctx)
 	if err != nil {
 		return err
 	}
@@ -3146,10 +3183,36 @@ func (s *Service) ensurePINUnique(ctx context.Context, restaurantID, exceptEmplo
 			continue
 		}
 		if verifyPIN(employee.PINHash, pin) == nil {
-			return fmt.Errorf("%w: duplicate non-archived employee PIN in restaurant", domain.ErrPINAlreadyExists)
+			return fmt.Errorf("%w: duplicate non-archived employee PIN in tenant", domain.ErrPINAlreadyExists)
 		}
 	}
 	return nil
+}
+
+func (s *Service) normalizeEmployeeScope(ctx context.Context, role domain.Role, restaurantIDs []string) ([]string, bool, error) {
+	if role.ManagesOrganization() {
+		return []string{}, true, nil
+	}
+	seen := map[string]struct{}{}
+	for _, id := range restaurantIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if err := s.ensureActiveRestaurant(ctx, id); err != nil {
+			return nil, false, err
+		}
+		seen[id] = struct{}{}
+	}
+	if len(seen) == 0 {
+		return nil, false, fmt.Errorf("%w: employee requires at least one restaurant membership", domain.ErrInvalid)
+	}
+	out := make([]string, 0, len(seen))
+	for id := range seen {
+		out = append(out, id)
+	}
+	slices.Sort(out)
+	return out, false, nil
 }
 
 func edgeHalls(items []domain.Hall) []domain.EdgeHall {

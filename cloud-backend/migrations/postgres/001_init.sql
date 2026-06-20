@@ -521,18 +521,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS cloud_currency_reference_alpha_code_idx
 -- === 004_master_data_authority.sql ===
 CREATE TABLE IF NOT EXISTS cloud_roles (
   id TEXT PRIMARY KEY,
-  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
   name TEXT NOT NULL CHECK (name <> ''),
   permissions_json JSONB NOT NULL,
   active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
-  UNIQUE (restaurant_id, name)
+  UNIQUE (name)
 );
 
 CREATE TABLE IF NOT EXISTS cloud_employees (
   id TEXT PRIMARY KEY,
-  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
   role_id TEXT NOT NULL REFERENCES cloud_roles(id),
   name TEXT NOT NULL CHECK (name <> ''),
   status TEXT NOT NULL CHECK (status IN ('active','suspended','archived')),
@@ -545,8 +543,19 @@ CREATE TABLE IF NOT EXISTS cloud_employees (
   updated_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS cloud_employees_restaurant_status
-  ON cloud_employees(restaurant_id, status);
+CREATE INDEX IF NOT EXISTS cloud_employees_status
+  ON cloud_employees(status);
+
+CREATE TABLE IF NOT EXISTS cloud_employee_restaurant_memberships (
+  employee_id TEXT NOT NULL REFERENCES cloud_employees(id) ON DELETE CASCADE,
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (employee_id, restaurant_id)
+);
+
+CREATE INDEX IF NOT EXISTS cloud_employee_memberships_restaurant
+  ON cloud_employee_restaurant_memberships(restaurant_id, employee_id);
 
 CREATE TABLE IF NOT EXISTS cloud_categories (
   id TEXT PRIMARY KEY,
@@ -977,6 +986,38 @@ ALTER TABLE cloud_roles
 
 ALTER TABLE cloud_employees
   ADD COLUMN IF NOT EXISTS cloud_version BIGINT NOT NULL DEFAULT 1 CHECK (cloud_version > 0);
+
+-- POS-61 startup upgrade: preserve previous restaurant ownership as explicit membership.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'cloud_employees' AND column_name = 'restaurant_id'
+  ) THEN
+    INSERT INTO cloud_employee_restaurant_memberships(employee_id,restaurant_id,created_at,updated_at)
+    SELECT id,restaurant_id,created_at,updated_at FROM cloud_employees
+    ON CONFLICT (employee_id,restaurant_id) DO NOTHING;
+    ALTER TABLE cloud_employees DROP COLUMN restaurant_id;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'cloud_roles' AND column_name = 'restaurant_id'
+  ) THEN
+    ALTER TABLE cloud_roles DROP COLUMN restaurant_id;
+  END IF;
+END $$;
+
+DROP INDEX IF EXISTS cloud_employees_restaurant_status;
+CREATE INDEX IF NOT EXISTS cloud_employees_status ON cloud_employees(status);
+WITH duplicate_names AS (
+  SELECT id,name,row_number() OVER (PARTITION BY name ORDER BY id) AS duplicate_no
+  FROM cloud_roles
+)
+UPDATE cloud_roles AS role
+SET name = role.name || ' (' || left(role.id,8) || ')'
+FROM duplicate_names
+WHERE duplicate_names.id = role.id AND duplicate_names.duplicate_no > 1;
+CREATE UNIQUE INDEX IF NOT EXISTS cloud_roles_name_unique ON cloud_roles(name);
 
 ALTER TABLE cloud_catalog_items
   ADD COLUMN IF NOT EXISTS cloud_version BIGINT NOT NULL DEFAULT 1 CHECK (cloud_version > 0);

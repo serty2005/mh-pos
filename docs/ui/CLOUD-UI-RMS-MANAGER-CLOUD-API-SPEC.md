@@ -31,6 +31,7 @@
 
 - Restaurants: `GET/POST/PATCH /restaurants`, `POST /restaurants/{id}/archive`.
 - Staff/RBAC для POS Edge: `/master-data/roles`, `/master-data/employees`.
+- Staff/RBAC routes работают в tenant scope: role не содержит `restaurant_id`, employee содержит authoritative `restaurant_ids` и `all_restaurants`; `organization.manage` вычисляется backend и всегда охватывает все restaurants.
 - Catalog/menu/modifiers/pricing/floor master-data: `/master-data/...`.
 - Provisioning/pairing: `/devices/unassigned`, `/restaurants/{restaurant_id}/devices`, `/restaurants/{restaurant_id}/devices/{node_device_id}/assign`, `/devices/{node_device_id}/assignment-status`, `/restaurants/{restaurant_id}/devices/generate-pairing-code`, `/devices/pairing/consume`.
 - Sync event log: `GET /sync/edge-events`.

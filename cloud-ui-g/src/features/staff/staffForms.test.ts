@@ -43,20 +43,24 @@ describe('staffForms payloads', () => {
     expect(buildCreateEmployeePayload({
       name: ' Anna ',
       role_id: 'role-1',
+      restaurant_ids: ['restaurant-1'],
       pin: '1234',
     })).toEqual({
       name: 'Anna',
       role_id: 'role-1',
+      restaurant_ids: ['restaurant-1'],
       pin: '1234',
     });
 
     expect(buildUpdateEmployeePayload({
       name: 'Anna',
       role_id: 'role-2',
+      restaurant_ids: ['restaurant-2'],
       status: 'suspended',
     })).toEqual({
       name: 'Anna',
       role_id: 'role-2',
+      restaurant_ids: ['restaurant-2'],
       status: 'suspended',
     });
   });

@@ -8,7 +8,7 @@
 | --- | --- | --- | --- | --- |
 | Restaurant | Cloud | No | Cloud -> Edge | реализовано сейчас for ingest stream `restaurants` |
 | Device | Cloud | Pairing/provisioning only | Cloud -> Edge | реализовано сейчас for ingest stream `devices` |
-| Role/Employee | Cloud | No | Cloud -> Edge | реализовано сейчас for ingest stream `staff` |
+| Tenant Role/Employee + restaurant membership | Cloud | No | Cloud -> Edge | реализовано сейчас: `staff` содержит только eligible employees для restaurant |
 | Hall/Table | Cloud | No | Cloud -> Edge | реализовано сейчас for ingest stream `floor` |
 | Catalog item | Cloud | No | Cloud -> Edge | реализовано сейчас for ingest stream `catalog` |
 | Menu item | Cloud | No | Cloud -> Edge | реализовано сейчас for ingest stream `menu` |
@@ -48,6 +48,7 @@
 `catalog` payload включает catalog folders/tags/services и modifier groups/options/bindings/effective links; `menu` payload включает menu items. Menu categories остаются отдельным понятием и не заменяют catalog folders.
 `pricing_policy` включает tax/service-charge reference tables и automatic discount/surcharge policies; manual override runtime остается backend RBAC-controlled action.
 `recipes` включает `recipe_versions` и `recipe_lines`; `inventory_reference` включает `stop_lists` и Cloud-owned `warehouses`.
+`staff` собирается из tenant-level roles/employees и `cloud_employee_restaurant_memberships`: `organization.manage` входит во все restaurant packages, остальные employees только в явно разрешенные. Edge деактивирует локальных сотрудников, отсутствующих в полном eligible set, поэтому revoke блокирует новый login и уже открытую session на следующем apply.
 
 Canonical seed/smoke для Cloud-owned ingest остается `scripts/seed-dev-system.py`. Новый Cloud-owned stream, справочник или POS read flow добавляется вместе с seed data, automatic delivery package, POS read assertion/smoke step, script guard `CLOUD_OWNED_SEED_SURFACES` и профильными docs; отдельный user-facing seed/smoke entrypoint не добавляется без отдельного архитектурного решения.
 

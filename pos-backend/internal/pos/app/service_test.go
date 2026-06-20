@@ -3226,6 +3226,33 @@ func TestPinLoginCreatesLocalSessionAndActorMetadataWithoutPINLeak(t *testing.T)
 	}
 }
 
+func TestStaffMembershipRevokeBlocksLoginAndExistingSession(t *testing.T) {
+	f := newFixture(t)
+	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{
+		CommandMeta: app.CommandMeta{CommandID: "cmd-before-membership-revoke", NodeDeviceID: f.device.ID, DeviceID: f.device.ID, ClientDeviceID: f.clientID, Origin: app.OriginEdgeDevice},
+		PIN:         "1111",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.ApplyMasterData(f.ctx, app.ApplyMasterDataCommand{
+		CommandMeta:  app.CommandMeta{NodeDeviceID: f.device.ID, DeviceID: f.device.ID, Origin: app.OriginCloudSync},
+		RestaurantID: f.restaurant.ID,
+		StreamName:   domain.MasterDataStreamStaff,
+		SyncMode:     domain.SyncModeIncremental,
+		CloudVersion: 2,
+		Roles:        []domain.Role{{ID: "role-no-eligible-staff", Name: "No eligible staff", PermissionsJSON: `{}`, Active: true}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.GetSession(f.ctx, login.Session.ID, f.device.ID, f.clientID); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected revoked membership to block existing session, got %v", err)
+	}
+	if _, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{CommandMeta: app.CommandMeta{CommandID: "cmd-after-membership-revoke", NodeDeviceID: f.device.ID, DeviceID: f.device.ID, ClientDeviceID: f.clientID, Origin: app.OriginEdgeDevice}, PIN: "1111"}); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected revoked membership to block login, got %v", err)
+	}
+}
+
 func TestLogoutRevokesBackendSession(t *testing.T) {
 	f := newFixture(t)
 	login, err := f.service.PinLogin(f.ctx, app.PinLoginCommand{

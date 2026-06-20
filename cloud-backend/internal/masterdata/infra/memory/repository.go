@@ -142,14 +142,12 @@ func (r *Repository) GetRole(_ context.Context, id string) (domain.Role, error) 
 	return v, nil
 }
 
-func (r *Repository) ListRoles(_ context.Context, restaurantID string) ([]domain.Role, error) {
+func (r *Repository) ListRoles(_ context.Context) ([]domain.Role, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var out []domain.Role
 	for _, item := range r.roles {
-		if item.RestaurantID == strings.TrimSpace(restaurantID) {
-			out = append(out, item)
-		}
+		out = append(out, item)
 	}
 	return out, nil
 }
@@ -181,14 +179,12 @@ func (r *Repository) GetEmployee(_ context.Context, id string) (domain.Employee,
 	return v, nil
 }
 
-func (r *Repository) ListEmployees(_ context.Context, restaurantID string) ([]domain.Employee, error) {
+func (r *Repository) ListEmployees(_ context.Context) ([]domain.Employee, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var out []domain.Employee
 	for _, item := range r.employees {
-		if item.RestaurantID == strings.TrimSpace(restaurantID) {
-			out = append(out, item)
-		}
+		out = append(out, item)
 	}
 	return out, nil
 }

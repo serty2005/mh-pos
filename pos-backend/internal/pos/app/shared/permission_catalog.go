@@ -11,6 +11,7 @@ import (
 type PermissionID string
 
 const (
+	PermissionOrganizationManage PermissionID = "organization.manage"
 	// Идентификаторы прав кассового runtime.
 	PermissionEmployeeShiftOpen        PermissionID = "pos.employee_shift.open"
 	PermissionEmployeeShiftClose       PermissionID = "pos.employee_shift.close"
@@ -63,6 +64,7 @@ const (
 )
 
 var knownPermissionIDs = map[PermissionID]struct{}{
+	PermissionOrganizationManage:         {},
 	PermissionEmployeeShiftOpen:          {},
 	PermissionEmployeeShiftClose:         {},
 	PermissionEmployeeShiftViewCurrent:   {},

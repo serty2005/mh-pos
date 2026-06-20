@@ -142,6 +142,7 @@ func TestCloudMigrationDirUsesOrderedManagedFiles(t *testing.T) {
 		"cloud_projection_shift_finance",
 		"cloud_master_data_packages",
 		"cloud_employees",
+		"cloud_employee_restaurant_memberships",
 		"cloud_catalog_items",
 		"cloud_menu_items",
 		"cloud_master_data_publications",

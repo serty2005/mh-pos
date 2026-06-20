@@ -63,7 +63,6 @@ func TestEmployeeLifecyclePINAndPermissionSnapshot(t *testing.T) {
 	service, _ := newService()
 	ctx := context.Background()
 	role, err := service.CreateRole(ctx, app.CreateRoleCommand{
-		RestaurantID:    "restaurant-1",
 		Name:            "manager",
 		PermissionsJSON: `{"pos.menu.view":true,"pos.payment.cash":true}`,
 	})
@@ -71,10 +70,9 @@ func TestEmployeeLifecyclePINAndPermissionSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	employee, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{
-		RestaurantID: "restaurant-1",
-		RoleID:       role.ID,
-		Name:         "Anna",
-		PIN:          "1111",
+		RestaurantIDs: []string{"restaurant-1"}, RoleID: role.ID,
+		Name: "Anna",
+		PIN:  "1111",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +110,6 @@ func TestEmployeeLifecyclePINAndPermissionSnapshot(t *testing.T) {
 func TestRoleRejectsUnknownPermissionID(t *testing.T) {
 	service, _ := newService()
 	_, err := service.CreateRole(context.Background(), app.CreateRoleCommand{
-		RestaurantID:    "restaurant-1",
 		Name:            "broken",
 		PermissionsJSON: `{"pos.order.create":true,"pos.unknown.permission":true}`,
 	})
@@ -124,7 +121,6 @@ func TestRoleRejectsUnknownPermissionID(t *testing.T) {
 func TestRoleAcceptsKitchenPermissionIDs(t *testing.T) {
 	service, _ := newService()
 	role, err := service.CreateRole(context.Background(), app.CreateRoleCommand{
-		RestaurantID:    "restaurant-1",
 		Name:            "kitchen",
 		PermissionsJSON: `{"pos.kitchen.view":true,"pos.kitchen.status.change":true,"permissions":["pos.kitchen.stock.receipt","pos.kitchen.production.complete"]}`,
 	})
@@ -136,17 +132,83 @@ func TestRoleAcceptsKitchenPermissionIDs(t *testing.T) {
 	}
 }
 
-func TestDuplicateActivePINIsRejectedPerRestaurant(t *testing.T) {
+func TestTenantStaffMembershipsFilterRestaurantPublication(t *testing.T) {
 	service, _ := newService()
 	ctx := context.Background()
-	role, err := service.CreateRole(ctx, app.CreateRoleCommand{RestaurantID: "restaurant-1", Name: "cashier", PermissionsJSON: `{}`})
+	second, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "Second", Timezone: "Europe/Moscow", Currency: "RUB"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: "restaurant-1", RoleID: role.ID, Name: "Anna", PIN: "1111"}); err != nil {
+	managerRole, err := service.CreateRole(ctx, app.CreateRoleCommand{Name: "organization manager", PermissionsJSON: `{"organization.manage":true}`})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: "restaurant-1", RoleID: role.ID, Name: "Ivan", PIN: "1111"}); !errors.Is(err, domain.ErrPINAlreadyExists) {
+	staffRole, err := service.CreateRole(ctx, app.CreateRoleCommand{Name: "cashier", PermissionsJSON: `{"pos.order.create":true}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RoleID: managerRole.ID, Name: "Manager", PIN: "1111"})
+	if err != nil || !manager.AllRestaurants || len(manager.RestaurantIDs) != 0 {
+		t.Fatalf("unexpected organization manager: %+v err=%v", manager, err)
+	}
+	employee, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RoleID: staffRole.ID, RestaurantIDs: []string{"restaurant-1"}, Name: "Cashier", PIN: "2222"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RoleID: staffRole.ID, Name: "No scope", PIN: "3333"}); !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected last-membership validation, got %v", err)
+	}
+	if _, err := service.Publish(ctx, app.PublishCommand{RestaurantID: "restaurant-1", PublishedBy: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := service.GetCurrentPublishedPackage(ctx, "restaurant-1", "node-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Employees) != 2 {
+		t.Fatalf("expected manager and member, got %+v", first.Employees)
+	}
+	if _, err := service.Publish(ctx, app.PublishCommand{RestaurantID: second.ID, PublishedBy: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	other, err := service.GetCurrentPublishedPackage(ctx, second.ID, "node-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(other.Employees) != 1 || other.Employees[0].ID != manager.ID {
+		t.Fatalf("expected only organization manager, got %+v", other.Employees)
+	}
+	empty := []string{}
+	if _, err := service.UpdateEmployee(ctx, employee.ID, app.UpdateEmployeeCommand{RestaurantIDs: &empty}); !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected revoke of last membership to fail, got %v", err)
+	}
+	secondOnly := []string{second.ID}
+	if _, err := service.UpdateEmployee(ctx, employee.ID, app.UpdateEmployeeCommand{RestaurantIDs: &secondOnly}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Publish(ctx, app.PublishCommand{RestaurantID: "restaurant-1", PublishedBy: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	revoked, err := service.GetCurrentPublishedPackage(ctx, "restaurant-1", "node-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revoked.Employees) != 1 || revoked.Employees[0].ID != manager.ID {
+		t.Fatalf("revoked employee remained eligible: %+v", revoked.Employees)
+	}
+}
+
+func TestDuplicateActivePINIsRejectedPerRestaurant(t *testing.T) {
+	service, _ := newService()
+	ctx := context.Background()
+	role, err := service.CreateRole(ctx, app.CreateRoleCommand{Name: "cashier", PermissionsJSON: `{}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantIDs: []string{"restaurant-1"}, RoleID: role.ID, Name: "Anna", PIN: "1111"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantIDs: []string{"restaurant-1"}, RoleID: role.ID, Name: "Ivan", PIN: "1111"}); !errors.Is(err, domain.ErrPINAlreadyExists) {
 		t.Fatalf("expected duplicate PIN conflict, got %v", err)
 	}
 }
@@ -154,18 +216,18 @@ func TestDuplicateActivePINIsRejectedPerRestaurant(t *testing.T) {
 func TestSuspendedEmployeePINStillBlocksReuse(t *testing.T) {
 	service, _ := newService()
 	ctx := context.Background()
-	role, err := service.CreateRole(ctx, app.CreateRoleCommand{RestaurantID: "restaurant-1", Name: "cashier", PermissionsJSON: `{}`})
+	role, err := service.CreateRole(ctx, app.CreateRoleCommand{Name: "cashier", PermissionsJSON: `{}`})
 	if err != nil {
 		t.Fatal(err)
 	}
-	employee, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: "restaurant-1", RoleID: role.ID, Name: "Anna", PIN: "1111"})
+	employee, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantIDs: []string{"restaurant-1"}, RoleID: role.ID, Name: "Anna", PIN: "1111"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.SuspendEmployee(ctx, employee.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: "restaurant-1", RoleID: role.ID, Name: "Ivan", PIN: "1111"}); !errors.Is(err, domain.ErrPINAlreadyExists) {
+	if _, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantIDs: []string{"restaurant-1"}, RoleID: role.ID, Name: "Ivan", PIN: "1111"}); !errors.Is(err, domain.ErrPINAlreadyExists) {
 		t.Fatalf("expected suspended employee PIN to stay reserved, got %v", err)
 	}
 }
@@ -173,18 +235,18 @@ func TestSuspendedEmployeePINStillBlocksReuse(t *testing.T) {
 func TestArchivedEmployeePINCanBeReused(t *testing.T) {
 	service, _ := newService()
 	ctx := context.Background()
-	role, err := service.CreateRole(ctx, app.CreateRoleCommand{RestaurantID: "restaurant-1", Name: "cashier", PermissionsJSON: `{}`})
+	role, err := service.CreateRole(ctx, app.CreateRoleCommand{Name: "cashier", PermissionsJSON: `{}`})
 	if err != nil {
 		t.Fatal(err)
 	}
-	employee, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: "restaurant-1", RoleID: role.ID, Name: "Anna", PIN: "1111"})
+	employee, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantIDs: []string{"restaurant-1"}, RoleID: role.ID, Name: "Anna", PIN: "1111"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.ArchiveEmployee(ctx, employee.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: "restaurant-1", RoleID: role.ID, Name: "Ivan", PIN: "1111"}); err != nil {
+	if _, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantIDs: []string{"restaurant-1"}, RoleID: role.ID, Name: "Ivan", PIN: "1111"}); err != nil {
 		t.Fatalf("expected archived employee PIN to be reusable, got %v", err)
 	}
 }
@@ -196,11 +258,11 @@ func TestCatalogMenuValidationAndPublicationPackageShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := service.CreateRole(ctx, app.CreateRoleCommand{RestaurantID: restaurant.ID, Name: "cashier", PermissionsJSON: `{}`})
+	role, err := service.CreateRole(ctx, app.CreateRoleCommand{Name: "cashier", PermissionsJSON: `{}`})
 	if err != nil {
 		t.Fatal(err)
 	}
-	employee, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantID: restaurant.ID, RoleID: role.ID, Name: "Oleg", PIN: "3333"})
+	employee, err := service.CreateEmployee(ctx, app.CreateEmployeeCommand{RestaurantIDs: []string{restaurant.ID}, RoleID: role.ID, Name: "Oleg", PIN: "3333"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1287,6 +1349,8 @@ func isTestUUIDv7(v string) bool {
 
 func newService() (*app.Service, *memory.Repository) {
 	repo := memory.NewRepository()
+	now := fixedClock{}.Now()
+	_, _ = repo.CreateRestaurant(context.Background(), domain.Restaurant{ID: "restaurant-1", Name: "Test", Timezone: "Europe/Moscow", Currency: "RUB", BusinessDayMode: "standard", BusinessDayBoundaryLocalTime: "05:00", Status: domain.RestaurantActive, CloudVersion: 1, CreatedAt: now, UpdatedAt: now})
 	return app.NewService(repo, fixedClock{}, &fixedIDs{}), repo
 }
 

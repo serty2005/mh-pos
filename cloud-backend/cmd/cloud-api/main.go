@@ -127,12 +127,12 @@ func run() error {
 		BatchSize: 25,
 	})
 	masterRepo := masterpg.NewRepository(pool)
-	masterService := masterapp.NewService(masterRepo, clock.SystemClock{}, masterapp.RandomIDGenerator{})
+	masterService := masterapp.NewService(masterRepo, clock.SystemClock{}, idgen.UUIDGenerator{})
 	var licenseClient provisioningapp.LicenseClient
 	if licenseURL != "" {
 		licenseClient = licensehttp.NewClient(licenseURL)
 	}
-	provisioningService := provisioningapp.NewService(provisioningpg.NewRepository(pool), masterService, clock.SystemClock{}, masterapp.RandomIDGenerator{}, publicURL, licenseClient)
+	provisioningService := provisioningapp.NewService(provisioningpg.NewRepository(pool), masterService, clock.SystemClock{}, idgen.UUIDGenerator{}, publicURL, licenseClient)
 	server := &http.Server{
 		Addr:              addr,
 		Handler:           api.NewRouterWithProvisioningAndOLAP(service, provisioningService, olapService, masterService),

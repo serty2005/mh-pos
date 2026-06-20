@@ -479,6 +479,9 @@ export const ru = {
       snapshotTitle: 'Матрица прав сотрудника',
       snapshotDescription: 'Snapshot приходит из роли и отображается только для чтения. Employee-specific override не реализован текущим backend contract.',
       permissionCount: 'Активных прав',
+      memberships: 'Доступ к ресторанам',
+      allRestaurants: 'Все рестораны',
+      organizationScope: 'Право organization.manage автоматически дает доступ ко всем текущим и будущим ресторанам.',
       searchLabel: 'Поиск сотрудников',
       searchPlaceholder: 'Поиск по имени, роли или ID',
       noActiveRoles: 'Сначала создайте или активируйте роль для выбранного ресторана.',
@@ -531,6 +534,7 @@ export const ru = {
     },
     permissions: {
       groups: {
+        organization: 'Организация',
         shift: 'Смены сотрудников',
         cash: 'Кассовая смена',
         sales: 'Продажи и заказы',
@@ -540,6 +544,7 @@ export const ru = {
         sync: 'Sync operations',
       },
       items: {
+        organizationManage: 'Управлять всей организацией',
         employeeShiftOpen: 'Открыть смену сотрудника',
         employeeShiftClose: 'Закрыть смену сотрудника',
         employeeShiftViewCurrent: 'Видеть текущую смену',

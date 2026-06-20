@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -28,6 +29,19 @@ func TestRequiredSchemaIncludesCurrencyReference(t *testing.T) { /* unchanged */
 	if !found {
 		t.Fatal("expected cloud_currency_reference in schema verification contract")
 	}
+}
+
+func TestRequiredSchemaIncludesEmployeeMemberships(t *testing.T) {
+	for _, req := range RequiredSchema() {
+		if req.Table != "cloud_employee_restaurant_memberships" {
+			continue
+		}
+		if !slices.Contains(req.Columns, "employee_id") || !slices.Contains(req.Columns, "restaurant_id") || !slices.Contains(req.Indexes, "cloud_employee_memberships_restaurant") {
+			t.Fatalf("incomplete membership schema verification: %+v", req)
+		}
+		return
+	}
+	t.Fatal("expected employee memberships in startup schema verification")
 }
 
 func TestRequiredSchemaIncludesCloudInventoryFoundationTables(t *testing.T) {

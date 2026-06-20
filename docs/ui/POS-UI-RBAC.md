@@ -65,7 +65,7 @@ UI visibility является только UX-слоем. Backend application-l
 Реализовано сейчас:
 
 - `cloud-ui-g` имеет route-backed sections: dashboard, restaurants, edge-sync, catalog, menu, modifiers, pricing-taxes, staff-permissions, floor, publications.
-- `staff-permissions` редактирует POS Edge roles/employees/permission profiles и валидирует permission IDs на Cloud Backend side.
+- `staff-permissions` редактирует tenant-level POS Edge roles/employees, authoritative restaurant memberships и permission profiles; `organization.manage` охватывает все restaurants, permission IDs и last-membership invariant валидирует Cloud Backend.
 - `inventory` и `reports` в активном `cloud-ui-g` остаются blocked/planned placeholders и не являются активными runtime actions.
 
 Запланировано далее:

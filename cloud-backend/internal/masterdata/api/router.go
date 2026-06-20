@@ -206,7 +206,7 @@ func (h *Handler) createRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listRoles(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.ListRoles(r.Context(), r.URL.Query().Get("restaurant_id"))
+	v, err := h.service.ListRoles(r.Context())
 	write(w, http.StatusOK, v, err)
 }
 
@@ -239,7 +239,7 @@ func (h *Handler) createEmployee(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listEmployees(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.ListEmployees(r.Context(), r.URL.Query().Get("restaurant_id"))
+	v, err := h.service.ListEmployees(r.Context())
 	write(w, http.StatusOK, v, err)
 }
 

@@ -84,7 +84,7 @@ func TestCanonicalRoleProfiles(t *testing.T) {
 }
 
 func TestValidatePermissionsJSON(t *testing.T) {
-	valid := shared.PermissionsJSON(shared.PermissionFloorView, shared.PermissionOrderCreate)
+	valid := shared.PermissionsJSON(shared.PermissionOrganizationManage, shared.PermissionFloorView, shared.PermissionOrderCreate)
 	if err := shared.ValidatePermissionsJSON(valid); err != nil {
 		t.Fatalf("expected valid canonical permissions json, got %v", err)
 	}

@@ -1,4 +1,4 @@
-export type PermissionGroupId = 'shift' | 'cash' | 'sales' | 'pricing' | 'payments' | 'kitchen' | 'sync';
+export type PermissionGroupId = 'organization' | 'shift' | 'cash' | 'sales' | 'pricing' | 'payments' | 'kitchen' | 'sync';
 
 export type PermissionDefinition = {
   id: string;
@@ -9,6 +9,7 @@ export type PermissionDefinition = {
 
 // permissionCatalog повторяет backend-known permission IDs, чтобы role permissions_json не уходил с неизвестными правами.
 export const permissionCatalog: PermissionDefinition[] = [
+  { id: 'organization.manage', group: 'organization', code: 'ORG', labelKey: 'staff.permissions.items.organizationManage' },
   { id: 'pos.employee_shift.open', group: 'shift', code: 'SOP', labelKey: 'staff.permissions.items.employeeShiftOpen' },
   { id: 'pos.employee_shift.close', group: 'shift', code: 'SCL', labelKey: 'staff.permissions.items.employeeShiftClose' },
   { id: 'pos.employee_shift.view_current', group: 'shift', code: 'SVW', labelKey: 'staff.permissions.items.employeeShiftViewCurrent' },
@@ -56,6 +57,6 @@ export const permissionCatalog: PermissionDefinition[] = [
   { id: 'pos.sync.retry_failed', group: 'sync', code: 'RTRY', labelKey: 'staff.permissions.items.syncRetryFailed' },
 ];
 
-export const permissionGroupIds: PermissionGroupId[] = ['shift', 'cash', 'sales', 'pricing', 'payments', 'kitchen', 'sync'];
+export const permissionGroupIds: PermissionGroupId[] = ['organization', 'shift', 'cash', 'sales', 'pricing', 'payments', 'kitchen', 'sync'];
 
 export const knownPermissionIds = new Set(permissionCatalog.map((permission) => permission.id));

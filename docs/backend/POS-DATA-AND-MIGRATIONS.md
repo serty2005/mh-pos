@@ -110,7 +110,7 @@ Managed SQL files, реализовано сейчас:
 
 `001_init.sql` provides foundation for:
 
-- roles and employees;
+- tenant-level roles/employees и `cloud_employee_restaurant_memberships`;
 - menu categories;
 - catalog folders and inherited folder parameters;
 - catalog tags and item-tag assignments;
@@ -125,6 +125,8 @@ Managed SQL files, реализовано сейчас:
 - master-data publications.
 
 Ограничение текущей основы:
+
+- Cloud baseline `0.1.10` переносит прежний `cloud_employees.restaurant_id` в memberships и удаляет restaurant ownership из roles/employees; совпадающие role names получают deterministic suffix из role ID. Startup выполняет обязательный PostgreSQL backup до checksum/version upgrade и проверяет membership table/columns/index до запуска HTTP/workers.
 
 - Cloud recipe/inventory-adjacent foundation is not equal to full POS Edge inventory runtime support.
 - POS Edge `ApplyMasterData` сейчас принимает `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`, `recipes`, `inventory_reference`, `proposal_feedback`.

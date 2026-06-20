@@ -38,8 +38,8 @@ export default function LaunchReadinessPanel({ restaurantId, hasPublication }: L
     setLoading(true);
     setError(null);
     Promise.all([
-      listRoles(restaurantId),
-      listEmployees(restaurantId),
+      listRoles(),
+      listEmployees(),
       listHalls(restaurantId),
       listTables(restaurantId),
       listCatalogItems(restaurantId),
@@ -52,8 +52,10 @@ export default function LaunchReadinessPanel({ restaurantId, hasPublication }: L
     ])
       .then(([roles, employees, halls, tables, catalogItems, menuItems, modifierGroups, modifierOptions, modifierBindings, pricing, devices]) => {
         const edgeAssigned = devices.some((device) => device.restaurant_id === restaurantId && device.status === 'assigned');
+        const eligibleEmployees = employees.filter((employee) => employee.all_restaurants || employee.restaurant_ids.includes(restaurantId));
+        const eligibleRoleIds = new Set(eligibleEmployees.map((employee) => employee.role_id));
         setChecks({
-          rolesEmployees: roles.length > 0 && employees.length > 0,
+          rolesEmployees: eligibleEmployees.length > 0 && roles.some((role) => role.active && eligibleRoleIds.has(role.id)),
           hallsTables: halls.length > 0 && tables.length > 0,
           catalogItems: catalogItems.length > 0,
           menuItems: menuItems.length > 0,

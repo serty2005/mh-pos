@@ -8,13 +8,14 @@ import {
   createEmployee,
   createRole,
   listEmployees,
+  listRestaurants,
   listRoles,
   rotateEmployeePIN,
   suspendEmployee,
   updateEmployee,
   updateRole,
 } from '../../shared/api/endpoints';
-import type { Employee, Role } from '../../shared/api/schemas';
+import type { Employee, Restaurant, Role } from '../../shared/api/schemas';
 import { useI18n } from '../../shared/i18n/I18nProvider';
 import EmptyState from '../../shared/ui/EmptyState';
 import LoadingSkeleton from '../../shared/ui/LoadingSkeleton';
@@ -44,6 +45,7 @@ export default function StaffPage({ restaurantId }: Props) {
   const [activeTab, setActiveTab] = useState<StaffTab>('employees');
   const [roles, setRoles] = useState<Role[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [status, setStatus] = useState<RouteStatus>('loading');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -52,12 +54,14 @@ export default function StaffPage({ restaurantId }: Props) {
     setStatus('loading');
     setError(null);
     try {
-      const [nextRoles, nextEmployees] = await Promise.all([
-        listRoles(restaurantId),
-        listEmployees(restaurantId),
+      const [nextRoles, nextEmployees, nextRestaurants] = await Promise.all([
+        listRoles(),
+        listEmployees(),
+        listRestaurants(),
       ]);
       setRoles(nextRoles);
       setEmployees(nextEmployees);
+      setRestaurants(nextRestaurants);
       setStatus('ready');
     } catch (nextError) {
       setStatus('blocked');
@@ -130,9 +134,11 @@ export default function StaffPage({ restaurantId }: Props) {
             <EmployeesPanel
               employees={employees}
               roles={roles}
+              restaurants={restaurants}
+              defaultRestaurantId={restaurantId}
               loading={loading}
               error={error}
-              onCreate={(values: EmployeeCreateFormValues) => mutate(async () => { await createEmployee({ restaurant_id: restaurantId, ...buildCreateEmployeePayload(values) }); })}
+              onCreate={(values: EmployeeCreateFormValues) => mutate(async () => { await createEmployee(buildCreateEmployeePayload(values)); })}
               onUpdate={(id: string, values: EmployeeUpdateFormValues) => mutate(async () => { await updateEmployee(id, buildUpdateEmployeePayload(values)); })}
               onAssignRole={(id: string, roleId: string) => mutate(async () => { await assignEmployeeRole(id, roleId); })}
               onSuspend={(id: string) => mutate(async () => { await suspendEmployee(id); })}
@@ -147,7 +153,7 @@ export default function StaffPage({ restaurantId }: Props) {
               employees={employees}
               loading={loading}
               error={error}
-              onCreate={(values: RoleFormValues) => mutate(async () => { await createRole({ restaurant_id: restaurantId, ...buildCreateRolePayload(values) }); })}
+              onCreate={(values: RoleFormValues) => mutate(async () => { await createRole(buildCreateRolePayload(values)); })}
               onUpdate={(id: string, values: RoleFormValues) => mutate(async () => { await updateRole(id, buildUpdateRolePayload(values)); })}
               onArchive={(id: string) => mutate(async () => { await archiveRole(id); })}
             />

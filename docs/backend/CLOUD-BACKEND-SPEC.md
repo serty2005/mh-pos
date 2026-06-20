@@ -198,6 +198,8 @@ Master data under canonical namespace:
 - `POST /api/v1/master-data/employees/{id}/role`
 - `POST /api/v1/master-data/employees/{id}/pin`
 - `POST /api/v1/master-data/employees/{id}/pin/rotate`
+
+Role/employee routes являются tenant-level и не принимают `restaurant_id` как ownership. Employee create/PATCH использует `restaurant_ids`; backend отклоняет пустой effective scope, кроме роли с `organization.manage`, для которой memberships игнорируются и effective scope равен всем текущим и будущим restaurants.
 - `POST /api/v1/master-data/catalog/items`
 - `GET /api/v1/master-data/catalog/items`
 - `GET /api/v1/master-data/catalog/items/{id}`
@@ -374,8 +376,9 @@ Production-oriented aliases:
 Сущности:
 
 - Restaurants: `active`, `archived`, timezone, currency, `business_day_mode`, `business_day_boundary_local_time`.
-- Roles: scoped by restaurant, permission snapshot, validation canonical permission ids.
-- Employees: `active`, `suspended`, `archived`, role assignment, PIN credential version, safe `pin_configured`.
+- Roles: tenant-level, permission snapshot, validation canonical permission ids, включая `organization.manage`.
+- Employees: tenant-level, `active`, `suspended`, `archived`, role assignment, PIN credential version, safe `pin_configured`, explicit `restaurant_ids`.
+- Employee restaurant scope хранится только в `cloud_employee_restaurant_memberships`: `organization.manage` охватывает все restaurants, остальные non-archived employees обязаны иметь минимум одно membership.
 - Floor: halls and tables.
 - Catalog: `dish`, `good`, `semi_finished`, `service`; folders, folder parameters, tags, item tags.
 - Modifiers: groups, options, bindings by target `menu_item`, `catalog_item`, `folder`, `tag`.
@@ -394,7 +397,7 @@ PIN policy:
 - Plain PIN принимается только на входе create/rotate use cases.
 - Cloud UI-facing API не возвращает raw PIN или `pin_hash`.
 - `pin_hash` присутствует только в device/system staff package для offline PIN auth на POS Edge.
-- PIN должен быть уникален в рамках ресторана среди сотрудников `active` и `suspended`.
+- PIN должен быть уникален в рамках tenant среди сотрудников `active` и `suspended`.
 - Archived employee не блокирует повторное использование PIN.
 - Duplicate active/suspended PIN возвращает conflict с `PIN_ALREADY_EXISTS`.
 
@@ -405,6 +408,7 @@ PIN policy:
 - Publication создает монотонную версию для ресторана.
 - Publication сохраняет `cloud_master_data_publications`.
 - Publication строит deterministic stream packages и сохраняет их в `cloud_master_data_packages`.
+- `staff` package содержит только active employees, eligible для целевого restaurant по membership или `organization.manage`, и только используемые ими roles.
 - Реализовано сейчас: `cloud-ui-g` вызывает publication API из отдельной panel. Это gap.
 - Запланировано далее: manual route/panel удаляются; package для подключенного Edge формируется автоматически после effective Cloud changes, а для нового Edge — из актуального state при assignment/first connection.
 - Edge-ready snapshot endpoint возвращает typed ingest DTO, который POS Edge может применить без PowerShell field stripping.
@@ -561,7 +565,7 @@ Managed SQL file, реализовано сейчас:
 - Projections: `cloud_projection_event_type_stats`, `cloud_projection_shift_finance`, `cloud_projection_financial_operations`.
 - Master-data packages: `cloud_master_data_packages`.
 - Currency reference: `cloud_currency_reference`.
-- Master data: `cloud_restaurants`, `cloud_roles`, `cloud_employees`, `cloud_categories`, `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_services`, `cloud_catalog_folders`, `cloud_catalog_folder_parameters`, `cloud_catalog_tags`, `cloud_catalog_item_tags`, `cloud_recipe_items`, `cloud_recipe_versions`, `cloud_recipe_lines`, `cloud_modifier_groups`, `cloud_modifier_options` с nullable `linked_catalog_item_id`, `cloud_modifier_group_bindings`, `cloud_pricing_policies`, `cloud_menu_items`, `cloud_menu_item_modifier_groups`, `cloud_menu_location_assignments`, `cloud_master_data_publications`, `cloud_review_assignment_audit_events`.
+- Master data: `cloud_restaurants`, `cloud_roles`, `cloud_employees`, `cloud_employee_restaurant_memberships`, `cloud_categories`, `cloud_catalog_items`, `cloud_dishes`, `cloud_goods`, `cloud_semi_finished_products`, `cloud_services`, `cloud_catalog_folders`, `cloud_catalog_folder_parameters`, `cloud_catalog_tags`, `cloud_catalog_item_tags`, `cloud_recipe_items`, `cloud_recipe_versions`, `cloud_recipe_lines`, `cloud_modifier_groups`, `cloud_modifier_options` с nullable `linked_catalog_item_id`, `cloud_modifier_group_bindings`, `cloud_pricing_policies`, `cloud_menu_items`, `cloud_menu_item_modifier_groups`, `cloud_menu_location_assignments`, `cloud_master_data_publications`, `cloud_review_assignment_audit_events`.
 - Provisioning: `cloud_edge_nodes`, `cloud_unassigned_edge_nodes`, `cloud_pairing_codes`.
 - Inventory runtime: `inventory_event_queue`, `stock_documents`, `stock_ledger`, `inventory_stock_balances`, `stock_recalculation_jobs`, `stock_recalculation_job_items`, `stock_recalculation_edges`, `stop_lists`.
 - OLAP control state: `olap_export_checkpoints`, `olap_export_retry_commands`.

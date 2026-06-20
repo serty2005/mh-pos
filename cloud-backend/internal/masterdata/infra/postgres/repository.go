@@ -70,10 +70,10 @@ func (r *Repository) ListRestaurants(ctx context.Context) ([]domain.Restaurant, 
 
 func (r *Repository) CreateRole(ctx context.Context, v domain.Role) (domain.Role, error) {
 	out, err := scanRole(r.pool.QueryRow(ctx, `
-INSERT INTO cloud_roles(id,restaurant_id,name,permissions_json,active,cloud_version,archived_at,created_at,updated_at)
-VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9)
-RETURNING id,restaurant_id,name,permissions_json::text,active,cloud_version,archived_at,created_at,updated_at`,
-		v.ID, v.RestaurantID, v.Name, v.PermissionsJSON, v.Active, v.CloudVersion, v.ArchivedAt, v.CreatedAt, v.UpdatedAt))
+INSERT INTO cloud_roles(id,name,permissions_json,active,cloud_version,archived_at,created_at,updated_at)
+VALUES ($1,$2,$3::jsonb,$4,$5,$6,$7,$8)
+RETURNING id,name,permissions_json::text,active,cloud_version,archived_at,created_at,updated_at`,
+		v.ID, v.Name, v.PermissionsJSON, v.Active, v.CloudVersion, v.ArchivedAt, v.CreatedAt, v.UpdatedAt))
 	return out, normalizeErr(err)
 }
 
@@ -82,18 +82,18 @@ func (r *Repository) UpdateRole(ctx context.Context, v domain.Role) (domain.Role
 UPDATE cloud_roles
 SET name=$2,permissions_json=$3::jsonb,active=$4,cloud_version=$5,archived_at=$6,updated_at=$7
 WHERE id=$1
-RETURNING id,restaurant_id,name,permissions_json::text,active,cloud_version,archived_at,created_at,updated_at`,
+RETURNING id,name,permissions_json::text,active,cloud_version,archived_at,created_at,updated_at`,
 		v.ID, v.Name, v.PermissionsJSON, v.Active, v.CloudVersion, v.ArchivedAt, v.UpdatedAt))
 	return out, normalizeErr(err)
 }
 
 func (r *Repository) GetRole(ctx context.Context, id string) (domain.Role, error) {
-	v, err := scanRole(r.pool.QueryRow(ctx, `SELECT id,restaurant_id,name,permissions_json::text,active,cloud_version,archived_at,created_at,updated_at FROM cloud_roles WHERE id = $1`, strings.TrimSpace(id)))
+	v, err := scanRole(r.pool.QueryRow(ctx, `SELECT id,name,permissions_json::text,active,cloud_version,archived_at,created_at,updated_at FROM cloud_roles WHERE id = $1`, strings.TrimSpace(id)))
 	return v, normalizeErr(err)
 }
 
-func (r *Repository) ListRoles(ctx context.Context, restaurantID string) ([]domain.Role, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id,restaurant_id,name,permissions_json::text,active,cloud_version,archived_at,created_at,updated_at FROM cloud_roles WHERE restaurant_id = $1 ORDER BY id`, strings.TrimSpace(restaurantID))
+func (r *Repository) ListRoles(ctx context.Context) ([]domain.Role, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id,name,permissions_json::text,active,cloud_version,archived_at,created_at,updated_at FROM cloud_roles ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -110,31 +110,65 @@ func (r *Repository) ListRoles(ctx context.Context, restaurantID string) ([]doma
 }
 
 func (r *Repository) CreateEmployee(ctx context.Context, v domain.Employee) (domain.Employee, error) {
-	out, err := scanEmployee(r.pool.QueryRow(ctx, `
-INSERT INTO cloud_employees(id,restaurant_id,role_id,name,status,pin_hash,pin_credential_version,permission_snapshot_json,cloud_version,suspended_at,archived_at,created_at,updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13)
-RETURNING id,restaurant_id,role_id,name,status,pin_hash,pin_credential_version,permission_snapshot_json::text,cloud_version,suspended_at,archived_at,created_at,updated_at`,
-		v.ID, v.RestaurantID, v.RoleID, v.Name, v.Status, v.PINHash, v.PINCredentialVersion, v.PermissionSnapshotJSON, v.CloudVersion, v.SuspendedAt, v.ArchivedAt, v.CreatedAt, v.UpdatedAt))
-	return out, normalizeErr(err)
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return domain.Employee{}, err
+	}
+	defer tx.Rollback(ctx)
+	out, err := scanEmployee(tx.QueryRow(ctx, `
+INSERT INTO cloud_employees(id,role_id,name,status,pin_hash,pin_credential_version,permission_snapshot_json,cloud_version,suspended_at,archived_at,created_at,updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12)
+RETURNING id,role_id,name,status,pin_hash,pin_credential_version,permission_snapshot_json::text,cloud_version,suspended_at,archived_at,created_at,updated_at`,
+		v.ID, v.RoleID, v.Name, v.Status, v.PINHash, v.PINCredentialVersion, v.PermissionSnapshotJSON, v.CloudVersion, v.SuspendedAt, v.ArchivedAt, v.CreatedAt, v.UpdatedAt))
+	if err != nil {
+		return domain.Employee{}, normalizeErr(err)
+	}
+	if err := replaceMemberships(ctx, tx, v.ID, v.RestaurantIDs, v.UpdatedAt); err != nil {
+		return domain.Employee{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.Employee{}, err
+	}
+	out.RestaurantIDs, out.AllRestaurants = v.RestaurantIDs, v.AllRestaurants
+	return out, nil
 }
 
 func (r *Repository) UpdateEmployee(ctx context.Context, v domain.Employee) (domain.Employee, error) {
-	out, err := scanEmployee(r.pool.QueryRow(ctx, `
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return domain.Employee{}, err
+	}
+	defer tx.Rollback(ctx)
+	out, err := scanEmployee(tx.QueryRow(ctx, `
 UPDATE cloud_employees
 SET role_id=$2,name=$3,status=$4,pin_hash=$5,pin_credential_version=$6,permission_snapshot_json=$7::jsonb,cloud_version=$8,suspended_at=$9,archived_at=$10,updated_at=$11
 WHERE id=$1
-RETURNING id,restaurant_id,role_id,name,status,pin_hash,pin_credential_version,permission_snapshot_json::text,cloud_version,suspended_at,archived_at,created_at,updated_at`,
+RETURNING id,role_id,name,status,pin_hash,pin_credential_version,permission_snapshot_json::text,cloud_version,suspended_at,archived_at,created_at,updated_at`,
 		v.ID, v.RoleID, v.Name, v.Status, v.PINHash, v.PINCredentialVersion, v.PermissionSnapshotJSON, v.CloudVersion, statusTime(v.Status, domain.EmployeeSuspended, v.SuspendedAt, v.UpdatedAt), v.ArchivedAt, v.UpdatedAt))
-	return out, normalizeErr(err)
+	if err != nil {
+		return domain.Employee{}, normalizeErr(err)
+	}
+	if err := replaceMemberships(ctx, tx, v.ID, v.RestaurantIDs, v.UpdatedAt); err != nil {
+		return domain.Employee{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.Employee{}, err
+	}
+	out.RestaurantIDs, out.AllRestaurants = v.RestaurantIDs, v.AllRestaurants
+	return out, nil
 }
 
 func (r *Repository) GetEmployee(ctx context.Context, id string) (domain.Employee, error) {
-	v, err := scanEmployee(r.pool.QueryRow(ctx, `SELECT id,restaurant_id,role_id,name,status,pin_hash,pin_credential_version,permission_snapshot_json::text,cloud_version,suspended_at,archived_at,created_at,updated_at FROM cloud_employees WHERE id = $1`, strings.TrimSpace(id)))
-	return v, normalizeErr(err)
+	v, err := scanEmployee(r.pool.QueryRow(ctx, `SELECT id,role_id,name,status,pin_hash,pin_credential_version,permission_snapshot_json::text,cloud_version,suspended_at,archived_at,created_at,updated_at FROM cloud_employees WHERE id = $1`, strings.TrimSpace(id)))
+	if err != nil {
+		return v, normalizeErr(err)
+	}
+	v.RestaurantIDs, err = r.listMemberships(ctx, v.ID)
+	return v, err
 }
 
-func (r *Repository) ListEmployees(ctx context.Context, restaurantID string) ([]domain.Employee, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id,restaurant_id,role_id,name,status,pin_hash,pin_credential_version,permission_snapshot_json::text,cloud_version,suspended_at,archived_at,created_at,updated_at FROM cloud_employees WHERE restaurant_id = $1 ORDER BY id`, strings.TrimSpace(restaurantID))
+func (r *Repository) ListEmployees(ctx context.Context) ([]domain.Employee, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id,role_id,name,status,pin_hash,pin_credential_version,permission_snapshot_json::text,cloud_version,suspended_at,archived_at,created_at,updated_at FROM cloud_employees ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +179,40 @@ func (r *Repository) ListEmployees(ctx context.Context, restaurantID string) ([]
 		if err != nil {
 			return nil, err
 		}
+		v.RestaurantIDs, err = r.listMemberships(ctx, v.ID)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func replaceMemberships(ctx context.Context, tx pgx.Tx, employeeID string, restaurantIDs []string, now time.Time) error {
+	if _, err := tx.Exec(ctx, `DELETE FROM cloud_employee_restaurant_memberships WHERE employee_id=$1`, employeeID); err != nil {
+		return err
+	}
+	for _, restaurantID := range restaurantIDs {
+		if _, err := tx.Exec(ctx, `INSERT INTO cloud_employee_restaurant_memberships(employee_id,restaurant_id,created_at,updated_at) VALUES ($1,$2,$3,$3)`, employeeID, restaurantID, now); err != nil {
+			return normalizeErr(err)
+		}
+	}
+	return nil
+}
+
+func (r *Repository) listMemberships(ctx context.Context, employeeID string) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT restaurant_id FROM cloud_employee_restaurant_memberships WHERE employee_id=$1 ORDER BY restaurant_id`, employeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
 	}
 	return out, rows.Err()
 }
@@ -1192,7 +1259,7 @@ type scanner interface {
 
 func scanRole(row scanner) (domain.Role, error) {
 	var v domain.Role
-	err := row.Scan(&v.ID, &v.RestaurantID, &v.Name, &v.PermissionsJSON, &v.Active, &v.CloudVersion, &v.ArchivedAt, &v.CreatedAt, &v.UpdatedAt)
+	err := row.Scan(&v.ID, &v.Name, &v.PermissionsJSON, &v.Active, &v.CloudVersion, &v.ArchivedAt, &v.CreatedAt, &v.UpdatedAt)
 	return v, err
 }
 
@@ -1207,7 +1274,7 @@ func scanRestaurant(row scanner) (domain.Restaurant, error) {
 func scanEmployee(row scanner) (domain.Employee, error) {
 	var v domain.Employee
 	var status string
-	err := row.Scan(&v.ID, &v.RestaurantID, &v.RoleID, &v.Name, &status, &v.PINHash, &v.PINCredentialVersion, &v.PermissionSnapshotJSON, &v.CloudVersion, &v.SuspendedAt, &v.ArchivedAt, &v.CreatedAt, &v.UpdatedAt)
+	err := row.Scan(&v.ID, &v.RoleID, &v.Name, &status, &v.PINHash, &v.PINCredentialVersion, &v.PermissionSnapshotJSON, &v.CloudVersion, &v.SuspendedAt, &v.ArchivedAt, &v.CreatedAt, &v.UpdatedAt)
 	v.Status = domain.EmployeeStatus(status)
 	v.PINConfigured = strings.TrimSpace(v.PINHash) != ""
 	return v, err

@@ -239,6 +239,13 @@ func (s *Service) applyStream(ctx context.Context, stream domain.MasterDataStrea
 		}
 		counts[string(stream)] = len(cmd.Devices)
 	case domain.MasterDataStreamStaff:
+		eligibleIDs := make([]string, 0, len(cmd.Employees))
+		for _, employee := range cmd.Employees {
+			eligibleIDs = append(eligibleIDs, employee.ID)
+		}
+		if err := s.repo.DeactivateMissingMasterEmployees(ctx, cmd.RestaurantID, eligibleIDs, shared.DBTime(now)); err != nil {
+			return err
+		}
 		for i := range cmd.Roles {
 			v := normalizeRole(cmd.Roles[i], now)
 			if err := validateRole(v); err != nil {

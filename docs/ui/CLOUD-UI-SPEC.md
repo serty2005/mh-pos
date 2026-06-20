@@ -47,7 +47,7 @@
 - Dashboard readiness проверяет наличие roles/employees, halls/tables, catalog items, menu items, modifiers/pricing, Edge assignment и publication.
 - Edge sync показывает server-owned pending devices, restaurant-owned assigned devices, assignment status, pairing code generation, safe Edge events list по выбранному устройству и metadata по отправленным Cloud -> Edge master-data packages без раскрытия raw payload.
 - Restaurants раздел управляет restaurant records.
-- Staff/permissions раздел управляет POS Edge roles, employees, role assignment, employee status, PIN rotation и POS permission profiles/matrix; список сотрудников показан компактной таблицей, create/edit сотрудника выполняется в модалке, а редактирование прав идет только через общую матрицу ролей со строками сотрудников только для чтения, которые пересчитываются от текущих прав должности; справочник прав поддерживает поиск и выделение связанного столбца матрицы; это не Cloud operator RBAC и не production Cloud authorization boundary.
+- Staff/permissions раздел управляет tenant-level POS Edge roles/employees, role assignment, employee restaurant memberships, status, PIN rotation и POS permission profiles/matrix; `organization.manage` отображается как доступ ко всем restaurants без отдельных галок; это не Cloud operator RBAC и не production Cloud authorization boundary.
 - Catalog раздел управляет catalog items, folders, folder parameters, tags и command-only item tag assignment.
 - Menu раздел управляет menu items и command-only menu category create.
 - Modifiers раздел управляет modifier groups, options и bindings.
@@ -66,11 +66,11 @@
 - `POST /api/v1/restaurants`
 - `PATCH /api/v1/restaurants/{id}`
 - `POST /api/v1/restaurants/{id}/archive`
-- `GET /api/v1/master-data/roles?restaurant_id=...`
+- `GET /api/v1/master-data/roles`
 - `POST /api/v1/master-data/roles`
 - `PATCH /api/v1/master-data/roles/{id}`
 - `POST /api/v1/master-data/roles/{id}/archive`
-- `GET /api/v1/master-data/employees?restaurant_id=...`
+- `GET /api/v1/master-data/employees`
 - `POST /api/v1/master-data/employees`
 - `PATCH /api/v1/master-data/employees/{id}`
 - `POST /api/v1/master-data/employees/{id}/suspend`

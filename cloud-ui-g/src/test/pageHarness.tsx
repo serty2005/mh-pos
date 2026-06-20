@@ -14,6 +14,7 @@ import type {
   MenuItem,
   PricingPolicy,
   PublicationSummary,
+  Restaurant,
   RestaurantEdgeNode,
   RestaurantTable,
   Role,
@@ -21,6 +22,22 @@ import type {
 } from '../shared/api/schemas';
 
 export const restaurantId = 'restaurant-alpha';
+
+export function restaurant(overrides: Partial<Restaurant> = {}): Restaurant {
+  return {
+    id: restaurantId,
+    name: 'Alpha',
+    timezone: 'Europe/Moscow',
+    currency: 'RUB',
+    business_day_mode: 'standard',
+    business_day_boundary_local_time: '05:00',
+    status: 'active',
+    cloud_version: 1,
+    created_at: '2026-06-01T10:00:00Z',
+    updated_at: '2026-06-01T10:00:00Z',
+    ...overrides,
+  };
+}
 export const nodeDeviceId = 'edge-node-1';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 export const rawMarkers = [
@@ -231,7 +248,6 @@ export function installFetchMock(routes: ApiRoute[]) {
 export function role(overrides: Partial<Role> = {}): Role {
   return {
     id: 'role-manager',
-    restaurant_id: restaurantId,
     name: 'Manager',
     permissions_json: '{"pos.catalog.view":true,"pos.sync.view":true}',
     active: true,
@@ -245,8 +261,9 @@ export function role(overrides: Partial<Role> = {}): Role {
 export function employee(overrides: Partial<Employee> = {}): Employee {
   return {
     id: 'employee-1',
-    restaurant_id: restaurantId,
     role_id: 'role-manager',
+    restaurant_ids: [restaurantId],
+    all_restaurants: false,
     name: 'Alice Manager',
     status: 'active',
     pin_configured: true,

@@ -8,6 +8,20 @@ import (
 	"pos-backend/internal/pos/domain"
 )
 
+// DeactivateMissingMasterEmployees блокирует login и существующие sessions после membership revoke.
+func (r *Repository) DeactivateMissingMasterEmployees(ctx context.Context, restaurantID string, eligibleIDs []string, updatedAt string) error {
+	query := `UPDATE employees SET active=0,updated_at=? WHERE restaurant_id=?`
+	args := []any{updatedAt, restaurantID}
+	if len(eligibleIDs) > 0 {
+		query += ` AND id NOT IN (` + strings.TrimRight(strings.Repeat("?,", len(eligibleIDs)), ",") + `)`
+		for _, id := range eligibleIDs {
+			args = append(args, id)
+		}
+	}
+	_, err := r.execer(ctx).ExecContext(ctx, query, args...)
+	return normalizeErr(err)
+}
+
 func (r *Repository) UpsertMasterRestaurant(ctx context.Context, v *domain.Restaurant, meta domain.MasterRecordSyncMeta) error {
 	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO restaurants(id,name,timezone,currency,business_day_mode,business_day_boundary_local_time,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)

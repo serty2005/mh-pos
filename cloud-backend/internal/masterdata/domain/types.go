@@ -69,7 +69,6 @@ type Restaurant struct {
 // Role описывает Cloud-authored роль и snapshot прав для доставки на POS Edge.
 type Role struct {
 	ID              string     `json:"id"`
-	RestaurantID    string     `json:"restaurant_id"`
 	Name            string     `json:"name"`
 	PermissionsJSON string     `json:"permissions_json"`
 	Active          bool       `json:"active"`
@@ -79,11 +78,26 @@ type Role struct {
 	ArchivedAt      *time.Time `json:"archived_at,omitempty"`
 }
 
+// ManagesOrganization сообщает, что роль охватывает все рестораны tenant без memberships.
+func (r Role) ManagesOrganization() bool {
+	var value map[string]any
+	if json.Unmarshal([]byte(r.PermissionsJSON), &value) != nil {
+		return false
+	}
+	for _, permission := range permissionsFromJSON(value) {
+		if permission == "organization.manage" {
+			return true
+		}
+	}
+	return false
+}
+
 // Employee описывает Cloud-authored сотрудника без раскрытия PIN credential в API JSON.
 type Employee struct {
 	ID                     string         `json:"id"`
-	RestaurantID           string         `json:"restaurant_id"`
 	RoleID                 string         `json:"role_id"`
+	RestaurantIDs          []string       `json:"restaurant_ids"`
+	AllRestaurants         bool           `json:"all_restaurants"`
 	Name                   string         `json:"name"`
 	Status                 EmployeeStatus `json:"status"`
 	PINHash                string         `json:"-"`
@@ -949,6 +963,7 @@ func permissionsFromJSON(raw map[string]any) []string {
 }
 
 var knownPermissionIDs = map[string]struct{}{
+	"organization.manage":               {},
 	"pos.employee_shift.open":           {},
 	"pos.employee_shift.close":          {},
 	"pos.employee_shift.view_current":   {},
