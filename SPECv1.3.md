@@ -24,6 +24,7 @@
 Реализовано сейчас:
 
 - cashier-first POS Edge runtime;
+- основной cashier flow является нелицензируемым базовым runtime: локальные смены, меню, заказ, precheck, payment, final check, reprint и financial operation ledger должны работать без module entitlement, если Edge имеет локальные данные;
 - PIN login/session/RBAC;
 - personal employee shifts;
 - cash sessions and cash drawer events;
@@ -48,6 +49,7 @@
 Цель полной пилотной реализации:
 
 - cashier runtime остается обязательным базовым потоком и не расширяется фискализацией/PSP-интеграцией до отдельного решения;
+- post-MVP бесплатный автономный POS Edge должен работать без внешнего Cloud: локальный владелец создает простые позиции меню на самом Edge, кассир продает их через базовый cashier flow, а подключение внешнего Cloud, tenant management, automatic delivery, analytics и расширенных рабочих пространств включается только покупкой лицензий;
 - manager runtime должен позволять через Cloud UI подготовить ресторан, роли, сотрудников, зал/столы, catalog/menu/modifiers/pricing, recipes и stop-list, опубликовать master-data и увидеть readiness/sync состояние Edge;
 - waiter runtime должен расширяться как mobile-first POS UI route для выбора стола, создания/изменения заказа, выбора модификаторов, выпуска и повторной печати precheck без права оплаты, если роль не имеет cashier payment permissions;
 - advanced KDS runtime уже поддерживает ticket lifecycle `new -> accepted -> in_progress -> ready -> served` с ветками `hold`, `recall` и `cancelled`; POS Edge backend и `pos-ui-g` для receipt/count/write-off/production, recipe read, catalog/recipe proposal input и bounded stop-list edit form поверх `POST /api/v1/kitchen/stop-list-updates` реализованы сейчас, а расширения по станциям/приоритету, cooking events и production-grade stop-list review polish остаются `запланировано далее`;
@@ -55,6 +57,7 @@
 - kitchen worker может видеть техкарту и отправлять `RecipeChangeSuggested` с заменой ингредиента, правкой количества/единицы/потерь и изменением prep time в пределах параметра `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES`; правка не применяется на Edge и не меняет Cloud recipe до review/apply шага;
 - kitchen worker должен видеть и редактировать stop-list; конфликт Cloud/Edge изменений разрешается параметром `stop_list_conflict_policy`, а один catalog item может быть добавлен Cloud-стороной и одновременно ограничен/исключен Edge-стороной через active overlay и `available_quantity`;
 - waiter runtime должен быть единственным mobile layout в POS UI: mobile-first route `/pos/waiter` для залов, заказов и ограниченной аналитики; cashier/KDS/manager modes не получают отдельные mobile variants в полном пилоте;
+- `waiter-space` лицензирует отдельный официантский доступ, а не shared order/precheck/payment backend. Текущие order routes используются кассиром и не должны закрываться целиком по `waiter-space`; backend enforcement нужен на waiter-only facade/route/worker или другом backend-owned признаке официантского контекста. UI route или frontend header не являются security boundary.
 - stop-list является единственным механизмом runtime-блокировки продаж: POS Edge должен локально блокировать блюдо или обязательный recipe component из active stop-list даже offline;
 - `CheckClosed` и `ItemServed` являются текущими inventory facts: Cloud принимает их через `sync/exchange`, дедуплицирует и передает Cloud Inventory Worker; при наличии уже принятого superseding `ItemServed` для той же order line Worker пропускает superseded served fact, а если старый served fact уже обработан, пишет append-only `ItemServedCompensation` return ledger перед новой подачей; `KitchenTicketStatusChanged` остается operational-only event без складской проводки;
 - Cloud Inventory Engine должен закрыть полный пилотный складской контур: recipes, stop-list, stock receipts, inventory counts, production, consumption, cancellation/refund dispositions, stock ledger, stock documents, stock balances и costing/recalculation state;
@@ -298,6 +301,7 @@ Boundary rules:
 - `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted` и `ItemServed` являются Edge/KDS input events, а не Edge stock documents.
 - `KitchenTicketStatusChanged` является operational-only Edge/KDS event без Cloud Inventory Worker проводки. `CatalogItemChangeSuggested` и `RecipeChangeSuggested` реализованы сейчас на POS Edge как proposal events с локальным статусом `pending_sync`; Cloud review/apply реализован сейчас через manager approve/reject/request-changes routes. `StopListUpdated` реализован сейчас как Edge -> Cloud audit/projection event: receiver validates/enqueues, Inventory Worker writes safe projection without raw payload, and `stop_list_conflict_policy` supports `cloud_wins`, `edge_overlay_until_next_publication`, `edge_overlay_requires_manager_review` with default `edge_overlay_requires_manager_review`.
 - `RefundRecorded` и `CancellationRecorded` передают operation-level `inventory_disposition`: `return_to_stock`, `write_off_waste`, `manual_review` или `no_stock_effect`. Текущий payload не содержит отдельного `items[].inventory_disposition`. Реализовано сейчас: Cloud нормализует `whole_check` и `order_line` из immutable snapshots; `service_charge`, `tip`, `payment` и `modifier_line` без authoritative linked catalog item не создают складское движение.
+- License boundary для Edge -> Cloud: базовые cashier financial facts остаются частью подключенного Cloud-контура, но module-owned события не должны попадать в batch и worker processing при выключенном entitlement. `kitchen-space` закрывает KDS/kitchen events и proposals, `warehouse-mode` закрывает receipt/count/write-off/production и Cloud inventory worker, будущий `waiter-space` закрывает waiter-only commands/events после выделения backend-discriminated waiter surface. Выключение модуля не удаляет уже сохраненные локальные данные.
 
 Inventory and costing logic:
 

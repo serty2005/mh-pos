@@ -1,6 +1,6 @@
 ﻿# Текущее функциональное состояние проекта
 
-Статус: реализовано сейчас по коду, тестам и документации на 2026-06-20; цели полного и выставочного альфа-пилотов зафиксированы отдельно и не считаются текущим runtime.
+Статус: реализовано сейчас по коду, тестам и документации на 2026-06-21; цели полного и выставочного альфа-пилотов зафиксированы отдельно и не считаются текущим runtime.
 
 Этот документ является сводной картой фактического состояния репозитория. Он не заменяет профильные спецификации: архитектурные инварианты остаются в `SPECv1.3.md`, backend-контракты - в `docs/backend/*`, контракты интерфейсов - в `docs/ui/*`, синхронизация - в `docs/sync/*`.
 
@@ -17,11 +17,13 @@
 Не обнаружено сейчас:
 
 - Подтвержденного runtime для delivery, настоящего платежного процессинга, фискального адаптера, COGS/margin OLAP reads, production BI, production-grade kitchen timing API и расширенных cooking events за пределами ticket lifecycle foundation.
-- Автоматическая Cloud -> Edge доставка без manual publish, QR-enabled ticket issuance, physical ESC/POS printing, Telegram reports и sales dashboard пока не реализованы. External License Server, versioned entitlement snapshots и backend gates для существующих table/kitchen/warehouse surfaces реализованы сейчас; будущие telegram/waiter/checker runtime получают gates вместе со своими routes/workers. Tenant-level roles/employees, employee restaurant memberships, `organization.manage`, tenant catalog identity и restaurant menu overrides реализованы сейчас. Master-data CRUD не обновляет Edge package автоматически, Cloud UI вызывает manual publish route; reprint возвращает snapshot без printer orchestration. QR checker/enrollment/relay/confirm перенесены в post-deploy цикл. Целевой контракт описан в `docs/project-management/EXHIBITION-ALPHA-PILOT-REQUIREMENTS.md`.
+- Автоматическая Cloud -> Edge доставка без manual publish, QR-enabled ticket issuance, physical ESC/POS printing, Telegram reports и sales dashboard пока не реализованы. External License Server, versioned entitlement snapshots и backend gates для существующих table/kitchen/warehouse surfaces реализованы сейчас; будущие telegram/waiter/checker runtime получают gates вместе со своими routes/workers. Основной cashier flow является базовым нелицензируемым runtime; `waiter-space` не должен закрывать shared order/precheck/payment backend, пока нет отдельного backend-discriminated waiter surface. Tenant-level roles/employees, employee restaurant memberships, `organization.manage`, tenant catalog identity и restaurant menu overrides реализованы сейчас. Master-data CRUD не обновляет Edge package автоматически, Cloud UI вызывает manual publish route; reprint возвращает snapshot без printer orchestration. QR checker/enrollment/relay/confirm перенесены в post-deploy цикл. Целевой контракт описан в `docs/project-management/EXHIBITION-ALPHA-PILOT-REQUIREMENTS.md`.
 
 Цель полной пилотной реализации:
 
 - сохранить текущий cashier runtime как базовый поток;
+- сохранить cashier runtime вне product licenses: локальные смены, меню, заказ, precheck, payment, final check, reprint и financial operation ledger должны работать на Edge при наличии локальных данных;
+- после MVP поддержать бесплатный автономный Edge без внешнего Cloud, где локальный владелец создает простое меню на самом Edge, а Cloud/tenant management/delivery/analytics/дополнительные рабочие пространства подключаются лицензиями;
 - stop-list sale blocking на POS Edge с Cloud authoring/publication и offline локальной проверкой уже подтвержден в `pos_stop_list_sale_blocking`;
 - расширять mobile-first waiter runtime без payment/refund authority по умолчанию только по подтвержденным backend contracts;
 - расширить KDS lifecycle за пределы текущего backend-backed ticket/stock/proposal/stop-list foundation: cooking events, station priority и operator analytics;
@@ -204,6 +206,7 @@
 - `scripts/seed-dev-system.py` проверяет health Cloud/POS/License, создает полный Cloud-owned seed dataset, создает active recipe versions через manager draft -> submit -> approve flow, публикует master data, выполняет license pairing POS Edge и проверяет базовый POS read model.
 - `scripts/seed-dev-system.py --run-minimal-flow` выполняет минимальный HTTP-only smoke: Cloud recipes/stop-list publication, Edge sync, waiter order/precheck, KDS served, cashier payment/final check, прием `ItemServed`/`CheckClosed` в Cloud, появление строк Cloud `stock_ledger` по `ItemServed`, появление materialized `stock-balances`, отсутствие duplicate `CheckClosed` delta для того же `order_line_id`, экспорт событий в ClickHouse `raw_business_events`, экспорт складских движений в `olap_stock_moves` и bounded reads `stock-move-summary`/`sales-kitchen-summary` без raw payload.
 - `scripts/seed-dev-system.py --run-kitchen-process-smoke` выполняет профильный kitchen/process smoke: Cloud seed publication для catalog/menu/recipes/inventory_reference, Edge sync, waiter order, kitchen order tile, `accept/start/ready/serve`, `recall/start/ready/serve`, ClickHouse `raw_business_events`, Cloud stock ledger и `olap_stock_moves` read для receipt/count/write-off/production, catalog/recipe suggestions, Cloud manager approve и Edge proposal feedback. При одновременном запуске `--run-minimal-flow` и `--run-kitchen-process-smoke` summary содержит отдельные секции `minimal_flow` и `kitchen_process_smoke`; полный kitchen/process smoke использует kitchen role/PIN, а не manager PIN.
+- Лицензионная цель для дальнейших smoke: Edge -> Cloud batch должен содержать только module-owned события включенных модулей; базовые cashier financial facts остаются синхронизируемым ядром подключенного Cloud-контура.
 - PowerShell/Bash wrappers и прежние onboarding flows удалены; в `scripts` остается один пользовательский Python seed script.
 - HTTP слой скриптов игнорирует proxy для localhost/loopback, чтобы не ломать Docker published ports.
 - Seed/smoke guards закрепляют отсутствие direct DB client imports, запрет destructive storage/archive routes и отсутствие automatic retry financial mutations.

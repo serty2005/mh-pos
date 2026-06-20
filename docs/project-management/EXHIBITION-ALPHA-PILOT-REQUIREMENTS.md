@@ -2,7 +2,7 @@
 
 Статус: требования первого выставочного запуска согласованы; QR-проверка билетов перенесена в следующий post-deploy цикл.
 
-Дата актуализации: 2026-06-20.
+Дата актуализации: 2026-06-21.
 
 Документ фиксирует выставки как частный случай общей RMS-POS платформы. Отдельный клиентский fork, exhibition-only runtime и hardcoded product profile запрещены. Конечный функционал Cloud и Edge собирается лицензиями.
 
@@ -21,7 +21,7 @@
 | Аналитика | Продажи видны на главной Cloud-бэкофиса по restaurant, категории билета, service, business date и смене. |
 | Telegram | Отчеты отправляются по расписанию и/или после закрытия кассовой смены согласно настройке ресторана. |
 | Сотрудники и роли | Роли и сотрудники принадлежат tenant; доступ к ресторанам задается employee memberships. |
-| Лицензии | License authority включает модули Cloud/Edge; UI скрывает, а backend блокирует нелицензированный функционал. |
+| Лицензии | Базовая кассовая продажа не отключается лицензиями; License authority включает Cloud/Edge модули поверх нее, UI скрывает, а backend блокирует нелицензированный функционал. |
 
 ## 2. Главный сценарий приемки
 
@@ -29,7 +29,7 @@
 2. Управляющий включает сотрудникам доступ к ресторанам; `organization.manage` автоматически охватывает все рестораны tenant.
 3. Менеджер ресторана выбирает catalog service и создает menu item со своими названием, ценой, тегом, налогом и папкой.
 4. Для услуги включаются `qr_confirmation_enabled`, validity policy и зависимый признак `single_unit_per_line`.
-5. Поставщик назначает tenant лицензии; entitlement snapshot становится доступен автоматически.
+5. Поставщик назначает tenant лицензии для дополнительных модулей; базовая кассовая продажа остается доступной на Edge при наличии локальных данных.
 6. После подключения Edge Cloud собирает актуальный разрешенный batch, а Edge забирает его при плановой синхронизации без ручной публикации.
 7. Кассир входит по PIN в разрешенном ресторане, открывает личную и кассовую смены.
 8. Кассир продает один или несколько билетов как услуги. Каждая единица остается отдельной order line quantity `1`; без `table-mode` checkout автоматически выпускает backend-authoritative precheck без отдельного экрана залов, столов и пречека.
@@ -54,7 +54,8 @@
 - tenant-level catalog identity и restaurant menu overrides для name, price, tag, active tax, menu folder, availability и runtime status;
 - Edge outbox, Cloud event receive, PostgreSQL operational storage и async ClickHouse export;
 - bounded OLAP foundation и Cloud dashboard shell;
-- Edge pairing через License Server stub.
+- внешний License Server как authority для versioned entitlement snapshots, stale grace и backend gates реализованных table/kitchen/warehouse surfaces;
+- Edge pairing через License Server.
 
 ### 3.2. Не реализовано и обязательно до запуска
 
@@ -63,10 +64,9 @@
 - физическая ESC/POS-очередь, драйверы, шаблоны, delivery status и retries;
 - реальные sales/ticket projections и KPI главной Cloud-бэкофиса;
 - restaurant-level Telegram settings, безопасный recipient onboarding и worker;
-- внешний licensing authority, module entitlements и backend enforcement;
 - production deployment, backup/restore и hardware acceptance.
 
-Текущие reprint endpoints возвращают snapshot и audit result, но не управляют физическим принтером. Текущий License Server является pairing stub, а не licensing authority. Telegram runtime отсутствует.
+Текущие reprint endpoints возвращают snapshot и audit result, но не управляют физическим принтером. License gates для будущих waiter/telegram/checker runtime добавляются вместе с соответствующими backend-discriminated routes/workers. Telegram runtime отсутствует.
 
 ## 4. Организация, рестораны и master data
 
@@ -121,6 +121,21 @@ Role и Employee являются tenant-level справочниками. Resta
 - управляющий рестораном использует обычную роль и явные memberships;
 - Cloud UI фильтры не заменяют backend authorization;
 - публикация на Edge содержит только сотрудников, которым разрешен этот restaurant, плюс актуальный permission snapshot.
+
+## 6.1. Базовая касса и лицензируемые рабочие пространства
+
+Продажа билетов первого запуска идет через базовый cashier flow `Order -> Precheck -> Payment -> Check`. Этот flow не должен зависеть от `waiter-space`, `kitchen-space`, `warehouse-mode`, `telegram-worker` или `checker-flow`.
+
+Лицензии включают только дополнительные Cloud/Edge возможности:
+
+- `table-mode` — залы/столы и table-bound flow;
+- `waiter-space` — отдельный официантский mobile/API доступ, когда он различим backend-стороной;
+- `kitchen-space` — KDS/kitchen runtime и kitchen events;
+- `warehouse-mode` — складские формы, inventory worker и module-owned складские события;
+- `telegram-worker` — отправку Telegram-отчетов;
+- `checker-flow` — post-deploy QR lookup/confirm/revoke runtime.
+
+Если модуль выключен, новые module-owned данные не создаются в Edge commands, Edge batch и Cloud workers. Уже сохраненные данные не удаляются. Базовые cashier financial facts остаются частью подключенного Cloud-контура.
 
 ## 7. QR-enabled service и ticket issuance
 
@@ -217,14 +232,14 @@ License Server становится внешним authority для tenant/serve
 
 | License | Включаемый функционал |
 | --- | --- |
-| `table-mode` | Залы, столы, precheck flow и соответствующие Cloud-настройки. |
+| `table-mode` | Залы, столы, table-bound flow, отдельный table precheck UI и соответствующие Cloud-настройки. |
 | `telegram-worker` | Telegram UI, routes, settings и worker. |
 | `kitchen-space` | Кухонный UI и все kitchen operations. |
-| `waiter-space` | Мобильные заказы, меню и precheck официанта; checker endpoint boundary остается отдельно. |
+| `waiter-space` | Отдельный mobile-first доступ официанта поверх backend-recognized waiter surface; базовый cashier order/precheck/payment/check flow остается доступным отдельно. |
 | `checker-flow` | Страница и backend commands проверки билетов. |
 | `warehouse-mode` | Склады, inventory workers, costing и recalculation. |
 
-Лицензия проверяется на Cloud и Edge trust boundaries. Скрытие UI не является security boundary. Нелицензированные routes возвращают стабильный safe error и не запускают workers.
+Лицензия проверяется на Cloud и Edge trust boundaries. Скрытие UI не является security boundary. Нелицензированные module-owned routes возвращают стабильный safe error и не запускают workers. Базовая кассовая продажа не блокируется отсутствием дополнительных module entitlements.
 
 Допустимый срок работы без authority задается поставщиком в deployment config конкретного сервера. Клиент не может его читать или менять. В пределах stale grace используется последний валидный snapshot с видимым status; после истечения лицензируемый функционал блокируется fail-closed без удаления данных.
 

@@ -46,6 +46,7 @@
 - Telegram reports настраиваются на restaurant и отправляются по расписанию и/или после закрытия кассовой смены;
 - внешний License Server является authority для `table-mode`, `telegram-worker`, `kitchen-space`, `waiter-space`, `checker-flow`, `warehouse-mode` и будущих entitlement IDs;
 - Cloud и Edge backend блокируют нелицензированные routes/workers, а UI скрывает соответствующие разделы;
+- основной cashier flow является нелицензируемым базовым runtime и должен оставаться доступным на Edge при наличии локальных данных; `waiter-space` лицензирует отдельный официантский доступ, а не shared order/precheck/payment backend;
 - stale grace задается поставщиком в deployment config сервера и недоступен клиенту;
 - требуются single-host runbook, backup/restore, printer hardware acceptance и сквозной smoke.
 
@@ -54,7 +55,7 @@
 - текущие catalog, role и employee schema остаются restaurant-owned и требуют tenant migration;
 - текущий runtime требует manual publication после CRUD; автоматическая per-Edge batch assembly и удаление Publish UI/API еще не реализованы;
 - physical printer orchestration, ticket issuance, Telegram worker и реальный sales dashboard отсутствуют;
-- License Server authority и gates существующих table/kitchen/warehouse surfaces реализованы; gates будущих telegram/waiter/checker runtime добавляются вместе с соответствующими routes/workers;
+- License Server authority и gates существующих table/kitchen/warehouse surfaces реализованы; gates будущих telegram/waiter/checker runtime добавляются вместе с соответствующими routes/workers. Для `waiter-space` требуется backend-discriminated waiter surface/facade, потому что текущие order routes являются базовой кассой и не закрываются лицензией;
 - не зафиксированы целевые модели ESC/POS-принтеров и production RPO/RTO.
 
 Следующий post-deploy цикл:
@@ -66,6 +67,7 @@
 ## Принципы
 
 - POS Edge остается авторитетным для offline-команд заказа, пречека, оплаты, финального чека, финансового журнала, pricing snapshot, idempotency, границ смен/кассы, stop-list sale blocking и KDS command validation.
+- Post-MVP бесплатный автономный Edge сохраняет эту базовую кассу без внешнего Cloud и позволяет локально создать простое меню для собственного Edge; покупка лицензии подключает Cloud, tenant management, delivery, analytics и дополнительные рабочие пространства.
 - POS UI не считает authoritative totals и не принимает финансовые или складские решения.
 - POS Edge и KDS являются генераторами неизменяемых business events и интерфейсом ввода складских фактов.
 - POS Edge не создает Cloud-owned stock documents, stock moves, stock balances и costing state.
@@ -76,6 +78,7 @@
 - Синхронная двойная запись в PostgreSQL и ClickHouse в request path запрещена.
 - Активный Cloud UI target — `cloud-ui-g`; устаревший Vue `cloud-ui` удален из runtime tree и больше не принимает Cloud-бэкофисные фичи.
 - Выставка является только набором tenant/restaurant data и licenses; отдельный fork или exhibition-only runtime запрещен.
+- Edge -> Cloud batch и Cloud workers должны уважать module ownership: module-owned события выключенного `kitchen-space`, `warehouse-mode`, будущего `waiter-space`, `telegram-worker` или `checker-flow` не отправляются/не обрабатываются как новые module data; базовые cashier financial facts остаются синхронизируемым ядром подключенного Cloud-контура.
 
 ---
 

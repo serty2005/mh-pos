@@ -1,14 +1,14 @@
 # Итерации кодогенерации выставочного запуска
 
-Статус: готово к последовательной реализации задач первого запуска.
+Статус: первые три итерации закрыты; `POS-65` готова к старту как следующая задача.
 
-Дата проверки: 2026-06-20.
+Дата проверки: 2026-06-21.
 
 Этот документ является runbook для непосредственной генерации кода. Он не копирует Plane: перед каждой итерацией агент обязан заново прочитать work item, relations и комментарии. Plane хранит текущее состояние работы, Git — требования, код и тесты.
 
 ## Вердикт
 
-Кодогенерацию можно начинать с первой незаблокированной задачи в состоянии `Ready`.
+Кодогенерацию можно продолжать с `POS-65`: зависимости `POS-61`, `POS-62` и `POS-42` проверены человеком и переведены в `Done`.
 
 На момент проверки первый безопасный порядок:
 
@@ -18,6 +18,49 @@
 4. `POS-65` — автоматическая Cloud -> Edge доставка.
 
 Весь launch cycle еще не готов к непрерывному выполнению: `POS-38`, `POS-41`, `POS-43`, `POS-44`, `POS-45`, `POS-64` остаются `Specified` до закрытия зависимостей или внешних решений. Агент не начинает такую задачу и не переводит ее в `Ready` предположением.
+
+## Срез после итерации 3
+
+Проверено 2026-06-21 после коммита `e0e8357` и последующих документальных уточнений лицензируемых границ.
+
+- `POS-61`, `POS-62` и `POS-42` находятся в `Done` в Plane после ручной проверки.
+- POS-42 реализован сейчас в runtime code, security tests, локальном Docker smoke и профильной документации.
+- POS-42 Plane item прочитан: state `Review`, labels `agent-ready`, `tests`, `security`, `frontend`, `backend`; итоговый комментарий фиксирует License Server, fail-closed Cloud/Edge gates, stale grace, revoke/expiry, backup, UI visibility, sync filtering и worker enforcement.
+- `list_work_item_relations` для POS-42 все еще падает на MCP schema validation: Plane server возвращает relation objects, connector ожидает строки UUID. Ограничение остается в `POS-66`; для текущего review использована fallback-таблица зависимостей ниже.
+
+### Docker POS Edge
+
+Отдельный `pos_edge_sqlite_data` volume в `docker-compose.igor.yml` является только локальным Docker/smoke harness для POS Edge. Он сохраняет `/app/data` между restart/rebuild контейнера: `pos-edge.db`, backups и archives. Это нужно для проверки POS-42 acceptance `данные при отключении не удаляются`, revoke/rebuild сценариев и воспроизводимого full-stack smoke с Cloud, License Server, PostgreSQL и ClickHouse.
+
+Это не целевой deployment contract для клиента. Целевой POS Edge остается исполняемым файлом в Windows-окружении POS-станции с локальными путями данных, backup и archive из deployment config. Для Windows-specific поведения, путей, service wrapper и локального SQLite надежнее дополнительно запускать `pos-edge` локально вне Docker; Docker-окружение пока оставляется как интеграционный стенд, а не замена локальной проверки.
+
+### POS-42 Закрепленные Решения
+
+Перед стартом POS-65 приняты следующие границы:
+
+1. Первый review finding по `waiter-space` уточнен: основной cashier flow является нелицензируемой базовой частью POS Edge и должен оставаться доступным всегда при наличии локальных данных. Нельзя закрывать `waiter-space` все `/api/v1/orders...`, `/api/v1/menu/items`, precheck/payment/check routes целиком, потому что это shared cashier backend surface. `waiter-space` должен применяться к отдельному waiter-доступу: mobile waiter route/API facade, waiter-only commands/events или другому backend-owned признаку официантского контекста. UI route `/pos/waiter` или frontend header не является security boundary.
+2. Post-MVP целевое решение: полностью бесплатный автономный POS Edge без внешнего Cloud. Edge локально хранит данные в SQLite, локальный владелец создает простые позиции меню для собственного Edge, кассир продает через базовый `Order -> Precheck -> Payment -> Check`, backup/archive остаются локальными. Покупка лицензии подключает внешний Cloud, tenant management, автоматическую доставку master data, Cloud analytics, waiter mobile, KDS/advanced kitchen, warehouse engine, Telegram, checker и будущие модули. Это тот же runtime/profile, а не fork продукта.
+3. Cloud generic provisioning package routes `/api/v1/provisioning/master-data/{stream}` пока не сопоставлены с module entitlements в `cloudModuleForRequest`. Sync exchange фильтрует disabled `floor`, `recipes` и `inventory` streams, но прямой package GET/PUT может читать или записывать package для выключенного модуля. Это важно перед POS-65, потому что следующая итерация меняет доставку Cloud -> Edge.
+4. Edge -> Cloud data boundary нужно довести до общего правила: Cloud-side не должен формировать данные из выключенных workers или заблокированных routes, а Edge batch должен содержать только module-owned события включенных лицензий. Базовые cashier financial facts остаются синхронизируемым ядром подключенного Cloud-контура. `kitchen-space` владеет KDS/kitchen events и proposals; `warehouse-mode` владеет receipt/count/write-off/production и Cloud inventory worker; будущий `waiter-space` владеет waiter-only commands/events после выделения backend-discriminated waiter surface.
+5. Дополнительно на Edge-стороне нужно закрыть работу с module-owned данными по entitlement: выключенный модуль не открывает новые commands/UI-backed routes и не добавляет новые module-owned outbox rows. Уже сохраненные данные не удаляются.
+6. Browser Playwright по POS-42 не выполнен из-за закрытия transport окружения. UI покрыт component/helper tests и production builds; браузерная проверка не блокирует старт POS-65 после ручной проверки первых трех итераций.
+7. npm audit предупреждения остаются внешним риском текущего frontend dependency state: Cloud UI — 1 high; POS UI — 2 low, 1 moderate, 1 high. Они не блокируют старт POS-65.
+
+### Проверки POS-42
+
+По итоговому Plane comment и последнему коммиту пройдены:
+
+- `cd license-server && go mod tidy && go test ./...`;
+- `cd cloud-backend && go mod tidy && go test ./...`;
+- `cd pos-backend && go mod tidy && go test ./...`;
+- `cd shared/platform && go test ./...`;
+- Python seed tests: 16/16;
+- POS UI: lint, tests 65/65, build;
+- Cloud UI: lint, tests 46/46, build;
+- полный seed, minimal flow и kitchen smoke;
+- Docker rebuild, health endpoints, `git diff --check`.
+
+После этого review runtime code не изменялся. Изменения плана фиксируют текущее состояние и разрешают старт POS-65.
 
 ## Результат аудита Plane
 
