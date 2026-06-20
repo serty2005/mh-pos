@@ -10,7 +10,7 @@
 
 Каждый промпт ниже предполагает:
 
-- работа ведется в репозитории `/home/serty/repos/mh-pos`;
+- работа ведется в репозитории `/home/master/repos/myhoreca-pos`;
 - ответы и документация пишутся на русском языке;
 - сначала читаются `AGENTS.md`, `docs/project-management/PLANE-POPULATION-PLAN.md`, `tools/plane-mcp/README.md` и профильные документы;
 - Plane write-операции выполняются только для явно назначенной задачи;
@@ -699,7 +699,7 @@ Runtime code не менять, если задача specification.
 
 Если контракт или зависимость не определены, оставь `Specified`; переводи в `Ready` только задачу с исполнимыми criteria и проверками. Не выставляй `Done`. Не создавай новую задачу, если gap уже покрыт существующей карточкой.
 
-Рекомендуемый launch-порядок: POS-61, POS-62, POS-65, POS-42, POS-52, POS-53, POS-48, POS-64, POS-40, POS-41, POS-63, POS-38, POS-43, POS-44, POS-45, POS-47, POS-46. POS-39 является родительским scope только post-deploy QR-проверки.
+Рекомендуемый launch-порядок: POS-61, POS-62, POS-42, POS-65, POS-52, POS-53, POS-48, POS-64, POS-40, POS-41, POS-63, POS-38, POS-43, POS-44, POS-45, POS-47, POS-46. Подробные execution prompts находятся в `docs/project-management/ALPHA-LAUNCH-CODEGEN-ITERATIONS.md`. POS-39 является родительским scope только post-deploy QR-проверки.
 
 В конце добавь Plane comment: что проверено, что изменено, какие факты подтверждены кодом, какие зависимости остались и почему выбран итоговый state.
 ```
