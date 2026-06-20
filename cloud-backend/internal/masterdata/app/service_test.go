@@ -614,6 +614,7 @@ func TestRecipeVersionDraftSubmitApprovePublishesActiveVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	repo.AssignEdgeNodeForTest(restaurant.ID, "node-recipe")
 	dish, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: restaurant.ID, Kind: domain.CatalogItemDish, Name: "Soup", SKU: "SOUP-DRAFT", BaseUnit: "portion"})
 	if err != nil {
 		t.Fatal(err)
@@ -749,6 +750,7 @@ func TestStopListUpdateReviewApprovePublishesCloudAuthorityWithoutRawPayload(t *
 	ctx := context.Background()
 	now := fixedClock{}.Now()
 	quantity := 0.0
+	repo.AssignEdgeNodeForTest("restaurant-1", "edge-1")
 	repo.SeedStopListUpdateReview(domain.StopListUpdateReview{
 		ID:                "event-stop-1",
 		RestaurantID:      "restaurant-1",
@@ -810,6 +812,7 @@ func TestCatalogSuggestionApproveAcceptsCurrentCreateAction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	repo.AssignEdgeNodeForTest(restaurant.ID, "node-suggestion")
 	payload := json.RawMessage(`{"data":{"action":"create","kind":"good","name":"Smoke Herb","sku":"SMOKE-HERB","base_unit":"g","kitchen_type":"hot","accounting_category":"good"}}`)
 	repo.SeedCatalogSuggestion(domain.CatalogSuggestion{
 		ID:              "catalog-suggestion-1",

@@ -83,7 +83,7 @@ export default function DashboardPage({ restaurantId }: DashboardPageProps) {
       </section>
 
       <LaunchReadinessPanel restaurantId={restaurantId} hasPublication={Boolean(publication)} />
-      <PublicationPanel restaurantId={restaurantId} canPublish={Boolean(restaurantId)} />
+      <PublicationPanel restaurantId={restaurantId} />
     </div>
   );
 }

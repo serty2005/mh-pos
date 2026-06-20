@@ -118,6 +118,12 @@ func NewRouterWithProvisioningOLAPAndLicense(service *app.Service, provisioningS
 func cloudModuleForRequest(r *http.Request) string {
 	path := r.URL.Path
 	switch {
+	case strings.Contains(path, "/provisioning/master-data/floor"):
+		return licensegate.TableMode
+	case strings.Contains(path, "/provisioning/master-data/recipes"):
+		return licensegate.KitchenSpace
+	case strings.Contains(path, "/provisioning/master-data/inventory_reference"):
+		return licensegate.WarehouseMode
 	case strings.Contains(path, "/master-data/floor/") || strings.Contains(path, "/master-data/halls") || strings.Contains(path, "/master-data/tables"):
 		return licensegate.TableMode
 	case strings.Contains(path, "/master-data/recipes/") || strings.Contains(path, "/master-data/recipe-suggestions"):

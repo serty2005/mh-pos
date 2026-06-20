@@ -250,7 +250,7 @@ Role/employee routes являются tenant-level и не принимают `r
   - `POST /api/v1/master-data/recipe-suggestions/{id}/approve`
   - `POST /api/v1/master-data/recipe-suggestions/{id}/reject`
   - `POST /api/v1/master-data/recipe-suggestions/{id}/request-changes`
-  - Review command body для approve/reject/request-changes: `reviewed_by_employee_id`, optional `review_comment`, optional `published_by`; approve применяет suggestion и создает новую master-data publication, reject/request-changes меняют только review status/comment metadata.
+  - Review command body для approve/reject/request-changes: `reviewed_by_employee_id`, optional `review_comment`; approve применяет suggestion и запускает automatic delivery refresh для назначенных Edge, reject/request-changes меняют только review status/comment metadata.
 - Реализовано сейчас для Edge-origin stop-list review:
   - `GET /api/v1/manager/stop-list-updates?restaurant_id=&status=&limit=&offset=`
   - `GET /api/v1/manager/stop-list-updates/{id}`
@@ -280,7 +280,6 @@ Role/employee routes являются tenant-level и не принимают `r
 - `GET /api/v1/master-data/menu/items/{id}`
 - `PATCH /api/v1/master-data/menu/items/{id}`
 - `POST /api/v1/master-data/menu/items/{id}/archive`
-- `POST /api/v1/master-data/publications`
 - `GET /api/v1/master-data/published`
 
 Production-oriented aliases:
@@ -324,7 +323,6 @@ Production-oriented aliases:
 - `GET /api/v1/tables`
 - `PATCH /api/v1/tables/{id}`
 - `POST /api/v1/tables/{id}/archive`
-- `POST /api/v1/restaurants/{id}/master-data/publish`
 - `GET /api/v1/restaurants/{id}/master-data/publication-state`
 - `GET /api/v1/restaurants/{id}/master-data/packages/latest`
 - `GET /api/v1/restaurants/{id}/master-data/packages/{package_id}`
@@ -334,9 +332,9 @@ Production-oriented aliases:
 
 - Master-data mutation routes используют strict JSON decode: неизвестные поля отклоняются.
 - Некоторые aliases сохранены для production-like сценариев и Cloud UI compatibility; canonical Cloud UI может использовать `/master-data/...` routes.
-- `GET /api/v1/restaurants/{id}/master-data/publication-state` до первой публикации возвращает `200 null`.
+- `GET /api/v1/restaurants/{id}/master-data/publication-state` до первого assignment/automatic refresh возвращает `200 null`.
 
-Целевой API удаляет user-facing `POST .../publish`. Master-data mutation атомарно обновляет logical stream version; read-only delivery status показывает Cloud/Edge checkpoints и lag. При отсутствии назначенных Edge package rows не создаются.
+Реализовано сейчас: user-facing `POST .../publish` удален из Cloud API. До Edge assignment package rows не создаются; assignment/pairing собирает current full batch для конкретного Edge, а подтвержденные Cloud master-data commits обновляют latest package rows только для назначенных Edge. Scheduled `sync/exchange` доставляет только package version новее Edge-provided checkpoint. Persistent Cloud-side Edge ACK/lag read model остается запланировано далее; текущий Cloud UI показывает safe read-only Cloud version metadata без manual action.
 
 ## Error Contract And Logging
 
@@ -403,14 +401,10 @@ PIN policy:
 
 ## Publication Workflow
 
-Реализовано сейчас:
-
-- Publication создает монотонную версию для ресторана.
-- Publication сохраняет `cloud_master_data_publications`.
-- Publication строит deterministic stream packages и сохраняет их в `cloud_master_data_packages`.
+- Реализовано сейчас: automatic delivery refresh создает монотонную Cloud version для ресторана, сохраняет `cloud_master_data_publications`, строит deterministic stream packages и upsert-ит latest rows в `cloud_master_data_packages` только для назначенных Edge.
 - `staff` package содержит только active employees, eligible для целевого restaurant по membership или `organization.manage`, и только используемые ими roles.
-- Реализовано сейчас: `cloud-ui-g` вызывает publication API из отдельной panel. Это gap.
-- Запланировано далее: manual route/panel удаляются; package для подключенного Edge формируется автоматически после effective Cloud changes, а для нового Edge — из актуального state при assignment/first connection.
+- Реализовано сейчас: `cloud-ui-g` показывает read-only delivery metadata и не вызывает manual publish API.
+- Запланировано далее: persistent Cloud-side delivery status по Edge ACK/checkpoint/lag/error.
 - Edge-ready snapshot endpoint возвращает typed ingest DTO, который POS Edge может применить без PowerShell field stripping.
 
 Текущие published streams:

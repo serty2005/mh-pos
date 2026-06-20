@@ -38,6 +38,7 @@ type Repository struct {
 	menuItems               map[string]domain.MenuItem
 	publications            map[string][]domain.Publication
 	packages                map[string]app.StreamPackage
+	assignedNodes           map[string]map[string]struct{}
 	catalogSuggestions      map[string]domain.CatalogSuggestion
 	recipeSuggestions       map[string]domain.RecipeSuggestion
 	recipeSuggestionChanges map[string][]domain.RecipeSuggestionChange
@@ -69,6 +70,7 @@ func NewRepository() *Repository {
 		menuItems:               map[string]domain.MenuItem{},
 		publications:            map[string][]domain.Publication{},
 		packages:                map[string]app.StreamPackage{},
+		assignedNodes:           map[string]map[string]struct{}{},
 		restaurants:             map[string]domain.Restaurant{},
 		catalogSuggestions:      map[string]domain.CatalogSuggestion{},
 		recipeSuggestions:       map[string]domain.RecipeSuggestion{},
@@ -874,6 +876,45 @@ func (r *Repository) ListMenuItems(_ context.Context, restaurantID string) ([]do
 		}
 	}
 	return out, nil
+}
+
+func (r *Repository) ListAssignedNodeDeviceIDs(_ context.Context, restaurantID string) ([]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	nodes := r.assignedNodes[strings.TrimSpace(restaurantID)]
+	out := make([]string, 0, len(nodes))
+	for nodeDeviceID := range nodes {
+		out = append(out, nodeDeviceID)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func (r *Repository) ListAssignedRestaurantIDs(_ context.Context) ([]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, 0, len(r.assignedNodes))
+	for restaurantID, nodes := range r.assignedNodes {
+		if restaurantID != "" && len(nodes) > 0 {
+			out = append(out, restaurantID)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func (r *Repository) AssignEdgeNodeForTest(restaurantID, nodeDeviceID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	restaurantID = strings.TrimSpace(restaurantID)
+	nodeDeviceID = strings.TrimSpace(nodeDeviceID)
+	if restaurantID == "" || nodeDeviceID == "" {
+		return
+	}
+	if r.assignedNodes[restaurantID] == nil {
+		r.assignedNodes[restaurantID] = map[string]struct{}{}
+	}
+	r.assignedNodes[restaurantID][nodeDeviceID] = struct{}{}
 }
 
 func (r *Repository) NextPublicationVersion(_ context.Context, restaurantID string) (int64, error) {

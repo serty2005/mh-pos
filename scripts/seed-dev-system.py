@@ -673,14 +673,6 @@ def seed_full_system(
             )
             table_ids.append(created_table["id"])
 
-    publication = request(
-        cloud_client,
-        "POST",
-        f"{API_PREFIX}/master-data/publications",
-        {"restaurant_id": restaurant_id, "node_device_id": node_device_id, "published_by": "seed-dev-system"},
-        expected_status=(201,),
-    )
-
     pairing = request(
         cloud_client,
         "POST",
@@ -691,6 +683,12 @@ def seed_full_system(
     pairing_code = pairing["pairing_code"]
     paired = request(pos_client, "POST", f"{API_PREFIX}/system/provisioning/pair-via-license", {"pairing_code": pairing_code}, expected_status=(200,))
     verify_pos_ready(pos_client, restaurant_id, node_device_id, client_device_id, pins["manager_pin"], wait_seconds, interval_seconds)
+    publication = request(
+        cloud_client,
+        "GET",
+        f"{API_PREFIX}/restaurants/{restaurant_id}/master-data/publication-state",
+        expected_status=(200,),
+    )
 
     summary = {
         "restaurant_id": restaurant_id,
@@ -841,7 +839,6 @@ def create_and_approve_recipe_versions(cloud_client, restaurant_id, catalog_ids,
             {
                 "reviewed_by_employee_id": manager_employee_id,
                 "review_comment": "approved by seed-dev-system manager flow",
-                "published_by": "seed-dev-system",
             },
             expected_status=(200,),
         )
@@ -1373,7 +1370,6 @@ def run_kitchen_process_smoke_flow(
     review_body = {
         "reviewed_by_employee_id": "seed-dev-system-manager",
         "review_comment": "approved by kitchen process smoke",
-        "published_by": "seed-dev-system-smoke",
     }
     approved_catalog = request(
         cloud_client,

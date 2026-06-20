@@ -281,6 +281,6 @@ POS sync sender доставляет Edge -> Cloud operational rows автома
 - после pairing через license code или Cloud assignment `pos-edge` прекращает повторный device registration/snapshot provisioning poll;
 - локальные Edge outbox rows отправляются через authenticated `sync/exchange` на ближайшем worker tick;
 - пустой `sync/exchange` для Cloud -> Edge pull ограничен отдельным interval, чтобы локальный Docker stack не создавал шумный Cloud access log при отсутствии локальных событий.
-- Реализовано сейчас: `cloud-ui-g` вызывает publication API с default `published_by = cloud-ui-g`; это подтвержденный gap. Целевой smoke не выполняет manual publish: после pairing/assignment Cloud автоматически собирает current batch, а последующие CRUD changes приходят на Edge через scheduled exchange.
+- Реализовано сейчас: canonical seed/smoke не вызывает manual publish API. После pairing/assignment Cloud автоматически собирает current batch, а последующие Cloud CRUD changes обновляют latest packages для назначенных Edge и приходят на Edge через scheduled exchange.
 
 вне текущего объема: production serving `pos-ui-g`/`cloud-ui-g` из Docker Compose, devbox service в текущем compose и production auth perimeter для Cloud/License API.

@@ -134,7 +134,7 @@ export default function CloudManagerApp() {
           ) : null}
 
           {activeRouteId === 'publications' && isRestaurantSelected ? (
-            <PublicationPanel restaurantId={selectedRestaurantId} canPublish={isRestaurantSelected} />
+            <PublicationPanel restaurantId={selectedRestaurantId} />
           ) : null}
 
           {activeRouteId === 'edge-sync' && isRestaurantSelected ? (

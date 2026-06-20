@@ -106,6 +106,8 @@ type Repository interface {
 	UpdateMenuItem(context.Context, domain.MenuItem) (domain.MenuItem, error)
 	GetMenuItem(context.Context, string) (domain.MenuItem, error)
 	ListMenuItems(context.Context, string) ([]domain.MenuItem, error)
+	ListAssignedNodeDeviceIDs(context.Context, string) ([]string, error)
+	ListAssignedRestaurantIDs(context.Context) ([]string, error)
 	NextPublicationVersion(context.Context, string) (int64, error)
 	SavePublication(context.Context, domain.Publication, []StreamPackage) (domain.Publication, error)
 	GetCurrentPublication(context.Context, string) (domain.Publication, error)
@@ -143,6 +145,35 @@ func NewService(repo Repository, clock clock.Clock, ids IDGenerator) *Service {
 		ids = idgen.UUIDGenerator{}
 	}
 	return &Service{repo: repo, clock: clock, ids: ids}
+}
+
+func afterRestaurantCommit[T any](s *Service, ctx context.Context, restaurantID string, v T, err error) (T, error) {
+	if err != nil {
+		return v, err
+	}
+	if strings.TrimSpace(restaurantID) == "" {
+		return v, nil
+	}
+	if _, refreshErr := s.RefreshDeliveryPackages(ctx, restaurantID); refreshErr != nil {
+		return v, refreshErr
+	}
+	return v, nil
+}
+
+func afterTenantCommit[T any](s *Service, ctx context.Context, v T, err error) (T, error) {
+	if err != nil {
+		return v, err
+	}
+	restaurantIDs, err := s.repo.ListAssignedRestaurantIDs(ctx)
+	if err != nil {
+		return v, err
+	}
+	for _, restaurantID := range restaurantIDs {
+		if _, refreshErr := s.RefreshDeliveryPackages(ctx, restaurantID); refreshErr != nil {
+			return v, refreshErr
+		}
+	}
+	return v, nil
 }
 
 // CreateRoleCommand описывает создание роли с JSON snapshot прав.
@@ -571,7 +602,8 @@ func (s *Service) CreateRestaurant(ctx context.Context, cmd CreateRestaurantComm
 		CreatedAt:                    now,
 		UpdatedAt:                    now,
 	}
-	return s.repo.CreateRestaurant(ctx, restaurant)
+	stored, err := s.repo.CreateRestaurant(ctx, restaurant)
+	return afterRestaurantCommit(s, ctx, restaurant.ID, stored, err)
 }
 
 // ListRestaurants возвращает рестораны для будущего Cloud UI/backoffice.
@@ -626,7 +658,8 @@ func (s *Service) UpdateRestaurant(ctx context.Context, id string, cmd UpdateRes
 	if restaurant.Status != domain.RestaurantArchived {
 		restaurant.ArchivedAt = nil
 	}
-	return s.repo.UpdateRestaurant(ctx, restaurant)
+	stored, err := s.repo.UpdateRestaurant(ctx, restaurant)
+	return afterRestaurantCommit(s, ctx, restaurant.ID, stored, err)
 }
 
 // ArchiveRestaurant выполняет soft-delete ресторана.
@@ -658,7 +691,8 @@ func (s *Service) CreateRole(ctx context.Context, cmd CreateRoleCommand) (domain
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
-	return s.repo.CreateRole(ctx, role)
+	stored, err := s.repo.CreateRole(ctx, role)
+	return afterTenantCommit(s, ctx, stored, err)
 }
 
 // ListRoles возвращает tenant-level роли.
@@ -706,7 +740,8 @@ func (s *Service) UpdateRole(ctx context.Context, id string, cmd UpdateRoleComma
 		archivedAt := role.UpdatedAt
 		role.ArchivedAt = &archivedAt
 	}
-	return s.repo.UpdateRole(ctx, role)
+	stored, err := s.repo.UpdateRole(ctx, role)
+	return afterTenantCommit(s, ctx, stored, err)
 }
 
 // ArchiveRole архивирует роль без физического удаления.
@@ -756,7 +791,8 @@ func (s *Service) CreateEmployee(ctx context.Context, cmd CreateEmployeeCommand)
 		CreatedAt:              now,
 		UpdatedAt:              now,
 	}
-	return s.repo.CreateEmployee(ctx, employee)
+	stored, err := s.repo.CreateEmployee(ctx, employee)
+	return afterTenantCommit(s, ctx, stored, err)
 }
 
 // ListEmployees возвращает tenant-level сотрудников и их memberships.
@@ -845,7 +881,8 @@ func (s *Service) UpdateEmployee(ctx context.Context, id string, cmd UpdateEmplo
 	if employee.Status != domain.EmployeeArchived {
 		employee.ArchivedAt = nil
 	}
-	return s.repo.UpdateEmployee(ctx, employee)
+	stored, err := s.repo.UpdateEmployee(ctx, employee)
+	return afterTenantCommit(s, ctx, stored, err)
 }
 
 // SuspendEmployee переводит сотрудника в состояние, недоступное для POS login.
@@ -889,7 +926,8 @@ func (s *Service) RotateEmployeePIN(ctx context.Context, id string, cmd RotatePI
 	employee.PINCredentialVersion++
 	employee.CloudVersion++
 	employee.UpdatedAt = s.clock.Now().UTC()
-	return s.repo.UpdateEmployee(ctx, employee)
+	stored, err := s.repo.UpdateEmployee(ctx, employee)
+	return afterTenantCommit(s, ctx, stored, err)
 }
 
 // CreateCatalogItem создает draft catalog item в Cloud-owned catalog.
@@ -916,7 +954,8 @@ func (s *Service) CreateCatalogItem(ctx context.Context, cmd CreateCatalogItemCo
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}
-	return s.repo.CreateCatalogItem(ctx, item)
+	stored, err := s.repo.CreateCatalogItem(ctx, item)
+	return afterRestaurantCommit(s, ctx, item.RestaurantID, stored, err)
 }
 
 // ListCatalogItems возвращает catalog items ресторана.
@@ -980,7 +1019,8 @@ func (s *Service) UpdateCatalogItem(ctx context.Context, id string, cmd UpdateCa
 	if item.Status != domain.StatusArchived {
 		item.ArchivedAt = nil
 	}
-	return s.repo.UpdateCatalogItem(ctx, item)
+	stored, err := s.repo.UpdateCatalogItem(ctx, item)
+	return afterRestaurantCommit(s, ctx, item.RestaurantID, stored, err)
 }
 
 // ArchiveCatalogItem архивирует catalog item без физического удаления.
@@ -996,7 +1036,8 @@ func (s *Service) CreateCatalogFolder(ctx context.Context, cmd CreateCatalogFold
 	}
 	now := s.clock.Now().UTC()
 	folder := domain.CatalogFolder{ID: s.ids.NewID(), RestaurantID: restaurantID, ParentID: strings.TrimSpace(cmd.ParentID), Name: name, SortOrder: cmd.SortOrder, Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
-	return s.repo.CreateCatalogFolder(ctx, folder)
+	stored, err := s.repo.CreateCatalogFolder(ctx, folder)
+	return afterRestaurantCommit(s, ctx, folder.RestaurantID, stored, err)
 }
 
 func (s *Service) ListCatalogFolders(ctx context.Context, restaurantID string) ([]domain.CatalogFolder, error) {
@@ -1032,7 +1073,8 @@ func (s *Service) UpdateCatalogFolder(ctx context.Context, id string, cmd Update
 	if folder.Status != domain.StatusArchived {
 		folder.ArchivedAt = nil
 	}
-	return s.repo.UpdateCatalogFolder(ctx, folder)
+	stored, err := s.repo.UpdateCatalogFolder(ctx, folder)
+	return afterRestaurantCommit(s, ctx, folder.RestaurantID, stored, err)
 }
 
 func (s *Service) ArchiveCatalogFolder(ctx context.Context, id string) (domain.CatalogFolder, error) {
@@ -1048,7 +1090,8 @@ func (s *Service) CreateFolderParameter(ctx context.Context, cmd CreateFolderPar
 	}
 	now := s.clock.Now().UTC()
 	parameter := domain.FolderParameter{ID: s.ids.NewID(), RestaurantID: restaurantID, FolderID: folderID, Key: key, ValueType: valueType, ValueJSON: canonicalJSON(valueJSON), Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
-	return s.repo.CreateFolderParameter(ctx, parameter)
+	stored, err := s.repo.CreateFolderParameter(ctx, parameter)
+	return afterRestaurantCommit(s, ctx, parameter.RestaurantID, stored, err)
 }
 
 func (s *Service) ListFolderParameters(ctx context.Context, restaurantID string) ([]domain.FolderParameter, error) {
@@ -1084,7 +1127,8 @@ func (s *Service) UpdateFolderParameter(ctx context.Context, id string, cmd Upda
 	if parameter.Status != domain.StatusArchived {
 		parameter.ArchivedAt = nil
 	}
-	return s.repo.UpdateFolderParameter(ctx, parameter)
+	stored, err := s.repo.UpdateFolderParameter(ctx, parameter)
+	return afterRestaurantCommit(s, ctx, parameter.RestaurantID, stored, err)
 }
 
 func (s *Service) CreateCatalogTag(ctx context.Context, cmd CreateCatalogTagCommand) (domain.CatalogTag, error) {
@@ -1094,7 +1138,8 @@ func (s *Service) CreateCatalogTag(ctx context.Context, cmd CreateCatalogTagComm
 	}
 	now := s.clock.Now().UTC()
 	tag := domain.CatalogTag{ID: s.ids.NewID(), RestaurantID: restaurantID, Name: name, Code: code, Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
-	return s.repo.CreateCatalogTag(ctx, tag)
+	stored, err := s.repo.CreateCatalogTag(ctx, tag)
+	return afterRestaurantCommit(s, ctx, tag.RestaurantID, stored, err)
 }
 
 func (s *Service) ListCatalogTags(ctx context.Context, restaurantID string) ([]domain.CatalogTag, error) {
@@ -1127,7 +1172,8 @@ func (s *Service) UpdateCatalogTag(ctx context.Context, id string, cmd UpdateCat
 	if tag.Status != domain.StatusArchived {
 		tag.ArchivedAt = nil
 	}
-	return s.repo.UpdateCatalogTag(ctx, tag)
+	stored, err := s.repo.UpdateCatalogTag(ctx, tag)
+	return afterRestaurantCommit(s, ctx, tag.RestaurantID, stored, err)
 }
 
 func (s *Service) AssignCatalogItemTag(ctx context.Context, cmd AssignCatalogItemTagCommand) (domain.CatalogItemTag, error) {
@@ -1142,7 +1188,8 @@ func (s *Service) AssignCatalogItemTag(ctx context.Context, cmd AssignCatalogIte
 		return domain.CatalogItemTag{}, err
 	}
 	tag := domain.CatalogItemTag{RestaurantID: restaurantID, CatalogItemID: itemID, TagID: tagID, CloudVersion: 1, CreatedAt: s.clock.Now().UTC()}
-	return s.repo.AssignCatalogItemTag(ctx, tag)
+	stored, err := s.repo.AssignCatalogItemTag(ctx, tag)
+	return afterRestaurantCommit(s, ctx, tag.RestaurantID, stored, err)
 }
 
 func (s *Service) CreateModifierGroup(ctx context.Context, cmd CreateModifierGroupCommand) (domain.ModifierGroup, error) {
@@ -1152,7 +1199,8 @@ func (s *Service) CreateModifierGroup(ctx context.Context, cmd CreateModifierGro
 	}
 	now := s.clock.Now().UTC()
 	group := domain.ModifierGroup{ID: s.ids.NewID(), RestaurantID: restaurantID, Name: name, Required: cmd.Required, MinCount: cmd.MinCount, MaxCount: cmd.MaxCount, Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
-	return s.repo.CreateModifierGroup(ctx, group)
+	stored, err := s.repo.CreateModifierGroup(ctx, group)
+	return afterRestaurantCommit(s, ctx, group.RestaurantID, stored, err)
 }
 
 func (s *Service) ListModifierGroups(ctx context.Context, restaurantID string) ([]domain.ModifierGroup, error) {
@@ -1194,7 +1242,8 @@ func (s *Service) UpdateModifierGroup(ctx context.Context, id string, cmd Update
 	if group.Status != domain.StatusArchived {
 		group.ArchivedAt = nil
 	}
-	return s.repo.UpdateModifierGroup(ctx, group)
+	stored, err := s.repo.UpdateModifierGroup(ctx, group)
+	return afterRestaurantCommit(s, ctx, group.RestaurantID, stored, err)
 }
 
 func (s *Service) CreateModifierOption(ctx context.Context, cmd CreateModifierOptionCommand) (domain.ModifierOption, error) {
@@ -1212,7 +1261,8 @@ func (s *Service) CreateModifierOption(ctx context.Context, cmd CreateModifierOp
 	}
 	now := s.clock.Now().UTC()
 	option := domain.ModifierOption{ID: s.ids.NewID(), RestaurantID: restaurantID, ModifierGroupID: groupID, LinkedCatalogItemID: linkedCatalogItemID, Name: name, PriceMinor: price, Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
-	return s.repo.CreateModifierOption(ctx, option)
+	stored, err := s.repo.CreateModifierOption(ctx, option)
+	return afterRestaurantCommit(s, ctx, option.RestaurantID, stored, err)
 }
 
 func (s *Service) ListModifierOptions(ctx context.Context, restaurantID string) ([]domain.ModifierOption, error) {
@@ -1255,7 +1305,8 @@ func (s *Service) UpdateModifierOption(ctx context.Context, id string, cmd Updat
 	if option.Status != domain.StatusArchived {
 		option.ArchivedAt = nil
 	}
-	return s.repo.UpdateModifierOption(ctx, option)
+	stored, err := s.repo.UpdateModifierOption(ctx, option)
+	return afterRestaurantCommit(s, ctx, option.RestaurantID, stored, err)
 }
 
 func (s *Service) CreateModifierGroupBinding(ctx context.Context, cmd CreateModifierGroupBindingCommand) (domain.ModifierGroupBinding, error) {
@@ -1268,7 +1319,8 @@ func (s *Service) CreateModifierGroupBinding(ctx context.Context, cmd CreateModi
 	}
 	now := s.clock.Now().UTC()
 	binding := domain.ModifierGroupBinding{ID: s.ids.NewID(), RestaurantID: restaurantID, ModifierGroupID: groupID, TargetType: cmd.TargetType, TargetID: targetID, SortOrder: cmd.SortOrder, Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
-	return s.repo.CreateModifierGroupBinding(ctx, binding)
+	stored, err := s.repo.CreateModifierGroupBinding(ctx, binding)
+	return afterRestaurantCommit(s, ctx, binding.RestaurantID, stored, err)
 }
 
 func (s *Service) ListModifierGroupBindings(ctx context.Context, restaurantID string) ([]domain.ModifierGroupBinding, error) {
@@ -1298,7 +1350,8 @@ func (s *Service) UpdateModifierGroupBinding(ctx context.Context, id string, cmd
 	if binding.Status != domain.StatusArchived {
 		binding.ArchivedAt = nil
 	}
-	return s.repo.UpdateModifierGroupBinding(ctx, binding)
+	stored, err := s.repo.UpdateModifierGroupBinding(ctx, binding)
+	return afterRestaurantCommit(s, ctx, binding.RestaurantID, stored, err)
 }
 
 func (s *Service) CreatePricingPolicy(ctx context.Context, cmd CreatePricingPolicyCommand) (domain.PricingPolicy, error) {
@@ -1321,7 +1374,8 @@ func (s *Service) CreatePricingPolicy(ctx context.Context, cmd CreatePricingPoli
 	}
 	now := s.clock.Now().UTC()
 	policy := domain.PricingPolicy{ID: s.ids.NewID(), RestaurantID: restaurantID, Name: name, Kind: cmd.Kind, Scope: scope, AmountKind: strings.TrimSpace(cmd.AmountKind), AmountMinor: cmd.AmountMinor, ValueBasisPoints: cmd.ValueBasisPoints, ApplicationIndex: cmd.ApplicationIndex, Manual: cmd.Manual, RequiresPermission: strings.TrimSpace(cmd.RequiresPermission), Status: domain.StatusPublished, CloudVersion: 1, CreatedAt: now, UpdatedAt: now}
-	return s.repo.CreatePricingPolicy(ctx, policy)
+	stored, err := s.repo.CreatePricingPolicy(ctx, policy)
+	return afterRestaurantCommit(s, ctx, policy.RestaurantID, stored, err)
 }
 
 func (s *Service) ListPricingPolicies(ctx context.Context, restaurantID string) ([]domain.PricingPolicy, error) {
@@ -1384,7 +1438,8 @@ func (s *Service) UpdatePricingPolicy(ctx context.Context, id string, cmd Update
 	if policy.Status != domain.StatusArchived {
 		policy.ArchivedAt = nil
 	}
-	return s.repo.UpdatePricingPolicy(ctx, policy)
+	stored, err := s.repo.UpdatePricingPolicy(ctx, policy)
+	return afterRestaurantCommit(s, ctx, policy.RestaurantID, stored, err)
 }
 
 // CreateRecipeItem добавляет Cloud-owned recipe component для будущей публикации на Edge.
@@ -1417,7 +1472,8 @@ func (s *Service) CreateRecipeItem(ctx context.Context, cmd CreateRecipeItemComm
 		CreatedAt:                now,
 		UpdatedAt:                now,
 	}
-	return s.repo.CreateRecipeItem(ctx, item)
+	stored, err := s.repo.CreateRecipeItem(ctx, item)
+	return afterRestaurantCommit(s, ctx, item.RestaurantID, stored, err)
 }
 
 // ListRecipeItems возвращает recipe reference rows ресторана.
@@ -1621,7 +1677,8 @@ func (s *Service) UpdateRecipeItem(ctx context.Context, id string, cmd UpdateRec
 		item.LossPercent = *cmd.LossPercent
 	}
 	item.UpdatedAt = s.clock.Now().UTC()
-	return s.repo.UpdateRecipeItem(ctx, item)
+	stored, err := s.repo.UpdateRecipeItem(ctx, item)
+	return afterRestaurantCommit(s, ctx, item.RestaurantID, stored, err)
 }
 
 // UpsertStopListEntry создает или обновляет Cloud-owned stop-list row по restaurant/catalog item.
@@ -1657,7 +1714,8 @@ func (s *Service) UpsertStopListEntry(ctx context.Context, cmd UpsertStopListEnt
 		CloudVersion:      &version,
 		UpdatedAt:         now,
 	}
-	return s.repo.UpsertStopListEntry(ctx, entry)
+	stored, err := s.repo.UpsertStopListEntry(ctx, entry)
+	return afterRestaurantCommit(s, ctx, entry.RestaurantID, stored, err)
 }
 
 // ListStopListEntries возвращает Cloud-owned stop-list rows ресторана.
@@ -1689,7 +1747,8 @@ func (s *Service) UpdateStopListEntry(ctx context.Context, id string, cmd Upsert
 	}
 	entry.CloudVersion = &version
 	entry.UpdatedAt = s.clock.Now().UTC()
-	return s.repo.UpsertStopListEntry(ctx, entry)
+	stored, err := s.repo.UpsertStopListEntry(ctx, entry)
+	return afterRestaurantCommit(s, ctx, entry.RestaurantID, stored, err)
 }
 
 // DeactivateStopListEntry переводит stop-list row в inactive, чтобы Edge получил явное снятие блокировки.
@@ -1736,7 +1795,8 @@ func (s *Service) CreateHall(ctx context.Context, cmd CreateHallCommand) (domain
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	return s.repo.CreateHall(ctx, hall)
+	stored, err := s.repo.CreateHall(ctx, hall)
+	return afterRestaurantCommit(s, ctx, hall.RestaurantID, stored, err)
 }
 
 // ListHalls возвращает Cloud-owned залы ресторана.
@@ -1768,7 +1828,8 @@ func (s *Service) UpdateHall(ctx context.Context, id string, cmd UpdateHallComma
 	if hall.Status != domain.StatusArchived {
 		hall.ArchivedAt = nil
 	}
-	return s.repo.UpdateHall(ctx, hall)
+	stored, err := s.repo.UpdateHall(ctx, hall)
+	return afterRestaurantCommit(s, ctx, hall.RestaurantID, stored, err)
 }
 
 // ArchiveHall архивирует зал без физического удаления.
@@ -1807,7 +1868,8 @@ func (s *Service) CreateTable(ctx context.Context, cmd CreateTableCommand) (doma
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	return s.repo.CreateTable(ctx, table)
+	stored, err := s.repo.CreateTable(ctx, table)
+	return afterRestaurantCommit(s, ctx, table.RestaurantID, stored, err)
 }
 
 // ListTables возвращает Cloud-owned столы ресторана.
@@ -1855,7 +1917,8 @@ func (s *Service) UpdateTable(ctx context.Context, id string, cmd UpdateTableCom
 	if table.Status != domain.StatusArchived {
 		table.ArchivedAt = nil
 	}
-	return s.repo.UpdateTable(ctx, table)
+	stored, err := s.repo.UpdateTable(ctx, table)
+	return afterRestaurantCommit(s, ctx, table.RestaurantID, stored, err)
 }
 
 // ArchiveTable архивирует стол без физического удаления.
@@ -1916,7 +1979,8 @@ func (s *Service) CreateMenuItem(ctx context.Context, cmd CreateMenuItemCommand)
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	return s.repo.CreateMenuItem(ctx, item)
+	stored, err := s.repo.CreateMenuItem(ctx, item)
+	return afterRestaurantCommit(s, ctx, item.RestaurantID, stored, err)
 }
 
 // ListMenuItems возвращает menu items ресторана.
@@ -2014,7 +2078,8 @@ func (s *Service) UpdateMenuItem(ctx context.Context, id string, cmd UpdateMenuI
 	if item.Status != domain.StatusArchived {
 		item.ArchivedAt = nil
 	}
-	return s.repo.UpdateMenuItem(ctx, item)
+	stored, err := s.repo.UpdateMenuItem(ctx, item)
+	return afterRestaurantCommit(s, ctx, item.RestaurantID, stored, err)
 }
 
 // ArchiveMenuItem архивирует menu item без физического удаления.
@@ -2024,6 +2089,9 @@ func (s *Service) ArchiveMenuItem(ctx context.Context, id string) (domain.MenuIt
 }
 
 // Publish создает versioned deterministic package для Cloud -> Edge sync.
+//
+// Deprecated: production delivery обновляется автоматическими refresh-методами после
+// assignment и Cloud commits. Метод оставлен для внутренних тестов и legacy route.
 func (s *Service) Publish(ctx context.Context, cmd PublishCommand) (PublicationSummary, error) {
 	restaurantID := strings.TrimSpace(cmd.RestaurantID)
 	publishedBy := strings.TrimSpace(cmd.PublishedBy)
@@ -2052,6 +2120,77 @@ func (s *Service) Publish(ctx context.Context, cmd PublishCommand) (PublicationS
 		CloudVersion:  version,
 		PublishedAt:   now,
 		PublishedBy:   publishedBy,
+		PackageJSON:   body,
+		PackageSHA256: hex.EncodeToString(sum[:]),
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	stored, err := s.repo.SavePublication(ctx, pub, streamPackages)
+	if err != nil {
+		return PublicationSummary{}, err
+	}
+	return summarizePublication(stored, counts), nil
+}
+
+// RefreshDeliveryPackages обновляет latest Cloud -> Edge packages для всех назначенных Edge выбранного ресторана.
+func (s *Service) RefreshDeliveryPackages(ctx context.Context, restaurantID string) (PublicationSummary, error) {
+	restaurantID = strings.TrimSpace(restaurantID)
+	if restaurantID == "" {
+		return PublicationSummary{}, fmt.Errorf("%w: restaurant_id is required", domain.ErrInvalid)
+	}
+	nodeDeviceIDs, err := s.repo.ListAssignedNodeDeviceIDs(ctx, restaurantID)
+	if err != nil {
+		return PublicationSummary{}, err
+	}
+	if len(nodeDeviceIDs) == 0 {
+		return PublicationSummary{}, nil
+	}
+	return s.refreshDeliveryPackages(ctx, restaurantID, nodeDeviceIDs, "cloud-auto")
+}
+
+// RefreshDeliveryPackagesForNode собирает current full batch при assignment/first connection конкретного Edge.
+func (s *Service) RefreshDeliveryPackagesForNode(ctx context.Context, restaurantID, nodeDeviceID string) (PublicationSummary, error) {
+	restaurantID = strings.TrimSpace(restaurantID)
+	nodeDeviceID = strings.TrimSpace(nodeDeviceID)
+	if restaurantID == "" || nodeDeviceID == "" {
+		return PublicationSummary{}, fmt.Errorf("%w: restaurant_id and node_device_id are required", domain.ErrInvalid)
+	}
+	return s.refreshDeliveryPackages(ctx, restaurantID, []string{nodeDeviceID}, "edge-assignment")
+}
+
+func (s *Service) refreshDeliveryPackages(ctx context.Context, restaurantID string, nodeDeviceIDs []string, publishedBy string) (PublicationSummary, error) {
+	version, err := s.repo.NextPublicationVersion(ctx, restaurantID)
+	if err != nil {
+		return PublicationSummary{}, err
+	}
+	now := s.clock.Now().UTC()
+	var packet domain.MasterDataPacket
+	var counts map[string]int
+	streamPackages := make([]StreamPackage, 0, len(nodeDeviceIDs)*9)
+	for index, nodeDeviceID := range nodeDeviceIDs {
+		nextPacket, nextCounts, streams, err := s.buildPacket(ctx, restaurantID, strings.TrimSpace(nodeDeviceID), version, now)
+		if err != nil {
+			return PublicationSummary{}, err
+		}
+		if index == 0 {
+			packet = nextPacket
+			counts = nextCounts
+		}
+		streamPackages = append(streamPackages, streams...)
+	}
+	body, err := json.Marshal(packet)
+	if err != nil {
+		return PublicationSummary{}, err
+	}
+	sum := sha256.Sum256(body)
+	pub := domain.Publication{
+		ID:            s.ids.NewID(),
+		RestaurantID:  restaurantID,
+		Version:       version,
+		Status:        domain.StatusPublished,
+		CloudVersion:  version,
+		PublishedAt:   now,
+		PublishedBy:   strings.TrimSpace(publishedBy),
 		PackageJSON:   body,
 		PackageSHA256: hex.EncodeToString(sum[:]),
 		CreatedAt:     now,
@@ -2244,8 +2383,7 @@ func (s *Service) ApproveCatalogSuggestion(ctx context.Context, id string, cmd S
 	if err != nil {
 		return domain.CatalogSuggestion{}, err
 	}
-	_, err = s.Publish(ctx, PublishCommand{RestaurantID: v.RestaurantID, PublishedBy: firstNonEmpty(strings.TrimSpace(cmd.PublishedBy), firstNonEmpty(v.ReviewedByEmployeeID, "system"))})
-	if err != nil {
+	if _, err := s.RefreshDeliveryPackages(ctx, v.RestaurantID); err != nil {
 		return domain.CatalogSuggestion{}, err
 	}
 	return stored, nil
@@ -2277,8 +2415,7 @@ func (s *Service) ApproveRecipeSuggestion(ctx context.Context, id string, cmd Su
 	if err != nil {
 		return domain.RecipeSuggestion{}, err
 	}
-	_, err = s.Publish(ctx, PublishCommand{RestaurantID: v.RestaurantID, PublishedBy: firstNonEmpty(strings.TrimSpace(cmd.PublishedBy), firstNonEmpty(v.ReviewedByEmployeeID, "system"))})
-	if err != nil {
+	if _, err := s.RefreshDeliveryPackages(ctx, v.RestaurantID); err != nil {
 		return domain.RecipeSuggestion{}, err
 	}
 	return stored, nil
@@ -2330,8 +2467,7 @@ func (s *Service) ApproveStopListUpdateReview(ctx context.Context, id string, cm
 	if err != nil {
 		return domain.StopListUpdateReview{}, err
 	}
-	_, err = s.Publish(ctx, PublishCommand{RestaurantID: v.RestaurantID, PublishedBy: firstNonEmpty(strings.TrimSpace(cmd.PublishedBy), firstNonEmpty(v.ReviewedByEmployeeID, "system"))})
-	if err != nil {
+	if _, err := s.RefreshDeliveryPackages(ctx, v.RestaurantID); err != nil {
 		return domain.StopListUpdateReview{}, err
 	}
 	return stored, nil

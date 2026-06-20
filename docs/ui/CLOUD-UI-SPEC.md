@@ -129,9 +129,8 @@
 - `POST /api/v1/devices/pairing/consume`
 - `GET /api/v1/sync/edge-events?restaurant_id=&limit=`
 - `GET /api/v1/restaurants/{id}/master-data/publication-state`
-- `POST /api/v1/restaurants/{id}/master-data/publish`
 
-`POST .../publish` используется только текущим runtime и должен быть удален из пользовательского flow после реализации automatic delivery. UI не вызывает его и не предлагает manual checkpoint.
+Реализовано сейчас: Publications раздел read-only. Он читает Cloud version metadata через `publication-state`, не вызывает publish API и не предлагает manual checkpoint. Edge ACK/lag/error отображаются только как safe delivery status surface; persistent Cloud-side checkpoint read model остается запланировано далее.
 
 ## Удаленный Legacy `cloud-ui`
 

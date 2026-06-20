@@ -305,26 +305,6 @@
         }
       }
     },
-    "/master-data/publications": {
-      "post": {
-        "operationId": "publishMasterData",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PublishMasterData"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Master data published"
-          }
-        }
-      }
-    },
     "/restaurants/{restaurant_id}/devices/generate-pairing-code": {
       "post": {
         "operationId": "generatePairingCode",
@@ -1254,10 +1234,6 @@
       "CreateStopListEntry": {
         "type": "object",
         "required": ["restaurant_id", "catalog_item_id"]
-      },
-      "PublishMasterData": {
-        "type": "object",
-        "required": ["restaurant_id", "published_by"]
       },
       "GeneratePairingCode": {
         "type": "object",

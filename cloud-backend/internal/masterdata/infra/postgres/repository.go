@@ -961,6 +961,40 @@ func (r *Repository) ListMenuItems(ctx context.Context, restaurantID string) ([]
 	return out, rows.Err()
 }
 
+func (r *Repository) ListAssignedNodeDeviceIDs(ctx context.Context, restaurantID string) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT node_device_id FROM cloud_edge_nodes WHERE restaurant_id = $1 AND status = 'assigned' ORDER BY node_device_id`, strings.TrimSpace(restaurantID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var nodeDeviceID string
+		if err := rows.Scan(&nodeDeviceID); err != nil {
+			return nil, err
+		}
+		out = append(out, nodeDeviceID)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) ListAssignedRestaurantIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT DISTINCT restaurant_id FROM cloud_edge_nodes WHERE status = 'assigned' AND restaurant_id <> '' ORDER BY restaurant_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var restaurantID string
+		if err := rows.Scan(&restaurantID); err != nil {
+			return nil, err
+		}
+		out = append(out, restaurantID)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) NextPublicationVersion(ctx context.Context, restaurantID string) (int64, error) {
 	var version int64
 	err := r.pool.QueryRow(ctx, `SELECT COALESCE(MAX(version),0) + 1 FROM cloud_master_data_publications WHERE restaurant_id = $1`, strings.TrimSpace(restaurantID)).Scan(&version)

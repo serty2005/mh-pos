@@ -69,8 +69,8 @@ Canonical seed/smoke для Cloud-owned ingest остается `scripts/seed-de
 - После successful pairing/assignment POS Edge не выполняет повторный Cloud device registration/snapshot provisioning loop; фоновая maintenance только регистрирует not configured node или poll-ит `pending_admin_approval`.
 - Повторный Cloud assignment-status для уже выданного `node_token` не ротирует token hash, чтобы внешние проверки статуса не приводили к `401 SYNC_UNAUTHORIZED` на последующих `sync/exchange`.
 - Пустой exchange без Edge outbox throttled отдельным Cloud pull interval, а появившиеся Edge outbox events отправляются в ближайший worker tick без ожидания этого throttling interval.
-- Реализовано сейчас: `cloud-ui-g` не обновляет package автоматически после CRUD; оператор вызывает manual publication API. Это gap, а не целевой workflow.
-- Целевой контракт: effective Cloud change автоматически меняет доступную версию всех подключенных Edge ресторана; без подключенных Edge delivery packages не создаются. При назначении/первом подключении Edge Cloud собирает актуальный full batch, затем Edge забирает новые версии на scheduled exchange. Operator Publish action отсутствует.
+- Реализовано сейчас: effective Cloud change автоматически меняет доступную версию всех назначенных Edge ресторана; без назначенных Edge delivery packages не создаются. При assignment/pairing Cloud собирает актуальный full batch, затем Edge забирает новые версии на scheduled exchange. Operator Publish action отсутствует.
+- Запланировано далее: отдельная Cloud-side read model для Edge ACK/checkpoint/lag/error поверх scheduled exchange.
 
 ## Текущий Edge -> Cloud Runtime
 

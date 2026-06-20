@@ -35,7 +35,7 @@
 - Catalog/menu/modifiers/pricing/floor master-data: `/master-data/...`.
 - Provisioning/pairing: `/devices/unassigned`, `/restaurants/{restaurant_id}/devices`, `/restaurants/{restaurant_id}/devices/{node_device_id}/assign`, `/devices/{node_device_id}/assignment-status`, `/restaurants/{restaurant_id}/devices/generate-pairing-code`, `/devices/pairing/consume`.
 - Sync event log: `GET /sync/edge-events`.
-- Automatic delivery status: целевой read-only contract по Cloud/Edge versions, lag и safe error. Текущие `GET .../publication-state` и `POST .../publish` являются transitional runtime; manual publish route должен исчезнуть из клиентского UI.
+- Automatic delivery status: реализовано сейчас как read-only `publication-state`/Cloud version metadata без manual publish action. Persistent Cloud-side Edge ACK/checkpoint/lag/error contract остается запланировано далее.
 
 Полный список текущих route-backed endpoints зафиксирован в `docs/ui/CLOUD-UI-SPEC.md`.
 

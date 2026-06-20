@@ -214,7 +214,7 @@ Cloud production delivery path:
 - Cloud создает master data через `/api/v1/restaurants`, `/api/v1/roles`, `/api/v1/employees`, `/api/v1/catalog/items`, `/api/v1/menu/items`;
 - `catalog_item_id` остается tenant catalog identity, `menu_item_id` остается restaurant menu identity; POS order lines snapshot-ят `category_id`/`tag_id`, чтобы ticket/reporting category не вычислялась из текста;
 - Cloud создает минимальный floor через `/api/v1/halls` и `/api/v1/tables`, потому что cashier order flow требует зал и стол;
-- Cloud публикует package через `POST /api/v1/restaurants/{id}/master-data/publish`;
+- Cloud автоматически создает current full batch при Edge assignment/pairing и обновляет latest package rows после подтвержденных Cloud master-data commits;
 - Cloud отдает Edge-ready payload через `GET /api/v1/restaurants/{id}/edge-nodes/{node_device_id}/master-data/snapshot`;
 - POS Edge применяет payload через `POST /api/v1/sync/master-data/snapshots`.
 

@@ -64,7 +64,8 @@ func TestEmployeeEndpointsDoNotExposePINMaterial(t *testing.T) {
 }
 
 func TestPublicationEndpointsReturnSummary(t *testing.T) {
-	router := newRouter()
+	router, repo := newRouterWithRepo()
+	repo.AssignEdgeNodeForTest("restaurant-1", "node-1")
 	role := post(t, router, "/api/v1/master-data/roles", `{"name":"cashier","permissions_json":"{}"}`)
 	var roleBody struct {
 		ID string `json:"id"`
@@ -85,20 +86,16 @@ func TestPublicationEndpointsReturnSummary(t *testing.T) {
 	_ = json.Unmarshal(menu.Body.Bytes(), &menuBody)
 	patch(t, router, "/api/v1/master-data/menu/items/"+menuBody.ID, `{"status":`+published+`}`)
 
-	pub := post(t, router, "/api/v1/master-data/publications", `{"restaurant_id":"restaurant-1","published_by":"operator-1"}`)
-	if pub.Code != http.StatusCreated {
-		t.Fatalf("expected publication created, got %d: %s", pub.Code, pub.Body.String())
-	}
-	if strings.Contains(pub.Body.String(), "pin_hash") || strings.Contains(pub.Body.String(), "pbkdf2") || strings.Contains(pub.Body.String(), "package_json") {
-		t.Fatalf("publication response should be summary without package/PIN material: %s", pub.Body.String())
-	}
 	current := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/master-data/published?restaurant_id=restaurant-1", nil)
 	router.ServeHTTP(current, req)
 	if current.Code != http.StatusOK {
 		t.Fatalf("expected current published state, got %d: %s", current.Code, current.Body.String())
 	}
-	if !strings.Contains(current.Body.String(), `"version":1`) {
+	if strings.Contains(current.Body.String(), "pin_hash") || strings.Contains(current.Body.String(), "pbkdf2") || strings.Contains(current.Body.String(), "package_json") {
+		t.Fatalf("publication response should be summary without package/PIN material: %s", current.Body.String())
+	}
+	if !strings.Contains(current.Body.String(), `"version":`) {
 		t.Fatalf("unexpected current publication: %s", current.Body.String())
 	}
 }
@@ -116,8 +113,8 @@ func TestRestaurantPublicationStateReturnsNullBeforeFirstPublish(t *testing.T) {
 	}
 }
 
-func TestProductionRestaurantPublishAndSnapshotEndpoints(t *testing.T) {
-	router := newRouter()
+func TestProductionRestaurantAutomaticDeliveryAndSnapshotEndpoints(t *testing.T) {
+	router, repo := newRouterWithRepo()
 	restaurant := post(t, router, "/api/v1/restaurants", `{"name":"Demo Bistro","timezone":"Europe/Moscow","currency":"RUB","business_day_mode":"standard","business_day_boundary_local_time":"04:00"}`)
 	if restaurant.Code != http.StatusCreated {
 		t.Fatalf("expected restaurant created, got %d: %s", restaurant.Code, restaurant.Body.String())
@@ -126,6 +123,7 @@ func TestProductionRestaurantPublishAndSnapshotEndpoints(t *testing.T) {
 		ID string `json:"id"`
 	}
 	_ = json.Unmarshal(restaurant.Body.Bytes(), &restaurantBody)
+	repo.AssignEdgeNodeForTest(restaurantBody.ID, "node-1")
 	role := post(t, router, "/api/v1/roles", `{"name":"cashier","permissions_json":"{}"}`)
 	var roleBody struct {
 		ID string `json:"id"`
@@ -138,11 +136,6 @@ func TestProductionRestaurantPublishAndSnapshotEndpoints(t *testing.T) {
 	}
 	_ = json.Unmarshal(catalog.Body.Bytes(), &catalogBody)
 	_ = post(t, router, "/api/v1/menu/items", `{"restaurant_id":"`+restaurantBody.ID+`","catalog_item_id":"`+catalogBody.ID+`","name":"Tea","price":1000,"currency":"RUB"}`)
-
-	pub := post(t, router, "/api/v1/restaurants/"+restaurantBody.ID+"/master-data/publish", `{"published_by":"operator-1"}`)
-	if pub.Code != http.StatusCreated {
-		t.Fatalf("expected publish created, got %d: %s", pub.Code, pub.Body.String())
-	}
 	snapshot := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/restaurants/"+restaurantBody.ID+"/edge-nodes/node-1/master-data/snapshot", nil)
 	router.ServeHTTP(snapshot, req)

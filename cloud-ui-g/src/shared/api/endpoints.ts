@@ -366,7 +366,3 @@ export function getPublicationState(restaurantId: string): Promise<PublicationSu
     publicationSummarySchema,
   );
 }
-
-export function publishMasterData(restaurantId: string, payload: Payload): Promise<PublicationSummary> {
-  return post(`/restaurants/${encodeURIComponent(restaurantId)}/master-data/publish`, publicationSummarySchema, payload);
-}

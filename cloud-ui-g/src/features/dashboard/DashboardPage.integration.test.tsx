@@ -4,9 +4,6 @@ import DashboardPage from './DashboardPage';
 import PublicationPanel from '../publications/PublicationPanel';
 import { ru } from '../../shared/i18n/ru';
 import {
-  buttonByText,
-  change,
-  click,
   deferred,
   employee,
   expectNoRawMarkers,
@@ -96,7 +93,7 @@ describe('DashboardPage page integration', () => {
 
   it('renders safe summary fields after successful reads', async () => {
     installFetchMock([
-      { path: `/restaurants/${restaurantId}/master-data/publication-state`, responder: () => publication({ version: 11 }) },
+      { path: `/restaurants/${restaurantId}/master-data/publication-state`, responder: () => publication({ version: 11, cloud_version: 11 }) },
       ...readinessRoutes(),
     ]);
 
@@ -136,7 +133,7 @@ describe('PublicationPanel page integration', () => {
       { path: `/restaurants/${restaurantId}/master-data/publication-state`, responder: () => current.promise },
     ]);
 
-    const page = await renderPage(<PublicationPanel restaurantId={restaurantId} canPublish />);
+    const page = await renderPage(<PublicationPanel restaurantId={restaurantId} />);
 
     await waitFor(() => {
       expect(api.callsFor(`/restaurants/${restaurantId}/master-data/publication-state`)).toHaveLength(1);
@@ -151,109 +148,44 @@ describe('PublicationPanel page integration', () => {
     installFetchMock([
       { path: `/restaurants/${restaurantId}/master-data/publication-state`, responder: () => null },
     ]);
-    const empty = await renderPage(<PublicationPanel restaurantId={restaurantId} canPublish />);
+    const empty = await renderPage(<PublicationPanel restaurantId={restaurantId} />);
     await waitFor(() => expect(text(empty.container)).toContain(ru.publications.emptyTitle));
     await empty.cleanup();
 
     installFetchMock([
-      { path: `/restaurants/${restaurantId}/master-data/publication-state`, responder: () => publication({ version: 42 }) },
+      { path: `/restaurants/${restaurantId}/master-data/publication-state`, responder: () => publication({ version: 42, cloud_version: 42 }) },
     ]);
-    const success = await renderPage(<PublicationPanel restaurantId={restaurantId} canPublish />);
+    const success = await renderPage(<PublicationPanel restaurantId={restaurantId} />);
     await waitFor(() => {
       expect(text(success.container)).toContain('42');
-      expect(text(success.container)).toContain('cloud-ui-test');
+      expect(text(success.container)).toContain(ru.publications.ackPending);
+      expect(text(success.container)).toContain(ru.publications.noDeliveryError);
     });
     await success.cleanup();
 
     installFetchMock([
       { path: `/restaurants/${restaurantId}/master-data/publication-state`, responder: () => { throw safeApiError(); } },
     ]);
-    const failed = await renderPage(<PublicationPanel restaurantId={restaurantId} canPublish />);
+    const failed = await renderPage(<PublicationPanel restaurantId={restaurantId} />);
     await waitFor(() => expect(text(failed.container)).toContain(ru.errors.server));
     expectNoRawMarkers(failed.container);
     await failed.cleanup();
   });
 
-  it('publishes successfully with operator payload and refreshes current publication', async () => {
-    let currentReads = 0;
+  it('does not expose manual publish action', async () => {
     const api = installFetchMock([
       {
         path: `/restaurants/${restaurantId}/master-data/publication-state`,
-        responder: () => {
-          currentReads += 1;
-          return currentReads > 1 ? publication({ version: 12, published_by: 'operator-1' }) : null;
-        },
-      },
-      {
-        method: 'POST',
-        path: `/restaurants/${restaurantId}/master-data/publish`,
-        responder: () => publication({ version: 12, published_by: 'operator-1' }),
+        responder: () => publication({ version: 12, cloud_version: 12 }),
       },
     ]);
 
-    const page = await renderPage(<PublicationPanel restaurantId={restaurantId} canPublish />);
-    await waitFor(() => expect(currentReads).toBe(1));
-
-    const inputs = page.container.querySelectorAll('input');
-    await change(inputs[0], 'operator-1');
-    await change(inputs[1], 'edge-node-1');
-    await click(buttonByText(page.container, ru.publications.publishAction));
-
+    const page = await renderPage(<PublicationPanel restaurantId={restaurantId} />);
     await waitFor(() => {
-      expect(api.callsFor(`/restaurants/${restaurantId}/master-data/publish`, 'POST')).toHaveLength(1);
-      expect(currentReads).toBe(2);
       expect(text(page.container)).toContain('12');
     });
-    expect(api.callsFor(`/restaurants/${restaurantId}/master-data/publish`, 'POST')[0].body).toEqual({
-      published_by: 'operator-1',
-      node_device_id: 'edge-node-1',
-    });
-
-    await page.cleanup();
-  });
-
-  it('keeps failed publish visible without duplicate mutation or automatic retry', async () => {
-    let currentReads = 0;
-    const publishPending = deferred<unknown>();
-    const api = installFetchMock([
-      {
-        path: `/restaurants/${restaurantId}/master-data/publication-state`,
-        responder: () => {
-          currentReads += 1;
-          return null;
-        },
-      },
-      {
-        method: 'POST',
-        path: `/restaurants/${restaurantId}/master-data/publish`,
-        responder: () => publishPending.promise,
-      },
-    ]);
-
-    const page = await renderPage(<PublicationPanel restaurantId={restaurantId} canPublish />);
-    await waitFor(() => expect(currentReads).toBe(1));
-
-    const inputs = page.container.querySelectorAll('input');
-    await change(inputs[0], 'operator-1');
-    await change(inputs[1], 'edge-node-1');
-    await click(buttonByText(page.container, ru.publications.publishAction));
-    await waitFor(() => {
-      expect(api.callsFor(`/restaurants/${restaurantId}/master-data/publish`, 'POST')).toHaveLength(1);
-      expect((buttonByText(page.container, ru.publications.publishAction) as HTMLButtonElement).disabled).toBe(true);
-    });
-    await click(buttonByText(page.container, ru.publications.publishAction));
-    publishPending.reject(safeApiError());
-
-    await waitFor(() => {
-      expect(api.callsFor(`/restaurants/${restaurantId}/master-data/publish`, 'POST')).toHaveLength(1);
-      expect(text(page.container)).toContain(ru.errors.server);
-    });
-    expect(api.callsFor(`/restaurants/${restaurantId}/master-data/publish`, 'POST')[0].body).toEqual({
-      published_by: 'operator-1',
-      node_device_id: 'edge-node-1',
-    });
-    expect(currentReads).toBe(1);
-    expectNoRawMarkers(page.container);
+    expect(page.container.querySelector('input')).toBeNull();
+    expect(api.callsFor(`/restaurants/${restaurantId}/master-data/publish`, 'POST')).toHaveLength(0);
 
     await page.cleanup();
   });

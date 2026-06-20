@@ -202,6 +202,9 @@ func (s *Service) AssignDevice(ctx context.Context, restaurantID, nodeDeviceID s
 		return AssignDeviceResult{}, err
 	}
 	_ = s.repo.MarkUnassignedAssigned(ctx, nodeDeviceID, restaurantID, now)
+	if _, err := s.master.RefreshDeliveryPackagesForNode(ctx, restaurantID, nodeDeviceID); err != nil {
+		return AssignDeviceResult{}, err
+	}
 	return AssignDeviceResult{NodeDeviceID: node.NodeDeviceID, RestaurantID: restaurantID, Status: string(node.Status), SnapshotURL: snapshotURL(restaurantID, nodeDeviceID)}, nil
 }
 
@@ -343,6 +346,9 @@ func (s *Service) ConsumePairingCode(ctx context.Context, cmd PairingConsumeComm
 		return PairingConsumeResult{}, err
 	}
 	_ = s.repo.MarkUnassignedAssigned(ctx, nodeID, pairing.RestaurantID, now)
+	if _, err := s.master.RefreshDeliveryPackagesForNode(ctx, pairing.RestaurantID, nodeID); err != nil {
+		return PairingConsumeResult{}, err
+	}
 	return PairingConsumeResult{
 		NodeDeviceID: node.NodeDeviceID,
 		RestaurantID: node.RestaurantID,
@@ -369,15 +375,6 @@ func (s *Service) ensureRestaurantReady(ctx context.Context, restaurantID string
 	}
 	if restaurant.Status != masterdomain.RestaurantActive {
 		return fmt.Errorf("%w: restaurant is archived", domain.ErrInvalid)
-	}
-	if _, err := s.master.GetCurrentPublishedPackage(ctx, restaurantID, ""); err != nil {
-		if errorsIsMasterNotFound(err) {
-			if _, err := s.master.Publish(ctx, masterapp.PublishCommand{RestaurantID: restaurantID, PublishedBy: "provisioning"}); err != nil {
-				return err
-			}
-			return nil
-		}
-		return err
 	}
 	return nil
 }

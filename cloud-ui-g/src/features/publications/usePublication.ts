@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getPublicationState, publishMasterData } from '../../shared/api/endpoints';
+import { getPublicationState } from '../../shared/api/endpoints';
 import type { PublicationSummary } from '../../shared/api/schemas';
 
 export function usePublication(restaurantId: string) {
@@ -31,13 +31,5 @@ export function usePublication(restaurantId: string) {
     void reload();
   }, [reload]);
 
-  const publish = useCallback(async (payload: { published_by: string; node_device_id: string }) => {
-    const next = await publishMasterData(restaurantId, payload);
-    setPublication(next);
-    setStatus('ready');
-    await reload();
-    return next;
-  }, [reload, restaurantId]);
-
-  return { publication, status, error, reload, publish };
+  return { publication, status, error, reload };
 }

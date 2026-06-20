@@ -108,7 +108,6 @@ GET   /api/v1/menu/items?restaurant_id=...
 GET   /api/v1/menu/items/{id}
 PATCH /api/v1/menu/items/{id}
 POST  /api/v1/menu/items/{id}/archive
-POST  /api/v1/restaurants/{id}/master-data/publish
 GET   /api/v1/restaurants/{id}/master-data/publication-state
 GET   /api/v1/restaurants/{id}/master-data/packages/latest
 GET   /api/v1/restaurants/{id}/master-data/packages/{package_id}
@@ -117,9 +116,9 @@ GET   /api/v1/restaurants/{id}/edge-nodes/{node_device_id}/master-data/snapshot
 
 Совместимые legacy/foundation routes `/api/v1/master-data/...` сохранены для текущих тестов и low-level сценариев, но новый production onboarding path документируется через top-level routes выше.
 
-Реализовано сейчас: publication endpoint не делает каждое сохранение live. Он создает versioned publication (`version`, `cloud_version`, `published_at`, `published_by`, `package_sha256`) и deterministic packages для `restaurants`, `staff`, `floor`, `catalog`, `menu`. Generated packages сохраняются в `cloud_master_data_packages`, после чего Edge может получить их через provisioning/import path или через Edge-ready snapshot endpoint.
+Реализовано сейчас: user-facing manual publish endpoint удален. До Edge assignment delivery packages не создаются. При assignment/pairing Cloud собирает current full batch для конкретного `node_device_id`; после подтвержденных Cloud master-data commits обновляется только latest row в `cloud_master_data_packages` для назначенных Edge и stream. Event backlog на каждое изменение не ведется.
 
-Реализовано сейчас: `GET /api/v1/restaurants/{id}/master-data/publication-state` до первой публикации возвращает `200` с JSON `null`, чтобы Cloud UI показывал ожидаемый empty state без browser-console 404 noise.
+Реализовано сейчас: `GET /api/v1/restaurants/{id}/master-data/publication-state` до первого assignment/automatic refresh возвращает `200` с JSON `null`, чтобы Cloud UI показывал ожидаемый empty state без browser-console 404 noise.
 
 Реализовано сейчас: employee lifecycle поддерживает `active`, `suspended`, `archived`; role assignment обновляет permission snapshot для sync-safe POS usage; PIN rotation увеличивает credential version. API responses не возвращают PIN или `pin_hash`.
 
@@ -257,6 +256,8 @@ go test ./...
 - `cloud_master_data_packages`
 
 Реализовано сейчас: `CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE` ограничивает число Cloud -> Edge packages в одном authenticated `sync/exchange` response. Ошибочные Edge batch/exchange items получают item-level ACK и сохраняются в `cloud_sync_problem_events`, не блокируя прием остальных items.
+
+Реализовано сейчас: scheduled `sync/exchange` доставляет Cloud package только если package `cloud_version` новее Edge-provided stream checkpoint. Полноценный persistent Cloud-side Edge ACK/lag read model остается запланировано далее; Cloud UI показывает safe read-only Cloud version metadata и не вызывает publish API.
 
 Реализовано сейчас financial operation sync behavior:
 - `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud financial operation events.
