@@ -11,6 +11,7 @@ export const i18nKeys = {
   navRestaurants: 'nav.restaurants',
   navEdgeSync: 'nav.edgeSync',
   navCatalog: 'nav.catalog',
+  navLicenses: 'nav.licenses',
   navMenu: 'nav.menu',
   navModifiers: 'nav.modifiers',
   navPricingTaxes: 'nav.pricingTaxes',

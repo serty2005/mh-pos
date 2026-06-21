@@ -79,6 +79,7 @@ type Repository interface {
 	MarkConsumed(context.Context, string, time.Time) error
 	SaveEntitlements(context.Context, EntitlementSnapshot) error
 	GetEntitlements(context.Context, string, string) (EntitlementSnapshot, error)
+	ListEntitlements(context.Context) ([]EntitlementSnapshot, error)
 }
 
 // EntitlementSnapshot хранит authoritative module grants для tenant/server.
@@ -211,6 +212,11 @@ func (s *Service) GetEntitlements(ctx context.Context, tenantID, serverID string
 		return EntitlementSnapshot{}, invalid("entitlement_scope_required")
 	}
 	return s.repo.GetEntitlements(ctx, strings.TrimSpace(tenantID), strings.TrimSpace(serverID))
+}
+
+// ListEntitlements возвращает админский срез всех license snapshot без раскрытия секретов.
+func (s *Service) ListEntitlements(ctx context.Context) ([]EntitlementSnapshot, error) {
+	return s.repo.ListEntitlements(ctx)
 }
 
 func validEntitlementID(id string) bool {

@@ -32,15 +32,11 @@ import {
   type RoleFormValues,
 } from './staffForms';
 
-type Props = {
-  restaurantId: string;
-};
-
 type RouteStatus = 'loading' | 'ready' | 'blocked';
 type StaffTab = 'employees' | 'roles';
 
 // StaffPage связывает role-backed permission management с employee lifecycle без backend employee override.
-export default function StaffPage({ restaurantId }: Props) {
+export default function StaffPage() {
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<StaffTab>('employees');
   const [roles, setRoles] = useState<Role[]>([]);
@@ -71,7 +67,7 @@ export default function StaffPage({ restaurantId }: Props) {
 
   useEffect(() => {
     void reload();
-  }, [restaurantId]);
+  }, []);
 
   const mutate = async (action: () => Promise<void>) => {
     setLoading(true);
@@ -135,7 +131,7 @@ export default function StaffPage({ restaurantId }: Props) {
               employees={employees}
               roles={roles}
               restaurants={restaurants}
-              defaultRestaurantId={restaurantId}
+              defaultRestaurantId=""
               loading={loading}
               error={error}
               onCreate={(values: EmployeeCreateFormValues) => mutate(async () => { await createEmployee(buildCreateEmployeePayload(values)); })}

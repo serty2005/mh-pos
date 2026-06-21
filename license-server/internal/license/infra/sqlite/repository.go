@@ -129,6 +129,31 @@ func (r *Repository) GetEntitlements(ctx context.Context, tenantID, serverID str
 	return v, nil
 }
 
+func (r *Repository) ListEntitlements(ctx context.Context) ([]app.EntitlementSnapshot, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT tenant_id,server_id,version,status,entitlements_json,issued_at,expires_at,updated_at FROM entitlement_snapshots ORDER BY tenant_id, server_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []app.EntitlementSnapshot{}
+	for rows.Next() {
+		var v app.EntitlementSnapshot
+		var raw, issued, expires, updated string
+		if err := rows.Scan(&v.TenantID, &v.ServerID, &v.Version, &v.Status, &raw, &issued, &expires, &updated); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(raw), &v.Entitlements); err != nil {
+			return nil, err
+		}
+		v.IssuedAt, _ = time.Parse(time.RFC3339Nano, issued)
+		v.ExpiresAt, _ = time.Parse(time.RFC3339Nano, expires)
+		v.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
+		items = append(items, v)
+	}
+	return items, rows.Err()
+}
+
 func (r *Repository) Save(ctx context.Context, v app.PairingCode) error {
 	_, err := r.db.ExecContext(ctx, `INSERT INTO pairing_codes(pairing_code_hash,pairing_id,instance_id,cloud_url,restaurant_id,node_device_id,credentials_json,expires_at,created_at)
 VALUES (?,?,?,?,?,?,?,?,?)

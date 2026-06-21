@@ -218,6 +218,18 @@ func TestHTTPEntitlementsRequireProviderTokenAndReturnSnapshot(t *testing.T) {
 	f.router.ServeHTTP(got, httptest.NewRequest(http.MethodGet, "/api/v1/entitlements/tenant-1/cloud-1", nil))
 	assertJSONStatus(t, got, http.StatusOK)
 	assertBodyContains(t, got.Body.String(), `"tenant_id":"tenant-1"`, `"server_id":"cloud-1"`, `"table-mode":true`)
+
+	listUnauthorized := httptest.NewRecorder()
+	f.router.ServeHTTP(listUnauthorized, httptest.NewRequest(http.MethodGet, "/api/v1/entitlements", nil))
+	assertJSONStatus(t, listUnauthorized, http.StatusUnauthorized)
+	assertSafeErrorEnvelope(t, listUnauthorized, "LICENSE_AUTH_REQUIRED", "errors.license.authRequired")
+
+	list := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/entitlements", nil)
+	req.Header.Set("Authorization", "Bearer provider-test-token")
+	f.router.ServeHTTP(list, req)
+	assertJSONStatus(t, list, http.StatusOK)
+	assertBodyContains(t, list.Body.String(), `"tenant_id":"tenant-1"`, `"server_id":"cloud-1"`, `"table-mode":true`)
 }
 
 type httpFixture struct {

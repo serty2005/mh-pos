@@ -73,6 +73,11 @@ function query(restaurantId: string) {
   return `restaurant_id=${encodeURIComponent(restaurantId)}`;
 }
 
+function optionalRestaurantQuery(restaurantId?: string) {
+  const trimmed = restaurantId?.trim() ?? '';
+  return trimmed ? `?${query(trimmed)}` : '';
+}
+
 export function listRestaurants(): Promise<Restaurant[]> {
   return request('/restaurants', z.array(restaurantSchema));
 }
@@ -141,8 +146,8 @@ export function rotateEmployeePIN(id: string, pin: string): Promise<Employee> {
   return post(`/master-data/employees/${encodeURIComponent(id)}/pin`, employeeSchema, { pin });
 }
 
-export function listCatalogItems(restaurantId: string): Promise<CatalogItem[]> {
-  return request(`/master-data/catalog/items?${query(restaurantId)}`, z.array(catalogItemSchema));
+export function listCatalogItems(restaurantId?: string): Promise<CatalogItem[]> {
+  return request(`/master-data/catalog/items${optionalRestaurantQuery(restaurantId)}`, z.array(catalogItemSchema));
 }
 
 export function listMenuItems(restaurantId: string): Promise<MenuItem[]> {
@@ -177,8 +182,8 @@ export function archiveCatalogItem(id: string): Promise<CatalogItem> {
   return post(`/master-data/catalog/items/${encodeURIComponent(id)}/archive`, catalogItemSchema, {});
 }
 
-export function listCatalogFolders(restaurantId: string): Promise<CatalogFolder[]> {
-  return request(`/master-data/catalog/folders?${query(restaurantId)}`, z.array(catalogFolderSchema));
+export function listCatalogFolders(restaurantId?: string): Promise<CatalogFolder[]> {
+  return request(`/master-data/catalog/folders${optionalRestaurantQuery(restaurantId)}`, z.array(catalogFolderSchema));
 }
 
 export function createCatalogFolder(payload: Payload): Promise<CatalogFolder> {
@@ -205,8 +210,8 @@ export function updateFolderParameter(id: string, payload: Payload): Promise<Fol
   return patch(`/master-data/catalog/folder-parameters/${encodeURIComponent(id)}`, folderParameterSchema, payload);
 }
 
-export function listCatalogTags(restaurantId: string): Promise<CatalogTag[]> {
-  return request(`/master-data/catalog/tags?${query(restaurantId)}`, z.array(catalogTagSchema));
+export function listCatalogTags(restaurantId?: string): Promise<CatalogTag[]> {
+  return request(`/master-data/catalog/tags${optionalRestaurantQuery(restaurantId)}`, z.array(catalogTagSchema));
 }
 
 export function createCatalogTag(payload: Payload): Promise<CatalogTag> {

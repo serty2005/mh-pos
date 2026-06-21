@@ -38,13 +38,28 @@ func NewRouter(service *app.Service, adminTokens ...string) http.Handler {
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	r.Get("/", h.adminPage)
+	r.Get("/admin", h.adminPage)
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/pairing-codes", h.register)
 		r.Post("/pairing-codes/resolve", h.resolve)
+		r.Get("/entitlements", h.listEntitlements)
 		r.Get("/entitlements/{tenant_id}/{server_id}", h.getEntitlements)
 		r.Put("/entitlements/{tenant_id}/{server_id}", h.putEntitlements)
 	})
 	return r
+}
+
+func (h *Handler) listEntitlements(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAdmin(w, r) {
+		return
+	}
+	v, err := h.service.ListEntitlements(r.Context())
+	if err != nil {
+		writeAppError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
 }
 
 func (h *Handler) getEntitlements(w http.ResponseWriter, r *http.Request) {
@@ -57,9 +72,7 @@ func (h *Handler) getEntitlements(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) putEntitlements(w http.ResponseWriter, r *http.Request) {
-	provided := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-	if h.adminToken == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(h.adminToken)) != 1 {
-		writeError(w, r, http.StatusUnauthorized, "LICENSE_AUTH_REQUIRED", "errors.license.authRequired", app.ErrInvalid)
+	if !h.requireAdmin(w, r) {
 		return
 	}
 	var cmd app.PutEntitlementsCommand
@@ -74,6 +87,15 @@ func (h *Handler) putEntitlements(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.InfoContext(r.Context(), "license entitlement snapshot updated", "operation", "license.entitlements.update", "result", "success", "tenant_id", maskLogID(v.TenantID), "server_id", maskLogID(v.ServerID), "version", v.Version, "status", v.Status)
 	writeJSON(w, http.StatusOK, v)
+}
+
+func (h *Handler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	provided := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+	if h.adminToken == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(h.adminToken)) != 1 {
+		writeError(w, r, http.StatusUnauthorized, "LICENSE_AUTH_REQUIRED", "errors.license.authRequired", app.ErrInvalid)
+		return false
+	}
+	return true
 }
 
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {

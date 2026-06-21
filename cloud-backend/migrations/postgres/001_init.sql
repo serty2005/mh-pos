@@ -617,6 +617,26 @@ CREATE TABLE IF NOT EXISTS cloud_services (
   updated_at TIMESTAMPTZ NOT NULL
 );
 
+ALTER TABLE cloud_dishes
+  ADD COLUMN IF NOT EXISTS restaurant_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE cloud_dishes
+  DROP CONSTRAINT IF EXISTS cloud_dishes_restaurant_id_check;
+
+ALTER TABLE cloud_goods
+  ADD COLUMN IF NOT EXISTS restaurant_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE cloud_goods
+  DROP CONSTRAINT IF EXISTS cloud_goods_restaurant_id_check;
+
+ALTER TABLE cloud_semi_finished_products
+  ADD COLUMN IF NOT EXISTS restaurant_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE cloud_semi_finished_products
+  DROP CONSTRAINT IF EXISTS cloud_semi_finished_products_restaurant_id_check;
+
+ALTER TABLE cloud_services
+  ADD COLUMN IF NOT EXISTS restaurant_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE cloud_services
+  DROP CONSTRAINT IF EXISTS cloud_services_restaurant_id_check;
+
 CREATE TABLE IF NOT EXISTS cloud_catalog_folders (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL DEFAULT '',
@@ -632,6 +652,9 @@ CREATE TABLE IF NOT EXISTS cloud_catalog_folders (
 
 CREATE INDEX IF NOT EXISTS cloud_catalog_folders_parent_sort
   ON cloud_catalog_folders(restaurant_id, parent_id, sort_order, id);
+
+ALTER TABLE cloud_catalog_folders
+  DROP CONSTRAINT IF EXISTS cloud_catalog_folders_restaurant_id_check;
 
 CREATE TABLE IF NOT EXISTS cloud_catalog_folder_parameters (
   id TEXT PRIMARY KEY,
@@ -661,6 +684,9 @@ CREATE TABLE IF NOT EXISTS cloud_catalog_tags (
   UNIQUE (code)
 );
 
+ALTER TABLE cloud_catalog_tags
+  DROP CONSTRAINT IF EXISTS cloud_catalog_tags_restaurant_id_check;
+
 CREATE TABLE IF NOT EXISTS cloud_catalog_item_tags (
   restaurant_id TEXT NOT NULL DEFAULT '',
   catalog_item_id TEXT NOT NULL REFERENCES cloud_catalog_items(id) ON DELETE CASCADE,
@@ -669,6 +695,9 @@ CREATE TABLE IF NOT EXISTS cloud_catalog_item_tags (
   created_at TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (catalog_item_id, tag_id)
 );
+
+ALTER TABLE cloud_catalog_item_tags
+  DROP CONSTRAINT IF EXISTS cloud_catalog_item_tags_restaurant_id_check;
 
 CREATE TABLE IF NOT EXISTS cloud_recipe_items (
   id TEXT PRIMARY KEY,
@@ -1027,6 +1056,9 @@ ALTER TABLE cloud_catalog_items
 
 ALTER TABLE cloud_catalog_items
   ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+
+ALTER TABLE cloud_catalog_items
+  DROP CONSTRAINT IF EXISTS cloud_catalog_items_restaurant_id_check;
 
 ALTER TABLE cloud_catalog_items
   DROP CONSTRAINT IF EXISTS cloud_catalog_items_kind_check;

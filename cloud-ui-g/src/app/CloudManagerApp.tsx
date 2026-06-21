@@ -17,6 +17,7 @@ import ModifiersPage from '../features/modifiers/ModifiersPage';
 import PricingPage from '../features/pricing/PricingPage';
 import StaffPage from '../features/staff/StaffPage';
 import FloorPage from '../features/floor/FloorPage';
+import LicensesPage from '../features/licenses/LicensesPage';
 import { getEntitlements } from '../shared/api/endpoints';
 
 export default function CloudManagerApp() {
@@ -133,6 +134,10 @@ export default function CloudManagerApp() {
             />
           ) : null}
 
+          {activeRouteId === 'licenses' ? (
+            <LicensesPage />
+          ) : null}
+
           {activeRouteId === 'publications' && isRestaurantSelected ? (
             <PublicationPanel restaurantId={selectedRestaurantId} />
           ) : null}
@@ -141,8 +146,8 @@ export default function CloudManagerApp() {
             <EdgeSyncPage restaurantId={selectedRestaurantId} />
           ) : null}
 
-          {activeRouteId === 'catalog' && isRestaurantSelected ? (
-            <CatalogPage restaurantId={selectedRestaurantId} />
+          {activeRouteId === 'catalog' ? (
+            <CatalogPage />
           ) : null}
 
           {activeRouteId === 'menu' && isRestaurantSelected ? (
@@ -157,15 +162,15 @@ export default function CloudManagerApp() {
             <PricingPage restaurantId={selectedRestaurantId} />
           ) : null}
 
-          {activeRouteId === 'staff-permissions' && isRestaurantSelected ? (
-            <StaffPage restaurantId={selectedRestaurantId} />
+          {activeRouteId === 'staff-permissions' ? (
+            <StaffPage />
           ) : null}
 
           {activeRouteId === 'floor' && isRestaurantSelected ? (
             <FloorPage restaurantId={selectedRestaurantId} />
           ) : null}
 
-          {activeRouteId !== 'dashboard' && activeRouteId !== 'restaurants' && activeRouteId !== 'publications' && activeRouteId !== 'edge-sync' && activeRouteId !== 'catalog' && activeRouteId !== 'menu' && activeRouteId !== 'modifiers' && activeRouteId !== 'pricing-taxes' && activeRouteId !== 'staff-permissions' && activeRouteId !== 'floor' && isRestaurantSelected ? (
+          {activeRouteId !== 'dashboard' && activeRouteId !== 'restaurants' && activeRouteId !== 'licenses' && activeRouteId !== 'publications' && activeRouteId !== 'edge-sync' && activeRouteId !== 'catalog' && activeRouteId !== 'menu' && activeRouteId !== 'modifiers' && activeRouteId !== 'pricing-taxes' && activeRouteId !== 'staff-permissions' && activeRouteId !== 'floor' && isRestaurantSelected ? (
             <section className="rounded-2xl border border-slate-200 bg-white p-6">
               <h3 className="text-base font-semibold text-slate-900">{t(activeItem.labelKey)}</h3>
               <p className="mt-1 text-sm text-slate-600">{t('sections.blocked')}</p>

@@ -165,6 +165,53 @@ func TestMarkConsumedPersistsTimestampIsRepeatableAndDoesNotTouchOtherRows(t *te
 	}
 }
 
+func TestEntitlementSnapshotsRoundTripAndList(t *testing.T) {
+	ctx := t.Context()
+	_, repo := migratedTestRepo(t)
+	first := app.EntitlementSnapshot{
+		TenantID:     "tenant-a",
+		ServerID:     "cloud-a",
+		Version:      1,
+		Status:       "active",
+		Entitlements: map[string]bool{"table-mode": true, "kitchen-space": false},
+		IssuedAt:     time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC),
+		ExpiresAt:    time.Date(2099, 6, 20, 10, 0, 0, 0, time.UTC),
+		UpdatedAt:    time.Date(2026, 6, 20, 10, 1, 0, 0, time.UTC),
+	}
+	second := app.EntitlementSnapshot{
+		TenantID:     "tenant-b",
+		ServerID:     "edge-b",
+		Version:      2,
+		Status:       "revoked",
+		Entitlements: map[string]bool{"warehouse-mode": false},
+		IssuedAt:     time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC),
+		ExpiresAt:    time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC),
+		UpdatedAt:    time.Date(2026, 6, 21, 10, 1, 0, 0, time.UTC),
+	}
+	if err := repo.SaveEntitlements(ctx, first); err != nil {
+		t.Fatalf("save first entitlement snapshot: %v", err)
+	}
+	if err := repo.SaveEntitlements(ctx, second); err != nil {
+		t.Fatalf("save second entitlement snapshot: %v", err)
+	}
+
+	got, err := repo.GetEntitlements(ctx, first.TenantID, first.ServerID)
+	if err != nil {
+		t.Fatalf("get entitlement snapshot: %v", err)
+	}
+	if got.Version != first.Version || got.Status != first.Status || !got.Entitlements["table-mode"] || got.Entitlements["kitchen-space"] {
+		t.Fatalf("unexpected entitlement round-trip: %+v", got)
+	}
+
+	list, err := repo.ListEntitlements(ctx)
+	if err != nil {
+		t.Fatalf("list entitlement snapshots: %v", err)
+	}
+	if len(list) != 2 || list[0].TenantID != first.TenantID || list[1].TenantID != second.TenantID {
+		t.Fatalf("unexpected entitlement list: %+v", list)
+	}
+}
+
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "license-test.db"))

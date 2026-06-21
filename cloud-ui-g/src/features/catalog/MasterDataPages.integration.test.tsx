@@ -37,23 +37,21 @@ describe('CatalogPage page integration', () => {
   it('shows loading, empty, success with missing optional fields, and safe error states', async () => {
     const items = deferred<unknown[]>();
     installFetchMock([
-      { path: `/master-data/catalog/items?restaurant_id=${restaurantId}`, responder: () => items.promise },
-      { path: `/master-data/catalog/folders?restaurant_id=${restaurantId}`, responder: () => [] },
-      { path: `/master-data/catalog/folder-parameters?restaurant_id=${restaurantId}`, responder: () => [] },
-      { path: `/master-data/catalog/tags?restaurant_id=${restaurantId}`, responder: () => [] },
+      { method: 'GET', path: '/master-data/catalog/items', responder: () => items.promise },
+      { method: 'GET', path: '/master-data/catalog/folders', responder: () => [] },
+      { method: 'GET', path: '/master-data/catalog/tags', responder: () => [] },
     ]);
-    const loading = await renderPage(<CatalogPage restaurantId={restaurantId} />);
+    const loading = await renderPage(<CatalogPage />);
     await waitFor(() => expect(text(loading.container)).toContain(ru.status.loading));
     items.resolve([]);
     await loading.cleanup();
 
     installFetchMock([
-      { path: `/master-data/catalog/items?restaurant_id=${restaurantId}`, responder: () => [] },
-      { path: `/master-data/catalog/folders?restaurant_id=${restaurantId}`, responder: () => [] },
-      { path: `/master-data/catalog/folder-parameters?restaurant_id=${restaurantId}`, responder: () => [] },
-      { path: `/master-data/catalog/tags?restaurant_id=${restaurantId}`, responder: () => [] },
+      { method: 'GET', path: '/master-data/catalog/items', responder: () => [] },
+      { method: 'GET', path: '/master-data/catalog/folders', responder: () => [] },
+      { method: 'GET', path: '/master-data/catalog/tags', responder: () => [] },
     ]);
-    const empty = await renderPage(<CatalogPage restaurantId={restaurantId} />);
+    const empty = await renderPage(<CatalogPage />);
     await waitFor(() => {
       expect(text(empty.container)).toContain(ru.catalog.items.empty);
       expect(text(empty.container)).toContain(ru.catalog.folders.empty);
@@ -62,24 +60,23 @@ describe('CatalogPage page integration', () => {
 
     installFetchMock([
       {
-        path: `/master-data/catalog/items?restaurant_id=${restaurantId}`,
+        method: 'GET',
+        path: '/master-data/catalog/items',
         responder: () => [{ ...catalogItem(), folder_id: undefined, kitchen_type: undefined, accounting_category: undefined }],
       },
-      { path: `/master-data/catalog/folders?restaurant_id=${restaurantId}`, responder: () => [catalogFolder()] },
-      { path: `/master-data/catalog/folder-parameters?restaurant_id=${restaurantId}`, responder: () => [] },
-      { path: `/master-data/catalog/tags?restaurant_id=${restaurantId}`, responder: () => [] },
+      { method: 'GET', path: '/master-data/catalog/folders', responder: () => [catalogFolder()] },
+      { method: 'GET', path: '/master-data/catalog/tags', responder: () => [] },
     ]);
-    const success = await renderPage(<CatalogPage restaurantId={restaurantId} />);
+    const success = await renderPage(<CatalogPage />);
     await waitFor(() => expect(text(success.container)).toContain('Tea'));
     await success.cleanup();
 
     installFetchMock([
-      { path: `/master-data/catalog/items?restaurant_id=${restaurantId}`, responder: () => { throw safeApiError(); } },
-      { path: `/master-data/catalog/folders?restaurant_id=${restaurantId}`, responder: () => [] },
-      { path: `/master-data/catalog/folder-parameters?restaurant_id=${restaurantId}`, responder: () => [] },
-      { path: `/master-data/catalog/tags?restaurant_id=${restaurantId}`, responder: () => [] },
+      { method: 'GET', path: '/master-data/catalog/items', responder: () => { throw safeApiError(); } },
+      { method: 'GET', path: '/master-data/catalog/folders', responder: () => [] },
+      { method: 'GET', path: '/master-data/catalog/tags', responder: () => [] },
     ]);
-    const failed = await renderPage(<CatalogPage restaurantId={restaurantId} />);
+    const failed = await renderPage(<CatalogPage />);
     await waitFor(() => expect(text(failed.container)).toContain(ru.catalog.blockedTitle));
     expectNoRawMarkers(failed.container);
     await failed.cleanup();
@@ -89,19 +86,19 @@ describe('CatalogPage page integration', () => {
     let itemReads = 0;
     const api = installFetchMock([
       {
-        path: `/master-data/catalog/items?restaurant_id=${restaurantId}`,
+        method: 'GET',
+        path: '/master-data/catalog/items',
         responder: () => {
           itemReads += 1;
           return itemReads > 1 ? [catalogItem({ id: 'catalog-coffee', name: 'Coffee', sku: 'COF' })] : [];
         },
       },
-      { path: `/master-data/catalog/folders?restaurant_id=${restaurantId}`, responder: () => [catalogFolder()] },
-      { path: `/master-data/catalog/folder-parameters?restaurant_id=${restaurantId}`, responder: () => [] },
-      { path: `/master-data/catalog/tags?restaurant_id=${restaurantId}`, responder: () => [] },
+      { method: 'GET', path: '/master-data/catalog/folders', responder: () => [catalogFolder()] },
+      { method: 'GET', path: '/master-data/catalog/tags', responder: () => [] },
       { method: 'POST', path: '/master-data/catalog/items', responder: () => catalogItem({ id: 'catalog-coffee', name: 'Coffee', sku: 'COF' }) },
     ]);
 
-    const page = await renderPage(<CatalogPage restaurantId={restaurantId} />);
+    const page = await renderPage(<CatalogPage />);
     await waitFor(() => expect(text(page.container)).toContain(ru.catalog.items.empty));
 
     const itemPanel = page.container.querySelector('section section');
@@ -119,7 +116,6 @@ describe('CatalogPage page integration', () => {
       expect(text(page.container)).toContain('Coffee');
     });
     expect(api.callsFor('/master-data/catalog/items', 'POST')[0].body).toMatchObject({
-      restaurant_id: restaurantId,
       kind: 'dish',
       folder_id: '',
       name: 'Coffee',
