@@ -1001,7 +1001,50 @@ func (r *Repository) NextPublicationVersion(ctx context.Context, restaurantID st
 	return version, err
 }
 
-func (r *Repository) SavePublication(ctx context.Context, pub domain.Publication, packages []app.StreamPackage) (domain.Publication, error) {
+func (r *Repository) GetDeliveryState(ctx context.Context, nodeDeviceID string) (app.DeliveryStatus, error) {
+	var v app.DeliveryStatus
+	err := r.pool.QueryRow(ctx, `
+SELECT node_device_id,restaurant_id,status,effective_sha256,cloud_version,edge_ack_version,
+       GREATEST(cloud_version-edge_ack_version,0),last_sync_at,last_error_code,consecutive_failures,next_retry_at,updated_at
+FROM cloud_master_data_delivery_states WHERE node_device_id=$1`, strings.TrimSpace(nodeDeviceID)).Scan(
+		&v.NodeDeviceID, &v.RestaurantID, &v.Status, &v.EffectiveSHA256, &v.CloudVersion, &v.EdgeACKVersion,
+		&v.Lag, &v.LastSyncAt, &v.LastErrorCode, &v.ConsecutiveFailures, &v.NextRetryAt, &v.UpdatedAt)
+	return v, normalizeErr(err)
+}
+
+func (r *Repository) ListDeliveryStates(ctx context.Context, restaurantID string) ([]app.DeliveryStatus, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT node_device_id,restaurant_id,status,effective_sha256,cloud_version,edge_ack_version,
+       GREATEST(cloud_version-edge_ack_version,0),last_sync_at,last_error_code,consecutive_failures,next_retry_at,updated_at
+FROM cloud_master_data_delivery_states WHERE restaurant_id=$1 ORDER BY node_device_id`, strings.TrimSpace(restaurantID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]app.DeliveryStatus, 0)
+	for rows.Next() {
+		var v app.DeliveryStatus
+		if err := rows.Scan(&v.NodeDeviceID, &v.RestaurantID, &v.Status, &v.EffectiveSHA256, &v.CloudVersion, &v.EdgeACKVersion,
+			&v.Lag, &v.LastSyncAt, &v.LastErrorCode, &v.ConsecutiveFailures, &v.NextRetryAt, &v.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) MarkDeliveryError(ctx context.Context, restaurantID, nodeDeviceID, errorCode string, now time.Time) error {
+	_, err := r.pool.Exec(ctx, `
+INSERT INTO cloud_master_data_delivery_states(node_device_id,restaurant_id,status,last_error_code,consecutive_failures,next_retry_at,updated_at)
+VALUES ($1,$2,'error',$3,1,$4,$4)
+ON CONFLICT (node_device_id) DO UPDATE SET
+  restaurant_id=EXCLUDED.restaurant_id,status='error',last_error_code=EXCLUDED.last_error_code,
+  consecutive_failures=cloud_master_data_delivery_states.consecutive_failures+1,next_retry_at=EXCLUDED.next_retry_at,updated_at=EXCLUDED.updated_at`,
+		strings.TrimSpace(nodeDeviceID), strings.TrimSpace(restaurantID), strings.TrimSpace(errorCode), now)
+	return err
+}
+
+func (r *Repository) SavePublication(ctx context.Context, pub domain.Publication, packages []app.StreamPackage, deliveries []app.DeliveryStatus) (domain.Publication, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return domain.Publication{}, err
@@ -1029,6 +1072,20 @@ ON CONFLICT (stream_name,node_device_id) DO UPDATE SET
   payload_json = EXCLUDED.payload_json,
   updated_at = EXCLUDED.updated_at`,
 			pkg.StreamName, strings.TrimSpace(pkg.NodeDeviceID), pkg.RestaurantID, pkg.SyncMode, pkg.CloudVersion, nullableText(pkg.CheckpointToken), pkg.CloudUpdatedAt, string(pkg.PayloadJSON)); err != nil {
+			return domain.Publication{}, err
+		}
+	}
+	for _, delivery := range deliveries {
+		if _, err := tx.Exec(ctx, `
+INSERT INTO cloud_master_data_delivery_states(
+  node_device_id,restaurant_id,status,effective_sha256,cloud_version,edge_ack_version,last_sync_at,last_error_code,consecutive_failures,next_retry_at,updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,'',0,NULL,$8)
+ON CONFLICT (node_device_id) DO UPDATE SET
+  restaurant_id=EXCLUDED.restaurant_id,status=EXCLUDED.status,effective_sha256=EXCLUDED.effective_sha256,
+  cloud_version=EXCLUDED.cloud_version,edge_ack_version=EXCLUDED.edge_ack_version,last_sync_at=EXCLUDED.last_sync_at,
+  last_error_code='',consecutive_failures=0,next_retry_at=NULL,updated_at=EXCLUDED.updated_at`,
+			delivery.NodeDeviceID, delivery.RestaurantID, delivery.Status, delivery.EffectiveSHA256, delivery.CloudVersion,
+			delivery.EdgeACKVersion, delivery.LastSyncAt, delivery.UpdatedAt); err != nil {
 			return domain.Publication{}, err
 		}
 	}

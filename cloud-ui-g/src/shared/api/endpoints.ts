@@ -6,6 +6,7 @@ import {
   catalogItemTagSchema,
   catalogTagSchema,
   categorySchema,
+  deliveryStatusSchema,
   employeeSchema,
   folderParameterSchema,
   hallSchema,
@@ -369,5 +370,12 @@ export function getPublicationState(restaurantId: string): Promise<PublicationSu
   return requestOptional(
     `/restaurants/${encodeURIComponent(restaurantId)}/master-data/publication-state`,
     publicationSummarySchema,
+  );
+}
+
+export function listDeliveryStatuses(restaurantId: string) {
+  return request(
+    `/restaurants/${encodeURIComponent(restaurantId)}/master-data/delivery-status`,
+    z.array(deliveryStatusSchema),
   );
 }

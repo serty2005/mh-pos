@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
 	"strconv"
@@ -108,8 +109,11 @@ type Repository interface {
 	ListMenuItems(context.Context, string) ([]domain.MenuItem, error)
 	ListAssignedNodeDeviceIDs(context.Context, string) ([]string, error)
 	ListAssignedRestaurantIDs(context.Context) ([]string, error)
+	GetDeliveryState(context.Context, string) (DeliveryStatus, error)
+	ListDeliveryStates(context.Context, string) ([]DeliveryStatus, error)
+	MarkDeliveryError(context.Context, string, string, string, time.Time) error
 	NextPublicationVersion(context.Context, string) (int64, error)
-	SavePublication(context.Context, domain.Publication, []StreamPackage) (domain.Publication, error)
+	SavePublication(context.Context, domain.Publication, []StreamPackage, []DeliveryStatus) (domain.Publication, error)
 	GetCurrentPublication(context.Context, string) (domain.Publication, error)
 	GetPublication(context.Context, string, string) (domain.Publication, error)
 	ListCatalogSuggestions(context.Context, string, string, int, int) ([]domain.CatalogSuggestion, error)
@@ -155,7 +159,7 @@ func afterRestaurantCommit[T any](s *Service, ctx context.Context, restaurantID 
 		return v, nil
 	}
 	if _, refreshErr := s.RefreshDeliveryPackages(ctx, restaurantID); refreshErr != nil {
-		return v, refreshErr
+		slog.ErrorContext(ctx, "automatic master-data delivery refresh failed", "operation", "master_data.delivery.refresh", "restaurant_id", restaurantID, "error", refreshErr)
 	}
 	return v, nil
 }
@@ -170,7 +174,7 @@ func afterTenantCommit[T any](s *Service, ctx context.Context, v T, err error) (
 	}
 	for _, restaurantID := range restaurantIDs {
 		if _, refreshErr := s.RefreshDeliveryPackages(ctx, restaurantID); refreshErr != nil {
-			return v, refreshErr
+			slog.ErrorContext(ctx, "automatic tenant delivery refresh failed", "operation", "master_data.delivery.refresh", "restaurant_id", restaurantID, "error", refreshErr)
 		}
 	}
 	return v, nil
@@ -509,15 +513,16 @@ type PublishCommand struct {
 
 // PublicationSummary возвращает Cloud UI-safe metadata публикации без package payload и PIN material.
 type PublicationSummary struct {
-	ID            string         `json:"id"`
-	RestaurantID  string         `json:"restaurant_id"`
-	Version       int64          `json:"version"`
-	Status        string         `json:"status"`
-	CloudVersion  int64          `json:"cloud_version"`
-	PublishedAt   time.Time      `json:"published_at"`
-	PublishedBy   string         `json:"published_by"`
-	PackageSHA256 string         `json:"package_sha256"`
-	Counts        map[string]int `json:"counts"`
+	ID            string           `json:"id"`
+	RestaurantID  string           `json:"restaurant_id"`
+	Version       int64            `json:"version"`
+	Status        string           `json:"status"`
+	CloudVersion  int64            `json:"cloud_version"`
+	PublishedAt   time.Time        `json:"published_at"`
+	PublishedBy   string           `json:"published_by"`
+	PackageSHA256 string           `json:"package_sha256"`
+	Counts        map[string]int   `json:"counts"`
+	Deliveries    []DeliveryStatus `json:"deliveries"`
 }
 
 type SuggestionReviewCommand struct {
@@ -572,6 +577,22 @@ type StreamPackage struct {
 	CheckpointToken string          `json:"checkpoint_token"`
 	CloudUpdatedAt  time.Time       `json:"cloud_updated_at"`
 	PayloadJSON     json.RawMessage `json:"payload_json"`
+}
+
+// DeliveryStatus описывает безопасное агрегированное состояние доставки на Edge.
+type DeliveryStatus struct {
+	NodeDeviceID        string     `json:"node_device_id"`
+	RestaurantID        string     `json:"restaurant_id"`
+	Status              string     `json:"status"`
+	EffectiveSHA256     string     `json:"-"`
+	CloudVersion        int64      `json:"cloud_version"`
+	EdgeACKVersion      int64      `json:"edge_ack_version"`
+	Lag                 int64      `json:"lag"`
+	LastSyncAt          *time.Time `json:"last_sync_at,omitempty"`
+	LastErrorCode       string     `json:"last_error_code,omitempty"`
+	ConsecutiveFailures int        `json:"consecutive_failures"`
+	NextRetryAt         *time.Time `json:"next_retry_at,omitempty"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 // CreateRestaurant создает Cloud-owned ресторан с production-настройками учетного дня.
@@ -2125,7 +2146,7 @@ func (s *Service) Publish(ctx context.Context, cmd PublishCommand) (PublicationS
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
-	stored, err := s.repo.SavePublication(ctx, pub, streamPackages)
+	stored, err := s.repo.SavePublication(ctx, pub, streamPackages, nil)
 	if err != nil {
 		return PublicationSummary{}, err
 	}
@@ -2159,6 +2180,37 @@ func (s *Service) RefreshDeliveryPackagesForNode(ctx context.Context, restaurant
 }
 
 func (s *Service) refreshDeliveryPackages(ctx context.Context, restaurantID string, nodeDeviceIDs []string, publishedBy string) (PublicationSummary, error) {
+	type candidate struct {
+		nodeDeviceID string
+		fingerprint  string
+		previous     DeliveryStatus
+	}
+	candidates := make([]candidate, 0, len(nodeDeviceIDs))
+	fingerprintTime := time.Unix(0, 0).UTC()
+	for _, nodeDeviceID := range nodeDeviceIDs {
+		nodeDeviceID = strings.TrimSpace(nodeDeviceID)
+		_, _, streams, err := s.buildPacket(ctx, restaurantID, nodeDeviceID, 1, fingerprintTime)
+		if err != nil {
+			s.markDeliveryErrors(ctx, restaurantID, nodeDeviceIDs)
+			return PublicationSummary{}, err
+		}
+		fingerprint, err := packageFingerprint(streams)
+		if err != nil {
+			s.markDeliveryErrors(ctx, restaurantID, nodeDeviceIDs)
+			return PublicationSummary{}, err
+		}
+		previous, err := s.repo.GetDeliveryState(ctx, nodeDeviceID)
+		if err != nil && !errorsIsNotFound(err) {
+			return PublicationSummary{}, err
+		}
+		if err == nil && previous.EffectiveSHA256 == fingerprint && previous.Status != "error" {
+			continue
+		}
+		candidates = append(candidates, candidate{nodeDeviceID: nodeDeviceID, fingerprint: fingerprint, previous: previous})
+	}
+	if len(candidates) == 0 {
+		return s.GetCurrentPublishedState(ctx, restaurantID)
+	}
 	version, err := s.repo.NextPublicationVersion(ctx, restaurantID)
 	if err != nil {
 		return PublicationSummary{}, err
@@ -2166,10 +2218,12 @@ func (s *Service) refreshDeliveryPackages(ctx context.Context, restaurantID stri
 	now := s.clock.Now().UTC()
 	var packet domain.MasterDataPacket
 	var counts map[string]int
-	streamPackages := make([]StreamPackage, 0, len(nodeDeviceIDs)*9)
-	for index, nodeDeviceID := range nodeDeviceIDs {
-		nextPacket, nextCounts, streams, err := s.buildPacket(ctx, restaurantID, strings.TrimSpace(nodeDeviceID), version, now)
+	streamPackages := make([]StreamPackage, 0, len(candidates)*9)
+	deliveries := make([]DeliveryStatus, 0, len(candidates))
+	for index, item := range candidates {
+		nextPacket, nextCounts, streams, err := s.buildPacket(ctx, restaurantID, item.nodeDeviceID, version, now)
 		if err != nil {
+			s.markDeliveryErrors(ctx, restaurantID, nodeDeviceIDs)
 			return PublicationSummary{}, err
 		}
 		if index == 0 {
@@ -2177,6 +2231,11 @@ func (s *Service) refreshDeliveryPackages(ctx context.Context, restaurantID stri
 			counts = nextCounts
 		}
 		streamPackages = append(streamPackages, streams...)
+		deliveries = append(deliveries, DeliveryStatus{
+			NodeDeviceID: item.nodeDeviceID, RestaurantID: restaurantID, Status: "pending",
+			EffectiveSHA256: item.fingerprint, CloudVersion: version, EdgeACKVersion: item.previous.EdgeACKVersion,
+			Lag: max(0, version-item.previous.EdgeACKVersion), UpdatedAt: now,
+		})
 	}
 	body, err := json.Marshal(packet)
 	if err != nil {
@@ -2196,11 +2255,48 @@ func (s *Service) refreshDeliveryPackages(ctx context.Context, restaurantID stri
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
-	stored, err := s.repo.SavePublication(ctx, pub, streamPackages)
+	stored, err := s.repo.SavePublication(ctx, pub, streamPackages, deliveries)
 	if err != nil {
 		return PublicationSummary{}, err
 	}
-	return summarizePublication(stored, counts), nil
+	summary := summarizePublication(stored, counts)
+	summary.Deliveries, err = s.repo.ListDeliveryStates(ctx, restaurantID)
+	return summary, err
+}
+
+// RetryDeliveryForNode повторяет одну pending/error сборку при очередном Edge exchange.
+func (s *Service) RetryDeliveryForNode(ctx context.Context, restaurantID, nodeDeviceID string) error {
+	state, err := s.repo.GetDeliveryState(ctx, strings.TrimSpace(nodeDeviceID))
+	if err != nil {
+		return err
+	}
+	if state.RestaurantID != strings.TrimSpace(restaurantID) || state.Status != "error" {
+		return nil
+	}
+	_, err = s.refreshDeliveryPackages(ctx, state.RestaurantID, []string{state.NodeDeviceID}, "cloud-retry")
+	return err
+}
+
+func (s *Service) markDeliveryErrors(ctx context.Context, restaurantID string, nodeDeviceIDs []string) {
+	now := s.clock.Now().UTC()
+	for _, nodeDeviceID := range nodeDeviceIDs {
+		if err := s.repo.MarkDeliveryError(ctx, restaurantID, strings.TrimSpace(nodeDeviceID), "DELIVERY_ASSEMBLY_FAILED", now); err != nil {
+			slog.ErrorContext(ctx, "delivery error state write failed", "operation", "master_data.delivery.mark_error", "restaurant_id", restaurantID, "node_device_id", nodeDeviceID, "error", err)
+		}
+	}
+}
+
+func packageFingerprint(packages []StreamPackage) (string, error) {
+	h := sha256.New()
+	for _, pkg := range packages {
+		if _, err := h.Write([]byte(pkg.StreamName)); err != nil {
+			return "", err
+		}
+		if _, err := h.Write(pkg.PayloadJSON); err != nil {
+			return "", err
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // GetCurrentPublishedState возвращает Cloud UI-safe metadata текущей публикации.
@@ -2223,7 +2319,18 @@ func (s *Service) GetCurrentPublishedState(ctx context.Context, restaurantID str
 		"recipe_lines":    len(packet.RecipeLines),
 		"stop_lists":      len(packet.StopLists),
 	}
-	return summarizePublication(pub, counts), nil
+	summary := summarizePublication(pub, counts)
+	summary.Deliveries, err = s.repo.ListDeliveryStates(ctx, strings.TrimSpace(restaurantID))
+	return summary, err
+}
+
+// ListDeliveryStatuses возвращает safe per-Edge ACK/lag/error read model независимо от наличия publication.
+func (s *Service) ListDeliveryStatuses(ctx context.Context, restaurantID string) ([]DeliveryStatus, error) {
+	restaurantID = strings.TrimSpace(restaurantID)
+	if restaurantID == "" {
+		return nil, fmt.Errorf("%w: restaurant_id is required", domain.ErrInvalid)
+	}
+	return s.repo.ListDeliveryStates(ctx, restaurantID)
 }
 
 // GetCurrentPublishedPackage возвращает последний full multi-stream payload для прямой доставки на POS Edge.

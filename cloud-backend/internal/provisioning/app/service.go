@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -203,7 +204,7 @@ func (s *Service) AssignDevice(ctx context.Context, restaurantID, nodeDeviceID s
 	}
 	_ = s.repo.MarkUnassignedAssigned(ctx, nodeDeviceID, restaurantID, now)
 	if _, err := s.master.RefreshDeliveryPackagesForNode(ctx, restaurantID, nodeDeviceID); err != nil {
-		return AssignDeviceResult{}, err
+		slog.ErrorContext(ctx, "initial Edge delivery assembly failed", "operation", "provisioning.delivery.refresh", "restaurant_id", restaurantID, "node_device_id", nodeDeviceID, "error", err)
 	}
 	return AssignDeviceResult{NodeDeviceID: node.NodeDeviceID, RestaurantID: restaurantID, Status: string(node.Status), SnapshotURL: snapshotURL(restaurantID, nodeDeviceID)}, nil
 }
@@ -347,7 +348,7 @@ func (s *Service) ConsumePairingCode(ctx context.Context, cmd PairingConsumeComm
 	}
 	_ = s.repo.MarkUnassignedAssigned(ctx, nodeID, pairing.RestaurantID, now)
 	if _, err := s.master.RefreshDeliveryPackagesForNode(ctx, pairing.RestaurantID, nodeID); err != nil {
-		return PairingConsumeResult{}, err
+		slog.ErrorContext(ctx, "pairing delivery assembly failed", "operation", "provisioning.delivery.refresh", "restaurant_id", pairing.RestaurantID, "node_device_id", nodeID, "error", err)
 	}
 	return PairingConsumeResult{
 		NodeDeviceID: node.NodeDeviceID,

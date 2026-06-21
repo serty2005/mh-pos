@@ -689,6 +689,12 @@ def seed_full_system(
         f"{API_PREFIX}/restaurants/{restaurant_id}/master-data/publication-state",
         expected_status=(200,),
     )
+    delivery_status = request(
+        cloud_client,
+        "GET",
+        f"{API_PREFIX}/restaurants/{restaurant_id}/master-data/delivery-status",
+        expected_status=(200,),
+    )
 
     summary = {
         "restaurant_id": restaurant_id,
@@ -717,6 +723,7 @@ def seed_full_system(
         "recipe_suggestion_ids": [item["suggestion_id"] for item in recipe_versions],
         "stop_list_ids": stop_list_ids,
         "publication_id": publication["id"],
+        "delivery_status": delivery_status,
         "health": health,
         "entitlement_version": entitlement_version,
     }

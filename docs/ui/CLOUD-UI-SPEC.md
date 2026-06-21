@@ -54,7 +54,7 @@
 - Modifiers раздел управляет modifier groups, options и bindings.
 - Pricing/taxes раздел управляет pricing policies и package `pricing_policy` через provisioning route.
 - Floor раздел управляет halls/tables и показывает preview зала.
-- Publications раздел читает publication state и выполняет publish master data.
+- Publications раздел читает publication state и per-Edge delivery status без manual publish action.
 - Это текущее, но устаревающее поведение: целевой Cloud UI удаляет Publish action и заменяет Publications экран read-only состоянием автоматической доставки по Edge — Cloud version, acknowledged Edge version, lag и safe error.
 - API client валидирует responses через Zod-схемы и использует bounded/safe query там, где route это поддерживает.
 - Пользовательские строки находятся в `cloud-ui-g/src/shared/i18n` и `cloud-ui-g/src/i18n`; новые строки не должны добавляться hardcoded в components.
@@ -129,8 +129,9 @@
 - `POST /api/v1/devices/pairing/consume`
 - `GET /api/v1/sync/edge-events?restaurant_id=&limit=`
 - `GET /api/v1/restaurants/{id}/master-data/publication-state`
+- `GET /api/v1/restaurants/{id}/master-data/delivery-status`
 
-Реализовано сейчас: Publications раздел read-only. Он читает Cloud version metadata через `publication-state`, не вызывает publish API и не предлагает manual checkpoint. Edge ACK/lag/error отображаются только как safe delivery status surface; persistent Cloud-side checkpoint read model остается запланировано далее.
+Реализовано сейчас: Publications раздел read-only. Он читает Cloud version metadata через `publication-state`, а фактические per-Edge ACK version, lag, last sync и safe error code через `delivery-status`; publish API и manual checkpoint отсутствуют.
 
 ## Удаленный Legacy `cloud-ui`
 

@@ -12,8 +12,13 @@ type PublicationPanelProps = {
 
 export default function PublicationPanel({ restaurantId }: PublicationPanelProps) {
   const { t } = useI18n();
-  const { publication, status, error, reload } = usePublication(restaurantId);
+  const { publication, deliveries, status, error, reload } = usePublication(restaurantId);
   const isLoading = status === 'loading';
+  const deliveryStatus = (value: 'pending' | 'synced' | 'error') => {
+    if (value === 'synced') return t('publications.statusSynced');
+    if (value === 'error') return t('publications.statusError');
+    return t('publications.statusPending');
+  };
 
   return (
     <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
@@ -43,6 +48,10 @@ export default function PublicationPanel({ restaurantId }: PublicationPanelProps
             <p className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-500">{t('publications.fields.packageHash')}<span className="mt-1 block truncate font-mono text-xs font-semibold text-slate-900">{publication.package_sha256}</span></p>
           </div>
 
+        </>
+      ) : null}
+
+      {status === 'ready' ? (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="flex items-start gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700">
@@ -53,13 +62,22 @@ export default function PublicationPanel({ restaurantId }: PublicationPanelProps
                 <p className="mt-1 text-sm leading-6 text-slate-600">{t('publications.deliveryDescription')}</p>
               </div>
             </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-3">
-              <p className="rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-500">{t('publications.fields.edgeAck')}<span className="mt-1 block text-sm font-semibold text-slate-900">{t('publications.ackPending')}</span></p>
-              <p className="rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-500">{t('publications.fields.lag')}<span className="mt-1 block text-sm font-semibold text-slate-900">{t('publications.lagUnknown')}</span></p>
-              <p className="rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-500">{t('publications.fields.error')}<span className="mt-1 block text-sm font-semibold text-slate-900">{t('publications.noDeliveryError')}</span></p>
-            </div>
+            {deliveries.length === 0 ? <p className="mt-3 text-sm text-slate-600">{t('publications.deliveryEmpty')}</p> : (
+              <div className="mt-3 divide-y divide-slate-200 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                {deliveries.map((delivery) => (
+                  <div key={delivery.node_device_id} className="grid gap-3 p-3 text-sm md:grid-cols-6">
+                    <p className="md:col-span-2"><span className="block text-xs font-semibold text-slate-500">{t('publications.fields.nodeDeviceId')}</span><span className="mt-1 block truncate font-mono text-xs text-slate-900">{delivery.node_device_id}</span></p>
+                    <p><span className="block text-xs font-semibold text-slate-500">{t('publications.fields.status')}</span><span className="mt-1 block font-semibold text-slate-900">{deliveryStatus(delivery.status)}</span></p>
+                    <p><span className="block text-xs font-semibold text-slate-500">{t('publications.fields.edgeAck')}</span><span className="mt-1 block font-mono tabular-nums text-slate-900">{delivery.edge_ack_version} / {delivery.cloud_version}</span></p>
+                    <p><span className="block text-xs font-semibold text-slate-500">{t('publications.fields.lag')}</span><span className="mt-1 block tabular-nums text-slate-900">{delivery.lag}</span></p>
+                    <p><span className="block text-xs font-semibold text-slate-500">{t('publications.fields.lastSync')}</span><span className="mt-1 block text-xs text-slate-900">{delivery.last_sync_at ? formatIsoDateTime(delivery.last_sync_at) : t('publications.noSync')}</span></p>
+                    <p className="md:col-span-5"><span className="block text-xs font-semibold text-slate-500">{t('publications.fields.error')}</span><span className="mt-1 block font-mono text-xs text-slate-900">{delivery.last_error_code || t('publications.noDeliveryError')}</span></p>
+                    <p><span className="block text-xs font-semibold text-slate-500">{t('publications.fields.failures')}</span><span className="mt-1 block tabular-nums text-slate-900">{delivery.consecutive_failures}</span></p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </>
       ) : null}
     </section>
   );

@@ -315,7 +315,7 @@ func TestPublicationPackageSaveCurrentAtomicityVersionAndMemoryParity(t *testing
 		testStreamPackage("floor", "node-publication", "restaurant-publication", 1, base, `{"stream":"floor","halls":[{"id":"hall-1"}]}`),
 	}
 	for _, repo := range []publicationRepository{memRepo, pgRepo} {
-		if _, err := repo.SavePublication(ctx, pub, packages); err != nil {
+		if _, err := repo.SavePublication(ctx, pub, packages, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -338,7 +338,7 @@ func TestPublicationPackageSaveCurrentAtomicityVersionAndMemoryParity(t *testing
 
 	pub2 := testPublication("publication-source-002", "restaurant-publication", 2, base.Add(time.Hour))
 	pub2.PackageSHA256 = "sha-publication-source-002"
-	if _, err := pgRepo.SavePublication(ctx, pub2, []app.StreamPackage{testStreamPackage("catalog", "node-publication", "restaurant-publication", 2, base.Add(time.Hour), `{"stream":"catalog","items":[{"id":"catalog-2"}]}`)}); err != nil {
+	if _, err := pgRepo.SavePublication(ctx, pub2, []app.StreamPackage{testStreamPackage("catalog", "node-publication", "restaurant-publication", 2, base.Add(time.Hour), `{"stream":"catalog","items":[{"id":"catalog-2"}]}`)}, nil); err != nil {
 		t.Fatal(err)
 	}
 	current, err = pgRepo.GetCurrentPublication(ctx, "restaurant-publication")
@@ -353,7 +353,7 @@ func TestPublicationPackageSaveCurrentAtomicityVersionAndMemoryParity(t *testing
 	_, err = pgRepo.SavePublication(ctx, badPub, []app.StreamPackage{
 		testStreamPackage("catalog", "node-publication-bad", "restaurant-publication", 3, base, `{"stream":"catalog"}`),
 		testStreamPackage("invalid_stream", "node-publication-bad", "restaurant-publication", 3, base, `{"stream":"invalid"}`),
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("expected invalid stream package to fail")
 	}
@@ -545,7 +545,7 @@ func TestPricingPolicyPersistenceUpdateListPublicationFieldAndMemoryParity(t *te
 
 	pub := testPublication("publication-pricing-source", "restaurant-pricing-a", 1, base.Add(2*time.Hour))
 	pkg := testStreamPackage("pricing_policy", "node-pricing", "restaurant-pricing-a", 1, base.Add(2*time.Hour), `{"pricing_policies":[{"id":"pricing-source-020","requires_permission":"custom.pricing.override"}]}`)
-	if _, err := pgRepo.SavePublication(ctx, pub, []app.StreamPackage{pkg}); err != nil {
+	if _, err := pgRepo.SavePublication(ctx, pub, []app.StreamPackage{pkg}, nil); err != nil {
 		t.Fatal(err)
 	}
 	assertPackagePayloadShape(t, ctx, pool, "pricing_policy", "node-pricing", "custom.pricing.override")
@@ -558,7 +558,7 @@ type roleRepository interface {
 }
 
 type publicationRepository interface {
-	SavePublication(context.Context, domain.Publication, []app.StreamPackage) (domain.Publication, error)
+	SavePublication(context.Context, domain.Publication, []app.StreamPackage, []app.DeliveryStatus) (domain.Publication, error)
 }
 
 type stopListRepository interface {

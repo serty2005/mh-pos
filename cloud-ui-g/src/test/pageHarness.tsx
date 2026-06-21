@@ -7,6 +7,7 @@ import { ApiError } from '../shared/api/errors';
 import type {
   CatalogFolder,
   CatalogItem,
+  DeliveryStatus,
   Employee,
   EdgeEvent,
   Hall,
@@ -461,6 +462,21 @@ export function publication(overrides: Partial<PublicationSummary> = {}): Public
     published_by: 'cloud-ui-test',
     package_sha256: 'sha-safe',
     counts: { catalog: 1, menu: 1 },
+    deliveries: [],
+    ...overrides,
+  };
+}
+
+export function deliveryStatus(overrides: Partial<DeliveryStatus> = {}): DeliveryStatus {
+  return {
+    node_device_id: nodeDeviceId,
+    restaurant_id: restaurantId,
+    status: 'pending',
+    cloud_version: 7,
+    edge_ack_version: 5,
+    lag: 2,
+    consecutive_failures: 0,
+    updated_at: '2026-06-01T10:00:00Z',
     ...overrides,
   };
 }

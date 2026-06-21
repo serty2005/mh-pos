@@ -877,6 +877,23 @@ CREATE INDEX IF NOT EXISTS cloud_master_data_publications_current
   ON cloud_master_data_publications(restaurant_id, version DESC)
   WHERE status = 'published';
 
+CREATE TABLE IF NOT EXISTS cloud_master_data_delivery_states (
+  node_device_id TEXT PRIMARY KEY CHECK (node_device_id <> ''),
+  restaurant_id TEXT NOT NULL CHECK (restaurant_id <> ''),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','synced','error')),
+  effective_sha256 TEXT NOT NULL DEFAULT '',
+  cloud_version BIGINT NOT NULL DEFAULT 0 CHECK (cloud_version >= 0),
+  edge_ack_version BIGINT NOT NULL DEFAULT 0 CHECK (edge_ack_version >= 0),
+  last_sync_at TIMESTAMPTZ,
+  last_error_code TEXT NOT NULL DEFAULT '',
+  consecutive_failures INTEGER NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
+  next_retry_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS cloud_master_data_delivery_states_restaurant
+  ON cloud_master_data_delivery_states(restaurant_id, status, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS cloud_catalog_suggestions (
   id TEXT PRIMARY KEY,
   suggestion_id TEXT NOT NULL UNIQUE,

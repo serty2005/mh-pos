@@ -1783,3 +1783,80 @@ func TestPricingPolicyValidationAndPublicationPayload(t *testing.T) {
 		t.Fatalf("unexpected pricing policy payload: %+v", published)
 	}
 }
+
+func TestAutomaticDeliveryCreatesLatestRowsForAssignedEdgesAndReplayIsIdempotent(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	restaurant, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "Demo", Timezone: "Europe/Moscow", Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: restaurant.ID, Kind: domain.CatalogItemGood, Name: "Tea", SKU: "TEA", BaseUnit: "pcs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.GetCurrentPublishedState(ctx, restaurant.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("CRUD before assignment must not create publication, got %v", err)
+	}
+
+	repo.AssignEdgeNodeForTest(restaurant.ID, "edge-a")
+	repo.AssignEdgeNodeForTest(restaurant.ID, "edge-b")
+	first, err := service.RefreshDeliveryPackages(ctx, restaurant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Version != 1 || len(first.Deliveries) != 2 {
+		t.Fatalf("expected first full batch for two Edge nodes, got %+v", first)
+	}
+	for _, nodeID := range []string{"edge-a", "edge-b"} {
+		if _, ok := repo.Package("catalog", nodeID); !ok {
+			t.Fatalf("expected latest catalog row for %s", nodeID)
+		}
+	}
+	if _, err := service.RefreshDeliveryPackagesForNode(ctx, restaurant.ID, "edge-a"); err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := service.GetCurrentPublishedState(ctx, restaurant.ID)
+	if err != nil || replayed.Version != first.Version {
+		t.Fatalf("unchanged replay must keep publication version, got %+v err=%v", replayed, err)
+	}
+
+	name := "Black tea"
+	if _, err := service.UpdateCatalogItem(ctx, item.ID, app.UpdateCatalogItemCommand{Name: name}); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := service.GetCurrentPublishedState(ctx, restaurant.ID)
+	if err != nil || updated.Version != 2 || len(updated.Deliveries) != 2 {
+		t.Fatalf("effective commit must update both Edge nodes once, got %+v err=%v", updated, err)
+	}
+}
+
+func TestAutomaticDeliveryFailureKeepsAuthorityCommitAndRetries(t *testing.T) {
+	service, repo := newService()
+	ctx := context.Background()
+	restaurant, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "Demo", Timezone: "Europe/Moscow", Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.AssignEdgeNodeForTest(restaurant.ID, "edge-a")
+	if _, err := service.RefreshDeliveryPackagesForNode(ctx, restaurant.ID, "edge-a"); err != nil {
+		t.Fatal(err)
+	}
+	repo.FailDeliveryAssemblyForTest(errors.New("storage unavailable"))
+	item, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{RestaurantID: restaurant.ID, Kind: domain.CatalogItemGood, Name: "Tea", SKU: "TEA", BaseUnit: "pcs"})
+	if err != nil || item.ID == "" {
+		t.Fatalf("authority commit must succeed when delivery assembly fails, item=%+v err=%v", item, err)
+	}
+	state, err := repo.GetDeliveryState(ctx, "edge-a")
+	if err != nil || state.Status != "error" || state.LastErrorCode != "DELIVERY_ASSEMBLY_FAILED" || state.ConsecutiveFailures != 1 {
+		t.Fatalf("expected observable retryable delivery error, got %+v err=%v", state, err)
+	}
+	repo.FailDeliveryAssemblyForTest(nil)
+	if err := service.RetryDeliveryForNode(ctx, restaurant.ID, "edge-a"); err != nil {
+		t.Fatal(err)
+	}
+	state, err = repo.GetDeliveryState(ctx, "edge-a")
+	if err != nil || state.Status != "pending" || state.CloudVersion != 2 || state.LastErrorCode != "" {
+		t.Fatalf("expected successful retry with a new latest package, got %+v err=%v", state, err)
+	}
+}
