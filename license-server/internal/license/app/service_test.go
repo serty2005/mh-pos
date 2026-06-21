@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -29,6 +30,20 @@ func (r *memoryRepo) GetEntitlements(_ context.Context, tenantID, serverID strin
 		return app.EntitlementSnapshot{}, app.ErrEntitlementNotFound
 	}
 	return item, nil
+}
+
+func (r *memoryRepo) ListEntitlements(_ context.Context) ([]app.EntitlementSnapshot, error) {
+	items := make([]app.EntitlementSnapshot, 0, len(r.entitlements))
+	for _, item := range r.entitlements {
+		items = append(items, item)
+	}
+	slices.SortFunc(items, func(a, b app.EntitlementSnapshot) int {
+		if a.TenantID == b.TenantID {
+			return cmpString(a.ServerID, b.ServerID)
+		}
+		return cmpString(a.TenantID, b.TenantID)
+	})
+	return items, nil
 }
 
 func (r *memoryRepo) Save(_ context.Context, item app.PairingCode) error {
@@ -126,6 +141,15 @@ func TestEntitlementsEnableDisableRevokeAndMonotonicVersion(t *testing.T) {
 	if err != nil || got.Version != 3 || got.Status != "revoked" {
 		t.Fatalf("get: %+v %v", got, err)
 	}
+	list, err := service.ListEntitlements(t.Context())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if !slices.ContainsFunc(list, func(item app.EntitlementSnapshot) bool {
+		return item.TenantID == "tenant-1" && item.ServerID == "edge-1" && item.Version == 3
+	}) {
+		t.Fatalf("expected saved entitlement in list, got %+v", list)
+	}
 }
 
 func errFromResolve(t *testing.T, service *app.Service, cmd app.ResolveCommand) error {
@@ -135,4 +159,15 @@ func errFromResolve(t *testing.T, service *app.Service, cmd app.ResolveCommand) 
 		t.Fatal("expected resolve error")
 	}
 	return err
+}
+
+func cmpString(a, b string) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	default:
+		return 0
+	}
 }

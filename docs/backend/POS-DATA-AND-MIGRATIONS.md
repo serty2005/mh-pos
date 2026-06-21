@@ -126,8 +126,7 @@ Managed SQL files, реализовано сейчас:
 
 Ограничение текущей основы:
 
-- Cloud baseline `0.1.10` переносит прежний `cloud_employees.restaurant_id` в memberships и удаляет restaurant ownership из roles/employees; совпадающие role names получают deterministic suffix из role ID. Startup выполняет обязательный PostgreSQL backup до checksum/version upgrade и проверяет membership table/columns/index до запуска HTTP/workers.
-- Cloud baseline `0.1.11` добавляет `cloud_master_data_delivery_states` для persistent per-Edge ACK/lag/error/retry state. Active pre-pilot upgrade сохраняет обязательный PostgreSQL backup и schema verification до запуска HTTP/workers.
+- Cloud baseline `0.1.12` переносит прежний `cloud_employees.restaurant_id` в memberships, удаляет restaurant ownership из roles/employees, снимает legacy `restaurant_id <> ''` constraints с foundation-таблиц tenant catalog и добавляет `cloud_master_data_delivery_states` для persistent per-Edge ACK/lag/error/retry state. Совпадающие role names получают deterministic suffix из role ID. Startup выполняет обязательный PostgreSQL backup до checksum/version upgrade и проверяет runtime schema до запуска HTTP/workers.
 
 - Cloud recipe/inventory-adjacent foundation is not equal to full POS Edge inventory runtime support.
 - POS Edge `ApplyMasterData` сейчас принимает `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`, `recipes`, `inventory_reference`, `proposal_feedback`.

@@ -36,7 +36,7 @@ describe('StaffPage page integration', () => {
       { method: 'GET', path: '/master-data/employees', responder: () => [] },
     ]);
 
-    const loading = await renderPage(<StaffPage restaurantId={restaurantId} />);
+    const loading = await renderPage(<StaffPage />);
     await waitFor(() => {
       expect(loading.container.querySelector('[aria-busy="true"]')).not.toBeNull();
       expect(text(loading.container)).toContain(ru.staff.pageTitle);
@@ -48,7 +48,7 @@ describe('StaffPage page integration', () => {
       { method: 'GET', path: '/master-data/roles', responder: () => [] },
       { method: 'GET', path: '/master-data/employees', responder: () => [] },
     ]);
-    const empty = await renderPage(<StaffPage restaurantId={restaurantId} />);
+    const empty = await renderPage(<StaffPage />);
     await waitFor(() => expect(text(empty.container)).toContain(ru.staff.employees.emptyTitle));
     await click(buttonByText(empty.container, ru.staff.tabs.roles));
     await waitFor(() => expect(text(empty.container)).toContain(ru.staff.roles.empty));
@@ -58,7 +58,7 @@ describe('StaffPage page integration', () => {
       { method: 'GET', path: '/master-data/roles', responder: () => { throw safeApiError(); } },
       { method: 'GET', path: '/master-data/employees', responder: () => [] },
     ]);
-    const blocked = await renderPage(<StaffPage restaurantId={restaurantId} />);
+    const blocked = await renderPage(<StaffPage />);
     await waitFor(() => expect(text(blocked.container)).toContain(ru.staff.blockedTitle));
     expectNoRawMarkers(blocked.container);
     await blocked.cleanup();
@@ -94,7 +94,7 @@ describe('StaffPage page integration', () => {
       },
     ]);
 
-    const page = await renderPage(<StaffPage restaurantId={restaurantId} />);
+    const page = await renderPage(<StaffPage />);
     await waitFor(() => expect(text(page.container)).toContain(ru.staff.employees.emptyTitle));
 
     await click(buttonByText(page.container, ru.staff.tabs.roles));
@@ -138,7 +138,7 @@ describe('StaffPage page integration', () => {
       },
     ]);
 
-    const page = await renderPage(<StaffPage restaurantId={restaurantId} />);
+    const page = await renderPage(<StaffPage />);
     await waitFor(() => expect(text(page.container)).toContain(ru.staff.employees.emptyTitle));
     await click(buttonByText(page.container, ru.staff.tabs.roles));
     await waitFor(() => expect(text(page.container)).toContain(existingRole.name));
@@ -182,7 +182,7 @@ describe('StaffPage page integration', () => {
       },
     ]);
 
-    const page = await renderPage(<StaffPage restaurantId={restaurantId} />);
+    const page = await renderPage(<StaffPage />);
     await waitFor(() => expect(text(page.container)).toContain(ru.staff.employees.emptyTitle));
 
     await click(buttonByText(page.container, ru.staff.employees.actions.new));
@@ -193,6 +193,7 @@ describe('StaffPage page integration', () => {
     await change(inputs[0], 'Bob Cashier');
     await change(selects[0], 'role-manager');
     await change(inputs[1], '1234');
+    await click(modal!.querySelector('input[type="checkbox"]')!);
     await click(buttonByText(modal!, ru.staff.employees.actions.create));
     await click(buttonByText(modal!, ru.staff.employees.actions.create));
 
@@ -226,7 +227,7 @@ describe('StaffPage page integration', () => {
       { method: 'POST', path: '/master-data/employees', responder: () => { throw safeApiError(); } },
     ]);
 
-    const failed = await renderPage(<StaffPage restaurantId={restaurantId} />);
+    const failed = await renderPage(<StaffPage />);
     await waitFor(() => expect(text(failed.container)).toContain(ru.staff.employees.emptyTitle));
     await click(buttonByText(failed.container, ru.staff.employees.actions.new));
     const failedModal = failed.container.querySelector('.fixed');
@@ -236,6 +237,7 @@ describe('StaffPage page integration', () => {
     await change(failedInputs[0], 'Pin Leak Check');
     await change(failedSelects[0], 'role-manager');
     await change(failedInputs[1], '9999');
+    await click(failedModal!.querySelector('input[type="checkbox"]')!);
     await click(buttonByText(failedModal!, ru.staff.employees.actions.create));
 
     await waitFor(() => {

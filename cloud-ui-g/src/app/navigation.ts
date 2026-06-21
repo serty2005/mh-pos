@@ -7,13 +7,14 @@ export type NavigationItem = {
 
 export const navigationItems: NavigationItem[] = [
   { route: { id: 'dashboard', scope: 'global' }, labelKey: 'nav.dashboard' },
+  { route: { id: 'catalog', scope: 'global' }, labelKey: 'nav.catalog' },
+  { route: { id: 'staff-permissions', scope: 'global' }, labelKey: 'nav.staffPermissions' },
+  { route: { id: 'licenses', scope: 'global' }, labelKey: 'nav.licenses' },
   { route: { id: 'restaurants', scope: 'global' }, labelKey: 'nav.restaurants' },
   { route: { id: 'edge-sync', scope: 'restaurant' }, labelKey: 'nav.edgeSync' },
-  { route: { id: 'catalog', scope: 'restaurant' }, labelKey: 'nav.catalog' },
   { route: { id: 'menu', scope: 'restaurant' }, labelKey: 'nav.menu' },
   { route: { id: 'modifiers', scope: 'restaurant' }, labelKey: 'nav.modifiers' },
   { route: { id: 'pricing-taxes', scope: 'restaurant' }, labelKey: 'nav.pricingTaxes' },
-  { route: { id: 'staff-permissions', scope: 'restaurant' }, labelKey: 'nav.staffPermissions' },
   { route: { id: 'floor', scope: 'restaurant' }, labelKey: 'nav.floor' },
   { route: { id: 'publications', scope: 'restaurant' }, labelKey: 'nav.publications' },
   { route: { id: 'inventory', scope: 'restaurant' }, labelKey: 'nav.inventory' },
