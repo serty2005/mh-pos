@@ -92,8 +92,10 @@ class FakeClient:
             return {"id": f"hall-{self.counter}"}
         if path == "/api/v1/master-data/floor/tables":
             return {"id": f"table-{self.counter}"}
-        if path == "/api/v1/master-data/publications":
-            return {"id": "publication-1"}
+        if path == "/api/v1/restaurants/restaurant-1/master-data/publication-state":
+            return {"id": "publication-1", "cloud_version": 1}
+        if path == "/api/v1/restaurants/restaurant-1/master-data/delivery-status":
+            return [{"node_device_id": "edge-node-from-pos", "status": "pending", "cloud_version": 1, "edge_ack_version": 0, "lag": 1}]
         if path == "/api/v1/restaurants/restaurant-1/devices/generate-pairing-code":
             if "node_device_id" in body:
                 raise AssertionError("Cloud pairing code generation must not receive edge node_device_id")
@@ -383,11 +385,15 @@ class SeedDevSystemTest(unittest.TestCase):
 
         cloud_paths = [path for _, path, _, _ in cloud.calls]
         pairing_index = cloud_paths.index("/api/v1/restaurants/restaurant-1/devices/generate-pairing-code")
-        publication_index = cloud_paths.index("/api/v1/master-data/publications")
-        self.assertGreater(pairing_index, publication_index)
+        publication_index = cloud_paths.index("/api/v1/restaurants/restaurant-1/master-data/publication-state")
+        delivery_index = cloud_paths.index("/api/v1/restaurants/restaurant-1/master-data/delivery-status")
+        self.assertGreater(publication_index, pairing_index)
+        self.assertGreater(delivery_index, publication_index)
+        self.assertNotIn("/api/v1/master-data/publications", cloud_paths)
         self.assertEqual(summary["node_device_id"], "edge-node-from-pos")
         self.assertEqual(summary["pairing_code"], "PAIR1234")
         self.assertEqual(summary["pairing_id"], "pairing-1")
+        self.assertEqual(summary["delivery_status"][0]["node_device_id"], "edge-node-from-pos")
         pairing_call = cloud.calls[pairing_index]
         self.assertEqual(pairing_call[2], {"display_name": "POS Terminal unit", "expires_in_minutes": 30})
         role_call = next(call for call in cloud.calls if call[1] == "/api/v1/master-data/roles")

@@ -156,6 +156,7 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 	r.Patch("/tables/{id}", h.updateTable)
 	r.Post("/tables/{id}/archive", h.archiveTable)
 	r.Get("/restaurants/{id}/master-data/publication-state", h.getRestaurantPublished)
+	r.Get("/restaurants/{id}/master-data/delivery-status", h.listRestaurantDeliveryStatus)
 	r.Get("/restaurants/{id}/master-data/packages/latest", h.getLatestRestaurantPackage)
 	r.Get("/restaurants/{id}/master-data/packages/{package_id}", h.getRestaurantPackage)
 	r.Get("/restaurants/{id}/edge-nodes/{node_device_id}/master-data/snapshot", h.getEdgeNodeSnapshot)
@@ -702,6 +703,11 @@ func (h *Handler) getPublished(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) getRestaurantPublished(w http.ResponseWriter, r *http.Request) {
 	v, err := h.service.GetCurrentPublishedState(r.Context(), chi.URLParam(r, "id"))
 	writeOptional(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) listRestaurantDeliveryStatus(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListDeliveryStatuses(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
 }
 
 func (h *Handler) getLatestRestaurantPackage(w http.ResponseWriter, r *http.Request) {

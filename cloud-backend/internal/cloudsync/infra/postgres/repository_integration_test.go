@@ -16,6 +16,16 @@ import (
 	"cloud-backend/internal/cloudsync/contracts"
 )
 
+func TestDeliveryACKVersionIgnoresOptionalZeroStreams(t *testing.T) {
+	streams := []contracts.SyncExchangeStreamRequest{
+		{StreamName: contracts.MasterDataStreamCatalog, LastCloudVersion: 6},
+		{StreamName: contracts.MasterDataStreamCurrencies, LastCloudVersion: 0},
+	}
+	if got := deliveryACKVersion(streams); got != 6 {
+		t.Fatalf("expected latest acknowledged common publication version 6, got %d", got)
+	}
+}
+
 type repositoryFixedClock struct{}
 
 func (repositoryFixedClock) Now() time.Time {

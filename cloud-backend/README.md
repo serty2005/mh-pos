@@ -47,7 +47,7 @@ CLOUD_POSTGRES_MIGRATIONS_DIR=migrations/postgres
 CLOUD_POSTGRES_BACKUP_DIR=data/cloud-backups
 CLOUD_PUBLIC_URL=http://localhost:8090
 LICENSE_SERVER_URL=http://localhost:8095
-MH_POS_VERSION=0.1.10
+MH_POS_VERSION=0.1.11
 ```
 
 `CLOUD_POSTGRES_DSN` обязателен.
@@ -111,6 +111,7 @@ POST  /api/v1/menu/items/{id}/archive
 GET   /api/v1/restaurants/{id}/master-data/publication-state
 GET   /api/v1/restaurants/{id}/master-data/packages/latest
 GET   /api/v1/restaurants/{id}/master-data/packages/{package_id}
+GET   /api/v1/restaurants/{id}/master-data/delivery-status
 GET   /api/v1/restaurants/{id}/edge-nodes/{node_device_id}/master-data/snapshot
 ```
 
@@ -254,10 +255,11 @@ go test ./...
 - `cloud_projection_financial_operations`
 - `cloud_sync_problem_events`
 - `cloud_master_data_packages`
+- `cloud_master_data_delivery_states`
 
 Реализовано сейчас: `CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE` ограничивает число Cloud -> Edge packages в одном authenticated `sync/exchange` response. Ошибочные Edge batch/exchange items получают item-level ACK и сохраняются в `cloud_sync_problem_events`, не блокируя прием остальных items.
 
-Реализовано сейчас: scheduled `sync/exchange` доставляет Cloud package только если package `cloud_version` новее Edge-provided stream checkpoint. Полноценный persistent Cloud-side Edge ACK/lag read model остается запланировано далее; Cloud UI показывает safe read-only Cloud version metadata и не вызывает publish API.
+Реализовано сейчас: scheduled `sync/exchange` доставляет Cloud package только если package `cloud_version` новее Edge-provided stream checkpoint. `cloud_master_data_delivery_states` хранит per-Edge Cloud version, Edge ACK version, lag, last sync, safe error code и bounded retry state. Ошибка assembly после authority commit не откатывает commit и повторяется при следующем exchange. Cloud UI читает `GET /api/v1/restaurants/{id}/master-data/delivery-status` и не вызывает publish API.
 
 Реализовано сейчас financial operation sync behavior:
 - `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud financial operation events.

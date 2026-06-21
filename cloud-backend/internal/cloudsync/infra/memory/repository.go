@@ -150,6 +150,10 @@ func (r *Repository) RecordProblemEdgeEvent(_ context.Context, item app.ProblemE
 	return nil
 }
 
+func (r *Repository) RecordDeliveryExchange(_ context.Context, _, _ string, _ []contracts.SyncExchangeStreamRequest, _ time.Time) error {
+	return nil
+}
+
 // ListEdgeEvents возвращает последние принятые events из memory storage без raw payload.
 func (r *Repository) ListEdgeEvents(_ context.Context, filter app.EdgeEventListFilter) ([]contracts.EdgeEventView, error) {
 	r.mu.Lock()

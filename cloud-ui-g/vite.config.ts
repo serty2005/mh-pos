@@ -16,6 +16,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5174,
+    allowedHosts: ['host.docker.internal'],
     hmr: !disableHmr,
     // На Linux polling не расходует inotify watchers и предотвращает ENOSPC при обычном npm run dev.
     watch: disableHmr ? null : usePollingWatch ? { usePolling: true, interval: 1000 } : {},

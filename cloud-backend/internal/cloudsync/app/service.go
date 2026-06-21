@@ -28,6 +28,7 @@ type Repository interface {
 	UpsertMasterDataPackage(context.Context, contracts.MasterDataPackage) (contracts.MasterDataPackage, error)
 	GetMasterDataPackage(context.Context, string, string) (contracts.MasterDataPackage, error)
 	AuthenticateNodeToken(context.Context, string, string, string) error
+	RecordDeliveryExchange(context.Context, string, string, []contracts.SyncExchangeStreamRequest, time.Time) error
 }
 
 type EdgeEventReceipt struct {
@@ -487,6 +488,9 @@ func (s *Service) Exchange(ctx context.Context, req contracts.SyncExchangeReques
 	status := contracts.SyncExchangeStatusAccepted
 	if !allAccepted {
 		status = contracts.SyncExchangeStatusPartial
+	}
+	if err := s.repo.RecordDeliveryExchange(ctx, req.RestaurantID, req.NodeDeviceID, req.Streams, s.clock.Now().UTC()); err != nil {
+		return contracts.SyncExchangeResponse{}, err
 	}
 	return contracts.SyncExchangeResponse{
 		ProtocolVersion: contracts.SyncExchangeProtocolVersion,

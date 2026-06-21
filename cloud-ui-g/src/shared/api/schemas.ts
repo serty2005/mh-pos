@@ -357,6 +357,20 @@ export const edgeEventSchema = z.object({
   raw_payload_sha256_hex: z.string(),
 });
 
+export const deliveryStatusSchema = z.object({
+  node_device_id: z.string(),
+  restaurant_id: z.string(),
+  status: z.enum(['pending', 'synced', 'error']),
+  cloud_version: z.number(),
+  edge_ack_version: z.number(),
+  lag: z.number(),
+  last_sync_at: z.string().optional(),
+  last_error_code: z.string().optional(),
+  consecutive_failures: z.number(),
+  next_retry_at: z.string().optional(),
+  updated_at: z.string(),
+});
+
 export const publicationSummarySchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
@@ -367,6 +381,7 @@ export const publicationSummarySchema = z.object({
   published_by: z.string(),
   package_sha256: z.string(),
   counts: z.record(z.string(), z.number()),
+  deliveries: z.array(deliveryStatusSchema).default([]),
 });
 
 export type Restaurant = z.infer<typeof restaurantSchema>;
@@ -392,6 +407,7 @@ export type MasterDataPackage = z.infer<typeof masterDataPackageSchema>;
 export type RestaurantEdgeNode = z.infer<typeof restaurantEdgeNodeSchema>;
 export type EdgeEvent = z.infer<typeof edgeEventSchema>;
 export type PublicationSummary = z.infer<typeof publicationSummarySchema>;
+export type DeliveryStatus = z.infer<typeof deliveryStatusSchema>;
 export type UnassignedEdgeNode = z.infer<typeof unassignedEdgeNodeSchema>;
 export type AssignDeviceResult = z.infer<typeof assignDeviceResultSchema>;
 export type AssignmentStatus = z.infer<typeof assignmentStatusSchema>;

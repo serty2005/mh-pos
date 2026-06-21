@@ -98,6 +98,12 @@ func TestPublicationEndpointsReturnSummary(t *testing.T) {
 	if !strings.Contains(current.Body.String(), `"version":`) {
 		t.Fatalf("unexpected current publication: %s", current.Body.String())
 	}
+	delivery := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/restaurants/restaurant-1/master-data/delivery-status", nil)
+	router.ServeHTTP(delivery, req)
+	if delivery.Code != http.StatusOK || !strings.Contains(delivery.Body.String(), `"node_device_id":"node-1"`) {
+		t.Fatalf("expected safe per-Edge delivery status, code=%d body=%s", delivery.Code, delivery.Body.String())
+	}
 }
 
 func TestRestaurantPublicationStateReturnsNullBeforeFirstPublish(t *testing.T) {

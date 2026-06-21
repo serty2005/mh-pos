@@ -35,7 +35,7 @@
 - Catalog/menu/modifiers/pricing/floor master-data: `/master-data/...`.
 - Provisioning/pairing: `/devices/unassigned`, `/restaurants/{restaurant_id}/devices`, `/restaurants/{restaurant_id}/devices/{node_device_id}/assign`, `/devices/{node_device_id}/assignment-status`, `/restaurants/{restaurant_id}/devices/generate-pairing-code`, `/devices/pairing/consume`.
 - Sync event log: `GET /sync/edge-events`.
-- Automatic delivery status: реализовано сейчас как read-only `publication-state`/Cloud version metadata без manual publish action. Persistent Cloud-side Edge ACK/checkpoint/lag/error contract остается запланировано далее.
+- Automatic delivery status: реализовано сейчас как read-only `publication-state` и `GET /restaurants/{id}/master-data/delivery-status` без manual publish action. Delivery DTO содержит per-Edge Cloud/ACK version, lag, last sync, safe error code и retry metadata.
 
 Полный список текущих route-backed endpoints зафиксирован в `docs/ui/CLOUD-UI-SPEC.md`.
 

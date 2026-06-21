@@ -5,6 +5,7 @@ import PublicationPanel from '../publications/PublicationPanel';
 import { ru } from '../../shared/i18n/ru';
 import {
   deferred,
+  deliveryStatus,
   employee,
   expectNoRawMarkers,
   hall,
@@ -39,6 +40,7 @@ function readinessRoutes(overrides: Record<string, unknown> = {}) {
     [`/master-data/modifiers/bindings?restaurant_id=${restaurantId}`]: [],
     [`/master-data/pricing/policies?restaurant_id=${restaurantId}`]: [],
     [`/restaurants/${restaurantId}/devices`]: [restaurantDevice()],
+    [`/restaurants/${restaurantId}/master-data/delivery-status`]: [],
   };
 
   return Object.entries({ ...defaults, ...overrides }).map(([path, response]) => ({
@@ -131,6 +133,7 @@ describe('PublicationPanel page integration', () => {
     const current = deferred<unknown>();
     const api = installFetchMock([
       { path: `/restaurants/${restaurantId}/master-data/publication-state`, responder: () => current.promise },
+      { path: `/restaurants/${restaurantId}/master-data/delivery-status`, responder: () => [] },
     ]);
 
     const page = await renderPage(<PublicationPanel restaurantId={restaurantId} />);
@@ -147,6 +150,7 @@ describe('PublicationPanel page integration', () => {
   it('renders empty, current publication, and safe error states', async () => {
     installFetchMock([
       { path: `/restaurants/${restaurantId}/master-data/publication-state`, responder: () => null },
+      { path: `/restaurants/${restaurantId}/master-data/delivery-status`, responder: () => [] },
     ]);
     const empty = await renderPage(<PublicationPanel restaurantId={restaurantId} />);
     await waitFor(() => expect(text(empty.container)).toContain(ru.publications.emptyTitle));
@@ -154,17 +158,20 @@ describe('PublicationPanel page integration', () => {
 
     installFetchMock([
       { path: `/restaurants/${restaurantId}/master-data/publication-state`, responder: () => publication({ version: 42, cloud_version: 42 }) },
+      { path: `/restaurants/${restaurantId}/master-data/delivery-status`, responder: () => [deliveryStatus({ cloud_version: 42, edge_ack_version: 40, lag: 2 })] },
     ]);
     const success = await renderPage(<PublicationPanel restaurantId={restaurantId} />);
     await waitFor(() => {
       expect(text(success.container)).toContain('42');
-      expect(text(success.container)).toContain(ru.publications.ackPending);
+      expect(text(success.container)).toContain('40 / 42');
+      expect(text(success.container)).toContain(ru.publications.statusPending);
       expect(text(success.container)).toContain(ru.publications.noDeliveryError);
     });
     await success.cleanup();
 
     installFetchMock([
       { path: `/restaurants/${restaurantId}/master-data/publication-state`, responder: () => { throw safeApiError(); } },
+      { path: `/restaurants/${restaurantId}/master-data/delivery-status`, responder: () => [] },
     ]);
     const failed = await renderPage(<PublicationPanel restaurantId={restaurantId} />);
     await waitFor(() => expect(text(failed.container)).toContain(ru.errors.server));
@@ -178,6 +185,7 @@ describe('PublicationPanel page integration', () => {
         path: `/restaurants/${restaurantId}/master-data/publication-state`,
         responder: () => publication({ version: 12, cloud_version: 12 }),
       },
+      { path: `/restaurants/${restaurantId}/master-data/delivery-status`, responder: () => [] },
     ]);
 
     const page = await renderPage(<PublicationPanel restaurantId={restaurantId} />);
@@ -187,6 +195,20 @@ describe('PublicationPanel page integration', () => {
     expect(page.container.querySelector('input')).toBeNull();
     expect(api.callsFor(`/restaurants/${restaurantId}/master-data/publish`, 'POST')).toHaveLength(0);
 
+    await page.cleanup();
+  });
+
+  it('shows a retryable delivery error before the first successful publication', async () => {
+    installFetchMock([
+      { path: `/restaurants/${restaurantId}/master-data/publication-state`, responder: () => null },
+      { path: `/restaurants/${restaurantId}/master-data/delivery-status`, responder: () => [deliveryStatus({ status: 'error', cloud_version: 0, edge_ack_version: 0, lag: 0, last_error_code: 'DELIVERY_ASSEMBLY_FAILED', consecutive_failures: 1 })] },
+    ]);
+
+    const page = await renderPage(<PublicationPanel restaurantId={restaurantId} />);
+    await waitFor(() => {
+      expect(text(page.container)).toContain(ru.publications.statusError);
+      expect(text(page.container)).toContain('DELIVERY_ASSEMBLY_FAILED');
+    });
     await page.cleanup();
   });
 });

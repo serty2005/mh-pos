@@ -665,7 +665,7 @@
 - Вести все новые Cloud UI правки только в `cloud-ui-g`.
 - Runtime surfaces для inventory operations/costing за пределами текущих read-only `stock-balances` и `stock-ledger` после появления подтвержденных Cloud backend routes.
 - Изменяющие surfaces для OLAP exports/operator controls только после production-grade backend jobs; активный `cloud-ui-g` еще не имеет export status, stock moves, stock move summary и `sales-kitchen-summary` screens.
-- Safe package delivery status/Edge package ACK surface для Cloud UI после появления отдельного read-only backend route/DTO; текущие package payload/snapshot routes и `sync/exchange` не используются как UI delivery-state источник.
+- выполнено: safe package delivery status/Edge ACK surface использует отдельный read-only `delivery-status` DTO; package payload/snapshot routes и raw `sync/exchange` не используются как UI delivery-state источник.
 
 ## Full pilot smoke
 

@@ -166,7 +166,7 @@ Inventory read model:
 - реализовано сейчас: активный `cloud-ui-g` читает publication state, выполняет publication, работает с Edge-device flow, master data и safe Edge events list; inventory/OLAP/reporting screens в `cloud-ui-g` еще не реализованы.
 - реализовано сейчас: publication panel читает только safe `GET /api/v1/restaurants/{id}/master-data/publication-state`; routes `/master-data/packages/*`, `/master-data/snapshot` и `sync/exchange` переносят package payload/snapshot для Edge delivery и не являются Cloud UI read-only delivery-status contract.
 - вне текущего объема: Cloud UI не вызывает support-only mutating `POST /api/v1/olap/export-retry` и `POST /api/v1/olap/backfill-jobs`, не показывает COGS/margin и не превращает bounded slices в BI dashboard.
-- запланировано далее: отдельный safe read-only package delivery status/Edge package ACK DTO для Cloud UI; до появления такого route UI не должен имитировать delivery state поверх payload routes или raw exchange payload.
+- реализовано сейчас: `GET /api/v1/restaurants/{id}/master-data/delivery-status` возвращает safe per-Edge Cloud/ACK version, lag, last sync, error code и retry metadata без package payload.
 
 Generic Cloud -> Edge package storage:
 
@@ -334,7 +334,7 @@ Production-oriented aliases:
 - Некоторые aliases сохранены для production-like сценариев и Cloud UI compatibility; canonical Cloud UI может использовать `/master-data/...` routes.
 - `GET /api/v1/restaurants/{id}/master-data/publication-state` до первого assignment/automatic refresh возвращает `200 null`.
 
-Реализовано сейчас: user-facing `POST .../publish` удален из Cloud API. До Edge assignment package rows не создаются; assignment/pairing собирает current full batch для конкретного Edge, а подтвержденные Cloud master-data commits обновляют latest package rows только для назначенных Edge. Scheduled `sync/exchange` доставляет только package version новее Edge-provided checkpoint. Persistent Cloud-side Edge ACK/lag read model остается запланировано далее; текущий Cloud UI показывает safe read-only Cloud version metadata без manual action.
+Реализовано сейчас: user-facing `POST .../publish` удален из Cloud API. До Edge assignment package rows не создаются; assignment/pairing собирает current full batch для конкретного Edge, а подтвержденные Cloud master-data commits обновляют latest package rows только для назначенных Edge. Scheduled `sync/exchange` доставляет только package version новее Edge-provided checkpoint, фиксирует ACK/lag/last sync и повторяет failed assembly. Неизменный replay не повышает publication version.
 
 ## Error Contract And Logging
 
@@ -404,7 +404,7 @@ PIN policy:
 - Реализовано сейчас: automatic delivery refresh создает монотонную Cloud version для ресторана, сохраняет `cloud_master_data_publications`, строит deterministic stream packages и upsert-ит latest rows в `cloud_master_data_packages` только для назначенных Edge.
 - `staff` package содержит только active employees, eligible для целевого restaurant по membership или `organization.manage`, и только используемые ими roles.
 - Реализовано сейчас: `cloud-ui-g` показывает read-only delivery metadata и не вызывает manual publish API.
-- Запланировано далее: persistent Cloud-side delivery status по Edge ACK/checkpoint/lag/error.
+- Реализовано сейчас: `cloud_master_data_delivery_states` хранит persistent Cloud-side delivery status по Edge ACK/checkpoint/lag/error и retry state.
 - Edge-ready snapshot endpoint возвращает typed ingest DTO, который POS Edge может применить без PowerShell field stripping.
 
 Текущие published streams:
@@ -599,7 +599,7 @@ Schema verification:
 - `StopListUpdated` обрабатывается асинхронно через `inventory_event_queue`: worker пишет `cloud_projection_stop_list_updates` без raw payload. `edge_overlay_until_next_publication` обновляет bounded `stop_lists` overlay, `cloud_wins` не перетирает Cloud-owned row, `edge_overlay_requires_manager_review` фиксирует безопасную projection для bounded manager review.
 - Bounded manager review для `edge_overlay_requires_manager_review` реализован сейчас: list/detail имеют stable bounded paging, decisions идемпотентны, invalid transition возвращает conflict, approve применяет изменение только через Cloud-owned `stop_lists` + publication, reject/request-changes не меняют runtime stop-list authority.
 - `GET /api/v1/sync/readiness/stop-list` реализовано сейчас как safe readiness summary: publication/package metadata, latest accepted `StopListUpdated` ACK metadata и агрегат `cloud_sync_problem_events` по кодам ошибок без raw payload.
-- Отдельный safe read-only route для package delivery status по restaurant/device/package сейчас не подтвержден кодом; доступные package/snapshot routes возвращают provisioning payload, а `sync/exchange` возвращает Cloud packages для Edge import. Cloud UI может показывать только `publication-state` и stop-list readiness ACK metadata, но не должен заявлять общий package delivery ACK.
+- Safe read-only route `GET /api/v1/restaurants/{id}/master-data/delivery-status` возвращает общий package delivery ACK/lag/error без provisioning payload; `sync/exchange` остается Edge transport route.
 - `StockReceiptCaptured`, `InventoryCountCaptured`, `StockWriteOffCaptured` и `ProductionCompleted` создают Cloud-owned stock documents/ledger rows и отдельный `inventory_document_processing_state` без raw payload. State является audit/idempotency contract для повторов: `(restaurant_id, source_event_id, source_event_type)` уникален, posted state хранит document id, ledger counters, aggregate costing status и recalculation marker, failed state хранит только безопасные failure code/message key.
 - Для `InventoryCountCaptured` Cloud worker считает корректировку от текущего materialized balance: `IN`, `OUT` или no-op `posted` state с нулем ledger rows. Для `ProductionCompleted` Cloud worker пишет готовую позицию `IN` и ingredient `OUT` по active recipe; если recipe/cost basis отсутствуют, факт production сохраняется с `estimated`/`needs_recalculation`.
 - Реализовано сейчас: backdated `StockReceiptCaptured`, `InventoryCountCaptured`, `ProductionCompleted` и `StockWriteOffCaptured` создают idempotent async recalculation job, если есть affected ledger rows позднее trigger date. Job хранит affected catalog/warehouse/unit ranges и recipe dependency edges; `RunRecalculationOnce` выполняется background worker-ом, обновляет только costing fields/status существующих `stock_ledger` rows и refresh materialized balance costing visibility. Recipe cycles завершают job safe failure `RECIPE_DEPENDENCY_CYCLE` без panic и без raw payload.

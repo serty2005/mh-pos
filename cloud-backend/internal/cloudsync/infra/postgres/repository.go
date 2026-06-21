@@ -23,6 +23,26 @@ type Repository struct {
 	pool *pgxpool.Pool
 }
 
+// RecordDeliveryExchange сохраняет агрегированный Edge checkpoint после валидного exchange.
+func (r *Repository) RecordDeliveryExchange(ctx context.Context, restaurantID, nodeDeviceID string, streams []contracts.SyncExchangeStreamRequest, now time.Time) error {
+	ackVersion := deliveryACKVersion(streams)
+	_, err := r.pool.Exec(ctx, `
+UPDATE cloud_master_data_delivery_states SET
+  edge_ack_version=GREATEST(edge_ack_version,$3),
+  status=CASE WHEN status='error' THEN status WHEN GREATEST(edge_ack_version,$3)>=cloud_version THEN 'synced' ELSE 'pending' END,
+  last_sync_at=$4,updated_at=$4
+WHERE node_device_id=$1 AND restaurant_id=$2`, strings.TrimSpace(nodeDeviceID), strings.TrimSpace(restaurantID), ackVersion, now)
+	return err
+}
+
+func deliveryACKVersion(streams []contracts.SyncExchangeStreamRequest) int64 {
+	var version int64
+	for _, stream := range streams {
+		version = max(version, stream.LastCloudVersion)
+	}
+	return version
+}
+
 func NewRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }

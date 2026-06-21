@@ -31,6 +31,7 @@ import (
 type Handler struct {
 	service *app.Service
 	gate    licensegate.Gate
+	master  *masterapp.Service
 }
 
 type financialOperationReportItem struct {
@@ -77,6 +78,9 @@ func NewRouterWithProvisioningAndOLAP(service *app.Service, provisioningService 
 
 func NewRouterWithProvisioningOLAPAndLicense(service *app.Service, provisioningService *provisioningapp.Service, olapService *olapapp.Service, gate licensegate.Gate, masterServices ...*masterapp.Service) http.Handler {
 	h := &Handler{service: service, gate: gate}
+	if len(masterServices) > 0 {
+		h.master = masterServices[0]
+	}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -519,6 +523,11 @@ func (h *Handler) exchange(w http.ResponseWriter, r *http.Request) {
 		platformExchangeLog(r, "auth", "rejected", errorCodeForExchange(err), req.NodeDeviceID)
 		httpx.Error(w, err, r)
 		return
+	}
+	if h.master != nil {
+		if err := h.master.RetryDeliveryForNode(r.Context(), req.RestaurantID, req.NodeDeviceID); err != nil {
+			slog.ErrorContext(r.Context(), "master-data delivery retry failed", "operation", "sync.exchange.delivery_retry", "restaurant_id", req.RestaurantID, "node_device_id", req.NodeDeviceID, "error", err)
+		}
 	}
 	platformExchangeLog(r, "exchange", "attempt", "", req.NodeDeviceID)
 	resp, err := h.service.Exchange(r.Context(), req)

@@ -39,11 +39,13 @@ type Repository struct {
 	publications            map[string][]domain.Publication
 	packages                map[string]app.StreamPackage
 	assignedNodes           map[string]map[string]struct{}
+	deliveryStates          map[string]app.DeliveryStatus
 	catalogSuggestions      map[string]domain.CatalogSuggestion
 	recipeSuggestions       map[string]domain.RecipeSuggestion
 	recipeSuggestionChanges map[string][]domain.RecipeSuggestionChange
 	stopListUpdates         map[string]domain.StopListUpdateReview
 	assignmentAuditEvents   map[string]domain.ReviewAssignmentAuditEvent
+	deliveryAssemblyErr     error
 }
 
 // NewRepository создает пустой in-memory repository.
@@ -71,6 +73,7 @@ func NewRepository() *Repository {
 		publications:            map[string][]domain.Publication{},
 		packages:                map[string]app.StreamPackage{},
 		assignedNodes:           map[string]map[string]struct{}{},
+		deliveryStates:          map[string]app.DeliveryStatus{},
 		restaurants:             map[string]domain.Restaurant{},
 		catalogSuggestions:      map[string]domain.CatalogSuggestion{},
 		recipeSuggestions:       map[string]domain.RecipeSuggestion{},
@@ -147,11 +150,21 @@ func (r *Repository) GetRole(_ context.Context, id string) (domain.Role, error) 
 func (r *Repository) ListRoles(_ context.Context) ([]domain.Role, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.deliveryAssemblyErr != nil {
+		return nil, r.deliveryAssemblyErr
+	}
 	var out []domain.Role
 	for _, item := range r.roles {
 		out = append(out, item)
 	}
 	return out, nil
+}
+
+// FailDeliveryAssemblyForTest управляет ошибкой чтения только для проверки retry workflow.
+func (r *Repository) FailDeliveryAssemblyForTest(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.deliveryAssemblyErr = err
 }
 
 func (r *Repository) CreateEmployee(_ context.Context, v domain.Employee) (domain.Employee, error) {
@@ -923,12 +936,53 @@ func (r *Repository) NextPublicationVersion(_ context.Context, restaurantID stri
 	return int64(len(r.publications[strings.TrimSpace(restaurantID)]) + 1), nil
 }
 
-func (r *Repository) SavePublication(_ context.Context, pub domain.Publication, packages []app.StreamPackage) (domain.Publication, error) {
+func (r *Repository) GetDeliveryState(_ context.Context, nodeDeviceID string) (app.DeliveryStatus, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.deliveryStates[strings.TrimSpace(nodeDeviceID)]
+	if !ok {
+		return app.DeliveryStatus{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) ListDeliveryStates(_ context.Context, restaurantID string) ([]app.DeliveryStatus, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]app.DeliveryStatus, 0)
+	for _, v := range r.deliveryStates {
+		if v.RestaurantID == strings.TrimSpace(restaurantID) {
+			out = append(out, v)
+		}
+	}
+	slices.SortFunc(out, func(a, b app.DeliveryStatus) int { return strings.Compare(a.NodeDeviceID, b.NodeDeviceID) })
+	return out, nil
+}
+
+func (r *Repository) MarkDeliveryError(_ context.Context, restaurantID, nodeDeviceID, errorCode string, now time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v := r.deliveryStates[strings.TrimSpace(nodeDeviceID)]
+	v.NodeDeviceID = strings.TrimSpace(nodeDeviceID)
+	v.RestaurantID = strings.TrimSpace(restaurantID)
+	v.Status = "error"
+	v.LastErrorCode = strings.TrimSpace(errorCode)
+	v.ConsecutiveFailures++
+	v.NextRetryAt = &now
+	v.UpdatedAt = now
+	r.deliveryStates[v.NodeDeviceID] = v
+	return nil
+}
+
+func (r *Repository) SavePublication(_ context.Context, pub domain.Publication, packages []app.StreamPackage, deliveries []app.DeliveryStatus) (domain.Publication, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.publications[pub.RestaurantID] = append(r.publications[pub.RestaurantID], clonePublication(pub))
 	for _, pkg := range packages {
 		r.packages[pkg.StreamName+"|"+pkg.NodeDeviceID] = clonePackage(pkg)
+	}
+	for _, delivery := range deliveries {
+		r.deliveryStates[delivery.NodeDeviceID] = delivery
 	}
 	return clonePublication(pub), nil
 }
