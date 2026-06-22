@@ -1,0 +1,38 @@
+{
+  "mcpServers": {
+    "plane-myhoreca-pos": {
+      "type": "stdio",
+      "command": "/home/master/repos/myhoreca-pos/tools/plane-mcp/run-stdio.sh"
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@playwright/mcp", "--headless", "--no-sandbox"]
+    }
+  },
+  "permissions": {
+    "allow": [
+      "Bash(go mod tidy)",
+      "Bash(go test *)",
+      "Bash(npm install)",
+      "Bash(npm run build)",
+      "Bash(npm run dev)",
+      "Bash(npm run lint)",
+      "Bash(npm run test *)",
+      "Bash(python3 scripts/seed-dev-system.py *)",
+      "Bash(docker compose *)",
+      "Bash(docker-compose *)",
+      "Bash(git *)",
+      "Bash(rg *)",
+      "Bash(find *)",
+      "Bash(uvx *)",
+      "Bash(go build *)",
+      "Bash(go run *)",
+      "Bash(go vet *)",
+      "Bash(gofmt *)",
+      "Read",
+      "Edit",
+      "Write"
+    ]
+  }
+}
