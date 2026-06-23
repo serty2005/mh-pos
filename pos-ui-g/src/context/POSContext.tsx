@@ -96,7 +96,9 @@ interface POSContextType {
   tables: Table[];
   setSelectedTableId: (id: string | null) => void;
   selectedTableId: string | null;
+  tableModeEnabled: boolean;
   createOrderForTable: (tableId: string, guestsCount: number) => Promise<void>;
+  createCounterOrder: () => Promise<void>;
   activeOrders: Order[];
   currentOrder: Order | null;
   addMenuItemToOrder: (item: MenuItem, selectedModifiers: SelectedModifier[]) => Promise<CommandResult>;
@@ -108,6 +110,7 @@ interface POSContextType {
   cancelPrecheck: (managerPin: string, reason: string) => Promise<boolean>;
   reprintPrecheck: () => Promise<void>;
   payOrder: (method: 'cash' | 'card', inputAmount: number) => Promise<PaymentResult>;
+  payOrderCounter: (method: 'cash' | 'card', inputAmount: number) => Promise<PaymentResult>;
   closedOrders: ClosedOrder[];
   closedOrdersPage: number;
   closedOrdersPageSize: number;
@@ -200,6 +203,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [provisioningLoading, setProvisioningLoading] = useState<boolean>(false);
   const [provisioningError, setProvisioningError] = useState<string>('');
   const [logEvents, setLogEvents] = useState<LogEvent[]>([]);
+  const [entitlements, setEntitlements] = useState<Record<string, boolean>>({});
 
   const isEdgePaired = useMemo(
     () => Boolean(auth.nodeDeviceId && auth.restaurantId),
@@ -209,6 +213,14 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     actorRef.current = actor;
   }, [actor]);
+
+  useEffect(() => {
+    void api.getEntitlements().then((snapshot) => {
+      if (snapshot.status === 'active' && new Date(snapshot.expires_at).getTime() > Date.now()) {
+        setEntitlements(snapshot.entitlements);
+      }
+    }).catch(() => {});
+  }, [api]);
 
   const setAuth = useCallback((next: AuthSnapshot) => {
     authRef.current = next;
@@ -648,6 +660,17 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [addLogEvent, api, handleError, refreshFloor, tablesDto]);
 
+  const createCounterOrder = useCallback(async () => {
+    try {
+      const created = await api.createCounterOrder();
+      setCurrentSection('order');
+      addLogEvent(t.ops.orderCreated(created.edge_order_id), 'success');
+      await refreshFloor();
+    } catch (error) {
+      handleError(error, t.ops.orderCreateFailed);
+    }
+  }, [addLogEvent, api, handleError, refreshFloor, setCurrentSection]);
+
   const addMenuItemToOrder = useCallback(async (item: MenuItem, selectedModifiers: SelectedModifier[]): Promise<CommandResult> => {
     if (!backendCurrentOrder) return { success: false, errorKey: 'blocks.noOrderSelected' };
     try {
@@ -789,6 +812,22 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [activePrecheck, addLogEvent, api, handleError, refreshActivity, refreshFloor]);
 
+  const payOrderCounter = useCallback(async (method: 'cash' | 'card', inputAmount: number): Promise<PaymentResult> => {
+    if (!backendCurrentOrder) return { success: false, change: 0, errorKey: 'errors.orderLocked' };
+    try {
+      await api.counterPayment(backendCurrentOrder.id, method, inputAmount, 'RUB');
+      const change = paymentChange(backendCurrentOrder.total, inputAmount);
+      addLogEvent(t.ops.paymentCaptured, 'success');
+      setSelectedTableId(null);
+      await refreshFloor();
+      await refreshActivity();
+      return { success: true, change };
+    } catch (error) {
+      handleError(error, t.ops.paymentCaptureFailed);
+      return { success: false, change: 0, errorKey: 'errors.paymentFailed' };
+    }
+  }, [backendCurrentOrder, addLogEvent, api, handleError, refreshActivity, refreshFloor]);
+
   const refundCheck = useCallback(async (checkId: string, reason: string, disposition: 'waste' | 'return') => {
     try {
       await api.recordCheckRefund(checkId, {
@@ -862,6 +901,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setThemeSettings((prev) => ({ ...prev, scheme }));
   }, []);
 
+  const tableModeEnabled = entitlements['table-mode'] === true;
+
   const value = useMemo<POSContextType>(() => ({
     currentSection,
     setCurrentSection,
@@ -891,7 +932,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     tables,
     setSelectedTableId,
     selectedTableId,
+    tableModeEnabled,
     createOrderForTable,
+    createCounterOrder,
     activeOrders,
     currentOrder,
     addMenuItemToOrder,
@@ -903,6 +946,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     cancelPrecheck,
     reprintPrecheck,
     payOrder,
+    payOrderCounter,
     closedOrders,
     closedOrdersPage,
     closedOrdersPageSize: CLOSED_ORDERS_PAGE_SIZE,
@@ -953,6 +997,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     closedOrdersHasNextPage,
     closedOrdersLoading,
     closedOrdersPage,
+    createCounterOrder,
     createOrderForTable,
     currentOperator,
     currentOrder,
@@ -970,6 +1015,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     openEmployeeShift,
     partialRefundCheck,
     payOrder,
+    payOrderCounter,
     pinLogin,
     pairViaLicense,
     provisioningError,
@@ -995,6 +1041,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setThemeScheme,
     updateCommentAndCourse,
     issuePrecheck,
+    entitlements,
   ]);
 
   return <POSContext.Provider value={value}>{children}</POSContext.Provider>;

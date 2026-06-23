@@ -131,6 +131,9 @@ export const t = {
     addDishesHint: 'Добавьте блюда из меню слева',
     precheckLocked: 'Заблокировано: выпущен пречек',
     precheck: 'Пречек',
+    startCounterOrder: 'Начать заказ',
+    counterOrderHint: 'Нажмите «Начать заказ», чтобы создать заказ без стола',
+    payCounter: 'Оплатить',
     categories: {
       dish: 'Меню',
       good: 'Товары',

@@ -225,6 +225,10 @@ func (s *Service) applyStream(ctx context.Context, stream domain.MasterDataStrea
 			if err := s.repo.UpsertMasterRestaurant(ctx, &v, meta); err != nil {
 				return err
 			}
+			// Идемпотентно создаём системный зал и стол для counter sale.
+			if err := s.repo.EnsureSystemFloor(ctx, v.ID, s.ids.NewID(), s.ids.NewID(), now); err != nil {
+				return fmt.Errorf("ensure system floor for restaurant %s: %w", v.ID, err)
+			}
 		}
 		counts[string(stream)] = len(cmd.Restaurants)
 	case domain.MasterDataStreamDevices:

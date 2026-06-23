@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"time"
 
 	"pos-backend/internal/pos/domain/floor"
 )
@@ -15,4 +16,8 @@ type FloorRepository interface {
 	GetTable(context.Context, string) (*floor.Table, error)
 	ListTables(context.Context, string, string) ([]floor.Table, error)
 	ArchiveTable(context.Context, string, string) error
+	// GetSystemTable возвращает системный стол для counter sale по restaurantID.
+	GetSystemTable(ctx context.Context, restaurantID string) (*floor.Table, error)
+	// EnsureSystemFloor идемпотентно создаёт системный зал и стол для ресторана.
+	EnsureSystemFloor(ctx context.Context, restaurantID, hallID, tableID string, now time.Time) error
 }

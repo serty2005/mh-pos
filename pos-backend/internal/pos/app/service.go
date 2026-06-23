@@ -73,6 +73,19 @@ type ReprintPrecheckCommand = appprecheck.ReprintPrecheckCommand
 type AddDiscountCommand = apppricing.AddDiscountCommand
 type AddSurchargeCommand = apppricing.AddSurchargeCommand
 type CapturePaymentCommand = appcheck.CapturePaymentCommand
+
+// CounterPaymentCommand объединяет issue-precheck + capture-payment для counter sale (table-mode=off).
+type CounterPaymentCommand struct {
+	shared.CommandMeta
+	OrderID               string               `json:"order_id"`
+	Method                domain.PaymentMethod `json:"method"`
+	Amount                int64                `json:"amount"`
+	Currency              string               `json:"currency"`
+	ProviderName          string               `json:"provider_name,omitempty"`
+	ProviderTransactionID string               `json:"provider_transaction_id,omitempty"`
+	ProviderReference     string               `json:"provider_reference,omitempty"`
+	FingerprintHash       string               `json:"fingerprint_hash,omitempty"`
+}
 type RefundPaymentCommand = appcheck.RefundPaymentCommand
 type ListClosedOrdersCommand = appcheck.ListClosedOrdersCommand
 type ListFinancialOperationsCommand = appcheck.ListFinancialOperationsCommand
@@ -509,6 +522,45 @@ func (s *Service) ListClosedOrders(ctx context.Context, cmd ListClosedOrdersComm
 
 func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand) (*domain.Payment, error) {
 	return s.checks.CapturePayment(ctx, cmd)
+}
+
+// CounterPayment атомарно выдаёт предчек (если нет активного) и захватывает оплату.
+// Используется при table-mode=off: клиент не вызывает /prechecks отдельно.
+func (s *Service) CounterPayment(ctx context.Context, cmd CounterPaymentCommand) (*domain.Payment, error) {
+	shared.NormalizeDeviceMeta(&cmd.CommandMeta)
+	if strings.TrimSpace(cmd.OrderID) == "" {
+		return nil, fmt.Errorf("%w: order_id is required", domain.ErrInvalid)
+	}
+	// Выдаём предчек, если его ещё нет для заказа.
+	activePrecheck, err := s.repo.GetActivePrecheckByOrder(ctx, cmd.OrderID)
+	if err != nil {
+		if !errors.Is(err, domain.ErrNotFound) {
+			return nil, err
+		}
+		// Нет активного предчека — выдаём. Используем производный command_id для идемпотентности.
+		issueCmd := appprecheck.IssuePrecheckCommand{
+			CommandMeta: cmd.CommandMeta,
+			OrderID:     cmd.OrderID,
+		}
+		issueCmd.CommandID = cmd.CommandID + ":precheck"
+		var precheck *domain.Precheck
+		precheck, err = s.prechecks.IssuePrecheck(ctx, issueCmd)
+		if err != nil {
+			return nil, fmt.Errorf("counter-payment: issue precheck: %w", err)
+		}
+		activePrecheck = precheck
+	}
+	return s.checks.CapturePayment(ctx, appcheck.CapturePaymentCommand{
+		CommandMeta:           cmd.CommandMeta,
+		PrecheckID:            activePrecheck.ID,
+		Method:                cmd.Method,
+		Amount:                cmd.Amount,
+		Currency:              cmd.Currency,
+		ProviderName:          cmd.ProviderName,
+		ProviderTransactionID: cmd.ProviderTransactionID,
+		ProviderReference:     cmd.ProviderReference,
+		FingerprintHash:       cmd.FingerprintHash,
+	})
 }
 
 func (s *Service) RefundPayment(ctx context.Context, cmd RefundPaymentCommand) (*domain.Payment, error) {

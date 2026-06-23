@@ -317,6 +317,14 @@ export function createApiClient(getAuth: () => AuthSnapshot, base = (viteEnv.env
         guest_count: guestCount,
       }),
     }),
+    createCounterOrder: () => request('/orders', orderSchema, {
+      method: 'POST',
+      body: JSON.stringify({ restaurant_id: getAuth().restaurantId, guest_count: 1 }),
+    }),
+    counterPayment: (orderId: string, method: 'cash' | 'card', amount: number, currency: string) => request(`/orders/${encodeURIComponent(orderId)}/counter-payment`, paymentSchema, {
+      method: 'POST',
+      body: JSON.stringify({ method, amount, currency, provider_name: method === 'card' ? 'trusted_manual' : undefined }),
+    }),
     addOrderLine: (orderId: string, menuItemId: string, quantity = 1, selectedModifiers: SelectedModifierPayload[] = []) => request(`/orders/${encodeURIComponent(orderId)}/lines`, orderLineSchema, {
       method: 'POST',
       body: JSON.stringify({ menu_item_id: menuItemId, quantity, selected_modifiers: selectedModifiers }),

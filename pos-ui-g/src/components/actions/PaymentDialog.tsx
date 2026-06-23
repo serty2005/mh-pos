@@ -13,7 +13,7 @@ export const PaymentDialog: React.FC<PaymentDialogProps> = ({
   isOpen,
   onClose
 }) => {
-  const { currentOrder, payOrder, cashSession } = usePOS();
+  const { currentOrder, payOrder, payOrderCounter, cashSession, tableModeEnabled } = usePOS();
   
   const [method, setMethod] = useState<'cash' | 'card'>('cash');
   const [inputVal, setInputVal] = useState<string>('');
@@ -44,8 +44,8 @@ export const PaymentDialog: React.FC<PaymentDialogProps> = ({
     const numericAmount = parseFloat(inputVal) || 0;
     const amountToPay = currentOrder.total;
     
-    // Process payment mutation via context
-    const report = await payOrder(method, numericAmount);
+    // Process payment mutation via context — counter-mode bypasses precheck step
+    const report = await (tableModeEnabled ? payOrder(method, numericAmount) : payOrderCounter(method, numericAmount));
     
     if (report.success) {
       setPaymentReport({

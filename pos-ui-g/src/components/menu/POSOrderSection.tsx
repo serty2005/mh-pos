@@ -58,7 +58,9 @@ export const POSOrderSection: React.FC = () => {
     setCurrentSection,
     menuItems,
     pricingPolicies,
-    applyPricingPolicy
+    applyPricingPolicy,
+    tableModeEnabled,
+    createCounterOrder,
   } = usePOS();
 
   // Search and Category filters
@@ -338,9 +340,23 @@ export const POSOrderSection: React.FC = () => {
           {/* Lines iterator */}
           <div className="flex-1 pos-scrollarea-y pos-scrollbar-thin overflow-y-auto">
             {!currentOrder ? (
-              <div className="p-8 text-center text-[var(--pos-text-muted)] h-full flex flex-col items-center justify-center">
-                <SlidersHorizontal className="w-8 h-8 opacity-35 mb-2 shrink-0" />
-                <span className="font-mono text-xs font-bold uppercase tracking-wider">{t.menu.orderEmpty}</span>
+              <div className="p-8 text-center text-[var(--pos-text-muted)] h-full flex flex-col items-center justify-center gap-4">
+                <SlidersHorizontal className="w-8 h-8 opacity-35 shrink-0" />
+                {!tableModeEnabled ? (
+                  <>
+                    <span className="font-sans text-xs">{t.menu.counterOrderHint}</span>
+                    <PosButton
+                      id="counter-start-order-btn"
+                      variant="primary"
+                      size="md"
+                      onClick={createCounterOrder}
+                    >
+                      {t.menu.startCounterOrder}
+                    </PosButton>
+                  </>
+                ) : (
+                  <span className="font-mono text-xs font-bold uppercase tracking-wider">{t.menu.orderEmpty}</span>
+                )}
               </div>
             ) : currentOrder.lines.length === 0 ? (
               <div className="p-8 text-center text-[var(--pos-text-muted)] h-full flex flex-col items-center justify-center">
@@ -492,17 +508,30 @@ export const POSOrderSection: React.FC = () => {
                     {t.pricing.action}
                   </PosButton>
 
-                  {/* Precheck issuance triggers */}
-                  <PosButton
-                    id="order-precheck-btn"
-                    variant="primary"
-                    size="md"
-                    onClick={issuePrecheck}
-                    disabled={currentOrder.lines.length === 0 || !canIssuePrecheck}
-                    icon={<Printer className="w-4 h-4" />}
-                  >
-                    {t.menu.precheck}
-                  </PosButton>
+                  {/* Counter-mode: direct payment without precheck; table-mode: issue precheck first */}
+                  {tableModeEnabled ? (
+                    <PosButton
+                      id="order-precheck-btn"
+                      variant="primary"
+                      size="md"
+                      onClick={issuePrecheck}
+                      disabled={currentOrder.lines.length === 0 || !canIssuePrecheck}
+                      icon={<Printer className="w-4 h-4" />}
+                    >
+                      {t.menu.precheck}
+                    </PosButton>
+                  ) : (
+                    <PosButton
+                      id="order-counter-pay-btn"
+                      variant="primary"
+                      size="md"
+                      onClick={() => setPaymentModalOpen(true)}
+                      disabled={currentOrder.lines.length === 0 || !canCapturePayment}
+                      icon={<Banknote className="w-4 h-4" />}
+                    >
+                      {t.menu.payCounter}
+                    </PosButton>
+                  )}
                 </>
               ) : (
                 <>

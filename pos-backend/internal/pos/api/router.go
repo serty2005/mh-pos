@@ -87,6 +87,7 @@ func NewRouterWithLicense(service *app.Service, gate licensegate.Gate) http.Hand
 		r.Post("/orders/{id}/precheck", h.issuePrecheck)
 		r.Get("/orders/{id}/prechecks", h.listPrechecksByOrder)
 		r.Post("/orders/{id}/close", h.closeOrder)
+		r.Post("/orders/{id}/counter-payment", h.counterPayment)
 
 		r.Get("/prechecks/{id}", h.getPrecheck)
 		r.Post("/prechecks/{id}/cancel", h.cancelPrecheck)
@@ -153,6 +154,8 @@ func edgeModuleForRequest(r *http.Request) string {
 	switch {
 	case strings.HasPrefix(path, "/api/v1/halls") || strings.HasPrefix(path, "/api/v1/tables") || strings.HasSuffix(path, "/sync/master-data/floor"):
 		return licensegate.TableMode
+	case strings.HasSuffix(path, "/counter-payment"):
+		return "" // counter-payment не требует table-mode: базовый кассовый поток всегда доступен
 	case strings.Contains(path, "/precheck"):
 		return licensegate.TableMode
 	case strings.Contains(path, "/kitchen/stock-") || strings.Contains(path, "/kitchen/inventory-") || strings.Contains(path, "/kitchen/productions") || strings.Contains(path, "/kitchen/stop-list") || strings.HasSuffix(path, "/sync/master-data/inventory_reference"):
@@ -1132,6 +1135,18 @@ func (h *Handler) capturePrecheckPayment(w http.ResponseWriter, r *http.Request)
 	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.PrecheckID = chi.URLParam(r, "id")
 	v, err := h.service.CapturePayment(r.Context(), cmd)
+	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) counterPayment(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CounterPaymentCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	cmd.OrderID = chi.URLParam(r, "id")
+	v, err := h.service.CounterPayment(r.Context(), cmd)
 	writeCreated(w, r, v, err)
 }
 

@@ -175,9 +175,6 @@ func (s *Service) CreateOrder(ctx context.Context, cmd CreateOrderCommand) (*dom
 	if cmd.GuestCount < 0 {
 		return nil, fmt.Errorf("%w: guest_count must be non-negative", domain.ErrInvalid)
 	}
-	if strings.TrimSpace(cmd.TableID) == "" {
-		return nil, fmt.Errorf("%w: table_id is required", domain.ErrInvalid)
-	}
 	now := s.clock.Now()
 	var order *domain.Order
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
@@ -206,12 +203,21 @@ func (s *Service) CreateOrder(ctx context.Context, cmd CreateOrderCommand) (*dom
 		if restaurantID := strings.TrimSpace(cmd.RestaurantID); restaurantID != "" && restaurantID != shift.RestaurantID {
 			return fmt.Errorf("%w: restaurant_id не совпадает с личной сменой", domain.ErrConflict)
 		}
-		table, err := s.repo.GetTable(ctx, cmd.TableID)
-		if err != nil {
-			return err
-		}
-		if !table.Active || table.RestaurantID != shift.RestaurantID {
-			return fmt.Errorf("%w: стол не активен для ресторана личной смены", domain.ErrConflict)
+		var table *domain.Table
+		if strings.TrimSpace(cmd.TableID) == "" {
+			// counter sale: table_id не передан, используем системный стол ресторана.
+			table, err = s.repo.GetSystemTable(ctx, shift.RestaurantID)
+			if err != nil {
+				return fmt.Errorf("%w: нет системного стола для counter sale", domain.ErrConflict)
+			}
+		} else {
+			table, err = s.repo.GetTable(ctx, cmd.TableID)
+			if err != nil {
+				return err
+			}
+			if !table.Active || table.RestaurantID != shift.RestaurantID {
+				return fmt.Errorf("%w: стол не активен для ресторана личной смены", domain.ErrConflict)
+			}
 		}
 		order = &domain.Order{ID: s.ids.NewID(), EdgeOrderID: s.ids.NewID(), RestaurantID: shift.RestaurantID, DeviceID: cmd.DeviceID, ShiftID: shift.ID, Status: domain.OrderOpen, TableID: table.ID, TableName: table.Name, GuestCount: cmd.GuestCount, OpenedAt: now, CreatedAt: now, UpdatedAt: now}
 		if err := s.repo.CreateOrder(ctx, order); err != nil {
