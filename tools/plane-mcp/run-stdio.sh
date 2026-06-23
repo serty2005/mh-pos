@@ -11,4 +11,4 @@ set +a
 : "${PLANE_WORKSPACE_SLUG:?missing PLANE_WORKSPACE_SLUG in tools/plane-mcp/.env}"
 : "${PLANE_API_KEY:?missing PLANE_API_KEY in tools/plane-mcp/.env}"
 
-exec uvx plane-mcp-server stdio
+exec uvx plane-mcp-server==0.2.9 stdio
