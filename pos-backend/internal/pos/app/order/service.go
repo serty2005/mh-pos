@@ -253,6 +253,13 @@ func (s *Service) ChangeOrderLineQuantity(ctx context.Context, cmd ChangeOrderLi
 		if line.Status != domain.OrderLineActive {
 			return fmt.Errorf("%w: cannot change non-active order line", domain.ErrConflict)
 		}
+		catalogItem, err := s.repo.GetCatalogItem(ctx, line.CatalogItemID)
+		if err != nil {
+			return err
+		}
+		if catalogItem.SingleUnitPerLine && cmd.Quantity > 1 {
+			return fmt.Errorf("%w: quantity cannot exceed 1 for single-unit-per-line item", domain.ErrInvalid)
+		}
 		if cmd.Quantity > line.Quantity {
 			if err := s.ensureSaleAvailable(ctx, order.RestaurantID, line.CatalogItemID); err != nil {
 				return err
@@ -409,6 +416,13 @@ func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*d
 		if err := s.ensureSaleAvailable(ctx, order.RestaurantID, menuItem.CatalogItemID); err != nil {
 			return err
 		}
+		catalogItem, err := s.repo.GetCatalogItem(ctx, menuItem.CatalogItemID)
+		if err != nil {
+			return err
+		}
+		if catalogItem.SingleUnitPerLine && cmd.Quantity > 1 {
+			return fmt.Errorf("%w: quantity cannot exceed 1 for single-unit-per-line item", domain.ErrInvalid)
+		}
 		selectedModifiers, modifierTotal, err := s.buildSelectedModifiers(ctx, cmd.SelectedModifiers)
 		if err != nil {
 			return err
@@ -431,10 +445,6 @@ func (s *Service) AddOrderLine(ctx context.Context, cmd AddOrderLineCommand) (*d
 			}
 		}
 		if menuItem.ItemType != string(domain.CatalogItemService) {
-			catalogItem, err := s.repo.GetCatalogItem(ctx, menuItem.CatalogItemID)
-			if err != nil {
-				return err
-			}
 			ticket := &domain.KitchenTicket{
 				ID:                s.ids.NewID(),
 				RestaurantID:      order.RestaurantID,

@@ -129,8 +129,8 @@ ON CONFLICT(id) DO UPDATE SET
 }
 
 func (r *Repository) UpsertMasterCatalogItem(ctx context.Context, v *domain.CatalogItem, meta domain.MasterRecordSyncMeta) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO catalog_items(id,type,folder_id,name,sku,base_unit,kitchen_type,accounting_category,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO catalog_items(id,type,folder_id,name,sku,base_unit,kitchen_type,accounting_category,qr_confirmation_enabled,single_unit_per_line,validity_mode,validity_expires_at,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(id) DO UPDATE SET
   type = excluded.type,
   folder_id = excluded.folder_id,
@@ -139,13 +139,19 @@ ON CONFLICT(id) DO UPDATE SET
   base_unit = excluded.base_unit,
   kitchen_type = excluded.kitchen_type,
   accounting_category = excluded.accounting_category,
+  qr_confirmation_enabled = excluded.qr_confirmation_enabled,
+  single_unit_per_line = excluded.single_unit_per_line,
+  validity_mode = excluded.validity_mode,
+  validity_expires_at = excluded.validity_expires_at,
   active = excluded.active,
   updated_at = excluded.updated_at,
   cloud_version = excluded.cloud_version,
   cloud_updated_at = excluded.cloud_updated_at,
   cloud_deleted_at = excluded.cloud_deleted_at,
   last_synced_at = excluded.last_synced_at`,
-		v.ID, string(v.Type), nullableString(v.FolderID), v.Name, v.SKU, v.BaseUnit, v.KitchenType, v.AccountingCategory, boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+		v.ID, string(v.Type), nullableString(v.FolderID), v.Name, v.SKU, v.BaseUnit, v.KitchenType, v.AccountingCategory,
+		boolInt(v.QRConfirmationEnabled), boolInt(v.SingleUnitPerLine), v.ValidityMode, nullableTime(v.ValidityExpiresAt),
+		boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
 	return normalizeErr(err)
 }
 

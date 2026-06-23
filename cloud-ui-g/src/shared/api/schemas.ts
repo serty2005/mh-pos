@@ -59,6 +59,9 @@ export const employeeSchema = z.object({
   archived_at: z.string().optional(),
 });
 
+export const ticketValidityModeSchema = z.enum(['cash_session', 'business_date', 'absolute_date']);
+export type TicketValidityMode = z.infer<typeof ticketValidityModeSchema>;
+
 export const catalogItemSchema = z.object({
   id: z.string(),
   restaurant_id: z.string().optional().default(''),
@@ -69,6 +72,10 @@ export const catalogItemSchema = z.object({
   base_unit: z.string(),
   kitchen_type: z.string().optional().default(''),
   accounting_category: z.string().optional().default(''),
+  qr_confirmation_enabled: z.boolean().optional().default(false),
+  single_unit_per_line: z.boolean().optional().default(false),
+  validity_mode: ticketValidityModeSchema.optional(),
+  validity_expires_at: z.string().optional(),
   status: lifecycleStatusSchema,
   cloud_version: z.number(),
   created_at: z.string(),

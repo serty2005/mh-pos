@@ -1956,3 +1956,9 @@ WHEN NOT EXISTS (SELECT 1 FROM catalog_items WHERE id = NEW.catalog_item_id AND 
 BEGIN
   SELECT RAISE(ABORT, 'recipe line must reference good or semi_finished catalog item');
 END;
+
+-- POS-52: QR-enabled service с single-unit-per-line и validity configuration
+ALTER TABLE catalog_items ADD COLUMN qr_confirmation_enabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE catalog_items ADD COLUMN single_unit_per_line INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE catalog_items ADD COLUMN validity_mode TEXT NOT NULL DEFAULT '';
+ALTER TABLE catalog_items ADD COLUMN validity_expires_at TEXT;

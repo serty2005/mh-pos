@@ -1,4 +1,4 @@
-import type { CatalogFolder, CatalogItem, CatalogTag, FolderParameter } from '../../shared/api/schemas';
+import type { CatalogFolder, CatalogItem, CatalogTag, FolderParameter, TicketValidityMode } from '../../shared/api/schemas';
 
 export type CatalogKind = 'dish' | 'good' | 'semi_finished' | 'service';
 export type LifecycleStatus = 'draft' | 'published' | 'archived';
@@ -11,6 +11,9 @@ export type CatalogItemFormValues = {
   base_unit: string;
   kitchen_type: string;
   accounting_category: string;
+  qr_confirmation_enabled: boolean;
+  validity_mode: TicketValidityMode | '';
+  validity_expires_at: string;
   status: LifecycleStatus;
 };
 
@@ -48,6 +51,9 @@ export const defaultCatalogItemValues: CatalogItemFormValues = {
   base_unit: 'pcs',
   kitchen_type: '',
   accounting_category: '',
+  qr_confirmation_enabled: false,
+  validity_mode: '',
+  validity_expires_at: '',
   status: 'draft',
 };
 
@@ -78,7 +84,14 @@ export const defaultItemTagCommandValues: ItemTagCommandFormValues = {
 };
 
 export function buildCreateCatalogItemPayload(values: CatalogItemFormValues) {
-  const { status: _status, ...payload } = values;
+  const { status: _status, validity_mode, validity_expires_at, ...rest } = values;
+  const payload: Record<string, unknown> = { ...rest };
+  if (values.qr_confirmation_enabled && validity_mode) {
+    payload.validity_mode = validity_mode;
+    if (validity_mode === 'absolute_date' && validity_expires_at) {
+      payload.validity_expires_at = validity_expires_at;
+    }
+  }
   return payload;
 }
 
@@ -106,6 +119,9 @@ export function toCatalogItemValues(item: CatalogItem): CatalogItemFormValues {
     base_unit: item.base_unit,
     kitchen_type: item.kitchen_type ?? '',
     accounting_category: item.accounting_category ?? '',
+    qr_confirmation_enabled: item.qr_confirmation_enabled ?? false,
+    validity_mode: item.validity_mode ?? '',
+    validity_expires_at: item.validity_expires_at ?? '',
     status: item.status,
   };
 }

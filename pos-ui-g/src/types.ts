@@ -19,6 +19,7 @@ export interface MenuItem {
   price: number;
   category: string;
   isAvailable: boolean;
+  singleUnitPerLine?: boolean;
   stopListActive?: boolean;
   stopListBlocked?: boolean;
   stopListAvailableQuantity?: number;

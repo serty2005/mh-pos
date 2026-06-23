@@ -97,8 +97,73 @@ export default function CatalogItemsPanel({ items, folders, loading, error, onCr
         </div>
       </div>
 
+      {values.kind === 'service' && (
+        <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              checked={values.qr_confirmation_enabled}
+              onChange={(event) => setValues({
+                ...values,
+                qr_confirmation_enabled: event.target.checked,
+                validity_mode: event.target.checked ? values.validity_mode : '',
+                validity_expires_at: event.target.checked ? values.validity_expires_at : '',
+              })}
+              disabled={loading}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            <span className="text-sm text-slate-700">{t('catalog.items.fields.qrConfirmationEnabled')}</span>
+          </label>
+          {values.qr_confirmation_enabled && (
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm text-slate-700">{t('catalog.items.fields.validityMode')}</label>
+                <select
+                  value={values.validity_mode}
+                  onChange={(event) => setValues({
+                    ...values,
+                    validity_mode: event.target.value as typeof values.validity_mode,
+                    validity_expires_at: event.target.value !== 'absolute_date' ? '' : values.validity_expires_at,
+                  })}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  disabled={loading}
+                >
+                  <option value="">—</option>
+                  <option value="cash_session">{t('catalog.items.fields.validityModes.cash_session')}</option>
+                  <option value="business_date">{t('catalog.items.fields.validityModes.business_date')}</option>
+                  <option value="absolute_date">{t('catalog.items.fields.validityModes.absolute_date')}</option>
+                </select>
+              </div>
+              {values.validity_mode === 'absolute_date' && (
+                <div>
+                  <label className="mb-1 block text-sm text-slate-700">{t('catalog.items.fields.validityExpiresAt')}</label>
+                  <input
+                    type="datetime-local"
+                    value={values.validity_expires_at}
+                    onChange={(event) => setValues({ ...values, validity_expires_at: event.target.value })}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                    disabled={loading}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
-        <button type="submit" disabled={loading || !values.name.trim() || !values.sku.trim() || !values.base_unit.trim()} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{mode === 'create' ? t('catalog.items.actions.create') : t('catalog.shared.save')}</button>
+        <button
+          type="submit"
+          disabled={
+            loading ||
+            !values.name.trim() ||
+            !values.sku.trim() ||
+            !values.base_unit.trim() ||
+            (values.qr_confirmation_enabled && !values.validity_mode) ||
+            (values.qr_confirmation_enabled && values.validity_mode === 'absolute_date' && !values.validity_expires_at)
+          }
+          className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >{mode === 'create' ? t('catalog.items.actions.create') : t('catalog.shared.save')}</button>
         {onCancel ? <button type="button" onClick={onCancel} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700" disabled={loading}>{t('catalog.shared.cancel')}</button> : null}
       </div>
     </form>

@@ -163,22 +163,36 @@ func (t Table) ActiveForPOS() bool {
 	return t.Status == StatusPublished
 }
 
+// TicketValidityMode задаёт окно действия QR-билета.
+type TicketValidityMode string
+
+const (
+	TicketValidityCashSession  TicketValidityMode = "cash_session"
+	TicketValidityBusinessDate TicketValidityMode = "business_date"
+	TicketValidityAbsoluteDate TicketValidityMode = "absolute_date"
+)
+
 // CatalogItem описывает tenant-owned номенклатуру без restaurant ownership.
 type CatalogItem struct {
-	ID                 string          `json:"id"`
-	RestaurantID       string          `json:"restaurant_id,omitempty"`
-	Kind               CatalogItemKind `json:"kind"`
-	FolderID           string          `json:"folder_id,omitempty"`
-	Name               string          `json:"name"`
-	SKU                string          `json:"sku"`
-	BaseUnit           string          `json:"base_unit"`
-	KitchenType        string          `json:"kitchen_type,omitempty"`
-	AccountingCategory string          `json:"accounting_category,omitempty"`
-	Status             LifecycleStatus `json:"status"`
-	CloudVersion       int64           `json:"cloud_version"`
-	CreatedAt          time.Time       `json:"created_at"`
-	UpdatedAt          time.Time       `json:"updated_at"`
-	ArchivedAt         *time.Time      `json:"archived_at,omitempty"`
+	ID                    string             `json:"id"`
+	RestaurantID          string             `json:"restaurant_id,omitempty"`
+	Kind                  CatalogItemKind    `json:"kind"`
+	FolderID              string             `json:"folder_id,omitempty"`
+	Name                  string             `json:"name"`
+	SKU                   string             `json:"sku"`
+	BaseUnit              string             `json:"base_unit"`
+	KitchenType           string             `json:"kitchen_type,omitempty"`
+	AccountingCategory    string             `json:"accounting_category,omitempty"`
+	QRConfirmationEnabled bool               `json:"qr_confirmation_enabled"`
+	// SingleUnitPerLine автоматически true когда QRConfirmationEnabled=true; backend не допускает qty>1 в order line.
+	SingleUnitPerLine     bool               `json:"single_unit_per_line"`
+	ValidityMode          TicketValidityMode `json:"validity_mode,omitempty"`
+	ValidityExpiresAt     *time.Time         `json:"validity_expires_at,omitempty"`
+	Status                LifecycleStatus    `json:"status"`
+	CloudVersion          int64              `json:"cloud_version"`
+	CreatedAt             time.Time          `json:"created_at"`
+	UpdatedAt             time.Time          `json:"updated_at"`
+	ArchivedAt            *time.Time         `json:"archived_at,omitempty"`
 }
 
 // ActiveForPOS сообщает, должен ли catalog item быть активным в Edge read model.
@@ -665,17 +679,21 @@ type EdgeEmployee struct {
 
 // EdgeCatalogItem является projection catalog item в существующий POS Edge catalog stream.
 type EdgeCatalogItem struct {
-	ID                 string    `json:"id"`
-	Type               string    `json:"type"`
-	FolderID           string    `json:"folder_id,omitempty"`
-	Name               string    `json:"name"`
-	SKU                string    `json:"sku"`
-	BaseUnit           string    `json:"base_unit"`
-	KitchenType        string    `json:"kitchen_type,omitempty"`
-	AccountingCategory string    `json:"accounting_category,omitempty"`
-	Active             bool      `json:"active"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	ID                    string             `json:"id"`
+	Type                  string             `json:"type"`
+	FolderID              string             `json:"folder_id,omitempty"`
+	Name                  string             `json:"name"`
+	SKU                   string             `json:"sku"`
+	BaseUnit              string             `json:"base_unit"`
+	KitchenType           string             `json:"kitchen_type,omitempty"`
+	AccountingCategory    string             `json:"accounting_category,omitempty"`
+	QRConfirmationEnabled bool               `json:"qr_confirmation_enabled"`
+	SingleUnitPerLine     bool               `json:"single_unit_per_line"`
+	ValidityMode          TicketValidityMode `json:"validity_mode,omitempty"`
+	ValidityExpiresAt     *time.Time         `json:"validity_expires_at,omitempty"`
+	Active                bool               `json:"active"`
+	CreatedAt             time.Time          `json:"created_at"`
+	UpdatedAt             time.Time          `json:"updated_at"`
 }
 
 // EdgeCatalogFolder является projection папки номенклатуры в catalog stream.
@@ -862,6 +880,16 @@ type EdgeWarehouseReference struct {
 	Default      bool      `json:"is_default"`
 	Active       bool      `json:"active"`
 	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// ValidateTicketValidityMode проверяет допустимый режим действия QR-билета.
+func ValidateTicketValidityMode(v TicketValidityMode) error {
+	switch v {
+	case TicketValidityCashSession, TicketValidityBusinessDate, TicketValidityAbsoluteDate:
+		return nil
+	default:
+		return fmt.Errorf("%w: unsupported ticket validity_mode %q", ErrInvalid, v)
+	}
 }
 
 // ValidateEmployeeStatus проверяет допустимое lifecycle состояние сотрудника.

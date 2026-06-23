@@ -918,6 +918,11 @@ func normalizeCatalogItem(v domain.CatalogItem, now time.Time) domain.CatalogIte
 	v.BaseUnit = strings.TrimSpace(v.BaseUnit)
 	v.KitchenType = strings.TrimSpace(v.KitchenType)
 	v.AccountingCategory = strings.TrimSpace(v.AccountingCategory)
+	v.ValidityMode = strings.TrimSpace(v.ValidityMode)
+	// single_unit_per_line автоматически следует за qr_confirmation_enabled при доставке из Cloud
+	if v.QRConfirmationEnabled {
+		v.SingleUnitPerLine = true
+	}
 	v.CreatedAt = defaultTime(v.CreatedAt, now)
 	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
 	return v
@@ -1161,10 +1166,20 @@ func validateCatalogItem(v domain.CatalogItem) error {
 	}
 	switch v.Type {
 	case domain.CatalogItemDish, domain.CatalogItemGood, domain.CatalogItemSemiFinished, domain.CatalogItemService:
-		return nil
 	default:
 		return fmt.Errorf("%w: unsupported catalog item type", domain.ErrInvalid)
 	}
+	if v.QRConfirmationEnabled {
+		switch v.ValidityMode {
+		case "cash_session", "business_date", "absolute_date":
+		default:
+			return fmt.Errorf("%w: validity_mode is required when qr_confirmation_enabled is true", domain.ErrInvalid)
+		}
+		if v.ValidityMode == "absolute_date" && v.ValidityExpiresAt == nil {
+			return fmt.Errorf("%w: validity_expires_at is required for absolute_date validity_mode", domain.ErrInvalid)
+		}
+	}
+	return nil
 }
 
 func validateCatalogFolder(v domain.CatalogFolder) error {

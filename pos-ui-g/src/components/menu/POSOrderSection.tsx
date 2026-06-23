@@ -351,7 +351,9 @@ export const POSOrderSection: React.FC = () => {
               <div className="divide-y divide-[var(--pos-border)]">
                 {currentOrder.lines.map((line) => {
                   const isLocked = currentOrder.status === 'precheck_issued';
-                  
+                  const lineMenuItem = menuItems.find((menuItem) => menuItem.id === line.itemId);
+                  const maxQty = lineMenuItem?.singleUnitPerLine ? 1 : undefined;
+
                   return (
                     <div 
                       key={line.id} 
@@ -408,6 +410,7 @@ export const POSOrderSection: React.FC = () => {
                           value={line.quantity}
                           onChange={(val) => changeLineQuantity(line.id, val)}
                           disabled={isLocked}
+                          max={maxQty}
                         />
 
                         <span className="font-mono text-xs font-black text-[var(--pos-text-primary)]">

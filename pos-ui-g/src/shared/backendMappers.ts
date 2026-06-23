@@ -62,6 +62,7 @@ export function mapMenuItem(item: BackendMenuItem): MenuItem {
     price: item.price,
     category: item.item_type === 'service' ? 'services' : item.item_type,
     isAvailable: item.active && !item.stop_list_blocked,
+    singleUnitPerLine: item.single_unit_per_line ?? false,
     stopListActive: item.stop_list_active ?? false,
     stopListBlocked: item.stop_list_blocked ?? false,
     stopListAvailableQuantity: item.stop_list_available_quantity,

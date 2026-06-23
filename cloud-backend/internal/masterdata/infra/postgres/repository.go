@@ -224,10 +224,10 @@ func (r *Repository) CreateCatalogItem(ctx context.Context, v domain.CatalogItem
 	}
 	defer tx.Rollback(ctx)
 	out, err := scanCatalogItem(tx.QueryRow(ctx, `
-INSERT INTO cloud_catalog_items(id,restaurant_id,kind,folder_id,name,sku,base_unit,kitchen_type,accounting_category,status,cloud_version,archived_at,created_at,updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-RETURNING id,restaurant_id,kind,COALESCE(folder_id,''),name,sku,base_unit,COALESCE(kitchen_type,''),COALESCE(accounting_category,''),status,cloud_version,archived_at,created_at,updated_at`,
-		v.ID, strings.TrimSpace(v.RestaurantID), v.Kind, nullableText(v.FolderID), v.Name, v.SKU, v.BaseUnit, nullableText(v.KitchenType), nullableText(v.AccountingCategory), v.Status, v.CloudVersion, v.ArchivedAt, v.CreatedAt, v.UpdatedAt))
+INSERT INTO cloud_catalog_items(id,restaurant_id,kind,folder_id,name,sku,base_unit,kitchen_type,accounting_category,qr_confirmation_enabled,single_unit_per_line,validity_mode,validity_expires_at,status,cloud_version,archived_at,created_at,updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+RETURNING id,restaurant_id,kind,COALESCE(folder_id,''),name,sku,base_unit,COALESCE(kitchen_type,''),COALESCE(accounting_category,''),qr_confirmation_enabled,single_unit_per_line,COALESCE(validity_mode,''),validity_expires_at,status,cloud_version,archived_at,created_at,updated_at`,
+		v.ID, strings.TrimSpace(v.RestaurantID), v.Kind, nullableText(v.FolderID), v.Name, v.SKU, v.BaseUnit, nullableText(v.KitchenType), nullableText(v.AccountingCategory), v.QRConfirmationEnabled, v.SingleUnitPerLine, nullableText(string(v.ValidityMode)), v.ValidityExpiresAt, v.Status, v.CloudVersion, v.ArchivedAt, v.CreatedAt, v.UpdatedAt))
 	if err != nil {
 		return domain.CatalogItem{}, normalizeErr(err)
 	}
@@ -248,10 +248,10 @@ func (r *Repository) UpdateCatalogItem(ctx context.Context, v domain.CatalogItem
 	defer tx.Rollback(ctx)
 	out, err := scanCatalogItem(tx.QueryRow(ctx, `
 UPDATE cloud_catalog_items
-SET kind=$2,folder_id=$3,name=$4,sku=$5,base_unit=$6,kitchen_type=$7,accounting_category=$8,status=$9,cloud_version=$10,archived_at=$11,updated_at=$12
+SET kind=$2,folder_id=$3,name=$4,sku=$5,base_unit=$6,kitchen_type=$7,accounting_category=$8,qr_confirmation_enabled=$9,single_unit_per_line=$10,validity_mode=$11,validity_expires_at=$12,status=$13,cloud_version=$14,archived_at=$15,updated_at=$16
 WHERE id=$1
-RETURNING id,restaurant_id,kind,COALESCE(folder_id,''),name,sku,base_unit,COALESCE(kitchen_type,''),COALESCE(accounting_category,''),status,cloud_version,archived_at,created_at,updated_at`,
-		v.ID, v.Kind, nullableText(v.FolderID), v.Name, v.SKU, v.BaseUnit, nullableText(v.KitchenType), nullableText(v.AccountingCategory), v.Status, v.CloudVersion, v.ArchivedAt, v.UpdatedAt))
+RETURNING id,restaurant_id,kind,COALESCE(folder_id,''),name,sku,base_unit,COALESCE(kitchen_type,''),COALESCE(accounting_category,''),qr_confirmation_enabled,single_unit_per_line,COALESCE(validity_mode,''),validity_expires_at,status,cloud_version,archived_at,created_at,updated_at`,
+		v.ID, v.Kind, nullableText(v.FolderID), v.Name, v.SKU, v.BaseUnit, nullableText(v.KitchenType), nullableText(v.AccountingCategory), v.QRConfirmationEnabled, v.SingleUnitPerLine, nullableText(string(v.ValidityMode)), v.ValidityExpiresAt, v.Status, v.CloudVersion, v.ArchivedAt, v.UpdatedAt))
 	if err != nil {
 		return domain.CatalogItem{}, normalizeErr(err)
 	}
@@ -265,13 +265,13 @@ RETURNING id,restaurant_id,kind,COALESCE(folder_id,''),name,sku,base_unit,COALES
 }
 
 func (r *Repository) GetCatalogItem(ctx context.Context, id string) (domain.CatalogItem, error) {
-	v, err := scanCatalogItem(r.pool.QueryRow(ctx, `SELECT id,restaurant_id,kind,COALESCE(folder_id,''),name,sku,base_unit,COALESCE(kitchen_type,''),COALESCE(accounting_category,''),status,cloud_version,archived_at,created_at,updated_at FROM cloud_catalog_items WHERE id = $1`, strings.TrimSpace(id)))
+	v, err := scanCatalogItem(r.pool.QueryRow(ctx, `SELECT id,restaurant_id,kind,COALESCE(folder_id,''),name,sku,base_unit,COALESCE(kitchen_type,''),COALESCE(accounting_category,''),qr_confirmation_enabled,single_unit_per_line,COALESCE(validity_mode,''),validity_expires_at,status,cloud_version,archived_at,created_at,updated_at FROM cloud_catalog_items WHERE id = $1`, strings.TrimSpace(id)))
 	return v, normalizeErr(err)
 }
 
 func (r *Repository) ListCatalogItems(ctx context.Context, restaurantID string) ([]domain.CatalogItem, error) {
 	restaurantID = strings.TrimSpace(restaurantID)
-	query := `SELECT id,restaurant_id,kind,COALESCE(folder_id,''),name,sku,base_unit,COALESCE(kitchen_type,''),COALESCE(accounting_category,''),status,cloud_version,archived_at,created_at,updated_at FROM cloud_catalog_items`
+	query := `SELECT id,restaurant_id,kind,COALESCE(folder_id,''),name,sku,base_unit,COALESCE(kitchen_type,''),COALESCE(accounting_category,''),qr_confirmation_enabled,single_unit_per_line,COALESCE(validity_mode,''),validity_expires_at,status,cloud_version,archived_at,created_at,updated_at FROM cloud_catalog_items`
 	args := []any{}
 	if restaurantID != "" {
 		query += ` WHERE restaurant_id = '' OR restaurant_id = $1`
@@ -1405,13 +1405,14 @@ func scanEmployee(row scanner) (domain.Employee, error) {
 
 func scanCatalogItem(row scanner) (domain.CatalogItem, error) {
 	var v domain.CatalogItem
-	var kind, status string
-	err := row.Scan(&v.ID, &v.RestaurantID, &kind, &v.FolderID, &v.Name, &v.SKU, &v.BaseUnit, &v.KitchenType, &v.AccountingCategory, &status, &v.CloudVersion, &v.ArchivedAt, &v.CreatedAt, &v.UpdatedAt)
+	var kind, status, validityMode string
+	err := row.Scan(&v.ID, &v.RestaurantID, &kind, &v.FolderID, &v.Name, &v.SKU, &v.BaseUnit, &v.KitchenType, &v.AccountingCategory, &v.QRConfirmationEnabled, &v.SingleUnitPerLine, &validityMode, &v.ValidityExpiresAt, &status, &v.CloudVersion, &v.ArchivedAt, &v.CreatedAt, &v.UpdatedAt)
 	if err != nil {
 		return v, err
 	}
 	v.Kind = domain.CatalogItemKind(kind)
 	v.Status = domain.LifecycleStatus(status)
+	v.ValidityMode = domain.TicketValidityMode(validityMode)
 	if err := domain.ValidateCatalogItemKind(v.Kind); err != nil {
 		return v, fmt.Errorf("%w: scanned catalog item %s has unsupported kind", err, v.ID)
 	}

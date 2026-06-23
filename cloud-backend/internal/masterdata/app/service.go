@@ -240,28 +240,34 @@ type RotatePINCommand struct {
 
 // CreateCatalogItemCommand описывает создание Cloud-owned catalog item.
 type CreateCatalogItemCommand struct {
-	RestaurantID       string                 `json:"restaurant_id,omitempty"`
-	Kind               domain.CatalogItemKind `json:"kind"`
-	Type               domain.CatalogItemKind `json:"type,omitempty"`
-	FolderID           string                 `json:"folder_id,omitempty"`
-	Name               string                 `json:"name"`
-	SKU                string                 `json:"sku"`
-	BaseUnit           string                 `json:"base_unit"`
-	KitchenType        string                 `json:"kitchen_type,omitempty"`
-	AccountingCategory string                 `json:"accounting_category,omitempty"`
+	RestaurantID          string                      `json:"restaurant_id,omitempty"`
+	Kind                  domain.CatalogItemKind      `json:"kind"`
+	Type                  domain.CatalogItemKind      `json:"type,omitempty"`
+	FolderID              string                      `json:"folder_id,omitempty"`
+	Name                  string                      `json:"name"`
+	SKU                   string                      `json:"sku"`
+	BaseUnit              string                      `json:"base_unit"`
+	KitchenType           string                      `json:"kitchen_type,omitempty"`
+	AccountingCategory    string                      `json:"accounting_category,omitempty"`
+	QRConfirmationEnabled bool                        `json:"qr_confirmation_enabled"`
+	ValidityMode          domain.TicketValidityMode   `json:"validity_mode,omitempty"`
+	ValidityExpiresAt     *time.Time                  `json:"validity_expires_at,omitempty"`
 }
 
 // UpdateCatalogItemCommand описывает изменение Cloud-owned catalog item.
 type UpdateCatalogItemCommand struct {
-	Kind               *domain.CatalogItemKind `json:"kind,omitempty"`
-	Type               *domain.CatalogItemKind `json:"type,omitempty"`
-	FolderID           *string                 `json:"folder_id,omitempty"`
-	Name               string                  `json:"name,omitempty"`
-	SKU                string                  `json:"sku,omitempty"`
-	BaseUnit           string                  `json:"base_unit,omitempty"`
-	KitchenType        *string                 `json:"kitchen_type,omitempty"`
-	AccountingCategory *string                 `json:"accounting_category,omitempty"`
-	Status             *domain.LifecycleStatus `json:"status,omitempty"`
+	Kind                  *domain.CatalogItemKind      `json:"kind,omitempty"`
+	Type                  *domain.CatalogItemKind      `json:"type,omitempty"`
+	FolderID              *string                      `json:"folder_id,omitempty"`
+	Name                  string                       `json:"name,omitempty"`
+	SKU                   string                       `json:"sku,omitempty"`
+	BaseUnit              string                       `json:"base_unit,omitempty"`
+	KitchenType           *string                      `json:"kitchen_type,omitempty"`
+	AccountingCategory    *string                      `json:"accounting_category,omitempty"`
+	Status                *domain.LifecycleStatus      `json:"status,omitempty"`
+	QRConfirmationEnabled *bool                        `json:"qr_confirmation_enabled,omitempty"`
+	ValidityMode          *domain.TicketValidityMode   `json:"validity_mode,omitempty"`
+	ValidityExpiresAt     *time.Time                   `json:"validity_expires_at,omitempty"`
 }
 
 type CreateCatalogFolderCommand struct {
@@ -959,21 +965,29 @@ func (s *Service) CreateCatalogItem(ctx context.Context, cmd CreateCatalogItemCo
 	if err := validateCatalogFields(cmd.Kind, cmd.Name, cmd.SKU, cmd.BaseUnit); err != nil {
 		return domain.CatalogItem{}, err
 	}
+	// qr_confirmation_enabled автоматически подтягивает single_unit_per_line; validity_mode обязателен при QR
+	if err := validateQRConfig(cmd.QRConfirmationEnabled, cmd.ValidityMode, cmd.ValidityExpiresAt); err != nil {
+		return domain.CatalogItem{}, err
+	}
 	now := s.clock.Now().UTC()
 	item := domain.CatalogItem{
-		ID:                 s.ids.NewID(),
-		RestaurantID:       strings.TrimSpace(cmd.RestaurantID),
-		Kind:               cmd.Kind,
-		FolderID:           strings.TrimSpace(cmd.FolderID),
-		Name:               strings.TrimSpace(cmd.Name),
-		SKU:                strings.TrimSpace(cmd.SKU),
-		BaseUnit:           strings.TrimSpace(cmd.BaseUnit),
-		KitchenType:        strings.TrimSpace(cmd.KitchenType),
-		AccountingCategory: strings.TrimSpace(cmd.AccountingCategory),
-		Status:             domain.StatusPublished,
-		CloudVersion:       1,
-		CreatedAt:          now,
-		UpdatedAt:          now,
+		ID:                    s.ids.NewID(),
+		RestaurantID:          strings.TrimSpace(cmd.RestaurantID),
+		Kind:                  cmd.Kind,
+		FolderID:              strings.TrimSpace(cmd.FolderID),
+		Name:                  strings.TrimSpace(cmd.Name),
+		SKU:                   strings.TrimSpace(cmd.SKU),
+		BaseUnit:              strings.TrimSpace(cmd.BaseUnit),
+		KitchenType:           strings.TrimSpace(cmd.KitchenType),
+		AccountingCategory:    strings.TrimSpace(cmd.AccountingCategory),
+		QRConfirmationEnabled: cmd.QRConfirmationEnabled,
+		SingleUnitPerLine:     cmd.QRConfirmationEnabled, // автоматически
+		ValidityMode:          cmd.ValidityMode,
+		ValidityExpiresAt:     cmd.ValidityExpiresAt,
+		Status:                domain.StatusPublished,
+		CloudVersion:          1,
+		CreatedAt:             now,
+		UpdatedAt:             now,
 	}
 	stored, err := s.repo.CreateCatalogItem(ctx, item)
 	return afterRestaurantCommit(s, ctx, item.RestaurantID, stored, err)
@@ -1030,6 +1044,20 @@ func (s *Service) UpdateCatalogItem(ctx context.Context, id string, cmd UpdateCa
 			return domain.CatalogItem{}, err
 		}
 		item.Status = *cmd.Status
+	}
+	if cmd.QRConfirmationEnabled != nil {
+		item.QRConfirmationEnabled = *cmd.QRConfirmationEnabled
+	}
+	if cmd.ValidityMode != nil {
+		item.ValidityMode = *cmd.ValidityMode
+	}
+	if cmd.ValidityExpiresAt != nil {
+		item.ValidityExpiresAt = cmd.ValidityExpiresAt
+	}
+	// single_unit_per_line автоматически следует за qr_confirmation_enabled
+	item.SingleUnitPerLine = item.QRConfirmationEnabled
+	if err := validateQRConfig(item.QRConfirmationEnabled, item.ValidityMode, item.ValidityExpiresAt); err != nil {
+		return domain.CatalogItem{}, err
 	}
 	item.CloudVersion++
 	item.UpdatedAt = s.clock.Now().UTC()
@@ -2995,7 +3023,23 @@ func edgeEmployees(items []domain.Employee, restaurantID string) []domain.EdgeEm
 func edgeCatalogItems(items []domain.CatalogItem) []domain.EdgeCatalogItem {
 	out := make([]domain.EdgeCatalogItem, 0, len(items))
 	for _, item := range items {
-		out = append(out, domain.EdgeCatalogItem{ID: item.ID, Type: item.EdgeType(), FolderID: item.FolderID, Name: item.Name, SKU: item.SKU, BaseUnit: item.BaseUnit, KitchenType: item.KitchenType, AccountingCategory: item.AccountingCategory, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+		out = append(out, domain.EdgeCatalogItem{
+			ID:                    item.ID,
+			Type:                  item.EdgeType(),
+			FolderID:              item.FolderID,
+			Name:                  item.Name,
+			SKU:                   item.SKU,
+			BaseUnit:              item.BaseUnit,
+			KitchenType:           item.KitchenType,
+			AccountingCategory:    item.AccountingCategory,
+			QRConfirmationEnabled: item.QRConfirmationEnabled,
+			SingleUnitPerLine:     item.SingleUnitPerLine,
+			ValidityMode:          item.ValidityMode,
+			ValidityExpiresAt:     item.ValidityExpiresAt,
+			Active:                item.ActiveForPOS(),
+			CreatedAt:             item.CreatedAt,
+			UpdatedAt:             item.UpdatedAt,
+		})
 	}
 	return out
 }
@@ -3301,6 +3345,20 @@ func validateCatalogFields(kind domain.CatalogItemKind, name, sku, baseUnit stri
 		return fmt.Errorf("%w: name, sku and base_unit are required", domain.ErrInvalid)
 	}
 	return domain.ValidateCatalogItemKind(kind)
+}
+
+// validateQRConfig проверяет инварианты QR-конфигурации сервиса.
+func validateQRConfig(enabled bool, mode domain.TicketValidityMode, expiresAt *time.Time) error {
+	if !enabled {
+		return nil
+	}
+	if err := domain.ValidateTicketValidityMode(mode); err != nil {
+		return fmt.Errorf("%w: validity_mode is required when qr_confirmation_enabled is true", domain.ErrInvalid)
+	}
+	if mode == domain.TicketValidityAbsoluteDate && expiresAt == nil {
+		return fmt.Errorf("%w: validity_expires_at is required for absolute_date validity_mode", domain.ErrInvalid)
+	}
+	return nil
 }
 
 func (s *Service) ensureRestaurantActive(ctx context.Context, restaurantID string) error {

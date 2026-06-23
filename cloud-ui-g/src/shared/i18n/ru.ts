@@ -236,6 +236,14 @@ export const ru = {
         folder: 'Папка',
         kitchenType: 'Kitchen type',
         accountingCategory: 'Accounting category',
+        qrConfirmationEnabled: 'QR-подтверждение',
+        validityMode: 'Режим действия',
+        validityExpiresAt: 'Срок действия до',
+        validityModes: {
+          cash_session: 'Кассовая смена',
+          business_date: 'Бизнес-дата',
+          absolute_date: 'Конкретная дата',
+        },
       },
     },
     folders: {

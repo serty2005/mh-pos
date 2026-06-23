@@ -1860,3 +1860,93 @@ func TestAutomaticDeliveryFailureKeepsAuthorityCommitAndRetries(t *testing.T) {
 		t.Fatalf("expected successful retry with a new latest package, got %+v err=%v", state, err)
 	}
 }
+
+func TestQRConfirmationEnabledCatalogItemValidation(t *testing.T) {
+	service, _ := newService()
+	ctx := context.Background()
+	restaurant, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "QR Bistro", Timezone: "Europe/Moscow", Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// QR включён без validity_mode — должен вернуть ErrInvalid
+	_, err = service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{
+		RestaurantID:          restaurant.ID,
+		Kind:                  domain.CatalogItemService,
+		Name:                  "Entry Ticket",
+		SKU:                   "TICKET-1",
+		BaseUnit:              "service",
+		QRConfirmationEnabled: true,
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected ErrInvalid when qr_confirmation_enabled without validity_mode, got %v", err)
+	}
+
+	// QR включён с absolute_date без expires_at — должен вернуть ErrInvalid
+	_, err = service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{
+		RestaurantID:          restaurant.ID,
+		Kind:                  domain.CatalogItemService,
+		Name:                  "Entry Ticket",
+		SKU:                   "TICKET-2",
+		BaseUnit:              "service",
+		QRConfirmationEnabled: true,
+		ValidityMode:          domain.TicketValidityAbsoluteDate,
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected ErrInvalid when absolute_date without validity_expires_at, got %v", err)
+	}
+
+	// QR включён с cash_session — успех, single_unit_per_line должен быть auto-set
+	item, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{
+		RestaurantID:          restaurant.ID,
+		Kind:                  domain.CatalogItemService,
+		Name:                  "Entry Ticket",
+		SKU:                   "TICKET-3",
+		BaseUnit:              "service",
+		QRConfirmationEnabled: true,
+		ValidityMode:          domain.TicketValidityCashSession,
+	})
+	if err != nil {
+		t.Fatalf("expected success for valid QR config, got %v", err)
+	}
+	if !item.QRConfirmationEnabled {
+		t.Fatal("expected qr_confirmation_enabled=true on created item")
+	}
+	if !item.SingleUnitPerLine {
+		t.Fatal("expected single_unit_per_line=true auto-derived from qr_confirmation_enabled")
+	}
+	if item.ValidityMode != domain.TicketValidityCashSession {
+		t.Fatalf("expected validity_mode=cash_session, got %v", item.ValidityMode)
+	}
+
+	// Update: отключаем QR — single_unit_per_line должен стать false
+	disabled := false
+	updated, err := service.UpdateCatalogItem(ctx, item.ID, app.UpdateCatalogItemCommand{
+		QRConfirmationEnabled: &disabled,
+	})
+	if err != nil {
+		t.Fatalf("expected success disabling QR, got %v", err)
+	}
+	if updated.QRConfirmationEnabled || updated.SingleUnitPerLine {
+		t.Fatal("expected both qr_confirmation_enabled and single_unit_per_line=false after disabling QR")
+	}
+
+	// absolute_date с expires_at — успех
+	expiresAt := time.Now().Add(30 * 24 * time.Hour)
+	itemAbs, err := service.CreateCatalogItem(ctx, app.CreateCatalogItemCommand{
+		RestaurantID:          restaurant.ID,
+		Kind:                  domain.CatalogItemService,
+		Name:                  "Season Pass",
+		SKU:                   "SEASON-1",
+		BaseUnit:              "service",
+		QRConfirmationEnabled: true,
+		ValidityMode:          domain.TicketValidityAbsoluteDate,
+		ValidityExpiresAt:     &expiresAt,
+	})
+	if err != nil {
+		t.Fatalf("expected success for absolute_date with expires_at, got %v", err)
+	}
+	if itemAbs.ValidityExpiresAt == nil {
+		t.Fatal("expected validity_expires_at to be set")
+	}
+}

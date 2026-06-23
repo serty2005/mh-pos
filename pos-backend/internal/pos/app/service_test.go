@@ -8612,3 +8612,50 @@ func TestUpdateOrderLineModifiersBlockedByActivePrecheck(t *testing.T) {
 		t.Fatalf("expected locked order conflict, got %v", err)
 	}
 }
+
+func TestSingleUnitPerLineBlocksQuantityAboveOne(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+
+	// Создаём catalog item с single_unit_per_line через прямой SQL (симулируем Cloud-delivered data)
+	const catalogID = "catalog-qr-ticket-test"
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO catalog_items(id,type,name,sku,base_unit,qr_confirmation_enabled,single_unit_per_line,validity_mode,active,created_at,updated_at) VALUES (?,?,?,?,?,1,1,'cash_session',1,?,?)`,
+		catalogID, "service", "Entry Ticket", "TICKET-QR", "service", appshared.DBTime(fixedClock{}.Now()), appshared.DBTime(fixedClock{}.Now())); err != nil {
+		t.Fatal(err)
+	}
+	qrMenuItem, err := f.service.CreateMenuItem(f.ctx, app.CreateMenuItemCommand{CommandMeta: seedMeta(f.device.ID), CatalogItemID: catalogID, Name: "Entry Ticket", Price: 500, Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// AddOrderLine с qty > 1 должен вернуть ErrInvalid
+	_, err = f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: qrMenuItem.ID, Quantity: 2})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected ErrInvalid when adding single_unit_per_line item with qty > 1, got %v", err)
+	}
+
+	// AddOrderLine с qty == 1 должен пройти
+	line, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: qrMenuItem.ID, Quantity: 1})
+	if err != nil {
+		t.Fatalf("expected success adding single_unit_per_line item with qty == 1, got %v", err)
+	}
+
+	// ChangeOrderLineQuantity до 2 должен вернуть ErrInvalid
+	_, err = f.service.ChangeOrderLineQuantity(f.ctx, app.ChangeOrderLineQuantityCommand{CommandMeta: f.edgeMetaCommand("cmd-single-unit-qty"), OrderID: order.ID, LineID: line.ID, Quantity: 2})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected ErrInvalid when changing qty > 1 for single_unit_per_line item, got %v", err)
+	}
+
+	// ChangeOrderLineQuantity до 1 должен остаться допустимым
+	changed, err := f.service.ChangeOrderLineQuantity(f.ctx, app.ChangeOrderLineQuantityCommand{CommandMeta: f.edgeMetaCommand("cmd-single-unit-qty-ok"), OrderID: order.ID, LineID: line.ID, Quantity: 1})
+	if err != nil {
+		t.Fatalf("expected success keeping qty == 1 for single_unit_per_line item, got %v", err)
+	}
+	if changed.Quantity != 1 {
+		t.Fatalf("expected qty == 1, got %d", changed.Quantity)
+	}
+}

@@ -12,6 +12,7 @@ type MenuItem struct {
 	Price                     int64                   `json:"price"`
 	Currency                  string                  `json:"currency"`
 	TaxProfileID              *string                 `json:"tax_profile_id,omitempty"`
+	SingleUnitPerLine         bool                    `json:"single_unit_per_line,omitempty"`
 	RuntimeStatus             string                  `json:"runtime_status,omitempty"`
 	ModifierGroups            []MenuItemModifierGroup `json:"modifier_groups,omitempty"`
 	StopListActive            bool                    `json:"stop_list_active,omitempty"`

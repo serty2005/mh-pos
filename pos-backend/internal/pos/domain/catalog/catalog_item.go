@@ -12,17 +12,22 @@ const (
 )
 
 type CatalogItem struct {
-	ID                 string          `json:"id"`
-	Type               CatalogItemType `json:"type"`
-	FolderID           *string         `json:"folder_id,omitempty"`
-	Name               string          `json:"name"`
-	SKU                string          `json:"sku"`
-	BaseUnit           string          `json:"base_unit"`
-	KitchenType        string          `json:"kitchen_type,omitempty"`
-	AccountingCategory string          `json:"accounting_category,omitempty"`
-	Active             bool            `json:"active"`
-	CreatedAt          time.Time       `json:"created_at"`
-	UpdatedAt          time.Time       `json:"updated_at"`
+	ID                    string          `json:"id"`
+	Type                  CatalogItemType `json:"type"`
+	FolderID              *string         `json:"folder_id,omitempty"`
+	Name                  string          `json:"name"`
+	SKU                   string          `json:"sku"`
+	BaseUnit              string          `json:"base_unit"`
+	KitchenType           string          `json:"kitchen_type,omitempty"`
+	AccountingCategory    string          `json:"accounting_category,omitempty"`
+	QRConfirmationEnabled bool            `json:"qr_confirmation_enabled"`
+	// SingleUnitPerLine доставляется из Cloud; qty>1 в order line блокируется backend.
+	SingleUnitPerLine     bool            `json:"single_unit_per_line"`
+	ValidityMode          string          `json:"validity_mode,omitempty"`
+	ValidityExpiresAt     *time.Time      `json:"validity_expires_at,omitempty"`
+	Active                bool            `json:"active"`
+	CreatedAt             time.Time       `json:"created_at"`
+	UpdatedAt             time.Time       `json:"updated_at"`
 }
 
 type CatalogFolder struct {

@@ -14,48 +14,57 @@ func (r *Repository) CreateCatalogItem(ctx context.Context, v *domain.CatalogIte
 }
 
 func (r *Repository) ListCatalogItems(ctx context.Context) ([]domain.CatalogItem, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,type,folder_id,name,sku,base_unit,kitchen_type,accounting_category,active,created_at,updated_at FROM catalog_items ORDER BY created_at`)
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,type,folder_id,name,sku,base_unit,kitchen_type,accounting_category,qr_confirmation_enabled,single_unit_per_line,validity_mode,validity_expires_at,active,created_at,updated_at FROM catalog_items ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []domain.CatalogItem
 	for rows.Next() {
-		var v domain.CatalogItem
-		var typ string
-		var folderID sql.NullString
-		var active int
-		var created, updated string
-		if err := rows.Scan(&v.ID, &typ, &folderID, &v.Name, &v.SKU, &v.BaseUnit, &v.KitchenType, &v.AccountingCategory, &active, &created, &updated); err != nil {
+		v, err := scanCatalogItemRow(rows)
+		if err != nil {
 			return nil, err
 		}
-		v.Type = domain.CatalogItemType(typ)
-		v.FolderID = stringPtr(folderID)
-		v.Active = active == 1
-		v.CreatedAt = parseTime(created)
-		v.UpdatedAt = parseTime(updated)
 		out = append(out, v)
 	}
 	return out, rows.Err()
 }
 
 func (r *Repository) GetCatalogItem(ctx context.Context, id string) (*domain.CatalogItem, error) {
-	var v domain.CatalogItem
-	var typ string
-	var folderID sql.NullString
-	var active int
-	var created, updated string
-	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,type,folder_id,name,sku,base_unit,kitchen_type,accounting_category,active,created_at,updated_at FROM catalog_items WHERE id = ?`, id).
-		Scan(&v.ID, &typ, &folderID, &v.Name, &v.SKU, &v.BaseUnit, &v.KitchenType, &v.AccountingCategory, &active, &created, &updated)
+	row := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,type,folder_id,name,sku,base_unit,kitchen_type,accounting_category,qr_confirmation_enabled,single_unit_per_line,validity_mode,validity_expires_at,active,created_at,updated_at FROM catalog_items WHERE id = ?`, id)
+	v, err := scanCatalogItemRow(row)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
+	return &v, nil
+}
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanCatalogItemRow(s rowScanner) (domain.CatalogItem, error) {
+	var v domain.CatalogItem
+	var typ string
+	var folderID sql.NullString
+	var qrEnabled, singleUnit, active int
+	var validityMode string
+	var validityExpiresAt sql.NullString
+	var created, updated string
+	if err := s.Scan(&v.ID, &typ, &folderID, &v.Name, &v.SKU, &v.BaseUnit, &v.KitchenType, &v.AccountingCategory,
+		&qrEnabled, &singleUnit, &validityMode, &validityExpiresAt, &active, &created, &updated); err != nil {
+		return domain.CatalogItem{}, err
+	}
 	v.Type = domain.CatalogItemType(typ)
 	v.FolderID = stringPtr(folderID)
+	v.QRConfirmationEnabled = qrEnabled == 1
+	v.SingleUnitPerLine = singleUnit == 1
+	v.ValidityMode = validityMode
+	v.ValidityExpiresAt = timePtr(validityExpiresAt)
 	v.Active = active == 1
 	v.CreatedAt = parseTime(created)
 	v.UpdatedAt = parseTime(updated)
-	return &v, nil
+	return v, nil
 }
 
 func (r *Repository) ListModifierGroupsForMenuItem(ctx context.Context, menuItemID string) ([]domain.ModifierGroup, error) {

@@ -1651,3 +1651,17 @@ CREATE TABLE IF NOT EXISTS stop_lists (
 
 CREATE UNIQUE INDEX IF NOT EXISTS stop_lists_restaurant_item
   ON stop_lists(restaurant_id, catalog_item_id);
+
+-- POS-52: QR-enabled service с single-unit-per-line и validity configuration
+ALTER TABLE cloud_catalog_items
+  ADD COLUMN IF NOT EXISTS qr_confirmation_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE cloud_catalog_items
+  ADD COLUMN IF NOT EXISTS single_unit_per_line BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE cloud_catalog_items
+  ADD COLUMN IF NOT EXISTS validity_mode TEXT
+    CHECK (validity_mode IN ('cash_session', 'business_date', 'absolute_date'));
+
+ALTER TABLE cloud_catalog_items
+  ADD COLUMN IF NOT EXISTS validity_expires_at TIMESTAMPTZ;

@@ -134,6 +134,7 @@ export const menuItemSchema = z.object({
   name: z.string(),
   price: z.number(),
   currency: z.string(),
+  single_unit_per_line: z.boolean().optional().default(false),
   modifier_groups: z.array(z.object({
     id: z.string(),
     restaurant_id: z.string(),
@@ -235,6 +236,10 @@ export const catalogItemSchema = z.object({
   base_unit: z.string().optional(),
   kitchen_type: z.string().optional(),
   accounting_category: z.string().optional(),
+  qr_confirmation_enabled: z.boolean().optional().default(false),
+  single_unit_per_line: z.boolean().optional().default(false),
+  validity_mode: z.string().optional(),
+  validity_expires_at: z.string().optional(),
   active: z.boolean().optional(),
 }).passthrough();
 
