@@ -22,6 +22,7 @@ import (
 	"pos-backend/internal/pos/domain/shared"
 	"pos-backend/internal/pos/domain/shift"
 	"pos-backend/internal/pos/domain/storage"
+	"pos-backend/internal/pos/domain/ticket"
 )
 
 var (
@@ -179,6 +180,17 @@ const (
 	KitchenProposalRejected         = kitchen.ProposalRejected
 	KitchenProposalChangesRequested = kitchen.ProposalChangesRequested
 	KitchenProposalFailed           = kitchen.ProposalFailed
+)
+
+type TicketUnit = ticket.TicketUnit
+type TicketValidityMode = ticket.ValidityMode
+
+const (
+	TicketValidityCashSession  = ticket.ValidityCashSession
+	TicketValidityBusinessDate = ticket.ValidityBusinessDate
+	TicketValidityAbsoluteDate = ticket.ValidityAbsoluteDate
+	TicketPrintStatusPending   = ticket.PrintStatusPending
+	TicketQRPayloadPrefix      = ticket.QRPayloadPrefix
 )
 
 type CheckStatus = check.CheckStatus

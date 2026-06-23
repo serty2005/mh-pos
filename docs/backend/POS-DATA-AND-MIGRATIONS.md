@@ -33,7 +33,7 @@ Managed SQL files, реализовано сейчас:
 - `catalog_items`, `catalog_folders`, `catalog_folder_parameters`, `catalog_tags`, `catalog_item_tags`, `menu_items`, `modifier_groups`, `modifier_options`, `menu_item_modifier_groups`, `tax_profiles`, `tax_rules`
 - `shifts`, `cash_sessions`, `cash_drawer_events`
 - `orders`, `order_lines`
-- `prechecks`, `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`, `payments`, `payment_attempts`, `checks`
+- `prechecks`, `precheck_lines`, `precheck_discounts`, `precheck_surcharges`, `precheck_taxes`, `payments`, `payment_attempts`, `checks`, `ticket_units`
 - `order_line_modifiers`, `order_line_discounts`, `order_level_discounts`, `order_surcharges`, `service_charge_rules`, `pricing_policies`
 - `financial_operations`, `financial_operation_items`
 - `manager_override_audit`
@@ -48,6 +48,7 @@ Cashier runtime invariants:
 - `precheck_*` breakdown tables persist lines, discounts, surcharges and tax components for audit/reprint/sync replay.
 - `payments` references `precheck_id`, not legacy `check_id`; `payments.shift_id` хранит текущую кассовую смену оплаты, а `orders.shift_id` сохраняет исходную личную смену оператора заказа.
 - `checks` references `order_id` and stores immutable `snapshot`.
+- `ticket_units` хранит проданные QR-билеты, выпускаемые один раз после закрытия final check для каждой QR-enabled line. Колонки immutable: `ticket_number` (UUIDv7, равен `id`), `name`, `sale_date_local`, `timezone`, `validity_mode` (`cash_session`/`business_date`/`absolute_date`), nullable `validity_date_local`, `cash_shift_sequence`, `qr_payload` (`MHT1:<ticket_number>`), `print_status` (`pending`/`printed`) и immutable `snapshot`. `UNIQUE(order_line_id)` и `UNIQUE(cash_session_id, cash_shift_sequence)` исключают повторную выдачу/дублирующий порядковый номер; индексы `ticket_units_check_id`, `ticket_units_cash_session_sequence`, `ticket_units_restaurant_sale_date` поддерживают bounded reads. Выдача транзакционна вместе с закрытием check (refund-safe), reprint не создает новую строку.
 - `order_lines.course` и `order_lines.comment` хранят введенные оператором metadata комментария и курса подачи для cashier UI и не участвуют в расчете цены.
 - `order_line_modifiers` stores selected modifiers for active order lines; precheck/check snapshots preserve selected modifiers for reprint/refund.
 - `catalog_items.type` supports canonical `dish`, `good`, `semi_finished`, `service`; legacy `ingredient` is not accepted by current active catalog v2 path.

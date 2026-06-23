@@ -274,6 +274,7 @@ CancellationRecorded
 RefundRecorded
 CheckCreated
 CheckClosed
+TicketIssued
 CheckReprinted
 OrderClosed
 AuthSessionStarted
@@ -479,6 +480,16 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 ```
 
 Поддержанные значения `conflict_policy`: `cloud_wins`, `edge_overlay_until_next_publication`, `edge_overlay_requires_manager_review`. Если поле не передано, применяется default `edge_overlay_requires_manager_review`. Только `edge_overlay_until_next_publication` обновляет bounded `stop_lists` overlay автоматически; остальные режимы фиксируются в safe projection для manager review и не раскрывают raw payload наружу. Bounded Cloud review endpoints `GET /api/v1/manager/stop-list-updates`, detail и `approve/reject/request-changes` отдают safe summary/diff only; approve применяет изменение через Cloud-owned stop-list authority/publication path, reject/request-changes не мутируют runtime authority. Реализовано сейчас: stop-list review assignment доступен через `POST /api/v1/manager/stop-list-updates/{id}/assign|unassign`, требует UUIDv7 `command_id`, идемпотентен по replay и пишет append-only audit `assigned`/`unassigned` с `event_id`, `review_id`, `actor_employee_id`, `target_employee_id`, `occurred_at` и safe `reason`. Assignment audit read реализовано сейчас для `stop_list_update`, `catalog_suggestion` и `recipe_suggestion` через `GET /api/v1/manager/stop-list-updates/{id}/audit?limit=&offset=`, `GET /api/v1/manager/catalog-suggestions/{id}/audit?limit=&offset=` и `GET /api/v1/manager/recipe-suggestions/{id}/audit?limit=&offset=`: default `50`, max `100`, `offset` non-negative, stable sort `occurred_at DESC, event_id DESC`; unknown review id возвращает safe empty list. Response содержит `command_id`, если он нужен для идемпотентного operator trace, но не содержит `payload_json`, raw payload, sync envelope, request dump, token/PIN/SQL details. Assignment runtime для catalog/recipe запланирован далее и не заявлен как реализованный. Escalation/dashboard запланированы далее. Raw payload exposure вне текущего объема и запрещено. POS Edge sale blocking invariant не разрешает локальному inactive overlay снять Cloud-imported active stop-list block для самого item или компонента активной техкарты.
+
+## QR Ticket Issuance (POS-48)
+
+Реализовано сейчас:
+
+- POS Edge выпускает одну `ticket_units` строку на каждую QR-enabled order line (`catalog_items.qr_confirmation_enabled = 1`, quantity 1) внутри той же транзакции, что и закрытие final check после полной оплаты; при откате оплаты билеты не остаются (единая financial transaction boundary).
+- Каждая ticket unit фиксирует immutable name из order line, `sale_date_local`, restaurant `timezone`, resolved validity snapshot (`cash_session`, `business_date` или `absolute_date`), уникальный `ticket_number` (UUIDv7, равен `id`), порядковый номер внутри кассовой смены (`cash_shift_sequence`) и безопасный QR payload `MHT1:<ticket_number>` без PIN/token/payment-sensitive данных.
+- Replay того же payment `command_id` не создает второй ticket; `UNIQUE(order_line_id)` и `UNIQUE(cash_session_id, cash_shift_sequence)` дают hard guarantee. Reprint (`POST /api/v1/tickets/{id}/reprint`) использует тот же ticket number и QR, помечается `COPY` marker и не создает новую единицу.
+- POS Edge генерирует `TicketIssued` outbox event (Edge -> Cloud) на каждую выпущенную ticket unit; payload строится из immutable ticket snapshot и содержит `ticket_id`, `ticket_number`, restaurant/device/cash session/shift/check/order/order line/catalog/menu IDs, name, `sale_date_local`, `timezone`, `validity_mode`, optional `validity_date_local`, `cash_shift_sequence` и `qr_payload`.
+- Cloud receiver валидирует `TicketIssued` (обязательные ids, name, qr_payload, положительный `cash_shift_sequence`, `sale_date_local` формата `YYYY-MM-DD`, поддержанный `validity_mode`) и сохраняет его как accepted edge event/raw audit идемпотентно по `event_id`. Operational sales projection/API проданных билетов запланированы далее (POS-40); QR lookup/use/revoke вне текущего объема.
 
 ## Financial Payload Boundaries
 

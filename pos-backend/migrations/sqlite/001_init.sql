@@ -848,6 +848,39 @@ CREATE TABLE IF NOT EXISTS cash_drawer_events (
 CREATE INDEX IF NOT EXISTS cash_drawer_events_cash_session_created_at ON cash_drawer_events(cash_session_id, created_at);
 CREATE INDEX IF NOT EXISTS cash_drawer_events_shift_created_at ON cash_drawer_events(shift_id, created_at);
 
+-- POS-48: проданные QR-билетные единицы. Выпускаются один раз после закрытия final check
+-- для каждой QR-enabled line; immutable name/sale date/timezone/validity, уникальный
+-- ticket number и порядковый номер внутри кассовой смены. Reprint не создает новую строку.
+CREATE TABLE IF NOT EXISTS ticket_units (
+  id TEXT PRIMARY KEY,
+  ticket_number TEXT NOT NULL UNIQUE CHECK (ticket_number <> ''),
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+  device_id TEXT NOT NULL REFERENCES devices(id),
+  cash_session_id TEXT NOT NULL REFERENCES cash_sessions(id),
+  shift_id TEXT NOT NULL REFERENCES shifts(id),
+  check_id TEXT NOT NULL REFERENCES checks(id),
+  order_id TEXT NOT NULL REFERENCES orders(id),
+  order_line_id TEXT NOT NULL UNIQUE REFERENCES order_lines(id),
+  catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id),
+  menu_item_id TEXT NOT NULL REFERENCES menu_items(id),
+  name TEXT NOT NULL CHECK (name <> ''),
+  sale_date_local TEXT NOT NULL CHECK (sale_date_local GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  timezone TEXT NOT NULL CHECK (timezone <> ''),
+  validity_mode TEXT NOT NULL CHECK (validity_mode IN ('cash_session', 'business_date', 'absolute_date')),
+  validity_date_local TEXT CHECK (validity_date_local IS NULL OR validity_date_local GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  cash_shift_sequence INTEGER NOT NULL CHECK (cash_shift_sequence > 0),
+  qr_payload TEXT NOT NULL CHECK (qr_payload <> ''),
+  print_status TEXT NOT NULL CHECK (print_status IN ('pending', 'printed')),
+  snapshot TEXT NOT NULL CHECK (json_valid(snapshot)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (cash_session_id, cash_shift_sequence)
+);
+
+CREATE INDEX IF NOT EXISTS ticket_units_check_id ON ticket_units(check_id, cash_shift_sequence);
+CREATE INDEX IF NOT EXISTS ticket_units_cash_session_sequence ON ticket_units(cash_session_id, cash_shift_sequence);
+CREATE INDEX IF NOT EXISTS ticket_units_restaurant_sale_date ON ticket_units(restaurant_id, sale_date_local, created_at);
+
 CREATE TABLE IF NOT EXISTS manager_override_audit (
   id TEXT PRIMARY KEY,
   command_id TEXT NOT NULL,

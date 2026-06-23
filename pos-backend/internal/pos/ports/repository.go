@@ -12,6 +12,7 @@ type Repository interface {
 	KitchenRepository
 	PrecheckRepository
 	CheckRepository
+	TicketRepository
 	FinancialOperationRepository
 	PricingRepository
 	CashRepository

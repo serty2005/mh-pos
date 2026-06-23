@@ -32,6 +32,81 @@ func TestValidateEnvelopeRejectsUnknownEvent(t *testing.T) {
 	}
 }
 
+func ticketIssuedEnvelope(t *testing.T) contracts.SyncEnvelope {
+	t.Helper()
+	raw := []byte(`{
+	  "version":"1",
+	  "event_id":"018f0000-0000-7000-8000-000000000777",
+	  "command_id":"command-ticket-1",
+	  "event_type":"TicketIssued",
+	  "aggregate_type":"Ticket",
+	  "aggregate_id":"ticket-1",
+	  "restaurant_id":"restaurant-1",
+	  "device_id":"device-1",
+	  "node_device_id":"device-1",
+	  "client_device_id":"client-1",
+	  "actor_employee_id":"employee-1",
+	  "session_id":"session-1",
+	  "shift_id":"shift-1",
+	  "occurred_at":"2026-05-05T09:00:00Z",
+	  "payload":{
+	    "origin":"edge_device",
+	    "data":{
+	      "document_type":"ticket",
+	      "ticket_id":"ticket-1",
+	      "ticket_number":"ticket-1",
+	      "restaurant_id":"restaurant-1",
+	      "device_id":"device-1",
+	      "cash_session_id":"cash-1",
+	      "shift_id":"shift-1",
+	      "check_id":"check-1",
+	      "order_id":"order-1",
+	      "order_line_id":"line-1",
+	      "catalog_item_id":"catalog-1",
+	      "menu_item_id":"menu-1",
+	      "name":"Entry",
+	      "sale_date_local":"2026-05-05",
+	      "timezone":"Europe/Moscow",
+	      "validity_mode":"business_date",
+	      "validity_date_local":"2026-05-05",
+	      "cash_shift_sequence":1,
+	      "qr_payload":"MHT1:ticket-1",
+	      "issued_at":"2026-05-05T09:00:00Z"
+	    }
+	  }
+	}`)
+	var envelope contracts.SyncEnvelope
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	return envelope
+}
+
+func TestValidateEnvelopeAcceptsTicketIssued(t *testing.T) {
+	if !contracts.IsKnownEventType(contracts.EventTicketIssued) {
+		t.Fatal("expected TicketIssued to be a known event type")
+	}
+	if err := contracts.ValidateEnvelope(ticketIssuedEnvelope(t)); err != nil {
+		t.Fatalf("expected valid TicketIssued envelope, got %v", err)
+	}
+}
+
+func TestValidateTicketIssuedRejectsMissingTicketNumber(t *testing.T) {
+	envelope := ticketIssuedEnvelope(t)
+	envelope.Payload = json.RawMessage(`{"origin":"edge_device","data":{"ticket_id":"ticket-1","restaurant_id":"restaurant-1","cash_session_id":"cash-1","check_id":"check-1","order_id":"order-1","order_line_id":"line-1","catalog_item_id":"catalog-1","menu_item_id":"menu-1","name":"Entry","sale_date_local":"2026-05-05","timezone":"Europe/Moscow","validity_mode":"business_date","cash_shift_sequence":1,"qr_payload":"MHT1:ticket-1"}}`)
+	if err := contracts.ValidateEnvelope(envelope); !errors.Is(err, contracts.ErrInvalidEnvelope) {
+		t.Fatalf("expected invalid envelope for missing ticket_number, got %v", err)
+	}
+}
+
+func TestValidateTicketIssuedRejectsUnsupportedValidityMode(t *testing.T) {
+	envelope := ticketIssuedEnvelope(t)
+	envelope.Payload = json.RawMessage(`{"origin":"edge_device","data":{"ticket_id":"ticket-1","ticket_number":"ticket-1","restaurant_id":"restaurant-1","cash_session_id":"cash-1","check_id":"check-1","order_id":"order-1","order_line_id":"line-1","catalog_item_id":"catalog-1","menu_item_id":"menu-1","name":"Entry","sale_date_local":"2026-05-05","timezone":"Europe/Moscow","validity_mode":"weekly","cash_shift_sequence":1,"qr_payload":"MHT1:ticket-1"}}`)
+	if err := contracts.ValidateEnvelope(envelope); !errors.Is(err, contracts.ErrInvalidEnvelope) {
+		t.Fatalf("expected invalid envelope for unsupported validity_mode, got %v", err)
+	}
+}
+
 func TestValidateEnvelopeAcceptsRefundEvents(t *testing.T) {
 	for _, eventType := range []contracts.EventType{contracts.EventPaymentRefunded, contracts.EventCheckRefunded} {
 		envelope := validEnvelope(t, eventType)

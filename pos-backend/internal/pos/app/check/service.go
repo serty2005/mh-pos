@@ -12,10 +12,16 @@ import (
 	"pos-backend/internal/platform/idgen"
 	txmanager "pos-backend/internal/platform/tx"
 	"pos-backend/internal/pos/app/shared"
+	appticket "pos-backend/internal/pos/app/ticket"
 	"pos-backend/internal/pos/domain"
 	"pos-backend/internal/pos/domain/order"
 	"pos-backend/internal/pos/ports"
 )
+
+// ticketIssuer выпускает QR-билеты после закрытия final check внутри текущей транзакции.
+type ticketIssuer interface {
+	IssueForClosedCheck(ctx context.Context, in appticket.IssueInput) ([]domain.TicketUnit, error)
+}
 
 const (
 	defaultClosedOrdersLimit = 50
@@ -26,14 +32,15 @@ const (
 )
 
 type Service struct {
-	repo  ports.Repository
-	tx    txmanager.Manager
-	ids   idgen.Generator
-	clock clock.Clock
+	repo    ports.Repository
+	tx      txmanager.Manager
+	ids     idgen.Generator
+	clock   clock.Clock
+	tickets ticketIssuer
 }
 
-func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock) *Service {
-	return &Service{repo: repo, tx: tx, ids: ids, clock: clock}
+func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, tickets ticketIssuer) *Service {
+	return &Service{repo: repo, tx: tx, ids: ids, clock: clock, tickets: tickets}
 }
 
 type CapturePaymentCommand struct {
@@ -428,7 +435,28 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 		if err := s.repo.UpdateOrderClosed(ctx, order); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Order", order.ID, "OrderClosed", order)
+		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Order", order.ID, "OrderClosed", order); err != nil {
+			return err
+		}
+		// POS-48: QR-билеты выпускаются в той же транзакции, что и закрытие check.
+		// Граница financial transaction единая: при откате оплаты билеты не остаются.
+		if s.tickets != nil {
+			if _, err := s.tickets.IssueForClosedCheck(ctx, appticket.IssueInput{
+				Meta:          cmd.CommandMeta,
+				RestaurantID:  order.RestaurantID,
+				DeviceID:      order.DeviceID,
+				CashSessionID: cashSession.ID,
+				ShiftID:       paymentShiftID,
+				CheckID:       check.ID,
+				OrderID:       order.ID,
+				SaleDateLocal: businessDate,
+				Timezone:      restaurant.Timezone,
+				Now:           now,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	return payment, err
 }

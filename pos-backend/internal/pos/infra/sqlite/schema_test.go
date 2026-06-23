@@ -153,6 +153,31 @@ func TestKitchenFoundationTablesExist(t *testing.T) {
 	}
 }
 
+func TestTicketUnitsConstraintsAndIndexes(t *testing.T) {
+	db, ctx := newSchemaDB(t)
+	seedFinancialForSchemaTests(t, ctx, db)
+	execSchema(t, ctx, db, `INSERT INTO menu_items(id,catalog_item_id,name,price,currency,active,created_at,updated_at) VALUES ('menu-qr','dish-1','Entry',500,'RUB',1,?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO order_lines(id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,currency_code,status,created_at,updated_at) VALUES ('tline-1','order-1','menu-qr','dish-1','Entry',1,500,500,'RUB','active',?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO order_lines(id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,currency_code,status,created_at,updated_at) VALUES ('tline-2','order-1','menu-qr','dish-1','Entry',1,500,500,'RUB','active',?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,shift_id,opened_by_employee_id,status,business_date_local,opening_cash_amount,opened_at,created_at,updated_at) VALUES ('cash-1','edge-cash-1','restaurant-1','device-1','shift-1','employee-1','open','2026-05-04',0,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
+
+	insert := `INSERT INTO ticket_units(id,ticket_number,restaurant_id,device_id,cash_session_id,shift_id,check_id,order_id,order_line_id,catalog_item_id,menu_item_id,name,sale_date_local,timezone,validity_mode,validity_date_local,cash_shift_sequence,qr_payload,print_status,snapshot,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+	execSchema(t, ctx, db, insert, "ticket-1", "ticket-1", "restaurant-1", "device-1", "cash-1", "shift-1", "check-1", "order-1", "tline-1", "dish-1", "menu-qr", "Entry", "2026-05-04", "Europe/Moscow", "business_date", "2026-05-04", 1, "MHT1:ticket-1", "pending", `{"document_type":"ticket"}`, schemaTestTime, schemaTestTime)
+
+	// Повторная выдача для одной order line невозможна.
+	if _, err := db.ExecContext(ctx, insert, "ticket-dup-line", "ticket-dup-line", "restaurant-1", "device-1", "cash-1", "shift-1", "check-1", "order-1", "tline-1", "dish-1", "menu-qr", "Entry", "2026-05-04", "Europe/Moscow", "business_date", "2026-05-04", 2, "MHT1:ticket-dup-line", "pending", `{}`, schemaTestTime, schemaTestTime); err == nil {
+		t.Fatal("expected duplicate ticket for one order_line_id to fail")
+	}
+	// Порядковый номер уникален внутри кассовой смены.
+	if _, err := db.ExecContext(ctx, insert, "ticket-dup-seq", "ticket-dup-seq", "restaurant-1", "device-1", "cash-1", "shift-1", "check-1", "order-1", "tline-2", "dish-1", "menu-qr", "Entry", "2026-05-04", "Europe/Moscow", "business_date", "2026-05-04", 1, "MHT1:ticket-dup-seq", "pending", `{}`, schemaTestTime, schemaTestTime); err == nil {
+		t.Fatal("expected duplicate cash_shift_sequence within cash session to fail")
+	}
+	// Неизвестный validity mode отклоняется.
+	if _, err := db.ExecContext(ctx, insert, "ticket-bad-validity", "ticket-bad-validity", "restaurant-1", "device-1", "cash-1", "shift-1", "check-1", "order-1", "tline-2", "dish-1", "menu-qr", "Entry", "2026-05-04", "Europe/Moscow", "weekly", "2026-05-04", 2, "MHT1:ticket-bad-validity", "pending", `{}`, schemaTestTime, schemaTestTime); err == nil {
+		t.Fatal("expected unsupported validity_mode to fail")
+	}
+}
+
 func TestKitchenTicketConstraintsAndIndexes(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)

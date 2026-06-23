@@ -118,9 +118,11 @@ func NewRouterWithLicense(service *app.Service, gate licensegate.Gate) http.Hand
 
 		r.Get("/checks/{id}", h.getCheck)
 		r.Get("/checks/{id}/financial-operations", h.listCheckFinancialOperations)
+		r.Get("/checks/{id}/tickets", h.listCheckTickets)
 		r.Post("/checks/{id}/reprint", h.reprintCheck)
 		r.Post("/checks/{id}/cancellations", h.recordCheckCancellation)
 		r.Post("/checks/{id}/refunds", h.recordCheckRefund)
+		r.Post("/tickets/{id}/reprint", h.reprintTicket)
 		r.Post("/payments/{id}/refund", h.refundPayment)
 
 		r.Post("/cash-shifts/open", h.openCashSession)
@@ -1123,6 +1125,24 @@ func (h *Handler) reprintCheck(w http.ResponseWriter, r *http.Request) {
 	setRequestMeta(&cmd.CommandMeta, r)
 	cmd.CheckID = chi.URLParam(r, "id")
 	v, err := h.service.ReprintCheck(r.Context(), cmd)
+	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) listCheckTickets(w http.ResponseWriter, r *http.Request) {
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.ListTicketUnitsByCheckAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) reprintTicket(w http.ResponseWriter, r *http.Request) {
+	var cmd app.ReprintTicketCommand
+	if r.Body != nil {
+		_ = httpx.Decode(r, &cmd)
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	cmd.TicketID = chi.URLParam(r, "id")
+	v, err := h.service.ReprintTicket(r.Context(), cmd)
 	writeCreated(w, r, v, err)
 }
 

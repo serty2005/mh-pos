@@ -75,6 +75,8 @@
 - `POST /api/v1/checks/{id}/cancellations`
 - `POST /api/v1/checks/{id}/refunds`
 - `GET /api/v1/checks/{id}/financial-operations`
+- `GET /api/v1/checks/{id}/tickets`
+- `POST /api/v1/tickets/{id}/reprint`
 - `GET /api/v1/financial-operations`
 - `GET /api/v1/kitchen/order-queue`
 - `GET /api/v1/kitchen/tickets`
@@ -270,6 +272,19 @@ Pricing contract:
 - refund manager PIN policy beyond current RBAC permission check;
 - cashier UI for modifier/service/tip partial cancellation/refund;
 - separate `business_day` and `fiscal_shift` runtime aggregates.
+
+## QR Ticket Issuance Contract
+
+Реализовано сейчас:
+
+- После полной оплаты и закрытия final check backend в той же транзакции создает по одной `ticket_units` единице на каждую active QR-enabled order line (`catalog_items.qr_confirmation_enabled = 1`, quantity 1). Не-QR lines билеты не создают.
+- Каждая единица фиксирует immutable name из order line, `sale_date_local` (business date оплаты), restaurant `timezone`, resolved validity snapshot по `validity_mode` (`cash_session` без даты, `business_date` = дата продажи, `absolute_date` = локальная дата из catalog `validity_expires_at`), уникальный `ticket_number` (UUIDv7, равен `id`), `cash_shift_sequence` (монотонный внутри кассовой смены) и QR payload `MHT1:<ticket_number>` без PIN/token/payment-sensitive данных.
+- Выдача идемпотентна: replay того же payment `command_id` не создает второй билет; `UNIQUE(order_line_id)` и `UNIQUE(cash_session_id, cash_shift_sequence)` дают hard guarantee. Refund/cancellation не удаляют и не дублируют выпущенный билет (refund-safe boundary).
+- `GET /api/v1/checks/{id}/tickets` возвращает выпущенные билеты check под `pos.check.view` в restaurant scope оператора.
+- `POST /api/v1/tickets/{id}/reprint` под `pos.check.reprint` возвращает reprint document с `COPY` marker поверх immutable ticket snapshot, использует тот же ticket number и QR и не создает новую единицу.
+- Backend пишет `TicketIssued` Edge -> Cloud outbox envelope на каждую выпущенную единицу из immutable ticket snapshot.
+
+Вне текущего объема: физическая ESC/POS печать билета (POS-64), operational sales projection/API (POS-40), QR lookup/use/revoke (post-deploy checker).
 
 ## Shift, Business Date And Fiscal Boundary
 

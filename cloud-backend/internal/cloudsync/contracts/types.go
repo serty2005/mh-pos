@@ -31,6 +31,7 @@ const (
 	EventCancellationRecorded       EventType = "CancellationRecorded"
 	EventRefundRecorded             EventType = "RefundRecorded"
 	EventCheckClosed                EventType = "CheckClosed"
+	EventTicketIssued               EventType = "TicketIssued"
 	EventKitchenTicketStatusChanged EventType = "KitchenTicketStatusChanged"
 	EventItemServed                 EventType = "ItemServed"
 	EventStockReceiptCaptured       EventType = "StockReceiptCaptured"
@@ -339,6 +340,31 @@ type CheckClosed struct {
 	Items             []InventoryItem `json:"items"`
 }
 
+// TicketIssued — продажа одной QR-билетной единицы после закрытия final check (POS-48).
+// Cloud принимает и хранит событие как edge audit; operational sales projection — POS-40.
+type TicketIssued struct {
+	DocumentType      string `json:"document_type"`
+	TicketID          string `json:"ticket_id"`
+	TicketNumber      string `json:"ticket_number"`
+	RestaurantID      string `json:"restaurant_id"`
+	DeviceID          string `json:"device_id"`
+	CashSessionID     string `json:"cash_session_id"`
+	ShiftID           string `json:"shift_id"`
+	CheckID           string `json:"check_id"`
+	OrderID           string `json:"order_id"`
+	OrderLineID       string `json:"order_line_id"`
+	CatalogItemID     string `json:"catalog_item_id"`
+	MenuItemID        string `json:"menu_item_id"`
+	Name              string `json:"name"`
+	SaleDateLocal     string `json:"sale_date_local"`
+	Timezone          string `json:"timezone"`
+	ValidityMode      string `json:"validity_mode"`
+	ValidityDateLocal string `json:"validity_date_local,omitempty"`
+	CashShiftSequence int64  `json:"cash_shift_sequence"`
+	QRPayload         string `json:"qr_payload"`
+	IssuedAt          string `json:"issued_at"`
+}
+
 type ItemServed struct {
 	ServedEventID           string    `json:"served_event_id"`
 	TicketID                string    `json:"ticket_id"`
@@ -636,6 +662,8 @@ func ValidateEventPayload(v SyncEnvelope) error {
 		return validateFinancialOperationRecordedPayload(v)
 	case EventCheckClosed:
 		return validateCheckClosedPayload(v)
+	case EventTicketIssued:
+		return validateTicketIssuedPayload(v)
 	case EventKitchenTicketStatusChanged:
 		return validateKitchenTicketStatusChangedPayload(v)
 	case EventItemServed:
@@ -798,6 +826,41 @@ func validateCheckClosedPayload(v SyncEnvelope) error {
 		return fmt.Errorf("%w: check closed closed_at and items are required", ErrInvalidEnvelope)
 	}
 	return validateInventoryItems(data.Items, false)
+}
+
+func validateTicketIssuedPayload(v SyncEnvelope) error {
+	payload, err := decodePayload[TicketIssued](v)
+	if err != nil {
+		return err
+	}
+	data := payload.Data
+	if strings.TrimSpace(data.TicketID) == "" || strings.TrimSpace(data.TicketNumber) == "" ||
+		strings.TrimSpace(data.RestaurantID) == "" || strings.TrimSpace(data.CheckID) == "" ||
+		strings.TrimSpace(data.OrderID) == "" || strings.TrimSpace(data.OrderLineID) == "" ||
+		strings.TrimSpace(data.CatalogItemID) == "" || strings.TrimSpace(data.MenuItemID) == "" ||
+		strings.TrimSpace(data.CashSessionID) == "" {
+		return fmt.Errorf("%w: ticket issued ids are required", ErrInvalidEnvelope)
+	}
+	if strings.TrimSpace(data.Name) == "" || strings.TrimSpace(data.QRPayload) == "" {
+		return fmt.Errorf("%w: ticket issued name and qr_payload are required", ErrInvalidEnvelope)
+	}
+	if data.CashShiftSequence <= 0 {
+		return fmt.Errorf("%w: ticket issued cash_shift_sequence must be positive", ErrInvalidEnvelope)
+	}
+	if err := validateBusinessDate(data.SaleDateLocal, "ticket issued sale_date_local"); err != nil {
+		return err
+	}
+	switch data.ValidityMode {
+	case "cash_session", "business_date", "absolute_date":
+	default:
+		return fmt.Errorf("%w: ticket issued validity_mode is unsupported", ErrInvalidEnvelope)
+	}
+	if data.ValidityDateLocal != "" {
+		if err := validateBusinessDate(data.ValidityDateLocal, "ticket issued validity_date_local"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validateItemServedPayload(v SyncEnvelope) error {
@@ -1024,7 +1087,7 @@ func validCurrency(v string) bool {
 
 func IsKnownEventType(v EventType) bool {
 	switch v {
-	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckReprinted, EventPrecheckCancelled, EventCheckCreated, EventCheckRefunded, EventCheckReprinted, EventPaymentCaptured, EventPaymentRefunded, EventCancellationRecorded, EventRefundRecorded, EventCheckClosed, EventKitchenTicketStatusChanged, EventItemServed, EventStockReceiptCaptured, EventInventoryCountCaptured, EventStockWriteOffCaptured, EventProductionCompleted, EventStopListUpdated, EventCatalogItemChangeSuggested, EventRecipeChangeSuggested, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
+	case EventShiftOpened, EventShiftClosed, EventOrderCreated, EventOrderLineAdded, EventOrderLineQuantityChanged, EventOrderLineVoided, EventPrecheckIssued, EventPrecheckReprinted, EventPrecheckCancelled, EventCheckCreated, EventCheckRefunded, EventCheckReprinted, EventPaymentCaptured, EventPaymentRefunded, EventCancellationRecorded, EventRefundRecorded, EventCheckClosed, EventTicketIssued, EventKitchenTicketStatusChanged, EventItemServed, EventStockReceiptCaptured, EventInventoryCountCaptured, EventStockWriteOffCaptured, EventProductionCompleted, EventStopListUpdated, EventCatalogItemChangeSuggested, EventRecipeChangeSuggested, EventOrderClosed, EventCashSessionOpened, EventCashSessionClosed, EventCashDrawerEventRecorded, EventAuthSessionStarted, EventAuthSessionRevoked, EventDeviceRegistered:
 		return true
 	default:
 		return false

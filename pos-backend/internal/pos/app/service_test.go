@@ -703,7 +703,7 @@ func insertClosedOrderFixture(t *testing.T, f *fixture, shiftID, deviceID, order
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
-	case "restaurants", "devices", "orders", "order_lines", "order_line_modifiers", "prechecks", "checks", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "kitchen_ticket_events", "kitchen_proposals", "manager_override_audit", "roles", "employees", "catalog_items", "catalog_folders", "catalog_tags", "catalog_item_tags", "modifier_groups", "modifier_options", "modifier_group_bindings", "menu_item_modifier_groups", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "pricing_policies", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "warehouse_reference", "recipe_versions", "recipe_lines", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_line_modifiers", "precheck_discounts", "precheck_surcharges", "precheck_taxes", "financial_operations", "financial_operation_items":
+	case "restaurants", "devices", "orders", "order_lines", "order_line_modifiers", "prechecks", "checks", "ticket_units", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "kitchen_ticket_events", "kitchen_proposals", "manager_override_audit", "roles", "employees", "catalog_items", "catalog_folders", "catalog_tags", "catalog_item_tags", "modifier_groups", "modifier_options", "modifier_group_bindings", "menu_item_modifier_groups", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "pricing_policies", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "warehouse_reference", "recipe_versions", "recipe_lines", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_line_modifiers", "precheck_discounts", "precheck_surcharges", "precheck_taxes", "financial_operations", "financial_operation_items":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -717,7 +717,7 @@ func countRows(t *testing.T, f *fixture, table string) int {
 func countRowsWhere(t *testing.T, f *fixture, table, where string, args ...any) int {
 	t.Helper()
 	switch table {
-	case "orders", "checks", "financial_operations", "financial_operation_items", "pos_sync_outbox", "local_event_log", "warehouse_reference", "kitchen_proposals":
+	case "orders", "checks", "ticket_units", "financial_operations", "financial_operation_items", "pos_sync_outbox", "local_event_log", "warehouse_reference", "kitchen_proposals":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -8657,5 +8657,264 @@ func TestSingleUnitPerLineBlocksQuantityAboveOne(t *testing.T) {
 	}
 	if changed.Quantity != 1 {
 		t.Fatalf("expected qty == 1, got %d", changed.Quantity)
+	}
+}
+
+// seedQRMenuItem создает QR-enabled service catalog item (симулируем Cloud-delivered data) и его menu item.
+func (f *fixture) seedQRMenuItem(t *testing.T, suffix, validityMode string, expiresAt *time.Time) *domain.MenuItem {
+	t.Helper()
+	catalogID := "catalog-qr-" + suffix
+	var expires any
+	if expiresAt != nil {
+		expires = appshared.DBTime(*expiresAt)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO catalog_items(id,type,name,sku,base_unit,qr_confirmation_enabled,single_unit_per_line,validity_mode,validity_expires_at,active,created_at,updated_at) VALUES (?,?,?,?,?,1,1,?,?,1,?,?)`,
+		catalogID, "service", "Entry "+suffix, "TICKET-"+suffix, "service", validityMode, expires, appshared.DBTime(fixedClock{}.Now()), appshared.DBTime(fixedClock{}.Now())); err != nil {
+		t.Fatal(err)
+	}
+	item, err := f.service.CreateMenuItem(f.ctx, app.CreateMenuItemCommand{CommandMeta: seedMeta(f.device.ID), CatalogItemID: catalogID, Name: "Entry " + suffix, Price: 500, Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return item
+}
+
+// payQRSale создает заказ с одной QR-line и одной обычной line, оплачивает его полностью и
+// возвращает order, check и payment. Используется command id для проверки replay.
+func (f *fixture) payQRSale(t *testing.T, qr *domain.MenuItem, commandID string) (*domain.Order, *domain.Check, *domain.Payment) {
+	t.Helper()
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: qr.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: f.menuItem.ID, Quantity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payment, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMetaCommand(commandID), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return order, check, payment
+}
+
+func TestQRTicketIssuedAfterFinalCheckWithImmutableFields(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	qr := f.seedQRMenuItem(t, "biz", "business_date", nil)
+
+	_, check, _ := f.payQRSale(t, qr, "cmd-qr-pay-1")
+
+	// Только QR-line создает ticket unit; обычная line — нет.
+	if got := countRowsWhere(t, f, "ticket_units", "check_id = ?", check.ID); got != 1 {
+		t.Fatalf("expected exactly 1 ticket unit for QR line, got %d", got)
+	}
+	tickets, err := f.repo.ListTicketUnitsByCheck(f.ctx, check.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unit := tickets[0]
+	if unit.TicketNumber != unit.ID {
+		t.Fatalf("expected ticket_number == id, got %q vs %q", unit.TicketNumber, unit.ID)
+	}
+	if unit.QRPayload != "MHT1:"+unit.ID {
+		t.Fatalf("expected qr_payload MHT1:<id>, got %q", unit.QRPayload)
+	}
+	if unit.CashShiftSequence != 1 {
+		t.Fatalf("expected cash_shift_sequence 1, got %d", unit.CashShiftSequence)
+	}
+	if unit.Name != "Entry biz" {
+		t.Fatalf("expected immutable name 'Entry biz', got %q", unit.Name)
+	}
+	if unit.SaleDateLocal != check.BusinessDateLocal {
+		t.Fatalf("expected sale_date_local == check business date %q, got %q", check.BusinessDateLocal, unit.SaleDateLocal)
+	}
+	if unit.Timezone != "Europe/Moscow" {
+		t.Fatalf("expected timezone Europe/Moscow, got %q", unit.Timezone)
+	}
+	if unit.ValidityMode != domain.TicketValidityBusinessDate {
+		t.Fatalf("expected validity_mode business_date, got %q", unit.ValidityMode)
+	}
+	if unit.ValidityDateLocal != check.BusinessDateLocal {
+		t.Fatalf("expected validity_date_local == sale date for business_date mode, got %q", unit.ValidityDateLocal)
+	}
+	if unit.CheckID != check.ID {
+		t.Fatalf("expected check_id %q, got %q", check.ID, unit.CheckID)
+	}
+	if outbox := countOutboxByType(t, f, "TicketIssued"); outbox != 1 {
+		t.Fatalf("expected exactly 1 TicketIssued outbox message, got %d", outbox)
+	}
+	if events := countLocalEventsByType(t, f, "TicketIssued"); events != 1 {
+		t.Fatalf("expected exactly 1 TicketIssued local event, got %d", events)
+	}
+}
+
+func TestQRTicketIssuanceAssignsCashShiftSequencePerUnit(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	qr := f.seedQRMenuItem(t, "seq", "cash_session", nil)
+	order, err := f.service.CreateOrder(f.ctx, app.CreateOrderCommand{CommandMeta: f.edgeMeta(), TableID: f.table.ID, TableName: "A1", GuestCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Две одинаковые QR-line (повторное добавление создает новую line) -> две ticket unit.
+	for i := 0; i < 2; i++ {
+		if _, err := f.service.AddOrderLine(f.ctx, app.AddOrderLineCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID, MenuItemID: qr.ID, Quantity: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	precheck, err := f.service.IssuePrecheck(f.ctx, app.IssuePrecheckCommand{CommandMeta: f.edgeMeta(), OrderID: order.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMetaCommand("cmd-qr-seq-pay"), PrecheckID: precheck.ID, Method: domain.PaymentCash, Amount: precheck.Total, Currency: "RUB"}); err != nil {
+		t.Fatal(err)
+	}
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tickets, err := f.repo.ListTicketUnitsByCheck(f.ctx, check.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tickets) != 2 {
+		t.Fatalf("expected 2 ticket units, got %d", len(tickets))
+	}
+	if tickets[0].CashShiftSequence != 1 || tickets[1].CashShiftSequence != 2 {
+		t.Fatalf("expected sequences 1,2 got %d,%d", tickets[0].CashShiftSequence, tickets[1].CashShiftSequence)
+	}
+	if tickets[0].TicketNumber == tickets[1].TicketNumber {
+		t.Fatalf("expected distinct ticket numbers, got duplicate %q", tickets[0].TicketNumber)
+	}
+	// cash_session validity не фиксирует конкретную дату.
+	if tickets[0].ValidityDateLocal != "" {
+		t.Fatalf("expected empty validity_date_local for cash_session mode, got %q", tickets[0].ValidityDateLocal)
+	}
+}
+
+func TestQRTicketIssuanceReplayDoesNotDuplicate(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	qr := f.seedQRMenuItem(t, "replay", "business_date", nil)
+	order, check, _ := f.payQRSale(t, qr, "cmd-qr-replay-pay")
+
+	// Предчек закрыт после полной оплаты, поэтому берем его id напрямую и реплеем тот же payment command id.
+	var precheckID string
+	var precheckTotal int64
+	if err := f.db.QueryRowContext(f.ctx, `SELECT id, total FROM prechecks WHERE order_id = ?`, order.ID).Scan(&precheckID, &precheckTotal); err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.service.CapturePayment(f.ctx, app.CapturePaymentCommand{CommandMeta: f.edgeMetaCommand("cmd-qr-replay-pay"), PrecheckID: precheckID, Method: domain.PaymentCash, Amount: precheckTotal, Currency: "RUB"})
+	if !errors.Is(err, domain.ErrDuplicateCommand) {
+		t.Fatalf("expected ErrDuplicateCommand on payment replay, got %v", err)
+	}
+	if got := countRowsWhere(t, f, "ticket_units", "check_id = ?", check.ID); got != 1 {
+		t.Fatalf("expected ticket unit count to stay 1 after replay, got %d", got)
+	}
+}
+
+func TestTicketReprintReusesSameQRWithCopyMarker(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	qr := f.seedQRMenuItem(t, "reprint", "business_date", nil)
+	_, check, _ := f.payQRSale(t, qr, "cmd-qr-reprint-pay")
+	tickets, err := f.repo.ListTicketUnitsByCheck(f.ctx, check.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := tickets[0]
+
+	document, err := f.service.ReprintTicket(f.ctx, app.ReprintTicketCommand{CommandMeta: f.managerEdgeMetaCommand(t, "cmd-reprint-ticket"), TicketID: original.ID})
+	if err != nil {
+		t.Fatalf("reprint ticket failed: %v", err)
+	}
+	if document.CopyMarker != "COPY" {
+		t.Fatalf("expected COPY marker, got %q", document.CopyMarker)
+	}
+	if document.DocumentType != "ticket" {
+		t.Fatalf("expected document_type ticket, got %q", document.DocumentType)
+	}
+	var snap struct {
+		QRPayload    string `json:"qr_payload"`
+		TicketNumber string `json:"ticket_number"`
+	}
+	if err := json.Unmarshal(document.Snapshot, &snap); err != nil {
+		t.Fatal(err)
+	}
+	if snap.QRPayload != original.QRPayload || snap.TicketNumber != original.TicketNumber {
+		t.Fatalf("expected reprint to reuse ticket number and QR, got %q/%q", snap.TicketNumber, snap.QRPayload)
+	}
+	// Reprint не создает новую единицу.
+	if got := countRowsWhere(t, f, "ticket_units", "check_id = ?", check.ID); got != 1 {
+		t.Fatalf("expected ticket unit count to stay 1 after reprint, got %d", got)
+	}
+}
+
+func TestRefundAfterTicketIssuanceKeepsSingleTicket(t *testing.T) {
+	f := newFixture(t)
+	shift := f.openShift(t)
+	cashSession := f.openCashSession(t)
+	qr := f.seedQRMenuItem(t, "refund", "business_date", nil)
+	_, check, payment := f.payQRSale(t, qr, "cmd-qr-refund-pay")
+
+	// Refund разрешен после закрытия исходной смены; ticket уже выпущен и должен пережить refund.
+	f.closeCashSessionAndShift(t, shift, cashSession, "before-ticket-refund")
+	f.openShift(t)
+	f.openCashSession(t)
+	if _, err := f.service.RefundPayment(f.ctx, app.RefundPaymentCommand{CommandMeta: f.managerEdgeMetaCommand(t, "cmd-refund-ticket"), PaymentID: payment.ID, Reason: "guest refund"}); err != nil {
+		t.Fatalf("refund failed: %v", err)
+	}
+	// Refund-safe: финансовая операция не удаляет и не дублирует уже выпущенный билет.
+	if got := countRowsWhere(t, f, "ticket_units", "check_id = ?", check.ID); got != 1 {
+		t.Fatalf("expected ticket unit count to stay 1 after refund, got %d", got)
+	}
+}
+
+func TestNonQRSaleIssuesNoTicket(t *testing.T) {
+	f := newFixture(t)
+	order, _ := f.createPaidOrder(t)
+	check, err := f.repo.GetCheckByOrder(f.ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := countRowsWhere(t, f, "ticket_units", "check_id = ?", check.ID); got != 0 {
+		t.Fatalf("expected no ticket units for non-QR sale, got %d", got)
+	}
+	if outbox := countOutboxByType(t, f, "TicketIssued"); outbox != 0 {
+		t.Fatalf("expected no TicketIssued outbox for non-QR sale, got %d", outbox)
+	}
+}
+
+func TestQRTicketAbsoluteDateValidityResolvesLocalDate(t *testing.T) {
+	f := newFixture(t)
+	f.openShift(t)
+	f.openCashSession(t)
+	expires := time.Date(2026, 12, 31, 21, 0, 0, 0, time.UTC) // 2027-01-01 00:00 в Europe/Moscow
+	qr := f.seedQRMenuItem(t, "abs", "absolute_date", &expires)
+	_, check, _ := f.payQRSale(t, qr, "cmd-qr-abs-pay")
+	tickets, err := f.repo.ListTicketUnitsByCheck(f.ctx, check.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tickets[0].ValidityMode != domain.TicketValidityAbsoluteDate {
+		t.Fatalf("expected absolute_date validity, got %q", tickets[0].ValidityMode)
+	}
+	if tickets[0].ValidityDateLocal != "2027-01-01" {
+		t.Fatalf("expected resolved local validity date 2027-01-01, got %q", tickets[0].ValidityDateLocal)
 	}
 }

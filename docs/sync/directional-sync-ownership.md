@@ -26,6 +26,7 @@
 | Payment | Edge | Захват относится к текущей кассовой смене кассира, а заказ сохраняет исходную личную смену | Edge -> Cloud operational events for capture | реализовано сейчас |
 | Financial operation | Edge | Yes | `CancellationRecorded` and `RefundRecorded` are current Edge -> Cloud operational events | реализовано сейчас |
 | Check | Edge | Создается после полной оплаты под кассовой сменой оплаты; финализированные чеки не переписываются через cancellation/refund | `CheckCreated` and `CheckClosed` are current Edge -> Cloud operational events; `CheckRefunded` is legacy accepted | реализовано сейчас |
+| Ticket unit (QR) | Edge | Выпускается один раз после закрытия final check для каждой QR-enabled line; immutable, reprint не создает новую единицу | `TicketIssued` Edge -> Cloud operational event; Cloud принимает как audit, sales projection — POS-40 | реализовано сейчас |
 | Tax/pricing policy reference | Cloud | Edge read model only | `pricing_policy` Cloud -> Edge stream for `tax_profiles`, `tax_rules`, `service_charge_rules`, `pricing_policies` | реализовано сейчас |
 | Operational order adjustments | Edge | Yes while order is open | runtime-команды; будущие policy ids могут ограничивать допустимые варианты | реализовано сейчас |
 | Stock document/move/ledger | Cloud Inventory Worker | No | Edge business events -> Cloud worker | реализовано сейчас for normalized item payloads; Edge-side stock document service был pre-pilot legacy и удален |
@@ -114,7 +115,8 @@ Edge Outbox
 Реализовано сейчас:
 
 - POS Edge генерирует `CheckClosed` при создании final check после полной оплаты; событие строится из immutable `check.Snapshot`;
-- Edge/KDS events `CheckClosed`, `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
+- POS Edge генерирует `TicketIssued` на каждую QR-билетную единицу при закрытии final check; событие строится из immutable ticket snapshot и принимается Cloud как audit без sales projection (POS-40);
+- Edge/KDS events `CheckClosed`, `TicketIssued`, `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
 - Cloud Inventory Worker создает `stock_documents` и `stock_ledger` из accepted events;
 - Cloud receiver/worker сохраняет идемпотентность replay и дедупликацию `ItemServed` с `CheckClosed`;
 - Если superseding `ItemServed` уже принят Cloud до обработки очереди, Cloud Inventory Worker пропускает superseded served fact; если старый served fact уже обработан, superseding `ItemServed` пишет append-only `ItemServedCompensation` return ledger перед новой sale ledger;

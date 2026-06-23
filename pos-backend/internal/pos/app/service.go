@@ -29,6 +29,7 @@ import (
 	"pos-backend/internal/pos/app/shared"
 	appshift "pos-backend/internal/pos/app/shift"
 	appstorage "pos-backend/internal/pos/app/storage"
+	appticket "pos-backend/internal/pos/app/ticket"
 	"pos-backend/internal/pos/domain"
 	"pos-backend/internal/pos/ports"
 )
@@ -73,6 +74,7 @@ type ReprintPrecheckCommand = appprecheck.ReprintPrecheckCommand
 type AddDiscountCommand = apppricing.AddDiscountCommand
 type AddSurchargeCommand = apppricing.AddSurchargeCommand
 type CapturePaymentCommand = appcheck.CapturePaymentCommand
+type ReprintTicketCommand = appticket.ReprintTicketCommand
 
 // CounterPaymentCommand объединяет issue-precheck + capture-payment для counter sale (table-mode=off).
 type CounterPaymentCommand struct {
@@ -167,6 +169,7 @@ type Service struct {
 	prechecks    *appprecheck.Service
 	pricing      *apppricing.Service
 	checks       *appcheck.Service
+	tickets      *appticket.Service
 	kitchen      *appkitchen.Service
 	cash         *appcash.Service
 	masterSync   *appmastersync.Service
@@ -194,6 +197,7 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 // NewServiceWithOptions создает POS application service с дополнительными runtime hooks.
 func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, options ServiceOptions) *Service {
 	pricingSvc := apppricing.NewService(repo, tx, ids, clock)
+	ticketsSvc := appticket.NewService(repo, tx, ids, clock)
 	s := &Service{
 		repo:        repo,
 		ids:         ids,
@@ -209,7 +213,8 @@ func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idge
 		orders:      apporder.NewService(repo, tx, ids, clock),
 		pricing:     pricingSvc,
 		prechecks:   appprecheck.NewService(repo, tx, ids, clock, pricingSvc),
-		checks:      appcheck.NewService(repo, tx, ids, clock),
+		checks:      appcheck.NewService(repo, tx, ids, clock, ticketsSvc),
+		tickets:     ticketsSvc,
 		kitchen: appkitchen.NewServiceWithOptions(repo, tx, ids, clock, appkitchen.Options{
 			RecipeSuggestionMaxPrepTimeDeltaMinutes: options.RecipeSuggestionMaxPrepTimeDeltaMinutes,
 		}),
@@ -577,6 +582,16 @@ func (s *Service) RecordRefund(ctx context.Context, cmd RecordCheckRefundCommand
 
 func (s *Service) ReprintCheck(ctx context.Context, cmd ReprintCheckCommand) (*domain.ReprintDocument, error) {
 	return s.checks.ReprintCheck(ctx, cmd)
+}
+
+// ListTicketUnitsByCheckAsOperator возвращает QR-билеты закрытого check в restaurant scope оператора.
+func (s *Service) ListTicketUnitsByCheckAsOperator(ctx context.Context, checkID string, meta CommandMeta) ([]domain.TicketUnit, error) {
+	return s.tickets.ListTicketUnitsByCheckAsOperator(ctx, checkID, meta)
+}
+
+// ReprintTicket повторно печатает QR-билет тем же ticket number и QR с COPY marker без новой единицы.
+func (s *Service) ReprintTicket(ctx context.Context, cmd ReprintTicketCommand) (*domain.ReprintDocument, error) {
+	return s.tickets.ReprintTicket(ctx, cmd)
 }
 
 func (s *Service) ListKitchenTickets(ctx context.Context, cmd ListKitchenTicketsCommand) ([]domain.KitchenTicket, error) {
