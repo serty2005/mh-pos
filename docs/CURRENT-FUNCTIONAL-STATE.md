@@ -127,6 +127,11 @@
 - Resolve pairing code с проверкой срока действия и consumed status.
 - Безопасный error contract для invalid/expired/consumed code.
 - Structured logs без раскрытия самого pairing code; логируются только факт наличия и длина.
+- Минимальная operator page `/` для просмотра и редактирования entitlement snapshots через admin token.
+
+Найдено при ручном UI-аудите 2026-06-28:
+
+- Operator page требует raw `Entitlements JSON` вместо набора переключателей модулей и имеет горизонтальный overflow на mobile viewport `390px`.
 
 ## POS UI
 
