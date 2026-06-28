@@ -26,5 +26,6 @@
   "LICENSE_SERVER_URL": "http://license-api:8095",
   "LICENSE_TENANT_ID": "local-tenant",
   "LICENSE_SERVER_ID": "edge-local",
+  "LICENSE_FALLBACK_SERVER_IDS": "cloud-local",
   "LICENSE_STALE_GRACE_SECONDS": 300
 }

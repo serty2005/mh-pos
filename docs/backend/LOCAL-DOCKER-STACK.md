@@ -51,6 +51,8 @@ POS_SQLITE_PATH=/app/data/pos-edge.db
 
 Файловый конфиг имеет приоритет над env. Общий контракт описан в `docs/backend/RUNTIME-CONFIG.md`.
 
+Реализовано сейчас: local Docker `pos-edge` использует primary license scope `local-tenant/edge-local` и fallback `cloud-local`. Поэтому ручной active snapshot `local-tenant/cloud-local` в License Server разблокирует POS license status и `table-mode` routes до создания edge-specific snapshot. Если позже появляется primary `edge-local` snapshot, его `active`/`revoked`/expired состояние является авторитетным и fallback не обходит revoke.
+
 Локальный E2E environment:
 
 ```text

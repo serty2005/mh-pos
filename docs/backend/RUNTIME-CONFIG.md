@@ -45,6 +45,7 @@ Licensing authority config:
 
 - `LICENSE_ADMIN_TOKEN` — обязательный provider secret только для License Server update API;
 - `LICENSE_TENANT_ID` и `LICENSE_SERVER_ID` — runtime scope Cloud/Edge;
+- `LICENSE_FALLBACK_SERVER_IDS` — реализовано сейчас для POS Edge как deployment-configured список fallback `server_id`, разделенный запятыми, пробелами или `;`; используется только если primary snapshot отсутствует или authority не вернул валидный snapshot, но не обходит явный primary `revoked`/expired snapshot;
 - `LICENSE_STALE_GRACE_SECONDS` — provider deployment grace при недоступности authority; клиентский UI его не изменяет.
 
 Контракт и module IDs описаны в `docs/backend/LICENSE-ENTITLEMENTS.md`.

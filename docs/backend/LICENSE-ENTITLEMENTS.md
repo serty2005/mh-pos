@@ -9,6 +9,7 @@
 - provider update `PUT /api/v1/entitlements/{tenant_id}/{server_id}` требует `Authorization: Bearer <LICENSE_ADMIN_TOKEN>`;
 - runtime read `GET /api/v1/entitlements/{tenant_id}/{server_id}` не возвращает credentials или provider token;
 - Cloud и POS Edge получают snapshot по HTTP, работают fail-closed и возвращают `LICENSE_ENTITLEMENT_REQUIRED` (`403`) либо `LICENSE_AUTHORITY_UNAVAILABLE` (`503`);
+- POS Edge поддерживает deployment-configured fallback `server_id` через `LICENSE_FALLBACK_SERVER_IDS`: если primary snapshot еще не создан, runtime может прочитать общий local/provider snapshot; если primary snapshot найден и имеет `revoked` или expired state, fallback не используется;
 - stale grace применяется только при недоступности authority, задается deployment config и не продлевает snapshot при успешном ответе `expired`/`revoked`;
 - выключение entitlement не удаляет halls, tables, recipes, kitchen, warehouse или financial data.
 
@@ -54,4 +55,4 @@ Canonical IDs: `table-mode`, `telegram-worker`, `kitchen-space`, `waiter-space`,
 
 `license-server` программно создает SQLite table `entitlement_snapshots`; primary key — `(tenant_id, server_id)`. Provider update разрешает только версию выше сохраненной и пишет structured audit без token или entitlement payload.
 
-Локальный seed через HTTP создает active snapshots для `cloud-local` и `edge-local`. Production provider token должен передаваться secret management, а не храниться в tracked config.
+Локальный seed через HTTP создает active snapshots для `cloud-local` и `edge-local`. Локальный Docker POS Edge дополнительно имеет fallback на `cloud-local`, чтобы ручная настройка одного общего local snapshot не блокировала `/api/v1/license/entitlements` и `/api/v1/halls` после Cloud assignment. Production provider token должен передаваться secret management, а не храниться в tracked config.

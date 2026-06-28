@@ -61,7 +61,13 @@ func run() error {
 	if licenseURL == "" {
 		return errors.New("LICENSE_SERVER_URL is required")
 	}
-	licenseGate := licensegate.NewClient(licenseURL, cfg.Get("LICENSE_TENANT_ID", "local-tenant"), cfg.Get("LICENSE_SERVER_ID", "edge-local"), time.Duration(cfg.Int("LICENSE_STALE_GRACE_SECONDS", 0))*time.Second)
+	licenseGate := licensegate.NewClient(
+		licenseURL,
+		cfg.Get("LICENSE_TENANT_ID", "local-tenant"),
+		cfg.Get("LICENSE_SERVER_ID", "edge-local"),
+		time.Duration(cfg.Int("LICENSE_STALE_GRACE_SECONDS", 0))*time.Second,
+		splitConfigList(cfg.Get("LICENSE_FALLBACK_SERVER_IDS", ""))...,
+	)
 
 	db, err := platformsqlite.Open(dbPath)
 	if err != nil {
@@ -193,4 +199,17 @@ func envDuration(raw string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return parsed
+}
+
+func splitConfigList(raw string) []string {
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || r == ' ' || r == '\n' || r == '\t'
+	})
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }

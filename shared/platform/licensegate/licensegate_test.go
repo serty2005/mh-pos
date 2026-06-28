@@ -53,3 +53,57 @@ func TestClientUsesBoundedGraceOnlyWhenAuthorityUnavailable(t *testing.T) {
 		t.Fatalf("grace: %v", err)
 	}
 }
+
+func TestClientUsesFallbackServerIDWhenPrimarySnapshotMissing(t *testing.T) {
+	expires := time.Now().Add(time.Hour)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/entitlements/tenant/edge":
+			http.NotFound(w, r)
+		case "/api/v1/entitlements/tenant/cloud":
+			_, _ = w.Write([]byte(`{"tenant_id":"tenant","server_id":"cloud","version":1,"status":"active","entitlements":{"table-mode":true},"issued_at":"2026-06-20T00:00:00Z","expires_at":"` + expires.UTC().Format(time.RFC3339Nano) + `"}`))
+		default:
+			t.Fatalf("unexpected entitlement path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := licensegate.NewClient(server.URL, "tenant", "edge", 0, "cloud")
+	if err := client.Require(t.Context(), licensegate.TableMode); err != nil {
+		t.Fatalf("fallback entitlement should allow table-mode: %v", err)
+	}
+	current, err := client.Current(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.ServerID != "cloud" {
+		t.Fatalf("expected fallback snapshot, got %+v", current)
+	}
+}
+
+func TestClientDoesNotFallbackWhenPrimarySnapshotIsRevoked(t *testing.T) {
+	expires := time.Now().Add(time.Hour)
+	fallbackHits := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/entitlements/tenant/edge":
+			_, _ = w.Write([]byte(`{"tenant_id":"tenant","server_id":"edge","version":2,"status":"revoked","entitlements":{"table-mode":true},"issued_at":"2026-06-20T00:00:00Z","expires_at":"` + expires.UTC().Format(time.RFC3339Nano) + `"}`))
+		case "/api/v1/entitlements/tenant/cloud":
+			fallbackHits++
+			_, _ = w.Write([]byte(`{"tenant_id":"tenant","server_id":"cloud","version":1,"status":"active","entitlements":{"table-mode":true},"issued_at":"2026-06-20T00:00:00Z","expires_at":"` + expires.UTC().Format(time.RFC3339Nano) + `"}`))
+		default:
+			t.Fatalf("unexpected entitlement path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := licensegate.NewClient(server.URL, "tenant", "edge", 0, "cloud")
+	if err := client.Require(t.Context(), licensegate.TableMode); !errors.Is(err, licensegate.ErrDenied) {
+		t.Fatalf("revoked primary must deny without fallback, got %v", err)
+	}
+	if fallbackHits != 0 {
+		t.Fatalf("fallback was queried despite authoritative primary snapshot")
+	}
+}

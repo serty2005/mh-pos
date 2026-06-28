@@ -46,7 +46,7 @@ type Gate interface {
 
 // Client запрашивает authority на каждой проверке и использует только bounded provider grace.
 type Client struct {
-	endpoint   string
+	endpoints  []string
 	grace      time.Duration
 	http       *http.Client
 	mu         sync.RWMutex
@@ -54,38 +54,71 @@ type Client struct {
 	usingGrace bool
 }
 
-func NewClient(baseURL, tenantID, serverID string, grace time.Duration) *Client {
+func NewClient(baseURL, tenantID, serverID string, grace time.Duration, fallbackServerIDs ...string) *Client {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	endpoint := baseURL + "/api/v1/entitlements/" + url.PathEscape(strings.TrimSpace(tenantID)) + "/" + url.PathEscape(strings.TrimSpace(serverID))
-	return &Client{endpoint: endpoint, grace: max(grace, 0), http: &http.Client{Timeout: 5 * time.Second}}
+	tenantID = strings.TrimSpace(tenantID)
+	serverIDs := []string{strings.TrimSpace(serverID)}
+	seen := map[string]bool{serverIDs[0]: true}
+	for _, fallback := range fallbackServerIDs {
+		fallback = strings.TrimSpace(fallback)
+		if fallback == "" || seen[fallback] {
+			continue
+		}
+		seen[fallback] = true
+		serverIDs = append(serverIDs, fallback)
+	}
+	endpoints := make([]string, 0, len(serverIDs))
+	for _, id := range serverIDs {
+		endpoints = append(endpoints, baseURL+"/api/v1/entitlements/"+url.PathEscape(tenantID)+"/"+url.PathEscape(id))
+	}
+	return &Client{endpoints: endpoints, grace: max(grace, 0), http: &http.Client{Timeout: 5 * time.Second}}
 }
 
 func (c *Client) Current(ctx context.Context) (Snapshot, error) {
-	if c == nil || strings.TrimSpace(c.endpoint) == "" {
+	if c == nil || len(c.endpoints) == 0 || strings.TrimSpace(c.endpoints[0]) == "" {
 		return Snapshot{}, ErrUnavailable
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint, nil)
-	if err == nil {
-		var resp *http.Response
-		resp, err = c.http.Do(req)
-		if err == nil {
-			defer resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				var snapshot Snapshot
-				if decodeErr := json.NewDecoder(resp.Body).Decode(&snapshot); decodeErr == nil && valid(snapshot) {
-					c.mu.Lock()
-					if snapshot.Version >= c.cached.Version {
-						c.cached = snapshot
-					}
-					c.usingGrace = false
-					cached := c.cached
-					c.mu.Unlock()
-					return cached, nil
-				}
+	for _, endpoint := range c.endpoints {
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if reqErr != nil {
+			continue
+		}
+		resp, err := c.http.Do(req)
+		if err != nil {
+			continue
+		}
+		if resp.StatusCode == http.StatusOK {
+			var snapshot Snapshot
+			decodeErr := json.NewDecoder(resp.Body).Decode(&snapshot)
+			_ = resp.Body.Close()
+			if decodeErr == nil && valid(snapshot) {
+				c.mu.Lock()
+				c.cached = snapshot
+				c.usingGrace = false
+				cached := c.cached
+				c.mu.Unlock()
+				return cached, nil
 			}
-			err = fmt.Errorf("license authority status %d", resp.StatusCode)
+			continue
+		}
+		status := resp.StatusCode
+		_ = resp.Body.Close()
+		if status != http.StatusNotFound {
+			if cached, ok := c.cachedGrace(); ok {
+				return cached, nil
+			}
+			if status == http.StatusForbidden || status == http.StatusUnauthorized {
+				break
+			}
 		}
 	}
+	if cached, ok := c.cachedGrace(); ok {
+		return cached, nil
+	}
+	return Snapshot{}, fmt.Errorf("%w", ErrUnavailable)
+}
+
+func (c *Client) cachedGrace() (Snapshot, bool) {
 	c.mu.RLock()
 	cached := c.cached
 	c.mu.RUnlock()
@@ -93,9 +126,9 @@ func (c *Client) Current(ctx context.Context) (Snapshot, error) {
 		c.mu.Lock()
 		c.usingGrace = true
 		c.mu.Unlock()
-		return cached, nil
+		return cached, true
 	}
-	return Snapshot{}, fmt.Errorf("%w", ErrUnavailable)
+	return Snapshot{}, false
 }
 
 func (c *Client) Require(ctx context.Context, moduleID string) error {
