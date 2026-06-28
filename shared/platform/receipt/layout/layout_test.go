@@ -32,3 +32,12 @@ func TestRenderColumnsFitsUTF8(t *testing.T) {
 		t.Fatalf("unexpected fit: %q", got)
 	}
 }
+
+func TestTextCPLDoubleFont(t *testing.T) {
+	if got := TextCPL(48, ir.FontDouble); got != 24 {
+		t.Fatalf("double font CPL mismatch: got %d", got)
+	}
+	if got := TextCPL(48, ir.FontNormal); got != 48 {
+		t.Fatalf("normal font CPL mismatch: got %d", got)
+	}
+}

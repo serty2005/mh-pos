@@ -67,6 +67,9 @@ func TestRenderDefaultTicketFixture(t *testing.T) {
 	assertNoControlBlocks(t, blocks)
 	assertTextBlock(t, blocks[0], "Exhibition TechWorld 2026", ir.AlignCenter)
 	assertTextBlock(t, blocks[3], "TICKET", ir.AlignCenter)
+	assertTextBlockFont(t, blocks[3], ir.FontDouble)
+	assertTextBlock(t, blocks[6], "Standard Ticket", ir.AlignCenter)
+	assertTextBlockFont(t, blocks[6], ir.FontDouble)
 	if got, ok := blocks[9].(ir.QRBlock); !ok {
 		t.Fatalf("expected ticket QR block at index 9, got %T", blocks[9])
 	} else if got.Payload != "MHT1:019044ab-0000-7000-0000-000000000001" || got.Size != 6 || got.Model != 2 {
@@ -75,6 +78,17 @@ func TestRenderDefaultTicketFixture(t *testing.T) {
 	assertTextBlock(t, blocks[12], "Amount: 500,00 RUB", ir.AlignCenter)
 	assertCutHasFeed(t, blocks)
 	assertRenderableAtCPL(t, blocks, 32, 48)
+}
+
+func assertTextBlockFont(t *testing.T, block ir.Block, font ir.Font) {
+	t.Helper()
+	text, ok := block.(ir.TextBlock)
+	if !ok {
+		t.Fatalf("expected TextBlock, got %T", block)
+	}
+	if text.Font != font {
+		t.Fatalf("font mismatch: want %q, got %q", font, text.Font)
+	}
 }
 
 func TestRenderControlFlowAndMoneyEdgeCases(t *testing.T) {
@@ -175,9 +189,10 @@ func assertRenderableAtCPL(t *testing.T, blocks []ir.Block, cpls ...int) {
 				continue
 			}
 			for _, line := range text.Lines {
-				rendered := layout.RenderColumns(line.Columns, cpl)
-				if len([]rune(rendered)) > cpl {
-					t.Fatalf("line exceeds CPL %d: %q", cpl, rendered)
+				textCPL := layout.TextCPL(cpl, text.Font)
+				rendered := layout.RenderColumns(line.Columns, textCPL)
+				if len([]rune(rendered)) > textCPL {
+					t.Fatalf("line exceeds CPL %d for font %q: %q", textCPL, text.Font, rendered)
 				}
 			}
 		}

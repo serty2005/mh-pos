@@ -716,9 +716,11 @@ shared/platform/receipt/
   Clean-stack прогон 2026-06-28 создал Cloud printer через `/api/v1/printers`,
   доставил stream `printers` до Edge (`status=synced`, lag `0`) и после включения
   worker отправил один `precheck` и один `ticket`; оба `print_jobs` получили
-  `status=succeeded`, `attempts=1`. Для окончательного операторского подтверждения
-  нужно визуально подтвердить бумагу: читаемость `RECEIPT`/`TICKET`, суммы и QR
-  без мусора, съезда и лишнего реза.
+  `status=succeeded`, `attempts=1`. Оператор подтвердил выход двух чеков; ticket
+  печатался со съездом крупного `{f:double}` текста на 48CPL. Исправлено в
+  ESC/POS/SVG renderer: строки двойной ширины используют эффективную ширину `CPL/2`,
+  поэтому default ticket template может печатать крупные `TICKET` и `service_name`
+  без выхода за бумагу.
 - Предыдущий manual flow 2026-06-28 через `pos-ui-g`/Playwright создал заказ на
   две отдельные single-line `Service Fee` позиции (`qty=1` каждая), выпустил
   precheck и закрыл заказ cash payment. Результат backend/worker: `print_jobs`

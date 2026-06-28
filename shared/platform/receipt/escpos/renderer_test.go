@@ -112,6 +112,29 @@ func TestRenderCPL32And48(t *testing.T) {
 	}
 }
 
+func TestRenderDoubleFontUsesEffectiveCPL(t *testing.T) {
+	got, err := Render([]ir.Block{ir.TextBlock{
+		Lines:     []ir.TextLine{{Columns: []ir.Column{{Text: "TICKET", Align: ir.AlignCenter}}}},
+		Alignment: ir.AlignCenter,
+		Font:      ir.FontDouble,
+	}}, RenderOptions{CPL: 48})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := bytes.Index(got, []byte{0x1d, '!', 0x11})
+	if start < 0 {
+		t.Fatalf("missing double font command in % x", got)
+	}
+	content := got[start+3:]
+	end := bytes.IndexByte(content, '\n')
+	if end < 0 {
+		t.Fatalf("missing newline after double font content in % x", got)
+	}
+	if want := []byte("         TICKET         "); !bytes.Equal(content[:end], want) {
+		t.Fatalf("double font line mismatch\nwant %q len=%d\n got %q len=%d", want, len(want), content[:end], end)
+	}
+}
+
 // TestRenderParserFixture использует CP866, так как basic.rl содержит кириллицу.
 func TestRenderParserFixture(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("fixtures", "basic.rl"))

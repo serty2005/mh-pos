@@ -123,10 +123,11 @@ func (r *renderer) renderBlocks(blocks []ir.Block) error {
 }
 
 func (r *renderer) text(block ir.TextBlock) error {
+	cpl := layout.TextCPL(r.cpl, block.Font)
 	for _, line := range block.Lines {
-		rendered := layout.RenderColumns(line.Columns, r.cpl)
+		rendered := layout.RenderColumns(line.Columns, cpl)
 		if len(line.Columns) == 1 {
-			rendered = layout.Align(rendered, r.cpl, block.Alignment)
+			rendered = layout.Align(rendered, cpl, block.Alignment)
 		}
 		if err := r.line(rendered, block.Alignment, block.Font, block.Bold); err != nil {
 			return err

@@ -76,10 +76,11 @@ func (r *renderer) renderBlocks(blocks []ir.Block) error {
 }
 
 func (r *renderer) text(block ir.TextBlock) {
+	cpl := layout.TextCPL(r.cpl, block.Font)
 	for _, line := range block.Lines {
-		rendered := layout.RenderColumns(line.Columns, r.cpl)
+		rendered := layout.RenderColumns(line.Columns, cpl)
 		if len(line.Columns) == 1 {
-			rendered = layout.Align(rendered, r.cpl, block.Alignment)
+			rendered = layout.Align(rendered, cpl, block.Alignment)
 		}
 		r.textLine(rendered, block.Font, block.Bold)
 	}

@@ -18,6 +18,15 @@ func NormalizeCPL(cpl int) int {
 	return cpl
 }
 
+// TextCPL возвращает логическую ширину строки с учетом ширины ESC/POS шрифта.
+func TextCPL(cpl int, font ir.Font) int {
+	cpl = NormalizeCPL(cpl)
+	if font == ir.FontDouble {
+		return max(1, cpl/2)
+	}
+	return cpl
+}
+
 // RenderColumns собирает логическую строку в фиксированную CPL-ширину.
 func RenderColumns(columns []ir.Column, cpl int) string {
 	if len(columns) == 0 {
