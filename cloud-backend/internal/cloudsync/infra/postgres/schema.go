@@ -420,6 +420,13 @@ func RequiredSchema() []platformpg.SchemaRequirement {
 			Indexes:       []string{"stop_lists_restaurant_item"},
 		},
 		{
+			Table:         "cloud_receipt_templates",
+			RequiredBy:    "cloud receipt template master-data and Cloud->Edge receipt_templates stream package assembly",
+			MigrationFile: "001_init.sql",
+			Columns:       []string{"id", "org_id", "restaurant_id", "document_type", "name", "description", "content", "level", "cpl", "printer_class", "is_default", "version", "is_active", "created_at", "updated_at"},
+			Indexes:       []string{"cloud_receipt_templates_default_uq", "cloud_receipt_templates_org_type"},
+		},
+		{
 			Table:         "cloud_pricing_policies",
 			RequiredBy:    "cloud-owned discount/surcharge pricing policy reference",
 			MigrationFile: "001_init.sql",

@@ -303,6 +303,8 @@ export function catalogItem(overrides: Partial<CatalogItem> = {}): CatalogItem {
     base_unit: 'portion',
     kitchen_type: '',
     accounting_category: '',
+    qr_confirmation_enabled: false,
+    single_unit_per_line: false,
     status: 'published',
     cloud_version: 1,
     created_at: '2026-06-01T10:00:00Z',

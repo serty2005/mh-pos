@@ -130,6 +130,10 @@ func NewRouterWithLicense(service *app.Service, gate licensegate.Gate) http.Hand
 		r.Get("/cash-shifts/current", h.currentCashSession)
 		r.Post("/cash-drawer-events", h.recordCashDrawerEvent)
 
+		r.Get("/print/jobs", h.listPrintJobs)
+		r.Get("/print/jobs/{id}", h.getPrintJob)
+		r.Post("/print/jobs/{id}/retry", h.retryPrintJob)
+
 		r.Get("/sync/outbox", h.listOutbox)
 		r.Get("/sync/local-events", h.listLocalEvents)
 		r.Get("/sync/status", h.syncStatus)
@@ -1245,6 +1249,32 @@ func (h *Handler) recordCashDrawerEvent(w http.ResponseWriter, r *http.Request) 
 	setRequestMeta(&cmd.CommandMeta, r)
 	v, err := h.service.RecordCashDrawerEvent(r.Context(), cmd)
 	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) getPrintJob(w http.ResponseWriter, r *http.Request) {
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.GetPrintJobAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) listPrintJobs(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.ListPrintJobsAsOperator(r.Context(), meta, app.PrintJobListQuery{
+		Status:       domain.PrintJobStatus(r.URL.Query().Get("status")),
+		DocumentType: domain.ReceiptDocumentType(r.URL.Query().Get("document_type")),
+		Limit:        limit,
+	})
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) retryPrintJob(w http.ResponseWriter, r *http.Request) {
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.RetryPrintJobAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
+	writeOK(w, r, v, err)
 }
 
 func (h *Handler) listOutbox(w http.ResponseWriter, r *http.Request) {

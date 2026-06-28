@@ -82,7 +82,7 @@ ReceiptLine (MIT, https://github.com/receiptline/receiptline). JS-код не к
 | Шрифт               | `{f:normal\|double\|smaller}` (расширение/сужение)     |
 | Жирный текст        | `{b}` / `**bold**`                                     |
 | Горизонтальная черта| `---` — разделитель                                    |
-| QR-код              | `{qr:<payload>}` — нативный ESC/POS QR или растровый  |
+| QR-код              | `{qr:<payload>}` или `{qr:size=1..8:<payload>}` — нативный ESC/POS QR или растровый |
 | Штрихкод            | `{barcode:<type>:<data>}` — Code39/EAN/UPC/ITF         |
 | Изображение         | `{image:<path\|base64>}` — растровый 1-bit bitmap      |
 | Перевод строки / пробел | пустая строка, `{s:N}` пробел N строк              |
@@ -150,6 +150,16 @@ type ImageBlock struct {
 type CutBlock struct{ Partial bool }
 
 type DrawerBlock struct{}
+
+type IfBlock struct {
+    Expr   string
+    Blocks []Block
+}
+
+type EachBlock struct {
+    Key    string
+    Blocks []Block
+}
 ```
 
 ### Рендерер ESC/POS
@@ -168,17 +178,27 @@ Go, `shared/platform/receipt/escpos`:
 - `PrinterConfig` содержит: `Type` (tcp|usb), `Address`, `Port`, `CPL`, `PrinterClass`,
   `RasterOnly`, `PaperCutType` (full|partial|none).
 
+Статус P1-3: реализовано сейчас как shared primitives без очереди и маршрутизации.
+Поддержаны CP866, базовые IR-блоки, native QR/barcode, `GS v 0` для 1-bit ImageBlock,
+full/partial cut, drawer pulse, TCP raw write и USB/device-path raw write. Полноценный
+raster fallback для текста вне CP866 и `RasterOnly:true` остается вне текущего объема
+P1-3 до отдельной font/bitmap реализации.
+
+Hardware check P1-3 подтвердил печать текста, QR payload, barcode и cut. Следующие
+итерации должны вынести размер QR в template/default template и добавить отступ/cut feed,
+чтобы линия реза не попадала близко к QR/barcode.
+
 ### Рендерер SVG
 
 Go, `shared/platform/receipt/svg`:
 
-- Рендерит IR в строку `<svg>` с заданным CPL.
-- Layout физически идентичен ESC/POS: одинаковые ширины колонок, одинаковые переносы
-  строк при одном CPL.
-- Cloud Backend endpoint `GET /api/v1/receipts/preview`:
+- Реализовано сейчас: рендерит IR в строку `<svg>` с заданным CPL 32/48.
+- Реализовано сейчас: shared `receipt/layout` задает одинаковые ширины колонок и
+  обрезку строк для ESC/POS и SVG при одном CPL.
+- Реализовано сейчас: Cloud Backend endpoint `GET /api/v1/receipts/preview`:
   принимает `{template_content, document_type, cpl, print_context}`;
   возвращает `Content-Type: image/svg+xml`.
-- React Cloud UI вызывает этот endpoint и отображает SVG тегом `<img>`.
+- Запланировано далее: React Cloud UI вызывает этот endpoint и отображает SVG тегом `<img>`.
 
 ### Print context
 

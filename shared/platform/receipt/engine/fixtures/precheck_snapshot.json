@@ -1,0 +1,42 @@
+{
+  "document_type": "precheck",
+  "precheck_number": "00042",
+  "restaurant": {
+    "name": "Exhibition TechWorld 2026",
+    "address": "Jl. Panglima Polim No.1, Jakarta"
+  },
+  "cashier": { "name": "Ahmad Kasir" },
+  "shift_number": 42,
+  "business_date": "2026-06-24",
+  "opened_at": "2026-06-24T10:15:00",
+  "printed_at": "2026-06-24T10:16:00",
+  "currency_code": "RUB",
+  "subtotal_minor": 130000,
+  "discount_total_minor": 5000,
+  "surcharge_total_minor": 0,
+  "tax_total_minor": 20833,
+  "total_minor": 125000,
+  "lines": [
+    {
+      "name": "Standard Ticket",
+      "quantity": 1,
+      "unit_price_minor": 50000,
+      "total_minor": 60000,
+      "modifiers": [{ "name": "VIP Zone", "price_minor": 10000 }],
+      "is_service": true,
+      "qr_enabled": true
+    },
+    {
+      "name": "Latte Coffee",
+      "quantity": 2,
+      "unit_price_minor": 35000,
+      "total_minor": 70000,
+      "modifiers": [],
+      "is_service": false,
+      "qr_enabled": false
+    }
+  ],
+  "taxes": [{ "name": "VAT 20%", "base_minor": 104167, "amount_minor": 20833 }],
+  "discounts": [{ "name": "Discount 10%", "amount_minor": 5000 }],
+  "is_copy": false
+}

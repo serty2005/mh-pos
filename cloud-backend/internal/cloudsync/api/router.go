@@ -106,6 +106,8 @@ func NewRouterWithProvisioningOLAPAndLicense(service *app.Service, provisioningS
 		r.Get("/inventory/stock-balances", h.listInventoryStockBalances)
 		r.Get("/inventory/recalculation-jobs", h.listInventoryRecalculationJobs)
 		r.Get("/inventory/recalculation-jobs/{id}", h.getInventoryRecalculationJob)
+		r.Get("/receipts/preview", h.receiptPreview)
+		r.Post("/receipts/preview", h.receiptPreview)
 		r.Post("/sync/edge-events", h.receiveEdgeEvent)
 		r.Post("/sync/edge-events/batch", h.receiveEdgeEventBatch)
 		r.Post("/sync/exchange", h.exchange)
@@ -134,6 +136,8 @@ func cloudModuleForRequest(r *http.Request) string {
 		return licensegate.KitchenSpace
 	case strings.Contains(path, "/master-data/inventory/") || strings.HasPrefix(path, "/api/v1/inventory/"):
 		return licensegate.WarehouseMode
+	// receipts/preview доступен всем аутентифицированным пользователям Cloud (POS-80 template editor).
+	// checker-flow gate здесь не нужен.
 	default:
 		return ""
 	}

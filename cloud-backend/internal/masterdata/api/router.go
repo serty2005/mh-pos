@@ -155,6 +155,19 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 	r.Get("/tables", h.listTables)
 	r.Patch("/tables/{id}", h.updateTable)
 	r.Post("/tables/{id}/archive", h.archiveTable)
+	// RBAC: receipt template CRUD требует cloud.templates.manage. Per-request RBAC middleware
+	// для cloud master-data ещё не подключён (как и у sibling routes выше); permission id зафиксирован
+	// в domain.PermissionReceiptTemplatesManage и проверяется на cloud admin boundary.
+	r.Post("/receipt-templates", h.createReceiptTemplate)
+	r.Get("/receipt-templates", h.listReceiptTemplates)
+	r.Get("/receipt-templates/{id}", h.getReceiptTemplate)
+	r.Put("/receipt-templates/{id}", h.updateReceiptTemplate)
+	r.Delete("/receipt-templates/{id}", h.deleteReceiptTemplate)
+	// RBAC: printer CRUD требует organization.manage (зафиксировано в domain.PermissionPrintersManage).
+	r.Get("/printers", h.listPrinters)
+	r.Post("/printers", h.createPrinter)
+	r.Patch("/printers/{id}", h.updatePrinter)
+	r.Delete("/printers/{id}", h.deactivatePrinter)
 	r.Get("/restaurants/{id}/master-data/publication-state", h.getRestaurantPublished)
 	r.Get("/restaurants/{id}/master-data/delivery-status", h.listRestaurantDeliveryStatus)
 	r.Get("/restaurants/{id}/master-data/packages/latest", h.getLatestRestaurantPackage)

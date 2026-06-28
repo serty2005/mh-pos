@@ -19,6 +19,8 @@ export const navigationItems: NavigationItem[] = [
   { route: { id: 'publications', scope: 'restaurant' }, labelKey: 'nav.publications' },
   { route: { id: 'inventory', scope: 'restaurant' }, labelKey: 'nav.inventory' },
   { route: { id: 'reports', scope: 'restaurant' }, labelKey: 'nav.reports' },
+  { route: { id: 'receipt-templates', scope: 'global' }, labelKey: 'nav.receiptTemplates' },
+  { route: { id: 'printers', scope: 'restaurant' }, labelKey: 'nav.printers' },
 ];
 
 export const navigationById = new Map<CloudRouteId, NavigationItem>(

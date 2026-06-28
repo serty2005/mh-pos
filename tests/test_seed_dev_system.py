@@ -55,6 +55,7 @@ class FakeClient:
                 "Tom Yum Soup": "catalog-soup",
                 "Beef Sirloin": "catalog-sirloin",
                 "House Sauce": "catalog-sauce",
+                "Service Fee": "catalog-service-fee",
                 "Sold Out Cheesecake": "catalog-stopped",
             }
             return {"id": catalog_ids.get(body.get("name"), f"catalog-{self.counter}")}
@@ -65,6 +66,7 @@ class FakeClient:
         if path == "/api/v1/master-data/menu/items":
             menu_ids = {
                 "Tom Yum Soup": "menu-soup",
+                "Service Fee": "menu-service-fee",
                 "Sold Out Cheesecake": "menu-stopped",
             }
             return {"id": menu_ids.get(body.get("name"), f"menu-{self.counter}")}
@@ -88,6 +90,18 @@ class FakeClient:
             return {"id": f"recipe-suggestion-{version_id}", "recipe_version_id": version_id, "status": "pending"}
         if path == "/api/v1/master-data/inventory/stop-list":
             return {"id": f"stop-list-{self.counter}"}
+        if path.startswith("/api/v1/receipt-templates?"):
+            return []
+        if path == "/api/v1/receipt-templates":
+            return {
+                "id": f"receipt-template-{body['document_type']}",
+                "document_type": body["document_type"],
+                "is_default": body.get("is_default", False),
+                "restaurant_id": body.get("restaurant_id", ""),
+                "content": body.get("content", ""),
+            }
+        if path.startswith("/api/v1/receipt-templates/"):
+            return {"id": path.rsplit("/", 1)[-1], **body}
         if path == "/api/v1/master-data/floor/halls":
             return {"id": f"hall-{self.counter}"}
         if path == "/api/v1/master-data/floor/tables":
@@ -158,6 +172,7 @@ class FakeClient:
                         "options": [{"id": "modifier-option-mild"}],
                     }],
                 },
+                {"id": "menu-service-fee", "modifier_groups": []},
                 {"id": "menu-stopped", "modifier_groups": []},
             ]
         if path == "/api/v1/orders":
@@ -165,6 +180,8 @@ class FakeClient:
         if path == "/api/v1/orders/order-1/lines":
             if body.get("menu_item_id") == "menu-stopped":
                 return {"error": {"code": "SALE_STOP_LIST_CONFLICT", "message_key": "errors.stopListConflict"}}
+            if body.get("menu_item_id") == "menu-service-fee":
+                return {"id": "line-service-fee", "menu_item_id": body.get("menu_item_id"), "modifiers": body.get("selected_modifiers", [])}
             return {"id": "line-soup", "menu_item_id": body.get("menu_item_id"), "modifiers": body.get("selected_modifiers", [])}
         if path == "/api/v1/orders/order-1/precheck":
             return {"id": "precheck-1", "status": "issued", "total": 34900, "currency": "RUB"}
@@ -172,6 +189,13 @@ class FakeClient:
             return {"id": "payment-1", "precheck_id": "precheck-1", "amount": body.get("amount"), "status": "captured"}
         if path == "/api/v1/orders/order-1":
             return {"id": "order-1", "status": "closed", "check": {"id": "check-1", "status": "paid"}}
+        if path == "/api/v1/checks/check-1/tickets":
+            return [{"id": "ticket-service-1", "check_id": "check-1"}]
+        if path.startswith("/api/v1/print/jobs"):
+            return [
+                {"id": "print-precheck-1", "document_type": "precheck", "source_id": "precheck-1", "status": "pending"},
+                {"id": "print-ticket-1", "document_type": "ticket", "source_id": "ticket-service-1", "status": "pending"},
+            ]
         if path.startswith("/api/v1/sync/edge-events"):
             if "event_type=ItemServed" in path:
                 if self.full_smoke:
@@ -265,7 +289,7 @@ class FakeClient:
                 {"id": "recipe-suggestion", "kind": "recipe", "status": "approved"},
             ]
         if path == "/api/v1/sync/status":
-            return {"status": "ok"}
+            return {"status": "ok", "last_cloud_version": 1}
         raise AssertionError(f"unexpected request {method} {path}")
 
 
@@ -310,9 +334,12 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertGreaterEqual(len(dataset["employees"]), 6)
         self.assertGreaterEqual(len(dataset["catalog_items"]), 6)
         menu_items = [item for item in dataset["catalog_items"] if "price_minor" in item]
+        service_fee = next(item for item in dataset["catalog_items"] if item["ref"] == "service_fee")
         self.assertTrue(menu_items)
         self.assertTrue(all(item.get("category_ref") for item in menu_items))
         self.assertTrue(all(item.get("tags") for item in menu_items))
+        self.assertTrue(service_fee.get("qr_confirmation_enabled"))
+        self.assertEqual(service_fee.get("validity_mode"), "cash_session")
         self.assertTrue(dataset["pricing_policies"])
         self.assertTrue(dataset["recipes"])
         self.assertTrue(dataset["stop_list"])
@@ -339,7 +366,8 @@ class SeedDevSystemTest(unittest.TestCase):
             self.assertIn(key, dataset_keys)
         for stream in ("restaurants", "staff", "catalog", "menu", "pricing_policy", "recipes", "inventory_reference", "floor"):
             self.assertIn(stream, publication_streams)
-        for read_check in ("pin_login", "menu_items", "kitchen_recipe", "blocked_sale"):
+        self.assertIn("receipt_templates", publication_streams)
+        for read_check in ("pin_login", "menu_items", "kitchen_recipe", "blocked_sale", "sync_status"):
             self.assertIn(read_check, read_checks)
 
     def test_seed_dataset_contains_kitchen_role_pin_and_smoke_permissions(self):
@@ -347,8 +375,10 @@ class SeedDevSystemTest(unittest.TestCase):
 
         dataset = module.build_seed_dataset("unit")
         kitchen_role = next(role for role in dataset["roles"] if role["ref"] == "kitchen")
+        manager_role = next(role for role in dataset["roles"] if role["ref"] == "manager")
         kitchen_employee = next(employee for employee in dataset["employees"] if employee["pin_name"] == "kitchen_pin")
         permissions = json.loads(module.permissions_json(kitchen_role["profile"]))
+        manager_permissions = json.loads(module.permissions_json(manager_role["profile"]))
 
         self.assertEqual(kitchen_employee["role_ref"], "kitchen")
         for permission in (
@@ -365,6 +395,8 @@ class SeedDevSystemTest(unittest.TestCase):
             "pos.kitchen.production.complete",
         ):
             self.assertTrue(permissions.get(permission), f"missing kitchen smoke permission {permission}")
+        self.assertTrue(manager_permissions.get("pos.print.status"))
+        self.assertTrue(manager_permissions.get("pos.print.retry"))
 
     def test_seed_full_system_generates_pairing_after_all_master_data(self):
         module = load_seed_module()
@@ -398,9 +430,16 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertEqual(pairing_call[2], {"display_name": "POS Terminal unit", "expires_in_minutes": 30})
         role_call = next(call for call in cloud.calls if call[1] == "/api/v1/master-data/roles")
         employee_call = next(call for call in cloud.calls if call[1] == "/api/v1/master-data/employees")
+        service_catalog_call = next(
+            call
+            for call in cloud.calls
+            if call[1] == "/api/v1/master-data/catalog/items" and call[2].get("name") == "Service Fee"
+        )
         self.assertNotIn("restaurant_id", role_call[2])
         self.assertEqual(employee_call[2]["restaurant_ids"], ["restaurant-1"])
         self.assertNotIn("restaurant_id", employee_call[2])
+        self.assertTrue(service_catalog_call[2]["qr_confirmation_enabled"])
+        self.assertEqual(service_catalog_call[2]["validity_mode"], "cash_session")
         self.assertIn("/api/v1/system/provisioning/pair-via-license", [path for _, path, _, _ in pos.calls])
         self.assertEqual(
             [path for _, path, _, _ in license_client.calls],
@@ -413,6 +452,11 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertIn("waiter_pin", summary["pins"])
         self.assertIn("kitchen_pin", summary["pins"])
         self.assertIn("support_pin", summary["pins"])
+        self.assertEqual(
+            sorted(summary["receipt_template_ids"]),
+            ["receipt-template-precheck", "receipt-template-ticket"],
+        )
+        self.assertIn("/api/v1/receipt-templates", cloud_paths)
 
     def test_seed_script_uses_http_only_and_no_db_client_imports(self):
         tree = ast.parse(SCRIPT_PATH.read_text(encoding="utf-8"))
@@ -425,6 +469,30 @@ class SeedDevSystemTest(unittest.TestCase):
 
         forbidden = {"sqlite3", "psycopg", "psycopg2", "asyncpg", "pgx", "clickhouse_connect", "clickhouse_driver", "subprocess"}
         self.assertFalse(imported & forbidden)
+
+    def test_receipt_template_seed_is_idempotent_http_crud(self):
+        module = load_seed_module()
+
+        class Client:
+            def __init__(self):
+                self.calls = []
+
+            def request(self, method, path, body=None, expected_status=(200, 201), headers=None):
+                self.calls.append((method, path, body or {}, tuple(expected_status)))
+                if method == "GET" and path.startswith("/api/v1/receipt-templates?"):
+                    return [{"id": "existing-precheck", "document_type": "precheck", "is_default": True, "restaurant_id": ""}]
+                if method == "PUT" and path == "/api/v1/receipt-templates/existing-precheck":
+                    return {"id": "existing-precheck", **body}
+                if method == "POST" and path == "/api/v1/receipt-templates":
+                    return {"id": f"created-{body['document_type']}", **body}
+                raise AssertionError(f"unexpected request {method} {path}")
+
+        ids = module.seed_receipt_templates(Client(), [
+            {"document_type": "precheck", "name": "Precheck", "content": "A", "level": 1, "cpl": 48, "is_default": True},
+            {"document_type": "ticket", "name": "Ticket", "content": "B", "level": 1, "cpl": 48, "is_default": True},
+        ])
+
+        self.assertEqual(ids, ["existing-precheck", "created-ticket"])
 
     def test_request_rejects_destructive_storage_archive_routes(self):
         module = load_seed_module()
@@ -489,6 +557,7 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertIn("minimal_flow", summary)
         self.assertIn("kitchen_process_smoke", summary)
         self.assertEqual(summary["minimal_flow"]["check_id"], "check-1")
+        self.assertEqual(summary["minimal_flow"]["print_job_ids"], ["print-precheck-1", "print-ticket-1"])
         self.assertEqual(summary["kitchen_process_smoke"]["kitchen_ticket_id"], "ticket-line-soup")
 
     def test_full_smoke_never_calls_destructive_storage_or_archive_routes(self):
@@ -528,9 +597,9 @@ class SeedDevSystemTest(unittest.TestCase):
             restaurant_id="restaurant-1",
             node_device_id="edge-node-from-pos",
             client_device_id="unit-client",
-            pins={"waiter_pin": "3333", "cashier_pin": "1111", "kitchen_pin": "5555"},
+            pins={"waiter_pin": "3333", "cashier_pin": "1111", "kitchen_pin": "5555", "manager_pin": "2222"},
             table_ids=["table-1"],
-            menu_refs={"soup": "menu-soup", "sold_out_dessert": "menu-stopped"},
+            menu_refs={"soup": "menu-soup", "service_fee": "menu-service-fee", "sold_out_dessert": "menu-stopped"},
             catalog_refs={"sirloin": "catalog-sirloin", "sauce": "catalog-sauce"},
             wait_seconds=1,
             interval_seconds=0,
@@ -552,7 +621,14 @@ class SeedDevSystemTest(unittest.TestCase):
         self.assertEqual(result["olap_sales_kitchen_summary_group_keys"], ["CheckClosed", "ItemServed"])
         self.assertEqual(result["olap_kitchen_timing_summary_count"], 1)
         self.assertEqual(result["blocked_sale_error_code"], "SALE_STOP_LIST_CONFLICT")
+        self.assertEqual(result["ticket_order_line_id"], "line-service-fee")
+        self.assertEqual(result["issued_ticket_ids"], ["ticket-service-1"])
+        self.assertEqual(result["print_job_ids"], ["print-precheck-1", "print-ticket-1"])
+        self.assertEqual(result["print_job_statuses"], ["pending"])
         cloud_paths = [path for _, path, _, _ in cloud.calls]
+        pos_paths = [path for _, path, _, _ in pos.calls]
+        self.assertIn("/api/v1/checks/check-1/tickets", pos_paths)
+        self.assertIn("/api/v1/print/jobs?limit=100", pos_paths)
         self.assertTrue(any("event_type=ItemServed" in path for path in cloud_paths))
         self.assertTrue(any("event_type=CheckClosed" in path for path in cloud_paths))
         self.assertTrue(any("source_event_type=ItemServed" in path for path in cloud_paths))
@@ -599,9 +675,9 @@ class SeedDevSystemTest(unittest.TestCase):
             restaurant_id="restaurant-1",
             node_device_id="edge-node-from-pos",
             client_device_id="unit-client",
-            pins={"waiter_pin": "3333", "cashier_pin": "1111"},
+            pins={"waiter_pin": "3333", "cashier_pin": "1111", "manager_pin": "2222"},
             table_ids=["table-1"],
-            menu_refs={"soup": "menu-soup", "sold_out_dessert": "menu-stopped"},
+            menu_refs={"soup": "menu-soup", "service_fee": "menu-service-fee", "sold_out_dessert": "menu-stopped"},
             catalog_refs={"sirloin": "catalog-sirloin", "sauce": "catalog-sauce"},
             wait_seconds=1,
             interval_seconds=0,

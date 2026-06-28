@@ -45,6 +45,8 @@ const (
 	PermissionPaymentRefund         PermissionID = "pos.payment.refund"
 	PermissionCheckView             PermissionID = "pos.check.view"
 	PermissionCheckReprint          PermissionID = "pos.check.reprint"
+	PermissionPrintStatus           PermissionID = "pos.print.status"
+	PermissionPrintRetry            PermissionID = "pos.print.retry"
 	// Идентификаторы прав KDS runtime.
 	PermissionKitchenView                PermissionID = "pos.kitchen.view"
 	PermissionKitchenStatusChange        PermissionID = "pos.kitchen.status.change"
@@ -96,6 +98,8 @@ var knownPermissionIDs = map[PermissionID]struct{}{
 	PermissionPaymentRefund:              {},
 	PermissionCheckView:                  {},
 	PermissionCheckReprint:               {},
+	PermissionPrintStatus:                {},
+	PermissionPrintRetry:                 {},
 	PermissionKitchenView:                {},
 	PermissionKitchenStatusChange:        {},
 	PermissionKitchenCatalogView:         {},
@@ -158,6 +162,7 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionPaymentCash,
 			PermissionPaymentCardManual,
 			PermissionCheckView,
+			PermissionPrintStatus,
 		},
 	},
 	RoleSeniorCashier: {
@@ -191,6 +196,7 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionPaymentRefund,
 			PermissionCheckView,
 			PermissionSyncView,
+			PermissionPrintStatus,
 		},
 	},
 	RoleWaiter: {
@@ -214,6 +220,7 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionPrecheckView,
 			PermissionPrecheckReprint,
 			PermissionCheckView,
+			PermissionPrintStatus,
 		},
 	},
 	RoleManager: {
@@ -250,6 +257,8 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionPaymentRefund,
 			PermissionCheckView,
 			PermissionCheckReprint,
+			PermissionPrintStatus,
+			PermissionPrintRetry,
 			PermissionSyncView,
 			PermissionSyncRetryFailed,
 		},

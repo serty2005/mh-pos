@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"mh-pos-platform/receipt/escpos"
 	"pos-backend/internal/platform/clock"
 	platformsqlite "pos-backend/internal/platform/sqlite"
 	"pos-backend/internal/pos/app"
@@ -38,6 +39,30 @@ type fixedClock struct{}
 
 func (fixedClock) Now() time.Time {
 	return time.Date(2026, 5, 4, 20, 0, 0, 0, time.UTC)
+}
+
+type printTestClock struct {
+	now time.Time
+}
+
+func (c *printTestClock) Now() time.Time {
+	return c.now
+}
+
+func (c *printTestClock) Advance(d time.Duration) {
+	c.now = c.now.Add(d)
+}
+
+type printTestSender struct {
+	err      error
+	payloads [][]byte
+	configs  []escpos.PrinterConfig
+}
+
+func (s *printTestSender) Send(_ context.Context, cfg escpos.PrinterConfig, payload []byte) error {
+	s.configs = append(s.configs, cfg)
+	s.payloads = append(s.payloads, append([]byte(nil), payload...))
+	return s.err
 }
 
 var (
@@ -703,7 +728,7 @@ func insertClosedOrderFixture(t *testing.T, f *fixture, shiftID, deviceID, order
 func countRows(t *testing.T, f *fixture, table string) int {
 	t.Helper()
 	switch table {
-	case "restaurants", "devices", "orders", "order_lines", "order_line_modifiers", "prechecks", "checks", "ticket_units", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "kitchen_ticket_events", "kitchen_proposals", "manager_override_audit", "roles", "employees", "catalog_items", "catalog_folders", "catalog_tags", "catalog_item_tags", "modifier_groups", "modifier_options", "modifier_group_bindings", "menu_item_modifier_groups", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "pricing_policies", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "warehouse_reference", "recipe_versions", "recipe_lines", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_line_modifiers", "precheck_discounts", "precheck_surcharges", "precheck_taxes", "financial_operations", "financial_operation_items":
+	case "restaurants", "devices", "orders", "order_lines", "order_line_modifiers", "prechecks", "checks", "ticket_units", "payments", "payment_attempts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "kitchen_ticket_events", "kitchen_proposals", "manager_override_audit", "roles", "employees", "catalog_items", "catalog_folders", "catalog_tags", "catalog_item_tags", "modifier_groups", "modifier_options", "modifier_group_bindings", "menu_item_modifier_groups", "menu_items", "tax_profiles", "tax_rules", "service_charge_rules", "pricing_policies", "auth_sessions", "halls", "tables", "cloud_master_sync_state", "warehouse_reference", "recipe_versions", "recipe_lines", "order_line_discounts", "order_surcharges", "precheck_lines", "precheck_line_modifiers", "precheck_discounts", "precheck_surcharges", "precheck_taxes", "financial_operations", "financial_operation_items", "receipt_printers", "print_jobs":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -717,7 +742,7 @@ func countRows(t *testing.T, f *fixture, table string) int {
 func countRowsWhere(t *testing.T, f *fixture, table, where string, args ...any) int {
 	t.Helper()
 	switch table {
-	case "orders", "checks", "ticket_units", "financial_operations", "financial_operation_items", "pos_sync_outbox", "local_event_log", "warehouse_reference", "kitchen_proposals":
+	case "orders", "checks", "ticket_units", "financial_operations", "financial_operation_items", "pos_sync_outbox", "local_event_log", "warehouse_reference", "kitchen_proposals", "print_jobs":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -8916,5 +8941,197 @@ func TestQRTicketAbsoluteDateValidityResolvesLocalDate(t *testing.T) {
 	}
 	if tickets[0].ValidityDateLocal != "2027-01-01" {
 		t.Fatalf("expected resolved local validity date 2027-01-01, got %q", tickets[0].ValidityDateLocal)
+	}
+}
+
+func TestPrintQueueLifecycleRendersTemplateAndMarksSuccess(t *testing.T) {
+	f := newFixture(t)
+	clock := &printTestClock{now: fixedClock{}.Now()}
+	sender := &printTestSender{}
+	enablePrintQueue(t, f, clock, sender)
+	seedDefaultPrintTemplates(t, f)
+
+	f.createPaidOrder(t)
+	if got := countRows(t, f, "print_jobs"); got != 1 {
+		t.Fatalf("expected one precheck print job, got %d", got)
+	}
+	processed, err := f.service.ProcessNextPrintJob(f.ctx, "worker-success")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !processed || len(sender.payloads) != 2 {
+		t.Fatalf("expected precheck fan-out to two printers, processed=%v payloads=%d", processed, len(sender.payloads))
+	}
+	if len(sender.configs) != 2 || sender.configs[0].PrinterClass != "front" || sender.configs[0].Address != "127.0.0.11" || sender.configs[1].Address != "127.0.0.12" || sender.configs[0].CPL != 48 {
+		t.Fatalf("expected precheck document_type to route to front printer config, got %+v", sender.configs)
+	}
+	if len(sender.payloads[0]) < 2 || sender.payloads[0][0] != 0x1b || sender.payloads[0][1] != '@' {
+		t.Fatalf("expected ESC/POS payload to start with init command, got % x", sender.payloads[0])
+	}
+	jobs, err := f.repo.ListPrintJobs(f.ctx, domain.PrintJobListQuery{RestaurantID: f.restaurant.ID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 1 || jobs[0].Status != domain.PrintJobSucceeded || jobs[0].Attempts != 1 || jobs[0].PrintedAt == nil {
+		t.Fatalf("expected succeeded print job after render pipeline, got %+v", jobs)
+	}
+}
+
+func TestPrintQueueFailureRetriesThreeTimesThenFailsAndManualRetryDoesNotMutateFinancialState(t *testing.T) {
+	f := newFixture(t)
+	clock := &printTestClock{now: fixedClock{}.Now()}
+	sender := &printTestSender{err: errors.New("printer offline")}
+	enablePrintQueue(t, f, clock, sender)
+	seedDefaultPrintTemplates(t, f)
+	f.createPaidOrder(t)
+	paymentsBefore := countRows(t, f, "payments")
+	checksBefore := countRows(t, f, "checks")
+	ticketsBefore := countRows(t, f, "ticket_units")
+
+	for i, advance := range []time.Duration{2 * time.Second, 5 * time.Second, 0} {
+		if processed, err := f.service.ProcessNextPrintJob(f.ctx, "worker-fail"); err != nil || !processed {
+			t.Fatalf("attempt %d: processed=%v err=%v", i+1, processed, err)
+		}
+		clock.Advance(advance)
+	}
+	jobs, err := f.repo.ListPrintJobs(f.ctx, domain.PrintJobListQuery{RestaurantID: f.restaurant.ID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 1 || jobs[0].Status != domain.PrintJobFailed || jobs[0].Attempts != 3 || jobs[0].LastError == nil {
+		t.Fatalf("expected failed after 3 attempts, got %+v", jobs)
+	}
+	if *jobs[0].LastError != "PRINT_DELIVERY_FAILED" {
+		t.Fatalf("expected safe delivery error code, got %q", *jobs[0].LastError)
+	}
+	if len(sender.payloads) != 3 {
+		t.Fatalf("expected three send attempts, got %d", len(sender.payloads))
+	}
+
+	reset, err := f.service.RetryPrintJobAsOperator(f.ctx, jobs[0].ID, f.managerEdgeMetaCommand(t, "cmd-print-retry"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reset.Status != domain.PrintJobPending || reset.Attempts != 0 || reset.LastError != nil {
+		t.Fatalf("expected manual retry to reset failed job to pending, got %+v", reset)
+	}
+	if got := countRows(t, f, "payments"); got != paymentsBefore {
+		t.Fatalf("manual retry mutated payments: before=%d after=%d", paymentsBefore, got)
+	}
+	if got := countRows(t, f, "checks"); got != checksBefore {
+		t.Fatalf("manual retry mutated checks: before=%d after=%d", checksBefore, got)
+	}
+	if got := countRows(t, f, "ticket_units"); got != ticketsBefore {
+		t.Fatalf("manual retry mutated ticket units: before=%d after=%d", ticketsBefore, got)
+	}
+}
+
+func TestPrintQueueNoSyncedPrinterFailsWithSafeErrorCode(t *testing.T) {
+	f := newFixture(t)
+	clock := &printTestClock{now: fixedClock{}.Now()}
+	sender := &printTestSender{}
+	f.service = app.NewServiceWithOptions(f.repo, platformsqlite.NewTxManager(f.db), &testIDs{n: 51000}, clock, app.ServiceOptions{
+		StorageArchiveDir: f.archiveDir,
+		PrintSender:       sender,
+		PrintMaxAttempts:  1,
+	})
+	seedDefaultPrintTemplates(t, f)
+	f.createPaidOrder(t)
+
+	processed, err := f.service.ProcessNextPrintJob(f.ctx, "worker-no-printer")
+	if err != nil || !processed {
+		t.Fatalf("expected no-printer job to be processed into failed state, processed=%v err=%v", processed, err)
+	}
+	jobs, err := f.repo.ListPrintJobs(f.ctx, domain.PrintJobListQuery{RestaurantID: f.restaurant.ID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 1 || jobs[0].Status != domain.PrintJobFailed || jobs[0].LastError == nil || *jobs[0].LastError != "PRINT_ROUTING_NOT_CONFIGURED" {
+		t.Fatalf("expected failed job with safe routing error code, got %+v", jobs)
+	}
+	if len(sender.payloads) != 0 {
+		t.Fatalf("no-printer path must not send payloads, got %d", len(sender.payloads))
+	}
+}
+
+func TestPrintQueueStatusListRetryRBACAndTicketJobs(t *testing.T) {
+	f := newFixture(t)
+	clock := &printTestClock{now: fixedClock{}.Now()}
+	enablePrintQueue(t, f, clock, &printTestSender{err: errors.New("paper out")})
+	seedDefaultPrintTemplates(t, f)
+	f.openShift(t)
+	f.openCashSession(t)
+	qr := f.seedQRMenuItem(t, "print", "business_date", nil)
+	_, check, _ := f.payQRSale(t, qr, "cmd-print-ticket-pay")
+
+	jobs, err := f.service.ListPrintJobsAsOperator(f.ctx, f.edgeMeta(), domain.PrintJobListQuery{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("expected precheck + ticket print jobs, got %+v", jobs)
+	}
+	if _, err := f.service.GetPrintJobAsOperator(f.ctx, jobs[0].ID, f.edgeMeta()); err != nil {
+		t.Fatalf("status read with pos.print.status failed: %v", err)
+	}
+	kitchenMeta := f.useKitchenOperator(t)
+	if _, err := f.service.ListPrintJobsAsOperator(f.ctx, kitchenMeta, domain.PrintJobListQuery{Limit: 10}); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected print status RBAC denial for kitchen role, got %v", err)
+	}
+	for i, advance := range []time.Duration{2 * time.Second, 5 * time.Second, 0} {
+		if processed, err := f.service.ProcessNextPrintJob(f.ctx, "worker-rbac"); err != nil || !processed {
+			t.Fatalf("attempt %d: processed=%v err=%v", i+1, processed, err)
+		}
+		clock.Advance(advance)
+	}
+	failed, err := f.repo.ListPrintJobs(f.ctx, domain.PrintJobListQuery{RestaurantID: f.restaurant.ID, Status: domain.PrintJobFailed, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(failed) != 1 {
+		t.Fatalf("expected one failed job after retry exhaustion, got %+v", failed)
+	}
+	if _, err := f.service.RetryPrintJobAsOperator(f.ctx, failed[0].ID, f.edgeMeta()); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected cashier retry RBAC denial, got %v", err)
+	}
+	if _, err := f.service.RetryPrintJobAsOperator(f.ctx, failed[0].ID, f.managerEdgeMetaCommand(t, "cmd-print-rbac-retry")); err != nil {
+		t.Fatalf("expected manager print retry, got %v", err)
+	}
+	if ticketRows := countRowsWhere(t, f, "ticket_units", "check_id = ?", check.ID); ticketRows != 1 {
+		t.Fatalf("print retry must not create tickets, got %d", ticketRows)
+	}
+}
+
+func enablePrintQueue(t *testing.T, f *fixture, c *printTestClock, sender *printTestSender) {
+	t.Helper()
+	f.service = app.NewServiceWithOptions(f.repo, platformsqlite.NewTxManager(f.db), &testIDs{n: 50000}, c, app.ServiceOptions{
+		StorageArchiveDir: f.archiveDir,
+		PrintSender:       sender,
+	})
+	seedDefaultReceiptPrinters(t, f)
+}
+
+func seedDefaultReceiptPrinters(t *testing.T, f *fixture) {
+	t.Helper()
+	port := 9100
+	printers := []domain.ReceiptPrinter{
+		{ID: "printer-front-1", RestaurantID: f.restaurant.ID, Name: "Front 1", Type: escpos.PrinterTypeTCP, Address: "127.0.0.11", Port: &port, DocumentTypes: []domain.ReceiptDocumentType{domain.ReceiptDocumentPrecheck, domain.ReceiptDocumentCheckNonfiscal}, Codepage: "cp437", PaperCutType: "partial", CPL: 48, IsActive: true, CloudVersion: 10},
+		{ID: "printer-front-2", RestaurantID: f.restaurant.ID, Name: "Front 2", Type: escpos.PrinterTypeTCP, Address: "127.0.0.12", Port: &port, DocumentTypes: []domain.ReceiptDocumentType{domain.ReceiptDocumentPrecheck}, Codepage: "cp437", PaperCutType: "partial", CPL: 48, IsActive: true, CloudVersion: 10},
+		{ID: "printer-ticket", RestaurantID: f.restaurant.ID, Name: "Ticket", Type: escpos.PrinterTypeTCP, Address: "127.0.0.21", Port: &port, DocumentTypes: []domain.ReceiptDocumentType{domain.ReceiptDocumentTicket}, Codepage: "cp437", PaperCutType: "partial", CPL: 48, IsActive: true, CloudVersion: 10},
+	}
+	if err := f.repo.ReplaceMasterReceiptPrinters(f.ctx, f.restaurant.ID, printers, appshared.DBTime(fixedClock{}.Now())); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func seedDefaultPrintTemplates(t *testing.T, f *fixture) {
+	t.Helper()
+	templates := []domain.ReceiptTemplate{
+		{ID: "tmpl-print-precheck", DocumentType: domain.ReceiptDocumentPrecheck, Name: "Precheck", Content: "{a:center}{{.restaurant_name}}\n{a:center}P{{.precheck_number}}\n{w:auto,12}{a:left,right}TOTAL\t{{.total_minor}}\n{cut}", Level: 1, CPL: 48, PrinterClass: "front", IsDefault: true, Version: 1},
+		{ID: "tmpl-print-check", DocumentType: domain.ReceiptDocumentCheckNonfiscal, Name: "Check", Content: "{a:center}CHECK {{.precheck_number}}\n{w:auto,12}{a:left,right}TOTAL\t{{.total_minor}}\n{cut}", Level: 1, CPL: 48, PrinterClass: "front", IsDefault: true, Version: 1},
+		{ID: "tmpl-print-ticket", DocumentType: domain.ReceiptDocumentTicket, Name: "Ticket", Content: "{a:center}TICKET {{.ticket_display_number}}\n{qr:size=4:{{.qr_payload}}}\n{cut}", Level: 1, CPL: 48, PrinterClass: "ticket", IsDefault: true, Version: 1},
+	}
+	if err := f.repo.ReplaceMasterReceiptTemplates(f.ctx, templates, appshared.DBTime(fixedClock{}.Now())); err != nil {
+		t.Fatal(err)
 	}
 }

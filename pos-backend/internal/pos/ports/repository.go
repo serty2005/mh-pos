@@ -21,4 +21,5 @@ type Repository interface {
 	StorageLifecycleRepository
 	LocalEventRepository
 	OutboxRepository
+	PrintRepository
 }

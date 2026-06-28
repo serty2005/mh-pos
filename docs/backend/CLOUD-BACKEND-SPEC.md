@@ -149,6 +149,30 @@ Inventory read model:
 - `GET /api/v1/inventory/recalculation-jobs/{id}` — detail для одного async costing job с тем же bounded safe metadata; unknown id возвращает safe `404`.
 - Реализовано сейчас: отдельный public read endpoint для `inventory_document_processing_state` не добавлен; эксплуатационная проверка document processing state выполняется через worker/repository tests и существующие bounded reads.
 
+Receipt templates (master-data CRUD, POS-71):
+
+- `POST /api/v1/receipt-templates` — создать Cloud-owned шаблон печати; `restaurant_id` пустой = tenant-level default; `version = 1`, `is_active = true`.
+- `GET /api/v1/receipt-templates?org_id=&restaurant_id=&document_type=&is_default=&is_active=` — список шаблонов с фильтрами.
+- `GET /api/v1/receipt-templates/{id}` — получить шаблон; unknown id возвращает safe `404`.
+- `PUT /api/v1/receipt-templates/{id}` — обновить шаблон, инкрементирует `version`.
+- `DELETE /api/v1/receipt-templates/{id}` — soft-delete (`is_active = false`, снимает `is_default`).
+- RBAC: `cloud.templates.manage` (permission id `domain.PermissionReceiptTemplatesManage`); per-request RBAC middleware для cloud master-data routes ещё не подключён (как у sibling routes), авторитетная проверка — на cloud admin boundary. Error contract — стабильный safe code/message: `400` (ErrInvalid), `404` (ErrNotFound), `409` (ErrConflict при нарушении single-default). Изменения шаблонов триггерят Cloud -> Edge delivery refresh через stream `receipt_templates`.
+- Default `precheck` и `ticket` templates сидируются через `scripts/seed-dev-system.py` HTTP-only: list/update/create CRUD `/api/v1/receipt-templates`, без прямой записи в PostgreSQL и без publish API.
+
+Printers (master-data CRUD, POS-82):
+
+- `GET /api/v1/printers?restaurant_id=` — список принтеров ресторана.
+- `POST /api/v1/printers` — создать Cloud-owned ESC/POS принтер; `restaurant_id` обязателен; `type` = `tcp|usb`; USB принтеры не принимают `address`/`port`.
+- `PATCH /api/v1/printers/{id}` — обновить принтер, инкрементирует `version`.
+- `DELETE /api/v1/printers/{id}` — soft-delete (`is_active = false`, `version++`).
+- RBAC: `organization.manage` (permission id `domain.PermissionPrintersManage`). Error contract: `400` (ErrInvalid), `404` (ErrNotFound). Изменения принтеров триггерят Cloud -> Edge delivery refresh через stream `printers`.
+- Поля принтера: `name`, `type` (`tcp|usb`), `address`, `port` (NULL для USB), `document_types` (JSON array: `precheck|check_nonfiscal|ticket|kitchen_service|cash_in_out|acceptance`), `codepage` (`''|cp437|cp866`), `paper_cut_type` (`full|partial`, default `partial`), `cpl` (`32|42|48|56|80`).
+- Запланировано далее: Cloud хранит видимость Edge-originated printer/print-route overrides и audit изменений, но Edge settings применяет такие изменения локально сразу. Схема печати разделяет физический принтер и назначение: `restaurant` для принтера отчетов, `sales_point` для принтера кассы, `section` для сервисных принтеров зала/цеха. Точка продаж принадлежит ресторану, имеет обязательные `name` и `analytics_tag`, а кассовая смена открывается в рамках точки продаж. Для нескольких принтеров одного документа Cloud read model должен показывать per-printer `print_job_targets`, если Edge отправил такие статусы.
+
+Receipt preview:
+
+- `GET /api/v1/receipts/preview` — реализовано сейчас как bounded SVG preview для ReceiptLine Level 1 template content. Request body: `template_content`, `document_type`, `cpl` (`32` или `48`) и `print_context` JSON object. Endpoint вызывает `engine.Render` для Level 1 interpolation и отдаёт результат через общий SVG renderer; POS-72 projection не выполняется, caller передаёт готовый print context. Response `200` возвращает `Content-Type: image/svg+xml`. Ошибки: `400 TEMPLATE_PARSE_ERROR`, `400 CONTEXT_SCHEMA_ERROR`; module license gate сейчас не требуется. Endpoint не создает шаблоны, не читает БД, не выполняет print queue, fiscal logic, PNG/e-receipt или Cloud UI flow.
+
 	OLAP read model:
 
 - `GET /api/v1/olap/raw-business-events?restaurant_id=&event_type=&occurred_from=&occurred_to=&limit=&offset=` — bounded ClickHouse metadata view без raw payload.
@@ -417,7 +441,9 @@ PIN policy:
 - `pricing_policy`;
 - `recipes` через generic package storage/validation;
 - `inventory_reference` через generic package storage/validation;
-- `currencies` через generic package storage/validation.
+- `currencies` через generic package storage/validation;
+- `receipt_templates` — Cloud-owned шаблоны печати; эффективный набор (restaurant-specific + tenant-level defaults) собирается по `restaurant_id`; checkpoint `receipt-templates:{restaurant_id}:{MAX(updated_at).UnixMilli()}:{count}`;
+- `printers` — Cloud-owned ESC/POS принтеры ресторана; пакет содержит все `is_active=TRUE` принтеры для `restaurant_id`; checkpoint `printers:{restaurant_id}:{MAX(updated_at).UnixMilli()}:{count}`; soft-delete убирает принтер из следующего пакета.
 
 Publication DTO правила:
 
@@ -595,7 +621,7 @@ Schema verification:
 - `CatalogItemChangeSuggested` создает Cloud review item; upsert в catalog выполняется только после manager approve текущими `catalog-suggestions` routes.
 - `RecipeChangeSuggested` создает Cloud review item с diff по ingredients, quantities, units, loss percent и prep time; published recipe не меняется до approve/apply текущими `recipe-suggestions` routes. Реализовано сейчас: Cloud-authored recipe version draft при submit создает pending `RecipeChangeSuggested` с `action = publish_recipe_version`; approve активирует draft version, архивирует предыдущую active version для owner item и публикует `recipes` package.
 - Реализовано сейчас: Edge-origin stop-list review item для `StopListUpdated` поддерживает назначение на менеджера и снятие назначения через `POST /api/v1/manager/stop-list-updates/{id}/assign|unassign`. Assignment state хранится в `cloud_projection_stop_list_updates` (`assigned_to_employee_id`, `assigned_by_employee_id`, `assigned_at`, `assignment_note`), а действия `assigned`/`unassigned` пишутся в append-only `cloud_review_assignment_audit_events` с `event_id` UUIDv7, `review_id`, `actor_employee_id`, `target_employee_id`, `reason` и `occurred_at`. Реализовано сейчас: bounded чтение assignment audit доступно для `stop_list_update`, `catalog_suggestion` и `recipe_suggestion` через `GET /api/v1/manager/stop-list-updates/{id}/audit?limit=&offset=`, `GET /api/v1/manager/catalog-suggestions/{id}/audit?limit=&offset=` и `GET /api/v1/manager/recipe-suggestions/{id}/audit?limit=&offset=` без raw payload; unknown review id возвращает safe empty list. Assignment runtime для catalog/recipe запланирован далее и не заявлен как реализованный. Escalation/dashboard запланированы далее. Raw payload exposure вне текущего объема и запрещено.
-- Canonical seed/smoke для Cloud-owned сценариев находится только в `scripts/seed-dev-system.py`: при добавлении Cloud-owned справочника, review flow, publication stream/package или bounded POS read flow тем же PR обновляются seed dataset, publication assertion, smoke assertion/read check, script guard `CLOUD_OWNED_SEED_SURFACES` и профильная документация. Реализовано сейчас: minimal flow проверяет materialized `stock-balances` через HTTP API. Seed/smoke работает через HTTP API и не пишет напрямую в PostgreSQL/ClickHouse.
+- Canonical seed/smoke для Cloud-owned сценариев находится только в `scripts/seed-dev-system.py`: при добавлении Cloud-owned справочника, review flow, publication stream/package или bounded POS read flow тем же PR обновляются seed dataset, publication assertion, smoke assertion/read check, script guard `CLOUD_OWNED_SEED_SURFACES` и профильная документация. Реализовано сейчас: minimal flow проверяет materialized `stock-balances` и Edge `print_jobs` enqueue через HTTP API. Seed/smoke работает через HTTP API и не пишет напрямую в PostgreSQL/ClickHouse.
 - `StopListUpdated` обрабатывается асинхронно через `inventory_event_queue`: worker пишет `cloud_projection_stop_list_updates` без raw payload. `edge_overlay_until_next_publication` обновляет bounded `stop_lists` overlay, `cloud_wins` не перетирает Cloud-owned row, `edge_overlay_requires_manager_review` фиксирует безопасную projection для bounded manager review.
 - Bounded manager review для `edge_overlay_requires_manager_review` реализован сейчас: list/detail имеют stable bounded paging, decisions идемпотентны, invalid transition возвращает conflict, approve применяет изменение только через Cloud-owned `stop_lists` + publication, reject/request-changes не меняют runtime stop-list authority.
 - `GET /api/v1/sync/readiness/stop-list` реализовано сейчас как safe readiness summary: publication/package metadata, latest accepted `StopListUpdated` ACK metadata и агрегат `cloud_sync_problem_events` по кодам ошибок без raw payload.

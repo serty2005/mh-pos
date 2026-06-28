@@ -16,6 +16,9 @@ describe('catalogForms payloads', () => {
       base_unit: 'portion',
       kitchen_type: '',
       accounting_category: '',
+      qr_confirmation_enabled: false,
+      validity_mode: '',
+      validity_expires_at: '',
       status: 'draft',
     })).toEqual({
       kind: 'dish',
@@ -25,6 +28,7 @@ describe('catalogForms payloads', () => {
       base_unit: 'portion',
       kitchen_type: '',
       accounting_category: '',
+      qr_confirmation_enabled: false,
     });
   });
 

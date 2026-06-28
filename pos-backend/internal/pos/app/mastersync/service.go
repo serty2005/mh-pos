@@ -93,6 +93,8 @@ type ApplyMasterDataCommand struct {
 	Warehouses             []domain.WarehouseReference    `json:"warehouses,omitempty"`
 	CatalogSuggestions     []ProposalFeedback             `json:"catalog_suggestions,omitempty"`
 	RecipeSuggestions      []ProposalFeedback             `json:"recipe_suggestions,omitempty"`
+	ReceiptTemplates       []domain.ReceiptTemplate       `json:"receipt_templates,omitempty"`
+	Printers               []domain.ReceiptPrinter        `json:"printers,omitempty"`
 }
 
 // ProposalFeedback переносит Cloud review status для локальной kitchen proposal записи.
@@ -476,10 +478,82 @@ func (s *Service) applyStream(ctx context.Context, stream domain.MasterDataStrea
 			return err
 		}
 		counts[string(stream)] = len(cmd.CatalogSuggestions) + len(cmd.RecipeSuggestions)
+	case domain.MasterDataStreamReceiptTemplates:
+		// Edge хранит только эффективный набор: пакет атомарно заменяет все строки.
+		templates := make([]domain.ReceiptTemplate, 0, len(cmd.ReceiptTemplates))
+		for i := range cmd.ReceiptTemplates {
+			v := normalizeReceiptTemplate(cmd.ReceiptTemplates[i])
+			if err := v.Validate(); err != nil {
+				return err
+			}
+			templates = append(templates, v)
+		}
+		if err := s.repo.ReplaceMasterReceiptTemplates(ctx, templates, meta.LastSyncedAt); err != nil {
+			return err
+		}
+		counts[string(stream)] = len(templates)
+	case domain.MasterDataStreamPrinters:
+		printers := make([]domain.ReceiptPrinter, 0, len(cmd.Printers))
+		for i := range cmd.Printers {
+			v := normalizeReceiptPrinter(cmd.Printers[i], cmd.RestaurantID)
+			if err := v.Validate(); err != nil {
+				return err
+			}
+			printers = append(printers, v)
+		}
+		if err := s.repo.ReplaceMasterReceiptPrinters(ctx, strings.TrimSpace(cmd.RestaurantID), printers, meta.LastSyncedAt); err != nil {
+			return err
+		}
+		counts[string(stream)] = len(printers)
 	default:
 		return fmt.Errorf("%w: unsupported master data stream %q", domain.ErrInvalid, stream)
 	}
 	return nil
+}
+
+// normalizeReceiptTemplate приводит шаблон печати к безопасным дефолтам перед валидацией.
+func normalizeReceiptTemplate(v domain.ReceiptTemplate) domain.ReceiptTemplate {
+	v.ID = strings.TrimSpace(v.ID)
+	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
+	v.Name = strings.TrimSpace(v.Name)
+	v.PrinterClass = strings.TrimSpace(v.PrinterClass)
+	if v.PrinterClass == "" {
+		v.PrinterClass = "generic"
+	}
+	if v.Level == 0 {
+		v.Level = 1
+	}
+	if v.Version == 0 {
+		v.Version = 1
+	}
+	return v
+}
+
+// normalizeReceiptPrinter приводит Cloud stream printers к Edge read model defaults.
+func normalizeReceiptPrinter(v domain.ReceiptPrinter, packageRestaurantID string) domain.ReceiptPrinter {
+	v.ID = strings.TrimSpace(v.ID)
+	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
+	if v.RestaurantID == "" {
+		v.RestaurantID = strings.TrimSpace(packageRestaurantID)
+	}
+	v.Name = strings.TrimSpace(v.Name)
+	v.Type = strings.ToLower(strings.TrimSpace(v.Type))
+	v.Address = strings.TrimSpace(v.Address)
+	v.Codepage = strings.ToLower(strings.TrimSpace(v.Codepage))
+	v.PaperCutType = strings.ToLower(strings.TrimSpace(v.PaperCutType))
+	if v.PaperCutType == "" {
+		v.PaperCutType = "partial"
+	}
+	if v.CloudVersion == 0 && v.Version > 0 {
+		v.CloudVersion = v.Version
+	}
+	// Cloud stream printers содержит только active rows; отсутствующий is_active
+	// в payload не должен превращать доставленный принтер в выключенный на Edge.
+	v.IsActive = true
+	for i := range v.DocumentTypes {
+		v.DocumentTypes[i] = domain.ReceiptDocumentType(strings.TrimSpace(string(v.DocumentTypes[i])))
+	}
+	return v
 }
 
 func validatePayload(cmd ApplyMasterDataCommand, streams []domain.MasterDataStream, now time.Time) error {
@@ -621,6 +695,18 @@ func validatePayload(cmd ApplyMasterDataCommand, streams []domain.MasterDataStre
 			if err := validateProposalFeedback(cmd.RecipeSuggestions); err != nil {
 				return err
 			}
+		case domain.MasterDataStreamReceiptTemplates:
+			for i := range cmd.ReceiptTemplates {
+				if err := normalizeReceiptTemplate(cmd.ReceiptTemplates[i]).Validate(); err != nil {
+					return err
+				}
+			}
+		case domain.MasterDataStreamPrinters:
+			for i := range cmd.Printers {
+				if err := normalizeReceiptPrinter(cmd.Printers[i], cmd.RestaurantID).Validate(); err != nil {
+					return err
+				}
+			}
 		default:
 			return fmt.Errorf("%w: unsupported master data stream %q", domain.ErrInvalid, stream)
 		}
@@ -652,6 +738,10 @@ func payloadRowCount(cmd ApplyMasterDataCommand, streams []domain.MasterDataStre
 			total += len(cmd.Warehouses) + len(cmd.StopListEntries)
 		case domain.MasterDataStreamProposalFeedback:
 			total += len(cmd.CatalogSuggestions) + len(cmd.RecipeSuggestions)
+		case domain.MasterDataStreamReceiptTemplates:
+			total += len(cmd.ReceiptTemplates)
+		case domain.MasterDataStreamPrinters:
+			total += len(cmd.Printers)
 		}
 	}
 	return total
@@ -748,6 +838,12 @@ func streamsToApply(cmd ApplyMasterDataCommand) ([]domain.MasterDataStream, erro
 	if len(cmd.CatalogSuggestions) > 0 || len(cmd.RecipeSuggestions) > 0 {
 		streams = append(streams, domain.MasterDataStreamProposalFeedback)
 	}
+	if len(cmd.ReceiptTemplates) > 0 {
+		streams = append(streams, domain.MasterDataStreamReceiptTemplates)
+	}
+	if len(cmd.Printers) > 0 {
+		streams = append(streams, domain.MasterDataStreamPrinters)
+	}
 	if len(streams) == 0 {
 		return nil, fmt.Errorf("%w: at least one supported master data stream is required", domain.ErrInvalid)
 	}
@@ -765,7 +861,9 @@ func supportedStream(stream domain.MasterDataStream) bool {
 		domain.MasterDataStreamPricing,
 		domain.MasterDataStreamRecipes,
 		domain.MasterDataStreamInventory,
-		domain.MasterDataStreamProposalFeedback:
+		domain.MasterDataStreamProposalFeedback,
+		domain.MasterDataStreamReceiptTemplates,
+		domain.MasterDataStreamPrinters:
 		return true
 	default:
 		return false

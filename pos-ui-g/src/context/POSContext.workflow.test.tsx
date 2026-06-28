@@ -362,7 +362,7 @@ function createRenderState(overrides: Partial<RenderState>) {
   const actor = overrides.actor ?? actorFixture(workflowPermissions);
   const activeHallId = overrides.activeHallId ?? 'hall-1';
   const selectedTableId = overrides.selectedTableId ?? 'table-1';
-  const slots: unknown[] = Array.from({ length: 30 }, () => hookRuntime.missing);
+  const slots: unknown[] = Array.from({ length: 31 }, () => hookRuntime.missing);
   slots[0] = 'floor';
   slots[1] = activeHallId;
   slots[3] = false;
@@ -392,6 +392,7 @@ function createRenderState(overrides: Partial<RenderState>) {
   slots[27] = false;
   slots[28] = '';
   slots[29] = [];
+  slots[30] = { 'table-mode': true };
   return { actor, slots };
 }
 

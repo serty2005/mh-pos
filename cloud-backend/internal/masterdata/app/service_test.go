@@ -122,13 +122,13 @@ func TestRoleAcceptsKitchenPermissionIDs(t *testing.T) {
 	service, _ := newService()
 	role, err := service.CreateRole(context.Background(), app.CreateRoleCommand{
 		Name:            "kitchen",
-		PermissionsJSON: `{"pos.kitchen.view":true,"pos.kitchen.status.change":true,"permissions":["pos.kitchen.stock.receipt","pos.kitchen.production.complete"]}`,
+		PermissionsJSON: `{"pos.kitchen.view":true,"pos.kitchen.status.change":true,"pos.print.status":true,"permissions":["pos.kitchen.stock.receipt","pos.kitchen.production.complete","pos.print.retry"]}`,
 	})
 	if err != nil {
-		t.Fatalf("expected kitchen permissions to be accepted, got %v", err)
+		t.Fatalf("expected kitchen/print permissions to be accepted, got %v", err)
 	}
-	if !strings.Contains(role.PermissionsJSON, "pos.kitchen.stock.receipt") {
-		t.Fatalf("expected kitchen permissions to be persisted, got %s", role.PermissionsJSON)
+	if !strings.Contains(role.PermissionsJSON, "pos.kitchen.stock.receipt") || !strings.Contains(role.PermissionsJSON, "pos.print.retry") {
+		t.Fatalf("expected kitchen/print permissions to be persisted, got %s", role.PermissionsJSON)
 	}
 }
 

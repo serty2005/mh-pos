@@ -22,6 +22,7 @@ import (
 	"pos-backend/internal/platform/version"
 	"pos-backend/internal/pos/api"
 	"pos-backend/internal/pos/app"
+	appprint "pos-backend/internal/pos/app/print"
 	poscloudsync "pos-backend/internal/pos/infra/cloudsync"
 	posprovisioninghttp "pos-backend/internal/pos/infra/provisioninghttp"
 	possqlite "pos-backend/internal/pos/infra/sqlite"
@@ -79,6 +80,14 @@ func run() error {
 
 	repo := possqlite.NewRepository(db)
 	tx := platformsqlite.NewTxManager(db)
+	if legacyRouting := strings.TrimSpace(cfg.Get("POS_PRINTER_ROUTING_JSON", "")); legacyRouting != "" {
+		slog.Warn("POS_PRINTER_ROUTING_JSON is ignored; printer routing is loaded from Cloud sync stream printers",
+			"operation", "pos.startup",
+			"action", "printer_routing_config",
+			"result", "ignored",
+			"error_code", "LEGACY_PRINTER_ROUTING_IGNORED",
+		)
+	}
 	service := app.NewServiceWithOptions(repo, tx, idgen.UUIDGenerator{}, clock.SystemClock{}, app.ServiceOptions{
 		CloudProvisioningURL:                    cloudProvisioningURL,
 		LicenseServerURL:                        licenseURL,
@@ -122,6 +131,17 @@ func run() error {
 		go worker.Run(rootCtx)
 	} else {
 		slog.Info("POS sync sender disabled")
+	}
+
+	if cfg.Bool("POS_PRINT_WORKER_ENABLED", false) {
+		worker := appprint.NewWorker(service, appprint.WorkerConfig{
+			WorkerID:     cfg.Get("POS_PRINT_WORKER_ID", "pos-print-worker-main"),
+			PollInterval: envDuration(cfg.Get("POS_PRINT_WORKER_POLL_INTERVAL", ""), 2*time.Second),
+			SendTimeout:  envDuration(cfg.Get("POS_PRINT_WORKER_SEND_TIMEOUT", ""), 10*time.Second),
+		}, slog.Default())
+		go worker.Run(rootCtx)
+	} else {
+		slog.Info("POS print worker disabled")
 	}
 
 	if cloudProvisioningURL != "" {

@@ -96,6 +96,9 @@
 - `POST /api/v1/cash-shifts/{id}/close`
 - `GET /api/v1/cash-shifts/current`
 - `POST /api/v1/cash-drawer-events`
+- `GET /api/v1/print/jobs`
+- `GET /api/v1/print/jobs/{id}`
+- `POST /api/v1/print/jobs/{id}/retry`
 - `GET /api/v1/sync/outbox`
 - `GET /api/v1/sync/local-events`
 - `GET /api/v1/sync/status`
@@ -145,7 +148,7 @@
 
 Реализовано сейчас:
 
-- `scripts/seed-dev-system.py` является единственным локальным seed entrypoint: он создает полный набор Cloud-owned справочников, публикует master data, выполняет license pairing POS Edge и проверяет POS read model.
+- `scripts/seed-dev-system.py` является единственным локальным seed entrypoint: он создает полный набор Cloud-owned справочников, публикует master data, выполняет license pairing POS Edge и проверяет POS read model, включая receipt_templates sync и enqueue print_jobs в minimal flow.
 - Seed script выполняет health check Cloud/POS/License, берет `node_device_id` из POS provisioning status, создает справочники через Cloud API, публикует packages, генерирует license pairing code, вызывает POS `pair-via-license` и проверяет PIN login/menu/floor read model.
 - `--run-minimal-flow` выполняет минимальную financial/KDS mutation через HTTP: waiter order/precheck -> KDS served -> cashier payment/final check -> `ItemServed`/`CheckClosed` -> Cloud inventory ledger -> ClickHouse/OLAP bounded reads без double consumption и raw payload exposure. Refund/cancellation runtime boundaries проверяются отдельными backend/UI тестами. Seed script не делает automatic retry financial mutations и destructive storage actions.
 - `--run-kitchen-process-smoke` выполняет профильный Cloud publication -> Edge sync -> KDS lifecycle/recall -> stock/proposal events -> Cloud ledger/ClickHouse/proposal feedback smoke через HTTP API.
@@ -173,6 +176,16 @@ Operational activity/sync read contract:
 - Реализовано сейчас: `GET /api/v1/sync/local-events` принимает optional `limit` и `event_type`; backend repository возвращает bounded default page `100`, если limit пустой, отрицательный, нулевой или больше `500`, и сортирует по `created_at DESC, id DESC`.
 - POS UI sync/activity drawer использует `limit=5` для outbox и local events; эти reads не являются бесконечным журналом отчетности.
 - `GET /api/v1/sync/status` агрегирует counts by outbox status and does not return payload history.
+
+Print queue contract:
+
+- Реализовано сейчас: `GET /api/v1/print/jobs/{id}` требует `pos.print.status` и возвращает `PrintJob` только внутри restaurant scope оператора.
+- Реализовано сейчас: `GET /api/v1/print/jobs?status=&document_type=&limit=` требует `pos.print.status`, поддерживает bounded list, статусы `pending`, `processing`, `succeeded`, `failed`, document types `precheck`, `check_nonfiscal`, `ticket`.
+- Реализовано сейчас: `POST /api/v1/print/jobs/{id}/retry` требует `pos.print.retry`, принимает пустой JSON body и переводит `failed` или `pending` job в `pending`, сбрасывая `attempts`, `last_error`, `next_attempt_at`, `locked_by`, `locked_at`.
+- Manual retry не повторяет payment, не создает ticket, не меняет order/check/payment/financial state; он мутирует только локальную строку `print_jobs`.
+- Print worker routing читает Cloud-owned `receipt_printers` по `restaurant_id + document_type`; один тип документа может отправляться на несколько активных принтеров. Если подходящего принтера нет, job проходит обычную retry policy и сохраняет безопасный `last_error = PRINT_ROUTING_NOT_CONFIGURED`.
+- `PrintJob` response содержит `id`, `restaurant_id`, `document_type`, `source_kind`, `source_id`, `status`, `attempts`, `max_attempts`, `printer_class`, `last_error`, `next_attempt_at`, `locked_by`, `locked_at`, `printed_at`, `created_at`, `updated_at`.
+- Запланировано далее: Edge settings становятся местом полного управления принтерами и схемой печати. POS backend хранит restaurant-scoped `sales_points`, `restaurant_sections`, physical printer config, print routes и audit Edge override изменений. Кассовая смена открывается в рамках `sales_point`; принтер кассы обязателен для точки продаж. Секция бывает `hall_section` или `kitchen_workshop`; сервисные принтеры секции печатают соответственно `precheck` или `kitchen_service`. Для нескольких принтеров одного документа backend создает `print_job_targets`, каждый target имеет собственный статус, retry, ошибку и `printed_at`.
 
 Контракт lifecycle локального storage:
 
@@ -320,6 +333,11 @@ Pricing contract:
   - `catalog`
   - `menu`
   - `pricing_policy`
+  - `recipes`
+  - `inventory_reference`
+  - `proposal_feedback`
+  - `receipt_templates`
+  - `printers`
 - `catalog` применяет catalog folders, folder parameters, catalog tags, item tags, item kinds `dish`, `good`, `semi_finished`, `service` и modifier groups/options/bindings.
 - `menu` применяет menu items, menu item `item_type` и effective menu item modifier group links после применения menu items.
 - Cloud publication package для POS Edge должен соответствовать typed ingest DTO `ApplyMasterDataCommand`: modifier groups/options/bindings публикуются top-level массивами с `restaurant_id` и без Cloud lifecycle fields, а `menu_item_modifier_groups` остается link-only (`menu_item_id`, `modifier_group_id`, `sort_order`).
@@ -328,6 +346,8 @@ Pricing contract:
 - `pricing_policy` применяет `tax_profiles`, `tax_rules`, `service_charge_rules` и automatic discount/surcharge `pricing_policies` с sync metadata.
 - `recipes` применяет `recipe_versions` и `recipe_lines` с sync metadata.
 - `inventory_reference` применяет `stop_lists` и Cloud-owned `warehouses`/`warehouse_reference` с sync metadata; локальный Cloud publication seed публикует default `warehouse-main`.
+- `receipt_templates` применяет Cloud-owned read model шаблонов печати в таблицу `receipt_templates` (POS-71): Edge атомарно заменяет весь набор строк эффективным пакетом (restaurant-specific шаблоны плюс tenant-level defaults), хранит только активные строки и фиксирует stream-specific checkpoint. Шаблоны валидируются по нефискальному `document_type` и `cpl`.
+- `printers` применяет Cloud-owned read model ESC/POS принтеров в таблицу `receipt_printers` (POS-84): Edge атомарно заменяет строки конкретного ресторана, хранит активный набор с `document_types` JSON и фиксирует stream-specific checkpoint.
 - Strict JSON decode отклоняет неизвестные request fields; unsupported stream names отклоняются до partial apply.
 
 Только основа:
@@ -435,7 +455,7 @@ Recipes/inventory:
 Профильный smoke:
 
 - реализовано сейчас: `scripts/seed-dev-system.py --run-kitchen-process-smoke` проверяет Cloud publication -> Edge sync для catalog/menu/recipes/inventory_reference, waiter order, KDS order tile, `accept/start/ready/serve`, `recall/start/ready/serve`, Edge stock/proposal routes и прием Cloud feedback.
-- Seed/smoke расширяется только через canonical `scripts/seed-dev-system.py`; отдельные пользовательские smoke entrypoints не добавляются без явного архитектурного решения.
+- Seed/smoke расширяется только через canonical `scripts/seed-dev-system.py`; отдельные пользовательские smoke entrypoints не добавляются без явного архитектурного решения. Реализовано сейчас: `--run-minimal-flow` проверяет enqueue `print_jobs` для предчека и ticket units после оплаты без физической печати.
 - Inventory facts:
   - реализовано сейчас: final check creation writes current financial events and additional `CheckClosed` inventory event;
   - `CheckClosed` payload includes order line id, catalog item id, quantity, unit code and `required_for_inventory`;
@@ -470,11 +490,14 @@ Recipes/inventory:
 - Reprint permissions:
   - `pos.precheck.reprint`
   - `pos.check.reprint`
+- Print queue permissions:
+  - `pos.print.status`
+  - `pos.print.retry`
 - Role seed defaults:
-  - `cashier` получает order/precheck/payment cash-card/pricing read-apply permissions без refund/cash drawer/check reprint/sync retry;
-  - `waiter` получает floor/menu/catalog, order и precheck permissions без payment/refund/cash drawer permissions;
+  - `cashier` получает order/precheck/payment cash-card/pricing read-apply и print status permissions без refund/cash drawer/check reprint/print retry/sync retry;
+  - `waiter` получает floor/menu/catalog, order, precheck и print status permissions без payment/refund/cash drawer/print retry permissions;
   - `kitchen` получает kitchen/KDS, kitchen stock, proposal, recipe и stop-list permissions без financial/cashier permissions;
-  - `manager` получает cashier, refund/cancel, cash drawer, check reprint и sync retry permissions;
+  - `manager` получает cashier, refund/cancel, cash drawer, check reprint, print status/retry и sync retry permissions;
   - `support_admin` получает только `pos.sync.view` и `pos.sync.retry_failed`.
 - Backend permissions remain authoritative over UI visibility.
 

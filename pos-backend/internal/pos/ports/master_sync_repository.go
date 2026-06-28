@@ -9,6 +9,7 @@ import (
 	"pos-backend/internal/pos/domain/floor"
 	"pos-backend/internal/pos/domain/menu"
 	"pos-backend/internal/pos/domain/pricing"
+	"pos-backend/internal/pos/domain/receipt"
 	"pos-backend/internal/pos/domain/restaurant"
 	"pos-backend/internal/pos/domain/shared"
 )
@@ -35,6 +36,14 @@ type MasterSyncRepository interface {
 	UpsertMasterTaxRule(context.Context, *pricing.TaxRule, shared.MasterRecordSyncMeta) error
 	UpsertMasterServiceChargeRule(context.Context, *pricing.ServiceChargeRule, shared.MasterRecordSyncMeta) error
 	UpsertMasterPricingPolicy(context.Context, *pricing.PricingPolicy, shared.MasterRecordSyncMeta) error
+	// ReplaceMasterReceiptTemplates атомарно заменяет весь Edge read model шаблонов печати
+	// эффективным набором из Cloud package (вызывается внутри master-data apply tx).
+	ReplaceMasterReceiptTemplates(context.Context, []receipt.Template, string) error
+	ListReceiptTemplates(context.Context) ([]receipt.Template, error)
+	// ReplaceMasterReceiptPrinters атомарно заменяет Cloud-owned принтеры ресторана
+	// из stream printers внутри master-data apply tx.
+	ReplaceMasterReceiptPrinters(context.Context, string, []receipt.Printer, string) error
+	ListReceiptPrinters(context.Context, string, receipt.DocumentType) ([]receipt.Printer, error)
 	UpsertMasterDataSyncState(context.Context, *shared.MasterDataSyncState) error
 	GetMasterDataSyncState(context.Context, string, shared.MasterDataStream) (*shared.MasterDataSyncState, error)
 	ListMasterDataSyncStates(context.Context, string) ([]shared.MasterDataSyncState, error)

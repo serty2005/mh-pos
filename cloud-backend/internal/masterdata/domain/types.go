@@ -174,25 +174,25 @@ const (
 
 // CatalogItem описывает tenant-owned номенклатуру без restaurant ownership.
 type CatalogItem struct {
-	ID                    string             `json:"id"`
-	RestaurantID          string             `json:"restaurant_id,omitempty"`
-	Kind                  CatalogItemKind    `json:"kind"`
-	FolderID              string             `json:"folder_id,omitempty"`
-	Name                  string             `json:"name"`
-	SKU                   string             `json:"sku"`
-	BaseUnit              string             `json:"base_unit"`
-	KitchenType           string             `json:"kitchen_type,omitempty"`
-	AccountingCategory    string             `json:"accounting_category,omitempty"`
-	QRConfirmationEnabled bool               `json:"qr_confirmation_enabled"`
+	ID                    string          `json:"id"`
+	RestaurantID          string          `json:"restaurant_id,omitempty"`
+	Kind                  CatalogItemKind `json:"kind"`
+	FolderID              string          `json:"folder_id,omitempty"`
+	Name                  string          `json:"name"`
+	SKU                   string          `json:"sku"`
+	BaseUnit              string          `json:"base_unit"`
+	KitchenType           string          `json:"kitchen_type,omitempty"`
+	AccountingCategory    string          `json:"accounting_category,omitempty"`
+	QRConfirmationEnabled bool            `json:"qr_confirmation_enabled"`
 	// SingleUnitPerLine автоматически true когда QRConfirmationEnabled=true; backend не допускает qty>1 в order line.
-	SingleUnitPerLine     bool               `json:"single_unit_per_line"`
-	ValidityMode          TicketValidityMode `json:"validity_mode,omitempty"`
-	ValidityExpiresAt     *time.Time         `json:"validity_expires_at,omitempty"`
-	Status                LifecycleStatus    `json:"status"`
-	CloudVersion          int64              `json:"cloud_version"`
-	CreatedAt             time.Time          `json:"created_at"`
-	UpdatedAt             time.Time          `json:"updated_at"`
-	ArchivedAt            *time.Time         `json:"archived_at,omitempty"`
+	SingleUnitPerLine bool               `json:"single_unit_per_line"`
+	ValidityMode      TicketValidityMode `json:"validity_mode,omitempty"`
+	ValidityExpiresAt *time.Time         `json:"validity_expires_at,omitempty"`
+	Status            LifecycleStatus    `json:"status"`
+	CloudVersion      int64              `json:"cloud_version"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at"`
+	ArchivedAt        *time.Time         `json:"archived_at,omitempty"`
 }
 
 // ActiveForPOS сообщает, должен ли catalog item быть активным в Edge read model.
@@ -999,6 +999,7 @@ func permissionsFromJSON(raw map[string]any) []string {
 
 var knownPermissionIDs = map[string]struct{}{
 	"organization.manage":               {},
+	"cloud.templates.manage":            {},
 	"pos.employee_shift.open":           {},
 	"pos.employee_shift.close":          {},
 	"pos.employee_shift.view_current":   {},
@@ -1030,6 +1031,8 @@ var knownPermissionIDs = map[string]struct{}{
 	"pos.payment.refund":                {},
 	"pos.check.view":                    {},
 	"pos.check.reprint":                 {},
+	"pos.print.status":                  {},
+	"pos.print.retry":                   {},
 	"pos.kitchen.view":                  {},
 	"pos.kitchen.status.change":         {},
 	"pos.kitchen.catalog.view":          {},

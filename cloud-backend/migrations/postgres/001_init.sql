@@ -305,7 +305,7 @@ CREATE INDEX IF NOT EXISTS cloud_projection_financial_operations_check
   ON cloud_projection_financial_operations(restaurant_id, check_id, operation_created_at DESC);
 
 CREATE TABLE IF NOT EXISTS cloud_master_data_packages (
-  stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','currencies')),
+  stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','currencies','receipt_templates','printers')),
   node_device_id TEXT NOT NULL DEFAULT '',
   restaurant_id TEXT,
   sync_mode TEXT NOT NULL CHECK (sync_mode IN ('full_snapshot','incremental')),
@@ -482,7 +482,7 @@ CREATE TABLE IF NOT EXISTS cloud_projection_shift_finance (
 );
 
 CREATE TABLE IF NOT EXISTS cloud_master_data_packages (
-  stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','currencies')),
+  stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','currencies','receipt_templates','printers')),
   node_device_id TEXT NOT NULL DEFAULT '',
   restaurant_id TEXT,
   sync_mode TEXT NOT NULL CHECK (sync_mode IN ('full_snapshot','incremental')),
@@ -1256,7 +1256,7 @@ ALTER TABLE cloud_master_data_packages
   DROP CONSTRAINT IF EXISTS cloud_master_data_packages_stream_name_check;
 
 ALTER TABLE cloud_master_data_packages
-  ADD CONSTRAINT cloud_master_data_packages_stream_name_check CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','currencies','proposal_feedback'));
+  ADD CONSTRAINT cloud_master_data_packages_stream_name_check CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','currencies','proposal_feedback','receipt_templates','printers'));
 
 -- === 008_catalog_v2_modifiers_pricing_policy.sql ===
 ALTER TABLE cloud_catalog_items
@@ -1397,7 +1397,7 @@ ALTER TABLE cloud_master_data_packages
   DROP CONSTRAINT IF EXISTS cloud_master_data_packages_stream_name_check;
 
 ALTER TABLE cloud_master_data_packages
-  ADD CONSTRAINT cloud_master_data_packages_stream_name_check CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','currencies','proposal_feedback'));
+  ADD CONSTRAINT cloud_master_data_packages_stream_name_check CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','currencies','proposal_feedback','receipt_templates','printers'));
 
 
 -- === 004_cloud_inventory_foundation.sql ===
@@ -1668,3 +1668,55 @@ ALTER TABLE cloud_catalog_items
 
 ALTER TABLE cloud_catalog_items
   ADD COLUMN IF NOT EXISTS validity_expires_at TIMESTAMPTZ;
+
+-- POS-71: Cloud-owned receipt_template master-data и источник Cloud -> Edge stream receipt_templates.
+-- restaurant_id IS NULL = tenant-level default; org_id масштабирует под будущий multi-org tenant ('' = текущий single-tenant).
+CREATE TABLE IF NOT EXISTS cloud_receipt_templates (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL DEFAULT '',
+  restaurant_id TEXT,
+  document_type TEXT NOT NULL CHECK (document_type IN (
+    'precheck', 'check_nonfiscal', 'ticket',
+    'kitchen_service', 'cash_in_out', 'acceptance')),
+  name TEXT NOT NULL CHECK (name <> ''),
+  description TEXT NOT NULL DEFAULT '',
+  content TEXT NOT NULL CHECK (content <> ''),
+  level INTEGER NOT NULL DEFAULT 1 CHECK (level IN (1, 2)),
+  cpl INTEGER NOT NULL CHECK (cpl IN (32, 40, 48, 58)),
+  printer_class TEXT NOT NULL DEFAULT 'generic',
+  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  version INTEGER NOT NULL DEFAULT 1,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Один default-шаблон на (org, restaurant-scope, document_type) среди активных строк.
+CREATE UNIQUE INDEX IF NOT EXISTS cloud_receipt_templates_default_uq
+  ON cloud_receipt_templates (org_id, COALESCE(restaurant_id, ''), document_type)
+  WHERE is_default = TRUE AND is_active = TRUE;
+
+CREATE INDEX IF NOT EXISTS cloud_receipt_templates_org_type
+  ON cloud_receipt_templates (org_id, document_type, is_active);
+
+-- Cloud-owned ESC/POS принтеры, назначенные ресторану. Поставляются на Edge через mastersync stream printers.
+CREATE TABLE IF NOT EXISTS cloud_printers (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL DEFAULT '',
+  restaurant_id TEXT NOT NULL,
+  name TEXT NOT NULL CHECK (name <> ''),
+  type TEXT NOT NULL CHECK (type IN ('tcp', 'usb')),
+  address TEXT NOT NULL DEFAULT '',
+  port INTEGER,
+  document_types TEXT NOT NULL DEFAULT '[]',
+  codepage TEXT NOT NULL DEFAULT '' CHECK (codepage IN ('', 'cp437', 'cp866')),
+  paper_cut_type TEXT NOT NULL DEFAULT 'partial' CHECK (paper_cut_type IN ('full', 'partial')),
+  cpl INTEGER NOT NULL DEFAULT 42 CHECK (cpl IN (32, 42, 48, 56, 80)),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS cloud_printers_restaurant
+  ON cloud_printers (restaurant_id, is_active);

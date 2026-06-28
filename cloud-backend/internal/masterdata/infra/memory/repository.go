@@ -45,6 +45,8 @@ type Repository struct {
 	recipeSuggestionChanges map[string][]domain.RecipeSuggestionChange
 	stopListUpdates         map[string]domain.StopListUpdateReview
 	assignmentAuditEvents   map[string]domain.ReviewAssignmentAuditEvent
+	receiptTemplates        map[string]domain.ReceiptTemplate
+	printers                map[string]domain.Printer
 	deliveryAssemblyErr     error
 }
 
@@ -80,6 +82,8 @@ func NewRepository() *Repository {
 		recipeSuggestionChanges: map[string][]domain.RecipeSuggestionChange{},
 		stopListUpdates:         map[string]domain.StopListUpdateReview{},
 		assignmentAuditEvents:   map[string]domain.ReviewAssignmentAuditEvent{},
+		receiptTemplates:        map[string]domain.ReceiptTemplate{},
+		printers:                map[string]domain.Printer{},
 	}
 }
 

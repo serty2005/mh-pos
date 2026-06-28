@@ -17,7 +17,9 @@ import {
   pricingPolicyPackageSchema,
   pricingPolicySchema,
   masterDataPackageSchema,
+  printerSchema,
   publicationSummarySchema,
+  receiptTemplateSchema,
   restaurantSchema,
   restaurantEdgeNodeSchema,
   roleSchema,
@@ -44,10 +46,12 @@ import {
   type ModifierGroup,
   type ModifierOption,
   type PairingCodeResult,
+  type Printer,
   type PricingPolicyPackage,
   type MasterDataPackage,
   type PricingPolicy,
   type PublicationSummary,
+  type ReceiptTemplate,
   type Restaurant,
   type RestaurantEdgeNode,
   type RestaurantTable,
@@ -378,4 +382,54 @@ export function listDeliveryStatuses(restaurantId: string) {
     `/restaurants/${encodeURIComponent(restaurantId)}/master-data/delivery-status`,
     z.array(deliveryStatusSchema),
   );
+}
+
+export function listReceiptTemplates(filter?: { restaurant_id?: string; document_type?: string }): Promise<ReceiptTemplate[]> {
+  const params = new URLSearchParams();
+  if (filter?.restaurant_id) params.set('restaurant_id', filter.restaurant_id);
+  if (filter?.document_type) params.set('document_type', filter.document_type);
+  const qs = params.toString();
+  return request(`/receipt-templates${qs ? `?${qs}` : ''}`, z.array(receiptTemplateSchema));
+}
+
+export function createReceiptTemplate(payload: Payload): Promise<ReceiptTemplate> {
+  return post('/receipt-templates', receiptTemplateSchema, payload);
+}
+
+export function updateReceiptTemplate(id: string, payload: Payload): Promise<ReceiptTemplate> {
+  return patch(`/receipt-templates/${encodeURIComponent(id)}`, receiptTemplateSchema, payload);
+}
+
+export function deactivateReceiptTemplate(id: string): Promise<ReceiptTemplate> {
+  return post(`/receipt-templates/${encodeURIComponent(id)}/deactivate`, receiptTemplateSchema, {});
+}
+
+export async function previewReceiptTemplate(payload: {
+  content: string;
+  document_type: string;
+  cpl: number;
+}): Promise<string> {
+  const res = await fetch('/api/v1/receipts/preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Preview failed: ${res.status}`);
+  return res.text();
+}
+
+export function listPrinters(restaurantId: string): Promise<Printer[]> {
+  return request(`/printers?${query(restaurantId)}`, z.array(printerSchema));
+}
+
+export function createPrinter(payload: Payload): Promise<Printer> {
+  return post('/printers', printerSchema, payload);
+}
+
+export function updatePrinter(id: string, payload: Payload): Promise<Printer> {
+  return patch(`/printers/${encodeURIComponent(id)}`, printerSchema, payload);
+}
+
+export function deactivatePrinter(id: string): Promise<Printer> {
+  return request(`/printers/${encodeURIComponent(id)}`, printerSchema, { method: 'DELETE' });
 }

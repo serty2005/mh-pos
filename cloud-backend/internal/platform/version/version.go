@@ -7,7 +7,8 @@ import (
 
 const (
 	// DefaultProductVersion задает единую версию продукта для модулей монорепозитория.
-	DefaultProductVersion = "0.1.13"
+	// POS-84: повышено до 0.1.15 для применения managed baseline со stream printers.
+	DefaultProductVersion = "0.1.15"
 )
 
 // Resolve возвращает версию модуля из env или canonical default.

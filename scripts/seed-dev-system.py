@@ -15,6 +15,7 @@ import uuid
 API_PREFIX = "/api/v1"
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 DEFAULT_OUTPUT = str(SCRIPT_DIR / ".seed-dev-system-summary.json")
+DEFAULT_RECEIPT_TEMPLATE_DIR = SCRIPT_DIR.parent / "shared" / "platform" / "receipt" / "engine" / "templates"
 
 # Карта расширения seed/smoke: новый Cloud-owned справочник или stream
 # добавляется здесь вместе с dataset key, publication stream и POS read check.
@@ -31,6 +32,7 @@ CLOUD_OWNED_SEED_SURFACES = (
     {"dataset_key": "pricing_policies", "publication_stream": "pricing_policy", "pos_read_check": "menu_items"},
     {"dataset_key": "recipes", "publication_stream": "recipes", "pos_read_check": "kitchen_recipe"},
     {"dataset_key": "stop_list", "publication_stream": "inventory_reference", "pos_read_check": "blocked_sale"},
+    {"dataset_key": "receipt_templates", "publication_stream": "receipt_templates", "pos_read_check": "sync_status"},
 )
 
 FORBIDDEN_MUTATING_ROUTE_FRAGMENTS = (
@@ -171,6 +173,8 @@ PERMISSIONS = {
         "pos.payment.refund",
         "pos.check.view",
         "pos.check.reprint",
+        "pos.print.status",
+        "pos.print.retry",
         "pos.sync.view",
         "pos.sync.retry_failed",
     ],
@@ -278,6 +282,10 @@ def system_sku(kind, name, suffix):
     return f"SEED-{kind.upper()}-{slug(name)}-{suffix}"
 
 
+def read_default_receipt_template(name):
+    return (DEFAULT_RECEIPT_TEMPLATE_DIR / name).read_text(encoding="utf-8")
+
+
 def build_seed_dataset(suffix):
     return {
         "restaurant": {
@@ -321,7 +329,7 @@ def build_seed_dataset(suffix):
             {"ref": "soup", "kind": "dish", "folder_ref": "kitchen", "name": "Tom Yum Soup", "base_unit": "portion", "price_minor": 34900, "tags": ["hot_kitchen"], "category_ref": "kitchen", "station": "hot"},
             {"ref": "sirloin", "kind": "good", "folder_ref": "inventory", "name": "Beef Sirloin", "base_unit": "g", "tags": ["hot_kitchen"]},
             {"ref": "sauce", "kind": "semi_finished", "folder_ref": "inventory", "name": "House Sauce", "base_unit": "g", "tags": ["hot_kitchen"]},
-            {"ref": "service_fee", "kind": "service", "folder_ref": "services", "name": "Service Fee", "base_unit": "service", "price_minor": 5000, "tags": ["service"], "category_ref": "services", "station": "service"},
+            {"ref": "service_fee", "kind": "service", "folder_ref": "services", "name": "Service Fee", "base_unit": "service", "price_minor": 5000, "tags": ["service"], "category_ref": "services", "station": "service", "qr_confirmation_enabled": True, "validity_mode": "cash_session"},
             {"ref": "sold_out_dessert", "kind": "dish", "folder_ref": "kitchen", "name": "Sold Out Cheesecake", "base_unit": "portion", "price_minor": 29900, "tags": ["stop_test"], "category_ref": "kitchen", "station": "cold"},
         ],
         "menu_categories": [
@@ -361,6 +369,28 @@ def build_seed_dataset(suffix):
         ],
         "stop_list": [
             {"catalog_ref": "sold_out_dessert", "available_quantity": 0, "reason": "Demo sold out item", "active": True},
+        ],
+        "receipt_templates": [
+            {
+                "document_type": "precheck",
+                "name": "Default precheck receipt",
+                "description": "System default ReceiptLine Level 1 precheck template",
+                "content": read_default_receipt_template("default_precheck.rl"),
+                "level": 1,
+                "cpl": 48,
+                "printer_class": "generic",
+                "is_default": True,
+            },
+            {
+                "document_type": "ticket",
+                "name": "Default service ticket",
+                "description": "System default ReceiptLine Level 1 service ticket template",
+                "content": read_default_receipt_template("default_ticket.rl"),
+                "level": 1,
+                "cpl": 48,
+                "printer_class": "generic",
+                "is_default": True,
+            },
         ],
         "floor": [
             {"ref": "main", "name": "Main Hall", "tables": [{"name": "T1", "seats": 2}, {"name": "T2", "seats": 4}, {"name": "T3", "seats": 6}]},
@@ -511,6 +541,9 @@ def seed_full_system(
             "kitchen_type": item.get("station", ""),
             "accounting_category": item["kind"],
         }
+        if item.get("qr_confirmation_enabled"):
+            body["qr_confirmation_enabled"] = True
+            body["validity_mode"] = item.get("validity_mode", "cash_session")
         created = request(cloud_client, "POST", f"{API_PREFIX}/master-data/catalog/items", body, expected_status=(201,))
         catalog_ids[item["ref"]] = created["id"]
         for tag_ref in item.get("tags", []):
@@ -652,6 +685,8 @@ def seed_full_system(
         )
         stop_list_ids.append(created["id"])
 
+    receipt_template_ids = seed_receipt_templates(cloud_client, dataset["receipt_templates"])
+
     hall_ids = []
     table_ids = []
     for hall in dataset["floor"]:
@@ -722,6 +757,7 @@ def seed_full_system(
         "recipe_line_ids": [line_id for item in recipe_versions for line_id in item["line_ids"]],
         "recipe_suggestion_ids": [item["suggestion_id"] for item in recipe_versions],
         "stop_list_ids": stop_list_ids,
+        "receipt_template_ids": receipt_template_ids,
         "publication_id": publication["id"],
         "delivery_status": delivery_status,
         "health": health,
@@ -758,6 +794,40 @@ def seed_full_system(
     return summary
 
 
+def seed_receipt_templates(cloud_client, templates):
+    ids = []
+    for template in templates:
+        query = {
+            "document_type": template["document_type"],
+            "is_default": "true",
+            "is_active": "true",
+        }
+        existing = request(cloud_client, "GET", f"{API_PREFIX}/receipt-templates", expected_status=(200,), query=query)
+        matched = next(
+            (
+                item
+                for item in existing
+                if item.get("document_type") == template["document_type"]
+                and item.get("is_default") is True
+                and not item.get("restaurant_id", "")
+            ),
+            None,
+        )
+        if matched:
+            updated = request(
+                cloud_client,
+                "PUT",
+                f"{API_PREFIX}/receipt-templates/{matched['id']}",
+                template,
+                expected_status=(200,),
+            )
+            ids.append(updated["id"])
+            continue
+        created = request(cloud_client, "POST", f"{API_PREFIX}/receipt-templates", template, expected_status=(201,))
+        ids.append(created["id"])
+    return ids
+
+
 def verify_pos_ready(pos_client, restaurant_id, node_device_id, client_device_id, manager_pin, wait_seconds, interval_seconds):
     login = request(
         pos_client,
@@ -781,10 +851,11 @@ def verify_pos_ready(pos_client, restaurant_id, node_device_id, client_device_id
         halls = request(pos_client, "GET", f"{API_PREFIX}/halls", expected_status=(200,), query={"restaurant_id": restaurant_id}, headers=headers)
         menu = request(pos_client, "GET", f"{API_PREFIX}/menu/items", expected_status=(200,), headers=headers)
         sync_status = request(pos_client, "GET", f"{API_PREFIX}/sync/status", expected_status=(200,), headers=headers)
-        if halls and menu:
+        receipt_templates_synced = int(sync_status.get("last_cloud_version") or 0) > 0
+        if halls and menu and receipt_templates_synced:
             return {"halls": len(halls), "menu_items": len(menu), "sync_status": sync_status}
         if time.monotonic() >= deadline:
-            raise RuntimeError("POS Edge did not expose seeded halls/menu before timeout")
+            raise RuntimeError("POS Edge did not expose seeded halls/menu and applied Cloud->Edge streams before timeout")
         time.sleep(max(0, interval_seconds))
 
 
@@ -959,6 +1030,25 @@ def run_minimal_flow_smoke(
         wait_seconds=wait_seconds,
         interval_seconds=interval_seconds,
     )
+    ticket_line = {}
+    ticket_menu_id = menu_refs.get("service_fee", "")
+    if ticket_menu_id:
+        ticket_menu_item = find_by_id(menu_items, ticket_menu_id)
+        if not ticket_menu_item:
+            raise RuntimeError(f"POS Edge menu does not expose service ticket menu item {ticket_menu_id}")
+        ticket_line = request(
+            pos_client,
+            "POST",
+            f"{API_PREFIX}/orders/{order['id']}/lines",
+            {
+                "command_id": f"cmd-minimal-{command_suffix()}-ticket-line",
+                "menu_item_id": ticket_menu_id,
+                "quantity": 1,
+                "selected_modifiers": selected_required_modifiers(ticket_menu_item),
+            },
+            expected_status=(201,),
+            headers=waiter_headers,
+        )
     precheck = request(
         pos_client,
         "POST",
@@ -989,6 +1079,18 @@ def run_minimal_flow_smoke(
     check_id = check.get("id", "")
     if not check_id:
         raise RuntimeError("minimal flow payment did not create final check")
+    issued_tickets = request(pos_client, "GET", f"{API_PREFIX}/checks/{check_id}/tickets", expected_status=(200,), headers=cashier_headers)
+    ticket_ids = [item.get("id", "") for item in issued_tickets if item.get("id")]
+    if ticket_line and not ticket_ids:
+        raise RuntimeError(f"service ticket line {ticket_line.get('id', '')} did not issue ticket units for check {check_id}")
+    manager_headers = login_pos(pos_client, node_device_id, client_device_id, pins["manager_pin"])
+    print_jobs = wait_for_print_jobs_for_sources(
+        pos_client,
+        manager_headers,
+        [("precheck", precheck["id"])] + [("ticket", ticket_id) for ticket_id in ticket_ids],
+        wait_seconds,
+        interval_seconds,
+    )
 
     check_closed = wait_for_cloud_event(
         cloud_client,
@@ -1074,9 +1176,13 @@ def run_minimal_flow_smoke(
     return {
         "order_id": order["id"],
         "order_line_id": line["id"],
+        "ticket_order_line_id": ticket_line.get("id", ""),
         "precheck_id": precheck["id"],
         "payment_id": payment["id"],
         "check_id": check_id,
+        "issued_ticket_ids": ticket_ids,
+        "print_job_ids": sorted(job["id"] for job in print_jobs),
+        "print_job_statuses": sorted({job.get("status", "") for job in print_jobs}),
         "kitchen_ticket_id": kitchen_ticket["id"],
         "item_served_event_id": item_served["event_id"],
         "check_closed_event_id": check_closed["event_id"],
@@ -1093,6 +1199,25 @@ def run_minimal_flow_smoke(
         "olap_kitchen_timing_summary_count": len(kitchen_timing_summary),
         "blocked_sale_error_code": error_code(blocked_sale),
     }
+
+
+def wait_for_print_jobs_for_sources(pos_client, headers, expected_sources, wait_seconds, interval_seconds):
+    expected = {(document_type, source_id) for document_type, source_id in expected_sources if source_id}
+    if not expected:
+        raise RuntimeError("minimal flow print smoke requires at least one expected print source")
+    deadline = time.monotonic() + max(1, wait_seconds)
+    while True:
+        jobs = request(pos_client, "GET", f"{API_PREFIX}/print/jobs", expected_status=(200,), query={"limit": 100}, headers=headers)
+        matched = [
+            job for job in jobs
+            if (job.get("document_type", ""), job.get("source_id", "")) in expected
+        ]
+        found = {(job.get("document_type", ""), job.get("source_id", "")) for job in matched}
+        if expected.issubset(found):
+            return matched
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"POS Edge did not enqueue print jobs for sources {sorted(expected - found)} before timeout")
+        time.sleep(max(0, interval_seconds))
 
 
 def run_kitchen_process_smoke_flow(

@@ -18,6 +18,7 @@ import (
 	"pos-backend/internal/pos/domain/order"
 	"pos-backend/internal/pos/domain/precheck"
 	"pos-backend/internal/pos/domain/pricing"
+	"pos-backend/internal/pos/domain/receipt"
 	"pos-backend/internal/pos/domain/restaurant"
 	"pos-backend/internal/pos/domain/shared"
 	"pos-backend/internal/pos/domain/shift"
@@ -402,6 +403,8 @@ const (
 	MasterDataStreamRecipes          = shared.MasterDataStreamRecipes
 	MasterDataStreamInventory        = shared.MasterDataStreamInventory
 	MasterDataStreamProposalFeedback = shared.MasterDataStreamProposalFeedback
+	MasterDataStreamReceiptTemplates = shared.MasterDataStreamReceiptTemplates
+	MasterDataStreamPrinters         = shared.MasterDataStreamPrinters
 
 	SyncEnvelopeVersion = shared.SyncEnvelopeVersion
 )
@@ -427,6 +430,30 @@ type RecipeVersion = inventory.RecipeVersion
 type RecipeLine = inventory.RecipeLine
 type StopListEntry = inventory.StopListEntry
 type WarehouseReference = inventory.WarehouseReference
+
+// ReceiptTemplate — Cloud-owned read model шаблона печати (Cloud -> Edge stream receipt_templates).
+type ReceiptTemplate = receipt.Template
+type ReceiptPrinter = receipt.Printer
+type ReceiptDocumentType = receipt.DocumentType
+type PrintJob = receipt.PrintJob
+type PrintJobStatus = receipt.PrintJobStatus
+type PrintJobListQuery = receipt.PrintJobListQuery
+
+const (
+	ReceiptDocumentPrecheck       = receipt.DocumentPrecheck
+	ReceiptDocumentCheckNonfiscal = receipt.DocumentCheckNonfiscal
+	ReceiptDocumentTicket         = receipt.DocumentTicket
+	ReceiptDocumentKitchenService = receipt.DocumentKitchenService
+	ReceiptDocumentCashInOut      = receipt.DocumentCashInOut
+	ReceiptDocumentAcceptance     = receipt.DocumentAcceptance
+)
+
+const (
+	PrintJobPending    = receipt.PrintJobPending
+	PrintJobProcessing = receipt.PrintJobProcessing
+	PrintJobSucceeded  = receipt.PrintJobSucceeded
+	PrintJobFailed     = receipt.PrintJobFailed
+)
 
 const (
 	RecipeVersionDraft    = inventory.RecipeVersionDraft

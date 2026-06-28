@@ -976,7 +976,7 @@ CREATE TABLE IF NOT EXISTS cloud_master_sync_state (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT CHECK (restaurant_id IS NULL OR restaurant_id <> ''),
   node_device_id TEXT NOT NULL CHECK (node_device_id <> ''),
-  stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','proposal_feedback')),
+  stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','proposal_feedback','receipt_templates','printers')),
   direction TEXT NOT NULL CHECK (direction = 'cloud_to_edge'),
   sync_mode TEXT NOT NULL CHECK (sync_mode IN ('full_snapshot','incremental')),
   checkpoint_token TEXT CHECK (checkpoint_token IS NULL OR checkpoint_token <> ''),
@@ -1711,7 +1711,7 @@ CREATE TABLE IF NOT EXISTS cloud_master_sync_state (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT CHECK (restaurant_id IS NULL OR restaurant_id <> ''),
   node_device_id TEXT NOT NULL CHECK (node_device_id <> ''),
-  stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','recipes','inventory_reference','proposal_feedback')),
+  stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','recipes','inventory_reference','proposal_feedback','receipt_templates','printers')),
   direction TEXT NOT NULL CHECK (direction = 'cloud_to_edge'),
   sync_mode TEXT NOT NULL CHECK (sync_mode IN ('full_snapshot','incremental')),
   checkpoint_token TEXT CHECK (checkpoint_token IS NULL OR checkpoint_token <> ''),
@@ -1729,7 +1729,7 @@ CREATE TABLE IF NOT EXISTS cloud_master_sync_state_v2 (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT CHECK (restaurant_id IS NULL OR restaurant_id <> ''),
   node_device_id TEXT NOT NULL CHECK (node_device_id <> ''),
-  stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','proposal_feedback')),
+  stream_name TEXT NOT NULL CHECK (stream_name IN ('restaurants','devices','staff','floor','catalog','menu','pricing_policy','recipes','inventory_reference','proposal_feedback','receipt_templates','printers')),
   direction TEXT NOT NULL CHECK (direction = 'cloud_to_edge'),
   sync_mode TEXT NOT NULL CHECK (sync_mode IN ('full_snapshot','incremental')),
   checkpoint_token TEXT CHECK (checkpoint_token IS NULL OR checkpoint_token <> ''),
@@ -1995,3 +1995,72 @@ ALTER TABLE catalog_items ADD COLUMN qr_confirmation_enabled INTEGER NOT NULL DE
 ALTER TABLE catalog_items ADD COLUMN single_unit_per_line INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE catalog_items ADD COLUMN validity_mode TEXT NOT NULL DEFAULT '';
 ALTER TABLE catalog_items ADD COLUMN validity_expires_at TEXT;
+
+-- POS-71: Cloud-owned read model шаблонов печати. Edge хранит только эффективный набор
+-- (is_active = TRUE строки), который Cloud -> Edge stream receipt_templates заменяет атомарно.
+CREATE TABLE IF NOT EXISTS receipt_templates (
+  id TEXT NOT NULL PRIMARY KEY,
+  restaurant_id TEXT,
+  document_type TEXT NOT NULL,
+  name TEXT NOT NULL,
+  content TEXT NOT NULL,
+  level INTEGER NOT NULL DEFAULT 1,
+  cpl INTEGER NOT NULL,
+  printer_class TEXT NOT NULL DEFAULT 'generic',
+  is_default INTEGER NOT NULL DEFAULT 0,
+  version INTEGER NOT NULL DEFAULT 1,
+  synced_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS receipt_templates_type_default
+  ON receipt_templates (document_type, is_default);
+
+-- POS-84: Cloud-owned read model ESC/POS принтеров. Edge получает активный набор
+-- из stream printers и заменяет строки конкретного ресторана атомарно в apply tx.
+CREATE TABLE IF NOT EXISTS receipt_printers (
+  id TEXT NOT NULL PRIMARY KEY,
+  restaurant_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('tcp','usb')),
+  address TEXT,
+  port INTEGER,
+  document_types TEXT NOT NULL CHECK (json_valid(document_types)),
+  codepage TEXT NOT NULL DEFAULT '' CHECK (codepage IN ('','cp437','cp866')),
+  paper_cut_type TEXT NOT NULL DEFAULT 'partial' CHECK (paper_cut_type IN ('partial','full')),
+  cpl INTEGER NOT NULL CHECK (cpl IN (32,42,48,56,80)),
+  is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+  cloud_version INTEGER NOT NULL DEFAULT 0 CHECK (cloud_version >= 0),
+  synced_at TEXT NOT NULL,
+  CHECK ((type = 'tcp' AND address IS NOT NULL AND address <> '' AND port IS NOT NULL AND port > 0) OR type = 'usb')
+);
+
+CREATE INDEX IF NOT EXISTS receipt_printers_restaurant_active
+  ON receipt_printers (restaurant_id, is_active, id);
+
+-- POS-74: локальная Edge очередь нефискальной печати. Payload не хранится:
+-- worker заново читает immutable snapshot источника и актуальный Cloud-owned template.
+CREATE TABLE IF NOT EXISTS print_jobs (
+  id TEXT NOT NULL PRIMARY KEY,
+  restaurant_id TEXT NOT NULL,
+  document_type TEXT NOT NULL CHECK (document_type IN ('precheck','check_nonfiscal','ticket')),
+  source_kind TEXT NOT NULL CHECK (source_kind IN ('precheck','check','ticket')),
+  source_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending','processing','succeeded','failed')),
+  attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts INTEGER NOT NULL DEFAULT 3 CHECK (max_attempts > 0),
+  printer_class TEXT NOT NULL DEFAULT 'generic',
+  last_error TEXT,
+  next_attempt_at TEXT,
+  locked_by TEXT,
+  locked_at TEXT,
+  printed_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(document_type, source_id)
+);
+
+CREATE INDEX IF NOT EXISTS print_jobs_pending_due
+  ON print_jobs (status, next_attempt_at, created_at);
+
+CREATE INDEX IF NOT EXISTS print_jobs_restaurant_status_created
+  ON print_jobs (restaurant_id, status, created_at);

@@ -8,6 +8,11 @@
       "type": "stdio",
       "command": "npx",
       "args": ["@playwright/mcp", "--headless", "--no-sandbox"]
+    },
+    "codegraph": {
+      "type": "stdio",
+      "command": "codegraph",
+      "args": ["serve", "--mcp", "--path", "/home/master/repos/myhoreca-pos"]
     }
   },
   "permissions": {

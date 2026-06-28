@@ -129,6 +129,16 @@ type Repository interface {
 	GetReviewAssignmentAuditEvent(context.Context, string) (domain.ReviewAssignmentAuditEvent, error)
 	AppendReviewAssignmentAuditEvent(context.Context, domain.ReviewAssignmentAuditEvent) error
 	ListReviewAssignmentAuditEvents(context.Context, string, string, int, int) ([]domain.ReviewAssignmentAuditEvent, error)
+	CreateReceiptTemplate(context.Context, domain.ReceiptTemplate) (domain.ReceiptTemplate, error)
+	UpdateReceiptTemplate(context.Context, domain.ReceiptTemplate) (domain.ReceiptTemplate, error)
+	GetReceiptTemplate(context.Context, string) (domain.ReceiptTemplate, error)
+	ListReceiptTemplates(context.Context, ReceiptTemplateFilter) ([]domain.ReceiptTemplate, error)
+	ListActiveReceiptTemplatesForRestaurant(context.Context, string) ([]domain.ReceiptTemplate, error)
+	CreatePrinter(context.Context, domain.Printer) (domain.Printer, error)
+	UpdatePrinter(context.Context, domain.Printer) (domain.Printer, error)
+	GetPrinter(context.Context, string) (domain.Printer, error)
+	ListPrinters(context.Context, PrinterFilter) ([]domain.Printer, error)
+	ListActivePrintersForRestaurant(context.Context, string) ([]domain.Printer, error)
 }
 
 // IDGenerator задает источник идентификаторов для use cases и тестов.
@@ -2810,6 +2820,18 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 		return domain.MasterDataPacket{}, nil, nil, err
 	}
 	streams = append(streams, feedback)
+	templates, templateCount, err := s.receiptTemplatesStream(ctx, restaurantID, packet.NodeDeviceID, packet.SyncMode, packet.CloudVersion, packet.CloudUpdatedAt)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
+	streams = append(streams, templates)
+	counts["receipt_templates"] = templateCount
+	printers, printerCount, err := s.printersStream(ctx, restaurantID, packet.NodeDeviceID, packet.SyncMode, packet.CloudVersion, packet.CloudUpdatedAt)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
+	streams = append(streams, printers)
+	counts["printers"] = printerCount
 	return packet, counts, streams, nil
 }
 

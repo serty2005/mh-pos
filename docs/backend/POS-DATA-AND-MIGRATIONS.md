@@ -38,6 +38,7 @@ Managed SQL files, реализовано сейчас:
 - `financial_operations`, `financial_operation_items`
 - `manager_override_audit`
 - `local_event_log`, `pos_sync_outbox`, `cloud_master_sync_state`
+- `receipt_templates`, `receipt_printers`, `print_jobs`
 
 Cashier runtime invariants:
 
@@ -74,6 +75,10 @@ Cashier runtime invariants:
 
 - `recipe_versions` и `recipe_lines` являются Cloud-owned read-only reference data для KDS UI и локальной проверки stop-list; POS Edge применяет их через stream `recipes`.
 - `stop_lists` применяется через stream `inventory_reference`; Edge manager/KDS write overlay и conflict policy остаются запланировано далее.
+- `receipt_templates` (POS-71) — Cloud-owned read model шаблонов печати в `pos-backend/migrations/sqlite/001_init.sql`: колонки `id`, `restaurant_id` (NULL = tenant-level default), `document_type`, `name`, `content`, `level`, `cpl`, `printer_class`, `is_default`, `version`, `synced_at`, индекс `receipt_templates_type_default`. Edge хранит только активные строки; stream `receipt_templates` атомарно заменяет весь набор. POS Edge не редактирует шаблоны локально.
+- `receipt_printers` (POS-84) — Cloud-owned read model ESC/POS routing config в `pos-backend/migrations/sqlite/001_init.sql`: колонки `id`, `restaurant_id`, `name`, `type`, `address`, `port`, `document_types` JSON, `codepage`, `paper_cut_type`, `cpl`, `is_active`, `cloud_version`, `synced_at`, индекс `receipt_printers_restaurant_active`. Stream `printers` атомарно заменяет строки конкретного ресторана; один `document_type` может иметь несколько активных принтеров.
+- `print_jobs` (POS-74) — локальная Edge очередь нефискальной печати в `pos-backend/migrations/sqlite/001_init.sql`: колонки `id`, `restaurant_id`, `document_type` (`precheck`, `check_nonfiscal`, `ticket`), `source_kind`, `source_id`, `status` (`pending`, `processing`, `succeeded`, `failed`), `attempts`, `max_attempts`, `printer_class`, `last_error`, `next_attempt_at`, `locked_by`, `locked_at`, `printed_at`, `created_at`, `updated_at`; индексы `print_jobs_pending_due`, `print_jobs_restaurant_status_created`; unique `(document_type, source_id)` защищает от дублей при replay. Таблица не хранит print payload: worker читает immutable snapshot источника и template из `receipt_templates`.
+- Запланировано далее: целевая SQLite схема печати должна добавить `sales_points`, `restaurant_sections`, `print_routes` или эквивалентную таблицу назначений, audit Edge override изменений и `print_job_targets`. `sales_points` принадлежат ресторану, содержат обязательные `name` и `analytics_tag`, а `cash_sessions` должны ссылаться на точку продаж. `restaurant_sections` принадлежат ресторану и имеют режим `hall_section` или `kitchen_workshop`. `print_job_targets` хранит отдельный статус/retry/error/printed_at для каждого физического принтера, выбранного схемой печати.
 - POS Edge не создает `StockDocument`, `StockMove`, stock balance или costing rows.
 - `StockDocumentPosted` не входит в целевой Edge -> Cloud operational catalog.
 - Все складские документы, движения, остатки и себестоимость создаются только Cloud Inventory Worker.
@@ -130,10 +135,11 @@ Managed SQL files, реализовано сейчас:
 - Cloud baseline `0.1.12` переносит прежний `cloud_employees.restaurant_id` в memberships, удаляет restaurant ownership из roles/employees, снимает legacy `restaurant_id <> ''` constraints с foundation-таблиц tenant catalog и добавляет `cloud_master_data_delivery_states` для persistent per-Edge ACK/lag/error/retry state. Совпадающие role names получают deterministic suffix из role ID. Startup выполняет обязательный PostgreSQL backup до checksum/version upgrade и проверяет runtime schema до запуска HTTP/workers.
 
 - Cloud recipe/inventory-adjacent foundation is not equal to full POS Edge inventory runtime support.
-- POS Edge `ApplyMasterData` сейчас принимает `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`, `recipes`, `inventory_reference`, `proposal_feedback`.
+- POS Edge `ApplyMasterData` сейчас принимает `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`, `recipes`, `inventory_reference`, `proposal_feedback`, `receipt_templates`, `printers`.
 - `catalog` stream applies catalog folders/tags/items, service catalog items and modifier groups/options/bindings/effective menu-item links; `menu` stream applies menu items.
 - Cloud хранит menu categories отдельно от catalog folders; catalog publication не использует menu categories как замену folder hierarchy.
 - `recipes` и `inventory_reference` поддерживаются `mastersync.Service` apply path для `recipe_versions`, `recipe_lines`, `stop_lists` и warehouse reference; `proposal_feedback` обновляет локальные `kitchen_proposals` по `suggestion_id` без прямой мутации catalog/recipe read model.
+- `receipt_templates` и `printers` поддерживают нефискальную печать: шаблоны заменяются эффективным Cloud package, принтеры заменяются по `restaurant_id` и используются worker routing без deployment env var.
 
 Реализовано сейчас для Cloud-centric inventory:
 

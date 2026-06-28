@@ -1,0 +1,23 @@
+{
+  "document_type": "ticket",
+  "ticket_number": "019044ab-0000-7000-0000-000000000001",
+  "ticket_display_number": "0001",
+  "qr_payload": "MHT1:019044ab-0000-7000-0000-000000000001",
+  "service_name": "Standard Ticket",
+  "category_name": "Events",
+  "price_minor": 50000,
+  "currency_code": "RUB",
+  "sale_date_local": "2026-06-24",
+  "sale_time_local": "10:15:00",
+  "timezone": "Asia/Jakarta",
+  "validity_mode": "cash_session",
+  "validity_date_local": null,
+  "restaurant": {
+    "name": "Exhibition TechWorld 2026",
+    "address": "Jl. Panglima Polim No.1, Jakarta"
+  },
+  "cashier": { "name": "Ahmad Kasir" },
+  "shift_number": 42,
+  "business_date": "2026-06-24",
+  "is_copy": false
+}

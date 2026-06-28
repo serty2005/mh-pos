@@ -23,6 +23,21 @@ type ticketIssuer interface {
 	IssueForClosedCheck(ctx context.Context, in appticket.IssueInput) ([]domain.TicketUnit, error)
 }
 
+// printEnqueuer ставит локальные print jobs после закрытия check без изменения financial state.
+type printEnqueuer interface {
+	EnqueueForClosedCheck(context.Context, PrintInput) error
+}
+
+// PrintInput описывает immutable источники, которые надо поставить в Edge print queue.
+type PrintInput struct {
+	Meta         shared.CommandMeta
+	RestaurantID string
+	CheckID      string
+	PrecheckID   string
+	TicketIDs    []string
+	Now          time.Time
+}
+
 const (
 	defaultClosedOrdersLimit = 50
 	maxClosedOrdersLimit     = 100
@@ -37,10 +52,15 @@ type Service struct {
 	ids     idgen.Generator
 	clock   clock.Clock
 	tickets ticketIssuer
+	prints  printEnqueuer
 }
 
 func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, tickets ticketIssuer) *Service {
-	return &Service{repo: repo, tx: tx, ids: ids, clock: clock, tickets: tickets}
+	return NewServiceWithOptions(repo, tx, ids, clock, tickets, nil)
+}
+
+func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, tickets ticketIssuer, prints printEnqueuer) *Service {
+	return &Service{repo: repo, tx: tx, ids: ids, clock: clock, tickets: tickets, prints: prints}
 }
 
 type CapturePaymentCommand struct {
@@ -440,8 +460,10 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 		}
 		// POS-48: QR-билеты выпускаются в той же транзакции, что и закрытие check.
 		// Граница financial transaction единая: при откате оплаты билеты не остаются.
+		var issuedTickets []domain.TicketUnit
 		if s.tickets != nil {
-			if _, err := s.tickets.IssueForClosedCheck(ctx, appticket.IssueInput{
+			var err error
+			if issuedTickets, err = s.tickets.IssueForClosedCheck(ctx, appticket.IssueInput{
 				Meta:          cmd.CommandMeta,
 				RestaurantID:  order.RestaurantID,
 				DeviceID:      order.DeviceID,
@@ -452,6 +474,22 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 				SaleDateLocal: businessDate,
 				Timezone:      restaurant.Timezone,
 				Now:           now,
+			}); err != nil {
+				return err
+			}
+		}
+		if s.prints != nil {
+			ticketIDs := make([]string, 0, len(issuedTickets))
+			for _, unit := range issuedTickets {
+				ticketIDs = append(ticketIDs, unit.ID)
+			}
+			if err := s.prints.EnqueueForClosedCheck(ctx, PrintInput{
+				Meta:         cmd.CommandMeta,
+				RestaurantID: order.RestaurantID,
+				CheckID:      check.ID,
+				PrecheckID:   precheck.ID,
+				TicketIDs:    ticketIDs,
+				Now:          now,
 			}); err != nil {
 				return err
 			}

@@ -11,7 +11,9 @@ export type CloudRouteId =
   | 'floor'
   | 'publications'
   | 'inventory'
-  | 'reports';
+  | 'reports'
+  | 'receipt-templates'
+  | 'printers';
 
 export type CloudRouteScope = 'global' | 'restaurant';
 

@@ -73,6 +73,13 @@ func nullableInt64(v *int64) any {
 	return *v
 }
 
+func nullableInt(v *int) any {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
 func nullableTime(v *time.Time) any {
 	if v == nil {
 		return nil

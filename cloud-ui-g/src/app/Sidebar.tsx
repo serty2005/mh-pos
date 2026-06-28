@@ -4,9 +4,11 @@ import {
   ChevronDown,
   ChefHat,
   ClipboardList,
+  FileText,
   Layers3,
   KeyRound,
   Percent,
+  Printer,
   RefreshCw,
   Settings2,
   ShieldCheck,
@@ -65,6 +67,8 @@ export default function Sidebar({
     publications: Store,
     inventory: Warehouse,
     reports: ChefHat,
+    'receipt-templates': FileText,
+    printers: Printer,
   };
   const selectedRestaurant = restaurants.find((restaurant) => restaurant.id === selectedRestaurantId) ?? null;
   const selectorDisabled = restaurantsStatus !== 'ready';

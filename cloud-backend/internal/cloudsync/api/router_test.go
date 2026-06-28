@@ -229,6 +229,61 @@ func TestExchangeOmitsCloudPackageForDisabledModule(t *testing.T) {
 	}
 }
 
+func TestReceiptPreviewReturnsSVG(t *testing.T) {
+	repo := memory.NewRepository()
+	router := api.NewRouter(app.NewService(repo, fixedClock{}))
+	body := `{"template_content":"{a:center}{{.title}}\n{qr:size=4:{{.qr_payload}}}","document_type":"precheck","cpl":48,"print_context":{"title":"ПРЕДЧЕК","qr_payload":"MHT1:019"}}`
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts/preview", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "image/svg+xml" {
+		t.Fatalf("unexpected content type %q", got)
+	}
+	if !strings.Contains(rec.Body.String(), `<svg `) || !strings.Contains(rec.Body.String(), `ПРЕДЧЕК`) || !strings.Contains(rec.Body.String(), `data-size="4"`) {
+		t.Fatalf("unexpected svg: %s", rec.Body.String())
+	}
+}
+
+func TestReceiptPreviewBadTemplateReturnsParseError(t *testing.T) {
+	repo := memory.NewRepository()
+	router := api.NewRouter(app.NewService(repo, fixedClock{}))
+	body := `{"template_content":"{qr:}","document_type":"precheck","cpl":48,"print_context":{}}`
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts/preview", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || rec.Header().Get("X-Error-Code") != "TEMPLATE_PARSE_ERROR" {
+		t.Fatalf("expected TEMPLATE_PARSE_ERROR, got %d %s: %s", rec.Code, rec.Header().Get("X-Error-Code"), rec.Body.String())
+	}
+}
+
+func TestReceiptPreviewBadContextReturnsSchemaError(t *testing.T) {
+	repo := memory.NewRepository()
+	router := api.NewRouter(app.NewService(repo, fixedClock{}))
+	body := `{"template_content":"ok","document_type":"precheck","cpl":48,"print_context":[]}`
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts/preview", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || rec.Header().Get("X-Error-Code") != "CONTEXT_SCHEMA_ERROR" {
+		t.Fatalf("expected CONTEXT_SCHEMA_ERROR, got %d %s: %s", rec.Code, rec.Header().Get("X-Error-Code"), rec.Body.String())
+	}
+}
+
+func TestReceiptPreviewDoesNotRequireModuleGate(t *testing.T) {
+	repo := memory.NewRepository()
+	service := app.NewService(repo, fixedClock{})
+	router := api.NewRouterWithProvisioningOLAPAndLicense(service, nil, nil, deniedModuleGate{moduleID: licensegate.CheckerFlow})
+	body := `{"template_content":"ok","document_type":"precheck","cpl":48,"print_context":{}}`
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts/preview", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected preview to stay available without checker-flow, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestProvisioningMasterDataPutAndGet(t *testing.T) {
 	repo := memory.NewRepository()
 	router := api.NewRouter(app.NewService(repo, fixedClock{}))

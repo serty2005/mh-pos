@@ -27,6 +27,8 @@ const (
 	MasterDataStreamRecipes          MasterDataStream = "recipes"
 	MasterDataStreamInventory        MasterDataStream = "inventory_reference"
 	MasterDataStreamProposalFeedback MasterDataStream = "proposal_feedback"
+	MasterDataStreamReceiptTemplates MasterDataStream = "receipt_templates"
+	MasterDataStreamPrinters         MasterDataStream = "printers"
 )
 
 type MasterDataSyncState struct {

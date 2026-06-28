@@ -28,6 +28,11 @@
 | Check | Edge | Создается после полной оплаты под кассовой сменой оплаты; финализированные чеки не переписываются через cancellation/refund | `CheckCreated` and `CheckClosed` are current Edge -> Cloud operational events; `CheckRefunded` is legacy accepted | реализовано сейчас |
 | Ticket unit (QR) | Edge | Выпускается один раз после закрытия final check для каждой QR-enabled line; immutable, reprint не создает новую единицу | `TicketIssued` Edge -> Cloud operational event; Cloud принимает как audit, sales projection — POS-40 | реализовано сейчас |
 | Tax/pricing policy reference | Cloud | Edge read model only | `pricing_policy` Cloud -> Edge stream for `tax_profiles`, `tax_rules`, `service_charge_rules`, `pricing_policies` | реализовано сейчас |
+| Receipt template | Cloud | Edge read model only | `receipt_templates` Cloud -> Edge stream; Edge apply атомарно заменяет эффективный набор | реализовано сейчас (POS-71): restaurant-specific шаблоны перекрывают tenant-level defaults; Edge хранит только `is_active` строки |
+| ESC/POS Printer config | Cloud | Edge read model only | `printers` Cloud -> Edge stream; Edge apply атомарно заменяет `receipt_printers` строки ресторана | реализовано сейчас (POS-82/POS-84): Cloud CRUD + stream, Edge consumer и worker routing |
+| Edge printer/print-route override | Edge | Cloud read model/audit | Edge применяет изменение сразу, пишет local audit и отправляет override event в Cloud; Cloud хранит видимость/projection и может включать принятый effective state в последующие доставки | запланировано далее: не proposal flow |
+| Sales point | Cloud target, Edge operational use | Edge может локально переопределить назначение принтера с audit | Cloud -> Edge reference плюс Edge -> Cloud override/audit для назначения принтера | запланировано далее: restaurant-scoped `name` + `analytics_tag`, cash session открывается внутри sales point |
+| Restaurant section | Cloud target, Edge operational use | Edge может локально переопределить назначение принтера секции с audit | Cloud -> Edge reference плюс Edge -> Cloud override/audit для назначения принтера | запланировано далее: `hall_section` или `kitchen_workshop`, принтеры секции маршрутизируют `precheck`/`kitchen_service` |
 | Operational order adjustments | Edge | Yes while order is open | runtime-команды; будущие policy ids могут ограничивать допустимые варианты | реализовано сейчас |
 | Stock document/move/ledger | Cloud Inventory Worker | No | Edge business events -> Cloud worker | реализовано сейчас for normalized item payloads; Edge-side stock document service был pre-pilot legacy и удален |
 | Kitchen ticket/status | POS Edge/KDS | Yes | Edge -> Cloud `KitchenTicketStatusChanged`/`ItemServed` | реализовано сейчас для ticket lifecycle; receipt/proposal/stop-list Edge input flows реализованы сейчас |
@@ -45,10 +50,15 @@
 - `pricing_policy`
 - `recipes`
 - `inventory_reference`
+- `receipt_templates`
+- `printers`
 
 `catalog` payload включает catalog folders/tags/services и modifier groups/options/bindings/effective links; `menu` payload включает menu items. Menu categories остаются отдельным понятием и не заменяют catalog folders.
 `pricing_policy` включает tax/service-charge reference tables и automatic discount/surcharge policies; manual override runtime остается backend RBAC-controlled action.
 `recipes` включает `recipe_versions` и `recipe_lines`; `inventory_reference` включает `stop_lists` и Cloud-owned `warehouses`.
+`receipt_templates` собирает эффективный набор шаблонов печати: все активные restaurant-specific шаблоны плюс tenant-level defaults (`restaurant_id IS NULL`) для тех `document_type`, по которым нет restaurant-specific шаблона. Edge apply атомарно заменяет все строки `receipt_templates`; stream-specific checkpoint фиксирует `MAX(updated_at)` и число активных строк, чтобы Edge применял пакет только при изменении набора.
+`printers` собирает все `is_active=TRUE` принтеры ресторана. Edge apply атомарно заменяет строки `receipt_printers`; stream-specific checkpoint `printers:{restaurant_id}:{MAX(updated_at).UnixMilli()}:{count}`; soft-delete убирает принтер из следующего пакета, текущие print jobs не прерываются. Print worker выбирает активные строки по `restaurant_id + document_type`; если подходящих строк нет, job завершается через обычную retry policy с безопасным кодом `PRINT_ROUTING_NOT_CONFIGURED`.
+Запланировано далее: Edge settings может менять физические принтеры и схему печати локально. Такие изменения применяются немедленно на Edge, пишутся в audit и отправляются в Cloud как факты override. Cloud не превращает их в proposal и не требует approve перед применением на Edge; Cloud хранит read model/audit и должен уметь вернуть effective state на следующие Edge доставки.
 `staff` собирается из tenant-level roles/employees и `cloud_employee_restaurant_memberships`: `organization.manage` входит во все restaurant packages, остальные employees только в явно разрешенные. Edge деактивирует локальных сотрудников, отсутствующих в полном eligible set, поэтому revoke блокирует новый login и уже открытую session на следующем apply.
 
 Canonical seed/smoke для Cloud-owned ingest остается `scripts/seed-dev-system.py`. Новый Cloud-owned stream, справочник или POS read flow добавляется вместе с seed data, automatic delivery package, POS read assertion/smoke step, script guard `CLOUD_OWNED_SEED_SURFACES` и профильными docs; отдельный user-facing seed/smoke entrypoint не добавляется без отдельного архитектурного решения.

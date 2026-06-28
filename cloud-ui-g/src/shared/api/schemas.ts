@@ -419,3 +419,73 @@ export type UnassignedEdgeNode = z.infer<typeof unassignedEdgeNodeSchema>;
 export type AssignDeviceResult = z.infer<typeof assignDeviceResultSchema>;
 export type AssignmentStatus = z.infer<typeof assignmentStatusSchema>;
 export type PairingCodeResult = z.infer<typeof pairingCodeResultSchema>;
+
+export const printerTypeSchema = z.enum(['tcp', 'usb']);
+export type PrinterType = z.infer<typeof printerTypeSchema>;
+
+export const printerDocumentTypeSchema = z.enum([
+  'precheck',
+  'check_nonfiscal',
+  'ticket',
+  'kitchen_service',
+  'cash_in_out',
+  'acceptance',
+]);
+export type PrinterDocumentType = z.infer<typeof printerDocumentTypeSchema>;
+
+export const printerCodepageSchema = z.enum(['', 'cp437', 'cp866']);
+export type PrinterCodepage = z.infer<typeof printerCodepageSchema>;
+
+export const paperCutTypeSchema = z.enum(['full', 'partial']);
+export type PaperCutType = z.infer<typeof paperCutTypeSchema>;
+
+export const printerSchema = z.object({
+  id: z.string(),
+  org_id: z.string(),
+  restaurant_id: z.string(),
+  name: z.string(),
+  type: printerTypeSchema,
+  address: z.string().optional().default(''),
+  port: z.number().nullable().optional(),
+  document_types: z.array(printerDocumentTypeSchema),
+  codepage: printerCodepageSchema,
+  paper_cut_type: paperCutTypeSchema,
+  cpl: z.number(),
+  is_active: z.boolean(),
+  version: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export type Printer = z.infer<typeof printerSchema>;
+
+export const receiptTemplateDocumentTypeSchema = z.enum([
+  'precheck',
+  'check_nonfiscal',
+  'ticket',
+  'kitchen_service',
+  'cash_in_out',
+  'acceptance',
+]);
+
+export type ReceiptTemplateDocumentType = z.infer<typeof receiptTemplateDocumentTypeSchema>;
+
+export const receiptTemplateSchema = z.object({
+  id: z.string(),
+  org_id: z.string(),
+  restaurant_id: z.string().optional().default(''),
+  document_type: receiptTemplateDocumentTypeSchema,
+  name: z.string(),
+  description: z.string().optional().default(''),
+  content: z.string(),
+  level: z.number(),
+  cpl: z.number(),
+  printer_class: z.string(),
+  is_default: z.boolean(),
+  version: z.number(),
+  is_active: z.boolean(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export type ReceiptTemplate = z.infer<typeof receiptTemplateSchema>;

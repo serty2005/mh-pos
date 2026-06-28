@@ -331,7 +331,7 @@ func decodeAPIResponse[T any](t *testing.T, rr *httptest.ResponseRecorder) T {
 func countAPIRows(t *testing.T, f *apiFixture, table string) int {
 	t.Helper()
 	switch table {
-	case "prechecks", "checks", "payments", "payment_attempts", "financial_operations", "financial_operation_items", "shifts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "auth_sessions", "halls", "tables", "catalog_items", "kitchen_tickets", "kitchen_ticket_events", "kitchen_proposals", "cloud_master_sync_state":
+	case "prechecks", "checks", "payments", "payment_attempts", "financial_operations", "financial_operation_items", "shifts", "cash_sessions", "cash_drawer_events", "pos_sync_outbox", "local_event_log", "manager_override_audit", "auth_sessions", "halls", "tables", "catalog_items", "kitchen_tickets", "kitchen_ticket_events", "kitchen_proposals", "cloud_master_sync_state", "print_jobs":
 	default:
 		t.Fatalf("unexpected table %q", table)
 	}
@@ -553,6 +553,63 @@ func TestRevokedSessionReturnsSafeUnauthorizedError(t *testing.T) {
 	}
 	if strings.Contains(current.Body.String(), "pin") || strings.Contains(current.Body.String(), "hash") {
 		t.Fatalf("expected auth error not to expose sensitive data: %s", current.Body.String())
+	}
+}
+
+func TestPrintJobsAPIStatusListRetryAndRBAC(t *testing.T) {
+	f := newAPIFixture(t)
+	insertAPIPrintJob(t, f, "api-print-job-1", "failed", 3)
+
+	status := f.get(t, "/api/v1/print/jobs/api-print-job-1")
+	if status.Code != http.StatusOK {
+		t.Fatalf("expected 200 for print job status, got %d: %s", status.Code, status.Body.String())
+	}
+	got := decodeAPIResponse[domain.PrintJob](t, status)
+	if got.ID != "api-print-job-1" || got.Status != domain.PrintJobFailed || got.Attempts != 3 {
+		t.Fatalf("unexpected print job status: %+v", got)
+	}
+
+	list := f.get(t, "/api/v1/print/jobs?status=failed&limit=10")
+	if list.Code != http.StatusOK {
+		t.Fatalf("expected 200 for print job list, got %d: %s", list.Code, list.Body.String())
+	}
+	jobs := decodeAPIResponse[[]domain.PrintJob](t, list)
+	if len(jobs) != 1 || jobs[0].ID != "api-print-job-1" {
+		t.Fatalf("unexpected print job list: %+v", jobs)
+	}
+
+	cashierRetry := f.postJSON(t, "/api/v1/print/jobs/api-print-job-1/retry", `{}`)
+	if cashierRetry.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cashier print retry, got %d: %s", cashierRetry.Code, cashierRetry.Body.String())
+	}
+
+	f.useKitchenOperator(t)
+	kitchenStatus := f.get(t, "/api/v1/print/jobs/api-print-job-1")
+	if kitchenStatus.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for kitchen print status, got %d: %s", kitchenStatus.Code, kitchenStatus.Body.String())
+	}
+
+	f.useManagerOperator(t)
+	retry := f.postJSON(t, "/api/v1/print/jobs/api-print-job-1/retry", `{}`)
+	if retry.Code != http.StatusOK {
+		t.Fatalf("expected 200 for manager print retry, got %d: %s", retry.Code, retry.Body.String())
+	}
+	reset := decodeAPIResponse[domain.PrintJob](t, retry)
+	if reset.Status != domain.PrintJobPending || reset.Attempts != 0 || reset.LastError != nil {
+		t.Fatalf("expected retry to reset print job, got %+v", reset)
+	}
+}
+
+func insertAPIPrintJob(t *testing.T, f *apiFixture, id, status string, attempts int) {
+	t.Helper()
+	now := f.clock.Now().UTC().Format(time.RFC3339Nano)
+	var lastError any
+	if status == "failed" {
+		lastError = "printer offline"
+	}
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO print_jobs(id,restaurant_id,document_type,source_kind,source_id,status,attempts,max_attempts,printer_class,last_error,created_at,updated_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, id, f.restaurant.ID, "precheck", "precheck", "precheck-api", status, attempts, 3, "front", lastError, now, now); err != nil {
+		t.Fatal(err)
 	}
 }
 

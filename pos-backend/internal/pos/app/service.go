@@ -24,6 +24,7 @@ import (
 	apporder "pos-backend/internal/pos/app/order"
 	appprecheck "pos-backend/internal/pos/app/precheck"
 	apppricing "pos-backend/internal/pos/app/pricing"
+	appprint "pos-backend/internal/pos/app/print"
 	appprovisioning "pos-backend/internal/pos/app/provisioning"
 	apprestaurant "pos-backend/internal/pos/app/restaurant"
 	"pos-backend/internal/pos/app/shared"
@@ -75,6 +76,7 @@ type AddDiscountCommand = apppricing.AddDiscountCommand
 type AddSurchargeCommand = apppricing.AddSurchargeCommand
 type CapturePaymentCommand = appcheck.CapturePaymentCommand
 type ReprintTicketCommand = appticket.ReprintTicketCommand
+type PrintJobListQuery = domain.PrintJobListQuery
 
 // CounterPaymentCommand объединяет issue-precheck + capture-payment для counter sale (table-mode=off).
 type CounterPaymentCommand struct {
@@ -170,6 +172,7 @@ type Service struct {
 	pricing      *apppricing.Service
 	checks       *appcheck.Service
 	tickets      *appticket.Service
+	prints       *appprint.Service
 	kitchen      *appkitchen.Service
 	cash         *appcash.Service
 	masterSync   *appmastersync.Service
@@ -188,6 +191,8 @@ type ServiceOptions struct {
 	LicenseProvisioningClient               appprovisioning.LicenseClient
 	StorageArchiveDir                       string
 	RecipeSuggestionMaxPrepTimeDeltaMinutes int
+	PrintSender                             appprint.Sender
+	PrintMaxAttempts                        int
 }
 
 func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock) *Service {
@@ -198,6 +203,10 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, options ServiceOptions) *Service {
 	pricingSvc := apppricing.NewService(repo, tx, ids, clock)
 	ticketsSvc := appticket.NewService(repo, tx, ids, clock)
+	printsSvc := appprint.NewService(repo, ids, clock, appprint.Options{
+		Sender:      options.PrintSender,
+		MaxAttempts: options.PrintMaxAttempts,
+	})
 	s := &Service{
 		repo:        repo,
 		ids:         ids,
@@ -213,8 +222,9 @@ func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idge
 		orders:      apporder.NewService(repo, tx, ids, clock),
 		pricing:     pricingSvc,
 		prechecks:   appprecheck.NewService(repo, tx, ids, clock, pricingSvc),
-		checks:      appcheck.NewService(repo, tx, ids, clock, ticketsSvc),
+		checks:      appcheck.NewServiceWithOptions(repo, tx, ids, clock, ticketsSvc, printsSvc),
 		tickets:     ticketsSvc,
+		prints:      printsSvc,
 		kitchen: appkitchen.NewServiceWithOptions(repo, tx, ids, clock, appkitchen.Options{
 			RecipeSuggestionMaxPrepTimeDeltaMinutes: options.RecipeSuggestionMaxPrepTimeDeltaMinutes,
 		}),
@@ -527,6 +537,22 @@ func (s *Service) ListClosedOrders(ctx context.Context, cmd ListClosedOrdersComm
 
 func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand) (*domain.Payment, error) {
 	return s.checks.CapturePayment(ctx, cmd)
+}
+
+func (s *Service) GetPrintJobAsOperator(ctx context.Context, id string, meta CommandMeta) (*domain.PrintJob, error) {
+	return s.prints.GetPrintJobAsOperator(ctx, id, meta)
+}
+
+func (s *Service) ListPrintJobsAsOperator(ctx context.Context, meta CommandMeta, query PrintJobListQuery) ([]domain.PrintJob, error) {
+	return s.prints.ListPrintJobsAsOperator(ctx, meta, query)
+}
+
+func (s *Service) RetryPrintJobAsOperator(ctx context.Context, id string, meta CommandMeta) (*domain.PrintJob, error) {
+	return s.prints.RetryPrintJobAsOperator(ctx, id, meta)
+}
+
+func (s *Service) ProcessNextPrintJob(ctx context.Context, workerID string) (bool, error) {
+	return s.prints.ProcessNextPrintJob(ctx, workerID)
 }
 
 // CounterPayment атомарно выдаёт предчек (если нет активного) и захватывает оплату.
@@ -897,6 +923,8 @@ func syncExchangeStreams() []domain.MasterDataStream {
 		domain.MasterDataStreamRecipes,
 		domain.MasterDataStreamInventory,
 		domain.MasterDataStreamProposalFeedback,
+		domain.MasterDataStreamReceiptTemplates,
+		domain.MasterDataStreamPrinters,
 	}
 }
 

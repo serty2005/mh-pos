@@ -54,6 +54,7 @@ describe('backend DTO mappers', () => {
       name: 'Стейк',
       price: 1450,
       currency: 'RUB',
+      single_unit_per_line: false,
       active: true,
       created_at: '2026-05-24T10:00:00Z',
       updated_at: '2026-05-24T10:00:00Z',

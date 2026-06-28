@@ -18,6 +18,8 @@ import PricingPage from '../features/pricing/PricingPage';
 import StaffPage from '../features/staff/StaffPage';
 import FloorPage from '../features/floor/FloorPage';
 import LicensesPage from '../features/licenses/LicensesPage';
+import ReceiptTemplatesPage from '../features/receipt-templates/ReceiptTemplatesPage';
+import PrintersPage from '../features/printers/PrintersPage';
 import { getEntitlements } from '../shared/api/endpoints';
 
 export default function CloudManagerApp() {
@@ -170,7 +172,15 @@ export default function CloudManagerApp() {
             <FloorPage restaurantId={selectedRestaurantId} />
           ) : null}
 
-          {activeRouteId !== 'dashboard' && activeRouteId !== 'restaurants' && activeRouteId !== 'licenses' && activeRouteId !== 'publications' && activeRouteId !== 'edge-sync' && activeRouteId !== 'catalog' && activeRouteId !== 'menu' && activeRouteId !== 'modifiers' && activeRouteId !== 'pricing-taxes' && activeRouteId !== 'staff-permissions' && activeRouteId !== 'floor' && isRestaurantSelected ? (
+          {activeRouteId === 'receipt-templates' ? (
+            <ReceiptTemplatesPage />
+          ) : null}
+
+          {activeRouteId === 'printers' && isRestaurantSelected ? (
+            <PrintersPage restaurantId={selectedRestaurantId} />
+          ) : null}
+
+          {activeRouteId !== 'dashboard' && activeRouteId !== 'restaurants' && activeRouteId !== 'licenses' && activeRouteId !== 'publications' && activeRouteId !== 'edge-sync' && activeRouteId !== 'catalog' && activeRouteId !== 'menu' && activeRouteId !== 'modifiers' && activeRouteId !== 'pricing-taxes' && activeRouteId !== 'staff-permissions' && activeRouteId !== 'floor' && activeRouteId !== 'receipt-templates' && activeRouteId !== 'printers' && isRestaurantSelected ? (
             <section className="rounded-2xl border border-slate-200 bg-white p-6">
               <h3 className="text-base font-semibold text-slate-900">{t(activeItem.labelKey)}</h3>
               <p className="mt-1 text-sm text-slate-600">{t('sections.blocked')}</p>
