@@ -197,9 +197,9 @@ func TestHTTPAndRepositoryErrorStringsDoNotExposeSecrets(t *testing.T) {
 	assertBodyDoesNotContain(t, f.logs.String(), plaintextCodeMarker, hashMarker, app.Hash(plaintextCodeMarker))
 }
 
-func TestHTTPEntitlementsRequireProviderTokenAndReturnSnapshot(t *testing.T) {
+func TestHTTPEntitlementsRequireAdminLoginAndReturnSnapshot(t *testing.T) {
 	f := newHTTPFixture(t)
-	body := `{"version":1,"status":"active","entitlements":{"table-mode":true,"kitchen-space":false},"issued_at":"2026-06-20T00:00:00Z","expires_at":"2099-06-20T00:00:00Z"}`
+	body := `{"version":1,"status":"active","entitlements":{"cloud-subscription":true,"table-mode":true,"kitchen-space":false,"warehouse-mode":true,"waiter-space":false,"telegram-worker":false,"ticket-mode":true},"issued_at":"2026-06-20T00:00:00Z","expires_at":"2099-06-20T00:00:00Z"}`
 	unauthorized := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/entitlements/tenant-1/cloud-1", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -210,14 +210,14 @@ func TestHTTPEntitlementsRequireProviderTokenAndReturnSnapshot(t *testing.T) {
 	updated := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPut, "/api/v1/entitlements/tenant-1/cloud-1", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer provider-test-token")
+	req.AddCookie(f.loginCookie(t))
 	f.router.ServeHTTP(updated, req)
 	assertJSONStatus(t, updated, http.StatusOK)
 
 	got := httptest.NewRecorder()
 	f.router.ServeHTTP(got, httptest.NewRequest(http.MethodGet, "/api/v1/entitlements/tenant-1/cloud-1", nil))
 	assertJSONStatus(t, got, http.StatusOK)
-	assertBodyContains(t, got.Body.String(), `"tenant_id":"tenant-1"`, `"server_id":"cloud-1"`, `"table-mode":true`)
+	assertBodyContains(t, got.Body.String(), `"tenant_id":"tenant-1"`, `"server_id":"cloud-1"`, `"cloud-subscription":true`, `"ticket-mode":true`)
 
 	listUnauthorized := httptest.NewRecorder()
 	f.router.ServeHTTP(listUnauthorized, httptest.NewRequest(http.MethodGet, "/api/v1/entitlements", nil))
@@ -226,10 +226,17 @@ func TestHTTPEntitlementsRequireProviderTokenAndReturnSnapshot(t *testing.T) {
 
 	list := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/entitlements", nil)
-	req.Header.Set("Authorization", "Bearer provider-test-token")
+	req.AddCookie(f.loginCookie(t))
 	f.router.ServeHTTP(list, req)
 	assertJSONStatus(t, list, http.StatusOK)
-	assertBodyContains(t, list.Body.String(), `"tenant_id":"tenant-1"`, `"server_id":"cloud-1"`, `"table-mode":true`)
+	assertBodyContains(t, list.Body.String(), `"tenant_id":"tenant-1"`, `"server_id":"cloud-1"`, `"cloud-subscription":true`, `"ticket-mode":true`)
+
+	servers := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/servers", nil)
+	req.AddCookie(f.loginCookie(t))
+	f.router.ServeHTTP(servers, req)
+	assertJSONStatus(t, servers, http.StatusOK)
+	assertBodyContains(t, servers.Body.String(), `"tenant_id":"tenant-1"`, `"server_id":"cloud-1"`, `"snapshot"`)
 }
 
 type httpFixture struct {
@@ -256,10 +263,14 @@ func newHTTPFixture(t *testing.T) *httpFixture {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	t.Cleanup(func() { slog.SetDefault(previousLogger) })
 
+	service := app.NewService(repo)
+	if err := service.BootstrapSuperAdmin(t.Context(), "admin", "provider-test-password"); err != nil {
+		t.Fatalf("bootstrap test admin: %v", err)
+	}
 	return &httpFixture{
 		db:     db,
 		repo:   repo,
-		router: api.NewRouter(app.NewService(repo), "provider-test-token"),
+		router: api.NewRouter(service),
 		logs:   &logs,
 	}
 }
@@ -271,6 +282,22 @@ func (f *httpFixture) postJSON(t *testing.T, path string, body string) *httptest
 	rec := httptest.NewRecorder()
 	f.router.ServeHTTP(rec, req)
 	return rec
+}
+
+func (f *httpFixture) loginCookie(t *testing.T) *http.Cookie {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/login", strings.NewReader(`{"username":"admin","password":"provider-test-password"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	f.router.ServeHTTP(rec, req)
+	assertJSONStatus(t, rec, http.StatusOK)
+	for _, cookie := range rec.Result().Cookies() {
+		if cookie.Name == "license_admin_session" && cookie.Value != "" {
+			return cookie
+		}
+	}
+	t.Fatal("expected admin session cookie")
+	return nil
 }
 
 func assertJSONStatus(t *testing.T, rec *httptest.ResponseRecorder, want int) {

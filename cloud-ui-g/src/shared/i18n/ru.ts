@@ -643,6 +643,15 @@ export const ru = {
       issuedAt: 'Выдана',
       expiresAt: 'Истекает',
     },
+    modules: {
+      cloudSubscription: 'Cloud-бэкофис и доставка',
+      tableMode: 'Залы и столы',
+      kitchenSpace: 'Кухня и KDS',
+      warehouseMode: 'Склад',
+      waiterSpace: 'Официантский доступ',
+      telegramWorker: 'Telegram-отчеты',
+      ticketMode: 'Билеты и проверка',
+    },
   },
   floor: {
     pageTitle: 'Залы и столы',

@@ -11,16 +11,26 @@ import (
 )
 
 type memoryRepo struct {
-	items        map[string]app.PairingCode
-	entitlements map[string]app.EntitlementSnapshot
+	items         map[string]app.PairingCode
+	entitlements  map[string]app.EntitlementSnapshot
+	servers       map[string]app.ConnectedServer
+	adminUsers    map[string]app.AdminUser
+	adminSessions map[string]app.AdminSession
 }
 
 func newMemoryRepo() *memoryRepo {
-	return &memoryRepo{items: map[string]app.PairingCode{}, entitlements: map[string]app.EntitlementSnapshot{}}
+	return &memoryRepo{
+		items:         map[string]app.PairingCode{},
+		entitlements:  map[string]app.EntitlementSnapshot{},
+		servers:       map[string]app.ConnectedServer{},
+		adminUsers:    map[string]app.AdminUser{},
+		adminSessions: map[string]app.AdminSession{},
+	}
 }
 
 func (r *memoryRepo) SaveEntitlements(_ context.Context, item app.EntitlementSnapshot) error {
 	r.entitlements[item.TenantID+":"+item.ServerID] = item
+	r.servers[item.TenantID+":"+item.ServerID] = app.ConnectedServer{TenantID: item.TenantID, ServerID: item.ServerID, FirstSeenAt: item.UpdatedAt, LastSeenAt: item.UpdatedAt, Snapshot: &item}
 	return nil
 }
 
@@ -44,6 +54,61 @@ func (r *memoryRepo) ListEntitlements(_ context.Context) ([]app.EntitlementSnaps
 		return cmpString(a.TenantID, b.TenantID)
 	})
 	return items, nil
+}
+
+func (r *memoryRepo) SaveConnectedServer(_ context.Context, item app.ConnectedServer) error {
+	key := item.TenantID + ":" + item.ServerID
+	if current, ok := r.servers[key]; ok {
+		item.FirstSeenAt = current.FirstSeenAt
+		item.Snapshot = current.Snapshot
+	}
+	r.servers[key] = item
+	return nil
+}
+
+func (r *memoryRepo) ListConnectedServers(_ context.Context) ([]app.ConnectedServer, error) {
+	items := make([]app.ConnectedServer, 0, len(r.servers))
+	for _, item := range r.servers {
+		items = append(items, item)
+	}
+	slices.SortFunc(items, func(a, b app.ConnectedServer) int {
+		if a.TenantID == b.TenantID {
+			return cmpString(a.ServerID, b.ServerID)
+		}
+		return cmpString(a.TenantID, b.TenantID)
+	})
+	return items, nil
+}
+
+func (r *memoryRepo) SaveAdminUser(_ context.Context, item app.AdminUser) error {
+	r.adminUsers[item.Username] = item
+	return nil
+}
+
+func (r *memoryRepo) GetAdminUser(_ context.Context, username string) (app.AdminUser, error) {
+	item, ok := r.adminUsers[username]
+	if !ok {
+		return app.AdminUser{}, app.ErrAdminAuth
+	}
+	return item, nil
+}
+
+func (r *memoryRepo) SaveAdminSession(_ context.Context, item app.AdminSession) error {
+	r.adminSessions[item.TokenHash] = item
+	return nil
+}
+
+func (r *memoryRepo) GetAdminSession(_ context.Context, tokenHash string) (app.AdminSession, error) {
+	item, ok := r.adminSessions[tokenHash]
+	if !ok {
+		return app.AdminSession{}, app.ErrAdminAuth
+	}
+	return item, nil
+}
+
+func (r *memoryRepo) DeleteAdminSession(_ context.Context, tokenHash string) error {
+	delete(r.adminSessions, tokenHash)
+	return nil
 }
 
 func (r *memoryRepo) Save(_ context.Context, item app.PairingCode) error {
@@ -149,6 +214,37 @@ func TestEntitlementsEnableDisableRevokeAndMonotonicVersion(t *testing.T) {
 		return item.TenantID == "tenant-1" && item.ServerID == "edge-1" && item.Version == 3
 	}) {
 		t.Fatalf("expected saved entitlement in list, got %+v", list)
+	}
+}
+
+func TestBootstrapSuperAdminLoginSessionAndServerList(t *testing.T) {
+	repo := newMemoryRepo()
+	service := app.NewService(repo)
+	if err := service.BootstrapSuperAdmin(t.Context(), "admin", "change-me-123"); err != nil {
+		t.Fatalf("bootstrap admin: %v", err)
+	}
+	if _, err := service.LoginAdmin(t.Context(), "admin", "wrong-password"); !errors.Is(err, app.ErrAdminAuth) {
+		t.Fatalf("expected invalid login to be rejected, got %v", err)
+	}
+	login, err := service.LoginAdmin(t.Context(), "admin", "change-me-123")
+	if err != nil {
+		t.Fatalf("login admin: %v", err)
+	}
+	if username, ok := service.ValidateAdminSession(t.Context(), login.Token); !ok || username != "admin" {
+		t.Fatalf("expected valid admin session, username=%q ok=%v", username, ok)
+	}
+	if err := service.LogoutAdmin(t.Context(), login.Token); err != nil {
+		t.Fatalf("logout admin: %v", err)
+	}
+	if _, ok := service.ValidateAdminSession(t.Context(), login.Token); ok {
+		t.Fatal("expected logout to invalidate session")
+	}
+	if err := service.RecordServerSeen(t.Context(), "tenant-1", "cloud-1"); err != nil {
+		t.Fatalf("record connected server: %v", err)
+	}
+	servers, err := service.ListConnectedServers(t.Context())
+	if err != nil || len(servers) != 1 || servers[0].TenantID != "tenant-1" || servers[0].ServerID != "cloud-1" {
+		t.Fatalf("unexpected connected servers: %+v err=%v", servers, err)
 	}
 }
 

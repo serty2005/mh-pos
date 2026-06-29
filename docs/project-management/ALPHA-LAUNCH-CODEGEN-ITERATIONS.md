@@ -6,6 +6,30 @@
 
 Этот документ является runbook для непосредственной генерации кода. Он не копирует Plane: перед каждой итерацией агент обязан заново прочитать work item, relations и комментарии. Plane хранит текущее состояние работы, Git — требования, код и тесты.
 
+## Срез License Server deployment/CD
+
+Обновлено 2026-06-30.
+
+Реализовано сейчас:
+
+- License Server переведен с admin token на super-admin login/password из стартового конфига; password хранится hash+salt.
+- Operator UI выбирает connected server из списка, поддерживает поиск по `tenant_id`, toggles/presets и advanced JSON.
+- Подготовлен native Linux deployment для Ubuntu 24.04 без Docker: systemd unit, env example, production JSON example и runbook `docs/deployment/LICENSE-SERVER-LINUX.md`.
+- Подготовлен GitHub Actions CD template `deploy/license-server/deploy-license-server.workflow.yml`; активная папка `.github` временно не хранится в ветке до выдачи GitHub permission на workflow files. После копирования template в `.github/workflows/deploy-license-server.yml` push в ветку `production` при изменениях `license-server/**`, `shared/platform/**` или deploy artifacts запускает tests, build linux-amd64 binary, SSH deploy, symlink switch и restart `license-api`.
+- До появления домена runtime URL задается как `http://<server-ip>:8095`; firewall закрывает входящие соединения кроме SSH и порта License Server для доверенного IP/VPN.
+
+Запланировано далее:
+
+- создать ветку `production`, GitHub secrets и SSH deploy user на конечной VM;
+- выполнить первый ручной install, smoke и затем первый CD deploy;
+- настроить регулярный внешний backup и restore rehearsal.
+
+Вне текущего объема:
+
+- домен/TLS/reverse proxy;
+- billing provider;
+- полноценный commercial admin с тарифами, договорами и ролями операторов.
+
 ## Итог аудита Wave 3 / POS-64
 
 Статус: `POS-64` не закрыт. Кодовая база доведена до корректной основы для продолжения `POS-85…POS-89`, но Plane и ручная приемка ещё не совпадают полностью: `POS-67` и `POS-80` остаются на человеческой проверке, а ticket после исправления эффективной ширины для `{f:double}` требует повторного physical-print подтверждения на `10.25.1.201:9100`.
@@ -75,8 +99,10 @@
 
 Перед стартом POS-65 приняты следующие границы:
 
+Актуальный canonical contract по module IDs, product bundles и enforcement перенесен в `docs/backend/LICENSE-ENTITLEMENTS.md`; пункты ниже оставлены как исторический контекст POS-42.
+
 1. Первый review finding по `waiter-space` уточнен: основной cashier flow является нелицензируемой базовой частью POS Edge и должен оставаться доступным всегда при наличии локальных данных. Нельзя закрывать `waiter-space` все `/api/v1/orders...`, `/api/v1/menu/items`, precheck/payment/check routes целиком, потому что это shared cashier backend surface. `waiter-space` должен применяться к отдельному waiter-доступу: mobile waiter route/API facade, waiter-only commands/events или другому backend-owned признаку официантского контекста. UI route `/pos/waiter` или frontend header не является security boundary.
-2. Post-MVP целевое решение: полностью бесплатный автономный POS Edge без внешнего Cloud. Edge локально хранит данные в SQLite, локальный владелец создает простые позиции меню для собственного Edge, кассир продает через базовый `Order -> Precheck -> Payment -> Check`, backup/archive остаются локальными. Покупка лицензии подключает внешний Cloud, tenant management, автоматическую доставку master data, Cloud analytics, waiter mobile, KDS/advanced kitchen, warehouse engine, Telegram, checker и будущие модули. Это тот же runtime/profile, а не fork продукта.
+2. Post-MVP целевое решение: полностью бесплатный автономный POS Edge без внешнего Cloud. Edge локально хранит данные в SQLite, локальный владелец создает простые позиции меню для собственного Edge, кассир продает через базовый `Order -> Precheck -> Payment -> Check`, backup/archive остаются локальными. Покупка `cloud-subscription` подключает внешний Cloud, tenant management, автоматическую доставку master data и Cloud analytics; waiter mobile, KDS/advanced kitchen, warehouse engine, Telegram, ticket/checker и будущие модули подключаются отдельными entitlement IDs. Это тот же runtime/profile, а не fork продукта.
 3. Cloud generic provisioning package routes `/api/v1/provisioning/master-data/{stream}` пока не сопоставлены с module entitlements в `cloudModuleForRequest`. Sync exchange фильтрует disabled `floor`, `recipes` и `inventory` streams, но прямой package GET/PUT может читать или записывать package для выключенного модуля. Это важно перед POS-65, потому что следующая итерация меняет доставку Cloud -> Edge.
 4. Edge -> Cloud data boundary нужно довести до общего правила: Cloud-side не должен формировать данные из выключенных workers или заблокированных routes, а Edge batch должен содержать только module-owned события включенных лицензий. Базовые cashier financial facts остаются синхронизируемым ядром подключенного Cloud-контура. `kitchen-space` владеет KDS/kitchen events и proposals; `warehouse-mode` владеет receipt/count/write-off/production и Cloud inventory worker; будущий `waiter-space` владеет waiter-only commands/events после выделения backend-discriminated waiter surface.
 5. Дополнительно на Edge-стороне нужно закрыть работу с module-owned данными по entitlement: выключенный модуль не открывает новые commands/UI-backed routes и не добавляет новые module-owned outbox rows. Уже сохраненные данные не удаляются.
@@ -297,7 +323,7 @@ Runtime code:
 ```text
 Используй универсальный промпт для POS-42.
 
-Фокус: внешний licensing authority и расширяемые entitlements table-mode, telegram-worker, kitchen-space, waiter-space, checker-flow, warehouse-mode. UI hiding не заменяет Cloud/Edge backend enforcement. Stale grace задается только deployment config поставщика.
+Фокус: внешний licensing authority и расширяемые entitlements из `docs/backend/LICENSE-ENTITLEMENTS.md`: cloud-subscription, table-mode, telegram-worker, kitchen-space, waiter-space, ticket-mode, warehouse-mode. UI hiding не заменяет Cloud/Edge backend enforcement. Stale grace задается только deployment config поставщика.
 
 Минимальная приемка: enable/disable/revoke/stale-expiry проверены; нелицензированные routes, commands, workers и streams возвращают stable safe error; данные при отключении не удаляются. Обязательны security tests для License Server, Cloud, Edge и UI build.
 ```

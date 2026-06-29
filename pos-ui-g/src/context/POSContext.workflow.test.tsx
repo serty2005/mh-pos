@@ -90,6 +90,8 @@ vi.mock('../shared/api', async (importOriginal) => {
 
 type MockPosApiClient = Record<keyof PosApiClient, ReturnType<typeof vi.fn>>;
 type POSWorkflowContext = React.ComponentProps<typeof POSProvider> & {
+  createCounterOrder: () => Promise<void>;
+  currentOrder: { id: string } | null;
   payOrder: (method: 'cash' | 'card', inputAmount: number) => Promise<{ success: boolean; change: number; errorKey?: string }>;
   refundCheck: (checkId: string, reason: string, disposition: 'waste' | 'return') => Promise<void>;
   partialRefundCheck: (checkId: string, lineId: string, qtyToRefund: number, reason: string, disposition: 'waste' | 'return') => Promise<void>;
@@ -154,6 +156,29 @@ describe('POSContext workflow orchestration', () => {
     expect(apiRuntime.client.capturePrecheckPayment).toHaveBeenCalledTimes(1);
     expect(apiRuntime.client.listTables).not.toHaveBeenCalled();
     expectNoRawLeakage();
+  });
+
+  it('keeps a created counter order selected without a table selection', async () => {
+    const counterOrder = activeOrderFixture('counter-table');
+    counterOrder.id = 'order-counter';
+    counterOrder.table_name = '__counter__';
+    apiRuntime.client.createCounterOrder.mockResolvedValue(counterOrder);
+    apiRuntime.client.listPrechecksByOrder.mockResolvedValue([]);
+
+    const context = renderPOSContext({
+      selectedTableId: '',
+      selectedOrderId: 'order-counter',
+      activeOrders: [counterOrder],
+      prechecks: [],
+    });
+
+    expect(context.currentOrder?.id).toBe('order-counter');
+
+    await context.createCounterOrder();
+
+    expect(apiRuntime.client.createCounterOrder).toHaveBeenCalledTimes(1);
+    expect(apiRuntime.client.getOrderPricing).toHaveBeenCalledWith('order-counter');
+    expect(hookRuntime.stateAt<string | null>(31)).toBe('order-counter');
   });
 
   it('cancels the active precheck once and refreshes floor and prechecks', async () => {
@@ -352,6 +377,7 @@ type RenderState = {
   cashSession: BackendCashSession | null;
   activeHallId: string;
   selectedTableId: string;
+  selectedOrderId: string;
   activeOrders: BackendOrder[];
   prechecks: BackendPrecheck[];
   closedOrders: BackendClosedOrder[];
@@ -362,7 +388,7 @@ function createRenderState(overrides: Partial<RenderState>) {
   const actor = overrides.actor ?? actorFixture(workflowPermissions);
   const activeHallId = overrides.activeHallId ?? 'hall-1';
   const selectedTableId = overrides.selectedTableId ?? 'table-1';
-  const slots: unknown[] = Array.from({ length: 31 }, () => hookRuntime.missing);
+  const slots: unknown[] = Array.from({ length: 32 }, () => hookRuntime.missing);
   slots[0] = 'floor';
   slots[1] = activeHallId;
   slots[3] = false;
@@ -393,6 +419,7 @@ function createRenderState(overrides: Partial<RenderState>) {
   slots[28] = '';
   slots[29] = [];
   slots[30] = { 'table-mode': true };
+  slots[31] = overrides.selectedOrderId ?? null;
   return { actor, slots };
 }
 

@@ -49,6 +49,34 @@ func (r *Repository) Migrate(ctx context.Context) error {
 )`); err != nil {
 		return err
 	}
+	if _, err := r.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS license_servers (
+  tenant_id TEXT NOT NULL,
+  server_id TEXT NOT NULL,
+  first_seen_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  PRIMARY KEY (tenant_id, server_id)
+)`); err != nil {
+		return err
+	}
+	if _, err := r.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS admin_users (
+  username TEXT PRIMARY KEY,
+  password_hash TEXT NOT NULL,
+  salt TEXT NOT NULL,
+  iterations INTEGER NOT NULL CHECK (iterations > 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)`); err != nil {
+		return err
+	}
+	if _, err := r.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS admin_sessions (
+  token_hash TEXT PRIMARY KEY,
+  username TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (username) REFERENCES admin_users(username) ON DELETE CASCADE
+)`); err != nil {
+		return err
+	}
 	if _, err := r.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS db_runtime_versions (
   module_name TEXT PRIMARY KEY,
   current_version TEXT NOT NULL,
@@ -72,6 +100,9 @@ func (r *Repository) verifySchema(ctx context.Context) error {
 	for table, required := range map[string][]string{
 		"pairing_codes":         {"pairing_code_hash", "pairing_id", "instance_id", "expires_at"},
 		"entitlement_snapshots": {"tenant_id", "server_id", "version", "status", "entitlements_json", "expires_at"},
+		"license_servers":       {"tenant_id", "server_id", "first_seen_at", "last_seen_at"},
+		"admin_users":           {"username", "password_hash", "salt", "iterations"},
+		"admin_sessions":        {"token_hash", "username", "expires_at"},
 		"db_runtime_versions":   {"module_name", "current_version", "updated_at"},
 	} {
 		rows, err := r.db.QueryContext(ctx, `SELECT name FROM pragma_table_info(?)`, table)
@@ -102,11 +133,25 @@ func (r *Repository) SaveEntitlements(ctx context.Context, v app.EntitlementSnap
 	if err != nil {
 		return err
 	}
-	_, err = r.db.ExecContext(ctx, `INSERT INTO entitlement_snapshots(tenant_id,server_id,version,status,entitlements_json,issued_at,expires_at,updated_at)
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `INSERT INTO entitlement_snapshots(tenant_id,server_id,version,status,entitlements_json,issued_at,expires_at,updated_at)
 VALUES (?,?,?,?,?,?,?,?)
 ON CONFLICT(tenant_id,server_id) DO UPDATE SET version=excluded.version,status=excluded.status,entitlements_json=excluded.entitlements_json,issued_at=excluded.issued_at,expires_at=excluded.expires_at,updated_at=excluded.updated_at`,
-		v.TenantID, v.ServerID, v.Version, v.Status, string(entitlements), v.IssuedAt.Format(time.RFC3339Nano), v.ExpiresAt.Format(time.RFC3339Nano), v.UpdatedAt.Format(time.RFC3339Nano))
-	return err
+		v.TenantID, v.ServerID, v.Version, v.Status, string(entitlements), v.IssuedAt.Format(time.RFC3339Nano), v.ExpiresAt.Format(time.RFC3339Nano), v.UpdatedAt.Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	now := v.UpdatedAt.Format(time.RFC3339Nano)
+	if _, err = tx.ExecContext(ctx, `INSERT INTO license_servers(tenant_id,server_id,first_seen_at,last_seen_at)
+VALUES (?,?,?,?)
+ON CONFLICT(tenant_id,server_id) DO UPDATE SET last_seen_at=excluded.last_seen_at`,
+		v.TenantID, v.ServerID, now, now); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) GetEntitlements(ctx context.Context, tenantID, serverID string) (app.EntitlementSnapshot, error) {
@@ -152,6 +197,103 @@ func (r *Repository) ListEntitlements(ctx context.Context) ([]app.EntitlementSna
 		items = append(items, v)
 	}
 	return items, rows.Err()
+}
+
+func (r *Repository) SaveConnectedServer(ctx context.Context, v app.ConnectedServer) error {
+	now := v.LastSeenAt.Format(time.RFC3339Nano)
+	_, err := r.db.ExecContext(ctx, `INSERT INTO license_servers(tenant_id,server_id,first_seen_at,last_seen_at)
+VALUES (?,?,?,?)
+ON CONFLICT(tenant_id,server_id) DO UPDATE SET last_seen_at=excluded.last_seen_at`,
+		v.TenantID, v.ServerID, v.FirstSeenAt.Format(time.RFC3339Nano), now)
+	return err
+}
+
+func (r *Repository) ListConnectedServers(ctx context.Context) ([]app.ConnectedServer, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT s.tenant_id,s.server_id,s.first_seen_at,s.last_seen_at,
+e.version,e.status,e.entitlements_json,e.issued_at,e.expires_at,e.updated_at
+FROM license_servers s
+LEFT JOIN entitlement_snapshots e ON e.tenant_id=s.tenant_id AND e.server_id=s.server_id
+ORDER BY s.last_seen_at DESC, s.tenant_id, s.server_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []app.ConnectedServer{}
+	for rows.Next() {
+		var item app.ConnectedServer
+		var firstSeen, lastSeen string
+		var version sql.NullInt64
+		var status, raw, issued, expires, updated sql.NullString
+		if err := rows.Scan(&item.TenantID, &item.ServerID, &firstSeen, &lastSeen, &version, &status, &raw, &issued, &expires, &updated); err != nil {
+			return nil, err
+		}
+		item.FirstSeenAt, _ = time.Parse(time.RFC3339Nano, firstSeen)
+		item.LastSeenAt, _ = time.Parse(time.RFC3339Nano, lastSeen)
+		if version.Valid {
+			snapshot := app.EntitlementSnapshot{TenantID: item.TenantID, ServerID: item.ServerID, Version: version.Int64, Status: status.String}
+			if err := json.Unmarshal([]byte(raw.String), &snapshot.Entitlements); err != nil {
+				return nil, err
+			}
+			snapshot.IssuedAt, _ = time.Parse(time.RFC3339Nano, issued.String)
+			snapshot.ExpiresAt, _ = time.Parse(time.RFC3339Nano, expires.String)
+			snapshot.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated.String)
+			item.Snapshot = &snapshot
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *Repository) SaveAdminUser(ctx context.Context, v app.AdminUser) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO admin_users(username,password_hash,salt,iterations,created_at,updated_at)
+VALUES (?,?,?,?,?,?)
+ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash,salt=excluded.salt,iterations=excluded.iterations,updated_at=excluded.updated_at`,
+		v.Username, v.PasswordHash, v.Salt, v.Iterations, v.CreatedAt.Format(time.RFC3339Nano), v.UpdatedAt.Format(time.RFC3339Nano))
+	return err
+}
+
+func (r *Repository) GetAdminUser(ctx context.Context, username string) (app.AdminUser, error) {
+	var v app.AdminUser
+	var created, updated string
+	err := r.db.QueryRowContext(ctx, `SELECT username,password_hash,salt,iterations,created_at,updated_at FROM admin_users WHERE username=?`, username).
+		Scan(&v.Username, &v.PasswordHash, &v.Salt, &v.Iterations, &created, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return app.AdminUser{}, app.ErrAdminAuth
+	}
+	if err != nil {
+		return app.AdminUser{}, err
+	}
+	v.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+	v.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
+	return v, nil
+}
+
+func (r *Repository) SaveAdminSession(ctx context.Context, v app.AdminSession) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO admin_sessions(token_hash,username,expires_at,created_at) VALUES (?,?,?,?)`,
+		v.TokenHash, v.Username, v.ExpiresAt.Format(time.RFC3339Nano), v.CreatedAt.Format(time.RFC3339Nano))
+	return err
+}
+
+func (r *Repository) GetAdminSession(ctx context.Context, tokenHash string) (app.AdminSession, error) {
+	var v app.AdminSession
+	var expires, created string
+	err := r.db.QueryRowContext(ctx, `SELECT token_hash,username,expires_at,created_at FROM admin_sessions WHERE token_hash=?`, tokenHash).
+		Scan(&v.TokenHash, &v.Username, &expires, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return app.AdminSession{}, app.ErrAdminAuth
+	}
+	if err != nil {
+		return app.AdminSession{}, err
+	}
+	v.ExpiresAt, _ = time.Parse(time.RFC3339Nano, expires)
+	v.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+	return v, nil
+}
+
+func (r *Repository) DeleteAdminSession(ctx context.Context, tokenHash string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM admin_sessions WHERE token_hash=?`, tokenHash)
+	return err
 }
 
 func (r *Repository) Save(ctx context.Context, v app.PairingCode) error {

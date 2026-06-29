@@ -229,6 +229,53 @@ func TestExchangeOmitsCloudPackageForDisabledModule(t *testing.T) {
 	}
 }
 
+func TestExchangeRejectsEdgeEventForDisabledModule(t *testing.T) {
+	repo := memory.NewRepository()
+	if err := repo.AuthorizeNodeForTest("node-1", "restaurant-1", "node-token"); err != nil {
+		t.Fatal(err)
+	}
+	service := app.NewService(repo, fixedClock{})
+	router := api.NewRouterWithProvisioningOLAPAndLicense(service, nil, nil, deniedModuleGate{moduleID: licensegate.TicketMode})
+	body := []byte(`{
+		"protocol_version":"sync_exchange.v1",
+		"node_device_id":"node-1",
+		"restaurant_id":"restaurant-1",
+		"edge_events":[{
+			"client_item_id":"outbox-ticket-1",
+			"payload":{
+				"version":"1",
+				"event_id":"018f0000-0000-7000-8000-000000000095",
+				"command_id":"command-ticket-1",
+				"event_type":"TicketIssued",
+				"aggregate_type":"Ticket",
+				"aggregate_id":"ticket-1",
+				"restaurant_id":"restaurant-1",
+				"device_id":"node-1",
+				"occurred_at":"2026-05-05T09:00:00Z",
+				"payload":{"origin":"edge_device","data":{}}
+			}
+		}],
+		"streams":[]
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/exchange", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer node-token")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 exchange, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp contracts.SyncExchangeResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Status != contracts.SyncExchangeStatusPartial || len(resp.EdgeAcks) != 1 {
+		t.Fatalf("expected partial response with one rejected ack, got %+v", resp)
+	}
+	if resp.EdgeAcks[0].Status != contracts.BatchItemRejected || resp.EdgeAcks[0].ErrorCode != "LICENSE_ENTITLEMENT_REQUIRED" {
+		t.Fatalf("expected license rejection ack, got %+v", resp.EdgeAcks[0])
+	}
+}
+
 func TestReceiptPreviewReturnsSVG(t *testing.T) {
 	repo := memory.NewRepository()
 	router := api.NewRouter(app.NewService(repo, fixedClock{}))
@@ -274,13 +321,13 @@ func TestReceiptPreviewBadContextReturnsSchemaError(t *testing.T) {
 func TestReceiptPreviewDoesNotRequireModuleGate(t *testing.T) {
 	repo := memory.NewRepository()
 	service := app.NewService(repo, fixedClock{})
-	router := api.NewRouterWithProvisioningOLAPAndLicense(service, nil, nil, deniedModuleGate{moduleID: licensegate.CheckerFlow})
+	router := api.NewRouterWithProvisioningOLAPAndLicense(service, nil, nil, deniedModuleGate{moduleID: licensegate.TicketMode})
 	body := `{"template_content":"ok","document_type":"precheck","cpl":48,"print_context":{}}`
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts/preview", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("expected preview to stay available without checker-flow, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("expected preview to stay available without ticket-mode, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

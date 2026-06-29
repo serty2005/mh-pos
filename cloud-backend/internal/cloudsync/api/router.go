@@ -130,14 +130,24 @@ func cloudModuleForRequest(r *http.Request) string {
 		return licensegate.KitchenSpace
 	case strings.Contains(path, "/provisioning/master-data/inventory_reference"):
 		return licensegate.WarehouseMode
+	case strings.Contains(path, "/provisioning/master-data/receipt_templates") || strings.Contains(path, "/provisioning/master-data/printers"):
+		return licensegate.CloudSubscription
 	case strings.Contains(path, "/master-data/floor/") || strings.Contains(path, "/master-data/halls") || strings.Contains(path, "/master-data/tables"):
 		return licensegate.TableMode
 	case strings.Contains(path, "/master-data/recipes/") || strings.Contains(path, "/master-data/recipe-suggestions"):
 		return licensegate.KitchenSpace
 	case strings.Contains(path, "/master-data/inventory/") || strings.HasPrefix(path, "/api/v1/inventory/"):
 		return licensegate.WarehouseMode
-	// receipts/preview доступен всем аутентифицированным пользователям Cloud (POS-80 template editor).
-	// checker-flow gate здесь не нужен.
+	case strings.HasPrefix(path, "/api/v1/restaurants") ||
+		strings.HasPrefix(path, "/api/v1/devices") ||
+		strings.HasPrefix(path, "/api/v1/master-data/") ||
+		strings.HasPrefix(path, "/api/v1/provisioning/") ||
+		strings.HasPrefix(path, "/api/v1/reporting/") ||
+		strings.HasPrefix(path, "/api/v1/receipts/") ||
+		strings.HasPrefix(path, "/api/v1/receipt-templates") ||
+		strings.HasPrefix(path, "/api/v1/printers") ||
+		strings.HasPrefix(path, "/api/v1/olap/"):
+		return licensegate.CloudSubscription
 	default:
 		return ""
 	}
@@ -473,6 +483,18 @@ func (h *Handler) receiveEdgeEvent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if moduleID := moduleForRawEdgeEvent(bytes.TrimSpace(body)); moduleID != "" && h.gate != nil && h.gate.Require(r.Context(), moduleID) != nil {
+		writeJSON(w, http.StatusForbidden, contracts.BatchEventAck{
+			Status: "partial",
+			Items: []contracts.BatchEventAckItem{{
+				Index:     0,
+				Status:    contracts.BatchItemRejected,
+				ErrorCode: "LICENSE_ENTITLEMENT_REQUIRED",
+				Error:     "errors.license.entitlementRequired",
+			}},
+		})
+		return
+	}
 	ack, err := h.service.Receive(r.Context(), body)
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -499,16 +521,43 @@ func (h *Handler) receiveEdgeEventBatch(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	raws := make([][]byte, 0, len(req.Items))
-	for _, item := range req.Items {
+	result := contracts.BatchEventAck{Status: "accepted", Items: make([]contracts.BatchEventAckItem, 0, len(req.Items))}
+	rawIndex := make([]int, 0, len(req.Items))
+	for index, item := range req.Items {
 		raw := bytes.TrimSpace(item)
 		if len(raw) == 0 || string(raw) == "null" {
 			writeError(w, http.StatusBadRequest, fmt.Errorf("%w: batch item payload is required", contracts.ErrInvalidEnvelope))
 			return
 		}
+		if moduleID := moduleForRawEdgeEvent(raw); moduleID != "" && h.gate != nil && h.gate.Require(r.Context(), moduleID) != nil {
+			result.Status = "partial"
+			result.Items = append(result.Items, contracts.BatchEventAckItem{
+				Index:     index,
+				Status:    contracts.BatchItemRejected,
+				ErrorCode: "LICENSE_ENTITLEMENT_REQUIRED",
+				Error:     "errors.license.entitlementRequired",
+			})
+			continue
+		}
+		rawIndex = append(rawIndex, index)
 		raws = append(raws, raw)
 	}
+	if len(raws) == 0 {
+		writeJSON(w, http.StatusAccepted, result)
+		return
+	}
 	ack := h.service.ReceiveBatch(r.Context(), raws)
-	writeJSON(w, http.StatusAccepted, ack)
+	for _, item := range ack.Items {
+		item.Index = rawIndex[item.Index]
+		result.Items = append(result.Items, item)
+		if item.Status != contracts.BatchItemAccepted {
+			result.Status = "partial"
+		}
+	}
+	if len(result.Items) != len(req.Items) {
+		result.Status = "partial"
+	}
+	writeJSON(w, http.StatusAccepted, result)
 }
 
 func (h *Handler) exchange(w http.ResponseWriter, r *http.Request) {
@@ -528,17 +577,22 @@ func (h *Handler) exchange(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, err, r)
 		return
 	}
-	if h.master != nil {
+	if h.master != nil && (h.gate == nil || h.gate.Require(r.Context(), licensegate.CloudSubscription) == nil) {
 		if err := h.master.RetryDeliveryForNode(r.Context(), req.RestaurantID, req.NodeDeviceID); err != nil {
 			slog.ErrorContext(r.Context(), "master-data delivery retry failed", "operation", "sync.exchange.delivery_retry", "restaurant_id", req.RestaurantID, "node_device_id", req.NodeDeviceID, "error", err)
 		}
 	}
 	platformExchangeLog(r, "exchange", "attempt", "", req.NodeDeviceID)
+	req, rejectedAcks := h.filterLicensedExchangeEvents(r.Context(), req)
 	resp, err := h.service.Exchange(r.Context(), req)
 	if err != nil {
 		platformExchangeLog(r, "exchange", "rejected", errorCodeForExchange(err), req.NodeDeviceID)
 		httpx.Error(w, err, r)
 		return
+	}
+	if len(rejectedAcks) > 0 {
+		resp.EdgeAcks = append(rejectedAcks, resp.EdgeAcks...)
+		resp.Status = contracts.SyncExchangeStatusPartial
 	}
 	resp.CloudPackages = h.licensedCloudPackages(r.Context(), resp.CloudPackages)
 	platformExchangeLog(r, "exchange", "success", "", req.NodeDeviceID)
@@ -552,20 +606,51 @@ func (h *Handler) licensedCloudPackages(ctx context.Context, packages []contract
 	}
 	result := make([]contracts.SyncExchangeCloudPackage, 0, len(packages))
 	for _, pkg := range packages {
-		moduleID := ""
-		switch pkg.StreamName {
-		case contracts.MasterDataStreamFloor:
-			moduleID = licensegate.TableMode
-		case contracts.MasterDataStreamRecipes:
-			moduleID = licensegate.KitchenSpace
-		case contracts.MasterDataStreamInventory:
-			moduleID = licensegate.WarehouseMode
+		if h.gate.Require(ctx, licensegate.CloudSubscription) != nil {
+			continue
 		}
+		moduleID := ""
+		moduleID = licensegate.ModuleForCloudStream(pkg.StreamName)
 		if moduleID == "" || h.gate.Require(ctx, moduleID) == nil {
 			result = append(result, pkg)
 		}
 	}
 	return result
+}
+
+// filterLicensedExchangeEvents не принимает module-owned Edge events при выключенном module entitlement.
+func (h *Handler) filterLicensedExchangeEvents(ctx context.Context, req contracts.SyncExchangeRequest) (contracts.SyncExchangeRequest, []contracts.SyncExchangeEdgeAck) {
+	if h.gate == nil || len(req.EdgeEvents) == 0 {
+		return req, nil
+	}
+	allowed := make([]contracts.SyncExchangeEdgeEvent, 0, len(req.EdgeEvents))
+	rejected := make([]contracts.SyncExchangeEdgeAck, 0)
+	for _, item := range req.EdgeEvents {
+		moduleID := moduleForRawEdgeEvent(item.Payload)
+		if moduleID == "" || h.gate.Require(ctx, moduleID) == nil {
+			allowed = append(allowed, item)
+			continue
+		}
+		rejected = append(rejected, contracts.SyncExchangeEdgeAck{
+			ClientItemID: item.ClientItemID,
+			Status:       contracts.BatchItemRejected,
+			ErrorCode:    "LICENSE_ENTITLEMENT_REQUIRED",
+			MessageKey:   "errors.license.entitlementRequired",
+			Details:      map[string]string{"module_id": moduleID},
+		})
+	}
+	req.EdgeEvents = allowed
+	return req, rejected
+}
+
+func moduleForRawEdgeEvent(raw json.RawMessage) string {
+	var envelope struct {
+		EventType string `json:"event_type"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return ""
+	}
+	return licensegate.ModuleForEdgeEvent(envelope.EventType)
 }
 
 func bearerToken(raw string) string {

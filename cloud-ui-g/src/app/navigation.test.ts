@@ -5,10 +5,12 @@ describe('licensed navigation', () => {
   it('fails closed for licensed sections and shows enabled modules', () => {
     expect(navigationForEntitlements({}).map((item) => item.route.id)).not.toContain('floor');
     expect(navigationForEntitlements({}).map((item) => item.route.id)).not.toContain('inventory');
-    expect(navigationForEntitlements({}).map((item) => item.route.id)).toEqual(expect.arrayContaining(['catalog', 'staff-permissions', 'licenses']));
+    expect(navigationForEntitlements({}).map((item) => item.route.id)).toEqual(expect.arrayContaining(['dashboard', 'licenses']));
+    expect(navigationForEntitlements({}).map((item) => item.route.id)).not.toContain('catalog');
 
-    const enabled = navigationForEntitlements({ 'table-mode': true, 'warehouse-mode': true }).map((item) => item.route.id);
+    const enabled = navigationForEntitlements({ 'cloud-subscription': true, 'table-mode': true, 'warehouse-mode': true }).map((item) => item.route.id);
     expect(enabled).toContain('floor');
     expect(enabled).toContain('inventory');
+    expect(enabled).toContain('catalog');
   });
 });

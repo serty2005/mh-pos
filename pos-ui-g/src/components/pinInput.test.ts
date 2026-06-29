@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { appendPinDigit, canSubmitPin, maxPinLength, minPinLength } from './pinInput';
+import { appendPinDigit, canSubmitPin, maxPinLength, minPinLength, shouldAttemptPinLogin } from './pinInput';
 
 describe('PIN input helpers', () => {
   it('allows seed PINs longer than the minimum length', () => {
@@ -16,5 +16,14 @@ describe('PIN input helpers', () => {
   it('submits only PINs that reached the minimum length', () => {
     expect(canSubmitPin('1'.repeat(minPinLength - 1))).toBe(false);
     expect(canSubmitPin('1'.repeat(minPinLength))).toBe(true);
+  });
+
+  it('auto-attempts PIN login only for a fresh complete value', () => {
+    const completePin = '1'.repeat(minPinLength);
+
+    expect(shouldAttemptPinLogin('1'.repeat(minPinLength - 1), '', false)).toBe(false);
+    expect(shouldAttemptPinLogin(completePin, completePin, false)).toBe(false);
+    expect(shouldAttemptPinLogin(completePin, '', true)).toBe(false);
+    expect(shouldAttemptPinLogin(completePin, '', false)).toBe(true);
   });
 });

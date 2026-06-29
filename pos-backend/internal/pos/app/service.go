@@ -193,6 +193,9 @@ type ServiceOptions struct {
 	RecipeSuggestionMaxPrepTimeDeltaMinutes int
 	PrintSender                             appprint.Sender
 	PrintMaxAttempts                        int
+	LicenseGate                             interface {
+		Require(context.Context, string) error
+	}
 }
 
 func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock) *Service {
@@ -202,7 +205,7 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 // NewServiceWithOptions создает POS application service с дополнительными runtime hooks.
 func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, options ServiceOptions) *Service {
 	pricingSvc := apppricing.NewService(repo, tx, ids, clock)
-	ticketsSvc := appticket.NewService(repo, tx, ids, clock)
+	ticketsSvc := appticket.NewServiceWithOptions(repo, tx, ids, clock, appticket.Options{Gate: options.LicenseGate})
 	printsSvc := appprint.NewService(repo, ids, clock, appprint.Options{
 		Sender:      options.PrintSender,
 		MaxAttempts: options.PrintMaxAttempts,

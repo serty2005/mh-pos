@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"mh-pos-platform/licensegate"
+
 	"pos-backend/internal/platform/clock"
 	"pos-backend/internal/platform/idgen"
 	txmanager "pos-backend/internal/platform/tx"
@@ -25,10 +27,23 @@ type Service struct {
 	tx    txmanager.Manager
 	ids   idgen.Generator
 	clock clock.Clock
+	gate  entitlementGate
 }
 
 func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock) *Service {
-	return &Service{repo: repo, tx: tx, ids: ids, clock: clock}
+	return NewServiceWithOptions(repo, tx, ids, clock, Options{})
+}
+
+type entitlementGate interface {
+	Require(context.Context, string) error
+}
+
+type Options struct {
+	Gate entitlementGate
+}
+
+func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, options Options) *Service {
+	return &Service{repo: repo, tx: tx, ids: ids, clock: clock, gate: options.Gate}
 }
 
 // IssueInput описывает контекст закрытого final check для выпуска билетов.
@@ -96,6 +111,11 @@ func (s *Service) IssueForClosedCheck(ctx context.Context, in IssueInput) ([]dom
 		}
 		if !item.QRConfirmationEnabled {
 			continue
+		}
+		if s.gate != nil {
+			if err := s.gate.Require(ctx, licensegate.TicketMode); err != nil {
+				return nil, err
+			}
 		}
 		// Replay не создает второй ticket: единица для line уже могла быть выпущена.
 		if _, err := s.repo.GetTicketUnitByOrderLine(ctx, line.ID); err == nil {

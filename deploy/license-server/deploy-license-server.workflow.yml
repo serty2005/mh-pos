@@ -1,0 +1,70 @@
+name: Deploy License Server
+
+on:
+  push:
+    branches:
+      - production
+    paths:
+      - 'license-server/**'
+      - 'shared/platform/**'
+      - 'deploy/license-server/**'
+      - 'scripts/deploy-license-server.sh'
+      - '.github/workflows/deploy-license-server.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: license-server-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: license-server/go.mod
+          cache: true
+          cache-dependency-path: |
+            license-server/go.sum
+            license-server/go.mod
+            shared/platform/go.mod
+
+      - name: Test
+        working-directory: license-server
+        run: go test ./...
+
+      - name: Build linux binary
+        working-directory: license-server
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o license-api ./cmd/license-api
+
+      - name: Prepare SSH key
+        env:
+          LICENSE_DEPLOY_SSH_KEY: ${{ secrets.LICENSE_DEPLOY_SSH_KEY }}
+          LICENSE_DEPLOY_KNOWN_HOSTS: ${{ secrets.LICENSE_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          test -n "$LICENSE_DEPLOY_SSH_KEY"
+          test -n "$LICENSE_DEPLOY_KNOWN_HOSTS"
+          install -d -m 0700 ~/.ssh
+          printf '%s\n' "$LICENSE_DEPLOY_SSH_KEY" > ~/.ssh/license_deploy_key
+          printf '%s\n' "$LICENSE_DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 0600 ~/.ssh/license_deploy_key
+
+      - name: Deploy over SSH
+        env:
+          LICENSE_DEPLOY_HOST: ${{ secrets.LICENSE_DEPLOY_HOST }}
+          LICENSE_DEPLOY_USER: ${{ secrets.LICENSE_DEPLOY_USER }}
+          LICENSE_DEPLOY_PORT: ${{ secrets.LICENSE_DEPLOY_PORT }}
+          LICENSE_DEPLOY_KEY_PATH: /home/runner/.ssh/license_deploy_key
+          LICENSE_DEPLOY_BINARY: license-server/license-api
+        run: scripts/deploy-license-server.sh

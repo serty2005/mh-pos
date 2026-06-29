@@ -18,6 +18,7 @@ import {
 } from '../shared/backendMappers';
 import { getClientDeviceId } from '../shared/clientIdentity';
 import { t } from '../shared/i18n';
+import { hasEntitlement } from '../shared/licenseModules';
 import type {
   BackendActorContext,
   BackendCashDrawerEvent,
@@ -132,6 +133,7 @@ interface POSContextType {
   logEvents: LogEvent[];
   addLogEvent: (msg: string, type?: 'info' | 'warn' | 'success') => void;
   authSnapshot: AuthSnapshot;
+  entitlements: Record<string, boolean>;
   isEdgePaired: boolean;
   provisioningStatus: BackendProvisioningStatus | null;
   provisioningLoading: boolean;
@@ -167,7 +169,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return readStoredThemeSettings();
   });
   const [isPinLocked, setPinLocked] = useState<boolean>(true);
-  const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  const [selectedTableId, setSelectedTableIdState] = useState<string | null>(null);
 
   useEffect(() => {
     applyPOSTheme(themeSettings);
@@ -204,6 +206,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [provisioningError, setProvisioningError] = useState<string>('');
   const [logEvents, setLogEvents] = useState<LogEvent[]>([]);
   const [entitlements, setEntitlements] = useState<Record<string, boolean>>({});
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
   const isEdgePaired = useMemo(
     () => Boolean(auth.nodeDeviceId && auth.restaurantId),
@@ -214,12 +217,17 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     actorRef.current = actor;
   }, [actor]);
 
-  useEffect(() => {
-    void api.getEntitlements().then((snapshot) => {
+  const refreshEntitlements = useCallback(async () => {
+    try {
+      const snapshot = await api.getEntitlements();
       if (snapshot.status === 'active' && new Date(snapshot.expires_at).getTime() > Date.now()) {
         setEntitlements(snapshot.entitlements);
+        return;
       }
-    }).catch(() => {});
+      setEntitlements({});
+    } catch {
+      // Оставляем последний снимок: временная сеть не должна внезапно прятать уже открытые POS-разделы.
+    }
   }, [api]);
 
   const setAuth = useCallback((next: AuthSnapshot) => {
@@ -367,27 +375,34 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       api.listTables(activeHallId),
       api.listActiveOrdersByHall(activeHallId),
     ]);
+    let nextActiveOrders = activeOrders;
+    if (selectedOrderId && !activeOrders.some((order) => order.id === selectedOrderId)) {
+      const selectedOrder = await api.getOrder(selectedOrderId).catch(() => null);
+      if (selectedOrder && (selectedOrder.status === 'open' || selectedOrder.status === 'locked')) {
+        nextActiveOrders = [...activeOrders, selectedOrder];
+      }
+    }
     setTablesDto(tables.filter((table) => table.active));
-    setActiveOrdersDto(activeOrders);
-  }, [activeHallId, api, shift]);
+    setActiveOrdersDto(nextActiveOrders);
+  }, [activeHallId, api, selectedOrderId, shift]);
 
   const refreshCurrentPrechecks = useCallback(async (orderId?: string) => {
-    const id = orderId ?? activeOrdersDto.find((order) => order.table_id === selectedTableId)?.id;
+    const id = orderId ?? selectedOrderId ?? activeOrdersDto.find((order) => order.table_id === selectedTableId)?.id;
     if (!id || !authRef.current.sessionId) {
       setPrechecksDto([]);
       return;
     }
     setPrechecksDto(await api.listPrechecksByOrder(id));
-  }, [activeOrdersDto, api, selectedTableId]);
+  }, [activeOrdersDto, api, selectedOrderId, selectedTableId]);
 
   const refreshCurrentPricing = useCallback(async (orderId?: string) => {
-    const id = orderId ?? activeOrdersDto.find((order) => order.table_id === selectedTableId)?.id;
+    const id = orderId ?? selectedOrderId ?? activeOrdersDto.find((order) => order.table_id === selectedTableId)?.id;
     if (!id || !authRef.current.sessionId) {
       setCurrentPricingDto(null);
       return;
     }
     setCurrentPricingDto(await api.getOrderPricing(id).catch(() => null));
-  }, [activeOrdersDto, api, selectedTableId]);
+  }, [activeOrdersDto, api, selectedOrderId, selectedTableId]);
 
   const applyClosedOrdersPage = useCallback(async (page: number, businessDate: string) => {
     const nextPage = Math.max(1, page);
@@ -438,6 +453,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshAll = useCallback(async (permissionsOverride?: string[]) => {
     try {
+      await refreshEntitlements();
       await refreshOps(permissionsOverride);
       await refreshDirectory();
       await refreshFloor();
@@ -447,11 +463,20 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (error) {
       handleError(error, t.ops.posRefreshFailed);
     }
-  }, [handleError, refreshActivity, refreshCurrentPrechecks, refreshCurrentPricing, refreshDirectory, refreshFloor, refreshOps]);
+  }, [handleError, refreshActivity, refreshCurrentPrechecks, refreshCurrentPricing, refreshDirectory, refreshEntitlements, refreshFloor, refreshOps]);
 
   useEffect(() => {
     void refreshIdentity();
-  }, [refreshIdentity]);
+    void refreshEntitlements();
+  }, [refreshEntitlements, refreshIdentity]);
+
+  useEffect(() => {
+    if (isPinLocked || !actor || !auth.sessionId || !auth.nodeDeviceId) return undefined;
+    const timer = window.setInterval(() => {
+      void refreshAll(actor.permissions);
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [actor, auth.nodeDeviceId, auth.sessionId, isPinLocked, refreshAll]);
 
   useEffect(() => {
     if (isEdgePaired) return undefined;
@@ -502,8 +527,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const activePrecheck = useMemo(() => activeIssuedPrecheck(prechecksDto), [prechecksDto]);
   const backendCurrentOrder = useMemo(
-    () => activeOrdersDto.find((order) => order.table_id === selectedTableId) ?? null,
-    [activeOrdersDto, selectedTableId],
+    () => activeOrdersDto.find((order) => selectedOrderId ? order.id === selectedOrderId : order.table_id === selectedTableId) ?? null,
+    [activeOrdersDto, selectedOrderId, selectedTableId],
   );
   const currentOrder = useMemo(
     () => backendCurrentOrder ? applyPricingToOrder(mapOrder(backendCurrentOrder, activePrecheck), currentPricingDto) : null,
@@ -531,9 +556,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return moduleVersion || schemaVersion || t.common.notAvailable;
   }, [storageStatusDto]);
 
+  const setSelectedTableId = useCallback((id: string | null) => {
+    setSelectedOrderId(null);
+    setSelectedTableIdState(id);
+  }, []);
+
   const setActiveHallId = useCallback((id: string) => {
     setActiveHallIdState(id);
-    setSelectedTableId(null);
+    setSelectedOrderId(null);
+    setSelectedTableIdState(null);
   }, []);
 
   const pinLogin = useCallback(async (pin: string) => {
@@ -569,7 +600,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setActor(null);
       setShift(null);
       setCashSessionDto(null);
-      setSelectedTableId(null);
+      setSelectedOrderId(null);
+      setSelectedTableIdState(null);
       setPinLocked(true);
       addLogEvent(t.ops.terminalLocked, 'info');
     }
@@ -651,7 +683,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!table) return;
     try {
       const created = await api.createOrder(tableId, table.name, guestsCount);
-      setSelectedTableId(tableId);
+      setSelectedOrderId(created.id);
+      setSelectedTableIdState(tableId);
+      setActiveOrdersDto((prev) => upsertOrder(prev, created));
       setCurrentSection('order');
       addLogEvent(t.ops.orderCreated(created.edge_order_id), 'success');
       await refreshFloor();
@@ -663,13 +697,17 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const createCounterOrder = useCallback(async () => {
     try {
       const created = await api.createCounterOrder();
+      setSelectedOrderId(created.id);
+      setSelectedTableIdState(null);
+      setActiveOrdersDto((prev) => upsertOrder(prev, created));
       setCurrentSection('order');
       addLogEvent(t.ops.orderCreated(created.edge_order_id), 'success');
-      await refreshFloor();
+      await refreshCurrentPrechecks(created.id);
+      await refreshCurrentPricing(created.id);
     } catch (error) {
       handleError(error, t.ops.orderCreateFailed);
     }
-  }, [addLogEvent, api, handleError, refreshFloor, setCurrentSection]);
+  }, [addLogEvent, api, handleError, refreshCurrentPrechecks, refreshCurrentPricing, setCurrentSection]);
 
   const addMenuItemToOrder = useCallback(async (item: MenuItem, selectedModifiers: SelectedModifier[]): Promise<CommandResult> => {
     if (!backendCurrentOrder) return { success: false, errorKey: 'blocks.noOrderSelected' };
@@ -802,7 +840,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await api.capturePrecheckPayment(activePrecheck.id, method, inputAmount, activePrecheck.currency_code);
       const change = paymentChange(activePrecheck.remaining_total, inputAmount);
       addLogEvent(t.ops.paymentCaptured, 'success');
-      setSelectedTableId(null);
+      setSelectedOrderId(null);
+      setSelectedTableIdState(null);
       await refreshFloor();
       await refreshActivity();
       return { success: true, change };
@@ -818,7 +857,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await api.counterPayment(backendCurrentOrder.id, method, inputAmount, 'RUB');
       const change = paymentChange(backendCurrentOrder.total, inputAmount);
       addLogEvent(t.ops.paymentCaptured, 'success');
-      setSelectedTableId(null);
+      setSelectedOrderId(null);
+      setSelectedTableIdState(null);
       await refreshFloor();
       await refreshActivity();
       return { success: true, change };
@@ -901,7 +941,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setThemeSettings((prev) => ({ ...prev, scheme }));
   }, []);
 
-  const tableModeEnabled = entitlements['table-mode'] === true;
+  const tableModeEnabled = hasEntitlement(entitlements, 'table-mode');
 
   const value = useMemo<POSContextType>(() => ({
     currentSection,
@@ -968,6 +1008,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logEvents,
     addLogEvent,
     authSnapshot: auth,
+    entitlements,
     isEdgePaired,
     provisioningStatus: provisioningStatusDto,
     provisioningLoading,
@@ -1077,4 +1118,10 @@ function applyPricingToOrder(order: Order, pricing: BackendPricingCalculation | 
       totalPrice: lineTotals.get(line.id) ?? line.totalPrice,
     })),
   };
+}
+
+function upsertOrder(orders: BackendOrder[], order: BackendOrder): BackendOrder[] {
+  return orders.some((item) => item.id === order.id)
+    ? orders.map((item) => item.id === order.id ? order : item)
+    : [...orders, order];
 }

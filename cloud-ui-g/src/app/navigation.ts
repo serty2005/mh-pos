@@ -1,4 +1,5 @@
 import type { CloudRoute, CloudRouteId } from './routes';
+import { hasEntitlement } from '../shared/licenseModules';
 
 export type NavigationItem = {
   route: CloudRoute;
@@ -29,8 +30,10 @@ export const navigationById = new Map<CloudRouteId, NavigationItem>(
 
 export function navigationForEntitlements(entitlements: Record<string, boolean>) {
   return navigationItems.filter((item) => {
-    if (item.route.id === 'floor') return entitlements['table-mode'] === true;
-    if (item.route.id === 'inventory') return entitlements['warehouse-mode'] === true;
+    if (item.route.id === 'licenses') return true;
+    if (item.route.id === 'floor') return hasEntitlement(entitlements, 'table-mode');
+    if (item.route.id === 'inventory') return hasEntitlement(entitlements, 'warehouse-mode');
+    if (item.route.id !== 'dashboard') return hasEntitlement(entitlements, 'cloud-subscription');
     return true;
   });
 }

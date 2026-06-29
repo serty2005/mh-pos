@@ -3,21 +3,13 @@ import { RefreshCw, ShieldCheck } from 'lucide-react';
 import { getEntitlements } from '../../shared/api/endpoints';
 import type { EntitlementSnapshot } from '../../shared/api/schemas';
 import { useI18n } from '../../shared/i18n/I18nProvider';
+import { productModules } from '../../shared/licenseModules';
 import EmptyState from '../../shared/ui/EmptyState';
 import PanelHeader from '../../shared/ui/PanelHeader';
 import SafeErrorBanner from '../../shared/ui/SafeErrorBanner';
 import { formatIsoDateTime } from '../../shared/utils/format';
 
 type Status = 'loading' | 'ready' | 'blocked';
-
-const moduleIds = [
-  'table-mode',
-  'telegram-worker',
-  'kitchen-space',
-  'waiter-space',
-  'checker-flow',
-  'warehouse-mode',
-] as const;
 
 export default function LicensesPage() {
   const { t } = useI18n();
@@ -46,7 +38,7 @@ export default function LicensesPage() {
   const expiresAt = snapshot ? new Date(snapshot.expires_at).getTime() : 0;
   const isCurrent = Boolean(snapshot && snapshot.status === 'active' && expiresAt > Date.now());
   const enabledCount = useMemo(
-    () => moduleIds.filter((moduleId) => snapshot?.entitlements[moduleId] === true).length,
+    () => productModules.filter((module) => snapshot?.entitlements[module.id] === true).length,
     [snapshot],
   );
 
@@ -89,7 +81,7 @@ export default function LicensesPage() {
             </p>
             <p className="rounded-2xl border border-slate-200 bg-white p-4 text-xs font-semibold text-slate-500">
               {t('licenses.fields.modules')}
-              <span className="mt-2 block font-mono text-lg font-semibold text-slate-950">{enabledCount}/{moduleIds.length}</span>
+              <span className="mt-2 block font-mono text-lg font-semibold text-slate-950">{enabledCount}/{productModules.length}</span>
             </p>
             <p className="rounded-2xl border border-slate-200 bg-white p-4 text-xs font-semibold text-slate-500">
               {t('licenses.fields.expiresAt')}
@@ -109,14 +101,15 @@ export default function LicensesPage() {
               </div>
 
               <div className="grid gap-2 sm:grid-cols-2">
-                {moduleIds.map((moduleId) => {
-                  const enabled = snapshot.entitlements[moduleId] === true;
+                {productModules.map((module) => {
+                  const enabled = snapshot.entitlements[module.id] === true;
                   return (
                     <div
-                      key={moduleId}
+                      key={module.id}
                       className={enabled ? 'rounded-xl border border-emerald-200 bg-emerald-50 p-3' : 'rounded-xl border border-slate-200 bg-slate-50 p-3'}
                     >
-                      <p className="font-mono text-xs font-semibold text-slate-950">{moduleId}</p>
+                      <p className="font-mono text-xs font-semibold text-slate-950">{module.id}</p>
+                      <p className="mt-1 text-xs text-slate-600">{t(module.labelKey)}</p>
                       <p className={enabled ? 'mt-1 text-xs font-semibold text-emerald-700' : 'mt-1 text-xs font-semibold text-slate-500'}>
                         {enabled ? t('licenses.enabled') : t('licenses.disabled')}
                       </p>

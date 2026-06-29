@@ -22,3 +22,4 @@ scripts/.seed-dev-system-summary.json
 .env
 tools/plane-mcp/.env
 tools/plane-mcp/.env.local
+.ssh/

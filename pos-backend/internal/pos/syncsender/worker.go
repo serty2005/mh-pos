@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"mh-pos-platform/licensegate"
+
 	platformlog "pos-backend/internal/platform/logging"
 	"pos-backend/internal/pos/app"
 	"pos-backend/internal/pos/domain"
@@ -75,6 +77,9 @@ type Config struct {
 	// CloudPackageBurstThreshold разрешает немедленный Cloud pull после
 	// bounded Cloud->Edge response, чтобы забрать следующие порции.
 	CloudPackageBurstThreshold int
+	LicenseGate                interface {
+		Require(context.Context, string) error
+	}
 }
 
 type Worker struct {
@@ -231,6 +236,28 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 				ActorEmployeeID: derefOptional(msg.ActorEmployeeID),
 			}, "outbox_id", msg.ID, "sequence_no", msg.SequenceNo, "event_type", msg.CommandType, "reason", reason)
 			continue
+		}
+		if moduleID := licensegate.ModuleForEdgeEvent(msg.CommandType); moduleID != "" && w.config.LicenseGate != nil {
+			if err := w.config.LicenseGate.Require(ctx, moduleID); err != nil {
+				reason := "license entitlement required for module " + moduleID
+				if errors.Is(err, licensegate.ErrUnavailable) {
+					reason = "license authority unavailable for module " + moduleID
+				}
+				if markErr := w.service.MarkOutboxRetryableFailure(ctx, msg.ID, reason); markErr != nil {
+					return fmt.Errorf("mark entitlement-blocked outbox %s: %w", msg.ID, markErr)
+				}
+				platformlog.Log(ctx, w.logger, slog.LevelWarn, "POS sync sender deferred module-owned outbox message", platformlog.Event{
+					Operation:       "sync.sender",
+					Action:          "message.defer",
+					Result:          "rejected",
+					ErrorCode:       "SYNC_ENTITLEMENT_BLOCKED",
+					NodeDeviceID:    msg.NodeDeviceID,
+					ClientDeviceID:  derefOptional(msg.ClientDeviceID),
+					SessionID:       derefOptional(msg.SessionID),
+					ActorEmployeeID: derefOptional(msg.ActorEmployeeID),
+				}, "outbox_id", msg.ID, "sequence_no", msg.SequenceNo, "event_type", msg.CommandType, "module_id", moduleID, "reason", reason)
+				continue
+			}
 		}
 		sendable = append(sendable, msg)
 	}

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -99,6 +100,7 @@ func run() error {
 		LicenseServerURL:                        licenseURL,
 		CloudProvisioningClient:                 posprovisioninghttp.NewCloudClient(10 * time.Second),
 		LicenseProvisioningClient:               posprovisioninghttp.NewLicenseClient(10 * time.Second),
+		LicenseGate:                             licenseGate,
 		StorageArchiveDir:                       archiveDir,
 		RecipeSuggestionMaxPrepTimeDeltaMinutes: cfg.Int("POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES", 120),
 		MasterDataBackupBeforeFullSnapshot: func(ctx context.Context, req app.MasterDataBackupRequest) error {
@@ -117,7 +119,7 @@ func run() error {
 
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewRouterWithLicense(service, licenseGate),
+		Handler:           withOptionalPOSUI(api.NewRouterWithLicense(service, licenseGate), cfg.Get("POS_UI_DIST_DIR", "")),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -133,6 +135,7 @@ func run() error {
 			SendTimeout:                envDuration(cfg.Get("POS_SYNC_SENDER_SEND_TIMEOUT", ""), 10*time.Second),
 			EmergencyPendingThreshold:  cfg.Int("POS_SYNC_SENDER_EMERGENCY_PENDING_THRESHOLD", 100),
 			CloudPackageBurstThreshold: cfg.Int("POS_SYNC_SENDER_CLOUD_PACKAGE_BURST_THRESHOLD", 2),
+			LicenseGate:                licenseGate,
 		}, slog.Default())
 		go worker.Run(rootCtx)
 	} else {
@@ -191,6 +194,34 @@ func syncEndpoint(rawCloudURL string) string {
 		return trimmed
 	}
 	return trimmed + "/api/v1/sync/edge-events"
+}
+
+func withOptionalPOSUI(apiHandler http.Handler, uiDir string) http.Handler {
+	uiDir = strings.TrimSpace(uiDir)
+	if uiDir == "" {
+		return apiHandler
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead || isPOSAPIPath(r.URL.Path) {
+			apiHandler.ServeHTTP(w, r)
+			return
+		}
+
+		rel := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+		if rel == "" {
+			rel = "index.html"
+		}
+		file := filepath.Join(uiDir, filepath.FromSlash(rel))
+		if stat, err := os.Stat(file); err == nil && !stat.IsDir() {
+			http.ServeFile(w, r, file)
+			return
+		}
+		http.ServeFile(w, r, filepath.Join(uiDir, "index.html"))
+	})
+}
+
+func isPOSAPIPath(requestPath string) bool {
+	return requestPath == "/health" || strings.HasPrefix(requestPath, "/api/")
 }
 
 func envDuration(raw string, fallback time.Duration) time.Duration {

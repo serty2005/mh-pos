@@ -40,9 +40,10 @@ func run() error {
 	addr := cfg.Get("LICENSE_HTTP_ADDR", ":8095")
 	dbPath := cfg.Get("LICENSE_SQLITE_PATH", "data/license-server.db")
 	backupDir := cfg.Get("LICENSE_SQLITE_BACKUP_DIR", filepath.Join(filepath.Dir(dbPath), "backups"))
-	adminToken := cfg.Get("LICENSE_ADMIN_TOKEN", "")
-	if adminToken == "" {
-		return errors.New("LICENSE_ADMIN_TOKEN is required")
+	adminLogin := cfg.Get("LICENSE_SUPER_ADMIN_LOGIN", "")
+	adminPassword := cfg.Get("LICENSE_SUPER_ADMIN_PASSWORD", "")
+	if adminLogin == "" || adminPassword == "" {
+		return errors.New("LICENSE_SUPER_ADMIN_LOGIN and LICENSE_SUPER_ADMIN_PASSWORD are required")
 	}
 	if err := backupSQLiteFiles(dbPath, backupDir); err != nil {
 		return err
@@ -56,7 +57,11 @@ func run() error {
 	if err := repo.Migrate(context.Background()); err != nil {
 		return err
 	}
-	server := &http.Server{Addr: addr, Handler: api.NewRouter(app.NewService(repo), adminToken), ReadHeaderTimeout: 5 * time.Second}
+	service := app.NewService(repo)
+	if err := service.BootstrapSuperAdmin(context.Background(), adminLogin, adminPassword); err != nil {
+		return err
+	}
+	server := &http.Server{Addr: addr, Handler: api.NewRouter(service), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		slog.Info("License Server listening", "addr", addr, "sqlite", dbPath)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
