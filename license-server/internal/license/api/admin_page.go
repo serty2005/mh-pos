@@ -1,13 +1,21 @@
 package api
 
-import "net/http"
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+
+	"mh-pos-platform/licensegate"
+)
 
 func (h *Handler) adminPage(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(adminPageHTML))
 }
 
-const adminPageHTML = `<!doctype html>
+var adminPageHTML = strings.NewReplacer(
+	"__MODULE_CATALOG_JSON__", moduleCatalogJSON(),
+).Replace(`<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -43,7 +51,15 @@ const adminPageHTML = `<!doctype html>
     .revoked { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
     .modules { display: flex; flex-wrap: wrap; gap: 6px; }
     .module { border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 7px; color: #334155; background: #f8fafc; }
+    .module-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+    .toggle { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; background: #f8fafc; }
+    .toggle input { width: 18px; height: 18px; margin-top: 2px; }
+    .toggle strong { display: block; font-size: 13px; color: #0f172a; }
+    .toggle span { display: block; margin-top: 3px; color: #64748b; font-size: 12px; line-height: 1.35; }
+    details { margin-top: 12px; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 10px 12px; }
+    summary { cursor: pointer; color: #334155; font-size: 12px; font-weight: 800; }
     @media (max-width: 760px) { main { padding: 12px; } .grid { grid-template-columns: 1fr; } table { display: block; overflow-x: auto; } }
+    @media (max-width: 640px) { .module-grid { grid-template-columns: 1fr; } .toolbar button { flex: 1 1 140px; } }
   </style>
 </head>
 <body>
@@ -87,30 +103,30 @@ const adminPageHTML = `<!doctype html>
           <label>Issued at<input id="issued" type="datetime-local"></label>
           <label>Expires at<input id="expires" type="datetime-local"></label>
         </div>
-        <label style="margin-top:12px">Entitlements JSON
-          <textarea id="entitlements">{
-  "table-mode": true,
-  "telegram-worker": false,
-  "kitchen-space": true,
-  "waiter-space": false,
-  "checker-flow": false,
-  "warehouse-mode": false
-}</textarea>
-        </label>
+        <div id="moduleToggles" class="module-grid" aria-label="Product modules"></div>
+        <details>
+          <summary>Advanced support JSON</summary>
+          <p>Use this only to inspect or paste a support snapshot. Standard save uses the module toggles above.</p>
+          <textarea id="entitlements" style="margin-top:8px"></textarea>
+          <button id="applyJson" type="button" class="secondary" style="margin-top:8px">Apply JSON to toggles</button>
+        </details>
         <div class="toolbar" style="margin-top:12px">
           <button id="save" type="button">Save snapshot</button>
-          <button id="activePreset" type="button" class="secondary">Active baseline</button>
-          <button id="minimalPreset" type="button" class="secondary">Minimal POS</button>
+          <button id="activePreset" type="button" class="secondary">Full pilot</button>
+          <button id="cloudPreset" type="button" class="secondary">Tenant Cloud</button>
+          <button id="minimalPreset" type="button" class="secondary">Basic POS</button>
           <button id="revokedPreset" type="button" class="secondary">Revoked</button>
         </div>
       </section>
     </div>
   </main>
   <script>
-    const moduleIds = ['table-mode','telegram-worker','kitchen-space','waiter-space','checker-flow','warehouse-mode'];
+    const moduleCatalog = __MODULE_CATALOG_JSON__;
+    const moduleIds = moduleCatalog.map((module) => module.id);
     const token = document.querySelector('#token');
     const rows = document.querySelector('#rows');
     const statusLine = document.querySelector('#status');
+    const moduleToggles = document.querySelector('#moduleToggles');
     const fields = {
       tenant: document.querySelector('#tenant'),
       server: document.querySelector('#server'),
@@ -122,6 +138,34 @@ const adminPageHTML = `<!doctype html>
     };
 
     function setStatus(message) { statusLine.textContent = message || ''; }
+    function renderModuleToggles() {
+      moduleToggles.innerHTML = '';
+      for (const module of moduleCatalog) {
+        const label = document.createElement('label');
+        label.className = 'toggle';
+        label.innerHTML = '<input type="checkbox"><span><strong></strong><span></span></span>';
+        label.querySelector('input').dataset.moduleId = module.id;
+        label.querySelector('strong').textContent = module.id + ' - ' + module.label;
+        label.querySelector('span span').textContent = module.description;
+        moduleToggles.appendChild(label);
+      }
+    }
+    function readEntitlements() {
+      const out = {};
+      for (const id of moduleIds) out[id] = false;
+      for (const input of moduleToggles.querySelectorAll('input[type="checkbox"]')) {
+        out[input.dataset.moduleId] = input.checked;
+      }
+      fields.entitlements.value = JSON.stringify(out, null, 2);
+      return out;
+    }
+    function setEntitlements(next) {
+      const source = next || {};
+      for (const input of moduleToggles.querySelectorAll('input[type="checkbox"]')) {
+        input.checked = source[input.dataset.moduleId] === true;
+      }
+      readEntitlements();
+    }
     function toLocalInput(date) {
       const d = new Date(date);
       if (Number.isNaN(d.getTime())) return '';
@@ -142,7 +186,7 @@ const adminPageHTML = `<!doctype html>
       fields.status.value = snapshot.status || 'active';
       fields.issued.value = toLocalInput(snapshot.issued_at || new Date().toISOString());
       fields.expires.value = toLocalInput(snapshot.expires_at || new Date(Date.now() + 86400000 * 30).toISOString());
-      fields.entitlements.value = JSON.stringify(snapshot.entitlements || {}, null, 2);
+      setEntitlements(snapshot.entitlements || {});
     }
     function render(items) {
       rows.innerHTML = '';
@@ -183,8 +227,7 @@ const adminPageHTML = `<!doctype html>
       const tenant = fields.tenant.value.trim();
       const server = fields.server.value.trim();
       if (!tenant || !server) { setStatus('Tenant and server are required.'); return; }
-      let entitlements;
-      try { entitlements = JSON.parse(fields.entitlements.value); } catch { setStatus('Entitlements JSON is invalid.'); return; }
+      const entitlements = readEntitlements();
       const payload = {
         version: Number(fields.version.value),
         status: fields.status.value,
@@ -205,18 +248,46 @@ const adminPageHTML = `<!doctype html>
       fields.issued.value = toLocalInput(now.toISOString());
       fields.expires.value = toLocalInput(expires.toISOString());
       fields.status.value = kind === 'revoked' ? 'revoked' : 'active';
-      const enabled = Object.fromEntries(moduleIds.map((id) => [id, kind === 'active' || (kind === 'minimal' && id === 'table-mode')]));
+      const enabled = Object.fromEntries(moduleIds.map((id) => [id, kind === 'active' || (kind === 'cloud' && id === 'cloud-subscription')]));
       if (kind === 'revoked') for (const id of moduleIds) enabled[id] = false;
-      fields.entitlements.value = JSON.stringify(enabled, null, 2);
+      setEntitlements(enabled);
     }
+    function applyJsonToToggles() {
+      let entitlements;
+      try { entitlements = JSON.parse(fields.entitlements.value); } catch { setStatus('Entitlements JSON is invalid.'); return; }
+      setEntitlements(entitlements);
+      setStatus('Advanced JSON applied to toggles.');
+    }
+    renderModuleToggles();
     document.querySelector('#refresh').addEventListener('click', () => refresh().catch((error) => setStatus(String(error))));
     document.querySelector('#save').addEventListener('click', () => save().catch((error) => setStatus(String(error))));
     document.querySelector('#activePreset').addEventListener('click', () => preset('active'));
+    document.querySelector('#cloudPreset').addEventListener('click', () => preset('cloud'));
     document.querySelector('#minimalPreset').addEventListener('click', () => preset('minimal'));
     document.querySelector('#revokedPreset').addEventListener('click', () => preset('revoked'));
+    document.querySelector('#applyJson').addEventListener('click', applyJsonToToggles);
     const now = new Date();
     fields.issued.value = toLocalInput(now.toISOString());
     fields.expires.value = toLocalInput(new Date(Date.now() + 86400000 * 30).toISOString());
+    preset('cloud');
   </script>
 </body>
-</html>`
+</html>`)
+
+func moduleCatalogJSON() string {
+	type moduleDTO struct {
+		ID          string `json:"id"`
+		Label       string `json:"label"`
+		Description string `json:"description"`
+	}
+	modules := licensegate.CanonicalModules()
+	out := make([]moduleDTO, 0, len(modules))
+	for _, module := range modules {
+		out = append(out, moduleDTO{ID: module.ID, Label: module.Label, Description: module.Description})
+	}
+	body, err := json.Marshal(out)
+	if err != nil {
+		return "[]"
+	}
+	return string(body)
+}

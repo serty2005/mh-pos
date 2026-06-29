@@ -162,6 +162,8 @@ func edgeModuleForRequest(r *http.Request) string {
 		return licensegate.TableMode
 	case strings.HasSuffix(path, "/counter-payment"):
 		return "" // counter-payment не требует table-mode: базовый кассовый поток всегда доступен
+	case strings.HasPrefix(path, "/api/v1/tickets/") || (strings.HasPrefix(path, "/api/v1/checks/") && strings.Contains(path, "/tickets")):
+		return licensegate.TicketMode
 	case strings.Contains(path, "/precheck"):
 		return licensegate.TableMode
 	case strings.Contains(path, "/kitchen/stock-") || strings.Contains(path, "/kitchen/inventory-") || strings.Contains(path, "/kitchen/productions") || strings.Contains(path, "/kitchen/stop-list") || strings.HasSuffix(path, "/sync/master-data/inventory_reference"):

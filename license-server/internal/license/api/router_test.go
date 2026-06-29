@@ -199,7 +199,7 @@ func TestHTTPAndRepositoryErrorStringsDoNotExposeSecrets(t *testing.T) {
 
 func TestHTTPEntitlementsRequireProviderTokenAndReturnSnapshot(t *testing.T) {
 	f := newHTTPFixture(t)
-	body := `{"version":1,"status":"active","entitlements":{"table-mode":true,"kitchen-space":false},"issued_at":"2026-06-20T00:00:00Z","expires_at":"2099-06-20T00:00:00Z"}`
+	body := `{"version":1,"status":"active","entitlements":{"cloud-subscription":true,"table-mode":true,"kitchen-space":false,"warehouse-mode":true,"waiter-space":false,"telegram-worker":false,"ticket-mode":true},"issued_at":"2026-06-20T00:00:00Z","expires_at":"2099-06-20T00:00:00Z"}`
 	unauthorized := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/entitlements/tenant-1/cloud-1", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -217,7 +217,7 @@ func TestHTTPEntitlementsRequireProviderTokenAndReturnSnapshot(t *testing.T) {
 	got := httptest.NewRecorder()
 	f.router.ServeHTTP(got, httptest.NewRequest(http.MethodGet, "/api/v1/entitlements/tenant-1/cloud-1", nil))
 	assertJSONStatus(t, got, http.StatusOK)
-	assertBodyContains(t, got.Body.String(), `"tenant_id":"tenant-1"`, `"server_id":"cloud-1"`, `"table-mode":true`)
+	assertBodyContains(t, got.Body.String(), `"tenant_id":"tenant-1"`, `"server_id":"cloud-1"`, `"cloud-subscription":true`, `"ticket-mode":true`)
 
 	listUnauthorized := httptest.NewRecorder()
 	f.router.ServeHTTP(listUnauthorized, httptest.NewRequest(http.MethodGet, "/api/v1/entitlements", nil))
@@ -229,7 +229,7 @@ func TestHTTPEntitlementsRequireProviderTokenAndReturnSnapshot(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer provider-test-token")
 	f.router.ServeHTTP(list, req)
 	assertJSONStatus(t, list, http.StatusOK)
-	assertBodyContains(t, list.Body.String(), `"tenant_id":"tenant-1"`, `"server_id":"cloud-1"`, `"table-mode":true`)
+	assertBodyContains(t, list.Body.String(), `"tenant_id":"tenant-1"`, `"server_id":"cloud-1"`, `"cloud-subscription":true`, `"ticket-mode":true`)
 }
 
 type httpFixture struct {

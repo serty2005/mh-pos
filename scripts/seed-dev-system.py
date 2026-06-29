@@ -430,12 +430,19 @@ def seed_full_system(
     }
     entitlement_version = int(time.time())
     issued_at = datetime.datetime.now(datetime.timezone.utc)
+    canonical_modules = (
+        "cloud-subscription",
+        "table-mode",
+        "kitchen-space",
+        "warehouse-mode",
+        "waiter-space",
+        "telegram-worker",
+        "ticket-mode",
+    )
     entitlement_body = {
         "version": entitlement_version,
         "status": "active",
-        "entitlements": {module_id: True for module_id in (
-            "table-mode", "telegram-worker", "kitchen-space", "waiter-space", "checker-flow", "warehouse-mode",
-        )},
+        "entitlements": {module_id: True for module_id in canonical_modules},
         "issued_at": issued_at.isoformat().replace("+00:00", "Z"),
         "expires_at": (issued_at + datetime.timedelta(days=30)).isoformat().replace("+00:00", "Z"),
     }

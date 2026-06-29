@@ -5,11 +5,32 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
 	"mh-pos-platform/licensegate"
 )
+
+func TestCanonicalProductModuleCatalog(t *testing.T) {
+	want := []string{
+		"cloud-subscription",
+		"table-mode",
+		"kitchen-space",
+		"warehouse-mode",
+		"waiter-space",
+		"telegram-worker",
+		"ticket-mode",
+	}
+	if got := licensegate.CanonicalModuleIDs(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("canonical modules mismatch:\nwant=%v\n got=%v", want, got)
+	}
+	for _, id := range licensegate.CanonicalModuleIDs() {
+		if id == "checker-flow" {
+			t.Fatal("checker-flow must not be part of canonical catalog")
+		}
+	}
+}
 
 func TestClientEnableDisableRevokeAndExpiry(t *testing.T) {
 	status, enabled, expires := "active", true, time.Now().Add(time.Hour)

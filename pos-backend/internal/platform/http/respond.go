@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5/middleware"
+	"mh-pos-platform/licensegate"
 
 	"pos-backend/internal/pos/domain"
 )
@@ -88,6 +89,10 @@ func statusForError(err error) int {
 			return http.StatusUnauthorized
 		}
 		return http.StatusForbidden
+	case errors.Is(err, licensegate.ErrDenied):
+		return http.StatusForbidden
+	case errors.Is(err, licensegate.ErrUnavailable):
+		return http.StatusServiceUnavailable
 	case errors.Is(err, domain.ErrTooManyRequests):
 		return http.StatusTooManyRequests
 	case errors.Is(err, domain.ErrSaleUnavailable), errors.Is(err, domain.ErrConflict), errors.Is(err, domain.ErrDuplicate), errors.Is(err, domain.ErrDuplicateCommand):
@@ -113,6 +118,10 @@ func codeForError(err error, status int) string {
 		return "SESSION_CONTEXT_MISMATCH"
 	case errors.Is(err, domain.ErrForbidden) && isPermissionDeniedError(err):
 		return "PERMISSION_DENIED"
+	case errors.Is(err, licensegate.ErrDenied):
+		return "LICENSE_ENTITLEMENT_REQUIRED"
+	case errors.Is(err, licensegate.ErrUnavailable):
+		return "LICENSE_AUTHORITY_UNAVAILABLE"
 	case errors.Is(err, domain.ErrForbidden):
 		return "FORBIDDEN"
 	case errors.Is(err, domain.ErrNotFound) && containsErrorText(err, "kitchen recipe not found"):
@@ -190,6 +199,10 @@ func messageKeyForCode(code, fallback string) string {
 		return "errors.kitchen.recipeNotFound"
 	case "KITCHEN_RECIPE_SUGGESTION_LIMIT_EXCEEDED":
 		return "errors.kitchen.recipeSuggestionLimitExceeded"
+	case "LICENSE_ENTITLEMENT_REQUIRED":
+		return "errors.license.entitlementRequired"
+	case "LICENSE_AUTHORITY_UNAVAILABLE":
+		return "errors.license.unavailable"
 	case "VALIDATION_FAILED":
 		return "errors.validation"
 	case "NOT_FOUND":

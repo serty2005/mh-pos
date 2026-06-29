@@ -106,7 +106,7 @@ Response:
 - Если POS Edge получил bounded Cloud -> Edge response с числом packages не меньше `POS_SYNC_SENDER_CLOUD_PACKAGE_BURST_THRESHOLD`, следующий Cloud pull выполняется без ожидания `POS_SYNC_SENDER_CLOUD_PULL_INTERVAL`.
 - `node_token` выдается POS Edge один раз в provisioning/assignment flow. Повторный `assignment-status` для уже выданного token не ротирует `credentials_hash`, иначе локальный Edge token становится недействительным и `sync/exchange` получает `401 SYNC_UNAUTHORIZED`.
 - `event_id` для всех Edge POS/KDS business events должен быть UUIDv7.
-- Поддерживаемые exchange streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`, `recipes`, `inventory_reference`.
+- Поддерживаемые exchange streams: `restaurants`, `devices`, `staff`, `floor`, `catalog`, `menu`, `pricing_policy`, `recipes`, `inventory_reference`, `receipt_templates`, `printers`.
 - ACK statuses: `accepted`, `rejected`, `retryable`; rejected/retryable items возвращают стабильный `error_code` и `message_key`.
 - Если stream package отсутствует, `stream_results.status = "not_found"` и HTTP остается успешным.
 - Unknown stream отклоняет весь request как `400 VALIDATION_FAILED` до приема Edge events.
@@ -116,6 +116,8 @@ Response:
 - POS Edge применяет каждый Cloud package только после полного приема HTTP response и успешного JSON decode. Ошибочный package извлекается из текущей порции, фиксируется как `cloud_master_sync_state.status = "failed"` с `last_error`, не ломает применение остальных packages и не блокирует Edge -> Cloud ACK. Ошибочный package не продвигает объявляемые `last_cloud_version`/`checkpoint_token`: следующий exchange должен снова объявлять последний успешно примененный checkpoint, чтобы Cloud мог повторно выдать пакет.
 - Если весь Cloud exchange request не принят транспортно или авторизационно, Edge outbox ACK не коммитится как `sent`; следующий exchange безопасно повторяет Edge events через Cloud idempotency.
 - Реализовано сейчас: POS sender regression покрывает temporary exchange failure, retryable outbox state, повторную отправку того же item до item-level ACK и прекращение pending resend после успешного ACK.
+- Реализовано сейчас: POS sender не включает в batch module-owned events выключенных `ticket-mode`, `kitchen-space` и `warehouse-mode`; Cloud receiver повторно enforce-ит тот же canonical mapping и возвращает item-level `LICENSE_ENTITLEMENT_REQUIRED`.
+- Реализовано сейчас: Cloud -> Edge package delivery требует `cloud-subscription`; module streams `floor`, `recipes` и `inventory_reference` дополнительно требуют своих module IDs.
 
 ## Cloud -> Edge Master Data Ingest
 
@@ -199,6 +201,7 @@ Request body shape currently supported by POS Edge:
 - `pricing_policy` применяет Cloud-authored `tax_profiles`, `tax_rules`, `service_charge_rules` и automatic discount/surcharge `pricing_policies` в Edge read-model tables с sync metadata.
 - `recipes` применяет `recipe_versions` и `recipe_lines`.
 - `inventory_reference` применяет active/inactive `stop_lists` overlay rows и Cloud-owned `warehouses` в локальную `warehouse_reference` read model; local Docker seed publication содержит default `warehouse-main`.
+- `receipt_templates` и `printers` применяются как Cloud-owned tenant services и доставляются только при включенном `cloud-subscription`.
 - Unsupported JSON fields отклоняются strict decode; неизвестные stream names не применяются.
 
 Целевой delivery lifecycle:
@@ -489,6 +492,7 @@ POS Edge валидирует `RecipeChangeSuggested.prep_time_delta_minutes` п
 - Каждая ticket unit фиксирует immutable name из order line, `sale_date_local`, restaurant `timezone`, resolved validity snapshot (`cash_session`, `business_date` или `absolute_date`), уникальный `ticket_number` (UUIDv7, равен `id`), порядковый номер внутри кассовой смены (`cash_shift_sequence`) и безопасный QR payload `MHT1:<ticket_number>` без PIN/token/payment-sensitive данных.
 - Replay того же payment `command_id` не создает второй ticket; `UNIQUE(order_line_id)` и `UNIQUE(cash_session_id, cash_shift_sequence)` дают hard guarantee. Reprint (`POST /api/v1/tickets/{id}/reprint`) использует тот же ticket number и QR, помечается `COPY` marker и не создает новую единицу.
 - POS Edge генерирует `TicketIssued` outbox event (Edge -> Cloud) на каждую выпущенную ticket unit; payload строится из immutable ticket snapshot и содержит `ticket_id`, `ticket_number`, restaurant/device/cash session/shift/check/order/order line/catalog/menu IDs, name, `sale_date_local`, `timezone`, `validity_mode`, optional `validity_date_local`, `cash_shift_sequence` и `qr_payload`.
+- `TicketIssued` создается и отправляется только при включенном `ticket-mode`; выключение лицензии не удаляет уже сохраненные `ticket_units`.
 - Cloud receiver валидирует `TicketIssued` (обязательные ids, name, qr_payload, положительный `cash_shift_sequence`, `sale_date_local` формата `YYYY-MM-DD`, поддержанный `validity_mode`) и сохраняет его как accepted edge event/raw audit идемпотентно по `event_id`. Operational sales projection/API проданных билетов запланированы далее (POS-40); QR lookup/use/revoke вне текущего объема.
 
 ## Financial Payload Boundaries

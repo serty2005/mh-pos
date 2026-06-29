@@ -61,6 +61,8 @@
 Запланировано далее: Edge settings может менять физические принтеры и схему печати локально. Такие изменения применяются немедленно на Edge, пишутся в audit и отправляются в Cloud как факты override. Cloud не превращает их в proposal и не требует approve перед применением на Edge; Cloud хранит read model/audit и должен уметь вернуть effective state на следующие Edge доставки.
 `staff` собирается из tenant-level roles/employees и `cloud_employee_restaurant_memberships`: `organization.manage` входит во все restaurant packages, остальные employees только в явно разрешенные. Edge деактивирует локальных сотрудников, отсутствующих в полном eligible set, поэтому revoke блокирует новый login и уже открытую session на следующем apply.
 
+License filtering реализовано сейчас по canonical catalog из `docs/backend/LICENSE-ENTITLEMENTS.md`: любая Cloud -> Edge package delivery требует `cloud-subscription`; stream `floor` дополнительно требует `table-mode`, `recipes` требует `kitchen-space`, `inventory_reference` требует `warehouse-mode`. Выключенный stream не включается в `sync/exchange`, checkpoint Edge не продвигается, сохраненные данные на Edge не удаляются.
+
 Canonical seed/smoke для Cloud-owned ingest остается `scripts/seed-dev-system.py`. Новый Cloud-owned stream, справочник или POS read flow добавляется вместе с seed data, automatic delivery package, POS read assertion/smoke step, script guard `CLOUD_OWNED_SEED_SURFACES` и профильными docs; отдельный user-facing seed/smoke entrypoint не добавляется без отдельного архитектурного решения.
 
 Запланировано до полного пилота:
@@ -127,6 +129,7 @@ Edge Outbox
 - POS Edge генерирует `CheckClosed` при создании final check после полной оплаты; событие строится из immutable `check.Snapshot`;
 - POS Edge генерирует `TicketIssued` на каждую QR-билетную единицу при закрытии final check; событие строится из immutable ticket snapshot и принимается Cloud как audit без sales projection (POS-40);
 - Edge/KDS events `CheckClosed`, `TicketIssued`, `KitchenTicketStatusChanged`, `ItemServed`, `StockReceiptCaptured`, `CatalogItemChangeSuggested`, `RecipeChangeSuggested`, `InventoryCountCaptured`, `StockWriteOffCaptured`, `ProductionCompleted`, `RefundRecorded`, `CancellationRecorded`, `StopListUpdated`;
+- реализовано сейчас: Edge sender не отправляет module-owned events выключенных `ticket-mode`, `kitchen-space` и `warehouse-mode`; Cloud receiver дополнительно reject-ит такие events item-level ACK без raw payload exposure;
 - Cloud Inventory Worker создает `stock_documents` и `stock_ledger` из accepted events;
 - Cloud receiver/worker сохраняет идемпотентность replay и дедупликацию `ItemServed` с `CheckClosed`;
 - Если superseding `ItemServed` уже принят Cloud до обработки очереди, Cloud Inventory Worker пропускает superseded served fact; если старый served fact уже обработан, superseding `ItemServed` пишет append-only `ItemServedCompensation` return ledger перед новой sale ledger;

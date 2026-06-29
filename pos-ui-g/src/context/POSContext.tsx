@@ -18,6 +18,7 @@ import {
 } from '../shared/backendMappers';
 import { getClientDeviceId } from '../shared/clientIdentity';
 import { t } from '../shared/i18n';
+import { hasEntitlement } from '../shared/licenseModules';
 import type {
   BackendActorContext,
   BackendCashDrawerEvent,
@@ -924,7 +925,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setThemeSettings((prev) => ({ ...prev, scheme }));
   }, []);
 
-  const tableModeEnabled = entitlements['table-mode'] === true;
+  const tableModeEnabled = hasEntitlement(entitlements, 'table-mode');
 
   const value = useMemo<POSContextType>(() => ({
     currentSection,

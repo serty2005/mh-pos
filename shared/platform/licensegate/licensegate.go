@@ -14,18 +14,94 @@ import (
 )
 
 const (
-	TableMode      = "table-mode"
-	TelegramWorker = "telegram-worker"
-	KitchenSpace   = "kitchen-space"
-	WaiterSpace    = "waiter-space"
-	CheckerFlow    = "checker-flow"
-	WarehouseMode  = "warehouse-mode"
+	CloudSubscription = "cloud-subscription"
+	TableMode         = "table-mode"
+	KitchenSpace      = "kitchen-space"
+	WarehouseMode     = "warehouse-mode"
+	WaiterSpace       = "waiter-space"
+	TelegramWorker    = "telegram-worker"
+	TicketMode        = "ticket-mode"
 )
 
 var (
 	ErrDenied      = errors.New("license entitlement denied")
 	ErrUnavailable = errors.New("license authority unavailable")
 )
+
+// ProductModule описывает один canonical product module entitlement.
+type ProductModule struct {
+	ID          string
+	Label       string
+	Description string
+}
+
+// CanonicalModules возвращает полный product-owned catalog в стабильном порядке.
+func CanonicalModules() []ProductModule {
+	return []ProductModule{
+		{ID: CloudSubscription, Label: "Tenant Cloud", Description: "Cloud backoffice, tenant management, delivery, analytics, templates, printers"},
+		{ID: TableMode, Label: "Table mode", Description: "Halls, tables, table-bound flow, floor settings and floor delivery"},
+		{ID: KitchenSpace, Label: "Kitchen space", Description: "KDS, kitchen routes/actions, recipes, kitchen events and proposals"},
+		{ID: WarehouseMode, Label: "Warehouse mode", Description: "Inventory reference, stock operations, worker, ledger, balances and costing"},
+		{ID: WaiterSpace, Label: "Waiter space", Description: "Dedicated mobile-first waiter access when backend-discriminated"},
+		{ID: TelegramWorker, Label: "Telegram worker", Description: "Telegram settings, queues, worker and scheduled reports"},
+		{ID: TicketMode, Label: "Ticket mode", Description: "QR services, ticket issuance/templates/printing and checker runtime"},
+	}
+}
+
+// CanonicalModuleIDs возвращает только machine-readable IDs product catalog.
+func CanonicalModuleIDs() []string {
+	modules := CanonicalModules()
+	ids := make([]string, 0, len(modules))
+	for _, module := range modules {
+		ids = append(ids, module.ID)
+	}
+	return ids
+}
+
+// EntitlementsForModules строит snapshot map, где перечислены все canonical IDs.
+func EntitlementsForModules(enabledIDs ...string) map[string]bool {
+	out := make(map[string]bool, len(CanonicalModules()))
+	for _, module := range CanonicalModules() {
+		out[module.ID] = false
+	}
+	for _, id := range enabledIDs {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			out[id] = true
+		}
+	}
+	return out
+}
+
+// ModuleForCloudStream возвращает module entitlement для Cloud -> Edge stream.
+func ModuleForCloudStream(streamName string) string {
+	switch strings.TrimSpace(streamName) {
+	case "floor":
+		return TableMode
+	case "recipes":
+		return KitchenSpace
+	case "inventory_reference":
+		return WarehouseMode
+	case "receipt_templates", "printers":
+		return CloudSubscription
+	default:
+		return ""
+	}
+}
+
+// ModuleForEdgeEvent возвращает module entitlement для Edge -> Cloud module-owned event.
+func ModuleForEdgeEvent(eventType string) string {
+	switch strings.TrimSpace(eventType) {
+	case "TicketIssued":
+		return TicketMode
+	case "KitchenTicketStatusChanged", "ItemServed", "CatalogItemChangeSuggested", "RecipeChangeSuggested":
+		return KitchenSpace
+	case "StockReceiptCaptured", "InventoryCountCaptured", "StockWriteOffCaptured", "ProductionCompleted", "StopListUpdated":
+		return WarehouseMode
+	default:
+		return ""
+	}
+}
 
 // Snapshot является versioned ответом внешнего licensing authority.
 type Snapshot struct {

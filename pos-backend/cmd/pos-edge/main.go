@@ -93,6 +93,7 @@ func run() error {
 		LicenseServerURL:                        licenseURL,
 		CloudProvisioningClient:                 posprovisioninghttp.NewCloudClient(10 * time.Second),
 		LicenseProvisioningClient:               posprovisioninghttp.NewLicenseClient(10 * time.Second),
+		LicenseGate:                             licenseGate,
 		StorageArchiveDir:                       archiveDir,
 		RecipeSuggestionMaxPrepTimeDeltaMinutes: cfg.Int("POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES", 120),
 		MasterDataBackupBeforeFullSnapshot: func(ctx context.Context, req app.MasterDataBackupRequest) error {
@@ -127,6 +128,7 @@ func run() error {
 			SendTimeout:                envDuration(cfg.Get("POS_SYNC_SENDER_SEND_TIMEOUT", ""), 10*time.Second),
 			EmergencyPendingThreshold:  cfg.Int("POS_SYNC_SENDER_EMERGENCY_PENDING_THRESHOLD", 100),
 			CloudPackageBurstThreshold: cfg.Int("POS_SYNC_SENDER_CLOUD_PACKAGE_BURST_THRESHOLD", 2),
+			LicenseGate:                licenseGate,
 		}, slog.Default())
 		go worker.Run(rootCtx)
 	} else {

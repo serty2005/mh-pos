@@ -33,6 +33,7 @@ import {
 import { PosBottomNav, PosButton, PosIconButton, PosInlineStatusBadge, PosSelectableChip, PosSelectableTile } from './shared/ui';
 import type { POSSection } from './types';
 import { createApiClient } from './shared/api';
+import { hasEntitlement } from './shared/licenseModules';
 
 function POSAppShellContent() {
   const {
@@ -69,10 +70,10 @@ function POSAppShellContent() {
   }, [licenseApi]);
 
   useEffect(() => {
-    if (currentSection === 'floor' && entitlements['table-mode'] !== true) setCurrentSection('order');
-    if (currentMode === 'kds' && entitlements['kitchen-space'] !== true) setCurrentMode('pos');
-    if (currentMode === 'waiter' && entitlements['waiter-space'] !== true) setCurrentMode('pos');
-    if (currentKdsSection === 'stock' && entitlements['warehouse-mode'] !== true) setCurrentKdsSection('orders');
+    if (currentSection === 'floor' && !hasEntitlement(entitlements, 'table-mode')) setCurrentSection('order');
+    if (currentMode === 'kds' && !hasEntitlement(entitlements, 'kitchen-space')) setCurrentMode('pos');
+    if (currentMode === 'waiter' && !hasEntitlement(entitlements, 'waiter-space')) setCurrentMode('pos');
+    if (currentKdsSection === 'stock' && !hasEntitlement(entitlements, 'warehouse-mode')) setCurrentKdsSection('orders');
   }, [currentKdsSection, currentMode, currentSection, entitlements, setCurrentSection]);
 
   // Clock snapshot runner
@@ -173,20 +174,20 @@ function POSAppShellContent() {
     { id: 'activity', label: t.sections.activity, icon: ReceiptText },
     { id: 'reports', label: t.sections.reports, icon: BarChart3 },
     { id: 'cash', label: t.sections.cash, icon: Wallet }
-  ].filter((item) => item.id !== 'floor' || entitlements['table-mode'] === true);
+  ].filter((item) => item.id !== 'floor' || hasEntitlement(entitlements, 'table-mode'));
 
   const modeItems = [
     { id: 'pos', label: t.modes.pos, icon: Monitor },
     { id: 'kds', label: t.modes.kds, icon: ChefHat },
     { id: 'waiter', label: t.modes.waiter, icon: Smartphone },
     { id: 'delivery', label: t.modes.delivery, icon: Truck, badge: t.status.notAgreed },
-  ].filter((item) => (item.id !== 'kds' || entitlements['kitchen-space'] === true) && (item.id !== 'waiter' || entitlements['waiter-space'] === true));
+  ].filter((item) => (item.id !== 'kds' || hasEntitlement(entitlements, 'kitchen-space')) && (item.id !== 'waiter' || hasEntitlement(entitlements, 'waiter-space')));
 
   const kdsNavItems = [
     { id: 'orders', label: t.kitchen.navOrders, icon: ReceiptText },
     { id: 'stock', label: t.kitchen.navStock, icon: Truck },
     { id: 'kitchen', label: t.kitchen.navKitchen, icon: ChefHat },
-  ].filter((item) => item.id !== 'stock' || entitlements['warehouse-mode'] === true);
+  ].filter((item) => item.id !== 'stock' || hasEntitlement(entitlements, 'warehouse-mode'));
 
   const renderBottomNavigation = () => {
     if (currentMode === 'pos') {

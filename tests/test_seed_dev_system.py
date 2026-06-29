@@ -449,6 +449,20 @@ class SeedDevSystemTest(unittest.TestCase):
                 "/api/v1/entitlements/local-tenant/edge-local",
             ],
         )
+        entitlement_payload = license_client.calls[1][2]["entitlements"]
+        self.assertEqual(
+            sorted(entitlement_payload),
+            [
+                "cloud-subscription",
+                "kitchen-space",
+                "table-mode",
+                "telegram-worker",
+                "ticket-mode",
+                "waiter-space",
+                "warehouse-mode",
+            ],
+        )
+        self.assertNotIn("checker-flow", entitlement_payload)
         self.assertIn("waiter_pin", summary["pins"])
         self.assertIn("kitchen_pin", summary["pins"])
         self.assertIn("support_pin", summary["pins"])
