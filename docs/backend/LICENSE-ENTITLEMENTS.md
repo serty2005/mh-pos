@@ -1,8 +1,14 @@
-# Внешние лицензии и module gates
+# Внешнее лицензирование и module entitlements
 
-## Статус
+Статус: canonical contract для лицензирования RMS-POS. Остальные документы должны ссылаться на этот файл и не дублировать детальные правила.
 
-Реализовано сейчас:
+## Назначение
+
+Лицензирование собирает клиентское решение из общей кодовой базы RMS-POS без fork, exhibition-only runtime или hardcoded product profile. Выставка, ресторанный пилот и локальная касса отличаются tenant/restaurant data, deployment profile и entitlement snapshot, а не отдельным кодом.
+
+Базовый cashier runtime является бесплатным и нелицензируемым. Product licenses включают только дополнительные Cloud/Edge возможности, рабочие пространства, workers, delivery streams и интеграции.
+
+## Реализовано сейчас
 
 - внешний `license-server` является authority для versioned snapshot по паре `tenant_id/server_id`;
 - snapshot содержит monotonic `version`, `active|revoked`, extensible `entitlements`, `issued_at` и `expires_at`;
@@ -10,48 +16,152 @@
 - runtime read `GET /api/v1/entitlements/{tenant_id}/{server_id}` не возвращает credentials или provider token;
 - Cloud и POS Edge получают snapshot по HTTP, работают fail-closed и возвращают `LICENSE_ENTITLEMENT_REQUIRED` (`403`) либо `LICENSE_AUTHORITY_UNAVAILABLE` (`503`);
 - stale grace применяется только при недоступности authority, задается deployment config и не продлевает snapshot при успешном ответе `expired`/`revoked`;
-- выключение entitlement не удаляет halls, tables, recipes, kitchen, warehouse или financial data.
+- выключение entitlement не удаляет halls, tables, recipes, kitchen, warehouse, ticket или financial data;
+- backend gates реализованы для существующих `table-mode`, `kitchen-space` и `warehouse-mode` surfaces;
+- Cloud `sync/exchange` не отдает Edge package streams выключенных `floor`, `recipes` и `inventory_reference`;
+- Cloud inventory worker запускается только при доступном `warehouse-mode`;
+- POS UI и Cloud UI скрывают часть navigation по текущему snapshot, но это только UX-слой.
 
-Canonical IDs: `table-mode`, `telegram-worker`, `kitchen-space`, `waiter-space`, `checker-flow`, `warehouse-mode`. Дополнительные IDs допускают lowercase letters, digits, `-` и `.`.
+## Канонические entitlement IDs
 
-## Базовая касса и платные модули
+Идентификаторы лицензий являются machine-readable contract и пишутся в lowercase с `-`:
+
+| Entitlement ID | Назначение | Статус runtime |
+| --- | --- | --- |
+| `cloud-subscription` | Tenant-level Cloud: Cloud backoffice, tenant management, Cloud-owned catalog/roles/employees, automatic Cloud -> Edge delivery, Cloud analytics/OLAP/dashboard, multi-Edge/device limits, receipt/printer/template management и остальные Cloud-сервисы, которые не выделены в отдельный module ID. | функциональность реализована частично; explicit license gate запланирован далее |
+| `table-mode` | Залы, столы, table-bound flow, отдельный table/precheck UI, Cloud floor settings и delivery stream `floor`. | реализовано сейчас |
+| `kitchen-space` | KDS/kitchen UI, kitchen routes/actions, recipe delivery, kitchen events и proposals. | реализовано сейчас для существующих kitchen routes |
+| `warehouse-mode` | Складские формы, inventory reference delivery, stock receipt/count/write-off/production, Cloud Inventory Worker, stock ledger/balances/costing/recalculation. | реализовано сейчас частично |
+| `waiter-space` | Отдельный mobile-first официантский доступ поверх backend-recognized waiter surface. | запланировано далее для backend-discriminated waiter facade |
+| `telegram-worker` | Telegram settings/routes/worker и автоматическая отправка отчетов. | запланировано далее |
+| `ticket-mode` | QR-enabled service items, ticket issuance, ticket templates/printing, checker enrollment, ticket lookup/confirm/revoke/use runtime, scanner/manual code input и checker reporting. | ticket issuance/printing реализованы частично; checker runtime запланирован далее |
+
+Это полный согласованный на текущий момент список отдельно лицензируемых product modules. Новые module IDs добавляются только через обновление этого раздела, тесты, seed/smoke и профильную задачу Plane.
+
+Дополнительные IDs допускают lowercase letters, digits, `-` и `.`. Underscore IDs вроде `table_mode`, `stock_flow`, `qr_flow`, `kitchen_flow`, `analytic_mode` не являются canonical contract для текущего продукта: текущий валидатор License Server их не принимает. Если продукту понадобятся marketing aliases, они должны быть display metadata поверх canonical IDs, а не вторым runtime contract.
+
+## Продуктовые пакеты
+
+Product owner может продавать пакеты, которые включают один или несколько canonical IDs. Пакет не является runtime entitlement сам по себе, пока он не записан в snapshot как concrete IDs.
+
+| Пакет | Canonical IDs |
+| --- | --- |
+| Базовая касса | нет лицензируемых IDs |
+| Tenant Cloud | `cloud-subscription` |
+| Работа с залом | `table-mode` |
+| Кухня | `kitchen-space` |
+| Склад | `warehouse-mode` |
+| Официанты | `waiter-space` |
+| Telegram-отчеты | `telegram-worker` |
+| Билеты и проверка | `ticket-mode` |
+| Полный ресторанный пилот | `cloud-subscription`, `table-mode`, `kitchen-space`, `warehouse-mode`, `waiter-space`, затем `telegram-worker`/`ticket-mode` по scope |
+
+## Базовая бесплатная касса
 
 Основной кассовый поток является базовой частью продукта и не лицензируется:
 
-- локальный вход, смены сотрудника и кассовая смена устройства;
+- локальный PIN-вход и backend session;
+- личные смены сотрудников и кассовые смены устройства;
 - локальное меню, если оно уже есть на Edge;
 - создание заказа кассиром;
-- добавление/изменение/void строк;
+- добавление, изменение и void строк;
 - `Order -> Precheck -> Payment -> Check`;
-- повторная печать предчека/чека из сохраненного snapshot;
+- повторная печать предчека, итогового чека и сохраненных snapshots;
 - локальный financial operation ledger для отмен и возвратов;
 - локальный outbox базовых финансовых фактов, если Edge подключен к Cloud.
 
-Это решение нужно для текущего MVP и для post-MVP бесплатного автономного режима. После MVP POS Edge должен уметь работать полностью локально без внешнего Cloud: владелец локально создает простые позиции меню для этого Edge, кассир продает их через базовый поток, данные остаются в локальной SQLite и локальных backup/archive. Покупка лицензии подключает внешний Cloud/tenant management, автоматическую доставку master data, дополнительные роли, рабочие пространства и workers. Бесплатный автономный режим не получает Cloud-owned tenant catalog, межустройственную доставку, Cloud analytics, warehouse engine, waiter mobile, KDS/advanced kitchen, Telegram, checker или другие лицензируемые поверхности.
+После MVP POS Edge должен уметь работать полностью локально без внешнего Cloud: владелец локально создает простые позиции меню для этого Edge, кассир продает их через базовый поток, данные остаются в локальной SQLite и локальных backup/archive. Покупка `cloud-subscription` подключает внешний Cloud/tenant management, автоматическую доставку master data, Cloud analytics и остальные tenant-level Cloud services. Остальные рабочие пространства, workers и ticket/checker возможности подключаются своими module IDs.
 
-`waiter-space` лицензирует не сам факт заказа, а отдельный официантский доступ: mobile-first waiter UI/API, waiter-only navigation, waiter worker/facade и связанные события. Текущие order/precheck HTTP routes являются shared cashier backend surface, поэтому их нельзя закрывать `waiter-space` целиком: это сломает нелицензируемую базовую кассу. Enforcement для `waiter-space` должен появляться там, где backend однозначно видит официантский контекст, например через отдельный waiter API surface или backend-owned waiter command facade. UI route `/pos/waiter` и любые frontend headers сами по себе не являются security boundary.
+## Сборка клиентского решения
 
-Фактические gates существуют только для реализованных runtime surfaces:
+Клиентский deployment собирается так:
 
-- `table-mode`: Cloud floor routes, Edge halls/tables, direct floor ingest и доставка `floor` через sync exchange;
-- `kitchen-space`: Cloud recipe routes, Edge kitchen routes, direct recipe ingest и доставка `recipes` через sync exchange;
-- `warehouse-mode`: Cloud inventory master-data routes, Edge stock/count/write-off/production routes, direct inventory ingest, доставка `inventory_reference` через sync exchange и Cloud inventory worker.
+1. Поставщик выбирает deployment profile: автономный Edge, Cloud-connected Edge, выставочный tenant или полный ресторанный пилот.
+2. Cloud/License Server получают tenant/server identity.
+3. License Server хранит active snapshot для `cloud-local`/production Cloud server и для каждого Edge server id.
+4. Snapshot включает только canonical IDs, которые куплены или временно выданы для пилота.
+5. UI читает `/api/v1/license/entitlements` и скрывает недоступные разделы.
+6. Backend, workers и sync delivery проверяют те же IDs как security boundary.
+7. При отключении лицензии новые module-owned commands/events/workers блокируются, но сохраненные данные остаются в storage.
 
-При `denied` или недоступном authority лицензируемый Cloud package не включается в exchange response, поэтому Edge checkpoint этого stream не продвигается. После восстановления entitlement очередной exchange доставляет актуальную версию без удаления сохраненных данных.
+## Правила enforcement
 
-Архитектурное правило для Edge -> Cloud: batch, Cloud receiver и Cloud workers не должны формировать данные для выключенного модуля. Базовые cashier financial facts могут синхронизироваться как часть подключенного Cloud-контура, но module-owned события должны отсеиваться по entitlement до отправки batch или до обработки worker:
+UI visibility является только UX-слоем. Security boundary находится в Cloud backend, POS Edge backend, workers и sync delivery.
 
-- `kitchen-space` владеет KDS/kitchen operational events и kitchen proposal surfaces;
-- `warehouse-mode` владеет receipt/count/write-off/production и Cloud inventory worker processing;
-- `waiter-space` владеет waiter-only commands/events после появления отдельного backend-discriminated waiter surface;
-- `telegram-worker` и `checker-flow` владеют своими worker queues и routes после реализации.
+| Boundary | Требование |
+| --- | --- |
+| Cloud routes | Module-owned routes возвращают safe `403 LICENSE_ENTITLEMENT_REQUIRED` или `503 LICENSE_AUTHORITY_UNAVAILABLE`. |
+| POS Edge routes | Module-owned routes/commands fail-closed; базовый cashier flow не блокируется product module gates. |
+| Cloud -> Edge delivery | Packages выключенных module streams не включаются в exchange response, checkpoint stream не продвигается. |
+| Edge -> Cloud batch | Module-owned events выключенного модуля не должны попадать в отправляемый batch. |
+| Cloud receiver/workers | Cloud не создает module projections, stock documents, ledger rows или worker state из событий выключенного модуля. |
+| UI | Разделы скрываются или переводятся в понятный blocked/empty state без raw backend details. |
 
-Если модуль выключен, Edge не должен создавать новые module-owned commands через закрытые routes, sync sender не должен включать module-owned outbox rows в отправляемый batch, а Cloud не должен создавать module projections/worker rows из таких событий. Уже сохраненные данные не удаляются; после восстановления лицензии обработка продолжается с текущего безопасного checkpoint.
+При `denied` или недоступном authority лицензируемый Cloud package не включается в exchange response. После восстановления entitlement очередной exchange доставляет актуальную версию без удаления сохраненных данных.
 
-Запланировано далее: `telegram-worker`, отдельный waiter module и `checker-flow` получат gates одновременно с появлением соответствующих workers/routes. Дополнительно требуется довести module-owned outbox filtering для Edge -> Cloud batch и прямые Cloud provisioning package routes до того же entitlement mapping. Фиктивные endpoints не создаются.
+## Владение модулей
+
+- `table-mode` владеет halls/tables, table-bound navigation, floor settings и stream `floor`.
+- `kitchen-space` владеет KDS/kitchen operational events, kitchen routes, recipe read/proposals и stream `recipes`.
+- `warehouse-mode` владеет receipt/count/write-off/production, inventory reference stream, Cloud Inventory Worker, stock ledger/balances/costing/recalculation.
+- `waiter-space` будет владеть waiter-only commands/events после появления backend-discriminated waiter surface. Текущие shared order/precheck/payment routes остаются базовой кассой.
+- `telegram-worker` будет владеть Telegram settings, queues, worker и delivery audit.
+- `ticket-mode` владеет QR-enabled service flags, ticket units, ticket templates/printing, checker enrollment, lookup/confirm/revoke/use commands и checker reporting.
+- `cloud-subscription` владеет tenant-level Cloud services: Cloud backoffice, tenant management, Cloud-owned catalog/roles/employees, automatic delivery, Cloud analytics/OLAP/dashboard, multi-Edge/device limits, receipt/printer/template management и будущие Cloud-only products, пока для них не выделен отдельный module ID.
+
+## `waiter-space` boundary
+
+`waiter-space` лицензирует не сам факт заказа, а отдельный официантский доступ: mobile-first waiter UI/API, waiter-only navigation, waiter worker/facade и связанные события. Текущие order/precheck HTTP routes являются shared cashier backend surface, поэтому их нельзя закрывать `waiter-space` целиком: это сломает нелицензируемую базовую кассу.
+
+Enforcement для `waiter-space` должен появляться там, где backend однозначно видит официантский контекст, например через отдельный waiter API surface или backend-owned waiter command facade. UI route `/pos/waiter` и frontend headers сами по себе не являются security boundary.
+
+## `table-mode` off
+
+Без `table-mode` UI не показывает залы, столы и отдельный precheck/table flow. Базовая продажа через стойку должна сохранять общую финансовую модель: backend использует системный restaurant hall/table или другой backend-owned internal context и автоматически выпускает authoritative precheck перед payment. Это не создает отдельную order model и не открывает клиенту нелицензированные halls/tables/precheck surfaces.
+
+## `ticket-mode`
+
+`ticket-mode` объединяет QR-ticket-checker в один лицензируемый модуль. Модуль включает:
+
+- QR-enabled service item controls;
+- `single_unit_per_line` и ticket validity policy;
+- ticket unit issuance после оплаты;
+- ticket templates и ticket printing/reprint;
+- checker enrollment;
+- QR lookup, confirm, revoke/use и one-use guard;
+- scanner/manual code input;
+- checker reporting.
+
+Первый выставочный запуск реализует issuance/printing без checker runtime. Post-deploy checker cycle расширяет тот же `ticket-mode`, а не вводит отдельный `checker-flow`.
+
+## `cloud-subscription`
+
+`cloud-subscription` является отдельной tenant-level лицензией на Cloud-контур. Все дополнительные продукты, которые не выделены в отдельный module ID, входят в эту подписку:
+
+- Cloud backoffice и guided setup;
+- tenant roles/employees/catalog и restaurant menu overrides;
+- automatic Cloud -> Edge delivery;
+- Cloud analytics, OLAP/dashboard и bounded reporting;
+- multi-Edge/device limits;
+- receipt templates, printer management и Cloud-owned print configuration;
+- Cloud-only operational screens и будущие Cloud-сервисы до отдельного product decision.
+
+Бесплатный автономный Edge не требует `cloud-subscription` и не получает Cloud-owned tenant services.
+
+## Stale grace
+
+Stale grace задается поставщиком в deployment config сервера (`LICENSE_STALE_GRACE_SECONDS`) и недоступен клиенту в UI. Он применяется только когда authority временно недоступен, и только к последнему валидному active snapshot. Успешный ответ authority со статусом `revoked`, истекшим сроком или выключенным entitlement всегда блокирует module-owned functionality.
 
 ## Хранение и аудит
 
 `license-server` программно создает SQLite table `entitlement_snapshots`; primary key — `(tenant_id, server_id)`. Provider update разрешает только версию выше сохраненной и пишет structured audit без token или entitlement payload.
 
 Локальный seed через HTTP создает active snapshots для `cloud-local` и `edge-local`. Production provider token должен передаваться secret management, а не храниться в tracked config.
+
+## Запланировано далее
+
+- заменить License Server operator page raw `Entitlements JSON` на module toggles/presets поверх canonical catalog;
+- исправить POS license-state flow так, чтобы базовая касса не выглядела как заблокированный терминал при недоступном дополнительном module entitlement;
+- довести Edge -> Cloud module-owned outbox filtering до того же entitlement mapping;
+- добавить explicit gates для `cloud-subscription`, `ticket-mode`, будущих `telegram-worker` и backend-discriminated `waiter-space` routes/workers вместе с их runtime;
+- расширить smoke: enabled, denied, revoked, authority unavailable, stale grace и no data deletion для каждого реализованного module boundary.

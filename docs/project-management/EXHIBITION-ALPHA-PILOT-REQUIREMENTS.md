@@ -66,7 +66,7 @@
 - restaurant-level Telegram settings, безопасный recipient onboarding и worker;
 - production deployment, backup/restore и hardware acceptance.
 
-Текущие reprint endpoints возвращают snapshot и audit result, но не управляют физическим принтером. License gates для будущих waiter/telegram/checker runtime добавляются вместе с соответствующими backend-discriminated routes/workers. Telegram runtime отсутствует.
+Текущие reprint endpoints возвращают snapshot и audit result, но не управляют физическим принтером. License gates для будущих waiter/telegram/ticket-checker runtime добавляются вместе с соответствующими backend-discriminated routes/workers. Telegram runtime отсутствует.
 
 ## 4. Организация, рестораны и master data
 
@@ -124,18 +124,9 @@ Role и Employee являются tenant-level справочниками. Resta
 
 ## 6.1. Базовая касса и лицензируемые рабочие пространства
 
-Продажа билетов первого запуска идет через базовый cashier flow `Order -> Precheck -> Payment -> Check`. Этот flow не должен зависеть от `waiter-space`, `kitchen-space`, `warehouse-mode`, `telegram-worker` или `checker-flow`.
+Продажа билетов первого запуска идет через базовый cashier flow `Order -> Precheck -> Payment -> Check`. Этот flow не должен зависеть от `waiter-space`, `kitchen-space`, `warehouse-mode`, `telegram-worker` или post-deploy checker runtime внутри `ticket-mode`.
 
-Лицензии включают только дополнительные Cloud/Edge возможности:
-
-- `table-mode` — залы/столы и table-bound flow;
-- `waiter-space` — отдельный официантский mobile/API доступ, когда он различим backend-стороной;
-- `kitchen-space` — KDS/kitchen runtime и kitchen events;
-- `warehouse-mode` — складские формы, inventory worker и module-owned складские события;
-- `telegram-worker` — отправку Telegram-отчетов;
-- `checker-flow` — post-deploy QR lookup/confirm/revoke runtime.
-
-Если модуль выключен, новые module-owned данные не создаются в Edge commands, Edge batch и Cloud workers. Уже сохраненные данные не удаляются. Базовые cashier financial facts остаются частью подключенного Cloud-контура.
+Лицензии включают только дополнительные Cloud/Edge возможности. Canonical module IDs, ownership и правила enforcement описаны в `docs/backend/LICENSE-ENTITLEMENTS.md`. Если модуль выключен, новые module-owned данные не создаются в Edge commands, Edge batch и Cloud workers. Уже сохраненные данные не удаляются. Базовые cashier financial facts остаются частью подключенного Cloud-контура.
 
 ## 7. QR-enabled service и ticket issuance
 
@@ -226,26 +217,9 @@ Telegram Bot API не гарантирует начало диалога по us
 
 ## 12. Внешнее лицензирование
 
-License Server становится внешним authority для tenant/server entitlements. Cloud хранит подписанный/versioned snapshot и доставляет необходимый Edge subset.
+License Server является внешним authority для tenant/server entitlements. Подробный контракт licensing catalog, canonical IDs, stale grace, `table-mode` off, UI visibility и backend/workers/sync enforcement находится в `docs/backend/LICENSE-ENTITLEMENTS.md`.
 
-Начальный каталог лицензий:
-
-| License | Включаемый функционал |
-| --- | --- |
-| `table-mode` | Залы, столы, table-bound flow, отдельный table precheck UI и соответствующие Cloud-настройки. |
-| `telegram-worker` | Telegram UI, routes, settings и worker. |
-| `kitchen-space` | Кухонный UI и все kitchen operations. |
-| `waiter-space` | Отдельный mobile-first доступ официанта поверх backend-recognized waiter surface; базовый cashier order/precheck/payment/check flow остается доступным отдельно. |
-| `checker-flow` | Страница и backend commands проверки билетов. |
-| `warehouse-mode` | Склады, inventory workers, costing и recalculation. |
-
-Лицензия проверяется на Cloud и Edge trust boundaries. Скрытие UI не является security boundary. Нелицензированные module-owned routes возвращают стабильный safe error и не запускают workers. Базовая кассовая продажа не блокируется отсутствием дополнительных module entitlements.
-
-Допустимый срок работы без authority задается поставщиком в deployment config конкретного сервера. Клиент не может его читать или менять. В пределах stale grace используется последний валидный snapshot с видимым status; после истечения лицензируемый функционал блокируется fail-closed без удаления данных.
-
-Entitlement model должна принимать новые module/action IDs без создания нового fork или изменения tenant identity.
-
-Без `table-mode` Edge UI не показывает залы, столы и отдельный precheck flow, а Cloud UI не показывает их настройки. Для сохранения общей финансовой модели counter checkout использует системный restaurant table и автоматически выпускает внутренний authoritative precheck перед payment. Это не дает клиенту доступ к нелицензированным precheck routes/UI и не создает отдельную order model.
+Для выставочного запуска важно продуктовое правило: базовая кассовая продажа не блокируется отсутствием дополнительных module entitlements, а выставка остается конфигурацией общей RMS-POS через tenant/restaurant data и entitlement snapshot.
 
 ## 13. Deployment и эксплуатация
 

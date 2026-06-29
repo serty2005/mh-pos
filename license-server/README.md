@@ -1,6 +1,8 @@
-# MyHoReCa License Server Stub
+# MyHoReCa License Server
 
-`license-server` - отдельный локальный stub для production-like Option B pairing code flow. Он не является Cloud master-data authority; задача сервиса - принять pairing code metadata от Cloud и вернуть POS Edge `cloud_url`/`pairing_id` по введенному коду.
+`license-server` - внешний authority для tenant/server entitlement snapshots и production-like Option B pairing code flow. Он не является Cloud master-data authority: Cloud остается владельцем master data, а License Server отвечает за pairing code metadata и module entitlements.
+
+Canonical licensing contract, module IDs и правила stale grace описаны в `../docs/backend/LICENSE-ENTITLEMENTS.md`.
 
 ## Запуск
 
@@ -55,6 +57,27 @@ POST /api/v1/pairing-codes/resolve
 - successful resolve не переводит code в `consumed`, потому что финальное потребление выполняет Cloud после подтверждения Edge node id;
 - ошибки возвращаются в structured envelope и выставляют `X-Error-Code`.
 
+Entitlement snapshot runtime read:
+
+```http
+GET /api/v1/entitlements/{tenant_id}/{server_id}
+```
+
+Provider update:
+
+```http
+PUT /api/v1/entitlements/{tenant_id}/{server_id}
+Authorization: Bearer <LICENSE_ADMIN_TOKEN>
+```
+
+Реализовано сейчас:
+
+- snapshot хранится по `(tenant_id, server_id)`;
+- `version` должен монотонно расти;
+- `status` принимает `active` или `revoked`;
+- `entitlements` содержит canonical hyphen IDs из `../docs/backend/LICENSE-ENTITLEMENTS.md`;
+- update/list требуют admin token, runtime read не раскрывает provider credentials.
+
 ## Логирование
 
 Реализовано сейчас:
@@ -64,4 +87,4 @@ POST /api/v1/pairing-codes/resolve
 - безопасные причины отказа включают `registration_required_fields_missing`, `registration_expires_at_not_future`, `pairing_code_required`, `pairing_code_not_found` и `pairing_code_expired`;
 - pairing code, node token и credentials payload не пишутся в логи.
 
-Вне текущего объема: настоящий внешний licensing/billing, multi-tenant admin UI и production auth perimeter между Cloud и License Server.
+Вне текущего объема: настоящий billing provider, multi-tenant commercial admin UI и production auth perimeter между Cloud и License Server.

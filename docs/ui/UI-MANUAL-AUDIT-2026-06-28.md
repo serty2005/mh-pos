@@ -56,10 +56,10 @@
 - Edge-настройка поведения после оплаты: возвращаться на экран с `+` или сразу создавать следующий counter-order.
 - QR ticket modal/reprint для билетных позиций после явного POS DTO-контракта QR-флага номенклатуры и данных первого прохода.
 
-1. POS license + floor blocker: Plane `POS-90`.
+1. Canonical licensing flow: Plane `POS-95`.
 
 ```text
-Исправь POS Edge/POS UI license-state flow: при активном Cloud License Server snapshot `local-tenant/cloud-local` POS `/api/v1/license/entitlements` не должен возвращать 503, а UI не должен одновременно показывать `ТЕРМИНАЛ ЗАБЛОКИРОВАН` и разрешать вход/операции. Проверь путь Cloud assignment -> Edge license status -> `/api/v1/halls`. Acceptance: после ручного Cloud setup и assignment POS floor читает halls/tables, status license понятный, `npm run build` в `pos-ui-g`, профильные Go tests для затронутых backend-пакетов.
+Свести licensing flow к canonical contract docs/backend/LICENSE-ENTITLEMENTS.md: сохранить hyphen module IDs, заменить License Server raw Entitlements JSON на toggles/presets, исправить POS license-state flow, проверить Cloud assignment -> Edge license status -> module routes, сохранить базовую кассу доступной без дополнительных module entitlements. Исторический симптом из аудита POS-90 помечен в Plane как duplicate/delete candidate.
 ```
 
 2. POS order creation UI: Plane `POS-91`.
@@ -71,7 +71,7 @@
 3. Cloud forms without raw JSON: Plane `POS-92`.
 
 ```text
-Заменить raw JSON поля в Cloud UI на простые controls: License entitlements as module toggles/presets, Menu availability as status/days/time windows rows, Pricing tax/service-charge arrays as repeatable form rows. Не добавлять новый UI kit. Все тексты через i18n, payload остается совместимым с текущими backend DTO. Acceptance: пользователь может заполнить эти данные без JSON, invalid states подсвечиваются рядом с полем, `npm run build` в `cloud-ui-g`.
+Заменить raw JSON поля в Cloud UI на простые controls: Menu availability as status/days/time windows rows, Pricing tax/service-charge arrays as repeatable form rows. License entitlements controls перенесены в POS-95. Не добавлять новый UI kit. Все тексты через i18n, payload остается совместимым с текущими backend DTO. Acceptance: пользователь может заполнить эти данные без JSON, invalid states подсвечиваются рядом с полем, `npm run build` в `cloud-ui-g`.
 ```
 
 4. Cloud setup onboarding: Plane `POS-93`.
@@ -83,7 +83,7 @@
 5. Accessibility/layout cleanup: Plane `POS-94`.
 
 ```text
-Проставить устойчивые labels/id/aria-label/name для Cloud Catalog/Menu/Pricing/Receipt Template controls и исправить License Server mobile overflow. Acceptance: Playwright locator by label работает для основных форм, `documentElement.scrollWidth <= clientWidth` на 390px для License page, build/test соответствующего UI.
+Проставить устойчивые labels/id/aria-label/name для Cloud Catalog/Menu/Pricing/Receipt Template controls. License Server mobile overflow перенесен в POS-95. Acceptance: Playwright locator by label работает для основных форм, build/test соответствующего UI.
 ```
 
 ## Вне текущего объема аудита

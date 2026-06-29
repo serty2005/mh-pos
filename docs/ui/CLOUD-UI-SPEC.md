@@ -46,7 +46,7 @@
 - Navigation placeholders `inventory` и `reports` существуют, но пока показывают blocked section и не считаются реализованными runtime screens.
 - Dashboard readiness проверяет наличие roles/employees, halls/tables, catalog items, menu items, modifiers/pricing, Edge assignment и publication.
 - Edge sync показывает server-owned pending devices, restaurant-owned assigned devices, assignment status, pairing code generation, safe Edge events list по выбранному устройству и metadata по отправленным Cloud -> Edge master-data packages без раскрытия raw payload.
-- Cloud UI читает `GET /api/v1/license/entitlements` и скрывает `floor`/`inventory`, когда `table-mode`/`warehouse-mode` не разрешены; backend gate остается авторитетным.
+- Cloud UI читает `GET /api/v1/license/entitlements` и скрывает `floor`/`inventory`, когда `table-mode`/`warehouse-mode` не разрешены; backend gate остается авторитетным. Canonical module IDs описаны в `docs/backend/LICENSE-ENTITLEMENTS.md`.
 - Restaurants раздел управляет restaurant records.
 - Staff/permissions раздел управляет tenant-level POS Edge roles/employees, role assignment, employee restaurant memberships, status, PIN rotation и POS permission profiles/matrix; `organization.manage` отображается как доступ ко всем restaurants без отдельных галок; это не Cloud operator RBAC и не production Cloud authorization boundary.
 - Catalog раздел управляет catalog items, folders, folder parameters, tags и command-only item tag assignment.

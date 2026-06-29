@@ -9,7 +9,7 @@
 - `cloud-postgres` - PostgreSQL 16 для Cloud Backend;
 - `cloud-clickhouse` - ClickHouse для bounded Cloud OLAP slices;
 - `cloud-api` - Cloud Sync Receiver и Cloud master-data authority;
-- `license-api` - локальный License Server stub для Option B pairing code flow;
+- `license-api` - локальный License Server для Option B pairing code flow и entitlement snapshots;
 - `pos-edge` - POS Edge backend с SQLite, IANA timezone data (`tzdata`) для `business_date_local` и включенным sync sender.
 
 Не реализовано сейчас в `docker-compose.local.yml`:
