@@ -6,6 +6,30 @@
 
 Этот документ является runbook для непосредственной генерации кода. Он не копирует Plane: перед каждой итерацией агент обязан заново прочитать work item, relations и комментарии. Plane хранит текущее состояние работы, Git — требования, код и тесты.
 
+## Срез License Server deployment/CD
+
+Обновлено 2026-06-30.
+
+Реализовано сейчас:
+
+- License Server переведен с admin token на super-admin login/password из стартового конфига; password хранится hash+salt.
+- Operator UI выбирает connected server из списка, поддерживает поиск по `tenant_id`, toggles/presets и advanced JSON.
+- Подготовлен native Linux deployment для Ubuntu 24.04 без Docker: systemd unit, env example, production JSON example и runbook `docs/deployment/LICENSE-SERVER-LINUX.md`.
+- Подготовлен GitHub Actions CD template `deploy/license-server/deploy-license-server.workflow.yml`; активная папка `.github` временно не хранится в ветке до выдачи GitHub permission на workflow files. После копирования template в `.github/workflows/deploy-license-server.yml` push в ветку `production` при изменениях `license-server/**`, `shared/platform/**` или deploy artifacts запускает tests, build linux-amd64 binary, SSH deploy, symlink switch и restart `license-api`.
+- До появления домена runtime URL задается как `http://<server-ip>:8095`; firewall закрывает входящие соединения кроме SSH и порта License Server для доверенного IP/VPN.
+
+Запланировано далее:
+
+- создать ветку `production`, GitHub secrets и SSH deploy user на конечной VM;
+- выполнить первый ручной install, smoke и затем первый CD deploy;
+- настроить регулярный внешний backup и restore rehearsal.
+
+Вне текущего объема:
+
+- домен/TLS/reverse proxy;
+- billing provider;
+- полноценный commercial admin с тарифами, договорами и ролями операторов.
+
 ## Итог аудита Wave 3 / POS-64
 
 Статус: `POS-64` не закрыт. Кодовая база доведена до корректной основы для продолжения `POS-85…POS-89`, но Plane и ручная приемка ещё не совпадают полностью: `POS-67` и `POS-80` остаются на человеческой проверке, а ticket после исправления эффективной ширины для `{f:double}` требует повторного physical-print подтверждения на `10.25.1.201:9100`.

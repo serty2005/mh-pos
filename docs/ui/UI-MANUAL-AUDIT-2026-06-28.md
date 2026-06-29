@@ -24,7 +24,7 @@
 
 Блокеры:
 
-- Cloud License page до ручного snapshot показывает только `errors.license.unavailable`; пользователь не получает понятного действия восстановления. License Server требует знание admin token и редактирование snapshot через отдельную страницу.
+- Cloud License page до ручного snapshot показывает только `errors.license.unavailable`; пользователь не получает понятного действия восстановления. License Server operator page теперь использует login/password super-admin и выбор connected server из списка, но Cloud-side recovery action остается отдельным UI gap.
 - POS UI показывает `ТЕРМИНАЛ ЗАБЛОКИРОВАН` из-за `503 /api/v1/license/entitlements`, но при этом вход по PIN и кассовые операции доступны. Это противоречивое состояние лицензии.
 - POS floor/table сценарий не исполняется: `GET /api/v1/halls?...` возвращает `503 LICENSE_AUTHORITY_UNAVAILABLE`, хотя зал и стол созданы в Cloud.
 - POS `НАЧАТЬ ЗАКАЗ` отправляет `POST /api/v1/orders` и получает `201`, но UI остается в состоянии `ЗАКАЗ НЕ ВЫБРАН`; созданный заказ не открывается оператору.

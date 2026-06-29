@@ -210,6 +210,56 @@ func TestEntitlementSnapshotsRoundTripAndList(t *testing.T) {
 	if len(list) != 2 || list[0].TenantID != first.TenantID || list[1].TenantID != second.TenantID {
 		t.Fatalf("unexpected entitlement list: %+v", list)
 	}
+
+	servers, err := repo.ListConnectedServers(ctx)
+	if err != nil {
+		t.Fatalf("list connected servers: %v", err)
+	}
+	if len(servers) != 2 || servers[0].Snapshot == nil || servers[1].Snapshot == nil {
+		t.Fatalf("expected entitlement saves to appear in connected server list: %+v", servers)
+	}
+}
+
+func TestAdminUsersSessionsAndConnectedServersRoundTrip(t *testing.T) {
+	ctx := t.Context()
+	_, repo := migratedTestRepo(t)
+	now := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
+	user := app.AdminUser{
+		Username:     "admin",
+		PasswordHash: "hash",
+		Salt:         "salt",
+		Iterations:   210000,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := repo.SaveAdminUser(ctx, user); err != nil {
+		t.Fatalf("save admin user: %v", err)
+	}
+	gotUser, err := repo.GetAdminUser(ctx, "admin")
+	if err != nil || gotUser.PasswordHash != user.PasswordHash || gotUser.Iterations != user.Iterations {
+		t.Fatalf("unexpected admin user: %+v err=%v", gotUser, err)
+	}
+	session := app.AdminSession{TokenHash: "sha256:session", Username: "admin", ExpiresAt: now.Add(time.Hour), CreatedAt: now}
+	if err := repo.SaveAdminSession(ctx, session); err != nil {
+		t.Fatalf("save admin session: %v", err)
+	}
+	gotSession, err := repo.GetAdminSession(ctx, session.TokenHash)
+	if err != nil || gotSession.Username != "admin" {
+		t.Fatalf("unexpected admin session: %+v err=%v", gotSession, err)
+	}
+	if err := repo.DeleteAdminSession(ctx, session.TokenHash); err != nil {
+		t.Fatalf("delete admin session: %v", err)
+	}
+	if _, err := repo.GetAdminSession(ctx, session.TokenHash); !errors.Is(err, app.ErrAdminAuth) {
+		t.Fatalf("expected deleted session to be invalid, got %v", err)
+	}
+	if err := repo.SaveConnectedServer(ctx, app.ConnectedServer{TenantID: "tenant-a", ServerID: "edge-a", FirstSeenAt: now, LastSeenAt: now}); err != nil {
+		t.Fatalf("save connected server: %v", err)
+	}
+	servers, err := repo.ListConnectedServers(ctx)
+	if err != nil || len(servers) != 1 || servers[0].TenantID != "tenant-a" || servers[0].Snapshot != nil {
+		t.Fatalf("unexpected connected server list: %+v err=%v", servers, err)
+	}
 }
 
 func openTestDB(t *testing.T) *sql.DB {

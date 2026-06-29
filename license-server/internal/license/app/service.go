@@ -2,7 +2,11 @@ package app
 
 import (
 	"context"
+	"crypto/pbkdf2"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -16,7 +20,10 @@ var (
 	ErrConsumed            = fmt.Errorf("pairing code invalid: consumed")
 	ErrEntitlementNotFound = fmt.Errorf("entitlement snapshot not found")
 	ErrEntitlementVersion  = fmt.Errorf("entitlement snapshot version conflict")
+	ErrAdminAuth           = fmt.Errorf("admin auth invalid")
 )
+
+const adminPasswordIterations = 210_000
 
 // SafeErrorReason возвращает стабильную внутреннюю причину отказа без pairing code и токенов.
 func SafeErrorReason(err error) string {
@@ -29,6 +36,8 @@ func SafeErrorReason(err error) string {
 		return "expired"
 	case errors.Is(err, ErrConsumed):
 		return "consumed"
+	case errors.Is(err, ErrAdminAuth):
+		return "auth_invalid"
 	case errors.Is(err, ErrInvalid):
 		return "invalid"
 	default:
@@ -80,6 +89,13 @@ type Repository interface {
 	SaveEntitlements(context.Context, EntitlementSnapshot) error
 	GetEntitlements(context.Context, string, string) (EntitlementSnapshot, error)
 	ListEntitlements(context.Context) ([]EntitlementSnapshot, error)
+	SaveConnectedServer(context.Context, ConnectedServer) error
+	ListConnectedServers(context.Context) ([]ConnectedServer, error)
+	SaveAdminUser(context.Context, AdminUser) error
+	GetAdminUser(context.Context, string) (AdminUser, error)
+	SaveAdminSession(context.Context, AdminSession) error
+	GetAdminSession(context.Context, string) (AdminSession, error)
+	DeleteAdminSession(context.Context, string) error
 }
 
 // EntitlementSnapshot хранит authoritative module grants для tenant/server.
@@ -92,6 +108,38 @@ type EntitlementSnapshot struct {
 	IssuedAt     time.Time       `json:"issued_at"`
 	ExpiresAt    time.Time       `json:"expires_at"`
 	UpdatedAt    time.Time       `json:"updated_at"`
+}
+
+// ConnectedServer фиксирует сервер, который обращался к License Server за snapshot.
+type ConnectedServer struct {
+	TenantID    string               `json:"tenant_id"`
+	ServerID    string               `json:"server_id"`
+	FirstSeenAt time.Time            `json:"first_seen_at"`
+	LastSeenAt  time.Time            `json:"last_seen_at"`
+	Snapshot    *EntitlementSnapshot `json:"snapshot,omitempty"`
+}
+
+// AdminUser хранит hash первого super-admin и будущих операторов без plaintext password.
+type AdminUser struct {
+	Username     string
+	PasswordHash string
+	Salt         string
+	Iterations   int
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+type AdminSession struct {
+	TokenHash string
+	Username  string
+	ExpiresAt time.Time
+	CreatedAt time.Time
+}
+
+type LoginResult struct {
+	Token     string
+	Username  string
+	ExpiresAt time.Time
 }
 
 type PutEntitlementsCommand struct {
@@ -159,6 +207,60 @@ func (s *Service) Register(ctx context.Context, cmd RegisterPairingCodeCommand) 
 	return RegisterResult{Status: "registered", ExpiresAt: expiresAt}, nil
 }
 
+func (s *Service) BootstrapSuperAdmin(ctx context.Context, username, password string) error {
+	username = strings.TrimSpace(username)
+	if username == "" || len(password) < 8 {
+		return ErrAdminAuth
+	}
+	user, err := newAdminUser(username, password, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	return s.repo.SaveAdminUser(ctx, user)
+}
+
+func (s *Service) LoginAdmin(ctx context.Context, username, password string) (LoginResult, error) {
+	username = strings.TrimSpace(username)
+	user, err := s.repo.GetAdminUser(ctx, username)
+	if err != nil {
+		return LoginResult{}, ErrAdminAuth
+	}
+	if !verifyAdminPassword(user, password) {
+		return LoginResult{}, ErrAdminAuth
+	}
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return LoginResult{}, err
+	}
+	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
+	now := time.Now().UTC()
+	session := AdminSession{TokenHash: Hash(token), Username: user.Username, ExpiresAt: now.Add(12 * time.Hour), CreatedAt: now}
+	if err := s.repo.SaveAdminSession(ctx, session); err != nil {
+		return LoginResult{}, err
+	}
+	return LoginResult{Token: token, Username: user.Username, ExpiresAt: session.ExpiresAt}, nil
+}
+
+func (s *Service) ValidateAdminSession(ctx context.Context, token string) (string, bool) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return "", false
+	}
+	session, err := s.repo.GetAdminSession(ctx, Hash(token))
+	if err != nil || !session.ExpiresAt.After(time.Now().UTC()) {
+		return "", false
+	}
+	return session.Username, true
+}
+
+func (s *Service) LogoutAdmin(ctx context.Context, token string) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil
+	}
+	return s.repo.DeleteAdminSession(ctx, Hash(token))
+}
+
 func (s *Service) Resolve(ctx context.Context, cmd ResolveCommand) (ResolveResult, error) {
 	code := strings.TrimSpace(cmd.PairingCode)
 	if code == "" {
@@ -219,6 +321,19 @@ func (s *Service) ListEntitlements(ctx context.Context) ([]EntitlementSnapshot, 
 	return s.repo.ListEntitlements(ctx)
 }
 
+func (s *Service) RecordServerSeen(ctx context.Context, tenantID, serverID string) error {
+	tenantID, serverID = strings.TrimSpace(tenantID), strings.TrimSpace(serverID)
+	if tenantID == "" || serverID == "" {
+		return invalid("server_scope_required")
+	}
+	now := time.Now().UTC()
+	return s.repo.SaveConnectedServer(ctx, ConnectedServer{TenantID: tenantID, ServerID: serverID, FirstSeenAt: now, LastSeenAt: now})
+}
+
+func (s *Service) ListConnectedServers(ctx context.Context) ([]ConnectedServer, error) {
+	return s.repo.ListConnectedServers(ctx)
+}
+
 func validEntitlementID(id string) bool {
 	id = strings.TrimSpace(id)
 	if id == "" || len(id) > 100 || id[0] == '-' || id[len(id)-1] == '-' {
@@ -235,4 +350,39 @@ func validEntitlementID(id string) bool {
 func Hash(code string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(code)))
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func newAdminUser(username, password string, now time.Time) (AdminUser, error) {
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return AdminUser{}, err
+	}
+	hash, err := adminPasswordHash(password, salt, adminPasswordIterations)
+	if err != nil {
+		return AdminUser{}, err
+	}
+	return AdminUser{
+		Username:     username,
+		PasswordHash: hex.EncodeToString(hash),
+		Salt:         hex.EncodeToString(salt),
+		Iterations:   adminPasswordIterations,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}, nil
+}
+
+func verifyAdminPassword(user AdminUser, password string) bool {
+	salt, err := hex.DecodeString(user.Salt)
+	if err != nil || user.Iterations <= 0 || user.PasswordHash == "" {
+		return false
+	}
+	hash, err := adminPasswordHash(password, salt, user.Iterations)
+	if err != nil {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(hex.EncodeToString(hash)), []byte(user.PasswordHash)) == 1
+}
+
+func adminPasswordHash(password string, salt []byte, iterations int) ([]byte, error) {
+	return pbkdf2.Key(sha256.New, password, salt, iterations, 32)
 }

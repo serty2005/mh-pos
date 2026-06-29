@@ -127,7 +127,7 @@
 - Resolve pairing code с проверкой срока действия и consumed status.
 - Безопасный error contract для invalid/expired/consumed code.
 - Structured logs без раскрытия самого pairing code; логируются только факт наличия и длина.
-- Operator page `/` для просмотра и редактирования entitlement snapshots через admin token: стандартный flow использует canonical module toggles/presets, advanced JSON отделен как support/admin mode; layout адаптирован без горизонтального overflow на узком viewport.
+- Operator page `/` для просмотра и редактирования entitlement snapshots через login/password super-admin: стандартный flow выбирает connected server из списка, поддерживает поиск по `tenant_id`, canonical module toggles/presets и advanced JSON как support/admin mode.
 
 ## POS UI
 

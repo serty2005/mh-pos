@@ -1,7 +1,6 @@
 package api
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,17 +18,14 @@ import (
 	"license-server/internal/license/app"
 )
 
+const adminSessionCookie = "license_admin_session"
+
 type Handler struct {
-	service    *app.Service
-	adminToken string
+	service *app.Service
 }
 
-func NewRouter(service *app.Service, adminTokens ...string) http.Handler {
-	adminToken := ""
-	if len(adminTokens) > 0 {
-		adminToken = strings.TrimSpace(adminTokens[0])
-	}
-	h := &Handler{service: service, adminToken: adminToken}
+func NewRouter(service *app.Service) http.Handler {
+	h := &Handler{service: service}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -41,6 +37,10 @@ func NewRouter(service *app.Service, adminTokens ...string) http.Handler {
 	r.Get("/", h.adminPage)
 	r.Get("/admin", h.adminPage)
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Post("/admin/login", h.adminLogin)
+		r.Post("/admin/logout", h.adminLogout)
+		r.Get("/admin/me", h.adminMe)
+		r.Get("/servers", h.listServers)
 		r.Post("/pairing-codes", h.register)
 		r.Post("/pairing-codes/resolve", h.resolve)
 		r.Get("/entitlements", h.listEntitlements)
@@ -48,6 +48,60 @@ func NewRouter(service *app.Service, adminTokens ...string) http.Handler {
 		r.Put("/entitlements/{tenant_id}/{server_id}", h.putEntitlements)
 	})
 	return r
+}
+
+func (h *Handler) adminLogin(w http.ResponseWriter, r *http.Request) {
+	var cmd struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := decode(r, &cmd); err != nil {
+		writeError(w, r, http.StatusBadRequest, "VALIDATION_FAILED", "errors.validation", err)
+		return
+	}
+	result, err := h.service.LoginAdmin(r.Context(), cmd.Username, cmd.Password)
+	if err != nil {
+		writeError(w, r, http.StatusUnauthorized, "LICENSE_AUTH_REQUIRED", "errors.license.authRequired", app.ErrAdminAuth)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     adminSessionCookie,
+		Value:    result.Token,
+		Path:     "/",
+		Expires:  result.ExpiresAt,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	writeJSON(w, http.StatusOK, map[string]string{"username": result.Username})
+}
+
+func (h *Handler) adminLogout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie(adminSessionCookie); err == nil {
+		_ = h.service.LogoutAdmin(r.Context(), cookie.Value)
+	}
+	clearAdminCookie(w)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) adminMe(w http.ResponseWriter, r *http.Request) {
+	username, ok := h.adminUsername(r)
+	if !ok {
+		writeError(w, r, http.StatusUnauthorized, "LICENSE_AUTH_REQUIRED", "errors.license.authRequired", app.ErrAdminAuth)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"username": username})
+}
+
+func (h *Handler) listServers(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAdmin(w, r) {
+		return
+	}
+	v, err := h.service.ListConnectedServers(r.Context())
+	if err != nil {
+		writeAppError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
 }
 
 func (h *Handler) listEntitlements(w http.ResponseWriter, r *http.Request) {
@@ -63,7 +117,11 @@ func (h *Handler) listEntitlements(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getEntitlements(w http.ResponseWriter, r *http.Request) {
-	v, err := h.service.GetEntitlements(r.Context(), chi.URLParam(r, "tenant_id"), chi.URLParam(r, "server_id"))
+	tenantID, serverID := chi.URLParam(r, "tenant_id"), chi.URLParam(r, "server_id")
+	if err := h.service.RecordServerSeen(r.Context(), tenantID, serverID); err != nil {
+		slog.WarnContext(r.Context(), "license connected server record failed", "operation", "license.server_seen", "result", "failed", "tenant_id", maskLogID(tenantID), "server_id", maskLogID(serverID), "reason", app.SafeErrorReason(err))
+	}
+	v, err := h.service.GetEntitlements(r.Context(), tenantID, serverID)
 	if err != nil {
 		writeAppError(w, r, err)
 		return
@@ -90,12 +148,23 @@ func (h *Handler) putEntitlements(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	provided := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-	if h.adminToken == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(h.adminToken)) != 1 {
-		writeError(w, r, http.StatusUnauthorized, "LICENSE_AUTH_REQUIRED", "errors.license.authRequired", app.ErrInvalid)
+	if _, ok := h.adminUsername(r); !ok {
+		writeError(w, r, http.StatusUnauthorized, "LICENSE_AUTH_REQUIRED", "errors.license.authRequired", app.ErrAdminAuth)
 		return false
 	}
 	return true
+}
+
+func (h *Handler) adminUsername(r *http.Request) (string, bool) {
+	cookie, err := r.Cookie(adminSessionCookie)
+	if err != nil {
+		return "", false
+	}
+	return h.service.ValidateAdminSession(r.Context(), cookie.Value)
+}
+
+func clearAdminCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{Name: adminSessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 }
 
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
@@ -146,6 +215,8 @@ func writeAppError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusNotFound, "LICENSE_SNAPSHOT_NOT_FOUND", "errors.license.snapshotNotFound", err)
 	case errors.Is(err, app.ErrEntitlementVersion):
 		writeError(w, r, http.StatusConflict, "LICENSE_VERSION_CONFLICT", "errors.license.versionConflict", err)
+	case errors.Is(err, app.ErrAdminAuth):
+		writeError(w, r, http.StatusUnauthorized, "LICENSE_AUTH_REQUIRED", "errors.license.authRequired", err)
 	case errors.Is(err, app.ErrExpired):
 		writeError(w, r, http.StatusBadRequest, "PAIRING_CODE_EXPIRED", "errors.pairing.expired", err)
 	case errors.Is(err, app.ErrInvalid), errors.Is(err, app.ErrConsumed):

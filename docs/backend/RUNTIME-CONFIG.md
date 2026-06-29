@@ -41,10 +41,11 @@
 - `pos-backend/config/pos-edge.example.json`;
 - `cloud-backend/config/cloud-api.example.json`;
 - `license-server/config/license-api.example.json`.
+- `deploy/license-server/license-api.env.example` для native Linux deployment.
 
 Licensing authority config:
 
-- `LICENSE_ADMIN_TOKEN` — обязательный provider secret только для License Server update API;
+- `LICENSE_SUPER_ADMIN_LOGIN` и `LICENSE_SUPER_ADMIN_PASSWORD` — обязательные credentials первого super-admin для License Server operator UI/API;
 - `LICENSE_TENANT_ID` и `LICENSE_SERVER_ID` — runtime scope Cloud/Edge;
 - `LICENSE_STALE_GRACE_SECONDS` — provider deployment grace при недоступности authority; клиентский UI его не изменяет.
 

@@ -2,5 +2,6 @@
   "LICENSE_HTTP_ADDR": ":8095",
   "LICENSE_SQLITE_PATH": "data/license-server.db",
   "LICENSE_SQLITE_BACKUP_DIR": "data/backups",
-  "LICENSE_ADMIN_TOKEN": "replace-with-provider-secret"
+  "LICENSE_SUPER_ADMIN_LOGIN": "admin",
+  "LICENSE_SUPER_ADMIN_PASSWORD": "replace-with-strong-password"
 }
