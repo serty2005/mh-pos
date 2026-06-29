@@ -17,6 +17,7 @@
   "POS_HTTP_ADDR": ":8080",
   "POS_SQLITE_PATH": "data/pos-edge.db",
   "POS_SQLITE_ARCHIVE_DIR": "data/archives",
+  "POS_UI_DIST_DIR": "ui/pos-ui",
   "POS_SYNC_SENDER_ENABLED": true,
   "POS_SYNC_SENDER_BATCH_SIZE": 25,
   "POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES": 120
@@ -54,6 +55,8 @@ Licensing authority config:
 Реализовано сейчас: POS Edge storage archive export использует `POS_SQLITE_ARCHIVE_DIR`. Если значение не задано, entrypoint выбирает `archives` рядом с active SQLite data directory из `POS_SQLITE_PATH`; сам export не пишет файлы внутрь `.db` file и не запускает destructive apply. Физическое удаление и `VACUUM` выполняются только отдельным `POST /api/v1/storage/archive/apply-plan` после verified archive и runtime safety gate.
 
 Реализовано сейчас: `POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES` задает положительный integer limit для `RecipeChangeSuggested.prep_time_delta_minutes`. Если ключ отсутствует или некорректен, POS Edge использует default `120`.
+
+Реализовано сейчас: `POS_UI_DIST_DIR` включает отдачу production POS UI bundle самим POS Edge. При пустом значении backend отдает только API. При заданном каталоге `GET /` и frontend routes возвращают `index.html`, статические assets читаются из каталога, а `/api/*` и `/health` остаются backend routes.
 
 Вне текущего объема: горячая перезагрузка runtime-конфига без рестарта процесса и хранение secrets в зашифрованном vault.
 
