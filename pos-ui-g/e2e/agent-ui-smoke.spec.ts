@@ -67,7 +67,7 @@ test('agent smoke opens POS shell, navigates by clicks, and validates desktop/mo
   await saveViewportScreenshot(page, testInfo, 'agent-shell-mobile.png');
 });
 
-async function mockPosBackend(page: Page, options: { paired: boolean }) {
+async function mockPosBackend(page: Page, options: { paired: boolean; entitlements?: Record<string, boolean> }) {
   await page.route('**/api/v1/**', async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace(/^\/api\/v1/, '');
@@ -76,7 +76,7 @@ async function mockPosBackend(page: Page, options: { paired: boolean }) {
       return;
     }
 
-    const body = responseFor(path, options.paired);
+    const body = responseFor(path, options);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -94,7 +94,8 @@ async function seedUnlockedSession(page: Page) {
   });
 }
 
-function responseFor(path: string, paired: boolean) {
+function responseFor(path: string, options: { paired: boolean; entitlements?: Record<string, boolean> }) {
+  const paired = options.paired;
   if (path === '/system/pairing-status') {
     return paired
       ? {
@@ -112,6 +113,7 @@ function responseFor(path: string, paired: boolean) {
       : { paired: false, node_device_id: 'node-agent-e2e' };
   }
   if (path === '/system/provisioning-status') return provisioningStatus(paired);
+  if (path === '/license/entitlements') return entitlementSnapshot(options.entitlements);
   if (path === '/system/provisioning/register-cloud') return provisioningStatus(false);
   if (path === '/system/provisioning/pair-via-license') return provisioningStatus(true);
   if (path.startsWith('/auth/session') || path === '/auth/pin-login') return authResult();
@@ -134,6 +136,23 @@ function responseFor(path: string, paired: boolean) {
   if (path.startsWith('/kitchen/proposals')) return [];
   if (path.includes('/recipe')) return kitchenRecipe();
   return {};
+}
+
+function entitlementSnapshot(entitlements: Record<string, boolean> = {
+  'table-mode': true,
+  'kitchen-space': true,
+  'waiter-space': true,
+  'warehouse-mode': true,
+}) {
+  return {
+    tenant_id: 'tenant-agent-e2e',
+    server_id: 'license-agent-e2e',
+    version: 1,
+    status: 'active',
+    entitlements,
+    issued_at: now,
+    expires_at: '2099-01-01T00:00:00.000Z',
+  };
 }
 
 function provisioningStatus(paired: boolean) {

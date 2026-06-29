@@ -38,10 +38,13 @@ import {
   Banknote, 
   Lock,
   MessageSquare,
-  BadgePercent
+  BadgePercent,
+  Plus,
+  ReceiptText,
+  CreditCard
 } from 'lucide-react';
 import { canUseAnyPermission, canUsePermission } from '../../context/posContextHelpers';
-import { MenuItem, OrderLine, PricingPolicy, SelectedModifier, permissions } from '../../types';
+import { ClosedOrder, MenuItem, Order, OrderLine, PricingPolicy, SelectedModifier, permissions } from '../../types';
 
 export const POSOrderSection: React.FC = () => {
   const {
@@ -61,6 +64,7 @@ export const POSOrderSection: React.FC = () => {
     applyPricingPolicy,
     tableModeEnabled,
     createCounterOrder,
+    closedOrders,
   } = usePOS();
 
   // Search and Category filters
@@ -82,9 +86,11 @@ export const POSOrderSection: React.FC = () => {
 
   const [isPrecheckCancelOpen, setPrecheckCancelOpen] = useState<boolean>(false);
   const [isPricingModalOpen, setPricingModalOpen] = useState<boolean>(false);
+  const [isTotalsBreakdownOpen, setTotalsBreakdownOpen] = useState<boolean>(false);
   const [selectedPricingPolicyId, setSelectedPricingPolicyId] = useState<string>('');
   const [pricingReason, setPricingReason] = useState<string>('');
   const [pricingLineId, setPricingLineId] = useState<string>('');
+  const [selectedClosedOrder, setSelectedClosedOrder] = useState<ClosedOrder | null>(null);
 
   // Local notification banner for stop list alerts
   const [stopListAlertProduct, setStopListAlertProduct] = useState<string | null>(null);
@@ -257,13 +263,36 @@ export const POSOrderSection: React.FC = () => {
         {/* Menu Tile Grid Room */}
         <div className="flex-1 p-6 overflow-y-auto pos-scrollarea-y pos-scrollbar-thin">
           {!currentOrder ? (
-            <PosEmptyState
-              title={t.blocks.noOrderSelected}
-              description={t.blocks.noOrderSelectedDesc}
-              buttonLabel={t.blocks.toTables}
-              onAction={() => setCurrentSection('floor')}
-              icon={<Utensils className="w-12 h-12" />}
-            />
+            !tableModeEnabled ? (
+              <div className="h-full min-h-[360px] flex flex-col items-center justify-center gap-5 text-center">
+                <PosButton
+                  id="counter-start-order-plus-btn"
+                  variant="primary"
+                  size="critical"
+                  onClick={createCounterOrder}
+                  aria-label={t.menu.startCounterOrder}
+                  className="h-28 w-28 rounded-none px-0 text-5xl"
+                >
+                  <Plus className="h-14 w-14" aria-hidden="true" />
+                </PosButton>
+                <div className="space-y-1">
+                  <div className="font-mono text-sm font-black uppercase tracking-wider text-[var(--pos-text-primary)]">
+                    {t.menu.noSaleOrderTitle}
+                  </div>
+                  <div className="font-sans text-xs text-[var(--pos-text-muted)]">
+                    {t.menu.noSaleOrderDesc}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <PosEmptyState
+                title={t.blocks.noOrderSelected}
+                description={t.blocks.noOrderSelectedDesc}
+                buttonLabel={t.blocks.toTables}
+                onAction={() => setCurrentSection('floor')}
+                icon={<Utensils className="w-12 h-12" />}
+              />
+            )
           ) : loading ? (
             <PosSkeleton type="grid" />
           ) : filteredItems.length === 0 ? (
@@ -329,7 +358,7 @@ export const POSOrderSection: React.FC = () => {
           
           {/* Header descriptor */}
           <PosRailHeader
-            title={currentOrder ? `${currentOrder.tableName} (${t.common.order} #${currentOrder.shortId})` : t.menu.currentOrder}
+            title={currentOrder ? `${currentOrder.tableName || t.activity.noTable} (${t.common.order} #${currentOrder.shortId})` : (!tableModeEnabled ? t.activity.recentOrders : t.menu.currentOrder)}
             badge={currentOrder?.status === 'precheck_issued' ? (
               <PosInlineStatusBadge variant="warning" className="text-[9px] px-1.5 py-0.5 animate-pulse bg-[var(--pos-status-warning)] text-zinc-950">
                 {t.status.locked}
@@ -340,24 +369,17 @@ export const POSOrderSection: React.FC = () => {
           {/* Lines iterator */}
           <div className="flex-1 pos-scrollarea-y pos-scrollbar-thin overflow-y-auto">
             {!currentOrder ? (
-              <div className="p-8 text-center text-[var(--pos-text-muted)] h-full flex flex-col items-center justify-center gap-4">
-                <SlidersHorizontal className="w-8 h-8 opacity-35 shrink-0" />
-                {!tableModeEnabled ? (
-                  <>
-                    <span className="font-sans text-xs">{t.menu.counterOrderHint}</span>
-                    <PosButton
-                      id="counter-start-order-btn"
-                      variant="primary"
-                      size="md"
-                      onClick={createCounterOrder}
-                    >
-                      {t.menu.startCounterOrder}
-                    </PosButton>
-                  </>
-                ) : (
+              !tableModeEnabled ? (
+                <RecentClosedOrdersRail
+                  orders={closedOrders}
+                  onSelect={setSelectedClosedOrder}
+                />
+              ) : (
+                <div className="p-8 text-center text-[var(--pos-text-muted)] h-full flex flex-col items-center justify-center gap-4">
+                  <SlidersHorizontal className="w-8 h-8 opacity-35 shrink-0" />
                   <span className="font-mono text-xs font-bold uppercase tracking-wider">{t.menu.orderEmpty}</span>
-                )}
-              </div>
+                </div>
+              )
             ) : currentOrder.lines.length === 0 ? (
               <div className="p-8 text-center text-[var(--pos-text-muted)] h-full flex flex-col items-center justify-center">
                 <Utensils className="w-8 h-8 opacity-35 mb-2 shrink-0 animate-pulse" />
@@ -454,7 +476,11 @@ export const POSOrderSection: React.FC = () => {
 
           {/* Totals summaries container */}
           {currentOrder && (
-            <div className="border-t border-[var(--pos-border)] p-4 bg-[var(--pos-surface-raised)]/20 select-none space-y-2 shrink-0">
+            <button
+              type="button"
+              className="w-full border-t border-[var(--pos-border)] p-4 bg-[var(--pos-surface-raised)]/20 select-none space-y-2 shrink-0 text-left outline-none hover:bg-[var(--pos-surface-raised)] focus:ring-2 focus:ring-[var(--pos-focus-ring)]"
+              onClick={() => setTotalsBreakdownOpen(true)}
+            >
               <div className="flex justify-between items-baseline font-mono text-xs text-[var(--pos-text-muted)]">
                 <span>{t.common.subtotal}:</span>
                 <span>{currentOrder.subtotal} {t.common.ruble}</span>
@@ -473,7 +499,7 @@ export const POSOrderSection: React.FC = () => {
                 <span>{t.common.total}:</span>
                 <span className="text-sm md:text-xl font-black text-[var(--pos-status-success)]">{currentOrder.total} {t.common.ruble}</span>
               </div>
-            </div>
+            </button>
           )}
 
           {/* Action buttons footer */}
@@ -600,6 +626,17 @@ export const POSOrderSection: React.FC = () => {
         onClose={() => setPaymentModalOpen(false)}
       />
 
+      <ClosedOrderDialog
+        order={selectedClosedOrder}
+        onClose={() => setSelectedClosedOrder(null)}
+      />
+
+      <TotalsBreakdownDialog
+        isOpen={isTotalsBreakdownOpen}
+        onClose={() => setTotalsBreakdownOpen(false)}
+        order={currentOrder}
+      />
+
       <ActionsDialog
         isOpen={isActionsModalOpen}
         onClose={() => setActionsModalOpen(false)}
@@ -629,6 +666,172 @@ export const POSOrderSection: React.FC = () => {
     </div>
   );
 };
+
+function RecentClosedOrdersRail({
+  orders,
+  onSelect,
+}: {
+  orders: ClosedOrder[];
+  onSelect: (order: ClosedOrder) => void;
+}) {
+  if (orders.length === 0) {
+    return (
+      <div className="p-8 text-center text-[var(--pos-text-muted)] h-full flex flex-col items-center justify-center">
+        <ReceiptText className="w-8 h-8 opacity-40 mb-2 shrink-0" />
+        <span className="font-sans text-xs">{t.activity.emptyChecksTitle}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="divide-y divide-[var(--pos-border)]">
+      {orders.map((order) => {
+        const PaymentIcon = order.paymentMethod === 'card' ? CreditCard : Banknote;
+        return (
+          <PosSelectableTile
+            key={order.id}
+            id={`recent-order-row-${order.id}`}
+            onClick={() => onSelect(order)}
+            className="w-full border-none p-4 text-left hover:bg-[var(--pos-surface-raised)] active:bg-[var(--pos-border)] transition-colors flex items-center justify-between gap-3"
+          >
+            <div className="min-w-0 space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-black text-[var(--pos-text-primary)]">
+                  {t.activity.check} #{order.shortId}
+                </span>
+                <PosInlineStatusBadge variant="success" className="text-[9px] px-1.5 py-0.5">
+                  {order.paymentMethod === 'cash' ? t.modals.paymentMethodCash : t.modals.paymentMethodCard}
+                </PosInlineStatusBadge>
+              </div>
+              <span className="block truncate font-sans text-[11px] text-[var(--pos-text-muted)]">
+                {order.closedAt}
+              </span>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <PaymentIcon className="h-4 w-4 text-[var(--pos-text-muted)]" />
+              <span className="font-mono text-sm font-black text-[var(--pos-status-success)]">
+                {order.total} {t.common.ruble}
+              </span>
+            </div>
+          </PosSelectableTile>
+        );
+      })}
+    </div>
+  );
+}
+
+function ClosedOrderDialog({
+  order,
+  onClose,
+}: {
+  order: ClosedOrder | null;
+  onClose: () => void;
+}) {
+  return (
+    <PosDialog
+      isOpen={Boolean(order)}
+      onClose={onClose}
+      title={order ? `${t.activity.check} #${order.shortId}` : t.activity.checkDetails}
+      footer={
+        <PosButton variant="primary" size="sm" onClick={onClose}>
+          {t.common.close}
+        </PosButton>
+      }
+    >
+      {order && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 border border-[var(--pos-border)] bg-[var(--pos-surface-raised)] p-4">
+            <div className="space-y-1">
+              <span className="block font-mono text-[10px] font-bold uppercase text-[var(--pos-text-muted)]">
+                {t.activity.paymentType}
+              </span>
+              <span className="font-sans text-sm font-semibold text-[var(--pos-text-primary)]">
+                {order.paymentMethod === 'cash' ? t.modals.paymentMethodCash : t.modals.paymentMethodCard}
+              </span>
+            </div>
+            <div className="space-y-1 text-right">
+              <span className="block font-mono text-[10px] font-bold uppercase text-[var(--pos-text-muted)]">
+                {t.common.total}
+              </span>
+              <span className="font-mono text-lg font-black text-[var(--pos-status-success)]">
+                {order.total} {t.common.ruble}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--pos-text-muted)]">
+              {t.activity.checkLines}
+            </span>
+            <div className="divide-y divide-[var(--pos-border)] border border-[var(--pos-border)]">
+              {order.lines.map((line) => (
+                <div key={line.id} className="flex justify-between gap-3 p-3 text-xs">
+                  <div className="min-w-0">
+                    <span className="block truncate font-sans font-semibold text-[var(--pos-text-primary)]">
+                      {line.name}
+                    </span>
+                    {line.selectedModifiers.map((modifier) => (
+                      <span key={modifier.optionId} className="block truncate font-mono text-[9px] text-[var(--pos-text-muted)]">
+                        + {modifier.optionName}
+                      </span>
+                    ))}
+                  </div>
+                  <span className="shrink-0 font-mono font-bold text-[var(--pos-text-secondary)]">
+                    {line.price} {t.common.ruble} x {line.quantity}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </PosDialog>
+  );
+}
+
+function TotalsBreakdownDialog({
+  isOpen,
+  onClose,
+  order,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  order: Order | null;
+}) {
+  return (
+    <PosDialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title={t.pricing.title}
+      footer={
+        <PosButton variant="primary" size="sm" onClick={onClose}>
+          {t.common.close}
+        </PosButton>
+      }
+    >
+      {order && (
+        <div className="space-y-2">
+          <div className="flex justify-between border-b border-[var(--pos-border)] py-2 font-mono text-sm">
+            <span className="text-[var(--pos-text-muted)]">{t.common.subtotal}</span>
+            <span className="font-bold text-[var(--pos-text-primary)]">{order.subtotal} {t.common.ruble}</span>
+          </div>
+          <div className="flex justify-between border-b border-[var(--pos-border)] py-2 font-mono text-sm">
+            <span className="text-[var(--pos-text-muted)]">{t.common.discount}</span>
+            <span className="font-bold text-[var(--pos-text-primary)]">-{order.discount} {t.common.ruble}</span>
+          </div>
+          <div className="flex justify-between border-b border-[var(--pos-border)] py-2 font-mono text-sm">
+            <span className="text-[var(--pos-text-muted)]">{t.common.tax}</span>
+            <span className="font-bold text-[var(--pos-text-primary)]">{order.tax} {t.common.ruble}</span>
+          </div>
+          <div className="flex justify-between pt-3 font-mono text-base font-black uppercase">
+            <span className="text-[var(--pos-text-primary)]">{t.common.total}</span>
+            <span className="text-[var(--pos-status-success)]">{order.total} {t.common.ruble}</span>
+          </div>
+        </div>
+      )}
+    </PosDialog>
+  );
+}
 
 function categoryLabel(id: string) {
   switch (id) {

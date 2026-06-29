@@ -104,7 +104,7 @@ export function mapOrder(order: BackendOrder, activePrecheck?: BackendPrecheck |
     id: order.id,
     shortId: shortId(order.edge_order_id || order.id),
     tableId: order.table_id,
-    tableName: order.table_name,
+    tableName: visibleTableName(order.table_name),
     status: precheckIssued ? 'precheck_issued' : order.status === 'closed' ? 'closed' : 'open',
     lines: order.lines.filter((line) => line.status === 'active').map(mapOrderLine),
     subtotal: order.subtotal,
@@ -130,7 +130,7 @@ export function mapClosedOrder(order: BackendClosedOrder, operations: BackendFin
   return {
     id: check?.id ?? order.id,
     shortId: shortId(check?.id ?? order.id),
-    tableName: order.table_name,
+    tableName: visibleTableName(order.table_name),
     total: check?.total ?? order.total,
     paymentMethod: payment?.method === 'card' ? 'card' : 'cash',
     closedAt: order.closed_at ?? check?.closed_at ?? order.opened_at,
@@ -140,6 +140,10 @@ export function mapClosedOrder(order: BackendClosedOrder, operations: BackendFin
     lines: extractClosedOrderLines(check?.snapshot),
     operations: operations.map(mapFinancialOperation),
   };
+}
+
+function visibleTableName(tableName: string | undefined): string | undefined {
+  return tableName && tableName !== '__counter__' ? tableName : undefined;
 }
 
 export function mapPayment(payment: BackendPayment): Payment {
