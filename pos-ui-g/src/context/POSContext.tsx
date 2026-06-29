@@ -133,6 +133,7 @@ interface POSContextType {
   logEvents: LogEvent[];
   addLogEvent: (msg: string, type?: 'info' | 'warn' | 'success') => void;
   authSnapshot: AuthSnapshot;
+  entitlements: Record<string, boolean>;
   isEdgePaired: boolean;
   provisioningStatus: BackendProvisioningStatus | null;
   provisioningLoading: boolean;
@@ -216,12 +217,17 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     actorRef.current = actor;
   }, [actor]);
 
-  useEffect(() => {
-    void api.getEntitlements().then((snapshot) => {
+  const refreshEntitlements = useCallback(async () => {
+    try {
+      const snapshot = await api.getEntitlements();
       if (snapshot.status === 'active' && new Date(snapshot.expires_at).getTime() > Date.now()) {
         setEntitlements(snapshot.entitlements);
+        return;
       }
-    }).catch(() => {});
+      setEntitlements({});
+    } catch {
+      // Оставляем последний снимок: временная сеть не должна внезапно прятать уже открытые POS-разделы.
+    }
   }, [api]);
 
   const setAuth = useCallback((next: AuthSnapshot) => {
@@ -447,6 +453,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshAll = useCallback(async (permissionsOverride?: string[]) => {
     try {
+      await refreshEntitlements();
       await refreshOps(permissionsOverride);
       await refreshDirectory();
       await refreshFloor();
@@ -456,11 +463,20 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (error) {
       handleError(error, t.ops.posRefreshFailed);
     }
-  }, [handleError, refreshActivity, refreshCurrentPrechecks, refreshCurrentPricing, refreshDirectory, refreshFloor, refreshOps]);
+  }, [handleError, refreshActivity, refreshCurrentPrechecks, refreshCurrentPricing, refreshDirectory, refreshEntitlements, refreshFloor, refreshOps]);
 
   useEffect(() => {
     void refreshIdentity();
-  }, [refreshIdentity]);
+    void refreshEntitlements();
+  }, [refreshEntitlements, refreshIdentity]);
+
+  useEffect(() => {
+    if (isPinLocked || !actor || !auth.sessionId || !auth.nodeDeviceId) return undefined;
+    const timer = window.setInterval(() => {
+      void refreshAll(actor.permissions);
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [actor, auth.nodeDeviceId, auth.sessionId, isPinLocked, refreshAll]);
 
   useEffect(() => {
     if (isEdgePaired) return undefined;
@@ -992,6 +1008,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logEvents,
     addLogEvent,
     authSnapshot: auth,
+    entitlements,
     isEdgePaired,
     provisioningStatus: provisioningStatusDto,
     provisioningLoading,

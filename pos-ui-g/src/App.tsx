@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { POSProvider, usePOS } from './context/POSContext';
 import { PairingScreen } from './components/PairingScreen';
 import { PinLogin } from './components/PinLogin';
@@ -32,7 +32,6 @@ import {
 } from 'lucide-react';
 import { PosBottomNav, PosButton, PosIconButton, PosInlineStatusBadge, PosSelectableChip, PosSelectableTile } from './shared/ui';
 import type { POSSection } from './types';
-import { createApiClient } from './shared/api';
 import { hasEntitlement } from './shared/licenseModules';
 
 function POSAppShellContent() {
@@ -53,22 +52,13 @@ function POSAppShellContent() {
     syncRevision,
     outboxCount,
     appVersion,
-    authSnapshot,
+    entitlements,
   } = usePOS();
 
   const [isSideMenuOpen, setSideMenuOpen] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<string>('');
   const [currentMode, setCurrentMode] = useState<TerminalMode>(() => isMobileViewport() ? 'waiter' : 'pos');
   const [currentKdsSection, setCurrentKdsSection] = useState<'orders' | 'stock' | 'kitchen'>('orders');
-  const [entitlements, setEntitlements] = useState<Record<string, boolean>>({});
-  const licenseApi = useMemo(() => createApiClient(() => authSnapshot), [authSnapshot]);
-
-  useEffect(() => {
-    void licenseApi.getEntitlements().then((snapshot) => {
-      if (snapshot.status === 'active' && new Date(snapshot.expires_at).getTime() > Date.now()) setEntitlements(snapshot.entitlements);
-    }).catch(() => setEntitlements({}));
-  }, [licenseApi]);
-
   useEffect(() => {
     if (currentSection === 'floor' && !hasEntitlement(entitlements, 'table-mode')) setCurrentSection('order');
     if (currentMode === 'kds' && !hasEntitlement(entitlements, 'kitchen-space')) setCurrentMode('pos');

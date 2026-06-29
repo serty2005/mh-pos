@@ -1,37 +1,59 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { usePOS } from '../context/POSContext';
 import { t } from '../shared/i18n';
 import { PosButton } from '../shared/ui';
 import { Lock, Delete, ArrowRight } from 'lucide-react';
-import { appendPinDigit, canSubmitPin, pinIndicatorCount } from './pinInput';
+import { appendPinDigit, canSubmitPin, pinIndicatorCount, shouldAttemptPinLogin } from './pinInput';
 
 export const PinLogin: React.FC = () => {
   const { pinLogin, appVersion } = usePOS();
   const [pin, setPin] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isSubmitting, setSubmitting] = useState<boolean>(false);
+  const lastAttemptRef = useRef<string>('');
 
   const handleKeyPress = (num: string) => {
     setErrorMsg(null);
+    lastAttemptRef.current = '';
     setPin(prev => appendPinDigit(prev, num));
   };
 
   const handleDelete = () => {
     setErrorMsg(null);
+    lastAttemptRef.current = '';
     setPin(prev => prev.slice(0, -1));
   };
 
   const handleClear = () => {
     setErrorMsg(null);
+    lastAttemptRef.current = '';
     setPin('');
   };
 
-  const handlePinSubmit = async () => {
-    if (!canSubmitPin(pin)) return;
-    const success = await pinLogin(pin);
+  const submitPin = useCallback(async (candidate: string, clearOnFailure: boolean, force = false) => {
+    if (force) {
+      if (!canSubmitPin(candidate) || isSubmitting) return;
+    } else if (!shouldAttemptPinLogin(candidate, lastAttemptRef.current, isSubmitting)) return;
+    lastAttemptRef.current = candidate;
+    setSubmitting(true);
+    const success = await pinLogin(candidate);
+    setSubmitting(false);
     if (!success) {
       setErrorMsg(t.auth.invalidPin);
-      setPin('');
+      if (clearOnFailure) setPin('');
     }
+  }, [isSubmitting, pinLogin]);
+
+  useEffect(() => {
+    if (!canSubmitPin(pin)) return undefined;
+    const timer = window.setTimeout(() => {
+      void submitPin(pin, false);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [pin, submitPin]);
+
+  const handlePinSubmit = () => {
+    void submitPin(pin, true, true);
   };
 
   return (
@@ -157,7 +179,7 @@ export const PinLogin: React.FC = () => {
             size="md"
             fullWidth
             onClick={handlePinSubmit}
-            disabled={!canSubmitPin(pin)}
+            disabled={!canSubmitPin(pin) || isSubmitting}
             className="font-mono text-xs uppercase tracking-widest"
             icon={<ArrowRight className="w-4 h-4" />}
           >
