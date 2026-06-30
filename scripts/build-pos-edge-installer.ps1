@@ -2,10 +2,10 @@ param(
   [string]$Version = "0.1.9",
   [ValidateSet("amd64", "386")]
   [string]$Arch = "amd64",
-  [Parameter(Mandatory = $true)]
-  [string]$LicenseServerUrl,
-  [Parameter(Mandatory = $true)]
-  [string]$CloudSyncUrl,
+  [ValidateRange(1, 65535)]
+  [int]$PosHttpPort = 8080,
+  [string]$LicenseServerUrl = "https://license.example.com",
+  [string]$CloudSyncUrl = "https://cloud.example.com",
   [string]$OutDir,
   [string]$WebWallpaperExe = ""
 )
@@ -15,11 +15,19 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if (-not $OutDir) {
   $OutDir = Join-Path $Root "dist\pos-edge-installer"
 }
+if ($WebWallpaperExe -and -not (Test-Path -LiteralPath $WebWallpaperExe)) {
+  throw "WebWallpaperExe was not found: $WebWallpaperExe"
+}
 
 function Require-Command($Name) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
     throw "$Name is required in PATH"
   }
+}
+
+function Write-Utf8NoBom($Path, $Content) {
+  $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($Path, $Content, $Utf8NoBom)
 }
 
 Require-Command "go"
@@ -62,13 +70,14 @@ $Config = Get-Content (Join-Path $Root "pos-backend\config\pos-edge.windows.json
 $Config.MH_POS_VERSION = $Version
 $Config.LICENSE_SERVER_URL = $LicenseServerUrl
 $Config.POS_CLOUD_SYNC_URL = $CloudSyncUrl
-$Config.POS_HTTP_ADDR = "127.0.0.1:8080"
+$Config.POS_HTTP_ADDR = "127.0.0.1:$PosHttpPort"
 $Config.POS_SQLITE_PATH = "data/pos-edge.db"
 $Config.POS_SQLITE_MIGRATIONS_DIR = "migrations/sqlite"
 $Config.POS_SQLITE_BACKUP_DIR = "data/backups"
 $Config.POS_SQLITE_ARCHIVE_DIR = "data/archives"
 $Config.POS_UI_DIST_DIR = "ui/pos-ui"
-$Config | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $Stage "config\pos-edge.install.json")
+Write-Utf8NoBom (Join-Path $Stage "config\pos-edge.install.json") ($Config | ConvertTo-Json -Depth 8)
+Copy-Item (Join-Path $Root "installer\windows\apply-pos-edge-settings.ps1") (Join-Path $Stage "config\apply-pos-edge-settings.ps1")
 
 Copy-Item -Recurse (Join-Path $Root "pos-backend\migrations\sqlite") (Join-Path $Stage "migrations\sqlite")
 Copy-Item -Recurse (Join-Path $Root "pos-ui-g\dist") (Join-Path $Stage "ui\pos-ui")
@@ -81,10 +90,10 @@ pos-edge.exe
 "@ | Set-Content -Encoding ASCII (Join-Path $Stage "start-pos-edge.cmd")
 
 if ($WebWallpaperExe) {
-  Copy-Item $WebWallpaperExe (Join-Path $Stage "webwallpaper\gowebwallpaper.exe")
-  @"
+  Copy-Item -LiteralPath $WebWallpaperExe -Destination (Join-Path $Stage "webwallpaper\gowebwallpaper.exe")
+  $WebWallpaperExample = @"
 {
-  "URL": "http://127.0.0.1:8080/",
+  "URL": "http://127.0.0.1:$PosHttpPort/",
   "Monitors": [],
   "Audio": {
     "ID": "",
@@ -92,12 +101,16 @@ if ($WebWallpaperExe) {
     "Active": false
   }
 }
-"@ | Set-Content -Encoding UTF8 (Join-Path $Stage "webwallpaper\config.pos-edge.example.json")
+"@
+  Write-Utf8NoBom (Join-Path $Stage "webwallpaper\config.pos-edge.example.json") $WebWallpaperExample
 }
 
 makensis `
   "/DAPP_VERSION=$Version" `
   "/DAPP_ARCH=$Arch" `
+  "/DDEFAULT_POS_HTTP_PORT=$PosHttpPort" `
+  "/DDEFAULT_LICENSE_SERVER_URL=$LicenseServerUrl" `
+  "/DDEFAULT_CLOUD_SYNC_URL=$CloudSyncUrl" `
   "/DSTAGE_DIR=$Stage" `
   "/DOUT_FILE=$Installer" `
   (Join-Path $Root "installer\nsis\pos-edge.nsi")

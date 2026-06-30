@@ -169,9 +169,9 @@ function appendQueryParam(params: URLSearchParams, key: string, value: string | 
   if (normalized) params.set(key, normalized);
 }
 
-const viteEnv = import.meta as unknown as { env?: Record<string, string | undefined> };
+const configuredApiBase = import.meta.env.VITE_POS_API_BASE;
 
-export function createApiClient(getAuth: () => AuthSnapshot, base = (viteEnv.env?.VITE_POS_API_BASE ?? defaultApiBase()).replace(/\/$/, '')) {
+export function createApiClient(getAuth: () => AuthSnapshot, base = (configuredApiBase ?? defaultApiBase()).replace(/\/$/, '')) {
   async function request<T>(path: string, schema: z.ZodType<T>, init: RequestInit = {}) {
     const auth = getAuth();
     const headers = new Headers(init.headers);
