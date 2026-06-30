@@ -1,0 +1,129 @@
+services:
+  cloud-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${CLOUD_POSTGRES_DB:-mhpos_${CLIENT_SLUG:?set CLIENT_SLUG}_${SERVER_SLUG:?set SERVER_SLUG}}
+      POSTGRES_USER: ${CLOUD_POSTGRES_USER:-mhpos_${CLIENT_SLUG:?set CLIENT_SLUG}_${SERVER_SLUG:?set SERVER_SLUG}}
+      POSTGRES_PASSWORD: ${CLOUD_POSTGRES_PASSWORD:?set CLOUD_POSTGRES_PASSWORD}
+    volumes:
+      - cloud_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - client_internal
+
+  cloud-clickhouse:
+    image: clickhouse/clickhouse-server:25.5-alpine
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: ${CLOUD_CLICKHOUSE_DATABASE:-mhpos_${CLIENT_SLUG:?set CLIENT_SLUG}_${SERVER_SLUG:?set SERVER_SLUG}}
+      CLICKHOUSE_USER: ${CLOUD_CLICKHOUSE_USER:-mhpos_${CLIENT_SLUG:?set CLIENT_SLUG}_${SERVER_SLUG:?set SERVER_SLUG}}
+      CLICKHOUSE_PASSWORD: ${CLOUD_CLICKHOUSE_PASSWORD:?set CLOUD_CLICKHOUSE_PASSWORD}
+    volumes:
+      - cloud_clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "clickhouse-client --host 127.0.0.1 --user \"$$CLICKHOUSE_USER\" --password \"$$CLICKHOUSE_PASSWORD\" --query 'SELECT 1'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - client_internal
+
+  cloud-api:
+    image: ${MHPOS_DOCKER_NAMESPACE:?set MHPOS_DOCKER_NAMESPACE}/mhpos-cloud-api:${MHPOS_VERSION:?set MHPOS_VERSION}
+    restart: unless-stopped
+    depends_on:
+      cloud-postgres:
+        condition: service_healthy
+      cloud-clickhouse:
+        condition: service_healthy
+    environment:
+      CLOUD_CONFIG_PATH: ""
+      MH_POS_VERSION: ${MHPOS_VERSION:?set MHPOS_VERSION}
+      CLOUD_LOG_LEVEL: ${CLOUD_LOG_LEVEL:-INFO}
+      CLOUD_HTTP_ADDR: ":8090"
+      CLOUD_PUBLIC_URL: ${CLOUD_PUBLIC_URL:-https://${CLIENT_DOMAIN:-${SERVER_SLUG:?set SERVER_SLUG}.${CLIENT_SLUG:?set CLIENT_SLUG}.${CLIENT_BASE_DOMAIN:?set CLIENT_BASE_DOMAIN}}}
+      CLOUD_POSTGRES_DSN: ${CLOUD_POSTGRES_DSN:-postgres://${CLOUD_POSTGRES_USER:-mhpos_${CLIENT_SLUG:?set CLIENT_SLUG}_${SERVER_SLUG:?set SERVER_SLUG}}:${CLOUD_POSTGRES_PASSWORD:?set CLOUD_POSTGRES_PASSWORD}@cloud-postgres:5432/${CLOUD_POSTGRES_DB:-mhpos_${CLIENT_SLUG:?set CLIENT_SLUG}_${SERVER_SLUG:?set SERVER_SLUG}}?sslmode=disable}
+      CLOUD_POSTGRES_MIGRATIONS_DIR: /app/migrations/postgres
+      CLOUD_POSTGRES_BACKUP_DIR: /app/data/cloud-backups
+      CLOUD_CLICKHOUSE_URL: http://cloud-clickhouse:8123
+      CLOUD_CLICKHOUSE_DATABASE: ${CLOUD_CLICKHOUSE_DATABASE:-mhpos_${CLIENT_SLUG:?set CLIENT_SLUG}_${SERVER_SLUG:?set SERVER_SLUG}}
+      CLOUD_CLICKHOUSE_USER: ${CLOUD_CLICKHOUSE_USER:-mhpos_${CLIENT_SLUG:?set CLIENT_SLUG}_${SERVER_SLUG:?set SERVER_SLUG}}
+      CLOUD_CLICKHOUSE_PASSWORD: ${CLOUD_CLICKHOUSE_PASSWORD:?set CLOUD_CLICKHOUSE_PASSWORD}
+      CLOUD_OLAP_FORWARDER_ID: ${CLIENT_SLUG:?set CLIENT_SLUG}-${SERVER_SLUG:?set SERVER_SLUG}-raw-events-forwarder
+      CLOUD_OLAP_STOCK_MOVES_FORWARDER_ID: ${CLIENT_SLUG:?set CLIENT_SLUG}-${SERVER_SLUG:?set SERVER_SLUG}-stock-moves-forwarder
+      CLOUD_OLAP_BACKFILL_WORKER_ID: ${CLIENT_SLUG:?set CLIENT_SLUG}-${SERVER_SLUG:?set SERVER_SLUG}-backfill-worker
+      CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE: ${CLOUD_SYNC_MAX_CLOUD_PACKAGES_PER_EXCHANGE:-3}
+      LICENSE_SERVER_URL: ${LICENSE_SERVER_URL:?set LICENSE_SERVER_URL}
+      LICENSE_TENANT_ID: ${LICENSE_TENANT_ID:-${CLIENT_SLUG:?set CLIENT_SLUG}}
+      LICENSE_SERVER_ID: ${LICENSE_SERVER_ID:-${CLIENT_SLUG:?set CLIENT_SLUG}-${SERVER_SLUG:?set SERVER_SLUG}}
+      LICENSE_STALE_GRACE_SECONDS: ${LICENSE_STALE_GRACE_SECONDS:-300}
+    volumes:
+      - cloud_api_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8090/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.http.routers.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-api.rule=Host(`${CLIENT_DOMAIN:-${SERVER_SLUG}.${CLIENT_SLUG}.${CLIENT_BASE_DOMAIN}}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-api.entrypoints=websecure"
+      - "traefik.http.routers.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-api.tls=true"
+      - "traefik.http.routers.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-api.tls.certresolver=le"
+      - "traefik.http.routers.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-api.priority=100"
+      - "traefik.http.routers.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-health.rule=Host(`${CLIENT_DOMAIN:-${SERVER_SLUG}.${CLIENT_SLUG}.${CLIENT_BASE_DOMAIN}}`) && Path(`/health`)"
+      - "traefik.http.routers.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-health.entrypoints=websecure"
+      - "traefik.http.routers.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-health.tls=true"
+      - "traefik.http.routers.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-health.tls.certresolver=le"
+      - "traefik.http.routers.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-health.priority=100"
+      - "traefik.http.routers.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-health.service=mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-api"
+      - "traefik.http.services.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-api.loadbalancer.server.port=8090"
+    networks:
+      - client_internal
+      - traefik_proxy
+
+  cloud-ui:
+    image: ${MHPOS_DOCKER_NAMESPACE:?set MHPOS_DOCKER_NAMESPACE}/mhpos-cloud-ui:${MHPOS_VERSION:?set MHPOS_VERSION}
+    restart: unless-stopped
+    depends_on:
+      cloud-api:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.http.routers.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-ui.rule=Host(`${CLIENT_DOMAIN:-${SERVER_SLUG}.${CLIENT_SLUG}.${CLIENT_BASE_DOMAIN}}`)"
+      - "traefik.http.routers.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-ui.entrypoints=websecure"
+      - "traefik.http.routers.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-ui.tls=true"
+      - "traefik.http.routers.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-ui.tls.certresolver=le"
+      - "traefik.http.routers.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-ui.priority=10"
+      - "traefik.http.services.mhpos-${CLIENT_SLUG}-${SERVER_SLUG}-ui.loadbalancer.server.port=80"
+    networks:
+      - traefik_proxy
+
+volumes:
+  cloud_postgres_data:
+    name: mhpos_${CLIENT_SLUG:?set CLIENT_SLUG}_${SERVER_SLUG:?set SERVER_SLUG}_cloud_postgres_data
+  cloud_clickhouse_data:
+    name: mhpos_${CLIENT_SLUG:?set CLIENT_SLUG}_${SERVER_SLUG:?set SERVER_SLUG}_cloud_clickhouse_data
+  cloud_api_data:
+    name: mhpos_${CLIENT_SLUG:?set CLIENT_SLUG}_${SERVER_SLUG:?set SERVER_SLUG}_cloud_api_data
+
+networks:
+  client_internal:
+    name: mhpos_${CLIENT_SLUG:?set CLIENT_SLUG}_${SERVER_SLUG:?set SERVER_SLUG}_internal
+  traefik_proxy:
+    external: true
+    name: traefik_proxy

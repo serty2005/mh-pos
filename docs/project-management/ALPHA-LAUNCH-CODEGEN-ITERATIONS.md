@@ -6,6 +6,37 @@
 
 Этот документ является runbook для непосредственной генерации кода. Он не копирует Plane: перед каждой итерацией агент обязан заново прочитать work item, relations и комментарии. Plane хранит текущее состояние работы, Git — требования, код и тесты.
 
+## Срез Cloud client Docker/Traefik deployment
+
+Обновлено 2026-06-30.
+
+Реализовано сейчас:
+
+- Подготовлен alpha/pre-Kubernetes deployment path для нескольких независимых клиентских Cloud-стеков на одной Linux production VM: общий Traefik v3 reverse proxy, отдельный Docker Compose project на пару `CLIENT_SLUG` + `SERVER_SLUG`, отдельные volumes/env/domains и общая только сеть `traefik_proxy`.
+- Один клиентский стек описан в `deploy/cloud-client/docker-compose.cloud-client.yml`: Cloud Backend, PostgreSQL, ClickHouse и Cloud UI без публикации host ports для PostgreSQL, ClickHouse и Cloud Backend.
+- Cloud UI и Cloud API работают на одном клиентском домене: UI на `/`, API через Traefik `PathPrefix(/api)` на Cloud Backend port `8090`; production build Cloud UI использует `VITE_CLOUD_API_BASE=/api/v1`.
+- Cloud API production compose задает runtime config через env и `CLOUD_CONFIG_PATH=""`, чтобы не править `/app/config/cloud-api.docker.json` внутри контейнера и не перекрывать production DSN/ClickHouse/License settings.
+- Добавлен production Dockerfile для `cloud-ui-g` и `deploy/cloud-client/docker-compose.cloud-build.yml` для сборки/push `mhpos-cloud-api` и `mhpos-cloud-ui` в Docker Hub по immutable `MHPOS_VERSION` без отдельного shell-скрипта.
+- Runbook `docs/deployment/CLOUD-CLIENT-DOCKER-TRAEFIK.md` фиксирует запуск Traefik, добавление/обновление/rollback клиента, backup требования, multi-client isolation и будущую миграцию в Kubernetes.
+
+Обновление клиентов:
+
+- оператор собирает и публикует новые Docker images через `docker compose --env-file deploy/cloud-client/build.env -f deploy/cloud-client/docker-compose.cloud-build.yml build` и `push` по explicit immutable tag;
+- в `clients/<client>-<server>.env` меняется `MHPOS_VERSION`;
+- выполняется `docker compose pull` и `docker compose up -d` с тем же `-p mhpos-<client>-<server>`;
+- smoke включает `/health`, Cloud UI, Cloud API `/api/v1`, Edge pairing через внешний License Server и Edge sync.
+
+Запланировано далее:
+
+- перенести этот path в CI/CD: build/push immutable images и controlled VM rollout;
+- подготовить Kubernetes/Helm/GitOps контур, где текущие env values станут Helm values/Secrets, Traefik labels превратятся в Ingress/IngressRoute, а client stack boundary сохранится как namespace/release-per-client.
+
+Вне текущего объема:
+
+- Kubernetes/Helm manifests;
+- хранение production secrets в Git;
+- DB downgrade и автоматический restore без отдельной процедуры.
+
 ## Срез License Server deployment/CD
 
 Обновлено 2026-06-30.

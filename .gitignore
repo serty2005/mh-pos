@@ -20,6 +20,9 @@ scripts/.seed-dev-system-summary.json
 *.webp
 *.zip
 .env
+clients/*.env
+deploy/cloud-client/build.env
+deploy/traefik/traefik.env
 tools/plane-mcp/.env
 tools/plane-mcp/.env.local
 .ssh/

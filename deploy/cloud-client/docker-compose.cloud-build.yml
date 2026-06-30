@@ -1,0 +1,14 @@
+services:
+  cloud-api:
+    image: ${MHPOS_DOCKER_NAMESPACE:?set MHPOS_DOCKER_NAMESPACE}/mhpos-cloud-api:${MHPOS_VERSION:?set MHPOS_VERSION}
+    build:
+      context: ../..
+      dockerfile: docker/cloud-api.Dockerfile
+
+  cloud-ui:
+    image: ${MHPOS_DOCKER_NAMESPACE:?set MHPOS_DOCKER_NAMESPACE}/mhpos-cloud-ui:${MHPOS_VERSION:?set MHPOS_VERSION}
+    build:
+      context: ../../cloud-ui-g
+      dockerfile: Dockerfile
+      args:
+        VITE_CLOUD_API_BASE: ${VITE_CLOUD_API_BASE:-/api/v1}
