@@ -30,6 +30,27 @@
 - billing provider;
 - полноценный commercial admin с тарифами, договорами и ролями операторов.
 
+## Срез POS Edge Windows + webwallpaper
+
+Обновлено 2026-06-30.
+
+Реализовано сейчас:
+
+- NSIS installer с `-WebWallpaperExe` создает active `webwallpaper/config.pos-edge.json` на install-time с URL `http://127.0.0.1:<POS backend port>/`.
+- Installer создает shortcut `MyHoreca\POS Edge Display`, который запускает `gowebwallpaper.exe` с этим config path.
+- `gowebwallpaper` принимает config path первым аргументом командной строки; installer-generated config поэтому подавляет URL prompt на первом запуске.
+- Если config не содержит выбранный монитор, `gowebwallpaper` выбирает primary screen из подключенных мониторов и сохраняет этот выбор перед autostart.
+
+Запланировано далее:
+
+- собрать новый Windows installer с актуальным `gowebwallpaper.exe` и проверить на реальной Windows POS-станции: install, первый запуск `POS Edge`, первый запуск `POS Edge Display`, primary-screen fullscreen и повторный запуск без prompt.
+
+Вне текущего объема:
+
+- автозапуск POS Edge и kiosk host после установки;
+- Windows service/MSI/updater flow;
+- упаковка WebView2 runtime внутрь POS Edge installer.
+
 ## Итог аудита Wave 3 / POS-64
 
 Статус: `POS-64` не закрыт. Кодовая база доведена до корректной основы для продолжения `POS-85…POS-89`, но Plane и ручная приемка ещё не совпадают полностью: `POS-67` и `POS-80` остаются на человеческой проверке, а ticket после исправления эффективной ширины для `{f:double}` требует повторного physical-print подтверждения на `10.25.1.201:9100`.

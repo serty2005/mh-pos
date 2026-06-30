@@ -156,6 +156,9 @@ Section "Install"
   CreateDirectory "$SMPROGRAMS\MyHoreca"
   CreateShortCut "$SMPROGRAMS\MyHoreca\POS Edge.lnk" "$INSTDIR\start-pos-edge.cmd" "" "$INSTDIR\pos-edge.exe"
   CreateShortCut "$SMPROGRAMS\MyHoreca\POS Edge Config.lnk" "$INSTDIR\config\pos-edge.json"
+  !ifdef HAS_WEBWALLPAPER
+    CreateShortCut "$SMPROGRAMS\MyHoreca\POS Edge Display.lnk" "$INSTDIR\webwallpaper\gowebwallpaper.exe" '"$INSTDIR\webwallpaper\config.pos-edge.json"' "$INSTDIR\webwallpaper\gowebwallpaper.exe"
+  !endif
 
   WriteUninstaller "$INSTDIR\uninstall.exe"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\MyHorecaPOSEdge" "DisplayName" "MyHoreca POS Edge"
@@ -170,6 +173,7 @@ SectionEnd
 Section "Uninstall"
   Delete "$SMPROGRAMS\MyHoreca\POS Edge.lnk"
   Delete "$SMPROGRAMS\MyHoreca\POS Edge Config.lnk"
+  Delete "$SMPROGRAMS\MyHoreca\POS Edge Display.lnk"
   RMDir "$SMPROGRAMS\MyHoreca"
 
   Delete "$INSTDIR\pos-edge.exe"
