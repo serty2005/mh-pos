@@ -210,14 +210,11 @@ RoleSupportAdmin — только view), `pos.order.cancel_unconfirmed` (RoleMan
   (200 OK).
 - `POS-88` (Edge print_routes/targets UI) и `POS-102` (cloud-ui-g точки продаж/секции) не
   реализованы — переформулированы/заведены, но не начаты.
-- Физический hardware acceptance с реальным ESC/POS принтером под новой моделью маршрутизации
-  не переподтверждался в этой итерации (последнее подтверждение — Wave 3/POS-64 до POS-86).
-- Windows-инсталлятор (`scripts/build-pos-edge-installer.ps1`) не собирался в этой сессии —
-  на машине нет `npm`/Node.js и NSIS (`makensis`) в PATH, только Go и Docker Desktop. Baseline
-  конфиг `pos-backend/config/pos-edge.windows.json` (используемый инсталлятором как
-  `config\pos-edge.install.json`) проверен по git-истории: фикс `POS_PRINT_WORKER_ENABLED:
-  true` и `MH_POS_VERSION: 0.1.11` подтверждён в коммите `2d810f5`, но сам инсталлятор с этим
-  фиксом ещё ни разу не собирался и не запускался как установленный сервис.
+- Обновлено 2026-07-01 по операторской Windows-проверке: Windows-сборка собирается и
+  запускается, печать через устанавливаемую очередь печати подтверждена. Для первого
+  альфа-пилота это закрывает POS-86 hardware/manual-validation на уровне функционального
+  smoke; дальнейшее production-hardening физической адресации принтеров вынесено во внешний
+  адаптер `windows-printers` после первого пилота.
 - **Побочная находка (не исправлено, вне scope POS-86):** в `pos-ui-g/src/context/POSContext.tsx`
   `refreshCurrentPrechecks` (используется в отдельном `useEffect` без try/catch на строке
   ~514) может выбрасывать unhandled promise rejection (`ApiError: INVALID_RESPONSE`) при
@@ -227,12 +224,13 @@ RoleSupportAdmin — только view), `pos.order.cancel_unconfirmed` (RoleMan
   причины несовпадения response/schema и на добавление `.catch(handleError)` по аналогии с
   соседними `refresh*`-функциями.
 
-## Промпт: полная проверка и отладка POS-86 на чистом стеке
+## Исторический промпт полной проверки POS-86
 
-Статус: **не выполнялось** ни в основной, ни в доводочной сессии POS-86 — обе ограничились
-`go test`/`go vet`/`git diff --check` и построчным код-ревью. Ни живой докер-стек, ни
-Playwright, ни фактический прогон `seed-dev-system.py` не запускались. Следующая сессия
-должна закрыть именно этот разрыв.
+Статус: **выполнено и закрыто 2026-07-01**. Чистый docker-smoke, live
+`seed-dev-system.py --run-minimal-flow --run-kitchen-process-smoke`, Playwright-проверка
+Cloud UI/POS UI и операторская Windows-проверка печати зафиксированы выше в разделе
+"Оставшиеся риски / manual-validation". Блок ниже оставлен только как исторический чек-лист
+того прогона, а не как актуальная незакрытая работа.
 
 ```text
 Проверь и отладь реализацию POS-86 (жёсткая маршрутизация печати, Cloud-owned точки продаж/
