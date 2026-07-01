@@ -26,3 +26,4 @@ deploy/traefik/traefik.env
 tools/plane-mcp/.env
 tools/plane-mcp/.env.local
 .ssh/
+.goose
