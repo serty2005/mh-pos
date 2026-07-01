@@ -20,6 +20,7 @@ type CashSession struct {
 	EdgeCashSessionID  string            `json:"edge_cash_session_id"`
 	RestaurantID       string            `json:"restaurant_id"`
 	DeviceID           string            `json:"device_id"`
+	SalesPointID       string            `json:"sales_point_id"`
 	ShiftID            string            `json:"shift_id"`
 	OpenedByEmployeeID string            `json:"opened_by_employee_id"`
 	ClosedByEmployeeID *string           `json:"closed_by_employee_id,omitempty"`

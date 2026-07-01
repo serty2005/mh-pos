@@ -111,20 +111,57 @@ ON CONFLICT(id) DO UPDATE SET
 }
 
 func (r *Repository) UpsertMasterTable(ctx context.Context, v *domain.Table, meta domain.MasterRecordSyncMeta) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO tables(id,restaurant_id,hall_id,name,seats,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO tables(id,restaurant_id,hall_id,section_id,name,seats,is_default,active,created_at,updated_at,cloud_version,cloud_updated_at,cloud_deleted_at,last_synced_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(id) DO UPDATE SET
   restaurant_id = excluded.restaurant_id,
   hall_id = excluded.hall_id,
+  section_id = excluded.section_id,
   name = excluded.name,
   seats = excluded.seats,
+  is_default = excluded.is_default,
   active = excluded.active,
   updated_at = excluded.updated_at,
   cloud_version = excluded.cloud_version,
   cloud_updated_at = excluded.cloud_updated_at,
   cloud_deleted_at = excluded.cloud_deleted_at,
   last_synced_at = excluded.last_synced_at`,
-		v.ID, v.RestaurantID, v.HallID, v.Name, v.Seats, boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+		v.ID, v.RestaurantID, nullableStringValue(v.HallID), v.SectionID, v.Name, v.Seats, boolInt(v.IsDefault), boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt), meta.CloudVersion, nullableString(meta.CloudUpdatedAt), nullableString(meta.CloudDeletedAt), meta.LastSyncedAt)
+	return normalizeErr(err)
+}
+
+func (r *Repository) UpsertMasterSalesPoint(ctx context.Context, v *domain.SalesPoint, meta domain.MasterRecordSyncMeta) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO sales_points(id,restaurant_id,name,analytics_tag,default_table_id,is_active,cloud_version,synced_at,created_at,updated_at)
+VALUES (?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET
+  restaurant_id = excluded.restaurant_id,
+  name = excluded.name,
+  analytics_tag = excluded.analytics_tag,
+  default_table_id = excluded.default_table_id,
+  is_active = excluded.is_active,
+  cloud_version = excluded.cloud_version,
+  synced_at = excluded.synced_at,
+  updated_at = excluded.updated_at`,
+		v.ID, v.RestaurantID, v.Name, v.AnalyticsTag, v.DefaultTableID, boolInt(v.IsActive), meta.CloudVersion, meta.LastSyncedAt, dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	return normalizeErr(err)
+}
+
+func (r *Repository) UpsertMasterRestaurantSection(ctx context.Context, v *domain.RestaurantSection, meta domain.MasterRecordSyncMeta) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO restaurant_sections(id,restaurant_id,name,mode,hall_id,kitchen_routing_key,warehouse_id,is_default,is_active,cloud_version,synced_at,created_at,updated_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET
+  restaurant_id = excluded.restaurant_id,
+  name = excluded.name,
+  mode = excluded.mode,
+  hall_id = excluded.hall_id,
+  kitchen_routing_key = excluded.kitchen_routing_key,
+  warehouse_id = excluded.warehouse_id,
+  is_default = excluded.is_default,
+  is_active = excluded.is_active,
+  cloud_version = excluded.cloud_version,
+  synced_at = excluded.synced_at,
+  updated_at = excluded.updated_at`,
+		v.ID, v.RestaurantID, v.Name, string(v.Mode), nullableStringValue(v.HallID), nullableStringValue(v.KitchenRoutingKey), nullableStringValue(v.WarehouseID), boolInt(v.IsDefault), boolInt(v.IsActive), meta.CloudVersion, meta.LastSyncedAt, dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }
 

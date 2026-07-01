@@ -205,19 +205,29 @@ func (s *Service) CreateOrder(ctx context.Context, cmd CreateOrderCommand) (*dom
 		}
 		var table *domain.Table
 		if strings.TrimSpace(cmd.TableID) == "" {
-			// counter sale: table_id не передан, используем системный стол ресторана.
-			table, err = s.repo.GetSystemTable(ctx, shift.RestaurantID)
+			cashSession, err := s.repo.GetOpenCashSessionByDevice(ctx, cmd.DeviceID)
 			if err != nil {
-				return fmt.Errorf("%w: нет системного стола для counter sale", domain.ErrConflict)
+				if errors.Is(err, domain.ErrNotFound) {
+					return fmt.Errorf("%w: counter sale requires open cash session with sales point", domain.ErrConflict)
+				}
+				return err
+			}
+			salesPoint, err := s.repo.GetSalesPoint(ctx, cashSession.SalesPointID)
+			if err != nil {
+				return err
+			}
+			table, err = s.repo.GetTable(ctx, salesPoint.DefaultTableID)
+			if err != nil {
+				return err
 			}
 		} else {
 			table, err = s.repo.GetTable(ctx, cmd.TableID)
 			if err != nil {
 				return err
 			}
-			if !table.Active || table.RestaurantID != shift.RestaurantID {
-				return fmt.Errorf("%w: стол не активен для ресторана личной смены", domain.ErrConflict)
-			}
+		}
+		if !table.Active || table.RestaurantID != shift.RestaurantID || strings.TrimSpace(table.SectionID) == "" {
+			return fmt.Errorf("%w: стол не активен для ресторана личной смены или не привязан к секции", domain.ErrConflict)
 		}
 		order = &domain.Order{ID: s.ids.NewID(), EdgeOrderID: s.ids.NewID(), RestaurantID: shift.RestaurantID, DeviceID: cmd.DeviceID, ShiftID: shift.ID, Status: domain.OrderOpen, TableID: table.ID, TableName: table.Name, GuestCount: cmd.GuestCount, OpenedAt: now, CreatedAt: now, UpdatedAt: now}
 		if err := s.repo.CreateOrder(ctx, order); err != nil {

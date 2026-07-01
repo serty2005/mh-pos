@@ -39,6 +39,7 @@ type CreateTableCommand struct {
 	shared.CommandMeta
 	RestaurantID string `json:"restaurant_id"`
 	HallID       string `json:"hall_id"`
+	SectionID    string `json:"section_id"`
 	Name         string `json:"name"`
 	Seats        int    `json:"seats"`
 }
@@ -116,21 +117,30 @@ func (s *Service) CreateTable(ctx context.Context, cmd CreateTableCommand) (*dom
 	if err := shared.EnsureMasterDataWriteAllowed(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(cmd.RestaurantID) == "" || strings.TrimSpace(cmd.HallID) == "" || strings.TrimSpace(cmd.Name) == "" || cmd.Seats < 0 {
-		return nil, fmt.Errorf("%w: restaurant_id, hall_id, name and non-negative seats are required", domain.ErrInvalid)
+	if strings.TrimSpace(cmd.RestaurantID) == "" || strings.TrimSpace(cmd.SectionID) == "" || strings.TrimSpace(cmd.Name) == "" || cmd.Seats < 0 {
+		return nil, fmt.Errorf("%w: restaurant_id, section_id, name and non-negative seats are required", domain.ErrInvalid)
 	}
 	now := s.clock.Now()
-	table := &domain.Table{ID: s.ids.NewID(), RestaurantID: strings.TrimSpace(cmd.RestaurantID), HallID: strings.TrimSpace(cmd.HallID), Name: strings.TrimSpace(cmd.Name), Seats: cmd.Seats, Active: true, CreatedAt: now, UpdatedAt: now}
+	table := &domain.Table{ID: s.ids.NewID(), RestaurantID: strings.TrimSpace(cmd.RestaurantID), HallID: strings.TrimSpace(cmd.HallID), SectionID: strings.TrimSpace(cmd.SectionID), Name: strings.TrimSpace(cmd.Name), Seats: cmd.Seats, Active: true, CreatedAt: now, UpdatedAt: now}
 	return table, s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
 		}
-		hall, err := s.repo.GetHall(ctx, table.HallID)
+		if table.HallID != "" {
+			hall, err := s.repo.GetHall(ctx, table.HallID)
+			if err != nil {
+				return err
+			}
+			if !hall.Active || hall.RestaurantID != table.RestaurantID {
+				return fmt.Errorf("%w: table hall is not active for restaurant", domain.ErrConflict)
+			}
+		}
+		section, err := s.repo.GetRestaurantSection(ctx, table.SectionID)
 		if err != nil {
 			return err
 		}
-		if !hall.Active || hall.RestaurantID != table.RestaurantID {
-			return fmt.Errorf("%w: table hall is not active for restaurant", domain.ErrConflict)
+		if !section.IsActive || section.RestaurantID != table.RestaurantID || section.Mode != domain.RestaurantSectionHallSection {
+			return fmt.Errorf("%w: table section is not active hall_section for restaurant", domain.ErrConflict)
 		}
 		if err := s.repo.CreateTable(ctx, table); err != nil {
 			return err

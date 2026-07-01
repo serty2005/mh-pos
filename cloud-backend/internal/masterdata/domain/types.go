@@ -148,9 +148,11 @@ func (h Hall) ActiveForPOS() bool {
 type Table struct {
 	ID           string          `json:"id"`
 	RestaurantID string          `json:"restaurant_id"`
-	HallID       string          `json:"hall_id"`
+	HallID       string          `json:"hall_id,omitempty"`
+	SectionID    string          `json:"section_id"`
 	Name         string          `json:"name"`
 	Seats        int64           `json:"seats"`
+	IsDefault    bool            `json:"is_default"`
 	Status       LifecycleStatus `json:"status"`
 	CloudVersion int64           `json:"cloud_version"`
 	CreatedAt    time.Time       `json:"created_at"`
@@ -161,6 +163,43 @@ type Table struct {
 // ActiveForPOS сообщает, должен ли стол быть доступен в POS runtime.
 func (t Table) ActiveForPOS() bool {
 	return t.Status == StatusPublished
+}
+
+// RestaurantSectionMode задает операционный тип секции ресторана для печати и выбора столов.
+type RestaurantSectionMode string
+
+const (
+	RestaurantSectionHallSection     RestaurantSectionMode = "hall_section"
+	RestaurantSectionKitchenWorkshop RestaurantSectionMode = "kitchen_workshop"
+)
+
+// RestaurantSection описывает Cloud-owned операционную секцию ресторана.
+type RestaurantSection struct {
+	ID                string                `json:"id"`
+	RestaurantID      string                `json:"restaurant_id"`
+	Name              string                `json:"name"`
+	Mode              RestaurantSectionMode `json:"mode"`
+	HallID            string                `json:"hall_id,omitempty"`
+	KitchenRoutingKey string                `json:"kitchen_routing_key,omitempty"`
+	WarehouseID       string                `json:"warehouse_id,omitempty"`
+	IsDefault         bool                  `json:"is_default"`
+	IsActive          bool                  `json:"is_active"`
+	Version           int                   `json:"version"`
+	CreatedAt         time.Time             `json:"created_at"`
+	UpdatedAt         time.Time             `json:"updated_at"`
+}
+
+// SalesPoint описывает Cloud-owned точку продаж с обязательным default table.
+type SalesPoint struct {
+	ID             string    `json:"id"`
+	RestaurantID   string    `json:"restaurant_id"`
+	Name           string    `json:"name"`
+	AnalyticsTag   string    `json:"analytics_tag"`
+	DefaultTableID string    `json:"default_table_id"`
+	IsActive       bool      `json:"is_active"`
+	Version        int       `json:"version"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // TicketValidityMode задаёт окно действия QR-билета.
@@ -635,6 +674,8 @@ type MasterDataPacket struct {
 	MenuItems              []EdgeMenuItem              `json:"menu_items,omitempty"`
 	Halls                  []EdgeHall                  `json:"halls,omitempty"`
 	Tables                 []EdgeTable                 `json:"tables,omitempty"`
+	RestaurantSections     []RestaurantSection         `json:"restaurant_sections,omitempty"`
+	SalesPoints            []SalesPoint                `json:"sales_points,omitempty"`
 	PricingPolicies        []EdgePricingPolicy         `json:"pricing_policies,omitempty"`
 	RecipeVersions         []EdgeRecipeVersion         `json:"recipe_versions,omitempty"`
 	RecipeLines            []EdgeRecipeLine            `json:"recipe_lines,omitempty"`
@@ -769,9 +810,11 @@ type EdgeHall struct {
 type EdgeTable struct {
 	ID           string    `json:"id"`
 	RestaurantID string    `json:"restaurant_id"`
-	HallID       string    `json:"hall_id"`
+	HallID       string    `json:"hall_id,omitempty"`
+	SectionID    string    `json:"section_id"`
 	Name         string    `json:"name"`
 	Seats        int64     `json:"seats"`
+	IsDefault    bool      `json:"is_default"`
 	Active       bool      `json:"active"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -1033,6 +1076,9 @@ var knownPermissionIDs = map[string]struct{}{
 	"pos.check.reprint":                 {},
 	"pos.print.status":                  {},
 	"pos.print.retry":                   {},
+	"pos.print_routing.view":            {},
+	"pos.print_routing.manage":          {},
+	"pos.order.cancel_unconfirmed":      {},
 	"pos.kitchen.view":                  {},
 	"pos.kitchen.status.change":         {},
 	"pos.kitchen.catalog.view":          {},

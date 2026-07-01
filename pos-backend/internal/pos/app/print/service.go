@@ -15,6 +15,7 @@ import (
 	"pos-backend/internal/platform/clock"
 	"pos-backend/internal/platform/idgen"
 	appcheck "pos-backend/internal/pos/app/check"
+	appprecheck "pos-backend/internal/pos/app/precheck"
 	"pos-backend/internal/pos/app/shared"
 	"pos-backend/internal/pos/domain"
 	"pos-backend/internal/pos/domain/receipt"
@@ -48,6 +49,27 @@ type Options struct {
 	MaxAttempts int
 }
 
+type PrintRouteCommand struct {
+	shared.CommandMeta
+	DocumentType receipt.DocumentType `json:"document_type"`
+	ScopeType    string               `json:"scope_type"`
+	ScopeID      string               `json:"scope_id,omitempty"`
+	PrinterID    string               `json:"printer_id"`
+	IsRequired   *bool                `json:"is_required,omitempty"`
+	SortOrder    int                  `json:"sort_order,omitempty"`
+}
+
+type UpdatePrintRouteCommand struct {
+	shared.CommandMeta
+	DocumentType *receipt.DocumentType `json:"document_type,omitempty"`
+	ScopeType    *string               `json:"scope_type,omitempty"`
+	ScopeID      *string               `json:"scope_id,omitempty"`
+	PrinterID    *string               `json:"printer_id,omitempty"`
+	IsRequired   *bool                 `json:"is_required,omitempty"`
+	SortOrder    *int                  `json:"sort_order,omitempty"`
+	IsActive     *bool                 `json:"is_active,omitempty"`
+}
+
 // Service управляет print_jobs и worker render/send pipeline.
 type Service struct {
 	repo        ports.Repository
@@ -69,6 +91,17 @@ func NewService(repo ports.Repository, ids idgen.Generator, clock clock.Clock, o
 	return &Service{repo: repo, ids: ids, clock: clock, sender: sender, maxAttempts: maxAttempts}
 }
 
+func (s *Service) EnqueuePrecheck(ctx context.Context, in appprecheck.PrecheckPrintInput) error {
+	now := in.Now
+	if now.IsZero() {
+		now = s.clock.Now()
+	}
+	if strings.TrimSpace(in.RestaurantID) == "" || strings.TrimSpace(in.PrecheckID) == "" {
+		return fmt.Errorf("%w: restaurant_id and precheck_id are required for print enqueue", domain.ErrInvalid)
+	}
+	return s.enqueue(ctx, now, in.RestaurantID, receipt.DocumentPrecheck, "precheck", in.PrecheckID, strings.TrimSpace(in.SectionID))
+}
+
 // EnqueueForClosedCheck ставит локальные print jobs после закрытия check.
 // Метод не меняет payment/order/check/ticket state и безопасен для replay: repository
 // игнорирует уже существующую job по document_type/source_id.
@@ -77,28 +110,38 @@ func (s *Service) EnqueueForClosedCheck(ctx context.Context, in appcheck.PrintIn
 	if now.IsZero() {
 		now = s.clock.Now()
 	}
-	if strings.TrimSpace(in.RestaurantID) == "" || strings.TrimSpace(in.PrecheckID) == "" {
-		return fmt.Errorf("%w: restaurant_id and precheck_id are required for print enqueue", domain.ErrInvalid)
+	if strings.TrimSpace(in.RestaurantID) == "" || strings.TrimSpace(in.CheckID) == "" {
+		return fmt.Errorf("%w: restaurant_id and check_id are required for print enqueue", domain.ErrInvalid)
 	}
-	if err := s.enqueue(ctx, now, in.RestaurantID, receipt.DocumentPrecheck, "precheck", in.PrecheckID); err != nil {
+	if err := s.enqueue(ctx, now, in.RestaurantID, receipt.DocumentCheckNonfiscal, "check", in.CheckID, strings.TrimSpace(in.SalesPointID)); err != nil {
 		return err
 	}
 	for _, ticketID := range in.TicketIDs {
 		if strings.TrimSpace(ticketID) == "" {
 			continue
 		}
-		if err := s.enqueue(ctx, now, in.RestaurantID, receipt.DocumentTicket, "ticket", ticketID); err != nil {
+		if err := s.enqueue(ctx, now, in.RestaurantID, receipt.DocumentTicket, "ticket", ticketID, strings.TrimSpace(in.SectionID)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *Service) enqueue(ctx context.Context, now time.Time, restaurantID string, documentType receipt.DocumentType, sourceKind, sourceID string) error {
+func (s *Service) enqueue(ctx context.Context, now time.Time, restaurantID string, documentType receipt.DocumentType, sourceKind, sourceID, scopeID string) error {
+	scopeType, ok := receipt.RequiredScopeType(documentType)
+	if !ok {
+		return fmt.Errorf("%w: unsupported print document_type %s", domain.ErrInvalid, documentType)
+	}
+	var scopeIDPtr *string
+	if strings.TrimSpace(scopeID) != "" {
+		trimmed := strings.TrimSpace(scopeID)
+		scopeIDPtr = &trimmed
+	}
 	job := &receipt.PrintJob{
 		ID:           s.ids.NewID(),
 		RestaurantID: strings.TrimSpace(restaurantID),
 		DocumentType: documentType,
+		ScopeID:      scopeIDPtr,
 		SourceKind:   strings.TrimSpace(sourceKind),
 		SourceID:     strings.TrimSpace(sourceID),
 		Status:       receipt.PrintJobPending,
@@ -107,7 +150,46 @@ func (s *Service) enqueue(ctx context.Context, now time.Time, restaurantID strin
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	return s.repo.EnqueuePrintJob(ctx, job)
+	routes, err := s.repo.ListActivePrintRoutes(ctx, job.RestaurantID, documentType, scopeType, scopeIDPtr)
+	if err != nil {
+		return err
+	}
+	if len(routes) == 0 {
+		errCode := errPrintRoutingNotFound
+		job.Status = receipt.PrintJobFailed
+		job.LastError = &errCode
+		return s.repo.EnqueuePrintJobWithTargets(ctx, job, nil)
+	}
+	targets := s.targetsForRoutes(job, routes, now)
+	return s.repo.EnqueuePrintJobWithTargets(ctx, job, targets)
+}
+
+func (s *Service) routesForJob(ctx context.Context, job *receipt.PrintJob) ([]receipt.PrintRoute, error) {
+	scopeType, ok := receipt.RequiredScopeType(job.DocumentType)
+	if !ok {
+		return nil, fmt.Errorf("%w: unsupported print document_type %s", domain.ErrInvalid, job.DocumentType)
+	}
+	return s.repo.ListActivePrintRoutes(ctx, job.RestaurantID, job.DocumentType, scopeType, job.ScopeID)
+}
+
+func (s *Service) targetsForRoutes(job *receipt.PrintJob, routes []receipt.PrintRoute, now time.Time) []receipt.PrintJobTarget {
+	targets := make([]receipt.PrintJobTarget, 0, len(routes))
+	for _, route := range routes {
+		targets = append(targets, receipt.PrintJobTarget{
+			ID:           s.ids.NewID(),
+			PrintJobID:   job.ID,
+			RestaurantID: job.RestaurantID,
+			PrinterID:    route.PrinterID,
+			ScopeType:    route.ScopeType,
+			ScopeID:      route.ScopeID,
+			Status:       receipt.PrintJobPending,
+			MaxAttempts:  s.maxAttempts,
+			IsRequired:   route.IsRequired,
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		})
+	}
+	return targets
 }
 
 func (s *Service) GetPrintJobAsOperator(ctx context.Context, id string, meta shared.CommandMeta) (*receipt.PrintJob, error) {
@@ -122,6 +204,11 @@ func (s *Service) GetPrintJobAsOperator(ctx context.Context, id string, meta sha
 	if job.RestaurantID != operator.Employee.RestaurantID {
 		return nil, fmt.Errorf("%w: print job is outside operator restaurant", domain.ErrForbidden)
 	}
+	targets, err := s.repo.ListPrintJobTargets(ctx, job.ID)
+	if err != nil {
+		return nil, err
+	}
+	job.Targets = targets
 	return job, nil
 }
 
@@ -132,6 +219,218 @@ func (s *Service) ListPrintJobsAsOperator(ctx context.Context, meta shared.Comma
 	}
 	query.RestaurantID = operator.Employee.RestaurantID
 	return s.repo.ListPrintJobs(ctx, query)
+}
+
+func (s *Service) ListRoutingPrintersAsOperator(ctx context.Context, meta shared.CommandMeta) ([]receipt.Printer, error) {
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionPrintRoutingView))
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.ListAllReceiptPrinters(ctx, operator.Employee.RestaurantID)
+}
+
+func (s *Service) ListRoutingSalesPointsAsOperator(ctx context.Context, meta shared.CommandMeta) ([]domain.SalesPoint, error) {
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionPrintRoutingView))
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.ListSalesPoints(ctx, operator.Employee.RestaurantID)
+}
+
+func (s *Service) ListRoutingSectionsAsOperator(ctx context.Context, meta shared.CommandMeta) ([]domain.RestaurantSection, error) {
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionPrintRoutingView))
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.ListRestaurantSections(ctx, operator.Employee.RestaurantID)
+}
+
+func (s *Service) ListPrintRoutesAsOperator(ctx context.Context, meta shared.CommandMeta) ([]receipt.PrintRoute, error) {
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionPrintRoutingView))
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.ListPrintRoutes(ctx, operator.Employee.RestaurantID)
+}
+
+func (s *Service) CreatePrintRouteAsOperator(ctx context.Context, cmd PrintRouteCommand) (*receipt.PrintRoute, error) {
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionPrintRoutingManage))
+	if err != nil {
+		return nil, err
+	}
+	now := s.clock.Now()
+	required := true
+	if cmd.IsRequired != nil {
+		required = *cmd.IsRequired
+	}
+	route := receipt.PrintRoute{
+		ID:           s.ids.NewID(),
+		RestaurantID: operator.Employee.RestaurantID,
+		DocumentType: cmd.DocumentType,
+		ScopeType:    strings.TrimSpace(cmd.ScopeType),
+		PrinterID:    strings.TrimSpace(cmd.PrinterID),
+		IsRequired:   required,
+		SortOrder:    cmd.SortOrder,
+		Origin:       "edge_override",
+		IsActive:     true,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if scopeID := strings.TrimSpace(cmd.ScopeID); scopeID != "" {
+		route.ScopeID = &scopeID
+	}
+	if route.ScopeType == receipt.ScopeRestaurant {
+		route.ScopeID = nil
+	}
+	if err := s.validatePrintRoute(ctx, route); err != nil {
+		return nil, err
+	}
+	return s.repo.CreatePrintRoute(ctx, route, s.ids.NewID(), operator.Employee.ID, now)
+}
+
+func (s *Service) UpdatePrintRouteAsOperator(ctx context.Context, id string, cmd UpdatePrintRouteCommand) (*receipt.PrintRoute, error) {
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, cmd.CommandMeta, string(shared.PermissionPrintRoutingManage))
+	if err != nil {
+		return nil, err
+	}
+	route, err := s.printRouteForOperator(ctx, operator.Employee.RestaurantID, id)
+	if err != nil {
+		return nil, err
+	}
+	if cmd.DocumentType != nil {
+		route.DocumentType = *cmd.DocumentType
+	}
+	if cmd.ScopeType != nil {
+		route.ScopeType = strings.TrimSpace(*cmd.ScopeType)
+	}
+	if cmd.ScopeID != nil {
+		scopeID := strings.TrimSpace(*cmd.ScopeID)
+		if scopeID == "" {
+			route.ScopeID = nil
+		} else {
+			route.ScopeID = &scopeID
+		}
+	}
+	if cmd.PrinterID != nil {
+		route.PrinterID = strings.TrimSpace(*cmd.PrinterID)
+	}
+	if cmd.IsRequired != nil {
+		route.IsRequired = *cmd.IsRequired
+	}
+	if cmd.SortOrder != nil {
+		route.SortOrder = *cmd.SortOrder
+	}
+	if cmd.IsActive != nil {
+		route.IsActive = *cmd.IsActive
+	}
+	if route.ScopeType == receipt.ScopeRestaurant {
+		route.ScopeID = nil
+	}
+	route.Origin = "edge_override"
+	route.UpdatedAt = s.clock.Now()
+	if err := s.validatePrintRoute(ctx, route); err != nil {
+		return nil, err
+	}
+	return s.repo.UpdatePrintRoute(ctx, route, s.ids.NewID(), operator.Employee.ID, route.UpdatedAt)
+}
+
+func (s *Service) DeactivatePrintRouteAsOperator(ctx context.Context, id string, meta shared.CommandMeta) (*receipt.PrintRoute, error) {
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionPrintRoutingManage))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.printRouteForOperator(ctx, operator.Employee.RestaurantID, id); err != nil {
+		return nil, err
+	}
+	return s.repo.DeactivatePrintRoute(ctx, strings.TrimSpace(id), s.ids.NewID(), operator.Employee.ID, s.clock.Now())
+}
+
+func (s *Service) RetryPrintJobTargetAsOperator(ctx context.Context, jobID, targetID string, meta shared.CommandMeta) (*receipt.PrintJob, error) {
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionPrintRetry))
+	if err != nil {
+		return nil, err
+	}
+	job, err := s.repo.GetPrintJob(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	if job.RestaurantID != operator.Employee.RestaurantID {
+		return nil, fmt.Errorf("%w: print job is outside operator restaurant", domain.ErrForbidden)
+	}
+	reset, err := s.repo.RetryPrintJobTarget(ctx, job.ID, targetID, s.clock.Now())
+	if err != nil {
+		return nil, err
+	}
+	reset.Targets, err = s.repo.ListPrintJobTargets(ctx, reset.ID)
+	if err != nil {
+		return nil, err
+	}
+	return reset, nil
+}
+
+func (s *Service) printRouteForOperator(ctx context.Context, restaurantID, id string) (receipt.PrintRoute, error) {
+	routes, err := s.repo.ListPrintRoutes(ctx, restaurantID)
+	if err != nil {
+		return receipt.PrintRoute{}, err
+	}
+	for _, route := range routes {
+		if route.ID == strings.TrimSpace(id) {
+			return route, nil
+		}
+	}
+	return receipt.PrintRoute{}, domain.ErrNotFound
+}
+
+func (s *Service) validatePrintRoute(ctx context.Context, route receipt.PrintRoute) error {
+	requiredScope, ok := receipt.RequiredScopeType(route.DocumentType)
+	if !ok {
+		return fmt.Errorf("%w: unsupported print route document_type %s", domain.ErrInvalid, route.DocumentType)
+	}
+	if route.ScopeType != requiredScope {
+		return fmt.Errorf("%w: document_type %s requires scope_type %s", domain.ErrInvalid, route.DocumentType, requiredScope)
+	}
+	if strings.TrimSpace(route.PrinterID) == "" {
+		return fmt.Errorf("%w: printer_id is required", domain.ErrInvalid)
+	}
+	printer, err := s.repo.GetReceiptPrinter(ctx, route.PrinterID)
+	if err != nil {
+		return err
+	}
+	if printer.RestaurantID != route.RestaurantID || !printer.IsActive {
+		return fmt.Errorf("%w: printer is inactive or belongs to another restaurant", domain.ErrInvalid)
+	}
+	switch route.ScopeType {
+	case receipt.ScopeRestaurant:
+		route.ScopeID = nil
+	case receipt.ScopeSalesPoint:
+		if route.ScopeID == nil || strings.TrimSpace(*route.ScopeID) == "" {
+			return fmt.Errorf("%w: sales_point scope_id is required", domain.ErrInvalid)
+		}
+		salesPoint, err := s.repo.GetSalesPoint(ctx, *route.ScopeID)
+		if err != nil {
+			return err
+		}
+		if salesPoint.RestaurantID != route.RestaurantID || !salesPoint.IsActive {
+			return fmt.Errorf("%w: sales point is inactive or belongs to another restaurant", domain.ErrInvalid)
+		}
+	case receipt.ScopeSection:
+		if route.ScopeID == nil || strings.TrimSpace(*route.ScopeID) == "" {
+			return fmt.Errorf("%w: section scope_id is required", domain.ErrInvalid)
+		}
+		section, err := s.repo.GetRestaurantSection(ctx, *route.ScopeID)
+		if err != nil {
+			return err
+		}
+		if section.RestaurantID != route.RestaurantID || !section.IsActive {
+			return fmt.Errorf("%w: section is inactive or belongs to another restaurant", domain.ErrInvalid)
+		}
+		if mode, ok := receipt.RequiredSectionMode(route.DocumentType); ok && string(section.Mode) != mode {
+			return fmt.Errorf("%w: document_type %s requires section mode %s", domain.ErrInvalid, route.DocumentType, mode)
+		}
+	default:
+		return fmt.Errorf("%w: unsupported print route scope_type %s", domain.ErrInvalid, route.ScopeType)
+	}
+	return nil
 }
 
 func (s *Service) RetryPrintJobAsOperator(ctx context.Context, id string, meta shared.CommandMeta) (*receipt.PrintJob, error) {
@@ -146,8 +445,14 @@ func (s *Service) RetryPrintJobAsOperator(ctx context.Context, id string, meta s
 	if job.RestaurantID != operator.Employee.RestaurantID {
 		return nil, fmt.Errorf("%w: print job is outside operator restaurant", domain.ErrForbidden)
 	}
-	// Manual retry меняет только локальный print_jobs статус; payment/order/ticket state не трогается.
-	reset, err := s.repo.ResetPrintJobForRetry(ctx, id, s.clock.Now())
+	now := s.clock.Now()
+	routes, err := s.routesForJob(ctx, job)
+	if err != nil {
+		return nil, err
+	}
+	targets := s.targetsForRoutes(job, routes, now)
+	// Manual retry пересобирает только локальные print targets; payment/order/ticket state не трогается.
+	reset, err := s.repo.ResetPrintJobForRetryWithTargets(ctx, id, targets, now)
 	if err == nil {
 		slog.InfoContext(ctx, "print job manual retry requested",
 			"operation", "print.retry",
@@ -164,29 +469,88 @@ func (s *Service) RetryPrintJobAsOperator(ctx context.Context, id string, meta s
 // ProcessNextPrintJob выполняет один worker step: claim -> render -> send -> status update.
 func (s *Service) ProcessNextPrintJob(ctx context.Context, workerID string) (bool, error) {
 	now := s.clock.Now()
-	job, err := s.repo.ClaimDuePrintJob(ctx, workerID, now)
+	job, target, err := s.repo.ClaimDuePrintJobTarget(ctx, workerID, now)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return false, nil
 		}
 		return false, err
 	}
-	if err := s.renderAndSend(ctx, job); err != nil {
-		return true, s.recordAttemptFailure(ctx, job, err)
+	if err := s.renderAndSend(ctx, job, target); err != nil {
+		return true, s.recordTargetAttemptFailure(ctx, job, target, err)
 	}
-	attempts := job.Attempts + 1
-	if err := s.repo.MarkPrintJobSucceeded(ctx, job.ID, attempts, s.clock.Now()); err != nil {
+	attempts := target.Attempts + 1
+	if err := s.repo.MarkPrintJobTargetSucceeded(ctx, target.ID, attempts, s.clock.Now()); err != nil {
 		return true, err
 	}
-	slog.InfoContext(ctx, "print job succeeded",
+	if err := s.maybeConfirmCheckPrint(ctx, job.ID); err != nil {
+		return true, err
+	}
+	slog.InfoContext(ctx, "print job target succeeded",
 		"operation", "print.worker",
 		"job_id", job.ID,
+		"target_id", target.ID,
+		"printer_id", target.PrinterID,
 		"document_type", job.DocumentType,
 		"source_kind", job.SourceKind,
 		"source_id", job.SourceID,
 		"attempts", attempts,
 	)
 	return true, nil
+}
+
+func (s *Service) maybeConfirmCheckPrint(ctx context.Context, jobID string) error {
+	job, err := s.repo.GetPrintJob(ctx, jobID)
+	if err != nil {
+		return err
+	}
+	if job.Status != receipt.PrintJobSucceeded {
+		return nil
+	}
+	var checkID string
+	switch job.DocumentType {
+	case receipt.DocumentCheckNonfiscal:
+		checkID = job.SourceID
+	case receipt.DocumentTicket:
+		ticket, err := s.repo.GetTicketUnit(ctx, job.SourceID)
+		if err != nil {
+			return err
+		}
+		checkID = ticket.CheckID
+	default:
+		return nil
+	}
+	_, err = s.repo.MarkCheckPrintConfirmedIfReady(ctx, checkID, s.clock.Now())
+	return err
+}
+
+func (s *Service) recordTargetAttemptFailure(ctx context.Context, job *receipt.PrintJob, target *receipt.PrintJobTarget, cause error) error {
+	now := s.clock.Now()
+	attempts := target.Attempts + 1
+	status := receipt.PrintJobPending
+	var next *time.Time
+	if attempts >= target.MaxAttempts {
+		status = receipt.PrintJobFailed
+	} else {
+		delay := retryBackoff[min(attempts-1, len(retryBackoff)-1)]
+		t := now.Add(delay)
+		next = &t
+	}
+	slog.WarnContext(ctx, "print job target attempt failed",
+		"operation", "print.worker",
+		"job_id", job.ID,
+		"target_id", target.ID,
+		"printer_id", target.PrinterID,
+		"document_type", job.DocumentType,
+		"source_kind", job.SourceKind,
+		"source_id", job.SourceID,
+		"attempts", attempts,
+		"max_attempts", target.MaxAttempts,
+		"next_attempt_at", next,
+		"status", status,
+		"error", cause,
+	)
+	return s.repo.MarkPrintJobTargetFailedAttempt(ctx, target.ID, attempts, status, next, cause.Error(), now)
 }
 
 func (s *Service) recordAttemptFailure(ctx context.Context, job *receipt.PrintJob, cause error) error {
@@ -216,13 +580,13 @@ func (s *Service) recordAttemptFailure(ctx context.Context, job *receipt.PrintJo
 	return s.repo.MarkPrintJobFailedAttempt(ctx, job.ID, attempts, status, next, cause.Error(), now)
 }
 
-func (s *Service) renderAndSend(ctx context.Context, job *receipt.PrintJob) error {
-	printers, err := s.repo.ListReceiptPrinters(ctx, job.RestaurantID, job.DocumentType)
+func (s *Service) renderAndSend(ctx context.Context, job *receipt.PrintJob, target *receipt.PrintJobTarget) error {
+	printer, err := s.repo.GetReceiptPrinter(ctx, target.PrinterID)
 	if err != nil {
 		return err
 	}
-	if len(printers) == 0 {
-		return errors.New(errPrintRoutingNotFound)
+	if !printer.IsActive || printer.RestaurantID != job.RestaurantID {
+		return errors.New(errPrintRoutingInvalid)
 	}
 	tmpl, err := s.lookupTemplate(ctx, job.RestaurantID, job.DocumentType)
 	if err != nil {
@@ -236,18 +600,16 @@ func (s *Service) renderAndSend(ctx context.Context, job *receipt.PrintJob) erro
 	if err != nil {
 		return errors.New(errPrintPayloadRenderFail)
 	}
-	for _, printer := range printers {
-		cfg, err := printerConfig(printer, tmpl)
-		if err != nil {
-			return err
-		}
-		payload, err := escpos.Render(blocks, cfg.RenderOptions())
-		if err != nil {
-			return errors.New(errPrintPayloadRenderFail)
-		}
-		if err := s.sender.Send(ctx, cfg, payload); err != nil {
-			return err
-		}
+	cfg, err := printerConfig(*printer, tmpl)
+	if err != nil {
+		return err
+	}
+	payload, err := escpos.Render(blocks, cfg.RenderOptions())
+	if err != nil {
+		return errors.New(errPrintPayloadRenderFail)
+	}
+	if err := s.sender.Send(ctx, cfg, payload); err != nil {
+		return err
 	}
 	return nil
 }

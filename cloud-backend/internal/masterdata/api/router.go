@@ -81,6 +81,9 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 		r.Patch("/inventory/stop-list/{id}", h.updateStopListEntry)
 		r.Post("/inventory/stop-list/{id}/deactivate", h.deactivateStopListEntry)
 		r.Post("/menu/categories", h.createCategory)
+		r.Get("/menu/categories", h.listCategories)
+		r.Patch("/menu/categories/{id}", h.updateCategory)
+		r.Post("/menu/categories/{id}/archive", h.archiveCategory)
 		r.Post("/floor/halls", h.createHall)
 		r.Get("/floor/halls", h.listHalls)
 		r.Patch("/floor/halls/{id}", h.updateHall)
@@ -89,6 +92,14 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 		r.Get("/floor/tables", h.listTables)
 		r.Patch("/floor/tables/{id}", h.updateTable)
 		r.Post("/floor/tables/{id}/archive", h.archiveTable)
+		r.Post("/restaurant-sections", h.createRestaurantSection)
+		r.Get("/restaurant-sections", h.listRestaurantSections)
+		r.Patch("/restaurant-sections/{id}", h.updateRestaurantSection)
+		r.Post("/restaurant-sections/{id}/archive", h.archiveRestaurantSection)
+		r.Post("/sales-points", h.createSalesPoint)
+		r.Get("/sales-points", h.listSalesPoints)
+		r.Patch("/sales-points/{id}", h.updateSalesPoint)
+		r.Post("/sales-points/{id}/archive", h.archiveSalesPoint)
 		r.Post("/menu/items", h.createMenuItem)
 		r.Get("/menu/items", h.listMenuItems)
 		r.Get("/menu/items/{id}", h.getMenuItem)
@@ -155,6 +166,14 @@ func RegisterRoutes(r chi.Router, service *app.Service) {
 	r.Get("/tables", h.listTables)
 	r.Patch("/tables/{id}", h.updateTable)
 	r.Post("/tables/{id}/archive", h.archiveTable)
+	r.Post("/restaurant-sections", h.createRestaurantSection)
+	r.Get("/restaurant-sections", h.listRestaurantSections)
+	r.Patch("/restaurant-sections/{id}", h.updateRestaurantSection)
+	r.Post("/restaurant-sections/{id}/archive", h.archiveRestaurantSection)
+	r.Post("/sales-points", h.createSalesPoint)
+	r.Get("/sales-points", h.listSalesPoints)
+	r.Patch("/sales-points/{id}", h.updateSalesPoint)
+	r.Post("/sales-points/{id}/archive", h.archiveSalesPoint)
 	// RBAC: receipt template CRUD требует cloud.templates.manage. Per-request RBAC middleware
 	// для cloud master-data ещё не подключён (как и у sibling routes выше); permission id зафиксирован
 	// в domain.PermissionReceiptTemplatesManage и проверяется на cloud admin boundary.
@@ -600,6 +619,25 @@ func (h *Handler) createCategory(w http.ResponseWriter, r *http.Request) {
 	write(w, http.StatusCreated, v, err)
 }
 
+func (h *Handler) listCategories(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListCategories(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) updateCategory(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdateCategoryCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpdateCategory(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) archiveCategory(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ArchiveCategory(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
+}
+
 func (h *Handler) createHall(w http.ResponseWriter, r *http.Request) {
 	var cmd app.CreateHallCommand
 	if !decode(w, r, &cmd) {
@@ -653,6 +691,62 @@ func (h *Handler) updateTable(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) archiveTable(w http.ResponseWriter, r *http.Request) {
 	v, err := h.service.ArchiveTable(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) createRestaurantSection(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateRestaurantSectionCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.CreateRestaurantSection(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) listRestaurantSections(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListRestaurantSections(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) updateRestaurantSection(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdateRestaurantSectionCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpdateRestaurantSection(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) archiveRestaurantSection(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ArchiveRestaurantSection(r.Context(), chi.URLParam(r, "id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) createSalesPoint(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CreateSalesPointCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.CreateSalesPoint(r.Context(), cmd)
+	write(w, http.StatusCreated, v, err)
+}
+
+func (h *Handler) listSalesPoints(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ListSalesPoints(r.Context(), r.URL.Query().Get("restaurant_id"))
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) updateSalesPoint(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdateSalesPointCommand
+	if !decode(w, r, &cmd) {
+		return
+	}
+	v, err := h.service.UpdateSalesPoint(r.Context(), chi.URLParam(r, "id"), cmd)
+	write(w, http.StatusOK, v, err)
+}
+
+func (h *Handler) archiveSalesPoint(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.ArchiveSalesPoint(r.Context(), chi.URLParam(r, "id"))
 	write(w, http.StatusOK, v, err)
 }
 

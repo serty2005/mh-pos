@@ -150,6 +150,7 @@ func TestRepositoryNullableScansRoundTrip(t *testing.T) {
 		EdgeCashSessionID:  "edge-cash-session-scan",
 		RestaurantID:       "restaurant-1",
 		DeviceID:           "device-1",
+		SalesPointID:       "sales-point-1",
 		ShiftID:            "shift-1",
 		OpenedByEmployeeID: "employee-1",
 		Status:             domain.CashSessionOpen,
@@ -808,7 +809,7 @@ func TestStorageArchiveRepositoryOpenBoundariesBlockWithoutMutation(t *testing.T
 	})
 	execSchema(t, ctx, db, `INSERT INTO shifts(id,restaurant_id,device_id,opened_by_employee_id,status,business_date_local,opened_at,opening_cash_amount,created_at,updated_at) VALUES ('shift-boundary-open','restaurant-boundary','device-boundary','employee-boundary','open','2026-05-01',?,0,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO orders(id,edge_order_id,restaurant_id,device_id,shift_id,status,table_id,table_name,guest_count,opened_at,created_at,updated_at) VALUES ('order-boundary-open','edge-order-boundary-open','restaurant-boundary','device-boundary','shift-boundary-open','open','table-boundary','T',1,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
-	execSchema(t, ctx, db, `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,shift_id,opened_by_employee_id,status,business_date_local,opening_cash_amount,opened_at,created_at,updated_at) VALUES ('cash-session-boundary-open','edge-cash-session-boundary-open','restaurant-boundary','device-boundary','shift-boundary-open','employee-boundary','open','2026-05-01',0,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,sales_point_id,shift_id,opened_by_employee_id,status,business_date_local,opening_cash_amount,opened_at,created_at,updated_at) VALUES ('cash-session-boundary-open','edge-cash-session-boundary-open','restaurant-boundary','device-boundary','sales-point-table-boundary','shift-boundary-open','employee-boundary','open','2026-05-01',0,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
 
 	scope, err := repo.BuildStorageArchiveApplyRuntimeScope(ctx, "2026-05-02")
 	if err != nil {
@@ -866,12 +867,16 @@ func seedClosedOrderFixtureBase(t *testing.T, ctx context.Context, db *sql.DB, r
 	t.Helper()
 	roleID := "role-" + employeeID
 	hallID := "hall-" + tableID
+	sectionID := "section-" + tableID
+	salesPointID := "sales-point-" + tableID
 	execSchema(t, ctx, db, `INSERT OR IGNORE INTO restaurants(id,name,timezone,currency,active,created_at,updated_at) VALUES (?,?, 'UTC','RUB',1,?,?)`, restaurantID, restaurantID, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO devices(id,restaurant_id,device_code,name,type,active,registered_at,created_at,updated_at) VALUES (?,?,?,?, 'windows',1,?,?,?)`, deviceID, restaurantID, deviceID, deviceID, schemaTestTime, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO roles(id,name,permissions_json,active,created_at,updated_at) VALUES (?,?, '{}',1,?,?)`, roleID, roleID, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO employees(id,restaurant_id,role_id,name,pin_hash,active,created_at,updated_at) VALUES (?,?,?,?, 'hash',1,?,?)`, employeeID, restaurantID, roleID, employeeID, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO halls(id,restaurant_id,name,active,created_at,updated_at) VALUES (?,?,?,1,?,?)`, hallID, restaurantID, hallID, schemaTestTime, schemaTestTime)
-	execSchema(t, ctx, db, `INSERT INTO tables(id,restaurant_id,hall_id,name,seats,active,created_at,updated_at) VALUES (?,?,?,?,2,1,?,?)`, tableID, restaurantID, hallID, tableID, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO restaurant_sections(id,restaurant_id,name,mode,hall_id,is_default,created_at,updated_at) VALUES (?,?,?,'hall_section',?,0,?,?)`, sectionID, restaurantID, sectionID, hallID, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO tables(id,restaurant_id,hall_id,section_id,name,seats,is_default,active,created_at,updated_at) VALUES (?,?,?,?,?,2,0,1,?,?)`, tableID, restaurantID, hallID, sectionID, tableID, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO sales_points(id,restaurant_id,name,analytics_tag,default_table_id,is_active,created_at,updated_at) VALUES (?,?,?,?,?,1,?,?)`, salesPointID, restaurantID, salesPointID, salesPointID, tableID, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO shifts(id,restaurant_id,device_id,opened_by_employee_id,closed_by_employee_id,status,business_date_local,opened_at,closed_at,opening_cash_amount,closing_cash_amount,created_at,updated_at) VALUES (?,?,?,?,?,'closed','2026-05-01',?,?,0,0,?,?)`, shiftID, restaurantID, deviceID, employeeID, employeeID, schemaTestTime, schemaTestTime, schemaTestTime, schemaTestTime)
 }
 

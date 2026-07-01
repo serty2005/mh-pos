@@ -225,7 +225,6 @@ func (s *Service) AssignmentStatus(ctx context.Context, nodeDeviceID string) (As
 		NodeDeviceID: node.NodeDeviceID,
 		Status:       string(node.Status),
 		RestaurantID: node.RestaurantID,
-		CloudURL:     s.cloudURL,
 		SnapshotURL:  snapshotURL(node.RestaurantID, node.NodeDeviceID),
 	}
 	if strings.TrimSpace(node.CredentialsHash) != "" {

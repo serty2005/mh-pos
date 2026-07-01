@@ -821,6 +821,21 @@ RETURNING id,restaurant_id,name,status,sort_order,created_at,updated_at`,
 	return out, normalizeErr(err)
 }
 
+func (r *Repository) UpdateCategory(ctx context.Context, v domain.Category) (domain.Category, error) {
+	out, err := scanCategory(r.pool.QueryRow(ctx, `
+UPDATE cloud_categories
+SET name=$2,status=$3,sort_order=$4,updated_at=$5
+WHERE id=$1
+RETURNING id,restaurant_id,name,status,sort_order,created_at,updated_at`,
+		v.ID, v.Name, v.Status, v.SortOrder, v.UpdatedAt))
+	return out, normalizeErr(err)
+}
+
+func (r *Repository) GetCategory(ctx context.Context, id string) (domain.Category, error) {
+	v, err := scanCategory(r.pool.QueryRow(ctx, `SELECT id,restaurant_id,name,status,sort_order,created_at,updated_at FROM cloud_categories WHERE id=$1`, strings.TrimSpace(id)))
+	return v, normalizeErr(err)
+}
+
 func (r *Repository) ListCategories(ctx context.Context, restaurantID string) ([]domain.Category, error) {
 	rows, err := r.pool.Query(ctx, `SELECT id,restaurant_id,name,status,sort_order,created_at,updated_at FROM cloud_categories WHERE restaurant_id = $1 ORDER BY sort_order,id`, strings.TrimSpace(restaurantID))
 	if err != nil {
@@ -881,30 +896,30 @@ func (r *Repository) ListHalls(ctx context.Context, restaurantID string) ([]doma
 
 func (r *Repository) CreateTable(ctx context.Context, v domain.Table) (domain.Table, error) {
 	out, err := scanTable(r.pool.QueryRow(ctx, `
-INSERT INTO cloud_tables(id,restaurant_id,hall_id,name,seats,status,cloud_version,archived_at,created_at,updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-RETURNING id,restaurant_id,hall_id,name,seats,status,cloud_version,archived_at,created_at,updated_at`,
-		v.ID, v.RestaurantID, v.HallID, v.Name, v.Seats, v.Status, v.CloudVersion, v.ArchivedAt, v.CreatedAt, v.UpdatedAt))
+INSERT INTO cloud_tables(id,restaurant_id,hall_id,section_id,name,seats,is_default,status,cloud_version,archived_at,created_at,updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+RETURNING id,restaurant_id,COALESCE(hall_id,''),section_id,name,seats,is_default,status,cloud_version,archived_at,created_at,updated_at`,
+		v.ID, v.RestaurantID, nullableText(v.HallID), v.SectionID, v.Name, v.Seats, v.IsDefault, v.Status, v.CloudVersion, v.ArchivedAt, v.CreatedAt, v.UpdatedAt))
 	return out, normalizeErr(err)
 }
 
 func (r *Repository) UpdateTable(ctx context.Context, v domain.Table) (domain.Table, error) {
 	out, err := scanTable(r.pool.QueryRow(ctx, `
 UPDATE cloud_tables
-SET hall_id=$2,name=$3,seats=$4,status=$5,cloud_version=$6,archived_at=$7,updated_at=$8
+SET hall_id=$2,section_id=$3,name=$4,seats=$5,is_default=$6,status=$7,cloud_version=$8,archived_at=$9,updated_at=$10
 WHERE id=$1
-RETURNING id,restaurant_id,hall_id,name,seats,status,cloud_version,archived_at,created_at,updated_at`,
-		v.ID, v.HallID, v.Name, v.Seats, v.Status, v.CloudVersion, v.ArchivedAt, v.UpdatedAt))
+RETURNING id,restaurant_id,COALESCE(hall_id,''),section_id,name,seats,is_default,status,cloud_version,archived_at,created_at,updated_at`,
+		v.ID, nullableText(v.HallID), v.SectionID, v.Name, v.Seats, v.IsDefault, v.Status, v.CloudVersion, v.ArchivedAt, v.UpdatedAt))
 	return out, normalizeErr(err)
 }
 
 func (r *Repository) GetTable(ctx context.Context, id string) (domain.Table, error) {
-	v, err := scanTable(r.pool.QueryRow(ctx, `SELECT id,restaurant_id,hall_id,name,seats,status,cloud_version,archived_at,created_at,updated_at FROM cloud_tables WHERE id = $1`, strings.TrimSpace(id)))
+	v, err := scanTable(r.pool.QueryRow(ctx, `SELECT id,restaurant_id,COALESCE(hall_id,''),section_id,name,seats,is_default,status,cloud_version,archived_at,created_at,updated_at FROM cloud_tables WHERE id = $1`, strings.TrimSpace(id)))
 	return v, normalizeErr(err)
 }
 
 func (r *Repository) ListTables(ctx context.Context, restaurantID string) ([]domain.Table, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id,restaurant_id,hall_id,name,seats,status,cloud_version,archived_at,created_at,updated_at FROM cloud_tables WHERE restaurant_id = $1 ORDER BY hall_id,id`, strings.TrimSpace(restaurantID))
+	rows, err := r.pool.Query(ctx, `SELECT id,restaurant_id,COALESCE(hall_id,''),section_id,name,seats,is_default,status,cloud_version,archived_at,created_at,updated_at FROM cloud_tables WHERE restaurant_id = $1 ORDER BY section_id,id`, strings.TrimSpace(restaurantID))
 	if err != nil {
 		return nil, err
 	}
@@ -912,6 +927,88 @@ func (r *Repository) ListTables(ctx context.Context, restaurantID string) ([]dom
 	var out []domain.Table
 	for rows.Next() {
 		v, err := scanTable(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) CreateRestaurantSection(ctx context.Context, v domain.RestaurantSection) (domain.RestaurantSection, error) {
+	out, err := scanRestaurantSection(r.pool.QueryRow(ctx, `
+INSERT INTO cloud_restaurant_sections(id,restaurant_id,name,mode,hall_id,kitchen_routing_key,warehouse_id,is_default,is_active,version,created_at,updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+RETURNING id,restaurant_id,name,mode,COALESCE(hall_id,''),COALESCE(kitchen_routing_key,''),COALESCE(warehouse_id,''),is_default,is_active,version,created_at,updated_at`,
+		v.ID, v.RestaurantID, v.Name, string(v.Mode), nullableText(v.HallID), nullableText(v.KitchenRoutingKey), nullableText(v.WarehouseID), v.IsDefault, v.IsActive, v.Version, v.CreatedAt, v.UpdatedAt))
+	return out, normalizeErr(err)
+}
+
+func (r *Repository) UpdateRestaurantSection(ctx context.Context, v domain.RestaurantSection) (domain.RestaurantSection, error) {
+	out, err := scanRestaurantSection(r.pool.QueryRow(ctx, `
+UPDATE cloud_restaurant_sections
+SET name=$2,mode=$3,hall_id=$4,kitchen_routing_key=$5,warehouse_id=$6,is_default=$7,is_active=$8,version=$9,updated_at=$10
+WHERE id=$1
+RETURNING id,restaurant_id,name,mode,COALESCE(hall_id,''),COALESCE(kitchen_routing_key,''),COALESCE(warehouse_id,''),is_default,is_active,version,created_at,updated_at`,
+		v.ID, v.Name, string(v.Mode), nullableText(v.HallID), nullableText(v.KitchenRoutingKey), nullableText(v.WarehouseID), v.IsDefault, v.IsActive, v.Version, v.UpdatedAt))
+	return out, normalizeErr(err)
+}
+
+func (r *Repository) GetRestaurantSection(ctx context.Context, id string) (domain.RestaurantSection, error) {
+	v, err := scanRestaurantSection(r.pool.QueryRow(ctx, `SELECT id,restaurant_id,name,mode,COALESCE(hall_id,''),COALESCE(kitchen_routing_key,''),COALESCE(warehouse_id,''),is_default,is_active,version,created_at,updated_at FROM cloud_restaurant_sections WHERE id = $1`, strings.TrimSpace(id)))
+	return v, normalizeErr(err)
+}
+
+func (r *Repository) ListRestaurantSections(ctx context.Context, restaurantID string) ([]domain.RestaurantSection, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id,restaurant_id,name,mode,COALESCE(hall_id,''),COALESCE(kitchen_routing_key,''),COALESCE(warehouse_id,''),is_default,is_active,version,created_at,updated_at FROM cloud_restaurant_sections WHERE restaurant_id = $1 ORDER BY mode,name,id`, strings.TrimSpace(restaurantID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.RestaurantSection
+	for rows.Next() {
+		v, err := scanRestaurantSection(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) CreateSalesPoint(ctx context.Context, v domain.SalesPoint) (domain.SalesPoint, error) {
+	out, err := scanSalesPoint(r.pool.QueryRow(ctx, `
+INSERT INTO cloud_sales_points(id,restaurant_id,name,analytics_tag,default_table_id,is_active,version,created_at,updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+RETURNING id,restaurant_id,name,analytics_tag,default_table_id,is_active,version,created_at,updated_at`,
+		v.ID, v.RestaurantID, v.Name, v.AnalyticsTag, v.DefaultTableID, v.IsActive, v.Version, v.CreatedAt, v.UpdatedAt))
+	return out, normalizeErr(err)
+}
+
+func (r *Repository) UpdateSalesPoint(ctx context.Context, v domain.SalesPoint) (domain.SalesPoint, error) {
+	out, err := scanSalesPoint(r.pool.QueryRow(ctx, `
+UPDATE cloud_sales_points
+SET name=$2,analytics_tag=$3,default_table_id=$4,is_active=$5,version=$6,updated_at=$7
+WHERE id=$1
+RETURNING id,restaurant_id,name,analytics_tag,default_table_id,is_active,version,created_at,updated_at`,
+		v.ID, v.Name, v.AnalyticsTag, v.DefaultTableID, v.IsActive, v.Version, v.UpdatedAt))
+	return out, normalizeErr(err)
+}
+
+func (r *Repository) GetSalesPoint(ctx context.Context, id string) (domain.SalesPoint, error) {
+	v, err := scanSalesPoint(r.pool.QueryRow(ctx, `SELECT id,restaurant_id,name,analytics_tag,default_table_id,is_active,version,created_at,updated_at FROM cloud_sales_points WHERE id = $1`, strings.TrimSpace(id)))
+	return v, normalizeErr(err)
+}
+
+func (r *Repository) ListSalesPoints(ctx context.Context, restaurantID string) ([]domain.SalesPoint, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id,restaurant_id,name,analytics_tag,default_table_id,is_active,version,created_at,updated_at FROM cloud_sales_points WHERE restaurant_id = $1 ORDER BY name,id`, strings.TrimSpace(restaurantID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.SalesPoint
+	for rows.Next() {
+		v, err := scanSalesPoint(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -1547,8 +1644,22 @@ func scanHall(row scanner) (domain.Hall, error) {
 func scanTable(row scanner) (domain.Table, error) {
 	var v domain.Table
 	var status string
-	err := row.Scan(&v.ID, &v.RestaurantID, &v.HallID, &v.Name, &v.Seats, &status, &v.CloudVersion, &v.ArchivedAt, &v.CreatedAt, &v.UpdatedAt)
+	err := row.Scan(&v.ID, &v.RestaurantID, &v.HallID, &v.SectionID, &v.Name, &v.Seats, &v.IsDefault, &status, &v.CloudVersion, &v.ArchivedAt, &v.CreatedAt, &v.UpdatedAt)
 	v.Status = domain.LifecycleStatus(status)
+	return v, err
+}
+
+func scanRestaurantSection(row scanner) (domain.RestaurantSection, error) {
+	var v domain.RestaurantSection
+	var mode string
+	err := row.Scan(&v.ID, &v.RestaurantID, &v.Name, &mode, &v.HallID, &v.KitchenRoutingKey, &v.WarehouseID, &v.IsDefault, &v.IsActive, &v.Version, &v.CreatedAt, &v.UpdatedAt)
+	v.Mode = domain.RestaurantSectionMode(mode)
+	return v, err
+}
+
+func scanSalesPoint(row scanner) (domain.SalesPoint, error) {
+	var v domain.SalesPoint
+	err := row.Scan(&v.ID, &v.RestaurantID, &v.Name, &v.AnalyticsTag, &v.DefaultTableID, &v.IsActive, &v.Version, &v.CreatedAt, &v.UpdatedAt)
 	return v, err
 }
 

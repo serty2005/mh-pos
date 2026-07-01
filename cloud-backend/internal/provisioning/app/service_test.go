@@ -164,6 +164,32 @@ func TestAssignmentStatusIssuesNodeTokenOnceWhenMissing(t *testing.T) {
 	}
 }
 
+func TestAssignmentStatusDoesNotReturnCloudURLForManualAssignment(t *testing.T) {
+	ctx := context.Background()
+	repo := newProvisioningRepo()
+	repo.edgeNodes["node-1"] = domain.EdgeNode{
+		ID:           "edge-node-1",
+		RestaurantID: "restaurant-1",
+		NodeDeviceID: "node-1",
+		DisplayName:  "POS Edge",
+		Status:       domain.EdgeNodeAssigned,
+		CreatedAt:    fixedClock{}.Now(),
+		UpdatedAt:    fixedClock{}.Now(),
+	}
+	service := NewService(repo, nil, fixedClock{}, &fixedIDs{}, "http://configured-cloud.local", nil)
+
+	status, err := service.AssignmentStatus(ctx, "node-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.CloudURL != "" {
+		t.Fatalf("manual assignment status must not override Edge-configured Cloud URL, got %q", status.CloudURL)
+	}
+	if status.SnapshotURL == "" || status.RestaurantID != "restaurant-1" {
+		t.Fatalf("expected assignment bootstrap without cloud_url, got %+v", status)
+	}
+}
+
 func TestAssignmentStatusReturnsPendingForUnknownNode(t *testing.T) {
 	service := NewService(newProvisioningRepo(), nil, fixedClock{}, &fixedIDs{}, "http://cloud.local", nil)
 
@@ -179,15 +205,26 @@ func TestAssignmentStatusReturnsPendingForUnknownNode(t *testing.T) {
 func TestListRestaurantDevicesReturnsOwnedEdgeNodesOnly(t *testing.T) {
 	repo := newProvisioningRepo()
 	repo.edgeNodes["node-1"] = domain.EdgeNode{NodeDeviceID: "node-1", RestaurantID: "restaurant-1", Status: domain.EdgeNodeAssigned}
-	repo.edgeNodes["node-2"] = domain.EdgeNode{NodeDeviceID: "node-2", RestaurantID: "restaurant-2", Status: domain.EdgeNodeAssigned}
+	repo.edgeNodes["node-2"] = domain.EdgeNode{NodeDeviceID: "node-2", RestaurantID: "restaurant-1", Status: domain.EdgeNodeAssigned}
+	repo.edgeNodes["node-3"] = domain.EdgeNode{NodeDeviceID: "node-3", RestaurantID: "restaurant-2", Status: domain.EdgeNodeAssigned}
 	service := NewService(repo, nil, fixedClock{}, &fixedIDs{}, "http://cloud.local", nil)
 
 	devices, err := service.ListRestaurantDevices(context.Background(), "restaurant-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(devices) != 1 || devices[0].NodeDeviceID != "node-1" {
-		t.Fatalf("expected one restaurant-owned node, got %+v", devices)
+	if len(devices) != 2 {
+		t.Fatalf("expected multiple restaurant-owned nodes, got %+v", devices)
+	}
+	seen := map[string]bool{}
+	for _, device := range devices {
+		seen[device.NodeDeviceID] = true
+		if device.RestaurantID != "restaurant-1" {
+			t.Fatalf("expected only restaurant-1 nodes, got %+v", devices)
+		}
+	}
+	if !seen["node-1"] || !seen["node-2"] {
+		t.Fatalf("expected node-1 and node-2 for restaurant-1, got %+v", devices)
 	}
 }
 

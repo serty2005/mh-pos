@@ -22,6 +22,7 @@ import {
   receiptTemplateSchema,
   restaurantSchema,
   restaurantEdgeNodeSchema,
+  restaurantSectionSchema,
   roleSchema,
   tableSchema,
   assignmentStatusSchema,
@@ -54,6 +55,7 @@ import {
   type ReceiptTemplate,
   type Restaurant,
   type RestaurantEdgeNode,
+  type RestaurantSection,
   type RestaurantTable,
   type Role,
   type UnassignedEdgeNode,
@@ -159,8 +161,20 @@ export function listMenuItems(restaurantId: string): Promise<MenuItem[]> {
   return request(`/master-data/menu/items?${query(restaurantId)}`, z.array(menuItemSchema));
 }
 
+export function listMenuCategories(restaurantId: string): Promise<Category[]> {
+  return request(`/master-data/menu/categories?${query(restaurantId)}`, z.array(categorySchema));
+}
+
 export function createMenuCategory(payload: Payload): Promise<Category> {
   return post('/master-data/menu/categories', categorySchema, payload);
+}
+
+export function updateMenuCategory(id: string, payload: Payload): Promise<Category> {
+  return patch(`/master-data/menu/categories/${encodeURIComponent(id)}`, categorySchema, payload);
+}
+
+export function archiveMenuCategory(id: string): Promise<Category> {
+  return post(`/master-data/menu/categories/${encodeURIComponent(id)}/archive`, categorySchema, {});
 }
 
 export function createMenuItem(payload: Payload): Promise<MenuItem> {
@@ -315,6 +329,10 @@ export function archiveHall(id: string): Promise<Hall> {
 
 export function listTables(restaurantId: string): Promise<RestaurantTable[]> {
   return request(`/master-data/floor/tables?${query(restaurantId)}`, z.array(tableSchema));
+}
+
+export function listRestaurantSections(restaurantId: string): Promise<RestaurantSection[]> {
+  return request(`/master-data/restaurant-sections?${query(restaurantId)}`, z.array(restaurantSectionSchema));
 }
 
 export function createTable(payload: Payload): Promise<RestaurantTable> {

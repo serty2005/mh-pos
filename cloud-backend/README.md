@@ -108,6 +108,10 @@ GET   /api/v1/menu/items?restaurant_id=...
 GET   /api/v1/menu/items/{id}
 PATCH /api/v1/menu/items/{id}
 POST  /api/v1/menu/items/{id}/archive
+POST  /api/v1/master-data/menu/categories
+GET   /api/v1/master-data/menu/categories?restaurant_id=...
+PATCH /api/v1/master-data/menu/categories/{id}
+POST  /api/v1/master-data/menu/categories/{id}/archive
 GET   /api/v1/restaurants/{id}/master-data/publication-state
 GET   /api/v1/restaurants/{id}/master-data/packages/latest
 GET   /api/v1/restaurants/{id}/master-data/packages/{package_id}
@@ -141,7 +145,7 @@ POST /api/v1/restaurants/{restaurant_id}/devices/{node_device_id}/assign
 GET  /api/v1/devices/{node_device_id}/assignment-status
 ```
 
-`assign` проверяет active restaurant, создает/обновляет assigned edge node, при необходимости публикует master-data и возвращает snapshot URL. `assignment-status` после назначения возвращает `restaurant_id`, `cloud_url`, snapshot URL и одноразовый node token; Cloud хранит только hash/verifier.
+`assign` проверяет active restaurant, создает/обновляет assigned edge node, при необходимости публикует master-data и возвращает snapshot URL. `assignment-status` после ручного назначения возвращает `restaurant_id`, snapshot URL и одноразовый node token; Cloud не переопределяет `cloud_url`, с которым Edge уже зарегистрировался, и хранит только hash/verifier.
 
 Option B, License Server Code:
 

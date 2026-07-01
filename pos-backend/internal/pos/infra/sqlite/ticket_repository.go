@@ -3,18 +3,22 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"pos-backend/internal/pos/domain/ticket"
 )
 
-const ticketUnitColumns = `id,ticket_number,restaurant_id,device_id,cash_session_id,shift_id,check_id,order_id,order_line_id,catalog_item_id,menu_item_id,name,sale_date_local,timezone,validity_mode,validity_date_local,cash_shift_sequence,qr_payload,print_status,snapshot,created_at,updated_at`
+const ticketUnitColumns = `id,ticket_number,restaurant_id,device_id,cash_session_id,shift_id,check_id,order_id,order_line_id,catalog_item_id,menu_item_id,name,sale_date_local,timezone,validity_mode,validity_date_local,cash_shift_sequence,qr_payload,print_status,status,snapshot,created_at,updated_at`
 
 // CreateTicketUnit вставляет выпущенную ticket unit. UNIQUE(order_line_id) и
 // UNIQUE(cash_session_id, cash_shift_sequence) защищают от дублей при replay.
 func (r *Repository) CreateTicketUnit(ctx context.Context, v *ticket.TicketUnit) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO ticket_units(`+ticketUnitColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	if v.Status == "" {
+		v.Status = ticket.TicketStatusActive
+	}
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO ticket_units(`+ticketUnitColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		v.ID, v.TicketNumber, v.RestaurantID, v.DeviceID, v.CashSessionID, v.ShiftID, v.CheckID, v.OrderID, v.OrderLineID, v.CatalogItemID, v.MenuItemID,
-		v.Name, v.SaleDateLocal, v.Timezone, string(v.ValidityMode), nullableStringValue(v.ValidityDateLocal), v.CashShiftSequence, v.QRPayload, v.PrintStatus, string(v.Snapshot), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+		v.Name, v.SaleDateLocal, v.Timezone, string(v.ValidityMode), nullableStringValue(v.ValidityDateLocal), v.CashShiftSequence, v.QRPayload, v.PrintStatus, v.Status, string(v.Snapshot), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }
 
@@ -43,6 +47,13 @@ func (r *Repository) ListTicketUnitsByCheck(ctx context.Context, checkID string)
 	return out, normalizeErr(rows.Err())
 }
 
+// VoidTicketUnitsByCheck закрывает все active билеты чека при cancel-unconfirmed flow.
+// Билеты не удаляются физически — остаются в БД как voided для истории/аналитики.
+func (r *Repository) VoidTicketUnitsByCheck(ctx context.Context, checkID string, now time.Time) error {
+	_, err := r.execer(ctx).ExecContext(ctx, `UPDATE ticket_units SET status = 'voided', updated_at = ? WHERE check_id = ? AND status = 'active'`, dbTime(now), checkID)
+	return normalizeErr(err)
+}
+
 // NextTicketCashShiftSequence считает следующий порядковый номер билета внутри кассовой смены.
 // Вызывается внутри транзакции CapturePayment, поэтому single-writer SQLite гарантирует монотонность.
 func (r *Repository) NextTicketCashShiftSequence(ctx context.Context, cashSessionID string) (int64, error) {
@@ -62,7 +73,7 @@ func scanTicketUnitRows(row scanner) (*ticket.TicketUnit, error) {
 	var validityMode, snapshot, created, updated string
 	var validityDate sql.NullString
 	if err := row.Scan(&v.ID, &v.TicketNumber, &v.RestaurantID, &v.DeviceID, &v.CashSessionID, &v.ShiftID, &v.CheckID, &v.OrderID, &v.OrderLineID, &v.CatalogItemID, &v.MenuItemID,
-		&v.Name, &v.SaleDateLocal, &v.Timezone, &validityMode, &validityDate, &v.CashShiftSequence, &v.QRPayload, &v.PrintStatus, &snapshot, &created, &updated); err != nil {
+		&v.Name, &v.SaleDateLocal, &v.Timezone, &validityMode, &validityDate, &v.CashShiftSequence, &v.QRPayload, &v.PrintStatus, &v.Status, &snapshot, &created, &updated); err != nil {
 		return nil, normalizeErr(err)
 	}
 	v.ValidityMode = ticket.ValidityMode(validityMode)

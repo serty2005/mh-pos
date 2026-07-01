@@ -59,22 +59,24 @@ func (c *apiFixedClock) Advance(d time.Duration) {
 }
 
 type apiFixture struct {
-	ctx        context.Context
-	db         *sql.DB
-	repo       *possqlite.Repository
-	service    *app.Service
-	router     http.Handler
-	restaurant *domain.Restaurant
-	device     *domain.Device
-	employee   *domain.Employee
-	manager    *domain.Employee
-	session    *domain.AuthSession
-	hall       *domain.Hall
-	table      *domain.Table
-	menuItem   *domain.MenuItem
-	clientID   string
-	archiveDir string
-	clock      *apiFixedClock
+	ctx          context.Context
+	db           *sql.DB
+	repo         *possqlite.Repository
+	service      *app.Service
+	router       http.Handler
+	restaurant   *domain.Restaurant
+	device       *domain.Device
+	employee     *domain.Employee
+	manager      *domain.Employee
+	session      *domain.AuthSession
+	hall         *domain.Hall
+	table        *domain.Table
+	sectionID    string
+	salesPointID string
+	menuItem     *domain.MenuItem
+	clientID     string
+	archiveDir   string
+	clock        *apiFixedClock
 }
 
 func newAPIFixture(t *testing.T) *apiFixture {
@@ -153,8 +155,16 @@ func (f *apiFixture) seed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.table, err = f.service.CreateTable(f.ctx, app.CreateTableCommand{CommandMeta: apiSeedMeta(f.device.ID), RestaurantID: f.restaurant.ID, HallID: f.hall.ID, Name: "A1", Seats: 2})
+	f.sectionID = "api-section-main"
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO restaurant_sections(id,restaurant_id,name,mode,hall_id,is_default,is_active,created_at,updated_at) VALUES (?,?,?,?,?,1,1,?,?)`, f.sectionID, f.restaurant.ID, "Main hall", "hall_section", f.hall.ID, appshared.DBTime(f.clock.Now()), appshared.DBTime(f.clock.Now())); err != nil {
+		t.Fatal(err)
+	}
+	f.table, err = f.service.CreateTable(f.ctx, app.CreateTableCommand{CommandMeta: apiSeedMeta(f.device.ID), RestaurantID: f.restaurant.ID, HallID: f.hall.ID, SectionID: f.sectionID, Name: "A1", Seats: 2})
 	if err != nil {
+		t.Fatal(err)
+	}
+	f.salesPointID = "api-sales-point-main"
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO sales_points(id,restaurant_id,name,analytics_tag,default_table_id,is_active,created_at,updated_at) VALUES (?,?,?,?,?,1,?,?)`, f.salesPointID, f.restaurant.ID, "Front", "front", f.table.ID, appshared.DBTime(f.clock.Now()), appshared.DBTime(f.clock.Now())); err != nil {
 		t.Fatal(err)
 	}
 	catalog, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: apiSeedMeta(f.device.ID), Type: domain.CatalogItemDish, Name: "Soup", SKU: "SOUP", BaseUnit: "portion"})
@@ -217,6 +227,7 @@ func (f *apiFixture) openCashSession(t *testing.T) *domain.CashSession {
 	session, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
 		CommandMeta:        f.edgeMeta(),
 		RestaurantID:       f.restaurant.ID,
+		SalesPointID:       f.salesPointID,
 		OpenedByEmployeeID: f.employee.ID,
 		OpeningCashAmount:  0,
 	})
@@ -905,7 +916,7 @@ func TestCashFlowAPIHappyPathPersistsStateAndEvents(t *testing.T) {
 	openedOutboxBefore := countAPIOutboxByType(t, f, "CashSessionOpened")
 	openedEventsBefore := countAPILocalEventsByType(t, f, "CashSessionOpened")
 
-	openBody := `{"command_id":"cmd-api-cash-open-happy","restaurant_id":"` + f.restaurant.ID + `","opened_by_employee_id":"` + f.employee.ID + `","opening_cash_amount":5000}`
+	openBody := `{"command_id":"cmd-api-cash-open-happy","restaurant_id":"` + f.restaurant.ID + `","sales_point_id":"` + f.salesPointID + `","opened_by_employee_id":"` + f.employee.ID + `","opening_cash_amount":5000}`
 	openRR := f.postJSON(t, "/api/v1/cash-shifts/open", openBody)
 	if openRR.Code != http.StatusCreated {
 		t.Fatalf("expected 201 for cash shift open, got %d: %s", openRR.Code, openRR.Body.String())
@@ -1117,7 +1128,7 @@ func TestCashShiftOpenAPIDuplicateCommandDoesNotCreateSecondSession(t *testing.T
 	}); err != nil {
 		t.Fatal(err)
 	}
-	body := `{"command_id":"cmd-api-cash-open-duplicate","restaurant_id":"` + f.restaurant.ID + `","opened_by_employee_id":"` + f.employee.ID + `","opening_cash_amount":0}`
+	body := `{"command_id":"cmd-api-cash-open-duplicate","restaurant_id":"` + f.restaurant.ID + `","sales_point_id":"` + f.salesPointID + `","opened_by_employee_id":"` + f.employee.ID + `","opening_cash_amount":0}`
 	opened := f.postJSON(t, "/api/v1/cash-shifts/open", body)
 	if opened.Code != http.StatusCreated {
 		t.Fatalf("expected 201 for first open, got %d: %s", opened.Code, opened.Body.String())
@@ -2742,6 +2753,7 @@ func TestRecordRefundAboveCheckTotalThroughPublicAPIReturnsConflict(t *testing.T
 	if _, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
 		CommandMeta:        f.edgeMeta(),
 		RestaurantID:       f.restaurant.ID,
+		SalesPointID:       f.salesPointID,
 		OpenedByEmployeeID: f.employee.ID,
 		OpeningCashAmount:  0,
 	}); err != nil {
@@ -2845,6 +2857,7 @@ func TestRecordRefundAfterCancellationAboveRemainingThroughPublicAPIReturnsConfl
 	if _, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
 		CommandMeta:        f.edgeMeta(),
 		RestaurantID:       f.restaurant.ID,
+		SalesPointID:       f.salesPointID,
 		OpenedByEmployeeID: f.employee.ID,
 		OpeningCashAmount:  0,
 	}); err != nil {
@@ -2964,6 +2977,7 @@ func TestRecordRefundAfterLineCancellationAboveRemainingQuantityThroughPublicAPI
 	if _, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
 		CommandMeta:        f.edgeMeta(),
 		RestaurantID:       f.restaurant.ID,
+		SalesPointID:       f.salesPointID,
 		OpenedByEmployeeID: f.employee.ID,
 		OpeningCashAmount:  0,
 	}); err != nil {
@@ -3152,6 +3166,7 @@ func TestRecordCancellationThenRefundRemainingThroughPublicAPISucceeds(t *testin
 	if _, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
 		CommandMeta:        f.edgeMeta(),
 		RestaurantID:       f.restaurant.ID,
+		SalesPointID:       f.salesPointID,
 		OpenedByEmployeeID: f.employee.ID,
 		OpeningCashAmount:  0,
 	}); err != nil {

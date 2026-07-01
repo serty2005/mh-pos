@@ -16,6 +16,7 @@ const (
 	DocumentCheckNonfiscal DocumentType = "check_nonfiscal"
 	DocumentTicket         DocumentType = "ticket"
 	DocumentKitchenService DocumentType = "kitchen_service"
+	DocumentReport         DocumentType = "report"
 	DocumentCashInOut      DocumentType = "cash_in_out"
 	DocumentAcceptance     DocumentType = "acceptance"
 )

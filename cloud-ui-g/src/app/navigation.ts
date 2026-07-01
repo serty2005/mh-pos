@@ -13,7 +13,6 @@ export const navigationItems: NavigationItem[] = [
   { route: { id: 'licenses', scope: 'global' }, labelKey: 'nav.licenses' },
   { route: { id: 'restaurants', scope: 'global' }, labelKey: 'nav.restaurants' },
   { route: { id: 'edge-sync', scope: 'restaurant' }, labelKey: 'nav.edgeSync' },
-  { route: { id: 'menu', scope: 'restaurant' }, labelKey: 'nav.menu' },
   { route: { id: 'modifiers', scope: 'restaurant' }, labelKey: 'nav.modifiers' },
   { route: { id: 'pricing-taxes', scope: 'restaurant' }, labelKey: 'nav.pricingTaxes' },
   { route: { id: 'floor', scope: 'restaurant' }, labelKey: 'nav.floor' },

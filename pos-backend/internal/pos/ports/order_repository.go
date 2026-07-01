@@ -15,6 +15,7 @@ type OrderRepository interface {
 	UpdateOrderOpen(context.Context, *order.Order) error
 	UpdateOrderLocked(context.Context, *order.Order) error
 	UpdateOrderClosed(context.Context, *order.Order) error
+	UpdateOrderCancelled(context.Context, *order.Order) error
 	CreateOrderLine(context.Context, *order.OrderLine) error
 	CreateOrderLineModifier(context.Context, *order.LineModifier) error
 	ReplaceOrderLineModifiers(context.Context, string, []order.LineModifier) error

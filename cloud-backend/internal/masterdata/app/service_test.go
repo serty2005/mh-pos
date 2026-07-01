@@ -122,12 +122,12 @@ func TestRoleAcceptsKitchenPermissionIDs(t *testing.T) {
 	service, _ := newService()
 	role, err := service.CreateRole(context.Background(), app.CreateRoleCommand{
 		Name:            "kitchen",
-		PermissionsJSON: `{"pos.kitchen.view":true,"pos.kitchen.status.change":true,"pos.print.status":true,"permissions":["pos.kitchen.stock.receipt","pos.kitchen.production.complete","pos.print.retry"]}`,
+		PermissionsJSON: `{"pos.kitchen.view":true,"pos.kitchen.status.change":true,"pos.print.status":true,"permissions":["pos.kitchen.stock.receipt","pos.kitchen.production.complete","pos.print.retry","pos.print_routing.view","pos.print_routing.manage","pos.order.cancel_unconfirmed"]}`,
 	})
 	if err != nil {
 		t.Fatalf("expected kitchen/print permissions to be accepted, got %v", err)
 	}
-	if !strings.Contains(role.PermissionsJSON, "pos.kitchen.stock.receipt") || !strings.Contains(role.PermissionsJSON, "pos.print.retry") {
+	if !strings.Contains(role.PermissionsJSON, "pos.kitchen.stock.receipt") || !strings.Contains(role.PermissionsJSON, "pos.print_routing.manage") || !strings.Contains(role.PermissionsJSON, "pos.order.cancel_unconfirmed") {
 		t.Fatalf("expected kitchen/print permissions to be persisted, got %s", role.PermissionsJSON)
 	}
 }
@@ -438,6 +438,45 @@ func TestTenantCatalogItemFeedsIndependentRestaurantMenus(t *testing.T) {
 	}
 	if len(secondPackage.MenuItems) != 1 || secondPackage.MenuItems[0].ID != secondMenu.ID || secondPackage.MenuItems[0].CatalogItemID != catalog.ID || secondPackage.MenuItems[0].CategoryID != secondCategory.ID || secondPackage.MenuItems[0].Name != "Guest pass" || secondPackage.MenuItems[0].Price != 75000 || !secondPackage.MenuItems[0].Active {
 		t.Fatalf("second Edge package must contain only second restaurant-effective menu, got %+v", secondPackage.MenuItems)
+	}
+}
+
+func TestMenuCategoryLifecycle(t *testing.T) {
+	service, _ := newService()
+	ctx := context.Background()
+	restaurant, err := service.CreateRestaurant(ctx, app.CreateRestaurantCommand{Name: "Expo", Timezone: "Europe/Moscow", Currency: "RUB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ListCategories(ctx, ""); !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("expected restaurant_id validation, got %v", err)
+	}
+	category, err := service.CreateCategory(ctx, app.CreateCategoryCommand{RestaurantID: restaurant.ID, Name: "Tickets", SortOrder: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := service.ListCategories(ctx, restaurant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 || listed[0].ID != category.ID {
+		t.Fatalf("expected created category in list, got %+v", listed)
+	}
+	nextOrder := int64(20)
+	published := domain.StatusPublished
+	updated, err := service.UpdateCategory(ctx, category.ID, app.UpdateCategoryCommand{Name: "Main tickets", SortOrder: &nextOrder, Status: &published})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Name != "Main tickets" || updated.SortOrder != 20 || updated.Status != domain.StatusPublished {
+		t.Fatalf("unexpected updated category: %+v", updated)
+	}
+	archived, err := service.ArchiveCategory(ctx, category.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if archived.Status != domain.StatusArchived {
+		t.Fatalf("expected archived category, got %+v", archived)
 	}
 }
 
@@ -1437,6 +1476,8 @@ type posEdgeMasterDataCommand struct {
 	Employees              []json.RawMessage              `json:"employees,omitempty"`
 	Halls                  []json.RawMessage              `json:"halls,omitempty"`
 	Tables                 []json.RawMessage              `json:"tables,omitempty"`
+	RestaurantSections     []json.RawMessage              `json:"restaurant_sections,omitempty"`
+	SalesPoints            []json.RawMessage              `json:"sales_points,omitempty"`
 	CatalogItems           []json.RawMessage              `json:"catalog_items,omitempty"`
 	Folders                []json.RawMessage              `json:"folders,omitempty"`
 	FolderParameters       []posEdgeFolderParameter       `json:"folder_parameters,omitempty"`
@@ -1720,7 +1761,14 @@ func TestExistingReferenceUpdatesKeepLifecycleStatusesExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	table, err := service.CreateTable(ctx, app.CreateTableCommand{RestaurantID: restaurant.ID, HallID: hall.ID, Name: "A1", Seats: 2})
+	sections, err := service.ListRestaurantSections(ctx, restaurant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sections) == 0 {
+		t.Fatal("expected bootstrap default section")
+	}
+	table, err := service.CreateTable(ctx, app.CreateTableCommand{RestaurantID: restaurant.ID, HallID: hall.ID, SectionID: sections[0].ID, Name: "A1", Seats: 2})
 	if err != nil {
 		t.Fatal(err)
 	}

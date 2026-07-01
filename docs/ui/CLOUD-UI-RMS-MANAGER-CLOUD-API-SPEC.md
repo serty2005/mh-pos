@@ -186,18 +186,50 @@ Response item:
 
 Эти routes полезны для отчетных и складских экранов, но не полностью заменяют sales KPI из референса: текущий `sales-kitchen-summary` не является полноценным revenue/check/payment-method API.
 
+## Единый раздел `Каталог и меню`
+
+реализовано сейчас.
+
+Активный `cloud-ui-g` заменяет отдельные manager-facing CRUD surfaces `catalog` и `menu` одним разделом `Каталог и меню`.
+
+Обязательное поведение:
+
+- Раздел доступен без выбранного ресторана и в этом состоянии работает как tenant catalog editor.
+- При выбранном ресторане UI загружает tenant catalog и restaurant menu items, затем подсвечивает catalog items, которые уже выставлены на продажу в выбранном ресторане.
+- View mode `Только каталог` строит дерево по `catalog_folders` и показывает весь tenant catalog с restaurant menu overlay.
+- View mode `Только меню` доступен только при выбранном ресторане, строит дерево по `menu categories` и показывает только restaurant menu items.
+- Menu item form не меняет `catalog_item_id`; она редактирует только restaurant overrides: `name`, `price`, `category_id`, `tag_id`, `tax_profile_id`, `availability_json`, `runtime_status` и lifecycle status.
+- Все create/edit формы открываются как modal dialogs; список/дерево не содержит inline CRUD forms.
+- Context menu должен перехватывать right click на группах и позициях, но не выполнять destructive/support commands без backend RBAC/idempotency/audit contract.
+
+реализовано сейчас:
+
+- `GET /master-data/catalog/items?restaurant_id=...`
+- `GET /master-data/catalog/folders?restaurant_id=...`
+- `GET /master-data/catalog/tags?restaurant_id=...`
+- `GET /master-data/menu/items?restaurant_id=...`
+- `POST/PATCH/archive` routes для catalog items/folders и menu items.
+- `POST /master-data/menu/categories`
+- `GET /master-data/menu/categories?restaurant_id=...`
+- `PATCH /master-data/menu/categories/{id}`
+- `POST /master-data/menu/categories/{id}/archive`
+
+запланировано далее:
+
+- Расширенные toolbar filters, tags filter, настройки вида и delivery status.
+- Restaurant color/accent DTO для подсветки состояния `выставлено на продажу`.
+
 ## Меню, категории, availability и tech cards
 
 ### GET `/master-data/menu/categories`
 
-запланировано далее.
+реализовано сейчас.
 
-Сейчас `cloud-ui-g` имеет command-only `POST /master-data/menu/categories`. Для референсного menu UI нужен список категорий.
+Используется режимом `Только меню` в едином разделе `Каталог и меню`.
 
 Query:
 
 - `restaurant_id`
-- `status=draft|published|archived`
 
 Response item:
 
@@ -206,10 +238,8 @@ Response item:
   "id": "uuid-v7",
   "restaurant_id": "uuid-v7",
   "name": "Горячие блюда",
-  "slug": "mains",
-  "icon": "Soup",
-  "sort_order": 10,
   "status": "published",
+  "sort_order": 10,
   "created_at": "2026-06-15T09:00:00Z",
   "updated_at": "2026-06-15T09:00:00Z"
 }
@@ -217,15 +247,13 @@ Response item:
 
 ### PATCH `/master-data/menu/categories/{id}`
 
-запланировано далее.
+реализовано сейчас.
 
 Body:
 
 ```json
 {
   "name": "Горячие блюда",
-  "slug": "mains",
-  "icon": "Soup",
   "sort_order": 10,
   "status": "published"
 }
@@ -233,9 +261,9 @@ Body:
 
 ### POST `/master-data/menu/categories/{id}/archive`
 
-запланировано далее.
+реализовано сейчас.
 
-Нужно для симметричного lifecycle category management.
+Переводит category в lifecycle status `archived` без физического удаления.
 
 ### PATCH `/master-data/menu/items/{id}/availability`
 

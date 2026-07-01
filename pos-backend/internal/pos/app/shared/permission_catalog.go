@@ -37,16 +37,19 @@ const (
 	PermissionPrecheckView             PermissionID = "pos.precheck.view"
 	PermissionPrecheckReprint          PermissionID = "pos.precheck.reprint"
 	// Идентификаторы прав manager override flow.
-	PermissionPrecheckCancelRequest PermissionID = "pos.precheck.cancel.request"
-	PermissionPrecheckCancel        PermissionID = "pos.precheck.cancel"
-	PermissionPaymentCash           PermissionID = "pos.payment.cash"
-	PermissionPaymentCardManual     PermissionID = "pos.payment.card.manual"
-	PermissionPaymentOther          PermissionID = "pos.payment.other"
-	PermissionPaymentRefund         PermissionID = "pos.payment.refund"
-	PermissionCheckView             PermissionID = "pos.check.view"
-	PermissionCheckReprint          PermissionID = "pos.check.reprint"
-	PermissionPrintStatus           PermissionID = "pos.print.status"
-	PermissionPrintRetry            PermissionID = "pos.print.retry"
+	PermissionPrecheckCancelRequest  PermissionID = "pos.precheck.cancel.request"
+	PermissionPrecheckCancel         PermissionID = "pos.precheck.cancel"
+	PermissionPaymentCash            PermissionID = "pos.payment.cash"
+	PermissionPaymentCardManual      PermissionID = "pos.payment.card.manual"
+	PermissionPaymentOther           PermissionID = "pos.payment.other"
+	PermissionPaymentRefund          PermissionID = "pos.payment.refund"
+	PermissionCheckView              PermissionID = "pos.check.view"
+	PermissionCheckReprint           PermissionID = "pos.check.reprint"
+	PermissionPrintStatus            PermissionID = "pos.print.status"
+	PermissionPrintRetry             PermissionID = "pos.print.retry"
+	PermissionPrintRoutingView       PermissionID = "pos.print_routing.view"
+	PermissionPrintRoutingManage     PermissionID = "pos.print_routing.manage"
+	PermissionOrderCancelUnconfirmed PermissionID = "pos.order.cancel_unconfirmed"
 	// Идентификаторы прав KDS runtime.
 	PermissionKitchenView                PermissionID = "pos.kitchen.view"
 	PermissionKitchenStatusChange        PermissionID = "pos.kitchen.status.change"
@@ -100,6 +103,9 @@ var knownPermissionIDs = map[PermissionID]struct{}{
 	PermissionCheckReprint:               {},
 	PermissionPrintStatus:                {},
 	PermissionPrintRetry:                 {},
+	PermissionPrintRoutingView:           {},
+	PermissionPrintRoutingManage:         {},
+	PermissionOrderCancelUnconfirmed:     {},
 	PermissionKitchenView:                {},
 	PermissionKitchenStatusChange:        {},
 	PermissionKitchenCatalogView:         {},
@@ -259,6 +265,9 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 			PermissionCheckReprint,
 			PermissionPrintStatus,
 			PermissionPrintRetry,
+			PermissionPrintRoutingView,
+			PermissionPrintRoutingManage,
+			PermissionOrderCancelUnconfirmed,
 			PermissionSyncView,
 			PermissionSyncRetryFailed,
 		},
@@ -287,6 +296,7 @@ var canonicalRoleProfiles = map[RoleName]RoleProfile{
 		Permissions: []PermissionID{
 			PermissionSyncView,
 			PermissionSyncRetryFailed,
+			PermissionPrintRoutingView,
 		},
 	},
 }

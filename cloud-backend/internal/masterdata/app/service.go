@@ -94,6 +94,8 @@ type Repository interface {
 	GetStopListEntry(context.Context, string) (domain.StopListEntry, error)
 	ListStopListEntries(context.Context, string) ([]domain.StopListEntry, error)
 	CreateCategory(context.Context, domain.Category) (domain.Category, error)
+	UpdateCategory(context.Context, domain.Category) (domain.Category, error)
+	GetCategory(context.Context, string) (domain.Category, error)
 	ListCategories(context.Context, string) ([]domain.Category, error)
 	CreateHall(context.Context, domain.Hall) (domain.Hall, error)
 	UpdateHall(context.Context, domain.Hall) (domain.Hall, error)
@@ -103,6 +105,14 @@ type Repository interface {
 	UpdateTable(context.Context, domain.Table) (domain.Table, error)
 	GetTable(context.Context, string) (domain.Table, error)
 	ListTables(context.Context, string) ([]domain.Table, error)
+	CreateRestaurantSection(context.Context, domain.RestaurantSection) (domain.RestaurantSection, error)
+	UpdateRestaurantSection(context.Context, domain.RestaurantSection) (domain.RestaurantSection, error)
+	GetRestaurantSection(context.Context, string) (domain.RestaurantSection, error)
+	ListRestaurantSections(context.Context, string) ([]domain.RestaurantSection, error)
+	CreateSalesPoint(context.Context, domain.SalesPoint) (domain.SalesPoint, error)
+	UpdateSalesPoint(context.Context, domain.SalesPoint) (domain.SalesPoint, error)
+	GetSalesPoint(context.Context, string) (domain.SalesPoint, error)
+	ListSalesPoints(context.Context, string) ([]domain.SalesPoint, error)
 	CreateMenuItem(context.Context, domain.MenuItem) (domain.MenuItem, error)
 	UpdateMenuItem(context.Context, domain.MenuItem) (domain.MenuItem, error)
 	GetMenuItem(context.Context, string) (domain.MenuItem, error)
@@ -250,34 +260,34 @@ type RotatePINCommand struct {
 
 // CreateCatalogItemCommand описывает создание Cloud-owned catalog item.
 type CreateCatalogItemCommand struct {
-	RestaurantID          string                      `json:"restaurant_id,omitempty"`
-	Kind                  domain.CatalogItemKind      `json:"kind"`
-	Type                  domain.CatalogItemKind      `json:"type,omitempty"`
-	FolderID              string                      `json:"folder_id,omitempty"`
-	Name                  string                      `json:"name"`
-	SKU                   string                      `json:"sku"`
-	BaseUnit              string                      `json:"base_unit"`
-	KitchenType           string                      `json:"kitchen_type,omitempty"`
-	AccountingCategory    string                      `json:"accounting_category,omitempty"`
-	QRConfirmationEnabled bool                        `json:"qr_confirmation_enabled"`
-	ValidityMode          domain.TicketValidityMode   `json:"validity_mode,omitempty"`
-	ValidityExpiresAt     *time.Time                  `json:"validity_expires_at,omitempty"`
+	RestaurantID          string                    `json:"restaurant_id,omitempty"`
+	Kind                  domain.CatalogItemKind    `json:"kind"`
+	Type                  domain.CatalogItemKind    `json:"type,omitempty"`
+	FolderID              string                    `json:"folder_id,omitempty"`
+	Name                  string                    `json:"name"`
+	SKU                   string                    `json:"sku"`
+	BaseUnit              string                    `json:"base_unit"`
+	KitchenType           string                    `json:"kitchen_type,omitempty"`
+	AccountingCategory    string                    `json:"accounting_category,omitempty"`
+	QRConfirmationEnabled bool                      `json:"qr_confirmation_enabled"`
+	ValidityMode          domain.TicketValidityMode `json:"validity_mode,omitempty"`
+	ValidityExpiresAt     *time.Time                `json:"validity_expires_at,omitempty"`
 }
 
 // UpdateCatalogItemCommand описывает изменение Cloud-owned catalog item.
 type UpdateCatalogItemCommand struct {
-	Kind                  *domain.CatalogItemKind      `json:"kind,omitempty"`
-	Type                  *domain.CatalogItemKind      `json:"type,omitempty"`
-	FolderID              *string                      `json:"folder_id,omitempty"`
-	Name                  string                       `json:"name,omitempty"`
-	SKU                   string                       `json:"sku,omitempty"`
-	BaseUnit              string                       `json:"base_unit,omitempty"`
-	KitchenType           *string                      `json:"kitchen_type,omitempty"`
-	AccountingCategory    *string                      `json:"accounting_category,omitempty"`
-	Status                *domain.LifecycleStatus      `json:"status,omitempty"`
-	QRConfirmationEnabled *bool                        `json:"qr_confirmation_enabled,omitempty"`
-	ValidityMode          *domain.TicketValidityMode   `json:"validity_mode,omitempty"`
-	ValidityExpiresAt     *time.Time                   `json:"validity_expires_at,omitempty"`
+	Kind                  *domain.CatalogItemKind    `json:"kind,omitempty"`
+	Type                  *domain.CatalogItemKind    `json:"type,omitempty"`
+	FolderID              *string                    `json:"folder_id,omitempty"`
+	Name                  string                     `json:"name,omitempty"`
+	SKU                   string                     `json:"sku,omitempty"`
+	BaseUnit              string                     `json:"base_unit,omitempty"`
+	KitchenType           *string                    `json:"kitchen_type,omitempty"`
+	AccountingCategory    *string                    `json:"accounting_category,omitempty"`
+	Status                *domain.LifecycleStatus    `json:"status,omitempty"`
+	QRConfirmationEnabled *bool                      `json:"qr_confirmation_enabled,omitempty"`
+	ValidityMode          *domain.TicketValidityMode `json:"validity_mode,omitempty"`
+	ValidityExpiresAt     *time.Time                 `json:"validity_expires_at,omitempty"`
 }
 
 type CreateCatalogFolderCommand struct {
@@ -462,6 +472,13 @@ type CreateCategoryCommand struct {
 	SortOrder    int64  `json:"sort_order"`
 }
 
+// UpdateCategoryCommand описывает изменение restaurant menu category lifecycle.
+type UpdateCategoryCommand struct {
+	Name      string                  `json:"name,omitempty"`
+	SortOrder *int64                  `json:"sort_order,omitempty"`
+	Status    *domain.LifecycleStatus `json:"status,omitempty"`
+}
+
 // CreateHallCommand описывает создание Cloud-owned зала.
 type CreateHallCommand struct {
 	RestaurantID string `json:"restaurant_id"`
@@ -478,16 +495,51 @@ type UpdateHallCommand struct {
 type CreateTableCommand struct {
 	RestaurantID string `json:"restaurant_id"`
 	HallID       string `json:"hall_id"`
+	SectionID    string `json:"section_id"`
 	Name         string `json:"name"`
 	Seats        int64  `json:"seats"`
 }
 
 // UpdateTableCommand описывает изменение Cloud-owned стола.
 type UpdateTableCommand struct {
-	HallID string                  `json:"hall_id,omitempty"`
-	Name   string                  `json:"name,omitempty"`
-	Seats  *int64                  `json:"seats,omitempty"`
-	Status *domain.LifecycleStatus `json:"status,omitempty"`
+	HallID    string                  `json:"hall_id,omitempty"`
+	SectionID string                  `json:"section_id,omitempty"`
+	Name      string                  `json:"name,omitempty"`
+	Seats     *int64                  `json:"seats,omitempty"`
+	Status    *domain.LifecycleStatus `json:"status,omitempty"`
+}
+
+type CreateRestaurantSectionCommand struct {
+	RestaurantID      string                       `json:"restaurant_id"`
+	Name              string                       `json:"name"`
+	Mode              domain.RestaurantSectionMode `json:"mode"`
+	HallID            string                       `json:"hall_id,omitempty"`
+	KitchenRoutingKey string                       `json:"kitchen_routing_key,omitempty"`
+	WarehouseID       string                       `json:"warehouse_id,omitempty"`
+	IsActive          bool                         `json:"is_active,omitempty"`
+}
+
+type UpdateRestaurantSectionCommand struct {
+	Name              string                        `json:"name,omitempty"`
+	Mode              *domain.RestaurantSectionMode `json:"mode,omitempty"`
+	HallID            *string                       `json:"hall_id,omitempty"`
+	KitchenRoutingKey *string                       `json:"kitchen_routing_key,omitempty"`
+	WarehouseID       *string                       `json:"warehouse_id,omitempty"`
+	IsActive          *bool                         `json:"is_active,omitempty"`
+}
+
+type CreateSalesPointCommand struct {
+	RestaurantID   string `json:"restaurant_id"`
+	Name           string `json:"name"`
+	AnalyticsTag   string `json:"analytics_tag"`
+	DefaultTableID string `json:"default_table_id,omitempty"`
+}
+
+type UpdateSalesPointCommand struct {
+	Name           string `json:"name,omitempty"`
+	AnalyticsTag   string `json:"analytics_tag,omitempty"`
+	DefaultTableID string `json:"default_table_id,omitempty"`
+	IsActive       *bool  `json:"is_active,omitempty"`
 }
 
 // CreateMenuItemCommand описывает создание draft menu item.
@@ -640,7 +692,51 @@ func (s *Service) CreateRestaurant(ctx context.Context, cmd CreateRestaurantComm
 		UpdatedAt:                    now,
 	}
 	stored, err := s.repo.CreateRestaurant(ctx, restaurant)
-	return afterRestaurantCommit(s, ctx, restaurant.ID, stored, err)
+	if err != nil {
+		return domain.Restaurant{}, err
+	}
+	if err := s.bootstrapDefaultSectionAndTable(ctx, stored.ID, now); err != nil {
+		return domain.Restaurant{}, err
+	}
+	return afterRestaurantCommit(s, ctx, stored.ID, stored, nil)
+}
+
+func (s *Service) bootstrapDefaultSectionAndTable(ctx context.Context, restaurantID string, now time.Time) error {
+	section := domain.RestaurantSection{
+		ID:           s.ids.NewID(),
+		RestaurantID: restaurantID,
+		Name:         "Default hall section",
+		Mode:         domain.RestaurantSectionHallSection,
+		IsDefault:    true,
+		IsActive:     true,
+		Version:      1,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	storedSection, err := s.repo.CreateRestaurantSection(ctx, section)
+	if err != nil {
+		if errors.Is(err, domain.ErrConflict) {
+			return nil
+		}
+		return err
+	}
+	table := domain.Table{
+		ID:           s.ids.NewID(),
+		RestaurantID: restaurantID,
+		SectionID:    storedSection.ID,
+		Name:         "Default table",
+		Seats:        0,
+		IsDefault:    true,
+		Status:       domain.StatusPublished,
+		CloudVersion: 1,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	_, err = s.repo.CreateTable(ctx, table)
+	if errors.Is(err, domain.ErrConflict) {
+		return nil
+	}
+	return err
 }
 
 // ListRestaurants возвращает рестораны для будущего Cloud UI/backoffice.
@@ -1818,20 +1914,64 @@ func (s *Service) DeactivateStopListEntry(ctx context.Context, id string) (domai
 
 // CreateCategory создает draft категорию меню.
 func (s *Service) CreateCategory(ctx context.Context, cmd CreateCategoryCommand) (domain.Category, error) {
-	if strings.TrimSpace(cmd.RestaurantID) == "" || strings.TrimSpace(cmd.Name) == "" {
+	restaurantID := strings.TrimSpace(cmd.RestaurantID)
+	name := strings.TrimSpace(cmd.Name)
+	if restaurantID == "" || name == "" {
 		return domain.Category{}, fmt.Errorf("%w: restaurant_id and name are required", domain.ErrInvalid)
+	}
+	if err := s.ensureActiveRestaurant(ctx, restaurantID); err != nil {
+		return domain.Category{}, err
 	}
 	now := s.clock.Now().UTC()
 	category := domain.Category{
 		ID:           s.ids.NewID(),
-		RestaurantID: strings.TrimSpace(cmd.RestaurantID),
-		Name:         strings.TrimSpace(cmd.Name),
+		RestaurantID: restaurantID,
+		Name:         name,
 		Status:       domain.StatusDraft,
 		SortOrder:    cmd.SortOrder,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	return s.repo.CreateCategory(ctx, category)
+	stored, err := s.repo.CreateCategory(ctx, category)
+	return afterRestaurantCommit(s, ctx, category.RestaurantID, stored, err)
+}
+
+// ListCategories возвращает restaurant menu categories для построения дерева меню.
+func (s *Service) ListCategories(ctx context.Context, restaurantID string) ([]domain.Category, error) {
+	restaurantID = strings.TrimSpace(restaurantID)
+	if restaurantID == "" {
+		return nil, fmt.Errorf("%w: restaurant_id is required", domain.ErrInvalid)
+	}
+	return s.repo.ListCategories(ctx, restaurantID)
+}
+
+// UpdateCategory изменяет category metadata и lifecycle без физического удаления.
+func (s *Service) UpdateCategory(ctx context.Context, id string, cmd UpdateCategoryCommand) (domain.Category, error) {
+	category, err := s.repo.GetCategory(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.Category{}, err
+	}
+	if strings.TrimSpace(cmd.Name) != "" {
+		category.Name = strings.TrimSpace(cmd.Name)
+	}
+	if cmd.SortOrder != nil {
+		category.SortOrder = *cmd.SortOrder
+	}
+	if cmd.Status != nil {
+		if err := domain.ValidateLifecycleStatus(*cmd.Status); err != nil {
+			return domain.Category{}, err
+		}
+		category.Status = *cmd.Status
+	}
+	category.UpdatedAt = s.clock.Now().UTC()
+	stored, err := s.repo.UpdateCategory(ctx, category)
+	return afterRestaurantCommit(s, ctx, category.RestaurantID, stored, err)
+}
+
+// ArchiveCategory архивирует menu category без удаления связанных menu items.
+func (s *Service) ArchiveCategory(ctx context.Context, id string) (domain.Category, error) {
+	status := domain.StatusArchived
+	return s.UpdateCategory(ctx, id, UpdateCategoryCommand{Status: &status})
 }
 
 // CreateHall создает published зал для Zero-to-Cashier floor stream.
@@ -1901,25 +2041,36 @@ func (s *Service) ArchiveHall(ctx context.Context, id string) (domain.Hall, erro
 func (s *Service) CreateTable(ctx context.Context, cmd CreateTableCommand) (domain.Table, error) {
 	restaurantID := strings.TrimSpace(cmd.RestaurantID)
 	hallID := strings.TrimSpace(cmd.HallID)
+	sectionID := strings.TrimSpace(cmd.SectionID)
 	name := strings.TrimSpace(cmd.Name)
-	if restaurantID == "" || hallID == "" || name == "" || cmd.Seats < 0 {
-		return domain.Table{}, fmt.Errorf("%w: restaurant_id, hall_id, name and non-negative seats are required", domain.ErrInvalid)
+	if restaurantID == "" || sectionID == "" || name == "" || cmd.Seats < 0 {
+		return domain.Table{}, fmt.Errorf("%w: restaurant_id, section_id, name and non-negative seats are required", domain.ErrInvalid)
 	}
 	if err := s.ensureActiveRestaurant(ctx, restaurantID); err != nil {
 		return domain.Table{}, err
 	}
-	hall, err := s.repo.GetHall(ctx, hallID)
+	if hallID != "" {
+		hall, err := s.repo.GetHall(ctx, hallID)
+		if err != nil {
+			return domain.Table{}, err
+		}
+		if hall.RestaurantID != restaurantID || hall.Status == domain.StatusArchived {
+			return domain.Table{}, fmt.Errorf("%w: hall is archived or belongs to another restaurant", domain.ErrInvalid)
+		}
+	}
+	section, err := s.repo.GetRestaurantSection(ctx, sectionID)
 	if err != nil {
 		return domain.Table{}, err
 	}
-	if hall.RestaurantID != restaurantID || hall.Status == domain.StatusArchived {
-		return domain.Table{}, fmt.Errorf("%w: hall is archived or belongs to another restaurant", domain.ErrInvalid)
+	if section.RestaurantID != restaurantID || section.Mode != domain.RestaurantSectionHallSection || !section.IsActive {
+		return domain.Table{}, fmt.Errorf("%w: section must be active hall_section from same restaurant", domain.ErrInvalid)
 	}
 	now := s.clock.Now().UTC()
 	table := domain.Table{
 		ID:           s.ids.NewID(),
 		RestaurantID: restaurantID,
 		HallID:       hallID,
+		SectionID:    sectionID,
 		Name:         name,
 		Seats:        cmd.Seats,
 		Status:       domain.StatusPublished,
@@ -1952,6 +2103,16 @@ func (s *Service) UpdateTable(ctx context.Context, id string, cmd UpdateTableCom
 		}
 		table.HallID = hall.ID
 	}
+	if strings.TrimSpace(cmd.SectionID) != "" {
+		section, err := s.repo.GetRestaurantSection(ctx, strings.TrimSpace(cmd.SectionID))
+		if err != nil {
+			return domain.Table{}, err
+		}
+		if section.RestaurantID != table.RestaurantID || section.Mode != domain.RestaurantSectionHallSection || !section.IsActive {
+			return domain.Table{}, fmt.Errorf("%w: section must be active hall_section from same restaurant", domain.ErrInvalid)
+		}
+		table.SectionID = section.ID
+	}
 	if strings.TrimSpace(cmd.Name) != "" {
 		table.Name = strings.TrimSpace(cmd.Name)
 	}
@@ -1964,6 +2125,16 @@ func (s *Service) UpdateTable(ctx context.Context, id string, cmd UpdateTableCom
 	if cmd.Status != nil {
 		if err := domain.ValidateLifecycleStatus(*cmd.Status); err != nil {
 			return domain.Table{}, err
+		}
+		if *cmd.Status == domain.StatusArchived {
+			if table.IsDefault {
+				return domain.Table{}, fmt.Errorf("%w: default table cannot be archived", domain.ErrConflict)
+			}
+			if used, err := s.tableUsedBySalesPoint(ctx, table.RestaurantID, table.ID); err != nil {
+				return domain.Table{}, err
+			} else if used {
+				return domain.Table{}, fmt.Errorf("%w: table is sales point default_table_id", domain.ErrConflict)
+			}
 		}
 		table.Status = *cmd.Status
 	}
@@ -1984,6 +2155,291 @@ func (s *Service) UpdateTable(ctx context.Context, id string, cmd UpdateTableCom
 func (s *Service) ArchiveTable(ctx context.Context, id string) (domain.Table, error) {
 	status := domain.StatusArchived
 	return s.UpdateTable(ctx, id, UpdateTableCommand{Status: &status})
+}
+
+func (s *Service) CreateRestaurantSection(ctx context.Context, cmd CreateRestaurantSectionCommand) (domain.RestaurantSection, error) {
+	restaurantID := strings.TrimSpace(cmd.RestaurantID)
+	name := strings.TrimSpace(cmd.Name)
+	mode := cmd.Mode
+	if restaurantID == "" || name == "" {
+		return domain.RestaurantSection{}, fmt.Errorf("%w: restaurant_id and name are required", domain.ErrInvalid)
+	}
+	if mode == "" {
+		mode = domain.RestaurantSectionHallSection
+	}
+	if mode != domain.RestaurantSectionHallSection && mode != domain.RestaurantSectionKitchenWorkshop {
+		return domain.RestaurantSection{}, fmt.Errorf("%w: unsupported section mode", domain.ErrInvalid)
+	}
+	if err := s.ensureActiveRestaurant(ctx, restaurantID); err != nil {
+		return domain.RestaurantSection{}, err
+	}
+	hallID := strings.TrimSpace(cmd.HallID)
+	if hallID != "" {
+		hall, err := s.repo.GetHall(ctx, hallID)
+		if err != nil {
+			return domain.RestaurantSection{}, err
+		}
+		if hall.RestaurantID != restaurantID || hall.Status == domain.StatusArchived {
+			return domain.RestaurantSection{}, fmt.Errorf("%w: hall is archived or belongs to another restaurant", domain.ErrInvalid)
+		}
+	}
+	now := s.clock.Now().UTC()
+	section := domain.RestaurantSection{
+		ID:                s.ids.NewID(),
+		RestaurantID:      restaurantID,
+		Name:              name,
+		Mode:              mode,
+		HallID:            hallID,
+		KitchenRoutingKey: strings.TrimSpace(cmd.KitchenRoutingKey),
+		WarehouseID:       strings.TrimSpace(cmd.WarehouseID),
+		IsDefault:         false,
+		IsActive:          cmd.IsActive,
+		Version:           1,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	if section.IsActive {
+		return domain.RestaurantSection{}, fmt.Errorf("%w: new section must be activated after tables are assigned", domain.ErrInvalid)
+	}
+	stored, err := s.repo.CreateRestaurantSection(ctx, section)
+	return afterRestaurantCommit(s, ctx, stored.RestaurantID, stored, err)
+}
+
+func (s *Service) ListRestaurantSections(ctx context.Context, restaurantID string) ([]domain.RestaurantSection, error) {
+	return s.repo.ListRestaurantSections(ctx, strings.TrimSpace(restaurantID))
+}
+
+func (s *Service) UpdateRestaurantSection(ctx context.Context, id string, cmd UpdateRestaurantSectionCommand) (domain.RestaurantSection, error) {
+	section, err := s.repo.GetRestaurantSection(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.RestaurantSection{}, err
+	}
+	if strings.TrimSpace(cmd.Name) != "" {
+		section.Name = strings.TrimSpace(cmd.Name)
+	}
+	if cmd.Mode != nil {
+		if *cmd.Mode != domain.RestaurantSectionHallSection && *cmd.Mode != domain.RestaurantSectionKitchenWorkshop {
+			return domain.RestaurantSection{}, fmt.Errorf("%w: unsupported section mode", domain.ErrInvalid)
+		}
+		section.Mode = *cmd.Mode
+	}
+	if cmd.HallID != nil {
+		hallID := strings.TrimSpace(*cmd.HallID)
+		if hallID != "" {
+			hall, err := s.repo.GetHall(ctx, hallID)
+			if err != nil {
+				return domain.RestaurantSection{}, err
+			}
+			if hall.RestaurantID != section.RestaurantID || hall.Status == domain.StatusArchived {
+				return domain.RestaurantSection{}, fmt.Errorf("%w: hall is archived or belongs to another restaurant", domain.ErrInvalid)
+			}
+		}
+		section.HallID = hallID
+	}
+	if cmd.KitchenRoutingKey != nil {
+		section.KitchenRoutingKey = strings.TrimSpace(*cmd.KitchenRoutingKey)
+	}
+	if cmd.WarehouseID != nil {
+		section.WarehouseID = strings.TrimSpace(*cmd.WarehouseID)
+	}
+	if cmd.IsActive != nil {
+		if !*cmd.IsActive {
+			if section.IsDefault {
+				return domain.RestaurantSection{}, fmt.Errorf("%w: default section cannot be deactivated", domain.ErrConflict)
+			}
+			if used, err := s.sectionUsedBySalesPoint(ctx, section.RestaurantID, section.ID); err != nil {
+				return domain.RestaurantSection{}, err
+			} else if used {
+				return domain.RestaurantSection{}, fmt.Errorf("%w: section contains sales point default table", domain.ErrConflict)
+			}
+		}
+		if *cmd.IsActive && section.Mode == domain.RestaurantSectionHallSection {
+			if ok, err := s.sectionHasActiveTable(ctx, section.RestaurantID, section.ID); err != nil {
+				return domain.RestaurantSection{}, err
+			} else if !ok {
+				return domain.RestaurantSection{}, fmt.Errorf("%w: hall_section cannot be activated without table", domain.ErrInvalid)
+			}
+		}
+		section.IsActive = *cmd.IsActive
+	}
+	section.Version++
+	section.UpdatedAt = s.clock.Now().UTC()
+	stored, err := s.repo.UpdateRestaurantSection(ctx, section)
+	return afterRestaurantCommit(s, ctx, stored.RestaurantID, stored, err)
+}
+
+func (s *Service) ArchiveRestaurantSection(ctx context.Context, id string) (domain.RestaurantSection, error) {
+	active := false
+	return s.UpdateRestaurantSection(ctx, id, UpdateRestaurantSectionCommand{IsActive: &active})
+}
+
+func (s *Service) CreateSalesPoint(ctx context.Context, cmd CreateSalesPointCommand) (domain.SalesPoint, error) {
+	restaurantID := strings.TrimSpace(cmd.RestaurantID)
+	name := strings.TrimSpace(cmd.Name)
+	analyticsTag := strings.TrimSpace(cmd.AnalyticsTag)
+	if restaurantID == "" || name == "" || analyticsTag == "" {
+		return domain.SalesPoint{}, fmt.Errorf("%w: restaurant_id, name and analytics_tag are required", domain.ErrInvalid)
+	}
+	if err := s.ensureActiveRestaurant(ctx, restaurantID); err != nil {
+		return domain.SalesPoint{}, err
+	}
+	defaultTableID := strings.TrimSpace(cmd.DefaultTableID)
+	if defaultTableID == "" {
+		table, err := s.defaultTable(ctx, restaurantID)
+		if err != nil {
+			return domain.SalesPoint{}, err
+		}
+		defaultTableID = table.ID
+	}
+	if err := s.validateSalesPointDefaultTable(ctx, restaurantID, defaultTableID); err != nil {
+		return domain.SalesPoint{}, err
+	}
+	now := s.clock.Now().UTC()
+	salesPoint := domain.SalesPoint{
+		ID:             s.ids.NewID(),
+		RestaurantID:   restaurantID,
+		Name:           name,
+		AnalyticsTag:   analyticsTag,
+		DefaultTableID: defaultTableID,
+		IsActive:       true,
+		Version:        1,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	stored, err := s.repo.CreateSalesPoint(ctx, salesPoint)
+	return afterRestaurantCommit(s, ctx, stored.RestaurantID, stored, err)
+}
+
+func (s *Service) ListSalesPoints(ctx context.Context, restaurantID string) ([]domain.SalesPoint, error) {
+	return s.repo.ListSalesPoints(ctx, strings.TrimSpace(restaurantID))
+}
+
+func (s *Service) UpdateSalesPoint(ctx context.Context, id string, cmd UpdateSalesPointCommand) (domain.SalesPoint, error) {
+	salesPoint, err := s.repo.GetSalesPoint(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domain.SalesPoint{}, err
+	}
+	if strings.TrimSpace(cmd.Name) != "" {
+		salesPoint.Name = strings.TrimSpace(cmd.Name)
+	}
+	if strings.TrimSpace(cmd.AnalyticsTag) != "" {
+		salesPoint.AnalyticsTag = strings.TrimSpace(cmd.AnalyticsTag)
+	}
+	if strings.TrimSpace(cmd.DefaultTableID) != "" {
+		if err := s.validateSalesPointDefaultTable(ctx, salesPoint.RestaurantID, strings.TrimSpace(cmd.DefaultTableID)); err != nil {
+			return domain.SalesPoint{}, err
+		}
+		salesPoint.DefaultTableID = strings.TrimSpace(cmd.DefaultTableID)
+	}
+	if cmd.IsActive != nil {
+		if !*cmd.IsActive && salesPoint.IsActive {
+			points, err := s.repo.ListSalesPoints(ctx, salesPoint.RestaurantID)
+			if err != nil {
+				return domain.SalesPoint{}, err
+			}
+			active := 0
+			for _, point := range points {
+				if point.IsActive {
+					active++
+				}
+			}
+			if active <= 1 {
+				return domain.SalesPoint{}, fmt.Errorf("%w: last active sales point cannot be deactivated", domain.ErrConflict)
+			}
+		}
+		salesPoint.IsActive = *cmd.IsActive
+	}
+	salesPoint.Version++
+	salesPoint.UpdatedAt = s.clock.Now().UTC()
+	stored, err := s.repo.UpdateSalesPoint(ctx, salesPoint)
+	return afterRestaurantCommit(s, ctx, stored.RestaurantID, stored, err)
+}
+
+func (s *Service) ArchiveSalesPoint(ctx context.Context, id string) (domain.SalesPoint, error) {
+	active := false
+	return s.UpdateSalesPoint(ctx, id, UpdateSalesPointCommand{IsActive: &active})
+}
+
+func (s *Service) defaultTable(ctx context.Context, restaurantID string) (domain.Table, error) {
+	tables, err := s.repo.ListTables(ctx, restaurantID)
+	if err != nil {
+		return domain.Table{}, err
+	}
+	for _, table := range tables {
+		if table.IsDefault && table.Status == domain.StatusPublished {
+			return table, nil
+		}
+	}
+	return domain.Table{}, fmt.Errorf("%w: default table is not configured", domain.ErrInvalid)
+}
+
+func (s *Service) validateSalesPointDefaultTable(ctx context.Context, restaurantID, tableID string) error {
+	table, err := s.repo.GetTable(ctx, strings.TrimSpace(tableID))
+	if err != nil {
+		return err
+	}
+	if table.RestaurantID != strings.TrimSpace(restaurantID) || table.Status != domain.StatusPublished {
+		return fmt.Errorf("%w: default table is archived or belongs to another restaurant", domain.ErrInvalid)
+	}
+	section, err := s.repo.GetRestaurantSection(ctx, table.SectionID)
+	if err != nil {
+		return err
+	}
+	if section.RestaurantID != table.RestaurantID || section.Mode != domain.RestaurantSectionHallSection || !section.IsActive {
+		return fmt.Errorf("%w: default table section is not an active hall_section", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func (s *Service) tableUsedBySalesPoint(ctx context.Context, restaurantID, tableID string) (bool, error) {
+	points, err := s.repo.ListSalesPoints(ctx, restaurantID)
+	if err != nil {
+		return false, err
+	}
+	for _, point := range points {
+		if point.DefaultTableID == tableID && point.IsActive {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *Service) sectionUsedBySalesPoint(ctx context.Context, restaurantID, sectionID string) (bool, error) {
+	tables, err := s.repo.ListTables(ctx, restaurantID)
+	if err != nil {
+		return false, err
+	}
+	defaultTableIDs := map[string]struct{}{}
+	points, err := s.repo.ListSalesPoints(ctx, restaurantID)
+	if err != nil {
+		return false, err
+	}
+	for _, point := range points {
+		if point.IsActive {
+			defaultTableIDs[point.DefaultTableID] = struct{}{}
+		}
+	}
+	for _, table := range tables {
+		if table.SectionID == sectionID {
+			if _, ok := defaultTableIDs[table.ID]; ok {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func (s *Service) sectionHasActiveTable(ctx context.Context, restaurantID, sectionID string) (bool, error) {
+	tables, err := s.repo.ListTables(ctx, restaurantID)
+	if err != nil {
+		return false, err
+	}
+	for _, table := range tables {
+		if table.SectionID == sectionID && table.Status == domain.StatusPublished {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // CreateMenuItem создает draft menu item поверх catalog item.
@@ -2669,6 +3125,14 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
 	}
+	restaurantSections, err := s.repo.ListRestaurantSections(ctx, restaurantID)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
+	salesPoints, err := s.repo.ListSalesPoints(ctx, restaurantID)
+	if err != nil {
+		return domain.MasterDataPacket{}, nil, nil, err
+	}
 	catalogItems, err := s.repo.ListCatalogItems(ctx, restaurantID)
 	if err != nil {
 		return domain.MasterDataPacket{}, nil, nil, err
@@ -2783,6 +3247,8 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 		MenuItems:              edgeMenuItems(menuItems),
 		Halls:                  edgeHalls(halls),
 		Tables:                 edgeTables(tables),
+		RestaurantSections:     restaurantSections,
+		SalesPoints:            salesPoints,
 		PricingPolicies:        edgePricingPolicies(pricingPolicies),
 		RecipeVersions:         recipeVersions,
 		RecipeLines:            recipeLines,
@@ -2806,6 +3272,8 @@ func (s *Service) buildPacket(ctx context.Context, restaurantID, nodeDeviceID st
 		"menu_items":                len(packet.MenuItems),
 		"halls":                     len(packet.Halls),
 		"tables":                    len(packet.Tables),
+		"restaurant_sections":       len(packet.RestaurantSections),
+		"sales_points":              len(packet.SalesPoints),
 		"recipe_versions":           len(packet.RecipeVersions),
 		"recipe_lines":              len(packet.RecipeLines),
 		"stop_lists":                len(packet.StopLists),
@@ -2915,6 +3383,24 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 		Halls           []domain.EdgeHall  `json:"halls"`
 		Tables          []domain.EdgeTable `json:"tables"`
 	}
+	type restaurantSectionsPayload struct {
+		NodeDeviceID       string                     `json:"node_device_id,omitempty"`
+		RestaurantID       string                     `json:"restaurant_id"`
+		SyncMode           string                     `json:"sync_mode"`
+		CheckpointToken    string                     `json:"checkpoint_token,omitempty"`
+		CloudVersion       int64                      `json:"cloud_version"`
+		CloudUpdatedAt     time.Time                  `json:"cloud_updated_at"`
+		RestaurantSections []domain.RestaurantSection `json:"restaurant_sections"`
+	}
+	type salesPointsPayload struct {
+		NodeDeviceID    string              `json:"node_device_id,omitempty"`
+		RestaurantID    string              `json:"restaurant_id"`
+		SyncMode        string              `json:"sync_mode"`
+		CheckpointToken string              `json:"checkpoint_token,omitempty"`
+		CloudVersion    int64               `json:"cloud_version"`
+		CloudUpdatedAt  time.Time           `json:"cloud_updated_at"`
+		SalesPoints     []domain.SalesPoint `json:"sales_points"`
+	}
 	type menuPayload struct {
 		NodeDeviceID           string                             `json:"node_device_id,omitempty"`
 		RestaurantID           string                             `json:"restaurant_id"`
@@ -2989,6 +3475,14 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 	if err != nil {
 		return nil, err
 	}
+	restaurantSections, err := build("restaurant_sections", restaurantSectionsPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, RestaurantSections: packet.RestaurantSections})
+	if err != nil {
+		return nil, err
+	}
+	salesPoints, err := build("sales_points", salesPointsPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, SalesPoints: packet.SalesPoints})
+	if err != nil {
+		return nil, err
+	}
 	menu, err := build("menu", menuPayload{NodeDeviceID: packet.NodeDeviceID, RestaurantID: packet.RestaurantID, SyncMode: packet.SyncMode, CheckpointToken: packet.CheckpointToken, CloudVersion: packet.CloudVersion, CloudUpdatedAt: packet.CloudUpdatedAt, MenuItems: packet.MenuItems, MenuItemModifierGroups: packet.MenuItemModifierGroups})
 	if err != nil {
 		return nil, err
@@ -3005,7 +3499,7 @@ func streamPackages(packet domain.MasterDataPacket) ([]StreamPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []StreamPackage{restaurants, staff, catalog, floor, menu, pricing, recipes, inventory}, nil
+	return []StreamPackage{restaurants, staff, catalog, floor, restaurantSections, salesPoints, menu, pricing, recipes, inventory}, nil
 }
 
 func edgeRestaurants(items []domain.Restaurant) []domain.EdgeRestaurant {
@@ -3619,7 +4113,7 @@ func edgeHalls(items []domain.Hall) []domain.EdgeHall {
 func edgeTables(items []domain.Table) []domain.EdgeTable {
 	out := make([]domain.EdgeTable, 0, len(items))
 	for _, item := range items {
-		out = append(out, domain.EdgeTable{ID: item.ID, RestaurantID: item.RestaurantID, HallID: item.HallID, Name: item.Name, Seats: item.Seats, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+		out = append(out, domain.EdgeTable{ID: item.ID, RestaurantID: item.RestaurantID, HallID: item.HallID, SectionID: item.SectionID, Name: item.Name, Seats: item.Seats, IsDefault: item.IsDefault, Active: item.ActiveForPOS(), CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
 	}
 	return out
 }

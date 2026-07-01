@@ -35,6 +35,8 @@ type Repository struct {
 	categories              map[string]domain.Category
 	halls                   map[string]domain.Hall
 	tables                  map[string]domain.Table
+	restaurantSections      map[string]domain.RestaurantSection
+	salesPoints             map[string]domain.SalesPoint
 	menuItems               map[string]domain.MenuItem
 	publications            map[string][]domain.Publication
 	packages                map[string]app.StreamPackage
@@ -71,6 +73,8 @@ func NewRepository() *Repository {
 		categories:              map[string]domain.Category{},
 		halls:                   map[string]domain.Hall{},
 		tables:                  map[string]domain.Table{},
+		restaurantSections:      map[string]domain.RestaurantSection{},
+		salesPoints:             map[string]domain.SalesPoint{},
 		menuItems:               map[string]domain.MenuItem{},
 		publications:            map[string][]domain.Publication{},
 		packages:                map[string]app.StreamPackage{},
@@ -756,6 +760,26 @@ func (r *Repository) CreateCategory(_ context.Context, v domain.Category) (domai
 	return v, nil
 }
 
+func (r *Repository) UpdateCategory(_ context.Context, v domain.Category) (domain.Category, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.categories[v.ID]; !ok {
+		return domain.Category{}, domain.ErrNotFound
+	}
+	r.categories[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) GetCategory(_ context.Context, id string) (domain.Category, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.categories[strings.TrimSpace(id)]
+	if !ok {
+		return domain.Category{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
 func (r *Repository) ListCategories(_ context.Context, restaurantID string) ([]domain.Category, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -849,6 +873,89 @@ func (r *Repository) ListTables(_ context.Context, restaurantID string) ([]domai
 	defer r.mu.Unlock()
 	var out []domain.Table
 	for _, item := range r.tables {
+		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) CreateRestaurantSection(_ context.Context, v domain.RestaurantSection) (domain.RestaurantSection, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.restaurantSections[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) UpdateRestaurantSection(_ context.Context, v domain.RestaurantSection) (domain.RestaurantSection, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.restaurantSections[v.ID]; !ok {
+		return domain.RestaurantSection{}, domain.ErrNotFound
+	}
+	r.restaurantSections[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) GetRestaurantSection(_ context.Context, id string) (domain.RestaurantSection, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.restaurantSections[strings.TrimSpace(id)]
+	if !ok {
+		return domain.RestaurantSection{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) ListRestaurantSections(_ context.Context, restaurantID string) ([]domain.RestaurantSection, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.RestaurantSection
+	for _, item := range r.restaurantSections {
+		if item.RestaurantID == strings.TrimSpace(restaurantID) {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) CreateSalesPoint(_ context.Context, v domain.SalesPoint) (domain.SalesPoint, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, item := range r.salesPoints {
+		if item.RestaurantID == v.RestaurantID && strings.EqualFold(item.AnalyticsTag, v.AnalyticsTag) {
+			return domain.SalesPoint{}, domain.ErrConflict
+		}
+	}
+	r.salesPoints[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) UpdateSalesPoint(_ context.Context, v domain.SalesPoint) (domain.SalesPoint, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.salesPoints[v.ID]; !ok {
+		return domain.SalesPoint{}, domain.ErrNotFound
+	}
+	r.salesPoints[v.ID] = v
+	return v, nil
+}
+
+func (r *Repository) GetSalesPoint(_ context.Context, id string) (domain.SalesPoint, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.salesPoints[strings.TrimSpace(id)]
+	if !ok {
+		return domain.SalesPoint{}, domain.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *Repository) ListSalesPoints(_ context.Context, restaurantID string) ([]domain.SalesPoint, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.SalesPoint
+	for _, item := range r.salesPoints {
 		if item.RestaurantID == strings.TrimSpace(restaurantID) {
 			out = append(out, item)
 		}

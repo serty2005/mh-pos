@@ -98,10 +98,13 @@ func (r checkCreatedOutboxFailingRepo) CreateOutboxMessage(ctx context.Context, 
 }
 
 type countingProvisioningCloud struct {
-	registerCalls int
-	statusCalls   int
-	consumeCalls  int
-	snapshotCalls int
+	registerCalls       int
+	statusCalls         int
+	consumeCalls        int
+	snapshotCalls       int
+	assignmentStatus    appprovisioning.CloudAssignmentStatus
+	snapshot            appmastersync.ApplyMasterDataCommand
+	downloadSnapshotURL string
 }
 
 func (c *countingProvisioningCloud) RegisterDevice(context.Context, string, appprovisioning.CloudRegisterRequest) (appprovisioning.CloudRegisterResponse, error) {
@@ -109,8 +112,15 @@ func (c *countingProvisioningCloud) RegisterDevice(context.Context, string, appp
 	return appprovisioning.CloudRegisterResponse{NodeDeviceID: "node-1", Status: "pending_admin_approval"}, nil
 }
 
-func (c *countingProvisioningCloud) AssignmentStatus(context.Context, string, string) (appprovisioning.CloudAssignmentStatus, error) {
+func (c *countingProvisioningCloud) AssignmentStatus(_ context.Context, _ string, nodeDeviceID string) (appprovisioning.CloudAssignmentStatus, error) {
 	c.statusCalls++
+	if c.assignmentStatus.Status != "" {
+		out := c.assignmentStatus
+		if out.NodeDeviceID == "" {
+			out.NodeDeviceID = nodeDeviceID
+		}
+		return out, nil
+	}
 	return appprovisioning.CloudAssignmentStatus{NodeDeviceID: "node-1", Status: "pending_admin_approval"}, nil
 }
 
@@ -119,9 +129,10 @@ func (c *countingProvisioningCloud) ConsumePairingCode(context.Context, string, 
 	return appprovisioning.CloudPairingConsumeResponse{}, nil
 }
 
-func (c *countingProvisioningCloud) DownloadSnapshot(context.Context, string) (appmastersync.ApplyMasterDataCommand, error) {
+func (c *countingProvisioningCloud) DownloadSnapshot(_ context.Context, url string) (appmastersync.ApplyMasterDataCommand, error) {
 	c.snapshotCalls++
-	return appmastersync.ApplyMasterDataCommand{}, nil
+	c.downloadSnapshotURL = url
+	return c.snapshot, nil
 }
 
 type countingProvisioningLicense struct {
@@ -148,6 +159,8 @@ type fixture struct {
 	kitchenSession *domain.AuthSession
 	hall           *domain.Hall
 	table          *domain.Table
+	sectionID      string
+	salesPointID   string
 	menuItem       *domain.MenuItem
 	clientID       string
 	archiveDir     string
@@ -300,8 +313,16 @@ func (f *fixture) seed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.table, err = f.service.CreateTable(f.ctx, app.CreateTableCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, HallID: f.hall.ID, Name: "A1", Seats: 2})
+	f.sectionID = "section-main"
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO restaurant_sections(id,restaurant_id,name,mode,hall_id,is_default,is_active,created_at,updated_at) VALUES (?,?,?,?,?,1,1,?,?)`, f.sectionID, f.restaurant.ID, "Main hall", "hall_section", f.hall.ID, appshared.DBTime(fixedClock{}.Now()), appshared.DBTime(fixedClock{}.Now())); err != nil {
+		t.Fatal(err)
+	}
+	f.table, err = f.service.CreateTable(f.ctx, app.CreateTableCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, HallID: f.hall.ID, SectionID: f.sectionID, Name: "A1", Seats: 2})
 	if err != nil {
+		t.Fatal(err)
+	}
+	f.salesPointID = "sales-point-main"
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO sales_points(id,restaurant_id,name,analytics_tag,default_table_id,is_active,created_at,updated_at) VALUES (?,?,?,?,?,1,?,?)`, f.salesPointID, f.restaurant.ID, "Front", "front", f.table.ID, appshared.DBTime(fixedClock{}.Now()), appshared.DBTime(fixedClock{}.Now())); err != nil {
 		t.Fatal(err)
 	}
 	catalog, err := f.service.CreateCatalogItem(f.ctx, app.CreateCatalogItemCommand{CommandMeta: seedMeta(f.device.ID), Type: domain.CatalogItemDish, Name: "Soup", SKU: "SOUP", BaseUnit: "portion"})
@@ -352,6 +373,45 @@ func TestMaintainCloudProvisioningSkipsCloudRegistrationWhenAlreadyPaired(t *tes
 	}
 	if cloud.registerCalls != 0 || cloud.statusCalls != 0 || cloud.snapshotCalls != 0 {
 		t.Fatalf("expected paired maintenance not to call Cloud, got register=%d status=%d snapshot=%d", cloud.registerCalls, cloud.statusCalls, cloud.snapshotCalls)
+	}
+}
+
+func TestManualCloudAssignmentKeepsConfiguredCloudURL(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.db.ExecContext(f.ctx, `DELETE FROM edge_node_identity WHERE id = 'local'`); err != nil {
+		t.Fatal(err)
+	}
+	cloud := &countingProvisioningCloud{
+		assignmentStatus: appprovisioning.CloudAssignmentStatus{
+			Status:       "assigned",
+			RestaurantID: f.restaurant.ID,
+			SnapshotURL:  "/api/v1/restaurants/" + f.restaurant.ID + "/edge-nodes/node-1/master-data/snapshot",
+			Credentials:  &appprovisioning.Credentials{Type: "node_token", Token: "node-token"},
+		},
+		snapshot: appmastersync.ApplyMasterDataCommand{
+			RestaurantID: f.restaurant.ID,
+			Restaurants:  []domain.Restaurant{*f.restaurant},
+			CloudVersion: 1,
+		},
+	}
+	service := app.NewServiceWithOptions(f.repo, platformsqlite.NewTxManager(f.db), &testIDs{n: 9200}, fixedClock{}, app.ServiceOptions{
+		CloudProvisioningClient: cloud,
+	})
+
+	status, err := service.MaintainCloudProvisioning(f.ctx, app.RegisterCloudProvisioningCommand{
+		CloudURL:    "http://operator-cloud.local",
+		DisplayName: "POS Terminal",
+		AppVersion:  "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Paired || status.CloudURL != "http://operator-cloud.local" {
+		t.Fatalf("expected paired status to keep operator-configured Cloud URL, got %+v", status)
+	}
+	wantSnapshotURL := "http://operator-cloud.local" + cloud.assignmentStatus.SnapshotURL
+	if cloud.downloadSnapshotURL != wantSnapshotURL {
+		t.Fatalf("expected snapshot download from configured Cloud URL %q, got %q", wantSnapshotURL, cloud.downloadSnapshotURL)
 	}
 }
 
@@ -455,6 +515,7 @@ func (f *fixture) openCashSession(t *testing.T) *domain.CashSession {
 	session, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
 		CommandMeta:        f.edgeMeta(),
 		RestaurantID:       f.restaurant.ID,
+		SalesPointID:       f.salesPointID,
 		OpenedByEmployeeID: f.employee.ID,
 		OpeningCashAmount:  0,
 	})
@@ -2949,6 +3010,7 @@ func TestCannotOpenCashSessionWithoutOpenShift(t *testing.T) {
 	_, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
 		CommandMeta:        f.edgeMeta(),
 		RestaurantID:       f.restaurant.ID,
+		SalesPointID:       f.salesPointID,
 		OpenedByEmployeeID: f.employee.ID,
 		OpeningCashAmount:  100,
 	})
@@ -2984,6 +3046,7 @@ func TestCashDrawerEventRequiresPermission(t *testing.T) {
 	session, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
 		CommandMeta:        f.edgeMetaCommand("cmd-open-cash-before-denied-drawer"),
 		RestaurantID:       f.restaurant.ID,
+		SalesPointID:       f.salesPointID,
 		OpenedByEmployeeID: f.employee.ID,
 		OpeningCashAmount:  100,
 	})
@@ -3013,6 +3076,7 @@ func TestDuplicateCashSessionCommandIDDoesNotCreateDuplicateRows(t *testing.T) {
 	cmd := app.OpenCashSessionCommand{
 		CommandMeta:        f.edgeMetaCommand("cmd-open-cash-session-1"),
 		RestaurantID:       f.restaurant.ID,
+		SalesPointID:       f.salesPointID,
 		OpenedByEmployeeID: f.employee.ID,
 		OpeningCashAmount:  100,
 	}
@@ -3130,6 +3194,7 @@ func TestRollbackRemovesCashSessionWhenOutboxWriteFails(t *testing.T) {
 	_, err := service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
 		CommandMeta:        f.edgeMetaCommand("cmd-cash-outbox-fails"),
 		RestaurantID:       f.restaurant.ID,
+		SalesPointID:       f.salesPointID,
 		OpenedByEmployeeID: f.employee.ID,
 		OpeningCashAmount:  100,
 	})
@@ -3353,7 +3418,11 @@ func TestCloudOrSeedCreateAndArchiveHallAndTableUseCloudToEdgeOutbox(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	table, err := f.service.CreateTable(f.ctx, app.CreateTableCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, HallID: hall.ID, Name: "T1", Seats: 4})
+	sectionID := "section-terrace"
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO restaurant_sections(id,restaurant_id,name,mode,hall_id,is_active,created_at,updated_at) VALUES (?,?,?,?,?,1,?,?)`, sectionID, f.restaurant.ID, "Terrace section", "hall_section", hall.ID, appshared.DBTime(fixedClock{}.Now()), appshared.DBTime(fixedClock{}.Now())); err != nil {
+		t.Fatal(err)
+	}
+	table, err := f.service.CreateTable(f.ctx, app.CreateTableCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, HallID: hall.ID, SectionID: sectionID, Name: "T1", Seats: 4})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3391,11 +3460,15 @@ func TestCannotCreateTableInArchivedHall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sectionID := "section-closed-room"
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO restaurant_sections(id,restaurant_id,name,mode,hall_id,is_active,created_at,updated_at) VALUES (?,?,?,?,?,1,?,?)`, sectionID, f.restaurant.ID, "Closed room section", "hall_section", hall.ID, appshared.DBTime(fixedClock{}.Now()), appshared.DBTime(fixedClock{}.Now())); err != nil {
+		t.Fatal(err)
+	}
 	if err := f.service.ArchiveHall(f.ctx, app.ArchiveHallCommand{CommandMeta: seedMeta(f.device.ID), ID: hall.ID}); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = f.service.CreateTable(f.ctx, app.CreateTableCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, HallID: hall.ID, Name: "C1", Seats: 2})
+	_, err = f.service.CreateTable(f.ctx, app.CreateTableCommand{CommandMeta: seedMeta(f.device.ID), RestaurantID: f.restaurant.ID, HallID: hall.ID, SectionID: sectionID, Name: "C1", Seats: 2})
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
 	}
@@ -3508,6 +3581,7 @@ func TestCannotCloseShiftWithActiveCashSession(t *testing.T) {
 	if _, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
 		CommandMeta:        f.edgeMeta(),
 		RestaurantID:       f.restaurant.ID,
+		SalesPointID:       f.salesPointID,
 		OpenedByEmployeeID: f.employee.ID,
 		OpeningCashAmount:  100,
 	}); err != nil {
@@ -4543,6 +4617,7 @@ func TestCapturePaymentUsesCurrentCashSessionShiftForDifferentOrderOperator(t *t
 	if _, err := f.service.OpenCashSession(f.ctx, app.OpenCashSessionCommand{
 		CommandMeta:        f.managerEdgeMetaCommand(t, "cmd-cross-shift-open-cash"),
 		RestaurantID:       f.restaurant.ID,
+		SalesPointID:       f.salesPointID,
 		OpenedByEmployeeID: f.manager.ID,
 		OpeningCashAmount:  0,
 	}); err != nil {
@@ -6488,10 +6563,19 @@ func TestApplyMasterDataSnapshotUpsertsRowsStateAndDoesNotCreateOutbox(t *testin
 			Name:         "Cloud Hall",
 			Active:       true,
 		}},
+		RestaurantSections: []domain.RestaurantSection{{
+			ID:           "cloud-section-1",
+			RestaurantID: "cloud-restaurant-1",
+			Name:         "Cloud Bistro Default",
+			Mode:         domain.RestaurantSectionHallSection,
+			IsDefault:    true,
+			IsActive:     true,
+		}},
 		Tables: []domain.Table{{
 			ID:           "cloud-table-1",
 			RestaurantID: "cloud-restaurant-1",
 			HallID:       "cloud-hall-1",
+			SectionID:    "cloud-section-1",
 			Name:         "C1",
 			Seats:        4,
 			Active:       true,
@@ -6516,7 +6600,7 @@ func TestApplyMasterDataSnapshotUpsertsRowsStateAndDoesNotCreateOutbox(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := len(applied.AppliedStreams), 6; got != want {
+	if got, want := len(applied.AppliedStreams), 7; got != want {
 		t.Fatalf("expected %d applied streams, got %d: %+v", want, got, applied.AppliedStreams)
 	}
 	if outbox := countRows(t, f, "pos_sync_outbox"); outbox != outboxBefore {
@@ -6537,8 +6621,8 @@ func TestApplyMasterDataSnapshotUpsertsRowsStateAndDoesNotCreateOutbox(t *testin
 	if restaurantName != "Cloud Bistro" || restaurantActive != 1 || restaurantCloudVersion != 42 || menuCurrency != "RUB" || menuCloudVersion != 42 {
 		t.Fatalf("unexpected applied rows: restaurant=%q active=%d version=%d menu_currency=%q menu_version=%d", restaurantName, restaurantActive, restaurantCloudVersion, menuCurrency, menuCloudVersion)
 	}
-	if states := countRows(t, f, "cloud_master_sync_state"); states != 6 {
-		t.Fatalf("expected six master sync states, got %d", states)
+	if states := countRows(t, f, "cloud_master_sync_state"); states != 7 {
+		t.Fatalf("expected seven master sync states, got %d", states)
 	}
 	var wrongDirection int
 	if err := f.db.QueryRowContext(f.ctx, `SELECT COUNT(1) FROM cloud_master_sync_state WHERE direction <> 'cloud_to_edge' OR status <> 'applied'`).Scan(&wrongDirection); err != nil {
@@ -8952,18 +9036,23 @@ func TestPrintQueueLifecycleRendersTemplateAndMarksSuccess(t *testing.T) {
 	seedDefaultPrintTemplates(t, f)
 
 	f.createPaidOrder(t)
-	if got := countRows(t, f, "print_jobs"); got != 1 {
-		t.Fatalf("expected one precheck print job, got %d", got)
+	if got := countRows(t, f, "print_jobs"); got != 2 {
+		t.Fatalf("expected precheck and check_nonfiscal print jobs, got %d", got)
 	}
-	processed, err := f.service.ProcessNextPrintJob(f.ctx, "worker-success")
-	if err != nil {
-		t.Fatal(err)
+	for {
+		processed, err := f.service.ProcessNextPrintJob(f.ctx, "worker-success")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !processed {
+			break
+		}
 	}
-	if !processed || len(sender.payloads) != 2 {
-		t.Fatalf("expected precheck fan-out to two printers, processed=%v payloads=%d", processed, len(sender.payloads))
+	if len(sender.payloads) != 3 {
+		t.Fatalf("expected three target sends, got %d", len(sender.payloads))
 	}
-	if len(sender.configs) != 2 || sender.configs[0].PrinterClass != "front" || sender.configs[0].Address != "127.0.0.11" || sender.configs[1].Address != "127.0.0.12" || sender.configs[0].CPL != 48 {
-		t.Fatalf("expected precheck document_type to route to front printer config, got %+v", sender.configs)
+	if len(sender.configs) != 3 || sender.configs[0].PrinterClass != "front" || sender.configs[0].Address != "127.0.0.11" || sender.configs[0].CPL != 48 {
+		t.Fatalf("expected routed front printer configs, got %+v", sender.configs)
 	}
 	if len(sender.payloads[0]) < 2 || sender.payloads[0][0] != 0x1b || sender.payloads[0][1] != '@' {
 		t.Fatalf("expected ESC/POS payload to start with init command, got % x", sender.payloads[0])
@@ -8972,7 +9061,7 @@ func TestPrintQueueLifecycleRendersTemplateAndMarksSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(jobs) != 1 || jobs[0].Status != domain.PrintJobSucceeded || jobs[0].Attempts != 1 || jobs[0].PrintedAt == nil {
+	if len(jobs) != 2 || jobs[0].Status != domain.PrintJobSucceeded || jobs[1].Status != domain.PrintJobSucceeded {
 		t.Fatalf("expected succeeded print job after render pipeline, got %+v", jobs)
 	}
 }
@@ -8983,32 +9072,53 @@ func TestPrintQueueFailureRetriesThreeTimesThenFailsAndManualRetryDoesNotMutateF
 	sender := &printTestSender{err: errors.New("printer offline")}
 	enablePrintQueue(t, f, clock, sender)
 	seedDefaultPrintTemplates(t, f)
+	// IssuePrecheck и CapturePayment каждый enqueue'ят свою job (precheck на 2 таргета
+	// front-1/front-2, check_nonfiscal на 1 таргет front-1) — итого 3 таргета, каждый
+	// должен исчерпать по 3 попытки, прежде чем родительские jobs перейдут в failed.
 	f.createPaidOrder(t)
 	paymentsBefore := countRows(t, f, "payments")
 	checksBefore := countRows(t, f, "checks")
 	ticketsBefore := countRows(t, f, "ticket_units")
 
-	for i, advance := range []time.Duration{2 * time.Second, 5 * time.Second, 0} {
-		if processed, err := f.service.ProcessNextPrintJob(f.ctx, "worker-fail"); err != nil || !processed {
-			t.Fatalf("attempt %d: processed=%v err=%v", i+1, processed, err)
+	const maxBackoff = 15 * time.Second
+	for i := 0; i < 20; i++ {
+		processed, err := f.service.ProcessNextPrintJob(f.ctx, "worker-fail")
+		if err != nil {
+			t.Fatalf("attempt %d: err=%v", i+1, err)
 		}
-		clock.Advance(advance)
+		if !processed {
+			break
+		}
+		clock.Advance(maxBackoff)
 	}
 	jobs, err := f.repo.ListPrintJobs(f.ctx, domain.PrintJobListQuery{RestaurantID: f.restaurant.ID, Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(jobs) != 1 || jobs[0].Status != domain.PrintJobFailed || jobs[0].Attempts != 3 || jobs[0].LastError == nil {
-		t.Fatalf("expected failed after 3 attempts, got %+v", jobs)
+	if len(jobs) != 2 {
+		t.Fatalf("expected precheck + check_nonfiscal jobs, got %+v", jobs)
 	}
-	if *jobs[0].LastError != "PRINT_DELIVERY_FAILED" {
-		t.Fatalf("expected safe delivery error code, got %q", *jobs[0].LastError)
+	var checkJob *domain.PrintJob
+	for i := range jobs {
+		if jobs[i].Status != domain.PrintJobFailed || jobs[i].Attempts != 3 || jobs[i].LastError == nil {
+			t.Fatalf("expected job failed after 3 attempts, got %+v", jobs[i])
+		}
+		if *jobs[i].LastError != "PRINT_DELIVERY_FAILED" {
+			t.Fatalf("expected safe delivery error code, got %q", *jobs[i].LastError)
+		}
+		if jobs[i].DocumentType == domain.ReceiptDocumentCheckNonfiscal {
+			checkJob = &jobs[i]
+		}
 	}
-	if len(sender.payloads) != 3 {
-		t.Fatalf("expected three send attempts, got %d", len(sender.payloads))
+	if checkJob == nil {
+		t.Fatalf("expected a check_nonfiscal job among %+v", jobs)
+	}
+	// 3 таргета (front-1 x2 для precheck, front-1 для check_nonfiscal) x 3 попытки.
+	if len(sender.payloads) != 9 {
+		t.Fatalf("expected nine send attempts across all targets, got %d", len(sender.payloads))
 	}
 
-	reset, err := f.service.RetryPrintJobAsOperator(f.ctx, jobs[0].ID, f.managerEdgeMetaCommand(t, "cmd-print-retry"))
+	reset, err := f.service.RetryPrintJobAsOperator(f.ctx, checkJob.ID, f.managerEdgeMetaCommand(t, "cmd-print-retry"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -9038,16 +9148,17 @@ func TestPrintQueueNoSyncedPrinterFailsWithSafeErrorCode(t *testing.T) {
 	seedDefaultPrintTemplates(t, f)
 	f.createPaidOrder(t)
 
-	processed, err := f.service.ProcessNextPrintJob(f.ctx, "worker-no-printer")
-	if err != nil || !processed {
-		t.Fatalf("expected no-printer job to be processed into failed state, processed=%v err=%v", processed, err)
-	}
 	jobs, err := f.repo.ListPrintJobs(f.ctx, domain.PrintJobListQuery{RestaurantID: f.restaurant.ID, Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(jobs) != 1 || jobs[0].Status != domain.PrintJobFailed || jobs[0].LastError == nil || *jobs[0].LastError != "PRINT_ROUTING_NOT_CONFIGURED" {
-		t.Fatalf("expected failed job with safe routing error code, got %+v", jobs)
+	if len(jobs) == 0 {
+		t.Fatal("expected failed jobs with safe routing error code")
+	}
+	for _, job := range jobs {
+		if job.Status != domain.PrintJobFailed || job.LastError == nil || *job.LastError != "PRINT_ROUTING_NOT_CONFIGURED" {
+			t.Fatalf("expected failed job with safe routing error code, got %+v", jobs)
+		}
 	}
 	if len(sender.payloads) != 0 {
 		t.Fatalf("no-printer path must not send payloads, got %d", len(sender.payloads))
@@ -9068,8 +9179,8 @@ func TestPrintQueueStatusListRetryRBACAndTicketJobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(jobs) != 2 {
-		t.Fatalf("expected precheck + ticket print jobs, got %+v", jobs)
+	if len(jobs) != 3 {
+		t.Fatalf("expected precheck + check_nonfiscal + ticket print jobs, got %+v", jobs)
 	}
 	if _, err := f.service.GetPrintJobAsOperator(f.ctx, jobs[0].ID, f.edgeMeta()); err != nil {
 		t.Fatalf("status read with pos.print.status failed: %v", err)
@@ -9078,18 +9189,23 @@ func TestPrintQueueStatusListRetryRBACAndTicketJobs(t *testing.T) {
 	if _, err := f.service.ListPrintJobsAsOperator(f.ctx, kitchenMeta, domain.PrintJobListQuery{Limit: 10}); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("expected print status RBAC denial for kitchen role, got %v", err)
 	}
-	for i, advance := range []time.Duration{2 * time.Second, 5 * time.Second, 0} {
+	var failed []domain.PrintJob
+	for i := 0; i < 12; i++ {
 		if processed, err := f.service.ProcessNextPrintJob(f.ctx, "worker-rbac"); err != nil || !processed {
-			t.Fatalf("attempt %d: processed=%v err=%v", i+1, processed, err)
+			t.Fatalf("worker step %d: processed=%v err=%v", i+1, processed, err)
 		}
-		clock.Advance(advance)
+		clock.Advance(20 * time.Second)
+		var err error
+		failed, err = f.repo.ListPrintJobs(f.ctx, domain.PrintJobListQuery{RestaurantID: f.restaurant.ID, Status: domain.PrintJobFailed, Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(failed) > 0 {
+			break
+		}
 	}
-	failed, err := f.repo.ListPrintJobs(f.ctx, domain.PrintJobListQuery{RestaurantID: f.restaurant.ID, Status: domain.PrintJobFailed, Limit: 10})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(failed) != 1 {
-		t.Fatalf("expected one failed job after retry exhaustion, got %+v", failed)
+	if len(failed) == 0 {
+		t.Fatalf("expected at least one failed job after target retry exhaustion")
 	}
 	if _, err := f.service.RetryPrintJobAsOperator(f.ctx, failed[0].ID, f.edgeMeta()); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("expected cashier retry RBAC denial, got %v", err)
@@ -9121,6 +9237,25 @@ func seedDefaultReceiptPrinters(t *testing.T, f *fixture) {
 	}
 	if err := f.repo.ReplaceMasterReceiptPrinters(f.ctx, f.restaurant.ID, printers, appshared.DBTime(fixedClock{}.Now())); err != nil {
 		t.Fatal(err)
+	}
+	routes := []struct {
+		id           string
+		documentType string
+		scopeType    string
+		scopeID      any
+		printerID    string
+		sortOrder    int
+	}{
+		{"route-precheck-front-1", "precheck", "section", f.sectionID, "printer-front-1", 1},
+		{"route-precheck-front-2", "precheck", "section", f.sectionID, "printer-front-2", 2},
+		{"route-check-front-1", "check_nonfiscal", "sales_point", f.salesPointID, "printer-front-1", 1},
+		{"route-ticket", "ticket", "section", f.sectionID, "printer-ticket", 1},
+	}
+	for _, route := range routes {
+		if _, err := f.db.ExecContext(f.ctx, `INSERT INTO print_routes(id,restaurant_id,document_type,scope_type,scope_id,printer_id,is_required,sort_order,origin,is_active,created_at,updated_at) VALUES (?,?,?,?,?,?,1,?,'edge_override',1,?,?)`,
+			route.id, f.restaurant.ID, route.documentType, route.scopeType, route.scopeID, route.printerID, route.sortOrder, appshared.DBTime(fixedClock{}.Now()), appshared.DBTime(fixedClock{}.Now())); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

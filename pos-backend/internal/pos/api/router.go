@@ -88,6 +88,7 @@ func NewRouterWithLicense(service *app.Service, gate licensegate.Gate) http.Hand
 		r.Get("/orders/{id}/prechecks", h.listPrechecksByOrder)
 		r.Post("/orders/{id}/close", h.closeOrder)
 		r.Post("/orders/{id}/counter-payment", h.counterPayment)
+		r.Post("/orders/{id}/cancel-unconfirmed", h.cancelUnconfirmedOrder)
 
 		r.Get("/prechecks/{id}", h.getPrecheck)
 		r.Post("/prechecks/{id}/cancel", h.cancelPrecheck)
@@ -117,6 +118,8 @@ func NewRouterWithLicense(service *app.Service, gate licensegate.Gate) http.Hand
 		r.Post("/kitchen/stop-list-updates", h.updateKitchenStopList)
 
 		r.Get("/checks/{id}", h.getCheck)
+		r.Get("/checks/{id}/print-confirmation", h.getCheckPrintConfirmation)
+		r.Post("/checks/{id}/print-confirmation/retry", h.retryCheckPrintConfirmation)
 		r.Get("/checks/{id}/financial-operations", h.listCheckFinancialOperations)
 		r.Get("/checks/{id}/tickets", h.listCheckTickets)
 		r.Post("/checks/{id}/reprint", h.reprintCheck)
@@ -133,6 +136,14 @@ func NewRouterWithLicense(service *app.Service, gate licensegate.Gate) http.Hand
 		r.Get("/print/jobs", h.listPrintJobs)
 		r.Get("/print/jobs/{id}", h.getPrintJob)
 		r.Post("/print/jobs/{id}/retry", h.retryPrintJob)
+		r.Post("/print/jobs/{id}/targets/{target_id}/retry", h.retryPrintJobTarget)
+		r.Get("/print-routing/printers", h.listPrintRoutingPrinters)
+		r.Get("/print-routing/sales-points", h.listPrintRoutingSalesPoints)
+		r.Get("/print-routing/sections", h.listPrintRoutingSections)
+		r.Get("/print-routing/routes", h.listPrintRoutes)
+		r.Post("/print-routing/routes", h.createPrintRoute)
+		r.Patch("/print-routing/routes/{id}", h.updatePrintRoute)
+		r.Delete("/print-routing/routes/{id}", h.deletePrintRoute)
 
 		r.Get("/sync/outbox", h.listOutbox)
 		r.Get("/sync/local-events", h.listLocalEvents)
@@ -192,7 +203,7 @@ func localCORS(next http.Handler) http.Handler {
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Credentials", "false")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Node-Device-ID, X-Client-Device-ID, X-Actor-Employee-ID, X-Session-ID")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -892,6 +903,32 @@ func (h *Handler) getCheck(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, r, v, err)
 }
 
+func (h *Handler) getCheckPrintConfirmation(w http.ResponseWriter, r *http.Request) {
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.GetPrintConfirmationAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) retryCheckPrintConfirmation(w http.ResponseWriter, r *http.Request) {
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.RetryPrintConfirmationAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) cancelUnconfirmedOrder(w http.ResponseWriter, r *http.Request) {
+	var cmd app.CancelUnconfirmedOrderCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	cmd.OrderID = chi.URLParam(r, "id")
+	v, err := h.service.CancelUnconfirmedOrder(r.Context(), cmd)
+	writeOK(w, r, v, err)
+}
+
 func (h *Handler) listCheckFinancialOperations(w http.ResponseWriter, r *http.Request) {
 	limit, offset, ok := readLimitOffset(w, r)
 	if !ok {
@@ -1276,6 +1313,70 @@ func (h *Handler) retryPrintJob(w http.ResponseWriter, r *http.Request) {
 	var meta app.CommandMeta
 	setRequestMeta(&meta, r)
 	v, err := h.service.RetryPrintJobAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) retryPrintJobTarget(w http.ResponseWriter, r *http.Request) {
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.RetryPrintJobTargetAsOperator(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "target_id"), meta)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) listPrintRoutingPrinters(w http.ResponseWriter, r *http.Request) {
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.ListRoutingPrintersAsOperator(r.Context(), meta)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) listPrintRoutingSalesPoints(w http.ResponseWriter, r *http.Request) {
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.ListRoutingSalesPointsAsOperator(r.Context(), meta)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) listPrintRoutingSections(w http.ResponseWriter, r *http.Request) {
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.ListRoutingSectionsAsOperator(r.Context(), meta)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) listPrintRoutes(w http.ResponseWriter, r *http.Request) {
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.ListPrintRoutesAsOperator(r.Context(), meta)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) createPrintRoute(w http.ResponseWriter, r *http.Request) {
+	var cmd app.PrintRouteCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.CreatePrintRouteAsOperator(r.Context(), cmd)
+	writeCreated(w, r, v, err)
+}
+
+func (h *Handler) updatePrintRoute(w http.ResponseWriter, r *http.Request) {
+	var cmd app.UpdatePrintRouteCommand
+	if err := httpx.Decode(r, &cmd); err != nil {
+		httpx.Error(w, err, r)
+		return
+	}
+	setRequestMeta(&cmd.CommandMeta, r)
+	v, err := h.service.UpdatePrintRouteAsOperator(r.Context(), chi.URLParam(r, "id"), cmd)
+	writeOK(w, r, v, err)
+}
+
+func (h *Handler) deletePrintRoute(w http.ResponseWriter, r *http.Request) {
+	var meta app.CommandMeta
+	setRequestMeta(&meta, r)
+	v, err := h.service.DeactivatePrintRouteAsOperator(r.Context(), chi.URLParam(r, "id"), meta)
 	writeOK(w, r, v, err)
 }
 

@@ -2,7 +2,7 @@ package sqlite
 
 import (
 	"context"
-	"time"
+	"database/sql"
 
 	"pos-backend/internal/pos/domain"
 )
@@ -63,20 +63,25 @@ func (r *Repository) ArchiveHall(ctx context.Context, id, updatedAt string) erro
 }
 
 func (r *Repository) CreateTable(ctx context.Context, v *domain.Table) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO tables(id,restaurant_id,hall_id,name,seats,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)`,
-		v.ID, v.RestaurantID, v.HallID, v.Name, v.Seats, boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO tables(id,restaurant_id,hall_id,section_id,name,seats,is_default,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.RestaurantID, nullableStringValue(v.HallID), v.SectionID, v.Name, v.Seats, boolInt(v.IsDefault), boolInt(v.Active), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }
 
 func (r *Repository) GetTable(ctx context.Context, id string) (*domain.Table, error) {
 	var v domain.Table
-	var active int
+	var active, isDefault int
 	var created, updated string
-	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,hall_id,name,seats,active,created_at,updated_at FROM tables WHERE id = ?`, id).
-		Scan(&v.ID, &v.RestaurantID, &v.HallID, &v.Name, &v.Seats, &active, &created, &updated)
+	var hallID sql.NullString
+	err := r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,hall_id,section_id,name,seats,is_default,active,created_at,updated_at FROM tables WHERE id = ?`, id).
+		Scan(&v.ID, &v.RestaurantID, &hallID, &v.SectionID, &v.Name, &v.Seats, &isDefault, &active, &created, &updated)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
+	if hallID.Valid {
+		v.HallID = hallID.String
+	}
+	v.IsDefault = isDefault == 1
 	v.Active = active == 1
 	v.CreatedAt = parseTime(created)
 	v.UpdatedAt = parseTime(updated)
@@ -84,7 +89,7 @@ func (r *Repository) GetTable(ctx context.Context, id string) (*domain.Table, er
 }
 
 func (r *Repository) ListTables(ctx context.Context, restaurantID, hallID string) ([]domain.Table, error) {
-	query := `SELECT id,restaurant_id,hall_id,name,seats,active,created_at,updated_at FROM tables WHERE restaurant_id = ?`
+	query := `SELECT id,restaurant_id,hall_id,section_id,name,seats,is_default,active,created_at,updated_at FROM tables WHERE restaurant_id = ?`
 	args := []any{restaurantID}
 	if hallID != "" {
 		query += ` AND hall_id = ?`
@@ -99,11 +104,16 @@ func (r *Repository) ListTables(ctx context.Context, restaurantID, hallID string
 	var out []domain.Table
 	for rows.Next() {
 		var v domain.Table
-		var active int
+		var active, isDefault int
 		var created, updated string
-		if err := rows.Scan(&v.ID, &v.RestaurantID, &v.HallID, &v.Name, &v.Seats, &active, &created, &updated); err != nil {
+		var hallID sql.NullString
+		if err := rows.Scan(&v.ID, &v.RestaurantID, &hallID, &v.SectionID, &v.Name, &v.Seats, &isDefault, &active, &created, &updated); err != nil {
 			return nil, err
 		}
+		if hallID.Valid {
+			v.HallID = hallID.String
+		}
+		v.IsDefault = isDefault == 1
 		v.Active = active == 1
 		v.CreatedAt = parseTime(created)
 		v.UpdatedAt = parseTime(updated)
@@ -124,45 +134,98 @@ func (r *Repository) ArchiveTable(ctx context.Context, id, updatedAt string) err
 	return nil
 }
 
-// GetSystemTable возвращает активный системный стол для counter sale (name = '__counter__').
-func (r *Repository) GetSystemTable(ctx context.Context, restaurantID string) (*domain.Table, error) {
-	var v domain.Table
-	var active int
-	var created, updated string
-	err := r.queryer(ctx).QueryRowContext(ctx,
-		`SELECT id,restaurant_id,hall_id,name,seats,active,created_at,updated_at FROM tables WHERE restaurant_id = ? AND name = '__counter__' AND active = 1 LIMIT 1`,
-		restaurantID,
-	).Scan(&v.ID, &v.RestaurantID, &v.HallID, &v.Name, &v.Seats, &active, &created, &updated)
+func (r *Repository) GetRestaurantSection(ctx context.Context, id string) (*domain.RestaurantSection, error) {
+	return scanRestaurantSection(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,name,mode,hall_id,kitchen_routing_key,warehouse_id,is_default,is_active,cloud_version,synced_at,created_at,updated_at FROM restaurant_sections WHERE id = ?`, id))
+}
+
+func (r *Repository) ListRestaurantSections(ctx context.Context, restaurantID string) ([]domain.RestaurantSection, error) {
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,restaurant_id,name,mode,hall_id,kitchen_routing_key,warehouse_id,is_default,is_active,cloud_version,synced_at,created_at,updated_at FROM restaurant_sections WHERE restaurant_id = ? ORDER BY mode,name,id`, restaurantID)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
-	v.Active = active == 1
-	v.CreatedAt = parseTime(created)
-	v.UpdatedAt = parseTime(updated)
+	defer rows.Close()
+	out := []domain.RestaurantSection{}
+	for rows.Next() {
+		v, err := scanRestaurantSection(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *v)
+	}
+	return out, normalizeErr(rows.Err())
+}
+
+func scanRestaurantSection(row scanner) (*domain.RestaurantSection, error) {
+	var v domain.RestaurantSection
+	var mode string
+	var hallID, kitchenRoutingKey, warehouseID, synced, created, updated sql.NullString
+	var isDefault, isActive int
+	if err := row.Scan(&v.ID, &v.RestaurantID, &v.Name, &mode, &hallID, &kitchenRoutingKey, &warehouseID, &isDefault, &isActive, &v.CloudVersion, &synced, &created, &updated); err != nil {
+		return nil, normalizeErr(err)
+	}
+	v.Mode = domain.RestaurantSectionMode(mode)
+	if hallID.Valid {
+		v.HallID = hallID.String
+	}
+	if kitchenRoutingKey.Valid {
+		v.KitchenRoutingKey = kitchenRoutingKey.String
+	}
+	if warehouseID.Valid {
+		v.WarehouseID = warehouseID.String
+	}
+	v.IsDefault = isDefault == 1
+	v.IsActive = isActive == 1
+	if synced.Valid {
+		t := parseTime(synced.String)
+		v.SyncedAt = &t
+	}
+	if created.Valid {
+		v.CreatedAt = parseTime(created.String)
+	}
+	if updated.Valid {
+		v.UpdatedAt = parseTime(updated.String)
+	}
 	return &v, nil
 }
 
-// EnsureSystemFloor идемпотентно создаёт системный зал и стол для ресторана.
-// Использует INSERT OR IGNORE, поэтому безопасен при повторном вызове.
-func (r *Repository) EnsureSystemFloor(ctx context.Context, restaurantID, hallID, tableID string, now time.Time) error {
-	ts := dbTime(now)
-	_, err := r.execer(ctx).ExecContext(ctx,
-		`INSERT OR IGNORE INTO halls(id,restaurant_id,name,active,created_at,updated_at) VALUES (?,?,'__counter__',1,?,?)`,
-		hallID, restaurantID, ts, ts,
-	)
+func (r *Repository) GetSalesPoint(ctx context.Context, id string) (*domain.SalesPoint, error) {
+	return scanSalesPoint(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,name,analytics_tag,default_table_id,is_active,cloud_version,synced_at,created_at,updated_at FROM sales_points WHERE id = ?`, id))
+}
+
+func (r *Repository) ListSalesPoints(ctx context.Context, restaurantID string) ([]domain.SalesPoint, error) {
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,restaurant_id,name,analytics_tag,default_table_id,is_active,cloud_version,synced_at,created_at,updated_at FROM sales_points WHERE restaurant_id = ? ORDER BY name,id`, restaurantID)
 	if err != nil {
-		return normalizeErr(err)
+		return nil, normalizeErr(err)
 	}
-	// Получаем фактический hall_id (мог быть уже создан ранее).
-	var actualHallID string
-	if err := r.queryer(ctx).QueryRowContext(ctx,
-		`SELECT id FROM halls WHERE restaurant_id = ? AND name = '__counter__'`, restaurantID,
-	).Scan(&actualHallID); err != nil {
-		return normalizeErr(err)
+	defer rows.Close()
+	out := []domain.SalesPoint{}
+	for rows.Next() {
+		v, err := scanSalesPoint(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *v)
 	}
-	_, err = r.execer(ctx).ExecContext(ctx,
-		`INSERT OR IGNORE INTO tables(id,restaurant_id,hall_id,name,seats,active,created_at,updated_at) VALUES (?,?,?,'__counter__',0,1,?,?)`,
-		tableID, restaurantID, actualHallID, ts, ts,
-	)
-	return normalizeErr(err)
+	return out, normalizeErr(rows.Err())
+}
+
+func scanSalesPoint(row scanner) (*domain.SalesPoint, error) {
+	var v domain.SalesPoint
+	var active int
+	var synced, created, updated sql.NullString
+	if err := row.Scan(&v.ID, &v.RestaurantID, &v.Name, &v.AnalyticsTag, &v.DefaultTableID, &active, &v.CloudVersion, &synced, &created, &updated); err != nil {
+		return nil, normalizeErr(err)
+	}
+	v.IsActive = active == 1
+	if synced.Valid {
+		t := parseTime(synced.String)
+		v.SyncedAt = &t
+	}
+	if created.Valid {
+		v.CreatedAt = parseTime(created.String)
+	}
+	if updated.Valid {
+		v.UpdatedAt = parseTime(updated.String)
+	}
+	return &v, nil
 }

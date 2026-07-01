@@ -54,7 +54,7 @@ describe('CatalogPage page integration', () => {
     const empty = await renderPage(<CatalogPage />);
     await waitFor(() => {
       expect(text(empty.container)).toContain(ru.catalog.items.empty);
-      expect(text(empty.container)).toContain(ru.catalog.folders.empty);
+      expect(text(empty.container)).toContain(ru.catalogMenu.empty.catalogTitle);
     });
     await empty.cleanup();
 
@@ -99,16 +99,18 @@ describe('CatalogPage page integration', () => {
     ]);
 
     const page = await renderPage(<CatalogPage />);
-    await waitFor(() => expect(text(page.container)).toContain(ru.catalog.items.empty));
+    await waitFor(() => expect(text(page.container)).toContain('Kitchen'));
 
-    const itemPanel = page.container.querySelector('section section');
-    expect(itemPanel).not.toBeNull();
-    const inputs = itemPanel!.querySelectorAll('input');
+    await click(buttonByText(page.container, ru.catalogMenu.actions.new));
+    await click(buttonByText(page.container, ru.catalogMenu.actions.newItem));
+    const modal = page.container.querySelector('.fixed');
+    expect(modal).not.toBeNull();
+    const inputs = modal!.querySelectorAll('input');
     await change(inputs[0], 'Coffee');
     await change(inputs[1], 'COF');
     await change(inputs[2], 'portion');
-    await click(buttonByText(itemPanel!, ru.catalog.items.actions.create));
-    await click(buttonByText(itemPanel!, ru.catalog.items.actions.create));
+    await click(buttonByText(modal!, ru.catalog.items.actions.create));
+    await click(buttonByText(modal!, ru.catalog.items.actions.create));
 
     await waitFor(() => {
       expect(api.callsFor('/master-data/catalog/items', 'POST')).toHaveLength(1);
@@ -121,6 +123,37 @@ describe('CatalogPage page integration', () => {
       name: 'Coffee',
       sku: 'COF',
       base_unit: 'portion',
+    });
+
+    await page.cleanup();
+  });
+
+  it('loads restaurant menu categories for menu-only tree without mocks', async () => {
+    installFetchMock([
+      { path: `/master-data/catalog/items?restaurant_id=${restaurantId}`, responder: () => [catalogItem()] },
+      { path: `/master-data/catalog/folders?restaurant_id=${restaurantId}`, responder: () => [catalogFolder()] },
+      { path: `/master-data/catalog/tags?restaurant_id=${restaurantId}`, responder: () => [] },
+      { path: `/master-data/menu/items?restaurant_id=${restaurantId}`, responder: () => [menuItem({ category_id: 'category-tickets' })] },
+      {
+        path: `/master-data/menu/categories?restaurant_id=${restaurantId}`,
+        responder: () => [{
+          id: 'category-tickets',
+          restaurant_id: restaurantId,
+          name: 'Tickets',
+          status: 'published',
+          sort_order: 10,
+          created_at: '2026-06-01T10:00:00Z',
+          updated_at: '2026-06-01T10:00:00Z',
+        }],
+      },
+    ]);
+
+    const page = await renderPage(<CatalogPage restaurantId={restaurantId} restaurantCurrency="RUB" />);
+    await waitFor(() => expect(text(page.container)).toContain(ru.catalogMenu.saleState.forSale));
+    await click(buttonByText(page.container, ru.catalogMenu.modes.menu));
+    await waitFor(() => {
+      expect(text(page.container)).toContain('Tickets');
+      expect(text(page.container)).toContain('Tea service');
     });
 
     await page.cleanup();

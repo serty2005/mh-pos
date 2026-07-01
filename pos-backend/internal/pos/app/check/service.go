@@ -34,6 +34,8 @@ type PrintInput struct {
 	RestaurantID string
 	CheckID      string
 	PrecheckID   string
+	SalesPointID string
+	SectionID    string
 	TicketIDs    []string
 	Now          time.Time
 }
@@ -44,23 +46,32 @@ const (
 
 	defaultFinancialOperationsLimit = 50
 	maxFinancialOperationsLimit     = 200
+
+	printConfirmationPoll = 100 * time.Millisecond
 )
 
 type Service struct {
-	repo    ports.Repository
-	tx      txmanager.Manager
-	ids     idgen.Generator
-	clock   clock.Clock
-	tickets ticketIssuer
-	prints  printEnqueuer
+	repo                  ports.Repository
+	tx                    txmanager.Manager
+	ids                   idgen.Generator
+	clock                 clock.Clock
+	tickets               ticketIssuer
+	prints                printEnqueuer
+	printConfirmationWait time.Duration
 }
 
 func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, tickets ticketIssuer) *Service {
-	return NewServiceWithOptions(repo, tx, ids, clock, tickets, nil)
+	return NewServiceWithOptions(repo, tx, ids, clock, tickets, nil, 0)
 }
 
-func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, tickets ticketIssuer, prints printEnqueuer) *Service {
-	return &Service{repo: repo, tx: tx, ids: ids, clock: clock, tickets: tickets, prints: prints}
+// NewServiceWithOptions создает check service. printConfirmationWait задает bounded
+// HTTP-side wait после CapturePayment в ожидании print_confirmed_at (см.
+// waitForPrintConfirmation): <= 0 значит "проверить статус один раз и вернуть сразу" —
+// такое поведение нужно unit-тестам, где print worker не крутится параллельно и реальное
+// ожидание никогда бы не подтвердилось. Production-значение (несколько секунд) задается
+// явно в cmd/pos-edge при сборке сервиса.
+func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, tickets ticketIssuer, prints printEnqueuer, printConfirmationWait time.Duration) *Service {
+	return &Service{repo: repo, tx: tx, ids: ids, clock: clock, tickets: tickets, prints: prints, printConfirmationWait: printConfirmationWait}
 }
 
 type CapturePaymentCommand struct {
@@ -290,6 +301,7 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 	}
 	now := s.clock.Now()
 	var payment *domain.Payment
+	var closedCheckID string
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := shared.EnsureCommandNotProcessed(ctx, s.repo, cmd.CommandID); err != nil {
 			return err
@@ -302,6 +314,10 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 			return err
 		}
 		order, err := s.repo.GetOrder(ctx, precheck.OrderID)
+		if err != nil {
+			return err
+		}
+		orderTable, err := s.repo.GetTable(ctx, order.TableID)
 		if err != nil {
 			return err
 		}
@@ -439,6 +455,7 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 		if err := s.repo.CreateCheck(ctx, check); err != nil {
 			return err
 		}
+		closedCheckID = check.ID
 		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, paymentShiftID, "Check", check.ID, "CheckCreated", check); err != nil {
 			return err
 		}
@@ -488,6 +505,8 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 				RestaurantID: order.RestaurantID,
 				CheckID:      check.ID,
 				PrecheckID:   precheck.ID,
+				SalesPointID: cashSession.SalesPointID,
+				SectionID:    orderTable.SectionID,
 				TicketIDs:    ticketIDs,
 				Now:          now,
 			}); err != nil {
@@ -496,7 +515,97 @@ func (s *Service) CapturePayment(ctx context.Context, cmd CapturePaymentCommand)
 		}
 		return nil
 	})
-	return payment, err
+	if err != nil || payment == nil || closedCheckID == "" {
+		return payment, err
+	}
+	confirmation, waitErr := s.waitForPrintConfirmation(ctx, closedCheckID, s.printConfirmationWait)
+	if waitErr != nil {
+		return nil, waitErr
+	}
+	payment.PrintConfirmation = confirmation
+	return payment, nil
+}
+
+func (s *Service) GetPrintConfirmationAsOperator(ctx context.Context, checkID string, meta shared.CommandMeta) (*domain.PrintConfirmation, error) {
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionCheckView))
+	if err != nil {
+		return nil, err
+	}
+	check, err := s.repo.GetCheck(ctx, strings.TrimSpace(checkID))
+	if err != nil {
+		return nil, err
+	}
+	order, err := s.repo.GetOrder(ctx, check.OrderID)
+	if err != nil {
+		return nil, err
+	}
+	if order.RestaurantID != operator.Employee.RestaurantID {
+		return nil, fmt.Errorf("%w: check is outside operator restaurant", domain.ErrForbidden)
+	}
+	return s.printConfirmation(ctx, check)
+}
+
+func (s *Service) waitForPrintConfirmation(ctx context.Context, checkID string, timeout time.Duration) (*domain.PrintConfirmation, error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		check, err := s.repo.GetCheck(ctx, checkID)
+		if err != nil {
+			return nil, err
+		}
+		confirmation, err := s.printConfirmation(ctx, check)
+		if err != nil {
+			return nil, err
+		}
+		if confirmation.Confirmed || timeout <= 0 || !confirmationHasPendingTargets(confirmation) || time.Now().After(deadline) {
+			return confirmation, nil
+		}
+		timer := time.NewTimer(printConfirmationPoll)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func confirmationHasPendingTargets(confirmation *domain.PrintConfirmation) bool {
+	for _, target := range confirmation.Targets {
+		if target.Status == "pending" || target.Status == "processing" {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) printConfirmation(ctx context.Context, check *domain.Check) (*domain.PrintConfirmation, error) {
+	targets, err := s.repo.ListPrintJobTargetsForCheck(ctx, check.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := &domain.PrintConfirmation{
+		CheckID:     check.ID,
+		Confirmed:   check.PrintConfirmedAt != nil,
+		ConfirmedAt: check.PrintConfirmedAt,
+		Targets:     make([]domain.PrintConfirmationTarget, 0, len(targets)),
+	}
+	for _, target := range targets {
+		out.Targets = append(out.Targets, domain.PrintConfirmationTarget{
+			ID:            target.ID,
+			PrintJobID:    target.PrintJobID,
+			PrinterID:     target.PrinterID,
+			ScopeType:     target.ScopeType,
+			ScopeID:       target.ScopeID,
+			Status:        string(target.Status),
+			Attempts:      target.Attempts,
+			MaxAttempts:   target.MaxAttempts,
+			IsRequired:    target.IsRequired,
+			LastError:     target.LastError,
+			NextAttemptAt: target.NextAttemptAt,
+			PrintedAt:     target.PrintedAt,
+		})
+	}
+	return out, nil
 }
 
 func (s *Service) ReprintCheck(ctx context.Context, cmd ReprintCheckCommand) (*domain.ReprintDocument, error) {

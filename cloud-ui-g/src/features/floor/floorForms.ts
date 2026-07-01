@@ -11,6 +11,7 @@ export type HallUpdateFormValues = HallFormValues & {
 
 export type TableFormValues = {
   hall_id: string;
+  section_id: string;
   name: string;
   seats: number;
   status: LifecycleStatus;
@@ -27,6 +28,7 @@ export const defaultHallUpdateValues: HallUpdateFormValues = {
 
 export const defaultTableValues: TableFormValues = {
   hall_id: '',
+  section_id: '',
   name: '',
   seats: 2,
   status: 'published',
@@ -52,6 +54,7 @@ export function buildUpdateHallPayload(values: HallUpdateFormValues) {
 export function buildCreateTablePayload(values: TableFormValues) {
   return {
     hall_id: values.hall_id,
+    section_id: values.section_id,
     name: values.name.trim(),
     seats: normalizeSeats(values.seats),
   };
@@ -60,6 +63,7 @@ export function buildCreateTablePayload(values: TableFormValues) {
 export function buildUpdateTablePayload(values: TableFormValues) {
   return {
     hall_id: values.hall_id,
+    section_id: values.section_id,
     name: values.name.trim(),
     seats: normalizeSeats(values.seats),
     status: values.status,
@@ -76,6 +80,7 @@ export function toHallValues(hall: Hall): HallUpdateFormValues {
 export function toTableValues(table: RestaurantTable): TableFormValues {
   return {
     hall_id: table.hall_id,
+    section_id: table.section_id,
     name: table.name,
     seats: table.seats,
     status: table.status,

@@ -57,6 +57,32 @@ ORDER BY name ASC, id ASC`, strings.TrimSpace(restaurantID), string(documentType
 	return out, normalizeErr(rows.Err())
 }
 
+func (r *Repository) ListAllReceiptPrinters(ctx context.Context, restaurantID string) ([]receipt.Printer, error) {
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT id,restaurant_id,name,type,address,port,document_types,codepage,paper_cut_type,cpl,is_active,cloud_version
+FROM receipt_printers
+WHERE restaurant_id = ? AND is_active = 1
+ORDER BY name ASC, id ASC`, strings.TrimSpace(restaurantID))
+	if err != nil {
+		return nil, normalizeErr(err)
+	}
+	defer rows.Close()
+	var out []receipt.Printer
+	for rows.Next() {
+		v, err := scanReceiptPrinter(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *v)
+	}
+	return out, normalizeErr(rows.Err())
+}
+
+func (r *Repository) GetReceiptPrinter(ctx context.Context, id string) (*receipt.Printer, error) {
+	return scanReceiptPrinter(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,restaurant_id,name,type,address,port,document_types,codepage,paper_cut_type,cpl,is_active,cloud_version
+FROM receipt_printers
+WHERE id = ?`, strings.TrimSpace(id)))
+}
+
 func scanReceiptPrinter(row scanner) (*receipt.Printer, error) {
 	var v receipt.Printer
 	var address, codepage, paperCutType sql.NullString

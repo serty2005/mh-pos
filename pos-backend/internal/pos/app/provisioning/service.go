@@ -244,7 +244,10 @@ func (s *Service) PairViaLicense(ctx context.Context, cmd PairViaLicenseCommand)
 func (s *Service) finishAssigned(ctx context.Context, state *domain.EdgeProvisioningState, cloudURL, restaurantID, snapshotURL string, credentials *Credentials) error {
 	now := s.clock.Now()
 	state.Status = domain.ProvisioningAssignedDownloadingSnapshot
-	state.CloudURL = strings.TrimRight(strings.TrimSpace(cloudURL), "/")
+	cloudURL = strings.TrimRight(strings.TrimSpace(cloudURL), "/")
+	if cloudURL != "" {
+		state.CloudURL = cloudURL
+	}
 	state.RestaurantID = strings.TrimSpace(restaurantID)
 	if credentials != nil {
 		state.CredentialsType = credentials.Type

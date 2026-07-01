@@ -2,7 +2,7 @@
 
 Статус: требования первого выставочного запуска согласованы; QR-проверка билетов перенесена в следующий post-deploy цикл.
 
-Дата актуализации: 2026-06-21.
+Дата актуализации: 2026-06-30.
 
 Документ фиксирует выставки как частный случай общей RMS-POS платформы. Отдельный клиентский fork, exhibition-only runtime и hardcoded product profile запрещены. Конечный функционал Cloud и Edge собирается лицензиями.
 
@@ -49,24 +49,26 @@
 - restaurant identity в Edge commands, checks и Cloud sync envelopes;
 - PIN login, roles, permissions, personal shifts и cash sessions;
 - immutable precheck/check snapshots и controlled reprint response;
-- Cloud master-data publication и Edge ingest;
+- автоматическая Cloud -> Edge доставка без manual Publish: packages создаются после Edge assignment/pairing и обновляются после подтвержденных Cloud commits только для назначенных Edge;
 - tenant-level roles/employees, employee restaurant memberships, `organization.manage` и authoritative restaurant scope enforcement;
 - tenant-level catalog identity и restaurant menu overrides для name, price, tag, active tax, menu folder, availability и runtime status;
+- `qr_confirmation_enabled`, auto-derived `single_unit_per_line`, validity modes `cash_session`/`business_date`/`absolute_date`, Cloud UI форма и POS Edge validation quantity > 1;
+- ticket issuance после полной оплаты final check: одна immutable `ticket_units` единица на QR-enabled line, UUIDv7 ticket number, sequence внутри cash shift, QR payload `MHT1:<ticket_number>`, reprint с COPY marker без создания второй единицы;
+- `TicketIssued` Edge -> Cloud принимается как accepted audit; operational sales projection/API остается `POS-40`;
+- нефискальная physical ESC/POS печать `precheck` и `ticket` через Edge print queue/worker, Cloud-owned receipt templates и Cloud-owned printer config stream; clean-stack стенд 2026-06-28 отправил оба документа на TCP-принтер `10.25.1.201:9100`, оператор подтвердил выход двух чеков;
+- Cloud route-backed `receipt-templates` editor с live SVG preview и `printers` management в `cloud-ui-g`;
 - Edge outbox, Cloud event receive, PostgreSQL operational storage и async ClickHouse export;
 - bounded OLAP foundation и Cloud dashboard shell;
-- внешний License Server как authority для versioned entitlement snapshots, stale grace и backend gates реализованных table/kitchen/warehouse surfaces;
+- внешний License Server как authority для versioned entitlement snapshots, canonical module toggles/presets, stale grace и backend gates реализованных `cloud-subscription`/`table-mode`/`kitchen-space`/`warehouse-mode`/`ticket-mode` surfaces;
 - Edge pairing через License Server.
 
 ### 3.2. Не реализовано и обязательно до запуска
 
-- автоматическая сборка Edge batch после Cloud changes и удаления ручного publish flow;
-- `qr_confirmation_enabled`, `single_unit_per_line`, validity и ticket issuance;
-- физическая ESC/POS-очередь, драйверы, шаблоны, delivery status и retries;
 - реальные sales/ticket projections и KPI главной Cloud-бэкофиса;
 - restaurant-level Telegram settings, безопасный recipient onboarding и worker;
-- production deployment, backup/restore и hardware acceptance.
+- production deployment smoke, backup/restore rehearsal и финальная hardware acceptance.
 
-Текущие reprint endpoints возвращают snapshot и audit result, но не управляют физическим принтером. License gates для будущих waiter/telegram/ticket-checker runtime добавляются вместе с соответствующими backend-discriminated routes/workers. Telegram runtime отсутствует.
+Остающийся print-risk: после исправления ESC/POS/SVG renderer для крупного `{f:double}` текста на 48CPL требуется повторное визуальное подтверждение ticket на реальном принтере. License gates для будущих waiter/telegram runtime добавляются вместе с соответствующими backend-discriminated routes/workers. Telegram runtime отсутствует.
 
 ## 4. Организация, рестораны и master data
 
@@ -84,7 +86,7 @@ Tenant владеет:
 - меню и menu item overrides;
 - залами, столами, секциями и устройствами, если модуль включен;
 - сменами, заказами, продажами и печатными заданиями;
-- настройками Telegram-отчетов;
+- настройками Telegram-отчетов после реализации `POS-63`;
 - restaurant-scoped analytics.
 
 Текущие обязательные `restaurant_id` в catalog, roles и employees являются migration gap. До первого клиента active pre-pilot baseline меняется программно при startup согласно общей migration policy.
@@ -107,6 +109,17 @@ Restaurant override не изменяет catalog item и другие меню.
 Изменение effective menu/catalog data автоматически становится доступно подключенным Edge на ближайшей плановой синхронизации. Без подключенных Edge Cloud не копит delivery packages. При первом подключении batch собирается из актуального tenant/restaurant state. Менеджер не видит и не выполняет Publish action.
 
 Категория билета для аналитики должна иметь стабильную identity. До реализации нужно использовать явное поле/справочник, а не выводить категорию из названия, папки или произвольного тега.
+
+Cloud UI целевой flow:
+
+- раздел называется `Каталог и меню` и доступен до создания/выбора ресторана;
+- без выбранного ресторана менеджер заранее заполняет общий tenant catalog: папки каталога, позиции, services и tags;
+- после создания и выбора ресторана тот же раздел показывает tenant catalog с restaurant menu overlay;
+- позиции catalog item, выставленные на продажу в выбранном ресторане, подсвечиваются как `выставлено на продажу` и показывают menu item overrides;
+- `Только каталог` является режимом по умолчанию и строит иерархию по `catalog_folders`;
+- `Только меню` доступен при выбранном ресторане и строит иерархию по restaurant menu categories;
+- menu category является папкой ресторанного меню, а не папкой общего catalog;
+- все create/edit формы для catalog folders/items, menu categories/items и tags открываются как modal dialogs.
 
 ## 6. Сотрудники, роли и доступ к ресторанам
 
@@ -236,16 +249,16 @@ License Server является внешним authority для tenant/server en
 
 До допуска клиента обязательны:
 
-- tenant catalog и restaurant menu overrides;
-- автоматическая Cloud -> Edge доставка без ручной публикации и без накопления packages до подключения Edge;
-- tenant roles/employees, memberships и `organization.manage`;
-- продажа QR-enabled service с `single_unit_per_line`;
-- неизменяемый ticket number, validity snapshot и QR;
-- реальная печать нефискального чека и билета через оба целевых ESC/POS connection modes;
+- tenant catalog и restaurant menu overrides — реализовано сейчас, требуется smoke на целевых данных;
+- автоматическая Cloud -> Edge доставка без ручной публикации и без накопления packages до подключения Edge — реализовано сейчас, требуется go/no-go smoke;
+- tenant roles/employees, memberships и `organization.manage` — реализовано сейчас, требуется go/no-go smoke;
+- продажа QR-enabled service с `single_unit_per_line` — реализовано сейчас;
+- неизменяемый ticket number, validity snapshot и QR — реализовано сейчас;
+- реальная печать нефискального чека и билета через целевой ESC/POS TCP-принтер — реализовано сейчас; Windows USB и повторное визуальное подтверждение ticket после `{f:double}` fix остаются acceptance gate;
 - безопасный retry/reprint без duplicate ticket;
 - Cloud sales projections и dashboard reconciliation;
 - Telegram schedule и cash-shift-close delivery;
-- enforcement всех назначенных licenses на UI и backend;
+- enforcement всех назначенных licenses на UI и backend — canonical flow `POS-95` в `Review`;
 - stale grace/fail-closed smoke;
 - backup/restore rehearsal и client acceptance comment в Plane.
 
@@ -269,16 +282,14 @@ QR lookup/confirm не является критерием первого зап
 
 Активный цикл первого запуска содержит:
 
-- `POS-36`/`POS-46` — актуализацию требований, Plane и public page;
-- `POS-62` — tenant catalog и restaurant menu overrides;
-- `POS-61` — tenant roles/employees и restaurant memberships;
-- `POS-65` — automatic Cloud -> Edge delivery без manual Publish;
-- `POS-48`/`POS-52` — ticket issuance, QR, validity и single-unit-per-line без checker flow;
-- `POS-64` — ESC/POS subsystem и реальные шаблоны;
-- `POS-40`/`POS-41` — sales projections и главную Cloud-аналитику;
-- `POS-63` — Telegram reports;
-- `POS-42` — external licensing и module gates;
-- deployment, backup, smoke и go/no-go.
+- `POS-36` — requirements sync в `Review`; `POS-46` — финальная синхронизация Git/Plane/public page, `Ready`;
+- `POS-61`/`POS-62`/`POS-65`/`POS-48`/`POS-52`/`POS-53`/`POS-42` — `Done`;
+- `POS-64` — umbrella physical printing, `Ready`; дочерние `POS-68…74`, `POS-81…84` — `Done`, `POS-67`/`POS-80` — `Review`;
+- `POS-40` — sales projections API, `Ready`; `POS-41` — главная Cloud-аналитика, `Specified`;
+- `POS-63` — Telegram reports, `Ready`;
+- `POS-43`/`POS-44`/`POS-45` — deployment, backup/restore и E2E go/no-go, `Specified`;
+- `POS-91`/`POS-95` — найденные UI/license blockers из ручного аудита, `Review`;
+- `POS-92`/`POS-93`/`POS-94` — Cloud raw forms, guided setup и accessibility cleanup, `Specified`.
 
 QR checker, relay, usage/revoke events и device enrollment исключаются из активного цикла и переносятся в следующий post-deploy cycle без удаления истории задач.
 

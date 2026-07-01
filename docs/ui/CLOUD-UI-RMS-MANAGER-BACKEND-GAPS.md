@@ -10,11 +10,17 @@
 
 - Выбор ресторана, CRUD ресторанов и route-backed разделы master-data доступны в `cloud-ui-g`.
 - Каталог, меню, модификаторы, цены/налоги, роли/сотрудники, залы/столы, публикации master-data и базовая привязка Edge используют существующие Cloud API.
+- Раздельный пользовательский опыт Catalog/Menu в `cloud-ui-g` заменен единым разделом `Каталог и меню`; tenant catalog доступен без выбранного ресторана, а выбранный ресторан добавляет menu overlay.
+- Menu categories имеют backend lifecycle для режима `Только меню`: `GET /master-data/menu/categories?restaurant_id=...`, `PATCH /master-data/menu/categories/{id}` и `POST /master-data/menu/categories/{id}/archive`.
 - Экран Edge sync различает server-owned pending устройства и restaurant-owned assigned Edge nodes через `GET /devices/unassigned` и `GET /restaurants/{restaurant_id}/devices`; sync log фильтруется по выбранному устройству.
 - UI не копирует моковые симуляторы продаж, терминалов, склада и stop-list из референса.
 
 ## запланировано далее
 
+- Catalog/Menu:
+  - расширить toolbar единого раздела `Каталог и меню` фильтрами, tags filter, настройками вида и delivery status;
+  - подсветка `выставлено на продажу` цветом ресторана остается хотелкой до появления стабильного restaurant color/accent DTO;
+  - destructive/support actions в context menu остаются запрещены до отдельного backend RBAC/idempotency/audit contract.
 - Stop-list:
   - list active stop-list entries по ресторану;
   - create/update/deactivate entry;

@@ -12,7 +12,6 @@ import DashboardPage from '../features/dashboard/DashboardPage';
 import PublicationPanel from '../features/publications/PublicationPanel';
 import EdgeSyncPage from '../features/edge/EdgeSyncPage';
 import CatalogPage from '../features/catalog/CatalogPage';
-import MenuPage from '../features/menu/MenuPage';
 import ModifiersPage from '../features/modifiers/ModifiersPage';
 import PricingPage from '../features/pricing/PricingPage';
 import StaffPage from '../features/staff/StaffPage';
@@ -149,11 +148,7 @@ export default function CloudManagerApp() {
           ) : null}
 
           {activeRouteId === 'catalog' ? (
-            <CatalogPage />
-          ) : null}
-
-          {activeRouteId === 'menu' && isRestaurantSelected ? (
-            <MenuPage restaurantId={selectedRestaurantId} restaurantCurrency={selectedRestaurant?.currency ?? 'RUB'} />
+            <CatalogPage restaurantId={selectedRestaurantId} restaurantCurrency={selectedRestaurant?.currency ?? 'RUB'} />
           ) : null}
 
           {activeRouteId === 'modifiers' && isRestaurantSelected ? (
@@ -180,7 +175,7 @@ export default function CloudManagerApp() {
             <PrintersPage restaurantId={selectedRestaurantId} />
           ) : null}
 
-          {activeRouteId !== 'dashboard' && activeRouteId !== 'restaurants' && activeRouteId !== 'licenses' && activeRouteId !== 'publications' && activeRouteId !== 'edge-sync' && activeRouteId !== 'catalog' && activeRouteId !== 'menu' && activeRouteId !== 'modifiers' && activeRouteId !== 'pricing-taxes' && activeRouteId !== 'staff-permissions' && activeRouteId !== 'floor' && activeRouteId !== 'receipt-templates' && activeRouteId !== 'printers' && isRestaurantSelected ? (
+          {activeRouteId !== 'dashboard' && activeRouteId !== 'restaurants' && activeRouteId !== 'licenses' && activeRouteId !== 'publications' && activeRouteId !== 'edge-sync' && activeRouteId !== 'catalog' && activeRouteId !== 'modifiers' && activeRouteId !== 'pricing-taxes' && activeRouteId !== 'staff-permissions' && activeRouteId !== 'floor' && activeRouteId !== 'receipt-templates' && activeRouteId !== 'printers' && isRestaurantSelected ? (
             <section className="rounded-2xl border border-slate-200 bg-white p-6">
               <h3 className="text-base font-semibold text-slate-900">{t(activeItem.labelKey)}</h3>
               <p className="mt-1 text-sm text-slate-600">{t('sections.blocked')}</p>

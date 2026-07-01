@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"time"
 
 	"pos-backend/internal/pos/domain/ticket"
 )
@@ -15,4 +16,7 @@ type TicketRepository interface {
 	ListTicketUnitsByCheck(context.Context, string) ([]ticket.TicketUnit, error)
 	// NextTicketCashShiftSequence возвращает следующий порядковый номер билета внутри кассовой смены.
 	NextTicketCashShiftSequence(context.Context, string) (int64, error)
+	// VoidTicketUnitsByCheck помечает все active билеты чека как voided (cancel-unconfirmed
+	// flow); физически не удаляет билеты, только закрывает их для будущего checker/redemption.
+	VoidTicketUnitsByCheck(context.Context, string, time.Time) error
 }

@@ -34,6 +34,9 @@ const (
 	// PrintStatusPending — билет выпущен, но физическая печать выполняется отдельной print subsystem (POS-64).
 	PrintStatusPending = "pending"
 
+	TicketStatusActive = "active"
+	TicketStatusVoided = "voided"
+
 	// QRPayloadPrefix — версионный префикс QR payload. Checker (post-deploy QR lookup) парсит
 	// уникальный ticket number из payload; PIN/token/payment-sensitive данные не включаются.
 	QRPayloadPrefix = "MHT1:"
@@ -61,6 +64,7 @@ type TicketUnit struct {
 	CashShiftSequence int64           `json:"cash_shift_sequence"`
 	QRPayload         string          `json:"qr_payload"`
 	PrintStatus       string          `json:"print_status"`
+	Status            string          `json:"status"`
 	Snapshot          json.RawMessage `json:"snapshot,omitempty"`
 	CreatedAt         time.Time       `json:"created_at"`
 	UpdatedAt         time.Time       `json:"updated_at"`

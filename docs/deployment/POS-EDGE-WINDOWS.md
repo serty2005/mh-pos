@@ -54,7 +54,7 @@ scripts/package-pos-edge-windows.sh /tmp/pos-edge-windows
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\build-pos-edge-installer.ps1 `
-  -Version "0.1.9" `
+  -Version "0.1.10" `
   -Arch "amd64" `
   -PosHttpPort 8080 `
   -LicenseServerUrl "https://license.example.com" `
@@ -67,7 +67,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 ```powershell
 .\scripts\build-pos-edge-installer.ps1 `
-  -Version "0.1.9" `
+  -Version "0.1.10" `
   -Arch "386" `
   -PosHttpPort 8080 `
   -LicenseServerUrl "https://license.example.com" `
@@ -78,7 +78,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 ```powershell
 .\scripts\build-pos-edge-installer.ps1 `
-  -Version "0.1.9" `
+  -Version "0.1.10" `
   -Arch "amd64" `
   -PosHttpPort 8080 `
   -LicenseServerUrl "https://license.example.com" `
@@ -86,7 +86,7 @@ Set-ExecutionPolicy -Scope Process Bypass
   -WebWallpaperExe "C:\tools\gowebwallpaper.exe"
 ```
 
-Результат: `dist\pos-edge-installer\myhoreca-pos-edge-0.1.9-amd64-setup.exe`.
+Результат: `dist\pos-edge-installer\myhoreca-pos-edge-0.1.10-amd64-setup.exe`.
 
 ## Запуск на Windows
 

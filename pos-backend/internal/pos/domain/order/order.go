@@ -54,6 +54,7 @@ type Order struct {
 	Total         int64        `json:"total"`
 	OpenedAt      time.Time    `json:"opened_at"`
 	ClosedAt      *time.Time   `json:"closed_at,omitempty"`
+	CancelledAt   *time.Time   `json:"cancelled_at,omitempty"`
 	CreatedAt     time.Time    `json:"created_at"`
 	UpdatedAt     time.Time    `json:"updated_at"`
 	Lines         []OrderLine  `json:"lines,omitempty"`

@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "plane-myhoreca-pos": {
+      "type": "stdio",
+      "command": "/home/master/repos/myhoreca-pos/tools/plane-mcp/run-stdio.sh"
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "/usr/sbin/npx",
+      "args": ["@playwright/mcp", "--headless", "--no-sandbox"]
+    },
+    "codegraph": {
+      "type": "stdio",
+      "command": "/usr/local/sbin/codegraph",
+      "args": ["serve", "--mcp", "--path", "/home/master/repos/myhoreca-pos"]
+    }
+  }
+}

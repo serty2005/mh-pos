@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"time"
+
 	"pos-backend/internal/pos/domain"
 )
 
@@ -18,8 +20,8 @@ func (r *Repository) CreateCheck(ctx context.Context, v *domain.Check) error {
 	if v.RemainingTotal == 0 && v.Total >= v.PaidTotal {
 		v.RemainingTotal = v.Total - v.PaidTotal
 	}
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO checks(id,order_id,status,currency_code,subtotal,discount_total,surcharge_total,tax_total,total,paid_total,remaining_total,business_date_local,closed_at,snapshot,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.OrderID, string(v.Status), v.CurrencyCode, v.Subtotal, v.DiscountTotal, v.SurchargeTotal, v.TaxTotal, v.Total, v.PaidTotal, v.RemainingTotal, v.BusinessDateLocal, dbTime(v.ClosedAt), string(snapshot), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO checks(id,order_id,status,currency_code,subtotal,discount_total,surcharge_total,tax_total,total,paid_total,remaining_total,business_date_local,closed_at,print_confirmed_at,snapshot,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.OrderID, string(v.Status), v.CurrencyCode, v.Subtotal, v.DiscountTotal, v.SurchargeTotal, v.TaxTotal, v.Total, v.PaidTotal, v.RemainingTotal, v.BusinessDateLocal, dbTime(v.ClosedAt), nullableTime(v.PrintConfirmedAt), string(snapshot), dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }
 
@@ -31,22 +33,58 @@ func (r *Repository) GetCheckByOrder(ctx context.Context, orderID string) (*doma
 	return r.scanCheck(r.queryer(ctx).QueryRowContext(ctx, checkSelectSQL+` WHERE order_id = ?`, orderID))
 }
 
+func (r *Repository) MarkCheckPrintConfirmedIfReady(ctx context.Context, checkID string, now time.Time) (bool, error) {
+	res, err := r.execer(ctx).ExecContext(ctx, `UPDATE checks
+SET print_confirmed_at = ?, updated_at = ?
+WHERE id = ?
+  AND print_confirmed_at IS NULL
+  AND EXISTS (
+    SELECT 1 FROM print_jobs j
+    WHERE j.document_type = 'check_nonfiscal'
+      AND j.source_kind = 'check'
+      AND j.source_id = checks.id
+      AND j.status = 'succeeded'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM ticket_units tu
+    WHERE tu.check_id = checks.id
+      AND tu.status = 'active'
+      AND NOT EXISTS (
+        SELECT 1 FROM print_jobs tj
+        WHERE tj.document_type = 'ticket'
+          AND tj.source_kind = 'ticket'
+          AND tj.source_id = tu.id
+          AND tj.status = 'succeeded'
+      )
+  )`, dbTime(now), dbTime(now), checkID)
+	if err != nil {
+		return false, normalizeErr(err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
 func (r *Repository) scanCheck(row *sql.Row) (*domain.Check, error) {
 	var v domain.Check
 	var status, closed, snapshot, created, updated string
-	err := row.Scan(&v.ID, &v.OrderID, &status, &v.CurrencyCode, &v.Subtotal, &v.DiscountTotal, &v.SurchargeTotal, &v.TaxTotal, &v.Total, &v.PaidTotal, &v.RemainingTotal, &v.BusinessDateLocal, &closed, &snapshot, &created, &updated)
+	var printConfirmedAt sql.NullString
+	err := row.Scan(&v.ID, &v.OrderID, &status, &v.CurrencyCode, &v.Subtotal, &v.DiscountTotal, &v.SurchargeTotal, &v.TaxTotal, &v.Total, &v.PaidTotal, &v.RemainingTotal, &v.BusinessDateLocal, &closed, &printConfirmedAt, &snapshot, &created, &updated)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}
 	v.Status = domain.CheckStatus(status)
 	v.ClosedAt = parseTime(closed)
+	if printConfirmedAt.Valid {
+		t := parseTime(printConfirmedAt.String)
+		v.PrintConfirmedAt = &t
+	}
 	v.Snapshot = json.RawMessage(snapshot)
 	v.CreatedAt = parseTime(created)
 	v.UpdatedAt = parseTime(updated)
 	return &v, nil
 }
 
-const checkSelectSQL = `SELECT id,order_id,status,currency_code,subtotal,discount_total,surcharge_total,tax_total,total,paid_total,remaining_total,business_date_local,closed_at,snapshot,created_at,updated_at FROM checks`
+const checkSelectSQL = `SELECT id,order_id,status,currency_code,subtotal,discount_total,surcharge_total,tax_total,total,paid_total,remaining_total,business_date_local,closed_at,print_confirmed_at,snapshot,created_at,updated_at FROM checks`
 
 func (r *Repository) UpdateCheckPaidTotal(ctx context.Context, v *domain.Check) error {
 	_, err := r.execer(ctx).ExecContext(ctx, `UPDATE checks SET status = ?, paid_total = ?, remaining_total = ?, updated_at = ? WHERE id = ?`,

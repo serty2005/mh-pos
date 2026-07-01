@@ -167,7 +167,33 @@ Printers (master-data CRUD, POS-82):
 - `DELETE /api/v1/printers/{id}` — soft-delete (`is_active = false`, `version++`).
 - RBAC: `organization.manage` (permission id `domain.PermissionPrintersManage`). Error contract: `400` (ErrInvalid), `404` (ErrNotFound). Изменения принтеров триггерят Cloud -> Edge delivery refresh через stream `printers`.
 - Поля принтера: `name`, `type` (`tcp|usb`), `address`, `port` (NULL для USB), `document_types` (JSON array: `precheck|check_nonfiscal|ticket|kitchen_service|cash_in_out|acceptance`), `codepage` (`''|cp437|cp866`), `paper_cut_type` (`full|partial`, default `partial`), `cpl` (`32|42|48|56|80`).
-- Запланировано далее: Cloud хранит видимость Edge-originated printer/print-route overrides и audit изменений, но Edge settings применяет такие изменения локально сразу. Схема печати разделяет физический принтер и назначение: `restaurant` для принтера отчетов, `sales_point` для принтера кассы, `section` для сервисных принтеров зала/цеха. Точка продаж принадлежит ресторану, имеет обязательные `name` и `analytics_tag`, а кассовая смена открывается в рамках точки продаж. Для нескольких принтеров одного документа Cloud read model должен показывать per-printer `print_job_targets`, если Edge отправил такие статусы.
+- Запланировано далее (POS-87): Cloud хранит видимость Edge-originated printer/print-route overrides и audit изменений, но Edge settings применяет такие изменения локально сразу.
+- Запланировано далее (ADR-018, `docs/backend/EDGE-HARDWARE-ADAPTER-PROTOCOL.md`): вместо ручного ввода при создании принтера Cloud UI показывает список устройств, обнаруженных Edge-адаптером `windows-printers` (USB PnP + сетевой скан) через новую ephemeral-проекцию `printer_discovery_candidates` (не master data, наполняется из Edge → Cloud external-события `HardwareDeviceDiscovered`); оператор задаёт только имя, CPL, отступы и тип отреза, не видя технических идентификаторов устройства.
+
+Sales points и restaurant sections (master-data CRUD, POS-86):
+
+- `GET/POST/PATCH /api/v1/sales-points`, `POST /api/v1/sales-points/{id}/archive` (и зеркальные
+  `/api/v1/master-data/sales-points` пути) — Cloud-owned точка продаж: обязательные `name`,
+  `analytics_tag`, `default_table_id` (если не передан явно при создании — подставляется
+  бутстрэп-стол ресторана). RBAC `organization.manage`. Нельзя деактивировать последнюю
+  активную точку продаж ресторана (safe error).
+- `GET/POST/PATCH /api/v1/restaurant-sections`, `POST /api/v1/restaurant-sections/{id}/archive`
+  — Cloud-owned секция (`mode = hall_section|kitchen_workshop`). Новая секция создаётся как
+  черновик (`is_active=false`); `hall_section` нельзя активировать без хотя бы одного стола.
+  `is_default` секцию нельзя деактивировать; секцию, где есть стол с `default_table_id`
+  активной точки продаж, тоже нельзя деактивировать.
+- `POST /api/v1/master-data/floor/tables` теперь требует `section_id` (не только `hall_id`,
+  который остаётся опциональным декоративным полем UI-раскладки зала); стол с
+  `is_default=true` или используемый как `default_table_id` точки продаж нельзя архивировать.
+- При `POST /api/v1/restaurants` Cloud безусловно (вне зависимости от лицензии `table-mode`)
+  идемпотентно провижинит одну бутстрэп-секцию (`is_default=1`) и один бутстрэп-стол в ней
+  (`is_default=1`) — без них ни одна оплата на Edge невозможна (`cash_sessions.sales_point_id`
+  обязателен).
+- Mastersync streams `sales_points`, `restaurant_sections` — package содержит все `is_active`
+  строки ресторана; `floor` стрим расширен полем `section_id`/`is_default` в `EdgeTable`.
+- Полная модель маршрутизации печати через `print_routes` (Edge-local), print-confirmation
+  gate и обязательность `sales_point_id` у Edge кассовой сессии — см.
+  `docs/backend/EDGE-PRINT-ROUTING-SPEC.md`.
 
 Receipt preview:
 
@@ -471,7 +497,7 @@ Cloud Approve:
 2. Cloud UI видит незакрепленное устройство через `GET /api/v1/devices/unassigned`.
 3. Оператор назначает устройство ресторану через `POST /api/v1/restaurants/{restaurant_id}/devices/{node_device_id}/assign`.
 4. Cloud создает/обновляет assigned edge node и возвращает snapshot URL.
-5. POS Edge получает assignment status и одноразовый node token.
+5. POS Edge получает assignment status, snapshot URL и одноразовый node token, сохраняя Cloud URL, с которым он уже зарегистрировался.
 
 License Code:
 
@@ -486,7 +512,7 @@ License Code:
 
 - `assign` и `generate-pairing-code` требуют active restaurant.
 - Node token хранится в Cloud как hash/verifier, а не как plaintext.
-- `assignment-status` после assigned выдает credentials для Edge provisioning только если token еще не был выдан. Повторная проверка статуса не ротирует существующий `credentials_hash` и не возвращает plaintext token.
+- `assignment-status` после ручного assigned не возвращает `cloud_url`: Cloud не должен переопределять адрес, который Edge уже использует для polling. Credentials для Edge provisioning выдаются только если token еще не был выдан. Повторная проверка статуса не ротирует существующий `credentials_hash` и не возвращает plaintext token.
 - `generate-pairing-code` не назначает устройство и не выпускает node token; token выдается только на successful encrypted consume.
 - Активным может быть только один pairing code на ресторан; новый код ревокает предыдущий active code.
 - License Server недоступен: Cloud возвращает `503 LICENSE_SERVER_UNAVAILABLE`.

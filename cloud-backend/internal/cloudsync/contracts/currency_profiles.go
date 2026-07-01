@@ -90,6 +90,10 @@ func ValidateMasterDataPayload(streamName string, payload json.RawMessage) error
 		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "receipt_templates"}, []string{"receipt_templates"})
 	case MasterDataStreamPrinters:
 		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "printers"}, []string{"printers"})
+	case MasterDataStreamSalesPoints:
+		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "sales_points"}, []string{"sales_points"})
+	case MasterDataStreamSections:
+		return validateMasterDataObjectPayload(streamName, payload, []string{"node_device_id", "restaurant_id", "sync_mode", "checkpoint_token", "cloud_version", "cloud_updated_at", "restaurant_sections"}, []string{"restaurant_sections"})
 	default:
 		return nil
 	}

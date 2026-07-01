@@ -3,7 +3,7 @@ package version
 import "testing"
 
 func TestDefaultProductVersionBumpsPOSRuntimeAfterBaselineChange(t *testing.T) {
-	if DefaultProductVersion != "0.1.9" {
-		t.Fatalf("expected POS runtime version 0.1.9 after receipt_printers baseline change, got %s", DefaultProductVersion)
+	if DefaultProductVersion != "0.1.11" {
+		t.Fatalf("expected POS runtime version 0.1.11 after POS-86 print routing baseline change, got %s", DefaultProductVersion)
 	}
 }

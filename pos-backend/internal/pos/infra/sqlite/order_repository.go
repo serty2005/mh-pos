@@ -14,21 +14,21 @@ type scanner interface {
 }
 
 func (r *Repository) CreateOrder(ctx context.Context, v *domain.Order) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO orders(id,edge_order_id,restaurant_id,device_id,shift_id,status,table_id,table_name,guest_count,opened_at,closed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.EdgeOrderID, v.RestaurantID, v.DeviceID, v.ShiftID, string(v.Status), v.TableID, v.TableName, v.GuestCount, dbTime(v.OpenedAt), nil, dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO orders(id,edge_order_id,restaurant_id,device_id,shift_id,status,table_id,table_name,guest_count,opened_at,closed_at,cancelled_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.EdgeOrderID, v.RestaurantID, v.DeviceID, v.ShiftID, string(v.Status), v.TableID, v.TableName, v.GuestCount, dbTime(v.OpenedAt), nil, nil, dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }
 
 func (r *Repository) GetOrder(ctx context.Context, id string) (*domain.Order, error) {
-	return r.scanOrder(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,edge_order_id,restaurant_id,device_id,shift_id,status,table_id,table_name,guest_count,opened_at,closed_at,created_at,updated_at FROM orders WHERE id = ?`, id))
+	return r.scanOrder(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,edge_order_id,restaurant_id,device_id,shift_id,status,table_id,table_name,guest_count,opened_at,closed_at,cancelled_at,created_at,updated_at FROM orders WHERE id = ?`, id))
 }
 
 func (r *Repository) GetActiveOrderByDeviceAndTable(ctx context.Context, deviceID, tableID string) (*domain.Order, error) {
-	return r.scanOrder(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,edge_order_id,restaurant_id,device_id,shift_id,status,table_id,table_name,guest_count,opened_at,closed_at,created_at,updated_at FROM orders WHERE device_id = ? AND table_id = ? AND status IN ('open','locked') ORDER BY opened_at DESC LIMIT 1`, deviceID, tableID))
+	return r.scanOrder(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,edge_order_id,restaurant_id,device_id,shift_id,status,table_id,table_name,guest_count,opened_at,closed_at,cancelled_at,created_at,updated_at FROM orders WHERE device_id = ? AND table_id = ? AND status IN ('open','locked') ORDER BY opened_at DESC LIMIT 1`, deviceID, tableID))
 }
 
 func (r *Repository) ListActiveOrdersByRestaurantAndHall(ctx context.Context, restaurantID, hallID string) ([]domain.Order, error) {
-	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT o.id,o.edge_order_id,o.restaurant_id,o.device_id,o.shift_id,o.status,o.table_id,o.table_name,o.guest_count,o.opened_at,o.closed_at,o.created_at,o.updated_at FROM orders o JOIN tables t ON t.id = o.table_id WHERE o.restaurant_id = ? AND t.restaurant_id = ? AND t.hall_id = ? AND o.status IN ('open','locked') ORDER BY o.opened_at`, restaurantID, restaurantID, hallID)
+	rows, err := r.queryer(ctx).QueryContext(ctx, `SELECT o.id,o.edge_order_id,o.restaurant_id,o.device_id,o.shift_id,o.status,o.table_id,o.table_name,o.guest_count,o.opened_at,o.closed_at,o.cancelled_at,o.created_at,o.updated_at FROM orders o JOIN tables t ON t.id = o.table_id WHERE o.restaurant_id = ? AND t.restaurant_id = ? AND t.hall_id = ? AND o.status IN ('open','locked') ORDER BY o.opened_at`, restaurantID, restaurantID, hallID)
 	if err != nil {
 		return nil, err
 	}
@@ -51,8 +51,8 @@ func (r *Repository) scanOrder(row scanner) (*domain.Order, error) {
 func scanOrderRows(row scanner) (*domain.Order, error) {
 	var v domain.Order
 	var status, opened, created, updated string
-	var closed sql.NullString
-	if err := row.Scan(&v.ID, &v.EdgeOrderID, &v.RestaurantID, &v.DeviceID, &v.ShiftID, &status, &v.TableID, &v.TableName, &v.GuestCount, &opened, &closed, &created, &updated); err != nil {
+	var closed, cancelled sql.NullString
+	if err := row.Scan(&v.ID, &v.EdgeOrderID, &v.RestaurantID, &v.DeviceID, &v.ShiftID, &status, &v.TableID, &v.TableName, &v.GuestCount, &opened, &closed, &cancelled, &created, &updated); err != nil {
 		return nil, normalizeErr(err)
 	}
 	v.Status = domain.OrderStatus(status)
@@ -60,6 +60,10 @@ func scanOrderRows(row scanner) (*domain.Order, error) {
 	if closed.Valid {
 		t := parseTime(closed.String)
 		v.ClosedAt = &t
+	}
+	if cancelled.Valid {
+		t := parseTime(cancelled.String)
+		v.CancelledAt = &t
 	}
 	v.CreatedAt = parseTime(created)
 	v.UpdatedAt = parseTime(updated)
@@ -82,6 +86,17 @@ func (r *Repository) UpdateOrderClosed(ctx context.Context, v *domain.Order) err
 		closedAt = dbTime(*v.ClosedAt)
 	}
 	_, err := r.execer(ctx).ExecContext(ctx, `UPDATE orders SET status = ?, closed_at = ?, updated_at = ? WHERE id = ?`, string(v.Status), closedAt, dbTime(v.UpdatedAt), v.ID)
+	return normalizeErr(err)
+}
+
+// UpdateOrderCancelled переводит заказ в soft-cancel (cancel-unconfirmed flow): заказ
+// остаётся в БД со всей историей событий, но пропадает из активных списков.
+func (r *Repository) UpdateOrderCancelled(ctx context.Context, v *domain.Order) error {
+	var cancelledAt any
+	if v.CancelledAt != nil {
+		cancelledAt = dbTime(*v.CancelledAt)
+	}
+	_, err := r.execer(ctx).ExecContext(ctx, `UPDATE orders SET status = ?, cancelled_at = ?, updated_at = ? WHERE id = ?`, string(v.Status), cancelledAt, dbTime(v.UpdatedAt), v.ID)
 	return normalizeErr(err)
 }
 

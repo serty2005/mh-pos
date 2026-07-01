@@ -103,6 +103,7 @@ func run() error {
 		LicenseGate:                             licenseGate,
 		StorageArchiveDir:                       archiveDir,
 		RecipeSuggestionMaxPrepTimeDeltaMinutes: cfg.Int("POS_RECIPE_SUGGESTION_MAX_TIME_DELTA_MINUTES", 120),
+		PrintConfirmationWait:                   time.Duration(cfg.Int("POS_PRINT_CONFIRMATION_WAIT_SECONDS", 3)) * time.Second,
 		MasterDataBackupBeforeFullSnapshot: func(ctx context.Context, req app.MasterDataBackupRequest) error {
 			_, err := platformsqlite.BackupDatabase(ctx, db, dbPath, backupDir, platformsqlite.BackupOptions{
 				Action:         "backup_before_data_load",

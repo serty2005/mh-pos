@@ -24,14 +24,31 @@ type Service struct {
 	ids     idgen.Generator
 	clock   clock.Clock
 	pricing pricingCalculator
+	prints  printEnqueuer
 }
 
 type pricingCalculator interface {
 	CalculateOrderPricing(context.Context, string) (domainpricing.CalculationResult, error)
 }
 
+type printEnqueuer interface {
+	EnqueuePrecheck(context.Context, PrecheckPrintInput) error
+}
+
+type PrecheckPrintInput struct {
+	Meta         shared.CommandMeta
+	RestaurantID string
+	PrecheckID   string
+	SectionID    string
+	Now          time.Time
+}
+
 func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, pricing pricingCalculator) *Service {
-	return &Service{repo: repo, tx: tx, ids: ids, clock: clock, pricing: pricing}
+	return NewServiceWithOptions(repo, tx, ids, clock, pricing, nil)
+}
+
+func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator, clock clock.Clock, pricing pricingCalculator, prints printEnqueuer) *Service {
+	return &Service{repo: repo, tx: tx, ids: ids, clock: clock, pricing: pricing, prints: prints}
 }
 
 type IssuePrecheckCommand struct {
@@ -152,7 +169,23 @@ func (s *Service) IssuePrecheck(ctx context.Context, cmd IssuePrecheckCommand) (
 		if err := s.repo.UpdateOrderLocked(ctx, order); err != nil {
 			return err
 		}
-		return shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Precheck", precheck.ID, "PrecheckIssued", precheck)
+		if err := shared.WriteOutbox(ctx, s.repo, s.ids, s.clock, cmd.CommandMeta, order.RestaurantID, order.ShiftID, "Precheck", precheck.ID, "PrecheckIssued", precheck); err != nil {
+			return err
+		}
+		if s.prints != nil {
+			table, err := s.repo.GetTable(ctx, order.TableID)
+			if err != nil {
+				return err
+			}
+			return s.prints.EnqueuePrecheck(ctx, PrecheckPrintInput{
+				Meta:         cmd.CommandMeta,
+				RestaurantID: order.RestaurantID,
+				PrecheckID:   precheck.ID,
+				SectionID:    table.SectionID,
+				Now:          now,
+			})
+		}
+		return nil
 	})
 	return precheck, err
 }

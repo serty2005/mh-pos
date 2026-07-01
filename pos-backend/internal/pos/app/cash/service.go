@@ -28,6 +28,7 @@ func NewService(repo ports.Repository, tx txmanager.Manager, ids idgen.Generator
 type OpenCashSessionCommand struct {
 	shared.CommandMeta
 	RestaurantID       string `json:"restaurant_id"`
+	SalesPointID       string `json:"sales_point_id"`
 	OpenedByEmployeeID string `json:"opened_by_employee_id"`
 	OpeningCashAmount  int64  `json:"opening_cash_amount"`
 }
@@ -70,8 +71,8 @@ func (s *Service) OpenCashSession(ctx context.Context, cmd OpenCashSessionComman
 	if err := shared.ValidateWriteMeta(cmd.CommandMeta); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(cmd.RestaurantID) == "" || strings.TrimSpace(cmd.OpenedByEmployeeID) == "" || cmd.OpeningCashAmount < 0 {
-		return nil, fmt.Errorf("%w: restaurant_id, opened_by_employee_id and non-negative opening_cash_amount are required", domain.ErrInvalid)
+	if strings.TrimSpace(cmd.RestaurantID) == "" || strings.TrimSpace(cmd.SalesPointID) == "" || strings.TrimSpace(cmd.OpenedByEmployeeID) == "" || cmd.OpeningCashAmount < 0 {
+		return nil, fmt.Errorf("%w: restaurant_id, sales_point_id, opened_by_employee_id and non-negative opening_cash_amount are required", domain.ErrInvalid)
 	}
 	now := s.clock.Now()
 	var session *domain.CashSession
@@ -96,6 +97,13 @@ func (s *Service) OpenCashSession(ctx context.Context, cmd OpenCashSessionComman
 		if shift.RestaurantID != cmd.RestaurantID {
 			return fmt.Errorf("%w: restaurant_id does not match open shift", domain.ErrConflict)
 		}
+		salesPoint, err := s.repo.GetSalesPoint(ctx, cmd.SalesPointID)
+		if err != nil {
+			return err
+		}
+		if !salesPoint.IsActive || salesPoint.RestaurantID != shift.RestaurantID {
+			return fmt.Errorf("%w: sales point is not active for restaurant", domain.ErrConflict)
+		}
 		if _, err := s.repo.GetOpenCashSessionByDevice(ctx, cmd.DeviceID); err == nil {
 			return fmt.Errorf("%w: на устройстве уже есть открытая кассовая смена", domain.ErrConflict)
 		} else if !errors.Is(err, domain.ErrNotFound) {
@@ -114,6 +122,7 @@ func (s *Service) OpenCashSession(ctx context.Context, cmd OpenCashSessionComman
 			EdgeCashSessionID:  s.ids.NewID(),
 			RestaurantID:       shift.RestaurantID,
 			DeviceID:           shift.DeviceID,
+			SalesPointID:       salesPoint.ID,
 			ShiftID:            shift.ID,
 			OpenedByEmployeeID: cmd.OpenedByEmployeeID,
 			Status:             domain.CashSessionOpen,

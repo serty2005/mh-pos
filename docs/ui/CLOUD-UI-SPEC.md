@@ -36,8 +36,7 @@
   - `dashboard`;
   - `restaurants`;
   - `edge-sync`;
-  - `catalog`;
-  - `menu`;
+  - `catalog` как единый раздел `Каталог и меню`;
   - `modifiers`;
   - `pricing-taxes`;
   - `staff-permissions`;
@@ -49,8 +48,9 @@
 - Cloud UI читает `GET /api/v1/license/entitlements` и скрывает tenant-level Cloud navigation без `cloud-subscription`, а также `floor`/`inventory`, когда `table-mode`/`warehouse-mode` не разрешены; backend gate остается авторитетным. Раздел лицензий остается видимым для диагностики текущего snapshot. Canonical module IDs описаны в `docs/backend/LICENSE-ENTITLEMENTS.md`.
 - Restaurants раздел управляет restaurant records.
 - Staff/permissions раздел управляет tenant-level POS Edge roles/employees, role assignment, employee restaurant memberships, status, PIN rotation и POS permission profiles/matrix; `organization.manage` отображается как доступ ко всем restaurants без отдельных галок; это не Cloud operator RBAC и не production Cloud authorization boundary.
-- Catalog раздел управляет catalog items, folders, folder parameters, tags и command-only item tag assignment.
-- Menu раздел управляет menu items и command-only menu category create. Реализовано сейчас: форма menu item редактирует restaurant overrides `name`, `price`, `category_id` как menu folder/ticket category identity, `tag_id`, `tax_profile_id`, `availability_json` и `runtime_status` поверх неизменяемой связки `catalog_item_id`/`menu_item_id`.
+- Раздел `Каталог и меню` заменяет раздельный пользовательский опыт Catalog/Menu: без выбранного ресторана работает tenant catalog editor, а при выбранном ресторане показывает restaurant menu overlay поверх catalog tree.
+- `Каталог и меню` управляет catalog items, folders, tags, item tag assignment, menu items и menu categories через modal dialogs. `Только каталог` строит дерево по `catalog_folders`; `Только меню` строит дерево по restaurant `menu categories`.
+- Форма menu item редактирует restaurant overrides `name`, `price`, `category_id`, `tag_id`, `tax_profile_id`, `availability_json` и `runtime_status` поверх неизменяемой связки `catalog_item_id`/`menu_item_id`.
 - Modifiers раздел управляет modifier groups, options и bindings.
 - Pricing/taxes раздел управляет pricing policies и package `pricing_policy` через provisioning route.
 - Floor раздел управляет halls/tables и показывает preview зала.
@@ -99,6 +99,9 @@
 - `PATCH /api/v1/master-data/menu/items/{id}`
 - `POST /api/v1/master-data/menu/items/{id}/archive`
 - `POST /api/v1/master-data/menu/categories`
+- `GET /api/v1/master-data/menu/categories?restaurant_id=...`
+- `PATCH /api/v1/master-data/menu/categories/{id}`
+- `POST /api/v1/master-data/menu/categories/{id}/archive`
 - `GET /api/v1/master-data/modifiers/groups?restaurant_id=...`
 - `POST /api/v1/master-data/modifiers/groups`
 - `PATCH /api/v1/master-data/modifiers/groups/{id}`
@@ -132,6 +135,31 @@
 - `GET /api/v1/restaurants/{id}/master-data/delivery-status`
 
 Реализовано сейчас: Publications раздел read-only. Он читает Cloud version metadata через `publication-state`, а фактические per-Edge ACK version, lag, last sync и safe error code через `delivery-status`; publish API и manual checkpoint отсутствуют.
+
+## Раздел `Каталог и меню`
+
+реализовано сейчас:
+
+- В активном `cloud-ui-g` отдельные navigation entries `catalog` и `menu` заменены одной manager-facing точкой входа `Каталог и меню`.
+- Раздел доступен без выбранного ресторана. В этом состоянии доступны tenant-level catalog folders, catalog items, catalog tags и item tag assignment; restaurant-specific menu actions скрыты или disabled.
+- При выбранном ресторане UI загружает restaurant menu items и накладывает их на catalog tree. Catalog item с menu item выбранного ресторана получает состояние `выставлено на продажу`, а detail panel показывает restaurant overrides: menu item name, price, menu category, tag, tax profile, availability и runtime status.
+- Catalog item без menu item выбранного ресторана получает действие `Выставить на продажу`, которое создает restaurant menu item поверх существующего tenant catalog item.
+- Основной view mode по умолчанию — `Только каталог`: иерархия строится по `catalog_folders`, отображается весь tenant catalog, а позиции меню выбранного ресторана подсвечиваются как overlay.
+- View mode `Только меню` доступен только при выбранном ресторане: иерархия строится по restaurant `menu categories`, а список содержит только позиции, выставленные на продажу в этом ресторане.
+- Над деревом располагается compact toolbar: `+ Новая`, поиск, переключатель режима и refresh. Расширенные фильтры, tags filter, настройки вида и delivery status остаются следующими slice.
+- Все create/edit формы открываются в modal dialog. Inline editing внутри списка/дерева не является целевым паттерном для этого раздела.
+- Правый клик на catalog folders/items и menu categories/items перехватывается сразу через context menu shell. В первом UI slice меню может содержать только безопасные существующие действия и disabled-заготовки для будущих adaptive actions.
+
+Menu categories:
+
+- `catalog folder` группирует tenant catalog items и не зависит от конкретного ресторана.
+- `menu category` группирует restaurant menu items и принадлежит ресторану.
+- Один tenant catalog item может находиться в одном catalog folder, но быть выставлен в разных ресторанах в разных menu categories с разными name/price/tax/tag/availability.
+
+запланировано далее:
+
+- Подсветка `выставлено на продажу` цветом выбранного ресторана после появления стабильного restaurant color/accent DTO.
+- Расширенные фильтры toolbar, tags filter, настройки вида и delivery status в toolbar.
 
 ## Удаленный Legacy `cloud-ui`
 

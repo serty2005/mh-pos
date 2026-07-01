@@ -6,11 +6,12 @@ import {
   createHall,
   createTable,
   listHalls,
+  listRestaurantSections,
   listTables,
   updateHall,
   updateTable,
 } from '../../shared/api/endpoints';
-import type { Hall, RestaurantTable } from '../../shared/api/schemas';
+import type { Hall, RestaurantSection, RestaurantTable } from '../../shared/api/schemas';
 import { useI18n } from '../../shared/i18n/I18nProvider';
 import EmptyState from '../../shared/ui/EmptyState';
 import FloorPreview from './FloorPreview';
@@ -35,6 +36,7 @@ type RouteStatus = 'loading' | 'ready' | 'blocked';
 export default function FloorPage({ restaurantId }: Props) {
   const { t } = useI18n();
   const [halls, setHalls] = useState<Hall[]>([]);
+  const [sections, setSections] = useState<RestaurantSection[]>([]);
   const [tables, setTables] = useState<RestaurantTable[]>([]);
   const [status, setStatus] = useState<RouteStatus>('loading');
   const [loading, setLoading] = useState(false);
@@ -44,11 +46,13 @@ export default function FloorPage({ restaurantId }: Props) {
     setStatus('loading');
     setError(null);
     try {
-      const [nextHalls, nextTables] = await Promise.all([
+      const [nextHalls, nextSections, nextTables] = await Promise.all([
         listHalls(restaurantId),
+        listRestaurantSections(restaurantId),
         listTables(restaurantId),
       ]);
       setHalls(nextHalls);
+      setSections(nextSections);
       setTables(nextTables);
       setStatus('ready');
     } catch (nextError) {
@@ -105,6 +109,7 @@ export default function FloorPage({ restaurantId }: Props) {
           />
           <TablesPanel
             halls={halls}
+            sections={sections}
             tables={tables}
             loading={loading}
             error={error}

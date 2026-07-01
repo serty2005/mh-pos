@@ -22,15 +22,54 @@ const (
 // Snapshot документа остается в prechecks/checks/ticket_units, а job хранит только
 // routing/status metadata и последнюю безопасную диагностическую ошибку.
 type PrintJob struct {
+	ID            string           `json:"id"`
+	RestaurantID  string           `json:"restaurant_id"`
+	DocumentType  DocumentType     `json:"document_type"`
+	ScopeID       *string          `json:"scope_id,omitempty"`
+	SourceKind    string           `json:"source_kind"`
+	SourceID      string           `json:"source_id"`
+	Status        PrintJobStatus   `json:"status"`
+	Attempts      int              `json:"attempts"`
+	MaxAttempts   int              `json:"max_attempts"`
+	PrinterClass  string           `json:"printer_class"`
+	LastError     *string          `json:"last_error,omitempty"`
+	NextAttemptAt *time.Time       `json:"next_attempt_at,omitempty"`
+	LockedBy      *string          `json:"locked_by,omitempty"`
+	LockedAt      *time.Time       `json:"locked_at,omitempty"`
+	PrintedAt     *time.Time       `json:"printed_at,omitempty"`
+	CreatedAt     time.Time        `json:"created_at"`
+	UpdatedAt     time.Time        `json:"updated_at"`
+	Targets       []PrintJobTarget `json:"targets,omitempty"`
+}
+
+// PrintRoute описывает Edge-local effective route для одного document_type/scope.
+type PrintRoute struct {
+	ID           string       `json:"id"`
+	RestaurantID string       `json:"restaurant_id"`
+	DocumentType DocumentType `json:"document_type"`
+	ScopeType    string       `json:"scope_type"`
+	ScopeID      *string      `json:"scope_id,omitempty"`
+	PrinterID    string       `json:"printer_id"`
+	IsRequired   bool         `json:"is_required"`
+	SortOrder    int          `json:"sort_order"`
+	Origin       string       `json:"origin"`
+	IsActive     bool         `json:"is_active"`
+	CreatedAt    time.Time    `json:"created_at"`
+	UpdatedAt    time.Time    `json:"updated_at"`
+}
+
+// PrintJobTarget хранит delivery lifecycle одного job на один физический printer.
+type PrintJobTarget struct {
 	ID            string         `json:"id"`
+	PrintJobID    string         `json:"print_job_id"`
 	RestaurantID  string         `json:"restaurant_id"`
-	DocumentType  DocumentType   `json:"document_type"`
-	SourceKind    string         `json:"source_kind"`
-	SourceID      string         `json:"source_id"`
+	PrinterID     string         `json:"printer_id"`
+	ScopeType     string         `json:"scope_type"`
+	ScopeID       *string        `json:"scope_id,omitempty"`
 	Status        PrintJobStatus `json:"status"`
 	Attempts      int            `json:"attempts"`
 	MaxAttempts   int            `json:"max_attempts"`
-	PrinterClass  string         `json:"printer_class"`
+	IsRequired    bool           `json:"is_required"`
 	LastError     *string        `json:"last_error,omitempty"`
 	NextAttemptAt *time.Time     `json:"next_attempt_at,omitempty"`
 	LockedBy      *string        `json:"locked_by,omitempty"`

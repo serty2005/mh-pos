@@ -22,6 +22,8 @@ type MasterSyncRepository interface {
 	DeactivateMissingMasterEmployees(context.Context, string, []string, string) error
 	UpsertMasterHall(context.Context, *floor.Hall, shared.MasterRecordSyncMeta) error
 	UpsertMasterTable(context.Context, *floor.Table, shared.MasterRecordSyncMeta) error
+	UpsertMasterSalesPoint(context.Context, *floor.SalesPoint, shared.MasterRecordSyncMeta) error
+	UpsertMasterRestaurantSection(context.Context, *floor.RestaurantSection, shared.MasterRecordSyncMeta) error
 	UpsertMasterCatalogItem(context.Context, *catalog.CatalogItem, shared.MasterRecordSyncMeta) error
 	UpsertMasterCatalogFolder(context.Context, *catalog.CatalogFolder, shared.MasterRecordSyncMeta) error
 	UpsertMasterFolderParameter(context.Context, *catalog.FolderParameter, shared.MasterRecordSyncMeta) error
@@ -43,6 +45,8 @@ type MasterSyncRepository interface {
 	// ReplaceMasterReceiptPrinters атомарно заменяет Cloud-owned принтеры ресторана
 	// из stream printers внутри master-data apply tx.
 	ReplaceMasterReceiptPrinters(context.Context, string, []receipt.Printer, string) error
+	GetReceiptPrinter(context.Context, string) (*receipt.Printer, error)
+	ListAllReceiptPrinters(context.Context, string) ([]receipt.Printer, error)
 	ListReceiptPrinters(context.Context, string, receipt.DocumentType) ([]receipt.Printer, error)
 	UpsertMasterDataSyncState(context.Context, *shared.MasterDataSyncState) error
 	GetMasterDataSyncState(context.Context, string, shared.MasterDataStream) (*shared.MasterDataSyncState, error)

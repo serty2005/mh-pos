@@ -229,7 +229,8 @@ export const hallSchema = z.object({
 export const tableSchema = z.object({
   id: z.string(),
   restaurant_id: z.string(),
-  hall_id: z.string(),
+  hall_id: z.string().optional().default(''),
+  section_id: z.string(),
   name: z.string(),
   seats: z.number(),
   status: lifecycleStatusSchema,
@@ -237,6 +238,21 @@ export const tableSchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
   archived_at: z.string().optional(),
+});
+
+export const restaurantSectionSchema = z.object({
+  id: z.string(),
+  restaurant_id: z.string(),
+  name: z.string(),
+  mode: z.enum(['hall_section', 'kitchen_workshop']),
+  hall_id: z.string().optional().default(''),
+  kitchen_routing_key: z.string().optional().default(''),
+  warehouse_id: z.string().optional().default(''),
+  is_default: z.boolean(),
+  is_active: z.boolean(),
+  version: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
 });
 
 export const menuItemSchema = z.object({
@@ -407,6 +423,7 @@ export type RecipeItem = z.infer<typeof recipeItemSchema>;
 export type StopListEntry = z.infer<typeof stopListEntrySchema>;
 export type Hall = z.infer<typeof hallSchema>;
 export type RestaurantTable = z.infer<typeof tableSchema>;
+export type RestaurantSection = z.infer<typeof restaurantSectionSchema>;
 export type MenuItem = z.infer<typeof menuItemSchema>;
 export type Category = z.infer<typeof categorySchema>;
 export type PricingPolicyPackage = z.infer<typeof pricingPolicyPackageSchema>;

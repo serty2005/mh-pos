@@ -77,6 +77,8 @@ type AddSurchargeCommand = apppricing.AddSurchargeCommand
 type CapturePaymentCommand = appcheck.CapturePaymentCommand
 type ReprintTicketCommand = appticket.ReprintTicketCommand
 type PrintJobListQuery = domain.PrintJobListQuery
+type PrintRouteCommand = appprint.PrintRouteCommand
+type UpdatePrintRouteCommand = appprint.UpdatePrintRouteCommand
 
 // CounterPaymentCommand объединяет issue-precheck + capture-payment для counter sale (table-mode=off).
 type CounterPaymentCommand struct {
@@ -94,6 +96,7 @@ type RefundPaymentCommand = appcheck.RefundPaymentCommand
 type ListClosedOrdersCommand = appcheck.ListClosedOrdersCommand
 type ListFinancialOperationsCommand = appcheck.ListFinancialOperationsCommand
 type ReprintCheckCommand = appcheck.ReprintCheckCommand
+type CancelUnconfirmedOrderCommand = appcheck.CancelUnconfirmedOrderCommand
 type FinancialOperationItemCommand = appcheck.FinancialOperationItemCommand
 type RecordCheckCancellationCommand = appcheck.RecordCheckCancellationCommand
 type RecordCheckRefundCommand = appcheck.RecordCheckRefundCommand
@@ -193,6 +196,7 @@ type ServiceOptions struct {
 	RecipeSuggestionMaxPrepTimeDeltaMinutes int
 	PrintSender                             appprint.Sender
 	PrintMaxAttempts                        int
+	PrintConfirmationWait                   time.Duration
 	LicenseGate                             interface {
 		Require(context.Context, string) error
 	}
@@ -224,8 +228,8 @@ func NewServiceWithOptions(repo ports.Repository, tx txmanager.Manager, ids idge
 		shifts:      appshift.NewService(repo, tx, ids, clock),
 		orders:      apporder.NewService(repo, tx, ids, clock),
 		pricing:     pricingSvc,
-		prechecks:   appprecheck.NewService(repo, tx, ids, clock, pricingSvc),
-		checks:      appcheck.NewServiceWithOptions(repo, tx, ids, clock, ticketsSvc, printsSvc),
+		prechecks:   appprecheck.NewServiceWithOptions(repo, tx, ids, clock, pricingSvc, printsSvc),
+		checks:      appcheck.NewServiceWithOptions(repo, tx, ids, clock, ticketsSvc, printsSvc, options.PrintConfirmationWait),
 		tickets:     ticketsSvc,
 		prints:      printsSvc,
 		kitchen: appkitchen.NewServiceWithOptions(repo, tx, ids, clock, appkitchen.Options{
@@ -526,6 +530,52 @@ func (s *Service) GetCheckAsOperator(ctx context.Context, id string, meta Comman
 	return s.checks.GetCheckAsOperator(ctx, id, meta)
 }
 
+func (s *Service) GetPrintConfirmationAsOperator(ctx context.Context, checkID string, meta CommandMeta) (*domain.PrintConfirmation, error) {
+	return s.checks.GetPrintConfirmationAsOperator(ctx, checkID, meta)
+}
+
+func (s *Service) CancelUnconfirmedOrder(ctx context.Context, cmd CancelUnconfirmedOrderCommand) (*domain.Order, error) {
+	return s.checks.CancelUnconfirmedOrder(ctx, cmd)
+}
+
+// RetryPrintConfirmationAsOperator пересобирает targets всех print_jobs этого чека
+// (check_nonfiscal + ticket) из ТЕКУЩИХ активных print_routes — если принтер физически
+// заменили после серии неудачных попыток, подхватится новый. В отличие от retry
+// одного target (RetryPrintJobTargetAsOperator), это job-level retry: см.
+// RetryPrintJobAsOperator. Payment/order/ticket issuance не повторяются.
+func (s *Service) RetryPrintConfirmationAsOperator(ctx context.Context, checkID string, meta CommandMeta) (*domain.PrintConfirmation, error) {
+	operator, err := shared.EnsureOperatorSession(ctx, s.repo, meta, string(shared.PermissionPrintRetry))
+	if err != nil {
+		return nil, err
+	}
+	checkRow, err := s.repo.GetCheck(ctx, strings.TrimSpace(checkID))
+	if err != nil {
+		return nil, err
+	}
+	order, err := s.repo.GetOrder(ctx, checkRow.OrderID)
+	if err != nil {
+		return nil, err
+	}
+	if order.RestaurantID != operator.Employee.RestaurantID {
+		return nil, fmt.Errorf("%w: check is outside operator restaurant", domain.ErrForbidden)
+	}
+	targets, err := s.repo.ListPrintJobTargetsForCheck(ctx, checkRow.ID)
+	if err != nil {
+		return nil, err
+	}
+	retried := make(map[string]bool, len(targets))
+	for _, target := range targets {
+		if retried[target.PrintJobID] {
+			continue
+		}
+		retried[target.PrintJobID] = true
+		if _, err := s.prints.RetryPrintJobAsOperator(ctx, target.PrintJobID, meta); err != nil {
+			return nil, err
+		}
+	}
+	return s.checks.GetPrintConfirmationAsOperator(ctx, checkID, meta)
+}
+
 func (s *Service) ListFinancialOperationsByCheckAsOperator(ctx context.Context, checkID string, meta CommandMeta, limit, offset int) ([]domain.FinancialOperation, error) {
 	return s.checks.ListFinancialOperationsByCheckAsOperator(ctx, checkID, meta, limit, offset)
 }
@@ -552,6 +602,38 @@ func (s *Service) ListPrintJobsAsOperator(ctx context.Context, meta CommandMeta,
 
 func (s *Service) RetryPrintJobAsOperator(ctx context.Context, id string, meta CommandMeta) (*domain.PrintJob, error) {
 	return s.prints.RetryPrintJobAsOperator(ctx, id, meta)
+}
+
+func (s *Service) ListRoutingPrintersAsOperator(ctx context.Context, meta CommandMeta) ([]domain.ReceiptPrinter, error) {
+	return s.prints.ListRoutingPrintersAsOperator(ctx, meta)
+}
+
+func (s *Service) ListRoutingSalesPointsAsOperator(ctx context.Context, meta CommandMeta) ([]domain.SalesPoint, error) {
+	return s.prints.ListRoutingSalesPointsAsOperator(ctx, meta)
+}
+
+func (s *Service) ListRoutingSectionsAsOperator(ctx context.Context, meta CommandMeta) ([]domain.RestaurantSection, error) {
+	return s.prints.ListRoutingSectionsAsOperator(ctx, meta)
+}
+
+func (s *Service) ListPrintRoutesAsOperator(ctx context.Context, meta CommandMeta) ([]domain.PrintRoute, error) {
+	return s.prints.ListPrintRoutesAsOperator(ctx, meta)
+}
+
+func (s *Service) CreatePrintRouteAsOperator(ctx context.Context, cmd PrintRouteCommand) (*domain.PrintRoute, error) {
+	return s.prints.CreatePrintRouteAsOperator(ctx, cmd)
+}
+
+func (s *Service) UpdatePrintRouteAsOperator(ctx context.Context, id string, cmd UpdatePrintRouteCommand) (*domain.PrintRoute, error) {
+	return s.prints.UpdatePrintRouteAsOperator(ctx, id, cmd)
+}
+
+func (s *Service) DeactivatePrintRouteAsOperator(ctx context.Context, id string, meta CommandMeta) (*domain.PrintRoute, error) {
+	return s.prints.DeactivatePrintRouteAsOperator(ctx, id, meta)
+}
+
+func (s *Service) RetryPrintJobTargetAsOperator(ctx context.Context, jobID, targetID string, meta CommandMeta) (*domain.PrintJob, error) {
+	return s.prints.RetryPrintJobTargetAsOperator(ctx, jobID, targetID, meta)
 }
 
 func (s *Service) ProcessNextPrintJob(ctx context.Context, workerID string) (bool, error) {

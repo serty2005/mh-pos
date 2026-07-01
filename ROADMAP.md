@@ -1,6 +1,6 @@
 # ROADMAP
 
-Статус документа: актуализировано под фактический код, полный ресторанный пилот и согласованный выставочный запуск на 20.06.2026.
+Статус документа: актуализировано под фактический код, Plane и подготовку первого выставочного deploy на 30.06.2026.
 
 Этот документ объединяет:
 - исходную детальную структуру старого `ROADMAP.md`;
@@ -14,7 +14,9 @@
 
 Код и тесты являются источником истины для фактически реализованного runtime. Если документация описывает поведение как реализованное, но код/тесты это не подтверждают, документация должна быть исправлена под фактическое состояние, а не наоборот.
 
-Промежуточный ручной UI-аудит чистого локального стека от 28.06.2026 зафиксирован в `docs/ui/UI-MANUAL-AUDIT-2026-06-28.md`. Главные открытые блокеры: противоречивый POS license state, `503` на POS halls, потеря выбранного заказа после `POST /orders`, raw JSON формы в Cloud/License и слабый guided setup для чистого ресторана.
+Промежуточный ручной UI-аудит чистого локального стека от 28.06.2026 зафиксирован в `docs/ui/UI-MANUAL-AUDIT-2026-06-28.md`. По состоянию на 30.06.2026 POS license flow вынесен в `POS-95` и находится в `Review`, потеря выбранного заказа после `POST /orders` вынесена в `POS-91` и находится в `Review`, raw JSON формы Cloud/License и guided setup остаются отдельными задачами `POS-92`/`POS-93`.
+
+Срез deploy-подготовки от 30.06.2026: добавлены runbook и compose artifacts для Cloud client Docker/Traefik (`docs/deployment/CLOUD-CLIENT-DOCKER-TRAEFIK.md`, `deploy/cloud-client/*`, `deploy/traefik/*`), runbook native License Server на Ubuntu 24.04 с systemd/CD template (`docs/deployment/LICENSE-SERVER-LINUX.md`, `deploy/license-server/*`, `scripts/deploy-license-server.sh`) и Windows packaging для POS Edge с NSIS/webwallpaper (`docs/deployment/POS-EDGE-WINDOWS.md`, `installer/nsis/pos-edge.nsi`, `scripts/build-pos-edge-installer.ps1`, `scripts/package-pos-edge-windows.sh`).
 
 ## Текущий контур
 
@@ -52,13 +54,13 @@
 - stale grace задается поставщиком в deployment config сервера и недоступен клиенту;
 - требуются single-host runbook, backup/restore, printer hardware acceptance и сквозной smoke.
 
-Заблокировано реализацией:
+Остается до первого выставочного go/no-go:
 
-- текущие catalog, role и employee schema остаются restaurant-owned и требуют tenant migration;
-- текущий runtime требует manual publication после CRUD; автоматическая per-Edge batch assembly и удаление Publish UI/API еще не реализованы;
-- physical printer orchestration, ticket issuance, Telegram worker и реальный sales dashboard отсутствуют;
-- License Server authority и gates существующих table/kitchen/warehouse surfaces реализованы; gates будущих `cloud-subscription`, `ticket-mode`, telegram/waiter runtime добавляются вместе с соответствующими routes/workers. Для `waiter-space` требуется backend-discriminated waiter surface/facade, потому что текущие order routes являются базовой кассой и не закрываются лицензией;
-- не зафиксированы целевые модели ESC/POS-принтеров и production RPO/RTO.
+- `POS-40` Cloud sales API и `POS-41` реальный dashboard продаж: не реализованы сейчас; `POS-40` уже `Ready`, `POS-41` остается `Specified` до backend API.
+- `POS-63` Telegram reports: задача `Ready`, runtime worker/settings еще не реализованы.
+- `POS-64` зонтичная физическая печать: P1-подсистема реализована в коде и дочерних задачах `POS-68…74`, `POS-81…84`; `POS-67` и `POS-80` остаются в `Review`, нужен повторный операторский ticket print после исправления `{f:double}` ширины. Полноценная ресторанная схема печати (`POS-85…89`) начата: POS-85 Edge schema baseline для sales points, sections, Edge override audit и `print_job_targets` реализован сейчас, а API/services, sync projection, Edge UI и exhibition smoke запланированы далее.
+- `POS-43`/`POS-44`/`POS-45`: single-host runbook, backup/restore rehearsal и сквозной go/no-go smoke остаются `Specified`; часть deploy runbook уже добавлена 30.06.2026, но клиентская приемка еще не закрыта.
+- Production RPO/RTO, регулярный внешний backup/restore rehearsal, TLS/domain hardening и постоянный Cloud/License auth perimeter остаются operational gates.
 
 Следующий post-deploy цикл:
 
@@ -350,7 +352,7 @@
 - Waiter mobile viewport `390x844` уплотнен с sticky context/authority dock, lock badge и scrollable modifier dialog без payment/refund/cash drawer authority.
 - `pos-ui-g` kitchen mode переведен на backend-backed runtime с queue/ready order tiles, stock forms, full catalog picker, recipe view и proposals.
 - Исторический Vue `cloud-ui` удален из runtime tree; его подтвержденные сценарии переносятся в активный `cloud-ui-g` только поверх текущих backend routes/DTO.
-- Активный `cloud-ui-g`: React/Vite shell подключен к подтвержденным Cloud Backend routes для dashboard, restaurants, Edge sync, catalog, menu, modifiers, pricing/taxes, staff/permissions, floor и publications; `inventory` и `reports` пока остаются blocked navigation placeholders.
+- Активный `cloud-ui-g`: React/Vite shell подключен к подтвержденным Cloud Backend routes для dashboard, restaurants, Edge sync, catalog, menu, modifiers, pricing/taxes, staff/permissions, floor и publications; `inventory` и `reports` пока остаются blocked navigation placeholders. Целевой следующий UI slice объединяет `catalog` и `menu` в раздел `Каталог и меню`: tenant catalog доступен без выбранного ресторана, а при выбранном ресторане restaurant menu items накладываются на catalog tree; режим `Только меню` требует menu category list/edit/archive lifecycle.
 
 ---
 

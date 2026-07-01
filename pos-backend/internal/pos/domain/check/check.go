@@ -31,6 +31,7 @@ type Check struct {
 	RemainingTotal    int64           `json:"remaining_total"`
 	BusinessDateLocal string          `json:"business_date_local"`
 	ClosedAt          time.Time       `json:"closed_at"`
+	PrintConfirmedAt  *time.Time      `json:"print_confirmed_at,omitempty"`
 	Snapshot          json.RawMessage `json:"snapshot,omitempty"`
 	Payments          []Payment       `json:"payments,omitempty"`
 	CreatedAt         time.Time       `json:"created_at"`

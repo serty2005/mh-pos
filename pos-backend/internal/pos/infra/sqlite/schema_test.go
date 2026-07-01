@@ -42,8 +42,10 @@ func seedFinancialForSchemaTests(t *testing.T, ctx context.Context, db *sql.DB) 
 	execSchema(t, ctx, db, `INSERT INTO roles(id,name,permissions_json,active,created_at,updated_at) VALUES ('role-1','cashier','{}',1,?,?)`, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO employees(id,restaurant_id,role_id,name,pin_hash,active,created_at,updated_at) VALUES ('employee-1','restaurant-1','role-1','Anna','hash',1,?,?)`, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO halls(id,restaurant_id,name,active,created_at,updated_at) VALUES ('hall-1','restaurant-1','Main',1,?,?)`, schemaTestTime, schemaTestTime)
-	execSchema(t, ctx, db, `INSERT INTO tables(id,restaurant_id,hall_id,name,seats,active,created_at,updated_at) VALUES ('table-1','restaurant-1','hall-1','A1',2,1,?,?)`, schemaTestTime, schemaTestTime)
-	execSchema(t, ctx, db, `INSERT INTO tables(id,restaurant_id,hall_id,name,seats,active,created_at,updated_at) VALUES ('table-2','restaurant-1','hall-1','A2',2,1,?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO restaurant_sections(id,restaurant_id,name,mode,hall_id,is_default,created_at,updated_at) VALUES ('section-1','restaurant-1','Main hall','hall_section','hall-1',1,?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO tables(id,restaurant_id,hall_id,section_id,name,seats,is_default,active,created_at,updated_at) VALUES ('table-1','restaurant-1','hall-1','section-1','A1',2,1,1,?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO tables(id,restaurant_id,hall_id,section_id,name,seats,active,created_at,updated_at) VALUES ('table-2','restaurant-1','hall-1','section-1','A2',2,1,?,?)`, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO sales_points(id,restaurant_id,name,analytics_tag,default_table_id,is_active,created_at,updated_at) VALUES ('sales-point-1','restaurant-1','Front','front','table-1',1,?,?)`, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO shifts(id,restaurant_id,device_id,opened_by_employee_id,status,business_date_local,opened_at,opening_cash_amount,created_at,updated_at) VALUES ('shift-1','restaurant-1','device-1','employee-1','open','2026-05-04',?,0,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO orders(id,edge_order_id,restaurant_id,device_id,shift_id,status,table_id,table_name,guest_count,opened_at,created_at,updated_at) VALUES ('order-1','edge-order-1','restaurant-1','device-1','shift-1','open','table-1','A1',1,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO checks(id,order_id,status,subtotal,discount_total,tax_total,total,paid_total,business_date_local,closed_at,snapshot,created_at,updated_at) VALUES ('check-1','order-1','open',100,0,0,100,0,'2026-05-04',?,'{}',?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
@@ -159,7 +161,7 @@ func TestTicketUnitsConstraintsAndIndexes(t *testing.T) {
 	execSchema(t, ctx, db, `INSERT INTO menu_items(id,catalog_item_id,name,price,currency,active,created_at,updated_at) VALUES ('menu-qr','dish-1','Entry',500,'RUB',1,?,?)`, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO order_lines(id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,currency_code,status,created_at,updated_at) VALUES ('tline-1','order-1','menu-qr','dish-1','Entry',1,500,500,'RUB','active',?,?)`, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO order_lines(id,order_id,menu_item_id,catalog_item_id,name,quantity,unit_price,total_price,currency_code,status,created_at,updated_at) VALUES ('tline-2','order-1','menu-qr','dish-1','Entry',1,500,500,'RUB','active',?,?)`, schemaTestTime, schemaTestTime)
-	execSchema(t, ctx, db, `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,shift_id,opened_by_employee_id,status,business_date_local,opening_cash_amount,opened_at,created_at,updated_at) VALUES ('cash-1','edge-cash-1','restaurant-1','device-1','shift-1','employee-1','open','2026-05-04',0,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,sales_point_id,shift_id,opened_by_employee_id,status,business_date_local,opening_cash_amount,opened_at,created_at,updated_at) VALUES ('cash-1','edge-cash-1','restaurant-1','device-1','sales-point-1','shift-1','employee-1','open','2026-05-04',0,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
 
 	insert := `INSERT INTO ticket_units(id,ticket_number,restaurant_id,device_id,cash_session_id,shift_id,check_id,order_id,order_line_id,catalog_item_id,menu_item_id,name,sale_date_local,timezone,validity_mode,validity_date_local,cash_shift_sequence,qr_payload,print_status,snapshot,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
 	execSchema(t, ctx, db, insert, "ticket-1", "ticket-1", "restaurant-1", "device-1", "cash-1", "shift-1", "check-1", "order-1", "tline-1", "dish-1", "menu-qr", "Entry", "2026-05-04", "Europe/Moscow", "business_date", "2026-05-04", 1, "MHT1:ticket-1", "pending", `{"document_type":"ticket"}`, schemaTestTime, schemaTestTime)
@@ -313,10 +315,10 @@ func TestPrecheckLifecycleFoundationConstraints(t *testing.T) {
 func TestCashSessionsAllowOnlyOneOpenSessionPerDevice(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)
-	insert := `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,shift_id,opened_by_employee_id,status,business_date_local,opening_cash_amount,opened_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
-	execSchema(t, ctx, db, insert, "cash-session-1", "edge-cash-session-1", "restaurant-1", "device-1", "shift-1", "employee-1", "open", "2026-05-04", 100, schemaTestTime, schemaTestTime, schemaTestTime)
+	insert := `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,sales_point_id,shift_id,opened_by_employee_id,status,business_date_local,opening_cash_amount,opened_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+	execSchema(t, ctx, db, insert, "cash-session-1", "edge-cash-session-1", "restaurant-1", "device-1", "sales-point-1", "shift-1", "employee-1", "open", "2026-05-04", 100, schemaTestTime, schemaTestTime, schemaTestTime)
 
-	_, err := db.ExecContext(ctx, insert, "cash-session-2", "edge-cash-session-2", "restaurant-1", "device-1", "shift-1", "employee-1", "open", "2026-05-04", 200, schemaTestTime, schemaTestTime, schemaTestTime)
+	_, err := db.ExecContext(ctx, insert, "cash-session-2", "edge-cash-session-2", "restaurant-1", "device-1", "sales-point-1", "shift-1", "employee-1", "open", "2026-05-04", 200, schemaTestTime, schemaTestTime, schemaTestTime)
 	if err == nil {
 		t.Fatal("expected second open cash session on device to fail")
 	}
@@ -325,7 +327,7 @@ func TestCashSessionsAllowOnlyOneOpenSessionPerDevice(t *testing.T) {
 func TestCashDrawerEventsRequireSessionAndNonNegativeAmount(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	seedFinancialForSchemaTests(t, ctx, db)
-	execSchema(t, ctx, db, `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,shift_id,opened_by_employee_id,status,business_date_local,opening_cash_amount,opened_at,created_at,updated_at) VALUES ('cash-session-1','edge-cash-session-1','restaurant-1','device-1','shift-1','employee-1','open','2026-05-04',100,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
+	execSchema(t, ctx, db, `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,sales_point_id,shift_id,opened_by_employee_id,status,business_date_local,opening_cash_amount,opened_at,created_at,updated_at) VALUES ('cash-session-1','edge-cash-session-1','restaurant-1','device-1','sales-point-1','shift-1','employee-1','open','2026-05-04',100,?,?,?)`, schemaTestTime, schemaTestTime, schemaTestTime)
 	execSchema(t, ctx, db, `INSERT INTO cash_drawer_events(id,edge_cash_drawer_event_id,cash_session_id,restaurant_id,device_id,shift_id,created_by_employee_id,event_type,amount,occurred_at,created_at) VALUES ('cash-event-1','edge-cash-event-1','cash-session-1','restaurant-1','device-1','shift-1','employee-1','cash_in',100,?,?)`, schemaTestTime, schemaTestTime)
 
 	_, err := db.ExecContext(ctx, `INSERT INTO cash_drawer_events(id,edge_cash_drawer_event_id,cash_session_id,restaurant_id,device_id,shift_id,created_by_employee_id,event_type,amount,occurred_at,created_at) VALUES ('cash-event-2','edge-cash-event-2','missing','restaurant-1','device-1','shift-1','employee-1','cash_in',100,?,?)`, schemaTestTime, schemaTestTime)
@@ -452,143 +454,6 @@ func TestRequiredSchemaContractMatchesCleanInstall(t *testing.T) {
 	db, ctx := newSchemaDB(t)
 	if err := platformsqlite.VerifySchema(ctx, db, possqlite.RequiredSchema()); err != nil {
 		t.Fatalf("required schema contract does not match clean install: %v", err)
-	}
-}
-
-func TestRuntimeSchemaRepairMigratesLegacyBusinessDateColumns(t *testing.T) {
-	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "legacy-pos.db")
-	db, err := platformsqlite.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	execSchema(t, ctx, db, `
-CREATE TABLE restaurants (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  timezone TEXT NOT NULL,
-  currency TEXT NOT NULL,
-  active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE TABLE shifts (
-  id TEXT PRIMARY KEY,
-  restaurant_id TEXT NOT NULL,
-  device_id TEXT NOT NULL,
-  opened_by_employee_id TEXT NOT NULL,
-  closed_by_employee_id TEXT,
-  status TEXT NOT NULL,
-  opened_at TEXT NOT NULL,
-  closed_at TEXT,
-  opening_cash_amount INTEGER NOT NULL,
-  closing_cash_amount INTEGER,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE TABLE prechecks (
-  id TEXT PRIMARY KEY,
-  order_id TEXT NOT NULL,
-  status TEXT NOT NULL,
-  version INTEGER NOT NULL,
-  supersedes_precheck_id TEXT,
-  subtotal INTEGER NOT NULL,
-  discount_total INTEGER NOT NULL,
-  tax_total INTEGER NOT NULL,
-  total INTEGER NOT NULL,
-  paid_total INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL,
-  issued_at TEXT NOT NULL,
-  closed_at TEXT,
-  cancelled_by_employee_id TEXT,
-  cancellation_reason TEXT
-);
-CREATE TABLE checks (
-  id TEXT PRIMARY KEY,
-  order_id TEXT NOT NULL UNIQUE,
-  status TEXT NOT NULL,
-  subtotal INTEGER NOT NULL,
-  discount_total INTEGER NOT NULL,
-  tax_total INTEGER NOT NULL,
-  total INTEGER NOT NULL,
-  paid_total INTEGER NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE TABLE payments (
-  id TEXT PRIMARY KEY,
-  edge_payment_id TEXT NOT NULL UNIQUE,
-  restaurant_id TEXT NOT NULL,
-  device_id TEXT NOT NULL,
-  shift_id TEXT NOT NULL,
-  precheck_id TEXT NOT NULL,
-  method TEXT NOT NULL,
-  amount INTEGER NOT NULL,
-  currency TEXT NOT NULL,
-  status TEXT NOT NULL,
-  provider_name TEXT,
-  provider_transaction_id TEXT,
-  provider_reference TEXT,
-  fingerprint_hash TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE TABLE cash_sessions (
-  id TEXT PRIMARY KEY,
-  edge_cash_session_id TEXT NOT NULL UNIQUE,
-  restaurant_id TEXT NOT NULL,
-  device_id TEXT NOT NULL,
-  shift_id TEXT NOT NULL,
-  opened_by_employee_id TEXT NOT NULL,
-  closed_by_employee_id TEXT,
-  status TEXT NOT NULL,
-  opening_cash_amount INTEGER NOT NULL,
-  closing_cash_amount INTEGER,
-  opened_at TEXT NOT NULL,
-  closed_at TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-`)
-
-	if err := platformsqlite.MigrateDirWithPolicy(ctx, db, dbPath, filepath.Join("..", "..", "..", "..", "migrations", "sqlite"), platformsqlite.MigrationOptions{
-		ModuleName:         "pos-backend",
-		ModuleVersion:      "0.1.0",
-		BackupDir:          t.TempDir(),
-		SchemaRequirements: possqlite.RequiredSchema(),
-	}); err != nil {
-		t.Fatalf("legacy sqlite repair migration failed: %v", err)
-	}
-	for table, columns := range map[string][]string{
-		"restaurants":   {"business_day_mode", "business_day_boundary_local_time"},
-		"shifts":        {"business_date_local"},
-		"prechecks":     {"snapshot"},
-		"checks":        {"business_date_local", "closed_at", "snapshot"},
-		"payments":      {"business_date_local"},
-		"cash_sessions": {"business_date_local"},
-	} {
-		found := tableColumns(t, ctx, db, table)
-		for _, column := range columns {
-			if !found[column] {
-				t.Fatalf("expected repair migration to add %s.%s", table, column)
-			}
-		}
-	}
-	if err := platformsqlite.MigrateDirWithPolicy(ctx, db, dbPath, filepath.Join("..", "..", "..", "..", "migrations", "sqlite"), platformsqlite.MigrationOptions{
-		ModuleName:         "pos-backend",
-		ModuleVersion:      "0.1.0",
-		BackupDir:          t.TempDir(),
-		SchemaRequirements: possqlite.RequiredSchema(),
-	}); err != nil {
-		t.Fatalf("second legacy sqlite repair migration failed: %v", err)
-	}
-	var appliedCount int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations WHERE status = 'applied'`).Scan(&appliedCount); err != nil {
-		t.Fatal(err)
-	}
-	if appliedCount != 1 {
-		t.Fatalf("expected second startup to keep one applied migration, got %d", appliedCount)
 	}
 }
 

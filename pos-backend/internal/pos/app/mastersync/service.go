@@ -95,6 +95,8 @@ type ApplyMasterDataCommand struct {
 	RecipeSuggestions      []ProposalFeedback             `json:"recipe_suggestions,omitempty"`
 	ReceiptTemplates       []domain.ReceiptTemplate       `json:"receipt_templates,omitempty"`
 	Printers               []domain.ReceiptPrinter        `json:"printers,omitempty"`
+	SalesPoints            []domain.SalesPoint            `json:"sales_points,omitempty"`
+	RestaurantSections     []domain.RestaurantSection     `json:"restaurant_sections,omitempty"`
 }
 
 // ProposalFeedback переносит Cloud review status для локальной kitchen proposal записи.
@@ -227,10 +229,6 @@ func (s *Service) applyStream(ctx context.Context, stream domain.MasterDataStrea
 			if err := s.repo.UpsertMasterRestaurant(ctx, &v, meta); err != nil {
 				return err
 			}
-			// Идемпотентно создаём системный зал и стол для counter sale.
-			if err := s.repo.EnsureSystemFloor(ctx, v.ID, s.ids.NewID(), s.ids.NewID(), now); err != nil {
-				return fmt.Errorf("ensure system floor for restaurant %s: %w", v.ID, err)
-			}
 		}
 		counts[string(stream)] = len(cmd.Restaurants)
 	case domain.MasterDataStreamDevices:
@@ -291,6 +289,28 @@ func (s *Service) applyStream(ctx context.Context, stream domain.MasterDataStrea
 			}
 		}
 		counts[string(stream)] = len(cmd.Halls) + len(cmd.Tables)
+	case domain.MasterDataStreamSalesPoints:
+		for i := range cmd.SalesPoints {
+			v := normalizeSalesPoint(cmd.SalesPoints[i], now)
+			if err := validateSalesPoint(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterSalesPoint(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
+		counts[string(stream)] = len(cmd.SalesPoints)
+	case domain.MasterDataStreamRestaurantSections:
+		for i := range cmd.RestaurantSections {
+			v := normalizeRestaurantSection(cmd.RestaurantSections[i], now)
+			if err := validateRestaurantSection(v); err != nil {
+				return err
+			}
+			if err := s.repo.UpsertMasterRestaurantSection(ctx, &v, meta); err != nil {
+				return err
+			}
+		}
+		counts[string(stream)] = len(cmd.RestaurantSections)
 	case domain.MasterDataStreamCatalog:
 		for i := range cmd.Folders {
 			v := normalizeCatalogFolder(cmd.Folders[i])
@@ -593,6 +613,18 @@ func validatePayload(cmd ApplyMasterDataCommand, streams []domain.MasterDataStre
 					return err
 				}
 			}
+		case domain.MasterDataStreamSalesPoints:
+			for i := range cmd.SalesPoints {
+				if err := validateSalesPoint(normalizeSalesPoint(cmd.SalesPoints[i], now)); err != nil {
+					return err
+				}
+			}
+		case domain.MasterDataStreamRestaurantSections:
+			for i := range cmd.RestaurantSections {
+				if err := validateRestaurantSection(normalizeRestaurantSection(cmd.RestaurantSections[i], now)); err != nil {
+					return err
+				}
+			}
 		case domain.MasterDataStreamCatalog:
 			for i := range cmd.Folders {
 				if err := validateCatalogFolder(normalizeCatalogFolder(cmd.Folders[i])); err != nil {
@@ -817,6 +849,9 @@ func streamsToApply(cmd ApplyMasterDataCommand) ([]domain.MasterDataStream, erro
 	if len(cmd.Roles) > 0 || len(cmd.Employees) > 0 {
 		streams = append(streams, domain.MasterDataStreamStaff)
 	}
+	if len(cmd.RestaurantSections) > 0 {
+		streams = append(streams, domain.MasterDataStreamRestaurantSections)
+	}
 	if len(cmd.Halls) > 0 || len(cmd.Tables) > 0 {
 		streams = append(streams, domain.MasterDataStreamFloor)
 	}
@@ -844,6 +879,9 @@ func streamsToApply(cmd ApplyMasterDataCommand) ([]domain.MasterDataStream, erro
 	if len(cmd.Printers) > 0 {
 		streams = append(streams, domain.MasterDataStreamPrinters)
 	}
+	if len(cmd.SalesPoints) > 0 {
+		streams = append(streams, domain.MasterDataStreamSalesPoints)
+	}
 	if len(streams) == 0 {
 		return nil, fmt.Errorf("%w: at least one supported master data stream is required", domain.ErrInvalid)
 	}
@@ -863,7 +901,9 @@ func supportedStream(stream domain.MasterDataStream) bool {
 		domain.MasterDataStreamInventory,
 		domain.MasterDataStreamProposalFeedback,
 		domain.MasterDataStreamReceiptTemplates,
-		domain.MasterDataStreamPrinters:
+		domain.MasterDataStreamPrinters,
+		domain.MasterDataStreamSalesPoints,
+		domain.MasterDataStreamRestaurantSections:
 		return true
 	default:
 		return false
@@ -999,7 +1039,31 @@ func normalizeTable(v domain.Table, now time.Time) domain.Table {
 	v.ID = strings.TrimSpace(v.ID)
 	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
 	v.HallID = strings.TrimSpace(v.HallID)
+	v.SectionID = strings.TrimSpace(v.SectionID)
 	v.Name = strings.TrimSpace(v.Name)
+	v.CreatedAt = defaultTime(v.CreatedAt, now)
+	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
+	return v
+}
+
+func normalizeSalesPoint(v domain.SalesPoint, now time.Time) domain.SalesPoint {
+	v.ID = strings.TrimSpace(v.ID)
+	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
+	v.Name = strings.TrimSpace(v.Name)
+	v.AnalyticsTag = strings.TrimSpace(v.AnalyticsTag)
+	v.DefaultTableID = strings.TrimSpace(v.DefaultTableID)
+	v.CreatedAt = defaultTime(v.CreatedAt, now)
+	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
+	return v
+}
+
+func normalizeRestaurantSection(v domain.RestaurantSection, now time.Time) domain.RestaurantSection {
+	v.ID = strings.TrimSpace(v.ID)
+	v.RestaurantID = strings.TrimSpace(v.RestaurantID)
+	v.Name = strings.TrimSpace(v.Name)
+	v.HallID = strings.TrimSpace(v.HallID)
+	v.KitchenRoutingKey = strings.TrimSpace(v.KitchenRoutingKey)
+	v.WarehouseID = strings.TrimSpace(v.WarehouseID)
 	v.CreatedAt = defaultTime(v.CreatedAt, now)
 	v.UpdatedAt = defaultTime(v.UpdatedAt, now)
 	return v
@@ -1256,8 +1320,34 @@ func validateHall(v domain.Hall) error {
 }
 
 func validateTable(v domain.Table) error {
-	if v.ID == "" || v.RestaurantID == "" || v.HallID == "" || v.Name == "" || v.Seats < 0 {
-		return fmt.Errorf("%w: table id, restaurant_id, hall_id, name and non-negative seats are required", domain.ErrInvalid)
+	if v.ID == "" || v.RestaurantID == "" || v.SectionID == "" || v.Name == "" || v.Seats < 0 {
+		return fmt.Errorf("%w: table id, restaurant_id, section_id, name and non-negative seats are required", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func validateSalesPoint(v domain.SalesPoint) error {
+	if v.ID == "" || v.RestaurantID == "" || v.Name == "" || v.AnalyticsTag == "" || v.DefaultTableID == "" {
+		return fmt.Errorf("%w: sales point id, restaurant_id, name, analytics_tag and default_table_id are required", domain.ErrInvalid)
+	}
+	return nil
+}
+
+func validateRestaurantSection(v domain.RestaurantSection) error {
+	if v.ID == "" || v.RestaurantID == "" || v.Name == "" {
+		return fmt.Errorf("%w: restaurant section id, restaurant_id and name are required", domain.ErrInvalid)
+	}
+	switch v.Mode {
+	case domain.RestaurantSectionHallSection:
+		if v.KitchenRoutingKey != "" {
+			return fmt.Errorf("%w: hall section cannot have kitchen_routing_key", domain.ErrInvalid)
+		}
+	case domain.RestaurantSectionKitchenWorkshop:
+		if v.HallID != "" {
+			return fmt.Errorf("%w: kitchen workshop cannot have hall_id", domain.ErrInvalid)
+		}
+	default:
+		return fmt.Errorf("%w: unsupported restaurant section mode", domain.ErrInvalid)
 	}
 	return nil
 }

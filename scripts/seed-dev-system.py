@@ -10,6 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import http.cookiejar
 
 
 API_PREFIX = "/api/v1"
@@ -33,6 +34,7 @@ CLOUD_OWNED_SEED_SURFACES = (
     {"dataset_key": "recipes", "publication_stream": "recipes", "pos_read_check": "kitchen_recipe"},
     {"dataset_key": "stop_list", "publication_stream": "inventory_reference", "pos_read_check": "blocked_sale"},
     {"dataset_key": "receipt_templates", "publication_stream": "receipt_templates", "pos_read_check": "sync_status"},
+    {"dataset_key": "printers", "publication_stream": "printers", "pos_read_check": "print_routing"},
 )
 
 FORBIDDEN_MUTATING_ROUTE_FRAGMENTS = (
@@ -175,6 +177,9 @@ PERMISSIONS = {
         "pos.check.reprint",
         "pos.print.status",
         "pos.print.retry",
+        "pos.print_routing.view",
+        "pos.print_routing.manage",
+        "pos.order.cancel_unconfirmed",
         "pos.sync.view",
         "pos.sync.retry_failed",
     ],
@@ -189,7 +194,10 @@ class JsonClient:
     def __init__(self, base_url, timeout=20):
         self.base_url = normalize_base_url(base_url)
         self.timeout = timeout
-        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        self.opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}),
+            urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
+        )
 
     def root_get(self, path, expected_status=(200,)):
         return self._send("GET", path, None, expected_status)
@@ -372,6 +380,16 @@ def build_seed_dataset(suffix):
         ],
         "receipt_templates": [
             {
+                "document_type": "check_nonfiscal",
+                "name": "Default non-fiscal check receipt",
+                "description": "System default ReceiptLine Level 1 non-fiscal check template",
+                "content": read_default_receipt_template("default_precheck.rl"),
+                "level": 1,
+                "cpl": 48,
+                "printer_class": "generic",
+                "is_default": True,
+            },
+            {
                 "document_type": "precheck",
                 "name": "Default precheck receipt",
                 "description": "System default ReceiptLine Level 1 precheck template",
@@ -396,6 +414,18 @@ def build_seed_dataset(suffix):
             {"ref": "main", "name": "Main Hall", "tables": [{"name": "T1", "seats": 2}, {"name": "T2", "seats": 4}, {"name": "T3", "seats": 6}]},
             {"ref": "patio", "name": "Patio", "tables": [{"name": "P1", "seats": 2}, {"name": "P2", "seats": 4}]},
         ],
+        "printers": [
+            {
+                "name": "Local smoke receipt printer",
+                "type": "tcp",
+                "address": "127.0.0.1",
+                "port": 9,
+                "document_types": ["check_nonfiscal", "precheck", "ticket"],
+                "codepage": "cp437",
+                "paper_cut_type": "partial",
+                "cpl": 48,
+            },
+        ],
     }
 
 
@@ -407,6 +437,22 @@ def validate_seed_extension_plan(dataset):
     )
     if missing:
         raise RuntimeError(f"seed extension plan references missing dataset keys: {missing}")
+
+
+def wait_for_cloud_license_ready(cloud_client, wait_seconds, interval_seconds):
+    deadline = time.monotonic() + max(1, wait_seconds)
+    last_error = None
+    while True:
+        try:
+            snapshot = request(cloud_client, "GET", f"{API_PREFIX}/license/entitlements", expected_status=(200,))
+            if snapshot.get("status") == "active":
+                return snapshot
+            last_error = f"unexpected entitlement status: {snapshot}"
+        except Exception as exc:  # noqa: BLE001 - smoke script reports the last safe HTTP error.
+            last_error = str(exc)
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"Cloud license entitlements did not become ready before timeout: {last_error}")
+        time.sleep(max(0, interval_seconds))
 
 
 def seed_full_system(
@@ -446,6 +492,13 @@ def seed_full_system(
         "issued_at": issued_at.isoformat().replace("+00:00", "Z"),
         "expires_at": (issued_at + datetime.timedelta(days=30)).isoformat().replace("+00:00", "Z"),
     }
+    request(
+        license_client,
+        "POST",
+        f"{API_PREFIX}/admin/login",
+        {"username": "admin", "password": license_admin_token},
+        expected_status=(200,),
+    )
     for server_id in ("cloud-local", "edge-local"):
         request(
             license_client,
@@ -453,8 +506,8 @@ def seed_full_system(
             f"{API_PREFIX}/entitlements/local-tenant/{server_id}",
             entitlement_body,
             expected_status=(200,),
-            headers={"Authorization": f"Bearer {license_admin_token}"},
         )
+    wait_for_cloud_license_ready(cloud_client, wait_seconds, interval_seconds)
     status = request(pos_client, "GET", f"{API_PREFIX}/system/provisioning-status", expected_status=(200,))
     node_device_id = status.get("node_device_id", "")
     if not node_device_id:
@@ -466,6 +519,30 @@ def seed_full_system(
     validate_seed_extension_plan(dataset)
     restaurant = request(cloud_client, "POST", f"{API_PREFIX}/restaurants", dataset["restaurant"], expected_status=(201,))
     restaurant_id = restaurant["id"]
+
+    # Cloud идемпотентно провижинит дефолтную hall-секцию + дефолтный стол при создании
+    # ресторана (POS-86) — переиспользуем эту секцию для seed-таблиц зала и заводим одну
+    # точку продаж (обязательна для открытия кассовой смены).
+    restaurant_sections = request(
+        cloud_client,
+        "GET",
+        f"{API_PREFIX}/master-data/restaurant-sections",
+        expected_status=(200,),
+        query={"restaurant_id": restaurant_id},
+    )
+    default_section = next((section for section in restaurant_sections if section.get("is_default")), None)
+    if not default_section:
+        raise RuntimeError(f"restaurant {restaurant_id} has no default hall section provisioned by Cloud")
+    default_section_id = default_section["id"]
+
+    sales_point = request(
+        cloud_client,
+        "POST",
+        f"{API_PREFIX}/master-data/sales-points",
+        {"restaurant_id": restaurant_id, "name": f"Front Desk {suffix}", "analytics_tag": slug(f"front-desk-{suffix}")},
+        expected_status=(201,),
+    )
+    sales_point_id = sales_point["id"]
 
     role_ids = {}
     for role in dataset["roles"]:
@@ -693,6 +770,7 @@ def seed_full_system(
         stop_list_ids.append(created["id"])
 
     receipt_template_ids = seed_receipt_templates(cloud_client, dataset["receipt_templates"])
+    printer_ids = seed_printers(cloud_client, restaurant_id, dataset["printers"])
 
     hall_ids = []
     table_ids = []
@@ -710,7 +788,13 @@ def seed_full_system(
                 cloud_client,
                 "POST",
                 f"{API_PREFIX}/master-data/floor/tables",
-                {"restaurant_id": restaurant_id, "hall_id": created_hall["id"], "name": table["name"], "seats": table["seats"]},
+                {
+                    "restaurant_id": restaurant_id,
+                    "hall_id": created_hall["id"],
+                    "section_id": default_section_id,
+                    "name": table["name"],
+                    "seats": table["seats"],
+                },
                 expected_status=(201,),
             )
             table_ids.append(created_table["id"])
@@ -725,6 +809,11 @@ def seed_full_system(
     pairing_code = pairing["pairing_code"]
     paired = request(pos_client, "POST", f"{API_PREFIX}/system/provisioning/pair-via-license", {"pairing_code": pairing_code}, expected_status=(200,))
     verify_pos_ready(pos_client, restaurant_id, node_device_id, client_device_id, pins["manager_pin"], wait_seconds, interval_seconds)
+    route_headers = login_pos(pos_client, node_device_id, client_device_id, pins["manager_pin"])
+    routing_printers = wait_for_print_routing_ready(pos_client, route_headers, sales_point_id, default_section_id, wait_seconds, interval_seconds)
+    print_route_ids = [
+        route["id"] for route in seed_print_routes(pos_client, route_headers, routing_printers[0]["id"], sales_point_id, default_section_id)
+    ]
     publication = request(
         cloud_client,
         "GET",
@@ -752,6 +841,8 @@ def seed_full_system(
         "role_ids": role_ids,
         "hall_ids": hall_ids,
         "table_ids": table_ids,
+        "default_section_id": default_section_id,
+        "sales_point_id": sales_point_id,
         "catalog_item_ids": list(catalog_ids.values()),
         "catalog_item_refs": catalog_ids,
         "menu_item_ids": list(menu_ids.values()),
@@ -765,6 +856,8 @@ def seed_full_system(
         "recipe_suggestion_ids": [item["suggestion_id"] for item in recipe_versions],
         "stop_list_ids": stop_list_ids,
         "receipt_template_ids": receipt_template_ids,
+        "printer_ids": printer_ids,
+        "print_route_ids": print_route_ids,
         "publication_id": publication["id"],
         "delivery_status": delivery_status,
         "health": health,
@@ -779,6 +872,7 @@ def seed_full_system(
             client_device_id=client_device_id,
             pins=pins,
             table_ids=table_ids,
+            sales_point_id=sales_point_id,
             menu_refs=menu_ids,
             catalog_refs=catalog_ids,
             wait_seconds=wait_seconds,
@@ -835,6 +929,16 @@ def seed_receipt_templates(cloud_client, templates):
     return ids
 
 
+def seed_printers(cloud_client, restaurant_id, printers):
+    ids = []
+    for printer in printers:
+        body = dict(printer)
+        body["restaurant_id"] = restaurant_id
+        created = request(cloud_client, "POST", f"{API_PREFIX}/printers", body, expected_status=(201,))
+        ids.append(created["id"])
+    return ids
+
+
 def verify_pos_ready(pos_client, restaurant_id, node_device_id, client_device_id, manager_pin, wait_seconds, interval_seconds):
     login = request(
         pos_client,
@@ -864,6 +968,36 @@ def verify_pos_ready(pos_client, restaurant_id, node_device_id, client_device_id
         if time.monotonic() >= deadline:
             raise RuntimeError("POS Edge did not expose seeded halls/menu and applied Cloud->Edge streams before timeout")
         time.sleep(max(0, interval_seconds))
+
+
+def wait_for_print_routing_ready(pos_client, headers, sales_point_id, section_id, wait_seconds, interval_seconds):
+    deadline = time.monotonic() + max(1, wait_seconds)
+    while True:
+        printers = request(pos_client, "GET", f"{API_PREFIX}/print-routing/printers", expected_status=(200,), headers=headers)
+        sales_points = request(pos_client, "GET", f"{API_PREFIX}/print-routing/sales-points", expected_status=(200,), headers=headers)
+        sections = request(pos_client, "GET", f"{API_PREFIX}/print-routing/sections", expected_status=(200,), headers=headers)
+        if (
+            printers
+            and any(item.get("id") == sales_point_id for item in sales_points)
+            and any(item.get("id") == section_id for item in sections)
+        ):
+            return printers
+        if time.monotonic() >= deadline:
+            raise RuntimeError("POS Edge did not expose synced printers/sales points/sections before timeout")
+        time.sleep(max(0, interval_seconds))
+
+
+def seed_print_routes(pos_client, headers, printer_id, sales_point_id, section_id):
+    required = True
+    routes = [
+        {"document_type": "check_nonfiscal", "scope_type": "sales_point", "scope_id": sales_point_id, "printer_id": printer_id, "is_required": required, "sort_order": 10},
+        {"document_type": "precheck", "scope_type": "section", "scope_id": section_id, "printer_id": printer_id, "is_required": required, "sort_order": 20},
+        {"document_type": "ticket", "scope_type": "section", "scope_id": section_id, "printer_id": printer_id, "is_required": required, "sort_order": 30},
+    ]
+    return [
+        request(pos_client, "POST", f"{API_PREFIX}/print-routing/routes", route, expected_status=(201,), headers=headers)
+        for route in routes
+    ]
 
 
 def create_and_approve_recipe_versions(cloud_client, restaurant_id, catalog_ids, recipes, manager_employee_id):
@@ -946,6 +1080,7 @@ def run_minimal_flow_smoke(
     client_device_id,
     pins,
     table_ids,
+    sales_point_id,
     menu_refs,
     catalog_refs,
     wait_seconds,
@@ -1067,7 +1202,7 @@ def run_minimal_flow_smoke(
 
     cashier_headers = login_pos(pos_client, node_device_id, client_device_id, pins["cashier_pin"])
     ensure_employee_shift(pos_client, restaurant_id, cashier_headers, "minimal-cashier")
-    ensure_cash_session(pos_client, restaurant_id, cashier_headers, "minimal-cashier")
+    ensure_cash_session(pos_client, restaurant_id, cashier_headers, "minimal-cashier", sales_point_id)
     payment = request(
         pos_client,
         "POST",
@@ -1220,10 +1355,10 @@ def wait_for_print_jobs_for_sources(pos_client, headers, expected_sources, wait_
             if (job.get("document_type", ""), job.get("source_id", "")) in expected
         ]
         found = {(job.get("document_type", ""), job.get("source_id", "")) for job in matched}
-        if expected.issubset(found):
+        if expected.issubset(found) and all(job.get("status") in ("succeeded", "failed") for job in matched):
             return matched
         if time.monotonic() >= deadline:
-            raise RuntimeError(f"POS Edge did not enqueue print jobs for sources {sorted(expected - found)} before timeout")
+            raise RuntimeError(f"POS Edge print jobs did not reach terminal status before timeout; missing={sorted(expected - found)} matched={matched}")
         time.sleep(max(0, interval_seconds))
 
 
@@ -1658,7 +1793,7 @@ def ensure_employee_shift(pos_client, restaurant_id, headers, prefix):
     return request(pos_client, "GET", f"{API_PREFIX}/employee-shifts/current", expected_status=(200,), headers=headers)
 
 
-def ensure_cash_session(pos_client, restaurant_id, headers, prefix):
+def ensure_cash_session(pos_client, restaurant_id, headers, prefix, sales_point_id):
     response = request(
         pos_client,
         "POST",
@@ -1666,6 +1801,7 @@ def ensure_cash_session(pos_client, restaurant_id, headers, prefix):
         {
             "command_id": f"cmd-{prefix}-{command_suffix()}-open-cash",
             "restaurant_id": restaurant_id,
+            "sales_point_id": sales_point_id,
             "opened_by_employee_id": headers["X-Actor-Employee-ID"],
             "opening_cash_amount": 0,
         },

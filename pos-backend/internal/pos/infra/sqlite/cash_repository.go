@@ -8,8 +8,8 @@ import (
 )
 
 func (r *Repository) CreateCashSession(ctx context.Context, v *domain.CashSession) error {
-	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,shift_id,opened_by_employee_id,closed_by_employee_id,status,business_date_local,opening_cash_amount,closing_cash_amount,opened_at,closed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.EdgeCashSessionID, v.RestaurantID, v.DeviceID, v.ShiftID, v.OpenedByEmployeeID, nullableString(v.ClosedByEmployeeID), string(v.Status), v.BusinessDateLocal, v.OpeningCashAmount, nullableInt64(v.ClosingCashAmount), dbTime(v.OpenedAt), nil, dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
+	_, err := r.execer(ctx).ExecContext(ctx, `INSERT INTO cash_sessions(id,edge_cash_session_id,restaurant_id,device_id,sales_point_id,shift_id,opened_by_employee_id,closed_by_employee_id,status,business_date_local,opening_cash_amount,closing_cash_amount,opened_at,closed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.EdgeCashSessionID, v.RestaurantID, v.DeviceID, v.SalesPointID, v.ShiftID, v.OpenedByEmployeeID, nullableString(v.ClosedByEmployeeID), string(v.Status), v.BusinessDateLocal, v.OpeningCashAmount, nullableInt64(v.ClosingCashAmount), dbTime(v.OpenedAt), nil, dbTime(v.CreatedAt), dbTime(v.UpdatedAt))
 	return normalizeErr(err)
 }
 
@@ -24,11 +24,11 @@ func (r *Repository) UpdateCashSessionClosed(ctx context.Context, v *domain.Cash
 }
 
 func (r *Repository) GetCashSession(ctx context.Context, id string) (*domain.CashSession, error) {
-	return r.scanCashSession(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,edge_cash_session_id,restaurant_id,device_id,shift_id,opened_by_employee_id,closed_by_employee_id,status,business_date_local,opening_cash_amount,closing_cash_amount,opened_at,closed_at,created_at,updated_at FROM cash_sessions WHERE id = ?`, id))
+	return r.scanCashSession(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,edge_cash_session_id,restaurant_id,device_id,sales_point_id,shift_id,opened_by_employee_id,closed_by_employee_id,status,business_date_local,opening_cash_amount,closing_cash_amount,opened_at,closed_at,created_at,updated_at FROM cash_sessions WHERE id = ?`, id))
 }
 
 func (r *Repository) GetOpenCashSessionByDevice(ctx context.Context, deviceID string) (*domain.CashSession, error) {
-	return r.scanCashSession(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,edge_cash_session_id,restaurant_id,device_id,shift_id,opened_by_employee_id,closed_by_employee_id,status,business_date_local,opening_cash_amount,closing_cash_amount,opened_at,closed_at,created_at,updated_at FROM cash_sessions WHERE device_id = ? AND status = 'open'`, deviceID))
+	return r.scanCashSession(r.queryer(ctx).QueryRowContext(ctx, `SELECT id,edge_cash_session_id,restaurant_id,device_id,sales_point_id,shift_id,opened_by_employee_id,closed_by_employee_id,status,business_date_local,opening_cash_amount,closing_cash_amount,opened_at,closed_at,created_at,updated_at FROM cash_sessions WHERE device_id = ? AND status = 'open'`, deviceID))
 }
 
 func (r *Repository) scanCashSession(row *sql.Row) (*domain.CashSession, error) {
@@ -37,7 +37,7 @@ func (r *Repository) scanCashSession(row *sql.Row) (*domain.CashSession, error) 
 	var closedBy sql.NullString
 	var closingCash sql.NullInt64
 	var closedAt sql.NullString
-	err := row.Scan(&v.ID, &v.EdgeCashSessionID, &v.RestaurantID, &v.DeviceID, &v.ShiftID, &v.OpenedByEmployeeID, &closedBy, &status, &v.BusinessDateLocal, &v.OpeningCashAmount, &closingCash, &opened, &closedAt, &created, &updated)
+	err := row.Scan(&v.ID, &v.EdgeCashSessionID, &v.RestaurantID, &v.DeviceID, &v.SalesPointID, &v.ShiftID, &v.OpenedByEmployeeID, &closedBy, &status, &v.BusinessDateLocal, &v.OpeningCashAmount, &closingCash, &opened, &closedAt, &created, &updated)
 	if err != nil {
 		return nil, normalizeErr(err)
 	}

@@ -80,6 +80,14 @@ const (
 
 type Hall = floor.Hall
 type Table = floor.Table
+type RestaurantSection = floor.RestaurantSection
+type RestaurantSectionMode = floor.RestaurantSectionMode
+type SalesPoint = floor.SalesPoint
+
+const (
+	RestaurantSectionHallSection     = floor.RestaurantSectionHallSection
+	RestaurantSectionKitchenWorkshop = floor.RestaurantSectionKitchenWorkshop
+)
 
 type CatalogItemType = catalog.CatalogItemType
 type CatalogItem = catalog.CatalogItem
@@ -218,6 +226,8 @@ type PaymentStatus = check.PaymentStatus
 type PaymentMethod = check.PaymentMethod
 type Payment = check.Payment
 type PaymentAttempt = check.PaymentAttempt
+type PrintConfirmation = check.PrintConfirmation
+type PrintConfirmationTarget = check.PrintConfirmationTarget
 
 const (
 	PaymentCaptured = check.PaymentCaptured
@@ -393,18 +403,20 @@ const (
 	SyncExchangeStatusAccepted  = shared.SyncExchangeStatusAccepted
 	SyncExchangeStatusPartial   = shared.SyncExchangeStatusPartial
 
-	MasterDataStreamRestaurants      = shared.MasterDataStreamRestaurants
-	MasterDataStreamDevices          = shared.MasterDataStreamDevices
-	MasterDataStreamStaff            = shared.MasterDataStreamStaff
-	MasterDataStreamFloor            = shared.MasterDataStreamFloor
-	MasterDataStreamCatalog          = shared.MasterDataStreamCatalog
-	MasterDataStreamMenu             = shared.MasterDataStreamMenu
-	MasterDataStreamPricing          = shared.MasterDataStreamPricing
-	MasterDataStreamRecipes          = shared.MasterDataStreamRecipes
-	MasterDataStreamInventory        = shared.MasterDataStreamInventory
-	MasterDataStreamProposalFeedback = shared.MasterDataStreamProposalFeedback
-	MasterDataStreamReceiptTemplates = shared.MasterDataStreamReceiptTemplates
-	MasterDataStreamPrinters         = shared.MasterDataStreamPrinters
+	MasterDataStreamRestaurants        = shared.MasterDataStreamRestaurants
+	MasterDataStreamDevices            = shared.MasterDataStreamDevices
+	MasterDataStreamStaff              = shared.MasterDataStreamStaff
+	MasterDataStreamFloor              = shared.MasterDataStreamFloor
+	MasterDataStreamCatalog            = shared.MasterDataStreamCatalog
+	MasterDataStreamMenu               = shared.MasterDataStreamMenu
+	MasterDataStreamPricing            = shared.MasterDataStreamPricing
+	MasterDataStreamRecipes            = shared.MasterDataStreamRecipes
+	MasterDataStreamInventory          = shared.MasterDataStreamInventory
+	MasterDataStreamProposalFeedback   = shared.MasterDataStreamProposalFeedback
+	MasterDataStreamReceiptTemplates   = shared.MasterDataStreamReceiptTemplates
+	MasterDataStreamPrinters           = shared.MasterDataStreamPrinters
+	MasterDataStreamSalesPoints        = shared.MasterDataStreamSalesPoints
+	MasterDataStreamRestaurantSections = shared.MasterDataStreamRestaurantSections
 
 	SyncEnvelopeVersion = shared.SyncEnvelopeVersion
 )
@@ -436,6 +448,8 @@ type ReceiptTemplate = receipt.Template
 type ReceiptPrinter = receipt.Printer
 type ReceiptDocumentType = receipt.DocumentType
 type PrintJob = receipt.PrintJob
+type PrintRoute = receipt.PrintRoute
+type PrintJobTarget = receipt.PrintJobTarget
 type PrintJobStatus = receipt.PrintJobStatus
 type PrintJobListQuery = receipt.PrintJobListQuery
 
